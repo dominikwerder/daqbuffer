@@ -1,0 +1,45 @@
+#[derive(Debug)]
+pub struct Error {
+    msg: String,
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(fmt, "Error")
+    }
+}
+
+impl std::error::Error for Error {
+}
+
+impl From<std::io::Error> for Error {
+    fn from (k: std::io::Error) -> Self {
+        Self {
+            msg: k.to_string(),
+        }
+    }
+}
+
+impl From<http::Error> for Error {
+    fn from (k: http::Error) -> Self {
+        Self {
+            msg: k.to_string(),
+        }
+    }
+}
+
+impl From<hyper::Error> for Error {
+    fn from (k: hyper::Error) -> Self {
+        Self {
+            msg: k.to_string(),
+        }
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from (k: serde_json::Error) -> Self {
+        Self {
+            msg: k.to_string(),
+        }
+    }
+}
