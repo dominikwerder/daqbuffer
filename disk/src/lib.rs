@@ -76,15 +76,23 @@ impl futures_core::Stream for FileReader {
 
 struct Ftmp {
     file: Option<Box<dyn FusedFuture<Output=Result<tokio::fs::File, std::io::Error>> + Send>>,
+    file2: Option<Box<dyn FusedFuture<Output=Result<tokio::fs::File, std::io::Error>> + Send + Unpin>>,
 }
 
 impl Ftmp {
     pub fn new() -> Self {
         Ftmp {
             file: None,
+            file2: None,
         }
     }
     pub fn open(&mut self, path: PathBuf) {
+        /*{
+            let ff = tokio::fs::File::open(path.clone()).fuse();
+            futures_util::pin_mut!(ff);
+            let u: Box<dyn FusedFuture<Output=Result<tokio::fs::File, std::io::Error>> + Send + Unpin> = Box::new(ff);
+            self.file2.replace(u);
+        }*/
         //let z = tokio::fs::OpenOptions::new().read(true).open(path);
         //let y = Box::new(z);
         use futures_util::FutureExt;
@@ -132,6 +140,9 @@ pub fn raw_concat_channel_read_stream_try_open_in_background(query: &netpod::Agg
                 query.timebin += 1;
             }
             let timebin = 18700 + i1;
+            let b = Box::new("");
+            fn lala<H: Unpin>(h: H) {}
+            lala(b);
             //query.timebin = timebin;
             //let s2 = raw_concat_channel_read_stream_timebin(&query);
             //pin_mut!(s2);
@@ -141,12 +152,12 @@ pub fn raw_concat_channel_read_stream_try_open_in_background(query: &netpod::Agg
             //let s2f = s2.next().fuse();
             //pin_mut!(s2f);
             //pin_mut!(f2);
-            //let ff2 = ftmp1.file.unwrap();
-            //() == ff2;
-            //pin_mut!(ff2);
-            //let z = select! {
-            //    _ = ff2 => (),
-            //};
+            let ff2 = ftmp1.file.take().unwrap();
+            pin_mut!(ff2);
+            //let i: Box<dyn FusedFuture<Output=Result<tokio::fs::File, std::io::Error>> + Send + Unpin> = ff2;
+            let ff3 = Box::pin(ff2);
+            pin_mut!(ff3);
+            //let z = select! { _ = ff3 => () };
             yield Ok(Bytes::new());
         }
     }
