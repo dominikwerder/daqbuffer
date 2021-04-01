@@ -1,8 +1,6 @@
 #[allow(unused_imports)]
 use tracing::{error, warn, info, debug, trace};
 use err::Error;
-use http::Method;
-use hyper::Body;
 
 pub fn main() {
     match run(go()) {
@@ -48,20 +46,30 @@ pub fn tracing_init() {
         .with_target(true)
         .with_thread_names(true)
         //.with_max_level(tracing::Level::INFO)
-        .with_env_filter(tracing_subscriber::EnvFilter::new("info,retrieval=trace,tokio_postgres=info"))
+        .with_env_filter(tracing_subscriber::EnvFilter::new("info,retrieval=trace,disk=trace,tokio_postgres=info"))
         .init();
 }
 
 #[test]
 fn simple_fetch() {
     run(async {
+        let t1 = chrono::Utc::now();
         let query = netpod::AggQuerySingleChannel {
-            channel: "S10CB01-RIQM-STA:DACI".into(),
+            ksprefix: "daq_swissfel".into(),
+            keyspace: 2,
+            channel: netpod::Channel {
+                name: "S10BC01-DBAM070:EOM1_T1".into(),
+                backend: "sf-databuffer".into(),
+            },
+            timebin: 18714,
+            split: 12,
+            tbsize: 1000 * 60 * 60 * 24,
+            buffer_size: 1024 * 4,
         };
         let query_string = serde_json::to_string(&query).unwrap();
-        let host = tokio::spawn(httpret::host(8360));
+        let _host = tokio::spawn(httpret::host(8360));
         let req = hyper::Request::builder()
-            .method(Method::POST)
+            .method(http::Method::POST)
             .uri("http://localhost:8360/api/1/parsed_raw")
             .body(query_string.into()).unwrap();
         let client = hyper::Client::new();
@@ -69,10 +77,12 @@ fn simple_fetch() {
         info!("client response {:?}", res);
         let mut res_body = res.into_body();
         use hyper::body::HttpBody;
+        let mut ntot = 0 as u64;
         loop {
             match res_body.data().await {
                 Some(Ok(k)) => {
-                    info!("packet..  len {}", k.len());
+                    //info!("packet..  len {}", k.len());
+                    ntot += k.len() as u64;
                 }
                 Some(Err(e)) => {
                     error!("{:?}", e);
@@ -83,6 +93,10 @@ fn simple_fetch() {
                 }
             }
         }
+        let t2 = chrono::Utc::now();
+        let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
+        let throughput = ntot / 1024 * 1000 / ms;
+        info!("total download bytes {}   throughput {:5} kB/s", ntot, throughput);
         //Err::<(), _>(format!("test error").into())
         Ok(())
     }).unwrap();
