@@ -4,7 +4,7 @@ use err::Error;
 
 #[derive(Serialize, Deserialize)]
 pub struct AggQuerySingleChannel {
-    channel: String,
+    pub channel: String,
 }
 
 pub struct BodyStream {

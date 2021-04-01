@@ -11,7 +11,6 @@ pub struct Opts {
 
 #[derive(Debug, Clap)]
 pub enum SubCmd {
-    Version,
     Retrieval(Retrieval),
 }
 

@@ -3,6 +3,22 @@ pub struct Error {
     msg: String,
 }
 
+impl Error {
+    pub fn with_msg<S: Into<String>>(s: S) -> Self {
+        Self {
+            msg: s.into(),
+        }
+    }
+}
+
+impl From<String> for Error {
+    fn from(k: String) -> Self {
+        Self {
+            msg: k,
+        }
+    }
+}
+
 impl std::fmt::Display for Error {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(fmt, "Error")
