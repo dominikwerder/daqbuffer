@@ -65,7 +65,7 @@ async fn parsed_raw(req: Request<Body>) -> Result<Response<Body>, Error> {
     let query: AggQuerySingleChannel = serde_json::from_slice(&bodyslice)?;
     //let q = disk::read_test_1(&query).await?;
     //let s = q.inner;
-    let s = disk::raw_concat_channel_read_stream_file_pipe(&query);
+    let s = disk::parsed1(&query);
     let res = response(StatusCode::OK)
         .body(Body::wrap_stream(s))?;
     /*
