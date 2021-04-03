@@ -8,7 +8,7 @@ use tokio::fs::File;
 use std::future::Future;
 use futures_core::Stream;
 use futures_util::future::FusedFuture;
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use std::path::PathBuf;
 
 pub async fn read_test_1(query: &netpod::AggQuerySingleChannel) -> Result<netpod::BodyStream, Error> {
@@ -262,6 +262,61 @@ pub fn raw_concat_channel_read_stream_try_open_in_background(query: &netpod::Agg
 
 
 // TODO implement another variant with a dedicated task to feed the opened file queue.
+pub fn raw_concat_channel_read_stream_file_pipe(query: &netpod::AggQuerySingleChannel) -> impl Stream<Item=Result<Bytes, Error>> + Send {
+    let query = query.clone();
+    async_stream::stream! {
+        let chrx = open_files(&query);
+        while let Ok(file) = chrx.recv().await {
+            let mut file = match file {
+                Ok(k) => k,
+                Err(_) => break
+            };
+            loop {
+                let mut buf = BytesMut::with_capacity(query.buffer_size as usize);
+                use tokio::io::AsyncReadExt;
+                let n1 = file.read_buf(&mut buf).await?;
+                if n1 == 0 {
+                    info!("file EOF");
+                    break;
+                }
+                else {
+                    yield Ok(buf.freeze());
+                }
+            }
+        }
+    }
+}
+
+fn open_files(query: &netpod::AggQuerySingleChannel) -> async_channel::Receiver<Result<tokio::fs::File, Error>> {
+    let (chtx, chrx) = async_channel::bounded(2);
+    let mut query = query.clone();
+    tokio::spawn(async move {
+        let tb0 = query.timebin;
+        for i1 in 0..16 {
+            query.timebin = tb0 + i1;
+            let path = datapath(&query);
+            let fileres = tokio::fs::OpenOptions::new()
+                .read(true)
+                .open(path)
+                .await;
+            match fileres {
+                Ok(k) => {
+                    match chtx.send(Ok(k)).await {
+                        Ok(_) => (),
+                        Err(_) => break
+                    }
+                }
+                Err(e) => {
+                    match chtx.send(Err(e.into())).await {
+                        Ok(_) => (),
+                        Err(_) => break
+                    }
+                }
+            }
+        }
+    });
+    chrx
+}
 
 
 pub fn raw_concat_channel_read_stream(query: &netpod::AggQuerySingleChannel) -> impl Stream<Item=Result<Bytes, Error>> + Send {

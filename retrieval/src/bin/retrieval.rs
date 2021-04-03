@@ -61,10 +61,10 @@ fn simple_fetch() {
                 name: "S10BC01-DBAM070:EOM1_T1".into(),
                 backend: "sf-databuffer".into(),
             },
-            timebin: 18714,
+            timebin: 18700,
             split: 12,
             tbsize: 1000 * 60 * 60 * 24,
-            buffer_size: 1024 * 4,
+            buffer_size: 1024 * 16,
         };
         let query_string = serde_json::to_string(&query).unwrap();
         let _host = tokio::spawn(httpret::host(8360));

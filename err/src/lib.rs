@@ -59,3 +59,11 @@ impl From<serde_json::Error> for Error {
         }
     }
 }
+
+impl From<async_channel::RecvError> for Error {
+    fn from (k: async_channel::RecvError) -> Self {
+        Self {
+            msg: k.to_string(),
+        }
+    }
+}
