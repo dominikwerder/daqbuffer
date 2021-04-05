@@ -2,7 +2,7 @@
 members = ["retrieval", "httpret", "err", "disk"]
 
 [profile.release]
-opt-level = 0
-overflow-checks = true
-debug = 2
-debug-assertions = true
+#opt-level = 0
+#overflow-checks = true
+#debug = 2
+#debug-assertions = true

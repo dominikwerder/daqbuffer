@@ -17,3 +17,4 @@ async-stream = "0.3.0"
 hex = "0.4.3"
 err = { path = "../err" }
 netpod = { path = "../netpod" }
+bitshuffle = { path = "../bitshuffle" }

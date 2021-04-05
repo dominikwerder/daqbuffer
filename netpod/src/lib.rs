@@ -31,6 +31,7 @@ pub struct AggQuerySingleChannel {
     pub split: u32,
     pub tbsize: u32,
     pub buffer_size: u32,
+    pub tb_file_count: u32,
 }
 
 pub struct BodyStream {

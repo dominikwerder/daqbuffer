@@ -56,15 +56,16 @@ fn simple_fetch() {
         let t1 = chrono::Utc::now();
         let query = netpod::AggQuerySingleChannel {
             ksprefix: "daq_swissfel".into(),
-            keyspace: 2,
+            keyspace: 3,
             channel: netpod::Channel {
-                name: "S10BC01-DBAM070:EOM1_T1".into(),
+                name: "S10BC01-DBAM070:BAM_CH1_NORM".into(),
                 backend: "sf-databuffer".into(),
             },
-            timebin: 18700,
+            timebin: 18719,
+            tb_file_count: 1,
             split: 12,
             tbsize: 1000 * 60 * 60 * 24,
-            buffer_size: 1024 * 16,
+            buffer_size: 1024 * 8,
         };
         let query_string = serde_json::to_string(&query).unwrap();
         let _host = tokio::spawn(httpret::host(8360));

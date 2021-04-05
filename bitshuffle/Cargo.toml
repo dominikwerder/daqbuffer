@@ -1,0 +1,11 @@
+[package]
+name = "bitshuffle"
+version = "0.0.1-a.0"
+authors = ["Dominik Werder <dominik.werder@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+libc = "0.2.92"
+
+[build-dependencies]
+cc = "1.0.67"
