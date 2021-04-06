@@ -61,7 +61,7 @@ fn simple_fetch() {
                 name: "S10BC01-DBAM070:BAM_CH1_NORM".into(),
                 backend: "sf-databuffer".into(),
             },
-            timebin: 18719,
+            timebin: 18720,
             tb_file_count: 1,
             split: 12,
             tbsize: 1000 * 60 * 60 * 24,
@@ -97,7 +97,7 @@ fn simple_fetch() {
         let t2 = chrono::Utc::now();
         let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
         let throughput = ntot / 1024 * 1000 / ms;
-        info!("total download bytes {}   throughput {:5} kB/s", ntot, throughput);
+        info!("total download {} MB   throughput {:5} kB/s", ntot / 1024 / 1024, throughput);
         //Err::<(), _>(format!("test error").into())
         Ok(())
     }).unwrap();

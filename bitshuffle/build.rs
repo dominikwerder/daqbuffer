@@ -5,5 +5,6 @@ fn main() {
         .file("src/iochain.c")
         .file("src/lz4.c")
         .include("src")
+        .warnings(false)
         .compile("bitshufbundled");
 }
