@@ -15,6 +15,7 @@ use bytes::{Bytes, BytesMut, BufMut, Buf};
 use std::path::PathBuf;
 use bitshuffle::bitshuffle_decompress;
 use async_channel::bounded;
+use netpod::ScalarType;
 
 
 pub async fn read_test_1(query: &netpod::AggQuerySingleChannel) -> Result<netpod::BodyStream, Error> {
@@ -380,6 +381,95 @@ pub fn parsed1(query: &netpod::AggQuerySingleChannel) -> impl Stream<Item=Result
 }
 
 
+pub struct EventBlobsComplete {
+    file_chan: async_channel::Receiver<Result<File, Error>>,
+    evs: Option<EventChunker>,
+    buffer_size: u32,
+}
+
+impl EventBlobsComplete {
+    pub fn new(query: &netpod::AggQuerySingleChannel) -> Self {
+        Self {
+            file_chan: open_files(query),
+            evs: None,
+            buffer_size: query.buffer_size,
+        }
+    }
+}
+
+impl Stream for EventBlobsComplete {
+    type Item = Result<EventFull, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        'outer: loop {
+            let z = match &mut self.evs {
+                Some(evs) => {
+                    match evs.poll_next_unpin(cx) {
+                        Ready(Some(k)) => {
+                            Ready(Some(k))
+                        }
+                        Ready(None) => {
+                            self.evs = None;
+                            continue 'outer;
+                        }
+                        Pending => Pending,
+                    }
+                }
+                None => {
+                    match self.file_chan.poll_next_unpin(cx) {
+                        Ready(Some(k)) => {
+                            match k {
+                                Ok(file) => {
+                                    let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
+                                    let mut chunker = EventChunker::new(inp);
+                                    self.evs.replace(chunker);
+                                    continue 'outer;
+                                }
+                                Err(e) => Ready(Some(Err(e)))
+                            }
+                        }
+                        Ready(None) => Ready(None),
+                        Pending => Pending,
+                    }
+                }
+            };
+            break z;
+        }
+    }
+
+}
+
+
+pub fn event_blobs_complete(query: &netpod::AggQuerySingleChannel) -> impl Stream<Item=Result<EventFull, Error>> + Send {
+    let query = query.clone();
+    async_stream::stream! {
+        let filerx = open_files(&query);
+        while let Ok(fileres) = filerx.recv().await {
+            match fileres {
+                Ok(file) => {
+                    let inp = Box::pin(file_content_stream(file, query.buffer_size as usize));
+                    let mut chunker = EventChunker::new(inp);
+                    while let Some(evres) = chunker.next().await {
+                        match evres {
+                            Ok(evres) => {
+                                yield Ok(evres);
+                            }
+                            Err(e) => {
+                                yield Err(e)
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    yield Err(e);
+                }
+            }
+        }
+    }
+}
+
+
 pub struct EventChunker {
     inp: NeedMinBuffer,
     had_channel: bool,
@@ -527,7 +617,7 @@ impl EventChunker {
                             let c1 = bitshuffle_decompress(&buf.as_ref()[p1 as usize..], &mut decomp, ele_count as usize, ele_size as usize, 0);
                             //info!("decompress result: {:?}", c1);
                             assert!(c1.unwrap() as u32 == k1);
-                            ret.add_event(ts, pulse, Some(decomp));
+                            ret.add_event(ts, pulse, Some(decomp), ScalarType::from_dtype_index(type_index));
                         }
                         buf.advance(len as usize);
                         need_min = 4;
@@ -614,6 +704,7 @@ pub struct EventFull {
     tss: Vec<u64>,
     pulses: Vec<u64>,
     decomps: Vec<Option<BytesMut>>,
+    scalar_types: Vec<ScalarType>,
 }
 
 impl EventFull {
@@ -623,13 +714,15 @@ impl EventFull {
             tss: vec![],
             pulses: vec![],
             decomps: vec![],
+            scalar_types: vec![],
         }
     }
 
-    fn add_event(&mut self, ts: u64, pulse: u64, decomp: Option<BytesMut>) {
+    fn add_event(&mut self, ts: u64, pulse: u64, decomp: Option<BytesMut>, scalar_type: ScalarType) {
         self.tss.push(ts);
         self.pulses.push(pulse);
         self.decomps.push(decomp);
+        self.scalar_types.push(scalar_type);
     }
 
 }
@@ -835,4 +928,27 @@ impl futures_core::Stream for RawConcatChannelReader {
         todo!()
     }
 
+}
+
+fn run<T, F: std::future::Future<Output=Result<T, Error>>>(f: F) -> Result<T, Error> {
+    tracing_init();
+    tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(12)
+        .max_blocking_threads(256)
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(async {
+            f.await
+        })
+}
+
+pub fn tracing_init() {
+    tracing_subscriber::fmt()
+        //.with_timer(tracing_subscriber::fmt::time::uptime())
+        .with_target(true)
+        .with_thread_names(true)
+        //.with_max_level(tracing::Level::INFO)
+        .with_env_filter(tracing_subscriber::EnvFilter::new("info,retrieval=trace,disk=trace,tokio_postgres=info"))
+        .init();
 }
