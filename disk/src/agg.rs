@@ -154,6 +154,12 @@ pub struct MinMaxAvgScalarBinBatch {
     avgs: Vec<f32>,
 }
 
+impl std::fmt::Debug for MinMaxAvgScalarBinBatch {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(fmt, "MinMaxAvgScalarBinBatch  count {}", self.ts1s.len())
+    }
+}
+
 impl AggregatableXdim1Bin for MinMaxAvgScalarBinBatch {
     type Output = MinMaxAvgScalarBinBatch;
     fn into_agg(self) -> Self::Output {
@@ -458,6 +464,10 @@ async fn agg_x_dim_1_inner() {
         k
     })
     .into_binned_t()
+    .map(|k| {
+        info!("after T binning  {:?}", k.as_ref().unwrap());
+        k
+    })
     .for_each(|k| ready(()));
     fut1.await;
 }
