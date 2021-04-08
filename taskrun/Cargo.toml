@@ -1,0 +1,11 @@
+[package]
+name = "taskrun"
+version = "0.0.1-a.0"
+authors = ["Dominik Werder <dominik.werder@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+tokio = { version = "1.4.0", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
+tracing = "0.1.25"
+tracing-subscriber = "0.2.17"
+err = { path = "../err" }

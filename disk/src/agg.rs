@@ -766,7 +766,7 @@ const WEEK: u64 = DAY * 7;
 
 #[test]
 fn agg_x_dim_0() {
-    crate::run(async { agg_x_dim_0_inner().await; Ok(()) }).unwrap();
+    taskrun::run(async { agg_x_dim_0_inner().await; Ok(()) }).unwrap();
 }
 
 async fn agg_x_dim_0_inner() {
@@ -812,7 +812,7 @@ async fn agg_x_dim_0_inner() {
 
 #[test]
 fn agg_x_dim_1() {
-    crate::run(async { agg_x_dim_1_inner().await; Ok(()) }).unwrap();
+    taskrun::run(async { agg_x_dim_1_inner().await; Ok(()) }).unwrap();
 }
 
 async fn agg_x_dim_1_inner() {
