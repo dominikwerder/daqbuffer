@@ -8,10 +8,10 @@ use std::task::{Context, Poll};
 use std::future::Future;
 use futures_core::Stream;
 use futures_util::future::FusedFuture;
-use futures_util::{pin_mut, StreamExt};
+use futures_util::{FutureExt, StreamExt, pin_mut, select};
 use std::pin::Pin;
 use tokio::io::AsyncRead;
-use tokio::fs::File;
+use tokio::fs::{OpenOptions, File};
 use bytes::{Bytes, BytesMut, Buf};
 use std::path::PathBuf;
 use bitshuffle::bitshuffle_decompress;
@@ -84,8 +84,8 @@ impl Stream for FileReader {
 
 #[allow(dead_code)]
 struct Fopen1 {
-    opts: tokio::fs::OpenOptions,
-    fut: Pin<Box<dyn Future<Output=Result<tokio::fs::File, std::io::Error>>>>,
+    opts: OpenOptions,
+    fut: Pin<Box<dyn Future<Output=Result<File, std::io::Error>>>>,
     term: bool,
 }
 
@@ -93,18 +93,18 @@ impl Fopen1 {
 
     pub fn new(path: PathBuf) -> Self {
         let fut = Box::pin(async {
-            let mut o1 = tokio::fs::OpenOptions::new();
+            let mut o1 = OpenOptions::new();
             let o2 = o1.read(true);
             let res = o2.open(path);
             //() == res;
             //todo!()
             res.await
-        }) as Pin<Box<dyn Future<Output=std::io::Result<tokio::fs::File>>>>;
+        }) as Pin<Box<dyn Future<Output=Result<File, std::io::Error>>>>;
         let _fut2: Box<dyn Future<Output=u32>> = Box::new(async {
             123
         });
         Self {
-            opts: tokio::fs::OpenOptions::new(),
+            opts: OpenOptions::new(),
             fut,
             term: false,
         }
@@ -113,7 +113,7 @@ impl Fopen1 {
 }
 
 impl Future for Fopen1 {
-    type Output = Result<tokio::fs::File, Error>;
+    type Output = Result<File, Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let g = self.fut.as_mut();
@@ -143,10 +143,9 @@ unsafe impl Send for Fopen1 {}
 
 
 pub fn raw_concat_channel_read_stream_try_open_in_background(query: &netpod::AggQuerySingleChannel) -> impl Stream<Item=Result<Bytes, Error>> + Send {
-    use futures_util::{FutureExt, select};
-    use tokio::io::AsyncReadExt;
     let mut query = query.clone();
     async_stream::stream! {
+        use tokio::io::AsyncReadExt;
         let mut fopen = None;
         let mut fopen_avail = false;
         let mut file_prep: Option<File> = None;
@@ -928,4 +927,14 @@ impl futures_core::Stream for RawConcatChannelReader {
         todo!()
     }
 
+}
+
+pub mod timeunits {
+    pub const MU: u64 = 1000;
+    pub const MS: u64 = MU * 1000;
+    pub const SEC: u64 = MS * 1000;
+    pub const MIN: u64 = SEC * 60;
+    pub const HOUR: u64 = MIN * 60;
+    pub const DAY: u64 = HOUR * 24;
+    pub const WEEK: u64 = DAY * 7;
 }

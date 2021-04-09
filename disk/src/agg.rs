@@ -753,14 +753,8 @@ pub struct TimeRange {
     ts2: u64,
 }
 
-const MU: u64 = 1000;
-const MS: u64 = MU * 1000;
-const SEC: u64 = MS * 1000;
-const MIN: u64 = SEC * 60;
-const HOUR: u64 = MIN * 60;
-const DAY: u64 = HOUR * 24;
-const WEEK: u64 = DAY * 7;
 
+use crate::timeunits::*;
 
 
 
