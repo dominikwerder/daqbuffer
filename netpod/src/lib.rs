@@ -1,32 +1,12 @@
 use serde::{Serialize, Deserialize};
 use err::Error;
-//use std::pin::Pin;
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Channel {
-    pub backend: String,
-    pub name: String,
-}
-
-impl Channel {
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-}
-
-#[test]
-fn serde_channel() {
-    let _ex = "{\"name\":\"thechannel\",\"backend\":\"thebackend\"}";
-}
-
+use std::path::PathBuf;
 
 
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AggQuerySingleChannel {
-    pub ksprefix: String,
-    pub keyspace: u32,
-    pub channel: Channel,
+    pub channel_config: ChannelConfig,
     pub timebin: u32,
     pub split: u32,
     pub tbsize: u32,
@@ -39,6 +19,7 @@ pub struct BodyStream {
     pub inner: Box<dyn futures_core::Stream<Item=Result<bytes::Bytes, Error>> + Send + Unpin>,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ScalarType {
     U8,
     U16,
@@ -91,4 +72,68 @@ impl ScalarType {
         }
     }
 
+    pub fn index(&self) -> u8 {
+        use ScalarType::*;
+        match self {
+            U8 => 3,
+            U16 => 5,
+            U32 => 8,
+            U64 => 10,
+            I8 => 2,
+            I16 => 4,
+            I32 => 7,
+            I64 => 9,
+            F32 => 11,
+            F64 => 12,
+        }
+    }
+
+}
+
+
+pub struct Node {
+    pub host: String,
+    pub port: u16,
+    pub split: u8,
+    pub data_base_path: PathBuf,
+    pub ksprefix: String,
+}
+
+impl Node {
+    pub fn name(&self) -> String {
+        format!("{}-{}", self.host, self.port)
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Channel {
+    pub keyspace: u8,
+    pub backend: String,
+    pub name: String,
+}
+
+impl Channel {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+#[test]
+fn serde_channel() {
+    let _ex = "{\"name\":\"thechannel\",\"backend\":\"thebackend\"}";
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ChannelConfig {
+    pub channel: Channel,
+    pub time_bin_size: u64,
+    pub scalar_type: ScalarType,
+    pub shape: Shape,
+    pub compression: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Shape {
+    Scalar,
+    Wave(usize),
 }

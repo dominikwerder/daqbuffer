@@ -15,14 +15,13 @@ use tokio::fs::{OpenOptions, File};
 use bytes::{Bytes, BytesMut, Buf};
 use std::path::PathBuf;
 use bitshuffle::bitshuffle_decompress;
-use netpod::ScalarType;
+use netpod::{ScalarType, Node};
 
 
-pub async fn read_test_1(query: &netpod::AggQuerySingleChannel) -> Result<netpod::BodyStream, Error> {
-    let pre = "/data/sf-databuffer/daq_swissfel";
-    let path = format!("{}/{}_{}/byTime/{}/{:019}/{:010}/{:019}_00000_Data", pre, query.ksprefix, query.keyspace, query.channel.name(), query.timebin, query.split, query.tbsize);
-    debug!("try path: {}", path);
-    let fin = tokio::fs::OpenOptions::new()
+pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: &Node) -> Result<netpod::BodyStream, Error> {
+    let path = datapath(query.timebin as u64, &query.channel_config, node);
+    debug!("try path: {:?}", path);
+    let fin = OpenOptions::new()
         .read(true)
         .open(path)
         .await?;
@@ -142,7 +141,7 @@ impl FusedFuture for Fopen1 {
 unsafe impl Send for Fopen1 {}
 
 
-pub fn raw_concat_channel_read_stream_try_open_in_background(query: &netpod::AggQuerySingleChannel) -> impl Stream<Item=Result<Bytes, Error>> + Send {
+pub fn raw_concat_channel_read_stream_try_open_in_background(query: &netpod::AggQuerySingleChannel, node: &Node) -> impl Stream<Item=Result<Bytes, Error>> + Send {
     let mut query = query.clone();
     async_stream::stream! {
         use tokio::io::AsyncReadExt;
@@ -157,9 +156,8 @@ pub fn raw_concat_channel_read_stream_try_open_in_background(query: &netpod::Agg
             let blen = query.buffer_size as usize;
             {
                 if !fopen_avail && file_prep.is_none() && i1 < 16 {
-                    query.timebin = 18700 + i1;
-                    info!("Prepare open task for next file {}", query.timebin);
-                    fopen.replace(Fopen1::new(datapath(&query)));
+                    info!("Prepare open task for next file {}", query.timebin + i1);
+                    fopen.replace(Fopen1::new(datapath(query.timebin as u64 + i1 as u64, &query.channel_config, node)));
                     fopen_avail = true;
                     i1 += 1;
                 }
@@ -300,7 +298,7 @@ fn open_files(query: &netpod::AggQuerySingleChannel) -> async_channel::Receiver<
         for i1 in 0..query.tb_file_count {
             query.timebin = tb0 + i1;
             let path = datapath(&query);
-            let fileres = tokio::fs::OpenOptions::new()
+            let fileres = OpenOptions::new()
                 .read(true)
                 .open(&path)
                 .await;
@@ -573,10 +571,11 @@ impl EventChunker {
                         let type_flags = sl.read_u8().unwrap();
                         let type_index = sl.read_u8().unwrap();
                         assert!(type_index <= 13);
-                        let is_compressed = type_flags & 0x80 != 0;
-                        let is_array = type_flags & 0x40 != 0;
-                        let is_big_endian = type_flags & 0x20 != 0;
-                        let is_shaped = type_flags & 0x10 != 0;
+                        use dtflags::*;
+                        let is_compressed = type_flags & COMPRESSION != 0;
+                        let is_array = type_flags & ARRAY != 0;
+                        let is_big_endian = type_flags & BIG_ENDIAN != 0;
+                        let is_shaped = type_flags & SHAPE != 0;
                         let compression_method = if is_compressed {
                             sl.read_u8().unwrap()
                         }
@@ -595,7 +594,7 @@ impl EventChunker {
                         for i1 in 0..shape_dim {
                             shape_lens[i1 as usize] = sl.read_u8().unwrap();
                         }
-                        if true && is_compressed {
+                        if is_compressed {
                             //info!("event  ts {}  is_compressed {}", ts, is_compressed);
                             let value_bytes = sl.read_u64::<BE>().unwrap();
                             let block_size = sl.read_u32::<BE>().unwrap();
@@ -617,6 +616,9 @@ impl EventChunker {
                             //info!("decompress result: {:?}", c1);
                             assert!(c1.unwrap() as u32 == k1);
                             ret.add_event(ts, pulse, Some(decomp), ScalarType::from_dtype_index(type_index));
+                        }
+                        else {
+                            todo!()
                         }
                         buf.advance(len as usize);
                         need_min = 4;
@@ -864,10 +866,15 @@ pub fn raw_concat_channel_read_stream_timebin(query: &netpod::AggQuerySingleChan
 }
 
 
-fn datapath(query: &netpod::AggQuerySingleChannel) -> PathBuf {
-    let pre = "/data/sf-databuffer/daq_swissfel";
-    let path = format!("{}/{}_{}/byTime/{}/{:019}/{:010}/{:019}_00000_Data", pre, query.ksprefix, query.keyspace, query.channel.name(), query.timebin, query.split, query.tbsize);
-    path.into()
+fn datapath(timebin: u64, config: &netpod::ChannelConfig, node: &netpod::Node) -> PathBuf {
+    //let pre = "/data/sf-databuffer/daq_swissfel";
+    node.data_base_path
+    .join(format!("{}_{}", node.ksprefix, config.channel.keyspace))
+    .join("byTime")
+    .join(config.channel.name.clone())
+    .join(format!("{:019}", timebin))
+    .join(format!("{:010}", node.split))
+    .join(format!("{:019}_00000_Data", config.time_bin_size))
 }
 
 
@@ -937,4 +944,11 @@ pub mod timeunits {
     pub const HOUR: u64 = MIN * 60;
     pub const DAY: u64 = HOUR * 24;
     pub const WEEK: u64 = DAY * 7;
+}
+
+pub mod dtflags {
+    pub const COMPRESSION: u8 = 0x80;
+    pub const ARRAY: u8 = 0x40;
+    pub const BIG_ENDIAN: u8 = 0x20;
+    pub const SHAPE: u8 = 0x10;
 }

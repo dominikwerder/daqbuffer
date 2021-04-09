@@ -385,7 +385,6 @@ impl AggregatorTdim for MinMaxAvgScalarBinSingleAggregator {
         todo!()
     }
 
-
     fn ingest(&mut self, v: &Self::InputValue) {
         todo!()
     }
@@ -810,34 +809,6 @@ fn agg_x_dim_1() {
 }
 
 async fn agg_x_dim_1_inner() {
-    let vals = ValuesDim1 {
-        tss: vec![0, 1, 2, 3],
-        values: vec![
-            vec![0., 0., 0.],
-            vec![1., 1., 1.],
-            vec![2., 2., 2.],
-            vec![3., 3., 3.],
-        ],
-    };
-    // I want to distinguish already in the outer part between dim-0 and dim-1 and generate
-    // separate code for these cases...
-    // That means that also the reading chain itself needs to be typed on that.
-    // Need to supply some event-payload converter type which has that type as Output type.
-    let vals2 = vals.into_agg();
-    // Now the T-binning:
-
-    /*
-    T-aggregator must be able to produce empty-values of correct type even if we never get
-    a single value of input data.
-    Therefore, it needs the bin range definition.
-    How do I want to drive the system?
-    If I write the T-binner as a Stream, then I also need to pass it the input!
-    Meaning, I need to pass the Stream which produces the actual numbers from disk.
-
-    readchannel()  -> Stream of timestamped byte blobs
-    .to_f32()  -> Stream ?    indirection to branch on the underlying shape
-    .agg_x_bins_1()  -> Stream ?    can I keep it at the single indirection on the top level?
-    */
     let query = netpod::AggQuerySingleChannel {
         ksprefix: "daq_swissfel".into(),
         keyspace: 3,
@@ -875,4 +846,36 @@ async fn agg_x_dim_1_inner() {
     })
     .for_each(|k| ready(()));
     fut1.await;
+}
+
+
+pub fn tmp_some_older_things() {
+    let vals = ValuesDim1 {
+        tss: vec![0, 1, 2, 3],
+        values: vec![
+            vec![0., 0., 0.],
+            vec![1., 1., 1.],
+            vec![2., 2., 2.],
+            vec![3., 3., 3.],
+        ],
+    };
+    // I want to distinguish already in the outer part between dim-0 and dim-1 and generate
+    // separate code for these cases...
+    // That means that also the reading chain itself needs to be typed on that.
+    // Need to supply some event-payload converter type which has that type as Output type.
+    let vals2 = vals.into_agg();
+    // Now the T-binning:
+
+    /*
+    T-aggregator must be able to produce empty-values of correct type even if we never get
+    a single value of input data.
+    Therefore, it needs the bin range definition.
+    How do I want to drive the system?
+    If I write the T-binner as a Stream, then I also need to pass it the input!
+    Meaning, I need to pass the Stream which produces the actual numbers from disk.
+
+    readchannel()  -> Stream of timestamped byte blobs
+    .to_f32()  -> Stream ?    indirection to branch on the underlying shape
+    .agg_x_bins_1()  -> Stream ?    can I keep it at the single indirection on the top level?
+    */
 }
