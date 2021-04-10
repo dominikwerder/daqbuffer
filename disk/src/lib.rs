@@ -617,9 +617,9 @@ impl EventChunker {
                             unsafe {
                                 decomp.set_len(decomp_bytes);
                             }
-                            debug!("try decompress  value_bytes {}  ele_size {}  ele_count {}  type_index {}", value_bytes, ele_size, ele_count, type_index);
+                            //debug!("try decompress  value_bytes {}  ele_size {}  ele_count {}  type_index {}", value_bytes, ele_size, ele_count, type_index);
                             let c1 = bitshuffle_decompress(&buf.as_ref()[p1 as usize..], &mut decomp, ele_count as usize, ele_size as usize, 0).unwrap();
-                            debug!("decompress result  c1 {}  k1 {}", c1, k1);
+                            //debug!("decompress result  c1 {}  k1 {}", c1, k1);
                             assert!(c1 as u32 == k1);
                             ret.add_event(ts, pulse, Some(decomp), ScalarType::from_dtype_index(type_index));
                         }
