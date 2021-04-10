@@ -597,16 +597,17 @@ impl EventChunker {
                         assert!(!is_shaped || (shape_dim >= 1 && shape_dim <= 2));
                         let mut shape_lens = [0, 0, 0, 0];
                         for i1 in 0..shape_dim {
-                            shape_lens[i1 as usize] = sl.read_u8().unwrap();
+                            shape_lens[i1 as usize] = sl.read_u32::<BE>().unwrap();
                         }
                         if is_compressed {
-                            //info!("event  ts {}  is_compressed {}", ts, is_compressed);
+                            //debug!("event  ts {}  is_compressed {}", ts, is_compressed);
                             let value_bytes = sl.read_u64::<BE>().unwrap();
                             let block_size = sl.read_u32::<BE>().unwrap();
                             let p1 = sl.position() as u32;
                             let k1 = len as u32 - p1 - 4;
+                            debug!("event  len {}  ts {}  is_compressed {}  shape_dim {}  len-dim-0 {}  value_bytes {}  block_size {}", len, ts, is_compressed, shape_dim, shape_lens[0], value_bytes, block_size);
                             assert!(value_bytes < 1024 * 256);
-                            assert!(block_size == 1024 * 8);
+                            assert!(block_size < 1024 * 32);
                             //let value_bytes = value_bytes;
                             let type_size = type_size(type_index);
                             let ele_count = value_bytes / type_size as u64;
@@ -616,10 +617,10 @@ impl EventChunker {
                             unsafe {
                                 decomp.set_len(decomp_bytes);
                             }
-                            //info!("try decompress  value_bytes {}  ele_size {}  ele_count {}  type_index {}", value_bytes, ele_size, ele_count, type_index);
-                            let c1 = bitshuffle_decompress(&buf.as_ref()[p1 as usize..], &mut decomp, ele_count as usize, ele_size as usize, 0);
-                            //info!("decompress result: {:?}", c1);
-                            assert!(c1.unwrap() as u32 == k1);
+                            debug!("try decompress  value_bytes {}  ele_size {}  ele_count {}  type_index {}", value_bytes, ele_size, ele_count, type_index);
+                            let c1 = bitshuffle_decompress(&buf.as_ref()[p1 as usize..], &mut decomp, ele_count as usize, ele_size as usize, 0).unwrap();
+                            debug!("decompress result  c1 {}  k1 {}", c1, k1);
+                            assert!(c1 as u32 == k1);
                             ret.add_event(ts, pulse, Some(decomp), ScalarType::from_dtype_index(type_index));
                         }
                         else {
@@ -877,7 +878,7 @@ fn datapath(timebin: u64, config: &netpod::ChannelConfig, node: &netpod::Node) -
     .join(config.channel.name.clone())
     .join(format!("{:019}", timebin))
     .join(format!("{:010}", node.split))
-    .join(format!("{:019}_00000_Data", config.time_bin_size))
+    .join(format!("{:019}_00000_Data", config.time_bin_size / timeunits::MS))
 }
 
 

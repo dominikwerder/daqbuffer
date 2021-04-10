@@ -175,7 +175,7 @@ async fn gen_event(file: &mut File, ts: u64, config: &ChannelConfig) -> Result<(
                         buf.put_u64(vals.len() as u64);
                         let comp_block_size = 0;
                         buf.put_u32(comp_block_size);
-                        buf.put(comp.as_slice());
+                        buf.put(&comp[..n1]);
                     }
                     _ => todo!()
                 }
