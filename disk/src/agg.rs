@@ -6,7 +6,7 @@ use std::pin::Pin;
 use crate::EventFull;
 use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt, future::ready};
-use netpod::ScalarType;
+use netpod::{Channel, ChannelConfig, ScalarType, Shape, Node};
 
 pub trait AggregatorTdim {
     type InputValue;
@@ -763,23 +763,34 @@ fn agg_x_dim_0() {
 }
 
 async fn agg_x_dim_0_inner() {
+    let node = Node {
+        host: "localhost".into(),
+        port: 8888,
+        data_base_path: "../tmpdata/node0".into(),
+        split: 0,
+        ksprefix: "ks".into(),
+    };
     let query = netpod::AggQuerySingleChannel {
-        ksprefix: "daq_swissfel".into(),
-        keyspace: 2,
-        channel: netpod::Channel {
-            name: "S10BC01-DBAM070:EOM1_T1".into(),
-            backend: "sf-databuffer".into(),
+        channel_config: ChannelConfig {
+            channel: Channel {
+                backend: "sf-databuffer".into(),
+                keyspace: 2,
+                name: "S10BC01-DBAM070:EOM1_T1".into(),
+            },
+            time_bin_size: DAY,
+            shape: Shape::Scalar,
+            scalar_type: ScalarType::F64,
+            big_endian: true,
+            compression: true,
         },
         timebin: 18723,
         tb_file_count: 1,
-        split: 12,
-        tbsize: 1000 * 60 * 60 * 24,
         buffer_size: 1024 * 4,
     };
     let bin_count = 20;
-    let ts1 = query.timebin as u64 * query.tbsize as u64 * MS;
+    let ts1 = query.timebin as u64 * query.channel_config.time_bin_size * MS;
     let ts2 = ts1 + HOUR * 24;
-    let fut1 = crate::EventBlobsComplete::new(&query)
+    let fut1 = crate::EventBlobsComplete::new(&query, &node)
     .into_dim_1_f32_stream()
     //.take(1000)
     .map(|q| {
@@ -809,23 +820,36 @@ fn agg_x_dim_1() {
 }
 
 async fn agg_x_dim_1_inner() {
+    // sf-databuffer
+    // /data/sf-databuffer/daq_swissfel/daq_swissfel_3/byTime/S10BC01-DBAM070\:BAM_CH1_NORM/*
+    let node = Node {
+        host: "localhost".into(),
+        port: 8888,
+        data_base_path: "../tmpdata/node0".into(),
+        split: 0,
+        ksprefix: "ks".into(),
+    };
     let query = netpod::AggQuerySingleChannel {
-        ksprefix: "daq_swissfel".into(),
-        keyspace: 3,
-        channel: netpod::Channel {
-            name: "S10BC01-DBAM070:BAM_CH1_NORM".into(),
-            backend: "sf-databuffer".into(),
+        channel_config: ChannelConfig {
+            channel: Channel {
+                backend: "ks".into(),
+                keyspace: 3,
+                name: "S10BC01-DBAM070:BAM_CH1_NORM".into(),
+            },
+            time_bin_size: DAY,
+            shape: Shape::Wave(1024),
+            scalar_type: ScalarType::F64,
+            big_endian: true,
+            compression: true,
         },
         timebin: 18722,
         tb_file_count: 1,
-        split: 12,
-        tbsize: 1000 * 60 * 60 * 24,
         buffer_size: 1024 * 4,
     };
     let bin_count = 100;
-    let ts1 = query.timebin as u64 * query.tbsize as u64 * MS;
+    let ts1 = query.timebin as u64 * query.channel_config.time_bin_size * MS;
     let ts2 = ts1 + HOUR * 24;
-    let fut1 = crate::EventBlobsComplete::new(&query)
+    let fut1 = crate::EventBlobsComplete::new(&query, &node)
     .into_dim_1_f32_stream()
     //.take(1000)
     .map(|q| {

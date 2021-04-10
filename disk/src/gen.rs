@@ -15,7 +15,7 @@ use bitshuffle::bitshuffle_compress;
 use netpod::ScalarType;
 use std::sync::Arc;
 use crate::timeunits::*;
-use netpod::{Node, Channel, Shape};
+use netpod::{Node, Channel, ChannelConfig, Shape};
 
 #[test]
 fn test_gen_test_data() {
@@ -33,30 +33,32 @@ pub async fn gen_test_data() -> Result<(), Error> {
         channels: vec![],
     };
     {
-        let chan = Channel {
-            backend: "test".into(),
-            keyspace: 3,
-            name: "wave1".into(),
+        let config = ChannelConfig {
+            channel: Channel {
+                backend: "test".into(),
+                keyspace: 3,
+                name: "wave1".into(),
+            },
             time_bin_size: DAY,
             scalar_type: ScalarType::F64,
             shape: Shape::Wave(9),
+            big_endian: true,
             compression: true,
-            time_spacing: HOUR * 6,
         };
-        ensemble.channels.push(chan);
+        ensemble.channels.push(config);
     }
     let node0 = Node {
         host: "localhost".into(),
         port: 7780,
         split: 0,
-        data_base_path: data_base_path.clone(),
+        data_base_path: data_base_path.join("node0"),
         ksprefix: ksprefix.clone(),
     };
     let node1 = Node {
         host: "localhost".into(),
         port: 7781,
         split: 1,
-        data_base_path: data_base_path.clone(),
+        data_base_path: data_base_path.join("node1"),
         ksprefix: ksprefix.clone(),
     };
     ensemble.nodes.push(node0);
@@ -69,27 +71,30 @@ pub async fn gen_test_data() -> Result<(), Error> {
 
 struct Ensemble {
     nodes: Vec<Node>,
-    channels: Vec<Channel>,
+    channels: Vec<ChannelConfig>,
 }
 
 async fn gen_node(node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
-    tokio::fs::create_dir_all(&ensemble.direnv.path).await?;
-    for channel in &ensemble.channels {
-        gen_channel(channel, node, ensemble).await?
+    for config in &ensemble.channels {
+        gen_channel(config, node, ensemble).await?
     }
     Ok(())
 }
 
-async fn gen_channel(channel: &Channel, node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
-    let channel_path = ensemble.direnv.path.clone()
-    .join(node.name())
-    .join(format!("{}_{}", ensemble.direnv.ksprefix, channel.keyspace))
+async fn gen_channel(config: &ChannelConfig, node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
+    let config_path = node.data_base_path
+    .join("config")
+    .join(&config.channel.name);
+    tokio::fs::create_dir_all(&config_path).await?;
+    let channel_path = node.data_base_path
+    .join(format!("{}_{}", node.ksprefix, config.channel.keyspace))
     .join("byTime")
-    .join(&channel.name);
+    .join(&config.channel.name);
     tokio::fs::create_dir_all(&channel_path).await?;
+    let ts_spacing = HOUR * 6;
     let mut ts = 0;
     while ts < DAY {
-        let res = gen_timebin(ts, &channel_path, channel, node, ensemble).await?;
+        let res = gen_timebin(ts, ts_spacing, &channel_path, config, node, ensemble).await?;
         ts = res.ts;
     }
     Ok(())
@@ -99,20 +104,20 @@ struct GenTimebinRes {
     ts: u64,
 }
 
-async fn gen_timebin(ts: u64, channel_path: &Path, channel: &Channel, node: &Node, ensemble: &Ensemble) -> Result<GenTimebinRes, Error> {
-    let tb = ts / channel.time_bin_size;
+async fn gen_timebin(ts: u64, ts_spacing: u64, channel_path: &Path, config: &ChannelConfig, node: &Node, ensemble: &Ensemble) -> Result<GenTimebinRes, Error> {
+    let tb = ts / config.time_bin_size;
     let path = channel_path.join(format!("{:019}", tb)).join(format!("{:010}", node.split));
     tokio::fs::create_dir_all(&path).await?;
-    let path = path.join(format!("{:019}_{:05}_Data", channel.time_bin_size / MS, 0));
+    let path = path.join(format!("{:019}_{:05}_Data", config.time_bin_size / MS, 0));
     info!("open file {:?}", path);
     let mut file = OpenOptions::new().write(true).create(true).truncate(true).open(path).await?;
-    gen_datafile_header(&mut file, channel).await?;
+    gen_datafile_header(&mut file, config).await?;
     let mut ts = ts;
-    let tsmax = (tb + 1) * channel.time_bin_size;
+    let tsmax = (tb + 1) * config.time_bin_size;
     while ts < tsmax {
         trace!("gen ts {}", ts);
-        gen_event(&mut file, ts, channel).await?;
-        ts += channel.time_spacing;
+        gen_event(&mut file, ts, config).await?;
+        ts += ts_spacing;
     }
     let ret = GenTimebinRes {
         ts,
@@ -120,9 +125,9 @@ async fn gen_timebin(ts: u64, channel_path: &Path, channel: &Channel, node: &Nod
     Ok(ret)
 }
 
-async fn gen_datafile_header(file: &mut File, channel: &Channel) -> Result<(), Error> {
+async fn gen_datafile_header(file: &mut File, config: &ChannelConfig) -> Result<(), Error> {
     let mut buf = BytesMut::with_capacity(1024);
-    let cnenc = channel.name.as_bytes();
+    let cnenc = config.channel.name.as_bytes();
     let len1 = cnenc.len() + 8;
     buf.put_i16(0);
     buf.put_i32(len1 as i32);
@@ -132,7 +137,7 @@ async fn gen_datafile_header(file: &mut File, channel: &Channel) -> Result<(), E
     Ok(())
 }
 
-async fn gen_event(file: &mut File, ts: u64, channel: &Channel) -> Result<(), Error> {
+async fn gen_event(file: &mut File, ts: u64, config: &ChannelConfig) -> Result<(), Error> {
     let mut buf = BytesMut::with_capacity(1024 * 16);
     buf.put_i32(0xcafecafe as u32 as i32);
     buf.put_u64(0xcafecafe);
@@ -143,16 +148,16 @@ async fn gen_event(file: &mut File, ts: u64, channel: &Channel) -> Result<(), Er
     buf.put_u8(0);
     buf.put_i32(-1);
     use crate::dtflags::*;
-    if channel.compression {
-        match channel.shape {
+    if config.compression {
+        match config.shape {
             Shape::Wave(ele_count) => {
                 buf.put_u8(COMPRESSION | ARRAY | SHAPE | BIG_ENDIAN);
-                buf.put_u8(channel.scalar_type.index());
+                buf.put_u8(config.scalar_type.index());
                 let comp_method = 0 as u8;
                 buf.put_u8(comp_method);
                 buf.put_u8(1);
                 buf.put_u32(ele_count as u32);
-                match &channel.scalar_type {
+                match &config.scalar_type {
                     ScalarType::F64 => {
                         let ele_size = 8;
                         let mut vals = vec![0; ele_size * ele_count];

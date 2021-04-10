@@ -8,10 +8,8 @@ use std::path::PathBuf;
 pub struct AggQuerySingleChannel {
     pub channel_config: ChannelConfig,
     pub timebin: u32,
-    pub split: u32,
-    pub tbsize: u32,
-    pub buffer_size: u32,
     pub tb_file_count: u32,
+    pub buffer_size: u32,
 }
 
 pub struct BodyStream {
@@ -90,7 +88,7 @@ impl ScalarType {
 
 }
 
-
+#[derive(Clone)]
 pub struct Node {
     pub host: String,
     pub port: u16,
@@ -129,6 +127,7 @@ pub struct ChannelConfig {
     pub time_bin_size: u64,
     pub scalar_type: ScalarType,
     pub shape: Shape,
+    pub big_endian: bool,
     pub compression: bool,
 }
 

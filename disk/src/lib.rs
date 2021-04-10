@@ -143,6 +143,7 @@ unsafe impl Send for Fopen1 {}
 
 pub fn raw_concat_channel_read_stream_try_open_in_background(query: &netpod::AggQuerySingleChannel, node: &Node) -> impl Stream<Item=Result<Bytes, Error>> + Send {
     let mut query = query.clone();
+    let node = node.clone();
     async_stream::stream! {
         use tokio::io::AsyncReadExt;
         let mut fopen = None;
@@ -157,7 +158,7 @@ pub fn raw_concat_channel_read_stream_try_open_in_background(query: &netpod::Agg
             {
                 if !fopen_avail && file_prep.is_none() && i1 < 16 {
                     info!("Prepare open task for next file {}", query.timebin + i1);
-                    fopen.replace(Fopen1::new(datapath(query.timebin as u64 + i1 as u64, &query.channel_config, node)));
+                    fopen.replace(Fopen1::new(datapath(query.timebin as u64 + i1 as u64, &query.channel_config, &node)));
                     fopen_avail = true;
                     i1 += 1;
                 }
@@ -265,10 +266,11 @@ pub fn raw_concat_channel_read_stream_try_open_in_background(query: &netpod::Agg
 }
 
 
-pub fn raw_concat_channel_read_stream_file_pipe(query: &netpod::AggQuerySingleChannel) -> impl Stream<Item=Result<BytesMut, Error>> + Send {
+pub fn raw_concat_channel_read_stream_file_pipe(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> impl Stream<Item=Result<BytesMut, Error>> + Send {
     let query = query.clone();
+    let node = node.clone();
     async_stream::stream! {
-        let chrx = open_files(&query);
+        let chrx = open_files(&query, &node);
         while let Ok(file) = chrx.recv().await {
             let mut file = match file {
                 Ok(k) => k,
@@ -290,14 +292,15 @@ pub fn raw_concat_channel_read_stream_file_pipe(query: &netpod::AggQuerySingleCh
     }
 }
 
-fn open_files(query: &netpod::AggQuerySingleChannel) -> async_channel::Receiver<Result<tokio::fs::File, Error>> {
+fn open_files(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> async_channel::Receiver<Result<tokio::fs::File, Error>> {
     let (chtx, chrx) = async_channel::bounded(2);
     let mut query = query.clone();
+    let node = node.clone();
     tokio::spawn(async move {
         let tb0 = query.timebin;
         for i1 in 0..query.tb_file_count {
             query.timebin = tb0 + i1;
-            let path = datapath(&query);
+            let path = datapath(query.timebin as u64, &query.channel_config, &node);
             let fileres = OpenOptions::new()
                 .read(true)
                 .open(&path)
@@ -341,10 +344,11 @@ pub fn file_content_stream(mut file: tokio::fs::File, buffer_size: usize) -> imp
 }
 
 
-pub fn parsed1(query: &netpod::AggQuerySingleChannel) -> impl Stream<Item=Result<Bytes, Error>> + Send {
+pub fn parsed1(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> impl Stream<Item=Result<Bytes, Error>> + Send {
     let query = query.clone();
+    let node = node.clone();
     async_stream::stream! {
-        let filerx = open_files(&query);
+        let filerx = open_files(&query, &node);
         while let Ok(fileres) = filerx.recv().await {
             match fileres {
                 Ok(file) => {
@@ -385,9 +389,9 @@ pub struct EventBlobsComplete {
 }
 
 impl EventBlobsComplete {
-    pub fn new(query: &netpod::AggQuerySingleChannel) -> Self {
+    pub fn new(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> Self {
         Self {
-            file_chan: open_files(query),
+            file_chan: open_files(query, node),
             evs: None,
             buffer_size: query.buffer_size,
         }
@@ -438,10 +442,11 @@ impl Stream for EventBlobsComplete {
 }
 
 
-pub fn event_blobs_complete(query: &netpod::AggQuerySingleChannel) -> impl Stream<Item=Result<EventFull, Error>> + Send {
+pub fn event_blobs_complete(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> impl Stream<Item=Result<EventFull, Error>> + Send {
     let query = query.clone();
+    let node = node.clone();
     async_stream::stream! {
-        let filerx = open_files(&query);
+        let filerx = open_files(&query, &node);
         while let Ok(fileres) = filerx.recv().await {
             match fileres {
                 Ok(file) => {
@@ -812,14 +817,15 @@ impl Stream for NeedMinBuffer {
 
 
 
-pub fn raw_concat_channel_read_stream(query: &netpod::AggQuerySingleChannel) -> impl Stream<Item=Result<Bytes, Error>> + Send {
+pub fn raw_concat_channel_read_stream(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> impl Stream<Item=Result<Bytes, Error>> + Send {
     let mut query = query.clone();
+    let node = node.clone();
     async_stream::stream! {
         let mut i1 = 0;
         loop {
             let timebin = 18700 + i1;
             query.timebin = timebin;
-            let s2 = raw_concat_channel_read_stream_timebin(&query);
+            let s2 = raw_concat_channel_read_stream_timebin(&query, &node);
             pin_mut!(s2);
             while let Some(item) = s2.next().await {
                 yield item;
@@ -833,16 +839,13 @@ pub fn raw_concat_channel_read_stream(query: &netpod::AggQuerySingleChannel) -> 
 }
 
 
-pub fn raw_concat_channel_read_stream_timebin(query: &netpod::AggQuerySingleChannel) -> impl Stream<Item=Result<Bytes, Error>> {
+pub fn raw_concat_channel_read_stream_timebin(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> impl Stream<Item=Result<Bytes, Error>> {
     let query = query.clone();
-    let pre = "/data/sf-databuffer/daq_swissfel";
-    let path = format!("{}/{}_{}/byTime/{}/{:019}/{:010}/{:019}_00000_Data", pre, query.ksprefix, query.keyspace, query.channel.name(), query.timebin, query.split, query.tbsize);
+    let node = node.clone();
     async_stream::stream! {
-        debug!("try path: {}", path);
-        let mut fin = tokio::fs::OpenOptions::new()
-            .read(true)
-            .open(path)
-            .await?;
+        let path = datapath(query.timebin as u64, &query.channel_config, &node);
+        debug!("try path: {:?}", path);
+        let mut fin = OpenOptions::new().read(true).open(path).await?;
         let meta = fin.metadata().await?;
         debug!("file meta {:?}", meta);
         let blen = query.buffer_size as usize;
@@ -877,21 +880,6 @@ fn datapath(timebin: u64, config: &netpod::ChannelConfig, node: &netpod::Node) -
     .join(format!("{:019}_00000_Data", config.time_bin_size))
 }
 
-
-pub async fn raw_concat_channel_read(query: &netpod::AggQuerySingleChannel) -> Result<netpod::BodyStream, Error> {
-    let _reader = RawConcatChannelReader {
-        ksprefix: query.ksprefix.clone(),
-        keyspace: query.keyspace,
-        channel: query.channel.clone(),
-        split: query.split,
-        tbsize: query.tbsize,
-        buffer_size: query.buffer_size,
-        tb: 18714,
-        //file_reader: None,
-        fopen: None,
-    };
-    todo!()
-}
 
 /**
 Read all events from all timebins for the given channel and split.
