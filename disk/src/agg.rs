@@ -7,6 +7,7 @@ use crate::EventFull;
 use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt, future::ready};
 use netpod::{Channel, ChannelConfig, ScalarType, Shape, Node, timeunits::*};
+use crate::merge::MergeDim1F32Stream;
 
 pub trait AggregatorTdim {
     type InputValue;
@@ -112,8 +113,19 @@ impl AggregatableXdim1Bin for ValuesDim1 {
 
 
 pub struct ValuesDim1 {
-    tss: Vec<u64>,
-    values: Vec<Vec<f32>>,
+    pub tss: Vec<u64>,
+    pub values: Vec<Vec<f32>>,
+}
+
+impl ValuesDim1 {
+
+    pub fn empty() -> Self {
+        Self {
+            tss: vec![],
+            values: vec![],
+        }
+    }
+
 }
 
 impl std::fmt::Debug for ValuesDim1 {
@@ -757,19 +769,24 @@ pub struct TimeRange {
 }
 
 
+pub fn make_test_node(ix: u8) -> Node {
+    Node {
+        host: "localhost".into(),
+        port: 8800 + ix as u16,
+        data_base_path: format!("../tmpdata/node{:02}", ix).into(),
+        split: ix,
+        ksprefix: "ks".into(),
+    }
+}
+
+
 #[test]
 fn agg_x_dim_0() {
     taskrun::run(async { agg_x_dim_0_inner().await; Ok(()) }).unwrap();
 }
 
 async fn agg_x_dim_0_inner() {
-    let node = Node {
-        host: "localhost".into(),
-        port: 8888,
-        data_base_path: "../tmpdata/node0".into(),
-        split: 0,
-        ksprefix: "ks".into(),
-    };
+    let node = make_test_node(0);
     let query = netpod::AggQuerySingleChannel {
         channel_config: ChannelConfig {
             channel: Channel {
@@ -823,13 +840,7 @@ async fn agg_x_dim_1_inner() {
     // sf-databuffer
     // /data/sf-databuffer/daq_swissfel/daq_swissfel_3/byTime/S10BC01-DBAM070\:BAM_CH1_NORM/*
     // S10BC01-DBAM070:BAM_CH1_NORM
-    let node = Node {
-        host: "localhost".into(),
-        port: 8888,
-        data_base_path: "../tmpdata/node0".into(),
-        split: 0,
-        ksprefix: "ks".into(),
-    };
+    let node = make_test_node(0);
     let query = netpod::AggQuerySingleChannel {
         channel_config: ChannelConfig {
             channel: Channel {
@@ -872,6 +883,47 @@ async fn agg_x_dim_1_inner() {
     .for_each(|k| ready(()));
     fut1.await;
 }
+
+#[test]
+fn merge_0() {
+    taskrun::run(async { merge_0_inner().await; Ok(()) }).unwrap();
+}
+
+async fn merge_0_inner() {
+    let nodes = vec![
+        make_test_node(0),
+        make_test_node(1),
+    ];
+    let query = netpod::AggQuerySingleChannel {
+        channel_config: ChannelConfig {
+            channel: Channel {
+                backend: "ks".into(),
+                keyspace: 3,
+                name: "wave1".into(),
+            },
+            time_bin_size: DAY,
+            shape: Shape::Wave(1024),
+            scalar_type: ScalarType::F64,
+            big_endian: true,
+            compression: true,
+        },
+        timebin: 0,
+        tb_file_count: 1,
+        buffer_size: 17,
+    };
+    let streams: Vec<_> = nodes.into_iter().map(|node| {
+        crate::EventBlobsComplete::new(&query, &node)
+        .into_dim_1_f32_stream()
+    })
+    .collect();
+    MergeDim1F32Stream::new(streams)
+    .map(|k| {
+        //info!("NEXT MERGED ITEM  ts {:?}", k.as_ref().unwrap().tss);
+    })
+    .fold(0, |k, q| async { 0 })
+    .await;
+}
+
 
 
 pub fn tmp_some_older_things() {

@@ -53,14 +53,14 @@ pub async fn gen_test_data() -> Result<(), Error> {
         host: "localhost".into(),
         port: 7780,
         split: 0,
-        data_base_path: data_base_path.join("node0"),
+        data_base_path: data_base_path.join("node00"),
         ksprefix: ksprefix.clone(),
     };
     let node1 = Node {
         host: "localhost".into(),
         port: 7781,
         split: 1,
-        data_base_path: data_base_path.join("node1"),
+        data_base_path: data_base_path.join("node01"),
         ksprefix: ksprefix.clone(),
     };
     ensemble.nodes.push(node0);

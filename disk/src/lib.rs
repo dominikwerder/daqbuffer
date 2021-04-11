@@ -1,5 +1,6 @@
 pub mod agg;
 pub mod gen;
+pub mod merge;
 
 #[allow(unused_imports)]
 use tracing::{error, warn, info, debug, trace};
