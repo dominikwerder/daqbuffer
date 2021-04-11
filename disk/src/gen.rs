@@ -41,30 +41,24 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 },
                 time_bin_size: DAY,
                 scalar_type: ScalarType::F64,
-                shape: Shape::Wave(9),
+                shape: Shape::Wave(17),
                 big_endian: true,
                 compression: true,
             },
-            time_spacing: SEC * 1,
+            time_spacing: MS * 10,
         };
         ensemble.channels.push(chn);
     }
-    let node0 = Node {
-        host: "localhost".into(),
-        port: 7780,
-        split: 0,
-        data_base_path: data_base_path.join("node00"),
-        ksprefix: ksprefix.clone(),
-    };
-    let node1 = Node {
-        host: "localhost".into(),
-        port: 7781,
-        split: 1,
-        data_base_path: data_base_path.join("node01"),
-        ksprefix: ksprefix.clone(),
-    };
-    ensemble.nodes.push(node0);
-    ensemble.nodes.push(node1);
+    for i1 in 0..13 {
+        let node = Node {
+            host: "localhost".into(),
+            port: 7780 + i1,
+            split: i1 as u8,
+            data_base_path: data_base_path.join(format!("node{:02}", i1)),
+            ksprefix: ksprefix.clone(),
+        };
+        ensemble.nodes.push(node);
+    }
     for node in &ensemble.nodes {
         gen_node(node, &ensemble).await?;
     }
@@ -173,7 +167,7 @@ async fn gen_event(file: &mut File, evix: u64, ts: u64, config: &ChannelConfig) 
                 match &config.scalar_type {
                     ScalarType::F64 => {
                         let ele_size = 8;
-                        let mut vals = vec![0; ele_size * ele_count];
+                        let mut vals = vec![0; (ele_size * ele_count) as usize];
                         for i1 in 0..ele_count {
                             let v = evix as f64;
                             let a = v.to_be_bytes();
@@ -182,8 +176,8 @@ async fn gen_event(file: &mut File, evix: u64, ts: u64, config: &ChannelConfig) 
                             c1.seek(SeekFrom::Start(i1 as u64 * ele_size as u64))?;
                             std::io::Write::write_all(&mut c1, &a)?;
                         }
-                        let mut comp = vec![0u8; ele_size * ele_count + 64];
-                        let n1 = bitshuffle_compress(&vals, &mut comp, ele_count, ele_size, 0).unwrap();
+                        let mut comp = vec![0u8; (ele_size * ele_count + 64) as usize];
+                        let n1 = bitshuffle_compress(&vals, &mut comp, ele_count as usize, ele_size as usize, 0).unwrap();
                         buf.put_u64(vals.len() as u64);
                         let comp_block_size = 0;
                         buf.put_u32(comp_block_size);

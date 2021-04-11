@@ -134,7 +134,7 @@ pub struct ChannelConfig {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Shape {
     Scalar,
-    Wave(usize),
+    Wave(u32),
 }
 
 pub mod timeunits {

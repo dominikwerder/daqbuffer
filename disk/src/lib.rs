@@ -16,7 +16,7 @@ use tokio::fs::{OpenOptions, File};
 use bytes::{Bytes, BytesMut, Buf};
 use std::path::PathBuf;
 use bitshuffle::bitshuffle_decompress;
-use netpod::{ScalarType, Node};
+use netpod::{ScalarType, Shape, Node, ChannelConfig};
 
 
 pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: &Node) -> Result<netpod::BodyStream, Error> {
@@ -354,7 +354,7 @@ pub fn parsed1(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> im
             match fileres {
                 Ok(file) => {
                     let inp = Box::pin(file_content_stream(file, query.buffer_size as usize));
-                    let mut chunker = EventChunker::new(inp);
+                    let mut chunker = EventChunker::new(inp, todo!());
                     while let Some(evres) = chunker.next().await {
                         match evres {
                             Ok(evres) => {
@@ -384,17 +384,19 @@ pub fn parsed1(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> im
 
 
 pub struct EventBlobsComplete {
+    channel_config: ChannelConfig,
     file_chan: async_channel::Receiver<Result<File, Error>>,
     evs: Option<EventChunker>,
     buffer_size: u32,
 }
 
 impl EventBlobsComplete {
-    pub fn new(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> Self {
+    pub fn new(query: &netpod::AggQuerySingleChannel, channel_config: ChannelConfig, node: &netpod::Node) -> Self {
         Self {
             file_chan: open_files(query, node),
             evs: None,
             buffer_size: query.buffer_size,
+            channel_config,
         }
     }
 }
@@ -424,7 +426,7 @@ impl Stream for EventBlobsComplete {
                             match k {
                                 Ok(file) => {
                                     let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
-                                    let mut chunker = EventChunker::new(inp);
+                                    let mut chunker = EventChunker::new(inp, self.channel_config.clone());
                                     self.evs.replace(chunker);
                                     continue 'outer;
                                 }
@@ -452,7 +454,7 @@ pub fn event_blobs_complete(query: &netpod::AggQuerySingleChannel, node: &netpod
             match fileres {
                 Ok(file) => {
                     let inp = Box::pin(file_content_stream(file, query.buffer_size as usize));
-                    let mut chunker = EventChunker::new(inp);
+                    let mut chunker = EventChunker::new(inp, todo!());
                     while let Some(evres) = chunker.next().await {
                         match evres {
                             Ok(evres) => {
@@ -479,6 +481,7 @@ pub struct EventChunker {
     polled: u32,
     state: DataFileState,
     tmpbuf: Vec<u8>,
+    channel_config: ChannelConfig,
 }
 
 enum DataFileState {
@@ -488,7 +491,7 @@ enum DataFileState {
 
 impl EventChunker {
 
-    pub fn new(inp: Pin<Box<dyn Stream<Item=Result<BytesMut, Error>> + Send>>) -> Self {
+    pub fn new(inp: Pin<Box<dyn Stream<Item=Result<BytesMut, Error>> + Send>>, channel_config: ChannelConfig) -> Self {
         let mut inp = NeedMinBuffer::new(inp);
         inp.set_need_min(6);
         Self {
@@ -497,6 +500,7 @@ impl EventChunker {
             polled: 0,
             state: DataFileState::FileHeader,
             tmpbuf: vec![0; 1024 * 1024 * 4],
+            channel_config,
         }
     }
 
@@ -582,6 +586,9 @@ impl EventChunker {
                         let is_array = type_flags & ARRAY != 0;
                         let is_big_endian = type_flags & BIG_ENDIAN != 0;
                         let is_shaped = type_flags & SHAPE != 0;
+                        if let Shape::Wave(_) = self.channel_config.shape {
+                            assert!(is_array);
+                        }
                         let compression_method = if is_compressed {
                             sl.read_u8().unwrap()
                         }
@@ -613,6 +620,12 @@ impl EventChunker {
                             let type_size = type_size(type_index);
                             let ele_count = value_bytes / type_size as u64;
                             let ele_size = type_size;
+                            match self.channel_config.shape {
+                                Shape::Wave(ele2) => {
+                                    assert!(ele2 == ele_count as u32);
+                                }
+                                _ => panic!(),
+                            }
                             let decomp_bytes = (type_size * ele_count as u32) as usize;
                             let mut decomp = BytesMut::with_capacity(decomp_bytes);
                             unsafe {

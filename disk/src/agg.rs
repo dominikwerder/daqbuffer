@@ -807,7 +807,7 @@ async fn agg_x_dim_0_inner() {
     let bin_count = 20;
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size;
     let ts2 = ts1 + HOUR * 24;
-    let fut1 = crate::EventBlobsComplete::new(&query, &node)
+    let fut1 = crate::EventBlobsComplete::new(&query, query.channel_config.clone(), &node)
     .into_dim_1_f32_stream()
     //.take(1000)
     .map(|q| {
@@ -861,7 +861,7 @@ async fn agg_x_dim_1_inner() {
     let bin_count = 10;
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size;
     let ts2 = ts1 + HOUR * 24;
-    let fut1 = crate::EventBlobsComplete::new(&query, &node)
+    let fut1 = crate::EventBlobsComplete::new(&query, query.channel_config.clone(), &node)
     .into_dim_1_f32_stream()
     //.take(1000)
     .map(|q| {
@@ -890,10 +890,6 @@ fn merge_0() {
 }
 
 async fn merge_0_inner() {
-    let nodes = vec![
-        make_test_node(0),
-        make_test_node(1),
-    ];
     let query = netpod::AggQuerySingleChannel {
         channel_config: ChannelConfig {
             channel: Channel {
@@ -902,17 +898,21 @@ async fn merge_0_inner() {
                 name: "wave1".into(),
             },
             time_bin_size: DAY,
-            shape: Shape::Wave(1024),
+            shape: Shape::Wave(17),
             scalar_type: ScalarType::F64,
             big_endian: true,
             compression: true,
         },
         timebin: 0,
         tb_file_count: 1,
-        buffer_size: 17,
+        buffer_size: 1024 * 8,
     };
-    let streams: Vec<_> = nodes.into_iter().map(|node| {
-        crate::EventBlobsComplete::new(&query, &node)
+    let streams = (0..13).into_iter()
+    .map(|k| {
+        make_test_node(k)
+    })
+    .map(|node| {
+        crate::EventBlobsComplete::new(&query, query.channel_config.clone(), &node)
         .into_dim_1_f32_stream()
     })
     .collect();
@@ -920,7 +920,7 @@ async fn merge_0_inner() {
     .map(|k| {
         //info!("NEXT MERGED ITEM  ts {:?}", k.as_ref().unwrap().tss);
     })
-    .fold(0, |k, q| async { 0 })
+    .fold(0, |k, q| ready(0))
     .await;
 }
 
