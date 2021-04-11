@@ -59,13 +59,14 @@ fn response<T>(status: T) -> http::response::Builder
 }
 
 async fn parsed_raw(req: Request<Body>) -> Result<Response<Body>, Error> {
+    let node = todo!("get node from config");
     use netpod::AggQuerySingleChannel;
     let reqbody = req.into_body();
     let bodyslice = hyper::body::to_bytes(reqbody).await?;
     let query: AggQuerySingleChannel = serde_json::from_slice(&bodyslice)?;
     //let q = disk::read_test_1(&query).await?;
     //let s = q.inner;
-    let s = disk::parsed1(&query);
+    let s = disk::parsed1(&query, &node);
     let res = response(StatusCode::OK)
         .body(Body::wrap_stream(s))?;
     /*

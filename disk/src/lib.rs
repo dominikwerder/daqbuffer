@@ -605,7 +605,7 @@ impl EventChunker {
                             let block_size = sl.read_u32::<BE>().unwrap();
                             let p1 = sl.position() as u32;
                             let k1 = len as u32 - p1 - 4;
-                            debug!("event  len {}  ts {}  is_compressed {}  shape_dim {}  len-dim-0 {}  value_bytes {}  block_size {}", len, ts, is_compressed, shape_dim, shape_lens[0], value_bytes, block_size);
+                            //debug!("event  len {}  ts {}  is_compressed {}  shape_dim {}  len-dim-0 {}  value_bytes {}  block_size {}", len, ts, is_compressed, shape_dim, shape_lens[0], value_bytes, block_size);
                             assert!(value_bytes < 1024 * 256);
                             assert!(block_size < 1024 * 32);
                             //let value_bytes = value_bytes;
@@ -878,7 +878,7 @@ fn datapath(timebin: u64, config: &netpod::ChannelConfig, node: &netpod::Node) -
     .join(config.channel.name.clone())
     .join(format!("{:019}", timebin))
     .join(format!("{:010}", node.split))
-    .join(format!("{:019}_00000_Data", config.time_bin_size / timeunits::MS))
+    .join(format!("{:019}_00000_Data", config.time_bin_size / netpod::timeunits::MS))
 }
 
 
@@ -923,16 +923,6 @@ impl futures_core::Stream for RawConcatChannelReader {
         todo!()
     }
 
-}
-
-pub mod timeunits {
-    pub const MU: u64 = 1000;
-    pub const MS: u64 = MU * 1000;
-    pub const SEC: u64 = MS * 1000;
-    pub const MIN: u64 = SEC * 60;
-    pub const HOUR: u64 = MIN * 60;
-    pub const DAY: u64 = HOUR * 24;
-    pub const WEEK: u64 = DAY * 7;
 }
 
 pub mod dtflags {

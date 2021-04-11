@@ -6,7 +6,7 @@ use std::pin::Pin;
 use crate::EventFull;
 use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt, future::ready};
-use netpod::{Channel, ChannelConfig, ScalarType, Shape, Node};
+use netpod::{Channel, ChannelConfig, ScalarType, Shape, Node, timeunits::*};
 
 pub trait AggregatorTdim {
     type InputValue;
@@ -192,10 +192,10 @@ impl AggregatableTdim for MinMaxAvgScalarEventBatch {
 pub struct MinMaxAvgScalarEventBatchAggregator {
     ts1: u64,
     ts2: u64,
+    count: u64,
     min: f32,
     max: f32,
     sum: f32,
-    count: u64,
 }
 
 impl MinMaxAvgScalarEventBatchAggregator {
@@ -272,6 +272,7 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
         MinMaxAvgScalarBinSingle {
             ts1: self.ts1,
             ts2: self.ts2,
+            count: self.count,
             min,
             max,
             avg,
@@ -284,6 +285,7 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
 pub struct MinMaxAvgScalarBinBatch {
     ts1s: Vec<u64>,
     ts2s: Vec<u64>,
+    counts: Vec<u64>,
     mins: Vec<f32>,
     maxs: Vec<f32>,
     avgs: Vec<f32>,
@@ -328,7 +330,6 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchAggregator {
         todo!()
     }
 
-
     fn ingest(&mut self, v: &Self::InputValue) {
         todo!()
     }
@@ -341,6 +342,7 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchAggregator {
 pub struct MinMaxAvgScalarBinSingle {
     ts1: u64,
     ts2: u64,
+    count: u64,
     min: f32,
     max: f32,
     avg: f32,
@@ -348,7 +350,7 @@ pub struct MinMaxAvgScalarBinSingle {
 
 impl std::fmt::Debug for MinMaxAvgScalarBinSingle {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(fmt, "MinMaxAvgScalarBinSingle  ts1 {}  ts2 {}  min {:7.2e}  max {:7.2e}  avg {:7.2e}", self.ts1, self.ts2, self.min, self.max, self.avg)
+        write!(fmt, "MinMaxAvgScalarBinSingle  ts1 {}  ts2 {}  count {}  min {:7.2e}  max {:7.2e}  avg {:7.2e}", self.ts1, self.ts2, self.count, self.min, self.max, self.avg)
     }
 }
 
@@ -389,7 +391,9 @@ impl AggregatorTdim for MinMaxAvgScalarBinSingleAggregator {
         todo!()
     }
 
-    fn result(self) -> Self::OutputValue { todo!() }
+    fn result(self) -> Self::OutputValue {
+        todo!()
+    }
 
 }
 
@@ -751,10 +755,6 @@ pub struct TimeRange {
     ts1: u64,
     ts2: u64,
 }
-
-
-use crate::timeunits::*;
-
 
 
 #[test]

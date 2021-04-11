@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use tracing::{error, warn, info, debug, trace};
 use err::Error;
+use netpod::{ChannelConfig, Channel, timeunits::*, ScalarType, Shape, Node};
 
 pub fn main() {
     match taskrun::run(go()) {
@@ -31,17 +32,28 @@ async fn go() -> Result<(), Error> {
 fn simple_fetch() {
     taskrun::run(async {
         let t1 = chrono::Utc::now();
-        let query = netpod::AggQuerySingleChannel {
+        let node = Node {
+            host: "localhost".into(),
+            port: 8888,
+            data_base_path: todo!(),
             ksprefix: "daq_swissfel".into(),
-            keyspace: 3,
-            channel: netpod::Channel {
-                name: "S10BC01-DBAM070:BAM_CH1_NORM".into(),
-                backend: "sf-databuffer".into(),
+            split: 0,
+        };
+        let query = netpod::AggQuerySingleChannel {
+            channel_config: ChannelConfig {
+                channel: Channel {
+                    backend: "sf-databuffer".into(),
+                    keyspace: 3,
+                    name: "S10BC01-DBAM070:BAM_CH1_NORM".into(),
+                },
+                time_bin_size: DAY,
+                scalar_type: ScalarType::F64,
+                shape: Shape::Wave(todo!()),
+                big_endian: true,
+                compression: true,
             },
             timebin: 18720,
             tb_file_count: 1,
-            split: 12,
-            tbsize: 1000 * 60 * 60 * 24,
             buffer_size: 1024 * 8,
         };
         let query_string = serde_json::to_string(&query).unwrap();

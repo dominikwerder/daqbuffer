@@ -136,3 +136,13 @@ pub enum Shape {
     Scalar,
     Wave(usize),
 }
+
+pub mod timeunits {
+    pub const MU: u64 = 1000;
+    pub const MS: u64 = MU * 1000;
+    pub const SEC: u64 = MS * 1000;
+    pub const MIN: u64 = SEC * 60;
+    pub const HOUR: u64 = MIN * 60;
+    pub const DAY: u64 = HOUR * 24;
+    pub const WEEK: u64 = DAY * 7;
+}

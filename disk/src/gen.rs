@@ -14,8 +14,7 @@ use std::path::{Path, PathBuf};
 use bitshuffle::bitshuffle_compress;
 use netpod::ScalarType;
 use std::sync::Arc;
-use crate::timeunits::*;
-use netpod::{Node, Channel, ChannelConfig, Shape};
+use netpod::{Node, Channel, ChannelConfig, Shape, timeunits::*};
 
 #[test]
 fn test_gen_test_data() {
@@ -33,19 +32,22 @@ pub async fn gen_test_data() -> Result<(), Error> {
         channels: vec![],
     };
     {
-        let config = ChannelConfig {
-            channel: Channel {
-                backend: "test".into(),
-                keyspace: 3,
-                name: "wave1".into(),
+        let chn = ChannelGenProps {
+            config: ChannelConfig {
+                channel: Channel {
+                    backend: "test".into(),
+                    keyspace: 3,
+                    name: "wave1".into(),
+                },
+                time_bin_size: DAY,
+                scalar_type: ScalarType::F64,
+                shape: Shape::Wave(9),
+                big_endian: true,
+                compression: true,
             },
-            time_bin_size: DAY,
-            scalar_type: ScalarType::F64,
-            shape: Shape::Wave(9),
-            big_endian: true,
-            compression: true,
+            time_spacing: SEC * 1,
         };
-        ensemble.channels.push(config);
+        ensemble.channels.push(chn);
     }
     let node0 = Node {
         host: "localhost".into(),
@@ -71,31 +73,35 @@ pub async fn gen_test_data() -> Result<(), Error> {
 
 struct Ensemble {
     nodes: Vec<Node>,
-    channels: Vec<ChannelConfig>,
+    channels: Vec<ChannelGenProps>,
+}
+
+pub struct ChannelGenProps {
+    config: ChannelConfig,
+    time_spacing: u64,
 }
 
 async fn gen_node(node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
-    for config in &ensemble.channels {
-        gen_channel(config, node, ensemble).await?
+    for chn in &ensemble.channels {
+        gen_channel(chn, node, ensemble).await?
     }
     Ok(())
 }
 
-async fn gen_channel(config: &ChannelConfig, node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
+async fn gen_channel(chn: &ChannelGenProps, node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
     let config_path = node.data_base_path
     .join("config")
-    .join(&config.channel.name);
+    .join(&chn.config.channel.name);
     tokio::fs::create_dir_all(&config_path).await?;
     let channel_path = node.data_base_path
-    .join(format!("{}_{}", node.ksprefix, config.channel.keyspace))
+    .join(format!("{}_{}", node.ksprefix, chn.config.channel.keyspace))
     .join("byTime")
-    .join(&config.channel.name);
+    .join(&chn.config.channel.name);
     tokio::fs::create_dir_all(&channel_path).await?;
-    let ts_spacing = HOUR * 1;
     let mut evix = 0;
     let mut ts = 0;
     while ts < DAY {
-        let res = gen_timebin(evix, ts, ts_spacing, &channel_path, config, node, ensemble).await?;
+        let res = gen_timebin(evix, ts, chn.time_spacing, &channel_path, &chn.config, node, ensemble).await?;
         evix = res.evix;
         ts = res.ts;
     }
@@ -120,7 +126,6 @@ async fn gen_timebin(evix: u64, ts: u64, ts_spacing: u64, channel_path: &Path, c
     let tsmax = (tb + 1) * config.time_bin_size;
     while ts < tsmax {
         if evix % ensemble.nodes.len() as u64 == node.split as u64 {
-            trace!("gen ts {}", ts);
             gen_event(&mut file, evix, ts, config).await?;
         }
         evix += 1;
@@ -179,7 +184,6 @@ async fn gen_event(file: &mut File, evix: u64, ts: u64, config: &ChannelConfig) 
                         }
                         let mut comp = vec![0u8; ele_size * ele_count + 64];
                         let n1 = bitshuffle_compress(&vals, &mut comp, ele_count, ele_size, 0).unwrap();
-                        trace!("comp size {}   {}e-2", n1, 100 * n1 / vals.len());
                         buf.put_u64(vals.len() as u64);
                         let comp_block_size = 0;
                         buf.put_u32(comp_block_size);
