@@ -1,7 +1,3 @@
-pub mod agg;
-pub mod gen;
-pub mod merge;
-
 #[allow(unused_imports)]
 use tracing::{error, warn, info, debug, trace};
 use err::Error;
@@ -17,6 +13,11 @@ use bytes::{Bytes, BytesMut, Buf};
 use std::path::PathBuf;
 use bitshuffle::bitshuffle_decompress;
 use netpod::{ScalarType, Shape, Node, ChannelConfig};
+
+pub mod agg;
+pub mod gen;
+pub mod merge;
+pub mod cache;
 
 
 pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: &Node) -> Result<netpod::BodyStream, Error> {

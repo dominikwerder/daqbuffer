@@ -1,7 +1,7 @@
 #[allow(unused_imports)]
 use tracing::{error, warn, info, debug, trace};
 use err::Error;
-use netpod::{ChannelConfig, Channel, timeunits::*, ScalarType, Shape, Node};
+use netpod::{ChannelConfig, Channel, timeunits::*, ScalarType, Shape, Node, Cluster};
 
 pub fn main() {
     match taskrun::run(go()) {
@@ -34,7 +34,7 @@ fn simple_fetch() {
         let t1 = chrono::Utc::now();
         let node = Node {
             host: "localhost".into(),
-            port: 8888,
+            port: 8360,
             data_base_path: todo!(),
             ksprefix: "daq_swissfel".into(),
             split: 0,
@@ -56,12 +56,15 @@ fn simple_fetch() {
             tb_file_count: 1,
             buffer_size: 1024 * 8,
         };
+        let cluster = Cluster {
+            nodes: vec![node],
+        };
         let query_string = serde_json::to_string(&query).unwrap();
-        let _host = tokio::spawn(httpret::host(8360));
+        let _host = tokio::spawn(httpret::host(cluster.nodes[0].clone(), cluster.clone()));
         let req = hyper::Request::builder()
             .method(http::Method::POST)
             .uri("http://localhost:8360/api/1/parsed_raw")
-            .body(query_string.into()).unwrap();
+            .body(query_string.into())?;
         let client = hyper::Client::new();
         let res = client.request(req).await?;
         info!("client response {:?}", res);

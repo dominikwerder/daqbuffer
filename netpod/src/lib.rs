@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 use err::Error;
 use std::path::PathBuf;
-
+use chrono::{DateTime, Utc, TimeZone};
 
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -103,6 +103,13 @@ impl Node {
     }
 }
 
+
+#[derive(Clone)]
+pub struct Cluster {
+    pub nodes: Vec<Node>,
+}
+
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Channel {
     pub keyspace: u8,
@@ -115,6 +122,31 @@ impl Channel {
         &self.name
     }
 }
+
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum TimeRange {
+    Time {
+        beg: DateTime<Utc>,
+        end: DateTime<Utc>,
+    },
+    Pulse {
+        beg: u64,
+        end: u64,
+    },
+    Nano {
+        beg: u64,
+        end: u64,
+    },
+}
+
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NanoRange {
+    pub beg: u64,
+    pub end: u64,
+}
+
 
 #[test]
 fn serde_channel() {
@@ -145,4 +177,122 @@ pub mod timeunits {
     pub const HOUR: u64 = MIN * 60;
     pub const DAY: u64 = HOUR * 24;
     pub const WEEK: u64 = DAY * 7;
+}
+
+
+
+pub struct BinSpecDimT {
+    pub count: u64,
+    pub ts1: u64,
+    pub ts2: u64,
+    pub bs: u64,
+}
+
+impl BinSpecDimT {
+
+    pub fn over_range(count: u64, ts1: u64, ts2: u64) -> Self {
+        use timeunits::*;
+        assert!(count >= 1);
+        assert!(count <= 2000);
+        assert!(ts2 > ts1);
+        let dt = ts2 - ts1;
+        assert!(dt <= DAY * 14);
+        let bs = dt / count;
+        let thresholds = [
+            2, 10, 100,
+            1000, 10_000, 100_000,
+            MU, MU * 10, MU * 100,
+            MS, MS * 10, MS * 100,
+            SEC, SEC * 5, SEC * 10, SEC * 20,
+            MIN, MIN * 5, MIN * 10, MIN * 20,
+            HOUR, HOUR * 2, HOUR * 4, HOUR * 12,
+            DAY, DAY * 2, DAY * 4, DAY * 8, DAY * 16,
+            WEEK, WEEK * 2, WEEK * 10, WEEK * 60,
+        ];
+        let mut i1 = 0;
+        let bs = loop {
+            if i1 >= thresholds.len() { break *thresholds.last().unwrap(); }
+            let t = thresholds[i1];
+            if bs < t { break t; }
+            i1 += 1;
+        };
+        //info!("INPUT TS  {}  {}", ts1, ts2);
+        //info!("chosen binsize: {}  {}", i1, bs);
+        let ts1 = ts1 / bs * bs;
+        let ts2 = (ts2 + bs - 1) / bs * bs;
+        //info!("ADJUSTED TS  {}  {}", ts1, ts2);
+        BinSpecDimT {
+            count,
+            ts1,
+            ts2,
+            bs,
+        }
+    }
+
+    pub fn get_range(&self, ix: u32) -> NanoRange {
+        NanoRange {
+            beg: self.ts1 + ix as u64 * self.bs,
+            end: self.ts1 + (ix as u64 + 1) * self.bs,
+        }
+    }
+
+}
+
+
+pub struct PreBinnedPatchIterator {
+    agg_kind: AggKind,
+}
+
+impl PreBinnedPatchIterator {
+
+    pub fn iter_blocks_for_request(range: NanoRange) -> Self {
+        todo!()
+    }
+
+}
+
+impl Iterator for PreBinnedPatchIterator {
+    type Item = ();
+
+    fn next(&mut self) -> Option<Self::Item> {
+        todo!()
+    }
+
+}
+
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum AggKind {
+    DimXBins1,
+}
+
+
+pub fn query_params(q: Option<&str>) -> std::collections::BTreeMap<String, String> {
+    let mut map = std::collections::BTreeMap::new();
+    match q {
+        Some(k) => {
+            for par in k.split("&") {
+                let mut u = par.split("=");
+                if let Some(t1) = u.next() {
+                    if let Some(t2) = u.next() {
+                        map.insert(t1.into(), t2.into());
+                    }
+                }
+            }
+        }
+        None => {
+        }
+    }
+    map
+}
+
+
+pub trait ToNanos {
+    fn to_nanos(&self) -> u64;
+}
+
+impl<Tz: TimeZone> ToNanos for DateTime<Tz> {
+    fn to_nanos(&self) -> u64 {
+        self.timestamp() as u64 * timeunits::SEC + self.timestamp_subsec_nanos() as u64
+    }
 }

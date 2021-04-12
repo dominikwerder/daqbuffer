@@ -8,22 +8,34 @@ use hyper::server::Server;
 use hyper::service::{make_service_fn, service_fn};
 use std::task::{Context, Poll};
 use std::pin::Pin;
-//use std::pin::Pin;
-//use std::future::Future;
-//use serde_derive::{Serialize, Deserialize};
-//use serde_json::{Value as SerdeValue, Value as JsonValue};
+use netpod::{Node, Cluster, AggKind};
+use disk::cache::BinParams;
 
-pub async fn host(port: u16) -> Result<(), Error> {
-    let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    let make_service = make_service_fn(|_conn| async {
-        Ok::<_, Error>(service_fn(data_api_proxy))
+pub async fn host(node: Node, cluster: Cluster) -> Result<(), Error> {
+    let addr = SocketAddr::from(([0, 0, 0, 0], node.port));
+    let make_service = make_service_fn({
+        move |_conn| {
+            let node = node.clone();
+            let cluster = cluster.clone();
+            async move {
+                Ok::<_, Error>(service_fn({
+                    move |req| {
+                        let hc = HostConf {
+                            node: node.clone(),
+                            cluster: cluster.clone(),
+                        };
+                        data_api_proxy(req, hc)
+                    }
+                }))
+            }
+        }
     });
     Server::bind(&addr).serve(make_service).await?;
     Ok(())
 }
 
-async fn data_api_proxy(req: Request<Body>) -> Result<Response<Body>, Error> {
-    match data_api_proxy_try(req).await {
+async fn data_api_proxy(req: Request<Body>, hconf: HostConf) -> Result<Response<Body>, Error> {
+    match data_api_proxy_try(req, hconf).await {
         Ok(k) => { Ok(k) }
         Err(e) => {
             error!("{:?}", e);
@@ -32,12 +44,20 @@ async fn data_api_proxy(req: Request<Body>) -> Result<Response<Body>, Error> {
     }
 }
 
-async fn data_api_proxy_try(req: Request<Body>) -> Result<Response<Body>, Error> {
+async fn data_api_proxy_try(req: Request<Body>, hconf: HostConf) -> Result<Response<Body>, Error> {
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/1/parsed_raw" {
         if req.method() == Method::POST {
             Ok(parsed_raw(req).await?)
+        }
+        else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    }
+    else if path == "/api/1/binned" {
+        if req.method() == Method::GET {
+            Ok(binned(req, hconf).await?)
         }
         else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
@@ -57,6 +77,7 @@ fn response<T>(status: T) -> http::response::Builder
         .header("access-control-allow-origin", "*")
         .header("access-control-allow-headers", "*")
 }
+
 
 async fn parsed_raw(req: Request<Body>) -> Result<Response<Body>, Error> {
     let node = todo!("get node from config");
@@ -107,4 +128,41 @@ impl hyper::body::HttpBody for BodyStreamWrap {
         Poll::Ready(Ok(None))
     }
 
+}
+
+
+async fn binned(req: Request<Body>, hconf: HostConf) -> Result<Response<Body>, Error> {
+    let (head, body) = req.into_parts();
+    let params = netpod::query_params(head.uri.query());
+
+    // TODO
+    // Channel, time range, bin size.
+    // Try to locate that file in cache, otherwise create it on the fly:
+    // Look up and parse channel config.
+    // Extract the relevant channel config entry.
+
+    disk::cache::Query::from_request(&head)?;
+    let params = BinParams {
+        node: hconf.node.clone(),
+        cluster: hconf.cluster.clone(),
+    };
+    let ret = match disk::cache::binned_bytes_for_http(params) {
+        Ok(s) => {
+            response(StatusCode::OK)
+            .body(Body::wrap_stream(s))?
+        }
+        Err(e) => {
+            error!("{:?}", e);
+            response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
+        }
+    };
+    Ok(ret)
+}
+
+
+
+#[derive(Clone)]
+pub struct HostConf {
+    node: Node,
+    cluster: Cluster,
 }

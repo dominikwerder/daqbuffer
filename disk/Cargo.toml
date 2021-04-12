@@ -5,15 +5,18 @@ authors = ["Dominik Werder <dominik.werder@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-tokio = { version = "1.4.0", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
-tracing = "0.1.25"
+http = "0.2"
+serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+chrono = { version = "0.4.19", features = ["serde"] }
+tokio = { version = "1.4.0", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
 async-channel = "1.6"
 bytes = "1.0.1"
 byteorder = "1.4.3"
 futures-core = "0.3.14"
 futures-util = "0.3.14"
 async-stream = "0.3.0"
+tracing = "0.1.25"
 hex = "0.4.3"
 err = { path = "../err" }
 taskrun = { path = "../taskrun" }

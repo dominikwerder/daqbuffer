@@ -67,3 +67,11 @@ impl From<async_channel::RecvError> for Error {
         }
     }
 }
+
+impl From<chrono::format::ParseError> for Error {
+    fn from (k: chrono::format::ParseError) -> Self {
+        Self {
+            msg: k.to_string(),
+        }
+    }
+}

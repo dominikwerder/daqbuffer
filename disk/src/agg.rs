@@ -8,6 +8,7 @@ use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt, future::ready};
 use netpod::{Channel, ChannelConfig, ScalarType, Shape, Node, timeunits::*};
 use crate::merge::MergeDim1F32Stream;
+use netpod::BinSpecDimT;
 
 pub trait AggregatorTdim {
     type InputValue;
@@ -658,7 +659,7 @@ where I: AggregatableTdim + Unpin, T: Stream<Item=Result<I, Error>> + Unpin, I::
                     if self.aggtor.is_none() {
                         let range = self.spec.get_range(self.curbin);
                         //info!("range:   {}   {}", range.ts1, range.ts2);
-                        self.aggtor = Some(k.aggregator_new(range.ts1, range.ts2));
+                        self.aggtor = Some(k.aggregator_new(range.beg, range.end));
                     }
                     let ag = self.aggtor.as_mut().unwrap();
                     if ag.ends_before(&k) {
@@ -706,69 +707,6 @@ where I: AggregatableTdim + Unpin, T: Stream<Item=Result<I, Error>> + Unpin, I::
     }
 
 }
-
-pub struct BinSpecDimT {
-    count: u64,
-    ts1: u64,
-    ts2: u64,
-    bs: u64,
-}
-
-impl BinSpecDimT {
-
-    pub fn over_range(count: u64, ts1: u64, ts2: u64) -> Self {
-        assert!(count >= 1);
-        assert!(count <= 2000);
-        assert!(ts2 > ts1);
-        let dt = ts2 - ts1;
-        assert!(dt <= DAY * 14);
-        let bs = dt / count;
-        let thresholds = [
-            2, 10, 100,
-            1000, 10_000, 100_000,
-            MU, MU * 10, MU * 100,
-            MS, MS * 10, MS * 100,
-            SEC, SEC * 5, SEC * 10, SEC * 20,
-            MIN, MIN * 5, MIN * 10, MIN * 20,
-            HOUR, HOUR * 2, HOUR * 4, HOUR * 12,
-            DAY, DAY * 2, DAY * 4, DAY * 8, DAY * 16,
-            WEEK, WEEK * 2, WEEK * 10, WEEK * 60,
-        ];
-        let mut i1 = 0;
-        let bs = loop {
-            if i1 >= thresholds.len() { break *thresholds.last().unwrap(); }
-            let t = thresholds[i1];
-            if bs < t { break t; }
-            i1 += 1;
-        };
-        //info!("INPUT TS  {}  {}", ts1, ts2);
-        //info!("chosen binsize: {}  {}", i1, bs);
-        let ts1 = ts1 / bs * bs;
-        let ts2 = (ts2 + bs - 1) / bs * bs;
-        //info!("ADJUSTED TS  {}  {}", ts1, ts2);
-        BinSpecDimT {
-            count,
-            ts1,
-            ts2,
-            bs,
-        }
-    }
-
-    pub fn get_range(&self, ix: u32) -> TimeRange {
-        TimeRange {
-            ts1: self.ts1 + ix as u64 * self.bs,
-            ts2: self.ts1 + (ix as u64 + 1) * self.bs,
-        }
-    }
-
-}
-
-pub struct TimeRange {
-    ts1: u64,
-    ts2: u64,
-}
-
-
 pub fn make_test_node(ix: u8) -> Node {
     Node {
         host: "localhost".into(),
