@@ -1,3 +1,5 @@
+#[allow(unused_imports)]
+use tracing::{error, warn, info, debug, trace};
 use serde::{Serialize, Deserialize};
 use err::Error;
 use std::path::PathBuf;
@@ -147,6 +149,14 @@ pub struct NanoRange {
     pub end: u64,
 }
 
+impl NanoRange {
+
+    pub fn delta(&self) -> u64 {
+        self.end - self.beg
+    }
+
+}
+
 
 #[test]
 fn serde_channel() {
@@ -211,9 +221,13 @@ impl BinSpecDimT {
         ];
         let mut i1 = 0;
         let bs = loop {
-            if i1 >= thresholds.len() { break *thresholds.last().unwrap(); }
+            if i1 >= thresholds.len() {
+                break *thresholds.last().unwrap();
+            }
             let t = thresholds[i1];
-            if bs < t { break t; }
+            if bs <= t {
+                break t;
+            }
             i1 += 1;
         };
         //info!("INPUT TS  {}  {}", ts1, ts2);
@@ -222,7 +236,7 @@ impl BinSpecDimT {
         let ts2 = (ts2 + bs - 1) / bs * bs;
         //info!("ADJUSTED TS  {}  {}", ts1, ts2);
         BinSpecDimT {
-            count,
+            count: (ts2 - ts1) / bs,
             ts1,
             ts2,
             bs,
@@ -239,23 +253,105 @@ impl BinSpecDimT {
 }
 
 
+#[derive(Clone, Debug)]
+pub struct PreBinnedPatchGridSpec {
+    range: NanoRange,
+    bs: u64,
+    count: u64,
+}
+
+impl PreBinnedPatchGridSpec {
+
+    pub fn over_range(range: NanoRange, count: u64) -> Option<Self> {
+        use timeunits::*;
+        assert!(count >= 1);
+        assert!(count <= 2000);
+        let dt = range.delta();
+        assert!(dt <= DAY * 14);
+        let bs = dt / count;
+        info!("BASIC bs {}", bs);
+        let thresholds = [
+            SEC * 10,
+            MIN * 10,
+            HOUR,
+            HOUR * 4,
+            DAY,
+            DAY * 4,
+        ];
+        let mut i1 = thresholds.len();
+        loop {
+            if i1 <= 0 {
+                break None;
+            }
+            else {
+                i1 -= 1;
+                let t = thresholds[i1];
+                info!("look at threshold {}  bs {}", t, bs);
+                if t <= bs {
+                    let bs = t;
+                    let ts1 = range.beg / bs * bs;
+                    let ts2 = (range.end + bs - 1) / bs * bs;
+                    if (ts2 - ts1) % bs != 0 {
+                        panic!();
+                    }
+                    let range = NanoRange {
+                        beg: ts1,
+                        end: ts2,
+                    };
+                    let count = range.delta() / bs;
+                    break Some(Self {
+                        range,
+                        bs,
+                        count,
+                    });
+                }
+            }
+        }
+    }
+
+}
+
+
+#[derive(Clone, Debug)]
+pub struct PreBinnedPatchCoord {
+    range: NanoRange,
+}
+
 pub struct PreBinnedPatchIterator {
+    spec: PreBinnedPatchGridSpec,
     agg_kind: AggKind,
+    ix: u64,
 }
 
 impl PreBinnedPatchIterator {
 
-    pub fn iter_blocks_for_request(range: NanoRange) -> Self {
-        todo!()
+    pub fn from_range(spec: PreBinnedPatchGridSpec) -> Self {
+        Self {
+            spec,
+            agg_kind: AggKind::DimXBins1,
+            ix: 0,
+        }
     }
 
 }
 
 impl Iterator for PreBinnedPatchIterator {
-    type Item = ();
+    type Item = PreBinnedPatchCoord;
 
     fn next(&mut self) -> Option<Self::Item> {
-        todo!()
+        if self.ix >= self.spec.count {
+            None
+        }
+        else {
+            let ret = Self::Item {
+                range: NanoRange {
+                    beg: self.spec.range.beg + self.ix * self.spec.bs,
+                    end: self.spec.range.beg + (self.ix + 1) * self.spec.bs,
+                },
+            };
+            self.ix += 1;
+            Some(ret)
+        }
     }
 
 }

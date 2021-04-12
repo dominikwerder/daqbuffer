@@ -20,7 +20,7 @@ async fn get_cached_0_inner() -> Result<(), Error> {
     let hosts = spawn_test_hosts(&cluster);
     let req = hyper::Request::builder()
     .method(http::Method::GET)
-    .uri(format!("http://{}:{}/api/1/binned?beg_date=1970-01-01T00:00:01.4253Z&end_date=1970-01-01T00:00:04.000Z", node0.host, node0.port))
+    .uri(format!("http://{}:{}/api/1/binned?bin_count=4&beg_date=1970-01-01T00:00:10.000Z&end_date=1970-01-01T00:00:51.000Z", node0.host, node0.port))
     .body(Body::empty())?;
     let client = hyper::Client::new();
     let res = client.request(req).await?;

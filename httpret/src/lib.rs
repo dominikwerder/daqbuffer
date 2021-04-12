@@ -141,12 +141,12 @@ async fn binned(req: Request<Body>, hconf: HostConf) -> Result<Response<Body>, E
     // Look up and parse channel config.
     // Extract the relevant channel config entry.
 
-    disk::cache::Query::from_request(&head)?;
+    let query = disk::cache::Query::from_request(&head)?;
     let params = BinParams {
         node: hconf.node.clone(),
         cluster: hconf.cluster.clone(),
     };
-    let ret = match disk::cache::binned_bytes_for_http(params) {
+    let ret = match disk::cache::binned_bytes_for_http(params, &query) {
         Ok(s) => {
             response(StatusCode::OK)
             .body(Body::wrap_stream(s))?
