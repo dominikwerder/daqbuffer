@@ -286,7 +286,7 @@ impl PreBinnedPatchGridSpec {
             else {
                 i1 -= 1;
                 let t = thresholds[i1];
-                info!("look at threshold {}  bs {}", t, bs);
+                //info!("look at threshold {}  bs {}", t, bs);
                 if t <= bs {
                     let bs = t;
                     let ts1 = range.beg / bs * bs;
@@ -314,7 +314,7 @@ impl PreBinnedPatchGridSpec {
 
 #[derive(Clone, Debug)]
 pub struct PreBinnedPatchCoord {
-    range: NanoRange,
+    pub range: NanoRange,
 }
 
 pub struct PreBinnedPatchIterator {

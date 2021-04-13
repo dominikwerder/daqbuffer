@@ -133,7 +133,7 @@ impl hyper::body::HttpBody for BodyStreamWrap {
 
 async fn binned(req: Request<Body>, hconf: HostConf) -> Result<Response<Body>, Error> {
     let (head, body) = req.into_parts();
-    let params = netpod::query_params(head.uri.query());
+    //let params = netpod::query_params(head.uri.query());
 
     // TODO
     // Channel, time range, bin size.
