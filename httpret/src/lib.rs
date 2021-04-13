@@ -160,6 +160,28 @@ async fn binned(req: Request<Body>, hconf: HostConf) -> Result<Response<Body>, E
 }
 
 
+async fn prebinned(req: Request<Body>, hconf: HostConf) -> Result<Response<Body>, Error> {
+    let (head, body) = req.into_parts();
+    todo!("create a new PreBinnedQuery and let extract from query");
+    let params = BinParams {
+        node: hconf.node.clone(),
+        cluster: hconf.cluster.clone(),
+    };
+    todo!("create this new entry point in disk::cache");
+    let ret = match Ok(()) {
+        Ok(s) => {
+            response(StatusCode::OK)
+            .body(Body::wrap_stream(______))?
+        }
+        Err(e) => {
+            error!("{:?}", e);
+            response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
+        }
+    };
+    Ok(ret)
+}
+
+
 
 #[derive(Clone)]
 pub struct HostConf {
