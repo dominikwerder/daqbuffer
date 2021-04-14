@@ -38,7 +38,6 @@ impl Query {
             agg_kind: AggKind::DimXBins1,
             channel: Channel {
                 backend: params.get("channel_backend").unwrap().into(),
-                keyspace: params.get("channel_keyspace").unwrap().parse().unwrap(),
                 name: params.get("channel_name").unwrap().into(),
             },
         };
@@ -59,7 +58,7 @@ pub fn binned_bytes_for_http(node_config: Arc<NodeConfig>, query: &Query) -> Res
         Some(spec) => {
             info!("GOT  PreBinnedPatchGridSpec:    {:?}", spec);
             warn!("Pass here to BinnedStream what kind of Agg, range, ...");
-            let s1 = BinnedStream::new(PreBinnedPatchIterator::from_range(spec), query.channel.clone(), agg_kind, node_config.cluster.clone());
+            let s1 = BinnedStream::new(PreBinnedPatchIterator::from_range(spec), query.channel.clone(), agg_kind, node_config.clone());
             // Iterate over the patches.
             // Request the patch from each node.
             // Merge.
@@ -130,7 +129,6 @@ impl PreBinnedQuery {
             agg_kind: AggKind::DimXBins1,
             channel: Channel {
                 backend: params.get("channel_backend").unwrap().into(),
-                keyspace: params.get("channel_keyspace").unwrap().parse().unwrap(),
                 name: params.get("channel_name").unwrap().into(),
             },
         };
@@ -153,12 +151,15 @@ pub fn pre_binned_bytes_for_http(node_config: Arc<NodeConfig>, query: &PreBinned
 
 
 pub struct PreBinnedValueByteStream {
+    inp: PreBinnedValueStream,
 }
 
 impl PreBinnedValueByteStream {
 
     pub fn new(patch: PreBinnedPatchCoord, channel: Channel, agg_kind: AggKind, node_config: Arc<NodeConfig>) -> Self {
+        warn!("PreBinnedValueByteStream");
         Self {
+            inp: PreBinnedValueStream::new(patch, channel, agg_kind, node_config),
         }
     }
 
@@ -167,9 +168,19 @@ impl PreBinnedValueByteStream {
 impl Stream for PreBinnedValueByteStream {
     type Item = Result<Bytes, Error>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         error!("PreBinnedValueByteStream poll_next");
-        todo!()
+        use Poll::*;
+        match self.inp.poll_next_unpin(cx) {
+            Ready(Some(Ok(k))) => {
+                error!("TODO convert item to Bytes");
+                let buf = Bytes::new();
+                Ready(Some(Ok(buf)))
+            }
+            Ready(Some(Err(e))) => Ready(Some(Err(e))),
+            Ready(None) => Ready(None),
+            Pending => Pending,
+        }
     }
 
 }
@@ -179,23 +190,66 @@ impl Stream for PreBinnedValueByteStream {
 
 
 pub struct PreBinnedValueStream {
+    patch_coord: PreBinnedPatchCoord,
+    channel: Channel,
+    agg_kind: AggKind,
+    node_config: Arc<NodeConfig>,
+}
+
+impl PreBinnedValueStream {
+
+    pub fn new(patch_coord: PreBinnedPatchCoord, channel: Channel, agg_kind: AggKind, node_config: Arc<NodeConfig>) -> Self {
+        let node_ix = node_ix_for_patch(&patch_coord, &channel, &node_config.cluster);
+        assert!(node_ix == node_config.node.id);
+        Self {
+            patch_coord,
+            channel,
+            agg_kind,
+            node_config,
+        }
+    }
+
+}
+
+impl Stream for PreBinnedValueStream {
+    // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
+    type Item = Result<MinMaxAvgScalarBinBatch, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        // TODO provide the data from a local cached file, the on-the-fly binning of higher-res
+        // pre-binned patches which we can get again via http, or if there is no higher resolution
+        // then from raw events, or a combination of all those especially if there is not yet
+        // a pre-binned patch, and we have to stitch from higher-res-pre-bin plus extend with
+        // on-the-fly binning of fresh data.
+        error!("TODO  provide the pre-binned data");
+        Ready(None)
+    }
+
+}
+
+
+
+
+pub struct PreBinnedValueFetchedStream {
     uri: http::Uri,
     patch_coord: PreBinnedPatchCoord,
     resfut: Option<hyper::client::ResponseFuture>,
     res: Option<hyper::Response<hyper::Body>>,
 }
 
-impl PreBinnedValueStream {
+impl PreBinnedValueFetchedStream {
 
-    pub fn new(patch_coord: PreBinnedPatchCoord, channel: Channel, agg_kind: AggKind, cluster: Arc<Cluster>) -> Self {
-        let nodeix = node_ix_for_patch(&patch_coord, &channel, &cluster);
-        let node = &cluster.nodes[nodeix];
+    pub fn new(patch_coord: PreBinnedPatchCoord, channel: Channel, agg_kind: AggKind, node_config: Arc<NodeConfig>) -> Self {
+        let nodeix = node_ix_for_patch(&patch_coord, &channel, &node_config.cluster);
+        let node = &node_config.cluster.nodes[nodeix as usize];
         let uri: hyper::Uri = format!(
-            "http://{}:{}/api/1/prebinned?beg={}&end={}&channel={}&agg_kind={:?}",
+            "http://{}:{}/api/1/prebinned?beg={}&end={}&channel_backend={}&channel_name={}&agg_kind={:?}",
             node.host,
             node.port,
             patch_coord.range.beg,
             patch_coord.range.end,
+            channel.backend,
             channel.name,
             agg_kind,
         ).parse().unwrap();
@@ -209,23 +263,7 @@ impl PreBinnedValueStream {
 
 }
 
-
-pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoord, channel: &Channel, cluster: &Cluster) -> usize {
-    let mut hash = tiny_keccak::Sha3::v256();
-    hash.update(channel.backend.as_bytes());
-    hash.update(channel.name.as_bytes());
-    hash.update(&patch_coord.range.beg.to_le_bytes());
-    hash.update(&patch_coord.range.end.to_le_bytes());
-    let mut out = [0; 32];
-    hash.finalize(&mut out);
-    let mut a = [out[0], out[1], out[2], out[3]];
-    let ix = u32::from_le_bytes(a) % cluster.nodes.len() as u32;
-    info!("node_ix_for_patch  {}", ix);
-    ix as usize
-}
-
-
-impl Stream for PreBinnedValueStream {
+impl Stream for PreBinnedValueFetchedStream {
     // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
     type Item = Result<MinMaxAvgScalarBinBatch, Error>;
 
@@ -259,7 +297,10 @@ impl Stream for PreBinnedValueStream {
                                             self.res = Some(res);
                                             continue 'outer;
                                         }
-                                        Err(e) => Ready(Some(Err(e.into()))),
+                                        Err(e) => {
+                                            error!("PreBinnedValueStream  error in stream {:?}", e);
+                                            Ready(Some(Err(e.into())))
+                                        }
                                     }
                                 }
                                 Pending => {
@@ -286,17 +327,19 @@ impl Stream for PreBinnedValueStream {
 }
 
 
+
 pub struct BinnedStream {
     inp: Pin<Box<dyn Stream<Item=Result<MinMaxAvgScalarBinBatch, Error>> + Send>>,
 }
 
 impl BinnedStream {
 
-    pub fn new(patch_it: PreBinnedPatchIterator, channel: Channel, agg_kind: AggKind, cluster: Arc<Cluster>) -> Self {
+    pub fn new(patch_it: PreBinnedPatchIterator, channel: Channel, agg_kind: AggKind, node_config: Arc<NodeConfig>) -> Self {
+        warn!("BinnedStream will open a PreBinnedValueStream");
         let mut patch_it = patch_it;
         let inp = futures_util::stream::iter(patch_it)
         .map(move |coord| {
-            PreBinnedValueStream::new(coord, channel.clone(), agg_kind.clone(), cluster.clone())
+            PreBinnedValueFetchedStream::new(coord, channel.clone(), agg_kind.clone(), node_config.clone())
         })
         .flatten()
         .map(|k| {
@@ -339,4 +382,20 @@ impl From<SomeReturnThing> for Bytes {
         todo!("TODO convert result to octets")
     }
 
+}
+
+
+
+pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoord, channel: &Channel, cluster: &Cluster) -> u32 {
+    let mut hash = tiny_keccak::Sha3::v256();
+    hash.update(channel.backend.as_bytes());
+    hash.update(channel.name.as_bytes());
+    hash.update(&patch_coord.range.beg.to_le_bytes());
+    hash.update(&patch_coord.range.end.to_le_bytes());
+    let mut out = [0; 32];
+    hash.finalize(&mut out);
+    let mut a = [out[0], out[1], out[2], out[3]];
+    let ix = u32::from_le_bytes(a) % cluster.nodes.len() as u32;
+    info!("node_ix_for_patch  {}", ix);
+    ix
 }

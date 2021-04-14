@@ -891,7 +891,7 @@ pub fn raw_concat_channel_read_stream_timebin(query: &netpod::AggQuerySingleChan
 fn datapath(timebin: u64, config: &netpod::ChannelConfig, node: &Node) -> PathBuf {
     //let pre = "/data/sf-databuffer/daq_swissfel";
     node.data_base_path
-    .join(format!("{}_{}", node.ksprefix, config.channel.keyspace))
+    .join(format!("{}_{}", node.ksprefix, config.keyspace))
     .join("byTime")
     .join(config.channel.name.clone())
     .join(format!("{:019}", timebin))

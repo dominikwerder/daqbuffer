@@ -1,24 +1,27 @@
 #[allow(unused_imports)]
 use tracing::{error, warn, info, debug, trace};
 use err::Error;
-use std::net::SocketAddr;
+use std::{task, future, pin, net, panic, sync};
+use net::SocketAddr;
 use http::{Method, StatusCode, HeaderMap};
-use hyper::{Body, Request, Response};
-use hyper::server::Server;
+use hyper::{Body, Request, Response, server::Server};
 use hyper::service::{make_service_fn, service_fn};
-use std::task::{Context, Poll};
-use std::pin::Pin;
-use futures_util::FutureExt;
+use task::{Context, Poll};
+use future::Future;
+use pin::Pin;
+use futures_core::Stream;
+use futures_util::{FutureExt, StreamExt};
 use netpod::{Node, Cluster, AggKind, NodeConfig};
-use std::sync::Arc;
+use sync::Arc;
 use disk::cache::PreBinnedQuery;
-use std::future::Future;
-use std::panic::UnwindSafe;
+use panic::{UnwindSafe, AssertUnwindSafe};
+use bytes::Bytes;
 
 pub async fn host(node_config: Arc<NodeConfig>) -> Result<(), Error> {
     let addr = SocketAddr::from(([0, 0, 0, 0], node_config.node.port));
     let make_service = make_service_fn({
-        move |_conn| {
+        move |conn| {
+            info!("new conn {:?}", conn);
             let node_config = node_config.clone();
             async move {
                 Ok::<_, Error>(service_fn({
@@ -48,18 +51,27 @@ struct Cont<F> {
     f: Pin<Box<F>>,
 }
 
-impl<F> Future for Cont<F> where F: Future {
+impl<F, I> Future for Cont<F> where F: Future<Output=Result<I, Error>> {
     type Output = <F as Future>::Output;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        /*let h = std::panic::catch_unwind(|| {
+        let h = std::panic::catch_unwind(AssertUnwindSafe(|| {
             self.f.poll_unpin(cx)
-        });
+        }));
         match h {
             Ok(k) => k,
-            Err(e) => todo!(),
-        }*/
-        self.f.poll_unpin(cx)
+            Err(e) => {
+                error!("Cont<F>  catch_unwind  {:?}", e);
+                match e.downcast_ref::<Error>() {
+                    Some(e) => {
+                        error!("Cont<F>  catch_unwind  is Error: {:?}", e);
+                    }
+                    None => {
+                    }
+                }
+                Poll::Ready(Err(Error::from(format!("{:?}", e))))
+            }
+        }
     }
 
 }
@@ -162,7 +174,55 @@ impl hyper::body::HttpBody for BodyStreamWrap {
 }
 
 
+struct BodyStream<S> {
+    inp: S,
+}
+
+impl<S, I> BodyStream<S> where S: Stream<Item=Result<I, Error>> + Unpin + Send + 'static, I: Into<Bytes> + Sized + 'static {
+
+    pub fn new(inp: S) -> Self {
+        Self {
+            inp,
+        }
+    }
+
+    pub fn wrapped(inp: S) -> Body {
+        Body::wrap_stream(Self::new(inp))
+    }
+
+}
+
+impl<S, I> Stream for BodyStream<S> where S: Stream<Item=Result<I, Error>> + Unpin, I: Into<Bytes> + Sized {
+    type Item = Result<I, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        let t = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            self.inp.poll_next_unpin(cx)
+        }));
+        let r = match t {
+            Ok(k) => k,
+            Err(e) => {
+                error!("panic {:?}", e);
+                panic!()
+            }
+        };
+        match r {
+            Ready(Some(Ok(k))) => Ready(Some(Ok(k))),
+            Ready(Some(Err(e))) => {
+                error!("body stream error: {:?}", e);
+                Ready(Some(Err(e.into())))
+            }
+            Ready(None) => Ready(None),
+            Pending => Pending,
+        }
+    }
+
+}
+
+
 async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
+    info!("--------------------------------------------------------   BINNED");
     let (head, body) = req.into_parts();
     //let params = netpod::query_params(head.uri.query());
 
@@ -176,7 +236,7 @@ async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Resp
     let ret = match disk::cache::binned_bytes_for_http(node_config, &query) {
         Ok(s) => {
             response(StatusCode::OK)
-            .body(Body::wrap_stream(s))?
+            .body(BodyStream::wrapped(s))?
         }
         Err(e) => {
             error!("{:?}", e);
@@ -188,12 +248,13 @@ async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Resp
 
 
 async fn prebinned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
+    info!("--------------------------------------------------------   PRE-BINNED");
     let (head, body) = req.into_parts();
     let q = PreBinnedQuery::from_request(&head)?;
     let ret = match disk::cache::pre_binned_bytes_for_http(node_config, &q) {
         Ok(s) => {
             response(StatusCode::OK)
-            .body(Body::wrap_stream(s))?
+            .body(BodyStream::wrapped(s))?
         }
         Err(e) => {
             error!("{:?}", e);

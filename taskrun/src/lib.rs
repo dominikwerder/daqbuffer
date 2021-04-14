@@ -1,4 +1,7 @@
+#[allow(unused_imports)]
+use tracing::{error, warn, info, debug, trace};
 use err::Error;
+use std::panic;
 
 pub fn run<T, F: std::future::Future<Output=Result<T, Error>>>(f: F) -> Result<T, Error> {
     tracing_init();
@@ -6,6 +9,13 @@ pub fn run<T, F: std::future::Future<Output=Result<T, Error>>>(f: F) -> Result<T
     .worker_threads(12)
     .max_blocking_threads(256)
     .enable_all()
+    .on_thread_start(|| {
+        let old = panic::take_hook();
+        panic::set_hook(Box::new(move |info| {
+            error!("✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗     panicking\n{:?}\nLOCATION: {:?}\nPAYLOAD: {:?}", backtrace::Backtrace::new(), info.location(), info.payload());
+            //old(info);
+        }));
+    })
     .build()
     .unwrap()
     .block_on(async {

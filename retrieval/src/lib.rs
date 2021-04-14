@@ -54,11 +54,12 @@ async fn get_cached_0_inner() -> Result<(), Error> {
 
 
 fn test_cluster() -> Cluster {
-    let nodes = (0..1).into_iter().map(|k| {
+    let nodes = (0..1).into_iter().map(|id| {
         let node = Node {
+            id,
             host: "localhost".into(),
-            port: 8360 + k,
-            data_base_path: format!("../tmpdata/node{:02}", k).into(),
+            port: 8360 + id as u16,
+            data_base_path: format!("../tmpdata/node{:02}", id).into(),
             ksprefix: "ks".into(),
             split: 0,
         };

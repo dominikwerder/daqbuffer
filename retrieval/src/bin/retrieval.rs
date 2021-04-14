@@ -34,6 +34,7 @@ fn simple_fetch() {
     taskrun::run(async {
         let t1 = chrono::Utc::now();
         let node = Node {
+            id: 0,
             host: "localhost".into(),
             port: 8360,
             data_base_path: todo!(),
@@ -45,9 +46,9 @@ fn simple_fetch() {
             channel_config: ChannelConfig {
                 channel: Channel {
                     backend: "sf-databuffer".into(),
-                    keyspace: 3,
                     name: "S10BC01-DBAM070:BAM_CH1_NORM".into(),
                 },
+                keyspace: 3,
                 time_bin_size: DAY,
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(todo!()),

@@ -93,9 +93,10 @@ impl ScalarType {
 
 #[derive(Debug)]
 pub struct Node {
+    pub id: u32,
     pub host: String,
     pub port: u16,
-    pub split: u8,
+    pub split: u32,
     pub data_base_path: PathBuf,
     pub ksprefix: String,
 }
@@ -122,7 +123,6 @@ pub struct NodeConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Channel {
-    pub keyspace: u8,
     pub backend: String,
     pub name: String,
 }
@@ -166,14 +166,10 @@ impl NanoRange {
 }
 
 
-#[test]
-fn serde_channel() {
-    let _ex = "{\"name\":\"thechannel\",\"backend\":\"thebackend\"}";
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChannelConfig {
     pub channel: Channel,
+    pub keyspace: u8,
     pub time_bin_size: u64,
     pub scalar_type: ScalarType,
     pub shape: Shape,

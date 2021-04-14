@@ -36,9 +36,9 @@ pub async fn gen_test_data() -> Result<(), Error> {
             config: ChannelConfig {
                 channel: Channel {
                     backend: "test".into(),
-                    keyspace: 3,
                     name: "wave1".into(),
                 },
+                keyspace: 3,
                 time_bin_size: DAY,
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(17),
@@ -51,9 +51,10 @@ pub async fn gen_test_data() -> Result<(), Error> {
     }
     for i1 in 0..13 {
         let node = Node {
+            id: i1,
             host: "localhost".into(),
-            port: 7780 + i1,
-            split: i1 as u8,
+            port: 7780 + i1 as u16,
+            split: i1,
             data_base_path: data_base_path.join(format!("node{:02}", i1)),
             ksprefix: ksprefix.clone(),
         };
@@ -88,7 +89,7 @@ async fn gen_channel(chn: &ChannelGenProps, node: &Node, ensemble: &Ensemble) ->
     .join(&chn.config.channel.name);
     tokio::fs::create_dir_all(&config_path).await?;
     let channel_path = node.data_base_path
-    .join(format!("{}_{}", node.ksprefix, chn.config.channel.keyspace))
+    .join(format!("{}_{}", node.ksprefix, chn.config.keyspace))
     .join("byTime")
     .join(&chn.config.channel.name);
     tokio::fs::create_dir_all(&channel_path).await?;

@@ -708,12 +708,13 @@ where I: AggregatableTdim + Unpin, T: Stream<Item=Result<I, Error>> + Unpin, I::
     }
 
 }
-pub fn make_test_node(ix: u8) -> Node {
+pub fn make_test_node(id: u32) -> Node {
     Node {
+        id,
         host: "localhost".into(),
-        port: 8800 + ix as u16,
-        data_base_path: format!("../tmpdata/node{:02}", ix).into(),
-        split: ix,
+        port: 8800 + id as u16,
+        data_base_path: format!("../tmpdata/node{:02}", id).into(),
+        split: id,
         ksprefix: "ks".into(),
     }
 }
@@ -731,9 +732,9 @@ async fn agg_x_dim_0_inner() {
         channel_config: ChannelConfig {
             channel: Channel {
                 backend: "sf-databuffer".into(),
-                keyspace: 2,
                 name: "S10BC01-DBAM070:EOM1_T1".into(),
             },
+            keyspace: 2,
             time_bin_size: DAY,
             shape: Shape::Scalar,
             scalar_type: ScalarType::F64,
@@ -786,9 +787,9 @@ async fn agg_x_dim_1_inner() {
         channel_config: ChannelConfig {
             channel: Channel {
                 backend: "ks".into(),
-                keyspace: 3,
                 name: "wave1".into(),
             },
+            keyspace: 3,
             time_bin_size: DAY,
             shape: Shape::Wave(1024),
             scalar_type: ScalarType::F64,
@@ -835,9 +836,9 @@ async fn merge_0_inner() {
         channel_config: ChannelConfig {
             channel: Channel {
                 backend: "ks".into(),
-                keyspace: 3,
                 name: "wave1".into(),
             },
+            keyspace: 3,
             time_bin_size: DAY,
             shape: Shape::Wave(17),
             scalar_type: ScalarType::F64,
