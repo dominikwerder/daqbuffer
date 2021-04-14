@@ -2,8 +2,9 @@
 use tracing::{error, warn, info, debug, trace};
 use err::Error;
 use tokio::task::JoinHandle;
-use netpod::{Node, Cluster};
+use netpod::{Node, Cluster, NodeConfig};
 use hyper::Body;
+use std::sync::Arc;
 
 pub mod cli;
 
@@ -15,9 +16,9 @@ fn get_cached_0() {
 #[cfg(test)]
 async fn get_cached_0_inner() -> Result<(), Error> {
     let t1 = chrono::Utc::now();
-    let cluster = test_cluster();
+    let cluster = Arc::new(test_cluster());
     let node0 = &cluster.nodes[0];
-    let hosts = spawn_test_hosts(&cluster);
+    let hosts = spawn_test_hosts(cluster.clone());
     let req = hyper::Request::builder()
     .method(http::Method::GET)
     .uri(format!("http://{}:{}/api/1/binned?channel_backend=testbackend&channel_keyspace=3&channel_name=wave1&bin_count=4&beg_date=1970-01-01T00:00:10.000Z&end_date=1970-01-01T00:00:51.000Z", node0.host, node0.port))
@@ -54,13 +55,14 @@ async fn get_cached_0_inner() -> Result<(), Error> {
 
 fn test_cluster() -> Cluster {
     let nodes = (0..1).into_iter().map(|k| {
-        Node {
+        let node = Node {
             host: "localhost".into(),
             port: 8360 + k,
             data_base_path: format!("../tmpdata/node{:02}", k).into(),
             ksprefix: "ks".into(),
             split: 0,
-        }
+        };
+        Arc::new(node)
     })
     .collect();
     Cluster {
@@ -68,10 +70,14 @@ fn test_cluster() -> Cluster {
     }
 }
 
-fn spawn_test_hosts(cluster: &Cluster) -> Vec<JoinHandle<Result<(), Error>>> {
+fn spawn_test_hosts(cluster: Arc<Cluster>) -> Vec<JoinHandle<Result<(), Error>>> {
     let mut ret = vec![];
     for node in &cluster.nodes {
-        let h = tokio::spawn(httpret::host(node.clone(), cluster.clone()));
+        let node_config = NodeConfig {
+            cluster: cluster.clone(),
+            node: node.clone(),
+        };
+        let h = tokio::spawn(httpret::host(Arc::new(node_config)));
         ret.push(h);
     }
     ret

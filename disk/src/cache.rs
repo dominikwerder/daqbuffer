@@ -8,12 +8,14 @@ use futures_core::Stream;
 use futures_util::{StreamExt, FutureExt, pin_mut};
 use bytes::{Bytes, BytesMut, BufMut};
 use chrono::{DateTime, Utc};
-use netpod::{Node, Cluster, AggKind, NanoRange, ToNanos, PreBinnedPatchGridSpec, PreBinnedPatchIterator, PreBinnedPatchCoord, Channel};
+use netpod::{Node, Cluster, AggKind, NanoRange, ToNanos, PreBinnedPatchGridSpec, PreBinnedPatchIterator, PreBinnedPatchCoord, Channel, NodeConfig};
 use crate::agg::MinMaxAvgScalarBinBatch;
 use http::uri::Scheme;
 use tiny_keccak::Hasher;
+use serde::{Serialize, Deserialize};
+use std::sync::Arc;
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Query {
     range: NanoRange,
     count: u64,
@@ -47,12 +49,7 @@ impl Query {
 }
 
 
-pub struct BinParams {
-    pub node: Node,
-    pub cluster: Cluster,
-}
-
-pub fn binned_bytes_for_http(params: BinParams, query: &Query) -> Result<BinnedBytesForHttpStream, Error> {
+pub fn binned_bytes_for_http(node_config: Arc<NodeConfig>, query: &Query) -> Result<BinnedBytesForHttpStream, Error> {
     let agg_kind = AggKind::DimXBins1;
 
     // TODO
@@ -62,7 +59,7 @@ pub fn binned_bytes_for_http(params: BinParams, query: &Query) -> Result<BinnedB
         Some(spec) => {
             info!("GOT  PreBinnedPatchGridSpec:    {:?}", spec);
             warn!("Pass here to BinnedStream what kind of Agg, range, ...");
-            let s1 = BinnedStream::new(PreBinnedPatchIterator::from_range(spec), query.channel.clone(), agg_kind, params.cluster.clone());
+            let s1 = BinnedStream::new(PreBinnedPatchIterator::from_range(spec), query.channel.clone(), agg_kind, node_config.cluster.clone());
             // Iterate over the patches.
             // Request the patch from each node.
             // Merge.
@@ -75,6 +72,7 @@ pub fn binned_bytes_for_http(params: BinParams, query: &Query) -> Result<BinnedB
         }
         None => {
             // Merge raw data
+            error!("TODO merge raw data");
             todo!()
         }
     }
@@ -108,6 +106,78 @@ impl Stream for BinnedBytesForHttpStream {
 }
 
 
+
+
+
+#[derive(Clone, Debug)]
+pub struct PreBinnedQuery {
+    patch: PreBinnedPatchCoord,
+    agg_kind: AggKind,
+    channel: Channel,
+}
+
+impl PreBinnedQuery {
+
+    pub fn from_request(req: &http::request::Parts) -> Result<Self, Error> {
+        let params = netpod::query_params(req.uri.query());
+        let ret = PreBinnedQuery {
+            patch: PreBinnedPatchCoord {
+                range: NanoRange {
+                    beg: params.get("beg").ok_or(Error::with_msg("missing beg"))?.parse()?,
+                    end: params.get("end").ok_or(Error::with_msg("missing end"))?.parse()?,
+                },
+            },
+            agg_kind: AggKind::DimXBins1,
+            channel: Channel {
+                backend: params.get("channel_backend").unwrap().into(),
+                keyspace: params.get("channel_keyspace").unwrap().parse().unwrap(),
+                name: params.get("channel_name").unwrap().into(),
+            },
+        };
+        info!("PreBinnedQuery::from_request  {:?}", ret);
+        Ok(ret)
+    }
+
+}
+
+
+
+// NOTE  This answers a request for a single valid pre-binned patch.
+// A user must first make sure that the grid spec is valid, and that this node is responsible for it.
+// Otherwise it is an error.
+pub fn pre_binned_bytes_for_http(node_config: Arc<NodeConfig>, query: &PreBinnedQuery) -> Result<PreBinnedValueByteStream, Error> {
+    info!("pre_binned_bytes_for_http  {:?}  {:?}", query, node_config.node);
+    let ret = PreBinnedValueByteStream::new(query.patch.clone(), query.channel.clone(), query.agg_kind.clone(), node_config);
+    Ok(ret)
+}
+
+
+pub struct PreBinnedValueByteStream {
+}
+
+impl PreBinnedValueByteStream {
+
+    pub fn new(patch: PreBinnedPatchCoord, channel: Channel, agg_kind: AggKind, node_config: Arc<NodeConfig>) -> Self {
+        Self {
+        }
+    }
+
+}
+
+impl Stream for PreBinnedValueByteStream {
+    type Item = Result<Bytes, Error>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        error!("PreBinnedValueByteStream poll_next");
+        todo!()
+    }
+
+}
+
+
+
+
+
 pub struct PreBinnedValueStream {
     uri: http::Uri,
     patch_coord: PreBinnedPatchCoord,
@@ -117,7 +187,7 @@ pub struct PreBinnedValueStream {
 
 impl PreBinnedValueStream {
 
-    pub fn new(patch_coord: PreBinnedPatchCoord, channel: Channel, agg_kind: AggKind, cluster: Cluster) -> Self {
+    pub fn new(patch_coord: PreBinnedPatchCoord, channel: Channel, agg_kind: AggKind, cluster: Arc<Cluster>) -> Self {
         let nodeix = node_ix_for_patch(&patch_coord, &channel, &cluster);
         let node = &cluster.nodes[nodeix];
         let uri: hyper::Uri = format!(
@@ -142,8 +212,16 @@ impl PreBinnedValueStream {
 
 pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoord, channel: &Channel, cluster: &Cluster) -> usize {
     let mut hash = tiny_keccak::Sha3::v256();
+    hash.update(channel.backend.as_bytes());
     hash.update(channel.name.as_bytes());
-    0
+    hash.update(&patch_coord.range.beg.to_le_bytes());
+    hash.update(&patch_coord.range.end.to_le_bytes());
+    let mut out = [0; 32];
+    hash.finalize(&mut out);
+    let mut a = [out[0], out[1], out[2], out[3]];
+    let ix = u32::from_le_bytes(a) % cluster.nodes.len() as u32;
+    info!("node_ix_for_patch  {}", ix);
+    ix as usize
 }
 
 
@@ -177,7 +255,7 @@ impl Stream for PreBinnedValueStream {
                                 Ready(res) => {
                                     match res {
                                         Ok(res) => {
-                                            info!("Got result from subrequest: {:?}", res);
+                                            info!("GOT result from SUB REQUEST: {:?}", res);
                                             self.res = Some(res);
                                             continue 'outer;
                                         }
@@ -190,12 +268,12 @@ impl Stream for PreBinnedValueStream {
                             }
                         }
                         None => {
-
                             let req = hyper::Request::builder()
                             .method(http::Method::GET)
                             .uri(&self.uri)
                             .body(hyper::Body::empty())?;
                             let client = hyper::Client::new();
+                            info!("START REQUEST FOR {:?}", req);
                             self.resfut = Some(client.request(req));
                             continue 'outer;
                         }
@@ -214,13 +292,17 @@ pub struct BinnedStream {
 
 impl BinnedStream {
 
-    pub fn new(patch_it: PreBinnedPatchIterator, channel: Channel, agg_kind: AggKind, cluster: Cluster) -> Self {
+    pub fn new(patch_it: PreBinnedPatchIterator, channel: Channel, agg_kind: AggKind, cluster: Arc<Cluster>) -> Self {
         let mut patch_it = patch_it;
         let inp = futures_util::stream::iter(patch_it)
         .map(move |coord| {
             PreBinnedValueStream::new(coord, channel.clone(), agg_kind.clone(), cluster.clone())
         })
-        .flatten();
+        .flatten()
+        .map(|k| {
+            info!("ITEM {:?}", k);
+            k
+        });
         Self {
             inp: Box::pin(inp),
         }
@@ -253,6 +335,7 @@ pub struct SomeReturnThing {}
 impl From<SomeReturnThing> for Bytes {
 
     fn from(k: SomeReturnThing) -> Self {
+        error!("TODO convert result to octets");
         todo!("TODO convert result to octets")
     }
 

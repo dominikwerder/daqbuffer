@@ -8,23 +8,23 @@ use hyper::server::Server;
 use hyper::service::{make_service_fn, service_fn};
 use std::task::{Context, Poll};
 use std::pin::Pin;
-use netpod::{Node, Cluster, AggKind};
-use disk::cache::BinParams;
+use futures_util::FutureExt;
+use netpod::{Node, Cluster, AggKind, NodeConfig};
+use std::sync::Arc;
+use disk::cache::PreBinnedQuery;
+use std::future::Future;
+use std::panic::UnwindSafe;
 
-pub async fn host(node: Node, cluster: Cluster) -> Result<(), Error> {
-    let addr = SocketAddr::from(([0, 0, 0, 0], node.port));
+pub async fn host(node_config: Arc<NodeConfig>) -> Result<(), Error> {
+    let addr = SocketAddr::from(([0, 0, 0, 0], node_config.node.port));
     let make_service = make_service_fn({
         move |_conn| {
-            let node = node.clone();
-            let cluster = cluster.clone();
+            let node_config = node_config.clone();
             async move {
                 Ok::<_, Error>(service_fn({
                     move |req| {
-                        let hc = HostConf {
-                            node: node.clone(),
-                            cluster: cluster.clone(),
-                        };
-                        data_api_proxy(req, hc)
+                        let f = data_api_proxy(req, node_config.clone());
+                        Cont { f: Box::pin(f) }
                     }
                 }))
             }
@@ -34,8 +34,8 @@ pub async fn host(node: Node, cluster: Cluster) -> Result<(), Error> {
     Ok(())
 }
 
-async fn data_api_proxy(req: Request<Body>, hconf: HostConf) -> Result<Response<Body>, Error> {
-    match data_api_proxy_try(req, hconf).await {
+async fn data_api_proxy(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
+    match data_api_proxy_try(req, node_config).await {
         Ok(k) => { Ok(k) }
         Err(e) => {
             error!("{:?}", e);
@@ -44,7 +44,30 @@ async fn data_api_proxy(req: Request<Body>, hconf: HostConf) -> Result<Response<
     }
 }
 
-async fn data_api_proxy_try(req: Request<Body>, hconf: HostConf) -> Result<Response<Body>, Error> {
+struct Cont<F> {
+    f: Pin<Box<F>>,
+}
+
+impl<F> Future for Cont<F> where F: Future {
+    type Output = <F as Future>::Output;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        /*let h = std::panic::catch_unwind(|| {
+            self.f.poll_unpin(cx)
+        });
+        match h {
+            Ok(k) => k,
+            Err(e) => todo!(),
+        }*/
+        self.f.poll_unpin(cx)
+    }
+
+}
+
+impl<F> UnwindSafe for Cont<F> {}
+
+
+async fn data_api_proxy_try(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/1/parsed_raw" {
@@ -57,7 +80,15 @@ async fn data_api_proxy_try(req: Request<Body>, hconf: HostConf) -> Result<Respo
     }
     else if path == "/api/1/binned" {
         if req.method() == Method::GET {
-            Ok(binned(req, hconf).await?)
+            Ok(binned(req, node_config.clone()).await?)
+        }
+        else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    }
+    else if path == "/api/1/prebinned" {
+        if req.method() == Method::GET {
+            Ok(prebinned(req, node_config.clone()).await?)
         }
         else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
@@ -87,7 +118,7 @@ async fn parsed_raw(req: Request<Body>) -> Result<Response<Body>, Error> {
     let query: AggQuerySingleChannel = serde_json::from_slice(&bodyslice)?;
     //let q = disk::read_test_1(&query).await?;
     //let s = q.inner;
-    let s = disk::parsed1(&query, &node);
+    let s = disk::parsed1(&query, node);
     let res = response(StatusCode::OK)
         .body(Body::wrap_stream(s))?;
     /*
@@ -131,7 +162,7 @@ impl hyper::body::HttpBody for BodyStreamWrap {
 }
 
 
-async fn binned(req: Request<Body>, hconf: HostConf) -> Result<Response<Body>, Error> {
+async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
     let (head, body) = req.into_parts();
     //let params = netpod::query_params(head.uri.query());
 
@@ -142,11 +173,7 @@ async fn binned(req: Request<Body>, hconf: HostConf) -> Result<Response<Body>, E
     // Extract the relevant channel config entry.
 
     let query = disk::cache::Query::from_request(&head)?;
-    let params = BinParams {
-        node: hconf.node.clone(),
-        cluster: hconf.cluster.clone(),
-    };
-    let ret = match disk::cache::binned_bytes_for_http(params, &query) {
+    let ret = match disk::cache::binned_bytes_for_http(node_config, &query) {
         Ok(s) => {
             response(StatusCode::OK)
             .body(Body::wrap_stream(s))?
@@ -160,18 +187,13 @@ async fn binned(req: Request<Body>, hconf: HostConf) -> Result<Response<Body>, E
 }
 
 
-async fn prebinned(req: Request<Body>, hconf: HostConf) -> Result<Response<Body>, Error> {
+async fn prebinned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
     let (head, body) = req.into_parts();
-    todo!("create a new PreBinnedQuery and let extract from query");
-    let params = BinParams {
-        node: hconf.node.clone(),
-        cluster: hconf.cluster.clone(),
-    };
-    todo!("create this new entry point in disk::cache");
-    let ret = match Ok(()) {
+    let q = PreBinnedQuery::from_request(&head)?;
+    let ret = match disk::cache::pre_binned_bytes_for_http(node_config, &q) {
         Ok(s) => {
             response(StatusCode::OK)
-            .body(Body::wrap_stream(______))?
+            .body(Body::wrap_stream(s))?
         }
         Err(e) => {
             error!("{:?}", e);
@@ -179,12 +201,4 @@ async fn prebinned(req: Request<Body>, hconf: HostConf) -> Result<Response<Body>
         }
     };
     Ok(ret)
-}
-
-
-
-#[derive(Clone)]
-pub struct HostConf {
-    node: Node,
-    cluster: Cluster,
 }

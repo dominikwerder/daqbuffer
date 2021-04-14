@@ -4,6 +4,7 @@ use serde::{Serialize, Deserialize};
 use err::Error;
 use std::path::PathBuf;
 use chrono::{DateTime, Utc, TimeZone};
+use std::sync::Arc;
 
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -90,7 +91,7 @@ impl ScalarType {
 
 }
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct Node {
     pub host: String,
     pub port: u16,
@@ -106,9 +107,16 @@ impl Node {
 }
 
 
-#[derive(Clone)]
+#[derive(Debug)]
 pub struct Cluster {
-    pub nodes: Vec<Node>,
+    pub nodes: Vec<Arc<Node>>,
+}
+
+
+#[derive(Debug)]
+pub struct NodeConfig {
+    pub node: Arc<Node>,
+    pub cluster: Arc<Cluster>,
 }
 
 
@@ -255,9 +263,9 @@ impl BinSpecDimT {
 
 #[derive(Clone, Debug)]
 pub struct PreBinnedPatchGridSpec {
-    range: NanoRange,
-    bs: u64,
-    count: u64,
+    pub range: NanoRange,
+    pub bs: u64,
+    pub count: u64,
 }
 
 impl PreBinnedPatchGridSpec {
@@ -315,6 +323,14 @@ impl PreBinnedPatchGridSpec {
 #[derive(Clone, Debug)]
 pub struct PreBinnedPatchCoord {
     pub range: NanoRange,
+}
+
+impl PreBinnedPatchCoord {
+
+    pub fn bs(&self) -> u64 {
+        self.range.end - self.range.beg
+    }
+
 }
 
 pub struct PreBinnedPatchIterator {

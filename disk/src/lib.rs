@@ -13,6 +13,7 @@ use bytes::{Bytes, BytesMut, Buf};
 use std::path::PathBuf;
 use bitshuffle::bitshuffle_decompress;
 use netpod::{ScalarType, Shape, Node, ChannelConfig};
+use std::sync::Arc;
 
 pub mod agg;
 pub mod gen;
@@ -20,8 +21,8 @@ pub mod merge;
 pub mod cache;
 
 
-pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: &Node) -> Result<netpod::BodyStream, Error> {
-    let path = datapath(query.timebin as u64, &query.channel_config, node);
+pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> Result<netpod::BodyStream, Error> {
+    let path = datapath(query.timebin as u64, &query.channel_config, &node);
     debug!("try path: {:?}", path);
     let fin = OpenOptions::new()
         .read(true)
@@ -143,7 +144,7 @@ impl FusedFuture for Fopen1 {
 unsafe impl Send for Fopen1 {}
 
 
-pub fn raw_concat_channel_read_stream_try_open_in_background(query: &netpod::AggQuerySingleChannel, node: &Node) -> impl Stream<Item=Result<Bytes, Error>> + Send {
+pub fn raw_concat_channel_read_stream_try_open_in_background(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> impl Stream<Item=Result<Bytes, Error>> + Send {
     let mut query = query.clone();
     let node = node.clone();
     async_stream::stream! {
@@ -268,11 +269,11 @@ pub fn raw_concat_channel_read_stream_try_open_in_background(query: &netpod::Agg
 }
 
 
-pub fn raw_concat_channel_read_stream_file_pipe(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> impl Stream<Item=Result<BytesMut, Error>> + Send {
+pub fn raw_concat_channel_read_stream_file_pipe(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> impl Stream<Item=Result<BytesMut, Error>> + Send {
     let query = query.clone();
     let node = node.clone();
     async_stream::stream! {
-        let chrx = open_files(&query, &node);
+        let chrx = open_files(&query, node.clone());
         while let Ok(file) = chrx.recv().await {
             let mut file = match file {
                 Ok(k) => k,
@@ -294,7 +295,7 @@ pub fn raw_concat_channel_read_stream_file_pipe(query: &netpod::AggQuerySingleCh
     }
 }
 
-fn open_files(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> async_channel::Receiver<Result<tokio::fs::File, Error>> {
+fn open_files(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> async_channel::Receiver<Result<tokio::fs::File, Error>> {
     let (chtx, chrx) = async_channel::bounded(2);
     let mut query = query.clone();
     let node = node.clone();
@@ -346,11 +347,11 @@ pub fn file_content_stream(mut file: tokio::fs::File, buffer_size: usize) -> imp
 }
 
 
-pub fn parsed1(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> impl Stream<Item=Result<Bytes, Error>> + Send {
+pub fn parsed1(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> impl Stream<Item=Result<Bytes, Error>> + Send {
     let query = query.clone();
     let node = node.clone();
     async_stream::stream! {
-        let filerx = open_files(&query, &node);
+        let filerx = open_files(&query, node.clone());
         while let Ok(fileres) = filerx.recv().await {
             match fileres {
                 Ok(file) => {
@@ -392,7 +393,8 @@ pub struct EventBlobsComplete {
 }
 
 impl EventBlobsComplete {
-    pub fn new(query: &netpod::AggQuerySingleChannel, channel_config: ChannelConfig, node: &netpod::Node) -> Self {
+
+    pub fn new(query: &netpod::AggQuerySingleChannel, channel_config: ChannelConfig, node: Arc<Node>) -> Self {
         Self {
             file_chan: open_files(query, node),
             evs: None,
@@ -400,6 +402,7 @@ impl EventBlobsComplete {
             channel_config,
         }
     }
+
 }
 
 impl Stream for EventBlobsComplete {
@@ -446,11 +449,11 @@ impl Stream for EventBlobsComplete {
 }
 
 
-pub fn event_blobs_complete(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> impl Stream<Item=Result<EventFull, Error>> + Send {
+pub fn event_blobs_complete(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> impl Stream<Item=Result<EventFull, Error>> + Send {
     let query = query.clone();
     let node = node.clone();
     async_stream::stream! {
-        let filerx = open_files(&query, &node);
+        let filerx = open_files(&query, node.clone());
         while let Ok(fileres) = filerx.recv().await {
             match fileres {
                 Ok(file) => {
@@ -782,7 +785,7 @@ impl NeedMinBuffer {
 impl Stream for NeedMinBuffer {
     type Item = Result<BytesMut, Error>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         loop {
             let mut again = false;
             let g = &mut self.inp;
@@ -833,7 +836,7 @@ impl Stream for NeedMinBuffer {
 
 
 
-pub fn raw_concat_channel_read_stream(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> impl Stream<Item=Result<Bytes, Error>> + Send {
+pub fn raw_concat_channel_read_stream(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> impl Stream<Item=Result<Bytes, Error>> + Send {
     let mut query = query.clone();
     let node = node.clone();
     async_stream::stream! {
@@ -841,7 +844,7 @@ pub fn raw_concat_channel_read_stream(query: &netpod::AggQuerySingleChannel, nod
         loop {
             let timebin = 18700 + i1;
             query.timebin = timebin;
-            let s2 = raw_concat_channel_read_stream_timebin(&query, &node);
+            let s2 = raw_concat_channel_read_stream_timebin(&query, node.clone());
             pin_mut!(s2);
             while let Some(item) = s2.next().await {
                 yield item;
@@ -855,7 +858,7 @@ pub fn raw_concat_channel_read_stream(query: &netpod::AggQuerySingleChannel, nod
 }
 
 
-pub fn raw_concat_channel_read_stream_timebin(query: &netpod::AggQuerySingleChannel, node: &netpod::Node) -> impl Stream<Item=Result<Bytes, Error>> {
+pub fn raw_concat_channel_read_stream_timebin(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> impl Stream<Item=Result<Bytes, Error>> {
     let query = query.clone();
     let node = node.clone();
     async_stream::stream! {
@@ -885,7 +888,7 @@ pub fn raw_concat_channel_read_stream_timebin(query: &netpod::AggQuerySingleChan
 }
 
 
-fn datapath(timebin: u64, config: &netpod::ChannelConfig, node: &netpod::Node) -> PathBuf {
+fn datapath(timebin: u64, config: &netpod::ChannelConfig, node: &Node) -> PathBuf {
     //let pre = "/data/sf-databuffer/daq_swissfel";
     node.data_base_path
     .join(format!("{}_{}", node.ksprefix, config.channel.keyspace))

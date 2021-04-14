@@ -9,6 +9,7 @@ use futures_util::{pin_mut, StreamExt, future::ready};
 use netpod::{Channel, ChannelConfig, ScalarType, Shape, Node, timeunits::*};
 use crate::merge::MergeDim1F32Stream;
 use netpod::BinSpecDimT;
+use std::sync::Arc;
 
 pub trait AggregatorTdim {
     type InputValue;
@@ -725,6 +726,7 @@ fn agg_x_dim_0() {
 
 async fn agg_x_dim_0_inner() {
     let node = make_test_node(0);
+    let node = Arc::new(node);
     let query = netpod::AggQuerySingleChannel {
         channel_config: ChannelConfig {
             channel: Channel {
@@ -745,7 +747,7 @@ async fn agg_x_dim_0_inner() {
     let bin_count = 20;
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size;
     let ts2 = ts1 + HOUR * 24;
-    let fut1 = crate::EventBlobsComplete::new(&query, query.channel_config.clone(), &node)
+    let fut1 = crate::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
     .into_dim_1_f32_stream()
     //.take(1000)
     .map(|q| {
@@ -779,6 +781,7 @@ async fn agg_x_dim_1_inner() {
     // /data/sf-databuffer/daq_swissfel/daq_swissfel_3/byTime/S10BC01-DBAM070\:BAM_CH1_NORM/*
     // S10BC01-DBAM070:BAM_CH1_NORM
     let node = make_test_node(0);
+    let node = Arc::new(node);
     let query = netpod::AggQuerySingleChannel {
         channel_config: ChannelConfig {
             channel: Channel {
@@ -799,7 +802,7 @@ async fn agg_x_dim_1_inner() {
     let bin_count = 10;
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size;
     let ts2 = ts1 + HOUR * 24;
-    let fut1 = crate::EventBlobsComplete::new(&query, query.channel_config.clone(), &node)
+    let fut1 = crate::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
     .into_dim_1_f32_stream()
     //.take(1000)
     .map(|q| {
@@ -850,7 +853,8 @@ async fn merge_0_inner() {
         make_test_node(k)
     })
     .map(|node| {
-        crate::EventBlobsComplete::new(&query, query.channel_config.clone(), &node)
+        let node = Arc::new(node);
+        crate::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
         .into_dim_1_f32_stream()
     })
     .collect();

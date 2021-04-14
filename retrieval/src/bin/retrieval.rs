@@ -1,7 +1,8 @@
 #[allow(unused_imports)]
 use tracing::{error, warn, info, debug, trace};
 use err::Error;
-use netpod::{ChannelConfig, Channel, timeunits::*, ScalarType, Shape, Node, Cluster};
+use netpod::{ChannelConfig, Channel, timeunits::*, ScalarType, Shape, Node, Cluster, NodeConfig};
+use std::sync::Arc;
 
 pub fn main() {
     match taskrun::run(go()) {
@@ -39,6 +40,7 @@ fn simple_fetch() {
             ksprefix: "daq_swissfel".into(),
             split: 0,
         };
+        let node = Arc::new(node);
         let query = netpod::AggQuerySingleChannel {
             channel_config: ChannelConfig {
                 channel: Channel {
@@ -59,8 +61,14 @@ fn simple_fetch() {
         let cluster = Cluster {
             nodes: vec![node],
         };
+        let cluster = Arc::new(cluster);
+        let node_config = NodeConfig {
+            cluster: cluster,
+            node: cluster.nodes[0].clone(),
+        };
+        let node_config = Arc::new(node_config);
         let query_string = serde_json::to_string(&query).unwrap();
-        let _host = tokio::spawn(httpret::host(cluster.nodes[0].clone(), cluster.clone()));
+        let _host = tokio::spawn(httpret::host(node_config));
         let req = hyper::Request::builder()
             .method(http::Method::POST)
             .uri("http://localhost:8360/api/1/parsed_raw")
