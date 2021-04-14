@@ -1,19 +1,20 @@
 #[allow(unused_imports)]
 use tracing::{error, warn, info, debug, trace};
 use err::Error;
-use std::future::ready;
+use std::future::{ready, Future};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use futures_core::Stream;
-use futures_util::{StreamExt, FutureExt, pin_mut};
+use futures_util::{StreamExt, FutureExt, pin_mut, TryFutureExt};
 use bytes::{Bytes, BytesMut, BufMut};
 use chrono::{DateTime, Utc};
-use netpod::{Node, Cluster, AggKind, NanoRange, ToNanos, PreBinnedPatchGridSpec, PreBinnedPatchIterator, PreBinnedPatchCoord, Channel, NodeConfig};
+use netpod::{Node, Cluster, AggKind, NanoRange, ToNanos, PreBinnedPatchRange, PreBinnedPatchIterator, PreBinnedPatchCoord, Channel, NodeConfig};
 use crate::agg::MinMaxAvgScalarBinBatch;
 use http::uri::Scheme;
 use tiny_keccak::Hasher;
 use serde::{Serialize, Deserialize};
 use std::sync::Arc;
+use tokio::fs::OpenOptions;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Query {
@@ -53,7 +54,7 @@ pub fn binned_bytes_for_http(node_config: Arc<NodeConfig>, query: &Query) -> Res
 
     // TODO
     // Translate the Query TimeRange + AggKind into an iterator over the pre-binned patches.
-    let grid = PreBinnedPatchGridSpec::over_range(query.range.clone(), query.count);
+    let grid = PreBinnedPatchRange::covering_range(query.range.clone(), query.count);
     match grid {
         Some(spec) => {
             info!("GOT  PreBinnedPatchGridSpec:    {:?}", spec);
@@ -194,6 +195,7 @@ pub struct PreBinnedValueStream {
     channel: Channel,
     agg_kind: AggKind,
     node_config: Arc<NodeConfig>,
+    open_check_local_file: Option<Pin<Box<dyn Future<Output=Result<tokio::fs::File, std::io::Error>> + Send>>>,
 }
 
 impl PreBinnedValueStream {
@@ -206,6 +208,7 @@ impl PreBinnedValueStream {
             channel,
             agg_kind,
             node_config,
+            open_check_local_file: None,
         }
     }
 
@@ -217,13 +220,41 @@ impl Stream for PreBinnedValueStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        // TODO provide the data from a local cached file, the on-the-fly binning of higher-res
-        // pre-binned patches which we can get again via http, or if there is no higher resolution
-        // then from raw events, or a combination of all those especially if there is not yet
-        // a pre-binned patch, and we have to stitch from higher-res-pre-bin plus extend with
-        // on-the-fly binning of fresh data.
-        error!("TODO  provide the pre-binned data");
-        Ready(None)
+        'outer: loop {
+            break match self.open_check_local_file.as_mut() {
+                None => {
+                    use std::os::unix::fs::OpenOptionsExt;
+                    let mut opts = std::fs::OpenOptions::new();
+                    opts.read(true);
+                    let fut = async {
+                        tokio::fs::OpenOptions::from(opts)
+                        .open("/DOESNOTEXIST").await
+                    };
+                    self.open_check_local_file = Some(Box::pin(fut));
+                    continue 'outer;
+                }
+                Some(fut) => {
+                    match fut.poll_unpin(cx) {
+                        Ready(Ok(file)) => {
+                            todo!("IMPLEMENT READ FROM LOCAL CACHE");
+                            Pending
+                        }
+                        Ready(Err(e)) => {
+                            match e.kind() {
+                                std::io::ErrorKind::NotFound => {
+                                    warn!("TODO LOCAL CACHE FILE NOT FOUND");
+                                }
+                                _ => {
+                                    error!("File I/O error: {:?}", e);
+                                }
+                            }
+                            Ready(Some(Err(e.into())))
+                        }
+                        Pending => Pending,
+                    }
+                }
+            }
+        }
     }
 
 }

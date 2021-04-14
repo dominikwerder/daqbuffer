@@ -259,21 +259,31 @@ impl BinSpecDimT {
 
 #[derive(Clone, Debug)]
 pub struct PreBinnedPatchGridSpec {
-    pub range: NanoRange,
-    pub bs: u64,
-    pub count: u64,
+    pub bin_t_len: u64,
+    pub patch_t_len: u64,
 }
 
 impl PreBinnedPatchGridSpec {
+}
 
-    pub fn over_range(range: NanoRange, count: u64) -> Option<Self> {
+
+#[derive(Clone, Debug)]
+pub struct PreBinnedPatchRange {
+    pub grid_spec: PreBinnedPatchGridSpec,
+    pub offset: u64,
+    pub count: u64,
+}
+
+impl PreBinnedPatchRange {
+
+    pub fn covering_range(range: NanoRange, min_bin_count: u64) -> Option<Self> {
         use timeunits::*;
-        assert!(count >= 1);
-        assert!(count <= 2000);
+        assert!(min_bin_count >= 1);
+        assert!(min_bin_count <= 2000);
         let dt = range.delta();
         assert!(dt <= DAY * 14);
-        let bs = dt / count;
-        info!("BASIC bs {}", bs);
+        let bs = dt / min_bin_count;
+        //info!("BASIC bs {}", bs);
         let thresholds = [
             SEC * 10,
             MIN * 10,
@@ -295,18 +305,21 @@ impl PreBinnedPatchGridSpec {
                     let bs = t;
                     let ts1 = range.beg / bs * bs;
                     let ts2 = (range.end + bs - 1) / bs * bs;
-                    if (ts2 - ts1) % bs != 0 {
-                        panic!();
-                    }
-                    let range = NanoRange {
-                        beg: ts1,
-                        end: ts2,
-                    };
                     let count = range.delta() / bs;
+                    let patch_t_len = if i1 >= thresholds.len() - 1 {
+                        bs * 8
+                    }
+                    else {
+                        thresholds[i1 + 1] * 8
+                    };
+                    let offset = ts1 / bs;
                     break Some(Self {
-                        range,
-                        bs,
+                        grid_spec: PreBinnedPatchGridSpec {
+                            bin_t_len: bs,
+                            patch_t_len,
+                        },
                         count,
+                        offset,
                     });
                 }
             }
@@ -330,16 +343,16 @@ impl PreBinnedPatchCoord {
 }
 
 pub struct PreBinnedPatchIterator {
-    spec: PreBinnedPatchGridSpec,
+    range: PreBinnedPatchRange,
     agg_kind: AggKind,
     ix: u64,
 }
 
 impl PreBinnedPatchIterator {
 
-    pub fn from_range(spec: PreBinnedPatchGridSpec) -> Self {
+    pub fn from_range(range: PreBinnedPatchRange) -> Self {
         Self {
-            spec,
+            range,
             agg_kind: AggKind::DimXBins1,
             ix: 0,
         }
@@ -351,14 +364,14 @@ impl Iterator for PreBinnedPatchIterator {
     type Item = PreBinnedPatchCoord;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.ix >= self.spec.count {
+        if self.ix >= self.range.count {
             None
         }
         else {
             let ret = Self::Item {
                 range: NanoRange {
-                    beg: self.spec.range.beg + self.ix * self.spec.bs,
-                    end: self.spec.range.beg + (self.ix + 1) * self.spec.bs,
+                    beg: (self.range.offset + self.ix) * self.range.grid_spec.patch_t_len,
+                    end: (self.range.offset + self.ix + 1) * self.range.grid_spec.patch_t_len,
                 },
             };
             self.ix += 1;
