@@ -8,7 +8,7 @@ use futures_core::Stream;
 use futures_util::{StreamExt, FutureExt, pin_mut, TryFutureExt};
 use bytes::{Bytes, BytesMut, BufMut};
 use chrono::{DateTime, Utc};
-use netpod::{Node, Cluster, AggKind, NanoRange, ToNanos, PreBinnedPatchRange, PreBinnedPatchIterator, PreBinnedPatchCoord, Channel, NodeConfig};
+use netpod::{Node, Cluster, AggKind, NanoRange, ToNanos, PreBinnedPatchRange, PreBinnedPatchIterator, PreBinnedPatchCoord, Channel, NodeConfig, PreBinnedPatchGridSpec};
 use crate::agg::MinMaxAvgScalarBinBatch;
 use http::uri::Scheme;
 use tiny_keccak::Hasher;
@@ -54,7 +54,7 @@ pub fn binned_bytes_for_http(node_config: Arc<NodeConfig>, query: &Query) -> Res
 
     // TODO
     // Translate the Query TimeRange + AggKind into an iterator over the pre-binned patches.
-    let grid = PreBinnedPatchRange::covering_range(query.range.clone(), query.count);
+    let grid = PreBinnedPatchRange::covering_range(query.range.clone(), query.count, 0);
     match grid {
         Some(spec) => {
             info!("GOT  PreBinnedPatchGridSpec:    {:?}", spec);
@@ -170,7 +170,6 @@ impl Stream for PreBinnedValueByteStream {
     type Item = Result<Bytes, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        error!("PreBinnedValueByteStream poll_next");
         use Poll::*;
         match self.inp.poll_next_unpin(cx) {
             Ready(Some(Ok(k))) => {
@@ -196,6 +195,7 @@ pub struct PreBinnedValueStream {
     agg_kind: AggKind,
     node_config: Arc<NodeConfig>,
     open_check_local_file: Option<Pin<Box<dyn Future<Output=Result<tokio::fs::File, std::io::Error>> + Send>>>,
+    fut2: Option<()>,
 }
 
 impl PreBinnedValueStream {
@@ -209,6 +209,24 @@ impl PreBinnedValueStream {
             agg_kind,
             node_config,
             open_check_local_file: None,
+            fut2: None,
+        }
+    }
+
+    fn try_setup_fetch_prebinned_higher_res(&mut self) {
+        info!("try to find a next better granularity for {:?}", self.patch_coord);
+        let g = self.patch_coord.range.end - self.patch_coord.range.beg;
+        match PreBinnedPatchRange::covering_range(self.patch_coord.range.clone(), 2, 0) {
+            Some(range) => {
+                let h = range.grid_spec.bin_t_len;
+                assert!(g / h > 1);
+                assert!(g / h < 20);
+                assert!(g % h == 0);
+                info!("FOUND NEXT GRAN  g {}  h {}  ratio {}  mod {}  {:?}", g, h, g/h, g%h, range);
+            }
+            None => {
+                info!("NO BETTER GRAN FOUND FOR  g {}", g);
+            }
         }
     }
 
@@ -221,38 +239,41 @@ impl Stream for PreBinnedValueStream {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         'outer: loop {
-            break match self.open_check_local_file.as_mut() {
-                None => {
-                    use std::os::unix::fs::OpenOptionsExt;
-                    let mut opts = std::fs::OpenOptions::new();
-                    opts.read(true);
-                    let fut = async {
-                        tokio::fs::OpenOptions::from(opts)
-                        .open("/DOESNOTEXIST").await
-                    };
-                    self.open_check_local_file = Some(Box::pin(fut));
-                    continue 'outer;
-                }
-                Some(fut) => {
-                    match fut.poll_unpin(cx) {
-                        Ready(Ok(file)) => {
-                            todo!("IMPLEMENT READ FROM LOCAL CACHE");
-                            Pending
-                        }
-                        Ready(Err(e)) => {
-                            match e.kind() {
-                                std::io::ErrorKind::NotFound => {
-                                    warn!("TODO LOCAL CACHE FILE NOT FOUND");
-                                }
-                                _ => {
-                                    error!("File I/O error: {:?}", e);
-                                }
-                            }
-                            Ready(Some(Err(e.into())))
-                        }
-                        Pending => Pending,
+            break if let Some(fut) = self.fut2.as_mut() {
+                todo!()
+            }
+            else if let Some(fut) = self.open_check_local_file.as_mut() {
+                match fut.poll_unpin(cx) {
+                    Ready(Ok(file)) => {
+                        todo!("IMPLEMENT READ FROM LOCAL CACHE");
+                        Pending
                     }
+                    Ready(Err(e)) => {
+                        match e.kind() {
+                            std::io::ErrorKind::NotFound => {
+                                warn!("TODO LOCAL CACHE FILE NOT FOUND");
+                                self.try_setup_fetch_prebinned_higher_res();
+                                continue 'outer;
+                            }
+                            _ => {
+                                error!("File I/O error: {:?}", e);
+                                Ready(Some(Err(e.into())))
+                            }
+                        }
+                    }
+                    Pending => Pending,
                 }
+            }
+            else {
+                use std::os::unix::fs::OpenOptionsExt;
+                let mut opts = std::fs::OpenOptions::new();
+                opts.read(true);
+                let fut = async {
+                    tokio::fs::OpenOptions::from(opts)
+                    .open("/DOESNOTEXIST").await
+                };
+                self.open_check_local_file = Some(Box::pin(fut));
+                continue 'outer;
             }
         }
     }

@@ -276,7 +276,7 @@ pub struct PreBinnedPatchRange {
 
 impl PreBinnedPatchRange {
 
-    pub fn covering_range(range: NanoRange, min_bin_count: u64) -> Option<Self> {
+    pub fn covering_range(range: NanoRange, min_bin_count: u64, finer: u64) -> Option<Self> {
         use timeunits::*;
         assert!(min_bin_count >= 1);
         assert!(min_bin_count <= 2000);
@@ -292,6 +292,7 @@ impl PreBinnedPatchRange {
             DAY,
             DAY * 4,
         ];
+        let mut found_count = 0;
         let mut i1 = thresholds.len();
         loop {
             if i1 <= 0 {
@@ -302,25 +303,32 @@ impl PreBinnedPatchRange {
                 let t = thresholds[i1];
                 //info!("look at threshold {}  bs {}", t, bs);
                 if t <= bs {
-                    let bs = t;
-                    let ts1 = range.beg / bs * bs;
-                    let ts2 = (range.end + bs - 1) / bs * bs;
-                    let count = range.delta() / bs;
-                    let patch_t_len = if i1 >= thresholds.len() - 1 {
-                        bs * 8
+                    found_count += 1;
+                    if found_count > finer {
+                        let bs = t;
+                        let ts1 = range.beg / bs * bs;
+                        let ts2 = (range.end + bs - 1) / bs * bs;
+                        let count = range.delta() / bs;
+                        let patch_t_len = if i1 >= thresholds.len() - 1 {
+                            bs * 8
+                        }
+                        else {
+                            thresholds[i1 + 1] * 8
+                        };
+                        let offset = ts1 / bs;
+                        break Some(Self {
+                            grid_spec: PreBinnedPatchGridSpec {
+                                bin_t_len: bs,
+                                patch_t_len,
+                            },
+                            count,
+                            offset,
+                        });
                     }
                     else {
-                        thresholds[i1 + 1] * 8
-                    };
-                    let offset = ts1 / bs;
-                    break Some(Self {
-                        grid_spec: PreBinnedPatchGridSpec {
-                            bin_t_len: bs,
-                            patch_t_len,
-                        },
-                        count,
-                        offset,
-                    });
+                    }
+                }
+                else {
                 }
             }
         }
