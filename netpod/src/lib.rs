@@ -339,13 +339,26 @@ impl PreBinnedPatchRange {
 
 #[derive(Clone, Debug)]
 pub struct PreBinnedPatchCoord {
-    pub range: NanoRange,
+    pub spec: PreBinnedPatchGridSpec,
+    pub ix: u64,
 }
 
 impl PreBinnedPatchCoord {
 
-    pub fn bs(&self) -> u64 {
-        self.range.end - self.range.beg
+    pub fn bin_t_len(&self) -> u64 {
+        self.spec.bin_t_len
+    }
+
+    pub fn patch_t_len(&self) -> u64 {
+        self.spec.patch_t_len
+    }
+
+    pub fn patch_beg(&self) -> u64 {
+        self.spec.patch_t_len * self.ix
+    }
+
+    pub fn patch_end(&self) -> u64 {
+        self.spec.patch_t_len * (self.ix + 1)
     }
 
 }
@@ -377,10 +390,8 @@ impl Iterator for PreBinnedPatchIterator {
         }
         else {
             let ret = Self::Item {
-                range: NanoRange {
-                    beg: (self.range.offset + self.ix) * self.range.grid_spec.patch_t_len,
-                    end: (self.range.offset + self.ix + 1) * self.range.grid_spec.patch_t_len,
-                },
+                spec: self.range.grid_spec.clone(),
+                ix: self.range.offset + self.ix,
             };
             self.ix += 1;
             Some(ret)
