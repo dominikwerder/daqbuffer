@@ -121,13 +121,7 @@ impl PreBinnedQuery {
     pub fn from_request(req: &http::request::Parts) -> Result<Self, Error> {
         let params = netpod::query_params(req.uri.query());
         let ret = PreBinnedQuery {
-            patch: PreBinnedPatchCoord {
-                spec: PreBinnedPatchGridSpec {
-                    patch_t_len: params.get("patch_t_len").ok_or(Error::with_msg("missing patch_t_len"))?.parse()?,
-                    bin_t_len: params.get("bin_t_len").ok_or(Error::with_msg("missing bin_t_len"))?.parse()?,
-                },
-                ix: params.get("patch_ix").ok_or(Error::with_msg("missing patch_ix"))?.parse()?,
-            },
+            patch: PreBinnedPatchCoord::from_query_params(&params),
             agg_kind: AggKind::DimXBins1,
             channel: Channel {
                 backend: params.get("channel_backend").unwrap().into(),
@@ -216,19 +210,19 @@ impl PreBinnedValueStream {
 
     fn try_setup_fetch_prebinned_higher_res(&mut self) {
         info!("try to find a next better granularity for {:?}", self.patch_coord);
-        let g = self.patch_coord.spec.bin_t_len;
+        let g = self.patch_coord.bin_t_len();
         let range = NanoRange {
             beg: self.patch_coord.patch_beg(),
             end: self.patch_coord.patch_end(),
         };
         match PreBinnedPatchRange::covering_range(range, 2, 0) {
             Some(range) => {
-                let h = range.grid_spec.bin_t_len;
+                let h = range.grid_spec.bin_t_len();
                 assert!(g / h > 1);
                 assert!(g / h < 20);
                 assert!(g % h == 0);
                 info!("FOUND NEXT GRAN  g {}  h {}  ratio {}  mod {}  {:?}", g, h, g/h, g%h, range);
-                let bin_size = range.grid_spec.bin_t_len;
+                let bin_size = range.grid_spec.bin_t_len();
                 let channel = self.channel.clone();
                 let agg_kind = self.agg_kind.clone();
                 let node_config = self.node_config.clone();
@@ -463,8 +457,9 @@ pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoord, channel: &Channel, c
     let mut hash = tiny_keccak::Sha3::v256();
     hash.update(channel.backend.as_bytes());
     hash.update(channel.name.as_bytes());
-    hash.update(&patch_coord.range.beg.to_le_bytes());
-    hash.update(&patch_coord.range.end.to_le_bytes());
+    hash.update(&patch_coord.patch_beg().to_le_bytes());
+    hash.update(&patch_coord.patch_end().to_le_bytes());
+    hash.update(&patch_coord.bin_t_len().to_le_bytes());
     let mut out = [0; 32];
     hash.finalize(&mut out);
     let mut a = [out[0], out[1], out[2], out[3]];

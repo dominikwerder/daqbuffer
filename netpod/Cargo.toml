@@ -11,4 +11,5 @@ bytes = "1.0.1"
 chrono = { version = "0.4.19", features = ["serde"] }
 futures-core = "0.3.12"
 tracing = "0.1.25"
+url = "2.2"
 err = { path = "../err" }

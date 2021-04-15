@@ -5,6 +5,8 @@ use err::Error;
 use std::path::PathBuf;
 use chrono::{DateTime, Utc, TimeZone};
 use std::sync::Arc;
+use std::collections::BTreeMap;
+use timeunits::*;
 
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -212,7 +214,7 @@ impl BinSpecDimT {
         let dt = ts2 - ts1;
         assert!(dt <= DAY * 14);
         let bs = dt / count;
-        let thresholds = [
+        let BIN_THRESHOLDS = [
             2, 10, 100,
             1000, 10_000, 100_000,
             MU, MU * 10, MU * 100,
@@ -225,10 +227,10 @@ impl BinSpecDimT {
         ];
         let mut i1 = 0;
         let bs = loop {
-            if i1 >= thresholds.len() {
-                break *thresholds.last().unwrap();
+            if i1 >= BIN_THRESHOLDS.len() {
+                break *BIN_THRESHOLDS.last().unwrap();
             }
-            let t = thresholds[i1];
+            let t = BIN_THRESHOLDS[i1];
             if bs <= t {
                 break t;
             }
@@ -259,12 +261,84 @@ impl BinSpecDimT {
 
 #[derive(Clone, Debug)]
 pub struct PreBinnedPatchGridSpec {
-    pub bin_t_len: u64,
-    pub patch_t_len: u64,
+    bin_t_len: u64,
 }
 
 impl PreBinnedPatchGridSpec {
+
+    pub fn new(bin_t_len: u64) -> Self {
+        let mut ok = false;
+        for &j in PATCH_T_LEN_OPTIONS.iter() {
+            if bin_t_len == j {
+                ok = true;
+                break;
+            }
+        }
+        if !ok {
+            panic!("invalid bin_t_len for PreBinnedPatchGridSpec  {}", bin_t_len);
+        }
+        Self {
+            bin_t_len,
+        }
+    }
+
+    pub fn from_query_params(params: &BTreeMap<String, String>) -> Self {
+        let bin_t_len = params.get("bin_t_len").unwrap().parse().unwrap();
+        if !Self::is_valid_bin_t_len(bin_t_len) {
+            panic!("invalid bin_t_len {}", bin_t_len);
+        }
+        Self {
+            bin_t_len: bin_t_len,
+        }
+    }
+
+    pub fn bin_t_len(&self) -> u64 {
+        self.bin_t_len
+    }
+
+    pub fn is_valid_bin_t_len(bin_t_len: u64) -> bool {
+        for &j in PATCH_T_LEN_OPTIONS.iter() {
+            if bin_t_len == j {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    pub fn patch_t_len(&self) -> u64 {
+        if self.bin_t_len == PATCH_T_LEN_OPTIONS[0] {
+            PATCH_T_LEN_OPTIONS[1]
+        }
+        else if self.bin_t_len == PATCH_T_LEN_OPTIONS[1] {
+            PATCH_T_LEN_OPTIONS[3]
+        }
+        else if self.bin_t_len == PATCH_T_LEN_OPTIONS[2] {
+            PATCH_T_LEN_OPTIONS[4]
+        }
+        else if self.bin_t_len == PATCH_T_LEN_OPTIONS[3] {
+            PATCH_T_LEN_OPTIONS[5]
+        }
+        else if self.bin_t_len == PATCH_T_LEN_OPTIONS[4] {
+            PATCH_T_LEN_OPTIONS[5] * 64
+        }
+        else if self.bin_t_len == PATCH_T_LEN_OPTIONS[5] {
+            PATCH_T_LEN_OPTIONS[5] * 1024
+        }
+        else {
+            panic!()
+        }
+    }
+
 }
+
+const PATCH_T_LEN_OPTIONS: [u64; 6] = [
+    SEC * 10,
+    MIN * 10,
+    HOUR,
+    HOUR * 4,
+    DAY,
+    DAY * 4,
+];
 
 
 #[derive(Clone, Debug)]
@@ -277,30 +351,21 @@ pub struct PreBinnedPatchRange {
 impl PreBinnedPatchRange {
 
     pub fn covering_range(range: NanoRange, min_bin_count: u64, finer: u64) -> Option<Self> {
-        use timeunits::*;
         assert!(min_bin_count >= 1);
         assert!(min_bin_count <= 2000);
         let dt = range.delta();
         assert!(dt <= DAY * 14);
         let bs = dt / min_bin_count;
         //info!("BASIC bs {}", bs);
-        let thresholds = [
-            SEC * 10,
-            MIN * 10,
-            HOUR,
-            HOUR * 4,
-            DAY,
-            DAY * 4,
-        ];
         let mut found_count = 0;
-        let mut i1 = thresholds.len();
+        let mut i1 = PATCH_T_LEN_OPTIONS.len();
         loop {
             if i1 <= 0 {
                 break None;
             }
             else {
                 i1 -= 1;
-                let t = thresholds[i1];
+                let t = PATCH_T_LEN_OPTIONS[i1];
                 //info!("look at threshold {}  bs {}", t, bs);
                 if t <= bs {
                     found_count += 1;
@@ -309,17 +374,16 @@ impl PreBinnedPatchRange {
                         let ts1 = range.beg / bs * bs;
                         let ts2 = (range.end + bs - 1) / bs * bs;
                         let count = range.delta() / bs;
-                        let patch_t_len = if i1 >= thresholds.len() - 1 {
+                        let patch_t_len = if i1 >= PATCH_T_LEN_OPTIONS.len() - 1 {
                             bs * 8
                         }
                         else {
-                            thresholds[i1 + 1] * 8
+                            PATCH_T_LEN_OPTIONS[i1 + 1] * 8
                         };
                         let offset = ts1 / bs;
                         break Some(Self {
                             grid_spec: PreBinnedPatchGridSpec {
                                 bin_t_len: bs,
-                                patch_t_len,
                             },
                             count,
                             offset,
@@ -339,8 +403,8 @@ impl PreBinnedPatchRange {
 
 #[derive(Clone, Debug)]
 pub struct PreBinnedPatchCoord {
-    pub spec: PreBinnedPatchGridSpec,
-    pub ix: u64,
+    spec: PreBinnedPatchGridSpec,
+    ix: u64,
 }
 
 impl PreBinnedPatchCoord {
@@ -350,15 +414,35 @@ impl PreBinnedPatchCoord {
     }
 
     pub fn patch_t_len(&self) -> u64 {
-        self.spec.patch_t_len
+        self.spec.patch_t_len()
     }
 
     pub fn patch_beg(&self) -> u64 {
-        self.spec.patch_t_len * self.ix
+        self.spec.patch_t_len() * self.ix
     }
 
     pub fn patch_end(&self) -> u64 {
-        self.spec.patch_t_len * (self.ix + 1)
+        self.spec.patch_t_len() * (self.ix + 1)
+    }
+
+    pub fn spec(&self) -> &PreBinnedPatchGridSpec {
+        &self.spec
+    }
+
+    pub fn ix(&self) -> u64 {
+        self.ix
+    }
+
+    pub fn to_url_params_strings(&self) -> String {
+        format!("patch_t_len={}&bin_t_len={}&patch_ix={}", self.spec.patch_t_len(), self.spec.bin_t_len(), self.ix())
+    }
+
+    pub fn from_query_params(params: &BTreeMap<String, String>) -> Self {
+        let patch_ix = params.get("patch_ix").unwrap().parse().unwrap();
+        Self {
+            spec: PreBinnedPatchGridSpec::from_query_params(params),
+            ix: patch_ix,
+        }
     }
 
 }
