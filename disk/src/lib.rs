@@ -13,6 +13,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::AsyncRead;
+
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
@@ -23,10 +24,7 @@ pub mod gen;
 pub mod merge;
 pub mod raw;
 
-pub async fn read_test_1(
-    query: &netpod::AggQuerySingleChannel,
-    node: Arc<Node>,
-) -> Result<netpod::BodyStream, Error> {
+pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> Result<netpod::BodyStream, Error> {
     let path = datapath(query.timebin as u64, &query.channel_config, &node);
     debug!("try path: {:?}", path);
     let fin = OpenOptions::new().read(true).open(path).await?;
@@ -387,11 +385,7 @@ pub struct EventBlobsComplete {
 }
 
 impl EventBlobsComplete {
-    pub fn new(
-        query: &netpod::AggQuerySingleChannel,
-        channel_config: ChannelConfig,
-        node: Arc<Node>,
-    ) -> Self {
+    pub fn new(query: &netpod::AggQuerySingleChannel, channel_config: ChannelConfig, node: Arc<Node>) -> Self {
         Self {
             file_chan: open_files(query, node),
             evs: None,
@@ -419,8 +413,7 @@ impl Stream for EventBlobsComplete {
                 None => match self.file_chan.poll_next_unpin(cx) {
                     Ready(Some(k)) => match k {
                         Ok(file) => {
-                            let inp =
-                                Box::pin(file_content_stream(file, self.buffer_size as usize));
+                            let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
                             let mut chunker = EventChunker::new(inp, self.channel_config.clone());
                             self.evs.replace(chunker);
                             continue 'outer;
@@ -531,9 +524,7 @@ impl EventChunker {
                         sl.advance(len as usize - 8);
                         let len2 = sl.read_i32::<BE>().unwrap();
                         assert!(len == len2, "len mismatch");
-                        let s1 =
-                            String::from_utf8(buf.as_ref()[6..(len as usize + 6 - 8)].to_vec())
-                                .unwrap();
+                        let s1 = String::from_utf8(buf.as_ref()[6..(len as usize + 6 - 8)].to_vec()).unwrap();
                         info!("channel name {}  len {}  len2 {}", s1, len, len2);
                         self.state = DataFileState::Event;
                         need_min = 4;
@@ -583,11 +574,7 @@ impl EventChunker {
                         if let Shape::Wave(_) = self.channel_config.shape {
                             assert!(is_array);
                         }
-                        let compression_method = if is_compressed {
-                            sl.read_u8().unwrap()
-                        } else {
-                            0
-                        };
+                        let compression_method = if is_compressed { sl.read_u8().unwrap() } else { 0 };
                         let shape_dim = if is_shaped { sl.read_u8().unwrap() } else { 0 };
                         assert!(compression_method <= 0);
                         assert!(!is_shaped || (shape_dim >= 1 && shape_dim <= 2));
@@ -630,12 +617,7 @@ impl EventChunker {
                             .unwrap();
                             //debug!("decompress result  c1 {}  k1 {}", c1, k1);
                             assert!(c1 as u32 == k1);
-                            ret.add_event(
-                                ts,
-                                pulse,
-                                Some(decomp),
-                                ScalarType::from_dtype_index(type_index),
-                            );
+                            ret.add_event(ts, pulse, Some(decomp), ScalarType::from_dtype_index(type_index));
                         } else {
                             todo!()
                         }
@@ -733,13 +715,7 @@ impl EventFull {
         }
     }
 
-    fn add_event(
-        &mut self,
-        ts: u64,
-        pulse: u64,
-        decomp: Option<BytesMut>,
-        scalar_type: ScalarType,
-    ) {
+    fn add_event(&mut self, ts: u64, pulse: u64, decomp: Option<BytesMut>, scalar_type: ScalarType) {
         self.tss.push(ts);
         self.pulses.push(pulse);
         self.decomps.push(decomp);
@@ -916,9 +892,7 @@ pub struct RawConcatChannelReader {
 
 impl RawConcatChannelReader {
     pub fn read(self) -> Result<netpod::BodyStream, Error> {
-        let res = netpod::BodyStream {
-            inner: Box::new(self),
-        };
+        let res = netpod::BodyStream { inner: Box::new(self) };
         Ok(res)
     }
 }

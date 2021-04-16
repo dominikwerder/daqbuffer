@@ -41,10 +41,7 @@ pub async fn host(node_config: Arc<NodeConfig>) -> Result<(), Error> {
     Ok(())
 }
 
-async fn data_api_proxy(
-    req: Request<Body>,
-    node_config: Arc<NodeConfig>,
-) -> Result<Response<Body>, Error> {
+async fn data_api_proxy(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
     match data_api_proxy_try(req, node_config).await {
         Ok(k) => Ok(k),
         Err(e) => {
@@ -84,10 +81,7 @@ where
 
 impl<F> UnwindSafe for Cont<F> {}
 
-async fn data_api_proxy_try(
-    req: Request<Body>,
-    node_config: Arc<NodeConfig>,
-) -> Result<Response<Body>, Error> {
+async fn data_api_proxy_try(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/1/parsed_raw" {
@@ -155,10 +149,7 @@ impl hyper::body::HttpBody for BodyStreamWrap {
     type Data = bytes::Bytes;
     type Error = Error;
 
-    fn poll_data(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+    fn poll_data(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         /*
         use futures_core::stream::Stream;
         let z: &mut async_channel::Receiver<Result<Self::Data, Self::Error>> = &mut self.0.receiver;
@@ -170,10 +161,7 @@ impl hyper::body::HttpBody for BodyStreamWrap {
         todo!()
     }
 
-    fn poll_trailers(
-        self: Pin<&mut Self>,
-        _cx: &mut Context<'_>,
-    ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
+    fn poll_trailers(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
         Poll::Ready(Ok(None))
     }
 }
@@ -247,10 +235,7 @@ async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Resp
     Ok(ret)
 }
 
-async fn prebinned(
-    req: Request<Body>,
-    node_config: Arc<NodeConfig>,
-) -> Result<Response<Body>, Error> {
+async fn prebinned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
     info!("--------------------------------------------------------   PRE-BINNED");
     let (head, body) = req.into_parts();
     let q = PreBinnedQuery::from_request(&head)?;

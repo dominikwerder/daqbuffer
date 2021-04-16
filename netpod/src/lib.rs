@@ -131,18 +131,9 @@ impl Channel {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum TimeRange {
-    Time {
-        beg: DateTime<Utc>,
-        end: DateTime<Utc>,
-    },
-    Pulse {
-        beg: u64,
-        end: u64,
-    },
-    Nano {
-        beg: u64,
-        end: u64,
-    },
+    Time { beg: DateTime<Utc>, end: DateTime<Utc> },
+    Pulse { beg: u64, end: u64 },
+    Nano { beg: u64, end: u64 },
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -283,10 +274,7 @@ impl PreBinnedPatchGridSpec {
             }
         }
         if !ok {
-            panic!(
-                "invalid bin_t_len for PreBinnedPatchGridSpec  {}",
-                bin_t_len
-            );
+            panic!("invalid bin_t_len for PreBinnedPatchGridSpec  {}", bin_t_len);
         }
         Self { bin_t_len }
     }
@@ -296,9 +284,7 @@ impl PreBinnedPatchGridSpec {
         if !Self::is_valid_bin_t_len(bin_t_len) {
             panic!("invalid bin_t_len {}", bin_t_len);
         }
-        Self {
-            bin_t_len: bin_t_len,
-        }
+        Self { bin_t_len: bin_t_len }
     }
 
     pub fn bin_t_len(&self) -> u64 {

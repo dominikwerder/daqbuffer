@@ -6,8 +6,8 @@ use futures_core::Stream;
 use futures_util::{pin_mut, FutureExt, StreamExt, TryFutureExt};
 use http::uri::Scheme;
 use netpod::{
-    AggKind, Channel, Cluster, NanoRange, Node, NodeConfig, PreBinnedPatchCoord,
-    PreBinnedPatchGridSpec, PreBinnedPatchIterator, PreBinnedPatchRange, ToNanos,
+    AggKind, Channel, Cluster, NanoRange, Node, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchGridSpec,
+    PreBinnedPatchIterator, PreBinnedPatchRange, ToNanos,
 };
 use serde::{Deserialize, Serialize};
 use std::future::{ready, Future};
@@ -30,12 +30,8 @@ pub struct Query {
 impl Query {
     pub fn from_request(req: &http::request::Parts) -> Result<Self, Error> {
         let params = netpod::query_params(req.uri.query());
-        let beg_date = params
-            .get("beg_date")
-            .ok_or(Error::with_msg("missing beg_date"))?;
-        let end_date = params
-            .get("end_date")
-            .ok_or(Error::with_msg("missing end_date"))?;
+        let beg_date = params.get("beg_date").ok_or(Error::with_msg("missing beg_date"))?;
+        let end_date = params.get("end_date").ok_or(Error::with_msg("missing end_date"))?;
         let ret = Query {
             range: NanoRange {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
@@ -57,10 +53,7 @@ impl Query {
     }
 }
 
-pub fn binned_bytes_for_http(
-    node_config: Arc<NodeConfig>,
-    query: &Query,
-) -> Result<BinnedBytesForHttpStream, Error> {
+pub fn binned_bytes_for_http(node_config: Arc<NodeConfig>, query: &Query) -> Result<BinnedBytesForHttpStream, Error> {
     let agg_kind = AggKind::DimXBins1;
 
     // TODO
@@ -146,10 +139,7 @@ pub fn pre_binned_bytes_for_http(
     node_config: Arc<NodeConfig>,
     query: &PreBinnedQuery,
 ) -> Result<PreBinnedValueByteStream, Error> {
-    info!(
-        "pre_binned_bytes_for_http  {:?}  {:?}",
-        query, node_config.node
-    );
+    info!("pre_binned_bytes_for_http  {:?}  {:?}", query, node_config.node);
     let ret = PreBinnedValueByteStream::new(
         query.patch.clone(),
         query.channel.clone(),
@@ -164,12 +154,7 @@ pub struct PreBinnedValueByteStream {
 }
 
 impl PreBinnedValueByteStream {
-    pub fn new(
-        patch: PreBinnedPatchCoord,
-        channel: Channel,
-        agg_kind: AggKind,
-        node_config: Arc<NodeConfig>,
-    ) -> Self {
+    pub fn new(patch: PreBinnedPatchCoord, channel: Channel, agg_kind: AggKind, node_config: Arc<NodeConfig>) -> Self {
         warn!("PreBinnedValueByteStream");
         Self {
             inp: PreBinnedValueStream::new(patch, channel, agg_kind, node_config),
@@ -200,8 +185,7 @@ pub struct PreBinnedValueStream {
     channel: Channel,
     agg_kind: AggKind,
     node_config: Arc<NodeConfig>,
-    open_check_local_file:
-        Option<Pin<Box<dyn Future<Output = Result<tokio::fs::File, std::io::Error>> + Send>>>,
+    open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<tokio::fs::File, std::io::Error>> + Send>>>,
     fut2: Option<Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarBinBatch, Error>> + Send>>>,
 }
 
@@ -225,10 +209,7 @@ impl PreBinnedValueStream {
     }
 
     fn try_setup_fetch_prebinned_higher_res(&mut self) {
-        info!(
-            "try to find a next better granularity for {:?}",
-            self.patch_coord
-        );
+        info!("try to find a next better granularity for {:?}", self.patch_coord);
         let g = self.patch_coord.bin_t_len();
         let range = NanoRange {
             beg: self.patch_coord.patch_beg(),
@@ -255,12 +236,7 @@ impl PreBinnedValueStream {
                 let mut patch_it = PreBinnedPatchIterator::from_range(range);
                 let s = futures_util::stream::iter(patch_it)
                     .map(move |coord| {
-                        PreBinnedValueFetchedStream::new(
-                            coord,
-                            channel.clone(),
-                            agg_kind.clone(),
-                            node_config.clone(),
-                        )
+                        PreBinnedValueFetchedStream::new(coord, channel.clone(), agg_kind.clone(), node_config.clone())
                     })
                     .flatten()
                     .map(move |k| {
@@ -315,11 +291,7 @@ impl Stream for PreBinnedValueStream {
                 use std::os::unix::fs::OpenOptionsExt;
                 let mut opts = std::fs::OpenOptions::new();
                 opts.read(true);
-                let fut = async {
-                    tokio::fs::OpenOptions::from(opts)
-                        .open("/DOESNOTEXIST")
-                        .await
-                };
+                let fut = async { tokio::fs::OpenOptions::from(opts).open("/DOESNOTEXIST").await };
                 self.open_check_local_file = Some(Box::pin(fut));
                 continue 'outer;
             };
@@ -431,12 +403,7 @@ impl BinnedStream {
         let mut patch_it = patch_it;
         let inp = futures_util::stream::iter(patch_it)
             .map(move |coord| {
-                PreBinnedValueFetchedStream::new(
-                    coord,
-                    channel.clone(),
-                    agg_kind.clone(),
-                    node_config.clone(),
-                )
+                PreBinnedValueFetchedStream::new(coord, channel.clone(), agg_kind.clone(), node_config.clone())
             })
             .flatten()
             .map(|k| {
@@ -471,11 +438,7 @@ impl From<SomeReturnThing> for Bytes {
     }
 }
 
-pub fn node_ix_for_patch(
-    patch_coord: &PreBinnedPatchCoord,
-    channel: &Channel,
-    cluster: &Cluster,
-) -> u32 {
+pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoord, channel: &Channel, cluster: &Cluster) -> u32 {
     let mut hash = tiny_keccak::Sha3::v256();
     hash.update(channel.backend.as_bytes());
     hash.update(channel.name.as_bytes());

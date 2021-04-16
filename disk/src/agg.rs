@@ -287,16 +287,8 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
     }
 
     fn result(self) -> Self::OutputValue {
-        let min = if self.min == f32::MAX {
-            f32::NAN
-        } else {
-            self.min
-        };
-        let max = if self.max == f32::MIN {
-            f32::NAN
-        } else {
-            self.max
-        };
+        let min = if self.min == f32::MAX { f32::NAN } else { self.min };
+        let max = if self.max == f32::MIN { f32::NAN } else { self.max };
         let avg = if self.count == 0 {
             f32::NAN
         } else {
@@ -381,7 +373,11 @@ pub struct MinMaxAvgScalarBinSingle {
 
 impl std::fmt::Debug for MinMaxAvgScalarBinSingle {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(fmt, "MinMaxAvgScalarBinSingle  ts1 {}  ts2 {}  count {}  min {:7.2e}  max {:7.2e}  avg {:7.2e}", self.ts1, self.ts2, self.count, self.min, self.max, self.avg)
+        write!(
+            fmt,
+            "MinMaxAvgScalarBinSingle  ts1 {}  ts2 {}  count {}  min {:7.2e}  max {:7.2e}  avg {:7.2e}",
+            self.ts1, self.ts2, self.count, self.min, self.max, self.avg
+        )
     }
 }
 
@@ -902,8 +898,7 @@ async fn merge_0_inner() {
         .map(|k| make_test_node(k))
         .map(|node| {
             let node = Arc::new(node);
-            crate::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
-                .into_dim_1_f32_stream()
+            crate::EventBlobsComplete::new(&query, query.channel_config.clone(), node).into_dim_1_f32_stream()
         })
         .collect();
     MergeDim1F32Stream::new(streams)
@@ -917,12 +912,7 @@ async fn merge_0_inner() {
 pub fn tmp_some_older_things() {
     let vals = ValuesDim1 {
         tss: vec![0, 1, 2, 3],
-        values: vec![
-            vec![0., 0., 0.],
-            vec![1., 1., 1.],
-            vec![2., 2., 2.],
-            vec![3., 3., 3.],
-        ],
+        values: vec![vec![0., 0., 0.], vec![1., 1., 1.], vec![2., 2., 2.], vec![3., 3., 3.]],
     };
     // I want to distinguish already in the outer part between dim-0 and dim-1 and generate
     // separate code for these cases...

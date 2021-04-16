@@ -20,9 +20,12 @@ async fn get_cached_0_inner() -> Result<(), Error> {
     let node0 = &cluster.nodes[0];
     let hosts = spawn_test_hosts(cluster.clone());
     let req = hyper::Request::builder()
-    .method(http::Method::GET)
-    .uri(format!("http://{}:{}/api/1/binned?channel_backend=testbackend&channel_keyspace=3&channel_name=wave1&bin_count=4&beg_date=1970-01-01T00:00:10.000Z&end_date=1970-01-01T00:00:51.000Z", node0.host, node0.port))
-    .body(Body::empty())?;
+        .method(http::Method::GET)
+        .uri(format!(
+            "http://{}:{}/api/1/binned?channel_backend=testbackend&channel_keyspace=3&channel_name=wave1&bin_count=4&beg_date=1970-01-01T00:00:10.000Z&end_date=1970-01-01T00:00:51.000Z",
+            node0.host, node0.port
+        ))
+        .body(Body::empty())?;
     let client = hyper::Client::new();
     let res = client.request(req).await?;
     info!("client response {:?}", res);

@@ -242,9 +242,8 @@ pub fn parseConfig(inp: &[u8]) -> Result<Config, Error> {
 #[cfg(test)]
 fn read_data() -> Vec<u8> {
     use std::io::Read;
-    let mut f1 =
-        std::fs::File::open("ks/config/S10CB01-RLOD100-PUP10:SIG-AMPLT/latest/00000_Config")
-            .unwrap();
+    let path = "ks/config/S10CB01-RLOD100-PUP10:SIG-AMPLT/latest/00000_Config";
+    let mut f1 = std::fs::File::open(path).unwrap();
     let mut buf = vec![];
     f1.read_to_end(&mut buf).unwrap();
     buf
@@ -252,8 +251,7 @@ fn read_data() -> Vec<u8> {
 
 #[test]
 fn parse_dummy() {
-    let config =
-        parseConfig(&[0, 0, 0, 0, 0, 11, 0x61, 0x62, 0x63, 0, 0, 0, 11, 0, 0, 0, 1]).unwrap();
+    let config = parseConfig(&[0, 0, 0, 0, 0, 11, 0x61, 0x62, 0x63, 0, 0, 0, 11, 0, 0, 0, 1]).unwrap();
     assert_eq!(0, config.formatVersion);
     assert_eq!("abc", config.channelName);
 }
