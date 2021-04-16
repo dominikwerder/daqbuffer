@@ -246,12 +246,6 @@ impl PreBinnedValueStream {
                 self.fut2 = Some(Box::pin(s));
             }
             None => {
-                // TODO now try to read raw data.
-                // TODO Request the whole pre bin patch so that I have the option to save it as cache file if complete.
-
-                // TODO The merging and other compute will be done by this node.
-                // TODO This node needs as input the splitted data streams.
-                // TODO Add a separate tcp server which can provide the parsed, unpacked, event-local-processed, reserialized streams.
                 error!("TODO  NO BETTER GRAN FOUND FOR  g {}", g);
                 todo!();
             }
