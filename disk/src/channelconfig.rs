@@ -1,5 +1,7 @@
-use crate::{BadError, Error};
+use err::Error;
+use nom::error::{ErrorKind, VerboseError};
 use nom::number::complete::{be_i16, be_i32, be_i64, be_i8, be_u8};
+use nom::Needed;
 #[allow(unused_imports)]
 use nom::{
     bytes::complete::{tag, take, take_while_m_n},
@@ -9,7 +11,9 @@ use nom::{
 };
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::ToPrimitive;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
+#[allow(unused_imports)]
+use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, FromPrimitive, ToPrimitive, Serialize, Deserialize)]
 pub enum DType {
@@ -85,35 +89,44 @@ pub struct Config {
     pub entries: Vec<ConfigEntry>,
 }
 
-fn parseShortString(inp: &[u8]) -> Result<(&[u8], Option<String>), Error> {
+fn parse_short_string(inp: &[u8]) -> IResult<&[u8], Option<String>> {
     let (inp, len1) = be_i32(inp)?;
     if len1 == -1 {
         return Ok((inp, None));
     }
     if len1 < 4 {
-        return BadError(format!("bad string len {}", len1));
+        error!("bad string len {}", len1);
+        let err = nom::error::make_error(inp, ErrorKind::Verify);
+        return Err(nom::Err::Error(err));
     }
     if len1 > 500 {
-        return BadError(format!("large string len {}", len1));
+        error!("large string len {}", len1);
+        let err = nom::error::make_error(inp, ErrorKind::Verify);
+        return Err(nom::Err::Error(err));
     }
     let (inp, snb) = take((len1 - 4) as usize)(inp)?;
-    let s1 = String::from_utf8(snb.to_vec())?;
-    Ok((inp, Some(s1)))
+    match String::from_utf8(snb.to_vec()) {
+        Ok(s1) => Ok((inp, Some(s1))),
+        Err(e) => {
+            let err = nom::error::make_error(inp, ErrorKind::Verify);
+            Err(nom::Err::Error(err))
+        }
+    }
 }
 
-/*
-Parse a single configuration entry.
-*/
-pub fn parseEntry(inp: &[u8]) -> Result<(&[u8], Option<ConfigEntry>), Error> {
-    let (inp, len1) = be_i32(inp)?;
+pub fn parse_entry(inp: &[u8]) -> IResult<&[u8], Option<ConfigEntry>> {
+    let t = be_i32(inp);
+    let (inp, len1) = t?;
     if len1 < 0 || len1 > 4000 {
-        return BadError(format!("ConfigEntry bad len1 {}", len1));
+        return Err(nom::Err::Error(nom::error::Error::new(inp, ErrorKind::Verify)));
+        //return Err(format!("ConfigEntry bad len1 {}", len1).into());
     }
     if inp.len() == 0 {
         return Ok((inp, None));
     }
     if inp.len() < len1 as usize - 4 {
-        return BadError(format!("incomplete input"));
+        return Err(nom::Err::Incomplete(Needed::new(len1 as usize - 4)));
+        //return Err(format!("incomplete input").into());
     }
     let inpE = &inp[(len1 - 8) as usize..];
     let (inp, ts) = be_i64(inp)?;
@@ -128,7 +141,9 @@ pub fn parseEntry(inp: &[u8]) -> Result<(&[u8], Option<ConfigEntry>), Error> {
     let (inp, precision) = be_i16(inp)?;
     let (inp, dtlen) = be_i32(inp)?;
     if dtlen > 100 {
-        return BadError(format!("unexpected data type len {}", dtlen));
+        error!("unexpected data type len {}", dtlen);
+        return Err(nom::Err::Error(nom::error::make_error(inp, ErrorKind::Verify)));
+        //return Err(format!("unexpected data type len {}", dtlen).into());
     }
     let (inp, dtmask) = be_u8(inp)?;
     let isCompressed = dtmask & 0x80 != 0;
@@ -137,11 +152,15 @@ pub fn parseEntry(inp: &[u8]) -> Result<(&[u8], Option<ConfigEntry>), Error> {
     let isShaped = dtmask & 0x10 != 0;
     let (inp, dtype) = be_i8(inp)?;
     if dtype > 13 {
-        return BadError(format!("unexpected data type {}", dtype));
+        error!("unexpected data type {}", dtype);
+        return Err(nom::Err::Error(nom::error::make_error(inp, ErrorKind::Verify)));
     }
     let dtype = match num_traits::FromPrimitive::from_i8(dtype) {
         Some(k) => k,
-        None => return BadError(format!("Can not convert {} to DType", dtype)),
+        None => {
+            error!("Can not convert {} to DType", dtype);
+            return Err(nom::Err::Error(nom::error::make_error(inp, ErrorKind::Verify)));
+        }
     };
     let (inp, compressionMethod) = match isCompressed {
         false => (inp, None),
@@ -149,7 +168,10 @@ pub fn parseEntry(inp: &[u8]) -> Result<(&[u8], Option<ConfigEntry>), Error> {
             let (inp, cm) = be_u8(inp)?;
             match num_traits::FromPrimitive::from_u8(cm) {
                 Some(k) => (inp, Some(k)),
-                None => return BadError("unknown compression"),
+                None => {
+                    error!("unknown compression");
+                    return Err(nom::Err::Error(nom::error::make_error(inp, ErrorKind::Verify)));
+                }
             }
         }
     };
@@ -158,7 +180,8 @@ pub fn parseEntry(inp: &[u8]) -> Result<(&[u8], Option<ConfigEntry>), Error> {
         true => {
             let (mut inp, dim) = be_u8(inp)?;
             if dim > 4 {
-                return BadError(format!("unexpected number of dimensions: {}", dim));
+                error!("unexpected number of dimensions: {}", dim);
+                return Err(nom::Err::Error(nom::error::make_error(inp, ErrorKind::Verify)));
             }
             let mut shape = vec![];
             for _ in 0..dim {
@@ -169,15 +192,16 @@ pub fn parseEntry(inp: &[u8]) -> Result<(&[u8], Option<ConfigEntry>), Error> {
             (inp, Some(shape))
         }
     };
-    let (inp, sourceName) = parseShortString(inp)?;
-    let (inp, unit) = parseShortString(inp)?;
-    let (inp, description) = parseShortString(inp)?;
-    let (inp, optionalFields) = parseShortString(inp)?;
-    let (inp, valueConverter) = parseShortString(inp)?;
+    let (inp, sourceName) = parse_short_string(inp)?;
+    let (inp, unit) = parse_short_string(inp)?;
+    let (inp, description) = parse_short_string(inp)?;
+    let (inp, optionalFields) = parse_short_string(inp)?;
+    let (inp, valueConverter) = parse_short_string(inp)?;
     assert_eq!(inp.len(), inpE.len());
     let (inpE, len2) = be_i32(inpE)?;
     if len1 != len2 {
-        return BadError(format!("mismatch  len1 {}  len2 {}", len1, len2));
+        error!("mismatch  len1 {}  len2 {}", len1, len2);
+        return Err(nom::Err::Error(nom::error::make_error(inp, ErrorKind::Verify)));
     }
     Ok((
         inpE,
@@ -211,32 +235,42 @@ pub fn parseEntry(inp: &[u8]) -> Result<(&[u8], Option<ConfigEntry>), Error> {
 /*
 Parse the full configuration file.
 */
-pub fn parseConfig(inp: &[u8]) -> Result<Config, Error> {
+pub fn parseConfig(inp: &[u8]) -> IResult<&[u8], Config> {
     let (inp, ver) = be_i16(inp)?;
     let (inp, len1) = be_i32(inp)?;
     if len1 <= 8 || len1 > 500 {
-        return BadError(format!("no channel name.  len1 {}", len1));
+        error!("no channel name.  len1 {}", len1);
+        return Err(nom::Err::Error(nom::error::make_error(inp, ErrorKind::Verify)));
     }
     let (inp, chn) = take((len1 - 8) as usize)(inp)?;
     let (inp, len2) = be_i32(inp)?;
     if len1 != len2 {
-        return BadError(format!("Mismatch  len1 {}  len2 {}", len1, len2));
+        error!("Mismatch  len1 {}  len2 {}", len1, len2);
+        return Err(nom::Err::Error(nom::error::make_error(inp, ErrorKind::Verify)));
     }
     let mut entries = vec![];
     let mut inpA = inp;
     while inpA.len() > 0 {
         let inp = inpA;
-        let (inp, e) = parseEntry(inp)?;
+        let (inp, e) = parse_entry(inp)?;
         if let Some(e) = e {
             entries.push(e);
         }
         inpA = inp;
     }
-    Ok(Config {
+    let channelName = match String::from_utf8(chn.to_vec()) {
+        Ok(k) => k,
+        Err(e) => {
+            error!("channelName utf8 error");
+            return Err(nom::Err::Error(nom::error::make_error(inp, ErrorKind::Verify)));
+        }
+    };
+    let ret = Config {
         formatVersion: ver,
-        channelName: String::from_utf8(chn.to_vec())?,
+        channelName,
         entries: entries,
-    })
+    };
+    Ok((inp, ret))
 }
 
 #[cfg(test)]
@@ -252,13 +286,13 @@ fn read_data() -> Vec<u8> {
 #[test]
 fn parse_dummy() {
     let config = parseConfig(&[0, 0, 0, 0, 0, 11, 0x61, 0x62, 0x63, 0, 0, 0, 11, 0, 0, 0, 1]).unwrap();
-    assert_eq!(0, config.formatVersion);
-    assert_eq!("abc", config.channelName);
+    assert_eq!(0, config.1.formatVersion);
+    assert_eq!("abc", config.1.channelName);
 }
 
 #[test]
 fn open_file() {
-    let config = parseConfig(&readData()).unwrap();
+    let config = parseConfig(&read_data()).unwrap().1;
     assert_eq!(0, config.formatVersion);
     assert_eq!(9, config.entries.len());
     for e in &config.entries {

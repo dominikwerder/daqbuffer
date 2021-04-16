@@ -10,3 +10,4 @@ http = "0.2"
 serde_json = "1.0"
 async-channel = "1.6"
 chrono = { version = "0.4.19", features = ["serde"] }
+nom = "6.1.2"

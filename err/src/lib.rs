@@ -1,4 +1,7 @@
+use nom::error::ErrorKind;
+use std::fmt::Debug;
 use std::num::ParseIntError;
+use std::string::FromUtf8Error;
 
 #[derive(Debug)]
 pub struct Error {
@@ -14,6 +17,12 @@ impl Error {
 impl From<String> for Error {
     fn from(k: String) -> Self {
         Self { msg: k }
+    }
+}
+
+impl From<&str> for Error {
+    fn from(k: &str) -> Self {
+        Self { msg: k.into() }
     }
 }
 
@@ -64,5 +73,37 @@ impl From<chrono::format::ParseError> for Error {
 impl From<ParseIntError> for Error {
     fn from(k: ParseIntError) -> Self {
         Self { msg: k.to_string() }
+    }
+}
+
+impl From<FromUtf8Error> for Error {
+    fn from(k: FromUtf8Error) -> Self {
+        Self { msg: k.to_string() }
+    }
+}
+
+impl<T> From<nom::Err<T>> for Error {
+    fn from(k: nom::Err<T>) -> Self {
+        Self {
+            msg: format!("nom::Err<T>"),
+        }
+    }
+}
+
+impl<I> From<nom::error::VerboseError<I>> for Error {
+    fn from(k: nom::error::VerboseError<I>) -> Self {
+        Self {
+            msg: format!("nom::error::VerboseError<I>"),
+        }
+    }
+}
+
+impl<I> nom::error::ParseError<I> for Error {
+    fn from_error_kind(input: I, kind: ErrorKind) -> Self {
+        todo!()
+    }
+
+    fn append(input: I, kind: ErrorKind, other: Self) -> Self {
+        todo!()
     }
 }
