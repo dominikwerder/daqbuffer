@@ -14,11 +14,14 @@ use std::path::PathBuf;
 use bitshuffle::bitshuffle_decompress;
 use netpod::{ScalarType, Shape, Node, ChannelConfig};
 use std::sync::Arc;
+use crate::dtflags::{COMPRESSION, BIG_ENDIAN, ARRAY, SHAPE};
 
 pub mod agg;
 pub mod gen;
 pub mod merge;
 pub mod cache;
+pub mod raw;
+pub mod channelconfig;
 
 
 pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> Result<netpod::BodyStream, Error> {
@@ -948,4 +951,25 @@ pub mod dtflags {
     pub const ARRAY: u8 = 0x40;
     pub const BIG_ENDIAN: u8 = 0x20;
     pub const SHAPE: u8 = 0x10;
+}
+
+
+trait ChannelConfigExt {
+    fn dtflags(&self) -> u8;
+}
+
+impl ChannelConfigExt for ChannelConfig {
+
+    fn dtflags(&self) -> u8 {
+        let mut ret = 0;
+        if self.compression { ret |= COMPRESSION; }
+        match self.shape {
+            Shape::Scalar => {}
+            Shape::Wave(_) => { ret |= SHAPE; }
+        }
+        if self.big_endian { ret |= BIG_ENDIAN; }
+        if self.array { ret |= ARRAY; }
+        ret
+    }
+
 }

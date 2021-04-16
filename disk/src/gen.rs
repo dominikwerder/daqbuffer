@@ -15,13 +15,16 @@ use bitshuffle::bitshuffle_compress;
 use netpod::ScalarType;
 use std::sync::Arc;
 use netpod::{Node, Channel, ChannelConfig, Shape, timeunits::*};
+use crate::ChannelConfigExt;
 
 #[test]
 fn test_gen_test_data() {
-    taskrun::run(async {
+    let res = taskrun::run(async {
         gen_test_data().await?;
         Ok(())
-    }).unwrap();
+    });
+    info!("{:?}", res);
+    res.unwrap();
 }
 
 pub async fn gen_test_data() -> Result<(), Error> {
@@ -40,6 +43,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 },
                 keyspace: 3,
                 time_bin_size: DAY,
+                array: true,
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(17),
                 big_endian: true,
@@ -87,12 +91,12 @@ async fn gen_channel(chn: &ChannelGenProps, node: &Node, ensemble: &Ensemble) ->
     let config_path = node.data_base_path
     .join("config")
     .join(&chn.config.channel.name);
-    tokio::fs::create_dir_all(&config_path).await?;
     let channel_path = node.data_base_path
     .join(format!("{}_{}", node.ksprefix, chn.config.keyspace))
     .join("byTime")
     .join(&chn.config.channel.name);
     tokio::fs::create_dir_all(&channel_path).await?;
+    gen_config(&config_path, &chn.config, node, ensemble).await.map_err(|k| Error::with_msg(format!("can not generate config {:?}", k)))?;
     let mut evix = 0;
     let mut ts = 0;
     while ts < DAY {
@@ -100,6 +104,68 @@ async fn gen_channel(chn: &ChannelGenProps, node: &Node, ensemble: &Ensemble) ->
         evix = res.evix;
         ts = res.ts;
     }
+    Ok(())
+}
+
+async fn gen_config(config_path: &Path, config: &ChannelConfig, node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
+    let path = config_path.join("latest");
+    tokio::fs::create_dir_all(&path).await?;
+    let path = path.join("00000_Config");
+    info!("try to open  {:?}", path);
+    let mut file = OpenOptions::new().write(true).create(true).truncate(true).open(path).await?;
+    let mut buf = BytesMut::with_capacity(1024 * 1);
+    let ver = 0;
+    buf.put_i16(ver);
+    let cnenc = config.channel.name.as_bytes();
+    let len1 = cnenc.len() + 8;
+    buf.put_i32(len1 as i32);
+    buf.put(cnenc);
+    buf.put_i32(len1 as i32);
+
+    let ts = 0;
+    let pulse = 0;
+    let sc = 0;
+    let status = 0;
+    let bb = 0;
+    let modulo = 0;
+    let offset = 0;
+    let precision = 0;
+    let p1 = buf.len();
+    buf.put_i32(0x20202020);
+    buf.put_i64(ts);
+    buf.put_i64(pulse);
+    buf.put_i32(config.keyspace as i32);
+    buf.put_i64(config.time_bin_size as i64);
+    buf.put_i32(sc);
+    buf.put_i32(status);
+    buf.put_i8(bb);
+    buf.put_i32(modulo);
+    buf.put_i32(offset);
+    buf.put_i16(precision);
+
+    {
+        // this len does not include itself and there seems to be no copy of it afterwards.
+        buf.put_i32(0x20202020);
+        let p3 = buf.len();
+        buf.put_u8(config.dtflags());
+        buf.put_u8(config.scalar_type.index());
+        if config.compression {
+            let method = 0;
+            buf.put_i8(method);
+        }
+        match config.shape {
+            Shape::Scalar => {}
+            Shape::Wave(k) => { buf.put_i32(k as i32); }
+        }
+        let len = buf.len() - p3;
+        buf.as_mut()[p3..].as_mut().put_i32(len as i32);
+    }
+
+    let p2 = buf.len();
+    let len = p2 - p1 + 4;
+    buf.put_i32(len as i32);
+    buf.as_mut()[p1..].as_mut().put_i32(len as i32);
+    file.write(&buf);
     Ok(())
 }
 

@@ -2,6 +2,8 @@
 use tracing::{error, warn, info, debug, trace};
 use err::Error;
 use std::panic;
+use tokio::task::JoinHandle;
+use std::future::Future;
 
 pub fn run<T, F: std::future::Future<Output=Result<T, Error>>>(f: F) -> Result<T, Error> {
     tracing_init();
@@ -31,4 +33,9 @@ pub fn tracing_init() {
     //.with_max_level(tracing::Level::INFO)
     .with_env_filter(tracing_subscriber::EnvFilter::new("info,retrieval=trace,disk=trace,tokio_postgres=info"))
     .init();
+}
+
+
+pub fn spawn<T>(task: T) -> JoinHandle<T::Output> where T: Future + Send + 'static, T::Output: Send + 'static {
+    tokio::spawn(task)
 }

@@ -54,7 +54,7 @@ pub fn binned_bytes_for_http(node_config: Arc<NodeConfig>, query: &Query) -> Res
 
     // TODO
     // Translate the Query TimeRange + AggKind into an iterator over the pre-binned patches.
-    let grid = PreBinnedPatchRange::covering_range(query.range.clone(), query.count, 0);
+    let grid = PreBinnedPatchRange::covering_range(query.range.clone(), query.count);
     match grid {
         Some(spec) => {
             info!("GOT  PreBinnedPatchGridSpec:    {:?}", spec);
@@ -215,13 +215,13 @@ impl PreBinnedValueStream {
             beg: self.patch_coord.patch_beg(),
             end: self.patch_coord.patch_end(),
         };
-        match PreBinnedPatchRange::covering_range(range, 2, 0) {
+        match PreBinnedPatchRange::covering_range(range, self.patch_coord.bin_count() + 1) {
             Some(range) => {
                 let h = range.grid_spec.bin_t_len();
+                info!("FOUND NEXT GRAN  g {}  h {}  ratio {}  mod {}  {:?}", g, h, g/h, g%h, range);
                 assert!(g / h > 1);
                 assert!(g / h < 20);
                 assert!(g % h == 0);
-                info!("FOUND NEXT GRAN  g {}  h {}  ratio {}  mod {}  {:?}", g, h, g/h, g%h, range);
                 let bin_size = range.grid_spec.bin_t_len();
                 let channel = self.channel.clone();
                 let agg_kind = self.agg_kind.clone();
@@ -239,6 +239,12 @@ impl PreBinnedValueStream {
                 self.fut2 = Some(Box::pin(s));
             }
             None => {
+                // TODO now try to read raw data.
+                // TODO Request the whole pre bin patch so that I have the option to save it as cache file if complete.
+
+                // TODO The merging and other compute will be done by this node.
+                // TODO This node needs as input the splitted data streams.
+                // TODO Add a separate tcp server which can provide the parsed, unpacked, event-local-processed, reserialized streams.
                 error!("TODO  NO BETTER GRAN FOUND FOR  g {}", g);
                 todo!();
             }

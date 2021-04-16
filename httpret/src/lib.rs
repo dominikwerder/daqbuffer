@@ -16,8 +16,11 @@ use sync::Arc;
 use disk::cache::PreBinnedQuery;
 use panic::{UnwindSafe, AssertUnwindSafe};
 use bytes::Bytes;
+use tokio::net::TcpStream;
+use tokio::io::AsyncWriteExt;
 
 pub async fn host(node_config: Arc<NodeConfig>) -> Result<(), Error> {
+    let rawjh = taskrun::spawn(raw_service(node_config.clone()));
     let addr = SocketAddr::from(([0, 0, 0, 0], node_config.node.port));
     let make_service = make_service_fn({
         move |conn| {
@@ -34,6 +37,7 @@ pub async fn host(node_config: Arc<NodeConfig>) -> Result<(), Error> {
         }
     });
     Server::bind(&addr).serve(make_service).await?;
+    rawjh.await;
     Ok(())
 }
 
@@ -262,4 +266,24 @@ async fn prebinned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<R
         }
     };
     Ok(ret)
+}
+
+async fn raw_service(node_config: Arc<NodeConfig>) -> Result<(), Error> {
+    let lis = tokio::net::TcpListener::bind("0.0.0.0:5555").await?;
+    loop {
+        match lis.accept().await {
+            Ok((stream, addr)) => {
+                taskrun::spawn(raw_conn_handler(stream, addr));
+            }
+            Err(e) => Err(e)?
+        }
+    }
+    Ok(())
+}
+
+async fn raw_conn_handler(mut stream: TcpStream, addr: SocketAddr) -> Result<(), Error> {
+    info!("RAW HANDLER  for {:?}", addr);
+    stream.write_i32_le(123).await?;
+    stream.flush().await?;
+    Ok(())
 }

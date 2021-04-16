@@ -174,10 +174,12 @@ pub struct ChannelConfig {
     pub keyspace: u8,
     pub time_bin_size: u64,
     pub scalar_type: ScalarType,
-    pub shape: Shape,
-    pub big_endian: bool,
     pub compression: bool,
+    pub shape: Shape,
+    pub array: bool,
+    pub big_endian: bool,
 }
+
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Shape {
@@ -297,7 +299,7 @@ impl PreBinnedPatchGridSpec {
     }
 
     pub fn is_valid_bin_t_len(bin_t_len: u64) -> bool {
-        for &j in PATCH_T_LEN_OPTIONS.iter() {
+        for &j in BIN_T_LEN_OPTIONS.iter() {
             if bin_t_len == j {
                 return true;
             }
@@ -306,38 +308,32 @@ impl PreBinnedPatchGridSpec {
     }
 
     pub fn patch_t_len(&self) -> u64 {
-        if self.bin_t_len == PATCH_T_LEN_OPTIONS[0] {
-            PATCH_T_LEN_OPTIONS[1]
+        for (i1, &j) in BIN_T_LEN_OPTIONS.iter().enumerate() {
+            if self.bin_t_len == j {
+                return PATCH_T_LEN_OPTIONS[i1];
+            }
         }
-        else if self.bin_t_len == PATCH_T_LEN_OPTIONS[1] {
-            PATCH_T_LEN_OPTIONS[3]
-        }
-        else if self.bin_t_len == PATCH_T_LEN_OPTIONS[2] {
-            PATCH_T_LEN_OPTIONS[4]
-        }
-        else if self.bin_t_len == PATCH_T_LEN_OPTIONS[3] {
-            PATCH_T_LEN_OPTIONS[5]
-        }
-        else if self.bin_t_len == PATCH_T_LEN_OPTIONS[4] {
-            PATCH_T_LEN_OPTIONS[5] * 64
-        }
-        else if self.bin_t_len == PATCH_T_LEN_OPTIONS[5] {
-            PATCH_T_LEN_OPTIONS[5] * 1024
-        }
-        else {
-            panic!()
-        }
+        panic!()
     }
 
 }
 
-const PATCH_T_LEN_OPTIONS: [u64; 6] = [
+const BIN_T_LEN_OPTIONS: [u64; 6] = [
     SEC * 10,
     MIN * 10,
     HOUR,
     HOUR * 4,
     DAY,
     DAY * 4,
+];
+
+const PATCH_T_LEN_OPTIONS: [u64; 6] = [
+    MIN * 10,
+    HOUR,
+    HOUR * 4,
+    DAY,
+    DAY * 4,
+    DAY * 12,
 ];
 
 
@@ -350,47 +346,35 @@ pub struct PreBinnedPatchRange {
 
 impl PreBinnedPatchRange {
 
-    pub fn covering_range(range: NanoRange, min_bin_count: u64, finer: u64) -> Option<Self> {
+    pub fn covering_range(range: NanoRange, min_bin_count: u64) -> Option<Self> {
         assert!(min_bin_count >= 1);
         assert!(min_bin_count <= 2000);
         let dt = range.delta();
         assert!(dt <= DAY * 14);
         let bs = dt / min_bin_count;
         //info!("BASIC bs {}", bs);
-        let mut found_count = 0;
-        let mut i1 = PATCH_T_LEN_OPTIONS.len();
+        let mut i1 = BIN_T_LEN_OPTIONS.len();
         loop {
             if i1 <= 0 {
                 break None;
             }
             else {
                 i1 -= 1;
-                let t = PATCH_T_LEN_OPTIONS[i1];
+                let t = BIN_T_LEN_OPTIONS[i1];
                 //info!("look at threshold {}  bs {}", t, bs);
                 if t <= bs {
-                    found_count += 1;
-                    if found_count > finer {
-                        let bs = t;
-                        let ts1 = range.beg / bs * bs;
-                        let ts2 = (range.end + bs - 1) / bs * bs;
-                        let count = range.delta() / bs;
-                        let patch_t_len = if i1 >= PATCH_T_LEN_OPTIONS.len() - 1 {
-                            bs * 8
-                        }
-                        else {
-                            PATCH_T_LEN_OPTIONS[i1 + 1] * 8
-                        };
-                        let offset = ts1 / bs;
-                        break Some(Self {
-                            grid_spec: PreBinnedPatchGridSpec {
-                                bin_t_len: bs,
-                            },
-                            count,
-                            offset,
-                        });
-                    }
-                    else {
-                    }
+                    let bs = t;
+                    let ts1 = range.beg / bs * bs;
+                    let ts2 = (range.end + bs - 1) / bs * bs;
+                    let count = range.delta() / bs;
+                    let offset = ts1 / bs;
+                    break Some(Self {
+                        grid_spec: PreBinnedPatchGridSpec {
+                            bin_t_len: bs,
+                        },
+                        count,
+                        offset,
+                    });
                 }
                 else {
                 }
@@ -423,6 +407,10 @@ impl PreBinnedPatchCoord {
 
     pub fn patch_end(&self) -> u64 {
         self.spec.patch_t_len() * (self.ix + 1)
+    }
+
+    pub fn bin_count(&self) -> u64 {
+        self.patch_t_len() / self.spec.bin_t_len
     }
 
     pub fn spec(&self) -> &PreBinnedPatchGridSpec {

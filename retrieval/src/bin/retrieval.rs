@@ -50,6 +50,7 @@ fn simple_fetch() {
                 },
                 keyspace: 3,
                 time_bin_size: DAY,
+                array: true,
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(todo!()),
                 big_endian: true,
