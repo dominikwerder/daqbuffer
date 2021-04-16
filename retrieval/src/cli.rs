@@ -1,4 +1,4 @@
-use clap::{Clap, crate_version};
+use clap::{crate_version, Clap};
 
 #[derive(Debug, Clap)]
 #[clap(name="retrieval", author="Dominik Werder <dominik.werder@gmail.com>", version=crate_version!())]
@@ -15,5 +15,4 @@ pub enum SubCmd {
 }
 
 #[derive(Debug, Clap)]
-pub struct Retrieval {
-}
+pub struct Retrieval {}

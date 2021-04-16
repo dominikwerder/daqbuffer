@@ -1,21 +1,21 @@
-#[allow(unused_imports)]
-use tracing::{error, warn, info, debug, trace};
+use crate::ChannelConfigExt;
+use bitshuffle::bitshuffle_compress;
+use bytes::{Buf, BufMut, Bytes, BytesMut};
 use err::Error;
-use std::task::{Context, Poll};
-use std::future::Future;
 use futures_core::Stream;
 use futures_util::future::FusedFuture;
 use futures_util::{pin_mut, StreamExt};
-use std::pin::Pin;
-use tokio::io::{AsyncRead, AsyncWriteExt};
-use tokio::fs::{OpenOptions, File};
-use bytes::{Bytes, BytesMut, BufMut, Buf};
-use std::path::{Path, PathBuf};
-use bitshuffle::bitshuffle_compress;
 use netpod::ScalarType;
+use netpod::{timeunits::*, Channel, ChannelConfig, Node, Shape};
+use std::future::Future;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
-use netpod::{Node, Channel, ChannelConfig, Shape, timeunits::*};
-use crate::ChannelConfigExt;
+use std::task::{Context, Poll};
+use tokio::fs::{File, OpenOptions};
+use tokio::io::{AsyncRead, AsyncWriteExt};
+#[allow(unused_imports)]
+use tracing::{debug, error, info, trace, warn};
 
 #[test]
 fn test_gen_test_data() {
@@ -88,31 +88,54 @@ async fn gen_node(node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
 }
 
 async fn gen_channel(chn: &ChannelGenProps, node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
-    let config_path = node.data_base_path
-    .join("config")
-    .join(&chn.config.channel.name);
-    let channel_path = node.data_base_path
-    .join(format!("{}_{}", node.ksprefix, chn.config.keyspace))
-    .join("byTime")
-    .join(&chn.config.channel.name);
+    let config_path = node
+        .data_base_path
+        .join("config")
+        .join(&chn.config.channel.name);
+    let channel_path = node
+        .data_base_path
+        .join(format!("{}_{}", node.ksprefix, chn.config.keyspace))
+        .join("byTime")
+        .join(&chn.config.channel.name);
     tokio::fs::create_dir_all(&channel_path).await?;
-    gen_config(&config_path, &chn.config, node, ensemble).await.map_err(|k| Error::with_msg(format!("can not generate config {:?}", k)))?;
+    gen_config(&config_path, &chn.config, node, ensemble)
+        .await
+        .map_err(|k| Error::with_msg(format!("can not generate config {:?}", k)))?;
     let mut evix = 0;
     let mut ts = 0;
     while ts < DAY {
-        let res = gen_timebin(evix, ts, chn.time_spacing, &channel_path, &chn.config, node, ensemble).await?;
+        let res = gen_timebin(
+            evix,
+            ts,
+            chn.time_spacing,
+            &channel_path,
+            &chn.config,
+            node,
+            ensemble,
+        )
+        .await?;
         evix = res.evix;
         ts = res.ts;
     }
     Ok(())
 }
 
-async fn gen_config(config_path: &Path, config: &ChannelConfig, node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
+async fn gen_config(
+    config_path: &Path,
+    config: &ChannelConfig,
+    node: &Node,
+    ensemble: &Ensemble,
+) -> Result<(), Error> {
     let path = config_path.join("latest");
     tokio::fs::create_dir_all(&path).await?;
     let path = path.join("00000_Config");
     info!("try to open  {:?}", path);
-    let mut file = OpenOptions::new().write(true).create(true).truncate(true).open(path).await?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
+        .await?;
     let mut buf = BytesMut::with_capacity(1024 * 1);
     let ver = 0;
     buf.put_i16(ver);
@@ -155,7 +178,9 @@ async fn gen_config(config_path: &Path, config: &ChannelConfig, node: &Node, ens
         }
         match config.shape {
             Shape::Scalar => {}
-            Shape::Wave(k) => { buf.put_i32(k as i32); }
+            Shape::Wave(k) => {
+                buf.put_i32(k as i32);
+            }
         }
         let len = buf.len() - p3;
         buf.as_mut()[p3..].as_mut().put_i32(len as i32);
@@ -174,13 +199,28 @@ struct GenTimebinRes {
     ts: u64,
 }
 
-async fn gen_timebin(evix: u64, ts: u64, ts_spacing: u64, channel_path: &Path, config: &ChannelConfig, node: &Node, ensemble: &Ensemble) -> Result<GenTimebinRes, Error> {
+async fn gen_timebin(
+    evix: u64,
+    ts: u64,
+    ts_spacing: u64,
+    channel_path: &Path,
+    config: &ChannelConfig,
+    node: &Node,
+    ensemble: &Ensemble,
+) -> Result<GenTimebinRes, Error> {
     let tb = ts / config.time_bin_size;
-    let path = channel_path.join(format!("{:019}", tb)).join(format!("{:010}", node.split));
+    let path = channel_path
+        .join(format!("{:019}", tb))
+        .join(format!("{:010}", node.split));
     tokio::fs::create_dir_all(&path).await?;
     let path = path.join(format!("{:019}_{:05}_Data", config.time_bin_size / MS, 0));
     info!("open file {:?}", path);
-    let mut file = OpenOptions::new().write(true).create(true).truncate(true).open(path).await?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
+        .await?;
     gen_datafile_header(&mut file, config).await?;
     let mut evix = evix;
     let mut ts = ts;
@@ -192,10 +232,7 @@ async fn gen_timebin(evix: u64, ts: u64, ts_spacing: u64, channel_path: &Path, c
         evix += 1;
         ts += ts_spacing;
     }
-    let ret = GenTimebinRes {
-        evix,
-        ts,
-    };
+    let ret = GenTimebinRes { evix, ts };
     Ok(ret)
 }
 
@@ -211,7 +248,12 @@ async fn gen_datafile_header(file: &mut File, config: &ChannelConfig) -> Result<
     Ok(())
 }
 
-async fn gen_event(file: &mut File, evix: u64, ts: u64, config: &ChannelConfig) -> Result<(), Error> {
+async fn gen_event(
+    file: &mut File,
+    evix: u64,
+    ts: u64,
+    config: &ChannelConfig,
+) -> Result<(), Error> {
     let mut buf = BytesMut::with_capacity(1024 * 16);
     buf.put_i32(0xcafecafe as u32 as i32);
     buf.put_u64(0xcafecafe);
@@ -244,19 +286,25 @@ async fn gen_event(file: &mut File, evix: u64, ts: u64, config: &ChannelConfig) 
                             std::io::Write::write_all(&mut c1, &a)?;
                         }
                         let mut comp = vec![0u8; (ele_size * ele_count + 64) as usize];
-                        let n1 = bitshuffle_compress(&vals, &mut comp, ele_count as usize, ele_size as usize, 0).unwrap();
+                        let n1 = bitshuffle_compress(
+                            &vals,
+                            &mut comp,
+                            ele_count as usize,
+                            ele_size as usize,
+                            0,
+                        )
+                        .unwrap();
                         buf.put_u64(vals.len() as u64);
                         let comp_block_size = 0;
                         buf.put_u32(comp_block_size);
                         buf.put(&comp[..n1]);
                     }
-                    _ => todo!()
+                    _ => todo!(),
                 }
             }
-            _ => todo!()
+            _ => todo!(),
         }
-    }
-    else {
+    } else {
         todo!()
     }
     {

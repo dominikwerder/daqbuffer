@@ -1,36 +1,35 @@
-#[allow(unused_imports)]
-use tracing::{error, warn, info, debug, trace};
+use crate::dtflags::{ARRAY, BIG_ENDIAN, COMPRESSION, SHAPE};
+use bitshuffle::bitshuffle_decompress;
+use bytes::{Buf, Bytes, BytesMut};
 use err::Error;
-use std::task::{Context, Poll};
-use std::future::Future;
 use futures_core::Stream;
 use futures_util::future::FusedFuture;
-use futures_util::{FutureExt, StreamExt, pin_mut, select};
-use std::pin::Pin;
-use tokio::io::AsyncRead;
-use tokio::fs::{OpenOptions, File};
-use bytes::{Bytes, BytesMut, Buf};
+use futures_util::{pin_mut, select, FutureExt, StreamExt};
+use netpod::{ChannelConfig, Node, ScalarType, Shape};
+use std::future::Future;
 use std::path::PathBuf;
-use bitshuffle::bitshuffle_decompress;
-use netpod::{ScalarType, Shape, Node, ChannelConfig};
+use std::pin::Pin;
 use std::sync::Arc;
-use crate::dtflags::{COMPRESSION, BIG_ENDIAN, ARRAY, SHAPE};
+use std::task::{Context, Poll};
+use tokio::fs::{File, OpenOptions};
+use tokio::io::AsyncRead;
+#[allow(unused_imports)]
+use tracing::{debug, error, info, trace, warn};
 
 pub mod agg;
+pub mod cache;
+pub mod channelconfig;
 pub mod gen;
 pub mod merge;
-pub mod cache;
 pub mod raw;
-pub mod channelconfig;
 
-
-pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> Result<netpod::BodyStream, Error> {
+pub async fn read_test_1(
+    query: &netpod::AggQuerySingleChannel,
+    node: Arc<Node>,
+) -> Result<netpod::BodyStream, Error> {
     let path = datapath(query.timebin as u64, &query.channel_config, &node);
     debug!("try path: {:?}", path);
-    let fin = OpenOptions::new()
-        .read(true)
-        .open(path)
-        .await?;
+    let fin = OpenOptions::new().read(true).open(path).await?;
     let meta = fin.metadata().await;
     debug!("file meta {:?}", meta);
     let stream = netpod::BodyStream {
@@ -68,8 +67,7 @@ impl Stream for FileReader {
                 let rlen = buf.filled().len();
                 if rlen == 0 {
                     Poll::Ready(None)
-                }
-                else {
+                } else {
                     if rlen != blen {
                         info!("short read  {} of {}", buf.filled().len(), blen);
                     }
@@ -77,25 +75,20 @@ impl Stream for FileReader {
                     Poll::Ready(Some(Ok(buf2.freeze())))
                 }
             }
-            Poll::Ready(Err(e)) => {
-                Poll::Ready(Some(Err(Error::from(e))))
-            }
-            Poll::Pending => Poll::Pending
+            Poll::Ready(Err(e)) => Poll::Ready(Some(Err(Error::from(e)))),
+            Poll::Pending => Poll::Pending,
         }
     }
-
 }
-
 
 #[allow(dead_code)]
 struct Fopen1 {
     opts: OpenOptions,
-    fut: Pin<Box<dyn Future<Output=Result<File, std::io::Error>>>>,
+    fut: Pin<Box<dyn Future<Output = Result<File, std::io::Error>>>>,
     term: bool,
 }
 
 impl Fopen1 {
-
     pub fn new(path: PathBuf) -> Self {
         let fut = Box::pin(async {
             let mut o1 = OpenOptions::new();
@@ -104,17 +97,14 @@ impl Fopen1 {
             //() == res;
             //todo!()
             res.await
-        }) as Pin<Box<dyn Future<Output=Result<File, std::io::Error>>>>;
-        let _fut2: Box<dyn Future<Output=u32>> = Box::new(async {
-            123
-        });
+        }) as Pin<Box<dyn Future<Output = Result<File, std::io::Error>>>>;
+        let _fut2: Box<dyn Future<Output = u32>> = Box::new(async { 123 });
         Self {
             opts: OpenOptions::new(),
             fut,
             term: false,
         }
     }
-
 }
 
 impl Future for Fopen1 {
@@ -126,17 +116,15 @@ impl Future for Fopen1 {
             Poll::Ready(Ok(k)) => {
                 self.term = true;
                 Poll::Ready(Ok(k))
-            },
+            }
             Poll::Ready(Err(k)) => {
                 self.term = true;
                 Poll::Ready(Err(k.into()))
-            },
+            }
             Poll::Pending => Poll::Pending,
         }
     }
-
 }
-
 
 impl FusedFuture for Fopen1 {
     fn is_terminated(&self) -> bool {
@@ -146,8 +134,10 @@ impl FusedFuture for Fopen1 {
 
 unsafe impl Send for Fopen1 {}
 
-
-pub fn raw_concat_channel_read_stream_try_open_in_background(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> impl Stream<Item=Result<Bytes, Error>> + Send {
+pub fn raw_concat_channel_read_stream_try_open_in_background(
+    query: &netpod::AggQuerySingleChannel,
+    node: Arc<Node>,
+) -> impl Stream<Item = Result<Bytes, Error>> + Send {
     let mut query = query.clone();
     let node = node.clone();
     async_stream::stream! {
@@ -271,8 +261,10 @@ pub fn raw_concat_channel_read_stream_try_open_in_background(query: &netpod::Agg
     }
 }
 
-
-pub fn raw_concat_channel_read_stream_file_pipe(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> impl Stream<Item=Result<BytesMut, Error>> + Send {
+pub fn raw_concat_channel_read_stream_file_pipe(
+    query: &netpod::AggQuerySingleChannel,
+    node: Arc<Node>,
+) -> impl Stream<Item = Result<BytesMut, Error>> + Send {
     let query = query.clone();
     let node = node.clone();
     async_stream::stream! {
@@ -298,7 +290,10 @@ pub fn raw_concat_channel_read_stream_file_pipe(query: &netpod::AggQuerySingleCh
     }
 }
 
-fn open_files(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> async_channel::Receiver<Result<tokio::fs::File, Error>> {
+fn open_files(
+    query: &netpod::AggQuerySingleChannel,
+    node: Arc<Node>,
+) -> async_channel::Receiver<Result<tokio::fs::File, Error>> {
     let (chtx, chrx) = async_channel::bounded(2);
     let mut query = query.clone();
     let node = node.clone();
@@ -307,32 +302,27 @@ fn open_files(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> async_c
         for i1 in 0..query.tb_file_count {
             query.timebin = tb0 + i1;
             let path = datapath(query.timebin as u64, &query.channel_config, &node);
-            let fileres = OpenOptions::new()
-                .read(true)
-                .open(&path)
-                .await;
+            let fileres = OpenOptions::new().read(true).open(&path).await;
             info!("opened file {:?}  {:?}", &path, &fileres);
             match fileres {
-                Ok(k) => {
-                    match chtx.send(Ok(k)).await {
-                        Ok(_) => (),
-                        Err(_) => break
-                    }
-                }
-                Err(e) => {
-                    match chtx.send(Err(e.into())).await {
-                        Ok(_) => (),
-                        Err(_) => break
-                    }
-                }
+                Ok(k) => match chtx.send(Ok(k)).await {
+                    Ok(_) => (),
+                    Err(_) => break,
+                },
+                Err(e) => match chtx.send(Err(e.into())).await {
+                    Ok(_) => (),
+                    Err(_) => break,
+                },
             }
         }
     });
     chrx
 }
 
-
-pub fn file_content_stream(mut file: tokio::fs::File, buffer_size: usize) -> impl Stream<Item=Result<BytesMut, Error>> + Send {
+pub fn file_content_stream(
+    mut file: tokio::fs::File,
+    buffer_size: usize,
+) -> impl Stream<Item = Result<BytesMut, Error>> + Send {
     async_stream::stream! {
         use tokio::io::AsyncReadExt;
         loop {
@@ -349,8 +339,10 @@ pub fn file_content_stream(mut file: tokio::fs::File, buffer_size: usize) -> imp
     }
 }
 
-
-pub fn parsed1(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> impl Stream<Item=Result<Bytes, Error>> + Send {
+pub fn parsed1(
+    query: &netpod::AggQuerySingleChannel,
+    node: Arc<Node>,
+) -> impl Stream<Item = Result<Bytes, Error>> + Send {
     let query = query.clone();
     let node = node.clone();
     async_stream::stream! {
@@ -387,7 +379,6 @@ pub fn parsed1(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> impl S
     }
 }
 
-
 pub struct EventBlobsComplete {
     channel_config: ChannelConfig,
     file_chan: async_channel::Receiver<Result<File, Error>>,
@@ -396,8 +387,11 @@ pub struct EventBlobsComplete {
 }
 
 impl EventBlobsComplete {
-
-    pub fn new(query: &netpod::AggQuerySingleChannel, channel_config: ChannelConfig, node: Arc<Node>) -> Self {
+    pub fn new(
+        query: &netpod::AggQuerySingleChannel,
+        channel_config: ChannelConfig,
+        node: Arc<Node>,
+    ) -> Self {
         Self {
             file_chan: open_files(query, node),
             evs: None,
@@ -405,7 +399,6 @@ impl EventBlobsComplete {
             channel_config,
         }
     }
-
 }
 
 impl Stream for EventBlobsComplete {
@@ -415,44 +408,38 @@ impl Stream for EventBlobsComplete {
         use Poll::*;
         'outer: loop {
             let z = match &mut self.evs {
-                Some(evs) => {
-                    match evs.poll_next_unpin(cx) {
-                        Ready(Some(k)) => {
-                            Ready(Some(k))
-                        }
-                        Ready(None) => {
-                            self.evs = None;
+                Some(evs) => match evs.poll_next_unpin(cx) {
+                    Ready(Some(k)) => Ready(Some(k)),
+                    Ready(None) => {
+                        self.evs = None;
+                        continue 'outer;
+                    }
+                    Pending => Pending,
+                },
+                None => match self.file_chan.poll_next_unpin(cx) {
+                    Ready(Some(k)) => match k {
+                        Ok(file) => {
+                            let inp =
+                                Box::pin(file_content_stream(file, self.buffer_size as usize));
+                            let mut chunker = EventChunker::new(inp, self.channel_config.clone());
+                            self.evs.replace(chunker);
                             continue 'outer;
                         }
-                        Pending => Pending,
-                    }
-                }
-                None => {
-                    match self.file_chan.poll_next_unpin(cx) {
-                        Ready(Some(k)) => {
-                            match k {
-                                Ok(file) => {
-                                    let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
-                                    let mut chunker = EventChunker::new(inp, self.channel_config.clone());
-                                    self.evs.replace(chunker);
-                                    continue 'outer;
-                                }
-                                Err(e) => Ready(Some(Err(e)))
-                            }
-                        }
-                        Ready(None) => Ready(None),
-                        Pending => Pending,
-                    }
-                }
+                        Err(e) => Ready(Some(Err(e))),
+                    },
+                    Ready(None) => Ready(None),
+                    Pending => Pending,
+                },
             };
             break z;
         }
     }
-
 }
 
-
-pub fn event_blobs_complete(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> impl Stream<Item=Result<EventFull, Error>> + Send {
+pub fn event_blobs_complete(
+    query: &netpod::AggQuerySingleChannel,
+    node: Arc<Node>,
+) -> impl Stream<Item = Result<EventFull, Error>> + Send {
     let query = query.clone();
     let node = node.clone();
     async_stream::stream! {
@@ -481,7 +468,6 @@ pub fn event_blobs_complete(query: &netpod::AggQuerySingleChannel, node: Arc<Nod
     }
 }
 
-
 pub struct EventChunker {
     inp: NeedMinBuffer,
     had_channel: bool,
@@ -497,8 +483,10 @@ enum DataFileState {
 }
 
 impl EventChunker {
-
-    pub fn new(inp: Pin<Box<dyn Stream<Item=Result<BytesMut, Error>> + Send>>, channel_config: ChannelConfig) -> Self {
+    pub fn new(
+        inp: Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>,
+        channel_config: ChannelConfig,
+    ) -> Self {
         let mut inp = NeedMinBuffer::new(inp);
         inp.set_need_min(6);
         Self {
@@ -518,7 +506,7 @@ impl EventChunker {
         // how many bytes I need min to make progress
         let mut ret = EventFull::empty();
         let mut need_min = 0 as u32;
-        use byteorder::{BE, ReadBytesExt};
+        use byteorder::{ReadBytesExt, BE};
         //info!("parse_buf  rb {}", buf.len());
         //let mut i1 = 0;
         loop {
@@ -539,12 +527,13 @@ impl EventChunker {
                         info!("parse_buf not enough A  totlen {}", totlen);
                         need_min = totlen as u32;
                         break;
-                    }
-                    else {
+                    } else {
                         sl.advance(len as usize - 8);
                         let len2 = sl.read_i32::<BE>().unwrap();
                         assert!(len == len2, "len mismatch");
-                        let s1 = String::from_utf8(buf.as_ref()[6..(len as usize + 6 - 8)].to_vec()).unwrap();
+                        let s1 =
+                            String::from_utf8(buf.as_ref()[6..(len as usize + 6 - 8)].to_vec())
+                                .unwrap();
                         info!("channel name {}  len {}  len2 {}", s1, len, len2);
                         self.state = DataFileState::Event;
                         need_min = 4;
@@ -560,8 +549,7 @@ impl EventChunker {
                         //info!("parse_buf not enough B");
                         need_min = len as u32;
                         break;
-                    }
-                    else if (buf.len() as u32) < len as u32 {
+                    } else if (buf.len() as u32) < len as u32 {
                         // TODO this is just for testing
                         let mut sl = std::io::Cursor::new(buf.as_ref());
                         sl.read_i32::<BE>().unwrap();
@@ -570,8 +558,7 @@ impl EventChunker {
                         //info!("parse_buf not enough C   len {}  have {}  ts {}", len, buf.len(), ts);
                         need_min = len as u32;
                         break;
-                    }
-                    else {
+                    } else {
                         let mut sl = std::io::Cursor::new(buf.as_ref());
                         let len1b = sl.read_i32::<BE>().unwrap();
                         assert!(len == len1b);
@@ -598,16 +585,10 @@ impl EventChunker {
                         }
                         let compression_method = if is_compressed {
                             sl.read_u8().unwrap()
-                        }
-                        else {
+                        } else {
                             0
                         };
-                        let shape_dim = if is_shaped {
-                            sl.read_u8().unwrap()
-                        }
-                        else {
-                            0
-                        };
+                        let shape_dim = if is_shaped { sl.read_u8().unwrap() } else { 0 };
                         assert!(compression_method <= 0);
                         assert!(!is_shaped || (shape_dim >= 1 && shape_dim <= 2));
                         let mut shape_lens = [0, 0, 0, 0];
@@ -639,12 +620,23 @@ impl EventChunker {
                                 decomp.set_len(decomp_bytes);
                             }
                             //debug!("try decompress  value_bytes {}  ele_size {}  ele_count {}  type_index {}", value_bytes, ele_size, ele_count, type_index);
-                            let c1 = bitshuffle_decompress(&buf.as_ref()[p1 as usize..], &mut decomp, ele_count as usize, ele_size as usize, 0).unwrap();
+                            let c1 = bitshuffle_decompress(
+                                &buf.as_ref()[p1 as usize..],
+                                &mut decomp,
+                                ele_count as usize,
+                                ele_size as usize,
+                                0,
+                            )
+                            .unwrap();
                             //debug!("decompress result  c1 {}  k1 {}", c1, k1);
                             assert!(c1 as u32 == k1);
-                            ret.add_event(ts, pulse, Some(decomp), ScalarType::from_dtype_index(type_index));
-                        }
-                        else {
+                            ret.add_event(
+                                ts,
+                                pulse,
+                                Some(decomp),
+                                ScalarType::from_dtype_index(type_index),
+                            );
+                        } else {
                             todo!()
                         }
                         buf.advance(len as usize);
@@ -659,7 +651,6 @@ impl EventChunker {
             need_min: need_min,
         })
     }
-
 }
 
 fn type_size(ix: u8) -> u32 {
@@ -678,7 +669,7 @@ fn type_size(ix: u8) -> u32 {
         11 => 4,
         12 => 8,
         13 => 1,
-        _ => panic!("logic")
+        _ => panic!("logic"),
     }
 }
 
@@ -704,11 +695,9 @@ impl Stream for EventChunker {
                 match self.parse_buf(&mut buf) {
                     Ok(res) => {
                         if buf.len() > 0 {
-
                             // TODO gather stats about this:
                             //info!("parse_buf returned {} leftover bytes to me", buf.len());
                             self.inp.put_back(buf);
-
                         }
                         if res.need_min > 8000 {
                             warn!("spurious EventChunker asks for need_min {}", res.need_min);
@@ -717,7 +706,7 @@ impl Stream for EventChunker {
                         self.inp.set_need_min(res.need_min);
                         Poll::Ready(Some(Ok(res.events)))
                     }
-                    Err(e) => Poll::Ready(Some(Err(e.into())))
+                    Err(e) => Poll::Ready(Some(Err(e.into()))),
                 }
             }
             Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
@@ -725,7 +714,6 @@ impl Stream for EventChunker {
             Poll::Pending => Poll::Pending,
         }
     }
-
 }
 
 pub struct EventFull {
@@ -736,7 +724,6 @@ pub struct EventFull {
 }
 
 impl EventFull {
-
     pub fn empty() -> Self {
         Self {
             tss: vec![],
@@ -746,27 +733,28 @@ impl EventFull {
         }
     }
 
-    fn add_event(&mut self, ts: u64, pulse: u64, decomp: Option<BytesMut>, scalar_type: ScalarType) {
+    fn add_event(
+        &mut self,
+        ts: u64,
+        pulse: u64,
+        decomp: Option<BytesMut>,
+        scalar_type: ScalarType,
+    ) {
         self.tss.push(ts);
         self.pulses.push(pulse);
         self.decomps.push(decomp);
         self.scalar_types.push(scalar_type);
     }
-
 }
 
-
-
-
 pub struct NeedMinBuffer {
-    inp: Pin<Box<dyn Stream<Item=Result<BytesMut, Error>> + Send>>,
+    inp: Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>,
     need_min: u32,
     left: Option<BytesMut>,
 }
 
 impl NeedMinBuffer {
-
-    pub fn new(inp: Pin<Box<dyn Stream<Item=Result<BytesMut, Error>> + Send>>) -> Self {
+    pub fn new(inp: Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>) -> Self {
         Self {
             inp: inp,
             need_min: 1,
@@ -782,7 +770,6 @@ impl NeedMinBuffer {
     pub fn set_need_min(&mut self, need_min: u32) {
         self.need_min = need_min;
     }
-
 }
 
 impl Stream for NeedMinBuffer {
@@ -803,8 +790,7 @@ impl Stream for NeedMinBuffer {
                             if buf.len() as u32 >= self.need_min {
                                 //info!("with left ready  len {}  need_min {}", buf.len(), self.need_min);
                                 Poll::Ready(Some(Ok(buf)))
-                            }
-                            else {
+                            } else {
                                 //info!("with left not enough  len {}  need_min {}", buf.len(), self.need_min);
                                 self.left.replace(buf);
                                 again = true;
@@ -815,8 +801,7 @@ impl Stream for NeedMinBuffer {
                             if buf.len() as u32 >= self.need_min {
                                 //info!("simply ready  len {}  need_min {}", buf.len(), self.need_min);
                                 Poll::Ready(Some(Ok(buf)))
-                            }
-                            else {
+                            } else {
                                 //info!("no previous leftover, need more  len {}  need_min {}", buf.len(), self.need_min);
                                 self.left.replace(buf);
                                 again = true;
@@ -834,12 +819,12 @@ impl Stream for NeedMinBuffer {
             }
         }
     }
-
 }
 
-
-
-pub fn raw_concat_channel_read_stream(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> impl Stream<Item=Result<Bytes, Error>> + Send {
+pub fn raw_concat_channel_read_stream(
+    query: &netpod::AggQuerySingleChannel,
+    node: Arc<Node>,
+) -> impl Stream<Item = Result<Bytes, Error>> + Send {
     let mut query = query.clone();
     let node = node.clone();
     async_stream::stream! {
@@ -860,8 +845,10 @@ pub fn raw_concat_channel_read_stream(query: &netpod::AggQuerySingleChannel, nod
     }
 }
 
-
-pub fn raw_concat_channel_read_stream_timebin(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> impl Stream<Item=Result<Bytes, Error>> {
+pub fn raw_concat_channel_read_stream_timebin(
+    query: &netpod::AggQuerySingleChannel,
+    node: Arc<Node>,
+) -> impl Stream<Item = Result<Bytes, Error>> {
     let query = query.clone();
     let node = node.clone();
     async_stream::stream! {
@@ -890,18 +877,19 @@ pub fn raw_concat_channel_read_stream_timebin(query: &netpod::AggQuerySingleChan
     }
 }
 
-
 fn datapath(timebin: u64, config: &netpod::ChannelConfig, node: &Node) -> PathBuf {
     //let pre = "/data/sf-databuffer/daq_swissfel";
     node.data_base_path
-    .join(format!("{}_{}", node.ksprefix, config.keyspace))
-    .join("byTime")
-    .join(config.channel.name.clone())
-    .join(format!("{:019}", timebin))
-    .join(format!("{:010}", node.split))
-    .join(format!("{:019}_00000_Data", config.time_bin_size / netpod::timeunits::MS))
+        .join(format!("{}_{}", node.ksprefix, config.keyspace))
+        .join("byTime")
+        .join(config.channel.name.clone())
+        .join(format!("{:019}", timebin))
+        .join(format!("{:010}", node.split))
+        .join(format!(
+            "{:019}_00000_Data",
+            config.time_bin_size / netpod::timeunits::MS
+        ))
 }
-
 
 /**
 Read all events from all timebins for the given channel and split.
@@ -923,18 +911,16 @@ pub struct RawConcatChannelReader {
     // • How can I transition between Stream and async world?
     // • I guess I must not poll a completed Future which comes from some async fn again after it completed.
     // • relevant crates:  async-stream, tokio-stream
-    fopen: Option<Box<dyn Future<Output=Option<Result<Bytes, Error>>> + Send>>,
+    fopen: Option<Box<dyn Future<Output = Option<Result<Bytes, Error>>> + Send>>,
 }
 
 impl RawConcatChannelReader {
-
     pub fn read(self) -> Result<netpod::BodyStream, Error> {
         let res = netpod::BodyStream {
             inner: Box::new(self),
         };
         Ok(res)
     }
-
 }
 
 impl futures_core::Stream for RawConcatChannelReader {
@@ -943,7 +929,6 @@ impl futures_core::Stream for RawConcatChannelReader {
     fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         todo!()
     }
-
 }
 
 pub mod dtflags {
@@ -953,23 +938,28 @@ pub mod dtflags {
     pub const SHAPE: u8 = 0x10;
 }
 
-
 trait ChannelConfigExt {
     fn dtflags(&self) -> u8;
 }
 
 impl ChannelConfigExt for ChannelConfig {
-
     fn dtflags(&self) -> u8 {
         let mut ret = 0;
-        if self.compression { ret |= COMPRESSION; }
+        if self.compression {
+            ret |= COMPRESSION;
+        }
         match self.shape {
             Shape::Scalar => {}
-            Shape::Wave(_) => { ret |= SHAPE; }
+            Shape::Wave(_) => {
+                ret |= SHAPE;
+            }
         }
-        if self.big_endian { ret |= BIG_ENDIAN; }
-        if self.array { ret |= ARRAY; }
+        if self.big_endian {
+            ret |= BIG_ENDIAN;
+        }
+        if self.array {
+            ret |= ARRAY;
+        }
         ret
     }
-
 }

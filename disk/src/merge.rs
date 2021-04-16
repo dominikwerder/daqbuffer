@@ -1,14 +1,17 @@
-#[allow(unused_imports)]
-use tracing::{error, warn, info, debug, trace};
-use futures_core::Stream;
-use err::Error;
-use std::task::{Poll, Context};
-use std::pin::Pin;
 use crate::agg::{Dim1F32Stream, ValuesDim1};
 use crate::EventFull;
-use futures_util::{pin_mut, StreamExt, future::ready};
+use err::Error;
+use futures_core::Stream;
+use futures_util::{future::ready, pin_mut, StreamExt};
+use std::pin::Pin;
+use std::task::{Context, Poll};
+#[allow(unused_imports)]
+use tracing::{debug, error, info, trace, warn};
 
-pub struct MergeDim1F32Stream<S> where S: Stream<Item=Result<EventFull, Error>> {
+pub struct MergeDim1F32Stream<S>
+where
+    S: Stream<Item = Result<EventFull, Error>>,
+{
     inps: Vec<Dim1F32Stream<S>>,
     current: Vec<CurVal>,
     ixs: Vec<usize>,
@@ -16,8 +19,10 @@ pub struct MergeDim1F32Stream<S> where S: Stream<Item=Result<EventFull, Error>> 
     batch: ValuesDim1,
 }
 
-impl<S> MergeDim1F32Stream<S> where S: Stream<Item=Result<EventFull, Error>> {
-
+impl<S> MergeDim1F32Stream<S>
+where
+    S: Stream<Item = Result<EventFull, Error>>,
+{
     pub fn new(inps: Vec<Dim1F32Stream<S>>) -> Self {
         let n = inps.len();
         let mut current = vec![];
@@ -32,10 +37,12 @@ impl<S> MergeDim1F32Stream<S> where S: Stream<Item=Result<EventFull, Error>> {
             batch: ValuesDim1::empty(),
         }
     }
-
 }
 
-impl<S> Stream for MergeDim1F32Stream<S> where S: Stream<Item=Result<EventFull, Error>> + Unpin {
+impl<S> Stream for MergeDim1F32Stream<S>
+where
+    S: Stream<Item = Result<EventFull, Error>> + Unpin,
+{
     //type Item = <Dim1F32Stream as Stream>::Item;
     type Item = Result<ValuesDim1, Error>;
 
@@ -83,8 +90,7 @@ impl<S> Stream for MergeDim1F32Stream<S> where S: Stream<Item=Result<EventFull, 
                             self.ixs[i1] = 0;
                             self.current[i1] = CurVal::None;
                             continue 'outer;
-                        }
-                        else {
+                        } else {
                             let ts = val.tss[u];
                             if ts < lowest_ts {
                                 lowest_ix = i1;
@@ -92,14 +98,13 @@ impl<S> Stream for MergeDim1F32Stream<S> where S: Stream<Item=Result<EventFull, 
                             }
                         }
                     }
-                    _ => panic!()
+                    _ => panic!(),
                 }
             }
             if lowest_ix == usize::MAX {
                 // TODO all inputs in finished state
                 break Ready(None);
-            }
-            else {
+            } else {
                 //trace!("decided on next lowest ts  {}  ix {}", lowest_ts, lowest_ix);
                 self.batch.tss.push(lowest_ts);
                 let rix = self.ixs[lowest_ix];
@@ -108,7 +113,7 @@ impl<S> Stream for MergeDim1F32Stream<S> where S: Stream<Item=Result<EventFull, 
                         let k = std::mem::replace(&mut k.values[rix], vec![]);
                         self.batch.values.push(k);
                     }
-                    _ => panic!()
+                    _ => panic!(),
                 }
                 self.ixs[lowest_ix] += 1;
             }
@@ -118,7 +123,6 @@ impl<S> Stream for MergeDim1F32Stream<S> where S: Stream<Item=Result<EventFull, 
             }
         }
     }
-
 }
 
 enum CurVal {

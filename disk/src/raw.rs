@@ -1,14 +1,8 @@
-
-
-
 /*
 Provide ser/de of value data to a good net exchange format.
 */
 
-
-
 async fn local_unpacked_test() {
-
     // TODO what kind of query format? What information do I need here?
     // Don't need exact details of channel because I need to parse the databuffer config anyway.
 
@@ -39,8 +33,7 @@ async fn local_unpacked_test() {
 
     // TODO find the matching config entry. (bonus: fuse consecutive compatible entries)
 
-
-    use crate::agg::{IntoDim1F32Stream};
+    use crate::agg::IntoDim1F32Stream;
     let stream = crate::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
-    .into_dim_1_f32_stream();
+        .into_dim_1_f32_stream();
 }

@@ -1,13 +1,12 @@
-#[allow(unused_imports)]
-use tracing::{error, warn, info, debug, trace};
-use serde::{Serialize, Deserialize};
+use chrono::{DateTime, TimeZone, Utc};
 use err::Error;
-use std::path::PathBuf;
-use chrono::{DateTime, Utc, TimeZone};
-use std::sync::Arc;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::sync::Arc;
 use timeunits::*;
-
+#[allow(unused_imports)]
+use tracing::{debug, error, info, trace, warn};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AggQuerySingleChannel {
@@ -19,7 +18,7 @@ pub struct AggQuerySingleChannel {
 
 pub struct BodyStream {
     //pub receiver: async_channel::Receiver<Result<bytes::Bytes, Error>>,
-    pub inner: Box<dyn futures_core::Stream<Item=Result<bytes::Bytes, Error>> + Send + Unpin>,
+    pub inner: Box<dyn futures_core::Stream<Item = Result<bytes::Bytes, Error>> + Send + Unpin>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -37,7 +36,6 @@ pub enum ScalarType {
 }
 
 impl ScalarType {
-
     pub fn from_dtype_index(ix: u8) -> Self {
         use ScalarType::*;
         match ix {
@@ -90,7 +88,6 @@ impl ScalarType {
             F64 => 12,
         }
     }
-
 }
 
 #[derive(Debug)]
@@ -109,19 +106,16 @@ impl Node {
     }
 }
 
-
 #[derive(Debug)]
 pub struct Cluster {
     pub nodes: Vec<Arc<Node>>,
 }
-
 
 #[derive(Debug)]
 pub struct NodeConfig {
     pub node: Arc<Node>,
     pub cluster: Arc<Cluster>,
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Channel {
@@ -134,7 +128,6 @@ impl Channel {
         &self.name
     }
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum TimeRange {
@@ -152,7 +145,6 @@ pub enum TimeRange {
     },
 }
 
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NanoRange {
     pub beg: u64,
@@ -160,13 +152,10 @@ pub struct NanoRange {
 }
 
 impl NanoRange {
-
     pub fn delta(&self) -> u64 {
         self.end - self.beg
     }
-
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChannelConfig {
@@ -179,7 +168,6 @@ pub struct ChannelConfig {
     pub array: bool,
     pub big_endian: bool,
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Shape {
@@ -197,8 +185,6 @@ pub mod timeunits {
     pub const WEEK: u64 = DAY * 7;
 }
 
-
-
 pub struct BinSpecDimT {
     pub count: u64,
     pub ts1: u64,
@@ -207,7 +193,6 @@ pub struct BinSpecDimT {
 }
 
 impl BinSpecDimT {
-
     pub fn over_range(count: u64, ts1: u64, ts2: u64) -> Self {
         use timeunits::*;
         assert!(count >= 1);
@@ -217,15 +202,39 @@ impl BinSpecDimT {
         assert!(dt <= DAY * 14);
         let bs = dt / count;
         let BIN_THRESHOLDS = [
-            2, 10, 100,
-            1000, 10_000, 100_000,
-            MU, MU * 10, MU * 100,
-            MS, MS * 10, MS * 100,
-            SEC, SEC * 5, SEC * 10, SEC * 20,
-            MIN, MIN * 5, MIN * 10, MIN * 20,
-            HOUR, HOUR * 2, HOUR * 4, HOUR * 12,
-            DAY, DAY * 2, DAY * 4, DAY * 8, DAY * 16,
-            WEEK, WEEK * 2, WEEK * 10, WEEK * 60,
+            2,
+            10,
+            100,
+            1000,
+            10_000,
+            100_000,
+            MU,
+            MU * 10,
+            MU * 100,
+            MS,
+            MS * 10,
+            MS * 100,
+            SEC,
+            SEC * 5,
+            SEC * 10,
+            SEC * 20,
+            MIN,
+            MIN * 5,
+            MIN * 10,
+            MIN * 20,
+            HOUR,
+            HOUR * 2,
+            HOUR * 4,
+            HOUR * 12,
+            DAY,
+            DAY * 2,
+            DAY * 4,
+            DAY * 8,
+            DAY * 16,
+            WEEK,
+            WEEK * 2,
+            WEEK * 10,
+            WEEK * 60,
         ];
         let mut i1 = 0;
         let bs = loop {
@@ -257,9 +266,7 @@ impl BinSpecDimT {
             end: self.ts1 + (ix as u64 + 1) * self.bs,
         }
     }
-
 }
-
 
 #[derive(Clone, Debug)]
 pub struct PreBinnedPatchGridSpec {
@@ -267,7 +274,6 @@ pub struct PreBinnedPatchGridSpec {
 }
 
 impl PreBinnedPatchGridSpec {
-
     pub fn new(bin_t_len: u64) -> Self {
         let mut ok = false;
         for &j in PATCH_T_LEN_OPTIONS.iter() {
@@ -277,11 +283,12 @@ impl PreBinnedPatchGridSpec {
             }
         }
         if !ok {
-            panic!("invalid bin_t_len for PreBinnedPatchGridSpec  {}", bin_t_len);
+            panic!(
+                "invalid bin_t_len for PreBinnedPatchGridSpec  {}",
+                bin_t_len
+            );
         }
-        Self {
-            bin_t_len,
-        }
+        Self { bin_t_len }
     }
 
     pub fn from_query_params(params: &BTreeMap<String, String>) -> Self {
@@ -315,27 +322,11 @@ impl PreBinnedPatchGridSpec {
         }
         panic!()
     }
-
 }
 
-const BIN_T_LEN_OPTIONS: [u64; 6] = [
-    SEC * 10,
-    MIN * 10,
-    HOUR,
-    HOUR * 4,
-    DAY,
-    DAY * 4,
-];
+const BIN_T_LEN_OPTIONS: [u64; 6] = [SEC * 10, MIN * 10, HOUR, HOUR * 4, DAY, DAY * 4];
 
-const PATCH_T_LEN_OPTIONS: [u64; 6] = [
-    MIN * 10,
-    HOUR,
-    HOUR * 4,
-    DAY,
-    DAY * 4,
-    DAY * 12,
-];
-
+const PATCH_T_LEN_OPTIONS: [u64; 6] = [MIN * 10, HOUR, HOUR * 4, DAY, DAY * 4, DAY * 12];
 
 #[derive(Clone, Debug)]
 pub struct PreBinnedPatchRange {
@@ -345,7 +336,6 @@ pub struct PreBinnedPatchRange {
 }
 
 impl PreBinnedPatchRange {
-
     pub fn covering_range(range: NanoRange, min_bin_count: u64) -> Option<Self> {
         assert!(min_bin_count >= 1);
         assert!(min_bin_count <= 2000);
@@ -357,8 +347,7 @@ impl PreBinnedPatchRange {
         loop {
             if i1 <= 0 {
                 break None;
-            }
-            else {
+            } else {
                 i1 -= 1;
                 let t = BIN_T_LEN_OPTIONS[i1];
                 //info!("look at threshold {}  bs {}", t, bs);
@@ -369,21 +358,16 @@ impl PreBinnedPatchRange {
                     let count = range.delta() / bs;
                     let offset = ts1 / bs;
                     break Some(Self {
-                        grid_spec: PreBinnedPatchGridSpec {
-                            bin_t_len: bs,
-                        },
+                        grid_spec: PreBinnedPatchGridSpec { bin_t_len: bs },
                         count,
                         offset,
                     });
-                }
-                else {
+                } else {
                 }
             }
         }
     }
-
 }
-
 
 #[derive(Clone, Debug)]
 pub struct PreBinnedPatchCoord {
@@ -392,7 +376,6 @@ pub struct PreBinnedPatchCoord {
 }
 
 impl PreBinnedPatchCoord {
-
     pub fn bin_t_len(&self) -> u64 {
         self.spec.bin_t_len
     }
@@ -422,7 +405,12 @@ impl PreBinnedPatchCoord {
     }
 
     pub fn to_url_params_strings(&self) -> String {
-        format!("patch_t_len={}&bin_t_len={}&patch_ix={}", self.spec.patch_t_len(), self.spec.bin_t_len(), self.ix())
+        format!(
+            "patch_t_len={}&bin_t_len={}&patch_ix={}",
+            self.spec.patch_t_len(),
+            self.spec.bin_t_len(),
+            self.ix()
+        )
     }
 
     pub fn from_query_params(params: &BTreeMap<String, String>) -> Self {
@@ -432,7 +420,6 @@ impl PreBinnedPatchCoord {
             ix: patch_ix,
         }
     }
-
 }
 
 pub struct PreBinnedPatchIterator {
@@ -442,7 +429,6 @@ pub struct PreBinnedPatchIterator {
 }
 
 impl PreBinnedPatchIterator {
-
     pub fn from_range(range: PreBinnedPatchRange) -> Self {
         Self {
             range,
@@ -450,7 +436,6 @@ impl PreBinnedPatchIterator {
             ix: 0,
         }
     }
-
 }
 
 impl Iterator for PreBinnedPatchIterator {
@@ -459,8 +444,7 @@ impl Iterator for PreBinnedPatchIterator {
     fn next(&mut self) -> Option<Self::Item> {
         if self.ix >= self.range.count {
             None
-        }
-        else {
+        } else {
             let ret = Self::Item {
                 spec: self.range.grid_spec.clone(),
                 ix: self.range.offset + self.ix,
@@ -469,15 +453,12 @@ impl Iterator for PreBinnedPatchIterator {
             Some(ret)
         }
     }
-
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum AggKind {
     DimXBins1,
 }
-
 
 pub fn query_params(q: Option<&str>) -> std::collections::BTreeMap<String, String> {
     let mut map = std::collections::BTreeMap::new();
@@ -492,12 +473,10 @@ pub fn query_params(q: Option<&str>) -> std::collections::BTreeMap<String, Strin
                 }
             }
         }
-        None => {
-        }
+        None => {}
     }
     map
 }
-
 
 pub trait ToNanos {
     fn to_nanos(&self) -> u64;

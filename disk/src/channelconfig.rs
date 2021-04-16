@@ -1,10 +1,15 @@
+use crate::{BadError, Error};
+use nom::number::complete::{be_i16, be_i32, be_i64, be_i8, be_u8};
 #[allow(unused_imports)]
-use nom::{IResult, bytes::complete::{tag, take, take_while_m_n}, combinator::map_res, sequence::tuple};
-use nom::number::complete::{be_i8, be_u8, be_i16, be_i32, be_i64};
-use crate::{Error, BadError};
+use nom::{
+    bytes::complete::{tag, take, take_while_m_n},
+    combinator::map_res,
+    sequence::tuple,
+    IResult,
+};
 use num_derive::{FromPrimitive, ToPrimitive};
-use num_traits::{ToPrimitive};
-use serde_derive::{Serialize, Deserialize};
+use num_traits::ToPrimitive;
+use serde_derive::{Deserialize, Serialize};
 
 #[derive(Debug, FromPrimitive, ToPrimitive, Serialize, Deserialize)]
 pub enum DType {
@@ -25,7 +30,9 @@ pub enum DType {
 }
 
 impl DType {
-    pub fn to_i16(&self) -> i16 { ToPrimitive::to_i16(self).unwrap() }
+    pub fn to_i16(&self) -> i16 {
+        ToPrimitive::to_i16(self).unwrap()
+    }
 }
 
 #[derive(Debug, FromPrimitive, ToPrimitive, Serialize, Deserialize)]
@@ -34,7 +41,9 @@ pub enum CompressionMethod {
 }
 
 impl CompressionMethod {
-    pub fn to_i16(&self) -> i16 { ToPrimitive::to_i16(self).unwrap() }
+    pub fn to_i16(&self) -> i16 {
+        ToPrimitive::to_i16(self).unwrap()
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -106,7 +115,7 @@ pub fn parseEntry(inp: &[u8]) -> Result<(&[u8], Option<ConfigEntry>), Error> {
     if inp.len() < len1 as usize - 4 {
         return BadError(format!("incomplete input"));
     }
-    let inpE = &inp[(len1-8) as usize ..];
+    let inpE = &inp[(len1 - 8) as usize..];
     let (inp, ts) = be_i64(inp)?;
     let (inp, pulse) = be_i64(inp)?;
     let (inp, ks) = be_i32(inp)?;
@@ -132,7 +141,7 @@ pub fn parseEntry(inp: &[u8]) -> Result<(&[u8], Option<ConfigEntry>), Error> {
     }
     let dtype = match num_traits::FromPrimitive::from_i8(dtype) {
         Some(k) => k,
-        None => return BadError(format!("Can not convert {} to DType", dtype))
+        None => return BadError(format!("Can not convert {} to DType", dtype)),
     };
     let (inp, compressionMethod) = match isCompressed {
         false => (inp, None),
@@ -148,7 +157,9 @@ pub fn parseEntry(inp: &[u8]) -> Result<(&[u8], Option<ConfigEntry>), Error> {
         false => (inp, None),
         true => {
             let (mut inp, dim) = be_u8(inp)?;
-            if dim > 4 { return BadError(format!("unexpected number of dimensions: {}", dim)); }
+            if dim > 4 {
+                return BadError(format!("unexpected number of dimensions: {}", dim));
+            }
             let mut shape = vec![];
             for _ in 0..dim {
                 let t1 = be_i32(inp)?;
@@ -168,11 +179,33 @@ pub fn parseEntry(inp: &[u8]) -> Result<(&[u8], Option<ConfigEntry>), Error> {
     if len1 != len2 {
         return BadError(format!("mismatch  len1 {}  len2 {}", len1, len2));
     }
-    Ok((inpE, Some(ConfigEntry {
-        ts, pulse, ks, bs, splitCount, status, bb, modulo, offset, precision, dtype,
-        isCompressed, isArray, isShaped, isBigEndian, compressionMethod, shape,
-        sourceName, unit, description, optionalFields, valueConverter,
-    })))
+    Ok((
+        inpE,
+        Some(ConfigEntry {
+            ts,
+            pulse,
+            ks,
+            bs,
+            splitCount,
+            status,
+            bb,
+            modulo,
+            offset,
+            precision,
+            dtype,
+            isCompressed,
+            isArray,
+            isShaped,
+            isBigEndian,
+            compressionMethod,
+            shape,
+            sourceName,
+            unit,
+            description,
+            optionalFields,
+            valueConverter,
+        }),
+    ))
 }
 
 /*
@@ -194,10 +227,12 @@ pub fn parseConfig(inp: &[u8]) -> Result<Config, Error> {
     while inpA.len() > 0 {
         let inp = inpA;
         let (inp, e) = parseEntry(inp)?;
-        if let Some(e) = e { entries.push(e); }
+        if let Some(e) = e {
+            entries.push(e);
+        }
         inpA = inp;
     }
-    Ok(Config{
+    Ok(Config {
         formatVersion: ver,
         channelName: String::from_utf8(chn.to_vec())?,
         entries: entries,
@@ -207,21 +242,24 @@ pub fn parseConfig(inp: &[u8]) -> Result<Config, Error> {
 #[cfg(test)]
 fn read_data() -> Vec<u8> {
     use std::io::Read;
-    let mut f1 = std::fs::File::open("ks/config/S10CB01-RLOD100-PUP10:SIG-AMPLT/latest/00000_Config").unwrap();
+    let mut f1 =
+        std::fs::File::open("ks/config/S10CB01-RLOD100-PUP10:SIG-AMPLT/latest/00000_Config")
+            .unwrap();
     let mut buf = vec![];
     f1.read_to_end(&mut buf).unwrap();
     buf
 }
 
-#[test] fn parse_dummy() {
-    let config = parseConfig(&[0, 0, 0, 0, 0, 11, 0x61, 0x62, 0x63,   0, 0, 0, 11,
-        0, 0, 0, 1,
-    ]).unwrap();
+#[test]
+fn parse_dummy() {
+    let config =
+        parseConfig(&[0, 0, 0, 0, 0, 11, 0x61, 0x62, 0x63, 0, 0, 0, 11, 0, 0, 0, 1]).unwrap();
     assert_eq!(0, config.formatVersion);
     assert_eq!("abc", config.channelName);
 }
 
-#[test] fn open_file() {
+#[test]
+fn open_file() {
     let config = parseConfig(&readData()).unwrap();
     assert_eq!(0, config.formatVersion);
     assert_eq!(9, config.entries.len());

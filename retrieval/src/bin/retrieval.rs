@@ -1,8 +1,8 @@
-#[allow(unused_imports)]
-use tracing::{error, warn, info, debug, trace};
 use err::Error;
-use netpod::{ChannelConfig, Channel, timeunits::*, ScalarType, Shape, Node, Cluster, NodeConfig};
+use netpod::{timeunits::*, Channel, ChannelConfig, Cluster, Node, NodeConfig, ScalarType, Shape};
 use std::sync::Arc;
+#[allow(unused_imports)]
+use tracing::{debug, error, info, trace, warn};
 
 pub fn main() {
     match taskrun::run(go()) {
@@ -60,9 +60,7 @@ fn simple_fetch() {
             tb_file_count: 1,
             buffer_size: 1024 * 8,
         };
-        let cluster = Cluster {
-            nodes: vec![node],
-        };
+        let cluster = Cluster { nodes: vec![node] };
         let cluster = Arc::new(cluster);
         let node_config = NodeConfig {
             cluster: cluster,
@@ -99,8 +97,13 @@ fn simple_fetch() {
         let t2 = chrono::Utc::now();
         let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
         let throughput = ntot / 1024 * 1000 / ms;
-        info!("total download {} MB   throughput {:5} kB/s", ntot / 1024 / 1024, throughput);
+        info!(
+            "total download {} MB   throughput {:5} kB/s",
+            ntot / 1024 / 1024,
+            throughput
+        );
         //Err::<(), _>(format!("test error").into())
         Ok(())
-    }).unwrap();
+    })
+    .unwrap();
 }

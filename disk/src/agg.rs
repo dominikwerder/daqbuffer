@@ -1,15 +1,15 @@
-#[allow(unused_imports)]
-use tracing::{error, warn, info, debug, trace};
-use err::Error;
-use std::task::{Context, Poll};
-use std::pin::Pin;
-use crate::EventFull;
-use futures_core::Stream;
-use futures_util::{pin_mut, StreamExt, future::ready};
-use netpod::{Channel, ChannelConfig, ScalarType, Shape, Node, timeunits::*};
 use crate::merge::MergeDim1F32Stream;
+use crate::EventFull;
+use err::Error;
+use futures_core::Stream;
+use futures_util::{future::ready, pin_mut, StreamExt};
 use netpod::BinSpecDimT;
+use netpod::{timeunits::*, Channel, ChannelConfig, Node, ScalarType, Shape};
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
+#[allow(unused_imports)]
+use tracing::{debug, error, info, trace, warn};
 
 pub trait AggregatorTdim {
     type InputValue;
@@ -32,11 +32,12 @@ pub trait AggregatableTdim {
     fn aggregator_new(&self, ts1: u64, ts2: u64) -> Self::Aggregator;
 }
 
-
 // dummy
 impl AggregatableXdim1Bin for () {
     type Output = ();
-    fn into_agg(self) -> Self::Output { todo!() }
+    fn into_agg(self) -> Self::Output {
+        todo!()
+    }
 }
 impl AggregatableTdim for () {
     type Output = ();
@@ -61,10 +62,13 @@ impl AggregatorTdim for () {
         todo!()
     }
 
-    fn ingest(&mut self, v: &Self::InputValue) { todo!() }
-    fn result(self) -> Self::OutputValue { todo!() }
+    fn ingest(&mut self, v: &Self::InputValue) {
+        todo!()
+    }
+    fn result(self) -> Self::OutputValue {
+        todo!()
+    }
 }
-
 
 pub struct ValuesDim0 {
     tss: Vec<u64>,
@@ -73,7 +77,13 @@ pub struct ValuesDim0 {
 
 impl std::fmt::Debug for ValuesDim0 {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(fmt, "count {}  tsA {:?}  tsB {:?}", self.tss.len(), self.tss.first(), self.tss.last())
+        write!(
+            fmt,
+            "count {}  tsA {:?}  tsB {:?}",
+            self.tss.len(),
+            self.tss.first(),
+            self.tss.last()
+        )
     }
 }
 
@@ -101,8 +111,12 @@ impl AggregatableXdim1Bin for ValuesDim1 {
                 max = max.max(v);
                 sum += v;
             }
-            if min == f32::MAX { min = f32::NAN; }
-            if max == f32::MIN { max = f32::NAN; }
+            if min == f32::MAX {
+                min = f32::NAN;
+            }
+            if max == f32::MIN {
+                max = f32::NAN;
+            }
             ret.tss.push(ts);
             ret.mins.push(min);
             ret.maxs.push(max);
@@ -110,9 +124,7 @@ impl AggregatableXdim1Bin for ValuesDim1 {
         }
         ret
     }
-
 }
-
 
 pub struct ValuesDim1 {
     pub tss: Vec<u64>,
@@ -120,19 +132,23 @@ pub struct ValuesDim1 {
 }
 
 impl ValuesDim1 {
-
     pub fn empty() -> Self {
         Self {
             tss: vec![],
             values: vec![],
         }
     }
-
 }
 
 impl std::fmt::Debug for ValuesDim1 {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(fmt, "count {}  tsA {:?}  tsB {:?}", self.tss.len(), self.tss.first(), self.tss.last())
+        write!(
+            fmt,
+            "count {}  tsA {:?}  tsB {:?}",
+            self.tss.len(),
+            self.tss.first(),
+            self.tss.last()
+        )
     }
 }
 
@@ -160,8 +176,12 @@ impl AggregatableXdim1Bin for ValuesDim0 {
                 max = max.max(v);
                 sum += v;
             }
-            if min == f32::MAX { min = f32::NAN; }
-            if max == f32::MIN { max = f32::NAN; }
+            if min == f32::MAX {
+                min = f32::NAN;
+            }
+            if max == f32::MIN {
+                max = f32::NAN;
+            }
             ret.tss.push(ts);
             ret.mins.push(min);
             ret.maxs.push(max);
@@ -169,9 +189,7 @@ impl AggregatableXdim1Bin for ValuesDim0 {
         }
         ret
     }
-
 }
-
 
 pub struct MinMaxAvgScalarEventBatch {
     tss: Vec<u64>,
@@ -200,7 +218,6 @@ impl AggregatableTdim for MinMaxAvgScalarEventBatch {
     fn aggregator_new(&self, ts1: u64, ts2: u64) -> Self::Aggregator {
         MinMaxAvgScalarEventBatchAggregator::new(ts1, ts2)
     }
-
 }
 
 pub struct MinMaxAvgScalarEventBatchAggregator {
@@ -213,7 +230,6 @@ pub struct MinMaxAvgScalarEventBatchAggregator {
 }
 
 impl MinMaxAvgScalarEventBatchAggregator {
-
     pub fn new(ts1: u64, ts2: u64) -> Self {
         Self {
             ts1,
@@ -224,7 +240,6 @@ impl MinMaxAvgScalarEventBatchAggregator {
             count: 0,
         }
     }
-
 }
 
 impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
@@ -233,28 +248,22 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
 
     fn ends_before(&self, inp: &Self::InputValue) -> bool {
         match inp.tss.last() {
-            Some(ts) => {
-                *ts < self.ts1
-            }
+            Some(ts) => *ts < self.ts1,
             None => true,
         }
     }
 
     fn ends_after(&self, inp: &Self::InputValue) -> bool {
         match inp.tss.last() {
-            Some(ts) => {
-                *ts >= self.ts2
-            }
-            _ => panic!()
+            Some(ts) => *ts >= self.ts2,
+            _ => panic!(),
         }
     }
 
     fn starts_after(&self, inp: &Self::InputValue) -> bool {
         match inp.tss.first() {
-            Some(ts) => {
-                *ts >= self.ts2
-            }
-            _ => panic!()
+            Some(ts) => *ts >= self.ts2,
+            _ => panic!(),
         }
     }
 
@@ -264,12 +273,10 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
             if ts < self.ts1 {
                 //info!("EventBatchAgg  {}  {}  {}  {}   IS BEFORE", v.tss[i1], v.mins[i1], v.maxs[i1], v.avgs[i1]);
                 continue;
-            }
-            else if ts >= self.ts2 {
+            } else if ts >= self.ts2 {
                 //info!("EventBatchAgg  {}  {}  {}  {}   IS AFTER", v.tss[i1], v.mins[i1], v.maxs[i1], v.avgs[i1]);
                 continue;
-            }
-            else {
+            } else {
                 //info!("EventBatchAgg  {}  {}  {}  {}", v.tss[i1], v.mins[i1], v.maxs[i1], v.avgs[i1]);
                 self.min = self.min.min(v.mins[i1]);
                 self.max = self.max.max(v.maxs[i1]);
@@ -280,9 +287,21 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
     }
 
     fn result(self) -> Self::OutputValue {
-        let min = if self.min == f32::MAX { f32::NAN } else { self.min };
-        let max = if self.max == f32::MIN { f32::NAN } else { self.max };
-        let avg = if self.count == 0 { f32::NAN } else { self.sum / self.count as f32 };
+        let min = if self.min == f32::MAX {
+            f32::NAN
+        } else {
+            self.min
+        };
+        let max = if self.max == f32::MIN {
+            f32::NAN
+        } else {
+            self.max
+        };
+        let avg = if self.count == 0 {
+            f32::NAN
+        } else {
+            self.sum / self.count as f32
+        };
         MinMaxAvgScalarBinSingle {
             ts1: self.ts1,
             ts2: self.ts2,
@@ -292,9 +311,7 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
             avg,
         }
     }
-
 }
-
 
 pub struct MinMaxAvgScalarBinBatch {
     ts1s: Vec<u64>,
@@ -348,10 +365,10 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchAggregator {
         todo!()
     }
 
-    fn result(self) -> Self::OutputValue { todo!() }
-
+    fn result(self) -> Self::OutputValue {
+        todo!()
+    }
 }
-
 
 pub struct MinMaxAvgScalarBinSingle {
     ts1: u64,
@@ -408,17 +425,19 @@ impl AggregatorTdim for MinMaxAvgScalarBinSingleAggregator {
     fn result(self) -> Self::OutputValue {
         todo!()
     }
-
 }
 
-
-
-
-pub struct Dim0F32Stream<S> where S: Stream<Item=Result<EventFull, Error>> {
+pub struct Dim0F32Stream<S>
+where
+    S: Stream<Item = Result<EventFull, Error>>,
+{
     inp: S,
 }
 
-impl<S> Stream for Dim0F32Stream<S> where S: Stream<Item=Result<EventFull, Error>> + Unpin {
+impl<S> Stream for Dim0F32Stream<S>
+where
+    S: Stream<Item = Result<EventFull, Error>> + Unpin,
+{
     type Item = Result<ValuesDim0, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
@@ -447,7 +466,9 @@ impl<S> Stream for Dim0F32Stream<S> where S: Stream<Item=Result<EventFull, Error
                             let ele_count = n1 / ty.bytes() as usize;
                             let mut j = Vec::with_capacity(ele_count);
                             // this is safe for ints and floats
-                            unsafe { j.set_len(ele_count); }
+                            unsafe {
+                                j.set_len(ele_count);
+                            }
                             let mut p1 = 0;
                             for i1 in 0..ele_count {
                                 let u = unsafe {
@@ -461,8 +482,8 @@ impl<S> Stream for Dim0F32Stream<S> where S: Stream<Item=Result<EventFull, Error
                             }
                             ret.tss.push(k.tss[i1]);
                             ret.values.push(j);
-                        },
-                        _ => todo!()
+                        }
+                        _ => todo!(),
                     }
                 }
                 Ready(Some(Ok(todo!())))
@@ -472,31 +493,34 @@ impl<S> Stream for Dim0F32Stream<S> where S: Stream<Item=Result<EventFull, Error
             Pending => Pending,
         }
     }
-
 }
 
 pub trait IntoDim0F32Stream {
-    fn into_dim_0_f32_stream(self) -> Dim0F32Stream<Self> where Self: Stream<Item=Result<EventFull, Error>> + Sized;
+    fn into_dim_0_f32_stream(self) -> Dim0F32Stream<Self>
+    where
+        Self: Stream<Item = Result<EventFull, Error>> + Sized;
 }
 
-impl<T> IntoDim0F32Stream for T where T: Stream<Item=Result<EventFull, Error>> {
-
+impl<T> IntoDim0F32Stream for T
+where
+    T: Stream<Item = Result<EventFull, Error>>,
+{
     fn into_dim_0_f32_stream(self) -> Dim0F32Stream<T> {
-        Dim0F32Stream {
-            inp: self,
-        }
+        Dim0F32Stream { inp: self }
     }
-
 }
 
-
-
-
-pub struct Dim1F32Stream<S> where S: Stream<Item=Result<EventFull, Error>> {
+pub struct Dim1F32Stream<S>
+where
+    S: Stream<Item = Result<EventFull, Error>>,
+{
     inp: S,
 }
 
-impl<S> Stream for Dim1F32Stream<S> where S: Stream<Item=Result<EventFull, Error>> + Unpin {
+impl<S> Stream for Dim1F32Stream<S>
+where
+    S: Stream<Item = Result<EventFull, Error>> + Unpin,
+{
     type Item = Result<ValuesDim1, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
@@ -521,7 +545,9 @@ impl<S> Stream for Dim1F32Stream<S> where S: Stream<Item=Result<EventFull, Error
                             let ele_count = n1 / ty.bytes() as usize;
                             let mut j = Vec::with_capacity(ele_count);
                             // this is safe for ints and floats
-                            unsafe { j.set_len(ele_count); }
+                            unsafe {
+                                j.set_len(ele_count);
+                            }
                             let mut p1 = 0;
                             for i1 in 0..ele_count {
                                 let u = unsafe {
@@ -535,8 +561,8 @@ impl<S> Stream for Dim1F32Stream<S> where S: Stream<Item=Result<EventFull, Error
                             }
                             ret.tss.push(k.tss[i1]);
                             ret.values.push(j);
-                        },
-                        _ => todo!()
+                        }
+                        _ => todo!(),
                     }
                 }
                 Ready(Some(Ok(ret)))
@@ -546,45 +572,54 @@ impl<S> Stream for Dim1F32Stream<S> where S: Stream<Item=Result<EventFull, Error
             Pending => Pending,
         }
     }
-
 }
 
 pub trait IntoDim1F32Stream {
-    fn into_dim_1_f32_stream(self) -> Dim1F32Stream<Self> where Self: Stream<Item=Result<EventFull, Error>> + Sized;
+    fn into_dim_1_f32_stream(self) -> Dim1F32Stream<Self>
+    where
+        Self: Stream<Item = Result<EventFull, Error>> + Sized;
 }
 
-impl<T> IntoDim1F32Stream for T where T: Stream<Item=Result<EventFull, Error>> {
-
+impl<T> IntoDim1F32Stream for T
+where
+    T: Stream<Item = Result<EventFull, Error>>,
+{
     fn into_dim_1_f32_stream(self) -> Dim1F32Stream<T> {
-        Dim1F32Stream {
-            inp: self,
-        }
+        Dim1F32Stream { inp: self }
     }
-
 }
-
 
 pub trait IntoBinnedXBins1<I: AggregatableXdim1Bin> {
     type StreamOut;
-    fn into_binned_x_bins_1(self) -> Self::StreamOut where Self: Stream<Item=Result<I, Error>>;
+    fn into_binned_x_bins_1(self) -> Self::StreamOut
+    where
+        Self: Stream<Item = Result<I, Error>>;
 }
 
-impl<T, I: AggregatableXdim1Bin> IntoBinnedXBins1<I> for T where T: Stream<Item=Result<I, Error>> + Unpin {
+impl<T, I: AggregatableXdim1Bin> IntoBinnedXBins1<I> for T
+where
+    T: Stream<Item = Result<I, Error>> + Unpin,
+{
     type StreamOut = IntoBinnedXBins1DefaultStream<T, I>;
 
     fn into_binned_x_bins_1(self) -> Self::StreamOut {
-        IntoBinnedXBins1DefaultStream {
-            inp: self,
-        }
+        IntoBinnedXBins1DefaultStream { inp: self }
     }
-
 }
 
-pub struct IntoBinnedXBins1DefaultStream<S, I> where S: Stream<Item=Result<I, Error>> + Unpin, I: AggregatableXdim1Bin {
+pub struct IntoBinnedXBins1DefaultStream<S, I>
+where
+    S: Stream<Item = Result<I, Error>> + Unpin,
+    I: AggregatableXdim1Bin,
+{
     inp: S,
 }
 
-impl<S, I> Stream for IntoBinnedXBins1DefaultStream<S, I> where S: Stream<Item=Result<I, Error>> + Unpin, I: AggregatableXdim1Bin {
+impl<S, I> Stream for IntoBinnedXBins1DefaultStream<S, I>
+where
+    S: Stream<Item = Result<I, Error>> + Unpin,
+    I: AggregatableXdim1Bin,
+{
     type Item = Result<I::Output, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
@@ -596,26 +631,31 @@ impl<S, I> Stream for IntoBinnedXBins1DefaultStream<S, I> where S: Stream<Item=R
             Pending => Pending,
         }
     }
-
 }
-
-
 
 pub trait IntoBinnedT {
     type StreamOut: Stream;
     fn into_binned_t(self, spec: BinSpecDimT) -> Self::StreamOut;
 }
 
-impl<T, I> IntoBinnedT for T where I: AggregatableTdim + Unpin, T: Stream<Item=Result<I, Error>> + Unpin, I::Aggregator: Unpin {
+impl<T, I> IntoBinnedT for T
+where
+    I: AggregatableTdim + Unpin,
+    T: Stream<Item = Result<I, Error>> + Unpin,
+    I::Aggregator: Unpin,
+{
     type StreamOut = IntoBinnedTDefaultStream<T, I>;
 
     fn into_binned_t(self, spec: BinSpecDimT) -> Self::StreamOut {
         IntoBinnedTDefaultStream::new(self, spec)
     }
-
 }
 
-pub struct IntoBinnedTDefaultStream<S, I> where I: AggregatableTdim, S: Stream<Item=Result<I, Error>> {
+pub struct IntoBinnedTDefaultStream<S, I>
+where
+    I: AggregatableTdim,
+    S: Stream<Item = Result<I, Error>>,
+{
     inp: S,
     aggtor: Option<I::Aggregator>,
     spec: BinSpecDimT,
@@ -623,8 +663,11 @@ pub struct IntoBinnedTDefaultStream<S, I> where I: AggregatableTdim, S: Stream<I
     left: Option<Poll<Option<Result<I, Error>>>>,
 }
 
-impl<S, I> IntoBinnedTDefaultStream<S, I> where I: AggregatableTdim, S: Stream<Item=Result<I, Error>> {
-
+impl<S, I> IntoBinnedTDefaultStream<S, I>
+where
+    I: AggregatableTdim,
+    S: Stream<Item = Result<I, Error>>,
+{
     pub fn new(inp: S, spec: BinSpecDimT) -> Self {
         //info!("spec ts  {}   {}", spec.ts1, spec.ts2);
         Self {
@@ -635,11 +678,13 @@ impl<S, I> IntoBinnedTDefaultStream<S, I> where I: AggregatableTdim, S: Stream<I
             left: None,
         }
     }
-
 }
 
 impl<T, I> Stream for IntoBinnedTDefaultStream<T, I>
-where I: AggregatableTdim + Unpin, T: Stream<Item=Result<I, Error>> + Unpin, I::Aggregator: Unpin
+where
+    I: AggregatableTdim + Unpin,
+    T: Stream<Item = Result<I, Error>> + Unpin,
+    I::Aggregator: Unpin,
 {
     type Item = Result<<I::Aggregator as AggregatorTdim>::OutputValue, Error>;
 
@@ -648,11 +693,9 @@ where I: AggregatableTdim + Unpin, T: Stream<Item=Result<I, Error>> + Unpin, I::
         'outer: loop {
             let cur = if self.curbin as u64 >= self.spec.count {
                 Ready(None)
-            }
-            else if let Some(k) = self.left.take() {
+            } else if let Some(k) = self.left.take() {
                 k
-            }
-            else {
+            } else {
                 self.inp.poll_next_unpin(cx)
             };
             break match cur {
@@ -666,14 +709,12 @@ where I: AggregatableTdim + Unpin, T: Stream<Item=Result<I, Error>> + Unpin, I::
                     if ag.ends_before(&k) {
                         //info!("ENDS BEFORE");
                         continue 'outer;
-                    }
-                    else if ag.starts_after(&k) {
+                    } else if ag.starts_after(&k) {
                         //info!("STARTS AFTER");
                         self.left = Some(Ready(Some(Ok(k))));
                         self.curbin += 1;
                         Ready(Some(Ok(self.aggtor.take().unwrap().result())))
-                    }
-                    else {
+                    } else {
                         //info!("INGEST");
                         ag.ingest(&k);
                         // if this input contains also data after the current bin, then I need to keep
@@ -683,30 +724,24 @@ where I: AggregatableTdim + Unpin, T: Stream<Item=Result<I, Error>> + Unpin, I::
                             self.left = Some(Ready(Some(Ok(k))));
                             self.curbin += 1;
                             Ready(Some(Ok(self.aggtor.take().unwrap().result())))
-                        }
-                        else {
+                        } else {
                             //info!("ENDS WITHIN");
                             continue 'outer;
                         }
                     }
                 }
                 Ready(Some(Err(e))) => Ready(Some(Err(e))),
-                Ready(None) => {
-                    match self.aggtor.take() {
-                        Some(ag) => {
-                            Ready(Some(Ok(ag.result())))
-                        }
-                        None => {
-                            warn!("TODO add trailing bins");
-                            Ready(None)
-                        }
+                Ready(None) => match self.aggtor.take() {
+                    Some(ag) => Ready(Some(Ok(ag.result()))),
+                    None => {
+                        warn!("TODO add trailing bins");
+                        Ready(None)
                     }
                 },
                 Pending => Pending,
             };
         }
     }
-
 }
 pub fn make_test_node(id: u32) -> Node {
     Node {
@@ -719,10 +754,13 @@ pub fn make_test_node(id: u32) -> Node {
     }
 }
 
-
 #[test]
 fn agg_x_dim_0() {
-    taskrun::run(async { agg_x_dim_0_inner().await; Ok(()) }).unwrap();
+    taskrun::run(async {
+        agg_x_dim_0_inner().await;
+        Ok(())
+    })
+    .unwrap();
 }
 
 async fn agg_x_dim_0_inner() {
@@ -750,32 +788,35 @@ async fn agg_x_dim_0_inner() {
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size;
     let ts2 = ts1 + HOUR * 24;
     let fut1 = crate::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
-    .into_dim_1_f32_stream()
-    //.take(1000)
-    .map(|q| {
-        if let Ok(ref k) = q {
-            //info!("vals: {:?}", k);
-        }
-        q
-    })
-    .into_binned_x_bins_1()
-    .map(|k| {
-        //info!("after X binning  {:?}", k.as_ref().unwrap());
-        k
-    })
-    .into_binned_t(BinSpecDimT::over_range(bin_count, ts1, ts2))
-    .map(|k| {
-        info!("after T binning  {:?}", k.as_ref().unwrap());
-        k
-    })
-    .for_each(|k| ready(()));
+        .into_dim_1_f32_stream()
+        //.take(1000)
+        .map(|q| {
+            if let Ok(ref k) = q {
+                //info!("vals: {:?}", k);
+            }
+            q
+        })
+        .into_binned_x_bins_1()
+        .map(|k| {
+            //info!("after X binning  {:?}", k.as_ref().unwrap());
+            k
+        })
+        .into_binned_t(BinSpecDimT::over_range(bin_count, ts1, ts2))
+        .map(|k| {
+            info!("after T binning  {:?}", k.as_ref().unwrap());
+            k
+        })
+        .for_each(|k| ready(()));
     fut1.await;
 }
 
-
 #[test]
 fn agg_x_dim_1() {
-    taskrun::run(async { agg_x_dim_1_inner().await; Ok(()) }).unwrap();
+    taskrun::run(async {
+        agg_x_dim_1_inner().await;
+        Ok(())
+    })
+    .unwrap();
 }
 
 async fn agg_x_dim_1_inner() {
@@ -806,31 +847,35 @@ async fn agg_x_dim_1_inner() {
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size;
     let ts2 = ts1 + HOUR * 24;
     let fut1 = crate::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
-    .into_dim_1_f32_stream()
-    //.take(1000)
-    .map(|q| {
-        if let Ok(ref k) = q {
-            //info!("vals: {:?}", k);
-        }
-        q
-    })
-    .into_binned_x_bins_1()
-    .map(|k| {
-        //info!("after X binning  {:?}", k.as_ref().unwrap());
-        k
-    })
-    .into_binned_t(BinSpecDimT::over_range(bin_count, ts1, ts2))
-    .map(|k| {
-        info!("after T binning  {:?}", k.as_ref().unwrap());
-        k
-    })
-    .for_each(|k| ready(()));
+        .into_dim_1_f32_stream()
+        //.take(1000)
+        .map(|q| {
+            if let Ok(ref k) = q {
+                //info!("vals: {:?}", k);
+            }
+            q
+        })
+        .into_binned_x_bins_1()
+        .map(|k| {
+            //info!("after X binning  {:?}", k.as_ref().unwrap());
+            k
+        })
+        .into_binned_t(BinSpecDimT::over_range(bin_count, ts1, ts2))
+        .map(|k| {
+            info!("after T binning  {:?}", k.as_ref().unwrap());
+            k
+        })
+        .for_each(|k| ready(()));
     fut1.await;
 }
 
 #[test]
 fn merge_0() {
-    taskrun::run(async { merge_0_inner().await; Ok(()) }).unwrap();
+    taskrun::run(async {
+        merge_0_inner().await;
+        Ok(())
+    })
+    .unwrap();
 }
 
 async fn merge_0_inner() {
@@ -852,25 +897,22 @@ async fn merge_0_inner() {
         tb_file_count: 1,
         buffer_size: 1024 * 8,
     };
-    let streams = (0..13).into_iter()
-    .map(|k| {
-        make_test_node(k)
-    })
-    .map(|node| {
-        let node = Arc::new(node);
-        crate::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
-        .into_dim_1_f32_stream()
-    })
-    .collect();
+    let streams = (0..13)
+        .into_iter()
+        .map(|k| make_test_node(k))
+        .map(|node| {
+            let node = Arc::new(node);
+            crate::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
+                .into_dim_1_f32_stream()
+        })
+        .collect();
     MergeDim1F32Stream::new(streams)
-    .map(|k| {
-        //info!("NEXT MERGED ITEM  ts {:?}", k.as_ref().unwrap().tss);
-    })
-    .fold(0, |k, q| ready(0))
-    .await;
+        .map(|k| {
+            //info!("NEXT MERGED ITEM  ts {:?}", k.as_ref().unwrap().tss);
+        })
+        .fold(0, |k, q| ready(0))
+        .await;
 }
-
-
 
 pub fn tmp_some_older_things() {
     let vals = ValuesDim1 {

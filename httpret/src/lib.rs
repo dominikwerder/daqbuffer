@@ -1,23 +1,23 @@
-#[allow(unused_imports)]
-use tracing::{error, warn, info, debug, trace};
+use bytes::Bytes;
+use disk::cache::PreBinnedQuery;
 use err::Error;
-use std::{task, future, pin, net, panic, sync};
-use net::SocketAddr;
-use http::{Method, StatusCode, HeaderMap};
-use hyper::{Body, Request, Response, server::Server};
-use hyper::service::{make_service_fn, service_fn};
-use task::{Context, Poll};
 use future::Future;
-use pin::Pin;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
-use netpod::{Node, Cluster, AggKind, NodeConfig};
+use http::{HeaderMap, Method, StatusCode};
+use hyper::service::{make_service_fn, service_fn};
+use hyper::{server::Server, Body, Request, Response};
+use net::SocketAddr;
+use netpod::{AggKind, Cluster, Node, NodeConfig};
+use panic::{AssertUnwindSafe, UnwindSafe};
+use pin::Pin;
+use std::{future, net, panic, pin, sync, task};
 use sync::Arc;
-use disk::cache::PreBinnedQuery;
-use panic::{UnwindSafe, AssertUnwindSafe};
-use bytes::Bytes;
-use tokio::net::TcpStream;
+use task::{Context, Poll};
 use tokio::io::AsyncWriteExt;
+use tokio::net::TcpStream;
+#[allow(unused_imports)]
+use tracing::{debug, error, info, trace, warn};
 
 pub async fn host(node_config: Arc<NodeConfig>) -> Result<(), Error> {
     let rawjh = taskrun::spawn(raw_service(node_config.clone()));
@@ -41,9 +41,12 @@ pub async fn host(node_config: Arc<NodeConfig>) -> Result<(), Error> {
     Ok(())
 }
 
-async fn data_api_proxy(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
+async fn data_api_proxy(
+    req: Request<Body>,
+    node_config: Arc<NodeConfig>,
+) -> Result<Response<Body>, Error> {
     match data_api_proxy_try(req, node_config).await {
-        Ok(k) => { Ok(k) }
+        Ok(k) => Ok(k),
         Err(e) => {
             error!("{:?}", e);
             Err(e)
@@ -55,13 +58,14 @@ struct Cont<F> {
     f: Pin<Box<F>>,
 }
 
-impl<F, I> Future for Cont<F> where F: Future<Output=Result<I, Error>> {
+impl<F, I> Future for Cont<F>
+where
+    F: Future<Output = Result<I, Error>>,
+{
     type Output = <F as Future>::Output;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        let h = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            self.f.poll_unpin(cx)
-        }));
+        let h = std::panic::catch_unwind(AssertUnwindSafe(|| self.f.poll_unpin(cx)));
         match h {
             Ok(k) => k,
             Err(e) => {
@@ -70,61 +74,55 @@ impl<F, I> Future for Cont<F> where F: Future<Output=Result<I, Error>> {
                     Some(e) => {
                         error!("Cont<F>  catch_unwind  is Error: {:?}", e);
                     }
-                    None => {
-                    }
+                    None => {}
                 }
                 Poll::Ready(Err(Error::from(format!("{:?}", e))))
             }
         }
     }
-
 }
 
 impl<F> UnwindSafe for Cont<F> {}
 
-
-async fn data_api_proxy_try(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
+async fn data_api_proxy_try(
+    req: Request<Body>,
+    node_config: Arc<NodeConfig>,
+) -> Result<Response<Body>, Error> {
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/1/parsed_raw" {
         if req.method() == Method::POST {
             Ok(parsed_raw(req).await?)
-        }
-        else {
+        } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    }
-    else if path == "/api/1/binned" {
+    } else if path == "/api/1/binned" {
         if req.method() == Method::GET {
             Ok(binned(req, node_config.clone()).await?)
-        }
-        else {
+        } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    }
-    else if path == "/api/1/prebinned" {
+    } else if path == "/api/1/prebinned" {
         if req.method() == Method::GET {
             Ok(prebinned(req, node_config.clone()).await?)
-        }
-        else {
+        } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    }
-    else {
+    } else {
         Ok(response(StatusCode::NOT_FOUND).body(Body::empty())?)
     }
 }
 
 fn response<T>(status: T) -> http::response::Builder
-    where
-        http::StatusCode: std::convert::TryFrom<T>,
-        <http::StatusCode as std::convert::TryFrom<T>>::Error: Into<http::Error>,
+where
+    http::StatusCode: std::convert::TryFrom<T>,
+    <http::StatusCode as std::convert::TryFrom<T>>::Error: Into<http::Error>,
 {
-    Response::builder().status(status)
+    Response::builder()
+        .status(status)
         .header("access-control-allow-origin", "*")
         .header("access-control-allow-headers", "*")
 }
-
 
 async fn parsed_raw(req: Request<Body>) -> Result<Response<Body>, Error> {
     let node = todo!("get node from config");
@@ -135,8 +133,7 @@ async fn parsed_raw(req: Request<Body>) -> Result<Response<Body>, Error> {
     //let q = disk::read_test_1(&query).await?;
     //let s = q.inner;
     let s = disk::parsed1(&query, node);
-    let res = response(StatusCode::OK)
-        .body(Body::wrap_stream(s))?;
+    let res = response(StatusCode::OK).body(Body::wrap_stream(s))?;
     /*
     let res = match q {
         Ok(k) => {
@@ -152,14 +149,16 @@ async fn parsed_raw(req: Request<Body>) -> Result<Response<Body>, Error> {
     Ok(res)
 }
 
-
 struct BodyStreamWrap(netpod::BodyStream);
 
 impl hyper::body::HttpBody for BodyStreamWrap {
     type Data = bytes::Bytes;
     type Error = Error;
 
-    fn poll_data(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+    fn poll_data(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         /*
         use futures_core::stream::Stream;
         let z: &mut async_channel::Receiver<Result<Self::Data, Self::Error>> = &mut self.0.receiver;
@@ -171,39 +170,42 @@ impl hyper::body::HttpBody for BodyStreamWrap {
         todo!()
     }
 
-    fn poll_trailers(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
+    fn poll_trailers(
+        self: Pin<&mut Self>,
+        _cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
         Poll::Ready(Ok(None))
     }
-
 }
-
 
 struct BodyStream<S> {
     inp: S,
 }
 
-impl<S, I> BodyStream<S> where S: Stream<Item=Result<I, Error>> + Unpin + Send + 'static, I: Into<Bytes> + Sized + 'static {
-
+impl<S, I> BodyStream<S>
+where
+    S: Stream<Item = Result<I, Error>> + Unpin + Send + 'static,
+    I: Into<Bytes> + Sized + 'static,
+{
     pub fn new(inp: S) -> Self {
-        Self {
-            inp,
-        }
+        Self { inp }
     }
 
     pub fn wrapped(inp: S) -> Body {
         Body::wrap_stream(Self::new(inp))
     }
-
 }
 
-impl<S, I> Stream for BodyStream<S> where S: Stream<Item=Result<I, Error>> + Unpin, I: Into<Bytes> + Sized {
+impl<S, I> Stream for BodyStream<S>
+where
+    S: Stream<Item = Result<I, Error>> + Unpin,
+    I: Into<Bytes> + Sized,
+{
     type Item = Result<I, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        let t = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            self.inp.poll_next_unpin(cx)
-        }));
+        let t = std::panic::catch_unwind(AssertUnwindSafe(|| self.inp.poll_next_unpin(cx)));
         let r = match t {
             Ok(k) => k,
             Err(e) => {
@@ -221,9 +223,7 @@ impl<S, I> Stream for BodyStream<S> where S: Stream<Item=Result<I, Error>> + Unp
             Pending => Pending,
         }
     }
-
 }
-
 
 async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
     info!("--------------------------------------------------------   BINNED");
@@ -238,10 +238,7 @@ async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Resp
 
     let query = disk::cache::Query::from_request(&head)?;
     let ret = match disk::cache::binned_bytes_for_http(node_config, &query) {
-        Ok(s) => {
-            response(StatusCode::OK)
-            .body(BodyStream::wrapped(s))?
-        }
+        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s))?,
         Err(e) => {
             error!("{:?}", e);
             response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
@@ -250,16 +247,15 @@ async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Resp
     Ok(ret)
 }
 
-
-async fn prebinned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
+async fn prebinned(
+    req: Request<Body>,
+    node_config: Arc<NodeConfig>,
+) -> Result<Response<Body>, Error> {
     info!("--------------------------------------------------------   PRE-BINNED");
     let (head, body) = req.into_parts();
     let q = PreBinnedQuery::from_request(&head)?;
     let ret = match disk::cache::pre_binned_bytes_for_http(node_config, &q) {
-        Ok(s) => {
-            response(StatusCode::OK)
-            .body(BodyStream::wrapped(s))?
-        }
+        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s))?,
         Err(e) => {
             error!("{:?}", e);
             response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
@@ -275,7 +271,7 @@ async fn raw_service(node_config: Arc<NodeConfig>) -> Result<(), Error> {
             Ok((stream, addr)) => {
                 taskrun::spawn(raw_conn_handler(stream, addr));
             }
-            Err(e) => Err(e)?
+            Err(e) => Err(e)?,
         }
     }
     Ok(())
