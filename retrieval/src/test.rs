@@ -1,4 +1,5 @@
 use crate::spawn_test_hosts;
+use chrono::Utc;
 use err::Error;
 use hyper::Body;
 use netpod::{Cluster, Node};
@@ -35,13 +36,24 @@ async fn get_cached_0_inner() -> Result<(), Error> {
     let cluster = Arc::new(test_cluster());
     let node0 = &cluster.nodes[0];
     let hosts = spawn_test_hosts(cluster.clone());
+    let beg_date: chrono::DateTime<Utc> = "1970-01-01T00:00:10.000Z".parse()?;
+    let end_date: chrono::DateTime<Utc> = "1970-01-01T00:00:51.000Z".parse()?;
+    let channel = "wave1";
+    let date_fmt = "%Y-%m-%dT%H:%M:%S%.3fZ";
+    let uri = format!(
+        "http://{}:{}/api/1/binned?channel_backend=testbackend&channel_name={}&bin_count=4&beg_date={}&end_date={}",
+        node0.host,
+        node0.port,
+        channel,
+        beg_date.format(date_fmt),
+        end_date.format(date_fmt),
+    );
+    info!("URI {:?}", uri);
     let req = hyper::Request::builder()
-    .method(http::Method::GET)
-    .uri(format!(
-        "http://{}:{}/api/1/binned?channel_backend=testbackend&channel_keyspace=3&channel_name=wave1&bin_count=4&beg_date=1970-01-01T00:00:10.000Z&end_date=1970-01-01T00:00:51.000Z",
-        node0.host, node0.port
-    ))
-    .body(Body::empty())?;
+        .method(http::Method::GET)
+        .uri(uri)
+        .body(Body::empty())?;
+    info!("Request for {:?}", req);
     let client = hyper::Client::new();
     let res = client.request(req).await?;
     info!("client response {:?}", res);

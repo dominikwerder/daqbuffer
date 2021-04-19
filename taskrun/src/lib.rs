@@ -7,7 +7,7 @@ use tracing::{debug, error, info, trace, warn};
 
 pub fn run<T, F: std::future::Future<Output = Result<T, Error>>>(f: F) -> Result<T, Error> {
     tracing_init();
-    tokio::runtime::Builder::new_multi_thread()
+    let res = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(12)
         .max_blocking_threads(256)
         .enable_all()
@@ -25,7 +25,14 @@ pub fn run<T, F: std::future::Future<Output = Result<T, Error>>>(f: F) -> Result
         })
         .build()
         .unwrap()
-        .block_on(async { f.await })
+        .block_on(async { f.await });
+    match res {
+        Ok(k) => Ok(k),
+        Err(e) => {
+            error!("{:?}", e);
+            Err(e)
+        }
+    }
 }
 
 pub fn tracing_init() {

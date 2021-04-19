@@ -216,16 +216,8 @@ where
 async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
     info!("--------------------------------------------------------   BINNED");
     let (head, _body) = req.into_parts();
-    //let params = netpod::query_params(head.uri.query());
-
-    // TODO
-    // Channel, time range, bin size.
-    // Try to locate that file in cache, otherwise create it on the fly:
-    // Look up and parse channel config.
-    // Extract the relevant channel config entry.
-
     let query = disk::cache::Query::from_request(&head)?;
-    let ret = match disk::cache::binned_bytes_for_http(node_config, &query) {
+    let ret = match disk::cache::binned_bytes_for_http(node_config, &query).await {
         Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s))?,
         Err(e) => {
             error!("{:?}", e);

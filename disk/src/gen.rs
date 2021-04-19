@@ -42,7 +42,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 big_endian: true,
                 compression: true,
             },
-            time_spacing: MS * 10,
+            time_spacing: MS * 2000,
         };
         ensemble.channels.push(chn);
     }
@@ -150,8 +150,8 @@ async fn gen_config(
 
     {
         // this len does not include itself and there seems to be no copy of it afterwards.
-        buf.put_i32(0x20202020);
         let p3 = buf.len();
+        buf.put_i32(404040);
         buf.put_u8(config.dtflags());
         buf.put_u8(config.scalar_type.index());
         if config.compression {
@@ -161,12 +161,24 @@ async fn gen_config(
         match config.shape {
             Shape::Scalar => {}
             Shape::Wave(k) => {
+                buf.put_i8(1);
                 buf.put_i32(k as i32);
             }
         }
-        let len = buf.len() - p3;
+        let len = buf.len() - p3 - 4;
         buf.as_mut()[p3..].as_mut().put_i32(len as i32);
     }
+
+    // source name
+    buf.put_i32(-1);
+    // unit
+    buf.put_i32(-1);
+    // description
+    buf.put_i32(-1);
+    // optional fields
+    buf.put_i32(-1);
+    // value converter
+    buf.put_i32(-1);
 
     let p2 = buf.len();
     let len = p2 - p1 + 4;

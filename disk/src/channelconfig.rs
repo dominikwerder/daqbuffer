@@ -1,4 +1,5 @@
 use err::Error;
+use netpod::{Channel, NodeConfig};
 use nom::number::complete::{be_i16, be_i32, be_i64, be_i8, be_u8};
 use nom::Needed;
 #[allow(unused_imports)]
@@ -10,6 +11,7 @@ use nom::{
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
@@ -60,7 +62,7 @@ impl CompressionMethod {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ConfigEntry {
-    pub ts: i64,
+    pub ts: u64,
     pub pulse: i64,
     pub ks: i32,
     pub bs: i64,
@@ -198,7 +200,7 @@ pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
     Ok((
         inp_e,
         Some(ConfigEntry {
-            ts,
+            ts: ts as u64,
             pulse,
             ks,
             bs,
@@ -262,31 +264,49 @@ pub fn parse_config(inp: &[u8]) -> NRes<Config> {
     Ok((inp, ret))
 }
 
+pub async fn read_local_config(channel: &Channel, node_config: Arc<NodeConfig>) -> Result<Config, Error> {
+    let path = node_config
+        .node
+        .data_base_path
+        .join("config")
+        .join(&channel.name)
+        .join("latest")
+        .join("00000_Config");
+    let buf = tokio::fs::read(&path).await?;
+    info!("try to parse config  {} bytes", buf.len());
+    let config = parse_config(&buf)?;
+    Ok(config.1)
+}
+
 #[cfg(test)]
-fn read_data() -> Vec<u8> {
-    use std::io::Read;
-    let path = "ks/config/S10CB01-RLOD100-PUP10:SIG-AMPLT/latest/00000_Config";
-    let mut f1 = std::fs::File::open(path).unwrap();
-    let mut buf = vec![];
-    f1.read_to_end(&mut buf).unwrap();
-    buf
-}
+mod test {
+    use super::parse_config;
 
-#[test]
-fn parse_dummy() {
-    let config = parse_config(&[0, 0, 0, 0, 0, 11, 0x61, 0x62, 0x63, 0, 0, 0, 11, 0, 0, 0, 1]).unwrap();
-    assert_eq!(0, config.1.format_version);
-    assert_eq!("abc", config.1.channel_name);
-}
+    fn read_data() -> Vec<u8> {
+        use std::io::Read;
+        let path = "ks/config/S10CB01-RLOD100-PUP10:SIG-AMPLT/latest/00000_Config";
+        let mut f1 = std::fs::File::open(path).unwrap();
+        let mut buf = vec![];
+        f1.read_to_end(&mut buf).unwrap();
+        buf
+    }
 
-#[test]
-fn open_file() {
-    let config = parse_config(&read_data()).unwrap().1;
-    assert_eq!(0, config.format_version);
-    assert_eq!(9, config.entries.len());
-    for e in &config.entries {
-        assert!(e.ts >= 631152000000000000);
-        assert!(e.ts <= 1591106812800073974);
-        assert!(e.shape.is_some());
+    #[test]
+    fn parse_dummy() {
+        let config = parse_config(&[0, 0, 0, 0, 0, 11, 0x61, 0x62, 0x63, 0, 0, 0, 11, 0, 0, 0, 1]).unwrap();
+        assert_eq!(0, config.1.format_version);
+        assert_eq!("abc", config.1.channel_name);
+    }
+
+    #[test]
+    fn open_file() {
+        let config = parse_config(&read_data()).unwrap().1;
+        assert_eq!(0, config.format_version);
+        assert_eq!(9, config.entries.len());
+        for e in &config.entries {
+            assert!(e.ts >= 631152000000000000);
+            assert!(e.ts <= 1591106812800073974);
+            assert!(e.shape.is_some());
+        }
     }
 }

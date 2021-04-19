@@ -51,11 +51,41 @@ impl Query {
     }
 }
 
-pub fn binned_bytes_for_http(node_config: Arc<NodeConfig>, query: &Query) -> Result<BinnedBytesForHttpStream, Error> {
+pub async fn binned_bytes_for_http(
+    node_config: Arc<NodeConfig>,
+    query: &Query,
+) -> Result<BinnedBytesForHttpStream, Error> {
     let agg_kind = AggKind::DimXBins1;
 
-    // TODO
-    // Translate the Query TimeRange + AggKind into an iterator over the pre-binned patches.
+    let channel_config = super::channelconfig::read_local_config(&query.channel, node_config.clone()).await?;
+    let entry;
+    {
+        let mut ixs = vec![];
+        for i1 in 0..channel_config.entries.len() {
+            let e1 = &channel_config.entries[i1];
+            if i1 + 1 < channel_config.entries.len() {
+                let e2 = &channel_config.entries[i1 + 1];
+                if e1.ts < query.range.end && e2.ts >= query.range.beg {
+                    ixs.push(i1);
+                } else {
+                }
+            } else {
+                if e1.ts < query.range.end {
+                    ixs.push(i1);
+                } else {
+                }
+            }
+        }
+        if ixs.len() == 0 {
+            return Err(Error::with_msg(format!("no config entries found")));
+        } else if ixs.len() > 1 {
+            return Err(Error::with_msg(format!("too many config entries found: {}", ixs.len())));
+        }
+        entry = &channel_config.entries[ixs[0]];
+    }
+
+    info!("found config entry {:?}", entry);
+
     let grid = PreBinnedPatchRange::covering_range(query.range.clone(), query.count);
     match grid {
         Some(spec) => {
