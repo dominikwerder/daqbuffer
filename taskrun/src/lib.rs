@@ -12,7 +12,7 @@ pub fn run<T, F: std::future::Future<Output = Result<T, Error>>>(f: F) -> Result
         .max_blocking_threads(256)
         .enable_all()
         .on_thread_start(|| {
-            let old = panic::take_hook();
+            let _old = panic::take_hook();
             panic::set_hook(Box::new(move |info| {
                 error!(
                     "✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗     panicking\n{:?}\nLOCATION: {:?}\nPAYLOAD: {:?}",

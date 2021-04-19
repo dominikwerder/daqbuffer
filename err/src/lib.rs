@@ -2,6 +2,7 @@ use nom::error::ErrorKind;
 use std::fmt::Debug;
 use std::num::ParseIntError;
 use std::string::FromUtf8Error;
+use tokio::task::JoinError;
 
 #[derive(Debug)]
 pub struct Error {
@@ -82,28 +83,31 @@ impl From<FromUtf8Error> for Error {
     }
 }
 
-impl<T> From<nom::Err<T>> for Error {
+impl<T: Debug> From<nom::Err<T>> for Error {
     fn from(k: nom::Err<T>) -> Self {
-        Self {
-            msg: format!("nom::Err<T>"),
-        }
-    }
-}
-
-impl<I> From<nom::error::VerboseError<I>> for Error {
-    fn from(k: nom::error::VerboseError<I>) -> Self {
-        Self {
-            msg: format!("nom::error::VerboseError<I>"),
-        }
+        Self::with_msg(format!("nom::Err<T> {:?}", k))
     }
 }
 
 impl<I> nom::error::ParseError<I> for Error {
-    fn from_error_kind(input: I, kind: ErrorKind) -> Self {
-        todo!()
+    fn from_error_kind(_input: I, kind: ErrorKind) -> Self {
+        Self::with_msg(format!("ParseError  {:?}", kind))
     }
 
-    fn append(input: I, kind: ErrorKind, other: Self) -> Self {
-        todo!()
+    fn append(_input: I, kind: ErrorKind, other: Self) -> Self {
+        Self::with_msg(format!("ParseError  kind {:?}  other {:?}", kind, other))
     }
+}
+
+impl From<JoinError> for Error {
+    fn from(k: JoinError) -> Self {
+        Self::with_msg(format!("JoinError {:?}", k))
+    }
+}
+
+pub fn todoval<T>() -> T {
+    if true {
+        todo!("TODO todoval");
+    }
+    todo!()
 }

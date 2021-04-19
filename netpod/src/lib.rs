@@ -95,6 +95,7 @@ pub struct Node {
     pub id: u32,
     pub host: String,
     pub port: u16,
+    pub port_raw: u16,
     pub split: u32,
     pub data_base_path: PathBuf,
     pub ksprefix: String,
@@ -192,41 +193,6 @@ impl BinSpecDimT {
         let dt = ts2 - ts1;
         assert!(dt <= DAY * 14);
         let bs = dt / count;
-        let BIN_THRESHOLDS = [
-            2,
-            10,
-            100,
-            1000,
-            10_000,
-            100_000,
-            MU,
-            MU * 10,
-            MU * 100,
-            MS,
-            MS * 10,
-            MS * 100,
-            SEC,
-            SEC * 5,
-            SEC * 10,
-            SEC * 20,
-            MIN,
-            MIN * 5,
-            MIN * 10,
-            MIN * 20,
-            HOUR,
-            HOUR * 2,
-            HOUR * 4,
-            HOUR * 12,
-            DAY,
-            DAY * 2,
-            DAY * 4,
-            DAY * 8,
-            DAY * 16,
-            WEEK,
-            WEEK * 2,
-            WEEK * 10,
-            WEEK * 60,
-        ];
         let mut i1 = 0;
         let bs = loop {
             if i1 >= BIN_THRESHOLDS.len() {
@@ -314,6 +280,42 @@ const BIN_T_LEN_OPTIONS: [u64; 6] = [SEC * 10, MIN * 10, HOUR, HOUR * 4, DAY, DA
 
 const PATCH_T_LEN_OPTIONS: [u64; 6] = [MIN * 10, HOUR, HOUR * 4, DAY, DAY * 4, DAY * 12];
 
+const BIN_THRESHOLDS: [u64; 33] = [
+    2,
+    10,
+    100,
+    1000,
+    10_000,
+    100_000,
+    MU,
+    MU * 10,
+    MU * 100,
+    MS,
+    MS * 10,
+    MS * 100,
+    SEC,
+    SEC * 5,
+    SEC * 10,
+    SEC * 20,
+    MIN,
+    MIN * 5,
+    MIN * 10,
+    MIN * 20,
+    HOUR,
+    HOUR * 2,
+    HOUR * 4,
+    HOUR * 12,
+    DAY,
+    DAY * 2,
+    DAY * 4,
+    DAY * 8,
+    DAY * 16,
+    WEEK,
+    WEEK * 2,
+    WEEK * 10,
+    WEEK * 60,
+];
+
 #[derive(Clone, Debug)]
 pub struct PreBinnedPatchRange {
     pub grid_spec: PreBinnedPatchGridSpec,
@@ -340,7 +342,7 @@ impl PreBinnedPatchRange {
                 if t <= bs {
                     let bs = t;
                     let ts1 = range.beg / bs * bs;
-                    let ts2 = (range.end + bs - 1) / bs * bs;
+                    let _ts2 = (range.end + bs - 1) / bs * bs;
                     let count = range.delta() / bs;
                     let offset = ts1 / bs;
                     break Some(Self {
@@ -410,6 +412,7 @@ impl PreBinnedPatchCoord {
 
 pub struct PreBinnedPatchIterator {
     range: PreBinnedPatchRange,
+    #[allow(dead_code)]
     agg_kind: AggKind,
     ix: u64,
 }

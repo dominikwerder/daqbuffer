@@ -1,19 +1,12 @@
 use crate::ChannelConfigExt;
 use bitshuffle::bitshuffle_compress;
-use bytes::{Buf, BufMut, Bytes, BytesMut};
+use bytes::{BufMut, BytesMut};
 use err::Error;
-use futures_core::Stream;
-use futures_util::future::FusedFuture;
-use futures_util::{pin_mut, StreamExt};
 use netpod::ScalarType;
 use netpod::{timeunits::*, Channel, ChannelConfig, Node, Shape};
-use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
 use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncRead, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
@@ -58,6 +51,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
             id: i1,
             host: "localhost".into(),
             port: 7780 + i1 as u16,
+            port_raw: 7780 + i1 as u16 + 100,
             split: i1,
             data_base_path: data_base_path.join(format!("node{:02}", i1)),
             ksprefix: ksprefix.clone(),
@@ -108,7 +102,12 @@ async fn gen_channel(chn: &ChannelGenProps, node: &Node, ensemble: &Ensemble) ->
     Ok(())
 }
 
-async fn gen_config(config_path: &Path, config: &ChannelConfig, node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
+async fn gen_config(
+    config_path: &Path,
+    config: &ChannelConfig,
+    _node: &Node,
+    _ensemble: &Ensemble,
+) -> Result<(), Error> {
     let path = config_path.join("latest");
     tokio::fs::create_dir_all(&path).await?;
     let path = path.join("00000_Config");
@@ -173,7 +172,7 @@ async fn gen_config(config_path: &Path, config: &ChannelConfig, node: &Node, ens
     let len = p2 - p1 + 4;
     buf.put_i32(len as i32);
     buf.as_mut()[p1..].as_mut().put_i32(len as i32);
-    file.write(&buf);
+    file.write(&buf).await?;
     Ok(())
 }
 

@@ -8,7 +8,7 @@ use http::{HeaderMap, Method, StatusCode};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
-use netpod::{AggKind, Cluster, Node, NodeConfig};
+use netpod::NodeConfig;
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
 use std::{future, net, panic, pin, sync, task};
@@ -37,7 +37,7 @@ pub async fn host(node_config: Arc<NodeConfig>) -> Result<(), Error> {
         }
     });
     Server::bind(&addr).serve(make_service).await?;
-    rawjh.await;
+    rawjh.await??;
     Ok(())
 }
 
@@ -86,7 +86,7 @@ async fn data_api_proxy_try(req: Request<Body>, node_config: Arc<NodeConfig>) ->
     let path = uri.path();
     if path == "/api/1/parsed_raw" {
         if req.method() == Method::POST {
-            Ok(parsed_raw(req).await?)
+            Ok(parsed_raw(req, node_config.clone()).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -118,8 +118,8 @@ where
         .header("access-control-allow-headers", "*")
 }
 
-async fn parsed_raw(req: Request<Body>) -> Result<Response<Body>, Error> {
-    let node = todo!("get node from config");
+async fn parsed_raw(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
+    let node = node_config.node.clone();
     use netpod::AggQuerySingleChannel;
     let reqbody = req.into_body();
     let bodyslice = hyper::body::to_bytes(reqbody).await?;
@@ -215,7 +215,7 @@ where
 
 async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
     info!("--------------------------------------------------------   BINNED");
-    let (head, body) = req.into_parts();
+    let (head, _body) = req.into_parts();
     //let params = netpod::query_params(head.uri.query());
 
     // TODO
@@ -237,7 +237,7 @@ async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Resp
 
 async fn prebinned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
     info!("--------------------------------------------------------   PRE-BINNED");
-    let (head, body) = req.into_parts();
+    let (head, _body) = req.into_parts();
     let q = PreBinnedQuery::from_request(&head)?;
     let ret = match disk::cache::pre_binned_bytes_for_http(node_config, &q) {
         Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s))?,
@@ -250,7 +250,8 @@ async fn prebinned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<R
 }
 
 async fn raw_service(node_config: Arc<NodeConfig>) -> Result<(), Error> {
-    let lis = tokio::net::TcpListener::bind("0.0.0.0:5555").await?;
+    let addr = format!("0.0.0.0:{}", node_config.node.port_raw);
+    let lis = tokio::net::TcpListener::bind(addr).await?;
     loop {
         match lis.accept().await {
             Ok((stream, addr)) => {
@@ -259,7 +260,6 @@ async fn raw_service(node_config: Arc<NodeConfig>) -> Result<(), Error> {
             Err(e) => Err(e)?,
         }
     }
-    Ok(())
 }
 
 async fn raw_conn_handler(mut stream: TcpStream, addr: SocketAddr) -> Result<(), Error> {

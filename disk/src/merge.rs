@@ -2,7 +2,7 @@ use crate::agg::{Dim1F32Stream, ValuesDim1};
 use crate::EventFull;
 use err::Error;
 use futures_core::Stream;
-use futures_util::{future::ready, pin_mut, StreamExt};
+use futures_util::StreamExt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 #[allow(unused_imports)]
@@ -61,10 +61,9 @@ where
                                 self.current[i1] = CurVal::Val(k);
                             }
                             Ready(Some(Err(e))) => {
+                                // TODO emit this error, consider this stream as done, anything more to do here?
                                 //self.current[i1] = CurVal::Err(e);
                                 return Ready(Some(Err(e)));
-                                // TODO emit this error, consider this stream as done.
-                                todo!()
                             }
                             Ready(None) => {
                                 self.current[i1] = CurVal::Finish;
@@ -72,7 +71,6 @@ where
                             Pending => {
                                 // TODO is this behaviour correct?
                                 return Pending;
-                                todo!()
                             }
                         }
                     }
@@ -128,6 +126,7 @@ where
 enum CurVal {
     None,
     Finish,
+    #[allow(dead_code)]
     Err(Error),
     Val(ValuesDim1),
 }

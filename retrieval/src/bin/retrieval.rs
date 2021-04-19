@@ -37,7 +37,8 @@ fn simple_fetch() {
             id: 0,
             host: "localhost".into(),
             port: 8360,
-            data_base_path: todo!(),
+            port_raw: 8360 + 100,
+            data_base_path: err::todoval(),
             ksprefix: "daq_swissfel".into(),
             split: 0,
         };
@@ -52,7 +53,7 @@ fn simple_fetch() {
                 time_bin_size: DAY,
                 array: true,
                 scalar_type: ScalarType::F64,
-                shape: Shape::Wave(todo!()),
+                shape: Shape::Wave(err::todoval()),
                 big_endian: true,
                 compression: true,
             },
@@ -63,12 +64,12 @@ fn simple_fetch() {
         let cluster = Cluster { nodes: vec![node] };
         let cluster = Arc::new(cluster);
         let node_config = NodeConfig {
-            cluster: cluster,
             node: cluster.nodes[0].clone(),
+            cluster: cluster,
         };
         let node_config = Arc::new(node_config);
         let query_string = serde_json::to_string(&query).unwrap();
-        let _host = tokio::spawn(httpret::host(node_config));
+        let host = tokio::spawn(httpret::host(node_config));
         let req = hyper::Request::builder()
             .method(http::Method::POST)
             .uri("http://localhost:8360/api/1/parsed_raw")
@@ -102,6 +103,7 @@ fn simple_fetch() {
             ntot / 1024 / 1024,
             throughput
         );
+        drop(host);
         //Err::<(), _>(format!("test error").into())
         Ok(())
     })

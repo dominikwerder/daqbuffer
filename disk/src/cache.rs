@@ -3,19 +3,17 @@ use bytes::{BufMut, Bytes, BytesMut};
 use chrono::{DateTime, Utc};
 use err::Error;
 use futures_core::Stream;
-use futures_util::{pin_mut, FutureExt, StreamExt, TryFutureExt};
-use http::uri::Scheme;
+use futures_util::{pin_mut, FutureExt, StreamExt};
 use netpod::{
-    AggKind, Channel, Cluster, NanoRange, Node, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchGridSpec,
-    PreBinnedPatchIterator, PreBinnedPatchRange, ToNanos,
+    AggKind, Channel, Cluster, NanoRange, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchIterator, PreBinnedPatchRange,
+    ToNanos,
 };
 use serde::{Deserialize, Serialize};
-use std::future::{ready, Future};
+use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tiny_keccak::Hasher;
-use tokio::fs::OpenOptions;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
@@ -97,7 +95,7 @@ impl Stream for BinnedBytesForHttpStream {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         match self.inp.poll_next_unpin(cx) {
-            Ready(Some(Ok(k))) => {
+            Ready(Some(Ok(_k))) => {
                 let mut buf = BytesMut::with_capacity(250);
                 buf.put(&b"TODO serialize to bytes\n"[..]);
                 Ready(Some(Ok(buf.freeze())))
@@ -168,7 +166,7 @@ impl Stream for PreBinnedValueByteStream {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         match self.inp.poll_next_unpin(cx) {
-            Ready(Some(Ok(k))) => {
+            Ready(Some(Ok(_k))) => {
                 error!("TODO convert item to Bytes");
                 let buf = Bytes::new();
                 Ready(Some(Ok(buf)))
@@ -233,7 +231,7 @@ impl PreBinnedValueStream {
                 let channel = self.channel.clone();
                 let agg_kind = self.agg_kind.clone();
                 let node_config = self.node_config.clone();
-                let mut patch_it = PreBinnedPatchIterator::from_range(range);
+                let patch_it = PreBinnedPatchIterator::from_range(range);
                 let s = futures_util::stream::iter(patch_it)
                     .map(move |coord| {
                         PreBinnedValueFetchedStream::new(coord, channel.clone(), agg_kind.clone(), node_config.clone())
@@ -264,13 +262,10 @@ impl Stream for PreBinnedValueStream {
                 fut.poll_next_unpin(cx)
             } else if let Some(fut) = self.open_check_local_file.as_mut() {
                 match fut.poll_unpin(cx) {
-                    Ready(Ok(file)) => {
-                        todo!("IMPLEMENT READ FROM LOCAL CACHE");
-                        Pending
-                    }
+                    Ready(Ok(_file)) => err::todoval(),
                     Ready(Err(e)) => match e.kind() {
                         std::io::ErrorKind::NotFound => {
-                            warn!("TODO LOCAL CACHE FILE NOT FOUND");
+                            error!("TODO LOCAL CACHE FILE NOT FOUND");
                             self.try_setup_fetch_prebinned_higher_res();
                             continue 'outer;
                         }
@@ -282,6 +277,7 @@ impl Stream for PreBinnedValueStream {
                     Pending => Pending,
                 }
             } else {
+                #[allow(unused_imports)]
                 use std::os::unix::fs::OpenOptionsExt;
                 let mut opts = std::fs::OpenOptions::new();
                 opts.read(true);
@@ -295,7 +291,6 @@ impl Stream for PreBinnedValueStream {
 
 pub struct PreBinnedValueFetchedStream {
     uri: http::Uri,
-    patch_coord: PreBinnedPatchCoord,
     resfut: Option<hyper::client::ResponseFuture>,
     res: Option<hyper::Response<hyper::Body>>,
 }
@@ -323,7 +318,6 @@ impl PreBinnedValueFetchedStream {
         .unwrap();
         Self {
             uri,
-            patch_coord,
             resfut: None,
             res: None,
         }
@@ -345,14 +339,14 @@ impl Stream for PreBinnedValueFetchedStream {
                     pin_mut!(res);
                     use hyper::body::HttpBody;
                     match res.poll_data(cx) {
-                        Ready(Some(Ok(k))) => Pending,
+                        Ready(Some(Ok(_k))) => todo!(),
                         Ready(Some(Err(e))) => Ready(Some(Err(e.into()))),
                         Ready(None) => Ready(None),
                         Pending => Pending,
                     }
                 }
                 None => match self.resfut.as_mut() {
-                    Some(mut resfut) => match resfut.poll_unpin(cx) {
+                    Some(resfut) => match resfut.poll_unpin(cx) {
                         Ready(res) => match res {
                             Ok(res) => {
                                 info!("GOT result from SUB REQUEST: {:?}", res);
@@ -394,7 +388,6 @@ impl BinnedStream {
         node_config: Arc<NodeConfig>,
     ) -> Self {
         warn!("BinnedStream will open a PreBinnedValueStream");
-        let mut patch_it = patch_it;
         let inp = futures_util::stream::iter(patch_it)
             .map(move |coord| {
                 PreBinnedValueFetchedStream::new(coord, channel.clone(), agg_kind.clone(), node_config.clone())
@@ -426,7 +419,7 @@ impl Stream for BinnedStream {
 pub struct SomeReturnThing {}
 
 impl From<SomeReturnThing> for Bytes {
-    fn from(k: SomeReturnThing) -> Self {
+    fn from(_k: SomeReturnThing) -> Self {
         error!("TODO convert result to octets");
         todo!("TODO convert result to octets")
     }
@@ -441,7 +434,7 @@ pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoord, channel: &Channel, c
     hash.update(&patch_coord.bin_t_len().to_le_bytes());
     let mut out = [0; 32];
     hash.finalize(&mut out);
-    let mut a = [out[0], out[1], out[2], out[3]];
+    let a = [out[0], out[1], out[2], out[3]];
     let ix = u32::from_le_bytes(a) % cluster.nodes.len() as u32;
     info!("node_ix_for_patch  {}", ix);
     ix

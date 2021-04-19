@@ -18,6 +18,8 @@ use tokio::io::AsyncRead;
 use tracing::{debug, error, info, trace, warn};
 
 pub mod agg;
+#[cfg(test)]
+pub mod aggtest;
 pub mod cache;
 pub mod channelconfig;
 pub mod gen;
@@ -136,7 +138,7 @@ pub fn raw_concat_channel_read_stream_try_open_in_background(
     query: &netpod::AggQuerySingleChannel,
     node: Arc<Node>,
 ) -> impl Stream<Item = Result<Bytes, Error>> + Send {
-    let mut query = query.clone();
+    let query = query.clone();
     let node = node.clone();
     async_stream::stream! {
         use tokio::io::AsyncReadExt;
@@ -349,7 +351,7 @@ pub fn parsed1(
             match fileres {
                 Ok(file) => {
                     let inp = Box::pin(file_content_stream(file, query.buffer_size as usize));
-                    let mut chunker = EventChunker::new(inp, todo!());
+                    let mut chunker = EventChunker::new(inp, err::todoval());
                     while let Some(evres) = chunker.next().await {
                         match evres {
                             Ok(evres) => {
@@ -414,7 +416,7 @@ impl Stream for EventBlobsComplete {
                     Ready(Some(k)) => match k {
                         Ok(file) => {
                             let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
-                            let mut chunker = EventChunker::new(inp, self.channel_config.clone());
+                            let chunker = EventChunker::new(inp, self.channel_config.clone());
                             self.evs.replace(chunker);
                             continue 'outer;
                         }
@@ -441,7 +443,7 @@ pub fn event_blobs_complete(
             match fileres {
                 Ok(file) => {
                     let inp = Box::pin(file_content_stream(file, query.buffer_size as usize));
-                    let mut chunker = EventChunker::new(inp, todo!());
+                    let mut chunker = EventChunker::new(inp, err::todoval());
                     while let Some(evres) = chunker.next().await {
                         match evres {
                             Ok(evres) => {
@@ -463,10 +465,8 @@ pub fn event_blobs_complete(
 
 pub struct EventChunker {
     inp: NeedMinBuffer,
-    had_channel: bool,
     polled: u32,
     state: DataFileState,
-    tmpbuf: Vec<u8>,
     channel_config: ChannelConfig,
 }
 
@@ -484,10 +484,8 @@ impl EventChunker {
         inp.set_need_min(6);
         Self {
             inp: inp,
-            had_channel: false,
             polled: 0,
             state: DataFileState::FileHeader,
-            tmpbuf: vec![0; 1024 * 1024 * 4],
             channel_config,
         }
     }
@@ -545,7 +543,7 @@ impl EventChunker {
                         let mut sl = std::io::Cursor::new(buf.as_ref());
                         sl.read_i32::<BE>().unwrap();
                         sl.read_i64::<BE>().unwrap();
-                        let ts = sl.read_i64::<BE>().unwrap();
+                        let _ts = sl.read_i64::<BE>().unwrap();
                         //info!("parse_buf not enough C   len {}  have {}  ts {}", len, buf.len(), ts);
                         need_min = len as u32;
                         break;
@@ -569,7 +567,7 @@ impl EventChunker {
                         use dtflags::*;
                         let is_compressed = type_flags & COMPRESSION != 0;
                         let is_array = type_flags & ARRAY != 0;
-                        let is_big_endian = type_flags & BIG_ENDIAN != 0;
+                        let _is_big_endian = type_flags & BIG_ENDIAN != 0;
                         let is_shaped = type_flags & SHAPE != 0;
                         if let Shape::Wave(_) = self.channel_config.shape {
                             assert!(is_array);
