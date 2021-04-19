@@ -274,7 +274,16 @@ impl PreBinnedValueStream {
                 self.fut2 = Some(Box::pin(s));
             }
             None => {
-                error!("TODO  NO BETTER GRAN FOUND FOR  g {}", g);
+                error!("NO BETTER GRAN FOUND FOR  g {}", g);
+                error!("TODO  see in source cache.rs");
+
+                // create a client helper in raw.rs which can connect to a given node with parameters
+                // create tcp service in raw.rs
+                // set up tcp inputs
+                // set up merger
+                // set up T-binning
+                // save to cache file if input is complete
+
                 todo!();
             }
         }
