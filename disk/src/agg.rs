@@ -1,3 +1,7 @@
+/*!
+Aggregation and binning support.
+*/
+
 use crate::EventFull;
 use err::Error;
 use futures_core::Stream;
@@ -30,13 +34,14 @@ pub trait AggregatableTdim {
     fn aggregator_new(&self, ts1: u64, ts2: u64) -> Self::Aggregator;
 }
 
-// dummy
+/// DO NOT USE. This is just a dummy for some testing.
 impl AggregatableXdim1Bin for () {
     type Output = ();
     fn into_agg(self) -> Self::Output {
         todo!()
     }
 }
+/// DO NOT USE. This is just a dummy for some testing.
 impl AggregatableTdim for () {
     type Output = ();
     type Aggregator = ();
@@ -44,6 +49,7 @@ impl AggregatableTdim for () {
         todo!()
     }
 }
+/// DO NOT USE. This is just a dummy for some testing.
 impl AggregatorTdim for () {
     type InputValue = ();
     type OutputValue = ();
@@ -68,6 +74,7 @@ impl AggregatorTdim for () {
     }
 }
 
+/// Batch of events with a scalar (zero dimensions) numeric value.
 pub struct ValuesDim0 {
     tss: Vec<u64>,
     values: Vec<Vec<f32>>,
@@ -124,6 +131,7 @@ impl AggregatableXdim1Bin for ValuesDim1 {
     }
 }
 
+/// Batch of events with a numeric one-dimensional (i.e. array) value.
 pub struct ValuesDim1 {
     pub tss: Vec<u64>,
     pub values: Vec<Vec<f32>>,

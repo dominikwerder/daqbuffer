@@ -1,4 +1,5 @@
 use crate::agg::MinMaxAvgScalarBinBatch;
+use crate::raw::EventsQuery;
 use bytes::{BufMut, Bytes, BytesMut};
 use chrono::{DateTime, Utc};
 use err::Error;
@@ -283,8 +284,18 @@ impl PreBinnedValueStream {
                 // set up merger
                 // set up T-binning
                 // save to cache file if input is complete
-
-                todo!();
+                let evq = EventsQuery {
+                    channel: self.channel.clone(),
+                    range: NanoRange {
+                        beg: self.patch_coord.patch_beg(),
+                        end: self.patch_coord.patch_end(),
+                    },
+                    agg_kind: self.agg_kind.clone(),
+                };
+                self.fut2 = Some(Box::pin(PreBinnedAssembledFromRemotes::new(
+                    evq,
+                    &self.node_config.cluster,
+                )));
             }
         }
     }
@@ -412,6 +423,27 @@ impl Stream for PreBinnedValueFetchedStream {
                 },
             };
         }
+    }
+}
+
+pub struct PreBinnedAssembledFromRemotes {}
+
+impl PreBinnedAssembledFromRemotes {
+    pub fn new(evq: EventsQuery, cluster: &Cluster) -> Self {
+        err::todoval()
+    }
+}
+
+impl Stream for PreBinnedAssembledFromRemotes {
+    // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
+    type Item = Result<MinMaxAvgScalarBinBatch, Error>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        // TODO this has several stages:
+        // First, establish async all connections.
+        // Then assemble the merge-and-processing-pipeline and pull from there.
+        err::todoval()
     }
 }
 

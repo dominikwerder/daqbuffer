@@ -1,9 +1,16 @@
+/*!
+Error handling and reporting.
+*/
+
 use nom::error::ErrorKind;
 use std::fmt::Debug;
 use std::num::ParseIntError;
 use std::string::FromUtf8Error;
 use tokio::task::JoinError;
 
+/**
+The common error type for this application.
+*/
 pub struct Error {
     msg: String,
     trace: backtrace::Backtrace,
@@ -20,13 +27,34 @@ impl Error {
 
 impl std::fmt::Debug for Error {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(fmt, "Error {}  backtrace:\n{:?}", self.msg, self.trace)
+        use std::io::Write;
+        let mut buf = vec![];
+        for fr in self.trace.frames() {
+            for sy in fr.symbols() {
+                let is_ours = match sy.filename() {
+                    None => false,
+                    Some(s) => s.to_str().unwrap().contains("dev/daqbuffer"),
+                };
+                if is_ours {
+                    write!(
+                        &mut buf,
+                        "\n    {}\n      {}  {}",
+                        sy.name().unwrap(),
+                        sy.filename().unwrap().to_str().unwrap(),
+                        sy.lineno().unwrap(),
+                    )
+                    .unwrap();
+                }
+            }
+        }
+        //write!(fmt, "Error {}  backtrace:\n{:?}", self.msg, self.trace)
+        write!(fmt, "Error {}  trace{}", self.msg, String::from_utf8(buf).unwrap())
     }
 }
 
 impl std::fmt::Display for Error {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(fmt, "Error {}  backtrace:\n{:?}", self.msg, self.trace)
+        std::fmt::Debug::fmt(self, fmt)
     }
 }
 

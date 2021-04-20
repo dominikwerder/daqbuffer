@@ -38,13 +38,15 @@ async fn get_cached_0_inner() -> Result<(), Error> {
     let hosts = spawn_test_hosts(cluster.clone());
     let beg_date: chrono::DateTime<Utc> = "1970-01-01T00:00:10.000Z".parse()?;
     let end_date: chrono::DateTime<Utc> = "1970-01-01T00:00:51.000Z".parse()?;
-    let channel = "wave1";
-    let date_fmt = "%Y-%m-%dT%H:%M:%S%.3fZ";
+    let channel_backend = "back";
+    let channel_name = "wave1";
+    let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
     let uri = format!(
-        "http://{}:{}/api/1/binned?channel_backend=testbackend&channel_name={}&bin_count=4&beg_date={}&end_date={}",
+        "http://{}:{}/api/1/binned?channel_backend={}&channel_name={}&bin_count=4&beg_date={}&end_date={}",
         node0.host,
         node0.port,
-        channel,
+        channel_backend,
+        channel_name,
         beg_date.format(date_fmt),
         end_date.format(date_fmt),
     );

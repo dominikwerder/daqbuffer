@@ -14,13 +14,11 @@ use pin::Pin;
 use std::{future, net, panic, pin, sync, task};
 use sync::Arc;
 use task::{Context, Poll};
-use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
 pub async fn host(node_config: Arc<NodeConfig>) -> Result<(), Error> {
-    let rawjh = taskrun::spawn(raw_service(node_config.clone()));
+    let rawjh = taskrun::spawn(disk::raw::raw_service(node_config.clone()));
     let addr = SocketAddr::from(([0, 0, 0, 0], node_config.node.port));
     let make_service = make_service_fn({
         move |conn| {
@@ -239,24 +237,4 @@ async fn prebinned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<R
         }
     };
     Ok(ret)
-}
-
-async fn raw_service(node_config: Arc<NodeConfig>) -> Result<(), Error> {
-    let addr = format!("0.0.0.0:{}", node_config.node.port_raw);
-    let lis = tokio::net::TcpListener::bind(addr).await?;
-    loop {
-        match lis.accept().await {
-            Ok((stream, addr)) => {
-                taskrun::spawn(raw_conn_handler(stream, addr));
-            }
-            Err(e) => Err(e)?,
-        }
-    }
-}
-
-async fn raw_conn_handler(mut stream: TcpStream, addr: SocketAddr) -> Result<(), Error> {
-    info!("RAW HANDLER  for {:?}", addr);
-    stream.write_i32_le(123).await?;
-    stream.flush().await?;
-    Ok(())
 }

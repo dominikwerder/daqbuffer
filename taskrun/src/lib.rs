@@ -16,7 +16,7 @@ pub fn run<T, F: std::future::Future<Output = Result<T, Error>>>(f: F) -> Result
             panic::set_hook(Box::new(move |info| {
                 error!(
                     "✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗     panicking\n{:?}\nLOCATION: {:?}\nPAYLOAD: {:?}",
-                    backtrace::Backtrace::new(),
+                    Error::with_msg("catched panic in taskrun::run"),
                     info.location(),
                     info.payload()
                 );
