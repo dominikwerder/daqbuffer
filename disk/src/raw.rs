@@ -24,7 +24,7 @@ use tracing::{debug, error, info, trace, warn};
 /**
 Query parameters to request (optionally) X-processed, but not T-processed events.
 */
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EventsQuery {
     pub channel: Channel,
     pub range: NanoRange,
@@ -32,16 +32,16 @@ pub struct EventsQuery {
 }
 
 pub async fn x_processed_stream_from_node(
-    query: &EventsQuery,
-    node: &Node,
-) -> Result<Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarEventBatch, Error>>>>, Error> {
+    query: Arc<EventsQuery>,
+    node: Arc<Node>,
+) -> Result<Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarEventBatch, Error>> + Send>>, Error> {
     let mut net = TcpStream::connect(format!("{}:{}", node.host, node.port_raw)).await?;
-    let qjs = serde_json::to_vec(query)?;
+    let qjs = serde_json::to_vec(query.as_ref())?;
     net.write_u32_le(qjs.len() as u32).await?;
     net.write_all(&qjs).await?;
     net.flush().await?;
     let s2 = MinMaxAvgScalarEventBatchStreamFromTcp { inp: net };
-    let s3: Pin<Box<dyn Stream<Item = Result<_, Error>>>> = Box::pin(s2);
+    let s3: Pin<Box<dyn Stream<Item = Result<_, Error>> + Send>> = Box::pin(s2);
     Ok(s3)
 }
 
@@ -161,7 +161,7 @@ pub async fn raw_service(node_config: Arc<NodeConfig>) -> Result<(), Error> {
     }
 }
 
-async fn raw_conn_handler(mut stream: TcpStream, addr: SocketAddr) -> Result<(), Error> {
+async fn raw_conn_handler(stream: TcpStream, addr: SocketAddr) -> Result<(), Error> {
     info!("RAW HANDLER  for {:?}", addr);
     let (netin, mut netout) = stream.into_split();
     InMemoryFrameAsyncReadStream::new(netin);

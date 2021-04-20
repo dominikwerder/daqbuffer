@@ -1,4 +1,4 @@
-use crate::agg::MinMaxAvgScalarBinBatch;
+use crate::agg::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarEventBatch};
 use crate::raw::EventsQuery;
 use bytes::{BufMut, Bytes, BytesMut};
 use chrono::{DateTime, Utc};
@@ -275,15 +275,7 @@ impl PreBinnedValueStream {
                 self.fut2 = Some(Box::pin(s));
             }
             None => {
-                error!("NO BETTER GRAN FOUND FOR  g {}", g);
-                error!("TODO  see in source cache.rs");
-
-                // create a client helper in raw.rs which can connect to a given node with parameters
-                // create tcp service in raw.rs
-                // set up tcp inputs
-                // set up merger
-                // set up T-binning
-                // save to cache file if input is complete
+                warn!("no better resolution found for  g {}", g);
                 let evq = EventsQuery {
                     channel: self.channel.clone(),
                     range: NanoRange {
@@ -292,9 +284,10 @@ impl PreBinnedValueStream {
                     },
                     agg_kind: self.agg_kind.clone(),
                 };
+                let evq = Arc::new(evq);
                 self.fut2 = Some(Box::pin(PreBinnedAssembledFromRemotes::new(
                     evq,
-                    &self.node_config.cluster,
+                    self.node_config.cluster.clone(),
                 )));
             }
         }
@@ -426,11 +419,26 @@ impl Stream for PreBinnedValueFetchedStream {
     }
 }
 
-pub struct PreBinnedAssembledFromRemotes {}
+type T001 = Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarEventBatch, Error>> + Send>>;
+type T002 = Pin<Box<dyn Future<Output = Result<T001, Error>> + Send>>;
+pub struct PreBinnedAssembledFromRemotes {
+    tcp_establish_futs: Vec<T002>,
+    nodein: Vec<Option<T001>>,
+}
 
 impl PreBinnedAssembledFromRemotes {
-    pub fn new(evq: EventsQuery, cluster: &Cluster) -> Self {
-        err::todoval()
+    pub fn new(evq: Arc<EventsQuery>, cluster: Arc<Cluster>) -> Self {
+        let mut tcp_establish_futs = vec![];
+        for node in &cluster.nodes {
+            let f = super::raw::x_processed_stream_from_node(evq.clone(), node.clone());
+            let f: T002 = Box::pin(f);
+            tcp_establish_futs.push(f);
+        }
+        let n = tcp_establish_futs.len();
+        Self {
+            tcp_establish_futs,
+            nodein: (0..n).into_iter().map(|_| None).collect(),
+        }
     }
 }
 
@@ -438,12 +446,46 @@ impl Stream for PreBinnedAssembledFromRemotes {
     // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
     type Item = Result<MinMaxAvgScalarBinBatch, Error>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        info!("PreBinnedAssembledFromRemotes   MAIN POLL");
         use Poll::*;
         // TODO this has several stages:
         // First, establish async all connections.
         // Then assemble the merge-and-processing-pipeline and pull from there.
-        err::todoval()
+        'outer: loop {
+            {
+                let mut pend = false;
+                let mut c1 = 0;
+                for i1 in 0..self.tcp_establish_futs.len() {
+                    if self.nodein[i1].is_none() {
+                        let f = &mut self.tcp_establish_futs[i1];
+                        pin_mut!(f);
+                        info!("tcp_establish_futs  POLLING INPUT ESTAB  {}", i1);
+                        match f.poll(cx) {
+                            Ready(Ok(k)) => {
+                                info!("ESTABLISHED INPUT {}", i1);
+                                self.nodein[i1] = Some(k);
+                            }
+                            Ready(Err(e)) => return Ready(Some(Err(e))),
+                            Pending => {
+                                pend = true;
+                            }
+                        }
+                    } else {
+                        c1 += 1;
+                    }
+                }
+                if pend {
+                    break Pending;
+                } else {
+                    if c1 == self.tcp_establish_futs.len() {
+                        // TODO set up the merged stream
+                        let inps = self.nodein.iter_mut().map(|k| k.take().unwrap()).collect();
+                        super::merge::MergedMinMaxAvgScalarStream::new(inps);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -465,7 +507,14 @@ impl BinnedStream {
             })
             .flatten()
             .map(|k| {
-                info!("ITEM {:?}", k);
+                match k {
+                    Ok(ref k) => {
+                        info!("BinnedStream  got good item {:?}", k);
+                    }
+                    Err(_) => {
+                        error!("BinnedStream  got error")
+                    }
+                }
                 k
             });
         Self { inp: Box::pin(inp) }

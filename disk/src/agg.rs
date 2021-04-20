@@ -198,10 +198,21 @@ impl AggregatableXdim1Bin for ValuesDim0 {
 }
 
 pub struct MinMaxAvgScalarEventBatch {
-    tss: Vec<u64>,
-    mins: Vec<f32>,
-    maxs: Vec<f32>,
-    avgs: Vec<f32>,
+    pub tss: Vec<u64>,
+    pub mins: Vec<f32>,
+    pub maxs: Vec<f32>,
+    pub avgs: Vec<f32>,
+}
+
+impl MinMaxAvgScalarEventBatch {
+    pub fn empty() -> Self {
+        Self {
+            tss: vec![],
+            mins: vec![],
+            maxs: vec![],
+            avgs: vec![],
+        }
+    }
 }
 
 impl std::fmt::Debug for MinMaxAvgScalarEventBatch {
