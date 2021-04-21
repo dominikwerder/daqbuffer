@@ -42,9 +42,17 @@ pub async fn x_processed_stream_from_node(
     debug!("x_processed_stream_from_node   qjs len {}", qjs.len());
     net.write_u32_le(qjs.len() as u32).await?;
     net.write_all(&qjs).await?;
-    debug!("x_processed_stream_from_node   WRITTEN");
     net.flush().await?;
-    let s2 = MinMaxAvgScalarEventBatchStreamFromTcp { inp: net };
+    let (mut netin, mut netout) = net.into_split();
+    netout.forget();
+
+    // TODO Can not signal some EOS over TCP.
+
+    debug!("x_processed_stream_from_node   WRITTEN");
+
+    // TODO use the splitted streams:
+    let s2 = MinMaxAvgScalarEventBatchStreamFromTcp { inp: netin };
+
     debug!("x_processed_stream_from_node   HAVE STREAM INSTANCE");
     let s3: Pin<Box<dyn Stream<Item = Result<_, Error>> + Send>> = Box::pin(s2);
     debug!("x_processed_stream_from_node   RETURN");
@@ -218,8 +226,9 @@ async fn raw_conn_handler(stream: TcpStream, addr: SocketAddr) -> Result<(), Err
     while let Some(k) = h.next().await {
         warn!("raw_conn_handler  FRAME RECV  {}", k.is_ok());
     }
-    netout.write_i32_le(123).await?;
-    netout.flush().await?;
+    warn!("raw_conn_handler  INPUT STREAM END");
+    //netout.write_i32_le(123).await?;
+    //netout.flush().await?;
     netout.forget();
     Ok(())
 }

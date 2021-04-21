@@ -51,7 +51,7 @@ impl std::fmt::Debug for Error {
                     Some(k) => k,
                     _ => 0,
                 };
-                if true || is_ours {
+                if is_ours {
                     write!(&mut buf, "\n    {}\n      {}  {}", name, filename, lineno).unwrap();
                 }
             }
