@@ -1,4 +1,4 @@
-use crate::agg::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinSingle, MinMaxAvgScalarEventBatch};
+use crate::agg::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarEventBatch};
 use crate::merge::MergedMinMaxAvgScalarStream;
 use crate::raw::EventsQuery;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -287,7 +287,8 @@ impl PreBinnedValueStream {
                 };
                 let evq = Arc::new(evq);
                 let s1 = MergedFromRemotes::new(evq, self.node_config.cluster.clone());
-                let s2 = s1.map_ok(|k| MinMaxAvgScalarBinBatch::empty());
+                error!("try_setup_fetch_prebinned_higher_res  TODO  emit actual value");
+                let s2 = s1.map_ok(|_k| MinMaxAvgScalarBinBatch::empty());
                 self.fut2 = Some(Box::pin(s2));
             }
         }

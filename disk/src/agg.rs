@@ -2,12 +2,15 @@
 Aggregation and binning support.
 */
 
+use crate::raw::Frameable;
 use crate::EventFull;
+use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::BinSpecDimT;
 use netpod::{Node, ScalarType};
+use std::mem::size_of;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 #[allow(unused_imports)]
@@ -234,6 +237,24 @@ impl AggregatableTdim for MinMaxAvgScalarEventBatch {
 
     fn aggregator_new(&self, ts1: u64, ts2: u64) -> Self::Aggregator {
         MinMaxAvgScalarEventBatchAggregator::new(ts1, ts2)
+    }
+}
+
+impl Frameable for MinMaxAvgScalarEventBatch {
+    fn serialized(&self) -> Bytes {
+        assert!(self.tss.len() != 0);
+        let n1 = self.tss.len();
+        let mut g = BytesMut::with_capacity(4 + n1 * (8 + 3 * 4));
+        g.put_u32_le(n1 as u32);
+        let a = unsafe { std::slice::from_raw_parts(&self.tss[0] as *const u64 as *const u8, size_of::<u64>() * n1) };
+        g.put(a);
+        let a = unsafe { std::slice::from_raw_parts(&self.mins[0] as *const f32 as *const u8, size_of::<f32>() * n1) };
+        g.put(a);
+        let a = unsafe { std::slice::from_raw_parts(&self.maxs[0] as *const f32 as *const u8, size_of::<f32>() * n1) };
+        g.put(a);
+        let a = unsafe { std::slice::from_raw_parts(&self.avgs[0] as *const f32 as *const u8, size_of::<f32>() * n1) };
+        g.put(a);
+        g.freeze()
     }
 }
 
