@@ -66,7 +66,7 @@ async fn get_cached_0_inner() -> Result<(), Error> {
     loop {
         match res_body.data().await {
             Some(Ok(k)) => {
-                //info!("packet..  len {}", k.len());
+                info!("packet..  len {}", k.len());
                 ntot += k.len() as u64;
             }
             Some(Err(e)) => {

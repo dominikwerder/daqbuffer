@@ -69,12 +69,10 @@ pub async fn binned_bytes_for_http(
                 let e2 = &channel_config.entries[i1 + 1];
                 if e1.ts < query.range.end && e2.ts >= query.range.beg {
                     ixs.push(i1);
-                } else {
                 }
             } else {
                 if e1.ts < query.range.end {
                     ixs.push(i1);
-                } else {
                 }
             }
         }
@@ -109,7 +107,7 @@ pub async fn binned_bytes_for_http(
         }
         None => {
             // Merge raw data
-            error!("TODO merge raw data");
+            error!("binned_bytes_for_http  TODO merge raw data");
             todo!()
         }
     }
@@ -128,8 +126,9 @@ impl Stream for BinnedBytesForHttpStream {
         use Poll::*;
         match self.inp.poll_next_unpin(cx) {
             Ready(Some(Ok(_k))) => {
+                error!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!          BinnedBytesForHttpStream  TODO  serialize to bytes");
                 let mut buf = BytesMut::with_capacity(250);
-                buf.put(&b"TODO serialize to bytes\n"[..]);
+                buf.put(&b"BinnedBytesForHttpStream  TODO  serialize to bytes\n"[..]);
                 Ready(Some(Ok(buf.freeze())))
             }
             Ready(Some(Err(e))) => Ready(Some(Err(e))),
@@ -287,8 +286,10 @@ impl PreBinnedValueStream {
                 };
                 let evq = Arc::new(evq);
                 let s1 = MergedFromRemotes::new(evq, self.node_config.cluster.clone());
-                error!("try_setup_fetch_prebinned_higher_res  TODO  emit actual value");
-                let s2 = s1.map_ok(|_k| MinMaxAvgScalarBinBatch::empty());
+                let s2 = s1.map_ok(|_k| {
+                    error!("try_setup_fetch_prebinned_higher_res  TODO  emit actual value");
+                    MinMaxAvgScalarBinBatch::empty()
+                });
                 self.fut2 = Some(Box::pin(s2));
             }
         }
@@ -453,7 +454,7 @@ impl Stream for MergedFromRemotes {
     type Item = Result<MinMaxAvgScalarEventBatch, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        trace!("PreBinnedAssembledFromRemotes   MAIN POLL");
+        trace!("MergedFromRemotes   MAIN POLL");
         use Poll::*;
         // TODO this has several stages:
         // First, establish async all connections.
@@ -462,9 +463,18 @@ impl Stream for MergedFromRemotes {
             break if let Some(fut) = &mut self.merged {
                 debug!("MergedFromRemotes   POLL merged");
                 match fut.poll_next_unpin(cx) {
-                    Ready(Some(Ok(k))) => Ready(Some(Ok(k))),
-                    Ready(Some(Err(e))) => Ready(Some(Err(e))),
-                    Ready(None) => Ready(None),
+                    Ready(Some(Ok(k))) => {
+                        info!("MergedFromRemotes  Ready Some Ok");
+                        Ready(Some(Ok(k)))
+                    }
+                    Ready(Some(Err(e))) => {
+                        info!("MergedFromRemotes  Ready Some Err");
+                        Ready(Some(Err(e)))
+                    }
+                    Ready(None) => {
+                        info!("MergedFromRemotes  Ready None");
+                        Ready(None)
+                    }
                     Pending => Pending,
                 }
             } else {
@@ -474,10 +484,10 @@ impl Stream for MergedFromRemotes {
                     if self.nodein[i1].is_none() {
                         let f = &mut self.tcp_establish_futs[i1];
                         pin_mut!(f);
-                        info!("tcp_establish_futs  POLLING INPUT ESTAB  {}", i1);
+                        info!("MergedFromRemotes  tcp_establish_futs  POLLING INPUT ESTAB  {}", i1);
                         match f.poll(cx) {
                             Ready(Ok(k)) => {
-                                info!("tcp_establish_futs  ESTABLISHED INPUT {}", i1);
+                                info!("MergedFromRemotes  tcp_establish_futs  ESTABLISHED INPUT {}", i1);
                                 self.nodein[i1] = Some(k);
                             }
                             Ready(Err(e)) => return Ready(Some(Err(e))),
@@ -493,14 +503,14 @@ impl Stream for MergedFromRemotes {
                     Pending
                 } else {
                     if c1 == self.tcp_establish_futs.len() {
-                        debug!("SETTING UP MERGED STREAM");
+                        debug!("MergedFromRemotes  SETTING UP MERGED STREAM");
                         // TODO set up the merged stream
                         let inps = self.nodein.iter_mut().map(|k| k.take().unwrap()).collect();
                         let s1 = MergedMinMaxAvgScalarStream::new(inps);
                         self.merged = Some(Box::pin(s1));
                     } else {
-                        error!(
-                            "NOTHING PENDING  TODO WHAT TO DO?  {}  {}",
+                        info!(
+                            "MergedFromRemotes  conn / estab  {}  {}",
                             c1,
                             self.tcp_establish_futs.len()
                         );

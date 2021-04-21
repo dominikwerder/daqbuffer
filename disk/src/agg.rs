@@ -216,11 +216,74 @@ impl MinMaxAvgScalarEventBatch {
             avgs: vec![],
         }
     }
+    pub fn from_full_frame(buf: &Bytes) -> Self {
+        info!("construct MinMaxAvgScalarEventBatch from full frame  len {}", buf.len());
+        let mut g = MinMaxAvgScalarEventBatch::empty();
+
+        let n1;
+        unsafe {
+            let ptr = (&buf[0] as *const u8) as *const [u8; 4];
+            n1 = u32::from_le_bytes(*ptr);
+            trace!("--- +++ --- +++ --- +++  n1: {}", n1);
+        }
+        if n1 == 0 {
+            g
+        } else {
+            let n2 = n1 as usize;
+            g.tss.reserve(n2);
+            g.mins.reserve(n2);
+            g.maxs.reserve(n2);
+            g.avgs.reserve(n2);
+            unsafe {
+                // TODO Can I unsafely create ptrs and just assign them?
+                // TODO What are cases where I really need transmute?
+                g.tss.set_len(n2);
+                g.mins.set_len(n2);
+                g.maxs.set_len(n2);
+                g.avgs.set_len(n2);
+                let ptr0 = &buf[4] as *const u8;
+                {
+                    let ptr1 = ptr0 as *const u64;
+                    for i1 in 0..n2 {
+                        g.tss[i1] = *ptr1.add(i1);
+                    }
+                }
+                {
+                    let ptr1 = ptr0.add((8) * n2) as *const f32;
+                    for i1 in 0..n2 {
+                        g.mins[i1] = *ptr1.add(i1);
+                    }
+                }
+                {
+                    let ptr1 = ptr0.add((8 + 4) * n2) as *const f32;
+                    for i1 in 0..n2 {
+                        g.maxs[i1] = *ptr1;
+                    }
+                }
+                {
+                    let ptr1 = ptr0.add((8 + 4 + 4) * n2) as *const f32;
+                    for i1 in 0..n2 {
+                        g.avgs[i1] = *ptr1;
+                    }
+                }
+            }
+            info!("CONTENT  {:?}", g);
+            g
+        }
+    }
 }
 
 impl std::fmt::Debug for MinMaxAvgScalarEventBatch {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(fmt, "MinMaxAvgScalarEventBatch  count {}", self.tss.len())
+        write!(
+            fmt,
+            "MinMaxAvgScalarEventBatch  count {}  tss {:?}  mins {:?}  maxs {:?}  avgs {:?}",
+            self.tss.len(),
+            self.tss,
+            self.mins,
+            self.maxs,
+            self.avgs,
+        )
     }
 }
 
@@ -242,18 +305,24 @@ impl AggregatableTdim for MinMaxAvgScalarEventBatch {
 
 impl Frameable for MinMaxAvgScalarEventBatch {
     fn serialized(&self) -> Bytes {
-        assert!(self.tss.len() != 0);
         let n1 = self.tss.len();
         let mut g = BytesMut::with_capacity(4 + n1 * (8 + 3 * 4));
         g.put_u32_le(n1 as u32);
-        let a = unsafe { std::slice::from_raw_parts(&self.tss[0] as *const u64 as *const u8, size_of::<u64>() * n1) };
-        g.put(a);
-        let a = unsafe { std::slice::from_raw_parts(&self.mins[0] as *const f32 as *const u8, size_of::<f32>() * n1) };
-        g.put(a);
-        let a = unsafe { std::slice::from_raw_parts(&self.maxs[0] as *const f32 as *const u8, size_of::<f32>() * n1) };
-        g.put(a);
-        let a = unsafe { std::slice::from_raw_parts(&self.avgs[0] as *const f32 as *const u8, size_of::<f32>() * n1) };
-        g.put(a);
+        if n1 > 0 {
+            let ptr = &self.tss[0] as *const u64 as *const u8;
+            let a = unsafe { std::slice::from_raw_parts(ptr, size_of::<u64>() * n1) };
+            g.put(a);
+            let ptr = &self.mins[0] as *const f32 as *const u8;
+            let a = unsafe { std::slice::from_raw_parts(ptr, size_of::<f32>() * n1) };
+            g.put(a);
+            let ptr = &self.maxs[0] as *const f32 as *const u8;
+            let a = unsafe { std::slice::from_raw_parts(ptr, size_of::<f32>() * n1) };
+            g.put(a);
+            let ptr = &self.avgs[0] as *const f32 as *const u8;
+            let a = unsafe { std::slice::from_raw_parts(ptr, size_of::<f32>() * n1) };
+            g.put(a);
+        }
+        info!("impl Frameable for MinMaxAvgScalarEventBatch  g.len() {}", g.len());
         g.freeze()
     }
 }

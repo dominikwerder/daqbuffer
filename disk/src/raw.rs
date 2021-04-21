@@ -48,39 +48,43 @@ pub async fn x_processed_stream_from_node(
     let (netin, netout) = net.into_split();
     netout.forget();
     debug!("x_processed_stream_from_node   WRITTEN");
-    let s2 = MinMaxAvgScalarEventBatchStreamFromTcp { inp: netin };
+    let frames = InMemoryFrameAsyncReadStream::new(netin);
+    let s2 = MinMaxAvgScalarEventBatchStreamFromFrames { inp: frames };
     debug!("x_processed_stream_from_node   HAVE STREAM INSTANCE");
     let s3: Pin<Box<dyn Stream<Item = Result<_, Error>> + Send>> = Box::pin(s2);
     debug!("x_processed_stream_from_node   RETURN");
     Ok(s3)
 }
 
-pub struct MinMaxAvgScalarEventBatchStreamFromTcp {
-    inp: OwnedReadHalf,
+pub struct MinMaxAvgScalarEventBatchStreamFromFrames<T>
+where
+    T: AsyncRead + Unpin,
+{
+    inp: InMemoryFrameAsyncReadStream<T>,
 }
 
-impl Stream for MinMaxAvgScalarEventBatchStreamFromTcp {
+impl<T> Stream for MinMaxAvgScalarEventBatchStreamFromFrames<T>
+where
+    T: AsyncRead + Unpin,
+{
     type Item = Result<MinMaxAvgScalarEventBatch, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         loop {
-            // TODO make capacity configurable.
-            // TODO reuse buffer if not full.
-            let mut buf = BytesMut::with_capacity(1024 * 2);
-            let mut buf2 = ReadBuf::new(buf.as_mut());
             let j = &mut self.inp;
             pin_mut!(j);
-            break match AsyncRead::poll_read(j, cx, &mut buf2) {
-                Ready(Ok(_)) => {
-                    if buf.len() == 0 {
-                        Ready(None)
-                    } else {
-                        error!("got input from remote  {} bytes", buf.len());
-                        Ready(Some(Ok(err::todoval())))
-                    }
+            break match j.poll_next(cx) {
+                Ready(Some(Ok(buf))) => {
+                    info!(
+                        "MinMaxAvgScalarEventBatchStreamFromFrames  got full frame buf  {}",
+                        buf.len()
+                    );
+                    let item = MinMaxAvgScalarEventBatch::from_full_frame(&buf);
+                    Ready(Some(Ok(item)))
                 }
-                Ready(Err(e)) => Ready(Some(Err(e.into()))),
+                Ready(Some(Err(e))) => Ready(Some(Err(e))),
+                Ready(None) => Ready(None),
                 Pending => Pending,
             };
         }
@@ -92,13 +96,19 @@ Interprets a byte stream as length-delimited frames.
 
 Emits each frame as a single item. Therefore, each item must fit easily into memory.
 */
-pub struct InMemoryFrameAsyncReadStream<T> {
+pub struct InMemoryFrameAsyncReadStream<T>
+where
+    T: AsyncRead + Unpin,
+{
     inp: T,
     buf: BytesMut,
     wp: usize,
 }
 
-impl<T> InMemoryFrameAsyncReadStream<T> {
+impl<T> InMemoryFrameAsyncReadStream<T>
+where
+    T: AsyncRead + Unpin,
+{
     fn new(inp: T) -> Self {
         // TODO make start cap adjustable
         let mut buf = BytesMut::with_capacity(1024);
@@ -232,7 +242,16 @@ async fn raw_conn_handler(stream: TcpStream, addr: SocketAddr) -> Result<(), Err
     warn!("TODO decide on response content based on the parsed json query");
 
     warn!("raw_conn_handler  INPUT STREAM END");
-    let mut s1 = futures_util::stream::iter(vec![MinMaxAvgScalarEventBatch::empty()]);
+    let mut batch = MinMaxAvgScalarEventBatch::empty();
+    batch.tss.push(42);
+    batch.tss.push(43);
+    batch.mins.push(7.1);
+    batch.mins.push(7.2);
+    batch.maxs.push(8.3);
+    batch.maxs.push(8.4);
+    batch.avgs.push(9.5);
+    batch.avgs.push(9.6);
+    let mut s1 = futures_util::stream::iter(vec![batch]);
     while let Some(item) = s1.next().await {
         let fr = item.serialized();
         netout.write_u32_le(fr.len() as u32).await?;
