@@ -94,6 +94,7 @@ impl ScalarType {
 pub struct Node {
     pub id: u32,
     pub host: String,
+    pub listen: String,
     pub port: u16,
     pub port_raw: u16,
     pub split: u32,

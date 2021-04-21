@@ -14,6 +14,7 @@ fn test_cluster() -> Cluster {
             let node = Node {
                 id,
                 host: "localhost".into(),
+                listen: "0.0.0.0".into(),
                 port: 8360 + id as u16,
                 port_raw: 8360 + id as u16 + 100,
                 data_base_path: format!("../tmpdata/node{:02}", id).into(),

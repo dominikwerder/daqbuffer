@@ -19,7 +19,8 @@ use tracing::{debug, error, info, trace, warn};
 
 pub async fn host(node_config: Arc<NodeConfig>) -> Result<(), Error> {
     let rawjh = taskrun::spawn(disk::raw::raw_service(node_config.clone()));
-    let addr = SocketAddr::from(([0, 0, 0, 0], node_config.node.port));
+    use std::str::FromStr;
+    let addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen, node_config.node.port))?;
     let make_service = make_service_fn({
         move |conn| {
             info!("new conn {:?}", conn);
@@ -192,21 +193,21 @@ where
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         let t = std::panic::catch_unwind(AssertUnwindSafe(|| self.inp.poll_next_unpin(cx)));
-        let r = match t {
-            Ok(k) => k,
+        match t {
+            Ok(r) => match r {
+                Ready(Some(Ok(k))) => Ready(Some(Ok(k))),
+                Ready(Some(Err(e))) => {
+                    error!("body stream error: {:?}", e);
+                    Ready(Some(Err(e.into())))
+                }
+                Ready(None) => Ready(None),
+                Pending => Pending,
+            },
             Err(e) => {
-                error!("panic {:?}", e);
-                panic!()
+                error!("PANIC CAUGHT in httpret::BodyStream: {:?}", e);
+                let e = Error::with_msg(format!("PANIC CAUGHT in httpret::BodyStream: {:?}", e));
+                Ready(Some(Err(e)))
             }
-        };
-        match r {
-            Ready(Some(Ok(k))) => Ready(Some(Ok(k))),
-            Ready(Some(Err(e))) => {
-                error!("body stream error: {:?}", e);
-                Ready(Some(Err(e.into())))
-            }
-            Ready(None) => Ready(None),
-            Pending => Pending,
         }
     }
 }

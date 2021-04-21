@@ -36,6 +36,7 @@ fn simple_fetch() {
         let node = Node {
             id: 0,
             host: "localhost".into(),
+            listen: "0.0.0.0".into(),
             port: 8360,
             port_raw: 8360 + 100,
             data_base_path: err::todoval(),

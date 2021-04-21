@@ -4,6 +4,7 @@ Error handling and reporting.
 
 use nom::error::ErrorKind;
 use std::fmt::Debug;
+use std::net::AddrParseError;
 use std::num::ParseIntError;
 use std::string::FromUtf8Error;
 use tokio::task::JoinError;
@@ -35,15 +36,23 @@ impl std::fmt::Debug for Error {
                     None => false,
                     Some(s) => s.to_str().unwrap().contains("dev/daqbuffer"),
                 };
-                if is_ours {
-                    write!(
-                        &mut buf,
-                        "\n    {}\n      {}  {}",
-                        sy.name().unwrap(),
-                        sy.filename().unwrap().to_str().unwrap(),
-                        sy.lineno().unwrap(),
-                    )
-                    .unwrap();
+                let name = match sy.name() {
+                    Some(k) => k.to_string(),
+                    _ => "[err]".into(),
+                };
+                let filename = match sy.filename() {
+                    Some(k) => match k.to_str() {
+                        Some(k) => k,
+                        _ => "[err]",
+                    },
+                    _ => "[err]",
+                };
+                let lineno = match sy.lineno() {
+                    Some(k) => k,
+                    _ => 0,
+                };
+                if true || is_ours {
+                    write!(&mut buf, "\n    {}\n      {}  {}", name, filename, lineno).unwrap();
                 }
             }
         }
@@ -74,6 +83,12 @@ impl std::error::Error for Error {}
 
 impl From<std::io::Error> for Error {
     fn from(k: std::io::Error) -> Self {
+        Self::with_msg(k.to_string())
+    }
+}
+
+impl From<AddrParseError> for Error {
+    fn from(k: AddrParseError) -> Self {
         Self::with_msg(k.to_string())
     }
 }

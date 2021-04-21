@@ -50,6 +50,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         let node = Node {
             id: i1,
             host: "localhost".into(),
+            listen: "0.0.0.0".into(),
             port: 7780 + i1 as u16,
             port_raw: 7780 + i1 as u16 + 100,
             split: i1,

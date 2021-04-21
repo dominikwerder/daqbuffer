@@ -1,4 +1,5 @@
 use crate::agg::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarEventBatch};
+use crate::merge::MergedMinMaxAvgScalarStream;
 use crate::raw::EventsQuery;
 use bytes::{BufMut, Bytes, BytesMut};
 use chrono::{DateTime, Utc};
@@ -382,7 +383,10 @@ impl Stream for PreBinnedValueFetchedStream {
                     pin_mut!(res);
                     use hyper::body::HttpBody;
                     match res.poll_data(cx) {
-                        Ready(Some(Ok(_k))) => todo!(),
+                        Ready(Some(Ok(_k))) => {
+                            error!("TODO   PreBinnedValueFetchedStream   received value, now do something");
+                            Pending
+                        }
                         Ready(Some(Err(e))) => Ready(Some(Err(e.into()))),
                         Ready(None) => Ready(None),
                         Pending => Pending,
@@ -424,6 +428,7 @@ type T002 = Pin<Box<dyn Future<Output = Result<T001, Error>> + Send>>;
 pub struct PreBinnedAssembledFromRemotes {
     tcp_establish_futs: Vec<T002>,
     nodein: Vec<Option<T001>>,
+    merged: Option<T001>,
 }
 
 impl PreBinnedAssembledFromRemotes {
@@ -438,6 +443,7 @@ impl PreBinnedAssembledFromRemotes {
         Self {
             tcp_establish_futs,
             nodein: (0..n).into_iter().map(|_| None).collect(),
+            merged: None,
         }
     }
 }
@@ -453,7 +459,17 @@ impl Stream for PreBinnedAssembledFromRemotes {
         // First, establish async all connections.
         // Then assemble the merge-and-processing-pipeline and pull from there.
         'outer: loop {
-            {
+            break if let Some(fut) = &mut self.merged {
+                match fut.poll_next_unpin(cx) {
+                    Ready(Some(Ok(_k))) => {
+                        let h = MinMaxAvgScalarBinBatch::empty();
+                        Ready(Some(Ok(h)))
+                    }
+                    Ready(Some(Err(e))) => Ready(Some(Err(e))),
+                    Ready(None) => Ready(None),
+                    Pending => Pending,
+                }
+            } else {
                 let mut pend = false;
                 let mut c1 = 0;
                 for i1 in 0..self.tcp_establish_futs.len() {
@@ -463,7 +479,7 @@ impl Stream for PreBinnedAssembledFromRemotes {
                         info!("tcp_establish_futs  POLLING INPUT ESTAB  {}", i1);
                         match f.poll(cx) {
                             Ready(Ok(k)) => {
-                                info!("ESTABLISHED INPUT {}", i1);
+                                info!("tcp_establish_futs  ESTABLISHED INPUT {}", i1);
                                 self.nodein[i1] = Some(k);
                             }
                             Ready(Err(e)) => return Ready(Some(Err(e))),
@@ -476,15 +492,20 @@ impl Stream for PreBinnedAssembledFromRemotes {
                     }
                 }
                 if pend {
-                    break Pending;
+                    Pending
                 } else {
                     if c1 == self.tcp_establish_futs.len() {
+                        debug!("SETTING UP MERGED STREAM");
                         // TODO set up the merged stream
                         let inps = self.nodein.iter_mut().map(|k| k.take().unwrap()).collect();
-                        super::merge::MergedMinMaxAvgScalarStream::new(inps);
+                        let s = MergedMinMaxAvgScalarStream::new(inps);
+                        self.merged = Some(Box::pin(s));
+                        continue 'outer;
+                    } else {
+                        Pending
                     }
                 }
-            }
+            };
         }
     }
 }

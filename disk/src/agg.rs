@@ -332,6 +332,19 @@ pub struct MinMaxAvgScalarBinBatch {
     avgs: Vec<f32>,
 }
 
+impl MinMaxAvgScalarBinBatch {
+    pub fn empty() -> Self {
+        Self {
+            ts1s: vec![],
+            ts2s: vec![],
+            counts: vec![],
+            mins: vec![],
+            maxs: vec![],
+            avgs: vec![],
+        }
+    }
+}
+
 impl std::fmt::Debug for MinMaxAvgScalarBinBatch {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(fmt, "MinMaxAvgScalarBinBatch  count {}", self.ts1s.len())
@@ -763,6 +776,7 @@ pub fn make_test_node(id: u32) -> Node {
     Node {
         id,
         host: "localhost".into(),
+        listen: "0.0.0.0".into(),
         port: 8800 + id as u16,
         port_raw: 8800 + id as u16 + 100,
         data_base_path: format!("../tmpdata/node{:02}", id).into(),
