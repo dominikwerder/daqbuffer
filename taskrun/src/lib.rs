@@ -14,11 +14,25 @@ pub fn run<T, F: std::future::Future<Output = Result<T, Error>>>(f: F) -> Result
         .on_thread_start(|| {
             let _old = panic::take_hook();
             panic::set_hook(Box::new(move |info| {
+                let payload = if let Some(k) = info.payload().downcast_ref::<Error>() {
+                    format!("{:?}", k)
+                }
+                else if let Some(k) = info.payload().downcast_ref::<String>() {
+                    k.into()
+                }
+                else if let Some(&k) = info.payload().downcast_ref::<&str>() {
+                    k.into()
+                }
+                else {
+                    format!("unknown payload type")
+                };
                 error!(
-                    "✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗     panicking\n{:?}\nLOCATION: {:?}\nPAYLOAD: {:?}",
+                    "✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗     panicking\n{:?}\nLOCATION: {:?}\nPAYLOAD: {:?}\ninfo object: {:?}\nerr: {:?}",
                     Error::with_msg("catched panic in taskrun::run"),
                     info.location(),
-                    info.payload()
+                    info.payload(),
+                    info,
+                    payload,
                 );
                 //old(info);
             }));
@@ -42,7 +56,7 @@ pub fn tracing_init() {
         .with_thread_names(true)
         //.with_max_level(tracing::Level::INFO)
         .with_env_filter(tracing_subscriber::EnvFilter::new(
-            "info,retrieval=trace,disk=trace,tokio_postgres=info",
+            "info,retrieval=trace,retrieval::test=trace,disk=trace,tokio_postgres=info",
         ))
         .init();
 }

@@ -14,7 +14,7 @@ use std::mem::size_of;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 #[allow(unused_imports)]
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, span, trace, warn, Level};
 
 pub trait AggregatorTdim {
     type InputValue;
@@ -218,8 +218,8 @@ impl MinMaxAvgScalarEventBatch {
     }
     pub fn from_full_frame(buf: &Bytes) -> Self {
         info!("construct MinMaxAvgScalarEventBatch from full frame  len {}", buf.len());
+        assert!(buf.len() >= 4);
         let mut g = MinMaxAvgScalarEventBatch::empty();
-
         let n1;
         unsafe {
             let ptr = (&buf[0] as *const u8) as *const [u8; 4];
@@ -442,13 +442,123 @@ impl MinMaxAvgScalarBinBatch {
         self.counts.push(g.count);
         self.mins.push(g.min);
         self.maxs.push(g.max);
-        self.counts.push(g.count);
+        self.avgs.push(g.avg);
+    }
+    pub fn from_full_frame(buf: &Bytes) -> Self {
+        info!("MinMaxAvgScalarBinBatch  construct from full frame  len {}", buf.len());
+        assert!(buf.len() >= 4);
+        let mut g = MinMaxAvgScalarBinBatch::empty();
+        let n1;
+        unsafe {
+            let ptr = (&buf[0] as *const u8) as *const [u8; 4];
+            n1 = u32::from_le_bytes(*ptr);
+            trace!(
+                "MinMaxAvgScalarBinBatch  construct  --- +++ --- +++ --- +++  n1: {}",
+                n1
+            );
+        }
+        if n1 == 0 {
+            g
+        } else {
+            let n2 = n1 as usize;
+            g.ts1s.reserve(n2);
+            g.ts2s.reserve(n2);
+            g.counts.reserve(n2);
+            g.mins.reserve(n2);
+            g.maxs.reserve(n2);
+            g.avgs.reserve(n2);
+            unsafe {
+                // TODO Can I unsafely create ptrs and just assign them?
+                // TODO What are cases where I really need transmute?
+                g.ts1s.set_len(n2);
+                g.ts2s.set_len(n2);
+                g.counts.set_len(n2);
+                g.mins.set_len(n2);
+                g.maxs.set_len(n2);
+                g.avgs.set_len(n2);
+                let ptr0 = &buf[4] as *const u8;
+                {
+                    let ptr1 = ptr0.add(0) as *const u64;
+                    for i1 in 0..n2 {
+                        g.ts1s[i1] = *ptr1.add(i1);
+                    }
+                }
+                {
+                    let ptr1 = ptr0.add((8) * n2) as *const u64;
+                    for i1 in 0..n2 {
+                        g.ts2s[i1] = *ptr1.add(i1);
+                    }
+                }
+                {
+                    let ptr1 = ptr0.add((8 + 8) * n2) as *const u64;
+                    for i1 in 0..n2 {
+                        g.counts[i1] = *ptr1.add(i1);
+                    }
+                }
+                {
+                    let ptr1 = ptr0.add((8 + 8 + 8) * n2) as *const f32;
+                    for i1 in 0..n2 {
+                        g.mins[i1] = *ptr1.add(i1);
+                    }
+                }
+                {
+                    let ptr1 = ptr0.add((8 + 8 + 8 + 4) * n2) as *const f32;
+                    for i1 in 0..n2 {
+                        g.maxs[i1] = *ptr1;
+                    }
+                }
+                {
+                    let ptr1 = ptr0.add((8 + 8 + 8 + 4 + 4) * n2) as *const f32;
+                    for i1 in 0..n2 {
+                        g.avgs[i1] = *ptr1;
+                    }
+                }
+            }
+            info!("CONTENT  {:?}", g);
+            g
+        }
+    }
+}
+
+impl Frameable for MinMaxAvgScalarBinBatch {
+    fn serialized(&self) -> Bytes {
+        let n1 = self.ts1s.len();
+        let mut g = BytesMut::with_capacity(4 + n1 * (3 * 8 + 3 * 4));
+        g.put_u32_le(n1 as u32);
+        if n1 > 0 {
+            let ptr = &self.ts1s[0] as *const u64 as *const u8;
+            let a = unsafe { std::slice::from_raw_parts(ptr, size_of::<u64>() * n1) };
+            g.put(a);
+            let ptr = &self.ts2s[0] as *const u64 as *const u8;
+            let a = unsafe { std::slice::from_raw_parts(ptr, size_of::<u64>() * n1) };
+            g.put(a);
+            let ptr = &self.counts[0] as *const u64 as *const u8;
+            let a = unsafe { std::slice::from_raw_parts(ptr, size_of::<u64>() * n1) };
+            g.put(a);
+            let ptr = &self.mins[0] as *const f32 as *const u8;
+            let a = unsafe { std::slice::from_raw_parts(ptr, size_of::<f32>() * n1) };
+            g.put(a);
+            let ptr = &self.maxs[0] as *const f32 as *const u8;
+            let a = unsafe { std::slice::from_raw_parts(ptr, size_of::<f32>() * n1) };
+            g.put(a);
+            let ptr = &self.avgs[0] as *const f32 as *const u8;
+            let a = unsafe { std::slice::from_raw_parts(ptr, size_of::<f32>() * n1) };
+            g.put(a);
+        }
+        g.freeze()
     }
 }
 
 impl std::fmt::Debug for MinMaxAvgScalarBinBatch {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(fmt, "MinMaxAvgScalarBinBatch  count {}", self.ts1s.len())
+        write!(
+            fmt,
+            "MinMaxAvgScalarBinBatch  count {}  ts1s {:?}  counts {:?}  avgs {:?}",
+            self.ts1s.len(),
+            self.ts1s,
+            self.counts,
+            self.avgs
+        )
     }
 }
 
@@ -789,6 +899,9 @@ where
     spec: BinSpecDimT,
     curbin: u32,
     left: Option<Poll<Option<Result<I, Error>>>>,
+    errored: bool,
+    completed: bool,
+    inp_completed: bool,
 }
 
 impl<S, I> IntoBinnedTDefaultStream<S, I>
@@ -804,6 +917,9 @@ where
             spec,
             curbin: 0,
             left: None,
+            errored: false,
+            completed: false,
+            inp_completed: false,
         }
     }
 }
@@ -817,14 +933,27 @@ where
     type Item = Result<<I::Aggregator as AggregatorTdim>::OutputValue, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        trace!("IntoBinnedTDefaultStream  poll_next");
         use Poll::*;
+        if self.errored {
+            self.completed = true;
+            return Ready(None);
+        } else if self.completed {
+            panic!("MergedFromRemotes  ✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗  poll_next on completed");
+        }
         'outer: loop {
             let cur = if self.curbin as u64 >= self.spec.count {
+                trace!("IntoBinnedTDefaultStream  curbin out of spec, END");
                 Ready(None)
             } else if let Some(k) = self.left.take() {
+                trace!("IntoBinnedTDefaultStream  GIVE LEFT");
                 k
+            } else if self.inp_completed {
+                Ready(None)
             } else {
-                self.inp.poll_next_unpin(cx)
+                trace!("IntoBinnedTDefaultStream  POLL OUR INPUT");
+                let inp_poll_span = span!(Level::TRACE, "into_t_inp_poll");
+                inp_poll_span.in_scope(|| self.inp.poll_next_unpin(cx))
             };
             break match cur {
                 Ready(Some(Ok(k))) => {
@@ -858,14 +987,22 @@ where
                         }
                     }
                 }
-                Ready(Some(Err(e))) => Ready(Some(Err(e))),
-                Ready(None) => match self.aggtor.take() {
-                    Some(ag) => Ready(Some(Ok(ag.result()))),
-                    None => {
-                        warn!("TODO add trailing bins");
-                        Ready(None)
+                Ready(Some(Err(e))) => {
+                    error!("IntoBinnedTDefaultStream  err from input");
+                    self.errored = true;
+                    Ready(Some(Err(e)))
+                }
+                Ready(None) => {
+                    self.inp_completed = true;
+                    match self.aggtor.take() {
+                        Some(ag) => Ready(Some(Ok(ag.result()))),
+                        None => {
+                            warn!("TODO add the trailing empty bins until requested range is complete");
+                            self.completed = true;
+                            Ready(None)
+                        }
                     }
-                },
+                }
                 Pending => Pending,
             };
         }

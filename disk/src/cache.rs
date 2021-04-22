@@ -1,11 +1,12 @@
 use crate::agg::{IntoBinnedT, MinMaxAvgScalarBinBatch, MinMaxAvgScalarEventBatch};
 use crate::merge::MergedMinMaxAvgScalarStream;
-use crate::raw::EventsQuery;
+use crate::raw::{EventsQuery, Frameable, InMemoryFrameAsyncReadStream};
 use bytes::{BufMut, Bytes, BytesMut};
 use chrono::{DateTime, Utc};
 use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, FutureExt, StreamExt, TryStreamExt};
+use hyper::Response;
 use netpod::{
     AggKind, BinSpecDimT, Channel, Cluster, NanoRange, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchIterator,
     PreBinnedPatchRange, ToNanos,
@@ -16,6 +17,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tiny_keccak::Hasher;
+use tokio::io::{AsyncRead, ReadBuf};
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
@@ -30,8 +32,12 @@ pub struct Query {
 impl Query {
     pub fn from_request(req: &http::request::Parts) -> Result<Self, Error> {
         let params = netpod::query_params(req.uri.query());
-        let beg_date = params.get("beg_date").ok_or(Error::with_msg("missing beg_date"))?;
-        let end_date = params.get("end_date").ok_or(Error::with_msg("missing end_date"))?;
+        let beg_date = params
+            .get("beg_date")
+            .ok_or_else(|| Error::with_msg("missing beg_date"))?;
+        let end_date = params
+            .get("end_date")
+            .ok_or_else(|| Error::with_msg("missing end_date"))?;
         let ret = Query {
             range: NanoRange {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
@@ -39,7 +45,7 @@ impl Query {
             },
             count: params
                 .get("bin_count")
-                .ok_or(Error::with_msg("missing beg_date"))?
+                .ok_or_else(|| Error::with_msg("missing beg_date"))?
                 .parse()
                 .unwrap(),
             agg_kind: AggKind::DimXBins1,
@@ -48,7 +54,6 @@ impl Query {
                 name: params.get("channel_name").unwrap().into(),
             },
         };
-        info!("Query::from_request  {:?}", ret);
         Ok(ret)
     }
 }
@@ -102,7 +107,7 @@ pub async fn binned_bytes_for_http(
         }
         None => {
             // Merge raw data
-            error!("binned_bytes_for_http  TODO merge raw data");
+            error!("binned_bytes_for_http   TODO   merge raw data");
             todo!()
         }
     }
@@ -124,10 +129,17 @@ impl Stream for BinnedBytesForHttpStream {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         match self.inp.poll_next_unpin(cx) {
-            Ready(Some(Ok(_k))) => {
-                error!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!          BinnedBytesForHttpStream  TODO  serialize to bytes");
-                let mut buf = BytesMut::with_capacity(250);
-                buf.put(&b"BinnedBytesForHttpStream  TODO  serialize to bytes\n"[..]);
+            Ready(Some(Ok(k))) => {
+                // TODO optimize this...
+                let mut buf = BytesMut::with_capacity(4);
+                buf.resize(4, 0);
+                let k = k.serialized();
+                info!("BinnedBytesForHttpStream  serialized slice has len {}", k.len());
+                let n1 = k.len();
+                buf.put_slice(&k);
+                assert!(buf.len() == k.len() + 4);
+                buf.as_mut().put_u32_le(n1 as u32);
+                info!("BinnedBytesForHttpStream  emit buf len {}", buf.len());
                 Ready(Some(Ok(buf.freeze())))
             }
             Ready(Some(Err(e))) => Ready(Some(Err(e))),
@@ -179,6 +191,7 @@ pub fn pre_binned_bytes_for_http(
 
 pub struct PreBinnedValueByteStream {
     inp: PreBinnedValueStream,
+    left: Option<Bytes>,
 }
 
 impl PreBinnedValueByteStream {
@@ -186,6 +199,7 @@ impl PreBinnedValueByteStream {
         warn!("PreBinnedValueByteStream");
         Self {
             inp: PreBinnedValueStream::new(patch, channel, agg_kind, node_config),
+            left: None,
         }
     }
 }
@@ -195,11 +209,17 @@ impl Stream for PreBinnedValueByteStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        if let Some(buf) = self.left.take() {
+            return Ready(Some(Ok(buf)));
+        }
         match self.inp.poll_next_unpin(cx) {
-            Ready(Some(Ok(_k))) => {
-                error!("TODO convert item to Bytes");
-                let buf = Bytes::new();
-                Ready(Some(Ok(buf)))
+            Ready(Some(Ok(k))) => {
+                let buf = k.serialized();
+                let n1 = buf.len();
+                self.left = Some(buf);
+                let mut buf2 = BytesMut::with_capacity(4);
+                buf2.put_u32_le(n1 as u32);
+                Ready(Some(Ok(buf2.freeze())))
             }
             Ready(Some(Err(e))) => Ready(Some(Err(e))),
             Ready(None) => Ready(None),
@@ -296,14 +316,17 @@ impl PreBinnedValueStream {
                 let s1 = MergedFromRemotes::new(evq, self.node_config.cluster.clone());
                 let s2 = s1
                     .map(|k| {
-                        trace!("MergedFromRemotes  emitted some item");
+                        if k.is_err() {
+                            error!("..................   try_setup_fetch_prebinned_higher_res  got ERROR");
+                        } else {
+                            trace!("try_setup_fetch_prebinned_higher_res  got some item from  MergedFromRemotes");
+                        }
                         k
                     })
                     .into_binned_t(spec)
                     .map_ok({
                         let mut a = MinMaxAvgScalarBinBatch::empty();
                         move |k| {
-                            error!("try_setup_fetch_prebinned_higher_res  TODO  emit actual value");
                             a.push_single(&k);
                             if a.len() > 0 {
                                 let z = std::mem::replace(&mut a, MinMaxAvgScalarBinBatch::empty());
@@ -313,11 +336,15 @@ impl PreBinnedValueStream {
                             }
                         }
                     })
-                    .filter(|k| {
+                    .filter_map(|k| {
                         use std::future::ready;
-                        ready(k.is_ok() && k.as_ref().unwrap().is_some())
-                    })
-                    .map_ok(Option::unwrap);
+                        let g = match k {
+                            Ok(Some(k)) => Some(Ok(k)),
+                            Ok(None) => None,
+                            Err(e) => Some(Err(e)),
+                        };
+                        ready(g)
+                    });
                 self.fut2 = Some(Box::pin(s2));
             }
         }
@@ -332,7 +359,6 @@ impl Stream for PreBinnedValueStream {
         use Poll::*;
         'outer: loop {
             break if let Some(fut) = self.fut2.as_mut() {
-                info!("PreBinnedValueStream  ---------------------------------------------------------  fut2 poll");
                 fut.poll_next_unpin(cx)
             } else if let Some(fut) = self.open_check_local_file.as_mut() {
                 match fut.poll_unpin(cx) {
@@ -366,7 +392,7 @@ impl Stream for PreBinnedValueStream {
 pub struct PreBinnedValueFetchedStream {
     uri: http::Uri,
     resfut: Option<hyper::client::ResponseFuture>,
-    res: Option<hyper::Response<hyper::Body>>,
+    res: Option<InMemoryFrameAsyncReadStream<HttpBodyAsAsyncRead>>,
 }
 
 impl PreBinnedValueFetchedStream {
@@ -408,11 +434,10 @@ impl Stream for PreBinnedValueFetchedStream {
         'outer: loop {
             break if let Some(res) = self.res.as_mut() {
                 pin_mut!(res);
-                use hyper::body::HttpBody;
-                match res.poll_data(cx) {
-                    Ready(Some(Ok(_))) => {
-                        error!("TODO   PreBinnedValueFetchedStream   received value, now do something");
-                        Pending
+                match res.poll_next(cx) {
+                    Ready(Some(Ok(buf))) => {
+                        let item = MinMaxAvgScalarBinBatch::from_full_frame(&buf);
+                        Ready(Some(Ok(item)))
                     }
                     Ready(Some(Err(e))) => Ready(Some(Err(e.into()))),
                     Ready(None) => Ready(None),
@@ -423,7 +448,9 @@ impl Stream for PreBinnedValueFetchedStream {
                     Ready(res) => match res {
                         Ok(res) => {
                             info!("GOT result from SUB REQUEST: {:?}", res);
-                            self.res = Some(res);
+                            let s1 = HttpBodyAsAsyncRead::new(res);
+                            let s2 = InMemoryFrameAsyncReadStream::new(s1);
+                            self.res = Some(s2);
                             continue 'outer;
                         }
                         Err(e) => {
@@ -447,12 +474,74 @@ impl Stream for PreBinnedValueFetchedStream {
     }
 }
 
+pub struct HttpBodyAsAsyncRead {
+    inp: Response<hyper::Body>,
+    left: Bytes,
+    rp: usize,
+}
+
+impl HttpBodyAsAsyncRead {
+    pub fn new(inp: hyper::Response<hyper::Body>) -> Self {
+        Self {
+            inp,
+            left: Bytes::new(),
+            rp: 0,
+        }
+    }
+}
+
+impl AsyncRead for HttpBodyAsAsyncRead {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut ReadBuf) -> Poll<std::io::Result<()>> {
+        use hyper::body::HttpBody;
+        use Poll::*;
+        if self.left.len() != 0 {
+            let n1 = buf.remaining();
+            let n2 = self.left.len() - self.rp;
+            if n2 <= n1 {
+                buf.put_slice(self.left[self.rp..].as_ref());
+                self.left = Bytes::new();
+                self.rp = 0;
+                Ready(Ok(()))
+            } else {
+                buf.put_slice(self.left[self.rp..(self.rp + n2)].as_ref());
+                self.rp += n2;
+                Ready(Ok(()))
+            }
+        } else {
+            let f = &mut self.inp;
+            pin_mut!(f);
+            match f.poll_data(cx) {
+                Ready(Some(Ok(k))) => {
+                    let n1 = buf.remaining();
+                    if k.len() <= n1 {
+                        buf.put_slice(k.as_ref());
+                        Ready(Ok(()))
+                    } else {
+                        buf.put_slice(k[..n1].as_ref());
+                        self.left = k;
+                        self.rp = n1;
+                        Ready(Ok(()))
+                    }
+                }
+                Ready(Some(Err(e))) => Ready(Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    Error::with_msg(format!("Received by HttpBodyAsAsyncRead: {:?}", e)),
+                ))),
+                Ready(None) => Ready(Ok(())),
+                Pending => Pending,
+            }
+        }
+    }
+}
+
 type T001 = Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarEventBatch, Error>> + Send>>;
 type T002 = Pin<Box<dyn Future<Output = Result<T001, Error>> + Send>>;
 pub struct MergedFromRemotes {
     tcp_establish_futs: Vec<T002>,
     nodein: Vec<Option<T001>>,
     merged: Option<T001>,
+    completed: bool,
+    errored: bool,
 }
 
 impl MergedFromRemotes {
@@ -468,6 +557,8 @@ impl MergedFromRemotes {
             tcp_establish_futs,
             nodein: (0..n).into_iter().map(|_| None).collect(),
             merged: None,
+            completed: false,
+            errored: false,
         }
     }
 }
@@ -477,46 +568,44 @@ impl Stream for MergedFromRemotes {
     type Item = Result<MinMaxAvgScalarEventBatch, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        trace!("MergedFromRemotes   MAIN POLL");
         use Poll::*;
+        if self.errored {
+            warn!("MergedFromRemotes  return None after Err");
+            self.completed = true;
+            return Ready(None);
+        } else if self.completed {
+            panic!("MergedFromRemotes  ✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗  poll_next on completed");
+        }
         'outer: loop {
             break if let Some(fut) = &mut self.merged {
-                debug!(
-                    "MergedFromRemotes  »»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»   MergedFromRemotes   POLL merged"
-                );
                 match fut.poll_next_unpin(cx) {
-                    Ready(Some(Ok(k))) => {
-                        info!("MergedFromRemotes  »»»»»»»»»»»»»»  Ready Some Ok");
-                        Ready(Some(Ok(k)))
-                    }
+                    Ready(Some(Ok(k))) => Ready(Some(Ok(k))),
                     Ready(Some(Err(e))) => {
-                        info!("MergedFromRemotes  »»»»»»»»»»»»»»  Ready Some Err");
+                        self.errored = true;
                         Ready(Some(Err(e)))
                     }
                     Ready(None) => {
-                        info!("MergedFromRemotes  »»»»»»»»»»»»»»  Ready None");
+                        self.completed = true;
                         Ready(None)
                     }
-                    Pending => {
-                        info!("MergedFromRemotes  »»»»»»»»»»»»»»  Pending");
-                        Pending
-                    }
+                    Pending => Pending,
                 }
             } else {
-                trace!("MergedFromRemotes   PHASE SETUP");
                 let mut pend = false;
                 let mut c1 = 0;
                 for i1 in 0..self.tcp_establish_futs.len() {
                     if self.nodein[i1].is_none() {
                         let f = &mut self.tcp_establish_futs[i1];
                         pin_mut!(f);
-                        info!("MergedFromRemotes  tcp_establish_futs  POLLING INPUT ESTAB  {}", i1);
                         match f.poll(cx) {
                             Ready(Ok(k)) => {
                                 info!("MergedFromRemotes  tcp_establish_futs  ESTABLISHED INPUT {}", i1);
                                 self.nodein[i1] = Some(k);
                             }
-                            Ready(Err(e)) => return Ready(Some(Err(e))),
+                            Ready(Err(e)) => {
+                                self.errored = true;
+                                return Ready(Some(Err(e)));
+                            }
                             Pending => {
                                 pend = true;
                             }

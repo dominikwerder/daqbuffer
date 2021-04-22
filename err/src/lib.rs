@@ -57,7 +57,7 @@ impl std::fmt::Debug for Error {
             }
         }
         //write!(fmt, "Error {}  backtrace:\n{:?}", self.msg, self.trace)
-        write!(fmt, "Error {}  trace{}", self.msg, String::from_utf8(buf).unwrap())
+        write!(fmt, "Error {}\nTrace:{}", self.msg, String::from_utf8(buf).unwrap())
     }
 }
 

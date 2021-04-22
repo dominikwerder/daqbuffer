@@ -1,6 +1,8 @@
 use crate::spawn_test_hosts;
 use chrono::Utc;
+use disk::agg::MinMaxAvgScalarBinBatch;
 use err::Error;
+use futures_util::TryStreamExt;
 use hyper::Body;
 use netpod::{Cluster, Node};
 use std::sync::Arc;
@@ -60,9 +62,10 @@ async fn get_cached_0_inner() -> Result<(), Error> {
     let client = hyper::Client::new();
     let res = client.request(req).await?;
     info!("client response {:?}", res);
-    let mut res_body = res.into_body();
-    use hyper::body::HttpBody;
-    let mut ntot = 0 as u64;
+    //let (res_head, mut res_body) = res.into_parts();
+    let s1 = disk::cache::HttpBodyAsAsyncRead::new(res);
+    let s2 = disk::raw::InMemoryFrameAsyncReadStream::new(s1);
+    /*use hyper::body::HttpBody;
     loop {
         match res_body.data().await {
             Some(Ok(k)) => {
@@ -77,14 +80,30 @@ async fn get_cached_0_inner() -> Result<(), Error> {
                 break;
             }
         }
-    }
+    }*/
+    use futures_util::StreamExt;
+    use std::future::ready;
+    let mut bin_count = 0;
+    let s3 = s2
+        .map_err(|e| error!("TEST GOT ERROR {:?}", e))
+        .map_ok(|k| {
+            info!("TEST GOT ITEM:  {:?}", k);
+            let z = MinMaxAvgScalarBinBatch::from_full_frame(&k);
+            info!("TEST GOT BATCH:  {:?}", z);
+            bin_count += 1;
+            z
+        })
+        .for_each(|_| ready(()));
+    s3.await;
     let t2 = chrono::Utc::now();
+    let ntot = 0;
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     let throughput = ntot / 1024 * 1000 / ms;
     info!(
-        "get_cached_0 DONE  total download {} MB   throughput {:5} kB/s",
+        "get_cached_0 DONE  total download {} MB   throughput {:5} kB/s  bin_count {}",
         ntot / 1024 / 1024,
-        throughput
+        throughput,
+        bin_count,
     );
     drop(hosts);
     //Err::<(), _>(format!("test error").into())

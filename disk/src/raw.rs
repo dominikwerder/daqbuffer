@@ -113,14 +113,16 @@ where
     buf: BytesMut,
     wp: usize,
     tryparse: bool,
-    stopped: bool,
+    errored: bool,
+    completed: bool,
+    inp_bytes_consumed: u64,
 }
 
 impl<T> InMemoryFrameAsyncReadStream<T>
 where
     T: AsyncRead + Unpin,
 {
-    fn new(inp: T) -> Self {
+    pub fn new(inp: T) -> Self {
         // TODO make start cap adjustable
         let mut buf = BytesMut::with_capacity(1024);
         buf.resize(buf.capacity(), 0);
@@ -129,22 +131,40 @@ where
             buf,
             wp: 0,
             tryparse: false,
-            stopped: false,
+            errored: false,
+            completed: false,
+            inp_bytes_consumed: 0,
         }
     }
 
-    fn tryparse(&mut self) -> Option<Option<Bytes>> {
-        info!("InMemoryFrameAsyncReadStream  tryparse");
+    fn tryparse(&mut self) -> Option<Option<Result<Bytes, Error>>> {
         let mut buf = std::mem::replace(&mut self.buf, BytesMut::new());
         if self.wp >= 4 {
             let len = u32::from_le_bytes(*arrayref::array_ref![buf, 0, 4]);
-            info!("InMemoryFrameAsyncReadStream  tryparse  len: {}", len);
             if len == 0 {
-                warn!("InMemoryFrameAsyncReadStream  tryparse  ✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗   STOP FRAME");
-                assert!(self.wp == 4);
+                warn!("InMemoryFrameAsyncReadStream  tryparse  ✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗   STOP FRAME  self.wp {}", self.wp);
+                if self.wp != 4 {
+                    return Some(Some(Err(Error::with_msg(format!(
+                        "InMemoryFrameAsyncReadStream  tryparse  unexpected amount left {}",
+                        self.wp
+                    )))));
+                }
                 self.buf = buf;
                 Some(None)
             } else {
+                if len > 1024 * 32 {
+                    warn!("InMemoryFrameAsyncReadStream  big len received  {}", len);
+                }
+                if len > 1024 * 1024 * 2 {
+                    error!(
+                        "???????????????????????????   {}   ????????????????????????????????????????????",
+                        len
+                    );
+                    return Some(Some(Err(Error::with_msg(format!(
+                        "InMemoryFrameAsyncReadStream  tryparse  hug buffer  len {}  self.inp_bytes_consumed {}",
+                        len, self.inp_bytes_consumed
+                    )))));
+                }
                 assert!(len > 0 && len < 1024 * 512);
                 let nl = len as usize + 4;
                 if buf.capacity() < nl {
@@ -153,7 +173,6 @@ where
                     // nothing to do
                 }
                 if self.wp >= nl {
-                    info!("InMemoryFrameAsyncReadStream  tryparse  Have whole frame");
                     let mut buf3 = BytesMut::with_capacity(buf.capacity());
                     // TODO make stats of copied bytes and warn if ratio is too bad.
                     buf3.put(buf[nl..self.wp].as_ref());
@@ -163,15 +182,14 @@ where
                     buf.advance(4);
                     self.wp = self.wp - nl;
                     self.buf = buf3;
-                    Some(Some(buf.freeze()))
+                    self.inp_bytes_consumed += buf.len() as u64 + 4;
+                    Some(Some(Ok(buf.freeze())))
                 } else {
-                    trace!("InMemoryFrameAsyncReadStream  tryparse  less than length + 4 bytes");
                     self.buf = buf;
                     None
                 }
             }
         } else {
-            trace!("InMemoryFrameAsyncReadStream  tryparse  less than 4 bytes");
             self.buf = buf;
             None
         }
@@ -185,12 +203,14 @@ where
     type Item = Result<Bytes, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        info!("InMemoryFrameAsyncReadStream  MAIN POLL");
         use Poll::*;
-        assert!(!self.stopped);
+        if self.errored {
+            self.completed = true;
+            return Ready(None);
+        }
+        assert!(!self.completed);
         'outer: loop {
             if self.tryparse {
-                info!("InMemoryFrameAsyncReadStream  TRYPARSE");
                 break match self.tryparse() {
                     None => {
                         self.tryparse = false;
@@ -198,13 +218,16 @@ where
                     }
                     Some(None) => {
                         self.tryparse = false;
-                        self.stopped = true;
+                        self.completed = true;
                         Ready(None)
                     }
-                    Some(Some(k)) => Ready(Some(Ok(k))),
+                    Some(Some(Ok(k))) => Ready(Some(Ok(k))),
+                    Some(Some(Err(e))) => {
+                        self.errored = true;
+                        Ready(Some(Err(e)))
+                    }
                 };
             } else {
-                info!("InMemoryFrameAsyncReadStream  PREPARE BUFFER FOR READING");
                 let mut buf0 = std::mem::replace(&mut self.buf, BytesMut::new());
                 if buf0.as_mut().len() != buf0.capacity() {
                     error!("-------   {}  {}", buf0.as_mut().len(), buf0.capacity());
@@ -217,17 +240,11 @@ where
                 let r1 = buf2.remaining();
                 let j = &mut self.inp;
                 pin_mut!(j);
-                info!(
-                    "InMemoryFrameAsyncReadStream  POLL READ  remaining {}",
-                    buf2.remaining()
-                );
                 break match AsyncRead::poll_read(j, cx, &mut buf2) {
                     Ready(Ok(())) => {
-                        let n1 = buf2.filled().len();
-                        info!("InMemoryFrameAsyncReadStream  read Ok n1 {}", n1);
+                        let _n1 = buf2.filled().len();
                         let r2 = buf2.remaining();
                         if r2 == r1 {
-                            info!("InMemoryFrameAsyncReadStream  END OF INPUT");
                             if self.wp != 0 {
                                 error!("InMemoryFrameAsyncReadStream  self.wp != 0   {}", self.wp);
                             }
@@ -236,7 +253,6 @@ where
                         } else {
                             let n = buf2.filled().len();
                             self.wp += n;
-                            info!("InMemoryFrameAsyncReadStream  read  n {}  wp {}", n, self.wp);
                             self.buf = buf0;
                             self.tryparse = true;
                             continue 'outer;
@@ -244,7 +260,6 @@ where
                     }
                     Ready(Err(e)) => Ready(Some(Err(e.into()))),
                     Pending => {
-                        info!("InMemoryFrameAsyncReadStream  Pending");
                         self.buf = buf0;
                         Pending
                     }
