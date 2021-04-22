@@ -140,7 +140,7 @@ impl Stream for BinnedBytesForHttpStream {
 
 #[derive(Clone, Debug)]
 pub struct PreBinnedQuery {
-    patch: PreBinnedPatchCoord,
+    pub patch: PreBinnedPatchCoord,
     agg_kind: AggKind,
     channel: Channel,
 }

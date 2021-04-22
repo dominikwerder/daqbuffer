@@ -49,7 +49,7 @@ pub async fn x_processed_stream_from_node(
     netout.forget();
     debug!("x_processed_stream_from_node   WRITTEN");
     let frames = InMemoryFrameAsyncReadStream::new(netin);
-    let s2 = MinMaxAvgScalarEventBatchStreamFromFrames { inp: frames };
+    let s2 = MinMaxAvgScalarEventBatchStreamFromFrames::new(frames);
     debug!("x_processed_stream_from_node   HAVE STREAM INSTANCE");
     let s3: Pin<Box<dyn Stream<Item = Result<_, Error>> + Send>> = Box::pin(s2);
     debug!("x_processed_stream_from_node   RETURN");
@@ -61,6 +61,15 @@ where
     T: AsyncRead + Unpin,
 {
     inp: InMemoryFrameAsyncReadStream<T>,
+}
+
+impl<T> MinMaxAvgScalarEventBatchStreamFromFrames<T>
+where
+    T: AsyncRead + Unpin,
+{
+    pub fn new(inp: InMemoryFrameAsyncReadStream<T>) -> Self {
+        Self { inp }
+    }
 }
 
 impl<T> Stream for MinMaxAvgScalarEventBatchStreamFromFrames<T>

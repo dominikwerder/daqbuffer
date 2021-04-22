@@ -14,8 +14,9 @@ use pin::Pin;
 use std::{future, net, panic, pin, sync, task};
 use sync::Arc;
 use task::{Context, Poll};
+use tracing::field::Empty;
 #[allow(unused_imports)]
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, span, trace, warn, Level};
 
 pub async fn host(node_config: Arc<NodeConfig>) -> Result<(), Error> {
     let rawjh = taskrun::spawn(disk::raw::raw_service(node_config.clone()));
@@ -167,6 +168,7 @@ impl hyper::body::HttpBody for BodyStreamWrap {
 
 struct BodyStream<S> {
     inp: S,
+    desc: String,
 }
 
 impl<S, I> BodyStream<S>
@@ -174,12 +176,12 @@ where
     S: Stream<Item = Result<I, Error>> + Unpin + Send + 'static,
     I: Into<Bytes> + Sized + 'static,
 {
-    pub fn new(inp: S) -> Self {
-        Self { inp }
+    pub fn new(inp: S, desc: String) -> Self {
+        Self { inp, desc }
     }
 
-    pub fn wrapped(inp: S) -> Body {
-        Body::wrap_stream(Self::new(inp))
+    pub fn wrapped(inp: S, desc: String) -> Body {
+        Body::wrap_stream(Self::new(inp, desc))
     }
 }
 
@@ -191,24 +193,28 @@ where
     type Item = Result<I, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        use Poll::*;
-        let t = std::panic::catch_unwind(AssertUnwindSafe(|| self.inp.poll_next_unpin(cx)));
-        match t {
-            Ok(r) => match r {
-                Ready(Some(Ok(k))) => Ready(Some(Ok(k))),
-                Ready(Some(Err(e))) => {
-                    error!("body stream error: {:?}", e);
-                    Ready(Some(Err(e.into())))
+        let span1 = span!(Level::INFO, "httpret::BodyStream", desc = Empty);
+        span1.record("desc", &self.desc.as_str());
+        span1.in_scope(|| {
+            use Poll::*;
+            let t = std::panic::catch_unwind(AssertUnwindSafe(|| self.inp.poll_next_unpin(cx)));
+            match t {
+                Ok(r) => match r {
+                    Ready(Some(Ok(k))) => Ready(Some(Ok(k))),
+                    Ready(Some(Err(e))) => {
+                        error!("body stream error: {:?}", e);
+                        Ready(Some(Err(e.into())))
+                    }
+                    Ready(None) => Ready(None),
+                    Pending => Pending,
+                },
+                Err(e) => {
+                    error!("PANIC CAUGHT in httpret::BodyStream: {:?}", e);
+                    let e = Error::with_msg(format!("PANIC CAUGHT in httpret::BodyStream: {:?}", e));
+                    Ready(Some(Err(e)))
                 }
-                Ready(None) => Ready(None),
-                Pending => Pending,
-            },
-            Err(e) => {
-                error!("PANIC CAUGHT in httpret::BodyStream: {:?}", e);
-                let e = Error::with_msg(format!("PANIC CAUGHT in httpret::BodyStream: {:?}", e));
-                Ready(Some(Err(e)))
             }
-        }
+        })
     }
 }
 
@@ -217,7 +223,7 @@ async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Resp
     let (head, _body) = req.into_parts();
     let query = disk::cache::Query::from_request(&head)?;
     let ret = match disk::cache::binned_bytes_for_http(node_config, &query).await {
-        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s))?,
+        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, format!("desc-BINNED")))?,
         Err(e) => {
             error!("{:?}", e);
             response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
@@ -227,15 +233,22 @@ async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Resp
 }
 
 async fn prebinned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
-    info!("--------------------------------------------------------   PRE-BINNED");
     let (head, _body) = req.into_parts();
     let q = PreBinnedQuery::from_request(&head)?;
-    let ret = match disk::cache::pre_binned_bytes_for_http(node_config, &q) {
-        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s))?,
-        Err(e) => {
-            error!("{:?}", e);
-            response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
-        }
-    };
-    Ok(ret)
+    let span1 = span!(Level::INFO, "httpret::prebinned", bin_t_len = 0);
+    span1.record("bin_t_len", &q.patch.bin_t_len());
+    span1.in_scope(|| {
+        trace!("prebinned");
+        let ret = match disk::cache::pre_binned_bytes_for_http(node_config, &q) {
+            Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(
+                s,
+                format!("prebinned-bin-{}-path-{}", q.patch.bin_t_len(), q.patch.patch_beg()),
+            ))?,
+            Err(e) => {
+                error!("{:?}", e);
+                response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
+            }
+        };
+        Ok(ret)
+    })
 }
