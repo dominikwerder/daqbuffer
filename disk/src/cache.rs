@@ -1,4 +1,4 @@
-use crate::agg::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarEventBatch};
+use crate::agg::{IntoBinnedT, MinMaxAvgScalarBinBatch, MinMaxAvgScalarEventBatch};
 use crate::merge::MergedMinMaxAvgScalarStream;
 use crate::raw::EventsQuery;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -7,8 +7,8 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, FutureExt, StreamExt, TryStreamExt};
 use netpod::{
-    AggKind, Channel, Cluster, NanoRange, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchIterator, PreBinnedPatchRange,
-    ToNanos,
+    AggKind, BinSpecDimT, Channel, Cluster, NanoRange, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchIterator,
+    PreBinnedPatchRange, ToNanos,
 };
 use serde::{Deserialize, Serialize};
 use std::future::Future;
@@ -97,12 +97,7 @@ pub async fn binned_bytes_for_http(
                 agg_kind,
                 node_config.clone(),
             );
-            // Iterate over the patches.
-            // Request the patch from each node.
-            // Merge.
-            // Agg+Bin.
-            // Deliver.
-            let ret = BinnedBytesForHttpStream { inp: s1 };
+            let ret = BinnedBytesForHttpStream::new(s1);
             Ok(ret)
         }
         None => {
@@ -117,7 +112,11 @@ pub struct BinnedBytesForHttpStream {
     inp: BinnedStream,
 }
 
-impl BinnedBytesForHttpStream {}
+impl BinnedBytesForHttpStream {
+    pub fn new(inp: BinnedStream) -> Self {
+        Self { inp }
+    }
+}
 
 impl Stream for BinnedBytesForHttpStream {
     type Item = Result<Bytes, Error>;
@@ -269,7 +268,7 @@ impl PreBinnedValueStream {
                     })
                     .flatten()
                     .map(move |k| {
-                        info!("ITEM  from sub res bin_size {}   {:?}", bin_size, k);
+                        error!("NOTE NOTE NOTE  try_setup_fetch_prebinned_higher_res   ITEM  from sub res bin_size {}   {:?}", bin_size, k);
                         k
                     });
                 self.fut2 = Some(Box::pin(s));
@@ -284,12 +283,41 @@ impl PreBinnedValueStream {
                     },
                     agg_kind: self.agg_kind.clone(),
                 };
+                assert!(self.patch_coord.patch_t_len() % self.patch_coord.bin_t_len() == 0);
+                let count = self.patch_coord.patch_t_len() / self.patch_coord.bin_t_len();
+                let spec = BinSpecDimT {
+                    bs: self.patch_coord.bin_t_len(),
+                    ts1: self.patch_coord.patch_beg(),
+                    ts2: self.patch_coord.patch_end(),
+                    count,
+                };
                 let evq = Arc::new(evq);
+                error!("try_setup_fetch_prebinned_higher_res  apply all requested transformations and T-binning");
                 let s1 = MergedFromRemotes::new(evq, self.node_config.cluster.clone());
-                let s2 = s1.map_ok(|_k| {
-                    error!("try_setup_fetch_prebinned_higher_res  TODO  emit actual value");
-                    MinMaxAvgScalarBinBatch::empty()
-                });
+                let s2 = s1
+                    .map(|k| {
+                        trace!("MergedFromRemotes  emitted some item");
+                        k
+                    })
+                    .into_binned_t(spec)
+                    .map_ok({
+                        let mut a = MinMaxAvgScalarBinBatch::empty();
+                        move |k| {
+                            error!("try_setup_fetch_prebinned_higher_res  TODO  emit actual value");
+                            a.push_single(&k);
+                            if a.len() > 0 {
+                                let z = std::mem::replace(&mut a, MinMaxAvgScalarBinBatch::empty());
+                                Some(z)
+                            } else {
+                                None
+                            }
+                        }
+                    })
+                    .filter(|k| {
+                        use std::future::ready;
+                        ready(k.is_ok() && k.as_ref().unwrap().is_some())
+                    })
+                    .map_ok(Option::unwrap);
                 self.fut2 = Some(Box::pin(s2));
             }
         }
@@ -304,6 +332,7 @@ impl Stream for PreBinnedValueStream {
         use Poll::*;
         'outer: loop {
             break if let Some(fut) = self.fut2.as_mut() {
+                info!("PreBinnedValueStream  ---------------------------------------------------------  fut2 poll");
                 fut.poll_next_unpin(cx)
             } else if let Some(fut) = self.open_check_local_file.as_mut() {
                 match fut.poll_unpin(cx) {
@@ -350,6 +379,7 @@ impl PreBinnedValueFetchedStream {
         let nodeix = node_ix_for_patch(&patch_coord, &channel, &node_config.cluster);
         let node = &node_config.cluster.nodes[nodeix as usize];
         warn!("TODO defining property of a PreBinnedPatchCoord? patchlen + ix? binsize + patchix? binsize + patchsize + patchix?");
+        // TODO encapsulate uri creation, how to express aggregation kind?
         let uri: hyper::Uri = format!(
             "http://{}:{}/api/1/prebinned?{}&channel_backend={}&channel_name={}&agg_kind={:?}",
             node.host,
@@ -375,50 +405,43 @@ impl Stream for PreBinnedValueFetchedStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        // TODO when requested next, create the next http request, connect, check headers
-        // and as soon as ready, wrap the body in the appropriate parser and return the stream.
-        // The wire protocol is not yet defined.
         'outer: loop {
-            break match self.res.as_mut() {
-                Some(res) => {
-                    pin_mut!(res);
-                    use hyper::body::HttpBody;
-                    match res.poll_data(cx) {
-                        Ready(Some(Ok(_k))) => {
-                            error!("TODO   PreBinnedValueFetchedStream   received value, now do something");
-                            Pending
-                        }
-                        Ready(Some(Err(e))) => Ready(Some(Err(e.into()))),
-                        Ready(None) => Ready(None),
-                        Pending => Pending,
+            break if let Some(res) = self.res.as_mut() {
+                pin_mut!(res);
+                use hyper::body::HttpBody;
+                match res.poll_data(cx) {
+                    Ready(Some(Ok(_))) => {
+                        error!("TODO   PreBinnedValueFetchedStream   received value, now do something");
+                        Pending
                     }
+                    Ready(Some(Err(e))) => Ready(Some(Err(e.into()))),
+                    Ready(None) => Ready(None),
+                    Pending => Pending,
                 }
-                None => match self.resfut.as_mut() {
-                    Some(resfut) => match resfut.poll_unpin(cx) {
-                        Ready(res) => match res {
-                            Ok(res) => {
-                                info!("GOT result from SUB REQUEST: {:?}", res);
-                                self.res = Some(res);
-                                continue 'outer;
-                            }
-                            Err(e) => {
-                                error!("PreBinnedValueStream  error in stream {:?}", e);
-                                Ready(Some(Err(e.into())))
-                            }
-                        },
-                        Pending => Pending,
+            } else if let Some(resfut) = self.resfut.as_mut() {
+                match resfut.poll_unpin(cx) {
+                    Ready(res) => match res {
+                        Ok(res) => {
+                            info!("GOT result from SUB REQUEST: {:?}", res);
+                            self.res = Some(res);
+                            continue 'outer;
+                        }
+                        Err(e) => {
+                            error!("PreBinnedValueStream  error in stream {:?}", e);
+                            Ready(Some(Err(e.into())))
+                        }
                     },
-                    None => {
-                        let req = hyper::Request::builder()
-                            .method(http::Method::GET)
-                            .uri(&self.uri)
-                            .body(hyper::Body::empty())?;
-                        let client = hyper::Client::new();
-                        info!("START REQUEST FOR {:?}", req);
-                        self.resfut = Some(client.request(req));
-                        continue 'outer;
-                    }
-                },
+                    Pending => Pending,
+                }
+            } else {
+                let req = hyper::Request::builder()
+                    .method(http::Method::GET)
+                    .uri(&self.uri)
+                    .body(hyper::Body::empty())?;
+                let client = hyper::Client::new();
+                info!("START REQUEST FOR {:?}", req);
+                self.resfut = Some(client.request(req));
+                continue 'outer;
             };
         }
     }
@@ -456,28 +479,31 @@ impl Stream for MergedFromRemotes {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         trace!("MergedFromRemotes   MAIN POLL");
         use Poll::*;
-        // TODO this has several stages:
-        // First, establish async all connections.
-        // Then assemble the merge-and-processing-pipeline and pull from there.
         'outer: loop {
             break if let Some(fut) = &mut self.merged {
-                debug!("MergedFromRemotes   POLL merged");
+                debug!(
+                    "MergedFromRemotes  »»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»   MergedFromRemotes   POLL merged"
+                );
                 match fut.poll_next_unpin(cx) {
                     Ready(Some(Ok(k))) => {
-                        info!("MergedFromRemotes  Ready Some Ok");
+                        info!("MergedFromRemotes  »»»»»»»»»»»»»»  Ready Some Ok");
                         Ready(Some(Ok(k)))
                     }
                     Ready(Some(Err(e))) => {
-                        info!("MergedFromRemotes  Ready Some Err");
+                        info!("MergedFromRemotes  »»»»»»»»»»»»»»  Ready Some Err");
                         Ready(Some(Err(e)))
                     }
                     Ready(None) => {
-                        info!("MergedFromRemotes  Ready None");
+                        info!("MergedFromRemotes  »»»»»»»»»»»»»»  Ready None");
                         Ready(None)
                     }
-                    Pending => Pending,
+                    Pending => {
+                        info!("MergedFromRemotes  »»»»»»»»»»»»»»  Pending");
+                        Pending
+                    }
                 }
             } else {
+                trace!("MergedFromRemotes   PHASE SETUP");
                 let mut pend = false;
                 let mut c1 = 0;
                 for i1 in 0..self.tcp_establish_futs.len() {
@@ -504,7 +530,6 @@ impl Stream for MergedFromRemotes {
                 } else {
                     if c1 == self.tcp_establish_futs.len() {
                         debug!("MergedFromRemotes  SETTING UP MERGED STREAM");
-                        // TODO set up the merged stream
                         let inps = self.nodein.iter_mut().map(|k| k.take().unwrap()).collect();
                         let s1 = MergedMinMaxAvgScalarStream::new(inps);
                         self.merged = Some(Box::pin(s1));

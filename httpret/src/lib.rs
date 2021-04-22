@@ -242,7 +242,11 @@ async fn prebinned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<R
         let ret = match disk::cache::pre_binned_bytes_for_http(node_config, &q) {
             Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(
                 s,
-                format!("prebinned-bin-{}-path-{}", q.patch.bin_t_len(), q.patch.patch_beg()),
+                format!(
+                    "pre-b-{}-p-{}",
+                    q.patch.bin_t_len() / 1000000000,
+                    q.patch.patch_beg() / 1000000000,
+                ),
             ))?,
             Err(e) => {
                 error!("{:?}", e);

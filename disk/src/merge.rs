@@ -61,8 +61,10 @@ where
                                 self.current[i1] = CurVal::Val(k);
                             }
                             Ready(Some(Err(e))) => {
-                                // TODO emit this error, consider this stream as done, anything more to do here?
-                                //self.current[i1] = CurVal::Err(e);
+                                self.current[i1] = CurVal::Err(Error::with_msg(format!(
+                                    "MergeDim1F32Stream  error from upstream {:?}",
+                                    e
+                                )));
                                 return Ready(Some(Err(e)));
                             }
                             Ready(None) => {
@@ -126,7 +128,6 @@ where
 enum CurVal {
     None,
     Finish,
-    #[allow(dead_code)]
     Err(Error),
     Val(ValuesDim1),
 }
@@ -156,7 +157,7 @@ where
         let n = inps.len();
         let current = (0..n)
             .into_iter()
-            .map(|_k| MergedMinMaxAvgScalarStreamCurVal::None)
+            .map(|_| MergedMinMaxAvgScalarStreamCurVal::None)
             .collect();
         Self {
             inps,
@@ -178,7 +179,9 @@ where
         use Poll::*;
         'outer: loop {
             if self.emitted_complete {
-                panic!("poll on complete stream");
+                break Ready(Some(Err(Error::with_msg(
+                    "MergedMinMaxAvgScalarStream  poll on complete stream",
+                ))));
             }
             // can only run logic if all streams are either finished, errored or have some current value.
             for i1 in 0..self.inps.len() {
@@ -228,8 +231,15 @@ where
                 }
             }
             if lowest_ix == usize::MAX {
-                // TODO all inputs in finished state
-                break Ready(None);
+                if self.batch.tss.len() != 0 {
+                    let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
+                    info!("````````````````    MergedMinMaxAvgScalarStream   emit Ready(Some( current batch ))");
+                    break Ready(Some(Ok(k)));
+                } else {
+                    self.emitted_complete = true;
+                    info!("````````````````    MergedMinMaxAvgScalarStream   emit Ready(None)");
+                    break Ready(None);
+                }
             } else {
                 info!("decided on next lowest ts  {}  ix {}", lowest_ts, lowest_ix);
                 self.batch.tss.push(lowest_ts);

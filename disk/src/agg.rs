@@ -433,6 +433,17 @@ impl MinMaxAvgScalarBinBatch {
             avgs: vec![],
         }
     }
+    pub fn len(&self) -> usize {
+        self.ts1s.len()
+    }
+    pub fn push_single(&mut self, g: &MinMaxAvgScalarBinSingle) {
+        self.ts1s.push(g.ts1);
+        self.ts2s.push(g.ts2);
+        self.counts.push(g.count);
+        self.mins.push(g.min);
+        self.maxs.push(g.max);
+        self.counts.push(g.count);
+    }
 }
 
 impl std::fmt::Debug for MinMaxAvgScalarBinBatch {
@@ -576,9 +587,7 @@ where
                             // do the conversion
 
                             // TODO  only a scalar!
-                            if true {
-                                todo!();
-                            }
+                            err::todoval::<u32>();
 
                             let n1 = decomp.len();
                             assert!(n1 % ty.bytes() as usize == 0);
