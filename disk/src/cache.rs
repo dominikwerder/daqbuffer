@@ -131,14 +131,17 @@ impl Stream for BinnedBytesForHttpStream {
         match self.inp.poll_next_unpin(cx) {
             Ready(Some(Ok(k))) => {
                 // TODO optimize this...
-                let mut buf = BytesMut::with_capacity(4);
-                buf.resize(4, 0);
+                const HEAD: usize = super::raw::INMEM_FRAME_HEAD;
+                let mut buf = BytesMut::with_capacity(HEAD);
+                buf.resize(HEAD, 0);
                 let k = k.serialized();
                 info!("BinnedBytesForHttpStream  serialized slice has len {}", k.len());
                 let n1 = k.len();
                 buf.put_slice(&k);
-                assert!(buf.len() == k.len() + 4);
-                buf.as_mut().put_u32_le(n1 as u32);
+                assert!(buf.len() == n1 + HEAD);
+                buf[0..4].as_mut().put_u32_le(super::raw::INMEM_FRAME_MAGIC);
+                buf[4..8].as_mut().put_u32_le(n1 as u32);
+                buf[8..12].as_mut().put_u32_le(0);
                 info!("BinnedBytesForHttpStream  emit buf len {}", buf.len());
                 Ready(Some(Ok(buf.freeze())))
             }
@@ -214,11 +217,15 @@ impl Stream for PreBinnedValueByteStream {
         }
         match self.inp.poll_next_unpin(cx) {
             Ready(Some(Ok(k))) => {
+                // TODO optimize this
+                const HEAD: usize = super::raw::INMEM_FRAME_HEAD;
                 let buf = k.serialized();
                 let n1 = buf.len();
                 self.left = Some(buf);
-                let mut buf2 = BytesMut::with_capacity(4);
+                let mut buf2 = BytesMut::with_capacity(HEAD);
+                buf2.put_u32_le(super::raw::INMEM_FRAME_MAGIC);
                 buf2.put_u32_le(n1 as u32);
+                buf2.put_u32_le(0);
                 Ready(Some(Ok(buf2.freeze())))
             }
             Ready(Some(Err(e))) => Ready(Some(Err(e))),

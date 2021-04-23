@@ -1,3 +1,6 @@
+#[doc(inline)]
+pub use std;
+
 use chrono::{DateTime, TimeZone, Utc};
 use err::Error;
 use serde::{Deserialize, Serialize};
