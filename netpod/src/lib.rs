@@ -1,12 +1,13 @@
-#[doc(inline)]
-pub use std;
-
 use chrono::{DateTime, TimeZone, Utc};
 use err::Error;
+use futures_core::Stream;
+use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use timeunits::*;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
@@ -478,5 +479,60 @@ pub trait ToNanos {
 impl<Tz: TimeZone> ToNanos for DateTime<Tz> {
     fn to_nanos(&self) -> u64 {
         self.timestamp() as u64 * timeunits::SEC + self.timestamp_subsec_nanos() as u64
+    }
+}
+
+pub trait RetStreamExt: Stream {
+    fn only_first_error(self) -> OnlyFirstError<Self>
+    where
+        Self: Sized;
+}
+
+pub struct OnlyFirstError<T> {
+    inp: T,
+    errored: bool,
+    completed: bool,
+}
+
+impl<T, I, E> Stream for OnlyFirstError<T>
+where
+    T: Stream<Item = Result<I, E>> + Unpin,
+{
+    type Item = <T as Stream>::Item;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        if self.completed {
+            panic!("poll_next on completed");
+        }
+        if self.errored {
+            self.completed = true;
+            return Ready(None);
+        }
+        match self.inp.poll_next_unpin(cx) {
+            Ready(Some(Ok(k))) => Ready(Some(Ok(k))),
+            Ready(Some(Err(e))) => {
+                self.errored = true;
+                Ready(Some(Err(e)))
+            }
+            Ready(None) => {
+                self.completed = true;
+                Ready(None)
+            }
+            Pending => Pending,
+        }
+    }
+}
+
+impl<T> RetStreamExt for T
+where
+    T: Stream,
+{
+    fn only_first_error(self) -> OnlyFirstError<Self> {
+        OnlyFirstError {
+            inp: self,
+            errored: false,
+            completed: false,
+        }
     }
 }

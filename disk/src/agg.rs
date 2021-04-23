@@ -10,6 +10,7 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::BinSpecDimT;
 use netpod::{Node, ScalarType};
+use serde::{Deserialize, Serialize};
 use std::mem::size_of;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -200,6 +201,7 @@ impl AggregatableXdim1Bin for ValuesDim0 {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct MinMaxAvgScalarEventBatch {
     pub tss: Vec<u64>,
     pub mins: Vec<f32>,
@@ -413,6 +415,7 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
 }
 
 #[allow(dead_code)]
+#[derive(Serialize, Deserialize)]
 pub struct MinMaxAvgScalarBinBatch {
     ts1s: Vec<u64>,
     ts2s: Vec<u64>,
@@ -935,11 +938,12 @@ where
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         trace!("IntoBinnedTDefaultStream  poll_next");
         use Poll::*;
+        if self.completed {
+            panic!("MergedFromRemotes  ✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗  poll_next on completed");
+        }
         if self.errored {
             self.completed = true;
             return Ready(None);
-        } else if self.completed {
-            panic!("MergedFromRemotes  ✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗  poll_next on completed");
         }
         'outer: loop {
             let cur = if self.curbin as u64 >= self.spec.count {

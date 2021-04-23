@@ -10,6 +10,7 @@ async-channel = "1.6"
 bytes = "1.0.1"
 chrono = { version = "0.4.19", features = ["serde"] }
 futures-core = "0.3.12"
+futures-util = "0.3.14"
 tracing = "0.1.25"
 url = "2.2"
 err = { path = "../err" }

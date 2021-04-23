@@ -17,6 +17,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWriteExt, ReadBuf};
+use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
 use tracing::Instrument;
 #[allow(unused_imports)]
@@ -36,11 +37,8 @@ pub async fn x_processed_stream_from_node(
     query: Arc<EventsQuery>,
     node: Arc<Node>,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarEventBatch, Error>> + Send>>, Error> {
-    debug!("x_processed_stream_from_node   ENTER");
     let net = TcpStream::connect(format!("{}:{}", node.host, node.port_raw)).await?;
-    debug!("x_processed_stream_from_node   CONNECTED");
     let qjs = serde_json::to_vec(query.as_ref())?;
-    debug!("x_processed_stream_from_node   qjs len {}", qjs.len());
     let (netin, mut netout) = net.into_split();
 
     // TODO  this incorrect magic MUST bubble up into the final result and be reported.
@@ -96,8 +94,14 @@ where
                         "MinMaxAvgScalarEventBatchStreamFromFrames  got full frame buf  {}",
                         buf.len()
                     );
-                    let item = MinMaxAvgScalarEventBatch::from_full_frame(&buf);
-                    Ready(Some(Ok(item)))
+                    //let item = MinMaxAvgScalarEventBatch::from_full_frame(&buf);
+                    match bincode::deserialize::<RawConnOut>(buf.as_ref()) {
+                        Ok(item) => match item {
+                            Ok(item) => Ready(Some(Ok(item))),
+                            Err(e) => Ready(Some(Err(e))),
+                        },
+                        Err(e) => Ready(Some(Err(e.into()))),
+                    }
                 }
                 Ready(Some(Err(e))) => Ready(Some(Err(e))),
                 Ready(None) => Ready(None),
@@ -162,10 +166,6 @@ where
                 )))));
             }
             if len == 0 {
-                warn!(
-                    "InMemoryFrameAsyncReadStream  tryparse  STOP FRAME  self.wp {}",
-                    self.wp
-                );
                 if self.wp != HEAD {
                     return Some(Some(Err(Error::with_msg(format!(
                         "InMemoryFrameAsyncReadStream  tryparse  unexpected amount left {}",
@@ -202,7 +202,7 @@ where
                     buf.advance(HEAD);
                     self.wp = self.wp - nl;
                     self.buf = buf3;
-                    self.inp_bytes_consumed += buf.len() as u64 + 4;
+                    self.inp_bytes_consumed += nl as u64;
                     Some(Some(Ok(buf.freeze())))
                 } else {
                     self.buf = buf;
@@ -224,14 +224,15 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        assert!(!self.completed);
         if self.errored {
             self.completed = true;
             return Ready(None);
         }
-        assert!(!self.completed);
         'outer: loop {
             if self.tryparse {
-                break match self.tryparse() {
+                let r = self.tryparse();
+                break match r {
                     None => {
                         self.tryparse = false;
                         continue 'outer;
@@ -243,6 +244,7 @@ where
                     }
                     Some(Some(Ok(k))) => Ready(Some(Ok(k))),
                     Some(Some(Err(e))) => {
+                        self.tryparse = false;
                         self.errored = true;
                         Ready(Some(Err(e)))
                     }
@@ -257,22 +259,23 @@ where
                 assert!(buf2.filled().len() == 0);
                 assert!(buf2.capacity() > 0);
                 assert!(buf2.remaining() > 0);
-                let r1 = buf2.remaining();
                 let j = &mut self.inp;
                 pin_mut!(j);
                 break match AsyncRead::poll_read(j, cx, &mut buf2) {
                     Ready(Ok(())) => {
-                        let _n1 = buf2.filled().len();
-                        let r2 = buf2.remaining();
-                        if r2 == r1 {
+                        let n1 = buf2.filled().len();
+                        if n1 == 0 {
                             if self.wp != 0 {
-                                error!("InMemoryFrameAsyncReadStream  self.wp != 0   {}", self.wp);
+                                error!(
+                                    "InMemoryFrameAsyncReadStream  self.wp != 0  wp {}  consumed {}",
+                                    self.wp, self.inp_bytes_consumed
+                                );
                             }
                             self.buf = buf0;
+                            self.completed = true;
                             Ready(None)
                         } else {
-                            let n = buf2.filled().len();
-                            self.wp += n;
+                            self.wp += n1;
                             self.buf = buf0;
                             self.tryparse = true;
                             continue 'outer;
@@ -326,19 +329,74 @@ async fn raw_conn_handler(stream: TcpStream, addr: SocketAddr) -> Result<(), Err
     raw_conn_handler_inner(stream, addr).instrument(span1).await
 }
 
+type RawConnOut = Result<MinMaxAvgScalarEventBatch, Error>;
+
 async fn raw_conn_handler_inner(stream: TcpStream, addr: SocketAddr) -> Result<(), Error> {
+    match raw_conn_handler_inner_try(stream, addr).await {
+        Ok(_) => (),
+        Err(mut ce) => {
+            let ret: RawConnOut = Err(ce.err);
+            let enc = bincode::serialize(&ret)?;
+            // TODO optimize
+            let mut buf = BytesMut::with_capacity(enc.len() + 32);
+            buf.put_u32_le(INMEM_FRAME_MAGIC);
+            buf.put_u32_le(enc.len() as u32);
+            buf.put_u32_le(0);
+            buf.put(enc.as_ref());
+            match ce.netout.write(&buf).await {
+                Ok(_) => (),
+                Err(e) => return Err(e)?,
+            }
+        }
+    }
+    Ok(())
+}
+
+struct ConnErr {
+    err: Error,
+    netout: OwnedWriteHalf,
+}
+
+impl From<(Error, OwnedWriteHalf)> for ConnErr {
+    fn from((err, netout): (Error, OwnedWriteHalf)) -> Self {
+        Self { err, netout }
+    }
+}
+
+impl From<(std::io::Error, OwnedWriteHalf)> for ConnErr {
+    fn from((err, netout): (std::io::Error, OwnedWriteHalf)) -> Self {
+        Self {
+            err: err.into(),
+            netout,
+        }
+    }
+}
+
+async fn raw_conn_handler_inner_try(stream: TcpStream, addr: SocketAddr) -> Result<(), ConnErr> {
     info!("raw_conn_handler   SPAWNED   for {:?}", addr);
     let (netin, mut netout) = stream.into_split();
     let mut h = InMemoryFrameAsyncReadStream::new(netin);
-    let inp_read_span = span!(Level::INFO, "raw_conn_handler  INPUT STREAM READ");
-    while let Some(k) = h.next().instrument(inp_read_span).await {
-        warn!("raw_conn_handler  FRAME RECV  {}", k.is_ok());
-        break;
+    let mut frames = vec![];
+    while let Some(k) = h
+        .next()
+        .instrument(span!(Level::INFO, "raw_conn_handler  INPUT STREAM READ"))
+        .await
+    {
+        match k {
+            Ok(_) => {
+                info!(". . . . . . . . . . . . . . . . . . . . . . . . . .   raw_conn_handler  FRAME RECV");
+                frames.push(k);
+            }
+            Err(e) => {
+                return Err((e, netout))?;
+            }
+        }
     }
-
-    warn!("TODO decide on response content based on the parsed json query");
-
-    warn!("raw_conn_handler  INPUT STREAM END");
+    if frames.len() != 1 {
+        error!("expect a command frame");
+        return Err((Error::with_msg("expect a command frame"), netout))?;
+    }
+    error!("TODO decide on response content based on the parsed json query");
     let mut batch = MinMaxAvgScalarEventBatch::empty();
     batch.tss.push(42);
     batch.tss.push(43);
@@ -351,16 +409,27 @@ async fn raw_conn_handler_inner(stream: TcpStream, addr: SocketAddr) -> Result<(
     let mut s1 = futures_util::stream::iter(vec![batch]);
     while let Some(item) = s1.next().await {
         let fr = item.serialized();
-        netout.write_u32_le(INMEM_FRAME_MAGIC).await?;
-        netout.write_u32_le(fr.len() as u32).await?;
-        netout.write_u32_le(0).await?;
-        netout.write(fr.as_ref()).await?;
+        let mut buf = BytesMut::with_capacity(fr.len() + 32);
+        buf.put_u32_le(INMEM_FRAME_MAGIC);
+        buf.put_u32_le(fr.len() as u32);
+        buf.put_u32_le(0);
+        buf.put(fr.as_ref());
+        match netout.write(&buf).await {
+            Ok(_) => {}
+            Err(e) => return Err((e, netout))?,
+        }
     }
-    netout.write_u32_le(INMEM_FRAME_MAGIC).await?;
-    netout.write_u32_le(0).await?;
-    netout.write_u32_le(0).await?;
-    netout.flush().await?;
-    netout.forget();
-    warn!("raw_conn_handler  DONE");
+    let mut buf = BytesMut::with_capacity(32);
+    buf.put_u32_le(INMEM_FRAME_MAGIC);
+    buf.put_u32_le(0);
+    buf.put_u32_le(0);
+    match netout.write(&buf).await {
+        Ok(_) => (),
+        Err(e) => return Err((e, netout))?,
+    }
+    match netout.flush().await {
+        Ok(_) => (),
+        Err(e) => return Err((e, netout))?,
+    }
     Ok(())
 }

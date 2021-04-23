@@ -1,6 +1,5 @@
 use crate::spawn_test_hosts;
 use chrono::Utc;
-use disk::agg::MinMaxAvgScalarBinBatch;
 use err::Error;
 use futures_util::TryStreamExt;
 use hyper::Body;
@@ -86,12 +85,31 @@ async fn get_cached_0_inner() -> Result<(), Error> {
     let mut bin_count = 0;
     let s3 = s2
         .map_err(|e| error!("TEST GOT ERROR {:?}", e))
-        .map_ok(|k| {
-            info!("TEST GOT ITEM:  {:?}", k);
-            let z = MinMaxAvgScalarBinBatch::from_full_frame(&k);
-            info!("TEST GOT BATCH:  {:?}", z);
-            bin_count += 1;
-            z
+        .filter_map(|item| {
+            let g = match item {
+                Ok(buf) => {
+                    info!("TEST GOT FRAME  len {}", buf.len());
+                    match bincode::deserialize::<disk::cache::BinnedBytesForHttpStreamFrame>(&buf) {
+                        Ok(item) => match item {
+                            Ok(item) => {
+                                info!("TEST GOT ITEM");
+                                bin_count += 1;
+                                Some(Ok(item))
+                            }
+                            Err(e) => {
+                                error!("TEST GOT ERROR FRAME: {:?}", e);
+                                Some(Err(e))
+                            }
+                        },
+                        Err(e) => {
+                            error!("bincode error: {:?}", e);
+                            Some(Err(e.into()))
+                        }
+                    }
+                }
+                Err(e) => Some(Err(Error::with_msg(format!("WEIRD EMPTY ERROR {:?}", e)))),
+            };
+            ready(g)
         })
         .for_each(|_| ready(()));
     s3.await;

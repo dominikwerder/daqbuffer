@@ -3,6 +3,7 @@ Error handling and reporting.
 */
 
 use nom::error::ErrorKind;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::net::AddrParseError;
 use std::num::ParseIntError;
@@ -12,16 +13,18 @@ use tokio::task::JoinError;
 /**
 The common error type for this application.
 */
+#[derive(Serialize, Deserialize)]
 pub struct Error {
     msg: String,
-    trace: backtrace::Backtrace,
+    #[serde(skip)]
+    trace: Option<backtrace::Backtrace>,
 }
 
 impl Error {
     pub fn with_msg<S: Into<String>>(s: S) -> Self {
         Self {
             msg: s.into(),
-            trace: backtrace::Backtrace::new(),
+            trace: Some(backtrace::Backtrace::new()),
         }
     }
 }
@@ -30,33 +33,39 @@ impl std::fmt::Debug for Error {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         use std::io::Write;
         let mut buf = vec![];
-        for fr in self.trace.frames() {
-            for sy in fr.symbols() {
-                let is_ours = match sy.filename() {
-                    None => false,
-                    Some(s) => s.to_str().unwrap().contains("dev/daqbuffer"),
-                };
-                let name = match sy.name() {
-                    Some(k) => k.to_string(),
-                    _ => "[err]".into(),
-                };
-                let filename = match sy.filename() {
-                    Some(k) => match k.to_str() {
-                        Some(k) => k,
-                        _ => "[err]",
-                    },
-                    _ => "[err]",
-                };
-                let lineno = match sy.lineno() {
-                    Some(k) => k,
-                    _ => 0,
-                };
-                if is_ours {
-                    write!(&mut buf, "\n    {}\n      {}  {}", name, filename, lineno).unwrap();
+        match &self.trace {
+            Some(trace) => {
+                for fr in trace.frames() {
+                    for sy in fr.symbols() {
+                        let is_ours = match sy.filename() {
+                            None => false,
+                            Some(s) => s.to_str().unwrap().contains("dev/daqbuffer"),
+                        };
+                        let name = match sy.name() {
+                            Some(k) => k.to_string(),
+                            _ => "[err]".into(),
+                        };
+                        let filename = match sy.filename() {
+                            Some(k) => match k.to_str() {
+                                Some(k) => k,
+                                _ => "[err]",
+                            },
+                            _ => "[err]",
+                        };
+                        let lineno = match sy.lineno() {
+                            Some(k) => k,
+                            _ => 0,
+                        };
+                        if is_ours {
+                            write!(&mut buf, "\n    {}\n      {}  {}", name, filename, lineno).unwrap();
+                        }
+                    }
                 }
             }
+            None => {
+                write!(&mut buf, "NO_TRACE").unwrap();
+            }
         }
-        //write!(fmt, "Error {}  backtrace:\n{:?}", self.msg, self.trace)
         write!(fmt, "Error {}\nTrace:{}", self.msg, String::from_utf8(buf).unwrap())
     }
 }
@@ -154,6 +163,12 @@ impl<I> nom::error::ParseError<I> for Error {
 impl From<JoinError> for Error {
     fn from(k: JoinError) -> Self {
         Self::with_msg(format!("JoinError {:?}", k))
+    }
+}
+
+impl From<Box<bincode::ErrorKind>> for Error {
+    fn from(k: Box<bincode::ErrorKind>) -> Self {
+        Self::with_msg(format!("bincode::ErrorKind {:?}", k))
     }
 }
 
