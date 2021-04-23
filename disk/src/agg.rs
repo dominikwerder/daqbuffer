@@ -2,7 +2,6 @@
 Aggregation and binning support.
 */
 
-use crate::raw::Frameable;
 use crate::EventFull;
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
@@ -305,8 +304,9 @@ impl AggregatableTdim for MinMaxAvgScalarEventBatch {
     }
 }
 
-impl Frameable for MinMaxAvgScalarEventBatch {
-    fn serialized(&self) -> Bytes {
+impl MinMaxAvgScalarEventBatch {
+    #[allow(dead_code)]
+    fn old_serialized(&self) -> Bytes {
         let n1 = self.tss.len();
         let mut g = BytesMut::with_capacity(4 + n1 * (8 + 3 * 4));
         g.put_u32_le(n1 as u32);
@@ -523,8 +523,9 @@ impl MinMaxAvgScalarBinBatch {
     }
 }
 
-impl Frameable for MinMaxAvgScalarBinBatch {
-    fn serialized(&self) -> Bytes {
+impl MinMaxAvgScalarBinBatch {
+    #[allow(dead_code)]
+    fn old_serialized(&self) -> Bytes {
         let n1 = self.ts1s.len();
         let mut g = BytesMut::with_capacity(4 + n1 * (3 * 8 + 3 * 4));
         g.put_u32_le(n1 as u32);
@@ -936,7 +937,6 @@ where
     type Item = Result<<I::Aggregator as AggregatorTdim>::OutputValue, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        trace!("IntoBinnedTDefaultStream  poll_next");
         use Poll::*;
         if self.completed {
             panic!("MergedFromRemotes  ✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗  poll_next on completed");
@@ -950,12 +950,11 @@ where
                 trace!("IntoBinnedTDefaultStream  curbin out of spec, END");
                 Ready(None)
             } else if let Some(k) = self.left.take() {
-                trace!("IntoBinnedTDefaultStream  GIVE LEFT");
+                trace!("IntoBinnedTDefaultStream  USE LEFTOVER");
                 k
             } else if self.inp_completed {
                 Ready(None)
             } else {
-                trace!("IntoBinnedTDefaultStream  POLL OUR INPUT");
                 let inp_poll_span = span!(Level::TRACE, "into_t_inp_poll");
                 inp_poll_span.in_scope(|| self.inp.poll_next_unpin(cx))
             };

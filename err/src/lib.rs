@@ -3,7 +3,7 @@ Error handling and reporting.
 */
 
 use nom::error::ErrorKind;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use std::fmt::Debug;
 use std::net::AddrParseError;
 use std::num::ParseIntError;
@@ -18,55 +18,69 @@ pub struct Error {
     msg: String,
     #[serde(skip)]
     trace: Option<backtrace::Backtrace>,
+    trace_str: Option<String>,
+}
+
+#[allow(dead_code)]
+fn ser_trace<S>(_: &Option<backtrace::Backtrace>, _: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    todoval()
 }
 
 impl Error {
     pub fn with_msg<S: Into<String>>(s: S) -> Self {
         Self {
             msg: s.into(),
-            trace: Some(backtrace::Backtrace::new()),
+            trace: None,
+            trace_str: Some(fmt_backtrace(&backtrace::Backtrace::new())),
         }
     }
 }
 
-impl std::fmt::Debug for Error {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        use std::io::Write;
-        let mut buf = vec![];
-        match &self.trace {
-            Some(trace) => {
-                for fr in trace.frames() {
-                    for sy in fr.symbols() {
-                        let is_ours = match sy.filename() {
-                            None => false,
-                            Some(s) => s.to_str().unwrap().contains("dev/daqbuffer"),
-                        };
-                        let name = match sy.name() {
-                            Some(k) => k.to_string(),
-                            _ => "[err]".into(),
-                        };
-                        let filename = match sy.filename() {
-                            Some(k) => match k.to_str() {
-                                Some(k) => k,
-                                _ => "[err]",
-                            },
-                            _ => "[err]",
-                        };
-                        let lineno = match sy.lineno() {
-                            Some(k) => k,
-                            _ => 0,
-                        };
-                        if is_ours {
-                            write!(&mut buf, "\n    {}\n      {}  {}", name, filename, lineno).unwrap();
-                        }
-                    }
-                }
-            }
-            None => {
-                write!(&mut buf, "NO_TRACE").unwrap();
+fn fmt_backtrace(trace: &backtrace::Backtrace) -> String {
+    use std::io::Write;
+    let mut buf = vec![];
+    for fr in trace.frames() {
+        for sy in fr.symbols() {
+            let is_ours = match sy.filename() {
+                None => false,
+                Some(s) => s.to_str().unwrap().contains("dev/daqbuffer"),
+            };
+            let name = match sy.name() {
+                Some(k) => k.to_string(),
+                _ => "[err]".into(),
+            };
+            let filename = match sy.filename() {
+                Some(k) => match k.to_str() {
+                    Some(k) => k,
+                    _ => "[err]",
+                },
+                _ => "[err]",
+            };
+            let lineno = match sy.lineno() {
+                Some(k) => k,
+                _ => 0,
+            };
+            if is_ours {
+                write!(&mut buf, "\n    {}\n      {}  {}", name, filename, lineno).unwrap();
             }
         }
-        write!(fmt, "Error {}\nTrace:{}", self.msg, String::from_utf8(buf).unwrap())
+    }
+    String::from_utf8(buf).unwrap()
+}
+
+impl std::fmt::Debug for Error {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let trace_str = if let Some(trace) = &self.trace {
+            fmt_backtrace(trace)
+        } else if let Some(s) = &self.trace_str {
+            s.into()
+        } else {
+            "NOTRACE".into()
+        };
+        write!(fmt, "Error {}\nTrace:\n{}", self.msg, trace_str)
     }
 }
 

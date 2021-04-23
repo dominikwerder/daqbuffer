@@ -9,7 +9,7 @@ use futures_util::{pin_mut, FutureExt, StreamExt, TryStreamExt};
 use hyper::Response;
 use netpod::{
     AggKind, BinSpecDimT, Channel, Cluster, NanoRange, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchIterator,
-    PreBinnedPatchRange, ToNanos,
+    PreBinnedPatchRange, RetStreamExt, ToNanos,
 };
 use serde::{Deserialize, Serialize};
 use std::future::{ready, Future};
@@ -145,7 +145,7 @@ impl Stream for BinnedBytesForHttpStream {
         }
         match self.inp.poll_next_unpin(cx) {
             Ready(Some(item)) => {
-                match bincode::serialize(&item) {
+                match bincode::serialize::<BinnedBytesForHttpStreamFrame>(&item) {
                     Ok(enc) => {
                         // TODO optimize this...
                         const HEAD: usize = super::raw::INMEM_FRAME_HEAD;
@@ -699,7 +699,6 @@ impl BinnedStream {
         agg_kind: AggKind,
         node_config: Arc<NodeConfig>,
     ) -> Self {
-        use netpod::RetStreamExt;
         warn!("BinnedStream will open a PreBinnedValueStream");
         let inp = futures_util::stream::iter(patch_it)
             .map(move |coord| {
