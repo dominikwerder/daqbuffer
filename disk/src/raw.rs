@@ -377,7 +377,7 @@ async fn raw_conn_handler_inner_try(stream: TcpStream, addr: SocketAddr) -> Resu
         .await
     {
         match k {
-            Ok(_) => {
+            Ok(k) => {
                 info!(". . . . . . . . . . . . . . . . . . . . . . . . . .   raw_conn_handler  FRAME RECV");
                 frames.push(k);
             }
@@ -390,7 +390,25 @@ async fn raw_conn_handler_inner_try(stream: TcpStream, addr: SocketAddr) -> Resu
         error!("expect a command frame");
         return Err((Error::with_msg("expect a command frame"), netout))?;
     }
-    error!("TODO decide on response content based on the parsed json query");
+    let s1 = match String::from_utf8(frames[0].to_vec()) {
+        Ok(k) => k,
+        Err(e) => {
+            return Err((e, netout))?;
+        }
+    };
+    trace!("json  {}", s1);
+    let res: Result<serde_json::Value, _> = serde_json::from_str(&s1);
+    let evq = match res {
+        Ok(k) => k,
+        Err(e) => {
+            error!("can not parse json {:?}", e);
+            return Err((Error::with_msg("can not parse request json"), netout))?;
+        }
+    };
+    error!(
+        "TODO decide on response content based on the parsed json query\n{:?}",
+        evq
+    );
     let mut batch = MinMaxAvgScalarEventBatch::empty();
     batch.tss.push(42);
     batch.tss.push(43);
