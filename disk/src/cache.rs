@@ -1,7 +1,7 @@
 use crate::agg::{IntoBinnedT, MinMaxAvgScalarBinBatch, MinMaxAvgScalarEventBatch};
 use crate::merge::MergedMinMaxAvgScalarStream;
-use crate::raw::{EventsQuery, InMemoryFrameAsyncReadStream};
-use bytes::{BufMut, Bytes, BytesMut};
+use crate::raw::{EventsQuery, FrameType, InMemoryFrameAsyncReadStream};
+use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use err::Error;
 use futures_core::Stream;
@@ -144,24 +144,13 @@ impl Stream for BinnedBytesForHttpStream {
             return Ready(None);
         }
         match self.inp.poll_next_unpin(cx) {
-            Ready(Some(item)) => {
-                match bincode::serialize::<BinnedBytesForHttpStreamFrame>(&item) {
-                    Ok(enc) => {
-                        // TODO optimize this...
-                        const HEAD: usize = super::raw::INMEM_FRAME_HEAD;
-                        let mut buf = BytesMut::with_capacity(enc.len() + HEAD);
-                        buf.put_u32_le(super::raw::INMEM_FRAME_MAGIC);
-                        buf.put_u32_le(enc.len() as u32);
-                        buf.put_u32_le(0);
-                        buf.put(enc.as_ref());
-                        Ready(Some(Ok(buf.freeze())))
-                    }
-                    Err(e) => {
-                        self.errored = true;
-                        Ready(Some(Err(e.into())))
-                    }
+            Ready(Some(item)) => match super::raw::make_frame::<BinnedBytesForHttpStreamFrame>(&item) {
+                Ok(buf) => Ready(Some(Ok(buf.freeze()))),
+                Err(e) => {
+                    self.errored = true;
+                    Ready(Some(Err(e.into())))
                 }
-            }
+            },
             Ready(None) => {
                 self.completed = true;
                 Ready(None)
@@ -241,24 +230,13 @@ impl Stream for PreBinnedValueByteStream {
             return Ready(None);
         }
         match self.inp.poll_next_unpin(cx) {
-            Ready(Some(item)) => {
-                // TODO optimize this
-                const HEAD: usize = super::raw::INMEM_FRAME_HEAD;
-                match bincode::serialize::<PreBinnedHttpFrame>(&item) {
-                    Ok(enc) => {
-                        let mut buf = BytesMut::with_capacity(enc.len() + HEAD);
-                        buf.put_u32_le(super::raw::INMEM_FRAME_MAGIC);
-                        buf.put_u32_le(enc.len() as u32);
-                        buf.put_u32_le(0);
-                        buf.put(enc.as_ref());
-                        Ready(Some(Ok(buf.freeze())))
-                    }
-                    Err(e) => {
-                        self.errored = true;
-                        Ready(Some(Err(e.into())))
-                    }
+            Ready(Some(item)) => match super::raw::make_frame::<PreBinnedHttpFrame>(&item) {
+                Ok(buf) => Ready(Some(Ok(buf.freeze()))),
+                Err(e) => {
+                    self.errored = true;
+                    Ready(Some(Err(e.into())))
                 }
-            }
+            },
             Ready(None) => Ready(None),
             Pending => Pending,
         }
@@ -474,6 +452,8 @@ impl PreBinnedValueFetchedStream {
     }
 }
 
+// TODO use a newtype here to use a different FRAME_TYPE_ID compared to
+// impl FrameType for BinnedBytesForHttpStreamFrame
 pub type PreBinnedHttpFrame = Result<MinMaxAvgScalarBinBatch, Error>;
 
 impl Stream for PreBinnedValueFetchedStream {
@@ -486,10 +466,13 @@ impl Stream for PreBinnedValueFetchedStream {
             break if let Some(res) = self.res.as_mut() {
                 pin_mut!(res);
                 match res.poll_next(cx) {
-                    Ready(Some(Ok(buf))) => match bincode::deserialize::<PreBinnedHttpFrame>(&buf) {
-                        Ok(item) => Ready(Some(item)),
-                        Err(e) => Ready(Some(Err(e.into()))),
-                    },
+                    Ready(Some(Ok(frame))) => {
+                        assert!(frame.tyid() == <PreBinnedHttpFrame as FrameType>::FRAME_TYPE_ID);
+                        match bincode::deserialize::<PreBinnedHttpFrame>(frame.buf()) {
+                            Ok(item) => Ready(Some(item)),
+                            Err(e) => Ready(Some(Err(e.into()))),
+                        }
+                    }
                     Ready(Some(Err(e))) => Ready(Some(Err(e.into()))),
                     Ready(None) => Ready(None),
                     Pending => Pending,

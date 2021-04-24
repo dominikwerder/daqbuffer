@@ -87,9 +87,10 @@ async fn get_cached_0_inner() -> Result<(), Error> {
         .map_err(|e| error!("TEST GOT ERROR {:?}", e))
         .filter_map(|item| {
             let g = match item {
-                Ok(buf) => {
-                    info!("TEST GOT FRAME  len {}", buf.len());
-                    match bincode::deserialize::<disk::cache::BinnedBytesForHttpStreamFrame>(&buf) {
+                Ok(frame) => {
+                    type ExpectedType = disk::cache::BinnedBytesForHttpStreamFrame;
+                    info!("TEST GOT FRAME  len {}", frame.buf().len());
+                    match bincode::deserialize::<ExpectedType>(frame.buf()) {
                         Ok(item) => match item {
                             Ok(item) => {
                                 info!("TEST GOT ITEM");
