@@ -14,7 +14,7 @@ use std::task::{Context, Poll};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::AsyncRead;
 #[allow(unused_imports)]
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, span, trace, warn, Level};
 
 pub mod agg;
 #[cfg(test)]
@@ -490,6 +490,10 @@ impl EventChunker {
     }
 
     fn parse_buf(&mut self, buf: &mut BytesMut) -> Result<ParseResult, Error> {
+        span!(Level::INFO, "EventChunker::parse_buf").in_scope(|| self.parse_buf_inner(buf))
+    }
+
+    fn parse_buf_inner(&mut self, buf: &mut BytesMut) -> Result<ParseResult, Error> {
         // must communicate to caller:
         // what I've found in the buffer
         // what I've consumed from the buffer
@@ -497,10 +501,9 @@ impl EventChunker {
         let mut ret = EventFull::empty();
         let mut need_min = 0 as u32;
         use byteorder::{ReadBytesExt, BE};
-        //info!("parse_buf  rb {}", buf.len());
-        //let mut i1 = 0;
+        error!("               ????????????????????????  Why should need_min ever be zero?");
+        info!("parse_buf  buf len {}  need_min {}", buf.len(), need_min);
         loop {
-            //info!("parse_buf LOOP {}", i1);
             if (buf.len() as u32) < need_min {
                 break;
             }
@@ -593,8 +596,13 @@ impl EventChunker {
                             let ele_count = value_bytes / type_size as u64;
                             let ele_size = type_size;
                             match self.channel_config.shape {
-                                Shape::Wave(ele2) => {
-                                    assert!(ele2 == ele_count as u32);
+                                Shape::Wave(dim1count) => {
+                                    if dim1count != ele_count as u32 {
+                                        Err(Error::with_msg(format!(
+                                            "ChannelConfig expects {:?} but event has {:?}",
+                                            self.channel_config.shape, ele_count,
+                                        )))?;
+                                    }
                                 }
                                 _ => panic!(),
                             }
@@ -661,6 +669,7 @@ impl Stream for EventChunker {
     type Item = Result<EventFull, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        use Poll::*;
         self.polled += 1;
         if self.polled >= 2000000 {
             warn!("EventChunker poll limit reached");
@@ -669,9 +678,10 @@ impl Stream for EventChunker {
         let g = &mut self.inp;
         pin_mut!(g);
         match g.poll_next(cx) {
-            Poll::Ready(Some(Ok(mut buf))) => {
+            Ready(Some(Ok(mut buf))) => {
                 //info!("EventChunker got buffer  len {}", buf.len());
-                match self.parse_buf(&mut buf) {
+                let r = self.parse_buf(&mut buf);
+                match r {
                     Ok(res) => {
                         if buf.len() > 0 {
                             // TODO gather stats about this:
@@ -680,17 +690,21 @@ impl Stream for EventChunker {
                         }
                         if res.need_min > 8000 {
                             warn!("spurious EventChunker asks for need_min {}", res.need_min);
-                            panic!();
+                            Ready(Some(Err(Error::with_msg(format!(
+                                "spurious EventChunker asks for need_min {}",
+                                res.need_min
+                            )))))
+                        } else {
+                            self.inp.set_need_min(res.need_min);
+                            Ready(Some(Ok(res.events)))
                         }
-                        self.inp.set_need_min(res.need_min);
-                        Poll::Ready(Some(Ok(res.events)))
                     }
-                    Err(e) => Poll::Ready(Some(Err(e.into()))),
+                    Err(e) => Ready(Some(Err(e.into()))),
                 }
             }
-            Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
-            Poll::Ready(None) => Poll::Ready(None),
-            Poll::Pending => Poll::Pending,
+            Ready(Some(Err(e))) => Ready(Some(Err(e))),
+            Ready(None) => Ready(None),
+            Pending => Pending,
         }
     }
 }

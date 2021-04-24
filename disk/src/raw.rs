@@ -5,13 +5,14 @@ Delivers event data (not yet time-binned) from local storage and provides client
 to request such data from nodes.
 */
 
-use crate::agg::MinMaxAvgScalarEventBatch;
+use crate::agg::{IntoBinnedXBins1, IntoDim1F32Stream, MinMaxAvgScalarEventBatch};
 use crate::cache::BinnedBytesForHttpStreamFrame;
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
-use netpod::{AggKind, Channel, NanoRange, Node, NodeConfig};
+use netpod::timeunits::DAY;
+use netpod::{AggKind, Channel, NanoRange, Node, NodeConfig, ScalarType, Shape};
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -377,23 +378,29 @@ pub async fn raw_service(node_config: Arc<NodeConfig>) -> Result<(), Error> {
     loop {
         match lis.accept().await {
             Ok((stream, addr)) => {
-                taskrun::spawn(raw_conn_handler(stream, addr));
+                taskrun::spawn(raw_conn_handler(stream, addr, node_config.clone()));
             }
             Err(e) => Err(e)?,
         }
     }
 }
 
-async fn raw_conn_handler(stream: TcpStream, addr: SocketAddr) -> Result<(), Error> {
+async fn raw_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: Arc<NodeConfig>) -> Result<(), Error> {
     //use tracing_futures::Instrument;
     let span1 = span!(Level::INFO, "raw::raw_conn_handler");
-    raw_conn_handler_inner(stream, addr).instrument(span1).await
+    raw_conn_handler_inner(stream, addr, node_config)
+        .instrument(span1)
+        .await
 }
 
 type RawConnOut = Result<MinMaxAvgScalarEventBatch, Error>;
 
-async fn raw_conn_handler_inner(stream: TcpStream, addr: SocketAddr) -> Result<(), Error> {
-    match raw_conn_handler_inner_try(stream, addr).await {
+async fn raw_conn_handler_inner(
+    stream: TcpStream,
+    addr: SocketAddr,
+    node_config: Arc<NodeConfig>,
+) -> Result<(), Error> {
+    match raw_conn_handler_inner_try(stream, addr, node_config).await {
         Ok(_) => (),
         Err(mut ce) => {
             error!("raw_conn_handler_inner  CAUGHT ERROR AND TRY TO SEND OVER TCP");
@@ -421,7 +428,11 @@ impl<E: Into<Error>> From<(E, OwnedWriteHalf)> for ConnErr {
     }
 }
 
-async fn raw_conn_handler_inner_try(stream: TcpStream, addr: SocketAddr) -> Result<(), ConnErr> {
+async fn raw_conn_handler_inner_try(
+    stream: TcpStream,
+    addr: SocketAddr,
+    node_config: Arc<NodeConfig>,
+) -> Result<(), ConnErr> {
     info!("raw_conn_handler   SPAWNED   for {:?}", addr);
     let (netin, mut netout) = stream.into_split();
     let mut h = InMemoryFrameAsyncReadStream::new(netin);
@@ -450,7 +461,7 @@ async fn raw_conn_handler_inner_try(stream: TcpStream, addr: SocketAddr) -> Resu
         Err(e) => return Err((e, netout))?,
     };
     trace!("json: {}", qitem.0);
-    let res: Result<serde_json::Value, _> = serde_json::from_str(&qitem.0);
+    let res: Result<EventsQuery, _> = serde_json::from_str(&qitem.0);
     let evq = match res {
         Ok(k) => k,
         Err(e) => {
@@ -462,17 +473,34 @@ async fn raw_conn_handler_inner_try(stream: TcpStream, addr: SocketAddr) -> Resu
         "TODO decide on response content based on the parsed json query\n{:?}",
         evq
     );
-    let mut batch = MinMaxAvgScalarEventBatch::empty();
-    batch.tss.push(42);
-    batch.tss.push(43);
-    batch.mins.push(7.1);
-    batch.mins.push(7.2);
-    batch.maxs.push(8.3);
-    batch.maxs.push(8.4);
-    batch.avgs.push(9.5);
-    batch.avgs.push(9.6);
-    let mut s1 = futures_util::stream::iter(vec![batch]).map(Result::Ok);
+    let query = netpod::AggQuerySingleChannel {
+        channel_config: netpod::ChannelConfig {
+            channel: netpod::Channel {
+                backend: "test1".into(),
+                name: "wave1".into(),
+            },
+            keyspace: 3,
+            time_bin_size: DAY,
+            shape: Shape::Wave(1024),
+            scalar_type: ScalarType::F64,
+            big_endian: true,
+            array: true,
+            compression: true,
+        },
+        // TODO use a NanoRange and search for matching files
+        timebin: 0,
+        tb_file_count: 1,
+        // TODO use the requested buffer size
+        buffer_size: 1024 * 4,
+    };
+    let mut s1 = crate::EventBlobsComplete::new(&query, query.channel_config.clone(), node_config.node.clone())
+        .into_dim_1_f32_stream()
+        .take(10)
+        .into_binned_x_bins_1();
     while let Some(item) = s1.next().await {
+        if let Ok(k) = &item {
+            info!("????????????????   emit item  ts0: {:?}", k.tss.first());
+        }
         match make_frame::<RawConnOut>(&item) {
             Ok(buf) => match netout.write(&buf).await {
                 Ok(_) => {}
@@ -480,6 +508,30 @@ async fn raw_conn_handler_inner_try(stream: TcpStream, addr: SocketAddr) -> Resu
             },
             Err(e) => {
                 return Err((e, netout))?;
+            }
+        }
+    }
+    if false {
+        // Manual test batch.
+        let mut batch = MinMaxAvgScalarEventBatch::empty();
+        batch.tss.push(42);
+        batch.tss.push(43);
+        batch.mins.push(7.1);
+        batch.mins.push(7.2);
+        batch.maxs.push(8.3);
+        batch.maxs.push(8.4);
+        batch.avgs.push(9.5);
+        batch.avgs.push(9.6);
+        let mut s1 = futures_util::stream::iter(vec![batch]).map(Result::Ok);
+        while let Some(item) = s1.next().await {
+            match make_frame::<RawConnOut>(&item) {
+                Ok(buf) => match netout.write(&buf).await {
+                    Ok(_) => {}
+                    Err(e) => return Err((e, netout))?,
+                },
+                Err(e) => {
+                    return Err((e, netout))?;
+                }
             }
         }
     }
