@@ -6,7 +6,8 @@ use futures_core::Stream;
 use futures_util::pin_mut;
 #[allow(unused_imports)]
 use netpod::log::*;
-use netpod::{ChannelConfig, ScalarType, Shape};
+use netpod::timeunits::SEC;
+use netpod::{ChannelConfig, NanoRange, ScalarType, Shape};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -18,6 +19,8 @@ pub struct EventChunker {
     channel_config: ChannelConfig,
     errored: bool,
     completed: bool,
+    range: NanoRange,
+    seen_beyond_range: bool,
 }
 
 enum DataFileState {
@@ -29,6 +32,7 @@ impl EventChunker {
     pub fn new(
         inp: Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>,
         channel_config: ChannelConfig,
+        range: NanoRange,
     ) -> Self {
         let mut inp = NeedMinBuffer::new(inp);
         inp.set_need_min(6);
@@ -40,6 +44,8 @@ impl EventChunker {
             channel_config,
             errored: false,
             completed: false,
+            range,
+            seen_beyond_range: false,
         }
     }
 
@@ -48,10 +54,6 @@ impl EventChunker {
     }
 
     fn parse_buf_inner(&mut self, buf: &mut BytesMut) -> Result<ParseResult, Error> {
-        // must communicate to caller:
-        // what I've found in the buffer
-        // what I've consumed from the buffer
-        // how many bytes I need min to make progress
         let mut ret = EventFull::empty();
         use byteorder::{ReadBytesExt, BE};
         loop {
@@ -115,6 +117,10 @@ impl EventChunker {
                         sl.read_i64::<BE>().unwrap();
                         let ts = sl.read_i64::<BE>().unwrap() as u64;
                         let pulse = sl.read_i64::<BE>().unwrap() as u64;
+                        if ts >= self.range.end {
+                            self.seen_beyond_range = true;
+                            break;
+                        }
                         sl.read_i64::<BE>().unwrap();
                         let status = sl.read_i8().unwrap();
                         let severity = sl.read_i8().unwrap();
@@ -187,7 +193,16 @@ impl EventChunker {
                                 Ok(c1) => {
                                     assert!(c1 as u32 == k1);
                                     trace!("decompress result  c1 {}  k1 {}", c1, k1);
-                                    ret.add_event(ts, pulse, Some(decomp), ScalarType::from_dtype_index(type_index));
+                                    if ts < self.range.beg {
+                                        warn!("UNNECESSARY EVENT DECOMPRESS  {}", ts / SEC);
+                                    } else {
+                                        ret.add_event(
+                                            ts,
+                                            pulse,
+                                            Some(decomp),
+                                            ScalarType::from_dtype_index(type_index),
+                                        );
+                                    }
                                 }
                                 Err(e) => {
                                     Err(Error::with_msg(format!("decompression failed {:?}", e)))?;
@@ -243,6 +258,10 @@ impl Stream for EventChunker {
             panic!("EventChunker poll_next on completed");
         }
         if self.errored {
+            self.completed = true;
+            return Ready(None);
+        }
+        if self.seen_beyond_range {
             self.completed = true;
             return Ready(None);
         }

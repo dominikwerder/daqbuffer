@@ -353,7 +353,8 @@ pub fn parsed1(
             match fileres {
                 Ok(file) => {
                     let inp = Box::pin(file_content_stream(file, query.buffer_size as usize));
-                    let mut chunker = eventchunker::EventChunker::new(inp, err::todoval());
+                    let range = err::todoval();
+                    let mut chunker = eventchunker::EventChunker::new(inp, err::todoval(), range);
                     while let Some(evres) = chunker.next().await {
                         match evres {
                             Ok(evres) => {

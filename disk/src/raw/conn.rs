@@ -7,7 +7,7 @@ use err::Error;
 use futures_util::StreamExt;
 #[allow(unused_imports)]
 use netpod::log::*;
-use netpod::timeunits::DAY;
+use netpod::timeunits::{DAY, SEC};
 use netpod::{NodeConfig, ScalarType, Shape};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -123,6 +123,11 @@ async fn raw_conn_handler_inner_try(
             return Err((Error::with_msg("can not parse request json"), netout))?;
         }
     };
+    debug!(
+        "\n\nREQUEST FOR RANGE  {}  {}\n\n",
+        evq.range.beg / SEC,
+        evq.range.end / SEC
+    );
     error!(
         "TODO decide on response content based on the parsed json query\n{:?}",
         evq
@@ -147,17 +152,26 @@ async fn raw_conn_handler_inner_try(
         // TODO use the requested buffer size
         buffer_size: 1024 * 4,
     };
-    let mut s1 = EventBlobsComplete::new(&query, query.channel_config.clone(), node_config.node.clone())
-        .into_dim_1_f32_stream()
-        .take(10)
-        .into_binned_x_bins_1();
+    let mut s1 = EventBlobsComplete::new(
+        &query,
+        query.channel_config.clone(),
+        evq.range.clone(),
+        node_config.node.clone(),
+    )
+    .into_dim_1_f32_stream()
+    .take(10)
+    .into_binned_x_bins_1();
+    let mut e = 0;
     while let Some(item) = s1.next().await {
         if let Ok(k) = &item {
+            e += 1;
             trace!(
-                "emit items {}  {:?}  {:?}",
+                "emit items  sp {:2}  e {:3}  len {:3}  {:10?}  {:10?}",
+                node_config.node.split,
+                e,
                 k.tss.len(),
-                k.tss.first().map(|k| k / 1000000000),
-                k.tss.last().map(|k| k / 1000000000)
+                k.tss.first().map(|k| k / SEC),
+                k.tss.last().map(|k| k / SEC),
             );
         }
         match make_frame::<RawConnOut>(&item) {

@@ -3,7 +3,7 @@ use crate::{file_content_stream, open_files};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use netpod::{ChannelConfig, Node};
+use netpod::{ChannelConfig, NanoRange, Node};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -14,15 +14,22 @@ pub struct EventBlobsComplete {
     file_chan: async_channel::Receiver<Result<File, Error>>,
     evs: Option<EventChunker>,
     buffer_size: u32,
+    range: NanoRange,
 }
 
 impl EventBlobsComplete {
-    pub fn new(query: &netpod::AggQuerySingleChannel, channel_config: ChannelConfig, node: Arc<Node>) -> Self {
+    pub fn new(
+        query: &netpod::AggQuerySingleChannel,
+        channel_config: ChannelConfig,
+        range: NanoRange,
+        node: Arc<Node>,
+    ) -> Self {
         Self {
             file_chan: open_files(query, node),
             evs: None,
             buffer_size: query.buffer_size,
             channel_config,
+            range,
         }
     }
 }
@@ -46,8 +53,8 @@ impl Stream for EventBlobsComplete {
                     Ready(Some(k)) => match k {
                         Ok(file) => {
                             let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
-                            let chunker = EventChunker::new(inp, self.channel_config.clone());
-                            self.evs.replace(chunker);
+                            let chunker = EventChunker::new(inp, self.channel_config.clone(), self.range.clone());
+                            self.evs = Some(chunker);
                             continue 'outer;
                         }
                         Err(e) => Ready(Some(Err(e))),
@@ -73,7 +80,7 @@ pub fn event_blobs_complete(
             match fileres {
                 Ok(file) => {
                     let inp = Box::pin(file_content_stream(file, query.buffer_size as usize));
-                    let mut chunker = EventChunker::new(inp, err::todoval());
+                    let mut chunker = EventChunker::new(inp, err::todoval(), err::todoval());
                     while let Some(evres) = chunker.next().await {
                         match evres {
                             Ok(evres) => {

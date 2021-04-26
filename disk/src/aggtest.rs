@@ -3,7 +3,7 @@ use super::merge::MergeDim1F32Stream;
 use crate::agg::make_test_node;
 use futures_util::StreamExt;
 use netpod::timeunits::*;
-use netpod::{BinSpecDimT, Channel, ChannelConfig, ScalarType, Shape};
+use netpod::{BinSpecDimT, Channel, ChannelConfig, NanoRange, ScalarType, Shape};
 use std::future::ready;
 use std::sync::Arc;
 #[allow(unused_imports)]
@@ -42,7 +42,8 @@ async fn agg_x_dim_0_inner() {
     let bin_count = 20;
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size;
     let ts2 = ts1 + HOUR * 24;
-    let fut1 = super::eventblobs::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
+    let range = NanoRange { beg: ts1, end: ts2 };
+    let fut1 = super::eventblobs::EventBlobsComplete::new(&query, query.channel_config.clone(), range, node)
         .into_dim_1_f32_stream()
         //.take(1000)
         .map(|q| {
@@ -107,7 +108,8 @@ async fn agg_x_dim_1_inner() {
     let bin_count = 10;
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size;
     let ts2 = ts1 + HOUR * 24;
-    let fut1 = super::eventblobs::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
+    let range = NanoRange { beg: ts1, end: ts2 };
+    let fut1 = super::eventblobs::EventBlobsComplete::new(&query, query.channel_config.clone(), range, node)
         .into_dim_1_f32_stream()
         //.take(1000)
         .map(|q| {
@@ -160,12 +162,13 @@ async fn merge_0_inner() {
         tb_file_count: 1,
         buffer_size: 1024 * 8,
     };
+    let range: NanoRange = err::todoval();
     let streams = (0..13)
         .into_iter()
         .map(|k| make_test_node(k))
         .map(|node| {
             let node = Arc::new(node);
-            super::eventblobs::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
+            super::eventblobs::EventBlobsComplete::new(&query, query.channel_config.clone(), range.clone(), node)
                 .into_dim_1_f32_stream()
         })
         .collect();
