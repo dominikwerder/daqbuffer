@@ -2,7 +2,7 @@
 Aggregation and binning support.
 */
 
-use crate::EventFull;
+use super::eventchunker::EventFull;
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
 use futures_core::Stream;

@@ -1,5 +1,5 @@
 use crate::spawn_test_hosts;
-use bytes::{BufMut, BytesMut};
+use bytes::BytesMut;
 use chrono::Utc;
 use err::Error;
 use futures_util::TryStreamExt;

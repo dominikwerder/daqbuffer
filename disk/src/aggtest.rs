@@ -42,7 +42,7 @@ async fn agg_x_dim_0_inner() {
     let bin_count = 20;
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size;
     let ts2 = ts1 + HOUR * 24;
-    let fut1 = crate::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
+    let fut1 = super::eventblobs::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
         .into_dim_1_f32_stream()
         //.take(1000)
         .map(|q| {
@@ -107,7 +107,7 @@ async fn agg_x_dim_1_inner() {
     let bin_count = 10;
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size;
     let ts2 = ts1 + HOUR * 24;
-    let fut1 = crate::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
+    let fut1 = super::eventblobs::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
         .into_dim_1_f32_stream()
         //.take(1000)
         .map(|q| {
@@ -165,7 +165,8 @@ async fn merge_0_inner() {
         .map(|k| make_test_node(k))
         .map(|node| {
             let node = Arc::new(node);
-            crate::EventBlobsComplete::new(&query, query.channel_config.clone(), node).into_dim_1_f32_stream()
+            super::eventblobs::EventBlobsComplete::new(&query, query.channel_config.clone(), node)
+                .into_dim_1_f32_stream()
         })
         .collect();
     MergeDim1F32Stream::new(streams)

@@ -173,9 +173,9 @@ where
             assert!(bnew.capacity() >= self.wp);
             info!(
                 "InMemoryFrameAsyncReadStream  re-use {} bytes from previous i/o",
-                self.wp
+                self.wp,
             );
-            bnew.put(&self.buf[..self.wp]);
+            bnew[0..].as_mut().put(&self.buf[..self.wp]);
             self.buf = bnew;
         }
         info!(
@@ -273,7 +273,12 @@ where
                 let nl = len as usize + HEAD;
                 if self.bufcap < nl {
                     // TODO count cases in production
-                    self.bufcap += 2 * nl;
+                    let n = 2 * nl;
+                    warn!(
+                        "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee   ADJUST bufcap  old {}  new {}",
+                        self.bufcap, n
+                    );
+                    self.bufcap = n;
                 }
                 if nb >= nl {
                     use bytes::Buf;
@@ -460,9 +465,16 @@ pub async fn raw_service(node_config: Arc<NodeConfig>) -> Result<(), Error> {
 async fn raw_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: Arc<NodeConfig>) -> Result<(), Error> {
     //use tracing_futures::Instrument;
     let span1 = span!(Level::INFO, "raw::raw_conn_handler");
-    raw_conn_handler_inner(stream, addr, node_config)
+    let r = raw_conn_handler_inner(stream, addr, node_config)
         .instrument(span1)
-        .await
+        .await;
+    match r {
+        Ok(k) => Ok(k),
+        Err(e) => {
+            error!("raw_conn_handler sees error: {:?}", e);
+            Err(e)
+        }
+    }
 }
 
 type RawConnOut = Result<MinMaxAvgScalarEventBatch, Error>;
@@ -475,7 +487,10 @@ async fn raw_conn_handler_inner(
     match raw_conn_handler_inner_try(stream, addr, node_config).await {
         Ok(_) => (),
         Err(mut ce) => {
-            error!("raw_conn_handler_inner  CAUGHT ERROR AND TRY TO SEND OVER TCP");
+            /*error!(
+                "raw_conn_handler_inner  CAUGHT ERROR AND TRY TO SEND OVER TCP {:?}",
+                ce.err
+            );*/
             let buf = make_frame::<RawConnOut>(&Err(ce.err))?;
             match ce.netout.write(&buf).await {
                 Ok(_) => (),
@@ -553,7 +568,7 @@ async fn raw_conn_handler_inner_try(
             },
             keyspace: 3,
             time_bin_size: DAY,
-            shape: Shape::Wave(1024),
+            shape: Shape::Wave(17),
             scalar_type: ScalarType::F64,
             big_endian: true,
             array: true,
@@ -565,10 +580,11 @@ async fn raw_conn_handler_inner_try(
         // TODO use the requested buffer size
         buffer_size: 1024 * 4,
     };
-    let mut s1 = crate::EventBlobsComplete::new(&query, query.channel_config.clone(), node_config.node.clone())
-        .into_dim_1_f32_stream()
-        .take(10)
-        .into_binned_x_bins_1();
+    let mut s1 =
+        super::eventblobs::EventBlobsComplete::new(&query, query.channel_config.clone(), node_config.node.clone())
+            .into_dim_1_f32_stream()
+            .take(10)
+            .into_binned_x_bins_1();
     while let Some(item) = s1.next().await {
         if let Ok(k) = &item {
             info!("????????????????   emit item  ts0: {:?}", k.tss.first());
