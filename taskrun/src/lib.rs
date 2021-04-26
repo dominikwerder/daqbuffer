@@ -56,7 +56,7 @@ pub fn tracing_init() {
         .with_thread_names(true)
         //.with_max_level(tracing::Level::INFO)
         .with_env_filter(tracing_subscriber::EnvFilter::new(
-            "info,retrieval=trace,retrieval::test=trace,disk=info,tokio_postgres=info",
+            "info,retrieval=trace,retrieval::test=trace,tokio_postgres=info",
         ))
         .init();
 }

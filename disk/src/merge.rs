@@ -147,6 +147,7 @@ where
     ixs: Vec<usize>,
     emitted_complete: bool,
     batch: MinMaxAvgScalarEventBatch,
+    ts_last_emit: u64,
 }
 
 impl<S> MergedMinMaxAvgScalarStream<S>
@@ -165,6 +166,7 @@ where
             ixs: vec![0; n],
             emitted_complete: false,
             batch: MinMaxAvgScalarEventBatch::empty(),
+            ts_last_emit: 0,
         }
     }
 }
@@ -241,7 +243,9 @@ where
                     break Ready(None);
                 }
             } else {
-                info!("decided on next lowest ts  {}  ix {}", lowest_ts, lowest_ix);
+                trace!("decided on next lowest ts  {}  ix {}", lowest_ts, lowest_ix);
+                assert!(lowest_ts >= self.ts_last_emit);
+                self.ts_last_emit = lowest_ts;
                 self.batch.tss.push(lowest_ts);
                 let rix = self.ixs[lowest_ix];
                 let z = match &self.current[lowest_ix] {

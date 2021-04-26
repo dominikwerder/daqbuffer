@@ -536,3 +536,8 @@ where
         }
     }
 }
+
+pub mod log {
+    #[allow(unused_imports)]
+    pub use tracing::{debug, error, info, span, trace, warn, Level};
+}

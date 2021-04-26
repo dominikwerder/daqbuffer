@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use disk::cache::PreBinnedQuery;
+use disk::raw::conn::raw_service;
 use err::Error;
 use future::Future;
 use futures_core::Stream;
@@ -19,12 +20,12 @@ use tracing::field::Empty;
 use tracing::{debug, error, info, span, trace, warn, Level};
 
 pub async fn host(node_config: Arc<NodeConfig>) -> Result<(), Error> {
-    let rawjh = taskrun::spawn(disk::raw::raw_service(node_config.clone()));
+    let rawjh = taskrun::spawn(raw_service(node_config.clone()));
     use std::str::FromStr;
     let addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen, node_config.node.port))?;
     let make_service = make_service_fn({
         move |conn| {
-            info!("new conn {:?}", conn);
+            info!("new raw {:?}", conn);
             let node_config = node_config.clone();
             async move {
                 Ok::<_, Error>(service_fn({

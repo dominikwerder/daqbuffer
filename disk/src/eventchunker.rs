@@ -4,11 +4,11 @@ use bytes::{Buf, BytesMut};
 use err::Error;
 use futures_core::Stream;
 use futures_util::pin_mut;
+#[allow(unused_imports)]
+use netpod::log::*;
 use netpod::{ChannelConfig, ScalarType, Shape};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-#[allow(unused_imports)]
-use tracing::{debug, error, info, span, trace, warn, Level};
 
 pub struct EventChunker {
     inp: NeedMinBuffer,
@@ -55,7 +55,7 @@ impl EventChunker {
         let mut ret = EventFull::empty();
         use byteorder::{ReadBytesExt, BE};
         loop {
-            info!("parse_buf  LOOP  buf len {}  need_min {}", buf.len(), self.need_min);
+            trace!("parse_buf  LOOP  buf len {}  need_min {}", buf.len(), self.need_min);
             if (buf.len() as u32) < self.need_min {
                 break;
             }
@@ -69,7 +69,7 @@ impl EventChunker {
                     assert!(len > 0 && len < 128, "unexpected data file header");
                     let totlen = len as usize + 2;
                     if buf.len() < totlen {
-                        info!("parse_buf not enough A  totlen {}", totlen);
+                        debug!("parse_buf not enough A  totlen {}", totlen);
                         self.need_min = totlen as u32;
                         break;
                     } else {
@@ -77,7 +77,7 @@ impl EventChunker {
                         let len2 = sl.read_i32::<BE>().unwrap();
                         assert!(len == len2, "len mismatch");
                         let s1 = String::from_utf8(buf.as_ref()[6..(len as usize + 6 - 8)].to_vec()).unwrap();
-                        info!("channel name {}  len {}  len2 {}", s1, len, len2);
+                        info!("channel name {}", s1);
                         self.state = DataFileState::Event;
                         self.need_min = 4;
                         buf.advance(totlen);
@@ -88,7 +88,7 @@ impl EventChunker {
                     let len = sl.read_i32::<BE>().unwrap();
                     assert!(len >= 20 && len < 1024 * 1024 * 10);
                     let len = len as u32;
-                    info!(
+                    trace!(
                         "+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-  event len {}",
                         len,
                     );
@@ -104,7 +104,7 @@ impl EventChunker {
                             sl.read_i32::<BE>().unwrap();
                             sl.read_i64::<BE>().unwrap();
                             let ts = sl.read_i64::<BE>().unwrap();
-                            info!("parse_buf not enough C   len {}  have {}  ts {}", len, buf.len(), ts);
+                            trace!("parse_buf not enough C   len {}  have {}  ts {}", len, buf.len(), ts);
                         }
                         self.need_min = len as u32;
                         break;
@@ -186,7 +186,7 @@ impl EventChunker {
                             ) {
                                 Ok(c1) => {
                                     assert!(c1 as u32 == k1);
-                                    debug!("decompress result  c1 {}  k1 {}", c1, k1);
+                                    trace!("decompress result  c1 {}  k1 {}", c1, k1);
                                     ret.add_event(ts, pulse, Some(decomp), ScalarType::from_dtype_index(type_index));
                                 }
                                 Err(e) => {
@@ -198,14 +198,14 @@ impl EventChunker {
                                 "TODO uncompressed event parsing not yet implemented"
                             )))?;
                         }
-                        info!("advance and reset need_min");
+                        trace!("advance and reset need_min");
                         buf.advance(len as usize);
                         self.need_min = 4;
                     }
                 }
             }
         }
-        info!("AFTER PARSE LOOP  len {}", ret.tss.len());
+        trace!("AFTER PARSE LOOP  len {}", ret.tss.len());
         Ok(ParseResult { events: ret })
     }
 }
@@ -254,10 +254,10 @@ impl Stream for EventChunker {
         }
         let g = &mut self.inp;
         pin_mut!(g);
-        info!("EventChunker  call input poll_next");
+        trace!("EventChunker  call input poll_next");
         match g.poll_next(cx) {
             Ready(Some(Ok(mut buf))) => {
-                info!("EventChunker got buffer  len {}", buf.len());
+                trace!("EventChunker got buffer  len {}", buf.len());
                 let r = self.parse_buf(&mut buf);
                 match r {
                     Ok(res) => {

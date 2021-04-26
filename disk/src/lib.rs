@@ -18,10 +18,12 @@ use tracing::{debug, error, info, span, trace, warn, Level};
 pub mod agg;
 #[cfg(test)]
 pub mod aggtest;
+pub mod binnedstream;
 pub mod cache;
 pub mod channelconfig;
 pub mod eventblobs;
 pub mod eventchunker;
+pub mod frame;
 pub mod gen;
 pub mod merge;
 pub mod raw;

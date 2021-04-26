@@ -1,6 +1,7 @@
 use crate::spawn_test_hosts;
 use bytes::BytesMut;
 use chrono::Utc;
+use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
 use futures_util::TryStreamExt;
 use hyper::Body;
@@ -64,7 +65,7 @@ async fn get_cached_0_inner() -> Result<(), Error> {
     info!("client response {:?}", res);
     //let (res_head, mut res_body) = res.into_parts();
     let s1 = disk::cache::HttpBodyAsAsyncRead::new(res);
-    let s2 = disk::raw::InMemoryFrameAsyncReadStream::new(s1);
+    let s2 = InMemoryFrameAsyncReadStream::new(s1);
     /*use hyper::body::HttpBody;
     loop {
         match res_body.data().await {
@@ -90,11 +91,11 @@ async fn get_cached_0_inner() -> Result<(), Error> {
             let g = match item {
                 Ok(frame) => {
                     type ExpectedType = disk::cache::BinnedBytesForHttpStreamFrame;
-                    info!("TEST GOT FRAME  len {}", frame.buf().len());
+                    //info!("TEST GOT FRAME  len {}", frame.buf().len());
                     match bincode::deserialize::<ExpectedType>(frame.buf()) {
                         Ok(item) => match item {
                             Ok(item) => {
-                                info!("TEST GOT ITEM");
+                                info!("TEST GOT ITEM {:?}", item);
                                 bin_count += 1;
                                 Some(Ok(item))
                             }

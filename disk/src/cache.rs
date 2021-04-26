@@ -1,6 +1,9 @@
 use crate::agg::{IntoBinnedT, MinMaxAvgScalarBinBatch, MinMaxAvgScalarEventBatch};
+use crate::binnedstream::BinnedStream;
+use crate::cache::pbvfs::{PreBinnedHttpFrame, PreBinnedValueFetchedStream};
+use crate::frame::makeframe::make_frame;
 use crate::merge::MergedMinMaxAvgScalarStream;
-use crate::raw::{EventsQuery, FrameType, InMemoryFrameAsyncReadStream};
+use crate::raw::EventsQuery;
 use bytes::Bytes;
 use chrono::{DateTime, Utc};
 use err::Error;
@@ -9,7 +12,7 @@ use futures_util::{pin_mut, FutureExt, StreamExt, TryStreamExt};
 use hyper::Response;
 use netpod::{
     AggKind, BinSpecDimT, Channel, Cluster, NanoRange, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchIterator,
-    PreBinnedPatchRange, RetStreamExt, ToNanos,
+    PreBinnedPatchRange, ToNanos,
 };
 use serde::{Deserialize, Serialize};
 use std::future::{ready, Future};
@@ -20,6 +23,8 @@ use tiny_keccak::Hasher;
 use tokio::io::{AsyncRead, ReadBuf};
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
+
+pub mod pbvfs;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Query {
@@ -144,7 +149,7 @@ impl Stream for BinnedBytesForHttpStream {
             return Ready(None);
         }
         match self.inp.poll_next_unpin(cx) {
-            Ready(Some(item)) => match super::raw::make_frame::<BinnedBytesForHttpStreamFrame>(&item) {
+            Ready(Some(item)) => match make_frame::<BinnedBytesForHttpStreamFrame>(&item) {
                 Ok(buf) => Ready(Some(Ok(buf.freeze()))),
                 Err(e) => {
                     self.errored = true;
@@ -208,7 +213,6 @@ pub struct PreBinnedValueByteStream {
 
 impl PreBinnedValueByteStream {
     pub fn new(patch: PreBinnedPatchCoord, channel: Channel, agg_kind: AggKind, node_config: Arc<NodeConfig>) -> Self {
-        warn!("PreBinnedValueByteStream");
         Self {
             inp: PreBinnedValueStream::new(patch, channel, agg_kind, node_config),
             errored: false,
@@ -230,7 +234,7 @@ impl Stream for PreBinnedValueByteStream {
             return Ready(None);
         }
         match self.inp.poll_next_unpin(cx) {
-            Ready(Some(item)) => match super::raw::make_frame::<PreBinnedHttpFrame>(&item) {
+            Ready(Some(item)) => match make_frame::<PreBinnedHttpFrame>(&item) {
                 Ok(buf) => Ready(Some(Ok(buf.freeze()))),
                 Err(e) => {
                     self.errored = true;
@@ -416,98 +420,6 @@ impl Stream for PreBinnedValueStream {
     }
 }
 
-pub struct PreBinnedValueFetchedStream {
-    uri: http::Uri,
-    resfut: Option<hyper::client::ResponseFuture>,
-    res: Option<InMemoryFrameAsyncReadStream<HttpBodyAsAsyncRead>>,
-}
-
-impl PreBinnedValueFetchedStream {
-    pub fn new(
-        patch_coord: PreBinnedPatchCoord,
-        channel: Channel,
-        agg_kind: AggKind,
-        node_config: Arc<NodeConfig>,
-    ) -> Self {
-        let nodeix = node_ix_for_patch(&patch_coord, &channel, &node_config.cluster);
-        let node = &node_config.cluster.nodes[nodeix as usize];
-        warn!("TODO defining property of a PreBinnedPatchCoord? patchlen + ix? binsize + patchix? binsize + patchsize + patchix?");
-        // TODO encapsulate uri creation, how to express aggregation kind?
-        let uri: hyper::Uri = format!(
-            "http://{}:{}/api/1/prebinned?{}&channel_backend={}&channel_name={}&agg_kind={:?}",
-            node.host,
-            node.port,
-            patch_coord.to_url_params_strings(),
-            channel.backend,
-            channel.name,
-            agg_kind,
-        )
-        .parse()
-        .unwrap();
-        Self {
-            uri,
-            resfut: None,
-            res: None,
-        }
-    }
-}
-
-// TODO use a newtype here to use a different FRAME_TYPE_ID compared to
-// impl FrameType for BinnedBytesForHttpStreamFrame
-pub type PreBinnedHttpFrame = Result<MinMaxAvgScalarBinBatch, Error>;
-
-impl Stream for PreBinnedValueFetchedStream {
-    // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
-    type Item = PreBinnedHttpFrame;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        use Poll::*;
-        'outer: loop {
-            break if let Some(res) = self.res.as_mut() {
-                pin_mut!(res);
-                match res.poll_next(cx) {
-                    Ready(Some(Ok(frame))) => {
-                        assert!(frame.tyid() == <PreBinnedHttpFrame as FrameType>::FRAME_TYPE_ID);
-                        match bincode::deserialize::<PreBinnedHttpFrame>(frame.buf()) {
-                            Ok(item) => Ready(Some(item)),
-                            Err(e) => Ready(Some(Err(e.into()))),
-                        }
-                    }
-                    Ready(Some(Err(e))) => Ready(Some(Err(e.into()))),
-                    Ready(None) => Ready(None),
-                    Pending => Pending,
-                }
-            } else if let Some(resfut) = self.resfut.as_mut() {
-                match resfut.poll_unpin(cx) {
-                    Ready(res) => match res {
-                        Ok(res) => {
-                            info!("PreBinnedValueFetchedStream  GOT result from SUB REQUEST: {:?}", res);
-                            let s1 = HttpBodyAsAsyncRead::new(res);
-                            let s2 = InMemoryFrameAsyncReadStream::new(s1);
-                            self.res = Some(s2);
-                            continue 'outer;
-                        }
-                        Err(e) => {
-                            error!("PreBinnedValueStream  error in stream {:?}", e);
-                            Ready(Some(Err(e.into())))
-                        }
-                    },
-                    Pending => Pending,
-                }
-            } else {
-                let req = hyper::Request::builder()
-                    .method(http::Method::GET)
-                    .uri(&self.uri)
-                    .body(hyper::Body::empty())?;
-                let client = hyper::Client::new();
-                info!("PreBinnedValueFetchedStream  START REQUEST FOR {:?}", req);
-                self.resfut = Some(client.request(req));
-                continue 'outer;
-            };
-        }
-    }
-}
-
 pub struct HttpBodyAsAsyncRead {
     inp: Response<hyper::Body>,
     left: Bytes,
@@ -659,7 +571,7 @@ impl Stream for MergedFromRemotes {
                         self.merged = Some(Box::pin(s1));
                     } else {
                         info!(
-                            "MergedFromRemotes  conn / estab  {}  {}",
+                            "MergedFromRemotes  raw / estab  {}  {}",
                             c1,
                             self.tcp_establish_futs.len()
                         );
@@ -667,54 +579,6 @@ impl Stream for MergedFromRemotes {
                     continue 'outer;
                 }
             };
-        }
-    }
-}
-
-pub struct BinnedStream {
-    inp: Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarBinBatch, Error>> + Send>>,
-}
-
-impl BinnedStream {
-    pub fn new(
-        patch_it: PreBinnedPatchIterator,
-        channel: Channel,
-        agg_kind: AggKind,
-        node_config: Arc<NodeConfig>,
-    ) -> Self {
-        warn!("BinnedStream will open a PreBinnedValueStream");
-        let inp = futures_util::stream::iter(patch_it)
-            .map(move |coord| {
-                PreBinnedValueFetchedStream::new(coord, channel.clone(), agg_kind.clone(), node_config.clone())
-            })
-            .flatten()
-            .only_first_error()
-            .map(|k| {
-                match k {
-                    Ok(ref k) => {
-                        info!("BinnedStream  got good item {:?}", k);
-                    }
-                    Err(_) => {
-                        error!("\n\n-----------------------------------------------------   BinnedStream  got error")
-                    }
-                }
-                k
-            });
-        Self { inp: Box::pin(inp) }
-    }
-}
-
-impl Stream for BinnedStream {
-    // TODO make this generic over all possible things
-    type Item = Result<MinMaxAvgScalarBinBatch, Error>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        use Poll::*;
-        match self.inp.poll_next_unpin(cx) {
-            Ready(Some(Ok(k))) => Ready(Some(Ok(k))),
-            Ready(Some(Err(e))) => Ready(Some(Err(e))),
-            Ready(None) => Ready(None),
-            Pending => Pending,
         }
     }
 }
@@ -739,6 +603,5 @@ pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoord, channel: &Channel, c
     hash.finalize(&mut out);
     let a = [out[0], out[1], out[2], out[3]];
     let ix = u32::from_le_bytes(a) % cluster.nodes.len() as u32;
-    info!("node_ix_for_patch  {}", ix);
     ix
 }
