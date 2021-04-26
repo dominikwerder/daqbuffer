@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tracing::{debug, error, info, trace, warn};
 
 fn test_cluster() -> Cluster {
-    let nodes = (0..1)
+    let nodes = (0..13)
         .into_iter()
         .map(|id| {
             let node = Node {
@@ -22,7 +22,7 @@ fn test_cluster() -> Cluster {
                 port_raw: 8360 + id as u16 + 100,
                 data_base_path: format!("../tmpdata/node{:02}", id).into(),
                 ksprefix: "ks".into(),
-                split: 0,
+                split: id,
             };
             Arc::new(node)
         })
@@ -129,6 +129,16 @@ async fn get_cached_0_inner() -> Result<(), Error> {
     drop(hosts);
     //Err::<(), _>(format!("test error").into())
     Ok(())
+}
+
+#[test]
+fn test_gen_test_data() {
+    let res = taskrun::run(async {
+        disk::gen::gen_test_data().await?;
+        Ok(())
+    });
+    info!("{:?}", res);
+    res.unwrap();
 }
 
 #[test]

@@ -230,7 +230,7 @@ impl BinSpecDimT {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct PreBinnedPatchGridSpec {
     bin_t_len: u64,
 }
@@ -278,6 +278,17 @@ impl PreBinnedPatchGridSpec {
             }
         }
         panic!()
+    }
+}
+
+impl std::fmt::Debug for PreBinnedPatchGridSpec {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            fmt,
+            "PreBinnedPatchGridSpec {{ bin_t_len: {:?}, patch_t_len(): {:?} }}",
+            self.bin_t_len / SEC,
+            self.patch_t_len() / SEC,
+        )
     }
 }
 
@@ -345,17 +356,18 @@ impl PreBinnedPatchRange {
                 let t = BIN_T_LEN_OPTIONS[i1];
                 //info!("look at threshold {}  bs {}", t, bs);
                 if t <= bs {
-                    let bs = t;
-                    let ts1 = range.beg / bs * bs;
-                    let _ts2 = (range.end + bs - 1) / bs * bs;
-                    let count = range.delta() / bs;
-                    let offset = ts1 / bs;
+                    let bin_t_len = t;
+                    let grid_spec = PreBinnedPatchGridSpec { bin_t_len };
+                    let pl = grid_spec.patch_t_len();
+                    let ts1 = range.beg / pl * pl;
+                    let ts2 = (range.end + pl - 1) / pl * pl;
+                    let count = (ts2 - ts1) / pl;
+                    let offset = ts1 / pl;
                     break Some(Self {
-                        grid_spec: PreBinnedPatchGridSpec { bin_t_len: bs },
+                        grid_spec,
                         count,
                         offset,
                     });
-                } else {
                 }
             }
         }

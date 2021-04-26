@@ -5,8 +5,9 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 #[allow(unused_imports)]
 use netpod::log::*;
-use netpod::RetStreamExt;
 use netpod::{AggKind, Channel, NodeConfig, PreBinnedPatchIterator};
+use netpod::{NanoRange, RetStreamExt};
+use std::future::ready;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -19,26 +20,42 @@ impl BinnedStream {
     pub fn new(
         patch_it: PreBinnedPatchIterator,
         channel: Channel,
+        range: NanoRange,
         agg_kind: AggKind,
         node_config: Arc<NodeConfig>,
     ) -> Self {
+        let patches: Vec<_> = patch_it.collect();
         warn!("BinnedStream will open a PreBinnedValueStream");
-        let inp = futures_util::stream::iter(patch_it)
+        for p in &patches {
+            info!("BinnedStream  ->  patch  {:?}", p);
+        }
+        let inp = futures_util::stream::iter(patches.into_iter())
             .map(move |coord| {
                 PreBinnedValueFetchedStream::new(coord, channel.clone(), agg_kind.clone(), node_config.clone())
             })
             .flatten()
             .only_first_error()
-            .map(|k| {
-                match k {
-                    Ok(ref k) => {
-                        trace!("BinnedStream  got good item {:?}", k);
-                    }
-                    Err(_) => {
-                        error!("\n\n-----------------------------------------------------   BinnedStream  got error")
-                    }
+            .filter_map({
+                let range = range.clone();
+                move |k: Result<MinMaxAvgScalarBinBatch, Error>| {
+                    let g = match k {
+                        Ok(k) => {
+                            use super::agg::{Fits, FitsInside};
+                            //info!("BinnedStream  got good item {:?}", k);
+                            match k.fits_inside(range.clone()) {
+                                Fits::Inside => Some(Ok(k)),
+                                _ => None,
+                            }
+                        }
+                        Err(e) => {
+                            error!(
+                                "\n\n-----------------------------------------------------   BinnedStream  got error"
+                            );
+                            Some(Err(e))
+                        }
+                    };
+                    ready(g)
                 }
-                k
             });
         Self { inp: Box::pin(inp) }
     }

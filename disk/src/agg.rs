@@ -7,7 +7,8 @@ use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use netpod::BinSpecDimT;
+use netpod::timeunits::SEC;
+use netpod::{BinSpecDimT, NanoRange};
 use netpod::{Node, ScalarType};
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;
@@ -523,6 +524,44 @@ impl MinMaxAvgScalarBinBatch {
     }
 }
 
+pub enum Fits {
+    Empty,
+    Lower,
+    Greater,
+    Inside,
+    PartlyLower,
+    PartlyGreater,
+    PartlyLowerAndGreater,
+}
+
+pub trait FitsInside {
+    fn fits_inside(&self, range: NanoRange) -> Fits;
+}
+
+impl FitsInside for MinMaxAvgScalarBinBatch {
+    fn fits_inside(&self, range: NanoRange) -> Fits {
+        if self.ts1s.is_empty() {
+            Fits::Empty
+        } else {
+            let t1 = *self.ts1s.first().unwrap();
+            let t2 = *self.ts2s.last().unwrap();
+            if t2 <= range.beg {
+                Fits::Lower
+            } else if t1 >= range.end {
+                Fits::Greater
+            } else if t1 < range.beg && t2 > range.end {
+                Fits::PartlyLowerAndGreater
+            } else if t1 < range.beg {
+                Fits::PartlyLower
+            } else if t2 > range.end {
+                Fits::PartlyGreater
+            } else {
+                Fits::Inside
+            }
+        }
+    }
+}
+
 impl MinMaxAvgScalarBinBatch {
     #[allow(dead_code)]
     fn old_serialized(&self) -> Bytes {
@@ -557,9 +596,10 @@ impl std::fmt::Debug for MinMaxAvgScalarBinBatch {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             fmt,
-            "MinMaxAvgScalarBinBatch  count {}  ts1s {:?}  counts {:?}  avgs {:?}",
+            "MinMaxAvgScalarBinBatch  count {}  ts1s {:?}  ts2s {:?}  counts {:?}  avgs {:?}",
             self.ts1s.len(),
-            self.ts1s,
+            self.ts1s.iter().map(|k| k / SEC).collect::<Vec<_>>(),
+            self.ts2s.iter().map(|k| k / SEC).collect::<Vec<_>>(),
             self.counts,
             self.avgs
         )

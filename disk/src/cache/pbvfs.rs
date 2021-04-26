@@ -40,6 +40,7 @@ impl PreBinnedValueFetchedStream {
         )
         .parse()
         .unwrap();
+        info!("PreBinnedValueFetchedStream  open uri  {}", uri);
         Self {
             uri,
             resfut: None,

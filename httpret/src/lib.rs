@@ -236,8 +236,8 @@ async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Resp
 async fn prebinned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let q = PreBinnedQuery::from_request(&head)?;
-    let span1 = span!(Level::INFO, "httpret::prebinned", bin_t_len = 0);
-    span1.record("bin_t_len", &q.patch.bin_t_len());
+    let desc = format!("pre-b-{}", q.patch.bin_t_len() / 1000000000);
+    let span1 = span!(Level::INFO, "httpret::prebinned", desc = &desc.as_str());
     span1.in_scope(|| {
         trace!("prebinned");
         let ret = match disk::cache::pre_binned_bytes_for_http(node_config, &q) {

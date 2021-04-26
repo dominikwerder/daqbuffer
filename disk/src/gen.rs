@@ -10,16 +10,6 @@ use tokio::io::AsyncWriteExt;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
-#[test]
-fn test_gen_test_data() {
-    let res = taskrun::run(async {
-        gen_test_data().await?;
-        Ok(())
-    });
-    info!("{:?}", res);
-    res.unwrap();
-}
-
 pub async fn gen_test_data() -> Result<(), Error> {
     let data_base_path = PathBuf::from("../tmpdata");
     let ksprefix = String::from("ks");

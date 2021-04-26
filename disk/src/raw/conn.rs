@@ -153,7 +153,12 @@ async fn raw_conn_handler_inner_try(
         .into_binned_x_bins_1();
     while let Some(item) = s1.next().await {
         if let Ok(k) = &item {
-            trace!("????????????????   emit item  ts0: {:?}", k.tss.first());
+            trace!(
+                "emit items {}  {:?}  {:?}",
+                k.tss.len(),
+                k.tss.first().map(|k| k / 1000000000),
+                k.tss.last().map(|k| k / 1000000000)
+            );
         }
         match make_frame::<RawConnOut>(&item) {
             Ok(buf) => match netout.write(&buf).await {
