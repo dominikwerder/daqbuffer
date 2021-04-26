@@ -1,4 +1,5 @@
 use crate::spawn_test_hosts;
+use bytes::{BufMut, BytesMut};
 use chrono::Utc;
 use err::Error;
 use futures_util::TryStreamExt;
@@ -127,4 +128,12 @@ async fn get_cached_0_inner() -> Result<(), Error> {
     drop(hosts);
     //Err::<(), _>(format!("test error").into())
     Ok(())
+}
+
+#[test]
+fn bufs() {
+    let mut buf = BytesMut::with_capacity(1024);
+    assert!(buf.as_mut().len() == 0);
+    buf.put_u32_le(123);
+    assert!(buf.as_mut().len() == 4);
 }
