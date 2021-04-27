@@ -43,32 +43,37 @@ async fn agg_x_dim_0_inner() {
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size;
     let ts2 = ts1 + HOUR * 24;
     let range = NanoRange { beg: ts1, end: ts2 };
-    let fut1 = super::eventblobs::EventBlobsComplete::new(&query, query.channel_config.clone(), range, node)
-        .into_dim_1_f32_stream()
-        //.take(1000)
-        .map(|q| {
-            if false {
-                if let Ok(ref k) = q {
-                    trace!("vals: {:?}", k);
-                }
+    let fut1 = super::eventblobs::EventBlobsComplete::new(
+        range.clone(),
+        query.channel_config.clone(),
+        node.clone(),
+        query.buffer_size as usize,
+    )
+    .into_dim_1_f32_stream()
+    //.take(1000)
+    .map(|q| {
+        if false {
+            if let Ok(ref k) = q {
+                trace!("vals: {:?}", k);
             }
-            q
-        })
-        .into_binned_x_bins_1()
-        .map(|k| {
-            if false {
-                trace!("after X binning  {:?}", k.as_ref().unwrap());
-            }
-            k
-        })
-        .into_binned_t(BinSpecDimT::over_range(bin_count, ts1, ts2))
-        .map(|k| {
-            if false {
-                trace!("after T binning  {:?}", k.as_ref().unwrap());
-            }
-            k
-        })
-        .for_each(|_k| ready(()));
+        }
+        q
+    })
+    .into_binned_x_bins_1()
+    .map(|k| {
+        if false {
+            trace!("after X binning  {:?}", k.as_ref().unwrap());
+        }
+        k
+    })
+    .into_binned_t(BinSpecDimT::over_range(bin_count, ts1, ts2))
+    .map(|k| {
+        if false {
+            trace!("after T binning  {:?}", k.as_ref().unwrap());
+        }
+        k
+    })
+    .for_each(|_k| ready(()));
     fut1.await;
 }
 
@@ -109,28 +114,33 @@ async fn agg_x_dim_1_inner() {
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size;
     let ts2 = ts1 + HOUR * 24;
     let range = NanoRange { beg: ts1, end: ts2 };
-    let fut1 = super::eventblobs::EventBlobsComplete::new(&query, query.channel_config.clone(), range, node)
-        .into_dim_1_f32_stream()
-        //.take(1000)
-        .map(|q| {
-            if false {
-                if let Ok(ref k) = q {
-                    info!("vals: {:?}", k);
-                }
+    let fut1 = super::eventblobs::EventBlobsComplete::new(
+        range.clone(),
+        query.channel_config.clone(),
+        node.clone(),
+        query.buffer_size as usize,
+    )
+    .into_dim_1_f32_stream()
+    //.take(1000)
+    .map(|q| {
+        if false {
+            if let Ok(ref k) = q {
+                info!("vals: {:?}", k);
             }
-            q
-        })
-        .into_binned_x_bins_1()
-        .map(|k| {
-            //info!("after X binning  {:?}", k.as_ref().unwrap());
-            k
-        })
-        .into_binned_t(BinSpecDimT::over_range(bin_count, ts1, ts2))
-        .map(|k| {
-            info!("after T binning  {:?}", k.as_ref().unwrap());
-            k
-        })
-        .for_each(|_k| ready(()));
+        }
+        q
+    })
+    .into_binned_x_bins_1()
+    .map(|k| {
+        //info!("after X binning  {:?}", k.as_ref().unwrap());
+        k
+    })
+    .into_binned_t(BinSpecDimT::over_range(bin_count, ts1, ts2))
+    .map(|k| {
+        info!("after T binning  {:?}", k.as_ref().unwrap());
+        k
+    })
+    .for_each(|_k| ready(()));
     fut1.await;
 }
 
@@ -168,8 +178,13 @@ async fn merge_0_inner() {
         .map(|k| make_test_node(k))
         .map(|node| {
             let node = Arc::new(node);
-            super::eventblobs::EventBlobsComplete::new(&query, query.channel_config.clone(), range.clone(), node)
-                .into_dim_1_f32_stream()
+            super::eventblobs::EventBlobsComplete::new(
+                range.clone(),
+                query.channel_config.clone(),
+                node.clone(),
+                query.buffer_size as usize,
+            )
+            .into_dim_1_f32_stream()
         })
         .collect();
     MergeDim1F32Stream::new(streams)

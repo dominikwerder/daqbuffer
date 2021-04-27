@@ -76,7 +76,9 @@ where
         );
         let gg = self.buf.len() - self.wp;
         let mut buf2 = ReadBuf::new(&mut self.buf[self.wp..]);
-        assert!(gg > 0);
+        if gg < 1 || gg > 1024 * 1024 * 20 {
+            panic!("have gg {}", gg);
+        }
         assert!(buf2.remaining() == gg);
         assert!(buf2.capacity() == gg);
         assert!(buf2.filled().len() == 0);

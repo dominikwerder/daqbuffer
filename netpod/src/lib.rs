@@ -152,9 +152,25 @@ pub enum TimeRange {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Nanos {
+    pub ns: u64,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
 pub struct NanoRange {
     pub beg: u64,
     pub end: u64,
+}
+
+impl std::fmt::Debug for NanoRange {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            fmt,
+            "NanoRange {{ beg: {} s, end: {} s }}",
+            self.beg / SEC,
+            self.end / SEC
+        )
+    }
 }
 
 impl NanoRange {

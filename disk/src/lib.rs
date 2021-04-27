@@ -4,7 +4,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::future::FusedFuture;
 use futures_util::{pin_mut, select, FutureExt, StreamExt};
-use netpod::{ChannelConfig, Node, Shape};
+use netpod::{ChannelConfig, NanoRange, Node, Shape};
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -25,11 +25,13 @@ pub mod eventblobs;
 pub mod eventchunker;
 pub mod frame;
 pub mod gen;
+pub mod index;
 pub mod merge;
+pub mod paths;
 pub mod raw;
 
 pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> Result<netpod::BodyStream, Error> {
-    let path = datapath(query.timebin as u64, &query.channel_config, &node);
+    let path = paths::datapath(query.timebin as u64, &query.channel_config, &node);
     debug!("try path: {:?}", path);
     let fin = OpenOptions::new().read(true).open(path).await?;
     let meta = fin.metadata().await;
@@ -156,7 +158,7 @@ pub fn raw_concat_channel_read_stream_try_open_in_background(
             {
                 if !fopen_avail && file_prep.is_none() && i1 < 16 {
                     info!("Prepare open task for next file {}", query.timebin + i1);
-                    fopen.replace(Fopen1::new(datapath(query.timebin as u64 + i1 as u64, &query.channel_config, &node)));
+                    fopen.replace(Fopen1::new(paths::datapath(query.timebin as u64 + i1 as u64, &query.channel_config, &node)));
                     fopen_avail = true;
                     i1 += 1;
                 }
@@ -264,20 +266,23 @@ pub fn raw_concat_channel_read_stream_try_open_in_background(
 }
 
 pub fn raw_concat_channel_read_stream_file_pipe(
-    query: &netpod::AggQuerySingleChannel,
+    range: &NanoRange,
+    channel_config: &ChannelConfig,
     node: Arc<Node>,
+    buffer_size: usize,
 ) -> impl Stream<Item = Result<BytesMut, Error>> + Send {
-    let query = query.clone();
+    let range = range.clone();
+    let channel_config = channel_config.clone();
     let node = node.clone();
     async_stream::stream! {
-        let chrx = open_files(&query, node.clone());
+        let chrx = open_files(&range, &channel_config, node.clone());
         while let Ok(file) = chrx.recv().await {
             let mut file = match file {
                 Ok(k) => k,
                 Err(_) => break
             };
             loop {
-                let mut buf = BytesMut::with_capacity(query.buffer_size as usize);
+                let mut buf = BytesMut::with_capacity(buffer_size);
                 use tokio::io::AsyncReadExt;
                 let n1 = file.read_buf(&mut buf).await?;
                 if n1 == 0 {
@@ -293,17 +298,36 @@ pub fn raw_concat_channel_read_stream_file_pipe(
 }
 
 fn open_files(
-    query: &netpod::AggQuerySingleChannel,
+    range: &NanoRange,
+    channel_config: &ChannelConfig,
     node: Arc<Node>,
 ) -> async_channel::Receiver<Result<tokio::fs::File, Error>> {
+    let channel_config = channel_config.clone();
     let (chtx, chrx) = async_channel::bounded(2);
-    let mut query = query.clone();
-    let node = node.clone();
     tokio::spawn(async move {
-        let tb0 = query.timebin;
-        for i1 in 0..query.tb_file_count {
-            query.timebin = tb0 + i1;
-            let path = datapath(query.timebin as u64, &query.channel_config, &node);
+        // TODO  reduce usage of `query` and see what we actually need.
+        // TODO  scan the timebins on the filesystem for the potential files first instead of trying to open hundreds in worst case.
+
+        let mut timebins = vec![];
+        {
+            let rd = tokio::fs::read_dir(paths::channel_timebins_dir_path(&channel_config, &node)?).await?;
+            let mut rd = tokio_stream::wrappers::ReadDirStream::new(rd);
+            while let Some(e) = rd.next().await {
+                let e = e?;
+                let dn = e
+                    .file_name()
+                    .into_string()
+                    .map_err(|e| Error::with_msg(format!("Bad OS path {:?}", e)))?;
+                let vv = dn.chars().fold(0, |a, x| if x.is_digit(10) { a + 1 } else { a });
+                if vv == 19 {
+                    timebins.push(dn.parse::<u64>()?);
+                }
+            }
+        }
+        timebins.sort_unstable();
+        info!("TIMEBINS FOUND:  {:?}", timebins);
+        for &tb in &timebins {
+            let path = paths::datapath(tb, &channel_config, &node);
             let fileres = OpenOptions::new().read(true).open(&path).await;
             info!("opened file {:?}  {:?}", &path, &fileres);
             match fileres {
@@ -317,6 +341,7 @@ fn open_files(
                 },
             }
         }
+        Ok::<_, Error>(())
     });
     chrx
 }
@@ -348,7 +373,7 @@ pub fn parsed1(
     let query = query.clone();
     let node = node.clone();
     async_stream::stream! {
-        let filerx = open_files(&query, node.clone());
+        let filerx = open_files(err::todoval(), err::todoval(), node.clone());
         while let Ok(fileres) = filerx.recv().await {
             match fileres {
                 Ok(file) => {
@@ -486,7 +511,7 @@ pub fn raw_concat_channel_read_stream_timebin(
     let query = query.clone();
     let node = node.clone();
     async_stream::stream! {
-        let path = datapath(query.timebin as u64, &query.channel_config, &node);
+        let path = paths::datapath(query.timebin as u64, &query.channel_config, &node);
         debug!("try path: {:?}", path);
         let mut fin = OpenOptions::new().read(true).open(path).await?;
         let meta = fin.metadata().await?;
@@ -509,20 +534,6 @@ pub fn raw_concat_channel_read_stream_timebin(
             yield Ok(buf.freeze());
         }
     }
-}
-
-fn datapath(timebin: u64, config: &netpod::ChannelConfig, node: &Node) -> PathBuf {
-    //let pre = "/data/sf-databuffer/daq_swissfel";
-    node.data_base_path
-        .join(format!("{}_{}", node.ksprefix, config.keyspace))
-        .join("byTime")
-        .join(config.channel.name.clone())
-        .join(format!("{:019}", timebin))
-        .join(format!("{:010}", node.split))
-        .join(format!(
-            "{:019}_00000_Data",
-            config.time_bin_size / netpod::timeunits::MS
-        ))
 }
 
 /**

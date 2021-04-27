@@ -28,7 +28,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 time_bin_size: DAY,
                 array: true,
                 scalar_type: ScalarType::F64,
-                shape: Shape::Wave(17),
+                shape: Shape::Wave(21),
                 big_endian: true,
                 compression: true,
             },
@@ -85,7 +85,7 @@ async fn gen_channel(chn: &ChannelGenProps, node: &Node, ensemble: &Ensemble) ->
         .map_err(|k| Error::with_msg(format!("can not generate config {:?}", k)))?;
     let mut evix = 0;
     let mut ts = 0;
-    while ts < DAY {
+    while ts < DAY * 2 {
         let res = gen_timebin(evix, ts, chn.time_spacing, &channel_path, &chn.config, node, ensemble).await?;
         evix = res.evix;
         ts = res.ts;
@@ -198,21 +198,34 @@ async fn gen_timebin(
         .join(format!("{:019}", tb))
         .join(format!("{:010}", node.split));
     tokio::fs::create_dir_all(&path).await?;
-    let path = path.join(format!("{:019}_{:05}_Data", config.time_bin_size / MS, 0));
-    info!("open file {:?}", path);
+    let data_path = path.join(format!("{:019}_{:05}_Data", config.time_bin_size / MS, 0));
+    let index_path = path.join(format!("{:019}_{:05}_Data_Index", config.time_bin_size / MS, 0));
+    info!("open data file {:?}", data_path);
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
-        .open(path)
+        .open(data_path)
         .await?;
+    let mut index_file = if let Shape::Wave(_) = config.shape {
+        info!("open index file {:?}", index_path);
+        let f = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(index_path)
+            .await?;
+        Some(f)
+    } else {
+        None
+    };
     gen_datafile_header(&mut file, config).await?;
     let mut evix = evix;
     let mut ts = ts;
     let tsmax = (tb + 1) * config.time_bin_size;
     while ts < tsmax {
         if evix % ensemble.nodes.len() as u64 == node.split as u64 {
-            gen_event(&mut file, evix, ts, config).await?;
+            gen_event(&mut file, index_file.as_mut(), evix, ts, config).await?;
         }
         evix += 1;
         ts += ts_spacing;
@@ -233,7 +246,13 @@ async fn gen_datafile_header(file: &mut File, config: &ChannelConfig) -> Result<
     Ok(())
 }
 
-async fn gen_event(file: &mut File, evix: u64, ts: u64, config: &ChannelConfig) -> Result<(), Error> {
+async fn gen_event(
+    file: &mut File,
+    _index_file: Option<&mut File>,
+    evix: u64,
+    ts: u64,
+    config: &ChannelConfig,
+) -> Result<(), Error> {
     let mut buf = BytesMut::with_capacity(1024 * 16);
     buf.put_i32(0xcafecafe as u32 as i32);
     buf.put_u64(0xcafecafe);

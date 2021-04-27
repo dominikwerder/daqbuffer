@@ -13,21 +13,16 @@ pub struct EventBlobsComplete {
     channel_config: ChannelConfig,
     file_chan: async_channel::Receiver<Result<File, Error>>,
     evs: Option<EventChunker>,
-    buffer_size: u32,
+    buffer_size: usize,
     range: NanoRange,
 }
 
 impl EventBlobsComplete {
-    pub fn new(
-        query: &netpod::AggQuerySingleChannel,
-        channel_config: ChannelConfig,
-        range: NanoRange,
-        node: Arc<Node>,
-    ) -> Self {
+    pub fn new(range: NanoRange, channel_config: ChannelConfig, node: Arc<Node>, buffer_size: usize) -> Self {
         Self {
-            file_chan: open_files(query, node),
+            file_chan: open_files(&range, &channel_config, node.clone()),
             evs: None,
-            buffer_size: query.buffer_size,
+            buffer_size,
             channel_config,
             range,
         }
@@ -75,7 +70,7 @@ pub fn event_blobs_complete(
     let query = query.clone();
     let node = node.clone();
     async_stream::stream! {
-        let filerx = open_files(&query, node.clone());
+        let filerx = open_files(err::todoval(), err::todoval(), node.clone());
         while let Ok(fileres) = filerx.recv().await {
             match fileres {
                 Ok(file) => {

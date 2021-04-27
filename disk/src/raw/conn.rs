@@ -8,7 +8,7 @@ use err::Error;
 use futures_util::StreamExt;
 #[allow(unused_imports)]
 use netpod::log::*;
-use netpod::timeunits::{DAY, SEC};
+use netpod::timeunits::SEC;
 use netpod::{NodeConfig, ScalarType, Shape};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -128,11 +128,7 @@ async fn raw_conn_handler_inner_try(
         Ok(_) => (),
         Err(e) => return Err((e, netout))?,
     }
-    debug!(
-        "\n\nREQUEST FOR RANGE  {}  {}\n\n",
-        evq.range.beg / SEC,
-        evq.range.end / SEC
-    );
+    debug!("REQUEST FOR RANGE  {:?}", evq.range);
     error!(
         "TODO decide on response content based on the parsed json query\n{:?}",
         evq
@@ -142,7 +138,10 @@ async fn raw_conn_handler_inner_try(
         Ok(k) => k,
         Err(e) => return Err((e, netout))?,
     };
-    let entry = extract_matching_config_entry(range, &channel_config)?;
+    let entry = match extract_matching_config_entry(range, &channel_config) {
+        Ok(k) => k,
+        Err(e) => return Err((e, netout))?,
+    };
     info!("found config entry {:?}", entry);
 
     let shape = match &entry.shape {
@@ -150,25 +149,14 @@ async fn raw_conn_handler_inner_try(
             if lens.len() == 1 {
                 Shape::Wave(lens[0])
             } else {
-                return Err(Error::with_msg(format!("Channel config unsupported shape {:?}", entry)))?;
+                return Err((
+                    Error::with_msg(format!("Channel config unsupported shape {:?}", entry)),
+                    netout,
+                ))?;
             }
         }
         None => Shape::Scalar,
     };
-
-    /*
-    TODO
-    This endpoint should deliver events over some time range, across files.
-    Therefore, based on the query and the found channel config, list the available files in the
-    candidate directories, and iterate over events from those files.
-    !!!  use index if available
-    • Generate index file for my test data.
-    • Use index file if available.
-    • If not, must use binary search if possible in that type.
-    Create a new type in place of AggQuerySingleChannel?
-    */
-    err::todoval();
-
     let query = netpod::AggQuerySingleChannel {
         channel_config: netpod::ChannelConfig {
             channel: evq.channel.clone(),
@@ -186,11 +174,12 @@ async fn raw_conn_handler_inner_try(
         // TODO use the requested buffer size
         buffer_size: 1024 * 4,
     };
+    let buffer_size = 1024 * 4;
     let mut s1 = EventBlobsComplete::new(
-        &query,
+        range.clone(),
         query.channel_config.clone(),
-        evq.range.clone(),
         node_config.node.clone(),
+        buffer_size,
     )
     .into_dim_1_f32_stream()
     .take(10)
