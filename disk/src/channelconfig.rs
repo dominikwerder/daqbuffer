@@ -1,5 +1,5 @@
 use err::Error;
-use netpod::{Channel, NodeConfig};
+use netpod::{Channel, NanoRange, NodeConfig};
 use nom::number::complete::{be_i16, be_i32, be_i64, be_i8, be_u8};
 use nom::Needed;
 #[allow(unused_imports)]
@@ -276,6 +276,32 @@ pub async fn read_local_config(channel: &Channel, node_config: Arc<NodeConfig>) 
     info!("try to parse config  {} bytes", buf.len());
     let config = parse_config(&buf)?;
     Ok(config.1)
+}
+
+pub fn extract_matching_config_entry<'a>(
+    range: &NanoRange,
+    channel_config: &'a Config,
+) -> Result<&'a ConfigEntry, Error> {
+    let mut ixs = vec![];
+    for i1 in 0..channel_config.entries.len() {
+        let e1 = &channel_config.entries[i1];
+        if i1 + 1 < channel_config.entries.len() {
+            let e2 = &channel_config.entries[i1 + 1];
+            if e1.ts < range.end && e2.ts >= range.beg {
+                ixs.push(i1);
+            }
+        } else {
+            if e1.ts < range.end {
+                ixs.push(i1);
+            }
+        }
+    }
+    if ixs.len() == 0 {
+        return Err(Error::with_msg(format!("no config entries found")));
+    } else if ixs.len() > 1 {
+        return Err(Error::with_msg(format!("too many config entries found: {}", ixs.len())));
+    }
+    Ok(&channel_config.entries[ixs[0]])
 }
 
 #[cfg(test)]

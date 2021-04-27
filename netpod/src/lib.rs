@@ -113,8 +113,17 @@ impl Node {
 }
 
 #[derive(Debug)]
+pub struct Database {
+    pub name: String,
+    pub host: String,
+    pub user: String,
+    pub pass: String,
+}
+
+#[derive(Debug)]
 pub struct Cluster {
     pub nodes: Vec<Arc<Node>>,
+    pub database: Database,
 }
 
 #[derive(Debug)]

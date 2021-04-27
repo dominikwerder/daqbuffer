@@ -5,13 +5,13 @@ use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
 use futures_util::TryStreamExt;
 use hyper::Body;
-use netpod::{Cluster, Node};
+use netpod::{Cluster, Database, Node};
 use std::sync::Arc;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
 fn test_cluster() -> Cluster {
-    let nodes = (0..13)
+    let nodes = (0..3)
         .into_iter()
         .map(|id| {
             let node = Node {
@@ -27,7 +27,15 @@ fn test_cluster() -> Cluster {
             Arc::new(node)
         })
         .collect();
-    Cluster { nodes: nodes }
+    Cluster {
+        nodes: nodes,
+        database: Database {
+            name: "daqbuffer".into(),
+            host: "localhost".into(),
+            user: "daqbuffer".into(),
+            pass: "daqbuffer".into(),
+        },
+    }
 }
 
 #[test]
@@ -44,13 +52,15 @@ async fn get_cached_0_inner() -> Result<(), Error> {
     let end_date: chrono::DateTime<Utc> = "1970-01-01T00:00:51.000Z".parse()?;
     let channel_backend = "back";
     let channel_name = "wave1";
+    let bin_count = 4;
     let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
     let uri = format!(
-        "http://{}:{}/api/1/binned?channel_backend={}&channel_name={}&bin_count=4&beg_date={}&end_date={}",
+        "http://{}:{}/api/1/binned?channel_backend={}&channel_name={}&bin_count={}&beg_date={}&end_date={}",
         node0.host,
         node0.port,
         channel_backend,
         channel_name,
+        bin_count,
         beg_date.format(date_fmt),
         end_date.format(date_fmt),
     );

@@ -32,11 +32,11 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 big_endian: true,
                 compression: true,
             },
-            time_spacing: MS * 2000,
+            time_spacing: MS * 1000,
         };
         ensemble.channels.push(chn);
     }
-    for i1 in 0..13 {
+    for i1 in 0..3 {
         let node = Node {
             id: i1,
             host: "localhost".into(),

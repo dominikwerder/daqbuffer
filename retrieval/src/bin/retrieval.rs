@@ -1,5 +1,5 @@
 use err::Error;
-use netpod::{timeunits::*, Channel, ChannelConfig, Cluster, Node, NodeConfig, ScalarType, Shape};
+use netpod::{timeunits::*, Channel, ChannelConfig, Cluster, Database, Node, NodeConfig, ScalarType, Shape};
 use std::sync::Arc;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
@@ -62,7 +62,15 @@ fn simple_fetch() {
             tb_file_count: 1,
             buffer_size: 1024 * 8,
         };
-        let cluster = Cluster { nodes: vec![node] };
+        let cluster = Cluster {
+            nodes: vec![node],
+            database: Database {
+                name: "daqbuffer".into(),
+                host: "localhost".into(),
+                user: "daqbuffer".into(),
+                pass: "daqbuffer".into(),
+            },
+        };
         let cluster = Arc::new(cluster);
         let node_config = NodeConfig {
             node: cluster.nodes[0].clone(),

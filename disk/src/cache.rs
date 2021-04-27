@@ -1,6 +1,7 @@
 use crate::agg::MinMaxAvgScalarEventBatch;
 use crate::binnedstream::BinnedStream;
 use crate::cache::pbv::PreBinnedValueByteStream;
+use crate::channelconfig::{extract_matching_config_entry, read_local_config};
 use crate::frame::makeframe::make_frame;
 use crate::merge::MergedMinMaxAvgScalarStream;
 use crate::raw::EventsQuery;
@@ -68,33 +69,10 @@ pub async fn binned_bytes_for_http(
     node_config: Arc<NodeConfig>,
     query: &Query,
 ) -> Result<BinnedBytesForHttpStream, Error> {
-    let channel_config = super::channelconfig::read_local_config(&query.channel, node_config.clone()).await?;
-    let entry;
-    {
-        let mut ixs = vec![];
-        for i1 in 0..channel_config.entries.len() {
-            let e1 = &channel_config.entries[i1];
-            if i1 + 1 < channel_config.entries.len() {
-                let e2 = &channel_config.entries[i1 + 1];
-                if e1.ts < query.range.end && e2.ts >= query.range.beg {
-                    ixs.push(i1);
-                }
-            } else {
-                if e1.ts < query.range.end {
-                    ixs.push(i1);
-                }
-            }
-        }
-        if ixs.len() == 0 {
-            return Err(Error::with_msg(format!("no config entries found")));
-        } else if ixs.len() > 1 {
-            return Err(Error::with_msg(format!("too many config entries found: {}", ixs.len())));
-        }
-        entry = &channel_config.entries[ixs[0]];
-    }
-
+    let range = &query.range;
+    let channel_config = read_local_config(&query.channel, node_config.clone()).await?;
+    let entry = extract_matching_config_entry(range, &channel_config);
     info!("found config entry {:?}", entry);
-
     let grid = PreBinnedPatchRange::covering_range(query.range.clone(), query.count);
     match grid {
         Some(spec) => {

@@ -186,6 +186,12 @@ impl From<Box<bincode::ErrorKind>> for Error {
     }
 }
 
+impl From<tokio_postgres::Error> for Error {
+    fn from(k: tokio_postgres::Error) -> Self {
+        Self::with_msg(k.to_string())
+    }
+}
+
 pub fn todoval<T>() -> T {
     todo!("TODO todoval")
 }

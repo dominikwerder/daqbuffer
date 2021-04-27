@@ -1,4 +1,5 @@
 use crate::agg::{IntoBinnedXBins1, IntoDim1F32Stream, MinMaxAvgScalarEventBatch};
+use crate::channelconfig::{extract_matching_config_entry, read_local_config};
 use crate::eventblobs::EventBlobsComplete;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{make_frame, make_term_frame};
@@ -123,6 +124,10 @@ async fn raw_conn_handler_inner_try(
             return Err((Error::with_msg("can not parse request json"), netout))?;
         }
     };
+    match dbconn::channel_exists(&evq.channel, node_config.clone()).await {
+        Ok(_) => (),
+        Err(e) => return Err((e, netout))?,
+    }
     debug!(
         "\n\nREQUEST FOR RANGE  {}  {}\n\n",
         evq.range.beg / SEC,
@@ -132,19 +137,48 @@ async fn raw_conn_handler_inner_try(
         "TODO decide on response content based on the parsed json query\n{:?}",
         evq
     );
+    let range = &evq.range;
+    let channel_config = match read_local_config(&evq.channel, node_config.clone()).await {
+        Ok(k) => k,
+        Err(e) => return Err((e, netout))?,
+    };
+    let entry = extract_matching_config_entry(range, &channel_config)?;
+    info!("found config entry {:?}", entry);
+
+    let shape = match &entry.shape {
+        Some(lens) => {
+            if lens.len() == 1 {
+                Shape::Wave(lens[0])
+            } else {
+                return Err(Error::with_msg(format!("Channel config unsupported shape {:?}", entry)))?;
+            }
+        }
+        None => Shape::Scalar,
+    };
+
+    /*
+    TODO
+    This endpoint should deliver events over some time range, across files.
+    Therefore, based on the query and the found channel config, list the available files in the
+    candidate directories, and iterate over events from those files.
+    !!!  use index if available
+    • Generate index file for my test data.
+    • Use index file if available.
+    • If not, must use binary search if possible in that type.
+    Create a new type in place of AggQuerySingleChannel?
+    */
+    err::todoval();
+
     let query = netpod::AggQuerySingleChannel {
         channel_config: netpod::ChannelConfig {
-            channel: netpod::Channel {
-                backend: "test1".into(),
-                name: "wave1".into(),
-            },
-            keyspace: 3,
-            time_bin_size: DAY,
-            shape: Shape::Wave(17),
-            scalar_type: ScalarType::F64,
-            big_endian: true,
-            array: true,
-            compression: true,
+            channel: evq.channel.clone(),
+            keyspace: entry.ks as u8,
+            time_bin_size: entry.bs as u64,
+            shape: shape,
+            scalar_type: ScalarType::from_dtype_index(entry.dtype.to_i16() as u8),
+            big_endian: entry.is_big_endian,
+            array: entry.is_array,
+            compression: entry.is_compressed,
         },
         // TODO use a NanoRange and search for matching files
         timebin: 0,

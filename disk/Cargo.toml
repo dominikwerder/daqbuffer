@@ -33,3 +33,4 @@ err = { path = "../err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }
 bitshuffle = { path = "../bitshuffle" }
+dbconn = { path = "../dbconn" }
