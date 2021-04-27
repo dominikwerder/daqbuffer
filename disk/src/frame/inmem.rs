@@ -55,10 +55,7 @@ where
     }
 
     fn poll_upstream(&mut self, cx: &mut Context) -> Poll<Result<usize, Error>> {
-        if self.wp > 0 {
-            // TODO copy only if we gain capacity in the current buffer.
-            // Also copy if the bufcap got increased: how to find out with BytesMut?  Question about how capacity is defined exactly...
-            // Avoid copies after e.g. after a previous Pending.
+        if true || self.wp > 0 {
             let mut bnew = self.empty_buf();
             assert!(self.buf.len() >= self.wp);
             assert!(bnew.capacity() >= self.wp);
@@ -66,7 +63,7 @@ where
                 "InMemoryFrameAsyncReadStream  re-use {} bytes from previous i/o",
                 self.wp,
             );
-            bnew[0..].as_mut().put_slice(&self.buf[..self.wp]);
+            bnew[..].as_mut().put_slice(&self.buf[..self.wp]);
             self.buf = bnew;
         }
         trace!(
@@ -77,7 +74,16 @@ where
         let gg = self.buf.len() - self.wp;
         let mut buf2 = ReadBuf::new(&mut self.buf[self.wp..]);
         if gg < 1 || gg > 1024 * 1024 * 20 {
-            panic!("have gg {}", gg);
+            use bytes::Buf;
+            panic!(
+                "have gg {}  len {}  cap {}  rem {}  rem mut {}  self.wp {}",
+                gg,
+                self.buf.len(),
+                self.buf.capacity(),
+                self.buf.remaining(),
+                self.buf.remaining_mut(),
+                self.wp,
+            );
         }
         assert!(buf2.remaining() == gg);
         assert!(buf2.capacity() == gg);
