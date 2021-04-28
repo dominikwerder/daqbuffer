@@ -11,31 +11,36 @@ use futures_util::StreamExt;
 #[allow(unused_imports)]
 use netpod::log::*;
 use netpod::timeunits::SEC;
-use netpod::{NodeConfig, ScalarType, Shape};
+use netpod::{Node, NodeConfig, ScalarType, Shape};
 use std::net::SocketAddr;
-use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
 use tracing::Instrument;
 
-pub async fn raw_service(node_config: Arc<NodeConfig>) -> Result<(), Error> {
-    let addr = format!("{}:{}", node_config.node.listen, node_config.node.port_raw);
+pub async fn raw_service(node_config: NodeConfig, node: Node) -> Result<(), Error> {
+    let addr = format!("{}:{}", node.listen, node.port_raw);
     let lis = tokio::net::TcpListener::bind(addr).await?;
     loop {
         match lis.accept().await {
             Ok((stream, addr)) => {
-                taskrun::spawn(raw_conn_handler(stream, addr, node_config.clone()));
+                let node = node.clone();
+                taskrun::spawn(raw_conn_handler(stream, addr, node_config.clone(), node));
             }
             Err(e) => Err(e)?,
         }
     }
 }
 
-async fn raw_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: Arc<NodeConfig>) -> Result<(), Error> {
+async fn raw_conn_handler(
+    stream: TcpStream,
+    addr: SocketAddr,
+    node_config: NodeConfig,
+    node: Node,
+) -> Result<(), Error> {
     //use tracing_futures::Instrument;
     let span1 = span!(Level::INFO, "raw::raw_conn_handler");
-    let r = raw_conn_handler_inner(stream, addr, node_config)
+    let r = raw_conn_handler_inner(stream, addr, &node_config, &node)
         .instrument(span1)
         .await;
     match r {
@@ -52,9 +57,10 @@ pub type RawConnOut = Result<MinMaxAvgScalarEventBatch, Error>;
 async fn raw_conn_handler_inner(
     stream: TcpStream,
     addr: SocketAddr,
-    node_config: Arc<NodeConfig>,
+    node_config: &NodeConfig,
+    node: &Node,
 ) -> Result<(), Error> {
-    match raw_conn_handler_inner_try(stream, addr, node_config).await {
+    match raw_conn_handler_inner_try(stream, addr, node_config, node).await {
         Ok(_) => (),
         Err(mut ce) => {
             /*error!(
@@ -88,7 +94,8 @@ impl<E: Into<Error>> From<(E, OwnedWriteHalf)> for ConnErr {
 async fn raw_conn_handler_inner_try(
     stream: TcpStream,
     addr: SocketAddr,
-    node_config: Arc<NodeConfig>,
+    node_config: &NodeConfig,
+    node: &Node,
 ) -> Result<(), ConnErr> {
     info!("raw_conn_handler   SPAWNED   for {:?}", addr);
     let (netin, mut netout) = stream.into_split();
@@ -126,13 +133,13 @@ async fn raw_conn_handler_inner_try(
             return Err((Error::with_msg("can not parse request json"), netout))?;
         }
     };
-    match dbconn::channel_exists(&evq.channel, node_config.clone()).await {
+    match dbconn::channel_exists(&evq.channel, &node_config).await {
         Ok(_) => (),
         Err(e) => return Err((e, netout))?,
     }
     debug!("REQUEST  {:?}", evq);
     let range = &evq.range;
-    let channel_config = match read_local_config(&evq.channel, node_config.clone()).await {
+    let channel_config = match read_local_config(&evq.channel, node).await {
         Ok(k) => k,
         Err(e) => return Err((e, netout))?,
     };
@@ -173,21 +180,16 @@ async fn raw_conn_handler_inner_try(
         buffer_size: 1024 * 4,
     };
     let buffer_size = 1024 * 4;
-    let mut s1 = EventBlobsComplete::new(
-        range.clone(),
-        query.channel_config.clone(),
-        node_config.node.clone(),
-        buffer_size,
-    )
-    .into_dim_1_f32_stream()
-    .into_binned_x_bins_1();
+    let mut s1 = EventBlobsComplete::new(range.clone(), query.channel_config.clone(), node.clone(), buffer_size)
+        .into_dim_1_f32_stream()
+        .into_binned_x_bins_1();
     let mut e = 0;
     while let Some(item) = s1.next().await {
         if let Ok(k) = &item {
             e += 1;
             trace!(
                 "emit items  sp {:2}  e {:3}  len {:3}  {:10?}  {:10?}",
-                node_config.node.split,
+                node.split,
                 e,
                 k.tss.len(),
                 k.tss.first().map(|k| k / SEC),

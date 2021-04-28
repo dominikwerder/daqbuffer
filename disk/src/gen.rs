@@ -38,7 +38,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
     }
     for i1 in 0..3 {
         let node = Node {
-            id: i1,
+            id: format!("{:02}", i1),
             host: "localhost".into(),
             listen: "0.0.0.0".into(),
             port: 7780 + i1 as u16,

@@ -270,14 +270,14 @@ pub fn raw_concat_channel_read_stream_try_open_in_background(
 pub fn raw_concat_channel_read_stream_file_pipe(
     range: &NanoRange,
     channel_config: &ChannelConfig,
-    node: Arc<Node>,
+    node: Node,
     buffer_size: usize,
 ) -> impl Stream<Item = Result<BytesMut, Error>> + Send {
     let range = range.clone();
     let channel_config = channel_config.clone();
     let node = node.clone();
     async_stream::stream! {
-        let chrx = open_files(&range, &channel_config, node.clone());
+        let chrx = open_files(&range, &channel_config, node);
         while let Ok(file) = chrx.recv().await {
             let mut file = match file {
                 Ok(k) => k,
@@ -319,14 +319,11 @@ pub fn file_content_stream(
     }
 }
 
-pub fn parsed1(
-    query: &netpod::AggQuerySingleChannel,
-    node: Arc<Node>,
-) -> impl Stream<Item = Result<Bytes, Error>> + Send {
+pub fn parsed1(query: &netpod::AggQuerySingleChannel, node: &Node) -> impl Stream<Item = Result<Bytes, Error>> + Send {
     let query = query.clone();
     let node = node.clone();
     async_stream::stream! {
-        let filerx = open_files(err::todoval(), err::todoval(), node.clone());
+        let filerx = open_files(err::todoval(), err::todoval(), node);
         while let Ok(fileres) = filerx.recv().await {
             match fileres {
                 Ok(file) => {

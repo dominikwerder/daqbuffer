@@ -1,5 +1,5 @@
 use err::Error;
-use netpod::{Channel, NanoRange, NodeConfig};
+use netpod::{Channel, NanoRange, Node};
 use nom::number::complete::{be_i16, be_i32, be_i64, be_i8, be_u8};
 use nom::Needed;
 #[allow(unused_imports)]
@@ -11,7 +11,6 @@ use nom::{
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
@@ -264,9 +263,8 @@ pub fn parse_config(inp: &[u8]) -> NRes<Config> {
     Ok((inp, ret))
 }
 
-pub async fn read_local_config(channel: &Channel, node_config: Arc<NodeConfig>) -> Result<Config, Error> {
-    let path = node_config
-        .node
+pub async fn read_local_config(channel: &Channel, node: &Node) -> Result<Config, Error> {
+    let path = node
         .data_base_path
         .join("config")
         .join(&channel.name)

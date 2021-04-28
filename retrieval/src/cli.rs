@@ -15,4 +15,7 @@ pub enum SubCmd {
 }
 
 #[derive(Debug, Clap)]
-pub struct Retrieval {}
+pub struct Retrieval {
+    #[clap(long)]
+    pub config: String,
+}

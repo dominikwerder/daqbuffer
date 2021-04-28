@@ -7,7 +7,6 @@ use futures_util::StreamExt;
 use netpod::timeunits::*;
 use netpod::{BinSpecDimT, Channel, ChannelConfig, NanoRange, ScalarType, Shape};
 use std::future::ready;
-use std::sync::Arc;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
@@ -22,7 +21,6 @@ fn agg_x_dim_0() {
 
 async fn agg_x_dim_0_inner() {
     let node = make_test_node(0);
-    let node = Arc::new(node);
     let query = netpod::AggQuerySingleChannel {
         channel_config: ChannelConfig {
             channel: Channel {
@@ -93,7 +91,6 @@ async fn agg_x_dim_1_inner() {
     // /data/sf-databuffer/daq_swissfel/daq_swissfel_3/byTime/S10BC01-DBAM070\:BAM_CH1_NORM/*
     // S10BC01-DBAM070:BAM_CH1_NORM
     let node = make_test_node(0);
-    let node = Arc::new(node);
     let query = netpod::AggQuerySingleChannel {
         channel_config: ChannelConfig {
             channel: Channel {
@@ -179,7 +176,6 @@ async fn merge_0_inner() {
         .into_iter()
         .map(|k| make_test_node(k))
         .map(|node| {
-            let node = Arc::new(node);
             super::eventblobs::EventBlobsComplete::new(
                 range.clone(),
                 query.channel_config.clone(),

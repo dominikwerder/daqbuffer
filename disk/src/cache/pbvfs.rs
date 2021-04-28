@@ -9,7 +9,6 @@ use futures_util::{pin_mut, FutureExt};
 use netpod::log::*;
 use netpod::{AggKind, Channel, NodeConfig, PreBinnedPatchCoord};
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 
 pub struct PreBinnedValueFetchedStream {
@@ -23,7 +22,7 @@ impl PreBinnedValueFetchedStream {
         patch_coord: PreBinnedPatchCoord,
         channel: Channel,
         agg_kind: AggKind,
-        node_config: Arc<NodeConfig>,
+        node_config: &NodeConfig,
     ) -> Self {
         let nodeix = node_ix_for_patch(&patch_coord, &channel, &node_config.cluster);
         let node = &node_config.cluster.nodes[nodeix as usize];

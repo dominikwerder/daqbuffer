@@ -12,13 +12,12 @@ use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
 use hyper::Response;
 use netpod::{
-    AggKind, Channel, Cluster, NanoRange, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchIterator, PreBinnedPatchRange,
-    ToNanos,
+    AggKind, Channel, Cluster, NanoRange, Node, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchIterator,
+    PreBinnedPatchRange, ToNanos,
 };
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 use tiny_keccak::Hasher;
 use tokio::io::{AsyncRead, ReadBuf};
@@ -66,11 +65,12 @@ impl Query {
 }
 
 pub async fn binned_bytes_for_http(
-    node_config: Arc<NodeConfig>,
+    node_config: &NodeConfig,
+    node: &Node,
     query: &Query,
 ) -> Result<BinnedBytesForHttpStream, Error> {
     let range = &query.range;
-    let channel_config = read_local_config(&query.channel, node_config.clone()).await?;
+    let channel_config = read_local_config(&query.channel, node).await?;
     let entry = extract_matching_config_entry(range, &channel_config);
     info!("found config entry {:?}", entry);
     let grid = PreBinnedPatchRange::covering_range(query.range.clone(), query.count);
@@ -83,7 +83,7 @@ pub async fn binned_bytes_for_http(
                 query.channel.clone(),
                 query.range.clone(),
                 query.agg_kind.clone(),
-                node_config.clone(),
+                node_config,
             );
             let ret = BinnedBytesForHttpStream::new(s1);
             Ok(ret)
@@ -170,10 +170,11 @@ impl PreBinnedQuery {
 // A user must first make sure that the grid spec is valid, and that this node is responsible for it.
 // Otherwise it is an error.
 pub fn pre_binned_bytes_for_http(
-    node_config: Arc<NodeConfig>,
+    node_config: &NodeConfig,
+    node: &Node,
     query: &PreBinnedQuery,
 ) -> Result<PreBinnedValueByteStream, Error> {
-    info!("pre_binned_bytes_for_http  {:?}  {:?}", query, node_config.node);
+    info!("pre_binned_bytes_for_http  {:?}  {:?}", query, node);
     let ret = PreBinnedValueByteStream::new(
         query.patch.clone(),
         query.channel.clone(),
@@ -254,7 +255,7 @@ pub struct MergedFromRemotes {
 }
 
 impl MergedFromRemotes {
-    pub fn new(evq: Arc<EventsQuery>, cluster: Arc<Cluster>) -> Self {
+    pub fn new(evq: EventsQuery, cluster: Cluster) -> Self {
         let mut tcp_establish_futs = vec![];
         for node in &cluster.nodes {
             let f = super::raw::x_processed_stream_from_node(evq.clone(), node.clone());

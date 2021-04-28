@@ -15,7 +15,6 @@ use netpod::{
 };
 use std::future::{ready, Future};
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 
 pub struct PreBinnedValueByteStream {
@@ -25,7 +24,7 @@ pub struct PreBinnedValueByteStream {
 }
 
 impl PreBinnedValueByteStream {
-    pub fn new(patch: PreBinnedPatchCoord, channel: Channel, agg_kind: AggKind, node_config: Arc<NodeConfig>) -> Self {
+    pub fn new(patch: PreBinnedPatchCoord, channel: Channel, agg_kind: AggKind, node_config: &NodeConfig) -> Self {
         Self {
             inp: PreBinnedValueStream::new(patch, channel, agg_kind, node_config),
             errored: false,
@@ -64,7 +63,7 @@ pub struct PreBinnedValueStream {
     patch_coord: PreBinnedPatchCoord,
     channel: Channel,
     agg_kind: AggKind,
-    node_config: Arc<NodeConfig>,
+    node_config: NodeConfig,
     open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<tokio::fs::File, std::io::Error>> + Send>>>,
     fut2: Option<Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarBinBatch, Error>> + Send>>>,
 }
@@ -74,15 +73,15 @@ impl PreBinnedValueStream {
         patch_coord: PreBinnedPatchCoord,
         channel: Channel,
         agg_kind: AggKind,
-        node_config: Arc<NodeConfig>,
+        node_config: &NodeConfig,
     ) -> Self {
-        let node_ix = node_ix_for_patch(&patch_coord, &channel, &node_config.cluster);
-        assert!(node_ix == node_config.node.id);
+        // TODO check that we are the correct node.
+        let _node_ix = node_ix_for_patch(&patch_coord, &channel, &node_config.cluster);
         Self {
             patch_coord,
             channel,
             agg_kind,
-            node_config,
+            node_config: node_config.clone(),
             open_check_local_file: None,
             fut2: None,
         }
@@ -107,7 +106,7 @@ impl PreBinnedValueStream {
                     range
                 );
                 assert!(g / h > 1);
-                assert!(g / h < 20);
+                assert!(g / h < 200);
                 assert!(g % h == 0);
                 let bin_size = range.grid_spec.bin_t_len();
                 let channel = self.channel.clone();
@@ -116,7 +115,7 @@ impl PreBinnedValueStream {
                 let patch_it = PreBinnedPatchIterator::from_range(range);
                 let s = futures_util::stream::iter(patch_it)
                 .map(move |coord| {
-                    PreBinnedValueFetchedStream::new(coord, channel.clone(), agg_kind.clone(), node_config.clone())
+                    PreBinnedValueFetchedStream::new(coord, channel.clone(), agg_kind.clone(), &node_config)
                 })
                 .flatten()
                 .map(move |k| {
@@ -147,7 +146,6 @@ impl PreBinnedValueStream {
                     ts2: self.patch_coord.patch_end(),
                     count,
                 };
-                let evq = Arc::new(evq);
                 let s1 = MergedFromRemotes::new(evq, self.node_config.cluster.clone());
                 let s2 = s1
                     .map(|k| {

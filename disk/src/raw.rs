@@ -14,7 +14,6 @@ use futures_core::Stream;
 use netpod::{AggKind, Channel, NanoRange, Node};
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
-use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 #[allow(unused_imports)]
@@ -37,11 +36,11 @@ pub struct EventsQuery {
 pub struct EventQueryJsonStringFrame(String);
 
 pub async fn x_processed_stream_from_node(
-    query: Arc<EventsQuery>,
-    node: Arc<Node>,
+    query: EventsQuery,
+    node: Node,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarEventBatch, Error>> + Send>>, Error> {
     let net = TcpStream::connect(format!("{}:{}", node.host, node.port_raw)).await?;
-    let qjs = serde_json::to_string(query.as_ref())?;
+    let qjs = serde_json::to_string(&query)?;
     let (netin, mut netout) = net.into_split();
     let buf = make_frame(&EventQueryJsonStringFrame(qjs))?;
     netout.write_all(&buf).await?;

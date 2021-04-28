@@ -1,6 +1,6 @@
 use err::Error;
-use netpod::{timeunits::*, Channel, ChannelConfig, Cluster, Database, Node, NodeConfig, ScalarType, Shape};
-use std::sync::Arc;
+use netpod::NodeConfig;
+use tokio::io::AsyncReadExt;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
@@ -20,10 +20,18 @@ async fn go() -> Result<(), Error> {
     use retrieval::cli::{Opts, SubCmd};
     let opts = Opts::parse();
     match opts.subcmd {
-        SubCmd::Retrieval(_subcmd) => {
+        SubCmd::Retrieval(subcmd) => {
             trace!("testout");
             info!("testout");
             error!("testout");
+            let mut config_file = tokio::fs::File::open(subcmd.config).await?;
+            let mut buf = vec![];
+            config_file.read_to_end(&mut buf).await?;
+            let node_config: NodeConfig = serde_json::from_slice(&buf)?;
+            let node = node_config
+                .get_node()
+                .ok_or(Error::with_msg(format!("nodeid config error")))?;
+            retrieval::run_node(node_config.clone(), node.clone()).await?;
         }
     }
     Ok(())
@@ -31,10 +39,11 @@ async fn go() -> Result<(), Error> {
 
 #[test]
 fn simple_fetch() {
+    use netpod::{timeunits::*, Channel, ChannelConfig, Cluster, Database, Node, NodeConfig, ScalarType, Shape};
     taskrun::run(async {
         let t1 = chrono::Utc::now();
         let node = Node {
-            id: 0,
+            id: format!("{:02}", 0),
             host: "localhost".into(),
             listen: "0.0.0.0".into(),
             port: 8360,
@@ -43,7 +52,6 @@ fn simple_fetch() {
             ksprefix: "daq_swissfel".into(),
             split: 0,
         };
-        let node = Arc::new(node);
         let query = netpod::AggQuerySingleChannel {
             channel_config: ChannelConfig {
                 channel: Channel {
@@ -71,14 +79,13 @@ fn simple_fetch() {
                 pass: "daqbuffer".into(),
             },
         };
-        let cluster = Arc::new(cluster);
         let node_config = NodeConfig {
-            node: cluster.nodes[0].clone(),
-            cluster: cluster,
+            nodeid: cluster.nodes[0].id.clone(),
+            cluster,
         };
-        let node_config = Arc::new(node_config);
+        let node = node_config.get_node().unwrap();
         let query_string = serde_json::to_string(&query).unwrap();
-        let host = tokio::spawn(httpret::host(node_config));
+        let host = tokio::spawn(httpret::host(node_config.clone(), node.clone()));
         let req = hyper::Request::builder()
             .method(http::Method::POST)
             .uri("http://localhost:8360/api/1/parsed_raw")

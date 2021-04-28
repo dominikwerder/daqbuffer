@@ -6,7 +6,6 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::{ChannelConfig, NanoRange, Node};
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::fs::File;
 
@@ -19,9 +18,9 @@ pub struct EventBlobsComplete {
 }
 
 impl EventBlobsComplete {
-    pub fn new(range: NanoRange, channel_config: ChannelConfig, node: Arc<Node>, buffer_size: usize) -> Self {
+    pub fn new(range: NanoRange, channel_config: ChannelConfig, node: Node, buffer_size: usize) -> Self {
         Self {
-            file_chan: open_files(&range, &channel_config, node.clone()),
+            file_chan: open_files(&range, &channel_config, node),
             evs: None,
             buffer_size,
             channel_config,
@@ -67,12 +66,12 @@ impl Stream for EventBlobsComplete {
 
 pub fn event_blobs_complete(
     query: &netpod::AggQuerySingleChannel,
-    node: Arc<Node>,
+    node: Node,
 ) -> impl Stream<Item = Result<EventFull, Error>> + Send {
     let query = query.clone();
     let node = node.clone();
     async_stream::stream! {
-        let filerx = open_files(err::todoval(), err::todoval(), node.clone());
+        let filerx = open_files(err::todoval(), err::todoval(), node);
         while let Ok(fileres) = filerx.recv().await {
             match fileres {
                 Ok(file) => {

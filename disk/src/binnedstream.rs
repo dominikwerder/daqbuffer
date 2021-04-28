@@ -9,7 +9,6 @@ use netpod::{AggKind, Channel, NodeConfig, PreBinnedPatchIterator};
 use netpod::{NanoRange, RetStreamExt};
 use std::future::ready;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 
 pub struct BinnedStream {
@@ -22,7 +21,7 @@ impl BinnedStream {
         channel: Channel,
         range: NanoRange,
         agg_kind: AggKind,
-        node_config: Arc<NodeConfig>,
+        node_config: &NodeConfig,
     ) -> Self {
         let patches: Vec<_> = patch_it.collect();
         warn!("BinnedStream will open a PreBinnedValueStream");
@@ -30,8 +29,9 @@ impl BinnedStream {
             info!("BinnedStream  ->  patch  {:?}", p);
         }
         let inp = futures_util::stream::iter(patches.into_iter())
-            .map(move |coord| {
-                PreBinnedValueFetchedStream::new(coord, channel.clone(), agg_kind.clone(), node_config.clone())
+            .map({
+                let node_config = node_config.clone();
+                move |coord| PreBinnedValueFetchedStream::new(coord, channel.clone(), agg_kind.clone(), &node_config)
             })
             .flatten()
             .only_first_error()

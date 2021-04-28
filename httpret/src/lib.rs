@@ -9,28 +9,30 @@ use http::{HeaderMap, Method, StatusCode};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
-use netpod::NodeConfig;
+use netpod::{Node, NodeConfig};
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
-use std::{future, net, panic, pin, sync, task};
-use sync::Arc;
+use std::{future, net, panic, pin, task};
 use task::{Context, Poll};
 use tracing::field::Empty;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, span, trace, warn, Level};
 
-pub async fn host(node_config: Arc<NodeConfig>) -> Result<(), Error> {
-    let rawjh = taskrun::spawn(raw_service(node_config.clone()));
+pub async fn host(node_config: NodeConfig, node: Node) -> Result<(), Error> {
+    let node_config = node_config.clone();
+    let node = node.clone();
+    let rawjh = taskrun::spawn(raw_service(node_config.clone(), node.clone()));
     use std::str::FromStr;
-    let addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen, node_config.node.port))?;
+    let addr = SocketAddr::from_str(&format!("{}:{}", node.listen, node.port))?;
     let make_service = make_service_fn({
         move |conn| {
             info!("new raw {:?}", conn);
             let node_config = node_config.clone();
+            let node = node.clone();
             async move {
                 Ok::<_, Error>(service_fn({
                     move |req| {
-                        let f = data_api_proxy(req, node_config.clone());
+                        let f = data_api_proxy(req, node_config.clone(), node.clone());
                         Cont { f: Box::pin(f) }
                     }
                 }))
@@ -42,8 +44,8 @@ pub async fn host(node_config: Arc<NodeConfig>) -> Result<(), Error> {
     Ok(())
 }
 
-async fn data_api_proxy(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
-    match data_api_proxy_try(req, node_config).await {
+async fn data_api_proxy(req: Request<Body>, node_config: NodeConfig, node: Node) -> Result<Response<Body>, Error> {
+    match data_api_proxy_try(req, &node_config, &node).await {
         Ok(k) => Ok(k),
         Err(e) => {
             error!("{:?}", e);
@@ -82,24 +84,28 @@ where
 
 impl<F> UnwindSafe for Cont<F> {}
 
-async fn data_api_proxy_try(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
+async fn data_api_proxy_try(
+    req: Request<Body>,
+    node_config: &NodeConfig,
+    node: &Node,
+) -> Result<Response<Body>, Error> {
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/1/parsed_raw" {
         if req.method() == Method::POST {
-            Ok(parsed_raw(req, node_config.clone()).await?)
+            Ok(parsed_raw(req, node).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else if path == "/api/1/binned" {
         if req.method() == Method::GET {
-            Ok(binned(req, node_config.clone()).await?)
+            Ok(binned(req, &node_config, node).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else if path == "/api/1/prebinned" {
         if req.method() == Method::GET {
-            Ok(prebinned(req, node_config.clone()).await?)
+            Ok(prebinned(req, &node_config, node).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -119,8 +125,7 @@ where
         .header("access-control-allow-headers", "*")
 }
 
-async fn parsed_raw(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
-    let node = node_config.node.clone();
+async fn parsed_raw(req: Request<Body>, node: &Node) -> Result<Response<Body>, Error> {
     use netpod::AggQuerySingleChannel;
     let reqbody = req.into_body();
     let bodyslice = hyper::body::to_bytes(reqbody).await?;
@@ -219,11 +224,10 @@ where
     }
 }
 
-async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
-    info!("--------------------------------------------------------   BINNED");
+async fn binned(req: Request<Body>, node_config: &NodeConfig, node: &Node) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let query = disk::cache::Query::from_request(&head)?;
-    let ret = match disk::cache::binned_bytes_for_http(node_config, &query).await {
+    let ret = match disk::cache::binned_bytes_for_http(node_config, node, &query).await {
         Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, format!("desc-BINNED")))?,
         Err(e) => {
             error!("{:?}", e);
@@ -233,14 +237,14 @@ async fn binned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Resp
     Ok(ret)
 }
 
-async fn prebinned(req: Request<Body>, node_config: Arc<NodeConfig>) -> Result<Response<Body>, Error> {
+async fn prebinned(req: Request<Body>, node_config: &NodeConfig, node: &Node) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let q = PreBinnedQuery::from_request(&head)?;
     let desc = format!("pre-b-{}", q.patch.bin_t_len() / 1000000000);
     let span1 = span!(Level::INFO, "httpret::prebinned", desc = &desc.as_str());
     span1.in_scope(|| {
         trace!("prebinned");
-        let ret = match disk::cache::pre_binned_bytes_for_http(node_config, &q) {
+        let ret = match disk::cache::pre_binned_bytes_for_http(node_config, node, &q) {
             Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(
                 s,
                 format!(

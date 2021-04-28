@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 use timeunits::*;
 #[allow(unused_imports)]
@@ -94,9 +93,9 @@ impl ScalarType {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Node {
-    pub id: u32,
+    pub id: String,
     pub host: String,
     pub listen: String,
     pub port: u16,
@@ -112,7 +111,7 @@ impl Node {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Database {
     pub name: String,
     pub host: String,
@@ -120,16 +119,27 @@ pub struct Database {
     pub pass: String,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Cluster {
-    pub nodes: Vec<Arc<Node>>,
+    pub nodes: Vec<Node>,
     pub database: Database,
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeConfig {
-    pub node: Arc<Node>,
-    pub cluster: Arc<Cluster>,
+    pub nodeid: String,
+    pub cluster: Cluster,
+}
+
+impl NodeConfig {
+    pub fn get_node(&self) -> Option<&Node> {
+        for n in &self.cluster.nodes {
+            if n.id == self.nodeid {
+                return Some(n);
+            }
+        }
+        None
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

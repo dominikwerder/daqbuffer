@@ -5,14 +5,13 @@ use futures_util::StreamExt;
 use netpod::log::*;
 use netpod::{ChannelConfig, NanoRange, Nanos, Node};
 use std::mem::size_of;
-use std::sync::Arc;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, ErrorKind, SeekFrom};
 
 pub fn open_files(
     range: &NanoRange,
     channel_config: &ChannelConfig,
-    node: Arc<Node>,
+    node: Node,
 ) -> async_channel::Receiver<Result<File, Error>> {
     let (chtx, chrx) = async_channel::bounded(2);
     let range = range.clone();
@@ -35,7 +34,7 @@ async fn open_files_inner(
     chtx: &async_channel::Sender<Result<File, Error>>,
     range: &NanoRange,
     channel_config: &ChannelConfig,
-    node: Arc<Node>,
+    node: Node,
 ) -> Result<(), Error> {
     let channel_config = channel_config.clone();
     // TODO  reduce usage of `query` and see what we actually need.

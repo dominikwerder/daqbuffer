@@ -6,25 +6,21 @@ use err::Error;
 use futures_util::TryStreamExt;
 use hyper::Body;
 use netpod::{Cluster, Database, Node};
-use std::sync::Arc;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
 fn test_cluster() -> Cluster {
     let nodes = (0..3)
         .into_iter()
-        .map(|id| {
-            let node = Node {
-                id,
-                host: "localhost".into(),
-                listen: "0.0.0.0".into(),
-                port: 8360 + id as u16,
-                port_raw: 8360 + id as u16 + 100,
-                data_base_path: format!("../tmpdata/node{:02}", id).into(),
-                ksprefix: "ks".into(),
-                split: id,
-            };
-            Arc::new(node)
+        .map(|id| Node {
+            id: format!("{:02}", id),
+            host: "localhost".into(),
+            listen: "0.0.0.0".into(),
+            port: 8360 + id as u16,
+            port_raw: 8360 + id as u16 + 100,
+            data_base_path: format!("../tmpdata/node{:02}", id).into(),
+            ksprefix: "ks".into(),
+            split: id,
         })
         .collect();
     Cluster {
@@ -45,7 +41,7 @@ fn get_cached_0() {
 
 async fn get_cached_0_inner() -> Result<(), Error> {
     let t1 = chrono::Utc::now();
-    let cluster = Arc::new(test_cluster());
+    let cluster = test_cluster();
     let node0 = &cluster.nodes[0];
     let hosts = spawn_test_hosts(cluster.clone());
     let beg_date: chrono::DateTime<Utc> = "1970-01-01T00:20:10.000Z".parse()?;
