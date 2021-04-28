@@ -1,5 +1,6 @@
+use crate::dataopen::open_files;
 use crate::eventchunker::{EventChunker, EventFull};
-use crate::{file_content_stream, open_files};
+use crate::file_content_stream;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -48,7 +49,8 @@ impl Stream for EventBlobsComplete {
                     Ready(Some(k)) => match k {
                         Ok(file) => {
                             let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
-                            let chunker = EventChunker::new(inp, self.channel_config.clone(), self.range.clone());
+                            let chunker =
+                                EventChunker::from_event_boundary(inp, self.channel_config.clone(), self.range.clone());
                             self.evs = Some(chunker);
                             continue 'outer;
                         }
@@ -75,7 +77,7 @@ pub fn event_blobs_complete(
             match fileres {
                 Ok(file) => {
                     let inp = Box::pin(file_content_stream(file, query.buffer_size as usize));
-                    let mut chunker = EventChunker::new(inp, err::todoval(), err::todoval());
+                    let mut chunker = EventChunker::from_event_boundary(inp, err::todoval(), err::todoval());
                     while let Some(evres) = chunker.next().await {
                         match evres {
                             Ok(evres) => {

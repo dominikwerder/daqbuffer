@@ -1,4 +1,4 @@
-use crate::agg::MinMaxAvgScalarBinBatch;
+use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::cache::pbvfs::PreBinnedValueFetchedStream;
 use err::Error;
 use futures_core::Stream;
@@ -41,16 +41,16 @@ impl BinnedStream {
                     let g = match k {
                         Ok(k) => {
                             use super::agg::{Fits, FitsInside};
-                            //info!("BinnedStream  got good item {:?}", k);
                             match k.fits_inside(range.clone()) {
-                                Fits::Inside => Some(Ok(k)),
+                                Fits::Inside
+                                | Fits::PartlyGreater
+                                | Fits::PartlyLower
+                                | Fits::PartlyLowerAndGreater => Some(Ok(k)),
                                 _ => None,
                             }
                         }
                         Err(e) => {
-                            error!(
-                                "\n\n-----------------------------------------------------   BinnedStream  got error"
-                            );
+                            error!("observe error in stream {:?}", e);
                             Some(Err(e))
                         }
                     };

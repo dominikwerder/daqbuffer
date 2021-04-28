@@ -90,6 +90,8 @@ impl std::fmt::Display for Error {
     }
 }
 
+impl std::error::Error for Error {}
+
 impl From<String> for Error {
     fn from(k: String) -> Self {
         Self::with_msg(k)
@@ -101,8 +103,6 @@ impl From<&str> for Error {
         Self::with_msg(k)
     }
 }
-
-impl std::error::Error for Error {}
 
 impl From<std::io::Error> for Error {
     fn from(k: std::io::Error) -> Self {
@@ -188,6 +188,12 @@ impl From<Box<bincode::ErrorKind>> for Error {
 
 impl From<tokio_postgres::Error> for Error {
     fn from(k: tokio_postgres::Error) -> Self {
+        Self::with_msg(k.to_string())
+    }
+}
+
+impl<T> From<async_channel::SendError<T>> for Error {
+    fn from(k: async_channel::SendError<T>) -> Self {
         Self::with_msg(k.to_string())
     }
 }

@@ -29,7 +29,7 @@ enum DataFileState {
 }
 
 impl EventChunker {
-    pub fn new(
+    pub fn from_start(
         inp: Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>,
         channel_config: ChannelConfig,
         range: NanoRange,
@@ -37,10 +37,30 @@ impl EventChunker {
         let mut inp = NeedMinBuffer::new(inp);
         inp.set_need_min(6);
         Self {
-            inp: inp,
+            inp,
             polled: 0,
             state: DataFileState::FileHeader,
             need_min: 6,
+            channel_config,
+            errored: false,
+            completed: false,
+            range,
+            seen_beyond_range: false,
+        }
+    }
+
+    pub fn from_event_boundary(
+        inp: Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>,
+        channel_config: ChannelConfig,
+        range: NanoRange,
+    ) -> Self {
+        let mut inp = NeedMinBuffer::new(inp);
+        inp.set_need_min(4);
+        Self {
+            inp,
+            polled: 0,
+            state: DataFileState::Event,
+            need_min: 4,
             channel_config,
             errored: false,
             completed: false,
@@ -194,7 +214,9 @@ impl EventChunker {
                                     assert!(c1 as u32 == k1);
                                     trace!("decompress result  c1 {}  k1 {}", c1, k1);
                                     if ts < self.range.beg {
-                                        warn!("UNNECESSARY EVENT DECOMPRESS  {}", ts / SEC);
+                                        error!("EVENT BEFORE RANGE  {}", ts / SEC);
+                                    } else if ts >= self.range.end {
+                                        error!("EVENT BEFORE RANGE  {}", ts / SEC);
                                     } else {
                                         ret.add_event(
                                             ts,

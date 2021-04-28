@@ -1,3 +1,4 @@
+use crate::dataopen::open_files;
 use crate::dtflags::{ARRAY, BIG_ENDIAN, COMPRESSION, SHAPE};
 use bytes::{Bytes, BytesMut};
 use err::Error;
@@ -21,6 +22,7 @@ pub mod aggtest;
 pub mod binnedstream;
 pub mod cache;
 pub mod channelconfig;
+pub mod dataopen;
 pub mod eventblobs;
 pub mod eventchunker;
 pub mod frame;
@@ -297,55 +299,6 @@ pub fn raw_concat_channel_read_stream_file_pipe(
     }
 }
 
-fn open_files(
-    range: &NanoRange,
-    channel_config: &ChannelConfig,
-    node: Arc<Node>,
-) -> async_channel::Receiver<Result<tokio::fs::File, Error>> {
-    let channel_config = channel_config.clone();
-    let (chtx, chrx) = async_channel::bounded(2);
-    tokio::spawn(async move {
-        // TODO  reduce usage of `query` and see what we actually need.
-        // TODO  scan the timebins on the filesystem for the potential files first instead of trying to open hundreds in worst case.
-
-        let mut timebins = vec![];
-        {
-            let rd = tokio::fs::read_dir(paths::channel_timebins_dir_path(&channel_config, &node)?).await?;
-            let mut rd = tokio_stream::wrappers::ReadDirStream::new(rd);
-            while let Some(e) = rd.next().await {
-                let e = e?;
-                let dn = e
-                    .file_name()
-                    .into_string()
-                    .map_err(|e| Error::with_msg(format!("Bad OS path {:?}", e)))?;
-                let vv = dn.chars().fold(0, |a, x| if x.is_digit(10) { a + 1 } else { a });
-                if vv == 19 {
-                    timebins.push(dn.parse::<u64>()?);
-                }
-            }
-        }
-        timebins.sort_unstable();
-        info!("TIMEBINS FOUND:  {:?}", timebins);
-        for &tb in &timebins {
-            let path = paths::datapath(tb, &channel_config, &node);
-            let fileres = OpenOptions::new().read(true).open(&path).await;
-            info!("opened file {:?}  {:?}", &path, &fileres);
-            match fileres {
-                Ok(k) => match chtx.send(Ok(k)).await {
-                    Ok(_) => (),
-                    Err(_) => break,
-                },
-                Err(e) => match chtx.send(Err(e.into())).await {
-                    Ok(_) => (),
-                    Err(_) => break,
-                },
-            }
-        }
-        Ok::<_, Error>(())
-    });
-    chrx
-}
-
 pub fn file_content_stream(
     mut file: tokio::fs::File,
     buffer_size: usize,
@@ -379,7 +332,7 @@ pub fn parsed1(
                 Ok(file) => {
                     let inp = Box::pin(file_content_stream(file, query.buffer_size as usize));
                     let range = err::todoval();
-                    let mut chunker = eventchunker::EventChunker::new(inp, err::todoval(), range);
+                    let mut chunker = eventchunker::EventChunker::from_event_boundary(inp, err::todoval(), range);
                     while let Some(evres) = chunker.next().await {
                         match evres {
                             Ok(evres) => {

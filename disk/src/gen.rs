@@ -179,6 +179,37 @@ async fn gen_config(
     Ok(())
 }
 
+struct CountedFile {
+    file: File,
+    bytes: u64,
+}
+
+impl CountedFile {
+    pub fn new(file: File) -> Self {
+        Self { file, bytes: 0 }
+    }
+    pub async fn write_all(&mut self, buf: &[u8]) -> Result<u64, Error> {
+        let l = buf.len();
+        let mut i = 0;
+        loop {
+            match self.file.write(&buf[i..]).await {
+                Ok(n) => {
+                    i += n;
+                    self.bytes += n as u64;
+                    if i >= l {
+                        break;
+                    }
+                }
+                Err(e) => Err(e)?,
+            }
+        }
+        Ok(i as u64)
+    }
+    pub fn written_len(&self) -> u64 {
+        self.bytes
+    }
+}
+
 struct GenTimebinRes {
     evix: u64,
     ts: u64,
@@ -201,12 +232,13 @@ async fn gen_timebin(
     let data_path = path.join(format!("{:019}_{:05}_Data", config.time_bin_size / MS, 0));
     let index_path = path.join(format!("{:019}_{:05}_Data_Index", config.time_bin_size / MS, 0));
     info!("open data file {:?}", data_path);
-    let mut file = OpenOptions::new()
+    let file = OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)
         .open(data_path)
         .await?;
+    let mut file = CountedFile::new(file);
     let mut index_file = if let Shape::Wave(_) = config.shape {
         info!("open index file {:?}", index_path);
         let f = OpenOptions::new()
@@ -215,7 +247,7 @@ async fn gen_timebin(
             .truncate(true)
             .open(index_path)
             .await?;
-        Some(f)
+        Some(CountedFile::new(f))
     } else {
         None
     };
@@ -234,7 +266,7 @@ async fn gen_timebin(
     Ok(ret)
 }
 
-async fn gen_datafile_header(file: &mut File, config: &ChannelConfig) -> Result<(), Error> {
+async fn gen_datafile_header(file: &mut CountedFile, config: &ChannelConfig) -> Result<(), Error> {
     let mut buf = BytesMut::with_capacity(1024);
     let cnenc = config.channel.name.as_bytes();
     let len1 = cnenc.len() + 8;
@@ -247,8 +279,8 @@ async fn gen_datafile_header(file: &mut File, config: &ChannelConfig) -> Result<
 }
 
 async fn gen_event(
-    file: &mut File,
-    _index_file: Option<&mut File>,
+    file: &mut CountedFile,
+    index_file: Option<&mut CountedFile>,
     evix: u64,
     ts: u64,
     config: &ChannelConfig,
@@ -305,6 +337,13 @@ async fn gen_event(
         buf.put_u32(len);
         buf.as_mut().put_u32(len);
     }
+    let z = file.written_len();
     file.write_all(buf.as_ref()).await?;
+    if let Some(f) = index_file {
+        let mut buf = BytesMut::with_capacity(16);
+        buf.put_u64(ts);
+        buf.put_u64(z);
+        f.write_all(&buf).await?;
+    }
     Ok(())
 }

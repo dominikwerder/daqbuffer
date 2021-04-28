@@ -5,7 +5,7 @@ Delivers event data (not yet time-binned) from local storage and provides client
 to request such data from nodes.
 */
 
-use crate::agg::MinMaxAvgScalarEventBatch;
+use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{make_frame, make_term_frame};
 use crate::raw::bffr::MinMaxAvgScalarEventBatchStreamFromFrames;

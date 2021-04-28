@@ -1,4 +1,6 @@
-use crate::agg::{IntoBinnedXBins1, IntoDim1F32Stream, MinMaxAvgScalarEventBatch};
+use crate::agg::binnedx::IntoBinnedXBins1;
+use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
+use crate::agg::IntoDim1F32Stream;
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
 use crate::eventblobs::EventBlobsComplete;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
@@ -128,11 +130,7 @@ async fn raw_conn_handler_inner_try(
         Ok(_) => (),
         Err(e) => return Err((e, netout))?,
     }
-    debug!("REQUEST FOR RANGE  {:?}", evq.range);
-    error!(
-        "TODO decide on response content based on the parsed json query\n{:?}",
-        evq
-    );
+    debug!("REQUEST  {:?}", evq);
     let range = &evq.range;
     let channel_config = match read_local_config(&evq.channel, node_config.clone()).await {
         Ok(k) => k,
@@ -182,7 +180,6 @@ async fn raw_conn_handler_inner_try(
         buffer_size,
     )
     .into_dim_1_f32_stream()
-    .take(10)
     .into_binned_x_bins_1();
     let mut e = 0;
     while let Some(item) = s1.next().await {

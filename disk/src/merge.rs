@@ -1,4 +1,5 @@
-use crate::agg::{Dim1F32Stream, MinMaxAvgScalarEventBatch, ValuesDim1};
+use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
+use crate::agg::{Dim1F32Stream, ValuesDim1};
 use crate::eventchunker::EventFull;
 use err::Error;
 use futures_core::Stream;

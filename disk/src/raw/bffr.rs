@@ -1,4 +1,4 @@
-use crate::agg::MinMaxAvgScalarEventBatch;
+use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::FrameType;
 use crate::raw::conn::RawConnOut;

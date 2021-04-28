@@ -1,4 +1,4 @@
-use crate::agg::MinMaxAvgScalarBinBatch;
+use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::FrameType;

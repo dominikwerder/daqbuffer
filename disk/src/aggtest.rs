@@ -1,5 +1,7 @@
-use super::agg::{AggregatableXdim1Bin, IntoBinnedT, IntoBinnedXBins1, IntoDim1F32Stream, ValuesDim1};
+use super::agg::{AggregatableXdim1Bin, IntoDim1F32Stream, ValuesDim1};
 use super::merge::MergeDim1F32Stream;
+use crate::agg::binnedt::IntoBinnedT;
+use crate::agg::binnedx::IntoBinnedXBins1;
 use crate::agg::make_test_node;
 use futures_util::StreamExt;
 use netpod::timeunits::*;

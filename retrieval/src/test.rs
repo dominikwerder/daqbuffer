@@ -48,8 +48,8 @@ async fn get_cached_0_inner() -> Result<(), Error> {
     let cluster = Arc::new(test_cluster());
     let node0 = &cluster.nodes[0];
     let hosts = spawn_test_hosts(cluster.clone());
-    let beg_date: chrono::DateTime<Utc> = "1970-01-01T00:00:10.000Z".parse()?;
-    let end_date: chrono::DateTime<Utc> = "1970-01-01T00:00:51.000Z".parse()?;
+    let beg_date: chrono::DateTime<Utc> = "1970-01-01T00:20:10.000Z".parse()?;
+    let end_date: chrono::DateTime<Utc> = "1970-01-01T00:20:51.000Z".parse()?;
     let channel_backend = "back";
     let channel_name = "wave1";
     let bin_count = 4;

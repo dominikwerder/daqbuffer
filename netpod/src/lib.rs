@@ -151,7 +151,7 @@ pub enum TimeRange {
     Nano { beg: u64, end: u64 },
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct Nanos {
     pub ns: u64,
 }
