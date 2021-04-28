@@ -9,7 +9,6 @@ use netpod::{ChannelConfig, NanoRange, Node, Shape};
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::AsyncRead;
@@ -32,7 +31,7 @@ pub mod merge;
 pub mod paths;
 pub mod raw;
 
-pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: Arc<Node>) -> Result<netpod::BodyStream, Error> {
+pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: Node) -> Result<netpod::BodyStream, Error> {
     let path = paths::datapath(query.timebin as u64, &query.channel_config, &node);
     debug!("try path: {:?}", path);
     let fin = OpenOptions::new().read(true).open(path).await?;
@@ -142,7 +141,7 @@ unsafe impl Send for Fopen1 {}
 
 pub fn raw_concat_channel_read_stream_try_open_in_background(
     query: &netpod::AggQuerySingleChannel,
-    node: Arc<Node>,
+    node: Node,
 ) -> impl Stream<Item = Result<Bytes, Error>> + Send {
     let query = query.clone();
     let node = node.clone();
@@ -432,7 +431,7 @@ impl Stream for NeedMinBuffer {
 
 pub fn raw_concat_channel_read_stream(
     query: &netpod::AggQuerySingleChannel,
-    node: Arc<Node>,
+    node: Node,
 ) -> impl Stream<Item = Result<Bytes, Error>> + Send {
     let mut query = query.clone();
     let node = node.clone();
@@ -456,7 +455,7 @@ pub fn raw_concat_channel_read_stream(
 
 pub fn raw_concat_channel_read_stream_timebin(
     query: &netpod::AggQuerySingleChannel,
-    node: Arc<Node>,
+    node: Node,
 ) -> impl Stream<Item = Result<Bytes, Error>> {
     let query = query.clone();
     let node = node.clone();
