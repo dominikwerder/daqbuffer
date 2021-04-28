@@ -193,7 +193,7 @@ impl NanoRange {
 pub struct ChannelConfig {
     pub channel: Channel,
     pub keyspace: u8,
-    pub time_bin_size: u64,
+    pub time_bin_size: Nanos,
     pub scalar_type: ScalarType,
     pub compression: bool,
     pub shape: Shape,

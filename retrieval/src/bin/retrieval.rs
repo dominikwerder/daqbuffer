@@ -1,5 +1,5 @@
 use err::Error;
-use netpod::NodeConfig;
+use netpod::{Nanos, NodeConfig};
 use tokio::io::AsyncReadExt;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
@@ -59,7 +59,7 @@ fn simple_fetch() {
                     name: "S10BC01-DBAM070:BAM_CH1_NORM".into(),
                 },
                 keyspace: 3,
-                time_bin_size: DAY,
+                time_bin_size: Nanos { ns: DAY },
                 array: true,
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(err::todoval()),

@@ -3,6 +3,7 @@ use bytes::BytesMut;
 use err::Error;
 use futures_util::StreamExt;
 use netpod::log::*;
+use netpod::timeunits::MS;
 use netpod::{ChannelConfig, NanoRange, Nanos, Node};
 use std::mem::size_of;
 use tokio::fs::{File, OpenOptions};
@@ -55,19 +56,22 @@ async fn open_files_inner(
         }
     }
     timebins.sort_unstable();
-    info!("TIMEBINS FOUND:  {:?}", timebins);
+    let tgt_tb = (range.beg / MS) as f32 / (channel_config.time_bin_size.ns / MS) as f32;
+    trace!("tgt_tb:  {:?}", tgt_tb);
+    trace!("timebins found:  {:?}", timebins);
     for &tb in &timebins {
         let ts_bin = Nanos {
-            ns: tb * channel_config.time_bin_size,
+            ns: tb * channel_config.time_bin_size.ns,
         };
         if ts_bin.ns >= range.end {
             continue;
         }
-        if ts_bin.ns + channel_config.time_bin_size <= range.beg {
+        if ts_bin.ns + channel_config.time_bin_size.ns <= range.beg {
             continue;
         }
-
+        info!("opening tb {:?}", &tb);
         let path = paths::datapath(tb, &channel_config, &node);
+        info!("opening path {:?}", &path);
         let mut file = OpenOptions::new().read(true).open(&path).await?;
         info!("opened file {:?}  {:?}", &path, &file);
 
@@ -76,14 +80,21 @@ async fn open_files_inner(
             match OpenOptions::new().read(true).open(&index_path).await {
                 Ok(mut index_file) => {
                     let meta = index_file.metadata().await?;
-                    if meta.len() > 1024 * 1024 * 10 {
+                    if meta.len() > 1024 * 1024 * 20 {
                         return Err(Error::with_msg(format!(
                             "too large index file  {} bytes  for {}",
                             meta.len(),
                             channel_config.channel.name
                         )));
                     }
-                    if meta.len() % 16 != 0 {
+                    if meta.len() < 2 {
+                        return Err(Error::with_msg(format!(
+                            "bad meta len {}  for {}",
+                            meta.len(),
+                            channel_config.channel.name
+                        )));
+                    }
+                    if meta.len() % 16 != 2 {
                         return Err(Error::with_msg(format!(
                             "bad meta len {}  for {}",
                             meta.len(),
@@ -94,7 +105,7 @@ async fn open_files_inner(
                     buf.resize(buf.capacity(), 0);
                     info!("read exact index file  {}  {}", buf.len(), buf.len() % 16);
                     index_file.read_exact(&mut buf).await?;
-                    match find_ge(range.beg, &buf)? {
+                    match find_ge(range.beg, &buf[2..])? {
                         Some(o) => {
                             info!("FOUND ts IN INDEX: {:?}", o);
                             file.seek(SeekFrom::Start(o.1)).await?;
@@ -109,6 +120,7 @@ async fn open_files_inner(
                     ErrorKind::NotFound => {
                         // TODO Read first 1k, assume that channel header fits.
                         // TODO Seek via binary search. Can not read whole file into memory!
+                        error!("TODO Seek directly in scalar file");
                         todo!("Seek directly in scalar file");
                     }
                     _ => Err(e)?,
@@ -120,6 +132,7 @@ async fn open_files_inner(
 
         chtx.send(Ok(file)).await?;
     }
+    warn!("OPEN FILES LOOP DONE");
     Ok(())
 }
 

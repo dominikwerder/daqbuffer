@@ -108,20 +108,15 @@ impl PreBinnedValueStream {
                 assert!(g / h > 1);
                 assert!(g / h < 200);
                 assert!(g % h == 0);
-                let bin_size = range.grid_spec.bin_t_len();
                 let channel = self.channel.clone();
                 let agg_kind = self.agg_kind.clone();
                 let node_config = self.node_config.clone();
                 let patch_it = PreBinnedPatchIterator::from_range(range);
                 let s = futures_util::stream::iter(patch_it)
-                .map(move |coord| {
-                    PreBinnedValueFetchedStream::new(coord, channel.clone(), agg_kind.clone(), &node_config)
-                })
-                .flatten()
-                .map(move |k| {
-                    error!("NOTE NOTE NOTE  try_setup_fetch_prebinned_higher_res   ITEM  from sub res bin_size {}   {:?}", bin_size, k);
-                    k
-                });
+                    .map(move |coord| {
+                        PreBinnedValueFetchedStream::new(coord, channel.clone(), agg_kind.clone(), &node_config)
+                    })
+                    .flatten();
                 self.fut2 = Some(Box::pin(s));
             }
             None => {

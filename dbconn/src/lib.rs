@@ -18,7 +18,12 @@ pub async fn channel_exists(channel: &Channel, node_config: &NodeConfig) -> Resu
         .await?;
     info!("channel_exists  {} rows", rows.len());
     for row in rows {
-        info!("  db on channel search: {:?}", row);
+        info!(
+            "  db on channel search: {:?}  {:?}  {:?}",
+            row,
+            row.columns(),
+            row.get::<_, i64>(0)
+        );
     }
     drop(cjh);
     Ok(true)

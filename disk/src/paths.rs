@@ -11,10 +11,7 @@ pub fn datapath(timebin: u64, config: &netpod::ChannelConfig, node: &Node) -> Pa
         .join(config.channel.name.clone())
         .join(format!("{:019}", timebin))
         .join(format!("{:010}", node.split))
-        .join(format!(
-            "{:019}_00000_Data",
-            config.time_bin_size / netpod::timeunits::MS
-        ))
+        .join(format!("{:019}_00000_Data", config.time_bin_size.ns / MS))
 }
 
 pub fn channel_timebins_dir_path(channel_config: &ChannelConfig, node: &Node) -> Result<PathBuf, Error> {
@@ -28,19 +25,19 @@ pub fn channel_timebins_dir_path(channel_config: &ChannelConfig, node: &Node) ->
 
 pub fn data_dir_path(ts: Nanos, channel_config: &ChannelConfig, node: &Node) -> Result<PathBuf, Error> {
     let ret = channel_timebins_dir_path(channel_config, node)?
-        .join(format!("{:019}", ts.ns / channel_config.time_bin_size))
+        .join(format!("{:019}", ts.ns / channel_config.time_bin_size.ns))
         .join(format!("{:010}", node.split));
     Ok(ret)
 }
 
 pub fn data_path(ts: Nanos, channel_config: &ChannelConfig, node: &Node) -> Result<PathBuf, Error> {
-    let fname = format!("{:019}_{:05}_Data", channel_config.time_bin_size / MS, 0);
+    let fname = format!("{:019}_{:05}_Data", channel_config.time_bin_size.ns / MS, 0);
     let ret = data_dir_path(ts, channel_config, node)?.join(fname);
     Ok(ret)
 }
 
 pub fn index_path(ts: Nanos, channel_config: &ChannelConfig, node: &Node) -> Result<PathBuf, Error> {
-    let fname = format!("{:019}_{:05}_Data_Index", channel_config.time_bin_size / MS, 0);
+    let fname = format!("{:019}_{:05}_Data_Index", channel_config.time_bin_size.ns / MS, 0);
     let ret = data_dir_path(ts, channel_config, node)?.join(fname);
     Ok(ret)
 }

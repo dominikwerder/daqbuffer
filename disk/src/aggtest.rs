@@ -5,7 +5,7 @@ use crate::agg::binnedx::IntoBinnedXBins1;
 use crate::agg::make_test_node;
 use futures_util::StreamExt;
 use netpod::timeunits::*;
-use netpod::{BinSpecDimT, Channel, ChannelConfig, NanoRange, ScalarType, Shape};
+use netpod::{BinSpecDimT, Channel, ChannelConfig, NanoRange, Nanos, ScalarType, Shape};
 use std::future::ready;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
@@ -28,7 +28,7 @@ async fn agg_x_dim_0_inner() {
                 name: "S10BC01-DBAM070:EOM1_T1".into(),
             },
             keyspace: 2,
-            time_bin_size: DAY,
+            time_bin_size: Nanos { ns: DAY },
             array: false,
             shape: Shape::Scalar,
             scalar_type: ScalarType::F64,
@@ -40,7 +40,7 @@ async fn agg_x_dim_0_inner() {
         buffer_size: 1024 * 4,
     };
     let bin_count = 20;
-    let ts1 = query.timebin as u64 * query.channel_config.time_bin_size;
+    let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.ns;
     let ts2 = ts1 + HOUR * 24;
     let range = NanoRange { beg: ts1, end: ts2 };
     let fut1 = super::eventblobs::EventBlobsComplete::new(
@@ -98,7 +98,7 @@ async fn agg_x_dim_1_inner() {
                 name: "wave1".into(),
             },
             keyspace: 3,
-            time_bin_size: DAY,
+            time_bin_size: Nanos { ns: DAY },
             array: true,
             shape: Shape::Wave(1024),
             scalar_type: ScalarType::F64,
@@ -110,7 +110,7 @@ async fn agg_x_dim_1_inner() {
         buffer_size: 17,
     };
     let bin_count = 10;
-    let ts1 = query.timebin as u64 * query.channel_config.time_bin_size;
+    let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.ns;
     let ts2 = ts1 + HOUR * 24;
     let range = NanoRange { beg: ts1, end: ts2 };
     let fut1 = super::eventblobs::EventBlobsComplete::new(
@@ -160,7 +160,7 @@ async fn merge_0_inner() {
                 name: "wave1".into(),
             },
             keyspace: 3,
-            time_bin_size: DAY,
+            time_bin_size: Nanos { ns: DAY },
             array: true,
             shape: Shape::Wave(17),
             scalar_type: ScalarType::F64,

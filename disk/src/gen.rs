@@ -2,8 +2,8 @@ use crate::ChannelConfigExt;
 use bitshuffle::bitshuffle_compress;
 use bytes::{BufMut, BytesMut};
 use err::Error;
-use netpod::ScalarType;
 use netpod::{timeunits::*, Channel, ChannelConfig, Node, Shape};
+use netpod::{Nanos, ScalarType};
 use std::path::{Path, PathBuf};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::AsyncWriteExt;
@@ -25,7 +25,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                     name: "wave1".into(),
                 },
                 keyspace: 3,
-                time_bin_size: DAY,
+                time_bin_size: Nanos { ns: DAY },
                 array: true,
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(21),
@@ -84,11 +84,11 @@ async fn gen_channel(chn: &ChannelGenProps, node: &Node, ensemble: &Ensemble) ->
         .await
         .map_err(|k| Error::with_msg(format!("can not generate config {:?}", k)))?;
     let mut evix = 0;
-    let mut ts = 0;
-    while ts < DAY * 2 {
+    let mut ts = Nanos { ns: 0 };
+    while ts.ns < DAY * 2 {
         let res = gen_timebin(evix, ts, chn.time_spacing, &channel_path, &chn.config, node, ensemble).await?;
         evix = res.evix;
-        ts = res.ts;
+        ts.ns = res.ts.ns;
     }
     Ok(())
 }
@@ -130,8 +130,8 @@ async fn gen_config(
     buf.put_i32(0x20202020);
     buf.put_i64(ts);
     buf.put_i64(pulse);
-    buf.put_i32(config.keyspace as i32);
-    buf.put_i64(config.time_bin_size as i64);
+    buf.put_u32(config.keyspace as u32);
+    buf.put_u64(config.time_bin_size.ns);
     buf.put_i32(sc);
     buf.put_i32(status);
     buf.put_i8(bb);
@@ -212,25 +212,25 @@ impl CountedFile {
 
 struct GenTimebinRes {
     evix: u64,
-    ts: u64,
+    ts: Nanos,
 }
 
 async fn gen_timebin(
     evix: u64,
-    ts: u64,
+    ts: Nanos,
     ts_spacing: u64,
     channel_path: &Path,
     config: &ChannelConfig,
     node: &Node,
     ensemble: &Ensemble,
 ) -> Result<GenTimebinRes, Error> {
-    let tb = ts / config.time_bin_size;
+    let tb = ts.ns / config.time_bin_size.ns;
     let path = channel_path
         .join(format!("{:019}", tb))
         .join(format!("{:010}", node.split));
     tokio::fs::create_dir_all(&path).await?;
-    let data_path = path.join(format!("{:019}_{:05}_Data", config.time_bin_size / MS, 0));
-    let index_path = path.join(format!("{:019}_{:05}_Data_Index", config.time_bin_size / MS, 0));
+    let data_path = path.join(format!("{:019}_{:05}_Data", config.time_bin_size.ns / MS, 0));
+    let index_path = path.join(format!("{:019}_{:05}_Data_Index", config.time_bin_size.ns / MS, 0));
     info!("open data file {:?}", data_path);
     let file = OpenOptions::new()
         .write(true)
@@ -247,20 +247,24 @@ async fn gen_timebin(
             .truncate(true)
             .open(index_path)
             .await?;
-        Some(CountedFile::new(f))
+        let mut f = CountedFile::new(f);
+        f.write_all(b"\x00\x00").await?;
+        Some(f)
     } else {
         None
     };
     gen_datafile_header(&mut file, config).await?;
     let mut evix = evix;
     let mut ts = ts;
-    let tsmax = (tb + 1) * config.time_bin_size;
-    while ts < tsmax {
+    let tsmax = Nanos {
+        ns: (tb + 1) * config.time_bin_size.ns,
+    };
+    while ts.ns < tsmax.ns {
         if evix % ensemble.nodes.len() as u64 == node.split as u64 {
             gen_event(&mut file, index_file.as_mut(), evix, ts, config).await?;
         }
         evix += 1;
-        ts += ts_spacing;
+        ts.ns += ts_spacing;
     }
     let ret = GenTimebinRes { evix, ts };
     Ok(ret)
@@ -282,13 +286,13 @@ async fn gen_event(
     file: &mut CountedFile,
     index_file: Option<&mut CountedFile>,
     evix: u64,
-    ts: u64,
+    ts: Nanos,
     config: &ChannelConfig,
 ) -> Result<(), Error> {
     let mut buf = BytesMut::with_capacity(1024 * 16);
     buf.put_i32(0xcafecafe as u32 as i32);
     buf.put_u64(0xcafecafe);
-    buf.put_u64(ts);
+    buf.put_u64(ts.ns);
     buf.put_u64(2323);
     buf.put_u64(0xcafecafe);
     buf.put_u8(0);
@@ -341,7 +345,7 @@ async fn gen_event(
     file.write_all(buf.as_ref()).await?;
     if let Some(f) = index_file {
         let mut buf = BytesMut::with_capacity(16);
-        buf.put_u64(ts);
+        buf.put_u64(ts.ns);
         buf.put_u64(z);
         f.write_all(&buf).await?;
     }

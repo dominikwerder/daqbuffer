@@ -166,7 +166,7 @@ async fn raw_conn_handler_inner_try(
         channel_config: netpod::ChannelConfig {
             channel: evq.channel.clone(),
             keyspace: entry.ks as u8,
-            time_bin_size: entry.bs as u64,
+            time_bin_size: entry.bs,
             shape: shape,
             scalar_type: ScalarType::from_dtype_index(entry.dtype.to_i16() as u8),
             big_endian: entry.is_big_endian,

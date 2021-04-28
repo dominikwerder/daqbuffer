@@ -1,5 +1,6 @@
 use err::Error;
-use netpod::{Channel, NanoRange, Node};
+use netpod::timeunits::MS;
+use netpod::{Channel, NanoRange, Nanos, Node};
 use nom::number::complete::{be_i16, be_i32, be_i64, be_i8, be_u8};
 use nom::Needed;
 #[allow(unused_imports)]
@@ -64,7 +65,7 @@ pub struct ConfigEntry {
     pub ts: u64,
     pub pulse: i64,
     pub ks: i32,
-    pub bs: i64,
+    pub bs: Nanos,
     pub split_count: i32,
     pub status: i32,
     pub bb: i8,
@@ -133,6 +134,7 @@ pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
     let (inp, pulse) = be_i64(inp)?;
     let (inp, ks) = be_i32(inp)?;
     let (inp, bs) = be_i64(inp)?;
+    let bs = Nanos { ns: bs as u64 * MS };
     let (inp, split_count) = be_i32(inp)?;
     let (inp, status) = be_i32(inp)?;
     let (inp, bb) = be_i8(inp)?;

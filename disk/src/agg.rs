@@ -366,6 +366,8 @@ where
     S: Stream<Item = Result<EventFull, Error>>,
 {
     inp: S,
+    errored: bool,
+    completed: bool,
 }
 
 impl<S> Stream for Dim1F32Stream<S>
@@ -376,6 +378,13 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        if self.completed {
+            panic!("poll_next on completed");
+        }
+        if self.errored {
+            self.completed = true;
+            return Ready(None);
+        }
         match self.inp.poll_next_unpin(cx) {
             Ready(Some(Ok(k))) => {
                 let mut ret = ValuesDim1 {
@@ -388,6 +397,26 @@ where
                     let ty = &k.scalar_types[i1];
                     let decomp = k.decomps[i1].as_ref().unwrap();
                     match ty {
+                        U16 => {
+                            const BY: usize = 2;
+                            // do the conversion
+                            let n1 = decomp.len();
+                            assert!(n1 % ty.bytes() as usize == 0);
+                            let ele_count = n1 / ty.bytes() as usize;
+                            let mut j = Vec::with_capacity(ele_count);
+                            let mut p1 = 0;
+                            for i1 in 0..ele_count {
+                                let u = unsafe {
+                                    let mut r = [0u8; BY];
+                                    std::ptr::copy_nonoverlapping(&decomp[p1], r.as_mut_ptr(), BY);
+                                    u16::from_be_bytes(r)
+                                };
+                                j.push(u as f32);
+                                p1 += BY;
+                            }
+                            ret.tss.push(k.tss[i1]);
+                            ret.values.push(j);
+                        }
                         F64 => {
                             const BY: usize = 8;
                             // do the conversion
@@ -395,7 +424,6 @@ where
                             assert!(n1 % ty.bytes() as usize == 0);
                             let ele_count = n1 / ty.bytes() as usize;
                             let mut j = Vec::with_capacity(ele_count);
-                            // this is safe for ints and floats
                             unsafe {
                                 j.set_len(ele_count);
                             }
@@ -413,7 +441,11 @@ where
                             ret.tss.push(k.tss[i1]);
                             ret.values.push(j);
                         }
-                        _ => todo!(),
+                        _ => {
+                            let e = Error::with_msg(format!("Dim1F32Stream  unhandled scalar type: {:?}", ty));
+                            self.errored = true;
+                            return Ready(Some(Err(e)));
+                        }
                     }
                 }
                 Ready(Some(Ok(ret)))
@@ -436,7 +468,11 @@ where
     T: Stream<Item = Result<EventFull, Error>>,
 {
     fn into_dim_1_f32_stream(self) -> Dim1F32Stream<T> {
-        Dim1F32Stream { inp: self }
+        Dim1F32Stream {
+            inp: self,
+            errored: false,
+            completed: false,
+        }
     }
 }
 
