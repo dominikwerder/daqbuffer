@@ -28,10 +28,13 @@ impl MinMaxAvgScalarBinBatch {
             avgs: vec![],
         }
     }
+
     pub fn len(&self) -> usize {
         self.ts1s.len()
     }
-    pub fn from_full_frame(buf: &Bytes) -> Self {
+
+    #[allow(dead_code)]
+    fn old_from_full_frame(buf: &Bytes) -> Self {
         info!("MinMaxAvgScalarBinBatch  construct from full frame  len {}", buf.len());
         assert!(buf.len() >= 4);
         let mut g = MinMaxAvgScalarBinBatch::empty();
@@ -197,6 +200,7 @@ pub struct MinMaxAvgScalarBinBatchAggregator {
     min: f32,
     max: f32,
     sum: f32,
+    sumc: u64,
 }
 
 impl MinMaxAvgScalarBinBatchAggregator {
@@ -204,10 +208,11 @@ impl MinMaxAvgScalarBinBatchAggregator {
         Self {
             ts1,
             ts2,
+            count: 0,
             min: f32::MAX,
             max: f32::MIN,
             sum: 0f32,
-            count: 0,
+            sumc: 0,
         }
     }
 }
@@ -246,10 +251,11 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchAggregator {
             } else if ts1 >= self.ts2 {
                 continue;
             } else {
+                self.count += v.counts[i1];
                 self.min = self.min.min(v.mins[i1]);
                 self.max = self.max.max(v.maxs[i1]);
                 self.sum += v.avgs[i1];
-                self.count += 1;
+                self.sumc += 1;
             }
         }
     }
@@ -257,10 +263,10 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchAggregator {
     fn result(self) -> Self::OutputValue {
         let min = if self.min == f32::MAX { f32::NAN } else { self.min };
         let max = if self.max == f32::MIN { f32::NAN } else { self.max };
-        let avg = if self.count == 0 {
+        let avg = if self.sumc == 0 {
             f32::NAN
         } else {
-            self.sum / self.count as f32
+            self.sum / self.sumc as f32
         };
         MinMaxAvgScalarBinBatch {
             ts1s: vec![self.ts1],
