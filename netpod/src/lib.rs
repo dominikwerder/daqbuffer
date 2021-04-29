@@ -265,68 +265,6 @@ impl BinSpecDimT {
     }
 }
 
-#[derive(Clone)]
-pub struct PreBinnedPatchGridSpec {
-    bin_t_len: u64,
-}
-
-impl PreBinnedPatchGridSpec {
-    pub fn new(bin_t_len: u64) -> Self {
-        let mut ok = false;
-        for &j in PATCH_T_LEN_OPTIONS.iter() {
-            if bin_t_len == j {
-                ok = true;
-                break;
-            }
-        }
-        if !ok {
-            panic!("invalid bin_t_len for PreBinnedPatchGridSpec  {}", bin_t_len);
-        }
-        Self { bin_t_len }
-    }
-
-    pub fn from_query_params(params: &BTreeMap<String, String>) -> Self {
-        let bin_t_len = params.get("bin_t_len").unwrap().parse().unwrap();
-        if !Self::is_valid_bin_t_len(bin_t_len) {
-            panic!("invalid bin_t_len {}", bin_t_len);
-        }
-        Self { bin_t_len: bin_t_len }
-    }
-
-    pub fn bin_t_len(&self) -> u64 {
-        self.bin_t_len
-    }
-
-    pub fn is_valid_bin_t_len(bin_t_len: u64) -> bool {
-        for &j in BIN_T_LEN_OPTIONS.iter() {
-            if bin_t_len == j {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    pub fn patch_t_len(&self) -> u64 {
-        for (i1, &j) in BIN_T_LEN_OPTIONS.iter().enumerate() {
-            if self.bin_t_len == j {
-                return PATCH_T_LEN_OPTIONS[i1];
-            }
-        }
-        panic!()
-    }
-}
-
-impl std::fmt::Debug for PreBinnedPatchGridSpec {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            fmt,
-            "PreBinnedPatchGridSpec {{ bin_t_len: {:?}, patch_t_len(): {:?} }}",
-            self.bin_t_len / SEC,
-            self.patch_t_len() / SEC,
-        )
-    }
-}
-
 const BIN_T_LEN_OPTIONS: [u64; 6] = [SEC * 10, MIN * 10, HOUR, HOUR * 4, DAY, DAY * 4];
 
 const PATCH_T_LEN_OPTIONS: [u64; 6] = [MIN * 10, HOUR, HOUR * 4, DAY, DAY * 4, DAY * 12];
@@ -366,6 +304,53 @@ const BIN_THRESHOLDS: [u64; 33] = [
     WEEK * 10,
     WEEK * 60,
 ];
+
+#[derive(Clone)]
+pub struct PreBinnedPatchGridSpec {
+    bin_t_len: u64,
+}
+
+impl PreBinnedPatchGridSpec {
+    pub fn new(bin_t_len: u64) -> Self {
+        if !Self::is_valid_bin_t_len(bin_t_len) {
+            panic!("PreBinnedPatchGridSpec  invalid bin_t_len  {}", bin_t_len);
+        }
+        Self { bin_t_len }
+    }
+
+    pub fn bin_t_len(&self) -> u64 {
+        self.bin_t_len
+    }
+
+    pub fn is_valid_bin_t_len(bin_t_len: u64) -> bool {
+        for &j in BIN_T_LEN_OPTIONS.iter() {
+            if bin_t_len == j {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    pub fn patch_t_len(&self) -> u64 {
+        for (i1, &j) in BIN_T_LEN_OPTIONS.iter().enumerate() {
+            if self.bin_t_len == j {
+                return PATCH_T_LEN_OPTIONS[i1];
+            }
+        }
+        panic!()
+    }
+}
+
+impl std::fmt::Debug for PreBinnedPatchGridSpec {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            fmt,
+            "PreBinnedPatchGridSpec {{ bin_t_len: {:?}, patch_t_len(): {:?} }}",
+            self.bin_t_len / SEC,
+            self.patch_t_len() / SEC,
+        )
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct PreBinnedPatchRange {
@@ -453,10 +438,9 @@ impl PreBinnedPatchCoord {
         )
     }
 
-    pub fn from_query_params(params: &BTreeMap<String, String>) -> Self {
-        let patch_ix = params.get("patch_ix").unwrap().parse().unwrap();
+    pub fn new(bin_t_len: u64, patch_ix: u64) -> Self {
         Self {
-            spec: PreBinnedPatchGridSpec::from_query_params(params),
+            spec: PreBinnedPatchGridSpec::new(bin_t_len),
             ix: patch_ix,
         }
     }
@@ -492,6 +476,94 @@ impl Iterator for PreBinnedPatchIterator {
             };
             self.ix += 1;
             Some(ret)
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct BinnedGridSpec {
+    bin_t_len: u64,
+}
+
+impl BinnedGridSpec {
+    pub fn new(bin_t_len: u64) -> Self {
+        if !Self::is_valid_bin_t_len(bin_t_len) {
+            panic!("BinnedGridSpec::new  invalid bin_t_len {}", bin_t_len);
+        }
+        Self { bin_t_len }
+    }
+
+    pub fn bin_t_len(&self) -> u64 {
+        self.bin_t_len
+    }
+
+    pub fn is_valid_bin_t_len(bin_t_len: u64) -> bool {
+        for &j in BIN_T_LEN_OPTIONS.iter() {
+            if bin_t_len == j {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+impl std::fmt::Debug for BinnedGridSpec {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if self.bin_t_len < SEC * 90 {
+            write!(fmt, "BinnedGridSpec {{ bin_t_len: {:?} ms }}", self.bin_t_len / MS,)
+        } else {
+            write!(fmt, "BinnedGridSpec {{ bin_t_len: {:?} s }}", self.bin_t_len / SEC,)
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct BinnedRange {
+    pub grid_spec: BinnedGridSpec,
+    pub offset: u64,
+    pub count: u64,
+}
+
+impl BinnedRange {
+    pub fn covering_range(range: NanoRange, min_bin_count: u64) -> Option<Self> {
+        assert!(min_bin_count >= 1);
+        assert!(min_bin_count <= 2000);
+        let dt = range.delta();
+        assert!(dt <= DAY * 14);
+        let bs = dt / min_bin_count;
+        let mut i1 = BIN_THRESHOLDS.len();
+        loop {
+            if i1 <= 0 {
+                break None;
+            } else {
+                i1 -= 1;
+                let t = BIN_THRESHOLDS[i1];
+                if t <= bs || i1 == 0 {
+                    let grid_spec = BinnedGridSpec { bin_t_len: t };
+                    let pl = grid_spec.bin_t_len();
+                    let ts1 = range.beg / pl * pl;
+                    let ts2 = (range.end + pl - 1) / pl * pl;
+                    let count = (ts2 - ts1) / pl;
+                    let offset = ts1 / pl;
+                    break Some(Self {
+                        grid_spec,
+                        count,
+                        offset,
+                    });
+                }
+            }
+        }
+    }
+    pub fn get_range(&self, ix: u32) -> NanoRange {
+        NanoRange {
+            beg: (self.offset + ix as u64) * self.grid_spec.bin_t_len,
+            end: (self.offset + ix as u64 + 1) * self.grid_spec.bin_t_len,
+        }
+    }
+    pub fn full_range(&self) -> NanoRange {
+        NanoRange {
+            beg: (self.offset + 0) * self.grid_spec.bin_t_len,
+            end: (self.offset + self.count) * self.grid_spec.bin_t_len,
         }
     }
 }

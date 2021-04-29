@@ -1,6 +1,6 @@
 use crate::spawn_test_hosts;
 use bytes::BytesMut;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
 use futures_util::TryStreamExt;
@@ -40,12 +40,12 @@ fn get_cached_0() {
 }
 
 async fn get_cached_0_inner() -> Result<(), Error> {
-    let t1 = chrono::Utc::now();
+    let t1 = Utc::now();
     let cluster = test_cluster();
     let node0 = &cluster.nodes[0];
     let hosts = spawn_test_hosts(cluster.clone());
-    let beg_date: chrono::DateTime<Utc> = "1970-01-01T00:20:10.000Z".parse()?;
-    let end_date: chrono::DateTime<Utc> = "1970-01-01T00:20:51.000Z".parse()?;
+    let beg_date: DateTime<Utc> = "1970-01-01T00:20:10.000Z".parse()?;
+    let end_date: DateTime<Utc> = "1970-01-01T00:20:51.000Z".parse()?;
     let channel_backend = "back";
     let channel_name = "wave1";
     let bin_count = 4;

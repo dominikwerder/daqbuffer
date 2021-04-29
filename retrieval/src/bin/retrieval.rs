@@ -17,7 +17,7 @@ pub fn main() {
 
 async fn go() -> Result<(), Error> {
     use clap::Clap;
-    use retrieval::cli::{Opts, SubCmd};
+    use retrieval::cli::{ClientType, Opts, SubCmd};
     let opts = Opts::parse();
     match opts.subcmd {
         SubCmd::Retrieval(subcmd) => {
@@ -33,6 +33,13 @@ async fn go() -> Result<(), Error> {
                 .ok_or(Error::with_msg(format!("nodeid config error")))?;
             retrieval::run_node(node_config.clone(), node.clone()).await?;
         }
+        SubCmd::Client(client) => match client.client_type {
+            ClientType::Binned(opts) => {
+                let beg = opts.beg.parse()?;
+                let end = opts.end.parse()?;
+                retrieval::client::get_binned(opts.host, opts.port, opts.channel, beg, end, opts.bins).await?;
+            }
+        },
     }
     Ok(())
 }

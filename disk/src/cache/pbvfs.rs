@@ -15,6 +15,8 @@ pub struct PreBinnedValueFetchedStream {
     uri: http::Uri,
     resfut: Option<hyper::client::ResponseFuture>,
     res: Option<InMemoryFrameAsyncReadStream<HttpBodyAsAsyncRead>>,
+    errored: bool,
+    completed: bool,
 }
 
 impl PreBinnedValueFetchedStream {
@@ -44,6 +46,8 @@ impl PreBinnedValueFetchedStream {
             uri,
             resfut: None,
             res: None,
+            errored: false,
+            completed: false,
         }
     }
 }
@@ -58,6 +62,13 @@ impl Stream for PreBinnedValueFetchedStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        if self.completed {
+            panic!("poll_next on completed");
+        }
+        if self.errored {
+            self.completed = true;
+            return Ready(None);
+        }
         'outer: loop {
             break if let Some(res) = self.res.as_mut() {
                 pin_mut!(res);

@@ -5,7 +5,7 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 #[allow(unused_imports)]
 use netpod::log::*;
-use netpod::{AggKind, Channel, NodeConfig, PreBinnedPatchIterator};
+use netpod::{AggKind, BinSpecDimT, BinnedRange, Channel, NodeConfig, PreBinnedPatchIterator};
 use netpod::{NanoRange, RetStreamExt};
 use std::future::ready;
 use std::pin::Pin;
@@ -19,29 +19,30 @@ impl BinnedStream {
     pub fn new(
         patch_it: PreBinnedPatchIterator,
         channel: Channel,
-        range: NanoRange,
+        range: BinnedRange,
         agg_kind: AggKind,
         node_config: &NodeConfig,
     ) -> Self {
         let patches: Vec<_> = patch_it.collect();
-        warn!("BinnedStream will open a PreBinnedValueStream");
+        warn!("BinnedStream::new");
         for p in &patches {
-            info!("BinnedStream  ->  patch  {:?}", p);
+            info!("BinnedStream::new  patch  {:?}", p);
         }
+        use super::agg::binnedt::IntoBinnedT;
         let inp = futures_util::stream::iter(patches.into_iter())
             .map({
                 let node_config = node_config.clone();
                 move |coord| PreBinnedValueFetchedStream::new(coord, channel.clone(), agg_kind.clone(), &node_config)
             })
             .flatten()
-            .only_first_error()
             .filter_map({
                 let range = range.clone();
                 move |k: Result<MinMaxAvgScalarBinBatch, Error>| {
+                    let fit_range = range.full_range();
                     let g = match k {
                         Ok(k) => {
                             use super::agg::{Fits, FitsInside};
-                            match k.fits_inside(range.clone()) {
+                            match k.fits_inside(fit_range) {
                                 Fits::Inside
                                 | Fits::PartlyGreater
                                 | Fits::PartlyLower
@@ -56,6 +57,17 @@ impl BinnedStream {
                     };
                     ready(g)
                 }
+            })
+            .map(|k| k)
+            .into_binned_t(range)
+            .map(|k| match k {
+                Ok(k) => {
+                    // TODO instead of converting, let binner already return batches.
+                    let mut ret = MinMaxAvgScalarBinBatch::empty();
+                    ret.push_single(&k);
+                    Ok(ret)
+                }
+                Err(e) => Err(e),
             });
         Self { inp: Box::pin(inp) }
     }

@@ -12,10 +12,38 @@ pub struct Opts {
 #[derive(Debug, Clap)]
 pub enum SubCmd {
     Retrieval(Retrieval),
+    Client(Client),
 }
 
 #[derive(Debug, Clap)]
 pub struct Retrieval {
     #[clap(long)]
     pub config: String,
+}
+
+#[derive(Debug, Clap)]
+pub struct Client {
+    #[clap(subcommand)]
+    pub client_type: ClientType,
+}
+
+#[derive(Debug, Clap)]
+pub enum ClientType {
+    Binned(BinnedClient),
+}
+
+#[derive(Debug, Clap)]
+pub struct BinnedClient {
+    #[clap(long)]
+    pub host: String,
+    #[clap(long)]
+    pub port: u16,
+    #[clap(long)]
+    pub channel: String,
+    #[clap(long)]
+    pub beg: String,
+    #[clap(long)]
+    pub end: String,
+    #[clap(long)]
+    pub bins: u32,
 }

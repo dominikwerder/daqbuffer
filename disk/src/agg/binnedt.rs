@@ -3,13 +3,13 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::BinSpecDimT;
+use netpod::{BinSpecDimT, BinnedRange};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 pub trait IntoBinnedT {
     type StreamOut: Stream;
-    fn into_binned_t(self, spec: BinSpecDimT) -> Self::StreamOut;
+    fn into_binned_t(self, spec: BinnedRange) -> Self::StreamOut;
 }
 
 impl<T, I> IntoBinnedT for T
@@ -20,7 +20,7 @@ where
 {
     type StreamOut = IntoBinnedTDefaultStream<T, I>;
 
-    fn into_binned_t(self, spec: BinSpecDimT) -> Self::StreamOut {
+    fn into_binned_t(self, spec: BinnedRange) -> Self::StreamOut {
         IntoBinnedTDefaultStream::new(self, spec)
     }
 }
@@ -32,7 +32,7 @@ where
 {
     inp: S,
     aggtor: Option<I::Aggregator>,
-    spec: BinSpecDimT,
+    spec: BinnedRange,
     curbin: u32,
     left: Option<Poll<Option<Result<I, Error>>>>,
     errored: bool,
@@ -45,7 +45,7 @@ where
     I: AggregatableTdim,
     S: Stream<Item = Result<I, Error>>,
 {
-    pub fn new(inp: S, spec: BinSpecDimT) -> Self {
+    pub fn new(inp: S, spec: BinnedRange) -> Self {
         let range = spec.get_range(0);
         Self {
             inp,

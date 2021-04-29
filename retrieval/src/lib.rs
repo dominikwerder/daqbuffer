@@ -5,6 +5,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, info, trace, warn};
 
 pub mod cli;
+pub mod client;
 #[cfg(test)]
 pub mod test;
 

@@ -405,7 +405,7 @@ where
                             let ele_count = n1 / ty.bytes() as usize;
                             let mut j = Vec::with_capacity(ele_count);
                             let mut p1 = 0;
-                            for i1 in 0..ele_count {
+                            for _ in 0..ele_count {
                                 let u = unsafe {
                                     let mut r = [0u8; BY];
                                     std::ptr::copy_nonoverlapping(&decomp[p1], r.as_mut_ptr(), BY);

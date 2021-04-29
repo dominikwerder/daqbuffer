@@ -5,7 +5,7 @@ use crate::agg::binnedx::IntoBinnedXBins1;
 use crate::agg::make_test_node;
 use futures_util::StreamExt;
 use netpod::timeunits::*;
-use netpod::{BinSpecDimT, Channel, ChannelConfig, NanoRange, Nanos, ScalarType, Shape};
+use netpod::{BinSpecDimT, BinnedRange, Channel, ChannelConfig, NanoRange, Nanos, ScalarType, Shape};
 use std::future::ready;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
@@ -66,7 +66,7 @@ async fn agg_x_dim_0_inner() {
         }
         k
     })
-    .into_binned_t(BinSpecDimT::over_range(bin_count, ts1, ts2))
+    .into_binned_t(BinnedRange::covering_range(range, bin_count).unwrap())
     .map(|k| {
         if false {
             trace!("after T binning  {:?}", k.as_ref().unwrap());
@@ -134,7 +134,7 @@ async fn agg_x_dim_1_inner() {
         //info!("after X binning  {:?}", k.as_ref().unwrap());
         k
     })
-    .into_binned_t(BinSpecDimT::over_range(bin_count, ts1, ts2))
+    .into_binned_t(BinnedRange::covering_range(range, bin_count).unwrap())
     .map(|k| {
         info!("after T binning  {:?}", k.as_ref().unwrap());
         k

@@ -12,7 +12,7 @@ use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
 use hyper::Response;
 use netpod::{
-    AggKind, Channel, Cluster, NanoRange, Node, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchIterator,
+    AggKind, BinnedRange, Channel, Cluster, NanoRange, Node, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchIterator,
     PreBinnedPatchRange, ToNanos,
 };
 use serde::{Deserialize, Serialize};
@@ -73,15 +73,24 @@ pub async fn binned_bytes_for_http(
     let channel_config = read_local_config(&query.channel, node).await?;
     let entry = extract_matching_config_entry(range, &channel_config);
     info!("found config entry {:?}", entry);
-    let grid = PreBinnedPatchRange::covering_range(query.range.clone(), query.count);
-    match grid {
-        Some(spec) => {
-            info!("GOT  PreBinnedPatchGridSpec:    {:?}", spec);
-            warn!("Pass here to BinnedStream what kind of Agg, range, ...");
+    let pre_range = PreBinnedPatchRange::covering_range(query.range.clone(), query.count);
+    match pre_range {
+        Some(pre_range) => {
+            info!("Found pre_range: {:?}", pre_range);
+            let range = BinnedRange::covering_range(range.clone(), query.count)
+                .ok_or(Error::with_msg(format!("BinnedRange::covering_range returned None")))?;
+            if range.grid_spec.bin_t_len() > pre_range.grid_spec.bin_t_len() {
+                let msg = format!(
+                    "binned_bytes_for_http incompatible ranges:\npre_range: {:?}\nrange: {:?}",
+                    pre_range, range
+                );
+                error!("{}", msg);
+                return Err(Error::with_msg(msg));
+            }
             let s1 = BinnedStream::new(
-                PreBinnedPatchIterator::from_range(spec),
+                PreBinnedPatchIterator::from_range(pre_range),
                 query.channel.clone(),
-                query.range.clone(),
+                range,
                 query.agg_kind.clone(),
                 node_config,
             );
@@ -89,7 +98,7 @@ pub async fn binned_bytes_for_http(
             Ok(ret)
         }
         None => {
-            // Merge raw data
+            // TODO Merge raw data.
             error!("binned_bytes_for_http   TODO   merge raw data");
             todo!()
         }
@@ -153,8 +162,10 @@ pub struct PreBinnedQuery {
 impl PreBinnedQuery {
     pub fn from_request(req: &http::request::Parts) -> Result<Self, Error> {
         let params = netpod::query_params(req.uri.query());
+        let patch_ix = params.get("patch_ix").unwrap().parse().unwrap();
+        let bin_t_len = params.get("bin_t_len").unwrap().parse().unwrap();
         let ret = PreBinnedQuery {
-            patch: PreBinnedPatchCoord::from_query_params(&params),
+            patch: PreBinnedPatchCoord::new(bin_t_len, patch_ix),
             agg_kind: AggKind::DimXBins1,
             channel: Channel {
                 backend: params.get("channel_backend").unwrap().into(),
