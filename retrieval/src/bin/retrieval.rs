@@ -40,6 +40,9 @@ async fn go() -> Result<(), Error> {
                 retrieval::client::get_binned(opts.host, opts.port, opts.channel, beg, end, opts.bins).await?;
             }
         },
+        SubCmd::GenerateTestData => {
+            disk::gen::gen_test_data().await?;
+        }
     }
     Ok(())
 }

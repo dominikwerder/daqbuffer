@@ -3,11 +3,13 @@ use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
+use futures_util::StreamExt;
 use futures_util::TryStreamExt;
 use hyper::Body;
+use netpod::log::*;
 use netpod::{Cluster, Database, Node};
-#[allow(unused_imports)]
-use tracing::{debug, error, info, trace, warn};
+use std::future::ready;
+use tokio::io::AsyncRead;
 
 fn test_cluster() -> Cluster {
     let nodes = (0..3)
@@ -35,20 +37,46 @@ fn test_cluster() -> Cluster {
 }
 
 #[test]
-fn get_cached_0() {
-    taskrun::run(get_cached_0_inner()).unwrap();
+fn get_binned() {
+    taskrun::run(get_binned_0_inner()).unwrap();
 }
 
-async fn get_cached_0_inner() -> Result<(), Error> {
+async fn get_binned_0_inner() -> Result<(), Error> {
+    get_binned_channel(
+        "wave-f64-be-n21",
+        "1970-01-01T00:20:10.000Z",
+        "1970-01-01T00:20:51.000Z",
+        4,
+    )
+    .await?;
+    get_binned_channel(
+        "wave-u16-le-n77",
+        "1970-01-01T01:11:00.000Z",
+        "1970-01-01T02:12:00.000Z",
+        4,
+    )
+    .await?;
+    get_binned_channel(
+        "wave-u16-le-n77",
+        "1970-01-01T01:42:00.000Z",
+        "1970-01-01T03:55:00.000Z",
+        2,
+    )
+    .await?;
+    Ok(())
+}
+
+async fn get_binned_channel<S>(channel_name: &str, beg_date: S, end_date: S, bin_count: u32) -> Result<(), Error>
+where
+    S: AsRef<str>,
+{
     let t1 = Utc::now();
     let cluster = test_cluster();
     let node0 = &cluster.nodes[0];
-    let hosts = spawn_test_hosts(cluster.clone());
-    let beg_date: DateTime<Utc> = "1970-01-01T00:20:10.000Z".parse()?;
-    let end_date: DateTime<Utc> = "1970-01-01T00:20:51.000Z".parse()?;
+    let _hosts = spawn_test_hosts(cluster.clone());
+    let beg_date: DateTime<Utc> = beg_date.as_ref().parse()?;
+    let end_date: DateTime<Utc> = end_date.as_ref().parse()?;
     let channel_backend = "back";
-    let channel_name = "wave1";
-    let bin_count = 4;
     let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
     let uri = format!(
         "http://{}:{}/api/1/binned?channel_backend={}&channel_name={}&bin_count={}&beg_date={}&end_date={}",
@@ -72,26 +100,30 @@ async fn get_cached_0_inner() -> Result<(), Error> {
     //let (res_head, mut res_body) = res.into_parts();
     let s1 = disk::cache::HttpBodyAsAsyncRead::new(res);
     let s2 = InMemoryFrameAsyncReadStream::new(s1);
-    /*use hyper::body::HttpBody;
-    loop {
-        match res_body.data().await {
-            Some(Ok(k)) => {
-                info!("packet..  len {}", k.len());
-                ntot += k.len() as u64;
-            }
-            Some(Err(e)) => {
-                error!("{:?}", e);
-            }
-            None => {
-                info!("response stream exhausted");
-                break;
-            }
-        }
-    }*/
-    use futures_util::StreamExt;
-    use std::future::ready;
-    let mut bin_count = 0;
-    let s3 = s2
+    let res = consume_binned_response(s2).await?;
+    let t2 = chrono::Utc::now();
+    let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
+    //let throughput = ntot / 1024 * 1000 / ms;
+    info!("get_cached_0 DONE  bin_count {}  time {} ms", res.bin_count, ms);
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct BinnedResponse {
+    bin_count: usize,
+}
+
+impl BinnedResponse {
+    pub fn new() -> Self {
+        Self { bin_count: 0 }
+    }
+}
+
+async fn consume_binned_response<T>(inp: InMemoryFrameAsyncReadStream<T>) -> Result<BinnedResponse, Error>
+where
+    T: AsyncRead + Unpin,
+{
+    let s1 = inp
         .map_err(|e| error!("TEST GOT ERROR {:?}", e))
         .filter_map(|item| {
             let g = match item {
@@ -102,7 +134,6 @@ async fn get_cached_0_inner() -> Result<(), Error> {
                         Ok(item) => match item {
                             Ok(item) => {
                                 info!("TEST GOT ITEM {:?}", item);
-                                bin_count += 1;
                                 Some(Ok(item))
                             }
                             Err(e) => {
@@ -120,31 +151,21 @@ async fn get_cached_0_inner() -> Result<(), Error> {
             };
             ready(g)
         })
-        .for_each(|_| ready(()));
-    s3.await;
-    let t2 = chrono::Utc::now();
-    let ntot = 0;
-    let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
-    let throughput = ntot / 1024 * 1000 / ms;
-    info!(
-        "get_cached_0 DONE  total download {} MB   throughput {:5} kB/s  bin_count {}",
-        ntot / 1024 / 1024,
-        throughput,
-        bin_count,
-    );
-    drop(hosts);
-    //Err::<(), _>(format!("test error").into())
-    Ok(())
-}
-
-#[test]
-fn test_gen_test_data() {
-    let res = taskrun::run(async {
-        disk::gen::gen_test_data().await?;
-        Ok(())
-    });
-    info!("{:?}", res);
-    res.unwrap();
+        .fold(Ok(BinnedResponse::new()), |a, k| {
+            let g = match a {
+                Ok(mut a) => match k {
+                    Ok(k) => {
+                        a.bin_count += k.ts1s.len();
+                        Ok(a)
+                    }
+                    Err(e) => Err(e),
+                },
+                Err(e) => Err(e),
+            };
+            ready(g)
+        });
+    let ret = s1.await;
+    ret
 }
 
 #[test]

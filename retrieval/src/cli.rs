@@ -13,6 +13,7 @@ pub struct Opts {
 pub enum SubCmd {
     Retrieval(Retrieval),
     Client(Client),
+    GenerateTestData,
 }
 
 #[derive(Debug, Clap)]

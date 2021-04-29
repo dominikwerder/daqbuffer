@@ -11,7 +11,7 @@ use tokio::io::AsyncWriteExt;
 use tracing::{debug, error, info, trace, warn};
 
 pub async fn gen_test_data() -> Result<(), Error> {
-    let data_base_path = PathBuf::from("../tmpdata");
+    let data_base_path = PathBuf::from("tmpdata");
     let ksprefix = String::from("ks");
     let mut ensemble = Ensemble {
         nodes: vec![],
@@ -21,8 +21,8 @@ pub async fn gen_test_data() -> Result<(), Error> {
         let chn = ChannelGenProps {
             config: ChannelConfig {
                 channel: Channel {
-                    backend: "test".into(),
-                    name: "wave1".into(),
+                    backend: "testbackend".into(),
+                    name: "wave-f64-be-n21".into(),
                 },
                 keyspace: 3,
                 time_bin_size: Nanos { ns: DAY },
@@ -33,6 +33,23 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 compression: true,
             },
             time_spacing: MS * 1000,
+        };
+        ensemble.channels.push(chn);
+        let chn = ChannelGenProps {
+            config: ChannelConfig {
+                channel: Channel {
+                    backend: "testbackend".into(),
+                    name: "wave-u16-le-n77".into(),
+                },
+                keyspace: 3,
+                time_bin_size: Nanos { ns: DAY },
+                array: true,
+                scalar_type: ScalarType::U16,
+                shape: Shape::Wave(77),
+                big_endian: false,
+                compression: true,
+            },
+            time_spacing: MS * 100,
         };
         ensemble.channels.push(chn);
     }
@@ -85,10 +102,22 @@ async fn gen_channel(chn: &ChannelGenProps, node: &Node, ensemble: &Ensemble) ->
         .map_err(|k| Error::with_msg(format!("can not generate config {:?}", k)))?;
     let mut evix = 0;
     let mut ts = Nanos { ns: 0 };
+    let mut pulse = 0;
     while ts.ns < DAY * 2 {
-        let res = gen_timebin(evix, ts, chn.time_spacing, &channel_path, &chn.config, node, ensemble).await?;
+        let res = gen_timebin(
+            evix,
+            ts,
+            pulse,
+            chn.time_spacing,
+            &channel_path,
+            &chn.config,
+            node,
+            ensemble,
+        )
+        .await?;
         evix = res.evix;
         ts.ns = res.ts.ns;
+        pulse = res.pulse;
     }
     Ok(())
 }
@@ -131,7 +160,7 @@ async fn gen_config(
     buf.put_i64(ts);
     buf.put_i64(pulse);
     buf.put_u32(config.keyspace as u32);
-    buf.put_u64(config.time_bin_size.ns);
+    buf.put_u64(config.time_bin_size.ns / MS);
     buf.put_i32(sc);
     buf.put_i32(status);
     buf.put_i8(bb);
@@ -213,11 +242,13 @@ impl CountedFile {
 struct GenTimebinRes {
     evix: u64,
     ts: Nanos,
+    pulse: u64,
 }
 
 async fn gen_timebin(
     evix: u64,
     ts: Nanos,
+    pulse: u64,
     ts_spacing: u64,
     channel_path: &Path,
     config: &ChannelConfig,
@@ -256,17 +287,19 @@ async fn gen_timebin(
     gen_datafile_header(&mut file, config).await?;
     let mut evix = evix;
     let mut ts = ts;
+    let mut pulse = pulse;
     let tsmax = Nanos {
         ns: (tb + 1) * config.time_bin_size.ns,
     };
     while ts.ns < tsmax.ns {
         if evix % ensemble.nodes.len() as u64 == node.split as u64 {
-            gen_event(&mut file, index_file.as_mut(), evix, ts, config).await?;
+            gen_event(&mut file, index_file.as_mut(), evix, ts, pulse, config).await?;
         }
         evix += 1;
         ts.ns += ts_spacing;
+        pulse += 1;
     }
-    let ret = GenTimebinRes { evix, ts };
+    let ret = GenTimebinRes { evix, ts, pulse };
     Ok(ret)
 }
 
@@ -287,14 +320,17 @@ async fn gen_event(
     index_file: Option<&mut CountedFile>,
     evix: u64,
     ts: Nanos,
+    pulse: u64,
     config: &ChannelConfig,
 ) -> Result<(), Error> {
+    let ttl = 0xcafecafe;
+    let ioc_ts = 0xcafecafe;
     let mut buf = BytesMut::with_capacity(1024 * 16);
     buf.put_i32(0xcafecafe as u32 as i32);
-    buf.put_u64(0xcafecafe);
+    buf.put_u64(ttl);
     buf.put_u64(ts.ns);
-    buf.put_u64(2323);
-    buf.put_u64(0xcafecafe);
+    buf.put_u64(pulse);
+    buf.put_u64(ioc_ts);
     buf.put_u8(0);
     buf.put_u8(0);
     buf.put_i32(-1);
@@ -314,11 +350,15 @@ async fn gen_event(
                         let mut vals = vec![0; (ele_size * ele_count) as usize];
                         for i1 in 0..ele_count {
                             let v = evix as f64;
-                            let a = v.to_be_bytes();
-                            let mut c1 = std::io::Cursor::new(&mut vals);
-                            use std::io::{Seek, SeekFrom};
+                            let a = if config.big_endian {
+                                v.to_be_bytes()
+                            } else {
+                                v.to_le_bytes()
+                            };
+                            use std::io::{Cursor, Seek, SeekFrom, Write};
+                            let mut c1 = Cursor::new(&mut vals);
                             c1.seek(SeekFrom::Start(i1 as u64 * ele_size as u64))?;
-                            std::io::Write::write_all(&mut c1, &a)?;
+                            Write::write_all(&mut c1, &a)?;
                         }
                         let mut comp = vec![0u8; (ele_size * ele_count + 64) as usize];
                         let n1 =
@@ -328,13 +368,36 @@ async fn gen_event(
                         buf.put_u32(comp_block_size);
                         buf.put(&comp[..n1]);
                     }
-                    _ => todo!(),
+                    ScalarType::U16 => {
+                        let ele_size = 2;
+                        let mut vals = vec![0; (ele_size * ele_count) as usize];
+                        for i1 in 0..ele_count {
+                            let v = evix as u16;
+                            let a = if config.big_endian {
+                                v.to_be_bytes()
+                            } else {
+                                v.to_le_bytes()
+                            };
+                            use std::io::{Cursor, Seek, SeekFrom, Write};
+                            let mut c1 = Cursor::new(&mut vals);
+                            c1.seek(SeekFrom::Start(i1 as u64 * ele_size as u64))?;
+                            Write::write_all(&mut c1, &a)?;
+                        }
+                        let mut comp = vec![0u8; (ele_size * ele_count + 64) as usize];
+                        let n1 =
+                            bitshuffle_compress(&vals, &mut comp, ele_count as usize, ele_size as usize, 0).unwrap();
+                        buf.put_u64(vals.len() as u64);
+                        let comp_block_size = 0;
+                        buf.put_u32(comp_block_size);
+                        buf.put(&comp[..n1]);
+                    }
+                    _ => todo!("Datatype not yet supported: {:?}", config.scalar_type),
                 }
             }
-            _ => todo!(),
+            _ => todo!("Shape not yet supported: {:?}", config.shape),
         }
     } else {
-        todo!()
+        todo!("Uncompressed not yet supported");
     }
     {
         let len = buf.len() as u32 + 4;

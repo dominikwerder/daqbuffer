@@ -134,14 +134,17 @@ impl EventChunker {
                         let mut sl = std::io::Cursor::new(buf.as_ref());
                         let len1b = sl.read_i32::<BE>().unwrap();
                         assert!(len == len1b as u32);
-                        sl.read_i64::<BE>().unwrap();
+                        let _ttl = sl.read_i64::<BE>().unwrap();
                         let ts = sl.read_i64::<BE>().unwrap() as u64;
                         let pulse = sl.read_i64::<BE>().unwrap() as u64;
                         if ts >= self.range.end {
                             self.seen_beyond_range = true;
                             break;
                         }
-                        sl.read_i64::<BE>().unwrap();
+                        if ts < self.range.beg {
+                            error!("seen before range: {}", ts / SEC);
+                        }
+                        let _ioc_ts = sl.read_i64::<BE>().unwrap();
                         let status = sl.read_i8().unwrap();
                         let severity = sl.read_i8().unwrap();
                         let optional = sl.read_i32::<BE>().unwrap();
@@ -214,9 +217,8 @@ impl EventChunker {
                                     assert!(c1 as u32 == k1);
                                     trace!("decompress result  c1 {}  k1 {}", c1, k1);
                                     if ts < self.range.beg {
-                                        error!("EVENT BEFORE RANGE  {}", ts / SEC);
                                     } else if ts >= self.range.end {
-                                        error!("EVENT BEFORE RANGE  {}", ts / SEC);
+                                        error!("EVENT AFTER RANGE  {}", ts / SEC);
                                     } else {
                                         ret.add_event(
                                             ts,
