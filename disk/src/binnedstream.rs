@@ -5,8 +5,7 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 #[allow(unused_imports)]
 use netpod::log::*;
-use netpod::{AggKind, BinSpecDimT, BinnedRange, Channel, NodeConfig, PreBinnedPatchIterator};
-use netpod::{NanoRange, RetStreamExt};
+use netpod::{AggKind, BinnedRange, Channel, NodeConfig, PreBinnedPatchIterator};
 use std::future::ready;
 use std::pin::Pin;
 use std::task::{Context, Poll};

@@ -3,7 +3,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::{BinSpecDimT, BinnedRange};
+use netpod::BinnedRange;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 

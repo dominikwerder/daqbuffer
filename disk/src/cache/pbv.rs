@@ -10,7 +10,7 @@ use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt, TryStreamExt};
 use netpod::log::*;
 use netpod::{
-    AggKind, BinSpecDimT, BinnedRange, Channel, NanoRange, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchIterator,
+    AggKind, BinnedRange, Channel, NanoRange, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchIterator,
     PreBinnedPatchRange,
 };
 use std::future::{ready, Future};
@@ -132,15 +132,6 @@ impl PreBinnedValueStream {
                 assert!(self.patch_coord.patch_t_len() % self.patch_coord.bin_t_len() == 0);
                 error!("try_setup_fetch_prebinned_higher_res  apply all requested transformations and T-binning");
                 let count = self.patch_coord.patch_t_len() / self.patch_coord.bin_t_len();
-                // TODO use a ctor, remove from BinSpecDimT the redundant variable.
-                // If given a timestamp range, verify that it divides.
-                // For ranges, use a range type.
-                let _spec = BinSpecDimT {
-                    bs: self.patch_coord.bin_t_len(),
-                    ts1: self.patch_coord.patch_beg(),
-                    ts2: self.patch_coord.patch_end(),
-                    count,
-                };
                 let range = BinnedRange::covering_range(evq.range.clone(), count).unwrap();
                 let s1 = MergedFromRemotes::new(evq, self.node_config.cluster.clone());
                 let s2 = s1

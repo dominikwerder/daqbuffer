@@ -5,7 +5,7 @@ use crate::agg::binnedx::IntoBinnedXBins1;
 use crate::agg::make_test_node;
 use futures_util::StreamExt;
 use netpod::timeunits::*;
-use netpod::{BinSpecDimT, BinnedRange, Channel, ChannelConfig, NanoRange, Nanos, ScalarType, Shape};
+use netpod::{BinnedRange, Channel, ChannelConfig, NanoRange, Nanos, ScalarType, Shape};
 use std::future::ready;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};

@@ -3,7 +3,6 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -215,54 +214,6 @@ pub mod timeunits {
     pub const HOUR: u64 = MIN * 60;
     pub const DAY: u64 = HOUR * 24;
     pub const WEEK: u64 = DAY * 7;
-}
-
-pub struct BinSpecDimT {
-    pub count: u64,
-    pub ts1: u64,
-    pub ts2: u64,
-    pub bs: u64,
-}
-
-impl BinSpecDimT {
-    pub fn over_range(count: u64, ts1: u64, ts2: u64) -> Self {
-        use timeunits::*;
-        assert!(count >= 1);
-        assert!(count <= 2000);
-        assert!(ts2 > ts1);
-        let dt = ts2 - ts1;
-        assert!(dt <= DAY * 14);
-        let bs = dt / count;
-        let mut i1 = 0;
-        let bs = loop {
-            if i1 >= BIN_THRESHOLDS.len() {
-                break *BIN_THRESHOLDS.last().unwrap();
-            }
-            let t = BIN_THRESHOLDS[i1];
-            if bs <= t {
-                break t;
-            }
-            i1 += 1;
-        };
-        //info!("INPUT TS  {}  {}", ts1, ts2);
-        //info!("chosen binsize: {}  {}", i1, bs);
-        let ts1 = ts1 / bs * bs;
-        let ts2 = (ts2 + bs - 1) / bs * bs;
-        //info!("ADJUSTED TS  {}  {}", ts1, ts2);
-        BinSpecDimT {
-            count: (ts2 - ts1) / bs,
-            ts1,
-            ts2,
-            bs,
-        }
-    }
-
-    pub fn get_range(&self, ix: u32) -> NanoRange {
-        NanoRange {
-            beg: self.ts1 + ix as u64 * self.bs,
-            end: self.ts1 + (ix as u64 + 1) * self.bs,
-        }
-    }
 }
 
 const BIN_T_LEN_OPTIONS: [u64; 6] = [SEC * 10, MIN * 10, HOUR, HOUR * 4, DAY, DAY * 4];
