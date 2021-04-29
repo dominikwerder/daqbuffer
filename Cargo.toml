@@ -1,8 +1,8 @@
 [workspace]
-members = ["retrieval", "httpret", "err", "disk"]
+members = ["retrieval"]
 
 [profile.release]
-#debug = 1
-#opt-level = 0
+debug = 1
+#opt-level = 1
 #overflow-checks = true
 #debug-assertions = true

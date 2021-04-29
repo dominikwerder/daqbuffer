@@ -182,6 +182,21 @@ where
     S: Stream<Item = Result<EventFull, Error>>,
 {
     inp: S,
+    errored: bool,
+    completed: bool,
+}
+
+impl<S> Dim0F32Stream<S>
+where
+    S: Stream<Item = Result<EventFull, Error>>,
+{
+    pub fn new(inp: S) -> Self {
+        Self {
+            inp,
+            errored: false,
+            completed: false,
+        }
+    }
 }
 
 impl<S> Stream for Dim0F32Stream<S>
@@ -192,6 +207,13 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        if self.completed {
+            panic!("Dim0F32Stream  poll_next on completed");
+        }
+        if self.errored {
+            self.completed = true;
+            return Ready(None);
+        }
         match self.inp.poll_next_unpin(cx) {
             Ready(Some(Ok(k))) => {
                 let mut ret = ValuesDim1 {
@@ -236,10 +258,17 @@ where
                         _ => err::todoval(),
                     }
                 }
-                Ready(Some(Ok(err::todoval())))
+                self.errored = true;
+                Ready(Some(Err(Error::with_msg(format!("TODO not yet implemented")))))
             }
-            Ready(Some(Err(e))) => Ready(Some(Err(e))),
-            Ready(None) => Ready(None),
+            Ready(Some(Err(e))) => {
+                self.errored = true;
+                Ready(Some(Err(e)))
+            }
+            Ready(None) => {
+                self.completed = true;
+                Ready(None)
+            }
             Pending => Pending,
         }
     }
@@ -256,7 +285,7 @@ where
     T: Stream<Item = Result<EventFull, Error>>,
 {
     fn into_dim_0_f32_stream(self) -> Dim0F32Stream<T> {
-        Dim0F32Stream { inp: self }
+        Dim0F32Stream::new(self)
     }
 }
 
@@ -269,6 +298,19 @@ where
     completed: bool,
 }
 
+impl<S> Dim1F32Stream<S>
+where
+    S: Stream<Item = Result<EventFull, Error>>,
+{
+    pub fn new(inp: S) -> Self {
+        Self {
+            inp,
+            errored: false,
+            completed: false,
+        }
+    }
+}
+
 impl<S> Stream for Dim1F32Stream<S>
 where
     S: Stream<Item = Result<EventFull, Error>> + Unpin,
@@ -278,7 +320,7 @@ where
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         if self.completed {
-            panic!("poll_next on completed");
+            panic!("Dim1F32Stream  poll_next on completed");
         }
         if self.errored {
             self.completed = true;
@@ -349,8 +391,14 @@ where
                 }
                 Ready(Some(Ok(ret)))
             }
-            Ready(Some(Err(e))) => Ready(Some(Err(e))),
-            Ready(None) => Ready(None),
+            Ready(Some(Err(e))) => {
+                self.errored = true;
+                Ready(Some(Err(e)))
+            }
+            Ready(None) => {
+                self.completed = true;
+                Ready(None)
+            }
             Pending => Pending,
         }
     }
@@ -367,11 +415,7 @@ where
     T: Stream<Item = Result<EventFull, Error>>,
 {
     fn into_dim_1_f32_stream(self) -> Dim1F32Stream<T> {
-        Dim1F32Stream {
-            inp: self,
-            errored: false,
-            completed: false,
-        }
+        Dim1F32Stream::new(self)
     }
 }
 

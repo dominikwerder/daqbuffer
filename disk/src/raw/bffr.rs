@@ -16,6 +16,8 @@ where
     T: AsyncRead + Unpin,
 {
     inp: InMemoryFrameAsyncReadStream<T>,
+    errored: bool,
+    completed: bool,
 }
 
 impl<T> MinMaxAvgScalarEventBatchStreamFromFrames<T>
@@ -23,7 +25,11 @@ where
     T: AsyncRead + Unpin,
 {
     pub fn new(inp: InMemoryFrameAsyncReadStream<T>) -> Self {
-        Self { inp }
+        Self {
+            inp,
+            errored: false,
+            completed: false,
+        }
     }
 }
 
@@ -35,6 +41,13 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        if self.completed {
+            panic!("MinMaxAvgScalarEventBatchStreamFromFrames  poll_next on completed");
+        }
+        if self.errored {
+            self.completed = true;
+            return Ready(None);
+        }
         loop {
             let j = &mut self.inp;
             pin_mut!(j);
@@ -49,19 +62,29 @@ where
                     match bincode::deserialize::<ExpectedType>(frame.buf()) {
                         Ok(item) => match item {
                             Ok(item) => Ready(Some(Ok(item))),
-                            Err(e) => Ready(Some(Err(e))),
+                            Err(e) => {
+                                self.errored = true;
+                                Ready(Some(Err(e)))
+                            }
                         },
                         Err(e) => {
                             error!(
                                 "MinMaxAvgScalarEventBatchStreamFromFrames  ~~~~~~~~   ERROR on frame payload {}",
                                 frame.buf().len(),
                             );
+                            self.errored = true;
                             Ready(Some(Err(e.into())))
                         }
                     }
                 }
-                Ready(Some(Err(e))) => Ready(Some(Err(e))),
-                Ready(None) => Ready(None),
+                Ready(Some(Err(e))) => {
+                    self.errored = true;
+                    Ready(Some(Err(e)))
+                }
+                Ready(None) => {
+                    self.completed = true;
+                    Ready(None)
+                }
                 Pending => Pending,
             };
         }

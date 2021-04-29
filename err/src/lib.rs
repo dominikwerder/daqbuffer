@@ -63,7 +63,7 @@ fn fmt_backtrace(trace: &backtrace::Backtrace) -> String {
                 Some(k) => k,
                 _ => 0,
             };
-            if is_ours {
+            if true || is_ours {
                 write!(&mut buf, "\n    {}\n      {}  {}", name, filename, lineno).unwrap();
             }
         }

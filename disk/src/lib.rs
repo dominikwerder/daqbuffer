@@ -139,7 +139,8 @@ impl FusedFuture for Fopen1 {
 
 unsafe impl Send for Fopen1 {}
 
-pub fn raw_concat_channel_read_stream_try_open_in_background(
+#[allow(dead_code)]
+fn unused_raw_concat_channel_read_stream_try_open_in_background(
     query: &netpod::AggQuerySingleChannel,
     node: Node,
 ) -> impl Stream<Item = Result<Bytes, Error>> + Send {
@@ -173,13 +174,13 @@ pub fn raw_concat_channel_read_stream_try_open_in_background(
             // But next iteration, the file is not available, but reading is, so I should read!
             // I can not simply drop the reading future, that would lose the request.
 
-            if reading.is_some() {
-                let k: Result<(tokio::fs::File, BytesMut), Error> = reading.as_mut().unwrap().await;
+            if let Some(read) = &mut reading {
+                let k: Result<(tokio::fs::File, BytesMut), Error> = read.await;
                 if k.is_err() {
                     error!("LONELY READ ERROR");
                 }
                 let k = k.unwrap();
-                reading.take();
+                reading = None;
                 file = Some(k.0);
                 yield Ok(k.1.freeze());
             }
@@ -266,7 +267,8 @@ pub fn raw_concat_channel_read_stream_try_open_in_background(
     }
 }
 
-pub fn raw_concat_channel_read_stream_file_pipe(
+#[allow(dead_code)]
+fn unused_raw_concat_channel_read_stream_file_pipe(
     range: &NanoRange,
     channel_config: &ChannelConfig,
     node: Node,

@@ -66,11 +66,7 @@ where
             bnew[..].as_mut().put_slice(&self.buf[..self.wp]);
             self.buf = bnew;
         }
-        trace!(
-            "..............   PREPARE READ FROM  wp {}  self.buf.len() {}",
-            self.wp,
-            self.buf.len(),
-        );
+        trace!("prepare read from  wp {}  self.buf.len() {}", self.wp, self.buf.len(),);
         let gg = self.buf.len() - self.wp;
         let mut buf2 = ReadBuf::new(&mut self.buf[self.wp..]);
         if gg < 1 || gg > 1024 * 1024 * 20 {
@@ -265,7 +261,6 @@ where
                 let r = self.poll_upstream(cx);
                 break match r {
                     Ready(Ok(n1)) => {
-                        trace!("poll_upstream  GIVES  Ready  {}", n1);
                         self.wp += n1;
                         if n1 == 0 {
                             let n2 = self.buf.len();
