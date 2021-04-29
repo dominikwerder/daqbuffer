@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
 use futures_util::TryStreamExt;
+use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
 
@@ -35,6 +36,10 @@ pub async fn get_binned(
     let client = hyper::Client::new();
     let res = client.request(req).await?;
     info!("client response {:?}", res);
+    if res.status() != StatusCode::OK {
+        error!("Server error");
+        return Err(Error::with_msg(format!("Server error")));
+    }
     //let (res_head, mut res_body) = res.into_parts();
     let s1 = disk::cache::HttpBodyAsAsyncRead::new(res);
     let s2 = InMemoryFrameAsyncReadStream::new(s1);

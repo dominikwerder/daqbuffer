@@ -1,5 +1,5 @@
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
-use crate::agg::{AggregatableTdim, AggregatableXdim1Bin, AggregatorTdim, MinMaxAvgScalarBinSingle};
+use crate::agg::{AggregatableTdim, AggregatableXdim1Bin, AggregatorTdim};
 use bytes::{BufMut, Bytes, BytesMut};
 use netpod::log::*;
 use netpod::timeunits::SEC;
@@ -159,25 +159,25 @@ impl MinMaxAvgScalarEventBatchAggregator {
 
 impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
     type InputValue = MinMaxAvgScalarEventBatch;
-    type OutputValue = MinMaxAvgScalarBinSingle;
+    type OutputValue = MinMaxAvgScalarBinBatch;
 
     fn ends_before(&self, inp: &Self::InputValue) -> bool {
         match inp.tss.last() {
-            Some(ts) => *ts < self.ts1,
+            Some(&ts) => ts < self.ts1,
             None => true,
         }
     }
 
     fn ends_after(&self, inp: &Self::InputValue) -> bool {
         match inp.tss.last() {
-            Some(ts) => *ts >= self.ts2,
+            Some(&ts) => ts >= self.ts2,
             _ => panic!(),
         }
     }
 
     fn starts_after(&self, inp: &Self::InputValue) -> bool {
         match inp.tss.first() {
-            Some(ts) => *ts >= self.ts2,
+            Some(&ts) => ts >= self.ts2,
             _ => panic!(),
         }
     }
@@ -235,13 +235,13 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
         } else {
             self.sum / self.count as f32
         };
-        MinMaxAvgScalarBinSingle {
-            ts1: self.ts1,
-            ts2: self.ts2,
-            count: self.count,
-            min,
-            max,
-            avg,
+        MinMaxAvgScalarBinBatch {
+            ts1s: vec![self.ts1],
+            ts2s: vec![self.ts2],
+            counts: vec![self.count],
+            mins: vec![min],
+            maxs: vec![max],
+            avgs: vec![avg],
         }
     }
 }

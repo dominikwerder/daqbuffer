@@ -71,7 +71,7 @@ where
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         if self.completed {
-            panic!("MergedFromRemotes  ✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗  poll_next on completed");
+            panic!("IntoBinnedTDefaultStream  poll_next on completed");
         }
         if self.errored {
             self.completed = true;
@@ -79,7 +79,6 @@ where
         }
         'outer: loop {
             let cur = if let Some(k) = self.left.take() {
-                trace!("IntoBinnedTDefaultStream  USE LEFTOVER");
                 k
             } else if self.inp_completed {
                 Ready(None)

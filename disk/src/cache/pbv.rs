@@ -7,13 +7,13 @@ use crate::raw::EventsQuery;
 use bytes::Bytes;
 use err::Error;
 use futures_core::Stream;
-use futures_util::{FutureExt, StreamExt, TryStreamExt};
+use futures_util::{FutureExt, StreamExt};
 use netpod::log::*;
 use netpod::{
     AggKind, BinnedRange, Channel, NanoRange, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchIterator,
     PreBinnedPatchRange,
 };
-use std::future::{ready, Future};
+use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -143,40 +143,7 @@ impl PreBinnedValueStream {
                         }
                         k
                     })
-                    .into_binned_t(range)
-                    .map_ok({
-                        let mut a = MinMaxAvgScalarBinBatch::empty();
-                        move |k| {
-                            a.push_single(&k);
-                            if a.len() > 0 {
-                                let z = std::mem::replace(&mut a, MinMaxAvgScalarBinBatch::empty());
-                                Some(z)
-                            } else {
-                                None
-                            }
-                        }
-                    })
-                    .filter_map(|k| {
-                        let g = match k {
-                            Ok(Some(k)) => Some(Ok(k)),
-                            Ok(None) => None,
-                            Err(e) => Some(Err(e)),
-                        };
-                        ready(g)
-                    })
-                    .take_while({
-                        let mut run = true;
-                        move |k| {
-                            if !run {
-                                ready(false)
-                            } else {
-                                if k.is_err() {
-                                    run = false;
-                                }
-                                ready(true)
-                            }
-                        }
-                    });
+                    .into_binned_t(range);
                 self.fut2 = Some(Box::pin(s2));
             }
         }

@@ -58,16 +58,7 @@ impl BinnedStream {
                 }
             })
             .map(|k| k)
-            .into_binned_t(range)
-            .map(|k| match k {
-                Ok(k) => {
-                    // TODO instead of converting, let binner already return batches.
-                    let mut ret = MinMaxAvgScalarBinBatch::empty();
-                    ret.push_single(&k);
-                    Ok(ret)
-                }
-                Err(e) => Err(e),
-            });
+            .into_binned_t(range);
         Self { inp: Box::pin(inp) }
     }
 }

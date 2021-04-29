@@ -1,4 +1,4 @@
-use crate::agg::{AggregatableTdim, AggregatableXdim1Bin, AggregatorTdim, Fits, FitsInside, MinMaxAvgScalarBinSingle};
+use crate::agg::{AggregatableTdim, AggregatableXdim1Bin, AggregatorTdim, Fits, FitsInside};
 use bytes::{BufMut, Bytes, BytesMut};
 use netpod::log::*;
 use netpod::timeunits::SEC;
@@ -9,12 +9,12 @@ use std::mem::size_of;
 #[allow(dead_code)]
 #[derive(Serialize, Deserialize)]
 pub struct MinMaxAvgScalarBinBatch {
-    ts1s: Vec<u64>,
-    ts2s: Vec<u64>,
-    counts: Vec<u64>,
-    mins: Vec<f32>,
-    maxs: Vec<f32>,
-    avgs: Vec<f32>,
+    pub ts1s: Vec<u64>,
+    pub ts2s: Vec<u64>,
+    pub counts: Vec<u64>,
+    pub mins: Vec<f32>,
+    pub maxs: Vec<f32>,
+    pub avgs: Vec<f32>,
 }
 
 impl MinMaxAvgScalarBinBatch {
@@ -30,14 +30,6 @@ impl MinMaxAvgScalarBinBatch {
     }
     pub fn len(&self) -> usize {
         self.ts1s.len()
-    }
-    pub fn push_single(&mut self, g: &MinMaxAvgScalarBinSingle) {
-        self.ts1s.push(g.ts1);
-        self.ts2s.push(g.ts2);
-        self.counts.push(g.count);
-        self.mins.push(g.min);
-        self.maxs.push(g.max);
-        self.avgs.push(g.avg);
     }
     pub fn from_full_frame(buf: &Bytes) -> Self {
         info!("MinMaxAvgScalarBinBatch  construct from full frame  len {}", buf.len());
@@ -191,36 +183,92 @@ impl AggregatableXdim1Bin for MinMaxAvgScalarBinBatch {
 }
 
 impl AggregatableTdim for MinMaxAvgScalarBinBatch {
-    type Output = MinMaxAvgScalarBinSingle;
+    type Output = MinMaxAvgScalarBinBatch;
     type Aggregator = MinMaxAvgScalarBinBatchAggregator;
-    fn aggregator_new_static(_ts1: u64, _ts2: u64) -> Self::Aggregator {
-        todo!()
+    fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator {
+        MinMaxAvgScalarBinBatchAggregator::new(ts1, ts2)
     }
 }
 
-pub struct MinMaxAvgScalarBinBatchAggregator {}
+pub struct MinMaxAvgScalarBinBatchAggregator {
+    ts1: u64,
+    ts2: u64,
+    count: u64,
+    min: f32,
+    max: f32,
+    sum: f32,
+}
+
+impl MinMaxAvgScalarBinBatchAggregator {
+    pub fn new(ts1: u64, ts2: u64) -> Self {
+        Self {
+            ts1,
+            ts2,
+            min: f32::MAX,
+            max: f32::MIN,
+            sum: 0f32,
+            count: 0,
+        }
+    }
+}
 
 impl AggregatorTdim for MinMaxAvgScalarBinBatchAggregator {
     type InputValue = MinMaxAvgScalarBinBatch;
-    type OutputValue = MinMaxAvgScalarBinSingle;
+    type OutputValue = MinMaxAvgScalarBinBatch;
 
-    fn ends_before(&self, _inp: &Self::InputValue) -> bool {
-        todo!()
+    fn ends_before(&self, inp: &Self::InputValue) -> bool {
+        match inp.ts2s.last() {
+            Some(&ts) => ts <= self.ts1,
+            None => true,
+        }
     }
 
-    fn ends_after(&self, _inp: &Self::InputValue) -> bool {
-        todo!()
+    fn ends_after(&self, inp: &Self::InputValue) -> bool {
+        match inp.ts2s.last() {
+            Some(&ts) => ts >= self.ts2,
+            _ => panic!(),
+        }
     }
 
-    fn starts_after(&self, _inp: &Self::InputValue) -> bool {
-        todo!()
+    fn starts_after(&self, inp: &Self::InputValue) -> bool {
+        match inp.ts1s.first() {
+            Some(&ts) => ts >= self.ts2,
+            _ => panic!(),
+        }
     }
 
-    fn ingest(&mut self, _v: &Self::InputValue) {
-        todo!()
+    fn ingest(&mut self, v: &Self::InputValue) {
+        for i1 in 0..v.ts1s.len() {
+            let ts1 = v.ts1s[i1];
+            let ts2 = v.ts2s[i1];
+            if ts2 <= self.ts1 {
+                continue;
+            } else if ts1 >= self.ts2 {
+                continue;
+            } else {
+                self.min = self.min.min(v.mins[i1]);
+                self.max = self.max.max(v.maxs[i1]);
+                self.sum += v.avgs[i1];
+                self.count += 1;
+            }
+        }
     }
 
     fn result(self) -> Self::OutputValue {
-        todo!()
+        let min = if self.min == f32::MAX { f32::NAN } else { self.min };
+        let max = if self.max == f32::MIN { f32::NAN } else { self.max };
+        let avg = if self.count == 0 {
+            f32::NAN
+        } else {
+            self.sum / self.count as f32
+        };
+        MinMaxAvgScalarBinBatch {
+            ts1s: vec![self.ts1],
+            ts2s: vec![self.ts2],
+            counts: vec![self.count],
+            mins: vec![min],
+            maxs: vec![max],
+            avgs: vec![avg],
+        }
     }
 }

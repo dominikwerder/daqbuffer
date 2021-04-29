@@ -73,13 +73,12 @@ pub async fn binned_bytes_for_http(
     let channel_config = read_local_config(&query.channel, node).await?;
     let entry = extract_matching_config_entry(range, &channel_config);
     info!("found config entry {:?}", entry);
-    let pre_range = PreBinnedPatchRange::covering_range(query.range.clone(), query.count);
-    match pre_range {
+    let range = BinnedRange::covering_range(range.clone(), query.count)
+        .ok_or(Error::with_msg(format!("BinnedRange::covering_range returned None")))?;
+    match PreBinnedPatchRange::covering_range(query.range.clone(), query.count) {
         Some(pre_range) => {
             info!("Found pre_range: {:?}", pre_range);
-            let range = BinnedRange::covering_range(range.clone(), query.count)
-                .ok_or(Error::with_msg(format!("BinnedRange::covering_range returned None")))?;
-            if range.grid_spec.bin_t_len() > pre_range.grid_spec.bin_t_len() {
+            if range.grid_spec.bin_t_len() < pre_range.grid_spec.bin_t_len() {
                 let msg = format!(
                     "binned_bytes_for_http incompatible ranges:\npre_range: {:?}\nrange: {:?}",
                     pre_range, range

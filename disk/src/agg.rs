@@ -40,46 +40,6 @@ pub trait AggregatableTdim {
     fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator;
 }
 
-/// DO NOT USE. This is just a dummy for some testing.
-impl AggregatableXdim1Bin for () {
-    type Output = ();
-    fn into_agg(self) -> Self::Output {
-        todo!()
-    }
-}
-/// DO NOT USE. This is just a dummy for some testing.
-impl AggregatableTdim for () {
-    type Output = ();
-    type Aggregator = ();
-    fn aggregator_new_static(_ts1: u64, _ts2: u64) -> Self::Aggregator {
-        todo!()
-    }
-}
-/// DO NOT USE. This is just a dummy for some testing.
-impl AggregatorTdim for () {
-    type InputValue = ();
-    type OutputValue = ();
-
-    fn ends_before(&self, _inp: &Self::InputValue) -> bool {
-        todo!()
-    }
-
-    fn ends_after(&self, _inp: &Self::InputValue) -> bool {
-        todo!()
-    }
-
-    fn starts_after(&self, _inp: &Self::InputValue) -> bool {
-        todo!()
-    }
-
-    fn ingest(&mut self, _v: &Self::InputValue) {
-        todo!()
-    }
-    fn result(self) -> Self::OutputValue {
-        todo!()
-    }
-}
-
 /// Batch of events with a scalar (zero dimensions) numeric value.
 pub struct ValuesDim0 {
     tss: Vec<u64>,
@@ -215,67 +175,6 @@ pub enum Fits {
 
 pub trait FitsInside {
     fn fits_inside(&self, range: NanoRange) -> Fits;
-}
-
-pub struct MinMaxAvgScalarBinSingle {
-    ts1: u64,
-    ts2: u64,
-    count: u64,
-    min: f32,
-    max: f32,
-    avg: f32,
-}
-
-impl std::fmt::Debug for MinMaxAvgScalarBinSingle {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            fmt,
-            "MinMaxAvgScalarBinSingle  ts1 {}  ts2 {}  count {}  min {:7.2e}  max {:7.2e}  avg {:7.2e}",
-            self.ts1, self.ts2, self.count, self.min, self.max, self.avg
-        )
-    }
-}
-
-impl AggregatableTdim for MinMaxAvgScalarBinSingle {
-    type Output = MinMaxAvgScalarBinSingle;
-    type Aggregator = MinMaxAvgScalarBinSingleAggregator;
-    fn aggregator_new_static(_ts1: u64, _ts2: u64) -> Self::Aggregator {
-        todo!()
-    }
-}
-
-impl AggregatableXdim1Bin for MinMaxAvgScalarBinSingle {
-    type Output = MinMaxAvgScalarBinSingle;
-    fn into_agg(self) -> Self::Output {
-        self
-    }
-}
-
-pub struct MinMaxAvgScalarBinSingleAggregator {}
-
-impl AggregatorTdim for MinMaxAvgScalarBinSingleAggregator {
-    type InputValue = MinMaxAvgScalarBinSingle;
-    type OutputValue = MinMaxAvgScalarBinSingle;
-
-    fn ends_before(&self, _inp: &Self::InputValue) -> bool {
-        todo!()
-    }
-
-    fn ends_after(&self, _inp: &Self::InputValue) -> bool {
-        todo!()
-    }
-
-    fn starts_after(&self, _inp: &Self::InputValue) -> bool {
-        todo!()
-    }
-
-    fn ingest(&mut self, _v: &Self::InputValue) {
-        todo!()
-    }
-
-    fn result(self) -> Self::OutputValue {
-        todo!()
-    }
 }
 
 pub struct Dim0F32Stream<S>

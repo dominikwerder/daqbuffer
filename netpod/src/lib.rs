@@ -311,6 +311,7 @@ pub struct PreBinnedPatchRange {
 }
 
 impl PreBinnedPatchRange {
+    /// Cover at least the given range with at least as many as the requested number of bins.
     pub fn covering_range(range: NanoRange, min_bin_count: u64) -> Option<Self> {
         assert!(min_bin_count >= 1);
         assert!(min_bin_count <= 2000);
