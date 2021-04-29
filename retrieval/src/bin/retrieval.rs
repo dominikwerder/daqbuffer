@@ -1,5 +1,5 @@
 use err::Error;
-use netpod::{Nanos, NodeConfig};
+use netpod::NodeConfig;
 use tokio::io::AsyncReadExt;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
@@ -46,6 +46,7 @@ async fn go() -> Result<(), Error> {
 
 #[test]
 fn simple_fetch() {
+    use netpod::Nanos;
     use netpod::{timeunits::*, Channel, ChannelConfig, Cluster, Database, Node, NodeConfig, ScalarType, Shape};
     taskrun::run(async {
         let t1 = chrono::Utc::now();
