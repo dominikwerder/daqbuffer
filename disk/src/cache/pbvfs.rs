@@ -1,7 +1,7 @@
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
-use crate::frame::makeframe::FrameType;
+use crate::frame::makeframe::decode_frame;
 use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, FutureExt};
@@ -73,15 +73,21 @@ impl Stream for PreBinnedValueFetchedStream {
             break if let Some(res) = self.res.as_mut() {
                 pin_mut!(res);
                 match res.poll_next(cx) {
-                    Ready(Some(Ok(frame))) => {
-                        assert!(frame.tyid() == <PreBinnedHttpFrame as FrameType>::FRAME_TYPE_ID);
-                        match bincode::deserialize::<PreBinnedHttpFrame>(frame.buf()) {
-                            Ok(item) => Ready(Some(item)),
-                            Err(e) => Ready(Some(Err(e.into()))),
+                    Ready(Some(Ok(frame))) => match decode_frame::<PreBinnedHttpFrame>(&frame) {
+                        Ok(item) => Ready(Some(item)),
+                        Err(e) => {
+                            self.errored = true;
+                            Ready(Some(Err(e.into())))
                         }
+                    },
+                    Ready(Some(Err(e))) => {
+                        self.errored = true;
+                        Ready(Some(Err(e.into())))
                     }
-                    Ready(Some(Err(e))) => Ready(Some(Err(e.into()))),
-                    Ready(None) => Ready(None),
+                    Ready(None) => {
+                        self.completed = true;
+                        Ready(None)
+                    }
                     Pending => Pending,
                 }
             } else if let Some(resfut) = self.resfut.as_mut() {
@@ -96,6 +102,7 @@ impl Stream for PreBinnedValueFetchedStream {
                         }
                         Err(e) => {
                             error!("PreBinnedValueStream  error in stream {:?}", e);
+                            self.errored = true;
                             Ready(Some(Err(e.into())))
                         }
                     },

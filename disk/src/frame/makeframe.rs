@@ -1,9 +1,10 @@
 use crate::cache::BinnedBytesForHttpStreamFrame;
+use crate::frame::inmem::InMemoryFrame;
 use crate::raw::conn::RawConnOut;
 use crate::raw::EventQueryJsonStringFrame;
 use bytes::{BufMut, BytesMut};
 use err::Error;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub const INMEM_FRAME_HEAD: usize = 16;
 pub const INMEM_FRAME_MAGIC: u32 = 0xc6c3b73d;
@@ -54,4 +55,32 @@ pub fn make_term_frame() -> BytesMut {
     buf.put_u32_le(0x01);
     buf.put_u32_le(0);
     buf
+}
+
+pub fn decode_frame<'a, FT>(frame: &'a InMemoryFrame) -> Result<FT, Error>
+where
+    FT: FrameType + Deserialize<'a>,
+{
+    if frame.encid() != 0x12121212 {
+        return Err(Error::with_msg(format!("unknown encoder id {:?}", frame)));
+    }
+    if frame.tyid() != FT::FRAME_TYPE_ID {
+        return Err(Error::with_msg(format!(
+            "type id mismatch expect {}  found {:?}",
+            FT::FRAME_TYPE_ID,
+            frame
+        )));
+    }
+    if frame.len() as usize != frame.buf().len() {
+        return Err(Error::with_msg(format!(
+            "buf mismatch  {}  vs  {}  in {:?}",
+            frame.len(),
+            frame.buf().len(),
+            frame
+        )));
+    }
+    match bincode::deserialize(frame.buf()) {
+        Ok(item) => Ok(item),
+        Err(e) => Err(e.into()),
+    }
 }

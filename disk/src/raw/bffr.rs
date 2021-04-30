@@ -1,6 +1,6 @@
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
-use crate::frame::makeframe::FrameType;
+use crate::frame::makeframe::decode_frame;
 use crate::raw::conn::RawConnOut;
 use err::Error;
 use futures_core::Stream;
@@ -58,8 +58,7 @@ where
                         "MinMaxAvgScalarEventBatchStreamFromFrames  got full frame buf  {}",
                         frame.buf().len()
                     );
-                    assert!(frame.tyid() == <ExpectedType as FrameType>::FRAME_TYPE_ID);
-                    match bincode::deserialize::<ExpectedType>(frame.buf()) {
+                    match decode_frame::<ExpectedType>(&frame) {
                         Ok(item) => match item {
                             Ok(item) => Ready(Some(Ok(item))),
                             Err(e) => {
@@ -73,7 +72,7 @@ where
                                 frame.buf().len(),
                             );
                             self.errored = true;
-                            Ready(Some(Err(e.into())))
+                            Ready(Some(Err(e)))
                         }
                     }
                 }

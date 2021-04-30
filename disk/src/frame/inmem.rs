@@ -216,6 +216,16 @@ impl InMemoryFrame {
     }
 }
 
+impl std::fmt::Debug for InMemoryFrame {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            fmt,
+            "InMemoryFrame {{ encid: {:x}  tyid: {:x}  len {} }}",
+            self.encid, self.tyid, self.len
+        )
+    }
+}
+
 impl<T> Stream for InMemoryFrameAsyncReadStream<T>
 where
     T: AsyncRead + Unpin,

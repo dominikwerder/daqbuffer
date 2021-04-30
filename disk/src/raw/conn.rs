@@ -4,7 +4,7 @@ use crate::agg::IntoDim1F32Stream;
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
 use crate::eventblobs::EventBlobsComplete;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
-use crate::frame::makeframe::{make_frame, make_term_frame};
+use crate::frame::makeframe::{decode_frame, make_frame, make_term_frame};
 use crate::raw::{EventQueryJsonStringFrame, EventsQuery};
 use err::Error;
 use futures_util::StreamExt;
@@ -68,7 +68,7 @@ async fn raw_conn_handler_inner(
                 ce.err
             );*/
             let buf = make_frame::<RawConnOut>(&Err(ce.err))?;
-            match ce.netout.write(&buf).await {
+            match ce.netout.write_all(&buf).await {
                 Ok(_) => (),
                 Err(e) => return Err(e)?,
             }
@@ -120,9 +120,9 @@ async fn raw_conn_handler_inner_try(
         error!("expect a command frame");
         return Err((Error::with_msg("expect a command frame"), netout))?;
     }
-    let qitem = match bincode::deserialize::<EventQueryJsonStringFrame>(frames[0].buf()) {
+    let qitem: EventQueryJsonStringFrame = match decode_frame(&frames[0]) {
         Ok(k) => k,
-        Err(e) => return Err((e, netout))?,
+        Err(e) => return Err((e, netout).into()),
     };
     trace!("json: {}", qitem.0);
     let res: Result<EventsQuery, _> = serde_json::from_str(&qitem.0);
@@ -197,7 +197,7 @@ async fn raw_conn_handler_inner_try(
             );
         }
         match make_frame::<RawConnOut>(&item) {
-            Ok(buf) => match netout.write(&buf).await {
+            Ok(buf) => match netout.write_all(&buf).await {
                 Ok(_) => {}
                 Err(e) => return Err((e, netout))?,
             },
@@ -220,7 +220,7 @@ async fn raw_conn_handler_inner_try(
         let mut s1 = futures_util::stream::iter(vec![batch]).map(Result::Ok);
         while let Some(item) = s1.next().await {
             match make_frame::<RawConnOut>(&item) {
-                Ok(buf) => match netout.write(&buf).await {
+                Ok(buf) => match netout.write_all(&buf).await {
                     Ok(_) => {}
                     Err(e) => return Err((e, netout))?,
                 },
@@ -231,7 +231,7 @@ async fn raw_conn_handler_inner_try(
         }
     }
     let buf = make_term_frame();
-    match netout.write(&buf).await {
+    match netout.write_all(&buf).await {
         Ok(_) => (),
         Err(e) => return Err((e, netout))?,
     }
