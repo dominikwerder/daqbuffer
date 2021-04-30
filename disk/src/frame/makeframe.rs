@@ -6,7 +6,8 @@ use bytes::{BufMut, BytesMut};
 use err::Error;
 use serde::{Deserialize, Serialize};
 
-pub const INMEM_FRAME_HEAD: usize = 16;
+pub const INMEM_FRAME_HEAD: usize = 20;
+pub const INMEM_FRAME_FOOT: usize = 4;
 pub const INMEM_FRAME_MAGIC: u32 = 0xc6c3b73d;
 
 pub trait FrameType {
@@ -34,13 +35,21 @@ where
             if enc.len() > u32::MAX as usize {
                 return Err(Error::with_msg(format!("too long payload {}", enc.len())));
             }
+            let mut h = crc32fast::Hasher::new();
+            h.update(&enc);
+            let payload_crc = h.finalize();
             let encid = 0x12121212;
             let mut buf = BytesMut::with_capacity(enc.len() + INMEM_FRAME_HEAD);
             buf.put_u32_le(INMEM_FRAME_MAGIC);
             buf.put_u32_le(encid);
             buf.put_u32_le(FT::FRAME_TYPE_ID);
             buf.put_u32_le(enc.len() as u32);
+            buf.put_u32_le(payload_crc);
             buf.put(enc.as_ref());
+            let mut h = crc32fast::Hasher::new();
+            h.update(&buf);
+            let frame_crc = h.finalize();
+            buf.put_u32_le(frame_crc);
             Ok(buf)
         }
         Err(e) => Err(e)?,
@@ -48,12 +57,20 @@ where
 }
 
 pub fn make_term_frame() -> BytesMut {
+    let mut h = crc32fast::Hasher::new();
+    h.update(&[]);
+    let payload_crc = h.finalize();
     let encid = 0x12121313;
     let mut buf = BytesMut::with_capacity(INMEM_FRAME_HEAD);
     buf.put_u32_le(INMEM_FRAME_MAGIC);
     buf.put_u32_le(encid);
     buf.put_u32_le(0x01);
     buf.put_u32_le(0);
+    buf.put_u32_le(payload_crc);
+    let mut h = crc32fast::Hasher::new();
+    h.update(&buf);
+    let frame_crc = h.finalize();
+    buf.put_u32_le(frame_crc);
     buf
 }
 

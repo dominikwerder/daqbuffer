@@ -42,11 +42,14 @@ fn get_binned() {
 }
 
 async fn get_binned_0_inner() -> Result<(), Error> {
+    let cluster = test_cluster();
+    let _hosts = spawn_test_hosts(cluster.clone());
     get_binned_channel(
         "wave-f64-be-n21",
         "1970-01-01T00:20:10.000Z",
         "1970-01-01T00:20:51.000Z",
         4,
+        &cluster,
     )
     .await?;
     get_binned_channel(
@@ -54,6 +57,7 @@ async fn get_binned_0_inner() -> Result<(), Error> {
         "1970-01-01T01:11:00.000Z",
         "1970-01-01T02:12:00.000Z",
         4,
+        &cluster,
     )
     .await?;
     get_binned_channel(
@@ -61,19 +65,24 @@ async fn get_binned_0_inner() -> Result<(), Error> {
         "1970-01-01T01:42:00.000Z",
         "1970-01-01T03:55:00.000Z",
         2,
+        &cluster,
     )
     .await?;
     Ok(())
 }
 
-async fn get_binned_channel<S>(channel_name: &str, beg_date: S, end_date: S, bin_count: u32) -> Result<(), Error>
+async fn get_binned_channel<S>(
+    channel_name: &str,
+    beg_date: S,
+    end_date: S,
+    bin_count: u32,
+    cluster: &Cluster,
+) -> Result<(), Error>
 where
     S: AsRef<str>,
 {
     let t1 = Utc::now();
-    let cluster = test_cluster();
     let node0 = &cluster.nodes[0];
-    let _hosts = spawn_test_hosts(cluster.clone());
     let beg_date: DateTime<Utc> = beg_date.as_ref().parse()?;
     let end_date: DateTime<Utc> = end_date.as_ref().parse()?;
     let channel_backend = "back";

@@ -66,6 +66,8 @@ pub struct PreBinnedValueStream {
     node_config: NodeConfig,
     open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<tokio::fs::File, std::io::Error>> + Send>>>,
     fut2: Option<Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarBinBatch, Error>> + Send>>>,
+    errored: bool,
+    completed: bool,
 }
 
 impl PreBinnedValueStream {
@@ -84,6 +86,8 @@ impl PreBinnedValueStream {
             node_config: node_config.clone(),
             open_check_local_file: None,
             fut2: None,
+            errored: false,
+            completed: false,
         }
     }
 
@@ -156,20 +160,48 @@ impl Stream for PreBinnedValueStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        if self.completed {
+            panic!("PreBinnedValueStream  poll_next on completed");
+        }
+        if self.errored {
+            self.completed = true;
+            return Ready(None);
+        }
         'outer: loop {
             break if let Some(fut) = self.fut2.as_mut() {
-                fut.poll_next_unpin(cx)
+                match fut.poll_next_unpin(cx) {
+                    Ready(Some(Ok(k))) => Ready(Some(Ok(k))),
+                    Ready(Some(Err(e))) => {
+                        self.errored = true;
+                        Ready(Some(Err(e)))
+                    }
+                    Ready(None) => Ready(None),
+                    Pending => Pending,
+                }
             } else if let Some(fut) = self.open_check_local_file.as_mut() {
                 match fut.poll_unpin(cx) {
-                    Ready(Ok(_file)) => err::todoval(),
+                    Ready(Ok(_file)) => {
+                        self.errored = true;
+                        Ready(Some(Err(Error::with_msg(format!(
+                            "TODO use the cached data from file"
+                        )))))
+                    }
                     Ready(Err(e)) => match e.kind() {
                         std::io::ErrorKind::NotFound => {
                             error!("TODO LOCAL CACHE FILE NOT FOUND");
                             self.try_setup_fetch_prebinned_higher_res();
-                            continue 'outer;
+                            if self.fut2.is_none() {
+                                self.errored = true;
+                                Ready(Some(Err(Error::with_msg(format!(
+                                    "try_setup_fetch_prebinned_higher_res  failed"
+                                )))))
+                            } else {
+                                continue 'outer;
+                            }
                         }
                         _ => {
                             error!("File I/O error: {:?}", e);
+                            self.errored = true;
                             Ready(Some(Err(e.into())))
                         }
                     },

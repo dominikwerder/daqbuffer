@@ -1,4 +1,4 @@
-use crate::frame::makeframe::{INMEM_FRAME_HEAD, INMEM_FRAME_MAGIC};
+use crate::frame::makeframe::{INMEM_FRAME_FOOT, INMEM_FRAME_HEAD, INMEM_FRAME_MAGIC};
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
 use futures_core::Stream;
@@ -108,10 +108,9 @@ where
             buf.len(),
             wp
         );
-        const HEAD: usize = INMEM_FRAME_HEAD;
         let mut buf = buf;
         let nb = wp;
-        if nb >= HEAD {
+        if nb >= INMEM_FRAME_HEAD {
             let magic = u32::from_le_bytes(*arrayref::array_ref![buf, 0, 4]);
             let encid = u32::from_le_bytes(*arrayref::array_ref![buf, 4, 4]);
             let tyid = u32::from_le_bytes(*arrayref::array_ref![buf, 8, 4]);
@@ -129,22 +128,12 @@ where
             }
             trace!("tryparse len {}", len);
             if len == 0 {
-                if nb != HEAD {
-                    return (
-                        Some(Some(Err(Error::with_msg(format!(
-                            "InMemoryFrameAsyncReadStream  tryparse  unexpected amount left {}",
-                            nb
-                        ))))),
-                        buf,
-                        wp,
-                    );
-                }
+                info!("stop-frame with nb {}", nb);
                 (Some(None), buf, wp)
             } else {
                 if len > 1024 * 32 {
                     warn!("InMemoryFrameAsyncReadStream  big len received  {}", len);
-                }
-                if len > 1024 * 1024 * 2 {
+                } else if len > 1024 * 1024 * 2 {
                     error!("InMemoryFrameAsyncReadStream  too long len {}", len);
                     return (
                         Some(Some(Err(Error::with_msg(format!(
@@ -155,27 +144,55 @@ where
                         wp,
                     );
                 }
-                if len == 0 && len > 1024 * 512 {
-                    return (
-                        Some(Some(Err(Error::with_msg(format!(
-                            "InMemoryFrameAsyncReadStream  tryparse  len {}  self.inp_bytes_consumed {}",
-                            len, self.inp_bytes_consumed
-                        ))))),
-                        buf,
-                        wp,
-                    );
-                }
-                let nl = len as usize + HEAD;
+                let nl = len as usize + INMEM_FRAME_HEAD + INMEM_FRAME_FOOT;
                 if self.bufcap < nl {
                     // TODO count cases in production
                     let n = 2 * nl;
                     warn!("Adjust bufcap  old {}  new {}", self.bufcap, n);
                     self.bufcap = n;
                 }
-                if nb >= nl {
+                if nb < nl {
+                    (None, buf, wp)
+                } else {
                     use bytes::Buf;
+                    let mut h = crc32fast::Hasher::new();
+                    h.update(&buf[..(nl - INMEM_FRAME_FOOT)]);
+                    let frame_crc = h.finalize();
+                    let mut h = crc32fast::Hasher::new();
+                    h.update(&buf[INMEM_FRAME_HEAD..(nl - INMEM_FRAME_FOOT)]);
+                    let payload_crc = h.finalize();
+                    let frame_crc_ind =
+                        u32::from_le_bytes(*arrayref::array_ref![buf, INMEM_FRAME_HEAD + len as usize, 4]);
+                    let payload_crc_ind = u32::from_le_bytes(*arrayref::array_ref![buf, 16, 4]);
+                    let payload_crc_match = payload_crc_ind == payload_crc;
+                    let frame_crc_match = frame_crc_ind == frame_crc;
+                    if !payload_crc_match || !frame_crc_match {
+                        return (
+                            Some(Some(Err(Error::with_msg(format!(
+                                "InMemoryFrameAsyncReadStream  tryparse  crc mismatch  {}  {}",
+                                payload_crc_match, frame_crc_match,
+                            ))))),
+                            buf,
+                            wp,
+                        );
+                    }
                     let mut buf3 = buf.split_to(nl);
-                    buf3.advance(HEAD);
+                    buf3.advance(INMEM_FRAME_HEAD);
+                    buf3.truncate(len as usize);
+                    let mut h = crc32fast::Hasher::new();
+                    h.update(&buf3);
+                    let payload_crc_2 = h.finalize();
+                    let payload_crc_2_match = payload_crc_2 == payload_crc_ind;
+                    if !payload_crc_2_match {
+                        return (
+                            Some(Some(Err(Error::with_msg(format!(
+                                "InMemoryFrameAsyncReadStream  tryparse  crc mismatch  {}  {}  {}",
+                                payload_crc_match, frame_crc_match, payload_crc_2_match,
+                            ))))),
+                            buf,
+                            wp,
+                        );
+                    }
                     self.inp_bytes_consumed += nl as u64;
                     let ret = InMemoryFrame {
                         len,
@@ -184,8 +201,6 @@ where
                         buf: buf3.freeze(),
                     };
                     (Some(Some(Ok(ret))), buf, wp - nl)
-                } else {
-                    (None, buf, wp)
                 }
             }
         } else {
