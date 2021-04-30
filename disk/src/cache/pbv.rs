@@ -9,6 +9,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use netpod::log::*;
+use netpod::streamext::SCC;
 use netpod::{
     AggKind, BinnedRange, Channel, NanoRange, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchIterator,
     PreBinnedPatchRange,
@@ -17,41 +18,32 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub struct PreBinnedValueByteStream {
+pub type PreBinnedValueByteStream = SCC<PreBinnedValueByteStreamInner>;
+
+pub struct PreBinnedValueByteStreamInner {
     inp: PreBinnedValueStream,
-    errored: bool,
-    completed: bool,
 }
 
-impl PreBinnedValueByteStream {
-    pub fn new(patch: PreBinnedPatchCoord, channel: Channel, agg_kind: AggKind, node_config: &NodeConfig) -> Self {
-        Self {
-            inp: PreBinnedValueStream::new(patch, channel, agg_kind, node_config),
-            errored: false,
-            completed: false,
-        }
-    }
+pub fn pre_binned_value_byte_stream_new(
+    patch: PreBinnedPatchCoord,
+    channel: Channel,
+    agg_kind: AggKind,
+    node_config: &NodeConfig,
+) -> PreBinnedValueByteStream {
+    let s1 = PreBinnedValueStream::new(patch, channel, agg_kind, node_config);
+    let s2 = PreBinnedValueByteStreamInner { inp: s1 };
+    SCC::new(s2)
 }
 
-impl Stream for PreBinnedValueByteStream {
+impl Stream for PreBinnedValueByteStreamInner {
     type Item = Result<Bytes, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        if self.completed {
-            panic!("poll_next on completed");
-        }
-        if self.errored {
-            self.completed = true;
-            return Ready(None);
-        }
         match self.inp.poll_next_unpin(cx) {
             Ready(Some(item)) => match make_frame::<PreBinnedHttpFrame>(&item) {
                 Ok(buf) => Ready(Some(Ok(buf.freeze()))),
-                Err(e) => {
-                    self.errored = true;
-                    Ready(Some(Err(e.into())))
-                }
+                Err(e) => Ready(Some(Err(e.into()))),
             },
             Ready(None) => Ready(None),
             Pending => Pending,

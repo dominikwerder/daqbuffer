@@ -52,21 +52,21 @@ pub async fn get_binned(
             let g = match item {
                 Ok(frame) => {
                     type ExpectedType = disk::cache::BinnedBytesForHttpStreamFrame;
-                    info!("frame  len {}", frame.buf().len());
+                    let n1 = frame.buf().len();
                     match bincode::deserialize::<ExpectedType>(frame.buf()) {
                         Ok(item) => match item {
                             Ok(item) => {
-                                info!("item: {:?}", item);
+                                info!("len {}  item {:?}", n1, item);
                                 bin_count += 1;
                                 Some(Ok(item))
                             }
                             Err(e) => {
-                                error!("error frame: {:?}", e);
+                                error!("len {}  error frame {:?}", n1, e);
                                 Some(Err(e))
                             }
                         },
                         Err(e) => {
-                            error!("bincode error: {:?}", e);
+                            error!("len {}  bincode error {:?}", n1, e);
                             Some(Err(e.into()))
                         }
                     }

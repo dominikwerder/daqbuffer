@@ -10,6 +10,8 @@ use timeunits::*;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
+pub mod streamext;
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AggQuerySingleChannel {
     pub channel_config: ChannelConfig,

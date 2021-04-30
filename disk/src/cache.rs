@@ -185,7 +185,7 @@ pub fn pre_binned_bytes_for_http(
     query: &PreBinnedQuery,
 ) -> Result<PreBinnedValueByteStream, Error> {
     info!("pre_binned_bytes_for_http  {:?}  {:?}", query, node);
-    let ret = PreBinnedValueByteStream::new(
+    let ret = super::cache::pbv::pre_binned_value_byte_stream_new(
         query.patch.clone(),
         query.channel.clone(),
         query.agg_kind.clone(),
