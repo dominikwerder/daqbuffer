@@ -204,7 +204,7 @@ async fn gen_config(
     let len = p2 - p1 + 4;
     buf.put_i32(len as i32);
     buf.as_mut()[p1..].as_mut().put_i32(len as i32);
-    file.write(&buf).await?;
+    file.write_all(&buf).await?;
     Ok(())
 }
 
