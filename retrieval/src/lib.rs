@@ -14,7 +14,7 @@ pub fn spawn_test_hosts(cluster: Cluster) -> Vec<JoinHandle<Result<(), Error>>> 
     for node in &cluster.nodes {
         let node_config = NodeConfig {
             cluster: cluster.clone(),
-            nodeid: node.id.clone(),
+            name: format!("{}:{}", node.host, node.port),
         };
         let h = tokio::spawn(httpret::host(node_config, node.clone()));
         ret.push(h);

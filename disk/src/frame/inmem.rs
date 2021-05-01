@@ -103,11 +103,6 @@ where
         buf: BytesMut,
         wp: usize,
     ) -> (Option<Option<Result<InMemoryFrame, Error>>>, BytesMut, usize) {
-        trace!(
-            "+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++   tryparse with  buf.len() {}  wp {}",
-            buf.len(),
-            wp
-        );
         let mut buf = buf;
         let nb = wp;
         if nb >= INMEM_FRAME_HEAD {
@@ -126,9 +121,10 @@ where
                     wp,
                 );
             }
-            trace!("tryparse len {}", len);
             if len == 0 {
-                info!("stop-frame with nb {}", nb);
+                if nb != INMEM_FRAME_HEAD + INMEM_FRAME_FOOT {
+                    warn!("stop-frame with nb {}", nb);
+                }
                 (Some(None), buf, wp)
             } else {
                 if len > 1024 * 32 {

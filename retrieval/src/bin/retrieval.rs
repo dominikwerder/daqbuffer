@@ -30,7 +30,7 @@ async fn go() -> Result<(), Error> {
             let node_config: NodeConfig = serde_json::from_slice(&buf)?;
             let node = node_config
                 .get_node()
-                .ok_or(Error::with_msg(format!("nodeid config error")))?;
+                .ok_or(Error::with_msg(format!("nodeid config error {:?}", node_config)))?;
             retrieval::run_node(node_config.clone(), node.clone()).await?;
         }
         SubCmd::Client(client) => match client.client_type {
@@ -54,7 +54,6 @@ fn simple_fetch() {
     taskrun::run(async {
         let t1 = chrono::Utc::now();
         let node = Node {
-            id: format!("{:02}", 0),
             host: "localhost".into(),
             listen: "0.0.0.0".into(),
             port: 8360,
@@ -91,7 +90,7 @@ fn simple_fetch() {
             },
         };
         let node_config = NodeConfig {
-            nodeid: cluster.nodes[0].id.clone(),
+            name: format!("{}:{}", cluster.nodes[0].host, cluster.nodes[0].port),
             cluster,
         };
         let node = node_config.get_node().unwrap();

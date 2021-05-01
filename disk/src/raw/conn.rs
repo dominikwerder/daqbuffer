@@ -11,7 +11,7 @@ use futures_util::StreamExt;
 #[allow(unused_imports)]
 use netpod::log::*;
 use netpod::timeunits::SEC;
-use netpod::{Node, NodeConfig, ScalarType, Shape};
+use netpod::{Node, NodeConfig, Shape};
 use std::net::SocketAddr;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
@@ -168,7 +168,7 @@ async fn raw_conn_handler_inner_try(
             keyspace: entry.ks as u8,
             time_bin_size: entry.bs,
             shape: shape,
-            scalar_type: ScalarType::from_dtype_index(entry.dtype.to_i16() as u8),
+            scalar_type: entry.scalar_type.clone(),
             big_endian: entry.is_big_endian,
             array: entry.is_array,
             compression: entry.is_compressed,

@@ -10,6 +10,7 @@ use timeunits::*;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
+pub mod status;
 pub mod streamext;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -40,11 +41,11 @@ pub enum ScalarType {
 }
 
 impl ScalarType {
-    pub fn from_dtype_index(ix: u8) -> Self {
+    pub fn from_dtype_index(ix: u8) -> Result<Self, Error> {
         use ScalarType::*;
-        match ix {
-            0 => panic!("BOOL not supported"),
-            1 => panic!("BOOL8 not supported"),
+        let g = match ix {
+            0 => return Err(Error::with_msg(format!("BOOL not supported"))),
+            1 => return Err(Error::with_msg(format!("BOOL8 not supported"))),
             3 => U8,
             5 => U16,
             8 => U32,
@@ -55,10 +56,11 @@ impl ScalarType {
             9 => I64,
             11 => F32,
             12 => F64,
-            6 => panic!("CHARACTER not supported"),
-            13 => panic!("STRING not supported"),
-            _ => panic!("unknown"),
-        }
+            6 => return Err(Error::with_msg(format!("CHARACTER not supported"))),
+            13 => return Err(Error::with_msg(format!("STRING not supported"))),
+            _ => return Err(Error::with_msg(format!("unknown dtype code: {}", ix))),
+        };
+        Ok(g)
     }
 
     pub fn bytes(&self) -> u8 {
@@ -96,7 +98,6 @@ impl ScalarType {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Node {
-    pub id: String,
     pub host: String,
     pub listen: String,
     pub port: u16,
@@ -107,7 +108,7 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn name(&self) -> String {
+    pub fn _name(&self) -> String {
         format!("{}-{}", self.host, self.port)
     }
 }
@@ -128,15 +129,23 @@ pub struct Cluster {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeConfig {
-    pub nodeid: String,
+    pub name: String,
     pub cluster: Cluster,
 }
 
 impl NodeConfig {
     pub fn get_node(&self) -> Option<&Node> {
-        for n in &self.cluster.nodes {
-            if n.id == self.nodeid {
-                return Some(n);
+        if self.name.contains(":") {
+            for n in &self.cluster.nodes {
+                if self.name == format!("{}:{}", n.host, n.port) {
+                    return Some(n);
+                }
+            }
+        } else {
+            for n in &self.cluster.nodes {
+                if self.name == format!("{}", n.host) {
+                    return Some(n);
+                }
             }
         }
         None

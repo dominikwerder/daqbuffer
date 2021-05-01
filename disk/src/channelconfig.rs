@@ -1,6 +1,6 @@
 use err::Error;
 use netpod::timeunits::MS;
-use netpod::{Channel, NanoRange, Nanos, Node};
+use netpod::{Channel, NanoRange, Nanos, Node, ScalarType};
 use nom::number::complete::{be_i16, be_i32, be_i64, be_i8, be_u8};
 use nom::Needed;
 #[allow(unused_imports)]
@@ -23,30 +23,6 @@ where
 {
     let e = Error::with_msg(msg);
     Err(nom::Err::Error(e))
-}
-
-#[derive(Debug, FromPrimitive, ToPrimitive, Serialize, Deserialize)]
-pub enum DType {
-    Bool = 0,
-    Bool8 = 1,
-    Int8 = 2,
-    Uint8 = 3,
-    Int16 = 4,
-    Uint16 = 5,
-    Character = 6,
-    Int32 = 7,
-    Uint32 = 8,
-    Int64 = 9,
-    Uint64 = 10,
-    Float32 = 11,
-    Float64 = 12,
-    String = 13,
-}
-
-impl DType {
-    pub fn to_i16(&self) -> i16 {
-        ToPrimitive::to_i16(self).unwrap()
-    }
 }
 
 #[derive(Debug, FromPrimitive, ToPrimitive, Serialize, Deserialize)]
@@ -78,7 +54,7 @@ pub struct ConfigEntry {
     -16  f64
     */
     pub precision: i16,
-    pub dtype: DType,
+    pub scalar_type: ScalarType,
     pub is_compressed: bool,
     pub is_shaped: bool,
     pub is_array: bool,
@@ -117,7 +93,6 @@ fn parse_short_string(inp: &[u8]) -> NRes<Option<String>> {
     }
 }
 
-//pub fn parse_entry(inp: &[u8]) -> IResult<&[u8], Option<ConfigEntry>> {
 pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
     let (inp, len1) = be_i32(inp)?;
     if len1 < 0 || len1 > 4000 {
@@ -150,14 +125,14 @@ pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
     let is_array = dtmask & 0x40 != 0;
     let is_big_endian = dtmask & 0x20 != 0;
     let is_shaped = dtmask & 0x10 != 0;
-    let (inp, dtype) = be_i8(inp)?;
+    let (inp, dtype) = be_u8(inp)?;
     if dtype > 13 {
         return mkerr(format!("unexpected data type {}", dtype));
     }
-    let dtype = match num_traits::FromPrimitive::from_i8(dtype) {
-        Some(k) => k,
-        None => {
-            return mkerr(format!("Can not convert {} to DType", dtype));
+    let scalar_type = match ScalarType::from_dtype_index(dtype) {
+        Ok(k) => k,
+        Err(e) => {
+            return mkerr(format!("Can not convert {} to DType  {:?}", dtype, e));
         }
     };
     let (inp, compression_method) = match is_compressed {
@@ -211,7 +186,7 @@ pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
             modulo,
             offset,
             precision,
-            dtype,
+            scalar_type,
             is_compressed: is_compressed,
             is_array: is_array,
             is_shaped: is_shaped,

@@ -15,7 +15,6 @@ fn test_cluster() -> Cluster {
     let nodes = (0..3)
         .into_iter()
         .map(|id| Node {
-            id: format!("{:02}", id),
             host: "localhost".into(),
             listen: "0.0.0.0".into(),
             port: 8360 + id as u16,

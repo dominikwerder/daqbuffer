@@ -224,7 +224,7 @@ impl EventChunker {
                                             ts,
                                             pulse,
                                             Some(decomp),
-                                            ScalarType::from_dtype_index(type_index),
+                                            ScalarType::from_dtype_index(type_index)?,
                                         );
                                     }
                                 }
