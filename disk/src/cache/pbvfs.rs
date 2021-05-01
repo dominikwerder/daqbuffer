@@ -7,7 +7,8 @@ use futures_core::Stream;
 use futures_util::{pin_mut, FutureExt};
 #[allow(unused_imports)]
 use netpod::log::*;
-use netpod::{AggKind, Channel, NodeConfig, PreBinnedPatchCoord};
+use netpod::{AggKind, Channel, NodeConfigCached, PreBinnedPatchCoord};
+use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -24,10 +25,10 @@ impl PreBinnedValueFetchedStream {
         patch_coord: PreBinnedPatchCoord,
         channel: Channel,
         agg_kind: AggKind,
-        node_config: &NodeConfig,
+        node_config: &NodeConfigCached,
     ) -> Self {
-        let nodeix = node_ix_for_patch(&patch_coord, &channel, &node_config.cluster);
-        let node = &node_config.cluster.nodes[nodeix as usize];
+        let nodeix = node_ix_for_patch(&patch_coord, &channel, &node_config.node_config.cluster);
+        let node = &node_config.node_config.cluster.nodes[nodeix as usize];
         warn!("TODO defining property of a PreBinnedPatchCoord? patchlen + ix? binsize + patchix? binsize + patchsize + patchix?");
         // TODO encapsulate uri creation, how to express aggregation kind?
         let uri: hyper::Uri = format!(
@@ -52,13 +53,26 @@ impl PreBinnedValueFetchedStream {
     }
 }
 
-// TODO use a newtype here to use a different FRAME_TYPE_ID compared to
-// impl FrameType for BinnedBytesForHttpStreamFrame
-pub type PreBinnedHttpFrame = Result<MinMaxAvgScalarBinBatch, Error>;
+#[derive(Serialize, Deserialize)]
+pub struct PreBinnedFrame(pub Result<PreBinnedItem, Error>);
+
+impl<T> From<T> for PreBinnedFrame
+where
+    T: Into<Error>,
+{
+    fn from(k: T) -> Self {
+        PreBinnedFrame(Err(k.into()))
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum PreBinnedItem {
+    Batch(MinMaxAvgScalarBinBatch),
+}
 
 impl Stream for PreBinnedValueFetchedStream {
     // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
-    type Item = PreBinnedHttpFrame;
+    type Item = PreBinnedFrame;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -73,16 +87,19 @@ impl Stream for PreBinnedValueFetchedStream {
             break if let Some(res) = self.res.as_mut() {
                 pin_mut!(res);
                 match res.poll_next(cx) {
-                    Ready(Some(Ok(frame))) => match decode_frame::<PreBinnedHttpFrame>(&frame) {
-                        Ok(item) => Ready(Some(item)),
+                    Ready(Some(Ok(frame))) => match decode_frame::<PreBinnedFrame>(&frame) {
+                        Ok(item) => match item.0 {
+                            Ok(item) => Ready(Some(PreBinnedFrame(Ok(item)))),
+                            Err(e) => Ready(Some(PreBinnedFrame(Err(e)))),
+                        },
                         Err(e) => {
                             self.errored = true;
-                            Ready(Some(Err(e.into())))
+                            Ready(Some(e.into()))
                         }
                     },
                     Ready(Some(Err(e))) => {
                         self.errored = true;
-                        Ready(Some(Err(e.into())))
+                        Ready(Some(e.into()))
                     }
                     Ready(None) => {
                         self.completed = true;
@@ -103,20 +120,28 @@ impl Stream for PreBinnedValueFetchedStream {
                         Err(e) => {
                             error!("PreBinnedValueStream  error in stream {:?}", e);
                             self.errored = true;
-                            Ready(Some(Err(e.into())))
+                            Ready(Some(PreBinnedFrame(Err(e.into()))))
                         }
                     },
                     Pending => Pending,
                 }
             } else {
-                let req = hyper::Request::builder()
+                match hyper::Request::builder()
                     .method(http::Method::GET)
                     .uri(&self.uri)
-                    .body(hyper::Body::empty())?;
-                let client = hyper::Client::new();
-                info!("PreBinnedValueFetchedStream  START REQUEST FOR {:?}", req);
-                self.resfut = Some(client.request(req));
-                continue 'outer;
+                    .body(hyper::Body::empty())
+                {
+                    Ok(req) => {
+                        let client = hyper::Client::new();
+                        info!("PreBinnedValueFetchedStream  START REQUEST FOR {:?}", req);
+                        self.resfut = Some(client.request(req));
+                        continue 'outer;
+                    }
+                    Err(e) => {
+                        self.errored = true;
+                        Ready(Some(e.into()))
+                    }
+                }
             };
         }
     }

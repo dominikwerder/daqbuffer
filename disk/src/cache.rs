@@ -12,7 +12,7 @@ use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
 use hyper::Response;
 use netpod::{
-    AggKind, BinnedRange, Channel, Cluster, NanoRange, Node, NodeConfig, PreBinnedPatchCoord, PreBinnedPatchIterator,
+    AggKind, BinnedRange, Channel, Cluster, NanoRange, NodeConfigCached, PreBinnedPatchCoord, PreBinnedPatchIterator,
     PreBinnedPatchRange, ToNanos,
 };
 use serde::{Deserialize, Serialize};
@@ -65,12 +65,11 @@ impl Query {
 }
 
 pub async fn binned_bytes_for_http(
-    node_config: &NodeConfig,
-    node: &Node,
+    node_config: &NodeConfigCached,
     query: &Query,
 ) -> Result<BinnedBytesForHttpStream, Error> {
     let range = &query.range;
-    let channel_config = read_local_config(&query.channel, node).await?;
+    let channel_config = read_local_config(&query.channel, &node_config.node).await?;
     let entry = extract_matching_config_entry(range, &channel_config);
     info!("found config entry {:?}", entry);
     let range = BinnedRange::covering_range(range.clone(), query.count)
@@ -180,11 +179,10 @@ impl PreBinnedQuery {
 // A user must first make sure that the grid spec is valid, and that this node is responsible for it.
 // Otherwise it is an error.
 pub fn pre_binned_bytes_for_http(
-    node_config: &NodeConfig,
-    node: &Node,
+    node_config: &NodeConfigCached,
     query: &PreBinnedQuery,
 ) -> Result<PreBinnedValueByteStream, Error> {
-    info!("pre_binned_bytes_for_http  {:?}  {:?}", query, node);
+    info!("pre_binned_bytes_for_http  {:?}  {:?}", query, node_config.node);
     let ret = super::cache::pbv::pre_binned_value_byte_stream_new(
         query.patch.clone(),
         query.channel.clone(),

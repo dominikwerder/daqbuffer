@@ -1,11 +1,11 @@
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
-use crate::cache::pbvfs::PreBinnedValueFetchedStream;
+use crate::cache::pbvfs::{PreBinnedItem, PreBinnedValueFetchedStream};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 #[allow(unused_imports)]
 use netpod::log::*;
-use netpod::{AggKind, BinnedRange, Channel, NodeConfig, PreBinnedPatchIterator};
+use netpod::{AggKind, BinnedRange, Channel, NodeConfigCached, PreBinnedPatchIterator};
 use std::future::ready;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -20,7 +20,7 @@ impl BinnedStream {
         channel: Channel,
         range: BinnedRange,
         agg_kind: AggKind,
-        node_config: &NodeConfig,
+        node_config: &NodeConfigCached,
     ) -> Self {
         let patches: Vec<_> = patch_it.collect();
         warn!("BinnedStream::new");
@@ -36,10 +36,10 @@ impl BinnedStream {
             .flatten()
             .filter_map({
                 let range = range.clone();
-                move |k: Result<MinMaxAvgScalarBinBatch, Error>| {
+                move |k| {
                     let fit_range = range.full_range();
-                    let g = match k {
-                        Ok(k) => {
+                    let g = match k.0 {
+                        Ok(PreBinnedItem::Batch(k)) => {
                             use super::agg::{Fits, FitsInside};
                             match k.fits_inside(fit_range) {
                                 Fits::Inside

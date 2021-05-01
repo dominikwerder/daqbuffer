@@ -1,5 +1,5 @@
 use err::Error;
-use netpod::NodeConfig;
+use netpod::{NodeConfig, NodeConfigCached};
 use tokio::io::AsyncReadExt;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
@@ -28,10 +28,9 @@ async fn go() -> Result<(), Error> {
             let mut buf = vec![];
             config_file.read_to_end(&mut buf).await?;
             let node_config: NodeConfig = serde_json::from_slice(&buf)?;
-            let node = node_config
-                .get_node()
-                .ok_or(Error::with_msg(format!("nodeid config error {:?}", node_config)))?;
-            retrieval::run_node(node_config.clone(), node.clone()).await?;
+            let node_config: Result<NodeConfigCached, Error> = node_config.into();
+            let node_config = node_config?;
+            retrieval::run_node(node_config.clone()).await?;
         }
         SubCmd::Client(client) => match client.client_type {
             ClientType::Binned(opts) => {
@@ -93,9 +92,10 @@ fn simple_fetch() {
             name: format!("{}:{}", cluster.nodes[0].host, cluster.nodes[0].port),
             cluster,
         };
-        let node = node_config.get_node().unwrap();
+        let node_config: Result<NodeConfigCached, Error> = node_config.into();
+        let node_config = node_config?;
         let query_string = serde_json::to_string(&query).unwrap();
-        let host = tokio::spawn(httpret::host(node_config.clone(), node.clone()));
+        let host = tokio::spawn(httpret::host(node_config.clone()));
         let req = hyper::Request::builder()
             .method(http::Method::POST)
             .uri("http://localhost:8360/api/1/parsed_raw")

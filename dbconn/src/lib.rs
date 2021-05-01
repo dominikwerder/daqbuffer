@@ -1,13 +1,14 @@
 use err::Error;
 use netpod::log::*;
-use netpod::{Channel, NodeConfig};
+use netpod::{Channel, NodeConfigCached};
 use tokio_postgres::NoTls;
 
-pub async fn channel_exists(channel: &Channel, node_config: &NodeConfig) -> Result<bool, Error> {
-    let d = &node_config.cluster.database;
+pub async fn channel_exists(channel: &Channel, node_config: &NodeConfigCached) -> Result<bool, Error> {
+    let d = &node_config.node_config.cluster.database;
     let uri = format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, 5432, d.name);
     let (cl, conn) = tokio_postgres::connect(&uri, NoTls).await?;
-    let cjh = tokio::spawn(async move {
+    // TODO monitor connection drop.
+    let _cjh = tokio::spawn(async move {
         if let Err(e) = conn.await {
             error!("connection error: {}", e);
         }
@@ -25,6 +26,5 @@ pub async fn channel_exists(channel: &Channel, node_config: &NodeConfig) -> Resu
             row.get::<_, i64>(0)
         );
     }
-    drop(cjh);
     Ok(true)
 }

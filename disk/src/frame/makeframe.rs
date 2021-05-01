@@ -1,3 +1,4 @@
+use crate::cache::pbvfs::PreBinnedFrame;
 use crate::cache::BinnedBytesForHttpStreamFrame;
 use crate::frame::inmem::InMemoryFrame;
 use crate::raw::conn::RawConnOut;
@@ -24,6 +25,10 @@ impl FrameType for EventQueryJsonStringFrame {
 
 impl FrameType for RawConnOut {
     const FRAME_TYPE_ID: u32 = 0x04;
+}
+
+impl FrameType for PreBinnedFrame {
+    const FRAME_TYPE_ID: u32 = 0x05;
 }
 
 pub fn make_frame<FT>(item: &FT) -> Result<BytesMut, Error>

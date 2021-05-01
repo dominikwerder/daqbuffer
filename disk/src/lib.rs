@@ -10,6 +10,7 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::AsyncRead;
 #[allow(unused_imports)]
@@ -300,21 +301,32 @@ fn unused_raw_concat_channel_read_stream_file_pipe(
     }
 }
 
+pub struct FileChunkRead {
+    buf: BytesMut,
+    duration: Duration,
+}
+
 pub fn file_content_stream(
     mut file: tokio::fs::File,
     buffer_size: usize,
-) -> impl Stream<Item = Result<BytesMut, Error>> + Send {
+) -> impl Stream<Item = Result<FileChunkRead, Error>> + Send {
     async_stream::stream! {
         use tokio::io::AsyncReadExt;
         loop {
             let mut buf = BytesMut::with_capacity(buffer_size);
+            let inst1 = Instant::now();
             let n1 = file.read_buf(&mut buf).await?;
+            let inst2 = Instant::now();
             if n1 == 0 {
                 info!("file EOF");
                 break;
             }
             else {
-                yield Ok(buf);
+                let ret = FileChunkRead {
+                    buf,
+                    duration: inst2.duration_since(inst1),
+                };
+                yield Ok(ret);
             }
         }
     }
@@ -357,22 +369,27 @@ pub fn parsed1(query: &netpod::AggQuerySingleChannel, node: &Node) -> impl Strea
         }
     }
 }
+
 pub struct NeedMinBuffer {
-    inp: Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>,
+    inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>,
     need_min: u32,
-    left: Option<BytesMut>,
+    left: Option<FileChunkRead>,
+    errored: bool,
+    completed: bool,
 }
 
 impl NeedMinBuffer {
-    pub fn new(inp: Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>) -> Self {
+    pub fn new(inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>) -> Self {
         Self {
             inp: inp,
             need_min: 1,
             left: None,
+            errored: false,
+            completed: false,
         }
     }
 
-    pub fn put_back(&mut self, buf: BytesMut) {
+    pub fn put_back(&mut self, buf: FileChunkRead) {
         assert!(self.left.is_none());
         self.left = Some(buf);
     }
@@ -383,46 +400,56 @@ impl NeedMinBuffer {
 }
 
 impl Stream for NeedMinBuffer {
-    type Item = Result<BytesMut, Error>;
+    type Item = Result<FileChunkRead, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        if self.completed {
+            panic!("NeedMinBuffer  poll_next on completed");
+        }
+        if self.errored {
+            self.completed = true;
+            return Ready(None);
+        }
         loop {
             let mut again = false;
             let g = &mut self.inp;
             pin_mut!(g);
             let z = match g.poll_next(cx) {
-                Poll::Ready(Some(Ok(buf))) => {
+                Ready(Some(Ok(fcr))) => {
                     //info!("NeedMin got buf  len {}", buf.len());
                     match self.left.take() {
-                        Some(mut left) => {
-                            left.unsplit(buf);
-                            let buf = left;
-                            if buf.len() as u32 >= self.need_min {
+                        Some(mut lfcr) => {
+                            // TODO measure:
+                            lfcr.buf.unsplit(fcr.buf);
+                            lfcr.duration += fcr.duration;
+                            let fcr = lfcr;
+                            if fcr.buf.len() as u32 >= self.need_min {
                                 //info!("with left ready  len {}  need_min {}", buf.len(), self.need_min);
-                                Poll::Ready(Some(Ok(buf)))
+                                Ready(Some(Ok(fcr)))
                             } else {
                                 //info!("with left not enough  len {}  need_min {}", buf.len(), self.need_min);
-                                self.left.replace(buf);
+                                self.left.replace(fcr);
                                 again = true;
-                                Poll::Pending
+                                Pending
                             }
                         }
                         None => {
-                            if buf.len() as u32 >= self.need_min {
+                            if fcr.buf.len() as u32 >= self.need_min {
                                 //info!("simply ready  len {}  need_min {}", buf.len(), self.need_min);
-                                Poll::Ready(Some(Ok(buf)))
+                                Ready(Some(Ok(fcr)))
                             } else {
                                 //info!("no previous leftover, need more  len {}  need_min {}", buf.len(), self.need_min);
-                                self.left.replace(buf);
+                                self.left.replace(fcr);
                                 again = true;
-                                Poll::Pending
+                                Pending
                             }
                         }
                     }
                 }
-                Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e.into()))),
-                Poll::Ready(None) => Poll::Ready(None),
-                Poll::Pending => Poll::Pending,
+                Ready(Some(Err(e))) => Ready(Some(Err(e.into()))),
+                Ready(None) => Ready(None),
+                Pending => Pending,
             };
             if !again {
                 break z;

@@ -107,12 +107,6 @@ pub struct Node {
     pub ksprefix: String,
 }
 
-impl Node {
-    pub fn _name(&self) -> String {
-        format!("{}-{}", self.host, self.port)
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Database {
     pub name: String,
@@ -149,6 +143,29 @@ impl NodeConfig {
             }
         }
         None
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct NodeConfigCached {
+    pub node_config: NodeConfig,
+    pub node: Node,
+    pub ix: usize,
+}
+
+impl From<NodeConfig> for Result<NodeConfigCached, Error> {
+    fn from(k: NodeConfig) -> Self {
+        match k.get_node() {
+            Some(node) => {
+                let ret = NodeConfigCached {
+                    node: node.clone(),
+                    node_config: k,
+                    ix: 0,
+                };
+                Ok(ret)
+            }
+            None => Err(Error::with_msg(format!("can not find node {:?}", k))),
+        }
     }
 }
 
@@ -622,4 +639,19 @@ where
 pub mod log {
     #[allow(unused_imports)]
     pub use tracing::{debug, error, info, span, trace, warn, Level};
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct EventDataReadStats {
+    pub parsed_bytes: u64,
+}
+
+impl EventDataReadStats {
+    pub fn new() -> Self {
+        Self { parsed_bytes: 0 }
+    }
+    pub fn trans(&mut self, k: &mut Self) {
+        self.parsed_bytes += k.parsed_bytes;
+        k.parsed_bytes = 0;
+    }
 }

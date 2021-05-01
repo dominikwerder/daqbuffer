@@ -1,8 +1,7 @@
-use super::agg::{AggregatableXdim1Bin, IntoDim1F32Stream, ValuesDim1};
+use super::agg::{make_test_node, IntoDim1F32Stream};
 use super::merge::MergeDim1F32Stream;
 use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::binnedx::IntoBinnedXBins1;
-use crate::agg::make_test_node;
 use futures_util::StreamExt;
 use netpod::timeunits::*;
 use netpod::{BinnedRange, Channel, ChannelConfig, NanoRange, Nanos, ScalarType, Shape};
@@ -194,15 +193,10 @@ async fn merge_0_inner() {
 }
 
 pub fn tmp_some_older_things() {
-    let vals = ValuesDim1 {
-        tss: vec![0, 1, 2, 3],
-        values: vec![vec![0., 0., 0.], vec![1., 1., 1.], vec![2., 2., 2.], vec![3., 3., 3.]],
-    };
     // I want to distinguish already in the outer part between dim-0 and dim-1 and generate
     // separate code for these cases...
     // That means that also the reading chain itself needs to be typed on that.
     // Need to supply some event-payload converter type which has that type as Output type.
-    let _vals2 = vals.into_agg();
     // Now the T-binning:
 
     /*

@@ -7,10 +7,11 @@ use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use netpod::NanoRange;
+use netpod::{EventDataReadStats, NanoRange};
 use netpod::{Node, ScalarType};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 #[allow(unused_imports)]
 use tracing::{debug, error, info, span, trace, warn, Level};
 
@@ -97,10 +98,28 @@ impl AggregatableXdim1Bin for ValuesDim1 {
     }
 }
 
+pub struct ValuesDim1ExtractStats {
+    pub dur: Duration,
+}
+
+impl ValuesDim1ExtractStats {
+    pub fn new() -> Self {
+        Self {
+            dur: Duration::default(),
+        }
+    }
+    pub fn trans(self: &mut Self, k: &mut Self) {
+        self.dur += k.dur;
+        k.dur = Duration::default();
+    }
+}
+
 /// Batch of events with a numeric one-dimensional (i.e. array) value.
 pub struct ValuesDim1 {
     pub tss: Vec<u64>,
     pub values: Vec<Vec<f32>>,
+    pub event_data_read_stats: EventDataReadStats,
+    pub values_dim_1_extract_stats: ValuesDim1ExtractStats,
 }
 
 impl ValuesDim1 {
@@ -108,6 +127,8 @@ impl ValuesDim1 {
         Self {
             tss: vec![],
             values: vec![],
+            event_data_read_stats: EventDataReadStats::new(),
+            values_dim_1_extract_stats: ValuesDim1ExtractStats::new(),
         }
     }
 }
@@ -216,7 +237,8 @@ where
         }
         match self.inp.poll_next_unpin(cx) {
             Ready(Some(Ok(k))) => {
-                let mut ret = ValuesDim1 {
+                // TODO implement here for dim-0
+                let mut ret = ValuesDim0 {
                     tss: vec![],
                     values: vec![],
                 };
@@ -328,10 +350,8 @@ where
         }
         match self.inp.poll_next_unpin(cx) {
             Ready(Some(Ok(k))) => {
-                let mut ret = ValuesDim1 {
-                    tss: vec![],
-                    values: vec![],
-                };
+                let inst1 = Instant::now();
+                let mut ret = ValuesDim1::empty();
                 use ScalarType::*;
                 for i1 in 0..k.tss.len() {
                     // TODO iterate sibling arrays after single bounds check
@@ -389,6 +409,10 @@ where
                         }
                     }
                 }
+                let inst2 = Instant::now();
+                let mut k = k;
+                ret.event_data_read_stats.trans(&mut k.event_data_read_stats);
+                ret.values_dim_1_extract_stats.dur += inst2.duration_since(inst1);
                 Ready(Some(Ok(ret)))
             }
             Ready(Some(Err(e))) => {
