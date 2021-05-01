@@ -90,7 +90,10 @@ impl Stream for PreBinnedValueFetchedStream {
                     Ready(Some(Ok(frame))) => match decode_frame::<PreBinnedFrame>(&frame) {
                         Ok(item) => match item.0 {
                             Ok(item) => Ready(Some(PreBinnedFrame(Ok(item)))),
-                            Err(e) => Ready(Some(PreBinnedFrame(Err(e)))),
+                            Err(e) => {
+                                self.errored = true;
+                                Ready(Some(PreBinnedFrame(Err(e))))
+                            }
                         },
                         Err(e) => {
                             self.errored = true;

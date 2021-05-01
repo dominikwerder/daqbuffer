@@ -9,6 +9,7 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::{EventDataReadStats, NanoRange};
 use netpod::{Node, ScalarType};
+use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
@@ -26,7 +27,7 @@ pub trait AggregatorTdim {
     fn ends_before(&self, inp: &Self::InputValue) -> bool;
     fn ends_after(&self, inp: &Self::InputValue) -> bool;
     fn starts_after(&self, inp: &Self::InputValue) -> bool;
-    fn ingest(&mut self, inp: &Self::InputValue);
+    fn ingest(&mut self, inp: &mut Self::InputValue);
     fn result(self) -> Self::OutputValue;
 }
 
@@ -62,13 +63,17 @@ impl std::fmt::Debug for ValuesDim0 {
 impl AggregatableXdim1Bin for ValuesDim1 {
     type Output = MinMaxAvgScalarEventBatch;
 
-    fn into_agg(self) -> Self::Output {
+    fn into_agg(mut self) -> Self::Output {
         let mut ret = MinMaxAvgScalarEventBatch {
             tss: Vec::with_capacity(self.tss.len()),
             mins: Vec::with_capacity(self.tss.len()),
             maxs: Vec::with_capacity(self.tss.len()),
             avgs: Vec::with_capacity(self.tss.len()),
+            event_data_read_stats: EventDataReadStats::new(),
+            values_extract_stats: ValuesExtractStats::new(),
         };
+        ret.event_data_read_stats.trans(&mut self.event_data_read_stats);
+        ret.values_extract_stats.trans(&mut self.values_extract_stats);
         for i1 in 0..self.tss.len() {
             let ts = self.tss[i1];
             let mut min = f32::MAX;
@@ -98,11 +103,12 @@ impl AggregatableXdim1Bin for ValuesDim1 {
     }
 }
 
-pub struct ValuesDim1ExtractStats {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ValuesExtractStats {
     pub dur: Duration,
 }
 
-impl ValuesDim1ExtractStats {
+impl ValuesExtractStats {
     pub fn new() -> Self {
         Self {
             dur: Duration::default(),
@@ -119,7 +125,7 @@ pub struct ValuesDim1 {
     pub tss: Vec<u64>,
     pub values: Vec<Vec<f32>>,
     pub event_data_read_stats: EventDataReadStats,
-    pub values_dim_1_extract_stats: ValuesDim1ExtractStats,
+    pub values_extract_stats: ValuesExtractStats,
 }
 
 impl ValuesDim1 {
@@ -128,7 +134,7 @@ impl ValuesDim1 {
             tss: vec![],
             values: vec![],
             event_data_read_stats: EventDataReadStats::new(),
-            values_dim_1_extract_stats: ValuesDim1ExtractStats::new(),
+            values_extract_stats: ValuesExtractStats::new(),
         }
     }
 }
@@ -154,7 +160,11 @@ impl AggregatableXdim1Bin for ValuesDim0 {
             mins: Vec::with_capacity(self.tss.len()),
             maxs: Vec::with_capacity(self.tss.len()),
             avgs: Vec::with_capacity(self.tss.len()),
+            event_data_read_stats: EventDataReadStats::new(),
+            values_extract_stats: ValuesExtractStats::new(),
         };
+        // TODO stats are not yet in ValuesDim0
+        err::todoval::<u32>();
         for i1 in 0..self.tss.len() {
             let ts = self.tss[i1];
             let mut min = f32::MAX;
@@ -412,7 +422,7 @@ where
                 let inst2 = Instant::now();
                 let mut k = k;
                 ret.event_data_read_stats.trans(&mut k.event_data_read_stats);
-                ret.values_dim_1_extract_stats.dur += inst2.duration_since(inst1);
+                ret.values_extract_stats.dur += inst2.duration_since(inst1);
                 Ready(Some(Ok(ret)))
             }
             Ready(Some(Err(e))) => {

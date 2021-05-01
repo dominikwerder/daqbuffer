@@ -184,14 +184,16 @@ async fn raw_conn_handler_inner_try(
     while let Some(item) = s1.next().await {
         if let Ok(k) = &item {
             e += 1;
-            trace!(
-                "emit items  sp {:2}  e {:3}  len {:3}  {:10?}  {:10?}",
-                node_config.node.split,
-                e,
-                k.tss.len(),
-                k.tss.first().map(|k| k / SEC),
-                k.tss.last().map(|k| k / SEC),
-            );
+            if false {
+                trace!(
+                    "emit items  sp {:2}  e {:3}  len {:3}  {:10?}  {:10?}",
+                    node_config.node.split,
+                    e,
+                    k.tss.len(),
+                    k.tss.first().map(|k| k / SEC),
+                    k.tss.last().map(|k| k / SEC),
+                );
+            }
         }
         match make_frame::<RawConnOut>(&item) {
             Ok(buf) => match netout.write_all(&buf).await {

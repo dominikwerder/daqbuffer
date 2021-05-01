@@ -641,7 +641,7 @@ pub mod log {
     pub use tracing::{debug, error, info, span, trace, warn, Level};
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct EventDataReadStats {
     pub parsed_bytes: u64,
 }

@@ -105,7 +105,8 @@ where
                         Ready(Some(Ok(ret)))
                     } else {
                         //info!("INGEST");
-                        ag.ingest(&k);
+                        let mut k = k;
+                        ag.ingest(&mut k);
                         // if this input contains also data after the current bin, then I need to keep
                         // it for the next round.
                         if ag.ends_after(&k) {

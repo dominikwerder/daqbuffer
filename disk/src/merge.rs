@@ -146,7 +146,8 @@ where
     inps: Vec<S>,
     current: Vec<MergedMinMaxAvgScalarStreamCurVal>,
     ixs: Vec<usize>,
-    emitted_complete: bool,
+    errored: bool,
+    completed: bool,
     batch: MinMaxAvgScalarEventBatch,
     ts_last_emit: u64,
 }
@@ -165,7 +166,8 @@ where
             inps,
             current: current,
             ixs: vec![0; n],
-            emitted_complete: false,
+            errored: false,
+            completed: false,
             batch: MinMaxAvgScalarEventBatch::empty(),
             ts_last_emit: 0,
         }
@@ -181,22 +183,27 @@ where
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         'outer: loop {
-            if self.emitted_complete {
-                break Ready(Some(Err(Error::with_msg(
-                    "MergedMinMaxAvgScalarStream  poll on complete stream",
-                ))));
+            if self.completed {
+                panic!("MergedMinMaxAvgScalarStream  poll_next on completed");
+            }
+            if self.errored {
+                self.completed = true;
+                return Ready(None);
             }
             // can only run logic if all streams are either finished, errored or have some current value.
             for i1 in 0..self.inps.len() {
                 match self.current[i1] {
                     MergedMinMaxAvgScalarStreamCurVal::None => {
                         match self.inps[i1].poll_next_unpin(cx) {
-                            Ready(Some(Ok(k))) => {
+                            Ready(Some(Ok(mut k))) => {
+                                self.batch.event_data_read_stats.trans(&mut k.event_data_read_stats);
+                                self.batch.values_extract_stats.trans(&mut k.values_extract_stats);
                                 self.current[i1] = MergedMinMaxAvgScalarStreamCurVal::Val(k);
                             }
                             Ready(Some(Err(e))) => {
                                 // TODO emit this error, consider this stream as done, anything more to do here?
                                 //self.current[i1] = CurVal::Err(e);
+                                self.errored = true;
                                 return Ready(Some(Err(e)));
                             }
                             Ready(None) => {
@@ -239,12 +246,12 @@ where
                     info!("````````````````    MergedMinMaxAvgScalarStream   emit Ready(Some( current batch ))");
                     break Ready(Some(Ok(k)));
                 } else {
-                    self.emitted_complete = true;
                     info!("````````````````    MergedMinMaxAvgScalarStream   emit Ready(None)");
+                    self.completed = true;
                     break Ready(None);
                 }
             } else {
-                trace!("decided on next lowest ts  {}  ix {}", lowest_ts, lowest_ix);
+                //trace!("decided on next lowest ts  {}  ix {}", lowest_ts, lowest_ix);
                 assert!(lowest_ts >= self.ts_last_emit);
                 self.ts_last_emit = lowest_ts;
                 self.batch.tss.push(lowest_ts);
