@@ -113,6 +113,7 @@ impl PreBinnedValueStream {
                     .filter_map(|k| match k {
                         Ok(k) => ready(Some(k)),
                         Err(e) => {
+                            // TODO Reconsider error handling here:
                             error!("{:?}", e);
                             ready(None)
                         }

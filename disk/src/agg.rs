@@ -46,6 +46,7 @@ pub trait AggregatableTdim {
 pub struct ValuesDim0 {
     tss: Vec<u64>,
     values: Vec<Vec<f32>>,
+    // TODO add the stats and flags
 }
 
 impl std::fmt::Debug for ValuesDim0 {
@@ -71,9 +72,13 @@ impl AggregatableXdim1Bin for ValuesDim1 {
             avgs: Vec::with_capacity(self.tss.len()),
             event_data_read_stats: EventDataReadStats::new(),
             values_extract_stats: ValuesExtractStats::new(),
+            range_complete_observed: false,
         };
         ret.event_data_read_stats.trans(&mut self.event_data_read_stats);
         ret.values_extract_stats.trans(&mut self.values_extract_stats);
+        if self.range_complete_observed {
+            ret.range_complete_observed = true;
+        }
         for i1 in 0..self.tss.len() {
             let ts = self.tss[i1];
             let mut min = f32::MAX;
@@ -126,6 +131,7 @@ pub struct ValuesDim1 {
     pub values: Vec<Vec<f32>>,
     pub event_data_read_stats: EventDataReadStats,
     pub values_extract_stats: ValuesExtractStats,
+    pub range_complete_observed: bool,
 }
 
 impl ValuesDim1 {
@@ -135,6 +141,7 @@ impl ValuesDim1 {
             values: vec![],
             event_data_read_stats: EventDataReadStats::new(),
             values_extract_stats: ValuesExtractStats::new(),
+            range_complete_observed: false,
         }
     }
 }
@@ -162,9 +169,13 @@ impl AggregatableXdim1Bin for ValuesDim0 {
             avgs: Vec::with_capacity(self.tss.len()),
             event_data_read_stats: EventDataReadStats::new(),
             values_extract_stats: ValuesExtractStats::new(),
+            range_complete_observed: false,
         };
         // TODO stats are not yet in ValuesDim0
         err::todoval::<u32>();
+        //if self.range_complete_observed {
+        //    ret.range_complete_observed = true;
+        //}
         for i1 in 0..self.tss.len() {
             let ts = self.tss[i1];
             let mut min = f32::MAX;
@@ -323,7 +334,7 @@ where
 
 pub struct Dim1F32Stream<S>
 where
-    S: Stream<Item = Result<EventFull, Error>>,
+    S: Stream,
 {
     inp: S,
     errored: bool,
@@ -332,7 +343,7 @@ where
 
 impl<S> Dim1F32Stream<S>
 where
-    S: Stream<Item = Result<EventFull, Error>>,
+    S: Stream,
 {
     pub fn new(inp: S) -> Self {
         Self {
@@ -363,6 +374,9 @@ where
                 let inst1 = Instant::now();
                 let mut ret = ValuesDim1::empty();
                 use ScalarType::*;
+                if k.end_of_range_observed {
+                    ret.range_complete_observed = true;
+                }
                 for i1 in 0..k.tss.len() {
                     // TODO iterate sibling arrays after single bounds check
                     let ty = &k.scalar_types[i1];

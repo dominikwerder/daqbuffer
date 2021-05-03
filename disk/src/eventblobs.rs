@@ -15,6 +15,8 @@ pub struct EventBlobsComplete {
     evs: Option<EventChunker>,
     buffer_size: usize,
     range: NanoRange,
+    errored: bool,
+    completed: bool,
 }
 
 impl EventBlobsComplete {
@@ -25,6 +27,8 @@ impl EventBlobsComplete {
             buffer_size,
             channel_config,
             range,
+            errored: false,
+            completed: false,
         }
     }
 }
@@ -34,6 +38,13 @@ impl Stream for EventBlobsComplete {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        if self.completed {
+            panic!("EventBlobsComplete  poll_next on completed");
+        }
+        if self.errored {
+            self.completed = true;
+            return Ready(None);
+        }
         'outer: loop {
             let z = match &mut self.evs {
                 Some(evs) => match evs.poll_next_unpin(cx) {
@@ -53,9 +64,15 @@ impl Stream for EventBlobsComplete {
                             self.evs = Some(chunker);
                             continue 'outer;
                         }
-                        Err(e) => Ready(Some(Err(e))),
+                        Err(e) => {
+                            self.errored = true;
+                            Ready(Some(Err(e)))
+                        }
                     },
-                    Ready(None) => Ready(None),
+                    Ready(None) => {
+                        self.completed = true;
+                        Ready(None)
+                    }
                     Pending => Pending,
                 },
             };

@@ -15,6 +15,7 @@ pub struct MinMaxAvgScalarEventBatch {
     pub avgs: Vec<f32>,
     pub event_data_read_stats: EventDataReadStats,
     pub values_extract_stats: ValuesExtractStats,
+    pub range_complete_observed: bool,
 }
 
 impl MinMaxAvgScalarEventBatch {
@@ -26,8 +27,10 @@ impl MinMaxAvgScalarEventBatch {
             avgs: vec![],
             event_data_read_stats: EventDataReadStats::new(),
             values_extract_stats: ValuesExtractStats::new(),
+            range_complete_observed: false,
         }
     }
+
     #[allow(dead_code)]
     pub fn old_from_full_frame(buf: &Bytes) -> Self {
         info!("construct MinMaxAvgScalarEventBatch from full frame  len {}", buf.len());
@@ -151,6 +154,7 @@ pub struct MinMaxAvgScalarEventBatchAggregator {
     sum: f32,
     event_data_read_stats: EventDataReadStats,
     values_extract_stats: ValuesExtractStats,
+    range_complete_observed: bool,
 }
 
 impl MinMaxAvgScalarEventBatchAggregator {
@@ -164,6 +168,7 @@ impl MinMaxAvgScalarEventBatchAggregator {
             count: 0,
             event_data_read_stats: EventDataReadStats::new(),
             values_extract_stats: ValuesExtractStats::new(),
+            range_complete_observed: false,
         }
     }
 }
@@ -206,6 +211,9 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
         }
         self.event_data_read_stats.trans(&mut v.event_data_read_stats);
         self.values_extract_stats.trans(&mut v.values_extract_stats);
+        if v.range_complete_observed {
+            self.range_complete_observed = true;
+        }
         for i1 in 0..v.tss.len() {
             let ts = v.tss[i1];
             if ts < self.ts1 {
@@ -259,6 +267,7 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
             avgs: vec![avg],
             event_data_read_stats: std::mem::replace(&mut self.event_data_read_stats, EventDataReadStats::new()),
             values_extract_stats: std::mem::replace(&mut self.values_extract_stats, ValuesExtractStats::new()),
+            range_complete_observed: self.range_complete_observed,
         }
     }
 }

@@ -133,12 +133,6 @@ enum CurVal {
     Val(ValuesDim1),
 }
 
-/*
-
-==============      MergedMinMaxAvgScalarStream
-
-*/
-
 pub struct MergedMinMaxAvgScalarStream<S>
 where
     S: Stream<Item = Result<MinMaxAvgScalarEventBatch, Error>>,
@@ -150,6 +144,8 @@ where
     completed: bool,
     batch: MinMaxAvgScalarEventBatch,
     ts_last_emit: u64,
+    range_complete_observed: Vec<bool>,
+    range_complete_observed_all: bool,
 }
 
 impl<S> MergedMinMaxAvgScalarStream<S>
@@ -170,6 +166,8 @@ where
             completed: false,
             batch: MinMaxAvgScalarEventBatch::empty(),
             ts_last_emit: 0,
+            range_complete_observed: vec![false; n],
+            range_complete_observed_all: false,
         }
     }
 }
@@ -198,6 +196,16 @@ where
                             Ready(Some(Ok(mut k))) => {
                                 self.batch.event_data_read_stats.trans(&mut k.event_data_read_stats);
                                 self.batch.values_extract_stats.trans(&mut k.values_extract_stats);
+                                if k.range_complete_observed {
+                                    self.range_complete_observed[i1] = true;
+                                    let d = self.range_complete_observed.iter().filter(|&&k| k).count();
+                                    if d == self.range_complete_observed.len() {
+                                        self.range_complete_observed_all = true;
+                                        info!("\n\n::::::  range_complete  d  {}  COMPLETE", d);
+                                    } else {
+                                        info!("\n\n::::::  range_complete  d  {}", d);
+                                    }
+                                }
                                 self.current[i1] = MergedMinMaxAvgScalarStreamCurVal::Val(k);
                             }
                             Ready(Some(Err(e))) => {
@@ -242,11 +250,14 @@ where
             }
             if lowest_ix == usize::MAX {
                 if self.batch.tss.len() != 0 {
-                    let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
-                    info!("````````````````    MergedMinMaxAvgScalarStream   emit Ready(Some( current batch ))");
+                    let mut k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
+                    if self.range_complete_observed_all {
+                        k.range_complete_observed = true;
+                    }
+                    info!("MergedMinMaxAvgScalarStream  no more lowest  emit Ready(Some( current batch ))");
                     break Ready(Some(Ok(k)));
                 } else {
-                    info!("````````````````    MergedMinMaxAvgScalarStream   emit Ready(None)");
+                    info!("MergedMinMaxAvgScalarStream  no more lowest  emit Ready(None)");
                     self.completed = true;
                     break Ready(None);
                 }
@@ -266,7 +277,10 @@ where
                 self.ixs[lowest_ix] += 1;
             }
             if self.batch.tss.len() >= 64 {
-                let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
+                let mut k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
+                if self.range_complete_observed_all {
+                    k.range_complete_observed = true;
+                }
                 break Ready(Some(Ok(k)));
             }
         }

@@ -144,7 +144,7 @@ where
                 if self.bufcap < nl {
                     // TODO count cases in production
                     let n = 2 * nl;
-                    warn!("Adjust bufcap  old {}  new {}", self.bufcap, n);
+                    debug!("Adjust bufcap  old {}  new {}", self.bufcap, n);
                     self.bufcap = n;
                 }
                 if nb < nl {
@@ -244,7 +244,6 @@ where
     type Item = Result<InMemoryFrame, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        trace!("InMemoryFrameAsyncReadStream  poll_next");
         use Poll::*;
         assert!(!self.completed);
         if self.errored {
@@ -287,7 +286,7 @@ where
                             let n2 = self.buf.len();
                             if n2 != 0 {
                                 warn!(
-                                    "InMemoryFrameAsyncReadStream  n2 != 0  n2 {}  consumed {}  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~",
+                                    "InMemoryFrameAsyncReadStream  n2 != 0  n2 {}  consumed {}",
                                     n2, self.inp_bytes_consumed
                                 );
                             }

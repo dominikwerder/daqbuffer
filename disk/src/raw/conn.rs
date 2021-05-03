@@ -89,7 +89,7 @@ async fn raw_conn_handler_inner_try(
     addr: SocketAddr,
     node_config: &NodeConfigCached,
 ) -> Result<(), ConnErr> {
-    info!("raw_conn_handler   SPAWNED   for {:?}", addr);
+    debug!("raw_conn_handler   SPAWNED   for {:?}", addr);
     let (netin, mut netout) = stream.into_split();
     let mut h = InMemoryFrameAsyncReadStream::new(netin);
     let mut frames = vec![];
@@ -100,7 +100,6 @@ async fn raw_conn_handler_inner_try(
     {
         match k {
             Ok(k) => {
-                info!(". . . . . . . . . . . . . . . . . . . . . . . . . .   raw_conn_handler  FRAME RECV");
                 frames.push(k);
             }
             Err(e) => {
@@ -116,7 +115,6 @@ async fn raw_conn_handler_inner_try(
         Ok(k) => k,
         Err(e) => return Err((e, netout).into()),
     };
-    trace!("json: {}", qitem.0);
     let res: Result<EventsQuery, _> = serde_json::from_str(&qitem.0);
     let evq = match res {
         Ok(k) => k,
@@ -129,7 +127,6 @@ async fn raw_conn_handler_inner_try(
         Ok(_) => (),
         Err(e) => return Err((e, netout))?,
     }
-    debug!("REQUEST  {:?}", evq);
     let range = &evq.range;
     let channel_config = match read_local_config(&evq.channel, &node_config.node).await {
         Ok(k) => k,
@@ -139,7 +136,7 @@ async fn raw_conn_handler_inner_try(
         Ok(k) => k,
         Err(e) => return Err((e, netout))?,
     };
-    info!("found config entry {:?}", entry);
+    debug!("found config entry {:?}", entry);
 
     let shape = match &entry.shape {
         Some(lens) => {
@@ -171,12 +168,11 @@ async fn raw_conn_handler_inner_try(
         // TODO use the requested buffer size
         buffer_size: 1024 * 4,
     };
-    let buffer_size = 1024 * 4;
     let mut s1 = EventBlobsComplete::new(
         range.clone(),
         query.channel_config.clone(),
         node_config.node.clone(),
-        buffer_size,
+        query.buffer_size as usize,
     )
     .into_dim_1_f32_stream()
     .into_binned_x_bins_1();

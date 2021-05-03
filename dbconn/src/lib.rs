@@ -17,9 +17,9 @@ pub async fn channel_exists(channel: &Channel, node_config: &NodeConfigCached) -
     let rows = cl
         .query("select rowid from channels where name = $1::text", &[&channel.name])
         .await?;
-    info!("channel_exists  {} rows", rows.len());
+    debug!("channel_exists  {} rows", rows.len());
     for row in rows {
-        info!(
+        debug!(
             "  db on channel search: {:?}  {:?}  {:?}",
             row,
             row.columns(),

@@ -108,12 +108,7 @@ impl EventChunker {
                     let len = sl.read_i32::<BE>().unwrap();
                     assert!(len >= 20 && len < 1024 * 1024 * 10);
                     let len = len as u32;
-                    if (buf.len() as u32) < 20 {
-                        // TODO gather stats about how often we find not enough input
-                        //info!("parse_buf not enough B");
-                        self.need_min = len as u32;
-                        break;
-                    } else if (buf.len() as u32) < len {
+                    if (buf.len() as u32) < len {
                         self.need_min = len as u32;
                         break;
                     } else {
@@ -125,6 +120,8 @@ impl EventChunker {
                         let pulse = sl.read_i64::<BE>().unwrap() as u64;
                         if ts >= self.range.end {
                             self.seen_beyond_range = true;
+                            ret.end_of_range_observed = true;
+                            info!("END OF RANGE OBSERVED");
                             break;
                         }
                         if ts < self.range.beg {
@@ -140,6 +137,7 @@ impl EventChunker {
                         let type_flags = sl.read_u8().unwrap();
                         let type_index = sl.read_u8().unwrap();
                         assert!(type_index <= 13);
+                        let scalar_type = ScalarType::from_dtype_index(type_index)?;
                         use super::dtflags::*;
                         let is_compressed = type_flags & COMPRESSION != 0;
                         let is_array = type_flags & ARRAY != 0;
@@ -166,7 +164,7 @@ impl EventChunker {
                             assert!(value_bytes < 1024 * 256);
                             assert!(block_size < 1024 * 32);
                             //let value_bytes = value_bytes;
-                            let type_size = type_size(type_index);
+                            let type_size = scalar_type.bytes() as u32;
                             let ele_count = value_bytes / type_size as u64;
                             let ele_size = type_size;
                             match self.channel_config.shape {
@@ -236,26 +234,6 @@ impl EventChunker {
     }
 }
 
-fn type_size(ix: u8) -> u32 {
-    match ix {
-        0 => 1,
-        1 => 1,
-        2 => 1,
-        3 => 1,
-        4 => 2,
-        5 => 2,
-        6 => 2,
-        7 => 4,
-        8 => 4,
-        9 => 8,
-        10 => 8,
-        11 => 4,
-        12 => 8,
-        13 => 1,
-        _ => panic!("logic"),
-    }
-}
-
 struct ParseResult {
     events: EventFull,
 }
@@ -278,7 +256,6 @@ impl Stream for EventChunker {
         }
         match self.inp.poll_next_unpin(cx) {
             Ready(Some(Ok(mut fcr))) => {
-                trace!("EventChunker got buffer  len {}", fcr.buf.len());
                 let r = self.parse_buf(&mut fcr.buf);
                 match r {
                     Ok(res) => {
@@ -323,6 +300,7 @@ pub struct EventFull {
     pub decomps: Vec<Option<BytesMut>>,
     pub scalar_types: Vec<ScalarType>,
     pub event_data_read_stats: EventDataReadStats,
+    pub end_of_range_observed: bool,
 }
 
 impl EventFull {
@@ -333,6 +311,7 @@ impl EventFull {
             decomps: vec![],
             scalar_types: vec![],
             event_data_read_stats: EventDataReadStats::new(),
+            end_of_range_observed: false,
         }
     }
 

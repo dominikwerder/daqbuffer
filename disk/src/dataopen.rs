@@ -69,11 +69,11 @@ async fn open_files_inner(
         if ts_bin.ns + channel_config.time_bin_size.ns <= range.beg {
             continue;
         }
-        info!("opening tb {:?}", &tb);
+        debug!("opening tb {:?}", &tb);
         let path = paths::datapath(tb, &channel_config, &node);
-        info!("opening path {:?}", &path);
+        debug!("opening path {:?}", &path);
         let mut file = OpenOptions::new().read(true).open(&path).await?;
-        info!("opened file {:?}  {:?}", &path, &file);
+        debug!("opened file {:?}  {:?}", &path, &file);
 
         {
             let index_path = paths::index_path(ts_bin, &channel_config, &node)?;
@@ -103,15 +103,15 @@ async fn open_files_inner(
                     }
                     let mut buf = BytesMut::with_capacity(meta.len() as usize);
                     buf.resize(buf.capacity(), 0);
-                    info!("read exact index file  {}  {}", buf.len(), buf.len() % 16);
+                    debug!("read exact index file  {}  {}", buf.len(), buf.len() % 16);
                     index_file.read_exact(&mut buf).await?;
                     match find_ge(range.beg, &buf[2..])? {
                         Some(o) => {
-                            info!("FOUND ts IN INDEX: {:?}", o);
+                            debug!("FOUND ts IN INDEX: {:?}", o);
                             file.seek(SeekFrom::Start(o.1)).await?;
                         }
                         None => {
-                            info!("NOT FOUND IN INDEX");
+                            debug!("NOT FOUND IN INDEX");
                             file.seek(SeekFrom::End(0)).await?;
                         }
                     }
@@ -132,7 +132,8 @@ async fn open_files_inner(
 
         chtx.send(Ok(file)).await?;
     }
-    warn!("OPEN FILES LOOP DONE");
+    // TODO keep track of number of running
+    debug!("open_files_inner done");
     Ok(())
 }
 
