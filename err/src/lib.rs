@@ -2,6 +2,7 @@
 Error handling and reporting.
 */
 
+use http::uri::InvalidUri;
 use nom::error::ErrorKind;
 use serde::{Deserialize, Serialize, Serializer};
 use std::fmt::Debug;
@@ -194,6 +195,12 @@ impl From<tokio_postgres::Error> for Error {
 
 impl<T> From<async_channel::SendError<T>> for Error {
     fn from(k: async_channel::SendError<T>) -> Self {
+        Self::with_msg(k.to_string())
+    }
+}
+
+impl From<InvalidUri> for Error {
+    fn from(k: InvalidUri) -> Self {
         Self::with_msg(k.to_string())
     }
 }

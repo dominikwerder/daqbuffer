@@ -397,6 +397,13 @@ impl PreBinnedPatchCoord {
         self.spec.patch_t_len() * (self.ix + 1)
     }
 
+    pub fn patch_range(&self) -> NanoRange {
+        NanoRange {
+            beg: self.patch_beg(),
+            end: self.patch_end(),
+        }
+    }
+
     pub fn bin_count(&self) -> u64 {
         self.patch_t_len() / self.spec.bin_t_len
     }

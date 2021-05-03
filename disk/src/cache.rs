@@ -15,7 +15,7 @@ use netpod::{
     AggKind, BinnedRange, Channel, Cluster, NanoRange, NodeConfigCached, PreBinnedPatchCoord, PreBinnedPatchIterator,
     PreBinnedPatchRange, ToNanos,
 };
-use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -27,54 +27,139 @@ use tracing::{debug, error, info, trace, warn};
 pub mod pbv;
 pub mod pbvfs;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Query {
-    range: NanoRange,
-    count: u64,
-    agg_kind: AggKind,
-    channel: Channel,
+#[derive(Clone, Debug)]
+pub enum CacheUsage {
+    Use,
+    Ignore,
+    Recreate,
 }
 
-impl Query {
+#[derive(Clone, Debug)]
+pub struct BinnedQuery {
+    range: NanoRange,
+    bin_count: u64,
+    agg_kind: AggKind,
+    channel: Channel,
+    cache_usage: CacheUsage,
+}
+
+impl BinnedQuery {
     pub fn from_request(req: &http::request::Parts) -> Result<Self, Error> {
         let params = netpod::query_params(req.uri.query());
-        let beg_date = params
-            .get("beg_date")
-            .ok_or_else(|| Error::with_msg("missing beg_date"))?;
-        let end_date = params
-            .get("end_date")
-            .ok_or_else(|| Error::with_msg("missing end_date"))?;
-        let ret = Query {
+        let beg_date = params.get("beg_date").ok_or(Error::with_msg("missing beg_date"))?;
+        let end_date = params.get("end_date").ok_or(Error::with_msg("missing end_date"))?;
+        let ret = BinnedQuery {
             range: NanoRange {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
             },
-            count: params
+            bin_count: params
                 .get("bin_count")
-                .ok_or_else(|| Error::with_msg("missing beg_date"))?
+                .ok_or(Error::with_msg("missing bin_count"))?
                 .parse()
-                .unwrap(),
+                .map_err(|e| Error::with_msg(format!("can not parse bin_count {:?}", e)))?,
             agg_kind: AggKind::DimXBins1,
-            channel: Channel {
-                backend: params.get("channel_backend").unwrap().into(),
-                name: params.get("channel_name").unwrap().into(),
-            },
+            channel: channel_from_params(&params)?,
+            cache_usage: cache_usage_from_params(&params)?,
         };
+        info!("BinnedQuery::from_request  {:?}", ret);
         Ok(ret)
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct PreBinnedQuery {
+    patch: PreBinnedPatchCoord,
+    agg_kind: AggKind,
+    channel: Channel,
+    cache_usage: CacheUsage,
+}
+
+impl PreBinnedQuery {
+    pub fn new(patch: PreBinnedPatchCoord, channel: Channel, agg_kind: AggKind, cache_usage: CacheUsage) -> Self {
+        Self {
+            patch,
+            agg_kind,
+            channel,
+            cache_usage,
+        }
+    }
+
+    pub fn from_request(req: &http::request::Parts) -> Result<Self, Error> {
+        let params = netpod::query_params(req.uri.query());
+        let patch_ix = params
+            .get("patch_ix")
+            .ok_or(Error::with_msg("missing patch_ix"))?
+            .parse()?;
+        let bin_t_len = params
+            .get("bin_t_len")
+            .ok_or(Error::with_msg("missing bin_t_len"))?
+            .parse()?;
+        let ret = PreBinnedQuery {
+            patch: PreBinnedPatchCoord::new(bin_t_len, patch_ix),
+            agg_kind: AggKind::DimXBins1,
+            channel: channel_from_params(&params)?,
+            cache_usage: cache_usage_from_params(&params)?,
+        };
+        info!("PreBinnedQuery::from_request  {:?}", ret);
+        Ok(ret)
+    }
+
+    pub fn make_query_string(&self) -> String {
+        format!(
+            "{}&channel_backend={}&channel_name={}&agg_kind={:?}",
+            self.patch.to_url_params_strings(),
+            self.channel.backend,
+            self.channel.name,
+            self.agg_kind
+        )
+    }
+
+    pub fn patch(&self) -> &PreBinnedPatchCoord {
+        &self.patch
+    }
+}
+
+fn channel_from_params(params: &BTreeMap<String, String>) -> Result<Channel, Error> {
+    let ret = Channel {
+        backend: params
+            .get("channel_backend")
+            .ok_or(Error::with_msg("missing channel_backend"))?
+            .into(),
+        name: params
+            .get("channel_name")
+            .ok_or(Error::with_msg("missing channel_name"))?
+            .into(),
+    };
+    Ok(ret)
+}
+
+fn cache_usage_from_params(params: &BTreeMap<String, String>) -> Result<CacheUsage, Error> {
+    let ret = params.get("cache_usage").map_or(Ok::<_, Error>(CacheUsage::Use), |k| {
+        if k == "use" {
+            Ok(CacheUsage::Use)
+        } else if k == "ignore" {
+            Ok(CacheUsage::Ignore)
+        } else if k == "recreate" {
+            Ok(CacheUsage::Recreate)
+        } else {
+            Err(Error::with_msg(format!("unexpected cache_usage {:?}", k)))?
+        }
+    })?;
+    Ok(ret)
+}
+
 pub async fn binned_bytes_for_http(
     node_config: &NodeConfigCached,
-    query: &Query,
+    query: &BinnedQuery,
 ) -> Result<BinnedBytesForHttpStream, Error> {
     let range = &query.range;
     let channel_config = read_local_config(&query.channel, &node_config.node).await?;
     let entry = extract_matching_config_entry(range, &channel_config);
     info!("found config entry {:?}", entry);
-    let range = BinnedRange::covering_range(range.clone(), query.count)
+    let range = BinnedRange::covering_range(range.clone(), query.bin_count)
         .ok_or(Error::with_msg(format!("BinnedRange::covering_range returned None")))?;
-    match PreBinnedPatchRange::covering_range(query.range.clone(), query.count) {
+    match PreBinnedPatchRange::covering_range(query.range.clone(), query.bin_count) {
         Some(pre_range) => {
             info!("Found pre_range: {:?}", pre_range);
             if range.grid_spec.bin_t_len() < pre_range.grid_spec.bin_t_len() {
@@ -90,6 +175,7 @@ pub async fn binned_bytes_for_http(
                 query.channel.clone(),
                 range,
                 query.agg_kind.clone(),
+                query.cache_usage.clone(),
                 node_config,
             );
             let ret = BinnedBytesForHttpStream::new(s1);
@@ -150,31 +236,6 @@ impl Stream for BinnedBytesForHttpStream {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct PreBinnedQuery {
-    pub patch: PreBinnedPatchCoord,
-    agg_kind: AggKind,
-    channel: Channel,
-}
-
-impl PreBinnedQuery {
-    pub fn from_request(req: &http::request::Parts) -> Result<Self, Error> {
-        let params = netpod::query_params(req.uri.query());
-        let patch_ix = params.get("patch_ix").unwrap().parse().unwrap();
-        let bin_t_len = params.get("bin_t_len").unwrap().parse().unwrap();
-        let ret = PreBinnedQuery {
-            patch: PreBinnedPatchCoord::new(bin_t_len, patch_ix),
-            agg_kind: AggKind::DimXBins1,
-            channel: Channel {
-                backend: params.get("channel_backend").unwrap().into(),
-                name: params.get("channel_name").unwrap().into(),
-            },
-        };
-        info!("PreBinnedQuery::from_request  {:?}", ret);
-        Ok(ret)
-    }
-}
-
 // NOTE  This answers a request for a single valid pre-binned patch.
 // A user must first make sure that the grid spec is valid, and that this node is responsible for it.
 // Otherwise it is an error.
@@ -183,12 +244,7 @@ pub fn pre_binned_bytes_for_http(
     query: &PreBinnedQuery,
 ) -> Result<PreBinnedValueByteStream, Error> {
     info!("pre_binned_bytes_for_http  {:?}  {:?}", query, node_config.node);
-    let ret = super::cache::pbv::pre_binned_value_byte_stream_new(
-        query.patch.clone(),
-        query.channel.clone(),
-        query.agg_kind.clone(),
-        node_config,
-    );
+    let ret = super::cache::pbv::pre_binned_value_byte_stream_new(query, node_config);
     Ok(ret)
 }
 
@@ -288,10 +344,9 @@ impl Stream for MergedFromRemotes {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         if self.completed {
-            panic!("MergedFromRemotes  ✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗  poll_next on completed");
+            panic!("MergedFromRemotes  poll_next on completed");
         }
         if self.errored {
-            warn!("MergedFromRemotes  return None after Err");
             self.completed = true;
             return Ready(None);
         }
@@ -355,10 +410,10 @@ impl Stream for MergedFromRemotes {
     }
 }
 
-pub struct SomeReturnThing {}
+pub struct BytesWrap {}
 
-impl From<SomeReturnThing> for Bytes {
-    fn from(_k: SomeReturnThing) -> Self {
+impl From<BytesWrap> for Bytes {
+    fn from(_k: BytesWrap) -> Self {
         error!("TODO convert result to octets");
         todo!("TODO convert result to octets")
     }

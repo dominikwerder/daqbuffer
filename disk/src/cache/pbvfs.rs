@@ -1,5 +1,5 @@
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
-use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead};
+use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead, PreBinnedQuery};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::decode_frame;
 use err::Error;
@@ -7,7 +7,7 @@ use futures_core::Stream;
 use futures_util::{pin_mut, FutureExt};
 #[allow(unused_imports)]
 use netpod::log::*;
-use netpod::{AggKind, Channel, NodeConfigCached, PreBinnedPatchCoord};
+use netpod::NodeConfigCached;
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -21,35 +21,26 @@ pub struct PreBinnedValueFetchedStream {
 }
 
 impl PreBinnedValueFetchedStream {
-    pub fn new(
-        patch_coord: PreBinnedPatchCoord,
-        channel: Channel,
-        agg_kind: AggKind,
-        node_config: &NodeConfigCached,
-    ) -> Self {
-        let nodeix = node_ix_for_patch(&patch_coord, &channel, &node_config.node_config.cluster);
+    pub fn new(query: &PreBinnedQuery, node_config: &NodeConfigCached) -> Result<Self, Error> {
+        let nodeix = node_ix_for_patch(&query.patch, &query.channel, &node_config.node_config.cluster);
         let node = &node_config.node_config.cluster.nodes[nodeix as usize];
         warn!("TODO defining property of a PreBinnedPatchCoord? patchlen + ix? binsize + patchix? binsize + patchsize + patchix?");
-        // TODO encapsulate uri creation, how to express aggregation kind?
         let uri: hyper::Uri = format!(
-            "http://{}:{}/api/1/prebinned?{}&channel_backend={}&channel_name={}&agg_kind={:?}",
+            "http://{}:{}/api/1/prebinned?{}",
             node.host,
             node.port,
-            patch_coord.to_url_params_strings(),
-            channel.backend,
-            channel.name,
-            agg_kind,
+            query.make_query_string()
         )
-        .parse()
-        .unwrap();
+        .parse()?;
         info!("PreBinnedValueFetchedStream  open uri  {}", uri);
-        Self {
+        let ret = Self {
             uri,
             resfut: None,
             res: None,
             errored: false,
             completed: false,
-        }
+        };
+        Ok(ret)
     }
 }
 

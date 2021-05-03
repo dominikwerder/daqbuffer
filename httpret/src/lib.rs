@@ -220,7 +220,7 @@ where
 
 async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
-    let query = disk::cache::Query::from_request(&head)?;
+    let query = disk::cache::BinnedQuery::from_request(&head)?;
     let ret = match disk::cache::binned_bytes_for_http(node_config, &query).await {
         Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, format!("desc-BINNED")))?,
         Err(e) => {
@@ -234,7 +234,7 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
 async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let q = PreBinnedQuery::from_request(&head)?;
-    let desc = format!("pre-b-{}", q.patch.bin_t_len() / 1000000000);
+    let desc = format!("pre-b-{}", q.patch().bin_t_len() / 1000000000);
     let span1 = span!(Level::INFO, "httpret::prebinned", desc = &desc.as_str());
     span1.in_scope(|| {
         trace!("prebinned");
@@ -243,8 +243,8 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
                 s,
                 format!(
                     "pre-b-{}-p-{}",
-                    q.patch.bin_t_len() / 1000000000,
-                    q.patch.patch_beg() / 1000000000,
+                    q.patch().bin_t_len() / 1000000000,
+                    q.patch().patch_beg() / 1000000000,
                 ),
             ))?,
             Err(e) => {

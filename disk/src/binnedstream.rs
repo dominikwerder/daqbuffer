@@ -1,5 +1,6 @@
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::cache::pbvfs::{PreBinnedItem, PreBinnedValueFetchedStream};
+use crate::cache::{CacheUsage, PreBinnedQuery};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -20,6 +21,7 @@ impl BinnedStream {
         channel: Channel,
         range: BinnedRange,
         agg_kind: AggKind,
+        cache_usage: CacheUsage,
         node_config: &NodeConfigCached,
     ) -> Self {
         let patches: Vec<_> = patch_it.collect();
@@ -31,7 +33,17 @@ impl BinnedStream {
         let inp = futures_util::stream::iter(patches.into_iter())
             .map({
                 let node_config = node_config.clone();
-                move |coord| PreBinnedValueFetchedStream::new(coord, channel.clone(), agg_kind.clone(), &node_config)
+                move |patch| {
+                    let query = PreBinnedQuery::new(patch, channel.clone(), agg_kind.clone(), cache_usage.clone());
+                    PreBinnedValueFetchedStream::new(&query, &node_config)
+                }
+            })
+            .filter_map(|k| match k {
+                Ok(k) => ready(Some(k)),
+                Err(e) => {
+                    error!("{:?}", e);
+                    ready(None)
+                }
             })
             .flatten()
             .filter_map({
