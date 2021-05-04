@@ -501,7 +501,10 @@ impl AggregatableXdim1Bin for Dim1F32StreamItem {
     fn into_agg(self) -> Self::Output {
         match self {
             Dim1F32StreamItem::Values(vals) => MinMaxAvgScalarEventBatchStreamItem::Values(vals.into_agg()),
-            _ => panic!(),
+            Dim1F32StreamItem::EventDataReadStats(stats) => {
+                MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats)
+            }
+            Dim1F32StreamItem::RangeComplete => MinMaxAvgScalarEventBatchStreamItem::RangeComplete,
         }
     }
 }
@@ -516,6 +519,7 @@ pub enum MinMaxAvgScalarBinBatchStreamItem {
 pub struct MinMaxAvgScalarEventBatchStreamItemAggregator {
     agg: MinMaxAvgScalarEventBatchAggregator,
     event_data_read_stats: EventDataReadStats,
+    range_complete: bool,
 }
 
 impl MinMaxAvgScalarEventBatchStreamItemAggregator {
@@ -524,6 +528,7 @@ impl MinMaxAvgScalarEventBatchStreamItemAggregator {
         Self {
             agg,
             event_data_read_stats: EventDataReadStats::new(),
+            range_complete: false,
         }
     }
 }
@@ -535,21 +540,21 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchStreamItemAggregator {
     fn ends_before(&self, inp: &Self::InputValue) -> bool {
         match inp {
             MinMaxAvgScalarEventBatchStreamItem::Values(vals) => self.agg.ends_before(vals),
-            _ => todo!(),
+            _ => false,
         }
     }
 
     fn ends_after(&self, inp: &Self::InputValue) -> bool {
         match inp {
             MinMaxAvgScalarEventBatchStreamItem::Values(vals) => self.agg.ends_after(vals),
-            _ => todo!(),
+            _ => false,
         }
     }
 
     fn starts_after(&self, inp: &Self::InputValue) -> bool {
         match inp {
             MinMaxAvgScalarEventBatchStreamItem::Values(vals) => self.agg.starts_after(vals),
-            _ => todo!(),
+            _ => false,
         }
     }
 
@@ -557,7 +562,7 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchStreamItemAggregator {
         match inp {
             MinMaxAvgScalarEventBatchStreamItem::Values(vals) => self.agg.ingest(vals),
             MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats) => self.event_data_read_stats.trans(stats),
-            MinMaxAvgScalarEventBatchStreamItem::RangeComplete => panic!(),
+            MinMaxAvgScalarEventBatchStreamItem::RangeComplete => self.range_complete = true,
         }
     }
 
@@ -571,6 +576,9 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchStreamItemAggregator {
         ret.push(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(
             self.event_data_read_stats,
         ));
+        if self.range_complete {
+            ret.push(MinMaxAvgScalarBinBatchStreamItem::RangeComplete);
+        }
         ret
     }
 }
@@ -596,6 +604,7 @@ impl AggregatableXdim1Bin for MinMaxAvgScalarEventBatchStreamItem {
 pub struct MinMaxAvgScalarBinBatchStreamItemAggregator {
     agg: MinMaxAvgScalarBinBatchAggregator,
     event_data_read_stats: EventDataReadStats,
+    range_complete: bool,
 }
 
 impl MinMaxAvgScalarBinBatchStreamItemAggregator {
@@ -604,6 +613,7 @@ impl MinMaxAvgScalarBinBatchStreamItemAggregator {
         Self {
             agg,
             event_data_read_stats: EventDataReadStats::new(),
+            range_complete: false,
         }
     }
 }
@@ -615,21 +625,21 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchStreamItemAggregator {
     fn ends_before(&self, inp: &Self::InputValue) -> bool {
         match inp {
             MinMaxAvgScalarBinBatchStreamItem::Values(vals) => self.agg.ends_before(vals),
-            _ => todo!(),
+            _ => false,
         }
     }
 
     fn ends_after(&self, inp: &Self::InputValue) -> bool {
         match inp {
             MinMaxAvgScalarBinBatchStreamItem::Values(vals) => self.agg.ends_after(vals),
-            _ => todo!(),
+            _ => false,
         }
     }
 
     fn starts_after(&self, inp: &Self::InputValue) -> bool {
         match inp {
             MinMaxAvgScalarBinBatchStreamItem::Values(vals) => self.agg.starts_after(vals),
-            _ => todo!(),
+            _ => false,
         }
     }
 
@@ -637,7 +647,7 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchStreamItemAggregator {
         match inp {
             MinMaxAvgScalarBinBatchStreamItem::Values(vals) => self.agg.ingest(vals),
             MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats) => self.event_data_read_stats.trans(stats),
-            MinMaxAvgScalarBinBatchStreamItem::RangeComplete => panic!(),
+            MinMaxAvgScalarBinBatchStreamItem::RangeComplete => self.range_complete = true,
         }
     }
 
@@ -651,6 +661,9 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchStreamItemAggregator {
         ret.push(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(
             self.event_data_read_stats,
         ));
+        if self.range_complete {
+            ret.push(MinMaxAvgScalarBinBatchStreamItem::RangeComplete);
+        }
         ret
     }
 }

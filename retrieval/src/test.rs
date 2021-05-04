@@ -52,11 +52,12 @@ async fn get_binned_0_inner() -> Result<(), Error> {
         &cluster,
     )
     .await?;
+    return Ok(());
     get_binned_channel(
         "wave-u16-le-n77",
         "1970-01-01T01:11:00.000Z",
-        "1970-01-01T02:12:00.000Z",
-        4,
+        "1970-01-01T01:40:00.000Z",
+        7,
         &cluster,
     )
     .await?;
@@ -142,7 +143,7 @@ where
                     match bincode::deserialize::<ExpectedType>(frame.buf()) {
                         Ok(item) => match item {
                             Ok(item) => {
-                                info!("TEST GOT ITEM {:?}", item);
+                                info!("TEST GOT ITEM {:?}\n", item);
                                 Some(Ok(item))
                             }
                             Err(e) => {

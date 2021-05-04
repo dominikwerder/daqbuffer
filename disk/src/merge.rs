@@ -160,6 +160,8 @@ where
     ts_last_emit: u64,
     range_complete_observed: Vec<bool>,
     range_complete_observed_all: bool,
+    range_complete_observed_all_emitted: bool,
+    batch_size: usize,
 }
 
 impl<S> MergedMinMaxAvgScalarStream<S>
@@ -182,6 +184,8 @@ where
             ts_last_emit: 0,
             range_complete_observed: vec![false; n],
             range_complete_observed_all: false,
+            range_complete_observed_all_emitted: false,
+            batch_size: 64,
         }
     }
 }
@@ -202,33 +206,41 @@ where
                 self.completed = true;
                 return Ready(None);
             }
+            if self.range_complete_observed_all {
+                error!("MERGER NOTE  range_complete_observed_all");
+                if self.range_complete_observed_all_emitted {
+                    // TODO something to do? Returning None is maybe too early if there is stats left.
+                } else {
+                    error!("MERGER NOTE  range_complete_observed_all  EMIT NOW");
+                    self.range_complete_observed_all_emitted = true;
+                    return Ready(Some(Ok(MinMaxAvgScalarEventBatchStreamItem::RangeComplete)));
+                }
+            }
             // can only run logic if all streams are either finished, errored or have some current value.
             for i1 in 0..self.inps.len() {
                 match self.current[i1] {
                     MergedMinMaxAvgScalarStreamCurVal::None => {
                         match self.inps[i1].poll_next_unpin(cx) {
-                            Ready(Some(Ok(k))) => {
-                                match k {
-                                    MinMaxAvgScalarEventBatchStreamItem::Values(vals) => {
-                                        self.current[i1] = MergedMinMaxAvgScalarStreamCurVal::Val(vals);
-                                    }
-                                    MinMaxAvgScalarEventBatchStreamItem::RangeComplete => {
-                                        self.range_complete_observed[i1] = true;
-                                        let d = self.range_complete_observed.iter().filter(|&&k| k).count();
-                                        if d == self.range_complete_observed.len() {
-                                            self.range_complete_observed_all = true;
-                                            info!("\n\n::::::  range_complete  d  {}  COMPLETE", d);
-                                        } else {
-                                            info!("\n\n::::::  range_complete  d  {}", d);
-                                        }
-                                        // TODO what else to do here?
-                                        todo!();
-                                    }
-                                    MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(_stats) => {
-                                        todo!();
-                                    }
+                            Ready(Some(Ok(k))) => match k {
+                                MinMaxAvgScalarEventBatchStreamItem::Values(vals) => {
+                                    self.ixs[i1] = 0;
+                                    self.current[i1] = MergedMinMaxAvgScalarStreamCurVal::Val(vals);
                                 }
-                            }
+                                MinMaxAvgScalarEventBatchStreamItem::RangeComplete => {
+                                    self.range_complete_observed[i1] = true;
+                                    let d = self.range_complete_observed.iter().filter(|&&k| k).count();
+                                    if d == self.range_complete_observed.len() {
+                                        self.range_complete_observed_all = true;
+                                        info!("\n\n::::::  range_complete  d  {}  COMPLETE", d);
+                                    } else {
+                                        info!("\n\n::::::  range_complete  d  {}", d);
+                                    }
+                                    continue 'outer;
+                                }
+                                MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(_stats) => {
+                                    todo!();
+                                }
+                            },
                             Ready(Some(Err(e))) => {
                                 // TODO emit this error, consider this stream as done, anything more to do here?
                                 //self.current[i1] = CurVal::Err(e);
@@ -239,7 +251,6 @@ where
                                 self.current[i1] = MergedMinMaxAvgScalarStreamCurVal::Finish;
                             }
                             Pending => {
-                                // TODO is this behaviour correct?
                                 return Pending;
                             }
                         }
@@ -290,21 +301,25 @@ where
                 self.batch.tss.push(lowest_ts);
                 let rix = self.ixs[lowest_ix];
                 let z = match &self.current[lowest_ix] {
-                    MergedMinMaxAvgScalarStreamCurVal::Val(k) => (k.mins[rix], k.maxs[rix], k.avgs[rix]),
+                    MergedMinMaxAvgScalarStreamCurVal::Val(k) => (k.mins[rix], k.maxs[rix], k.avgs[rix], k.tss.len()),
                     _ => panic!(),
                 };
                 self.batch.mins.push(z.0);
                 self.batch.maxs.push(z.1);
                 self.batch.avgs.push(z.2);
                 self.ixs[lowest_ix] += 1;
+                if self.ixs[lowest_ix] >= z.3 {
+                    self.ixs[lowest_ix] = 0;
+                    self.current[lowest_ix] = MergedMinMaxAvgScalarStreamCurVal::None;
+                }
             }
-            if self.batch.tss.len() >= 64 {
+            if self.batch.tss.len() >= self.batch_size {
                 let mut k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
                 if self.range_complete_observed_all {
                     k.range_complete_observed = true;
                 }
                 let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
-                break Ready(Some(Ok(ret)));
+                return Ready(Some(Ok(ret)));
             }
         }
     }

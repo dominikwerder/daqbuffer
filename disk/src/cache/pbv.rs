@@ -143,8 +143,11 @@ impl PreBinnedValueStream {
                 let s1 = MergedFromRemotes::new(evq, self.node_config.node_config.cluster.clone());
                 let s2 = s1.into_binned_t(range).map(|k| match k {
                     Ok(MinMaxAvgScalarBinBatchStreamItem::Values(k)) => Ok(PreBinnedItem::Batch(k)),
+                    Ok(MinMaxAvgScalarBinBatchStreamItem::RangeComplete) => Ok(PreBinnedItem::RangeComplete),
+                    Ok(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats)) => {
+                        Ok(PreBinnedItem::EventDataReadStats(stats))
+                    }
                     Err(e) => Err(e),
-                    _ => todo!(),
                 });
                 self.fut2 = Some(Box::pin(s2));
             }
