@@ -1,4 +1,4 @@
-use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
+use crate::agg::MinMaxAvgScalarEventBatchStreamItem;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::decode_frame;
 use crate::raw::conn::RawConnOut;
@@ -37,7 +37,7 @@ impl<T> Stream for MinMaxAvgScalarEventBatchStreamFromFrames<T>
 where
     T: AsyncRead + Unpin,
 {
-    type Item = Result<MinMaxAvgScalarEventBatch, Error>;
+    type Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;

@@ -1,5 +1,5 @@
 use crate::dataopen::open_files;
-use crate::eventchunker::{EventChunker, EventFull};
+use crate::eventchunker::{EventChunker, EventChunkerItem};
 use crate::file_content_stream;
 use err::Error;
 use futures_core::Stream;
@@ -34,7 +34,7 @@ impl EventBlobsComplete {
 }
 
 impl Stream for EventBlobsComplete {
-    type Item = Result<EventFull, Error>;
+    type Item = Result<EventChunkerItem, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -84,7 +84,7 @@ impl Stream for EventBlobsComplete {
 pub fn event_blobs_complete(
     query: &netpod::AggQuerySingleChannel,
     node: Node,
-) -> impl Stream<Item = Result<EventFull, Error>> + Send {
+) -> impl Stream<Item = Result<EventChunkerItem, Error>> + Send {
     let query = query.clone();
     let node = node.clone();
     async_stream::stream! {

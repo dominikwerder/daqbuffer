@@ -344,8 +344,9 @@ pub fn parsed1(query: &netpod::AggQuerySingleChannel, node: &Node) -> impl Strea
                     let range = err::todoval();
                     let mut chunker = eventchunker::EventChunker::from_event_boundary(inp, err::todoval(), range);
                     while let Some(evres) = chunker.next().await {
+                        use eventchunker::EventChunkerItem;
                         match evres {
-                            Ok(evres) => {
+                            Ok(EventChunkerItem::Events(evres)) => {
                                 //let mut buf = BytesMut::with_capacity(16);
                                 // TODO put some interesting information to test
                                 //buf.put_u64_le(0xcafecafe);
@@ -359,6 +360,7 @@ pub fn parsed1(query: &netpod::AggQuerySingleChannel, node: &Node) -> impl Strea
                             Err(e) => {
                                 yield Err(e)
                             }
+                            _ => todo!(),
                         }
                     }
                 }

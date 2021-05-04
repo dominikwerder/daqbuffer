@@ -1,5 +1,6 @@
 use crate::agg::binnedt::IntoBinnedT;
-use crate::cache::pbvfs::{PreBinnedFrame, PreBinnedItem, PreBinnedValueFetchedStream};
+use crate::agg::MinMaxAvgScalarBinBatchStreamItem;
+use crate::cache::pbvfs::{PreBinnedItem, PreBinnedValueFetchedStream};
 use crate::cache::{node_ix_for_patch, MergedFromRemotes, PreBinnedQuery};
 use crate::frame::makeframe::make_frame;
 use crate::raw::EventsQuery;
@@ -35,7 +36,7 @@ impl Stream for PreBinnedValueByteStreamInner {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         match self.inp.poll_next_unpin(cx) {
-            Ready(Some(item)) => match make_frame::<PreBinnedFrame>(&item) {
+            Ready(Some(item)) => match make_frame::<Result<PreBinnedItem, Error>>(&item) {
                 Ok(buf) => Ready(Some(Ok(buf.freeze()))),
                 Err(e) => Ready(Some(Err(e.into()))),
             },
@@ -49,7 +50,7 @@ pub struct PreBinnedValueStream {
     query: PreBinnedQuery,
     node_config: NodeConfigCached,
     open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<tokio::fs::File, std::io::Error>> + Send>>>,
-    fut2: Option<Pin<Box<dyn Stream<Item = PreBinnedFrame> + Send>>>,
+    fut2: Option<Pin<Box<dyn Stream<Item = Result<PreBinnedItem, Error>> + Send>>>,
     errored: bool,
     completed: bool,
 }
@@ -141,8 +142,9 @@ impl PreBinnedValueStream {
                 let range = BinnedRange::covering_range(evq.range.clone(), count).unwrap();
                 let s1 = MergedFromRemotes::new(evq, self.node_config.node_config.cluster.clone());
                 let s2 = s1.into_binned_t(range).map(|k| match k {
-                    Ok(k) => PreBinnedFrame(Ok(PreBinnedItem::Batch(k))),
-                    Err(e) => PreBinnedFrame(Err(e)),
+                    Ok(MinMaxAvgScalarBinBatchStreamItem::Values(k)) => Ok(PreBinnedItem::Batch(k)),
+                    Err(e) => Err(e),
+                    _ => todo!(),
                 });
                 self.fut2 = Some(Box::pin(s2));
             }
@@ -152,7 +154,7 @@ impl PreBinnedValueStream {
 
 impl Stream for PreBinnedValueStream {
     // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
-    type Item = PreBinnedFrame;
+    type Item = Result<PreBinnedItem, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -166,11 +168,11 @@ impl Stream for PreBinnedValueStream {
         'outer: loop {
             break if let Some(fut) = self.fut2.as_mut() {
                 match fut.poll_next_unpin(cx) {
-                    Ready(Some(k)) => match k.0 {
-                        Ok(k) => Ready(Some(PreBinnedFrame(Ok(k)))),
+                    Ready(Some(k)) => match k {
+                        Ok(k) => Ready(Some(Ok(k))),
                         Err(e) => {
                             self.errored = true;
-                            Ready(Some(PreBinnedFrame(Err(e))))
+                            Ready(Some(Err(e)))
                         }
                     },
                     Ready(None) => Ready(None),
@@ -180,7 +182,6 @@ impl Stream for PreBinnedValueStream {
                 match fut.poll_unpin(cx) {
                     Ready(Ok(_file)) => {
                         let e = Err(Error::with_msg(format!("TODO use the cached data from file")));
-                        let e = PreBinnedFrame(e);
                         self.errored = true;
                         Ready(Some(e))
                     }
@@ -190,7 +191,6 @@ impl Stream for PreBinnedValueStream {
                             self.try_setup_fetch_prebinned_higher_res();
                             if self.fut2.is_none() {
                                 let e = Err(Error::with_msg(format!("try_setup_fetch_prebinned_higher_res  failed")));
-                                let e = PreBinnedFrame(e);
                                 self.errored = true;
                                 Ready(Some(e))
                             } else {
@@ -200,8 +200,7 @@ impl Stream for PreBinnedValueStream {
                         _ => {
                             error!("File I/O error: {:?}", e);
                             self.errored = true;
-                            let e = PreBinnedFrame(Err(e.into()));
-                            Ready(Some(e))
+                            Ready(Some(Err(e.into())))
                         }
                     },
                     Pending => Pending,

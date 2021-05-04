@@ -1,6 +1,6 @@
 use crate::agg::binnedx::IntoBinnedXBins1;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
-use crate::agg::IntoDim1F32Stream;
+use crate::agg::{IntoDim1F32Stream, MinMaxAvgScalarEventBatchStreamItem};
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
 use crate::eventblobs::EventBlobsComplete;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
@@ -46,7 +46,7 @@ async fn raw_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: Node
     }
 }
 
-pub type RawConnOut = Result<MinMaxAvgScalarEventBatch, Error>;
+pub type RawConnOut = Result<MinMaxAvgScalarEventBatchStreamItem, Error>;
 
 async fn raw_conn_handler_inner(
     stream: TcpStream,
@@ -178,18 +178,21 @@ async fn raw_conn_handler_inner_try(
     .into_binned_x_bins_1();
     let mut e = 0;
     while let Some(item) = s1.next().await {
-        if let Ok(k) = &item {
-            e += 1;
-            if false {
-                trace!(
-                    "emit items  sp {:2}  e {:3}  len {:3}  {:10?}  {:10?}",
-                    node_config.node.split,
-                    e,
-                    k.tss.len(),
-                    k.tss.first().map(|k| k / SEC),
-                    k.tss.last().map(|k| k / SEC),
-                );
+        match &item {
+            Ok(MinMaxAvgScalarEventBatchStreamItem::Values(k)) => {
+                e += 1;
+                if false {
+                    trace!(
+                        "emit items  sp {:2}  e {:3}  len {:3}  {:10?}  {:10?}",
+                        node_config.node.split,
+                        e,
+                        k.tss.len(),
+                        k.tss.first().map(|k| k / SEC),
+                        k.tss.last().map(|k| k / SEC),
+                    );
+                }
             }
+            _ => (),
         }
         match make_frame::<RawConnOut>(&item) {
             Ok(buf) => match netout.write_all(&buf).await {
@@ -212,6 +215,7 @@ async fn raw_conn_handler_inner_try(
         batch.maxs.push(8.4);
         batch.avgs.push(9.5);
         batch.avgs.push(9.6);
+        let batch = MinMaxAvgScalarEventBatchStreamItem::Values(batch);
         let mut s1 = futures_util::stream::iter(vec![batch]).map(Result::Ok);
         while let Some(item) = s1.next().await {
             match make_frame::<RawConnOut>(&item) {

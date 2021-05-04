@@ -1,4 +1,4 @@
-use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
+use crate::agg::MinMaxAvgScalarEventBatchStreamItem;
 use crate::binnedstream::BinnedStream;
 use crate::cache::pbv::PreBinnedValueByteStream;
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
@@ -308,7 +308,7 @@ impl AsyncRead for HttpBodyAsAsyncRead {
     }
 }
 
-type T001 = Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarEventBatch, Error>> + Send>>;
+type T001 = Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>> + Send>>;
 type T002 = Pin<Box<dyn Future<Output = Result<T001, Error>> + Send>>;
 pub struct MergedFromRemotes {
     tcp_establish_futs: Vec<T002>,
@@ -339,7 +339,7 @@ impl MergedFromRemotes {
 
 impl Stream for MergedFromRemotes {
     // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
-    type Item = Result<MinMaxAvgScalarEventBatch, Error>;
+    type Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;

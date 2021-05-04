@@ -45,25 +45,13 @@ impl PreBinnedValueFetchedStream {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct PreBinnedFrame(pub Result<PreBinnedItem, Error>);
-
-impl<T> From<T> for PreBinnedFrame
-where
-    T: Into<Error>,
-{
-    fn from(k: T) -> Self {
-        PreBinnedFrame(Err(k.into()))
-    }
-}
-
-#[derive(Serialize, Deserialize)]
 pub enum PreBinnedItem {
     Batch(MinMaxAvgScalarBinBatch),
 }
 
 impl Stream for PreBinnedValueFetchedStream {
     // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
-    type Item = PreBinnedFrame;
+    type Item = Result<PreBinnedItem, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -78,22 +66,20 @@ impl Stream for PreBinnedValueFetchedStream {
             break if let Some(res) = self.res.as_mut() {
                 pin_mut!(res);
                 match res.poll_next(cx) {
-                    Ready(Some(Ok(frame))) => match decode_frame::<PreBinnedFrame>(&frame) {
-                        Ok(item) => match item.0 {
-                            Ok(item) => Ready(Some(PreBinnedFrame(Ok(item)))),
-                            Err(e) => {
-                                self.errored = true;
-                                Ready(Some(PreBinnedFrame(Err(e))))
-                            }
-                        },
+                    Ready(Some(Ok(frame))) => match decode_frame::<Result<PreBinnedItem, Error>>(&frame) {
+                        Ok(Ok(item)) => Ready(Some(Ok(item))),
+                        Ok(Err(e)) => {
+                            self.errored = true;
+                            Ready(Some(Err(e)))
+                        }
                         Err(e) => {
                             self.errored = true;
-                            Ready(Some(e.into()))
+                            Ready(Some(Err(e)))
                         }
                     },
                     Ready(Some(Err(e))) => {
                         self.errored = true;
-                        Ready(Some(e.into()))
+                        Ready(Some(Err(e)))
                     }
                     Ready(None) => {
                         self.completed = true;
@@ -114,7 +100,7 @@ impl Stream for PreBinnedValueFetchedStream {
                         Err(e) => {
                             error!("PreBinnedValueStream  error in stream {:?}", e);
                             self.errored = true;
-                            Ready(Some(PreBinnedFrame(Err(e.into()))))
+                            Ready(Some(Err(e.into())))
                         }
                     },
                     Pending => Pending,
@@ -133,7 +119,7 @@ impl Stream for PreBinnedValueFetchedStream {
                     }
                     Err(e) => {
                         self.errored = true;
-                        Ready(Some(e.into()))
+                        Ready(Some(Err(e.into())))
                     }
                 }
             };

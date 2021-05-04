@@ -1,13 +1,25 @@
-use super::agg::{make_test_node, IntoDim1F32Stream};
+use super::agg::IntoDim1F32Stream;
 use super::merge::MergeDim1F32Stream;
 use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::binnedx::IntoBinnedXBins1;
 use futures_util::StreamExt;
 use netpod::timeunits::*;
-use netpod::{BinnedRange, Channel, ChannelConfig, NanoRange, Nanos, ScalarType, Shape};
+use netpod::{BinnedRange, Channel, ChannelConfig, NanoRange, Nanos, Node, ScalarType, Shape};
 use std::future::ready;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
+
+pub fn make_test_node(id: u32) -> Node {
+    Node {
+        host: "localhost".into(),
+        listen: "0.0.0.0".into(),
+        port: 8800 + id as u16,
+        port_raw: 8800 + id as u16 + 100,
+        data_base_path: format!("../tmpdata/node{:02}", id).into(),
+        split: id,
+        ksprefix: "ks".into(),
+    }
+}
 
 #[test]
 fn agg_x_dim_0() {
@@ -49,15 +61,6 @@ async fn agg_x_dim_0_inner() {
         query.buffer_size as usize,
     )
     .into_dim_1_f32_stream()
-    //.take(1000)
-    .map(|q| {
-        if false {
-            if let Ok(ref k) = q {
-                trace!("vals: {:?}", k);
-            }
-        }
-        q
-    })
     .into_binned_x_bins_1()
     .map(|k| {
         if false {

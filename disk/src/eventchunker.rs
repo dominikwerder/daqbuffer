@@ -20,11 +20,16 @@ pub struct EventChunker {
     completed: bool,
     range: NanoRange,
     seen_beyond_range: bool,
+    sent_beyond_range: bool,
 }
 
 enum DataFileState {
     FileHeader,
     Event,
+}
+
+struct ParseResult {
+    events: EventFull,
 }
 
 impl EventChunker {
@@ -44,6 +49,7 @@ impl EventChunker {
             completed: false,
             range,
             seen_beyond_range: false,
+            sent_beyond_range: false,
         }
     }
 
@@ -63,6 +69,7 @@ impl EventChunker {
             completed: false,
             range,
             seen_beyond_range: false,
+            sent_beyond_range: false,
         }
     }
 
@@ -100,7 +107,7 @@ impl EventChunker {
                         self.state = DataFileState::Event;
                         self.need_min = 4;
                         buf.advance(totlen);
-                        ret.event_data_read_stats.parsed_bytes += totlen as u64;
+                        // TODO  ret.event_data_read_stats.parsed_bytes += totlen as u64;
                     }
                 }
                 DataFileState::Event => {
@@ -120,7 +127,7 @@ impl EventChunker {
                         let pulse = sl.read_i64::<BE>().unwrap() as u64;
                         if ts >= self.range.end {
                             self.seen_beyond_range = true;
-                            ret.end_of_range_observed = true;
+                            // TODO  ret.end_of_range_observed = true;
                             info!("END OF RANGE OBSERVED");
                             break;
                         }
@@ -223,7 +230,7 @@ impl EventChunker {
                         }
                         trace!("advance and reset need_min");
                         buf.advance(len as usize);
-                        ret.event_data_read_stats.parsed_bytes += len as u64;
+                        // TODO  ret.event_data_read_stats.parsed_bytes += len as u64;
                         self.need_min = 4;
                     }
                 }
@@ -234,12 +241,39 @@ impl EventChunker {
     }
 }
 
-struct ParseResult {
-    events: EventFull,
+pub struct EventFull {
+    pub tss: Vec<u64>,
+    pub pulses: Vec<u64>,
+    pub decomps: Vec<Option<BytesMut>>,
+    pub scalar_types: Vec<ScalarType>,
+}
+
+impl EventFull {
+    pub fn empty() -> Self {
+        Self {
+            tss: vec![],
+            pulses: vec![],
+            decomps: vec![],
+            scalar_types: vec![],
+        }
+    }
+
+    fn add_event(&mut self, ts: u64, pulse: u64, decomp: Option<BytesMut>, scalar_type: ScalarType) {
+        self.tss.push(ts);
+        self.pulses.push(pulse);
+        self.decomps.push(decomp);
+        self.scalar_types.push(scalar_type);
+    }
+}
+
+pub enum EventChunkerItem {
+    Events(EventFull),
+    RangeComplete,
+    EventDataReadStats(EventDataReadStats),
 }
 
 impl Stream for EventChunker {
-    type Item = Result<EventFull, Error>;
+    type Item = Result<EventChunkerItem, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -251,8 +285,13 @@ impl Stream for EventChunker {
             return Ready(None);
         }
         if self.seen_beyond_range {
-            self.completed = true;
-            return Ready(None);
+            if self.sent_beyond_range {
+                self.completed = true;
+                return Ready(None);
+            } else {
+                self.sent_beyond_range = true;
+                return Ready(Some(Ok(EventChunkerItem::RangeComplete)));
+            }
         }
         match self.inp.poll_next_unpin(cx) {
             Ready(Some(Ok(mut fcr))) => {
@@ -271,7 +310,9 @@ impl Stream for EventChunker {
                         } else {
                             let x = self.need_min;
                             self.inp.set_need_min(x);
-                            Ready(Some(Ok(res.events)))
+                            let ret = EventChunkerItem::Events(res.events);
+                            let ret = Ok(ret);
+                            Ready(Some(ret))
                         }
                     }
                     Err(e) => {
@@ -291,34 +332,5 @@ impl Stream for EventChunker {
             }
             Pending => Pending,
         }
-    }
-}
-
-pub struct EventFull {
-    pub tss: Vec<u64>,
-    pub pulses: Vec<u64>,
-    pub decomps: Vec<Option<BytesMut>>,
-    pub scalar_types: Vec<ScalarType>,
-    pub event_data_read_stats: EventDataReadStats,
-    pub end_of_range_observed: bool,
-}
-
-impl EventFull {
-    pub fn empty() -> Self {
-        Self {
-            tss: vec![],
-            pulses: vec![],
-            decomps: vec![],
-            scalar_types: vec![],
-            event_data_read_stats: EventDataReadStats::new(),
-            end_of_range_observed: false,
-        }
-    }
-
-    fn add_event(&mut self, ts: u64, pulse: u64, decomp: Option<BytesMut>, scalar_type: ScalarType) {
-        self.tss.push(ts);
-        self.pulses.push(pulse);
-        self.decomps.push(decomp);
-        self.scalar_types.push(scalar_type);
     }
 }

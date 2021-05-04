@@ -5,7 +5,7 @@ Delivers event data (not yet time-binned) from local storage and provides client
 to request such data from nodes.
 */
 
-use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
+use crate::agg::MinMaxAvgScalarEventBatchStreamItem;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{make_frame, make_term_frame};
 use crate::raw::bffr::MinMaxAvgScalarEventBatchStreamFromFrames;
@@ -38,7 +38,7 @@ pub struct EventQueryJsonStringFrame(String);
 pub async fn x_processed_stream_from_node(
     query: EventsQuery,
     node: Node,
-) -> Result<Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarEventBatch, Error>> + Send>>, Error> {
+) -> Result<Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>> + Send>>, Error> {
     let net = TcpStream::connect(format!("{}:{}", node.host, node.port_raw)).await?;
     let qjs = serde_json::to_string(&query)?;
     let (netin, mut netout) = net.into_split();

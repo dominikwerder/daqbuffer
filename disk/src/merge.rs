@@ -1,6 +1,6 @@
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
-use crate::agg::{Dim1F32Stream, ValuesDim1};
-use crate::eventchunker::EventFull;
+use crate::agg::{Dim1F32Stream, Dim1F32StreamItem, MinMaxAvgScalarEventBatchStreamItem, ValuesDim1};
+use crate::eventchunker::EventChunkerItem;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -9,21 +9,17 @@ use std::task::{Context, Poll};
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
-pub struct MergeDim1F32Stream<S>
-where
-    S: Stream<Item = Result<EventFull, Error>>,
-{
+pub struct MergeDim1F32Stream<S> {
+    // yields Dim1F32StreamItem
     inps: Vec<Dim1F32Stream<S>>,
     current: Vec<CurVal>,
     ixs: Vec<usize>,
-    emitted_complete: bool,
+    errored: bool,
+    completed: bool,
     batch: ValuesDim1,
 }
 
-impl<S> MergeDim1F32Stream<S>
-where
-    S: Stream<Item = Result<EventFull, Error>>,
-{
+impl<S> MergeDim1F32Stream<S> {
     pub fn new(inps: Vec<Dim1F32Stream<S>>) -> Self {
         let n = inps.len();
         let mut current = vec![];
@@ -34,24 +30,29 @@ where
             inps,
             current: current,
             ixs: vec![0; n],
-            emitted_complete: false,
             batch: ValuesDim1::empty(),
+            errored: false,
+            completed: false,
         }
     }
 }
 
 impl<S> Stream for MergeDim1F32Stream<S>
 where
-    S: Stream<Item = Result<EventFull, Error>> + Unpin,
+    S: Stream<Item = Result<EventChunkerItem, Error>> + Unpin,
 {
-    //type Item = <Dim1F32Stream as Stream>::Item;
-    type Item = Result<ValuesDim1, Error>;
+    type Item = Result<Dim1F32StreamItem, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        // TODO  rewrite making the break the default and explicit continue.
         'outer: loop {
-            if self.emitted_complete {
+            if self.completed {
                 panic!("poll on complete stream");
+            }
+            if self.errored {
+                self.completed = true;
+                return Ready(None);
             }
             // can only run logic if all streams are either finished, errored or have some current value.
             for i1 in 0..self.inps.len() {
@@ -59,7 +60,19 @@ where
                     CurVal::None => {
                         match self.inps[i1].poll_next_unpin(cx) {
                             Ready(Some(Ok(k))) => {
-                                self.current[i1] = CurVal::Val(k);
+                                // TODO do I keep only the values as "current" or also the other kinds of items?
+                                // Can I process the other kinds instantly?
+                                match k {
+                                    Dim1F32StreamItem::Values(vals) => {
+                                        self.current[i1] = CurVal::Val(vals);
+                                    }
+                                    Dim1F32StreamItem::RangeComplete => {
+                                        todo!();
+                                    }
+                                    Dim1F32StreamItem::EventDataReadStats(_stats) => {
+                                        todo!();
+                                    }
+                                }
                             }
                             Ready(Some(Err(e))) => {
                                 self.current[i1] = CurVal::Err(Error::with_msg(format!(
@@ -120,7 +133,8 @@ where
             }
             if self.batch.tss.len() >= 64 {
                 let k = std::mem::replace(&mut self.batch, ValuesDim1::empty());
-                break Ready(Some(Ok(k)));
+                let ret = Dim1F32StreamItem::Values(k);
+                break Ready(Some(Ok(ret)));
             }
         }
     }
@@ -135,7 +149,7 @@ enum CurVal {
 
 pub struct MergedMinMaxAvgScalarStream<S>
 where
-    S: Stream<Item = Result<MinMaxAvgScalarEventBatch, Error>>,
+    S: Stream<Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>>,
 {
     inps: Vec<S>,
     current: Vec<MergedMinMaxAvgScalarStreamCurVal>,
@@ -150,7 +164,7 @@ where
 
 impl<S> MergedMinMaxAvgScalarStream<S>
 where
-    S: Stream<Item = Result<MinMaxAvgScalarEventBatch, Error>>,
+    S: Stream<Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>>,
 {
     pub fn new(inps: Vec<S>) -> Self {
         let n = inps.len();
@@ -174,9 +188,9 @@ where
 
 impl<S> Stream for MergedMinMaxAvgScalarStream<S>
 where
-    S: Stream<Item = Result<MinMaxAvgScalarEventBatch, Error>> + Unpin,
+    S: Stream<Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>> + Unpin,
 {
-    type Item = Result<MinMaxAvgScalarEventBatch, Error>;
+    type Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -193,20 +207,27 @@ where
                 match self.current[i1] {
                     MergedMinMaxAvgScalarStreamCurVal::None => {
                         match self.inps[i1].poll_next_unpin(cx) {
-                            Ready(Some(Ok(mut k))) => {
-                                self.batch.event_data_read_stats.trans(&mut k.event_data_read_stats);
-                                self.batch.values_extract_stats.trans(&mut k.values_extract_stats);
-                                if k.range_complete_observed {
-                                    self.range_complete_observed[i1] = true;
-                                    let d = self.range_complete_observed.iter().filter(|&&k| k).count();
-                                    if d == self.range_complete_observed.len() {
-                                        self.range_complete_observed_all = true;
-                                        info!("\n\n::::::  range_complete  d  {}  COMPLETE", d);
-                                    } else {
-                                        info!("\n\n::::::  range_complete  d  {}", d);
+                            Ready(Some(Ok(k))) => {
+                                match k {
+                                    MinMaxAvgScalarEventBatchStreamItem::Values(vals) => {
+                                        self.current[i1] = MergedMinMaxAvgScalarStreamCurVal::Val(vals);
+                                    }
+                                    MinMaxAvgScalarEventBatchStreamItem::RangeComplete => {
+                                        self.range_complete_observed[i1] = true;
+                                        let d = self.range_complete_observed.iter().filter(|&&k| k).count();
+                                        if d == self.range_complete_observed.len() {
+                                            self.range_complete_observed_all = true;
+                                            info!("\n\n::::::  range_complete  d  {}  COMPLETE", d);
+                                        } else {
+                                            info!("\n\n::::::  range_complete  d  {}", d);
+                                        }
+                                        // TODO what else to do here?
+                                        todo!();
+                                    }
+                                    MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(_stats) => {
+                                        todo!();
                                     }
                                 }
-                                self.current[i1] = MergedMinMaxAvgScalarStreamCurVal::Val(k);
                             }
                             Ready(Some(Err(e))) => {
                                 // TODO emit this error, consider this stream as done, anything more to do here?
@@ -255,7 +276,8 @@ where
                         k.range_complete_observed = true;
                     }
                     info!("MergedMinMaxAvgScalarStream  no more lowest  emit Ready(Some( current batch ))");
-                    break Ready(Some(Ok(k)));
+                    let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
+                    break Ready(Some(Ok(ret)));
                 } else {
                     info!("MergedMinMaxAvgScalarStream  no more lowest  emit Ready(None)");
                     self.completed = true;
@@ -281,7 +303,8 @@ where
                 if self.range_complete_observed_all {
                     k.range_complete_observed = true;
                 }
-                break Ready(Some(Ok(k)));
+                let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
+                break Ready(Some(Ok(ret)));
             }
         }
     }

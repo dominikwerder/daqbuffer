@@ -50,7 +50,7 @@ impl BinnedStream {
                 let range = range.clone();
                 move |k| {
                     let fit_range = range.full_range();
-                    let g = match k.0 {
+                    let g = match k {
                         Ok(PreBinnedItem::Batch(k)) => {
                             use super::agg::{Fits, FitsInside};
                             match k.fits_inside(fit_range) {
