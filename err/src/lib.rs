@@ -43,7 +43,8 @@ impl Error {
 fn fmt_backtrace(trace: &backtrace::Backtrace) -> String {
     use std::io::Write;
     let mut buf = vec![];
-    for fr in trace.frames() {
+    let mut c1 = 0;
+    'outer: for fr in trace.frames() {
         for sy in fr.symbols() {
             let is_ours = match sy.filename() {
                 None => false,
@@ -64,8 +65,12 @@ fn fmt_backtrace(trace: &backtrace::Backtrace) -> String {
                 Some(k) => k,
                 _ => 0,
             };
-            if true || is_ours {
+            if is_ours {
                 write!(&mut buf, "\n    {}\n      {}  {}", name, filename, lineno).unwrap();
+                c1 += 1;
+                if c1 >= 10 {
+                    break 'outer;
+                }
             }
         }
     }
