@@ -1,6 +1,7 @@
 use crate::spawn_test_hosts;
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
+use disk::agg::MinMaxAvgScalarBinBatchStreamItem;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
 use futures_util::StreamExt;
@@ -162,10 +163,11 @@ where
         .fold(Ok(BinnedResponse::new()), |a, k| {
             let g = match a {
                 Ok(mut a) => match k {
-                    Ok(k) => {
+                    Ok(MinMaxAvgScalarBinBatchStreamItem::Values(k)) => {
                         a.bin_count += k.ts1s.len();
                         Ok(a)
                     }
+                    Ok(_) => Ok(a),
                     Err(e) => Err(e),
                 },
                 Err(e) => Err(e),

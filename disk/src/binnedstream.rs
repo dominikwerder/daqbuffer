@@ -1,4 +1,4 @@
-use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
+use crate::agg::MinMaxAvgScalarBinBatchStreamItem;
 use crate::cache::pbvfs::{PreBinnedItem, PreBinnedValueFetchedStream};
 use crate::cache::{CacheUsage, PreBinnedQuery};
 use err::Error;
@@ -12,7 +12,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 pub struct BinnedStream {
-    inp: Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarBinBatch, Error>> + Send>>,
+    inp: Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>> + Send>>,
 }
 
 impl BinnedStream {
@@ -57,9 +57,13 @@ impl BinnedStream {
                                 Fits::Inside
                                 | Fits::PartlyGreater
                                 | Fits::PartlyLower
-                                | Fits::PartlyLowerAndGreater => Some(Ok(k)),
+                                | Fits::PartlyLowerAndGreater => Some(Ok(MinMaxAvgScalarBinBatchStreamItem::Values(k))),
                                 _ => None,
                             }
+                        }
+                        Ok(PreBinnedItem::RangeComplete) => Some(Ok(MinMaxAvgScalarBinBatchStreamItem::RangeComplete)),
+                        Ok(PreBinnedItem::EventDataReadStats(stats)) => {
+                            Some(Ok(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats)))
                         }
                         Err(e) => {
                             error!("observe error in stream {:?}", e);
@@ -69,7 +73,7 @@ impl BinnedStream {
                     ready(g)
                 }
             })
-            .map(|k| k)
+            //.map(|k| k)
             .into_binned_t(range);
         Self { inp: Box::pin(inp) }
     }
@@ -77,7 +81,7 @@ impl BinnedStream {
 
 impl Stream for BinnedStream {
     // TODO make this generic over all possible things
-    type Item = Result<MinMaxAvgScalarBinBatch, Error>;
+    type Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.inp.poll_next_unpin(cx)

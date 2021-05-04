@@ -152,9 +152,6 @@ pub struct MinMaxAvgScalarEventBatchAggregator {
     min: f32,
     max: f32,
     sum: f32,
-    event_data_read_stats: EventDataReadStats,
-    values_extract_stats: ValuesExtractStats,
-    range_complete_observed: bool,
 }
 
 impl MinMaxAvgScalarEventBatchAggregator {
@@ -166,9 +163,6 @@ impl MinMaxAvgScalarEventBatchAggregator {
             max: f32::MIN,
             sum: 0f32,
             count: 0,
-            event_data_read_stats: EventDataReadStats::new(),
-            values_extract_stats: ValuesExtractStats::new(),
-            range_complete_observed: false,
         }
     }
 }
@@ -209,11 +203,6 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
                 v.tss.last().map(|k| k / SEC),
             );
         }
-        self.event_data_read_stats.trans(&mut v.event_data_read_stats);
-        self.values_extract_stats.trans(&mut v.values_extract_stats);
-        if v.range_complete_observed {
-            self.range_complete_observed = true;
-        }
         for i1 in 0..v.tss.len() {
             let ts = v.tss[i1];
             if ts < self.ts1 {
@@ -250,7 +239,7 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
         }
     }
 
-    fn result(mut self) -> Vec<Self::OutputValue> {
+    fn result(self) -> Vec<Self::OutputValue> {
         let min = if self.min == f32::MAX { f32::NAN } else { self.min };
         let max = if self.max == f32::MIN { f32::NAN } else { self.max };
         let avg = if self.count == 0 {
@@ -265,9 +254,6 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
             mins: vec![min],
             maxs: vec![max],
             avgs: vec![avg],
-            event_data_read_stats: std::mem::replace(&mut self.event_data_read_stats, EventDataReadStats::new()),
-            values_extract_stats: std::mem::replace(&mut self.values_extract_stats, ValuesExtractStats::new()),
-            range_complete_observed: self.range_complete_observed,
         };
         vec![v]
     }

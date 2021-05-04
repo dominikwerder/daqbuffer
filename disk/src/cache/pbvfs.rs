@@ -7,7 +7,7 @@ use futures_core::Stream;
 use futures_util::{pin_mut, FutureExt};
 #[allow(unused_imports)]
 use netpod::log::*;
-use netpod::NodeConfigCached;
+use netpod::{EventDataReadStats, NodeConfigCached};
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -47,6 +47,9 @@ impl PreBinnedValueFetchedStream {
 #[derive(Serialize, Deserialize)]
 pub enum PreBinnedItem {
     Batch(MinMaxAvgScalarBinBatch),
+    RangeComplete,
+    EventDataReadStats(EventDataReadStats),
+    //ValuesExtractStats(ValuesExtractStats),
 }
 
 impl Stream for PreBinnedValueFetchedStream {
