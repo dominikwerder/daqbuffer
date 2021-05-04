@@ -210,6 +210,10 @@ impl From<InvalidUri> for Error {
     }
 }
 
+pub fn todo() {
+    todo!("TODO");
+}
+
 pub fn todoval<T>() -> T {
     todo!("TODO todoval")
 }

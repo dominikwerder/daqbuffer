@@ -4,6 +4,7 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;
 use netpod::BinnedRange;
+use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -38,6 +39,7 @@ where
     errored: bool,
     completed: bool,
     inp_completed: bool,
+    tmp_agg_results: VecDeque<<I::Aggregator as AggregatorTdim>::OutputValue>,
 }
 
 impl<S, I> IntoBinnedTDefaultStream<S, I>
@@ -56,14 +58,15 @@ where
             errored: false,
             completed: false,
             inp_completed: false,
+            tmp_agg_results: VecDeque::new(),
         }
     }
 }
 
-impl<T, I> Stream for IntoBinnedTDefaultStream<T, I>
+impl<S, I> Stream for IntoBinnedTDefaultStream<S, I>
 where
     I: AggregatableTdim + Unpin,
-    T: Stream<Item = Result<I, Error>> + Unpin,
+    S: Stream<Item = Result<I, Error>> + Unpin,
     I::Aggregator: Unpin,
 {
     type Item = Result<<I::Aggregator as AggregatorTdim>::OutputValue, Error>;
@@ -78,6 +81,9 @@ where
             return Ready(None);
         }
         'outer: loop {
+            if let Some(item) = self.tmp_agg_results.pop_front() {
+                return Ready(Some(Ok(item)));
+            }
             let cur = if let Some(k) = self.left.take() {
                 k
             } else if self.inp_completed {
@@ -102,7 +108,9 @@ where
                             .replace(I::aggregator_new_static(range.beg, range.end))
                             .unwrap()
                             .result();
-                        Ready(Some(Ok(ret)))
+                        //Ready(Some(Ok(ret)))
+                        self.tmp_agg_results = ret.into();
+                        continue 'outer;
                     } else {
                         //info!("INGEST");
                         let mut k = k;
@@ -119,7 +127,9 @@ where
                                 .replace(I::aggregator_new_static(range.beg, range.end))
                                 .unwrap()
                                 .result();
-                            Ready(Some(Ok(ret)))
+                            //Ready(Some(Ok(ret)))
+                            self.tmp_agg_results = ret.into();
+                            continue 'outer;
                         } else {
                             //info!("ENDS WITHIN");
                             continue 'outer;
@@ -140,7 +150,12 @@ where
                         self.curbin += 1;
                         let range = self.spec.get_range(self.curbin);
                         match self.aggtor.replace(I::aggregator_new_static(range.beg, range.end)) {
-                            Some(ag) => Ready(Some(Ok(ag.result()))),
+                            Some(ag) => {
+                                let ret = ag.result();
+                                //Ready(Some(Ok(ag.result())))
+                                self.tmp_agg_results = ret.into();
+                                continue 'outer;
+                            }
                             None => {
                                 panic!();
                             }

@@ -250,7 +250,7 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
         }
     }
 
-    fn result(mut self) -> Self::OutputValue {
+    fn result(mut self) -> Vec<Self::OutputValue> {
         let min = if self.min == f32::MAX { f32::NAN } else { self.min };
         let max = if self.max == f32::MIN { f32::NAN } else { self.max };
         let avg = if self.count == 0 {
@@ -258,7 +258,7 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
         } else {
             self.sum / self.count as f32
         };
-        MinMaxAvgScalarBinBatch {
+        let v = MinMaxAvgScalarBinBatch {
             ts1s: vec![self.ts1],
             ts2s: vec![self.ts2],
             counts: vec![self.count],
@@ -268,6 +268,7 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
             event_data_read_stats: std::mem::replace(&mut self.event_data_read_stats, EventDataReadStats::new()),
             values_extract_stats: std::mem::replace(&mut self.values_extract_stats, ValuesExtractStats::new()),
             range_complete_observed: self.range_complete_observed,
-        }
+        };
+        vec![v]
     }
 }
