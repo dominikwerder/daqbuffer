@@ -61,7 +61,10 @@ impl BinnedStream {
                                 _ => None,
                             }
                         }
-                        Ok(PreBinnedItem::RangeComplete) => Some(Ok(MinMaxAvgScalarBinBatchStreamItem::RangeComplete)),
+                        Ok(PreBinnedItem::RangeComplete) => {
+                            info!("===================    BINNED STREAM OBSERVES RangeComplete   ====================");
+                            Some(Ok(MinMaxAvgScalarBinBatchStreamItem::RangeComplete))
+                        }
                         Ok(PreBinnedItem::EventDataReadStats(stats)) => {
                             Some(Ok(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats)))
                         }
@@ -73,7 +76,6 @@ impl BinnedStream {
                     ready(g)
                 }
             })
-            //.map(|k| k)
             .into_binned_t(range);
         Self { inp: Box::pin(inp) }
     }

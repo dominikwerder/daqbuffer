@@ -213,9 +213,9 @@ where
                                     let d = self.range_complete_observed.iter().filter(|&&k| k).count();
                                     if d == self.range_complete_observed.len() {
                                         self.range_complete_observed_all = true;
-                                        info!("\n\n::::::  range_complete  d  {}  COMPLETE", d);
+                                        info!("MergedMinMaxAvgScalarStream  range_complete  d  {}  COMPLETE", d);
                                     } else {
-                                        info!("\n\n::::::  range_complete  d  {}", d);
+                                        trace!("MergedMinMaxAvgScalarStream  range_complete  d  {}", d);
                                     }
                                     continue 'l1;
                                 }
@@ -258,7 +258,6 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        info!("Merger poll ENTER");
         if self.completed {
             panic!("MergedMinMaxAvgScalarStream  poll_next on completed");
         }
@@ -266,20 +265,14 @@ where
             self.completed = true;
             return Ready(None);
         }
-        let u = 'outer: loop {
+        'outer: loop {
             break if self.data_emit_complete {
-                error!("MERGER NOTE  data_emit_complete");
                 if self.range_complete_observed_all {
-                    error!("MERGER NOTE  range_complete_observed_all");
                     if self.range_complete_observed_all_emitted {
-                        error!("MERGER NOTE  range_complete_observed_all_emitted");
-                        // NOTE everything else (data and stats) must be emitted before data_emit_complete gets set.
                         self.completed = true;
                         Ready(None)
                     } else {
-                        error!("MERGER NOTE  range_complete_observed_all  EMIT NOW");
                         self.range_complete_observed_all_emitted = true;
-                        // NOTE this is supposed to return
                         Ready(Some(Ok(MinMaxAvgScalarEventBatchStreamItem::RangeComplete)))
                     }
                 } else {
@@ -293,39 +286,32 @@ where
                         let mut lowest_ix = usize::MAX;
                         let mut lowest_ts = u64::MAX;
                         for i1 in 0..self.inps.len() {
-                            match &self.current[i1] {
-                                MergedMinMaxAvgScalarStreamCurVal::Finish => {}
-                                MergedMinMaxAvgScalarStreamCurVal::Val(val) => {
-                                    let u = self.ixs[i1];
-                                    if u >= val.tss.len() {
-                                        self.ixs[i1] = 0;
-                                        self.current[i1] = MergedMinMaxAvgScalarStreamCurVal::None;
-                                        continue 'outer;
-                                    } else {
-                                        let ts = val.tss[u];
-                                        if ts < lowest_ts {
-                                            lowest_ix = i1;
-                                            lowest_ts = ts;
-                                        }
+                            if let MergedMinMaxAvgScalarStreamCurVal::Val(val) = &self.current[i1] {
+                                let u = self.ixs[i1];
+                                if u >= val.tss.len() {
+                                    self.ixs[i1] = 0;
+                                    self.current[i1] = MergedMinMaxAvgScalarStreamCurVal::None;
+                                    continue 'outer;
+                                } else {
+                                    let ts = val.tss[u];
+                                    if ts < lowest_ts {
+                                        lowest_ix = i1;
+                                        lowest_ts = ts;
                                     }
                                 }
-                                _ => panic!(),
                             }
                         }
                         if lowest_ix == usize::MAX {
                             if self.batch.tss.len() != 0 {
                                 let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
-                                info!("MergedMinMaxAvgScalarStream  no more lowest  emit Ready(Some( current batch ))");
                                 let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
                                 self.data_emit_complete = true;
                                 Ready(Some(Ok(ret)))
                             } else {
-                                info!("MergedMinMaxAvgScalarStream  no more lowest  emit Ready(None)");
                                 self.data_emit_complete = true;
                                 continue 'outer;
                             }
                         } else {
-                            //trace!("decided on next lowest ts  {}  ix {}", lowest_ts, lowest_ix);
                             assert!(lowest_ts >= self.ts_last_emit);
                             self.ts_last_emit = lowest_ts;
                             self.batch.tss.push(lowest_ts);
@@ -360,9 +346,7 @@ where
                     Pending => Pending,
                 }
             };
-        };
-        info!("Merger poll DONE");
-        u
+        }
     }
 }
 

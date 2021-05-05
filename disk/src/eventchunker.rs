@@ -127,8 +127,6 @@ impl EventChunker {
                         let pulse = sl.read_i64::<BE>().unwrap() as u64;
                         if ts >= self.range.end {
                             self.seen_beyond_range = true;
-                            // TODO  ret.end_of_range_observed = true;
-                            info!("END OF RANGE OBSERVED");
                             break;
                         }
                         if ts < self.range.beg {

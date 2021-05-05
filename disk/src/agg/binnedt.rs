@@ -53,6 +53,7 @@ where
     aggtor: Option<I::Aggregator>,
     spec: BinnedRange,
     curbin: u32,
+    data_completed: bool,
     range_complete: bool,
     range_complete_emitted: bool,
     left: Option<Poll<Option<Result<I, Error>>>>,
@@ -74,6 +75,7 @@ where
             aggtor: Some(I::aggregator_new_static(range.beg, range.end)),
             spec,
             curbin: 0,
+            data_completed: false,
             range_complete: false,
             range_complete_emitted: false,
             left: None,
@@ -105,30 +107,30 @@ where
         'outer: loop {
             if let Some(item) = self.tmp_agg_results.pop_front() {
                 return Ready(Some(Ok(item)));
+            } else if self.data_completed {
+                if self.range_complete {
+                    if self.range_complete_emitted {
+                        self.completed = true;
+                        return Ready(None);
+                    } else {
+                        self.range_complete_emitted = true;
+                        warn!("IntoBinnedTDefaultStream  ///////////////////////////////////   emit now RangeComplete");
+                        // TODO why can't I declare that type?
+                        //type TT = <I::Aggregator as AggregatorTdim>::OutputValue;
+                        if let Some(item) = <I::Aggregator as AggregatorTdim>::OutputValue::make_range_complete_item() {
+                            return Ready(Some(Ok(item)));
+                        } else {
+                            warn!("IntoBinnedTDefaultStream  should emit RangeComplete but it doesn't have one");
+                            self.completed = true;
+                            return Ready(None);
+                        }
+                    }
+                }
             }
             let cur = if let Some(k) = self.left.take() {
                 k
             } else if self.inp_completed {
-                if self.range_complete {
-                    if self.range_complete_emitted {
-                        self.completed = true;
-                        Ready(None)
-                    } else {
-                        self.range_complete_emitted = true;
-                        // TODO why can't I declare that type?
-                        //type TT = <I::Aggregator as AggregatorTdim>::OutputValue;
-                        if let Some(k) = <I::Aggregator as AggregatorTdim>::OutputValue::make_range_complete_item() {
-                            return Ready(Some(Ok(k)));
-                        } else {
-                            warn!("IntoBinnedTDefaultStream  should emit RangeComplete but I doesn't have one");
-                            self.completed = true;
-                            Ready(None)
-                        }
-                    }
-                } else {
-                    self.completed = true;
-                    Ready(None)
-                }
+                Ready(None)
             } else {
                 let inp_poll_span = span!(Level::TRACE, "into_t_inp_poll");
                 inp_poll_span.in_scope(|| self.inp.poll_next_unpin(cx))
@@ -190,15 +192,14 @@ where
                     self.inp_completed = true;
                     if self.curbin as u64 >= self.spec.count {
                         warn!("IntoBinnedTDefaultStream  curbin out of spec, END");
-                        self.completed = true;
-                        Ready(None)
+                        self.data_completed = true;
+                        continue 'outer;
                     } else {
                         self.curbin += 1;
                         let range = self.spec.get_range(self.curbin);
                         match self.aggtor.replace(I::aggregator_new_static(range.beg, range.end)) {
                             Some(ag) => {
                                 let ret = ag.result();
-                                //Ready(Some(Ok(ag.result())))
                                 self.tmp_agg_results = ret.into();
                                 continue 'outer;
                             }
