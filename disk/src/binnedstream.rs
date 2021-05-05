@@ -68,6 +68,7 @@ impl BinnedStream {
                         Ok(PreBinnedItem::EventDataReadStats(stats)) => {
                             Some(Ok(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats)))
                         }
+                        Ok(PreBinnedItem::Log(item)) => Some(Ok(MinMaxAvgScalarBinBatchStreamItem::Log(item))),
                         Err(e) => {
                             error!("observe error in stream {:?}", e);
                             Some(Err(e))

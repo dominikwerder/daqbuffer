@@ -1,5 +1,6 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
 use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
+use crate::streamlog::LogItem;
 use bytes::{BufMut, Bytes, BytesMut};
 use netpod::log::*;
 use netpod::timeunits::SEC;
@@ -201,6 +202,18 @@ impl AggregatableTdim for MinMaxAvgScalarBinBatch {
     fn make_range_complete_item() -> Option<Self> {
         None
     }
+
+    fn is_log_item(&self) -> bool {
+        false
+    }
+
+    fn log_item(self) -> Option<LogItem> {
+        None
+    }
+
+    fn make_log_item(_item: LogItem) -> Option<Self> {
+        None
+    }
 }
 
 pub struct MinMaxAvgScalarBinBatchAggregator {
@@ -295,6 +308,7 @@ pub enum MinMaxAvgScalarBinBatchStreamItem {
     Values(MinMaxAvgScalarBinBatch),
     RangeComplete,
     EventDataReadStats(EventDataReadStats),
+    Log(LogItem),
 }
 
 impl AggregatableTdim for MinMaxAvgScalarBinBatchStreamItem {
@@ -315,6 +329,26 @@ impl AggregatableTdim for MinMaxAvgScalarBinBatchStreamItem {
 
     fn make_range_complete_item() -> Option<Self> {
         Some(MinMaxAvgScalarBinBatchStreamItem::RangeComplete)
+    }
+
+    fn is_log_item(&self) -> bool {
+        if let MinMaxAvgScalarBinBatchStreamItem::Log(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    fn log_item(self) -> Option<LogItem> {
+        if let MinMaxAvgScalarBinBatchStreamItem::Log(item) = self {
+            Some(item)
+        } else {
+            None
+        }
+    }
+
+    fn make_log_item(item: LogItem) -> Option<Self> {
+        Some(MinMaxAvgScalarBinBatchStreamItem::Log(item))
     }
 }
 
@@ -371,6 +405,7 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchStreamItemAggregator {
             MinMaxAvgScalarBinBatchStreamItem::Values(vals) => self.agg.ingest(vals),
             MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats) => self.event_data_read_stats.trans(stats),
             MinMaxAvgScalarBinBatchStreamItem::RangeComplete => (),
+            MinMaxAvgScalarBinBatchStreamItem::Log(_) => (),
         }
     }
 

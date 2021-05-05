@@ -1,4 +1,5 @@
 use crate::agg::AggregatableXdim1Bin;
+use crate::streamlog::LogItem;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -24,6 +25,9 @@ pub trait AggregatableTdim: Sized {
     fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator;
     fn is_range_complete(&self) -> bool;
     fn make_range_complete_item() -> Option<Self>;
+    fn is_log_item(&self) -> bool;
+    fn log_item(self) -> Option<LogItem>;
+    fn make_log_item(item: LogItem) -> Option<Self>;
 }
 
 pub trait IntoBinnedT {
@@ -140,6 +144,19 @@ where
                     if k.is_range_complete() {
                         self.range_complete = true;
                         continue 'outer;
+                    } else if k.is_log_item() {
+                        if let Some(item) = k.log_item() {
+                            if let Some(item) =
+                                <I::Aggregator as AggregatorTdim>::OutputValue::make_log_item(item.clone())
+                            {
+                                Ready(Some(Ok(item)))
+                            } else {
+                                warn!("IntoBinnedTDefaultStream  can not create log item");
+                                continue 'outer;
+                            }
+                        } else {
+                            panic!()
+                        }
                     } else {
                         let ag = self.aggtor.as_mut().unwrap();
                         if ag.ends_before(&k) {

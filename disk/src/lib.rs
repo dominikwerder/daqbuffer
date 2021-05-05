@@ -31,6 +31,7 @@ pub mod index;
 pub mod merge;
 pub mod paths;
 pub mod raw;
+pub mod streamlog;
 
 pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: Node) -> Result<netpod::BodyStream, Error> {
     let path = paths::datapath(query.timebin as u64, &query.channel_config, &node);

@@ -1,6 +1,7 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
 use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatchStreamItem};
 use crate::agg::AggregatableXdim1Bin;
+use crate::streamlog::LogItem;
 use bytes::{BufMut, Bytes, BytesMut};
 use netpod::log::*;
 use netpod::timeunits::SEC;
@@ -118,6 +119,18 @@ impl AggregatableTdim for MinMaxAvgScalarEventBatch {
     }
 
     fn make_range_complete_item() -> Option<Self> {
+        None
+    }
+
+    fn is_log_item(&self) -> bool {
+        false
+    }
+
+    fn log_item(self) -> Option<LogItem> {
+        None
+    }
+
+    fn make_log_item(_item: LogItem) -> Option<Self> {
         None
     }
 }
@@ -266,6 +279,7 @@ pub enum MinMaxAvgScalarEventBatchStreamItem {
     Values(MinMaxAvgScalarEventBatch),
     RangeComplete,
     EventDataReadStats(EventDataReadStats),
+    Log(LogItem),
 }
 
 impl AggregatableXdim1Bin for MinMaxAvgScalarEventBatchStreamItem {
@@ -295,6 +309,26 @@ impl AggregatableTdim for MinMaxAvgScalarEventBatchStreamItem {
 
     fn make_range_complete_item() -> Option<Self> {
         Some(MinMaxAvgScalarEventBatchStreamItem::RangeComplete)
+    }
+
+    fn is_log_item(&self) -> bool {
+        if let MinMaxAvgScalarEventBatchStreamItem::Log(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    fn log_item(self) -> Option<LogItem> {
+        if let MinMaxAvgScalarEventBatchStreamItem::Log(item) = self {
+            Some(item)
+        } else {
+            None
+        }
+    }
+
+    fn make_log_item(item: LogItem) -> Option<Self> {
+        Some(MinMaxAvgScalarEventBatchStreamItem::Log(item))
     }
 }
 
@@ -343,6 +377,7 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchStreamItemAggregator {
             MinMaxAvgScalarEventBatchStreamItem::Values(vals) => self.agg.ingest(vals),
             MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats) => self.event_data_read_stats.trans(stats),
             MinMaxAvgScalarEventBatchStreamItem::RangeComplete => (),
+            MinMaxAvgScalarEventBatchStreamItem::Log(_) => (),
         }
     }
 

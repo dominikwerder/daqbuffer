@@ -4,6 +4,7 @@ use crate::cache::pbvfs::{PreBinnedItem, PreBinnedValueFetchedStream};
 use crate::cache::{node_ix_for_patch, MergedFromRemotes, PreBinnedQuery};
 use crate::frame::makeframe::make_frame;
 use crate::raw::EventsQuery;
+use crate::streamlog::Streamlog;
 use bytes::Bytes;
 use err::Error;
 use futures_core::Stream;
@@ -51,8 +52,12 @@ pub struct PreBinnedValueStream {
     node_config: NodeConfigCached,
     open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<tokio::fs::File, std::io::Error>> + Send>>>,
     fut2: Option<Pin<Box<dyn Stream<Item = Result<PreBinnedItem, Error>> + Send>>>,
+    data_complete: bool,
+    range_complete_observed: bool,
+    range_complete_emitted: bool,
     errored: bool,
     completed: bool,
+    streamlog: Streamlog,
 }
 
 impl PreBinnedValueStream {
@@ -64,92 +69,108 @@ impl PreBinnedValueStream {
             node_config: node_config.clone(),
             open_check_local_file: None,
             fut2: None,
+            data_complete: false,
+            range_complete_observed: false,
+            range_complete_emitted: false,
             errored: false,
             completed: false,
+            streamlog: Streamlog::new(),
         }
+    }
+
+    fn setup_merged_from_remotes(&mut self) {
+        let g = self.query.patch.bin_t_len();
+        warn!("no better resolution found for  g {}", g);
+        let evq = EventsQuery {
+            channel: self.query.channel.clone(),
+            range: self.query.patch.patch_range(),
+            agg_kind: self.query.agg_kind.clone(),
+        };
+        if self.query.patch.patch_t_len() % self.query.patch.bin_t_len() != 0 {
+            error!(
+                "Patch length inconsistency  {}  {}",
+                self.query.patch.patch_t_len(),
+                self.query.patch.bin_t_len()
+            );
+            return;
+        }
+        // TODO do I need to set up more transformations or binning to deliver the requested data?
+        let count = self.query.patch.patch_t_len() / self.query.patch.bin_t_len();
+        let range = BinnedRange::covering_range(evq.range.clone(), count).unwrap();
+        let s1 = MergedFromRemotes::new(evq, self.node_config.node_config.cluster.clone());
+        let s2 = s1.into_binned_t(range);
+        let s2 = s2.map(|k| {
+            use MinMaxAvgScalarBinBatchStreamItem::*;
+            match k {
+                Ok(Values(k)) => Ok(PreBinnedItem::Batch(k)),
+                Ok(RangeComplete) => Ok(PreBinnedItem::RangeComplete),
+                Ok(EventDataReadStats(stats)) => Ok(PreBinnedItem::EventDataReadStats(stats)),
+                Ok(Log(item)) => Ok(PreBinnedItem::Log(item)),
+                Err(e) => Err(e),
+            }
+        });
+        self.fut2 = Some(Box::pin(s2));
+    }
+
+    fn setup_from_higher_res_prebinned(&mut self, range: PreBinnedPatchRange) {
+        let g = self.query.patch.bin_t_len();
+        let h = range.grid_spec.bin_t_len();
+        info!(
+            "try_setup_fetch_prebinned_higher_res  found  g {}  h {}  ratio {}  mod {}  {:?}",
+            g,
+            h,
+            g / h,
+            g % h,
+            range,
+        );
+        if g / h <= 1 {
+            error!("try_setup_fetch_prebinned_higher_res  g {}  h {}", g, h);
+            return;
+        }
+        if g / h > 200 {
+            error!("try_setup_fetch_prebinned_higher_res  g {}  h {}", g, h);
+            return;
+        }
+        if g % h != 0 {
+            error!("try_setup_fetch_prebinned_higher_res  g {}  h {}", g, h);
+            return;
+        }
+        let node_config = self.node_config.clone();
+        let patch_it = PreBinnedPatchIterator::from_range(range);
+        let s = futures_util::stream::iter(patch_it)
+            .map({
+                let q2 = self.query.clone();
+                move |patch| {
+                    let query = PreBinnedQuery {
+                        patch,
+                        channel: q2.channel.clone(),
+                        agg_kind: q2.agg_kind.clone(),
+                        cache_usage: q2.cache_usage.clone(),
+                    };
+                    PreBinnedValueFetchedStream::new(&query, &node_config)
+                }
+            })
+            .filter_map(|k| match k {
+                Ok(k) => ready(Some(k)),
+                Err(e) => {
+                    // TODO Reconsider error handling here:
+                    error!("{:?}", e);
+                    ready(None)
+                }
+            })
+            .flatten();
+        self.fut2 = Some(Box::pin(s));
     }
 
     fn try_setup_fetch_prebinned_higher_res(&mut self) {
         info!("try_setup_fetch_prebinned_higher_res  for {:?}", self.query.patch);
-        let g = self.query.patch.bin_t_len();
         let range = self.query.patch.patch_range();
         match PreBinnedPatchRange::covering_range(range, self.query.patch.bin_count() + 1) {
             Some(range) => {
-                let h = range.grid_spec.bin_t_len();
-                info!(
-                    "try_setup_fetch_prebinned_higher_res  found  g {}  h {}  ratio {}  mod {}  {:?}",
-                    g,
-                    h,
-                    g / h,
-                    g % h,
-                    range,
-                );
-                if g / h <= 1 {
-                    error!("try_setup_fetch_prebinned_higher_res  g {}  h {}", g, h);
-                    return;
-                }
-                if g / h > 200 {
-                    error!("try_setup_fetch_prebinned_higher_res  g {}  h {}", g, h);
-                    return;
-                }
-                if g % h != 0 {
-                    error!("try_setup_fetch_prebinned_higher_res  g {}  h {}", g, h);
-                    return;
-                }
-                let node_config = self.node_config.clone();
-                let patch_it = PreBinnedPatchIterator::from_range(range);
-                let s = futures_util::stream::iter(patch_it)
-                    .map({
-                        let q2 = self.query.clone();
-                        move |patch| {
-                            let query = PreBinnedQuery {
-                                patch,
-                                channel: q2.channel.clone(),
-                                agg_kind: q2.agg_kind.clone(),
-                                cache_usage: q2.cache_usage.clone(),
-                            };
-                            PreBinnedValueFetchedStream::new(&query, &node_config)
-                        }
-                    })
-                    .filter_map(|k| match k {
-                        Ok(k) => ready(Some(k)),
-                        Err(e) => {
-                            // TODO Reconsider error handling here:
-                            error!("{:?}", e);
-                            ready(None)
-                        }
-                    })
-                    .flatten();
-                self.fut2 = Some(Box::pin(s));
+                self.setup_from_higher_res_prebinned(range);
             }
             None => {
-                warn!("no better resolution found for  g {}", g);
-                let evq = EventsQuery {
-                    channel: self.query.channel.clone(),
-                    range: self.query.patch.patch_range(),
-                    agg_kind: self.query.agg_kind.clone(),
-                };
-                if self.query.patch.patch_t_len() % self.query.patch.bin_t_len() != 0 {
-                    error!(
-                        "Patch length inconsistency  {}  {}",
-                        self.query.patch.patch_t_len(),
-                        self.query.patch.bin_t_len()
-                    );
-                    return;
-                }
-                error!("try_setup_fetch_prebinned_higher_res  apply all requested transformations and T-binning");
-                let count = self.query.patch.patch_t_len() / self.query.patch.bin_t_len();
-                let range = BinnedRange::covering_range(evq.range.clone(), count).unwrap();
-                let s1 = MergedFromRemotes::new(evq, self.node_config.node_config.cluster.clone());
-                let s2 = s1.into_binned_t(range).map(|k| match k {
-                    Ok(MinMaxAvgScalarBinBatchStreamItem::Values(k)) => Ok(PreBinnedItem::Batch(k)),
-                    Ok(MinMaxAvgScalarBinBatchStreamItem::RangeComplete) => Ok(PreBinnedItem::RangeComplete),
-                    Ok(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats)) => {
-                        Ok(PreBinnedItem::EventDataReadStats(stats))
-                    }
-                    Err(e) => Err(e),
-                });
-                self.fut2 = Some(Box::pin(s2));
+                self.setup_merged_from_remotes();
             }
         }
     }
@@ -168,17 +189,54 @@ impl Stream for PreBinnedValueStream {
             self.completed = true;
             return Ready(None);
         }
+        if let Some(item) = self.streamlog.pop() {
+            return Ready(Some(Ok(PreBinnedItem::Log(item))));
+        }
         'outer: loop {
-            break if let Some(fut) = self.fut2.as_mut() {
+            break if self.data_complete {
+                if self.range_complete_observed {
+                    if self.range_complete_emitted {
+                        self.completed = true;
+                        Ready(None)
+                    } else {
+                        let msg = format!(
+                            "======== STREAMLOG =========   WRITE CACHE FILE\n{:?}\n\n\n",
+                            self.query.patch
+                        );
+                        self.streamlog.append(Level::INFO, msg);
+                        info!(
+                            "========================   WRITE CACHE FILE\n{:?}\n\n\n",
+                            self.query.patch
+                        );
+                        self.range_complete_emitted = true;
+                        Ready(Some(Ok(PreBinnedItem::RangeComplete)))
+                    }
+                } else {
+                    self.completed = true;
+                    Ready(None)
+                }
+            } else if let Some(fut) = self.fut2.as_mut() {
                 match fut.poll_next_unpin(cx) {
                     Ready(Some(k)) => match k {
-                        Ok(k) => Ready(Some(Ok(k))),
+                        Ok(PreBinnedItem::RangeComplete) => {
+                            self.range_complete_observed = true;
+                            //Ready(Some(Ok(PreBinnedItem::RangeComplete)))
+                            continue 'outer;
+                        }
+                        Ok(PreBinnedItem::Batch(batch)) => Ready(Some(Ok(PreBinnedItem::Batch(batch)))),
+                        Ok(PreBinnedItem::EventDataReadStats(stats)) => {
+                            Ready(Some(Ok(PreBinnedItem::EventDataReadStats(stats))))
+                        }
+                        Ok(PreBinnedItem::Log(item)) => Ready(Some(Ok(PreBinnedItem::Log(item)))),
                         Err(e) => {
                             self.errored = true;
                             Ready(Some(Err(e)))
                         }
                     },
-                    Ready(None) => Ready(None),
+                    Ready(None) => {
+                        self.data_complete = true;
+                        continue 'outer;
+                    }
                     Pending => Pending,
                 }
             } else if let Some(fut) = self.open_check_local_file.as_mut() {

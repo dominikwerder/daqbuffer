@@ -52,9 +52,6 @@ async fn get_binned_0_inner() -> Result<(), Error> {
         &cluster,
     )
     .await?;
-    if true {
-        return Ok(());
-    }
     get_binned_channel(
         "wave-u16-le-n77",
         "1970-01-01T01:11:00.000Z",
@@ -71,6 +68,9 @@ async fn get_binned_0_inner() -> Result<(), Error> {
         &cluster,
     )
     .await?;
+    if true {
+        return Ok(());
+    }
     Ok(())
 }
 

@@ -1,9 +1,11 @@
 use crate::agg::eventbatch::{MinMaxAvgScalarEventBatch, MinMaxAvgScalarEventBatchStreamItem};
 use crate::agg::{Dim1F32Stream, Dim1F32StreamItem, ValuesDim1};
 use crate::eventchunker::EventChunkerItem;
+use crate::streamlog::LogItem;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 #[allow(unused_imports)]
@@ -163,6 +165,7 @@ where
     range_complete_observed_all_emitted: bool,
     data_emit_complete: bool,
     batch_size: usize,
+    logitems: VecDeque<LogItem>,
 }
 
 impl<S> MergedMinMaxAvgScalarStream<S>
@@ -188,6 +191,7 @@ where
             range_complete_observed_all_emitted: false,
             data_emit_complete: false,
             batch_size: 64,
+            logitems: VecDeque::new(),
         }
     }
 
@@ -217,6 +221,10 @@ where
                                     } else {
                                         trace!("MergedMinMaxAvgScalarStream  range_complete  d  {}", d);
                                     }
+                                    continue 'l1;
+                                }
+                                MinMaxAvgScalarEventBatchStreamItem::Log(item) => {
+                                    self.logitems.push_back(item);
                                     continue 'l1;
                                 }
                                 MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(_stats) => {
@@ -264,6 +272,9 @@ where
         if self.errored {
             self.completed = true;
             return Ready(None);
+        }
+        if let Some(item) = self.logitems.pop_front() {
+            return Ready(Some(Ok(MinMaxAvgScalarEventBatchStreamItem::Log(item))));
         }
         'outer: loop {
             break if self.data_emit_complete {

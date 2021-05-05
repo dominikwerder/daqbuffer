@@ -2,6 +2,7 @@ use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead, PreBinnedQuery};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::decode_frame;
+use crate::streamlog::LogItem;
 use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, FutureExt};
@@ -50,6 +51,7 @@ pub enum PreBinnedItem {
     RangeComplete,
     EventDataReadStats(EventDataReadStats),
     //ValuesExtractStats(ValuesExtractStats),
+    Log(LogItem),
 }
 
 impl Stream for PreBinnedValueFetchedStream {
