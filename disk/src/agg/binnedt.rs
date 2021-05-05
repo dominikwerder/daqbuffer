@@ -110,16 +110,23 @@ where
                 k
             } else if self.inp_completed {
                 if self.range_complete {
-                    self.range_complete_emitted = true;
-                    // TODO why can't I declare that type?
-                    //type TT = <I::Aggregator as AggregatorTdim>::OutputValue;
-                    if let Some(k) = <I::Aggregator as AggregatorTdim>::OutputValue::make_range_complete_item() {
-                        return Ready(Some(Ok(k)));
-                    } else {
-                        warn!("IntoBinnedTDefaultStream  should emit RangeComplete but I doesn't have one");
+                    if self.range_complete_emitted {
+                        self.completed = true;
                         Ready(None)
+                    } else {
+                        self.range_complete_emitted = true;
+                        // TODO why can't I declare that type?
+                        //type TT = <I::Aggregator as AggregatorTdim>::OutputValue;
+                        if let Some(k) = <I::Aggregator as AggregatorTdim>::OutputValue::make_range_complete_item() {
+                            return Ready(Some(Ok(k)));
+                        } else {
+                            warn!("IntoBinnedTDefaultStream  should emit RangeComplete but I doesn't have one");
+                            self.completed = true;
+                            Ready(None)
+                        }
                     }
                 } else {
+                    self.completed = true;
                     Ready(None)
                 }
             } else {

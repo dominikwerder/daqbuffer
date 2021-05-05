@@ -258,6 +258,7 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        info!("Merger poll ENTER");
         if self.completed {
             panic!("MergedMinMaxAvgScalarStream  poll_next on completed");
         }
@@ -265,7 +266,7 @@ where
             self.completed = true;
             return Ready(None);
         }
-        'outer: loop {
+        let u = 'outer: loop {
             break if self.data_emit_complete {
                 error!("MERGER NOTE  data_emit_complete");
                 if self.range_complete_observed_all {
@@ -359,7 +360,9 @@ where
                     Pending => Pending,
                 }
             };
-        }
+        };
+        info!("Merger poll DONE");
+        u
     }
 }
 

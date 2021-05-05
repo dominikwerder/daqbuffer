@@ -161,6 +161,7 @@ impl Stream for PreBinnedValueStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        info!("PreBinnedValueStream  poll_next  ENTER");
         if self.completed {
             panic!("PreBinnedValueStream  poll_next on completed");
         }
@@ -168,7 +169,7 @@ impl Stream for PreBinnedValueStream {
             self.completed = true;
             return Ready(None);
         }
-        'outer: loop {
+        let u = 'outer: loop {
             break if let Some(fut) = self.fut2.as_mut() {
                 match fut.poll_next_unpin(cx) {
                     Ready(Some(k)) => match k {
@@ -217,6 +218,8 @@ impl Stream for PreBinnedValueStream {
                 self.open_check_local_file = Some(Box::pin(fut));
                 continue 'outer;
             };
-        }
+        };
+        info!("PBV EXIT WITH {:?}", u);
+        u
     }
 }
