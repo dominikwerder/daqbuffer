@@ -1,4 +1,4 @@
-use crate::agg::MinMaxAvgScalarEventBatchStreamItem;
+use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
 use crate::binnedstream::BinnedStream;
 use crate::cache::pbv::PreBinnedValueByteStream;
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};

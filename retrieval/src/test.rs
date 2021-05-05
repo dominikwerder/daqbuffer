@@ -1,7 +1,7 @@
 use crate::spawn_test_hosts;
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
-use disk::agg::MinMaxAvgScalarBinBatchStreamItem;
+use disk::agg::scalarbinbatch::MinMaxAvgScalarBinBatchStreamItem;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
 use futures_util::StreamExt;
@@ -52,7 +52,9 @@ async fn get_binned_0_inner() -> Result<(), Error> {
         &cluster,
     )
     .await?;
-    return Ok(());
+    if true {
+        return Ok(());
+    }
     get_binned_channel(
         "wave-u16-le-n77",
         "1970-01-01T01:11:00.000Z",

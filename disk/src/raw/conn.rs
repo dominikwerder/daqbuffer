@@ -1,6 +1,6 @@
 use crate::agg::binnedx::IntoBinnedXBins1;
-use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
-use crate::agg::{IntoDim1F32Stream, MinMaxAvgScalarEventBatchStreamItem};
+use crate::agg::eventbatch::{MinMaxAvgScalarEventBatch, MinMaxAvgScalarEventBatchStreamItem};
+use crate::agg::IntoDim1F32Stream;
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
 use crate::eventblobs::EventBlobsComplete;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;

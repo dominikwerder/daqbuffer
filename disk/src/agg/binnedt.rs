@@ -1,4 +1,4 @@
-use crate::agg::{AggregatableTdim, AggregatorTdim};
+use crate::agg::AggregatableXdim1Bin;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -7,6 +7,23 @@ use netpod::BinnedRange;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
+pub trait AggregatorTdim {
+    type InputValue;
+    type OutputValue: AggregatableXdim1Bin + AggregatableTdim + Unpin;
+    fn ends_before(&self, inp: &Self::InputValue) -> bool;
+    fn ends_after(&self, inp: &Self::InputValue) -> bool;
+    fn starts_after(&self, inp: &Self::InputValue) -> bool;
+    fn ingest(&mut self, inp: &mut Self::InputValue);
+    fn result(self) -> Vec<Self::OutputValue>;
+}
+
+pub trait AggregatableTdim {
+    type Output: AggregatableXdim1Bin + AggregatableTdim;
+    type Aggregator: AggregatorTdim<InputValue = Self>;
+    fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator;
+    fn is_range_complete(&self) -> bool;
+}
 
 pub trait IntoBinnedT {
     type StreamOut: Stream;
@@ -94,6 +111,10 @@ where
             };
             break match cur {
                 Ready(Some(Ok(k))) => {
+                    // TODO need some trait to know whether the incoming item is a RangeComplete
+
+                    err::todo();
+
                     let ag = self.aggtor.as_mut().unwrap();
                     if ag.ends_before(&k) {
                         //info!("ENDS BEFORE");

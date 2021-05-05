@@ -1,5 +1,5 @@
 use crate::agg::binnedt::IntoBinnedT;
-use crate::agg::MinMaxAvgScalarBinBatchStreamItem;
+use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatchStreamItem;
 use crate::cache::pbvfs::{PreBinnedItem, PreBinnedValueFetchedStream};
 use crate::cache::{node_ix_for_patch, MergedFromRemotes, PreBinnedQuery};
 use crate::frame::makeframe::make_frame;

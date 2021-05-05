@@ -1,4 +1,4 @@
-use crate::agg::MinMaxAvgScalarBinBatchStreamItem;
+use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatchStreamItem;
 use crate::cache::pbvfs::{PreBinnedItem, PreBinnedValueFetchedStream};
 use crate::cache::{CacheUsage, PreBinnedQuery};
 use err::Error;

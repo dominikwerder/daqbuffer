@@ -1,8 +1,9 @@
-use crate::agg::{AggregatableTdim, AggregatableXdim1Bin, AggregatorTdim, Fits, FitsInside};
+use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
+use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
 use bytes::{BufMut, Bytes, BytesMut};
 use netpod::log::*;
 use netpod::timeunits::SEC;
-use netpod::NanoRange;
+use netpod::{EventDataReadStats, NanoRange};
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;
 
@@ -188,8 +189,13 @@ impl AggregatableXdim1Bin for MinMaxAvgScalarBinBatch {
 impl AggregatableTdim for MinMaxAvgScalarBinBatch {
     type Output = MinMaxAvgScalarBinBatch;
     type Aggregator = MinMaxAvgScalarBinBatchAggregator;
+
     fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator {
         MinMaxAvgScalarBinBatchAggregator::new(ts1, ts2)
+    }
+
+    fn is_range_complete(&self) -> bool {
+        false
     }
 }
 
@@ -277,5 +283,99 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchAggregator {
             avgs: vec![avg],
         };
         vec![v]
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum MinMaxAvgScalarBinBatchStreamItem {
+    Values(MinMaxAvgScalarBinBatch),
+    RangeComplete,
+    EventDataReadStats(EventDataReadStats),
+}
+
+impl AggregatableTdim for MinMaxAvgScalarBinBatchStreamItem {
+    type Output = MinMaxAvgScalarBinBatchStreamItem;
+    type Aggregator = MinMaxAvgScalarBinBatchStreamItemAggregator;
+
+    fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator {
+        Self::Aggregator::new(ts1, ts2)
+    }
+
+    fn is_range_complete(&self) -> bool {
+        if let MinMaxAvgScalarBinBatchStreamItem::RangeComplete = self {
+            true
+        } else {
+            false
+        }
+    }
+}
+
+impl AggregatableXdim1Bin for MinMaxAvgScalarBinBatchStreamItem {
+    type Output = MinMaxAvgScalarBinBatchStreamItem;
+
+    fn into_agg(self) -> Self::Output {
+        self
+    }
+}
+
+pub struct MinMaxAvgScalarBinBatchStreamItemAggregator {
+    agg: MinMaxAvgScalarBinBatchAggregator,
+    event_data_read_stats: EventDataReadStats,
+}
+
+impl MinMaxAvgScalarBinBatchStreamItemAggregator {
+    pub fn new(ts1: u64, ts2: u64) -> Self {
+        let agg = <MinMaxAvgScalarBinBatch as AggregatableTdim>::aggregator_new_static(ts1, ts2);
+        Self {
+            agg,
+            event_data_read_stats: EventDataReadStats::new(),
+        }
+    }
+}
+
+impl AggregatorTdim for MinMaxAvgScalarBinBatchStreamItemAggregator {
+    type InputValue = MinMaxAvgScalarBinBatchStreamItem;
+    type OutputValue = MinMaxAvgScalarBinBatchStreamItem;
+
+    fn ends_before(&self, inp: &Self::InputValue) -> bool {
+        match inp {
+            MinMaxAvgScalarBinBatchStreamItem::Values(vals) => self.agg.ends_before(vals),
+            _ => false,
+        }
+    }
+
+    fn ends_after(&self, inp: &Self::InputValue) -> bool {
+        match inp {
+            MinMaxAvgScalarBinBatchStreamItem::Values(vals) => self.agg.ends_after(vals),
+            _ => false,
+        }
+    }
+
+    fn starts_after(&self, inp: &Self::InputValue) -> bool {
+        match inp {
+            MinMaxAvgScalarBinBatchStreamItem::Values(vals) => self.agg.starts_after(vals),
+            _ => false,
+        }
+    }
+
+    fn ingest(&mut self, inp: &mut Self::InputValue) {
+        match inp {
+            MinMaxAvgScalarBinBatchStreamItem::Values(vals) => self.agg.ingest(vals),
+            MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats) => self.event_data_read_stats.trans(stats),
+            MinMaxAvgScalarBinBatchStreamItem::RangeComplete => (),
+        }
+    }
+
+    fn result(self) -> Vec<Self::OutputValue> {
+        let mut ret: Vec<Self::OutputValue> = self
+            .agg
+            .result()
+            .into_iter()
+            .map(MinMaxAvgScalarBinBatchStreamItem::Values)
+            .collect();
+        ret.push(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(
+            self.event_data_read_stats,
+        ));
+        ret
     }
 }

@@ -1,5 +1,5 @@
-use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
-use crate::agg::{Dim1F32Stream, Dim1F32StreamItem, MinMaxAvgScalarEventBatchStreamItem, ValuesDim1};
+use crate::agg::eventbatch::{MinMaxAvgScalarEventBatch, MinMaxAvgScalarEventBatchStreamItem};
+use crate::agg::{Dim1F32Stream, Dim1F32StreamItem, ValuesDim1};
 use crate::eventchunker::EventChunkerItem;
 use err::Error;
 use futures_core::Stream;
@@ -282,14 +282,21 @@ where
             }
             if lowest_ix == usize::MAX {
                 if self.batch.tss.len() != 0 {
-                    let mut k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
+                    let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
                     if self.range_complete_observed_all {
-                        k.range_complete_observed = true;
+                        // TODO  we don't  want to emit range complete here, instead we want to emit potentially
+                        // a RangeComplete at the very end when data and stats are emitted and all inputs finished.
+                        err::todo();
                     }
                     info!("MergedMinMaxAvgScalarStream  no more lowest  emit Ready(Some( current batch ))");
                     let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
                     break Ready(Some(Ok(ret)));
                 } else {
+                    if self.range_complete_observed_all {
+                        // TODO  we don't  want to emit range complete here, instead we want to emit potentially
+                        // a RangeComplete at the very end when data and stats are emitted and all inputs finished.
+                        err::todo();
+                    }
                     info!("MergedMinMaxAvgScalarStream  no more lowest  emit Ready(None)");
                     self.completed = true;
                     break Ready(None);
@@ -314,10 +321,7 @@ where
                 }
             }
             if self.batch.tss.len() >= self.batch_size {
-                let mut k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
-                if self.range_complete_observed_all {
-                    k.range_complete_observed = true;
-                }
+                let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
                 let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
                 return Ready(Some(Ok(ret)));
             }
