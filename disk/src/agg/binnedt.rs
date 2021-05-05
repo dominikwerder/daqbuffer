@@ -18,11 +18,12 @@ pub trait AggregatorTdim {
     fn result(self) -> Vec<Self::OutputValue>;
 }
 
-pub trait AggregatableTdim {
+pub trait AggregatableTdim: Sized {
     type Output: AggregatableXdim1Bin + AggregatableTdim;
     type Aggregator: AggregatorTdim<InputValue = Self>;
     fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator;
     fn is_range_complete(&self) -> bool;
+    fn make_range_complete_item() -> Option<Self>;
 }
 
 pub trait IntoBinnedT {
@@ -52,6 +53,8 @@ where
     aggtor: Option<I::Aggregator>,
     spec: BinnedRange,
     curbin: u32,
+    range_complete: bool,
+    range_complete_emitted: bool,
     left: Option<Poll<Option<Result<I, Error>>>>,
     errored: bool,
     completed: bool,
@@ -71,6 +74,8 @@ where
             aggtor: Some(I::aggregator_new_static(range.beg, range.end)),
             spec,
             curbin: 0,
+            range_complete: false,
+            range_complete_emitted: false,
             left: None,
             errored: false,
             completed: false,
@@ -104,42 +109,35 @@ where
             let cur = if let Some(k) = self.left.take() {
                 k
             } else if self.inp_completed {
-                Ready(None)
+                if self.range_complete {
+                    self.range_complete_emitted = true;
+                    // TODO why can't I declare that type?
+                    //type TT = <I::Aggregator as AggregatorTdim>::OutputValue;
+                    if let Some(k) = <I::Aggregator as AggregatorTdim>::OutputValue::make_range_complete_item() {
+                        return Ready(Some(Ok(k)));
+                    } else {
+                        warn!("IntoBinnedTDefaultStream  should emit RangeComplete but I doesn't have one");
+                        Ready(None)
+                    }
+                } else {
+                    Ready(None)
+                }
             } else {
                 let inp_poll_span = span!(Level::TRACE, "into_t_inp_poll");
                 inp_poll_span.in_scope(|| self.inp.poll_next_unpin(cx))
             };
             break match cur {
                 Ready(Some(Ok(k))) => {
-                    // TODO need some trait to know whether the incoming item is a RangeComplete
-
-                    err::todo();
-
-                    let ag = self.aggtor.as_mut().unwrap();
-                    if ag.ends_before(&k) {
-                        //info!("ENDS BEFORE");
-                        continue 'outer;
-                    } else if ag.starts_after(&k) {
-                        //info!("STARTS AFTER");
-                        self.left = Some(Ready(Some(Ok(k))));
-                        self.curbin += 1;
-                        let range = self.spec.get_range(self.curbin);
-                        let ret = self
-                            .aggtor
-                            .replace(I::aggregator_new_static(range.beg, range.end))
-                            .unwrap()
-                            .result();
-                        //Ready(Some(Ok(ret)))
-                        self.tmp_agg_results = ret.into();
+                    if k.is_range_complete() {
+                        self.range_complete = true;
                         continue 'outer;
                     } else {
-                        //info!("INGEST");
-                        let mut k = k;
-                        ag.ingest(&mut k);
-                        // if this input contains also data after the current bin, then I need to keep
-                        // it for the next round.
-                        if ag.ends_after(&k) {
-                            //info!("ENDS AFTER");
+                        let ag = self.aggtor.as_mut().unwrap();
+                        if ag.ends_before(&k) {
+                            //info!("ENDS BEFORE");
+                            continue 'outer;
+                        } else if ag.starts_after(&k) {
+                            //info!("STARTS AFTER");
                             self.left = Some(Ready(Some(Ok(k))));
                             self.curbin += 1;
                             let range = self.spec.get_range(self.curbin);
@@ -152,8 +150,28 @@ where
                             self.tmp_agg_results = ret.into();
                             continue 'outer;
                         } else {
-                            //info!("ENDS WITHIN");
-                            continue 'outer;
+                            //info!("INGEST");
+                            let mut k = k;
+                            ag.ingest(&mut k);
+                            // if this input contains also data after the current bin, then I need to keep
+                            // it for the next round.
+                            if ag.ends_after(&k) {
+                                //info!("ENDS AFTER");
+                                self.left = Some(Ready(Some(Ok(k))));
+                                self.curbin += 1;
+                                let range = self.spec.get_range(self.curbin);
+                                let ret = self
+                                    .aggtor
+                                    .replace(I::aggregator_new_static(range.beg, range.end))
+                                    .unwrap()
+                                    .result();
+                                //Ready(Some(Ok(ret)))
+                                self.tmp_agg_results = ret.into();
+                                continue 'outer;
+                            } else {
+                                //info!("ENDS WITHIN");
+                                continue 'outer;
+                            }
                         }
                     }
                 }

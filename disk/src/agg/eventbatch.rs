@@ -108,11 +108,17 @@ impl AggregatableXdim1Bin for MinMaxAvgScalarEventBatch {
 impl AggregatableTdim for MinMaxAvgScalarEventBatch {
     type Output = MinMaxAvgScalarBinBatch;
     type Aggregator = MinMaxAvgScalarEventBatchAggregator;
+
     fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator {
         MinMaxAvgScalarEventBatchAggregator::new(ts1, ts2)
     }
+
     fn is_range_complete(&self) -> bool {
         false
+    }
+
+    fn make_range_complete_item() -> Option<Self> {
+        None
     }
 }
 
@@ -285,6 +291,10 @@ impl AggregatableTdim for MinMaxAvgScalarEventBatchStreamItem {
         } else {
             false
         }
+    }
+
+    fn make_range_complete_item() -> Option<Self> {
+        Some(MinMaxAvgScalarEventBatchStreamItem::RangeComplete)
     }
 }
 

@@ -161,12 +161,13 @@ where
     range_complete_observed: Vec<bool>,
     range_complete_observed_all: bool,
     range_complete_observed_all_emitted: bool,
+    data_emit_complete: bool,
     batch_size: usize,
 }
 
 impl<S> MergedMinMaxAvgScalarStream<S>
 where
-    S: Stream<Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>>,
+    S: Stream<Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>> + Unpin,
 {
     pub fn new(inps: Vec<S>) -> Self {
         let n = inps.len();
@@ -185,42 +186,23 @@ where
             range_complete_observed: vec![false; n],
             range_complete_observed_all: false,
             range_complete_observed_all_emitted: false,
+            data_emit_complete: false,
             batch_size: 64,
         }
     }
-}
 
-impl<S> Stream for MergedMinMaxAvgScalarStream<S>
-where
-    S: Stream<Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>> + Unpin,
-{
-    type Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+    // This can:
+    // Do nothing if all have Val or Finished.
+    // But if some is None:
+    // We might get some Pending from upstream. In that case, caller also wants to abort here.
+    fn replenish(self: &mut Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Error>> {
         use Poll::*;
-        'outer: loop {
-            if self.completed {
-                panic!("MergedMinMaxAvgScalarStream  poll_next on completed");
-            }
-            if self.errored {
-                self.completed = true;
-                return Ready(None);
-            }
-            if self.range_complete_observed_all {
-                error!("MERGER NOTE  range_complete_observed_all");
-                if self.range_complete_observed_all_emitted {
-                    // TODO something to do? Returning None is maybe too early if there is stats left.
-                } else {
-                    error!("MERGER NOTE  range_complete_observed_all  EMIT NOW");
-                    self.range_complete_observed_all_emitted = true;
-                    return Ready(Some(Ok(MinMaxAvgScalarEventBatchStreamItem::RangeComplete)));
-                }
-            }
-            // can only run logic if all streams are either finished, errored or have some current value.
-            for i1 in 0..self.inps.len() {
-                match self.current[i1] {
-                    MergedMinMaxAvgScalarStreamCurVal::None => {
-                        match self.inps[i1].poll_next_unpin(cx) {
+        let mut pending = 0;
+        for i1 in 0..self.inps.len() {
+            match self.current[i1] {
+                MergedMinMaxAvgScalarStreamCurVal::None => {
+                    'l1: loop {
+                        break match self.inps[i1].poll_next_unpin(cx) {
                             Ready(Some(Ok(k))) => match k {
                                 MinMaxAvgScalarEventBatchStreamItem::Values(vals) => {
                                     self.ixs[i1] = 0;
@@ -235,9 +217,10 @@ where
                                     } else {
                                         info!("\n\n::::::  range_complete  d  {}", d);
                                     }
-                                    continue 'outer;
+                                    continue 'l1;
                                 }
                                 MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(_stats) => {
+                                    // TODO merge also the stats: either just sum, or sum up by input index.
                                     todo!();
                                 }
                             },
@@ -245,86 +228,137 @@ where
                                 // TODO emit this error, consider this stream as done, anything more to do here?
                                 //self.current[i1] = CurVal::Err(e);
                                 self.errored = true;
-                                return Ready(Some(Err(e)));
+                                return Ready(Err(e));
                             }
                             Ready(None) => {
                                 self.current[i1] = MergedMinMaxAvgScalarStreamCurVal::Finish;
                             }
                             Pending => {
-                                return Pending;
+                                pending += 1;
                             }
-                        }
+                        };
                     }
-                    _ => (),
                 }
+                _ => (),
             }
-            let mut lowest_ix = usize::MAX;
-            let mut lowest_ts = u64::MAX;
-            for i1 in 0..self.inps.len() {
-                match &self.current[i1] {
-                    MergedMinMaxAvgScalarStreamCurVal::Finish => {}
-                    MergedMinMaxAvgScalarStreamCurVal::Val(val) => {
-                        let u = self.ixs[i1];
-                        if u >= val.tss.len() {
-                            self.ixs[i1] = 0;
-                            self.current[i1] = MergedMinMaxAvgScalarStreamCurVal::None;
-                            continue 'outer;
-                        } else {
-                            let ts = val.tss[u];
-                            if ts < lowest_ts {
-                                lowest_ix = i1;
-                                lowest_ts = ts;
-                            }
-                        }
+        }
+        if pending > 0 {
+            Pending
+        } else {
+            Ready(Ok(()))
+        }
+    }
+}
+
+impl<S> Stream for MergedMinMaxAvgScalarStream<S>
+where
+    S: Stream<Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>> + Unpin,
+{
+    type Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        if self.completed {
+            panic!("MergedMinMaxAvgScalarStream  poll_next on completed");
+        }
+        if self.errored {
+            self.completed = true;
+            return Ready(None);
+        }
+        'outer: loop {
+            break if self.data_emit_complete {
+                error!("MERGER NOTE  data_emit_complete");
+                if self.range_complete_observed_all {
+                    error!("MERGER NOTE  range_complete_observed_all");
+                    if self.range_complete_observed_all_emitted {
+                        error!("MERGER NOTE  range_complete_observed_all_emitted");
+                        // NOTE everything else (data and stats) must be emitted before data_emit_complete gets set.
+                        self.completed = true;
+                        Ready(None)
+                    } else {
+                        error!("MERGER NOTE  range_complete_observed_all  EMIT NOW");
+                        self.range_complete_observed_all_emitted = true;
+                        // NOTE this is supposed to return
+                        Ready(Some(Ok(MinMaxAvgScalarEventBatchStreamItem::RangeComplete)))
                     }
-                    _ => panic!(),
-                }
-            }
-            if lowest_ix == usize::MAX {
-                if self.batch.tss.len() != 0 {
-                    let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
-                    if self.range_complete_observed_all {
-                        // TODO  we don't  want to emit range complete here, instead we want to emit potentially
-                        // a RangeComplete at the very end when data and stats are emitted and all inputs finished.
-                        err::todo();
-                    }
-                    info!("MergedMinMaxAvgScalarStream  no more lowest  emit Ready(Some( current batch ))");
-                    let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
-                    break Ready(Some(Ok(ret)));
                 } else {
-                    if self.range_complete_observed_all {
-                        // TODO  we don't  want to emit range complete here, instead we want to emit potentially
-                        // a RangeComplete at the very end when data and stats are emitted and all inputs finished.
-                        err::todo();
-                    }
-                    info!("MergedMinMaxAvgScalarStream  no more lowest  emit Ready(None)");
                     self.completed = true;
-                    break Ready(None);
+                    Ready(None)
                 }
             } else {
-                //trace!("decided on next lowest ts  {}  ix {}", lowest_ts, lowest_ix);
-                assert!(lowest_ts >= self.ts_last_emit);
-                self.ts_last_emit = lowest_ts;
-                self.batch.tss.push(lowest_ts);
-                let rix = self.ixs[lowest_ix];
-                let z = match &self.current[lowest_ix] {
-                    MergedMinMaxAvgScalarStreamCurVal::Val(k) => (k.mins[rix], k.maxs[rix], k.avgs[rix], k.tss.len()),
-                    _ => panic!(),
-                };
-                self.batch.mins.push(z.0);
-                self.batch.maxs.push(z.1);
-                self.batch.avgs.push(z.2);
-                self.ixs[lowest_ix] += 1;
-                if self.ixs[lowest_ix] >= z.3 {
-                    self.ixs[lowest_ix] = 0;
-                    self.current[lowest_ix] = MergedMinMaxAvgScalarStreamCurVal::None;
+                // Can only run logic if all streams are either finished, errored or have some current value.
+                match self.replenish(cx) {
+                    Ready(Ok(_)) => {
+                        let mut lowest_ix = usize::MAX;
+                        let mut lowest_ts = u64::MAX;
+                        for i1 in 0..self.inps.len() {
+                            match &self.current[i1] {
+                                MergedMinMaxAvgScalarStreamCurVal::Finish => {}
+                                MergedMinMaxAvgScalarStreamCurVal::Val(val) => {
+                                    let u = self.ixs[i1];
+                                    if u >= val.tss.len() {
+                                        self.ixs[i1] = 0;
+                                        self.current[i1] = MergedMinMaxAvgScalarStreamCurVal::None;
+                                        continue 'outer;
+                                    } else {
+                                        let ts = val.tss[u];
+                                        if ts < lowest_ts {
+                                            lowest_ix = i1;
+                                            lowest_ts = ts;
+                                        }
+                                    }
+                                }
+                                _ => panic!(),
+                            }
+                        }
+                        if lowest_ix == usize::MAX {
+                            if self.batch.tss.len() != 0 {
+                                let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
+                                info!("MergedMinMaxAvgScalarStream  no more lowest  emit Ready(Some( current batch ))");
+                                let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
+                                self.data_emit_complete = true;
+                                Ready(Some(Ok(ret)))
+                            } else {
+                                info!("MergedMinMaxAvgScalarStream  no more lowest  emit Ready(None)");
+                                self.data_emit_complete = true;
+                                continue 'outer;
+                            }
+                        } else {
+                            //trace!("decided on next lowest ts  {}  ix {}", lowest_ts, lowest_ix);
+                            assert!(lowest_ts >= self.ts_last_emit);
+                            self.ts_last_emit = lowest_ts;
+                            self.batch.tss.push(lowest_ts);
+                            let rix = self.ixs[lowest_ix];
+                            let z = match &self.current[lowest_ix] {
+                                MergedMinMaxAvgScalarStreamCurVal::Val(k) => {
+                                    (k.mins[rix], k.maxs[rix], k.avgs[rix], k.tss.len())
+                                }
+                                _ => panic!(),
+                            };
+                            self.batch.mins.push(z.0);
+                            self.batch.maxs.push(z.1);
+                            self.batch.avgs.push(z.2);
+                            self.ixs[lowest_ix] += 1;
+                            if self.ixs[lowest_ix] >= z.3 {
+                                self.ixs[lowest_ix] = 0;
+                                self.current[lowest_ix] = MergedMinMaxAvgScalarStreamCurVal::None;
+                            }
+                            if self.batch.tss.len() >= self.batch_size {
+                                let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
+                                let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
+                                Ready(Some(Ok(ret)))
+                            } else {
+                                continue 'outer;
+                            }
+                        }
+                    }
+                    Ready(Err(e)) => {
+                        self.errored = true;
+                        Ready(Some(Err(e)))
+                    }
+                    Pending => Pending,
                 }
-            }
-            if self.batch.tss.len() >= self.batch_size {
-                let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
-                let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
-                return Ready(Some(Ok(ret)));
-            }
+            };
         }
     }
 }

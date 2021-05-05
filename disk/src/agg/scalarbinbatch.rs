@@ -197,6 +197,10 @@ impl AggregatableTdim for MinMaxAvgScalarBinBatch {
     fn is_range_complete(&self) -> bool {
         false
     }
+
+    fn make_range_complete_item() -> Option<Self> {
+        None
+    }
 }
 
 pub struct MinMaxAvgScalarBinBatchAggregator {
@@ -307,6 +311,10 @@ impl AggregatableTdim for MinMaxAvgScalarBinBatchStreamItem {
         } else {
             false
         }
+    }
+
+    fn make_range_complete_item() -> Option<Self> {
+        Some(MinMaxAvgScalarBinBatchStreamItem::RangeComplete)
     }
 }
 
