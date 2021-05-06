@@ -112,7 +112,10 @@ impl PreBinnedValueStream {
             match k {
                 Ok(Values(k)) => Ok(PreBinnedItem::Batch(k)),
                 Ok(RangeComplete) => Ok(PreBinnedItem::RangeComplete),
-                Ok(EventDataReadStats(stats)) => Ok(PreBinnedItem::EventDataReadStats(stats)),
+                Ok(EventDataReadStats(stats)) => {
+                    info!("PreBinnedValueStream  ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙    stats {:?}", stats);
+                    Ok(PreBinnedItem::EventDataReadStats(stats))
+                }
                 Ok(Log(item)) => Ok(PreBinnedItem::Log(item)),
                 Err(e) => Err(e),
             }

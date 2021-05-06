@@ -198,10 +198,6 @@ where
         }
     }
 
-    // This can:
-    // Do nothing if all have Val or Finished.
-    // But if some is None:
-    // We might get some Pending from upstream. In that case, caller also wants to abort here.
     fn replenish(self: &mut Pin<&mut Self>, cx: &mut Context) -> Poll<Result<(), Error>> {
         use Poll::*;
         let mut pending = 0;

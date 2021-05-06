@@ -65,6 +65,7 @@ impl BinnedStream {
                         }
                         Ok(PreBinnedItem::RangeComplete) => Some(Ok(MinMaxAvgScalarBinBatchStreamItem::RangeComplete)),
                         Ok(PreBinnedItem::EventDataReadStats(stats)) => {
+                            info!("BinnedStream  observes stats {:?}", stats);
                             Some(Ok(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats)))
                         }
                         Ok(PreBinnedItem::Log(item)) => Some(Ok(MinMaxAvgScalarBinBatchStreamItem::Log(item))),
