@@ -151,7 +151,7 @@ where
                                     Some(Ok(MinMaxAvgScalarBinBatchStreamItem::Log(item)))
                                 }
                                 item => {
-                                    info!("TEST GOT ITEM {:?}\n", item);
+                                    info!("TEST GOT ITEM {:?}", item);
                                     Some(Ok(item))
                                 }
                             },

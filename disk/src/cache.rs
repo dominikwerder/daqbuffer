@@ -2,6 +2,7 @@ use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::binnedstream::BinnedStream;
 use crate::cache::pbv::PreBinnedValueByteStream;
+use crate::cache::pbvfs::PreBinnedItem;
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
 use crate::frame::makeframe::make_frame;
 use crate::merge::MergedMinMaxAvgScalarStream;
@@ -23,8 +24,8 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tiny_keccak::Hasher;
-use tokio::fs::OpenOptions;
-use tokio::io::{AsyncRead, AsyncWriteExt, ReadBuf};
+use tokio::fs::File;
+use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
@@ -512,12 +513,31 @@ pub async fn write_pb_cache_min_max_avg_scalar(
     let enc = serde_cbor::to_vec(&values)?;
     info!("Encoded size: {}", enc.len());
     tokio::fs::create_dir_all(path.parent().unwrap()).await?;
-    let mut f = OpenOptions::new()
-        .truncate(true)
-        .create(true)
-        .write(true)
-        .open(&path)
-        .await?;
-    f.write_all(&enc).await?;
+    tokio::task::spawn_blocking({
+        let path = path.clone();
+        move || {
+            use fs2::FileExt;
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(&path)?;
+            f.lock_exclusive()?;
+            f.write_all(&enc)?;
+            f.unlock()?;
+            Ok::<_, Error>(())
+        }
+    })
+    .await??;
     Ok(())
+}
+
+pub async fn read_pbv(mut file: File) -> Result<PreBinnedItem, Error> {
+    let mut buf = vec![];
+    file.read_to_end(&mut buf).await?;
+    info!("Read cached file  len {}", buf.len());
+    let dec: MinMaxAvgScalarBinBatch = serde_cbor::from_slice(&buf)?;
+    info!("Decoded cached file");
+    Ok(PreBinnedItem::Batch(dec))
 }

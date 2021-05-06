@@ -129,6 +129,9 @@ where
                             return Ready(None);
                         }
                     }
+                } else {
+                    self.completed = true;
+                    return Ready(None);
                 }
             }
             let cur = if let Some(k) = self.left.take() {
@@ -163,7 +166,6 @@ where
                             //info!("ENDS BEFORE");
                             continue 'outer;
                         } else if ag.starts_after(&k) {
-                            //info!("STARTS AFTER");
                             self.left = Some(Ready(Some(Ok(k))));
                             self.curbin += 1;
                             let range = self.spec.get_range(self.curbin);
@@ -172,17 +174,16 @@ where
                                 .replace(I::aggregator_new_static(range.beg, range.end))
                                 .unwrap()
                                 .result();
-                            //Ready(Some(Ok(ret)))
                             self.tmp_agg_results = ret.into();
+                            if self.curbin as u64 >= self.spec.count {
+                                self.data_completed = true;
+                            }
                             continue 'outer;
                         } else {
-                            //info!("INGEST");
                             let mut k = k;
                             ag.ingest(&mut k);
-                            // if this input contains also data after the current bin, then I need to keep
-                            // it for the next round.
+                            let k = k;
                             if ag.ends_after(&k) {
-                                //info!("ENDS AFTER");
                                 self.left = Some(Ready(Some(Ok(k))));
                                 self.curbin += 1;
                                 let range = self.spec.get_range(self.curbin);
@@ -191,11 +192,12 @@ where
                                     .replace(I::aggregator_new_static(range.beg, range.end))
                                     .unwrap()
                                     .result();
-                                //Ready(Some(Ok(ret)))
                                 self.tmp_agg_results = ret.into();
+                                if self.curbin as u64 >= self.spec.count {
+                                    self.data_completed = true;
+                                }
                                 continue 'outer;
                             } else {
-                                //info!("ENDS WITHIN");
                                 continue 'outer;
                             }
                         }
@@ -208,7 +210,6 @@ where
                 Ready(None) => {
                     self.inp_completed = true;
                     if self.curbin as u64 >= self.spec.count {
-                        warn!("IntoBinnedTDefaultStream  curbin out of spec, END");
                         self.data_completed = true;
                         continue 'outer;
                     } else {

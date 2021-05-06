@@ -1,7 +1,7 @@
 use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatchStreamItem};
 use crate::cache::pbvfs::{PreBinnedItem, PreBinnedValueFetchedStream};
-use crate::cache::{MergedFromRemotes, PreBinnedQuery};
+use crate::cache::{CacheFileDesc, MergedFromRemotes, PreBinnedQuery};
 use crate::frame::makeframe::make_frame;
 use crate::raw::EventsQuery;
 use crate::streamlog::Streamlog;
@@ -61,6 +61,7 @@ pub struct PreBinnedValueStream {
     streamlog: Streamlog,
     values: MinMaxAvgScalarBinBatch,
     write_fut: Option<Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>>,
+    read_cache_fut: Option<Pin<Box<dyn Future<Output = Result<PreBinnedItem, Error>> + Send>>>,
 }
 
 impl PreBinnedValueStream {
@@ -78,6 +79,7 @@ impl PreBinnedValueStream {
             streamlog: Streamlog::new(node_config.ix as u32),
             values: MinMaxAvgScalarBinBatch::empty(),
             write_fut: None,
+            read_cache_fut: None,
         }
     }
 
@@ -196,14 +198,35 @@ impl Stream for PreBinnedValueStream {
             } else if let Some(fut) = &mut self.write_fut {
                 pin_mut!(fut);
                 match fut.poll(cx) {
-                    Ready(Ok(())) => {
+                    Ready(item) => {
                         self.write_fut = None;
-                        self.streamlog.append(Level::INFO, format!("cache file written"));
-                        continue 'outer;
+                        match item {
+                            Ok(()) => {
+                                self.streamlog.append(Level::INFO, format!("cache file written"));
+                                continue 'outer;
+                            }
+                            Err(e) => {
+                                self.errored = true;
+                                Ready(Some(Err(e)))
+                            }
+                        }
                     }
-                    Ready(Err(e)) => {
-                        self.errored = true;
-                        Ready(Some(Err(e)))
+                    Pending => Pending,
+                }
+            } else if let Some(fut) = &mut self.read_cache_fut {
+                match fut.poll_unpin(cx) {
+                    Ready(item) => {
+                        self.read_cache_fut = None;
+                        match item {
+                            Ok(item) => {
+                                self.data_complete = true;
+                                Ready(Some(Ok(item)))
+                            }
+                            Err(e) => {
+                                self.errored = true;
+                                Ready(Some(Err(e)))
+                            }
+                        }
                     }
                     Pending => Pending,
                 }
@@ -268,29 +291,35 @@ impl Stream for PreBinnedValueStream {
                 }
             } else if let Some(fut) = self.open_check_local_file.as_mut() {
                 match fut.poll_unpin(cx) {
-                    Ready(Ok(_file)) => {
-                        let e = Err(Error::with_msg(format!("TODO use the cached data from file")));
-                        self.errored = true;
-                        Ready(Some(e))
-                    }
-                    Ready(Err(e)) => match e.kind() {
-                        std::io::ErrorKind::NotFound => {
-                            error!("TODO LOCAL CACHE FILE NOT FOUND");
-                            self.try_setup_fetch_prebinned_higher_res();
-                            if self.fut2.is_none() {
-                                let e = Err(Error::with_msg(format!("try_setup_fetch_prebinned_higher_res  failed")));
-                                self.errored = true;
-                                Ready(Some(e))
-                            } else {
+                    Ready(item) => {
+                        self.open_check_local_file = None;
+                        match item {
+                            Ok(file) => {
+                                let fut = super::read_pbv(file);
+                                self.read_cache_fut = Some(Box::pin(fut));
                                 continue 'outer;
                             }
+                            Err(e) => match e.kind() {
+                                std::io::ErrorKind::NotFound => {
+                                    self.try_setup_fetch_prebinned_higher_res();
+                                    if self.fut2.is_none() {
+                                        let e = Err(Error::with_msg(format!(
+                                            "try_setup_fetch_prebinned_higher_res  failed"
+                                        )));
+                                        self.errored = true;
+                                        Ready(Some(e))
+                                    } else {
+                                        continue 'outer;
+                                    }
+                                }
+                                _ => {
+                                    error!("File I/O error: {:?}", e);
+                                    self.errored = true;
+                                    Ready(Some(Err(e.into())))
+                                }
+                            },
                         }
-                        _ => {
-                            error!("File I/O error: {:?}", e);
-                            self.errored = true;
-                            Ready(Some(Err(e.into())))
-                        }
-                    },
+                    }
                     Pending => Pending,
                 }
             } else {
@@ -298,7 +327,13 @@ impl Stream for PreBinnedValueStream {
                 use std::os::unix::fs::OpenOptionsExt;
                 let mut opts = std::fs::OpenOptions::new();
                 opts.read(true);
-                let fut = async { tokio::fs::OpenOptions::from(opts).open("/DOESNOTEXIST").await };
+                let cfd = CacheFileDesc {
+                    channel: self.query.channel.clone(),
+                    patch: self.query.patch.clone(),
+                    agg_kind: self.query.agg_kind.clone(),
+                };
+                let path = cfd.path(&self.node_config);
+                let fut = async { tokio::fs::OpenOptions::from(opts).open(path).await };
                 self.open_check_local_file = Some(Box::pin(fut));
                 continue 'outer;
             };
