@@ -105,6 +105,7 @@ pub struct Node {
     pub split: u32,
     pub data_base_path: PathBuf,
     pub ksprefix: String,
+    pub backend: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

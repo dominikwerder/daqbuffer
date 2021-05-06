@@ -60,6 +60,7 @@ fn simple_fetch() {
             data_base_path: err::todoval(),
             ksprefix: "daq_swissfel".into(),
             split: 0,
+            backend: "testbackend".into(),
         };
         let query = netpod::AggQuerySingleChannel {
             channel_config: ChannelConfig {

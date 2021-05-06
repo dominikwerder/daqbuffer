@@ -158,6 +158,13 @@ pub async fn binned_bytes_for_http(
     node_config: &NodeConfigCached,
     query: &BinnedQuery,
 ) -> Result<BinnedBytesForHttpStream, Error> {
+    if query.channel.backend != node_config.node.backend {
+        let err = Error::with_msg(format!(
+            "backend mismatch  we {}  requested {}",
+            node_config.node.backend, query.channel.backend
+        ));
+        return Err(err);
+    }
     let range = &query.range;
     let channel_config = read_local_config(&query.channel, &node_config.node).await?;
     let entry = extract_matching_config_entry(range, &channel_config);
@@ -249,6 +256,13 @@ pub fn pre_binned_bytes_for_http(
     query: &PreBinnedQuery,
 ) -> Result<PreBinnedValueByteStream, Error> {
     info!("pre_binned_bytes_for_http  {:?}  {:?}", query, node_config.node);
+    if query.channel.backend != node_config.node.backend {
+        let err = Error::with_msg(format!(
+            "backend mismatch  we {}  requested {}",
+            node_config.node.backend, query.channel.backend
+        ));
+        return Err(err);
+    }
     let patch_node_ix = node_ix_for_patch(&query.patch, &query.channel, &node_config.node_config.cluster);
     if node_config.ix as u32 != patch_node_ix {
         Err(Error::with_msg(format!(

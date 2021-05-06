@@ -24,6 +24,7 @@ fn test_cluster() -> Cluster {
             data_base_path: format!("../tmpdata/node{:02}", id).into(),
             ksprefix: "ks".into(),
             split: id,
+            backend: "testbackend".into(),
         })
         .collect();
     Cluster {
