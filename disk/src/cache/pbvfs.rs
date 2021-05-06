@@ -6,6 +6,7 @@ use crate::streamlog::LogItem;
 use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, FutureExt};
+use http::StatusCode;
 #[allow(unused_imports)]
 use netpod::log::*;
 use netpod::{EventDataReadStats, NodeConfigCached};
@@ -25,7 +26,6 @@ impl PreBinnedValueFetchedStream {
     pub fn new(query: &PreBinnedQuery, node_config: &NodeConfigCached) -> Result<Self, Error> {
         let nodeix = node_ix_for_patch(&query.patch, &query.channel, &node_config.node_config.cluster);
         let node = &node_config.node_config.cluster.nodes[nodeix as usize];
-        warn!("TODO defining property of a PreBinnedPatchCoord? patchlen + ix? binsize + patchix? binsize + patchsize + patchix?");
         let uri: hyper::Uri = format!(
             "http://{}:{}/api/1/prebinned?{}",
             node.host,
@@ -33,7 +33,6 @@ impl PreBinnedValueFetchedStream {
             query.make_query_string()
         )
         .parse()?;
-        info!("PreBinnedValueFetchedStream  open uri  {}", uri);
         let ret = Self {
             uri,
             resfut: None,
@@ -96,11 +95,23 @@ impl Stream for PreBinnedValueFetchedStream {
                 match resfut.poll_unpin(cx) {
                     Ready(res) => match res {
                         Ok(res) => {
-                            info!("PreBinnedValueFetchedStream  GOT result from SUB REQUEST: {:?}", res);
-                            let s1 = HttpBodyAsAsyncRead::new(res);
-                            let s2 = InMemoryFrameAsyncReadStream::new(s1);
-                            self.res = Some(s2);
-                            continue 'outer;
+                            if res.status() == StatusCode::OK {
+                                let s1 = HttpBodyAsAsyncRead::new(res);
+                                let s2 = InMemoryFrameAsyncReadStream::new(s1);
+                                self.res = Some(s2);
+                                continue 'outer;
+                            } else {
+                                error!(
+                                    "PreBinnedValueFetchedStream  got non-OK result from sub request: {:?}",
+                                    res
+                                );
+                                let e = Error::with_msg(format!(
+                                    "PreBinnedValueFetchedStream  got non-OK result from sub request: {:?}",
+                                    res
+                                ));
+                                self.errored = true;
+                                Ready(Some(Err(e)))
+                            }
                         }
                         Err(e) => {
                             error!("PreBinnedValueStream  error in stream {:?}", e);
@@ -118,7 +129,6 @@ impl Stream for PreBinnedValueFetchedStream {
                 {
                     Ok(req) => {
                         let client = hyper::Client::new();
-                        info!("PreBinnedValueFetchedStream  START REQUEST FOR {:?}", req);
                         self.resfut = Some(client.request(req));
                         continue 'outer;
                     }

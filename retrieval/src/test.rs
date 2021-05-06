@@ -7,6 +7,7 @@ use disk::streamlog::Streamlog;
 use err::Error;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
+use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
 use netpod::{Cluster, Database, Node};
@@ -90,7 +91,7 @@ where
     let node0 = &cluster.nodes[0];
     let beg_date: DateTime<Utc> = beg_date.as_ref().parse()?;
     let end_date: DateTime<Utc> = end_date.as_ref().parse()?;
-    let channel_backend = "back";
+    let channel_backend = "testbackend";
     let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
     let uri = format!(
         "http://{}:{}/api/1/binned?channel_backend={}&channel_name={}&bin_count={}&beg_date={}&end_date={}",
@@ -102,23 +103,22 @@ where
         beg_date.format(date_fmt),
         end_date.format(date_fmt),
     );
-    info!("URI {:?}", uri);
+    info!("get_binned_channel  get {}", uri);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(uri)
         .body(Body::empty())?;
-    info!("Request for {:?}", req);
     let client = hyper::Client::new();
     let res = client.request(req).await?;
-    info!("client response {:?}", res);
-    //let (res_head, mut res_body) = res.into_parts();
+    if res.status() != StatusCode::OK {
+        error!("client response {:?}", res);
+    }
     let s1 = disk::cache::HttpBodyAsAsyncRead::new(res);
     let s2 = InMemoryFrameAsyncReadStream::new(s1);
     let res = consume_binned_response(s2).await?;
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
-    //let throughput = ntot / 1024 * 1000 / ms;
-    info!("get_cached_0 DONE  bin_count {}  time {} ms", res.bin_count, ms);
+    info!("get_cached_0  DONE  bin_count {}  time {} ms", res.bin_count, ms);
     Ok(())
 }
 

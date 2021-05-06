@@ -23,12 +23,14 @@ impl BinnedStream {
         agg_kind: AggKind,
         cache_usage: CacheUsage,
         node_config: &NodeConfigCached,
-    ) -> Self {
+    ) -> Result<Self, Error> {
         let patches: Vec<_> = patch_it.collect();
-        warn!("BinnedStream::new");
-        for p in &patches {
-            info!("BinnedStream::new  patch  {:?}", p);
+        let mut sp = String::new();
+        for (i, p) in patches.iter().enumerate() {
+            use std::fmt::Write;
+            write!(sp, "  • patch {:2}  {:?}\n", i, p)?;
         }
+        info!("BinnedStream::new\n{}", sp);
         use super::agg::binnedt::IntoBinnedT;
         let inp = futures_util::stream::iter(patches.into_iter())
             .map({
@@ -61,28 +63,43 @@ impl BinnedStream {
                                 _ => None,
                             }
                         }
-                        Ok(PreBinnedItem::RangeComplete) => {
-                            info!("===================    BINNED STREAM OBSERVES RangeComplete   ====================");
-                            Some(Ok(MinMaxAvgScalarBinBatchStreamItem::RangeComplete))
-                        }
+                        Ok(PreBinnedItem::RangeComplete) => Some(Ok(MinMaxAvgScalarBinBatchStreamItem::RangeComplete)),
                         Ok(PreBinnedItem::EventDataReadStats(stats)) => {
                             Some(Ok(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats)))
                         }
                         Ok(PreBinnedItem::Log(item)) => Some(Ok(MinMaxAvgScalarBinBatchStreamItem::Log(item))),
-                        Err(e) => {
-                            error!("observe error in stream {:?}", e);
-                            Some(Err(e))
-                        }
+                        Err(e) => Some(Err(e)),
                     };
                     ready(g)
                 }
             })
             .into_binned_t(range);
-        Self { inp: Box::pin(inp) }
+        Ok(Self { inp: Box::pin(inp) })
     }
 }
 
 impl Stream for BinnedStream {
+    // TODO make this generic over all possible things
+    type Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        self.inp.poll_next_unpin(cx)
+    }
+}
+
+pub struct BinnedStreamFromMerged {
+    inp: Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>> + Send>>,
+}
+
+impl BinnedStreamFromMerged {
+    pub fn new(
+        inp: Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>> + Send>>,
+    ) -> Result<Self, Error> {
+        Ok(Self { inp })
+    }
+}
+
+impl Stream for BinnedStreamFromMerged {
     // TODO make this generic over all possible things
     type Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>;
 

@@ -24,8 +24,7 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
     use std::str::FromStr;
     let addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen, node_config.node.port))?;
     let make_service = make_service_fn({
-        move |conn| {
-            info!("new raw {:?}", conn);
+        move |_conn| {
             let node_config = node_config.clone();
             async move {
                 Ok::<_, Error>(service_fn({
@@ -224,7 +223,7 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
     let ret = match disk::cache::binned_bytes_for_http(node_config, &query).await {
         Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, format!("desc-BINNED")))?,
         Err(e) => {
-            error!("{:?}", e);
+            error!("fn binned: {:?}", e);
             response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
         }
     };
@@ -237,7 +236,6 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
     let desc = format!("pre-b-{}", q.patch().bin_t_len() / 1000000000);
     let span1 = span!(Level::INFO, "httpret::prebinned", desc = &desc.as_str());
     span1.in_scope(|| {
-        trace!("prebinned");
         let ret = match disk::cache::pre_binned_bytes_for_http(node_config, &q) {
             Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(
                 s,
@@ -248,7 +246,7 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
                 ),
             ))?,
             Err(e) => {
-                error!("{:?}", e);
+                error!("fn prebinned: {:?}", e);
                 response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
             }
         };

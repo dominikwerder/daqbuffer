@@ -216,6 +216,12 @@ impl From<serde_cbor::Error> for Error {
     }
 }
 
+impl From<std::fmt::Error> for Error {
+    fn from(k: std::fmt::Error) -> Self {
+        Self::with_msg(k.to_string())
+    }
+}
+
 pub fn todo() {
     todo!("TODO");
 }

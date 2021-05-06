@@ -1,6 +1,7 @@
+use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
-use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
-use crate::binnedstream::BinnedStream;
+use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatchStreamItem};
+use crate::binnedstream::{BinnedStream, BinnedStreamFromMerged};
 use crate::cache::pbv::PreBinnedValueByteStream;
 use crate::cache::pbvfs::PreBinnedItem;
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
@@ -106,7 +107,6 @@ impl PreBinnedQuery {
             channel: channel_from_params(&params)?,
             cache_usage: cache_usage_from_params(&params)?,
         };
-        info!("PreBinnedQuery::from_request  {:?}", ret);
         Ok(ret)
     }
 
@@ -154,13 +154,15 @@ fn cache_usage_from_params(params: &BTreeMap<String, String>) -> Result<CacheUsa
     Ok(ret)
 }
 
+type BinnedStreamBox = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>;
+
 pub async fn binned_bytes_for_http(
     node_config: &NodeConfigCached,
     query: &BinnedQuery,
-) -> Result<BinnedBytesForHttpStream, Error> {
+) -> Result<BinnedStreamBox, Error> {
     if query.channel.backend != node_config.node.backend {
         let err = Error::with_msg(format!(
-            "backend mismatch  we {}  requested {}",
+            "backend mismatch  node: {}  requested: {}",
             node_config.node.backend, query.channel.backend
         ));
         return Err(err);
@@ -168,18 +170,18 @@ pub async fn binned_bytes_for_http(
     let range = &query.range;
     let channel_config = read_local_config(&query.channel, &node_config.node).await?;
     let entry = extract_matching_config_entry(range, &channel_config);
-    info!("found config entry {:?}", entry);
-    let range = BinnedRange::covering_range(range.clone(), query.bin_count)
-        .ok_or(Error::with_msg(format!("BinnedRange::covering_range returned None")))?;
+    info!("binned_bytes_for_http  found config entry {:?}", entry);
+    let range = BinnedRange::covering_range(range.clone(), query.bin_count).ok_or(Error::with_msg(format!(
+        "binned_bytes_for_http  BinnedRange::covering_range returned None"
+    )))?;
     match PreBinnedPatchRange::covering_range(query.range.clone(), query.bin_count) {
         Some(pre_range) => {
-            info!("Found pre_range: {:?}", pre_range);
+            info!("binned_bytes_for_http  found pre_range: {:?}", pre_range);
             if range.grid_spec.bin_t_len() < pre_range.grid_spec.bin_t_len() {
                 let msg = format!(
-                    "binned_bytes_for_http incompatible ranges:\npre_range: {:?}\nrange: {:?}",
+                    "binned_bytes_for_http  incompatible ranges:\npre_range: {:?}\nrange: {:?}",
                     pre_range, range
                 );
-                error!("{}", msg);
                 return Err(Error::with_msg(msg));
             }
             let s1 = BinnedStream::new(
@@ -189,28 +191,50 @@ pub async fn binned_bytes_for_http(
                 query.agg_kind.clone(),
                 query.cache_usage.clone(),
                 node_config,
-            );
+            )?;
             let ret = BinnedBytesForHttpStream::new(s1);
-            Ok(ret)
+            Ok(Box::pin(ret))
         }
         None => {
-            // TODO Merge raw data.
-            error!("binned_bytes_for_http   TODO   merge raw data");
-            todo!()
+            info!(
+                "binned_bytes_for_http  no covering range for prebinned, merge from remotes instead {:?}",
+                range
+            );
+            let evq = EventsQuery {
+                channel: query.channel.clone(),
+                range: query.range.clone(),
+                agg_kind: query.agg_kind.clone(),
+            };
+            // TODO do I need to set up more transformations or binning to deliver the requested data?
+            let s1 = MergedFromRemotes::new(evq, node_config.node_config.cluster.clone());
+            let s1 = s1.into_binned_t(range);
+            /*let s1 = s1.map(|k| {
+                use super::agg::scalarbinbatch::MinMaxAvgScalarBinBatchStreamItem::*;
+                match k {
+                    Ok(Values(k)) => Ok(PreBinnedItem::Batch(k)),
+                    Ok(RangeComplete) => Ok(PreBinnedItem::RangeComplete),
+                    Ok(EventDataReadStats(stats)) => Ok(PreBinnedItem::EventDataReadStats(stats)),
+                    Ok(Log(item)) => Ok(PreBinnedItem::Log(item)),
+                    Err(e) => Err(e),
+                }
+            });*/
+            let s1 = BinnedStreamFromMerged::new(Box::pin(s1))?;
+            let ret = BinnedBytesForHttpStream::new(s1);
+            Ok(Box::pin(ret))
         }
     }
 }
 
 pub type BinnedBytesForHttpStreamFrame = <BinnedStream as Stream>::Item;
 
-pub struct BinnedBytesForHttpStream {
-    inp: BinnedStream,
+pub struct BinnedBytesForHttpStream<S> {
+    inp: S,
     errored: bool,
     completed: bool,
 }
 
-impl BinnedBytesForHttpStream {
-    pub fn new(inp: BinnedStream) -> Self {
+impl<S> BinnedBytesForHttpStream<S> {
+    pub fn new(inp: S) -> Self {
         Self {
             inp,
             errored: false,
@@ -219,7 +243,10 @@ impl BinnedBytesForHttpStream {
     }
 }
 
-impl Stream for BinnedBytesForHttpStream {
+impl<S> Stream for BinnedBytesForHttpStream<S>
+where
+    S: Stream<Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>> + Unpin,
+{
     type Item = Result<Bytes, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
@@ -255,10 +282,9 @@ pub fn pre_binned_bytes_for_http(
     node_config: &NodeConfigCached,
     query: &PreBinnedQuery,
 ) -> Result<PreBinnedValueByteStream, Error> {
-    info!("pre_binned_bytes_for_http  {:?}  {:?}", query, node_config.node);
     if query.channel.backend != node_config.node.backend {
         let err = Error::with_msg(format!(
-            "backend mismatch  we {}  requested {}",
+            "backend mismatch  node: {}  requested: {}",
             node_config.node.backend, query.channel.backend
         ));
         return Err(err);
@@ -400,7 +426,6 @@ impl Stream for MergedFromRemotes {
                         pin_mut!(f);
                         match f.poll(cx) {
                             Ready(Ok(k)) => {
-                                info!("MergedFromRemotes  tcp_establish_futs  ESTABLISHED INPUT {}", i1);
                                 self.nodein[i1] = Some(k);
                             }
                             Ready(Err(e)) => {
@@ -523,9 +548,8 @@ pub async fn write_pb_cache_min_max_avg_scalar(
         agg_kind: agg_kind.clone(),
     };
     let path = cfd.path(&node_config);
-    info!("Writing cache file\n{:?}\npath: {:?}", cfd, path);
     let enc = serde_cbor::to_vec(&values)?;
-    info!("Encoded size: {}", enc.len());
+    info!("Writing cache file  size {}\n{:?}\npath: {:?}", enc.len(), cfd, path);
     tokio::fs::create_dir_all(path.parent().unwrap()).await?;
     tokio::task::spawn_blocking({
         let path = path.clone();
@@ -550,8 +574,7 @@ pub async fn write_pb_cache_min_max_avg_scalar(
 pub async fn read_pbv(mut file: File) -> Result<PreBinnedItem, Error> {
     let mut buf = vec![];
     file.read_to_end(&mut buf).await?;
-    info!("Read cached file  len {}", buf.len());
+    trace!("Read cached file  len {}", buf.len());
     let dec: MinMaxAvgScalarBinBatch = serde_cbor::from_slice(&buf)?;
-    info!("Decoded cached file");
     Ok(PreBinnedItem::Batch(dec))
 }

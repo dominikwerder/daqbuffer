@@ -248,7 +248,6 @@ pub async fn read_local_config(channel: &Channel, node: &Node) -> Result<Config,
         .join("latest")
         .join("00000_Config");
     let buf = tokio::fs::read(&path).await?;
-    info!("try to parse config  {} bytes", buf.len());
     let config = parse_config(&buf)?;
     Ok(config.1)
 }

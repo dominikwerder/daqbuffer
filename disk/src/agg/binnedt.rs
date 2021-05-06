@@ -118,7 +118,6 @@ where
                         return Ready(None);
                     } else {
                         self.range_complete_emitted = true;
-                        warn!("IntoBinnedTDefaultStream  ///////////////////////////////////   emit now RangeComplete");
                         // TODO why can't I declare that type?
                         //type TT = <I::Aggregator as AggregatorTdim>::OutputValue;
                         if let Some(item) = <I::Aggregator as AggregatorTdim>::OutputValue::make_range_complete_item() {

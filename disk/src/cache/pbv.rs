@@ -87,9 +87,8 @@ impl PreBinnedValueStream {
         }
     }
 
+    // TODO handle errors also here via return type.
     fn setup_merged_from_remotes(&mut self) {
-        let g = self.query.patch.bin_t_len();
-        warn!("no better resolution found for  g {}", g);
         let evq = EventsQuery {
             channel: self.query.channel.clone(),
             range: self.query.patch.patch_range(),
@@ -107,8 +106,8 @@ impl PreBinnedValueStream {
         let count = self.query.patch.patch_t_len() / self.query.patch.bin_t_len();
         let range = BinnedRange::covering_range(evq.range.clone(), count).unwrap();
         let s1 = MergedFromRemotes::new(evq, self.node_config.node_config.cluster.clone());
-        let s2 = s1.into_binned_t(range);
-        let s2 = s2.map(|k| {
+        let s1 = s1.into_binned_t(range);
+        let s1 = s1.map(|k| {
             use MinMaxAvgScalarBinBatchStreamItem::*;
             match k {
                 Ok(Values(k)) => Ok(PreBinnedItem::Batch(k)),
@@ -118,13 +117,13 @@ impl PreBinnedValueStream {
                 Err(e) => Err(e),
             }
         });
-        self.fut2 = Some(Box::pin(s2));
+        self.fut2 = Some(Box::pin(s1));
     }
 
     fn setup_from_higher_res_prebinned(&mut self, range: PreBinnedPatchRange) {
         let g = self.query.patch.bin_t_len();
         let h = range.grid_spec.bin_t_len();
-        info!(
+        trace!(
             "try_setup_fetch_prebinned_higher_res  found  g {}  h {}  ratio {}  mod {}  {:?}",
             g,
             h,
@@ -172,7 +171,7 @@ impl PreBinnedValueStream {
     }
 
     fn try_setup_fetch_prebinned_higher_res(&mut self) {
-        info!("try_setup_fetch_prebinned_higher_res  for {:?}", self.query.patch);
+        trace!("try_setup_fetch_prebinned_higher_res  for {:?}", self.query.patch);
         let range = self.query.patch.patch_range();
         match PreBinnedPatchRange::covering_range(range, self.query.patch.bin_count() + 1) {
             Some(range) => {
