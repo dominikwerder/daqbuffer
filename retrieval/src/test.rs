@@ -3,6 +3,7 @@ use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use disk::agg::scalarbinbatch::MinMaxAvgScalarBinBatchStreamItem;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
+use disk::streamlog::Streamlog;
 use err::Error;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
@@ -144,10 +145,16 @@ where
                     //info!("TEST GOT FRAME  len {}", frame.buf().len());
                     match bincode::deserialize::<ExpectedType>(frame.buf()) {
                         Ok(item) => match item {
-                            Ok(item) => {
-                                info!("TEST GOT ITEM {:?}\n", item);
-                                Some(Ok(item))
-                            }
+                            Ok(item) => match item {
+                                MinMaxAvgScalarBinBatchStreamItem::Log(item) => {
+                                    Streamlog::emit(&item);
+                                    Some(Ok(MinMaxAvgScalarBinBatchStreamItem::Log(item)))
+                                }
+                                item => {
+                                    info!("TEST GOT ITEM {:?}\n", item);
+                                    Some(Ok(item))
+                                }
+                            },
                             Err(e) => {
                                 error!("TEST GOT ERROR FRAME: {:?}", e);
                                 Some(Err(e))

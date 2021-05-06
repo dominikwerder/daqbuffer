@@ -6,6 +6,7 @@ use std::fmt::Formatter;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LogItem {
+    node_ix: u32,
     #[serde(with = "levelserde")]
     level: Level,
     msg: String,
@@ -17,7 +18,7 @@ impl<'de> Visitor<'de> for VisitLevel {
     type Value = u32;
 
     fn expecting(&self, fmt: &mut Formatter) -> std::fmt::Result {
-        write!(fmt, "")
+        write!(fmt, "expect u32 Level code")
     }
 
     fn visit_u32<E>(self, v: u32) -> Result<Self::Value, E>
@@ -75,19 +76,47 @@ mod levelserde {
 
 pub struct Streamlog {
     items: VecDeque<LogItem>,
+    node_ix: u32,
 }
 
 impl Streamlog {
-    pub fn new() -> Self {
-        Self { items: VecDeque::new() }
+    pub fn new(node_ix: u32) -> Self {
+        Self {
+            items: VecDeque::new(),
+            node_ix,
+        }
     }
 
     pub fn append(&mut self, level: Level, msg: String) {
-        let item = LogItem { level, msg };
+        let item = LogItem {
+            node_ix: self.node_ix,
+            level,
+            msg,
+        };
         self.items.push_back(item);
     }
 
     pub fn pop(&mut self) -> Option<LogItem> {
         self.items.pop_back()
+    }
+
+    pub fn emit(item: &LogItem) {
+        match item.level {
+            Level::ERROR => {
+                error!("StreamLog  Node {}  {}", item.node_ix, item.msg);
+            }
+            Level::WARN => {
+                warn!("StreamLog  Node {}  {}", item.node_ix, item.msg);
+            }
+            Level::INFO => {
+                info!("StreamLog  Node {}  {}", item.node_ix, item.msg);
+            }
+            Level::DEBUG => {
+                debug!("StreamLog  Node {}  {}", item.node_ix, item.msg);
+            }
+            Level::TRACE => {
+                trace!("StreamLog  Node {}  {}", item.node_ix, item.msg);
+            }
+        }
     }
 }

@@ -1,4 +1,5 @@
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
+use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::binnedstream::BinnedStream;
 use crate::cache::pbv::PreBinnedValueByteStream;
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
@@ -15,12 +16,15 @@ use netpod::{
     AggKind, BinnedRange, Channel, Cluster, NanoRange, NodeConfigCached, PreBinnedPatchCoord, PreBinnedPatchIterator,
     PreBinnedPatchRange, ToNanos,
 };
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tiny_keccak::Hasher;
-use tokio::io::{AsyncRead, ReadBuf};
+use tokio::fs::OpenOptions;
+use tokio::io::{AsyncRead, AsyncWriteExt, ReadBuf};
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
@@ -244,8 +248,16 @@ pub fn pre_binned_bytes_for_http(
     query: &PreBinnedQuery,
 ) -> Result<PreBinnedValueByteStream, Error> {
     info!("pre_binned_bytes_for_http  {:?}  {:?}", query, node_config.node);
-    let ret = super::cache::pbv::pre_binned_value_byte_stream_new(query, node_config);
-    Ok(ret)
+    let patch_node_ix = node_ix_for_patch(&query.patch, &query.channel, &node_config.node_config.cluster);
+    if node_config.ix as u32 != patch_node_ix {
+        Err(Error::with_msg(format!(
+            "pre_binned_bytes_for_http node mismatch  node_config.ix {}  patch_node_ix {}",
+            node_config.ix, patch_node_ix
+        )))
+    } else {
+        let ret = super::cache::pbv::pre_binned_value_byte_stream_new(query, node_config);
+        Ok(ret)
+    }
 }
 
 pub struct HttpBodyAsAsyncRead {
@@ -431,4 +443,81 @@ pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoord, channel: &Channel, c
     let a = [out[0], out[1], out[2], out[3]];
     let ix = u32::from_le_bytes(a) % cluster.nodes.len() as u32;
     ix
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CacheFileDesc {
+    // What identifies a cached file?
+    channel: Channel,
+    agg_kind: AggKind,
+    patch: PreBinnedPatchCoord,
+}
+
+impl CacheFileDesc {
+    pub fn hash(&self) -> String {
+        let mut h = tiny_keccak::Sha3::v256();
+        h.update(b"V000");
+        h.update(self.channel.backend.as_bytes());
+        h.update(self.channel.name.as_bytes());
+        h.update(format!("{:?}", self.agg_kind).as_bytes());
+        h.update(&self.patch.spec().bin_t_len().to_le_bytes());
+        h.update(&self.patch.spec().patch_t_len().to_le_bytes());
+        h.update(&self.patch.ix().to_le_bytes());
+        let mut buf = [0; 32];
+        h.finalize(&mut buf);
+        hex::encode(&buf)
+    }
+
+    pub fn hash_channel(&self) -> String {
+        let mut h = tiny_keccak::Sha3::v256();
+        h.update(b"V000");
+        h.update(self.channel.backend.as_bytes());
+        h.update(self.channel.name.as_bytes());
+        let mut buf = [0; 32];
+        h.finalize(&mut buf);
+        hex::encode(&buf)
+    }
+
+    pub fn path(&self, node_config: &NodeConfigCached) -> PathBuf {
+        let hash = self.hash();
+        let hc = self.hash_channel();
+        node_config
+            .node
+            .data_base_path
+            .join("cache")
+            .join(&hc[0..3])
+            .join(&hc[3..6])
+            .join(&self.channel.name)
+            .join(format!("{:?}", self.agg_kind))
+            .join(format!("{:019}", self.patch.spec().bin_t_len()))
+            .join(&hash[0..2])
+            .join(format!("{:019}", self.patch.ix()))
+    }
+}
+
+pub async fn write_pb_cache_min_max_avg_scalar(
+    values: MinMaxAvgScalarBinBatch,
+    patch: PreBinnedPatchCoord,
+    agg_kind: AggKind,
+    channel: Channel,
+    node_config: NodeConfigCached,
+) -> Result<(), Error> {
+    let cfd = CacheFileDesc {
+        channel: channel.clone(),
+        patch: patch.clone(),
+        agg_kind: agg_kind.clone(),
+    };
+    let path = cfd.path(&node_config);
+    info!("Writing cache file\n{:?}\npath: {:?}", cfd, path);
+    let enc = serde_cbor::to_vec(&values)?;
+    info!("Encoded size: {}", enc.len());
+    tokio::fs::create_dir_all(path.parent().unwrap()).await?;
+    let mut f = OpenOptions::new()
+        .truncate(true)
+        .create(true)
+        .write(true)
+        .open(&path)
+        .await?;
+    f.write_all(&enc).await?;
+    Ok(())
 }

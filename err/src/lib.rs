@@ -210,6 +210,12 @@ impl From<InvalidUri> for Error {
     }
 }
 
+impl From<serde_cbor::Error> for Error {
+    fn from(k: serde_cbor::Error) -> Self {
+        Self::with_msg(k.to_string())
+    }
+}
+
 pub fn todo() {
     todo!("TODO");
 }

@@ -128,18 +128,22 @@ pub struct NodeConfig {
 }
 
 impl NodeConfig {
-    pub fn get_node(&self) -> Option<&Node> {
+    pub fn get_node(&self) -> Option<(&Node, usize)> {
         if self.name.contains(":") {
+            let mut i1 = 0;
             for n in &self.cluster.nodes {
                 if self.name == format!("{}:{}", n.host, n.port) {
-                    return Some(n);
+                    return Some((n, i1));
                 }
+                i1 += 1;
             }
         } else {
+            let mut i1 = 0;
             for n in &self.cluster.nodes {
                 if self.name == format!("{}", n.host) {
-                    return Some(n);
+                    return Some((n, i1));
                 }
+                i1 += 1;
             }
         }
         None
@@ -156,11 +160,11 @@ pub struct NodeConfigCached {
 impl From<NodeConfig> for Result<NodeConfigCached, Error> {
     fn from(k: NodeConfig) -> Self {
         match k.get_node() {
-            Some(node) => {
+            Some((node, ix)) => {
                 let ret = NodeConfigCached {
                     node: node.clone(),
                     node_config: k,
-                    ix: 0,
+                    ix,
                 };
                 Ok(ret)
             }
@@ -284,7 +288,7 @@ const BIN_THRESHOLDS: [u64; 33] = [
     WEEK * 60,
 ];
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PreBinnedPatchGridSpec {
     bin_t_len: u64,
 }
@@ -374,7 +378,7 @@ impl PreBinnedPatchRange {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PreBinnedPatchCoord {
     spec: PreBinnedPatchGridSpec,
     ix: u64,
@@ -405,7 +409,7 @@ impl PreBinnedPatchCoord {
     }
 
     pub fn bin_count(&self) -> u64 {
-        self.patch_t_len() / self.spec.bin_t_len
+        self.spec.patch_t_len() / self.spec.bin_t_len
     }
 
     pub fn spec(&self) -> &PreBinnedPatchGridSpec {
@@ -645,7 +649,7 @@ where
 
 pub mod log {
     #[allow(unused_imports)]
-    pub use tracing::{debug, error, info, span, trace, warn, Level};
+    pub use tracing::{debug, error, event, info, span, trace, warn, Level};
 }
 
 #[derive(Debug, Serialize, Deserialize)]

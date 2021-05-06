@@ -13,4 +13,5 @@ futures-core = "0.3.12"
 futures-util = "0.3.14"
 tracing = "0.1.25"
 url = "2.2"
+lazy_static = "1.4.0"
 err = { path = "../err" }
