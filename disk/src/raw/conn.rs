@@ -1,5 +1,5 @@
 use crate::agg::binnedx::IntoBinnedXBins1;
-use crate::agg::eventbatch::{MinMaxAvgScalarEventBatch, MinMaxAvgScalarEventBatchStreamItem};
+use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
 use crate::agg::IntoDim1F32Stream;
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
 use crate::eventblobs::EventBlobsComplete;
@@ -8,9 +8,7 @@ use crate::frame::makeframe::{decode_frame, make_frame, make_term_frame};
 use crate::raw::{EventQueryJsonStringFrame, EventsQuery};
 use err::Error;
 use futures_util::StreamExt;
-#[allow(unused_imports)]
 use netpod::log::*;
-use netpod::timeunits::SEC;
 use netpod::{NodeConfigCached, Shape};
 use std::net::SocketAddr;
 use tokio::io::AsyncWriteExt;
@@ -56,10 +54,6 @@ async fn raw_conn_handler_inner(
     match raw_conn_handler_inner_try(stream, addr, node_config).await {
         Ok(_) => (),
         Err(mut ce) => {
-            /*error!(
-                "raw_conn_handler_inner  CAUGHT ERROR AND TRY TO SEND OVER TCP {:?}",
-                ce.err
-            );*/
             let buf = make_frame::<RawConnOut>(&Err(ce.err))?;
             match ce.netout.write_all(&buf).await {
                 Ok(_) => (),
@@ -89,7 +83,7 @@ async fn raw_conn_handler_inner_try(
     addr: SocketAddr,
     node_config: &NodeConfigCached,
 ) -> Result<(), ConnErr> {
-    debug!("raw_conn_handler   SPAWNED   for {:?}", addr);
+    let _ = addr;
     let (netin, mut netout) = stream.into_split();
     let mut h = InMemoryFrameAsyncReadStream::new(netin);
     let mut frames = vec![];
@@ -108,8 +102,8 @@ async fn raw_conn_handler_inner_try(
         }
     }
     if frames.len() != 1 {
-        error!("expect a command frame");
-        return Err((Error::with_msg("expect a command frame"), netout))?;
+        error!("missing command frame");
+        return Err((Error::with_msg("missing command frame"), netout))?;
     }
     let qitem: EventQueryJsonStringFrame = match decode_frame(&frames[0]) {
         Ok(k) => k,
@@ -119,8 +113,8 @@ async fn raw_conn_handler_inner_try(
     let evq = match res {
         Ok(k) => k,
         Err(e) => {
-            error!("can not parse json {:?}", e);
-            return Err((Error::with_msg("can not parse request json"), netout))?;
+            error!("json parse error: {:?}", e);
+            return Err((Error::with_msg("json parse error"), netout))?;
         }
     };
     match dbconn::channel_exists(&evq.channel, &node_config).await {
@@ -175,22 +169,21 @@ async fn raw_conn_handler_inner_try(
         query.buffer_size as usize,
     )
     .into_dim_1_f32_stream()
-    .into_binned_x_bins_1();
+    .into_binned_x_bins_1()
+    .map(|k| {
+        match &k {
+            Ok(MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats)) => {
+                info!("raw::conn  ✑  ✑  ✑  ✑  ✑  ✑  seeing stats:   {:?}", stats);
+            }
+            _ => {}
+        }
+        k
+    });
     let mut e = 0;
     while let Some(item) = s1.next().await {
         match &item {
-            Ok(MinMaxAvgScalarEventBatchStreamItem::Values(k)) => {
+            Ok(MinMaxAvgScalarEventBatchStreamItem::Values(_)) => {
                 e += 1;
-                if false {
-                    trace!(
-                        "emit items  sp {:2}  e {:3}  len {:3}  {:10?}  {:10?}",
-                        node_config.node.split,
-                        e,
-                        k.tss.len(),
-                        k.tss.first().map(|k| k / SEC),
-                        k.tss.last().map(|k| k / SEC),
-                    );
-                }
             }
             _ => (),
         }
@@ -204,31 +197,6 @@ async fn raw_conn_handler_inner_try(
             }
         }
     }
-    if false {
-        // Manual test batch.
-        let mut batch = MinMaxAvgScalarEventBatch::empty();
-        batch.tss.push(42);
-        batch.tss.push(43);
-        batch.mins.push(7.1);
-        batch.mins.push(7.2);
-        batch.maxs.push(8.3);
-        batch.maxs.push(8.4);
-        batch.avgs.push(9.5);
-        batch.avgs.push(9.6);
-        let batch = MinMaxAvgScalarEventBatchStreamItem::Values(batch);
-        let mut s1 = futures_util::stream::iter(vec![batch]).map(Result::Ok);
-        while let Some(item) = s1.next().await {
-            match make_frame::<RawConnOut>(&item) {
-                Ok(buf) => match netout.write_all(&buf).await {
-                    Ok(_) => {}
-                    Err(e) => return Err((e, netout))?,
-                },
-                Err(e) => {
-                    return Err((e, netout))?;
-                }
-            }
-        }
-    }
     let buf = make_term_frame();
     match netout.write_all(&buf).await {
         Ok(_) => (),
@@ -238,5 +206,6 @@ async fn raw_conn_handler_inner_try(
         Ok(_) => (),
         Err(e) => return Err((e, netout))?,
     }
+    let _total_written_value_items = e;
     Ok(())
 }

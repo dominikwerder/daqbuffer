@@ -71,7 +71,15 @@ impl Stream for PreBinnedValueFetchedStream {
                 pin_mut!(res);
                 match res.poll_next(cx) {
                     Ready(Some(Ok(frame))) => match decode_frame::<Result<PreBinnedItem, Error>>(&frame) {
-                        Ok(Ok(item)) => Ready(Some(Ok(item))),
+                        Ok(Ok(item)) => {
+                            match &item {
+                                PreBinnedItem::EventDataReadStats(stats) => {
+                                    info!("PreBinnedValueFetchedStream  ✕ ✕ ✕ ✕ ✕ ✕ ✕ ✕ ✕  stats {:?}", stats);
+                                }
+                                _ => {}
+                            }
+                            Ready(Some(Ok(item)))
+                        }
                         Ok(Err(e)) => {
                             self.errored = true;
                             Ready(Some(Err(e)))

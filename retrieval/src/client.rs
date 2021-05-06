@@ -9,13 +9,14 @@ use netpod::log::*;
 pub async fn get_binned(
     host: String,
     port: u16,
+    channel_backend: String,
     channel_name: String,
     beg_date: DateTime<Utc>,
     end_date: DateTime<Utc>,
     bin_count: u32,
 ) -> Result<(), Error> {
+    info!("-------   get_binned  client");
     let t1 = Utc::now();
-    let channel_backend = "NOBACKEND";
     let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
     let uri = format!(
         "http://{}:{}/api/1/binned?channel_backend={}&channel_name={}&beg_date={}&end_date={}&bin_count={}",
@@ -27,27 +28,24 @@ pub async fn get_binned(
         end_date.format(date_fmt),
         bin_count,
     );
-    info!("URI {:?}", uri);
+    info!("get_binned  uri {:?}", uri);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(uri)
         .body(Body::empty())?;
-    info!("Request for {:?}", req);
     let client = hyper::Client::new();
     let res = client.request(req).await?;
-    info!("client response {:?}", res);
     if res.status() != StatusCode::OK {
-        error!("Server error");
-        return Err(Error::with_msg(format!("Server error")));
+        error!("Server error  {:?}", res);
+        return Err(Error::with_msg(format!("Server error  {:?}", res)));
     }
-    //let (res_head, mut res_body) = res.into_parts();
     let s1 = disk::cache::HttpBodyAsAsyncRead::new(res);
     let s2 = InMemoryFrameAsyncReadStream::new(s1);
     use futures_util::StreamExt;
     use std::future::ready;
     let mut bin_count = 0;
     let s3 = s2
-        .map_err(|e| error!("{:?}", e))
+        .map_err(|e| error!("get_binned  {:?}", e))
         .filter_map(|item| {
             let g = match item {
                 Ok(frame) => {

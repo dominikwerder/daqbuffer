@@ -45,7 +45,7 @@ async fn data_api_proxy(req: Request<Body>, node_config: NodeConfigCached) -> Re
     match data_api_proxy_try(req, &node_config).await {
         Ok(k) => Ok(k),
         Err(e) => {
-            error!("{:?}", e);
+            error!("data_api_proxy sees error: {:?}", e);
             Err(e)
         }
     }
@@ -149,14 +149,6 @@ impl hyper::body::HttpBody for BodyStreamWrap {
     type Error = Error;
 
     fn poll_data(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        /*
-        use futures_core::stream::Stream;
-        let z: &mut async_channel::Receiver<Result<Self::Data, Self::Error>> = &mut self.0.receiver;
-        match Pin::new(z).poll_next(cx) {
-            Poll::Pending => Poll::Pending,
-            Poll::Ready(k) => Poll::Ready(k),
-        }
-        */
         todo!()
     }
 
@@ -208,8 +200,8 @@ where
                     Pending => Pending,
                 },
                 Err(e) => {
-                    error!("PANIC CAUGHT in httpret::BodyStream: {:?}", e);
-                    let e = Error::with_msg(format!("PANIC CAUGHT in httpret::BodyStream: {:?}", e));
+                    error!("panic caught in httpret::BodyStream: {:?}", e);
+                    let e = Error::with_msg(format!("panic caught in httpret::BodyStream: {:?}", e));
                     Ready(Some(Err(e)))
                 }
             }

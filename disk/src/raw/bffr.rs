@@ -4,8 +4,7 @@ use crate::frame::makeframe::decode_frame;
 use crate::raw::conn::RawConnOut;
 use err::Error;
 use futures_core::Stream;
-use futures_util::pin_mut;
-#[allow(unused_imports)]
+use futures_util::StreamExt;
 use netpod::log::*;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -49,9 +48,7 @@ where
             return Ready(None);
         }
         loop {
-            let j = &mut self.inp;
-            pin_mut!(j);
-            break match j.poll_next(cx) {
+            break match self.inp.poll_next_unpin(cx) {
                 Ready(Some(Ok(frame))) => {
                     type ExpectedType = RawConnOut;
                     trace!(
@@ -59,13 +56,25 @@ where
                         frame.buf().len()
                     );
                     match decode_frame::<ExpectedType>(&frame) {
-                        Ok(item) => match item {
-                            Ok(item) => Ready(Some(Ok(item))),
-                            Err(e) => {
-                                self.errored = true;
-                                Ready(Some(Err(e)))
+                        Ok(item) => {
+                            match item {
+                                Ok(item) => {
+                                    match &item {
+                                        MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats) => {
+                                            info!("✒✒✒✒✒✒✒✒✒✒✒✒✒✒✒✒ MinMaxAvgScalarEventBatchStreamFromFrames  stats  {:?}", stats);
+                                        }
+                                        _ => {
+                                            info!("✒ ✒ ✒ ✒  other kind")
+                                        }
+                                    }
+                                    Ready(Some(Ok(item)))
+                                }
+                                Err(e) => {
+                                    self.errored = true;
+                                    Ready(Some(Err(e)))
+                                }
                             }
-                        },
+                        }
                         Err(e) => {
                             error!(
                                 "MinMaxAvgScalarEventBatchStreamFromFrames  ~~~~~~~~   ERROR on frame payload {}",

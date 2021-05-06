@@ -40,6 +40,8 @@ pub struct BinnedClient {
     #[clap(long)]
     pub port: u16,
     #[clap(long)]
+    pub backend: String,
+    #[clap(long)]
     pub channel: String,
     #[clap(long)]
     pub beg: String,

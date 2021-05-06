@@ -5,6 +5,7 @@ use crate::streamlog::LogItem;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use netpod::EventDataReadStats;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -166,6 +167,7 @@ where
     data_emit_complete: bool,
     batch_size: usize,
     logitems: VecDeque<LogItem>,
+    event_data_read_stats_items: VecDeque<EventDataReadStats>,
 }
 
 impl<S> MergedMinMaxAvgScalarStream<S>
@@ -192,6 +194,7 @@ where
             data_emit_complete: false,
             batch_size: 64,
             logitems: VecDeque::new(),
+            event_data_read_stats_items: VecDeque::new(),
         }
     }
 
@@ -227,9 +230,9 @@ where
                                     self.logitems.push_back(item);
                                     continue 'l1;
                                 }
-                                MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(_stats) => {
-                                    // TODO merge also the stats: either just sum, or sum up by input index.
-                                    todo!();
+                                MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats) => {
+                                    self.event_data_read_stats_items.push_back(stats);
+                                    continue 'l1;
                                 }
                             },
                             Ready(Some(Err(e))) => {
@@ -266,18 +269,17 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        if self.completed {
-            panic!("MergedMinMaxAvgScalarStream  poll_next on completed");
-        }
-        if self.errored {
-            self.completed = true;
-            return Ready(None);
-        }
-        if let Some(item) = self.logitems.pop_front() {
-            return Ready(Some(Ok(MinMaxAvgScalarEventBatchStreamItem::Log(item))));
-        }
         'outer: loop {
-            break if self.data_emit_complete {
+            break if self.completed {
+                panic!("MergedMinMaxAvgScalarStream  poll_next on completed");
+            } else if self.errored {
+                self.completed = true;
+                Ready(None)
+            } else if let Some(item) = self.logitems.pop_front() {
+                Ready(Some(Ok(MinMaxAvgScalarEventBatchStreamItem::Log(item))))
+            } else if let Some(item) = self.event_data_read_stats_items.pop_front() {
+                Ready(Some(Ok(MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(item))))
+            } else if self.data_emit_complete {
                 if self.range_complete_observed_all {
                     if self.range_complete_observed_all_emitted {
                         self.completed = true;

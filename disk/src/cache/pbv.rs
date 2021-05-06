@@ -292,6 +292,7 @@ impl Stream for PreBinnedValueStream {
                             Ready(Some(Ok(PreBinnedItem::Batch(batch))))
                         }
                         Ok(PreBinnedItem::EventDataReadStats(stats)) => {
+                            info!("PreBinnedValueStream  as Stream  seeing stats {:?}", stats);
                             Ready(Some(Ok(PreBinnedItem::EventDataReadStats(stats))))
                         }
                         Ok(PreBinnedItem::Log(item)) => Ready(Some(Ok(PreBinnedItem::Log(item)))),

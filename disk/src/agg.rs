@@ -404,8 +404,8 @@ where
         match self.inp.poll_next_unpin(cx) {
             Ready(Some(Ok(k))) => {
                 let inst1 = Instant::now();
-                let u = match &k {
-                    EventChunkerItem::Events(events) => match self.process_event_data(events) {
+                let u = match k {
+                    EventChunkerItem::Events(events) => match self.process_event_data(&events) {
                         Ok(k) => {
                             let ret = Dim1F32StreamItem::Values(k);
                             Ready(Some(Ok(ret)))
@@ -416,10 +416,10 @@ where
                         }
                     },
                     EventChunkerItem::RangeComplete => Ready(Some(Ok(Dim1F32StreamItem::RangeComplete))),
-                    EventChunkerItem::EventDataReadStats(_stats) => {
-                        // TODO  ret.event_data_read_stats.trans(&mut k.event_data_read_stats);
-                        // TODO  ret.values_extract_stats.dur += inst2.duration_since(inst1);
-                        err::todoval()
+                    EventChunkerItem::EventDataReadStats(stats) => {
+                        info!("++++++++   Dim1F32Stream  stats  {:?}", stats);
+                        let ret = Dim1F32StreamItem::EventDataReadStats(stats);
+                        Ready(Some(Ok(ret)))
                     }
                 };
                 let inst2 = Instant::now();

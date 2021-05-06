@@ -36,7 +36,8 @@ async fn go() -> Result<(), Error> {
             ClientType::Binned(opts) => {
                 let beg = opts.beg.parse()?;
                 let end = opts.end.parse()?;
-                retrieval::client::get_binned(opts.host, opts.port, opts.channel, beg, end, opts.bins).await?;
+                retrieval::client::get_binned(opts.host, opts.port, opts.backend, opts.channel, beg, end, opts.bins)
+                    .await?;
             }
         },
         SubCmd::GenerateTestData => {

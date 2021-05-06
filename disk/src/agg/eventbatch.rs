@@ -4,7 +4,6 @@ use crate::agg::AggregatableXdim1Bin;
 use crate::streamlog::LogItem;
 use bytes::{BufMut, Bytes, BytesMut};
 use netpod::log::*;
-use netpod::timeunits::SEC;
 use netpod::EventDataReadStats;
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;
@@ -196,56 +195,25 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
     fn ends_after(&self, inp: &Self::InputValue) -> bool {
         match inp.tss.last() {
             Some(&ts) => ts >= self.ts2,
-            _ => panic!(),
+            None => panic!(),
         }
     }
 
     fn starts_after(&self, inp: &Self::InputValue) -> bool {
         match inp.tss.first() {
             Some(&ts) => ts >= self.ts2,
-            _ => panic!(),
+            None => panic!(),
         }
     }
 
     fn ingest(&mut self, v: &mut Self::InputValue) {
-        if false {
-            trace!(
-                "ingest  {}  {}  {}   {:?}  {:?}",
-                self.ends_before(v),
-                self.ends_after(v),
-                self.starts_after(v),
-                v.tss.first().map(|k| k / SEC),
-                v.tss.last().map(|k| k / SEC),
-            );
-        }
         for i1 in 0..v.tss.len() {
             let ts = v.tss[i1];
             if ts < self.ts1 {
-                trace!(
-                    "EventBatchAgg  {}  {}  {}  {}   IS BEFORE",
-                    v.tss[i1],
-                    v.mins[i1],
-                    v.maxs[i1],
-                    v.avgs[i1]
-                );
                 continue;
             } else if ts >= self.ts2 {
-                trace!(
-                    "EventBatchAgg  {}  {}  {}  {}   IS AFTER",
-                    v.tss[i1],
-                    v.mins[i1],
-                    v.maxs[i1],
-                    v.avgs[i1]
-                );
                 continue;
             } else {
-                trace!(
-                    "EventBatchAgg  {}  {}  {}  {}",
-                    v.tss[i1],
-                    v.mins[i1],
-                    v.maxs[i1],
-                    v.avgs[i1]
-                );
                 self.min = self.min.min(v.mins[i1]);
                 self.max = self.max.max(v.maxs[i1]);
                 self.sum += v.avgs[i1];
@@ -375,14 +343,17 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchStreamItemAggregator {
     fn ingest(&mut self, inp: &mut Self::InputValue) {
         match inp {
             MinMaxAvgScalarEventBatchStreamItem::Values(vals) => self.agg.ingest(vals),
-            MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats) => self.event_data_read_stats.trans(stats),
-            MinMaxAvgScalarEventBatchStreamItem::RangeComplete => (),
-            MinMaxAvgScalarEventBatchStreamItem::Log(_) => (),
+            MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats) => {
+                info!("33333333333      2222222222222222222222     see stats  {:?}", stats);
+                self.event_data_read_stats.trans(stats);
+            }
+            MinMaxAvgScalarEventBatchStreamItem::RangeComplete => {}
+            MinMaxAvgScalarEventBatchStreamItem::Log(_) => {}
         }
     }
 
     fn result(self) -> Vec<Self::OutputValue> {
-        let mut ret: Vec<Self::OutputValue> = self
+        let mut ret: Vec<_> = self
             .agg
             .result()
             .into_iter()

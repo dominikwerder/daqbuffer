@@ -38,77 +38,47 @@ impl Stream for EventBlobsComplete {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        if self.completed {
-            panic!("EventBlobsComplete  poll_next on completed");
-        }
-        if self.errored {
-            self.completed = true;
-            return Ready(None);
-        }
         'outer: loop {
-            let z = match &mut self.evs {
-                Some(evs) => match evs.poll_next_unpin(cx) {
-                    Ready(Some(k)) => Ready(Some(k)),
-                    Ready(None) => {
-                        self.evs = None;
-                        continue 'outer;
-                    }
-                    Pending => Pending,
-                },
-                None => match self.file_chan.poll_next_unpin(cx) {
-                    Ready(Some(k)) => match k {
-                        Ok(file) => {
-                            let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
-                            let chunker =
-                                EventChunker::from_event_boundary(inp, self.channel_config.clone(), self.range.clone());
-                            self.evs = Some(chunker);
+            break if self.completed {
+                panic!("EventBlobsComplete  poll_next on completed");
+            } else if self.errored {
+                self.completed = true;
+                return Ready(None);
+            } else {
+                match &mut self.evs {
+                    Some(evs) => match evs.poll_next_unpin(cx) {
+                        Ready(Some(k)) => Ready(Some(k)),
+                        Ready(None) => {
+                            self.evs = None;
                             continue 'outer;
                         }
-                        Err(e) => {
-                            self.errored = true;
-                            Ready(Some(Err(e)))
-                        }
+                        Pending => Pending,
                     },
-                    Ready(None) => {
-                        self.completed = true;
-                        Ready(None)
-                    }
-                    Pending => Pending,
-                },
-            };
-            break z;
-        }
-    }
-}
-
-pub fn event_blobs_complete(
-    query: &netpod::AggQuerySingleChannel,
-    node: Node,
-) -> impl Stream<Item = Result<EventChunkerItem, Error>> + Send {
-    let query = query.clone();
-    let node = node.clone();
-    async_stream::stream! {
-        let filerx = open_files(err::todoval(), err::todoval(), node);
-        while let Ok(fileres) = filerx.recv().await {
-            match fileres {
-                Ok(file) => {
-                    let inp = Box::pin(file_content_stream(file, query.buffer_size as usize));
-                    let mut chunker = EventChunker::from_event_boundary(inp, err::todoval(), err::todoval());
-                    while let Some(evres) = chunker.next().await {
-                        match evres {
-                            Ok(evres) => {
-                                yield Ok(evres);
+                    None => match self.file_chan.poll_next_unpin(cx) {
+                        Ready(Some(k)) => match k {
+                            Ok(file) => {
+                                let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
+                                let chunker = EventChunker::from_event_boundary(
+                                    inp,
+                                    self.channel_config.clone(),
+                                    self.range.clone(),
+                                );
+                                self.evs = Some(chunker);
+                                continue 'outer;
                             }
                             Err(e) => {
-                                yield Err(e)
+                                self.errored = true;
+                                Ready(Some(Err(e)))
                             }
+                        },
+                        Ready(None) => {
+                            self.completed = true;
+                            Ready(None)
                         }
-                    }
+                        Pending => Pending,
+                    },
                 }
-                Err(e) => {
-                    yield Err(e);
-                }
-            }
+            };
         }
     }
 }

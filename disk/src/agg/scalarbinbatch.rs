@@ -403,14 +403,17 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchStreamItemAggregator {
     fn ingest(&mut self, inp: &mut Self::InputValue) {
         match inp {
             MinMaxAvgScalarBinBatchStreamItem::Values(vals) => self.agg.ingest(vals),
-            MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats) => self.event_data_read_stats.trans(stats),
-            MinMaxAvgScalarBinBatchStreamItem::RangeComplete => (),
-            MinMaxAvgScalarBinBatchStreamItem::Log(_) => (),
+            MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats) => {
+                info!("kkkkkkkkkkkkkkkkk 0000000000000000000   see stats  {:?}", stats);
+                self.event_data_read_stats.trans(stats);
+            }
+            MinMaxAvgScalarBinBatchStreamItem::RangeComplete => {}
+            MinMaxAvgScalarBinBatchStreamItem::Log(_) => {}
         }
     }
 
     fn result(self) -> Vec<Self::OutputValue> {
-        let mut ret: Vec<Self::OutputValue> = self
+        let mut ret: Vec<_> = self
             .agg
             .result()
             .into_iter()

@@ -55,6 +55,9 @@ async fn get_binned_0_inner() -> Result<(), Error> {
         &cluster,
     )
     .await?;
+    if true {
+        return Ok(());
+    }
     get_binned_channel(
         "wave-u16-le-n77",
         "1970-01-01T01:11:00.000Z",
@@ -71,9 +74,6 @@ async fn get_binned_0_inner() -> Result<(), Error> {
         &cluster,
     )
     .await?;
-    if true {
-        return Ok(());
-    }
     Ok(())
 }
 
@@ -94,7 +94,7 @@ where
     let channel_backend = "testbackend";
     let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
     let uri = format!(
-        "http://{}:{}/api/1/binned?channel_backend={}&channel_name={}&bin_count={}&beg_date={}&end_date={}",
+        "http://{}:{}/api/1/binned?cache_usage=ignore&channel_backend={}&channel_name={}&bin_count={}&beg_date={}&end_date={}",
         node0.host,
         node0.port,
         channel_backend,
@@ -125,11 +125,15 @@ where
 #[derive(Debug)]
 pub struct BinnedResponse {
     bin_count: usize,
+    bytes_read: u64,
 }
 
 impl BinnedResponse {
     pub fn new() -> Self {
-        Self { bin_count: 0 }
+        Self {
+            bin_count: 0,
+            bytes_read: 0,
+        }
     }
 }
 
@@ -178,6 +182,10 @@ where
                         a.bin_count += k.ts1s.len();
                         Ok(a)
                     }
+                    Ok(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats)) => {
+                        a.bytes_read += stats.parsed_bytes;
+                        Ok(a)
+                    }
                     Ok(_) => Ok(a),
                     Err(e) => Err(e),
                 },
@@ -186,6 +194,7 @@ where
             ready(g)
         });
     let ret = s1.await;
+    info!("BinnedResponse: {:?}", ret);
     ret
 }
 

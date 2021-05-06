@@ -49,9 +49,8 @@ pub async fn x_processed_stream_from_node(
     netout.flush().await?;
     netout.forget();
     let frames = InMemoryFrameAsyncReadStream::new(netin);
-    let s2 = MinMaxAvgScalarEventBatchStreamFromFrames::new(frames);
-    let s3: Pin<Box<dyn Stream<Item = Result<_, Error>> + Send>> = Box::pin(s2);
-    Ok(s3)
+    let items = MinMaxAvgScalarEventBatchStreamFromFrames::new(frames);
+    Ok(Box::pin(items))
 }
 
 pub fn crchex<T>(t: T) -> String
