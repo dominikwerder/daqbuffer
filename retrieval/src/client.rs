@@ -5,6 +5,7 @@ use futures_util::TryStreamExt;
 use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
+use netpod::PerfOpts;
 
 pub async fn get_binned(
     host: String,
@@ -39,8 +40,9 @@ pub async fn get_binned(
         error!("Server error  {:?}", res);
         return Err(Error::with_msg(format!("Server error  {:?}", res)));
     }
+    let perf_opts = PerfOpts { inmem_bufcap: 512 };
     let s1 = disk::cache::HttpBodyAsAsyncRead::new(res);
-    let s2 = InMemoryFrameAsyncReadStream::new(s1);
+    let s2 = InMemoryFrameAsyncReadStream::new(s1, perf_opts.inmem_bufcap);
     use futures_util::StreamExt;
     use std::future::ready;
     let mut bin_count = 0;

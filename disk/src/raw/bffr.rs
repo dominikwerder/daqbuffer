@@ -40,28 +40,22 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        if self.completed {
-            panic!("MinMaxAvgScalarEventBatchStreamFromFrames  poll_next on completed");
-        }
-        if self.errored {
-            self.completed = true;
-            return Ready(None);
-        }
         loop {
-            break match self.inp.poll_next_unpin(cx) {
-                Ready(Some(Ok(frame))) => {
-                    type ExpectedType = RawConnOut;
-                    trace!(
-                        "MinMaxAvgScalarEventBatchStreamFromFrames  got full frame buf  {}",
-                        frame.buf().len()
-                    );
-                    match decode_frame::<ExpectedType>(&frame) {
-                        Ok(item) => {
-                            match item {
+            break if self.completed {
+                panic!("MinMaxAvgScalarEventBatchStreamFromFrames  poll_next on completed");
+            } else if self.errored {
+                self.completed = true;
+                Ready(None)
+            } else {
+                match self.inp.poll_next_unpin(cx) {
+                    Ready(Some(Ok(frame))) => {
+                        type ExpectedType = RawConnOut;
+                        match decode_frame::<ExpectedType>(&frame) {
+                            Ok(item) => match item {
                                 Ok(item) => {
                                     match &item {
                                         MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats) => {
-                                            info!("✒✒✒✒✒✒✒✒✒✒✒✒✒✒✒✒ MinMaxAvgScalarEventBatchStreamFromFrames  stats  {:?}", stats);
+                                            info!("✒✒ ✒✒ ✒✒ ✒✒ ✒✒ ✒✒  stats  {:?}", stats);
                                         }
                                         _ => {
                                             info!("✒ ✒ ✒ ✒  other kind")
@@ -73,27 +67,27 @@ where
                                     self.errored = true;
                                     Ready(Some(Err(e)))
                                 }
+                            },
+                            Err(e) => {
+                                error!(
+                                    "MinMaxAvgScalarEventBatchStreamFromFrames  ~~~~~~~~   ERROR on frame payload {}",
+                                    frame.buf().len(),
+                                );
+                                self.errored = true;
+                                Ready(Some(Err(e)))
                             }
                         }
-                        Err(e) => {
-                            error!(
-                                "MinMaxAvgScalarEventBatchStreamFromFrames  ~~~~~~~~   ERROR on frame payload {}",
-                                frame.buf().len(),
-                            );
-                            self.errored = true;
-                            Ready(Some(Err(e)))
-                        }
                     }
+                    Ready(Some(Err(e))) => {
+                        self.errored = true;
+                        Ready(Some(Err(e)))
+                    }
+                    Ready(None) => {
+                        self.completed = true;
+                        Ready(None)
+                    }
+                    Pending => Pending,
                 }
-                Ready(Some(Err(e))) => {
-                    self.errored = true;
-                    Ready(Some(Err(e)))
-                }
-                Ready(None) => {
-                    self.completed = true;
-                    Ready(None)
-                }
-                Pending => Pending,
             };
         }
     }

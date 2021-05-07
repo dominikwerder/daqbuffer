@@ -11,7 +11,7 @@ use crate::frame::makeframe::{make_frame, make_term_frame};
 use crate::raw::bffr::MinMaxAvgScalarEventBatchStreamFromFrames;
 use err::Error;
 use futures_core::Stream;
-use netpod::{AggKind, Channel, NanoRange, Node};
+use netpod::{AggKind, Channel, NanoRange, Node, PerfOpts};
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use tokio::io::AsyncWriteExt;
@@ -37,6 +37,7 @@ pub struct EventQueryJsonStringFrame(String);
 
 pub async fn x_processed_stream_from_node(
     query: EventsQuery,
+    perf_opts: PerfOpts,
     node: Node,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>> + Send>>, Error> {
     let net = TcpStream::connect(format!("{}:{}", node.host, node.port_raw)).await?;
@@ -48,7 +49,7 @@ pub async fn x_processed_stream_from_node(
     netout.write_all(&buf).await?;
     netout.flush().await?;
     netout.forget();
-    let frames = InMemoryFrameAsyncReadStream::new(netin);
+    let frames = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
     let items = MinMaxAvgScalarEventBatchStreamFromFrames::new(frames);
     Ok(Box::pin(items))
 }

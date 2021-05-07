@@ -11,8 +11,8 @@ use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use netpod::log::*;
 use netpod::streamext::SCC;
-use netpod::{BinnedRange, NodeConfigCached, PreBinnedPatchIterator, PreBinnedPatchRange};
-use std::future::{ready, Future};
+use netpod::{BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange};
+use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -105,7 +105,8 @@ impl PreBinnedValueStream {
         // TODO do I need to set up more transformations or binning to deliver the requested data?
         let count = self.query.patch.patch_t_len() / self.query.patch.bin_t_len();
         let range = BinnedRange::covering_range(evq.range.clone(), count).unwrap();
-        let s1 = MergedFromRemotes::new(evq, self.node_config.node_config.cluster.clone());
+        let perf_opts = PerfOpts { inmem_bufcap: 512 };
+        let s1 = MergedFromRemotes::new(evq, perf_opts, self.node_config.node_config.cluster.clone());
         let s1 = s1.into_binned_t(range);
         let s1 = s1.map(|k| {
             use MinMaxAvgScalarBinBatchStreamItem::*;
@@ -161,13 +162,12 @@ impl PreBinnedValueStream {
                     PreBinnedValueFetchedStream::new(&query, &node_config)
                 }
             })
-            .filter_map(|k| match k {
-                Ok(k) => ready(Some(k)),
-                Err(e) => {
-                    // TODO Reconsider error handling here:
-                    error!("{:?}", e);
-                    ready(None)
-                }
+            .map(|k| {
+                let s: Pin<Box<dyn Stream<Item = _> + Send>> = match k {
+                    Ok(k) => Box::pin(k),
+                    Err(e) => Box::pin(futures_util::stream::iter(vec![Err(e)])),
+                };
+                s
             })
             .flatten();
         self.fut2 = Some(Box::pin(s));

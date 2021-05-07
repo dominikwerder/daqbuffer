@@ -9,7 +9,7 @@ use crate::raw::{EventQueryJsonStringFrame, EventsQuery};
 use err::Error;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::{NodeConfigCached, Shape};
+use netpod::{NodeConfigCached, PerfOpts, Shape};
 use std::net::SocketAddr;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
@@ -85,7 +85,8 @@ async fn raw_conn_handler_inner_try(
 ) -> Result<(), ConnErr> {
     let _ = addr;
     let (netin, mut netout) = stream.into_split();
-    let mut h = InMemoryFrameAsyncReadStream::new(netin);
+    let perf_opts = PerfOpts { inmem_bufcap: 512 };
+    let mut h = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
     let mut frames = vec![];
     while let Some(k) = h
         .next()

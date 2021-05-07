@@ -10,7 +10,7 @@ use futures_util::TryStreamExt;
 use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
-use netpod::{Cluster, Database, Node};
+use netpod::{Cluster, Database, Node, PerfOpts};
 use std::future::ready;
 use tokio::io::AsyncRead;
 
@@ -50,8 +50,8 @@ async fn get_binned_0_inner() -> Result<(), Error> {
     get_binned_channel(
         "wave-f64-be-n21",
         "1970-01-01T00:20:10.000Z",
-        "1970-01-01T00:20:15.000Z",
-        4,
+        "1970-01-01T00:20:20.000Z",
+        1,
         &cluster,
     )
     .await?;
@@ -93,6 +93,8 @@ where
     let end_date: DateTime<Utc> = end_date.as_ref().parse()?;
     let channel_backend = "testbackend";
     let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
+    let perf_opts = PerfOpts { inmem_bufcap: 512 };
+    // TODO have a function to form the uri, including perf opts:
     let uri = format!(
         "http://{}:{}/api/1/binned?cache_usage=ignore&channel_backend={}&channel_name={}&bin_count={}&beg_date={}&end_date={}",
         node0.host,
@@ -114,7 +116,7 @@ where
         error!("client response {:?}", res);
     }
     let s1 = disk::cache::HttpBodyAsAsyncRead::new(res);
-    let s2 = InMemoryFrameAsyncReadStream::new(s1);
+    let s2 = InMemoryFrameAsyncReadStream::new(s1, perf_opts.inmem_bufcap);
     let res = consume_binned_response(s2).await?;
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;

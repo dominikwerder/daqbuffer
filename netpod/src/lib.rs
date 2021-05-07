@@ -667,3 +667,8 @@ impl EventDataReadStats {
         k.parsed_bytes = 0;
     }
 }
+
+#[derive(Clone, Debug)]
+pub struct PerfOpts {
+    pub inmem_bufcap: usize,
+}

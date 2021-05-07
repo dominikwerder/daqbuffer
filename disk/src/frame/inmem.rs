@@ -31,13 +31,11 @@ impl<T> InMemoryFrameAsyncReadStream<T>
 where
     T: AsyncRead + Unpin,
 {
-    pub fn new(inp: T) -> Self {
-        // TODO make capacity adjustable.
-        let bufcap = 512;
+    pub fn new(inp: T, bufcap: usize) -> Self {
         let mut t = Self {
             inp,
             buf: BytesMut::new(),
-            bufcap: bufcap,
+            bufcap,
             wp: 0,
             tryparse: false,
             errored: false,

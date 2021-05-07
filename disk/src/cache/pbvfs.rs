@@ -9,7 +9,7 @@ use futures_util::{pin_mut, FutureExt};
 use http::StatusCode;
 #[allow(unused_imports)]
 use netpod::log::*;
-use netpod::{EventDataReadStats, NodeConfigCached};
+use netpod::{EventDataReadStats, NodeConfigCached, PerfOpts};
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -104,8 +104,9 @@ impl Stream for PreBinnedValueFetchedStream {
                     Ready(res) => match res {
                         Ok(res) => {
                             if res.status() == StatusCode::OK {
+                                let perf_opts = PerfOpts { inmem_bufcap: 512 };
                                 let s1 = HttpBodyAsAsyncRead::new(res);
-                                let s2 = InMemoryFrameAsyncReadStream::new(s1);
+                                let s2 = InMemoryFrameAsyncReadStream::new(s1, perf_opts.inmem_bufcap);
                                 self.res = Some(s2);
                                 continue 'outer;
                             } else {

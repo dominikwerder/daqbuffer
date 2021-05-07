@@ -15,8 +15,8 @@ use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
 use hyper::Response;
 use netpod::{
-    AggKind, BinnedRange, Channel, Cluster, NanoRange, NodeConfigCached, PreBinnedPatchCoord, PreBinnedPatchIterator,
-    PreBinnedPatchRange, ToNanos,
+    AggKind, BinnedRange, Channel, Cluster, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchCoord,
+    PreBinnedPatchIterator, PreBinnedPatchRange, ToNanos,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -174,6 +174,7 @@ pub async fn binned_bytes_for_http(
     let range = BinnedRange::covering_range(range.clone(), query.bin_count).ok_or(Error::with_msg(format!(
         "binned_bytes_for_http  BinnedRange::covering_range returned None"
     )))?;
+    let perf_opts = PerfOpts { inmem_bufcap: 512 };
     match PreBinnedPatchRange::covering_range(query.range.clone(), query.bin_count) {
         Some(pre_range) => {
             info!("binned_bytes_for_http  found pre_range: {:?}", pre_range);
@@ -206,7 +207,7 @@ pub async fn binned_bytes_for_http(
                 agg_kind: query.agg_kind.clone(),
             };
             // TODO do I need to set up more transformations or binning to deliver the requested data?
-            let s1 = MergedFromRemotes::new(evq, node_config.node_config.cluster.clone());
+            let s1 = MergedFromRemotes::new(evq, perf_opts, node_config.node_config.cluster.clone());
             let s1 = s1.into_binned_t(range);
             /*let s1 = s1.map(|k| {
                 use super::agg::scalarbinbatch::MinMaxAvgScalarBinBatchStreamItem::*;
@@ -372,10 +373,10 @@ pub struct MergedFromRemotes {
 }
 
 impl MergedFromRemotes {
-    pub fn new(evq: EventsQuery, cluster: Cluster) -> Self {
+    pub fn new(evq: EventsQuery, perf_opts: PerfOpts, cluster: Cluster) -> Self {
         let mut tcp_establish_futs = vec![];
         for node in &cluster.nodes {
-            let f = super::raw::x_processed_stream_from_node(evq.clone(), node.clone());
+            let f = super::raw::x_processed_stream_from_node(evq.clone(), perf_opts.clone(), node.clone());
             let f: T002 = Box::pin(f);
             tcp_establish_futs.push(f);
         }
