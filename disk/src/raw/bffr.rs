@@ -53,12 +53,14 @@ where
                         match decode_frame::<ExpectedType>(&frame) {
                             Ok(item) => match item {
                                 Ok(item) => {
-                                    match &item {
-                                        MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats) => {
-                                            info!("✒✒ ✒✒ ✒✒ ✒✒ ✒✒ ✒✒  stats  {:?}", stats);
-                                        }
-                                        _ => {
-                                            info!("✒ ✒ ✒ ✒  other kind")
+                                    if false {
+                                        match &item {
+                                            MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats) => {
+                                                info!("✒✒ ✒✒ ✒✒ ✒✒ ✒✒ ✒✒  stats  {:?}", stats);
+                                            }
+                                            _ => {
+                                                info!("✒ ✒ ✒ ✒  other kind")
+                                            }
                                         }
                                     }
                                     Ready(Some(Ok(item)))

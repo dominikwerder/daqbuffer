@@ -216,7 +216,7 @@ where
                                     let d = self.range_complete_observed.iter().filter(|&&k| k).count();
                                     if d == self.range_complete_observed.len() {
                                         self.range_complete_observed_all = true;
-                                        info!("MergedMinMaxAvgScalarStream  range_complete  d  {}  COMPLETE", d);
+                                        debug!("MergedMinMaxAvgScalarStream  range_complete  d  {}  COMPLETE", d);
                                     } else {
                                         trace!("MergedMinMaxAvgScalarStream  range_complete  d  {}", d);
                                     }

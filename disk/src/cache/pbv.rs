@@ -113,10 +113,7 @@ impl PreBinnedValueStream {
             match k {
                 Ok(Values(k)) => Ok(PreBinnedItem::Batch(k)),
                 Ok(RangeComplete) => Ok(PreBinnedItem::RangeComplete),
-                Ok(EventDataReadStats(stats)) => {
-                    info!("PreBinnedValueStream  ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙    stats {:?}", stats);
-                    Ok(PreBinnedItem::EventDataReadStats(stats))
-                }
+                Ok(EventDataReadStats(stats)) => Ok(PreBinnedItem::EventDataReadStats(stats)),
                 Ok(Log(item)) => Ok(PreBinnedItem::Log(item)),
                 Err(e) => Err(e),
             }
@@ -174,7 +171,6 @@ impl PreBinnedValueStream {
     }
 
     fn try_setup_fetch_prebinned_higher_res(&mut self) {
-        trace!("try_setup_fetch_prebinned_higher_res  for {:?}", self.query.patch);
         let range = self.query.patch.patch_range();
         match PreBinnedPatchRange::covering_range(range, self.query.patch.bin_count() + 1) {
             Some(range) => {
@@ -295,7 +291,9 @@ impl Stream for PreBinnedValueStream {
                             Ready(Some(Ok(PreBinnedItem::Batch(batch))))
                         }
                         Ok(PreBinnedItem::EventDataReadStats(stats)) => {
-                            info!("PreBinnedValueStream  as Stream  seeing stats {:?}", stats);
+                            if false {
+                                info!("PreBinnedValueStream  ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙  stats {:?}", stats);
+                            }
                             Ready(Some(Ok(PreBinnedItem::EventDataReadStats(stats))))
                         }
                         Ok(PreBinnedItem::Log(item)) => Ready(Some(Ok(PreBinnedItem::Log(item)))),

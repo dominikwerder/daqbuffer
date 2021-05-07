@@ -73,7 +73,7 @@ impl Stream for PreBinnedValueFetchedStream {
                     Ready(Some(Ok(frame))) => match decode_frame::<Result<PreBinnedItem, Error>>(&frame) {
                         Ok(Ok(item)) => {
                             match &item {
-                                PreBinnedItem::EventDataReadStats(stats) => {
+                                PreBinnedItem::EventDataReadStats(stats) if false => {
                                     info!("PreBinnedValueFetchedStream  ✕ ✕ ✕ ✕ ✕ ✕ ✕ ✕ ✕  stats {:?}", stats);
                                 }
                                 _ => {}

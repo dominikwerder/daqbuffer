@@ -50,8 +50,8 @@ async fn get_binned_0_inner() -> Result<(), Error> {
     get_binned_channel(
         "wave-f64-be-n21",
         "1970-01-01T00:20:10.000Z",
-        "1970-01-01T00:20:20.000Z",
-        1,
+        "1970-01-01T00:20:30.000Z",
+        2,
         &cluster,
     )
     .await?;

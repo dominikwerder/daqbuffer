@@ -417,7 +417,6 @@ where
                     },
                     EventChunkerItem::RangeComplete => Ready(Some(Ok(Dim1F32StreamItem::RangeComplete))),
                     EventChunkerItem::EventDataReadStats(stats) => {
-                        info!("++++++++   Dim1F32Stream  stats  {:?}", stats);
                         let ret = Dim1F32StreamItem::EventDataReadStats(stats);
                         Ready(Some(Ok(ret)))
                     }

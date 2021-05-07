@@ -172,11 +172,13 @@ async fn raw_conn_handler_inner_try(
     .into_dim_1_f32_stream()
     .into_binned_x_bins_1()
     .map(|k| {
-        match &k {
-            Ok(MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats)) => {
-                info!("raw::conn  ✑  ✑  ✑  ✑  ✑  ✑  seeing stats:   {:?}", stats);
+        if false {
+            match &k {
+                Ok(MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats)) => {
+                    info!("raw::conn  ✑  ✑  ✑  ✑  ✑  ✑  seeing stats:   {:?}", stats);
+                }
+                _ => {}
             }
-            _ => {}
         }
         k
     });

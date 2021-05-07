@@ -283,7 +283,8 @@ where
                         if n1 == 0 {
                             let n2 = self.buf.len();
                             if n2 != 0 {
-                                warn!(
+                                // TODO anything more to handle here?
+                                debug!(
                                     "InMemoryFrameAsyncReadStream  n2 != 0  n2 {}  consumed {}",
                                     n2, self.inp_bytes_consumed
                                 );

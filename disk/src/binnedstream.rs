@@ -37,14 +37,15 @@ impl BinnedStream {
                 let node_config = node_config.clone();
                 move |patch| {
                     let query = PreBinnedQuery::new(patch, channel.clone(), agg_kind.clone(), cache_usage.clone());
-                    PreBinnedValueFetchedStream::new(&query, &node_config)
-                }
-            })
-            .filter_map(|k| match k {
-                Ok(k) => ready(Some(k)),
-                Err(e) => {
-                    error!("{:?}", e);
-                    ready(None)
+                    let s: Pin<Box<dyn Stream<Item = _> + Send>> =
+                        match PreBinnedValueFetchedStream::new(&query, &node_config) {
+                            Ok(k) => Box::pin(k),
+                            Err(e) => {
+                                error!("see error {:?}", e);
+                                Box::pin(futures_util::stream::iter(vec![Err(e)]))
+                            }
+                        };
+                    s
                 }
             })
             .flatten()
@@ -65,7 +66,7 @@ impl BinnedStream {
                         }
                         Ok(PreBinnedItem::RangeComplete) => Some(Ok(MinMaxAvgScalarBinBatchStreamItem::RangeComplete)),
                         Ok(PreBinnedItem::EventDataReadStats(stats)) => {
-                            info!("BinnedStream  observes stats {:?}", stats);
+                            //info!("BinnedStream  '''''''''''''''''''   observes stats {:?}", stats);
                             Some(Ok(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats)))
                         }
                         Ok(PreBinnedItem::Log(item)) => Some(Ok(MinMaxAvgScalarBinBatchStreamItem::Log(item))),

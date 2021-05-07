@@ -59,7 +59,7 @@ impl EventChunker {
             data_emit_complete: false,
             final_stats_sent: false,
             data_since_last_stats: 0,
-            stats_emit_interval: 1,
+            stats_emit_interval: 64,
             parsed_bytes: 0,
         }
     }
@@ -84,7 +84,7 @@ impl EventChunker {
             data_emit_complete: false,
             final_stats_sent: false,
             data_since_last_stats: 0,
-            stats_emit_interval: 1,
+            stats_emit_interval: 64,
             parsed_bytes: 0,
         }
     }
@@ -324,7 +324,6 @@ impl Stream for EventChunker {
                     parsed_bytes: self.parsed_bytes,
                 };
                 self.parsed_bytes = 0;
-                warn!("EMIT FINAL STATS  {:?}", item);
                 let ret = EventChunkerItem::EventDataReadStats(item);
                 self.final_stats_sent = true;
                 Ready(Some(Ok(ret)))
@@ -349,8 +348,7 @@ impl Stream for EventChunker {
                                     self.inp.set_need_min(x);
                                     self.data_since_last_stats += 1;
                                     let ret = EventChunkerItem::Events(res.events);
-                                    let ret = Ok(ret);
-                                    Ready(Some(ret))
+                                    Ready(Some(Ok(ret)))
                                 }
                             }
                             Err(e) => {

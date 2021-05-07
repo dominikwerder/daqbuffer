@@ -132,6 +132,18 @@ impl AggregatableTdim for MinMaxAvgScalarEventBatch {
     fn make_log_item(_item: LogItem) -> Option<Self> {
         None
     }
+
+    fn is_stats_item(&self) -> bool {
+        false
+    }
+
+    fn stats_item(self) -> Option<EventDataReadStats> {
+        None
+    }
+
+    fn make_stats_item(_item: EventDataReadStats) -> Option<Self> {
+        None
+    }
 }
 
 impl MinMaxAvgScalarEventBatch {
@@ -298,20 +310,36 @@ impl AggregatableTdim for MinMaxAvgScalarEventBatchStreamItem {
     fn make_log_item(item: LogItem) -> Option<Self> {
         Some(MinMaxAvgScalarEventBatchStreamItem::Log(item))
     }
+
+    fn is_stats_item(&self) -> bool {
+        if let MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    fn stats_item(self) -> Option<EventDataReadStats> {
+        if let MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(item) = self {
+            Some(item)
+        } else {
+            None
+        }
+    }
+
+    fn make_stats_item(item: EventDataReadStats) -> Option<Self> {
+        Some(MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(item))
+    }
 }
 
 pub struct MinMaxAvgScalarEventBatchStreamItemAggregator {
     agg: MinMaxAvgScalarEventBatchAggregator,
-    event_data_read_stats: EventDataReadStats,
 }
 
 impl MinMaxAvgScalarEventBatchStreamItemAggregator {
     pub fn new(ts1: u64, ts2: u64) -> Self {
         let agg = <MinMaxAvgScalarEventBatch as AggregatableTdim>::aggregator_new_static(ts1, ts2);
-        Self {
-            agg,
-            event_data_read_stats: EventDataReadStats::new(),
-        }
+        Self { agg }
     }
 }
 
@@ -343,25 +371,19 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchStreamItemAggregator {
     fn ingest(&mut self, inp: &mut Self::InputValue) {
         match inp {
             MinMaxAvgScalarEventBatchStreamItem::Values(vals) => self.agg.ingest(vals),
-            MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats) => {
-                info!("33333333333      2222222222222222222222     see stats  {:?}", stats);
-                self.event_data_read_stats.trans(stats);
-            }
-            MinMaxAvgScalarEventBatchStreamItem::RangeComplete => {}
-            MinMaxAvgScalarEventBatchStreamItem::Log(_) => {}
+            MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(_) => panic!(),
+            MinMaxAvgScalarEventBatchStreamItem::RangeComplete => panic!(),
+            MinMaxAvgScalarEventBatchStreamItem::Log(_) => panic!(),
         }
     }
 
     fn result(self) -> Vec<Self::OutputValue> {
-        let mut ret: Vec<_> = self
+        let ret: Vec<_> = self
             .agg
             .result()
             .into_iter()
             .map(MinMaxAvgScalarBinBatchStreamItem::Values)
             .collect();
-        ret.push(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(
-            self.event_data_read_stats,
-        ));
         ret
     }
 }
