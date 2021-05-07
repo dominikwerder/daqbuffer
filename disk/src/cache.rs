@@ -40,6 +40,17 @@ pub enum CacheUsage {
     Recreate,
 }
 
+impl CacheUsage {
+    pub fn query_param_value(&self) -> String {
+        match self {
+            CacheUsage::Use => "use",
+            CacheUsage::Ignore => "ignore",
+            CacheUsage::Recreate => "recreate",
+        }
+        .into()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct BinnedQuery {
     range: NanoRange,

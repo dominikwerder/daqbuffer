@@ -49,4 +49,8 @@ pub struct BinnedClient {
     pub end: String,
     #[clap(long)]
     pub bins: u32,
+    #[clap(long)]
+    pub ignore_cache: bool,
+    #[clap(long)]
+    pub recreate_cache: bool,
 }

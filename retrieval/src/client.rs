@@ -1,5 +1,8 @@
 use chrono::{DateTime, Utc};
+use disk::agg::scalarbinbatch::MinMaxAvgScalarBinBatchStreamItem;
+use disk::cache::CacheUsage;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
+use disk::streamlog::Streamlog;
 use err::Error;
 use futures_util::TryStreamExt;
 use http::StatusCode;
@@ -15,12 +18,13 @@ pub async fn get_binned(
     beg_date: DateTime<Utc>,
     end_date: DateTime<Utc>,
     bin_count: u32,
+    cache_usage: CacheUsage,
 ) -> Result<(), Error> {
     info!("-------   get_binned  client");
     let t1 = Utc::now();
     let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
     let uri = format!(
-        "http://{}:{}/api/1/binned?channel_backend={}&channel_name={}&beg_date={}&end_date={}&bin_count={}",
+        "http://{}:{}/api/1/binned?channel_backend={}&channel_name={}&beg_date={}&end_date={}&bin_count={}&cache_usage={}",
         host,
         port,
         channel_backend,
@@ -28,6 +32,7 @@ pub async fn get_binned(
         beg_date.format(date_fmt),
         end_date.format(date_fmt),
         bin_count,
+        cache_usage.query_param_value(),
     );
     info!("get_binned  uri {:?}", uri);
     let req = hyper::Request::builder()
@@ -56,8 +61,18 @@ pub async fn get_binned(
                     match bincode::deserialize::<ExpectedType>(frame.buf()) {
                         Ok(item) => match item {
                             Ok(item) => {
-                                info!("len {}  item {:?}", n1, item);
-                                bin_count += 1;
+                                match &item {
+                                    MinMaxAvgScalarBinBatchStreamItem::Log(item) => {
+                                        Streamlog::emit(item);
+                                    }
+                                    MinMaxAvgScalarBinBatchStreamItem::Values(item) => {
+                                        bin_count += 1;
+                                        info!("len {}  values {:?}", n1, item);
+                                    }
+                                    item => {
+                                        info!("len {}  item {:?}", n1, item);
+                                    }
+                                }
                                 Some(Ok(item))
                             }
                             Err(e) => {

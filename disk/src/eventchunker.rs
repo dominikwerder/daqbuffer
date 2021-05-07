@@ -59,7 +59,7 @@ impl EventChunker {
             data_emit_complete: false,
             final_stats_sent: false,
             data_since_last_stats: 0,
-            stats_emit_interval: 64,
+            stats_emit_interval: 256,
             parsed_bytes: 0,
         }
     }
@@ -84,7 +84,7 @@ impl EventChunker {
             data_emit_complete: false,
             final_stats_sent: false,
             data_since_last_stats: 0,
-            stats_emit_interval: 64,
+            stats_emit_interval: 256,
             parsed_bytes: 0,
         }
     }

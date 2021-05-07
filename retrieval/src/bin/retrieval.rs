@@ -1,3 +1,4 @@
+use disk::cache::CacheUsage;
 use err::Error;
 use netpod::{NodeConfig, NodeConfigCached};
 use tokio::io::AsyncReadExt;
@@ -36,8 +37,24 @@ async fn go() -> Result<(), Error> {
             ClientType::Binned(opts) => {
                 let beg = opts.beg.parse()?;
                 let end = opts.end.parse()?;
-                retrieval::client::get_binned(opts.host, opts.port, opts.backend, opts.channel, beg, end, opts.bins)
-                    .await?;
+                let cache_usage = if opts.ignore_cache {
+                    CacheUsage::Ignore
+                } else if opts.recreate_cache {
+                    CacheUsage::Recreate
+                } else {
+                    CacheUsage::Use
+                };
+                retrieval::client::get_binned(
+                    opts.host,
+                    opts.port,
+                    opts.backend,
+                    opts.channel,
+                    beg,
+                    end,
+                    opts.bins,
+                    cache_usage,
+                )
+                .await?;
             }
         },
         SubCmd::GenerateTestData => {
