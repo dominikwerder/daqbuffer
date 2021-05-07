@@ -69,24 +69,11 @@ impl EventChunker {
         channel_config: ChannelConfig,
         range: NanoRange,
     ) -> Self {
-        let mut inp = NeedMinBuffer::new(inp);
-        inp.set_need_min(4);
-        Self {
-            inp,
-            state: DataFileState::Event,
-            need_min: 4,
-            channel_config,
-            errored: false,
-            completed: false,
-            range,
-            seen_beyond_range: false,
-            sent_beyond_range: false,
-            data_emit_complete: false,
-            final_stats_sent: false,
-            data_since_last_stats: 0,
-            stats_emit_interval: 256,
-            parsed_bytes: 0,
-        }
+        let mut ret = Self::from_start(inp, channel_config, range);
+        ret.state = DataFileState::Event;
+        ret.need_min = 4;
+        ret.inp.set_need_min(4);
+        ret
     }
 
     fn parse_buf(&mut self, buf: &mut BytesMut) -> Result<ParseResult, Error> {
