@@ -1,5 +1,4 @@
 use super::agg::IntoDim1F32Stream;
-use super::merge::MergeDim1F32Stream;
 use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::binnedx::IntoBinnedXBins1;
 use futures_util::StreamExt;
@@ -144,75 +143,4 @@ async fn agg_x_dim_1_inner() {
     })
     .for_each(|_k| ready(()));
     fut1.await;
-}
-
-#[test]
-fn merge_0() {
-    taskrun::run(async {
-        merge_0_inner().await;
-        Ok(())
-    })
-    .unwrap();
-}
-
-async fn merge_0_inner() {
-    let query = netpod::AggQuerySingleChannel {
-        channel_config: ChannelConfig {
-            channel: Channel {
-                backend: "ks".into(),
-                name: "wave1".into(),
-            },
-            keyspace: 3,
-            time_bin_size: Nanos { ns: DAY },
-            array: true,
-            shape: Shape::Wave(17),
-            scalar_type: ScalarType::F64,
-            big_endian: true,
-            compression: true,
-        },
-        timebin: 0,
-        tb_file_count: 1,
-        buffer_size: 1024 * 8,
-    };
-    let range: NanoRange = err::todoval();
-    let streams = (0..13)
-        .into_iter()
-        .map(|k| make_test_node(k))
-        .map(|node| {
-            super::eventblobs::EventBlobsComplete::new(
-                range.clone(),
-                query.channel_config.clone(),
-                node.clone(),
-                query.buffer_size as usize,
-            )
-            .into_dim_1_f32_stream()
-        })
-        .collect();
-    MergeDim1F32Stream::new(streams)
-        .map(|_k| {
-            //info!("NEXT MERGED ITEM  ts {:?}", k.as_ref().unwrap().tss);
-        })
-        .fold(0, |_k, _q| ready(0))
-        .await;
-}
-
-pub fn tmp_some_older_things() {
-    // I want to distinguish already in the outer part between dim-0 and dim-1 and generate
-    // separate code for these cases...
-    // That means that also the reading chain itself needs to be typed on that.
-    // Need to supply some event-payload converter type which has that type as Output type.
-    // Now the T-binning:
-
-    /*
-    T-aggregator must be able to produce empty-values of correct type even if we never get
-    a single value of input data.
-    Therefore, it needs the bin range definition.
-    How do I want to drive the system?
-    If I write the T-binner as a Stream, then I also need to pass it the input!
-    Meaning, I need to pass the Stream which produces the actual numbers from disk.
-
-    readchannel()  -> Stream of timestamped byte blobs
-    .to_f32()  -> Stream ?    indirection to branch on the underlying shape
-    .agg_x_bins_1()  -> Stream ?    can I keep it at the single indirection on the top level?
-    */
 }
