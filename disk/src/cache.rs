@@ -1,7 +1,7 @@
 use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
 use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatchStreamItem};
-use crate::binnedstream::{BinnedStream, BinnedStreamFromMerged};
+use crate::binnedstream::{BinnedStreamFromMerged, BinnedStreamFromPreBinnedPatches};
 use crate::cache::pbv::PreBinnedValueByteStream;
 use crate::cache::pbvfs::PreBinnedItem;
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
@@ -226,7 +226,7 @@ pub async fn binned_bytes_for_http(
                 );
                 return Err(Error::with_msg(msg));
             }
-            let s1 = BinnedStream::new(
+            let s1 = BinnedStreamFromPreBinnedPatches::new(
                 PreBinnedPatchIterator::from_range(pre_range),
                 query.channel.clone(),
                 range,
@@ -258,7 +258,7 @@ pub async fn binned_bytes_for_http(
     }
 }
 
-pub type BinnedBytesForHttpStreamFrame = <BinnedStream as Stream>::Item;
+pub type BinnedBytesForHttpStreamFrame = <BinnedStreamFromPreBinnedPatches as Stream>::Item;
 
 pub struct BinnedBytesForHttpStream<S> {
     inp: S,

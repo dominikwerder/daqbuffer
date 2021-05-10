@@ -11,11 +11,11 @@ use std::future::ready;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub struct BinnedStream {
+pub struct BinnedStreamFromPreBinnedPatches {
     inp: Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>> + Send>>,
 }
 
-impl BinnedStream {
+impl BinnedStreamFromPreBinnedPatches {
     pub fn new(
         patch_it: PreBinnedPatchIterator,
         channel: Channel,
@@ -87,7 +87,7 @@ impl BinnedStream {
     }
 }
 
-impl Stream for BinnedStream {
+impl Stream for BinnedStreamFromPreBinnedPatches {
     // TODO make this generic over all possible things
     type Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>;
 

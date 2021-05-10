@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use disk::cache::PreBinnedQuery;
+use disk::cache::{BinnedQuery, PreBinnedQuery};
 use disk::eventchunker::EventChunkerConf;
 use disk::raw::conn::raw_service;
 use err::Error;
@@ -200,6 +200,26 @@ where
 async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let query = disk::cache::BinnedQuery::from_request(&head)?;
+    match head.headers.get("accept") {
+        Some(v) if v == "application/octet-stream" => binned_binary(query, node_config).await,
+        _ => binned_json(query, node_config).await,
+    }
+}
+
+async fn binned_binary(query: BinnedQuery, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    info!("binned_binary");
+    let ret = match disk::cache::binned_bytes_for_http(node_config, &query).await {
+        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, format!("desc-BINNED")))?,
+        Err(e) => {
+            error!("fn binned: {:?}", e);
+            response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
+        }
+    };
+    Ok(ret)
+}
+
+async fn binned_json(query: BinnedQuery, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    info!("binned_json");
     let ret = match disk::cache::binned_bytes_for_http(node_config, &query).await {
         Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, format!("desc-BINNED")))?,
         Err(e) => {
