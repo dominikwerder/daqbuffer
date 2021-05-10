@@ -19,12 +19,13 @@ pub async fn get_binned(
     end_date: DateTime<Utc>,
     bin_count: u32,
     cache_usage: CacheUsage,
+    disk_stats_every_kb: u32,
 ) -> Result<(), Error> {
     info!("-------   get_binned  client");
     let t1 = Utc::now();
     let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
     let uri = format!(
-        "http://{}:{}/api/1/binned?channel_backend={}&channel_name={}&beg_date={}&end_date={}&bin_count={}&cache_usage={}",
+        "http://{}:{}/api/1/binned?channel_backend={}&channel_name={}&beg_date={}&end_date={}&bin_count={}&cache_usage={}&disk_stats_every_kb={}",
         host,
         port,
         channel_backend,
@@ -33,6 +34,7 @@ pub async fn get_binned(
         end_date.format(date_fmt),
         bin_count,
         cache_usage.query_param_value(),
+        disk_stats_every_kb,
     );
     info!("get_binned  uri {:?}", uri);
     let req = hyper::Request::builder()

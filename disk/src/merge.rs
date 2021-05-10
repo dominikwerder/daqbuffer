@@ -3,12 +3,11 @@ use crate::streamlog::LogItem;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use netpod::log::*;
 use netpod::EventDataReadStats;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-#[allow(unused_imports)]
-use tracing::{debug, error, info, trace, warn};
 
 pub struct MergedMinMaxAvgScalarStream<S>
 where

@@ -53,4 +53,6 @@ pub struct BinnedClient {
     pub ignore_cache: bool,
     #[clap(long)]
     pub recreate_cache: bool,
+    #[clap(long, default_value = "1048576")]
+    pub disk_stats_every_kb: u32,
 }

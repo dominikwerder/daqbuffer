@@ -10,7 +10,7 @@ use futures_util::TryStreamExt;
 use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
-use netpod::{Cluster, Database, Node, PerfOpts};
+use netpod::{ByteSize, Cluster, Database, Node, PerfOpts};
 use std::future::ready;
 use tokio::io::AsyncRead;
 
@@ -94,9 +94,10 @@ where
     let channel_backend = "testbackend";
     let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
     let perf_opts = PerfOpts { inmem_bufcap: 512 };
+    let disk_stats_every = ByteSize::kb(1024);
     // TODO have a function to form the uri, including perf opts:
     let uri = format!(
-        "http://{}:{}/api/1/binned?cache_usage=ignore&channel_backend={}&channel_name={}&bin_count={}&beg_date={}&end_date={}",
+        "http://{}:{}/api/1/binned?cache_usage=ignore&channel_backend={}&channel_name={}&bin_count={}&beg_date={}&end_date={}&disk_stats_every_kb={}",
         node0.host,
         node0.port,
         channel_backend,
@@ -104,6 +105,7 @@ where
         bin_count,
         beg_date.format(date_fmt),
         end_date.format(date_fmt),
+        disk_stats_every.bytes() / 1024,
     );
     info!("get_binned_channel  get {}", uri);
     let req = hyper::Request::builder()

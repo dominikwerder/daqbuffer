@@ -1,5 +1,5 @@
 use crate::dataopen::open_files;
-use crate::eventchunker::{EventChunker, EventChunkerItem};
+use crate::eventchunker::{EventChunker, EventChunkerConf, EventChunkerItem};
 use crate::file_content_stream;
 use err::Error;
 use futures_core::Stream;
@@ -14,17 +14,25 @@ pub struct EventBlobsComplete {
     file_chan: async_channel::Receiver<Result<File, Error>>,
     evs: Option<EventChunker>,
     buffer_size: usize,
+    event_chunker_conf: EventChunkerConf,
     range: NanoRange,
     errored: bool,
     completed: bool,
 }
 
 impl EventBlobsComplete {
-    pub fn new(range: NanoRange, channel_config: ChannelConfig, node: Node, buffer_size: usize) -> Self {
+    pub fn new(
+        range: NanoRange,
+        channel_config: ChannelConfig,
+        node: Node,
+        buffer_size: usize,
+        event_chunker_conf: EventChunkerConf,
+    ) -> Self {
         Self {
             file_chan: open_files(&range, &channel_config, node),
             evs: None,
             buffer_size,
+            event_chunker_conf,
             channel_config,
             range,
             errored: false,
@@ -62,6 +70,7 @@ impl Stream for EventBlobsComplete {
                                     inp,
                                     self.channel_config.clone(),
                                     self.range.clone(),
+                                    self.event_chunker_conf.clone(),
                                 );
                                 self.evs = Some(chunker);
                                 continue 'outer;

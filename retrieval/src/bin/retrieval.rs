@@ -53,6 +53,7 @@ async fn go() -> Result<(), Error> {
                     end,
                     opts.bins,
                     cache_usage,
+                    opts.disk_stats_every_kb,
                 )
                 .await?;
             }

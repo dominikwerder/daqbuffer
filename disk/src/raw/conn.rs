@@ -3,13 +3,14 @@ use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
 use crate::agg::IntoDim1F32Stream;
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
 use crate::eventblobs::EventBlobsComplete;
+use crate::eventchunker::EventChunkerConf;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{decode_frame, make_frame, make_term_frame};
 use crate::raw::{EventQueryJsonStringFrame, EventsQuery};
 use err::Error;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::{NodeConfigCached, PerfOpts, Shape};
+use netpod::{ByteSize, NodeConfigCached, PerfOpts, Shape};
 use std::net::SocketAddr;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
@@ -163,11 +164,13 @@ async fn raw_conn_handler_inner_try(
         // TODO use the requested buffer size
         buffer_size: 1024 * 4,
     };
+    let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     let mut s1 = EventBlobsComplete::new(
         range.clone(),
         query.channel_config.clone(),
         node_config.node.clone(),
         query.buffer_size as usize,
+        event_chunker_conf,
     )
     .into_dim_1_f32_stream()
     .into_binned_x_bins_1()

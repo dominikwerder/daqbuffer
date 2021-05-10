@@ -136,7 +136,7 @@ impl PreBinnedValueStream {
             error!("try_setup_fetch_prebinned_higher_res  g {}  h {}", g, h);
             return;
         }
-        if g / h > 200 {
+        if g / h > 1024 * 10 {
             error!("try_setup_fetch_prebinned_higher_res  g {}  h {}", g, h);
             return;
         }
@@ -149,12 +149,14 @@ impl PreBinnedValueStream {
         let s = futures_util::stream::iter(patch_it)
             .map({
                 let q2 = self.query.clone();
+                let disk_stats_every = self.query.disk_stats_every.clone();
                 move |patch| {
                     let query = PreBinnedQuery {
                         patch,
                         channel: q2.channel.clone(),
                         agg_kind: q2.agg_kind.clone(),
                         cache_usage: q2.cache_usage.clone(),
+                        disk_stats_every: disk_stats_every.clone(),
                     };
                     PreBinnedValueFetchedStream::new(&query, &node_config)
                 }

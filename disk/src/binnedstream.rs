@@ -6,7 +6,7 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 #[allow(unused_imports)]
 use netpod::log::*;
-use netpod::{AggKind, BinnedRange, Channel, NodeConfigCached, PreBinnedPatchIterator};
+use netpod::{AggKind, BinnedRange, ByteSize, Channel, NodeConfigCached, PreBinnedPatchIterator};
 use std::future::ready;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -23,6 +23,7 @@ impl BinnedStream {
         agg_kind: AggKind,
         cache_usage: CacheUsage,
         node_config: &NodeConfigCached,
+        disk_stats_every: ByteSize,
     ) -> Result<Self, Error> {
         let patches: Vec<_> = patch_it.collect();
         let mut sp = String::new();
@@ -36,7 +37,13 @@ impl BinnedStream {
             .map({
                 let node_config = node_config.clone();
                 move |patch| {
-                    let query = PreBinnedQuery::new(patch, channel.clone(), agg_kind.clone(), cache_usage.clone());
+                    let query = PreBinnedQuery::new(
+                        patch,
+                        channel.clone(),
+                        agg_kind.clone(),
+                        cache_usage.clone(),
+                        disk_stats_every.clone(),
+                    );
                     let s: Pin<Box<dyn Stream<Item = _> + Send>> =
                         match PreBinnedValueFetchedStream::new(&query, &node_config) {
                             Ok(k) => Box::pin(k),

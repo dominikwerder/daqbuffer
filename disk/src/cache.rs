@@ -15,7 +15,7 @@ use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
 use hyper::Response;
 use netpod::{
-    AggKind, BinnedRange, Channel, Cluster, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchCoord,
+    AggKind, BinnedRange, ByteSize, Channel, Cluster, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchCoord,
     PreBinnedPatchIterator, PreBinnedPatchRange, ToNanos,
 };
 use serde::{Deserialize, Serialize};
@@ -58,6 +58,7 @@ pub struct BinnedQuery {
     agg_kind: AggKind,
     channel: Channel,
     cache_usage: CacheUsage,
+    disk_stats_every: ByteSize,
 }
 
 impl BinnedQuery {
@@ -65,6 +66,12 @@ impl BinnedQuery {
         let params = netpod::query_params(req.uri.query());
         let beg_date = params.get("beg_date").ok_or(Error::with_msg("missing beg_date"))?;
         let end_date = params.get("end_date").ok_or(Error::with_msg("missing end_date"))?;
+        let disk_stats_every = params
+            .get("disk_stats_every_kb")
+            .ok_or(Error::with_msg("missing disk_stats_every_kb"))?;
+        let disk_stats_every = disk_stats_every
+            .parse()
+            .map_err(|e| Error::with_msg(format!("can not parse disk_stats_every_kb {:?}", e)))?;
         let ret = BinnedQuery {
             range: NanoRange {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
@@ -78,6 +85,7 @@ impl BinnedQuery {
             agg_kind: AggKind::DimXBins1,
             channel: channel_from_params(&params)?,
             cache_usage: cache_usage_from_params(&params)?,
+            disk_stats_every: ByteSize::kb(disk_stats_every),
         };
         info!("BinnedQuery::from_request  {:?}", ret);
         Ok(ret)
@@ -90,15 +98,23 @@ pub struct PreBinnedQuery {
     agg_kind: AggKind,
     channel: Channel,
     cache_usage: CacheUsage,
+    disk_stats_every: ByteSize,
 }
 
 impl PreBinnedQuery {
-    pub fn new(patch: PreBinnedPatchCoord, channel: Channel, agg_kind: AggKind, cache_usage: CacheUsage) -> Self {
+    pub fn new(
+        patch: PreBinnedPatchCoord,
+        channel: Channel,
+        agg_kind: AggKind,
+        cache_usage: CacheUsage,
+        disk_stats_every: ByteSize,
+    ) -> Self {
         Self {
             patch,
             agg_kind,
             channel,
             cache_usage,
+            disk_stats_every,
         }
     }
 
@@ -112,11 +128,18 @@ impl PreBinnedQuery {
             .get("bin_t_len")
             .ok_or(Error::with_msg("missing bin_t_len"))?
             .parse()?;
+        let disk_stats_every = params
+            .get("disk_stats_every_kb")
+            .ok_or(Error::with_msg("missing disk_stats_every_kb"))?;
+        let disk_stats_every = disk_stats_every
+            .parse()
+            .map_err(|e| Error::with_msg(format!("can not parse disk_stats_every_kb {:?}", e)))?;
         let ret = PreBinnedQuery {
             patch: PreBinnedPatchCoord::new(bin_t_len, patch_ix),
             agg_kind: AggKind::DimXBins1,
             channel: channel_from_params(&params)?,
             cache_usage: cache_usage_from_params(&params)?,
+            disk_stats_every: ByteSize::kb(disk_stats_every),
         };
         Ok(ret)
     }
@@ -128,12 +151,13 @@ impl PreBinnedQuery {
             CacheUsage::Recreate => "recreate",
         };
         format!(
-            "{}&channel_backend={}&channel_name={}&agg_kind={:?}&cache_usage={}",
+            "{}&channel_backend={}&channel_name={}&agg_kind={:?}&cache_usage={}&disk_stats_every_kb={}",
             self.patch.to_url_params_strings(),
             self.channel.backend,
             self.channel.name,
             self.agg_kind,
             cache_usage,
+            self.disk_stats_every.bytes() / 1024,
         )
     }
 
@@ -209,6 +233,7 @@ pub async fn binned_bytes_for_http(
                 query.agg_kind.clone(),
                 query.cache_usage.clone(),
                 node_config,
+                query.disk_stats_every.clone(),
             )?;
             let ret = BinnedBytesForHttpStream::new(s1);
             Ok(Box::pin(ret))

@@ -1,5 +1,6 @@
 use crate::dataopen::open_files;
 use crate::dtflags::{ARRAY, BIG_ENDIAN, COMPRESSION, SHAPE};
+use crate::eventchunker::EventChunkerConf;
 use bytes::{Bytes, BytesMut};
 use err::Error;
 use futures_core::Stream;
@@ -333,7 +334,11 @@ pub fn file_content_stream(
     }
 }
 
-pub fn parsed1(query: &netpod::AggQuerySingleChannel, node: &Node) -> impl Stream<Item = Result<Bytes, Error>> + Send {
+pub fn parsed1(
+    query: &netpod::AggQuerySingleChannel,
+    node: &Node,
+    stats_conf: EventChunkerConf,
+) -> impl Stream<Item = Result<Bytes, Error>> + Send {
     let query = query.clone();
     let node = node.clone();
     async_stream::stream! {
@@ -343,7 +348,7 @@ pub fn parsed1(query: &netpod::AggQuerySingleChannel, node: &Node) -> impl Strea
                 Ok(file) => {
                     let inp = Box::pin(file_content_stream(file, query.buffer_size as usize));
                     let range = err::todoval();
-                    let mut chunker = eventchunker::EventChunker::from_event_boundary(inp, err::todoval(), range);
+                    let mut chunker = eventchunker::EventChunker::from_event_boundary(inp, err::todoval(), range, stats_conf.clone());
                     while let Some(evres) = chunker.next().await {
                         use eventchunker::EventChunkerItem;
                         match evres {

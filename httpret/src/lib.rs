@@ -1,5 +1,6 @@
 use bytes::Bytes;
 use disk::cache::PreBinnedQuery;
+use disk::eventchunker::EventChunkerConf;
 use disk::raw::conn::raw_service;
 use err::Error;
 use future::Future;
@@ -9,7 +10,7 @@ use http::{HeaderMap, Method, StatusCode};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
-use netpod::{Node, NodeConfigCached};
+use netpod::{ByteSize, Node, NodeConfigCached};
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
 use std::{future, net, panic, pin, task};
@@ -123,22 +124,9 @@ async fn parsed_raw(req: Request<Body>, node: &Node) -> Result<Response<Body>, E
     let reqbody = req.into_body();
     let bodyslice = hyper::body::to_bytes(reqbody).await?;
     let query: AggQuerySingleChannel = serde_json::from_slice(&bodyslice)?;
-    //let q = disk::read_test_1(&query).await?;
-    //let s = q.inner;
-    let s = disk::parsed1(&query, node);
+    let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
+    let s = disk::parsed1(&query, node, event_chunker_conf);
     let res = response(StatusCode::OK).body(Body::wrap_stream(s))?;
-    /*
-    let res = match q {
-        Ok(k) => {
-            response(StatusCode::OK)
-                .body(Body::wrap_stream(k.inner))?
-        }
-        Err(e) => {
-            response(StatusCode::INTERNAL_SERVER_ERROR)
-                .body(Body::empty())?
-        }
-    };
-    */
     Ok(res)
 }
 

@@ -246,14 +246,13 @@ pub mod timeunits {
     pub const MIN: u64 = SEC * 60;
     pub const HOUR: u64 = MIN * 60;
     pub const DAY: u64 = HOUR * 24;
-    pub const WEEK: u64 = DAY * 7;
 }
 
-const BIN_T_LEN_OPTIONS: [u64; 6] = [SEC * 10, MIN * 10, HOUR, HOUR * 4, DAY, DAY * 4];
+const BIN_T_LEN_OPTIONS: [u64; 3] = [SEC, MIN * 10, HOUR * 2];
 
-const PATCH_T_LEN_OPTIONS: [u64; 6] = [MIN * 10, HOUR, HOUR * 4, DAY, DAY * 4, DAY * 12];
+const PATCH_T_LEN_OPTIONS: [u64; 3] = [MIN * 20, HOUR * 12, DAY * 16];
 
-const BIN_THRESHOLDS: [u64; 33] = [
+const BIN_THRESHOLDS: [u64; 31] = [
     2,
     10,
     100,
@@ -283,10 +282,8 @@ const BIN_THRESHOLDS: [u64; 33] = [
     DAY * 4,
     DAY * 8,
     DAY * 16,
-    WEEK,
-    WEEK * 2,
-    WEEK * 10,
-    WEEK * 60,
+    DAY * 32,
+    DAY * 64,
 ];
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -671,4 +668,22 @@ impl EventDataReadStats {
 #[derive(Clone, Debug)]
 pub struct PerfOpts {
     pub inmem_bufcap: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct ByteSize(u32);
+
+impl ByteSize {
+    pub fn b(b: u32) -> Self {
+        Self(b)
+    }
+    pub fn kb(kb: u32) -> Self {
+        Self(1024 * kb)
+    }
+    pub fn mb(mb: u32) -> Self {
+        Self(1024 * 1024 * mb)
+    }
+    pub fn bytes(&self) -> u32 {
+        self.0
+    }
 }
