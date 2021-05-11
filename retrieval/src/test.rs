@@ -14,6 +14,8 @@ use netpod::{ByteSize, Cluster, Database, Node, PerfOpts};
 use std::future::ready;
 use tokio::io::AsyncRead;
 
+pub mod json;
+
 fn test_cluster() -> Cluster {
     let nodes = (0..3)
         .into_iter()
@@ -150,7 +152,7 @@ where
         .filter_map(|item| {
             let g = match item {
                 Ok(frame) => {
-                    type ExpectedType = disk::cache::BinnedBytesForHttpStreamFrame;
+                    type ExpectedType = disk::binned::BinnedBytesForHttpStreamFrame;
                     //info!("TEST GOT FRAME  len {}", frame.buf().len());
                     match bincode::deserialize::<ExpectedType>(frame.buf()) {
                         Ok(item) => match item {

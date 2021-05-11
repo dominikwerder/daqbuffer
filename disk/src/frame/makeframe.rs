@@ -1,5 +1,5 @@
+use crate::binned::BinnedBytesForHttpStreamFrame;
 use crate::cache::pbvfs::PreBinnedItem;
-use crate::cache::BinnedBytesForHttpStreamFrame;
 use crate::frame::inmem::InMemoryFrame;
 use crate::raw::conn::RawConnOut;
 use crate::raw::EventQueryJsonStringFrame;

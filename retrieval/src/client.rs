@@ -58,7 +58,7 @@ pub async fn get_binned(
         .filter_map(|item| {
             let g = match item {
                 Ok(frame) => {
-                    type ExpectedType = disk::cache::BinnedBytesForHttpStreamFrame;
+                    type ExpectedType = disk::binned::BinnedBytesForHttpStreamFrame;
                     let n1 = frame.buf().len();
                     match bincode::deserialize::<ExpectedType>(frame.buf()) {
                         Ok(item) => match item {

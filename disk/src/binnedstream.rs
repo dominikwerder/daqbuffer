@@ -96,11 +96,11 @@ impl Stream for BinnedStreamFromPreBinnedPatches {
     }
 }
 
-pub struct BinnedStreamFromMerged {
+pub struct BinnedStream {
     inp: Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>> + Send>>,
 }
 
-impl BinnedStreamFromMerged {
+impl BinnedStream {
     pub fn new(
         inp: Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>> + Send>>,
     ) -> Result<Self, Error> {
@@ -108,7 +108,7 @@ impl BinnedStreamFromMerged {
     }
 }
 
-impl Stream for BinnedStreamFromMerged {
+impl Stream for BinnedStream {
     // TODO make this generic over all possible things
     type Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>;
 
