@@ -10,6 +10,28 @@ use hyper::Body;
 use netpod::log::*;
 use netpod::PerfOpts;
 
+pub async fn status(host: String, port: u16) -> Result<(), Error> {
+    let t1 = Utc::now();
+    let uri = format!("http://{}:{}/api/1/node_status", host, port,);
+    let req = hyper::Request::builder()
+        .method(http::Method::GET)
+        .uri(uri)
+        .body(Body::empty())?;
+    let client = hyper::Client::new();
+    let res = client.request(req).await?;
+    if res.status() != StatusCode::OK {
+        error!("Server error  {:?}", res);
+        return Err(Error::with_msg(format!("Server error  {:?}", res)));
+    }
+    let body = hyper::body::to_bytes(res.into_body()).await?;
+    let res = String::from_utf8(body.to_vec())?;
+    let t2 = chrono::Utc::now();
+    let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
+    info!("node_status DONE  duration: {} ms", ms);
+    println!("{}", res);
+    Ok(())
+}
+
 pub async fn get_binned(
     host: String,
     port: u16,

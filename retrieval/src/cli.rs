@@ -31,6 +31,15 @@ pub struct Client {
 #[derive(Debug, Clap)]
 pub enum ClientType {
     Binned(BinnedClient),
+    Status(StatusClient),
+}
+
+#[derive(Debug, Clap)]
+pub struct StatusClient {
+    #[clap(long)]
+    pub host: String,
+    #[clap(long)]
+    pub port: u16,
 }
 
 #[derive(Debug, Clap)]

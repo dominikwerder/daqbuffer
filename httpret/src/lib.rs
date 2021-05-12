@@ -13,6 +13,7 @@ use net::SocketAddr;
 use netpod::{ByteSize, Node, NodeConfigCached};
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
+use serde::{Deserialize, Serialize};
 use std::{future, net, panic, pin, task};
 use task::{Context, Poll};
 use tracing::field::Empty;
@@ -85,7 +86,13 @@ impl<F> UnwindSafe for Cont<F> {}
 async fn data_api_proxy_try(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let uri = req.uri().clone();
     let path = uri.path();
-    if path == "/api/1/parsed_raw" {
+    if path == "/api/1/node_status" {
+        if req.method() == Method::GET {
+            Ok(node_status(req, &node_config).await?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    } else if path == "/api/1/parsed_raw" {
         if req.method() == Method::POST {
             Ok(parsed_raw(req, &node_config.node).await?)
         } else {
@@ -255,4 +262,19 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
         };
         Ok(ret)
     })
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NodeStatus {
+    database_size: u64,
+}
+
+async fn node_status(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    let (_head, _body) = req.into_parts();
+    let ret = NodeStatus {
+        database_size: dbconn::database_size(node_config).await?,
+    };
+    let ret = serde_json::to_vec(&ret)?;
+    let ret = response(StatusCode::OK).body(Body::from(ret))?;
+    Ok(ret)
 }

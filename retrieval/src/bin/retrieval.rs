@@ -34,6 +34,9 @@ async fn go() -> Result<(), Error> {
             retrieval::run_node(node_config.clone()).await?;
         }
         SubCmd::Client(client) => match client.client_type {
+            ClientType::Status(opts) => {
+                retrieval::client::status(opts.host, opts.port).await?;
+            }
             ClientType::Binned(opts) => {
                 let beg = opts.beg.parse()?;
                 let end = opts.end.parse()?;
