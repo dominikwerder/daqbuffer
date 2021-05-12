@@ -6,6 +6,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::future::FusedFuture;
 use futures_util::{pin_mut, select, FutureExt, StreamExt};
+use netpod::log::*;
 use netpod::{ChannelConfig, NanoRange, Node, Shape};
 use std::future::Future;
 use std::path::PathBuf;
@@ -14,8 +15,6 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::AsyncRead;
-#[allow(unused_imports)]
-use tracing::{debug, error, info, span, trace, warn, Level};
 
 pub mod agg;
 #[cfg(test)]

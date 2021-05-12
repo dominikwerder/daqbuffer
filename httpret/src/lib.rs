@@ -92,6 +92,18 @@ async fn data_api_proxy_try(req: Request<Body>, node_config: &NodeConfigCached) 
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if path == "/api/1/table_sizes" {
+        if req.method() == Method::GET {
+            Ok(table_sizes(req, &node_config).await?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    } else if path == "/api/1/random_channel" {
+        if req.method() == Method::GET {
+            Ok(random_channel(req, &node_config).await?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
     } else if path == "/api/1/parsed_raw" {
         if req.method() == Method::POST {
             Ok(parsed_raw(req, &node_config.node).await?)
@@ -275,6 +287,25 @@ async fn node_status(req: Request<Body>, node_config: &NodeConfigCached) -> Resu
         database_size: dbconn::database_size(node_config).await?,
     };
     let ret = serde_json::to_vec(&ret)?;
+    let ret = response(StatusCode::OK).body(Body::from(ret))?;
+    Ok(ret)
+}
+
+async fn table_sizes(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    let (_head, _body) = req.into_parts();
+    let sizes = dbconn::table_sizes(node_config).await?;
+    let mut ret = String::new();
+    for size in sizes.sizes {
+        use std::fmt::Write;
+        write!(ret, "{:60} {:20}\n", size.0, size.1)?;
+    }
+    let ret = response(StatusCode::OK).body(Body::from(ret))?;
+    Ok(ret)
+}
+
+pub async fn random_channel(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    let (_head, _body) = req.into_parts();
+    let ret = dbconn::random_channel(node_config).await?;
     let ret = response(StatusCode::OK).body(Body::from(ret))?;
     Ok(ret)
 }

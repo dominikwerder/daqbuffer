@@ -49,3 +49,40 @@ pub async fn database_size(node_config: &NodeConfigCached) -> Result<u64, Error>
     let size = size as u64;
     Ok(size)
 }
+
+pub struct TableSizes {
+    pub sizes: Vec<(String, String)>,
+}
+
+pub async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, Error> {
+    let sql = format!(
+        "{} {} {} {} {} {} {}",
+        "SELECT nspname || '.' || relname AS relation, pg_size_pretty(pg_total_relation_size(C.oid)) AS total_size",
+        "FROM pg_class C",
+        "LEFT JOIN pg_namespace N ON (N.oid = C.relnamespace)",
+        "WHERE nspname NOT IN ('pg_catalog', 'information_schema')",
+        "AND C.relkind <> 'i'",
+        "AND nspname !~ '^pg_toast'",
+        "ORDER BY pg_total_relation_size(C.oid) DESC LIMIT 20",
+    );
+    let sql = sql.as_str();
+    let cl = create_connection(node_config).await?;
+    let rows = cl.query(sql, &[]).await?;
+    let mut sizes = TableSizes { sizes: vec![] };
+    for row in rows {
+        sizes.sizes.push((row.get(0), row.get(1)));
+    }
+    sizes.sizes.push((format!("dummy0"), format!("A")));
+    sizes.sizes.push((format!("dummy1"), format!("B")));
+    Ok(sizes)
+}
+
+pub async fn random_channel(node_config: &NodeConfigCached) -> Result<String, Error> {
+    let sql = "select name from channels order by rowid limit 1 offset (random() * (select count(rowid) from channels))::bigint";
+    let cl = create_connection(node_config).await?;
+    let rows = cl.query(sql, &[]).await?;
+    if rows.len() == 0 {
+        Err(Error::with_msg("can not get random channel"))?;
+    }
+    Ok(rows[0].get(0))
+}

@@ -5,7 +5,6 @@ use futures_util::StreamExt;
 use netpod::log::*;
 use netpod::timeunits::MS;
 use netpod::{ChannelConfig, NanoRange, Nanos, Node};
-use std::mem::size_of;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, ErrorKind, SeekFrom};
 
@@ -38,7 +37,6 @@ async fn open_files_inner(
     node: Node,
 ) -> Result<(), Error> {
     let channel_config = channel_config.clone();
-    // TODO  reduce usage of `query` and see what we actually need.
     let mut timebins = vec![];
     {
         let rd = tokio::fs::read_dir(paths::channel_timebins_dir_path(&channel_config, &node)?).await?;
@@ -74,7 +72,6 @@ async fn open_files_inner(
         debug!("opening path {:?}", &path);
         let mut file = OpenOptions::new().read(true).open(&path).await?;
         debug!("opened file {:?}  {:?}", &path, &file);
-
         {
             let index_path = paths::index_path(ts_bin, &channel_config, &node)?;
             match OpenOptions::new().read(true).open(&index_path).await {
@@ -105,7 +102,7 @@ async fn open_files_inner(
                     buf.resize(buf.capacity(), 0);
                     debug!("read exact index file  {}  {}", buf.len(), buf.len() % 16);
                     index_file.read_exact(&mut buf).await?;
-                    match find_ge(range.beg, &buf[2..])? {
+                    match super::index::find_ge(range.beg, &buf[2..])? {
                         Some(o) => {
                             debug!("FOUND ts IN INDEX: {:?}", o);
                             file.seek(SeekFrom::Start(o.1)).await?;
@@ -118,65 +115,15 @@ async fn open_files_inner(
                 }
                 Err(e) => match e.kind() {
                     ErrorKind::NotFound => {
-                        // TODO Read first 1k, assume that channel header fits.
-                        // TODO Seek via binary search. Can not read whole file into memory!
-                        error!("TODO Seek directly in scalar file");
-                        todo!("Seek directly in scalar file");
+                        file = super::index::position_file(file, range.beg).await?;
                     }
                     _ => Err(e)?,
                 },
             }
         }
-
-        // TODO Since I want to seek into the data file, the consumer of this channel must not expect a file channel name header.
-
         chtx.send(Ok(file)).await?;
     }
     // TODO keep track of number of running
     debug!("open_files_inner done");
     Ok(())
-}
-
-fn find_ge(h: u64, buf: &[u8]) -> Result<Option<(u64, u64)>, Error> {
-    trace!("find_ge {}", h);
-    const N: usize = 2 * size_of::<u64>();
-    let n1 = buf.len();
-    if n1 % N != 0 {
-        return Err(Error::with_msg(format!("find_ge  bad len {}", n1)));
-    }
-    if n1 == 0 {
-        warn!("Empty index data");
-        return Ok(None);
-    }
-    let n1 = n1 / N;
-    let a = unsafe {
-        let ptr = &buf[0] as *const u8 as *const ([u8; 8], [u8; 8]);
-        std::slice::from_raw_parts(ptr, n1)
-    };
-    let mut j = 0;
-    let mut k = n1 - 1;
-    let x = u64::from_be_bytes(a[j].0);
-    let y = u64::from_be_bytes(a[k].0);
-    trace!("first/last ts:  {}  {}", x, y);
-    if x >= h {
-        return Ok(Some((u64::from_be_bytes(a[j].0), u64::from_be_bytes(a[j].1))));
-    }
-    if y < h {
-        return Ok(None);
-    }
-    loop {
-        if k - j < 2 {
-            let ret = (u64::from_be_bytes(a[k].0), u64::from_be_bytes(a[k].1));
-            trace!("FOUND  {:?}", ret);
-            return Ok(Some(ret));
-        }
-        let m = (k + j) / 2;
-        let x = u64::from_be_bytes(a[m].0);
-        trace!("CHECK NEW M: {}", x);
-        if x < h {
-            j = m;
-        } else {
-            k = m;
-        }
-    }
 }

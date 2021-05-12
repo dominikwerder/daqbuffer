@@ -109,15 +109,16 @@ where
             let tyid = u32::from_le_bytes(*arrayref::array_ref![buf, 8, 4]);
             let len = u32::from_le_bytes(*arrayref::array_ref![buf, 12, 4]);
             if magic != INMEM_FRAME_MAGIC {
-                error!("InMemoryFrameAsyncReadStream  tryparse  incorrect magic: {}", magic);
-                return (
-                    Some(Some(Err(Error::with_msg(format!(
-                        "InMemoryFrameAsyncReadStream  tryparse  incorrect magic: {}",
-                        magic
-                    ))))),
-                    buf,
-                    wp,
+                let z = nb.min(32);
+                let u = String::from_utf8_lossy(&buf[0..z]);
+                let e = Error::with_msg("INCORRECT MAGIC");
+                error!("incorrect magic  buf as utf8: {:?}  error: {:?}", u, e);
+                let msg = format!(
+                    "InMemoryFrameAsyncReadStream  tryparse  incorrect magic: {}  buf as utf8: {:?}",
+                    magic, u
                 );
+                error!("{}", msg);
+                return (Some(Some(Err(Error::with_msg(format!("{}", msg))))), buf, wp);
             }
             if len == 0 {
                 if nb != INMEM_FRAME_HEAD + INMEM_FRAME_FOOT {

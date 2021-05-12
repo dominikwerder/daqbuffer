@@ -6,6 +6,7 @@ use super::eventchunker::EventFull;
 use crate::agg::binnedt::AggregatableTdim;
 use crate::agg::eventbatch::{MinMaxAvgScalarEventBatch, MinMaxAvgScalarEventBatchStreamItem};
 use crate::eventchunker::EventChunkerItem;
+use bytes::BytesMut;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -307,6 +308,61 @@ pub struct Dim1F32Stream<S> {
     completed: bool,
 }
 
+trait NumEx {
+    const BY: usize;
+}
+
+struct NumF32;
+impl NumEx for NumF32 {
+    const BY: usize = 4;
+}
+
+macro_rules! make_get_values {
+    ($n:ident, $TY:ident, $FROM_BYTES:ident, $BY:expr) => {
+        fn $n(decomp: &BytesMut, ty: &ScalarType) -> Result<Vec<f32>, Error> {
+            let n1 = decomp.len();
+            if ty.bytes() as usize != $BY {
+                Err(Error::with_msg(format!(
+                    "ty.bytes() != BY  {} vs {}",
+                    ty.bytes(),
+                    $BY
+                )))?;
+            }
+            if n1 % ty.bytes() as usize != 0 {
+                Err(Error::with_msg(format!(
+                    "n1 % ty.bytes() as usize != 0  {} vs {}",
+                    n1,
+                    ty.bytes()
+                )))?;
+            }
+            let ele_count = n1 / ty.bytes() as usize;
+            let mut j = Vec::with_capacity(ele_count);
+            let mut p2 = j.as_mut_ptr();
+            let mut p1 = 0;
+            for _ in 0..ele_count {
+                unsafe {
+                    let mut r = [0u8; $BY];
+                    std::ptr::copy_nonoverlapping(&decomp[p1], r.as_mut_ptr(), $BY);
+                    *p2 = $TY::$FROM_BYTES(r) as f32;
+                    p1 += $BY;
+                    p2 = p2.add(1);
+                };
+            }
+            unsafe {
+                j.set_len(ele_count);
+            }
+            Ok(j)
+        }
+    };
+}
+
+make_get_values!(get_values_u16_le, u16, from_le_bytes, 2);
+make_get_values!(get_values_f32_le, f32, from_le_bytes, 4);
+make_get_values!(get_values_f64_le, f64, from_le_bytes, 8);
+make_get_values!(get_values_u16_be, u16, from_be_bytes, 2);
+make_get_values!(get_values_f32_be, f32, from_be_bytes, 4);
+make_get_values!(get_values_f64_be, f64, from_be_bytes, 8);
+
 impl<S> Dim1F32Stream<S> {
     pub fn new(inp: S) -> Self {
         Self {
@@ -322,51 +378,38 @@ impl<S> Dim1F32Stream<S> {
         for i1 in 0..k.tss.len() {
             // TODO iterate sibling arrays after single bounds check
             let ty = &k.scalar_types[i1];
+            let be = k.be[i1];
             let decomp = k.decomps[i1].as_ref().unwrap();
             match ty {
-                U16 => {
-                    const BY: usize = 2;
-                    // do the conversion
-                    let n1 = decomp.len();
-                    assert!(n1 % ty.bytes() as usize == 0);
-                    let ele_count = n1 / ty.bytes() as usize;
-                    let mut j = Vec::with_capacity(ele_count);
-                    let mut p1 = 0;
-                    for _ in 0..ele_count {
-                        let u = unsafe {
-                            let mut r = [0u8; BY];
-                            std::ptr::copy_nonoverlapping(&decomp[p1], r.as_mut_ptr(), BY);
-                            u16::from_be_bytes(r)
-                        };
-                        j.push(u as f32);
-                        p1 += BY;
-                    }
+                U16 if be => {
+                    let value = get_values_u16_be(decomp, ty)?;
                     ret.tss.push(k.tss[i1]);
-                    ret.values.push(j);
+                    ret.values.push(value);
+                }
+                U16 => {
+                    let value = get_values_u16_le(decomp, ty)?;
+                    ret.tss.push(k.tss[i1]);
+                    ret.values.push(value);
+                }
+                F32 if be => {
+                    let value = get_values_f32_be(decomp, ty)?;
+                    ret.tss.push(k.tss[i1]);
+                    ret.values.push(value);
+                }
+                F32 => {
+                    let value = get_values_f32_le(decomp, ty)?;
+                    ret.tss.push(k.tss[i1]);
+                    ret.values.push(value);
+                }
+                F64 if be => {
+                    let value = get_values_f64_be(decomp, ty)?;
+                    ret.tss.push(k.tss[i1]);
+                    ret.values.push(value);
                 }
                 F64 => {
-                    const BY: usize = 8;
-                    // do the conversion
-                    let n1 = decomp.len();
-                    assert!(n1 % ty.bytes() as usize == 0);
-                    let ele_count = n1 / ty.bytes() as usize;
-                    let mut j = Vec::with_capacity(ele_count);
-                    unsafe {
-                        j.set_len(ele_count);
-                    }
-                    let mut p1 = 0;
-                    for i1 in 0..ele_count {
-                        let u = unsafe {
-                            let mut r = [0u8; BY];
-                            std::ptr::copy_nonoverlapping(&decomp[p1], r.as_mut_ptr(), BY);
-                            f64::from_be_bytes(r)
-                            //f64::from_be_bytes(std::mem::transmute::<_, [u8; 8]>(&decomp[p1]))
-                        };
-                        j[i1] = u as f32;
-                        p1 += BY;
-                    }
+                    let value = get_values_f64_le(decomp, ty)?;
                     ret.tss.push(k.tss[i1]);
-                    ret.values.push(j);
+                    ret.values.push(value);
                 }
                 _ => {
                     let e = Error::with_msg(format!("Dim1F32Stream  unhandled scalar type: {:?}", ty));

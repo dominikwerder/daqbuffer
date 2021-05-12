@@ -48,7 +48,10 @@ fn fmt_backtrace(trace: &backtrace::Backtrace) -> String {
         for sy in fr.symbols() {
             let is_ours = match sy.filename() {
                 None => false,
-                Some(s) => s.to_str().unwrap().contains("dev/daqbuffer"),
+                Some(s) => {
+                    let s = s.to_str().unwrap();
+                    s.contains("dev/daqbuffer/") || s.contains("/retrsbld/")
+                }
             };
             let name = match sy.name() {
                 Some(k) => k.to_string(),

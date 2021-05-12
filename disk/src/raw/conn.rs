@@ -173,18 +173,7 @@ async fn raw_conn_handler_inner_try(
         event_chunker_conf,
     )
     .into_dim_1_f32_stream()
-    .into_binned_x_bins_1()
-    .map(|k| {
-        if false {
-            match &k {
-                Ok(MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats)) => {
-                    info!("raw::conn  ✑  ✑  ✑  ✑  ✑  ✑  seeing stats:   {:?}", stats);
-                }
-                _ => {}
-            }
-        }
-        k
-    });
+    .into_binned_x_bins_1();
     let mut e = 0;
     while let Some(item) = s1.next().await {
         match &item {

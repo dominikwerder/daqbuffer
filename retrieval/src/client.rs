@@ -62,6 +62,7 @@ pub async fn get_binned(
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(uri)
+        .header("aCCepT", "application/octet-stream")
         .body(Body::empty())?;
     let client = hyper::Client::new();
     let res = client.request(req).await?;

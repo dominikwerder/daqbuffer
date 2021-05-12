@@ -160,7 +160,7 @@ impl EventChunker {
                         use super::dtflags::*;
                         let is_compressed = type_flags & COMPRESSION != 0;
                         let is_array = type_flags & ARRAY != 0;
-                        let _is_big_endian = type_flags & BIG_ENDIAN != 0;
+                        let is_big_endian = type_flags & BIG_ENDIAN != 0;
                         let is_shaped = type_flags & SHAPE != 0;
                         if let Shape::Wave(_) = self.channel_config.shape {
                             assert!(is_array);
@@ -228,6 +228,7 @@ impl EventChunker {
                                             pulse,
                                             Some(decomp),
                                             ScalarType::from_dtype_index(type_index)?,
+                                            is_big_endian,
                                         );
                                     }
                                 }
@@ -236,9 +237,22 @@ impl EventChunker {
                                 }
                             };
                         } else {
-                            Err(Error::with_msg(format!(
-                                "TODO uncompressed event parsing not yet implemented"
-                            )))?;
+                            let p1 = sl.position();
+                            //info!("len: {}  p1: {}", len, p1);
+                            if len < p1 as u32 + 4 {
+                                let msg = format!("uncomp  len: {}  p1: {}", len, p1);
+                                Err(Error::with_msg(msg))?;
+                            }
+                            let vlen = len - p1 as u32 - 4;
+                            //info!("vlen: {}", vlen);
+                            let decomp = BytesMut::from(&buf[p1 as usize..(p1 as u32 + vlen) as usize]);
+                            ret.add_event(
+                                ts,
+                                pulse,
+                                Some(decomp),
+                                ScalarType::from_dtype_index(type_index)?,
+                                is_big_endian,
+                            );
                         }
                         buf.advance(len as usize);
                         parsed_bytes += len as u64;
@@ -259,6 +273,7 @@ pub struct EventFull {
     pub pulses: Vec<u64>,
     pub decomps: Vec<Option<BytesMut>>,
     pub scalar_types: Vec<ScalarType>,
+    pub be: Vec<bool>,
 }
 
 impl EventFull {
@@ -268,14 +283,16 @@ impl EventFull {
             pulses: vec![],
             decomps: vec![],
             scalar_types: vec![],
+            be: vec![],
         }
     }
 
-    fn add_event(&mut self, ts: u64, pulse: u64, decomp: Option<BytesMut>, scalar_type: ScalarType) {
+    fn add_event(&mut self, ts: u64, pulse: u64, decomp: Option<BytesMut>, scalar_type: ScalarType, be: bool) {
         self.tss.push(ts);
         self.pulses.push(pulse);
         self.decomps.push(decomp);
         self.scalar_types.push(scalar_type);
+        self.be.push(be);
     }
 }
 

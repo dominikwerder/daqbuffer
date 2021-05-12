@@ -48,7 +48,7 @@ impl BinnedStreamFromPreBinnedPatches {
                         match PreBinnedValueFetchedStream::new(&query, &node_config) {
                             Ok(k) => Box::pin(k),
                             Err(e) => {
-                                error!("see error {:?}", e);
+                                error!("error from PreBinnedValueFetchedStream::new {:?}", e);
                                 Box::pin(futures_util::stream::iter(vec![Err(e)]))
                             }
                         };
@@ -73,7 +73,6 @@ impl BinnedStreamFromPreBinnedPatches {
                         }
                         Ok(PreBinnedItem::RangeComplete) => Some(Ok(MinMaxAvgScalarBinBatchStreamItem::RangeComplete)),
                         Ok(PreBinnedItem::EventDataReadStats(stats)) => {
-                            //info!("BinnedStream  '''''''''''''''''''   observes stats {:?}", stats);
                             Some(Ok(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats)))
                         }
                         Ok(PreBinnedItem::Log(item)) => Some(Ok(MinMaxAvgScalarBinBatchStreamItem::Log(item))),

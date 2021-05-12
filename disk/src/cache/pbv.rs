@@ -254,7 +254,7 @@ impl Stream for PreBinnedValueStream {
                     match self.query.cache_usage {
                         super::CacheUsage::Use | super::CacheUsage::Recreate => {
                             let msg = format!(
-                                "Write cache file  query: {:?}  bin count: {}",
+                                "write cache file  query: {:?}  bin count: {}",
                                 self.query.patch,
                                 self.values.ts1s.len()
                             );
