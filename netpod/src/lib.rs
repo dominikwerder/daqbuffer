@@ -248,9 +248,9 @@ pub mod timeunits {
     pub const DAY: u64 = HOUR * 24;
 }
 
-const BIN_T_LEN_OPTIONS: [u64; 3] = [SEC, MIN * 10, HOUR * 2];
+const BIN_T_LEN_OPTIONS: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
 
-const PATCH_T_LEN_OPTIONS: [u64; 3] = [MIN * 20, HOUR * 12, DAY * 16];
+const PATCH_T_LEN_OPTIONS: [u64; 4] = [MIN * 10, HOUR * 2, DAY * 4, DAY * 32];
 
 const BIN_THRESHOLDS: [u64; 31] = [
     2,

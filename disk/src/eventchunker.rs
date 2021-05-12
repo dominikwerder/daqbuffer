@@ -182,7 +182,6 @@ impl EventChunker {
                             //debug!("event  len {}  ts {}  is_compressed {}  shape_dim {}  len-dim-0 {}  value_bytes {}  block_size {}", len, ts, is_compressed, shape_dim, shape_lens[0], value_bytes, block_size);
                             assert!(value_bytes < 1024 * 256);
                             assert!(block_size < 1024 * 32);
-                            //let value_bytes = value_bytes;
                             let type_size = scalar_type.bytes() as u32;
                             let ele_count = value_bytes / type_size as u64;
                             let ele_size = type_size;
@@ -208,7 +207,6 @@ impl EventChunker {
                             unsafe {
                                 decomp.set_len(decomp_bytes);
                             }
-                            //debug!("try decompress  value_bytes {}  ele_size {}  ele_count {}  type_index {}", value_bytes, ele_size, ele_count, type_index);
                             match bitshuffle_decompress(
                                 &buf.as_ref()[p1 as usize..],
                                 &mut decomp,
@@ -218,7 +216,6 @@ impl EventChunker {
                             ) {
                                 Ok(c1) => {
                                     assert!(c1 as u32 == k1);
-                                    //trace!("decompress result  c1 {}  k1 {}", c1, k1);
                                     if ts < self.range.beg {
                                     } else if ts >= self.range.end {
                                         Err(Error::with_msg(format!("event after range  {}", ts / SEC)))?;
@@ -238,13 +235,11 @@ impl EventChunker {
                             };
                         } else {
                             let p1 = sl.position();
-                            //info!("len: {}  p1: {}", len, p1);
                             if len < p1 as u32 + 4 {
                                 let msg = format!("uncomp  len: {}  p1: {}", len, p1);
                                 Err(Error::with_msg(msg))?;
                             }
                             let vlen = len - p1 as u32 - 4;
-                            //info!("vlen: {}", vlen);
                             let decomp = BytesMut::from(&buf[p1 as usize..(p1 as u32 + vlen) as usize]);
                             ret.add_event(
                                 ts,
@@ -315,8 +310,7 @@ impl Stream for EventChunker {
                 Ready(None)
             } else if self.parsed_bytes >= self.stats_conf.disk_stats_every.bytes() as u64 {
                 let item = EventDataReadStats {
-                    //parsed_bytes: self.parsed_bytes,
-                    parsed_bytes: 1000,
+                    parsed_bytes: self.parsed_bytes,
                 };
                 self.parsed_bytes = 0;
                 let ret = EventChunkerItem::EventDataReadStats(item);

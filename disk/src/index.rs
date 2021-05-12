@@ -154,37 +154,28 @@ pub async fn position_file(mut file: File, beg: u64) -> Result<File, Error> {
         //
     }
     let hres = parse_channel_header(&buf)?;
-    info!("hres: {:?}", hres);
     let headoff = 2 + hres.0 as u64;
     let ev = parse_event(&buf[headoff as usize..])?;
-    info!("ev: {:?}", ev);
     let evlen = ev.0 as u64;
-    info!("flen: {}  flen - headoff mod evlen: {}", flen, (flen - headoff) % evlen);
     let mut j = headoff;
     let mut k = ((flen - headoff) / evlen - 1) * evlen + headoff;
-    info!("j {}  k {}", j, k);
     let x = ev.1.ns;
     let y = read_event_at(k, &mut file).await?.1.ns;
-    info!("x {}  y {}", x, y);
     if x >= beg {
-        info!("found A");
         file.seek(SeekFrom::Start(j)).await?;
         return Ok(file);
     }
     if y < beg {
-        info!("found B");
         file.seek(SeekFrom::Start(j)).await?;
         return Ok(file);
     }
     loop {
         if k - j < 2 * evlen {
-            info!("found C");
             file.seek(SeekFrom::Start(k)).await?;
             return Ok(file);
         }
         let m = j + (k - j) / 2 / evlen * evlen;
         let x = read_event_at(m, &mut file).await?.1.ns;
-        info!("event at m: {}  ts: {}", m, x);
         if x < beg {
             j = m;
         } else {

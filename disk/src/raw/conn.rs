@@ -133,7 +133,6 @@ async fn raw_conn_handler_inner_try(
         Err(e) => return Err((e, netout))?,
     };
     debug!("found config entry {:?}", entry);
-
     let shape = match &entry.shape {
         Some(lens) => {
             if lens.len() == 1 {
@@ -147,29 +146,24 @@ async fn raw_conn_handler_inner_try(
         }
         None => Shape::Scalar,
     };
-    let query = netpod::AggQuerySingleChannel {
-        channel_config: netpod::ChannelConfig {
-            channel: evq.channel.clone(),
-            keyspace: entry.ks as u8,
-            time_bin_size: entry.bs,
-            shape: shape,
-            scalar_type: entry.scalar_type.clone(),
-            big_endian: entry.is_big_endian,
-            array: entry.is_array,
-            compression: entry.is_compressed,
-        },
-        // TODO use a NanoRange and search for matching files
-        timebin: 0,
-        tb_file_count: 1,
-        // TODO use the requested buffer size
-        buffer_size: 1024 * 4,
+    let channel_config = netpod::ChannelConfig {
+        channel: evq.channel.clone(),
+        keyspace: entry.ks as u8,
+        time_bin_size: entry.bs,
+        shape: shape,
+        scalar_type: entry.scalar_type.clone(),
+        big_endian: entry.is_big_endian,
+        array: entry.is_array,
+        compression: entry.is_compressed,
     };
+    // TODO use a requested buffer size
+    let buffer_size = 1024 * 4;
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     let mut s1 = EventBlobsComplete::new(
         range.clone(),
-        query.channel_config.clone(),
+        channel_config.clone(),
         node_config.node.clone(),
-        query.buffer_size as usize,
+        buffer_size,
         event_chunker_conf,
     )
     .into_dim_1_f32_stream()

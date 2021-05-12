@@ -356,10 +356,25 @@ macro_rules! make_get_values {
     };
 }
 
+make_get_values!(get_values_u8_le, u8, from_le_bytes, 1);
 make_get_values!(get_values_u16_le, u16, from_le_bytes, 2);
+make_get_values!(get_values_u32_le, u32, from_le_bytes, 4);
+make_get_values!(get_values_u64_le, u64, from_le_bytes, 8);
+make_get_values!(get_values_i8_le, i8, from_le_bytes, 1);
+make_get_values!(get_values_i16_le, i16, from_le_bytes, 2);
+make_get_values!(get_values_i32_le, i32, from_le_bytes, 4);
+make_get_values!(get_values_i64_le, i64, from_le_bytes, 8);
 make_get_values!(get_values_f32_le, f32, from_le_bytes, 4);
 make_get_values!(get_values_f64_le, f64, from_le_bytes, 8);
+
+make_get_values!(get_values_u8_be, u8, from_be_bytes, 1);
 make_get_values!(get_values_u16_be, u16, from_be_bytes, 2);
+make_get_values!(get_values_u32_be, u32, from_be_bytes, 4);
+make_get_values!(get_values_u64_be, u64, from_be_bytes, 8);
+make_get_values!(get_values_i8_be, i8, from_be_bytes, 1);
+make_get_values!(get_values_i16_be, i16, from_be_bytes, 2);
+make_get_values!(get_values_i32_be, i32, from_be_bytes, 4);
+make_get_values!(get_values_i64_be, i64, from_be_bytes, 8);
 make_get_values!(get_values_f32_be, f32, from_be_bytes, 4);
 make_get_values!(get_values_f64_be, f64, from_be_bytes, 8);
 
@@ -381,40 +396,95 @@ impl<S> Dim1F32Stream<S> {
             let be = k.be[i1];
             let decomp = k.decomps[i1].as_ref().unwrap();
             match ty {
-                U16 if be => {
-                    let value = get_values_u16_be(decomp, ty)?;
+                U8 => {
+                    let value = if be {
+                        get_values_u8_be(decomp, ty)?
+                    } else {
+                        get_values_u8_le(decomp, ty)?
+                    };
                     ret.tss.push(k.tss[i1]);
                     ret.values.push(value);
                 }
                 U16 => {
-                    let value = get_values_u16_le(decomp, ty)?;
+                    let value = if be {
+                        get_values_u16_be(decomp, ty)?
+                    } else {
+                        get_values_u16_le(decomp, ty)?
+                    };
                     ret.tss.push(k.tss[i1]);
                     ret.values.push(value);
                 }
-                F32 if be => {
-                    let value = get_values_f32_be(decomp, ty)?;
+                U32 => {
+                    let value = if be {
+                        get_values_u32_be(decomp, ty)?
+                    } else {
+                        get_values_u32_le(decomp, ty)?
+                    };
+                    ret.tss.push(k.tss[i1]);
+                    ret.values.push(value);
+                }
+                U64 => {
+                    let value = if be {
+                        get_values_u64_be(decomp, ty)?
+                    } else {
+                        get_values_u64_le(decomp, ty)?
+                    };
+                    ret.tss.push(k.tss[i1]);
+                    ret.values.push(value);
+                }
+                I8 => {
+                    let value = if be {
+                        get_values_i8_be(decomp, ty)?
+                    } else {
+                        get_values_i8_le(decomp, ty)?
+                    };
+                    ret.tss.push(k.tss[i1]);
+                    ret.values.push(value);
+                }
+                I16 => {
+                    let value = if be {
+                        get_values_i16_be(decomp, ty)?
+                    } else {
+                        get_values_i16_le(decomp, ty)?
+                    };
+                    ret.tss.push(k.tss[i1]);
+                    ret.values.push(value);
+                }
+                I32 => {
+                    let value = if be {
+                        get_values_i32_be(decomp, ty)?
+                    } else {
+                        get_values_i32_le(decomp, ty)?
+                    };
+                    ret.tss.push(k.tss[i1]);
+                    ret.values.push(value);
+                }
+                I64 => {
+                    let value = if be {
+                        get_values_i64_be(decomp, ty)?
+                    } else {
+                        get_values_i64_le(decomp, ty)?
+                    };
                     ret.tss.push(k.tss[i1]);
                     ret.values.push(value);
                 }
                 F32 => {
-                    let value = get_values_f32_le(decomp, ty)?;
-                    ret.tss.push(k.tss[i1]);
-                    ret.values.push(value);
-                }
-                F64 if be => {
-                    let value = get_values_f64_be(decomp, ty)?;
+                    let value = if be {
+                        get_values_f32_be(decomp, ty)?
+                    } else {
+                        get_values_f32_le(decomp, ty)?
+                    };
                     ret.tss.push(k.tss[i1]);
                     ret.values.push(value);
                 }
                 F64 => {
-                    let value = get_values_f64_le(decomp, ty)?;
+                    let value = if be {
+                        get_values_f64_be(decomp, ty)?
+                    } else {
+                        get_values_f64_le(decomp, ty)?
+                    };
                     ret.tss.push(k.tss[i1]);
                     ret.values.push(value);
-                }
-                _ => {
-                    let e = Error::with_msg(format!("Dim1F32Stream  unhandled scalar type: {:?}", ty));
-                    self.errored = true;
-                    return Err(e);
                 }
             }
         }
