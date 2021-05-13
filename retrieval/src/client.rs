@@ -12,7 +12,7 @@ use netpod::PerfOpts;
 
 pub async fn status(host: String, port: u16) -> Result<(), Error> {
     let t1 = Utc::now();
-    let uri = format!("http://{}:{}/api/1/node_status", host, port,);
+    let uri = format!("http://{}:{}/api/4/node_status", host, port,);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(uri)
@@ -47,7 +47,7 @@ pub async fn get_binned(
     let t1 = Utc::now();
     let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
     let uri = format!(
-        "http://{}:{}/api/1/binned?channel_backend={}&channel_name={}&beg_date={}&end_date={}&bin_count={}&cache_usage={}&disk_stats_every_kb={}",
+        "http://{}:{}/api/4/binned?channel_backend={}&channel_name={}&beg_date={}&end_date={}&bin_count={}&cache_usage={}&disk_stats_every_kb={}",
         host,
         port,
         channel_backend,

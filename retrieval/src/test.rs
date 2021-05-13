@@ -99,7 +99,7 @@ where
     let disk_stats_every = ByteSize::kb(1024);
     // TODO have a function to form the uri, including perf opts:
     let uri = format!(
-        "http://{}:{}/api/1/binned?cache_usage=ignore&channel_backend={}&channel_name={}&bin_count={}&beg_date={}&end_date={}&disk_stats_every_kb={}",
+        "http://{}:{}/api/4/binned?cache_usage=ignore&channel_backend={}&channel_name={}&bin_count={}&beg_date={}&end_date={}&disk_stats_every_kb={}",
         node0.host,
         node0.port,
         channel_backend,

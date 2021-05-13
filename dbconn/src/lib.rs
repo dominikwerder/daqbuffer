@@ -69,11 +69,10 @@ pub async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, E
     let cl = create_connection(node_config).await?;
     let rows = cl.query(sql, &[]).await?;
     let mut sizes = TableSizes { sizes: vec![] };
+    sizes.sizes.push((format!("table"), format!("size")));
     for row in rows {
         sizes.sizes.push((row.get(0), row.get(1)));
     }
-    sizes.sizes.push((format!("dummy0"), format!("A")));
-    sizes.sizes.push((format!("dummy1"), format!("B")));
     Ok(sizes)
 }
 

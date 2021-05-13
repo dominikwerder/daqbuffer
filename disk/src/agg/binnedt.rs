@@ -239,6 +239,9 @@ where
                     continue 'outer;
                 }
             } else {
+                // TODO  make sure that we don't poll our input here after it has completed.
+                err::todo();
+
                 let cur = self.cur(cx);
                 match self.handle(cur) {
                     Some(item) => item,

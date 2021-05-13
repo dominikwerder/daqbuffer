@@ -121,7 +121,7 @@ fn simple_fetch() {
         let host = tokio::spawn(httpret::host(node_config.clone()));
         let req = hyper::Request::builder()
             .method(http::Method::POST)
-            .uri("http://localhost:8360/api/1/parsed_raw")
+            .uri("http://localhost:8360/api/4/parsed_raw")
             .body(query_string.into())?;
         let client = hyper::Client::new();
         let res = client.request(req).await?;

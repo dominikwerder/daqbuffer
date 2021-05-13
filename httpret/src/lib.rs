@@ -86,44 +86,49 @@ impl<F> UnwindSafe for Cont<F> {}
 async fn data_api_proxy_try(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let uri = req.uri().clone();
     let path = uri.path();
-    if path == "/api/1/node_status" {
+    if path == "/api/4/node_status" {
         if req.method() == Method::GET {
             Ok(node_status(req, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/1/table_sizes" {
+    } else if path == "/api/4/table_sizes" {
         if req.method() == Method::GET {
             Ok(table_sizes(req, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/1/random_channel" {
+    } else if path == "/api/4/random_channel" {
         if req.method() == Method::GET {
             Ok(random_channel(req, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/1/parsed_raw" {
+    } else if path == "/api/4/parsed_raw" {
         if req.method() == Method::POST {
             Ok(parsed_raw(req, &node_config.node).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/1/binned" {
+    } else if path == "/api/4/binned" {
         if req.method() == Method::GET {
             Ok(binned(req, node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/1/prebinned" {
+    } else if path == "/api/4/prebinned" {
         if req.method() == Method::GET {
             Ok(prebinned(req, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else {
-        Ok(response(StatusCode::NOT_FOUND).body(Body::empty())?)
+        Ok(response(StatusCode::NOT_FOUND).body(Body::from(format!(
+            "Sorry, not found: {:?}  {:?}  {:?}",
+            req.method(),
+            req.uri().path(),
+            req.uri().query(),
+        )))?)
     }
 }
 

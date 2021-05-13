@@ -27,7 +27,7 @@ impl PreBinnedValueFetchedStream {
         let nodeix = node_ix_for_patch(&query.patch, &query.channel, &node_config.node_config.cluster);
         let node = &node_config.node_config.cluster.nodes[nodeix as usize];
         let uri: hyper::Uri = format!(
-            "http://{}:{}/api/1/prebinned?{}",
+            "http://{}:{}/api/4/prebinned?{}",
             node.host,
             node.port,
             query.make_query_string()
