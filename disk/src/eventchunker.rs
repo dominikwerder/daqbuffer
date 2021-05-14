@@ -1,3 +1,4 @@
+use crate::streamlog::LogItem;
 use crate::{FileChunkRead, NeedMinBuffer};
 use bitshuffle::bitshuffle_decompress;
 use bytes::{Buf, BytesMut};
@@ -348,6 +349,7 @@ pub enum EventChunkerItem {
     Events(EventFull),
     RangeComplete,
     EventDataReadStats(EventDataReadStats),
+    Log(LogItem),
 }
 
 impl Stream for EventChunker {

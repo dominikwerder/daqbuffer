@@ -11,7 +11,10 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, ErrorKind, SeekFrom};
 
 pub struct OpenedFile {
     pub path: PathBuf,
-    pub file: File,
+    pub file: Option<File>,
+    pub positioned: bool,
+    pub index: bool,
+    pub nreads: u32,
 }
 
 pub fn open_files(
@@ -78,8 +81,7 @@ async fn open_files_inner(
         debug!("opening path {:?}", &path);
         let mut file = OpenOptions::new().read(true).open(&path).await?;
         debug!("opened file {:?}  {:?}", &path, &file);
-        let mut use_file = false;
-        {
+        let ret = {
             let index_path = paths::index_path(ts_bin, &channel_config, &node)?;
             match OpenOptions::new().read(true).open(&index_path).await {
                 Ok(mut index_file) => {
@@ -111,14 +113,22 @@ async fn open_files_inner(
                     index_file.read_exact(&mut buf).await?;
                     match super::index::find_ge(range.beg, &buf[2..])? {
                         Some(o) => {
-                            debug!("FOUND ts IN INDEX: {:?}", o);
                             file.seek(SeekFrom::Start(o.1)).await?;
-                            use_file = true;
+                            OpenedFile {
+                                file: Some(file),
+                                path,
+                                positioned: true,
+                                index: true,
+                                nreads: 0,
+                            }
                         }
-                        None => {
-                            debug!("NOT FOUND IN INDEX");
-                            use_file = false;
-                        }
+                        None => OpenedFile {
+                            file: None,
+                            path,
+                            positioned: false,
+                            index: true,
+                            nreads: 0,
+                        },
                     }
                 }
                 Err(e) => match e.kind() {
@@ -126,19 +136,28 @@ async fn open_files_inner(
                         let res = super::index::position_static_len_datafile(file, range.beg).await?;
                         file = res.0;
                         if res.1 {
-                            use_file = true;
+                            OpenedFile {
+                                file: Some(file),
+                                path,
+                                positioned: true,
+                                index: false,
+                                nreads: res.2,
+                            }
                         } else {
-                            use_file = false;
+                            OpenedFile {
+                                file: None,
+                                path,
+                                positioned: false,
+                                index: false,
+                                nreads: 0,
+                            }
                         }
                     }
                     _ => Err(e)?,
                 },
             }
-        }
-        if use_file {
-            let ret = OpenedFile { file, path };
-            chtx.send(Ok(ret)).await?;
-        }
+        };
+        chtx.send(Ok(ret)).await?;
     }
     // TODO keep track of number of running
     debug!("open_files_inner done");

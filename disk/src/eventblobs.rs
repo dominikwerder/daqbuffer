@@ -1,9 +1,12 @@
 use crate::dataopen::{open_files, OpenedFile};
 use crate::eventchunker::{EventChunker, EventChunkerConf, EventChunkerItem};
 use crate::file_content_stream;
+use crate::streamlog::LogItem;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use netpod::log::*;
+use netpod::timeunits::SEC;
 use netpod::{ChannelConfig, NanoRange, Node};
 use std::pin::Pin;
 use std::sync::atomic::AtomicU64;
@@ -30,6 +33,7 @@ impl EventBlobsComplete {
         buffer_size: usize,
         event_chunker_conf: EventChunkerConf,
     ) -> Self {
+        info!("EventBlobsComplete::new  beg {}", range.beg / SEC);
         Self {
             file_chan: open_files(&range, &channel_config, node),
             evs: None,
@@ -69,17 +73,25 @@ impl Stream for EventBlobsComplete {
                         Ready(Some(k)) => match k {
                             Ok(file) => {
                                 let path = file.path;
-                                let inp = Box::pin(file_content_stream(file.file, self.buffer_size as usize));
-                                let chunker = EventChunker::from_event_boundary(
-                                    inp,
-                                    self.channel_config.clone(),
-                                    self.range.clone(),
-                                    self.event_chunker_conf.clone(),
-                                    path,
-                                    self.max_ts.clone(),
-                                );
-                                self.evs = Some(chunker);
-                                continue 'outer;
+                                //info!("handling  {:?}", path);
+                                let item = LogItem::quick(Level::INFO, format!("handle file {:?}", path));
+                                match file.file {
+                                    Some(file) => {
+                                        let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
+                                        let chunker = EventChunker::from_event_boundary(
+                                            inp,
+                                            self.channel_config.clone(),
+                                            self.range.clone(),
+                                            self.event_chunker_conf.clone(),
+                                            path,
+                                            self.max_ts.clone(),
+                                        );
+                                        self.evs = Some(chunker);
+                                    }
+                                    None => {}
+                                }
+                                Ready(Some(Ok(EventChunkerItem::Log(item))))
+                                //continue 'outer;
                             }
                             Err(e) => {
                                 self.errored = true;

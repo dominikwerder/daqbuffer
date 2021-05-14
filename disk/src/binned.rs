@@ -160,27 +160,31 @@ pub async fn binned_json(node_config: &NodeConfigCached, query: &BinnedQuery) ->
         };
         match item {
             Some(item) => {
+                use MinMaxAvgScalarBinBatchStreamItem::*;
                 match item {
-                    Ok(item) => {
-                        match item {
-                            MinMaxAvgScalarBinBatchStreamItem::Values(mut vals) => {
-                                batch.ts1s.append(&mut vals.ts1s);
-                                batch.ts2s.append(&mut vals.ts2s);
-                                batch.counts.append(&mut vals.counts);
-                                batch.mins.append(&mut vals.mins);
-                                batch.maxs.append(&mut vals.maxs);
-                                batch.avgs.append(&mut vals.avgs);
-                            }
-                            _ => {}
+                    Ok(item) => match item {
+                        Values(mut vals) => {
+                            info!("APPEND BATCH  {}", vals.ts1s.len());
+                            batch.ts1s.append(&mut vals.ts1s);
+                            batch.ts2s.append(&mut vals.ts2s);
+                            batch.counts.append(&mut vals.counts);
+                            batch.mins.append(&mut vals.mins);
+                            batch.maxs.append(&mut vals.maxs);
+                            batch.avgs.append(&mut vals.avgs);
+                            i1 += 1;
                         }
-                        serde_json::Value::String(format!("all good"))
+                        Log(_) => {}
+                        EventDataReadStats(_) => {}
+                        RangeComplete => {}
+                    },
+                    Err(e) => {
+                        // TODO  Need to use some flags to get good enough error message for remote user.
+                        Err(e)?
                     }
-                    Err(e) => serde_json::Value::String(format!("{:?}", e)),
                 };
             }
             None => break,
         }
-        i1 += 1;
     }
     let mut ret = BinnedJsonResult {
         ts_bin_edges: batch.ts1s,

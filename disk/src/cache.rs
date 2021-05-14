@@ -61,9 +61,7 @@ impl BinnedQuery {
         let params = netpod::query_params(req.uri.query());
         let beg_date = params.get("beg_date").ok_or(Error::with_msg("missing beg_date"))?;
         let end_date = params.get("end_date").ok_or(Error::with_msg("missing end_date"))?;
-        let disk_stats_every = params
-            .get("disk_stats_every_kb")
-            .ok_or(Error::with_msg("missing disk_stats_every_kb"))?;
+        let disk_stats_every = params.get("disk_stats_every_kb").map_or("2000", |k| k);
         let disk_stats_every = disk_stats_every
             .parse()
             .map_err(|e| Error::with_msg(format!("can not parse disk_stats_every_kb {:?}", e)))?;

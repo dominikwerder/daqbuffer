@@ -140,7 +140,7 @@ pub async fn read_event_at(pos: u64, file: &mut File) -> Result<(u32, Nanos), Er
     Ok(ev)
 }
 
-pub async fn position_static_len_datafile(mut file: File, beg: u64) -> Result<(File, bool), Error> {
+pub async fn position_static_len_datafile(mut file: File, beg: u64) -> Result<(File, bool, u32), Error> {
     let flen = file.seek(SeekFrom::End(0)).await?;
     file.seek(SeekFrom::Start(0)).await?;
     let mut buf = vec![0; 1024];
@@ -160,18 +160,19 @@ pub async fn position_static_len_datafile(mut file: File, beg: u64) -> Result<(F
         )))?;
     }
     let y = t.1.ns;
+    let mut nreads = 2;
     if x >= beg {
         file.seek(SeekFrom::Start(j)).await?;
-        return Ok((file, true));
+        return Ok((file, true, nreads));
     }
     if y < beg {
         file.seek(SeekFrom::Start(j)).await?;
-        return Ok((file, false));
+        return Ok((file, false, nreads));
     }
     loop {
         if k - j < 2 * evlen {
             file.seek(SeekFrom::Start(k)).await?;
-            return Ok((file, true));
+            return Ok((file, true, nreads));
         }
         let m = j + (k - j) / 2 / evlen * evlen;
         let t = read_event_at(m, &mut file).await?;
@@ -181,6 +182,7 @@ pub async fn position_static_len_datafile(mut file: File, beg: u64) -> Result<(F
                 t.0, evlen
             )))?;
         }
+        nreads += 1;
         let x = t.1.ns;
         if x < beg {
             j = m;

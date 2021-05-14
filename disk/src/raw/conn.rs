@@ -10,6 +10,7 @@ use crate::raw::{EventQueryJsonStringFrame, EventsQuery};
 use err::Error;
 use futures_util::StreamExt;
 use netpod::log::*;
+use netpod::timeunits::SEC;
 use netpod::{ByteSize, NodeConfigCached, PerfOpts, Shape};
 use std::net::SocketAddr;
 use tokio::io::AsyncWriteExt;
@@ -132,7 +133,8 @@ async fn raw_conn_handler_inner_try(
         Ok(k) => k,
         Err(e) => return Err((e, netout))?,
     };
-    debug!("found config entry {:?}", entry);
+    //info!("found config entry {:?}", entry);
+    info!("raw_conn_handler_inner_try  beg {}", range.beg / SEC);
     let shape = match &entry.shape {
         Some(lens) => {
             if lens.len() == 1 {

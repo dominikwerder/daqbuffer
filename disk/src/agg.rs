@@ -6,6 +6,7 @@ use super::eventchunker::EventFull;
 use crate::agg::binnedt::AggregatableTdim;
 use crate::agg::eventbatch::{MinMaxAvgScalarEventBatch, MinMaxAvgScalarEventBatchStreamItem};
 use crate::eventchunker::EventChunkerItem;
+use crate::streamlog::LogItem;
 use bytes::BytesMut;
 use err::Error;
 use futures_core::Stream;
@@ -508,6 +509,7 @@ pub enum Dim1F32StreamItem {
     Values(ValuesDim1),
     RangeComplete,
     EventDataReadStats(EventDataReadStats),
+    Log(LogItem),
 }
 
 impl<S> Stream for Dim1F32Stream<S>
@@ -540,6 +542,7 @@ where
                         }
                     },
                     EventChunkerItem::RangeComplete => Ready(Some(Ok(Dim1F32StreamItem::RangeComplete))),
+                    EventChunkerItem::Log(item) => Ready(Some(Ok(Dim1F32StreamItem::Log(item)))),
                     EventChunkerItem::EventDataReadStats(stats) => {
                         let ret = Dim1F32StreamItem::EventDataReadStats(stats);
                         Ready(Some(Ok(ret)))
@@ -587,6 +590,7 @@ impl AggregatableXdim1Bin for Dim1F32StreamItem {
             Dim1F32StreamItem::EventDataReadStats(stats) => {
                 MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats)
             }
+            Dim1F32StreamItem::Log(item) => MinMaxAvgScalarEventBatchStreamItem::Log(item),
             Dim1F32StreamItem::RangeComplete => MinMaxAvgScalarEventBatchStreamItem::RangeComplete,
         }
     }

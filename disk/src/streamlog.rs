@@ -12,6 +12,16 @@ pub struct LogItem {
     msg: String,
 }
 
+impl LogItem {
+    pub fn quick(level: Level, msg: String) -> Self {
+        Self {
+            level,
+            msg,
+            node_ix: 42,
+        }
+    }
+}
+
 struct VisitLevel;
 
 impl<'de> Visitor<'de> for VisitLevel {
