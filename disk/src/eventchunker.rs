@@ -7,6 +7,7 @@ use futures_util::StreamExt;
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{ByteSize, ChannelConfig, EventDataReadStats, NanoRange, ScalarType, Shape};
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -24,6 +25,7 @@ pub struct EventChunker {
     data_emit_complete: bool,
     final_stats_sent: bool,
     parsed_bytes: u64,
+    path: PathBuf,
 }
 
 enum DataFileState {
@@ -53,6 +55,7 @@ impl EventChunker {
         channel_config: ChannelConfig,
         range: NanoRange,
         stats_conf: EventChunkerConf,
+        path: PathBuf,
     ) -> Self {
         let mut inp = NeedMinBuffer::new(inp);
         inp.set_need_min(6);
@@ -70,6 +73,7 @@ impl EventChunker {
             data_emit_complete: false,
             final_stats_sent: false,
             parsed_bytes: 0,
+            path,
         }
     }
 
@@ -78,8 +82,9 @@ impl EventChunker {
         channel_config: ChannelConfig,
         range: NanoRange,
         stats_conf: EventChunkerConf,
+        path: PathBuf,
     ) -> Self {
-        let mut ret = Self::from_start(inp, channel_config, range, stats_conf);
+        let mut ret = Self::from_start(inp, channel_config, range, stats_conf, path);
         ret.state = DataFileState::Event;
         ret.need_min = 4;
         ret.inp.set_need_min(4);
@@ -100,23 +105,29 @@ impl EventChunker {
             }
             match self.state {
                 DataFileState::FileHeader => {
-                    assert!(buf.len() >= 6, "logic");
+                    if buf.len() < 6 {
+                        Err(Error::with_msg("need min 6 for FileHeader"))?;
+                    }
                     let mut sl = std::io::Cursor::new(buf.as_ref());
                     let fver = sl.read_i16::<BE>().unwrap();
-                    assert!(fver == 0, "unexpected file version");
+                    if fver != 0 {
+                        Err(Error::with_msg("unexpected data file version"))?;
+                    }
                     let len = sl.read_i32::<BE>().unwrap();
-                    assert!(len > 0 && len < 128, "unexpected data file header");
+                    if len <= 0 || len >= 128 {
+                        Err(Error::with_msg("large channel header len"))?;
+                    }
                     let totlen = len as usize + 2;
                     if buf.len() < totlen {
-                        debug!("parse_buf not enough A  totlen {}", totlen);
                         self.need_min = totlen as u32;
                         break;
                     } else {
                         sl.advance(len as usize - 8);
                         let len2 = sl.read_i32::<BE>().unwrap();
-                        assert!(len == len2, "len mismatch");
-                        let s1 = String::from_utf8(buf.as_ref()[6..(len as usize + 6 - 8)].to_vec()).unwrap();
-                        info!("channel name {}", s1);
+                        if len != len2 {
+                            Err(Error::with_msg("channel header len mismatch"))?;
+                        }
+                        String::from_utf8(buf.as_ref()[6..(len as usize + 6 - 8)].to_vec())?;
                         self.state = DataFileState::Event;
                         self.need_min = 4;
                         buf.advance(totlen);
@@ -126,7 +137,9 @@ impl EventChunker {
                 DataFileState::Event => {
                     let mut sl = std::io::Cursor::new(buf.as_ref());
                     let len = sl.read_i32::<BE>().unwrap();
-                    assert!(len >= 20 && len < 1024 * 1024 * 10);
+                    if len < 20 || len > 1024 * 1024 * 10 {
+                        Err(Error::with_msg("unexpected large event chunk"))?;
+                    }
                     let len = len as u32;
                     if (buf.len() as u32) < len {
                         self.need_min = len as u32;
@@ -144,18 +157,37 @@ impl EventChunker {
                             break;
                         }
                         if ts < self.range.beg {
-                            error!("seen before range: {}", ts / SEC);
+                            Err(Error::with_msg(format!(
+                                "seen before range: event ts: {}.{}  range beg: {}.{}  range end: {}.{}  pulse {}  config {:?}  path {:?}",
+                                ts / SEC,
+                                ts % SEC,
+                                self.range.beg / SEC,
+                                self.range.beg % SEC,
+                                self.range.end / SEC,
+                                self.range.end % SEC,
+                                pulse,
+                                self.channel_config.shape,
+                                self.path
+                            )))?;
                         }
                         let _ioc_ts = sl.read_i64::<BE>().unwrap();
                         let status = sl.read_i8().unwrap();
                         let severity = sl.read_i8().unwrap();
                         let optional = sl.read_i32::<BE>().unwrap();
-                        assert!(status == 0);
-                        assert!(severity == 0);
-                        assert!(optional == -1);
+                        if status != 0 {
+                            Err(Error::with_msg(format!("status != 0: {}", status)))?;
+                        }
+                        if severity != 0 {
+                            Err(Error::with_msg(format!("severity != 0: {}", severity)))?;
+                        }
+                        if optional != -1 {
+                            Err(Error::with_msg(format!("optional != -1: {}", optional)))?;
+                        }
                         let type_flags = sl.read_u8().unwrap();
                         let type_index = sl.read_u8().unwrap();
-                        assert!(type_index <= 13);
+                        if type_index > 13 {
+                            Err(Error::with_msg(format!("type_index: {}", type_index)))?;
+                        }
                         let scalar_type = ScalarType::from_dtype_index(type_index)?;
                         use super::dtflags::*;
                         let is_compressed = type_flags & COMPRESSION != 0;
@@ -163,7 +195,9 @@ impl EventChunker {
                         let is_big_endian = type_flags & BIG_ENDIAN != 0;
                         let is_shaped = type_flags & SHAPE != 0;
                         if let Shape::Wave(_) = self.channel_config.shape {
-                            assert!(is_array);
+                            if !is_array {
+                                Err(Error::with_msg(format!("dim1 but not array {:?}", self.channel_config)))?;
+                            }
                         }
                         let compression_method = if is_compressed { sl.read_u8().unwrap() } else { 0 };
                         let shape_dim = if is_shaped { sl.read_u8().unwrap() } else { 0 };

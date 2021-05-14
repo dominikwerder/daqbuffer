@@ -178,6 +178,7 @@ pub struct MinMaxAvgScalarEventBatchAggregator {
     min: f32,
     max: f32,
     sum: f32,
+    sumc: u64,
 }
 
 impl MinMaxAvgScalarEventBatchAggregator {
@@ -185,10 +186,11 @@ impl MinMaxAvgScalarEventBatchAggregator {
         Self {
             ts1,
             ts2,
+            count: 0,
             min: f32::MAX,
             max: f32::MIN,
-            sum: 0f32,
-            count: 0,
+            sum: f32::NAN,
+            sumc: 0,
         }
     }
 }
@@ -226,10 +228,19 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
             } else if ts >= self.ts2 {
                 continue;
             } else {
+                self.count += 1;
                 self.min = self.min.min(v.mins[i1]);
                 self.max = self.max.max(v.maxs[i1]);
-                self.sum += v.avgs[i1];
-                self.count += 1;
+                let x = v.avgs[i1];
+                if x.is_nan() {
+                } else {
+                    if self.sum.is_nan() {
+                        self.sum = x;
+                    } else {
+                        self.sum += x;
+                    }
+                    self.sumc += 1;
+                }
             }
         }
     }
@@ -237,10 +248,10 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
     fn result(self) -> Vec<Self::OutputValue> {
         let min = if self.min == f32::MAX { f32::NAN } else { self.min };
         let max = if self.max == f32::MIN { f32::NAN } else { self.max };
-        let avg = if self.count == 0 {
+        let avg = if self.sumc == 0 {
             f32::NAN
         } else {
-            self.sum / self.count as f32
+            self.sum / self.sumc as f32
         };
         let v = MinMaxAvgScalarBinBatch {
             ts1s: vec![self.ts1],

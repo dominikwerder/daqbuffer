@@ -5,14 +5,20 @@ use futures_util::StreamExt;
 use netpod::log::*;
 use netpod::timeunits::MS;
 use netpod::{ChannelConfig, NanoRange, Nanos, Node};
+use std::path::PathBuf;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, ErrorKind, SeekFrom};
+
+pub struct OpenedFile {
+    pub path: PathBuf,
+    pub file: File,
+}
 
 pub fn open_files(
     range: &NanoRange,
     channel_config: &ChannelConfig,
     node: Node,
-) -> async_channel::Receiver<Result<File, Error>> {
+) -> async_channel::Receiver<Result<OpenedFile, Error>> {
     let (chtx, chrx) = async_channel::bounded(2);
     let range = range.clone();
     let channel_config = channel_config.clone();
@@ -31,7 +37,7 @@ pub fn open_files(
 }
 
 async fn open_files_inner(
-    chtx: &async_channel::Sender<Result<File, Error>>,
+    chtx: &async_channel::Sender<Result<OpenedFile, Error>>,
     range: &NanoRange,
     channel_config: &ChannelConfig,
     node: Node,
@@ -121,7 +127,8 @@ async fn open_files_inner(
                 },
             }
         }
-        chtx.send(Ok(file)).await?;
+        let ret = OpenedFile { file, path };
+        chtx.send(Ok(ret)).await?;
     }
     // TODO keep track of number of running
     debug!("open_files_inner done");

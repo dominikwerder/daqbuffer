@@ -1,4 +1,4 @@
-use crate::dataopen::open_files;
+use crate::dataopen::{open_files, OpenedFile};
 use crate::eventchunker::{EventChunker, EventChunkerConf, EventChunkerItem};
 use crate::file_content_stream;
 use err::Error;
@@ -7,11 +7,10 @@ use futures_util::StreamExt;
 use netpod::{ChannelConfig, NanoRange, Node};
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::fs::File;
 
 pub struct EventBlobsComplete {
     channel_config: ChannelConfig,
-    file_chan: async_channel::Receiver<Result<File, Error>>,
+    file_chan: async_channel::Receiver<Result<OpenedFile, Error>>,
     evs: Option<EventChunker>,
     buffer_size: usize,
     event_chunker_conf: EventChunkerConf,
@@ -65,12 +64,14 @@ impl Stream for EventBlobsComplete {
                     None => match self.file_chan.poll_next_unpin(cx) {
                         Ready(Some(k)) => match k {
                             Ok(file) => {
-                                let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
+                                let path = file.path;
+                                let inp = Box::pin(file_content_stream(file.file, self.buffer_size as usize));
                                 let chunker = EventChunker::from_event_boundary(
                                     inp,
                                     self.channel_config.clone(),
                                     self.range.clone(),
                                     self.event_chunker_conf.clone(),
+                                    path,
                                 );
                                 self.evs = Some(chunker);
                                 continue 'outer;

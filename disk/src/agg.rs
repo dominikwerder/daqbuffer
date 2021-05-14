@@ -62,15 +62,22 @@ impl AggregatableXdim1Bin for ValuesDim1 {
             let ts = self.tss[i1];
             let mut min = f32::MAX;
             let mut max = f32::MIN;
-            let mut sum = 0f32;
+            let mut sum = f32::NAN;
+            let mut count = 0;
             let vals = &self.values[i1];
-            assert!(vals.len() > 0);
             for i2 in 0..vals.len() {
                 let v = vals[i2];
-                //info!("value  {}  {}  {}", i1, i2, v);
                 min = min.min(v);
                 max = max.max(v);
-                sum += v;
+                if v.is_nan() {
+                } else {
+                    if sum.is_nan() {
+                        sum = v;
+                    } else {
+                        sum += v;
+                    }
+                    count += 1;
+                }
             }
             if min == f32::MAX {
                 min = f32::NAN;
@@ -81,7 +88,11 @@ impl AggregatableXdim1Bin for ValuesDim1 {
             ret.tss.push(ts);
             ret.mins.push(min);
             ret.maxs.push(max);
-            ret.avgs.push(sum / vals.len() as f32);
+            if sum.is_nan() {
+                ret.avgs.push(sum);
+            } else {
+                ret.avgs.push(sum / count as f32);
+            }
         }
         ret
     }

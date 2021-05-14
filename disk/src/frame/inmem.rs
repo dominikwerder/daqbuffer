@@ -67,7 +67,7 @@ where
         trace!("prepare read from  wp {}  self.buf.len() {}", self.wp, self.buf.len(),);
         let gg = self.buf.len() - self.wp;
         let mut buf2 = ReadBuf::new(&mut self.buf[self.wp..]);
-        if gg < 1 || gg > 1024 * 1024 * 20 {
+        if gg < 1 || gg > 1024 * 1024 * 40 {
             use bytes::Buf;
             panic!(
                 "have gg {}  len {}  cap {}  rem {}  rem mut {}  self.wp {}",
@@ -126,9 +126,7 @@ where
                 }
                 (Some(None), buf, wp)
             } else {
-                if len > 1024 * 32 {
-                    warn!("InMemoryFrameAsyncReadStream  big len received  {}", len);
-                } else if len > 1024 * 1024 * 2 {
+                if len > 1024 * 1024 * 50 {
                     error!("InMemoryFrameAsyncReadStream  too long len {}", len);
                     return (
                         Some(Some(Err(Error::with_msg(format!(
@@ -138,6 +136,9 @@ where
                         buf,
                         wp,
                     );
+                } else if len > 1024 * 1024 * 1 {
+                    // TODO
+                    //warn!("InMemoryFrameAsyncReadStream  big len received  {}", len);
                 }
                 let nl = len as usize + INMEM_FRAME_HEAD + INMEM_FRAME_FOOT;
                 if self.bufcap < nl {

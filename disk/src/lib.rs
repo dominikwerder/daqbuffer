@@ -284,7 +284,7 @@ fn unused_raw_concat_channel_read_stream_file_pipe(
         let chrx = open_files(&range, &channel_config, node);
         while let Ok(file) = chrx.recv().await {
             let mut file = match file {
-                Ok(k) => k,
+                Ok(k) => k.file,
                 Err(_) => break
             };
             loop {
@@ -346,9 +346,9 @@ pub fn parsed1(
         while let Ok(fileres) = filerx.recv().await {
             match fileres {
                 Ok(file) => {
-                    let inp = Box::pin(file_content_stream(file, query.buffer_size as usize));
+                    let inp = Box::pin(file_content_stream(file.file, query.buffer_size as usize));
                     let range = err::todoval();
-                    let mut chunker = eventchunker::EventChunker::from_event_boundary(inp, err::todoval(), range, stats_conf.clone());
+                    let mut chunker = eventchunker::EventChunker::from_event_boundary(inp, err::todoval(), range, stats_conf.clone(), file.path);
                     while let Some(evres) = chunker.next().await {
                         use eventchunker::EventChunkerItem;
                         match evres {

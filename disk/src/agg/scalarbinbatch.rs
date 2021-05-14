@@ -116,11 +116,13 @@ impl std::fmt::Debug for MinMaxAvgScalarBinBatch {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             fmt,
-            "MinMaxAvgScalarBinBatch  count {}  ts1s {:?}  ts2s {:?}  counts {:?}  avgs {:?}",
+            "MinMaxAvgScalarBinBatch  count {}  ts1s {:?}  ts2s {:?}  counts {:?}  mins {:?}  maxs {:?}  avgs {:?}",
             self.ts1s.len(),
             self.ts1s.iter().map(|k| k / SEC).collect::<Vec<_>>(),
             self.ts2s.iter().map(|k| k / SEC).collect::<Vec<_>>(),
             self.counts,
+            self.mins,
+            self.maxs,
             self.avgs,
         )
     }
@@ -289,8 +291,16 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchAggregator {
                 self.count += v.counts[i1];
                 self.min = self.min.min(v.mins[i1]);
                 self.max = self.max.max(v.maxs[i1]);
-                self.sum += v.avgs[i1];
-                self.sumc += 1;
+                let x = v.avgs[i1];
+                if x.is_nan() {
+                } else {
+                    if self.sum.is_nan() {
+                        self.sum = x;
+                    } else {
+                        self.sum += x;
+                    }
+                    self.sumc += 1;
+                }
             }
         }
     }

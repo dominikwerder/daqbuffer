@@ -96,6 +96,8 @@ where
     fn cur(&mut self, cx: &mut Context) -> Poll<Option<Result<I, Error>>> {
         if let Some(cur) = self.left.take() {
             cur
+        } else if self.inp_completed {
+            Poll::Ready(None)
         } else {
             let inp_poll_span = span!(Level::TRACE, "into_t_inp_poll");
             inp_poll_span.in_scope(|| self.inp.poll_next_unpin(cx))
@@ -182,7 +184,6 @@ where
                 Some(Ready(Some(Err(e))))
             }
             Ready(None) => {
-                // No more input, no more in leftover.
                 self.inp_completed = true;
                 if self.all_bins_emitted {
                     None
@@ -239,9 +240,6 @@ where
                     continue 'outer;
                 }
             } else {
-                // TODO  make sure that we don't poll our input here after it has completed.
-                err::todo();
-
                 let cur = self.cur(cx);
                 match self.handle(cur) {
                     Some(item) => item,
