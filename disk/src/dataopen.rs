@@ -64,8 +64,8 @@ async fn open_files_inner(
     }
     timebins.sort_unstable();
     let tgt_tb = (range.beg / MS) as f32 / (channel_config.time_bin_size.ns / MS) as f32;
-    trace!("tgt_tb:  {:?}", tgt_tb);
-    trace!("timebins found:  {:?}", timebins);
+    info!("tgt_tb:  {:?}", tgt_tb);
+    info!("timebins found:  {:?}", timebins);
     for &tb in &timebins {
         let ts_bin = Nanos {
             ns: tb * channel_config.time_bin_size.ns,
@@ -76,11 +76,11 @@ async fn open_files_inner(
         if ts_bin.ns + channel_config.time_bin_size.ns <= range.beg {
             continue;
         }
-        debug!("opening tb {:?}", &tb);
+        //debug!("opening tb {:?}", &tb);
         let path = paths::datapath(tb, &channel_config, &node);
-        debug!("opening path {:?}", &path);
+        info!("opening path {:?}", &path);
         let mut file = OpenOptions::new().read(true).open(&path).await?;
-        debug!("opened file {:?}  {:?}", &path, &file);
+        //info!("opened file {:?}  {:?}", &path, &file);
         let ret = {
             let index_path = paths::index_path(ts_bin, &channel_config, &node)?;
             match OpenOptions::new().read(true).open(&index_path).await {

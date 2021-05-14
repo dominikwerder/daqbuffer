@@ -33,7 +33,7 @@ impl EventBlobsComplete {
         buffer_size: usize,
         event_chunker_conf: EventChunkerConf,
     ) -> Self {
-        info!("EventBlobsComplete::new  beg {}", range.beg / SEC);
+        //info!("EventBlobsComplete::new  beg {}", range.beg / SEC);
         Self {
             file_chan: open_files(&range, &channel_config, node),
             evs: None,
@@ -73,10 +73,10 @@ impl Stream for EventBlobsComplete {
                         Ready(Some(k)) => match k {
                             Ok(file) => {
                                 let path = file.path;
-                                //info!("handling  {:?}", path);
                                 let item = LogItem::quick(Level::INFO, format!("handle file {:?}", path));
                                 match file.file {
                                     Some(file) => {
+                                        info!("got file  {:?}", path);
                                         let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
                                         let chunker = EventChunker::from_event_boundary(
                                             inp,
@@ -88,7 +88,9 @@ impl Stream for EventBlobsComplete {
                                         );
                                         self.evs = Some(chunker);
                                     }
-                                    None => {}
+                                    None => {
+                                        info!("skip  {:?}", path);
+                                    }
                                 }
                                 Ready(Some(Ok(EventChunkerItem::Log(item))))
                                 //continue 'outer;
