@@ -9,6 +9,8 @@ use netpod::timeunits::SEC;
 use netpod::{ByteSize, ChannelConfig, EventDataReadStats, NanoRange, ScalarType, Shape};
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 pub struct EventChunker {
@@ -26,6 +28,7 @@ pub struct EventChunker {
     final_stats_sent: bool,
     parsed_bytes: u64,
     path: PathBuf,
+    max_ts: Arc<AtomicU64>,
 }
 
 enum DataFileState {
@@ -56,6 +59,7 @@ impl EventChunker {
         range: NanoRange,
         stats_conf: EventChunkerConf,
         path: PathBuf,
+        max_ts: Arc<AtomicU64>,
     ) -> Self {
         let mut inp = NeedMinBuffer::new(inp);
         inp.set_need_min(6);
@@ -74,6 +78,7 @@ impl EventChunker {
             final_stats_sent: false,
             parsed_bytes: 0,
             path,
+            max_ts,
         }
     }
 
@@ -83,8 +88,9 @@ impl EventChunker {
         range: NanoRange,
         stats_conf: EventChunkerConf,
         path: PathBuf,
+        max_ts: Arc<AtomicU64>,
     ) -> Self {
-        let mut ret = Self::from_start(inp, channel_config, range, stats_conf, path);
+        let mut ret = Self::from_start(inp, channel_config, range, stats_conf, path, max_ts);
         ret.state = DataFileState::Event;
         ret.need_min = 4;
         ret.inp.set_need_min(4);
@@ -151,6 +157,19 @@ impl EventChunker {
                         let _ttl = sl.read_i64::<BE>().unwrap();
                         let ts = sl.read_i64::<BE>().unwrap() as u64;
                         let pulse = sl.read_i64::<BE>().unwrap() as u64;
+                        let max_ts = self.max_ts.load(Ordering::SeqCst);
+                        if ts < max_ts {
+                            Err(Error::with_msg(format!(
+                                "unordered event ts: {}.{}  max_ts {}.{}  config {:?}  path {:?}",
+                                ts / SEC,
+                                ts % SEC,
+                                max_ts / SEC,
+                                max_ts % SEC,
+                                self.channel_config.shape,
+                                self.path
+                            )))?;
+                        }
+                        self.max_ts.store(ts, Ordering::SeqCst);
                         if ts >= self.range.end {
                             self.seen_beyond_range = true;
                             self.data_emit_complete = true;

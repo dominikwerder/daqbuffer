@@ -10,6 +10,7 @@ use http::{HeaderMap, Method, StatusCode};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
+use netpod::log::*;
 use netpod::{ByteSize, Node, NodeConfigCached};
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
@@ -17,8 +18,8 @@ use serde::{Deserialize, Serialize};
 use std::{future, net, panic, pin, task};
 use task::{Context, Poll};
 use tracing::field::Empty;
-#[allow(unused_imports)]
-use tracing::{debug, error, info, span, trace, warn, Level};
+
+pub mod gather;
 
 pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
     let node_config = node_config.clone();

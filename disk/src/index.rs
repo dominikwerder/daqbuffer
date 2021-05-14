@@ -140,19 +140,11 @@ pub async fn read_event_at(pos: u64, file: &mut File) -> Result<(u32, Nanos), Er
     Ok(ev)
 }
 
-pub async fn position_file(mut file: File, beg: u64) -> Result<File, Error> {
-    // Read first chunk which should include channel name packet, and a first event.
-    // It can be that file is empty.
-    // It can be that there is a a channel header but zero events.
+pub async fn position_static_len_datafile(mut file: File, beg: u64) -> Result<(File, bool), Error> {
     let flen = file.seek(SeekFrom::End(0)).await?;
     file.seek(SeekFrom::Start(0)).await?;
     let mut buf = vec![0; 1024];
-    let n1 = read(&mut buf, &mut file).await?;
-    if n1 < buf.len() {
-        // file has less content than our buffer
-    } else {
-        //
-    }
+    let _n1 = read(&mut buf, &mut file).await?;
     let hres = parse_channel_header(&buf)?;
     let headoff = 2 + hres.0 as u64;
     let ev = parse_event(&buf[headoff as usize..])?;
@@ -160,22 +152,36 @@ pub async fn position_file(mut file: File, beg: u64) -> Result<File, Error> {
     let mut j = headoff;
     let mut k = ((flen - headoff) / evlen - 1) * evlen + headoff;
     let x = ev.1.ns;
-    let y = read_event_at(k, &mut file).await?.1.ns;
+    let t = read_event_at(k, &mut file).await?;
+    if t.0 != evlen as u32 {
+        Err(Error::with_msg(format!(
+            "inconsistent event lengths:  {}  vs  {}",
+            t.0, evlen
+        )))?;
+    }
+    let y = t.1.ns;
     if x >= beg {
         file.seek(SeekFrom::Start(j)).await?;
-        return Ok(file);
+        return Ok((file, true));
     }
     if y < beg {
         file.seek(SeekFrom::Start(j)).await?;
-        return Ok(file);
+        return Ok((file, false));
     }
     loop {
         if k - j < 2 * evlen {
             file.seek(SeekFrom::Start(k)).await?;
-            return Ok(file);
+            return Ok((file, true));
         }
         let m = j + (k - j) / 2 / evlen * evlen;
-        let x = read_event_at(m, &mut file).await?.1.ns;
+        let t = read_event_at(m, &mut file).await?;
+        if t.0 != evlen as u32 {
+            Err(Error::with_msg(format!(
+                "inconsistent event lengths:  {}  vs  {}",
+                t.0, evlen
+            )))?;
+        }
+        let x = t.1.ns;
         if x < beg {
             j = m;
         } else {

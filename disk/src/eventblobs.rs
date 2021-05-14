@@ -6,6 +6,8 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::{ChannelConfig, NanoRange, Node};
 use std::pin::Pin;
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
 use std::task::{Context, Poll};
 
 pub struct EventBlobsComplete {
@@ -17,6 +19,7 @@ pub struct EventBlobsComplete {
     range: NanoRange,
     errored: bool,
     completed: bool,
+    max_ts: Arc<AtomicU64>,
 }
 
 impl EventBlobsComplete {
@@ -36,6 +39,7 @@ impl EventBlobsComplete {
             range,
             errored: false,
             completed: false,
+            max_ts: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -72,6 +76,7 @@ impl Stream for EventBlobsComplete {
                                     self.range.clone(),
                                     self.event_chunker_conf.clone(),
                                     path,
+                                    self.max_ts.clone(),
                                 );
                                 self.evs = Some(chunker);
                                 continue 'outer;

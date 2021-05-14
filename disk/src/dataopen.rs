@@ -78,6 +78,7 @@ async fn open_files_inner(
         debug!("opening path {:?}", &path);
         let mut file = OpenOptions::new().read(true).open(&path).await?;
         debug!("opened file {:?}  {:?}", &path, &file);
+        let mut use_file = false;
         {
             let index_path = paths::index_path(ts_bin, &channel_config, &node)?;
             match OpenOptions::new().read(true).open(&index_path).await {
@@ -112,23 +113,32 @@ async fn open_files_inner(
                         Some(o) => {
                             debug!("FOUND ts IN INDEX: {:?}", o);
                             file.seek(SeekFrom::Start(o.1)).await?;
+                            use_file = true;
                         }
                         None => {
                             debug!("NOT FOUND IN INDEX");
-                            file.seek(SeekFrom::End(0)).await?;
+                            use_file = false;
                         }
                     }
                 }
                 Err(e) => match e.kind() {
                     ErrorKind::NotFound => {
-                        file = super::index::position_file(file, range.beg).await?;
+                        let res = super::index::position_static_len_datafile(file, range.beg).await?;
+                        file = res.0;
+                        if res.1 {
+                            use_file = true;
+                        } else {
+                            use_file = false;
+                        }
                     }
                     _ => Err(e)?,
                 },
             }
         }
-        let ret = OpenedFile { file, path };
-        chtx.send(Ok(ret)).await?;
+        if use_file {
+            let ret = OpenedFile { file, path };
+            chtx.send(Ok(ret)).await?;
+        }
     }
     // TODO keep track of number of running
     debug!("open_files_inner done");

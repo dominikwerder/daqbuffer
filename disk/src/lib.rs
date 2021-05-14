@@ -348,7 +348,8 @@ pub fn parsed1(
                 Ok(file) => {
                     let inp = Box::pin(file_content_stream(file.file, query.buffer_size as usize));
                     let range = err::todoval();
-                    let mut chunker = eventchunker::EventChunker::from_event_boundary(inp, err::todoval(), range, stats_conf.clone(), file.path);
+                    let max_ts = err::todoval();
+                    let mut chunker = eventchunker::EventChunker::from_event_boundary(inp, err::todoval(), range, stats_conf.clone(), file.path, max_ts);
                     while let Some(evres) = chunker.next().await {
                         use eventchunker::EventChunkerItem;
                         match evres {
