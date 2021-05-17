@@ -3,7 +3,6 @@ use bytes::BytesMut;
 use err::Error;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::timeunits::MS;
 use netpod::{ChannelConfig, NanoRange, Nanos, Node};
 use std::path::PathBuf;
 use tokio::fs::{File, OpenOptions};
@@ -63,9 +62,6 @@ async fn open_files_inner(
         }
     }
     timebins.sort_unstable();
-    let tgt_tb = (range.beg / MS) as f32 / (channel_config.time_bin_size.ns / MS) as f32;
-    info!("tgt_tb:  {:?}", tgt_tb);
-    info!("timebins found:  {:?}", timebins);
     for &tb in &timebins {
         let ts_bin = Nanos {
             ns: tb * channel_config.time_bin_size.ns,
@@ -76,11 +72,8 @@ async fn open_files_inner(
         if ts_bin.ns + channel_config.time_bin_size.ns <= range.beg {
             continue;
         }
-        //debug!("opening tb {:?}", &tb);
         let path = paths::datapath(tb, &channel_config, &node);
-        info!("opening path {:?}", &path);
         let mut file = OpenOptions::new().read(true).open(&path).await?;
-        //info!("opened file {:?}  {:?}", &path, &file);
         let ret = {
             let index_path = paths::index_path(ts_bin, &channel_config, &node)?;
             match OpenOptions::new().read(true).open(&index_path).await {
@@ -109,7 +102,6 @@ async fn open_files_inner(
                     }
                     let mut buf = BytesMut::with_capacity(meta.len() as usize);
                     buf.resize(buf.capacity(), 0);
-                    debug!("read exact index file  {}  {}", buf.len(), buf.len() % 16);
                     index_file.read_exact(&mut buf).await?;
                     match super::index::find_ge(range.beg, &buf[2..])? {
                         Some(o) => {
@@ -160,6 +152,5 @@ async fn open_files_inner(
         chtx.send(Ok(ret)).await?;
     }
     // TODO keep track of number of running
-    debug!("open_files_inner done");
     Ok(())
 }

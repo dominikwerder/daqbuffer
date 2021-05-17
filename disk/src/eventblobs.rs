@@ -6,7 +6,6 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::timeunits::SEC;
 use netpod::{ChannelConfig, NanoRange, Node};
 use std::pin::Pin;
 use std::sync::atomic::AtomicU64;
@@ -20,9 +19,11 @@ pub struct EventBlobsComplete {
     buffer_size: usize,
     event_chunker_conf: EventChunkerConf,
     range: NanoRange,
+    data_completed: bool,
     errored: bool,
     completed: bool,
     max_ts: Arc<AtomicU64>,
+    files_count: u32,
 }
 
 impl EventBlobsComplete {
@@ -33,7 +34,6 @@ impl EventBlobsComplete {
         buffer_size: usize,
         event_chunker_conf: EventChunkerConf,
     ) -> Self {
-        //info!("EventBlobsComplete::new  beg {}", range.beg / SEC);
         Self {
             file_chan: open_files(&range, &channel_config, node),
             evs: None,
@@ -41,9 +41,11 @@ impl EventBlobsComplete {
             event_chunker_conf,
             channel_config,
             range,
+            data_completed: false,
             errored: false,
             completed: false,
             max_ts: Arc::new(AtomicU64::new(0)),
+            files_count: 0,
         }
     }
 }
@@ -59,6 +61,9 @@ impl Stream for EventBlobsComplete {
             } else if self.errored {
                 self.completed = true;
                 return Ready(None);
+            } else if self.data_completed {
+                self.completed = true;
+                return Ready(None);
             } else {
                 match &mut self.evs {
                     Some(evs) => match evs.poll_next_unpin(cx) {
@@ -72,6 +77,7 @@ impl Stream for EventBlobsComplete {
                     None => match self.file_chan.poll_next_unpin(cx) {
                         Ready(Some(k)) => match k {
                             Ok(file) => {
+                                self.files_count += 1;
                                 let path = file.path;
                                 let item = LogItem::quick(Level::INFO, format!("handle file {:?}", path));
                                 match file.file {
@@ -93,7 +99,6 @@ impl Stream for EventBlobsComplete {
                                     }
                                 }
                                 Ready(Some(Ok(EventChunkerItem::Log(item))))
-                                //continue 'outer;
                             }
                             Err(e) => {
                                 self.errored = true;
@@ -101,8 +106,12 @@ impl Stream for EventBlobsComplete {
                             }
                         },
                         Ready(None) => {
-                            self.completed = true;
-                            Ready(None)
+                            self.data_completed = true;
+                            let item = LogItem::quick(
+                                Level::INFO,
+                                format!("EventBlobsComplete used {} datafiles", self.files_count),
+                            );
+                            Ready(Some(Ok(EventChunkerItem::Log(item))))
                         }
                         Pending => Pending,
                     },
