@@ -1,6 +1,6 @@
 use err::Error;
 use netpod::timeunits::MS;
-use netpod::{Channel, NanoRange, Nanos, Node, ScalarType};
+use netpod::{Channel, NanoRange, Nanos, Node, ScalarType, Shape};
 use nom::number::complete::{be_i16, be_i32, be_i64, be_i8, be_u8};
 use nom::Needed;
 #[allow(unused_imports)]
@@ -66,6 +66,22 @@ pub struct ConfigEntry {
     description: Option<String>,
     optional_fields: Option<String>,
     value_converter: Option<String>,
+}
+
+impl ConfigEntry {
+    pub fn to_shape(&self) -> Result<Shape, Error> {
+        let ret = match &self.shape {
+            Some(lens) => {
+                if lens.len() == 1 {
+                    Shape::Wave(lens[0])
+                } else {
+                    return Err(Error::with_msg(format!("Channel config unsupported shape {:?}", self)))?;
+                }
+            }
+            None => Shape::Scalar,
+        };
+        Ok(ret)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

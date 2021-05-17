@@ -10,6 +10,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
 use hyper::Response;
+use netpod::timeunits::SEC;
 use netpod::{
     AggKind, ByteSize, Channel, Cluster, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchCoord, ToNanos,
 };
@@ -145,6 +146,10 @@ impl PreBinnedQuery {
             .get("bin_t_len")
             .ok_or(Error::with_msg("missing bin_t_len"))?
             .parse()?;
+        let patch_t_len = params
+            .get("patch_t_len")
+            .ok_or(Error::with_msg("missing patch_t_len"))?
+            .parse()?;
         let disk_stats_every = params
             .get("disk_stats_every_kb")
             .ok_or(Error::with_msg("missing disk_stats_every_kb"))?;
@@ -152,7 +157,7 @@ impl PreBinnedQuery {
             .parse()
             .map_err(|e| Error::with_msg(format!("can not parse disk_stats_every_kb {:?}", e)))?;
         let ret = PreBinnedQuery {
-            patch: PreBinnedPatchCoord::new(bin_t_len, patch_ix),
+            patch: PreBinnedPatchCoord::new(bin_t_len, patch_t_len, patch_ix),
             agg_kind: AggKind::DimXBins1,
             channel: channel_from_params(&params)?,
             cache_usage: cache_usage_from_params(&params)?,
@@ -415,6 +420,7 @@ pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoord, channel: &Channel, c
     hash.update(&patch_coord.patch_beg().to_le_bytes());
     hash.update(&patch_coord.patch_end().to_le_bytes());
     hash.update(&patch_coord.bin_t_len().to_le_bytes());
+    hash.update(&patch_coord.patch_t_len().to_le_bytes());
     let mut out = [0; 32];
     hash.finalize(&mut out);
     let a = [out[0], out[1], out[2], out[3]];
@@ -466,9 +472,12 @@ impl CacheFileDesc {
             .join(&hc[3..6])
             .join(&self.channel.name)
             .join(format!("{:?}", self.agg_kind))
-            .join(format!("{:019}", self.patch.spec().bin_t_len()))
-            .join(&hash[0..2])
-            .join(format!("{:019}", self.patch.ix()))
+            .join(format!(
+                "{:010}-{:010}",
+                self.patch.spec().bin_t_len() / SEC,
+                self.patch.spec().patch_t_len() / SEC
+            ))
+            .join(format!("{}-{:012}", &hash[0..6], self.patch.ix()))
     }
 }
 

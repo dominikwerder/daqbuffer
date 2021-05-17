@@ -60,6 +60,7 @@ async fn agg_x_dim_0_inner() {
         range.clone(),
         query.channel_config.clone(),
         node.clone(),
+        0,
         query.buffer_size as usize,
         event_chunker_conf,
     )
@@ -71,7 +72,7 @@ async fn agg_x_dim_0_inner() {
         }
         k
     })
-    .into_binned_t(BinnedRange::covering_range(range, bin_count).unwrap())
+    .into_binned_t(BinnedRange::covering_range(range, bin_count).unwrap().unwrap())
     .map(|k| {
         if false {
             trace!("after T binning  {:?}", k.as_ref().unwrap());
@@ -123,6 +124,7 @@ async fn agg_x_dim_1_inner() {
         range.clone(),
         query.channel_config.clone(),
         node.clone(),
+        0,
         query.buffer_size as usize,
         event_chunker_conf,
     )
@@ -141,7 +143,7 @@ async fn agg_x_dim_1_inner() {
         //info!("after X binning  {:?}", k.as_ref().unwrap());
         k
     })
-    .into_binned_t(BinnedRange::covering_range(range, bin_count).unwrap())
+    .into_binned_t(BinnedRange::covering_range(range, bin_count).unwrap().unwrap())
     .map(|k| {
         info!("after T binning  {:?}", k.as_ref().unwrap());
         k

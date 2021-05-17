@@ -10,8 +10,7 @@ use crate::raw::{EventQueryJsonStringFrame, EventsQuery};
 use err::Error;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::timeunits::SEC;
-use netpod::{ByteSize, NodeConfigCached, PerfOpts, Shape};
+use netpod::{ByteSize, NodeConfigCached, PerfOpts};
 use std::net::SocketAddr;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
@@ -133,20 +132,9 @@ async fn raw_conn_handler_inner_try(
         Ok(k) => k,
         Err(e) => return Err((e, netout))?,
     };
-    //info!("found config entry {:?}", entry);
-    info!("raw_conn_handler_inner_try  beg {}", range.beg / SEC);
-    let shape = match &entry.shape {
-        Some(lens) => {
-            if lens.len() == 1 {
-                Shape::Wave(lens[0])
-            } else {
-                return Err((
-                    Error::with_msg(format!("Channel config unsupported shape {:?}", entry)),
-                    netout,
-                ))?;
-            }
-        }
-        None => Shape::Scalar,
+    let shape = match entry.to_shape() {
+        Ok(k) => k,
+        Err(e) => return Err((e, netout))?,
     };
     let channel_config = netpod::ChannelConfig {
         channel: evq.channel.clone(),
@@ -165,6 +153,7 @@ async fn raw_conn_handler_inner_try(
         range.clone(),
         channel_config.clone(),
         node_config.node.clone(),
+        node_config.ix,
         buffer_size,
         event_chunker_conf,
     )

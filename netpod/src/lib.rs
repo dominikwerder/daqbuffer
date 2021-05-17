@@ -250,7 +250,9 @@ pub mod timeunits {
 
 const BIN_T_LEN_OPTIONS: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
 
-const PATCH_T_LEN_OPTIONS: [u64; 4] = [MIN * 10, HOUR * 2, DAY * 4, DAY * 32];
+const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 4] = [MIN * 60, HOUR * 2, DAY * 4, DAY * 32];
+
+const PATCH_T_LEN_OPTIONS_WAVE: [u64; 4] = [MIN * 20, HOUR * 2, DAY * 4, DAY * 32];
 
 const BIN_THRESHOLDS: [u64; 31] = [
     2,
@@ -289,14 +291,15 @@ const BIN_THRESHOLDS: [u64; 31] = [
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PreBinnedPatchGridSpec {
     bin_t_len: u64,
+    patch_t_len: u64,
 }
 
 impl PreBinnedPatchGridSpec {
-    pub fn new(bin_t_len: u64) -> Self {
+    pub fn new(bin_t_len: u64, patch_t_len: u64) -> Self {
         if !Self::is_valid_bin_t_len(bin_t_len) {
             panic!("PreBinnedPatchGridSpec  invalid bin_t_len  {}", bin_t_len);
         }
-        Self { bin_t_len }
+        Self { bin_t_len, patch_t_len }
     }
 
     pub fn bin_t_len(&self) -> u64 {
@@ -313,12 +316,7 @@ impl PreBinnedPatchGridSpec {
     }
 
     pub fn patch_t_len(&self) -> u64 {
-        for (i1, &j) in BIN_T_LEN_OPTIONS.iter().enumerate() {
-            if self.bin_t_len == j {
-                return PATCH_T_LEN_OPTIONS[i1];
-            }
-        }
-        panic!()
+        self.patch_t_len
     }
 }
 
@@ -340,36 +338,64 @@ pub struct PreBinnedPatchRange {
     pub count: u64,
 }
 
+fn get_patch_t_len(bin_t_len: u64) -> u64 {
+    // TODO mechanism to select different patch lengths for different channels.
+    let shape = Shape::Scalar;
+    match shape {
+        Shape::Scalar => {
+            for (i1, &j) in BIN_T_LEN_OPTIONS.iter().enumerate() {
+                if bin_t_len == j {
+                    return PATCH_T_LEN_OPTIONS_SCALAR[i1];
+                }
+            }
+        }
+        Shape::Wave(_) => {
+            for (i1, &j) in BIN_T_LEN_OPTIONS.iter().enumerate() {
+                if bin_t_len == j {
+                    return PATCH_T_LEN_OPTIONS_WAVE[i1];
+                }
+            }
+        }
+    }
+    panic!()
+}
+
 impl PreBinnedPatchRange {
     /// Cover at least the given range with at least as many as the requested number of bins.
-    pub fn covering_range(range: NanoRange, min_bin_count: u64) -> Option<Self> {
-        assert!(min_bin_count >= 1);
-        assert!(min_bin_count <= 2000);
+    pub fn covering_range(range: NanoRange, min_bin_count: u64) -> Result<Option<Self>, Error> {
+        if min_bin_count < 1 {
+            Err(Error::with_msg("min_bin_count < 1"))?;
+        }
+        if min_bin_count > 4000 {
+            Err(Error::with_msg("min_bin_count > 4000"))?;
+        }
         let dt = range.delta();
-        assert!(dt <= DAY * 14);
+        if dt > DAY * 14 {
+            Err(Error::with_msg("dt > DAY * 14"))?;
+        }
         let bs = dt / min_bin_count;
-        //info!("BASIC bs {}", bs);
         let mut i1 = BIN_T_LEN_OPTIONS.len();
         loop {
             if i1 <= 0 {
-                break None;
+                break Ok(None);
             } else {
                 i1 -= 1;
                 let t = BIN_T_LEN_OPTIONS[i1];
-                //info!("look at threshold {}  bs {}", t, bs);
                 if t <= bs {
                     let bin_t_len = t;
-                    let grid_spec = PreBinnedPatchGridSpec { bin_t_len };
-                    let pl = grid_spec.patch_t_len();
+                    let patch_t_len = get_patch_t_len(bin_t_len);
+                    let grid_spec = PreBinnedPatchGridSpec { bin_t_len, patch_t_len };
+                    let pl = patch_t_len;
                     let ts1 = range.beg / pl * pl;
                     let ts2 = (range.end + pl - 1) / pl * pl;
                     let count = (ts2 - ts1) / pl;
                     let offset = ts1 / pl;
-                    break Some(Self {
+                    let ret = Self {
                         grid_spec,
                         count,
                         offset,
-                    });
+                    };
+                    break Ok(Some(ret));
                 }
             }
         }
@@ -427,9 +453,9 @@ impl PreBinnedPatchCoord {
         )
     }
 
-    pub fn new(bin_t_len: u64, patch_ix: u64) -> Self {
+    pub fn new(bin_t_len: u64, patch_t_len: u64, patch_ix: u64) -> Self {
         Self {
-            spec: PreBinnedPatchGridSpec::new(bin_t_len),
+            spec: PreBinnedPatchGridSpec::new(bin_t_len, patch_t_len),
             ix: patch_ix,
         }
     }
@@ -514,16 +540,22 @@ pub struct BinnedRange {
 }
 
 impl BinnedRange {
-    pub fn covering_range(range: NanoRange, min_bin_count: u64) -> Option<Self> {
-        assert!(min_bin_count >= 1);
-        assert!(min_bin_count <= 2000);
+    pub fn covering_range(range: NanoRange, min_bin_count: u64) -> Result<Option<Self>, Error> {
+        if min_bin_count < 1 {
+            Err(Error::with_msg("min_bin_count < 1"))?;
+        }
+        if min_bin_count > 4000 {
+            Err(Error::with_msg("min_bin_count > 4000"))?;
+        }
         let dt = range.delta();
-        assert!(dt <= DAY * 14);
+        if dt > DAY * 14 {
+            Err(Error::with_msg("dt > DAY * 14"))?;
+        }
         let bs = dt / min_bin_count;
         let mut i1 = BIN_THRESHOLDS.len();
         loop {
             if i1 <= 0 {
-                break None;
+                break Ok(None);
             } else {
                 i1 -= 1;
                 let t = BIN_THRESHOLDS[i1];
@@ -534,11 +566,12 @@ impl BinnedRange {
                     let ts2 = (range.end + pl - 1) / pl * pl;
                     let count = (ts2 - ts1) / pl;
                     let offset = ts1 / pl;
-                    break Some(Self {
+                    let ret = Self {
                         grid_spec,
                         count,
                         offset,
-                    });
+                    };
+                    break Ok(Some(ret));
                 }
             }
         }

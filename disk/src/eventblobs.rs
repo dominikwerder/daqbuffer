@@ -6,6 +6,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;
+use netpod::timeunits::SEC;
 use netpod::{ChannelConfig, NanoRange, Node};
 use std::pin::Pin;
 use std::sync::atomic::AtomicU64;
@@ -24,6 +25,7 @@ pub struct EventBlobsComplete {
     completed: bool,
     max_ts: Arc<AtomicU64>,
     files_count: u32,
+    node_ix: usize,
 }
 
 impl EventBlobsComplete {
@@ -31,6 +33,7 @@ impl EventBlobsComplete {
         range: NanoRange,
         channel_config: ChannelConfig,
         node: Node,
+        node_ix: usize,
         buffer_size: usize,
         event_chunker_conf: EventChunkerConf,
     ) -> Self {
@@ -46,6 +49,7 @@ impl EventBlobsComplete {
             completed: false,
             max_ts: Arc::new(AtomicU64::new(0)),
             files_count: 0,
+            node_ix,
         }
     }
 }
@@ -82,7 +86,6 @@ impl Stream for EventBlobsComplete {
                                 let item = LogItem::quick(Level::INFO, format!("handle file {:?}", path));
                                 match file.file {
                                     Some(file) => {
-                                        info!("got file  {:?}", path);
                                         let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
                                         let chunker = EventChunker::from_event_boundary(
                                             inp,
@@ -94,9 +97,7 @@ impl Stream for EventBlobsComplete {
                                         );
                                         self.evs = Some(chunker);
                                     }
-                                    None => {
-                                        info!("skip  {:?}", path);
-                                    }
+                                    None => {}
                                 }
                                 Ready(Some(Ok(EventChunkerItem::Log(item))))
                             }
@@ -109,7 +110,13 @@ impl Stream for EventBlobsComplete {
                             self.data_completed = true;
                             let item = LogItem::quick(
                                 Level::INFO,
-                                format!("EventBlobsComplete used {} datafiles", self.files_count),
+                                format!(
+                                    "EventBlobsComplete used {} datafiles  beg {}  end {}  node_ix {}",
+                                    self.files_count,
+                                    self.range.beg / SEC,
+                                    self.range.end / SEC,
+                                    self.node_ix
+                                ),
                             );
                             Ready(Some(Ok(EventChunkerItem::Log(item))))
                         }

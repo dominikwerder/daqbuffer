@@ -27,14 +27,15 @@ pub async fn binned_stream(node_config: &NodeConfigCached, query: &BinnedQuery) 
     }
     let range = query.range();
     let channel_config = read_local_config(&query.channel(), &node_config.node).await?;
-    let entry = extract_matching_config_entry(range, &channel_config);
+    let entry = extract_matching_config_entry(range, &channel_config)?;
     info!("binned_bytes_for_http  found config entry {:?}", entry);
-    let range = BinnedRange::covering_range(range.clone(), query.bin_count()).ok_or(Error::with_msg(format!(
+    let range = BinnedRange::covering_range(range.clone(), query.bin_count())?.ok_or(Error::with_msg(format!(
         "binned_bytes_for_http  BinnedRange::covering_range returned None"
     )))?;
     let perf_opts = PerfOpts { inmem_bufcap: 512 };
+    let _shape = entry.to_shape()?;
     match PreBinnedPatchRange::covering_range(query.range().clone(), query.bin_count()) {
-        Some(pre_range) => {
+        Ok(Some(pre_range)) => {
             info!("binned_bytes_for_http  found pre_range: {:?}", pre_range);
             if range.grid_spec.bin_t_len() < pre_range.grid_spec.bin_t_len() {
                 let msg = format!(
@@ -55,7 +56,7 @@ pub async fn binned_stream(node_config: &NodeConfigCached, query: &BinnedQuery) 
             let ret = BinnedStream::new(Box::pin(s1))?;
             Ok(ret)
         }
-        None => {
+        Ok(None) => {
             info!(
                 "binned_bytes_for_http  no covering range for prebinned, merge from remotes instead {:?}",
                 range
@@ -71,6 +72,7 @@ pub async fn binned_stream(node_config: &NodeConfigCached, query: &BinnedQuery) 
             let ret = BinnedStream::new(Box::pin(s1))?;
             Ok(ret)
         }
+        Err(e) => Err(e),
     }
 }
 

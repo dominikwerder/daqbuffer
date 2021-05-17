@@ -104,7 +104,10 @@ impl PreBinnedValueStream {
         }
         // TODO do I need to set up more transformations or binning to deliver the requested data?
         let count = self.query.patch.patch_t_len() / self.query.patch.bin_t_len();
-        let range = BinnedRange::covering_range(evq.range.clone(), count).unwrap();
+        let range = BinnedRange::covering_range(evq.range.clone(), count)
+            .unwrap()
+            .ok_or(Error::with_msg("covering_range returns None"))
+            .unwrap();
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
         let s1 = MergedFromRemotes::new(evq, perf_opts, self.node_config.node_config.cluster.clone());
         let s1 = s1.into_binned_t(range);
@@ -172,16 +175,18 @@ impl PreBinnedValueStream {
         self.fut2 = Some(Box::pin(s));
     }
 
-    fn try_setup_fetch_prebinned_higher_res(&mut self) {
+    fn try_setup_fetch_prebinned_higher_res(&mut self) -> Result<(), Error> {
         let range = self.query.patch.patch_range();
         match PreBinnedPatchRange::covering_range(range, self.query.patch.bin_count() + 1) {
-            Some(range) => {
+            Ok(Some(range)) => {
                 self.setup_from_higher_res_prebinned(range);
             }
-            None => {
+            Ok(None) => {
                 self.setup_merged_from_remotes();
             }
+            Err(e) => return Err(e),
         }
+        Ok(())
     }
 }
 
@@ -322,18 +327,27 @@ impl Stream for PreBinnedValueStream {
                                 continue 'outer;
                             }
                             Err(e) => match e.kind() {
-                                std::io::ErrorKind::NotFound => {
-                                    self.try_setup_fetch_prebinned_higher_res();
-                                    if self.fut2.is_none() {
-                                        let e = Err(Error::with_msg(format!(
-                                            "try_setup_fetch_prebinned_higher_res  failed"
-                                        )));
-                                        self.errored = true;
-                                        Ready(Some(e))
-                                    } else {
-                                        continue 'outer;
+                                std::io::ErrorKind::NotFound => match self.try_setup_fetch_prebinned_higher_res() {
+                                    Ok(_) => {
+                                        if self.fut2.is_none() {
+                                            let e = Err(Error::with_msg(format!(
+                                                "try_setup_fetch_prebinned_higher_res  failed"
+                                            )));
+                                            self.errored = true;
+                                            Ready(Some(e))
+                                        } else {
+                                            continue 'outer;
+                                        }
                                     }
-                                }
+                                    Err(e) => {
+                                        let e = Error::with_msg(format!(
+                                            "try_setup_fetch_prebinned_higher_res  error: {:?}",
+                                            e
+                                        ));
+                                        self.errored = true;
+                                        Ready(Some(Err(e)))
+                                    }
+                                },
                                 _ => {
                                     error!("File I/O error: {:?}", e);
                                     self.errored = true;
