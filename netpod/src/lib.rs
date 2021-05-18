@@ -561,11 +561,11 @@ impl BinnedRange {
                 let t = BIN_THRESHOLDS[i1];
                 if t <= bs || i1 == 0 {
                     let grid_spec = BinnedGridSpec { bin_t_len: t };
-                    let pl = grid_spec.bin_t_len();
-                    let ts1 = range.beg / pl * pl;
-                    let ts2 = (range.end + pl - 1) / pl * pl;
-                    let count = (ts2 - ts1) / pl;
-                    let offset = ts1 / pl;
+                    let bl = grid_spec.bin_t_len();
+                    let ts1 = range.beg / bl * bl;
+                    let ts2 = (range.end + bl - 1) / bl * bl;
+                    let count = (ts2 - ts1) / bl;
+                    let offset = ts1 / bl;
                     let ret = Self {
                         grid_spec,
                         count,
