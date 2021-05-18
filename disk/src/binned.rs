@@ -17,12 +17,15 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-pub struct BinnedStreamRes {
-    pub binned_stream: BinnedStream,
+pub struct BinnedStreamRes<I> {
+    pub binned_stream: BinnedStream<I>,
     pub range: BinnedRange,
 }
 
-pub async fn binned_stream(node_config: &NodeConfigCached, query: &BinnedQuery) -> Result<BinnedStreamRes, Error> {
+pub async fn binned_stream(
+    node_config: &NodeConfigCached,
+    query: &BinnedQuery,
+) -> Result<BinnedStreamRes<Result<MinMaxAvgScalarBinBatchStreamItem, Error>>, Error> {
     if query.channel().backend != node_config.node.backend {
         let err = Error::with_msg(format!(
             "backend mismatch  node: {}  requested: {}",
@@ -96,6 +99,10 @@ pub async fn binned_bytes_for_http(
     node_config: &NodeConfigCached,
     query: &BinnedQuery,
 ) -> Result<BinnedStreamBox, Error> {
+    // TODO must decide here already which AggKind so that I can call into the generic code.
+
+    todo::todo;
+
     let res = binned_stream(node_config, query).await?;
     let ret = BinnedBytesForHttpStream::new(res.binned_stream);
     Ok(Box::pin(ret))

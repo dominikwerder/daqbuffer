@@ -95,21 +95,20 @@ impl Stream for BinnedStreamFromPreBinnedPatches {
     }
 }
 
-pub struct BinnedStream {
-    inp: Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>> + Send>>,
+pub struct BinnedStream<I> {
+    inp: Pin<Box<dyn Stream<Item = I> + Send>>,
 }
 
-impl BinnedStream {
-    pub fn new(
-        inp: Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>> + Send>>,
-    ) -> Result<Self, Error> {
+impl<I> BinnedStream<I> {
+    // Item was: Result<MinMaxAvgScalarBinBatchStreamItem, Error>
+    pub fn new(inp: Pin<Box<dyn Stream<Item = I> + Send>>) -> Result<Self, Error> {
         Ok(Self { inp })
     }
 }
 
-impl Stream for BinnedStream {
-    // TODO make this generic over all possible things
-    type Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>;
+impl<I> Stream for BinnedStream<I> {
+    //type Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>;
+    type Item = I;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.inp.poll_next_unpin(cx)
