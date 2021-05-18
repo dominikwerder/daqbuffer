@@ -16,6 +16,7 @@ use netpod::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fmt::{Display, Formatter};
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -44,6 +45,27 @@ impl CacheUsage {
             CacheUsage::Recreate => "recreate",
         }
         .into()
+    }
+
+    pub fn from_params(params: &BTreeMap<String, String>) -> Result<Self, Error> {
+        let ret = params.get("cache_usage").map_or(Ok::<_, Error>(CacheUsage::Use), |k| {
+            if k == "use" {
+                Ok(CacheUsage::Use)
+            } else if k == "ignore" {
+                Ok(CacheUsage::Ignore)
+            } else if k == "recreate" {
+                Ok(CacheUsage::Recreate)
+            } else {
+                Err(Error::with_msg(format!("unexpected cache_usage {:?}", k)))?
+            }
+        })?;
+        Ok(ret)
+    }
+}
+
+impl Display for CacheUsage {
+    fn fmt(&self, fmt: &mut Formatter) -> std::fmt::Result {
+        write!(fmt, "{}", self.query_param_value())
     }
 }
 
@@ -76,9 +98,13 @@ impl BinnedQuery {
                 .ok_or(Error::with_msg("missing bin_count"))?
                 .parse()
                 .map_err(|e| Error::with_msg(format!("can not parse bin_count {:?}", e)))?,
-            agg_kind: AggKind::DimXBins1,
+            agg_kind: params
+                .get("agg_kind")
+                .map_or("DimXBins1", |k| k)
+                .parse()
+                .map_err(|e| Error::with_msg(format!("can not parse agg_kind {:?}", e)))?,
             channel: channel_from_params(&params)?,
-            cache_usage: cache_usage_from_params(&params)?,
+            cache_usage: CacheUsage::from_params(&params)?,
             disk_stats_every: ByteSize::kb(disk_stats_every),
         };
         info!("BinnedQuery::from_request  {:?}", ret);
@@ -158,27 +184,26 @@ impl PreBinnedQuery {
             .map_err(|e| Error::with_msg(format!("can not parse disk_stats_every_kb {:?}", e)))?;
         let ret = PreBinnedQuery {
             patch: PreBinnedPatchCoord::new(bin_t_len, patch_t_len, patch_ix),
-            agg_kind: AggKind::DimXBins1,
+            agg_kind: params
+                .get("agg_kind")
+                .map_or(&format!("{:?}", AggKind::DimXBins1), |k| k)
+                .parse()
+                .map_err(|e| Error::with_msg(format!("can not parse agg_kind {:?}", e)))?,
             channel: channel_from_params(&params)?,
-            cache_usage: cache_usage_from_params(&params)?,
+            cache_usage: CacheUsage::from_params(&params)?,
             disk_stats_every: ByteSize::kb(disk_stats_every),
         };
         Ok(ret)
     }
 
     pub fn make_query_string(&self) -> String {
-        let cache_usage = match self.cache_usage {
-            CacheUsage::Use => "use",
-            CacheUsage::Ignore => "ignore",
-            CacheUsage::Recreate => "recreate",
-        };
         format!(
             "{}&channel_backend={}&channel_name={}&agg_kind={:?}&cache_usage={}&disk_stats_every_kb={}",
             self.patch.to_url_params_strings(),
             self.channel.backend,
             self.channel.name,
             self.agg_kind,
-            cache_usage,
+            self.cache_usage,
             self.disk_stats_every.bytes() / 1024,
         )
     }
@@ -199,21 +224,6 @@ fn channel_from_params(params: &BTreeMap<String, String>) -> Result<Channel, Err
             .ok_or(Error::with_msg("missing channel_name"))?
             .into(),
     };
-    Ok(ret)
-}
-
-fn cache_usage_from_params(params: &BTreeMap<String, String>) -> Result<CacheUsage, Error> {
-    let ret = params.get("cache_usage").map_or(Ok::<_, Error>(CacheUsage::Use), |k| {
-        if k == "use" {
-            Ok(CacheUsage::Use)
-        } else if k == "ignore" {
-            Ok(CacheUsage::Ignore)
-        } else if k == "recreate" {
-            Ok(CacheUsage::Recreate)
-        } else {
-            Err(Error::with_msg(format!("unexpected cache_usage {:?}", k)))?
-        }
-    })?;
     Ok(ret)
 }
 

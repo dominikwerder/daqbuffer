@@ -5,6 +5,7 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::str::FromStr;
 use std::task::{Context, Poll};
 use timeunits::*;
 #[allow(unused_imports)]
@@ -593,6 +594,18 @@ impl BinnedRange {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum AggKind {
     DimXBins1,
+}
+
+impl FromStr for AggKind {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s == "DimXBins1" {
+            Ok(AggKind::DimXBins1)
+        } else {
+            Err(Error::with_msg(format!("can not parse {} as AggKind", s)))
+        }
+    }
 }
 
 pub fn query_params(q: Option<&str>) -> std::collections::BTreeMap<String, String> {

@@ -1,7 +1,10 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
 use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
+use crate::binned::MakeBytesFrame;
+use crate::frame::makeframe::make_frame;
 use crate::streamlog::LogItem;
 use bytes::{BufMut, Bytes, BytesMut};
+use err::Error;
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{EventDataReadStats, NanoRange};
@@ -399,6 +402,12 @@ impl AggregatableXdim1Bin for MinMaxAvgScalarBinBatchStreamItem {
 
     fn into_agg(self) -> Self::Output {
         self
+    }
+}
+
+impl MakeBytesFrame for Result<MinMaxAvgScalarBinBatchStreamItem, Error> {
+    fn make_bytes_frame(&self) -> Result<Bytes, Error> {
+        Ok(make_frame::<Self>(self)?.freeze())
     }
 }
 

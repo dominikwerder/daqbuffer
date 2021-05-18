@@ -3,7 +3,6 @@ use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatc
 use crate::binnedstream::{BinnedStream, BinnedStreamFromPreBinnedPatches};
 use crate::cache::{BinnedQuery, MergedFromRemotes};
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
-use crate::frame::makeframe::make_frame;
 use crate::raw::EventsQuery;
 use bytes::Bytes;
 use chrono::{TimeZone, Utc};
@@ -120,9 +119,14 @@ impl<S> BinnedBytesForHttpStream<S> {
     }
 }
 
-impl<S> Stream for BinnedBytesForHttpStream<S>
+pub trait MakeBytesFrame {
+    fn make_bytes_frame(&self) -> Result<Bytes, Error>;
+}
+
+impl<S, I> Stream for BinnedBytesForHttpStream<S>
 where
-    S: Stream<Item = Result<MinMaxAvgScalarBinBatchStreamItem, Error>> + Unpin,
+    S: Stream<Item = I> + Unpin,
+    I: MakeBytesFrame,
 {
     type Item = Result<Bytes, Error>;
 
@@ -136,8 +140,8 @@ where
             return Ready(None);
         }
         match self.inp.poll_next_unpin(cx) {
-            Ready(Some(item)) => match make_frame::<BinnedBytesForHttpStreamFrame>(&item) {
-                Ok(buf) => Ready(Some(Ok(buf.freeze()))),
+            Ready(Some(item)) => match item.make_bytes_frame() {
+                Ok(buf) => Ready(Some(Ok(buf))),
                 Err(e) => {
                     self.errored = true;
                     Ready(Some(Err(e.into())))

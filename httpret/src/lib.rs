@@ -87,7 +87,7 @@ impl<F> UnwindSafe for Cont<F> {}
 macro_rules! static_http {
     ($path:expr, $tgt:expr, $tgtex:expr) => {
         if $path == concat!("/api/4/documentation/", $tgt) {
-            let c = include_bytes!(concat!("../static/documentation/", $tgt, $tgtex));
+            let c = include_bytes!(concat!("../static/documentation/", $tgtex));
             return Ok(response(StatusCode::OK).body(Body::from(&c[..]))?);
         }
     };
@@ -141,7 +141,9 @@ async fn data_api_proxy_try(req: Request<Body>, node_config: &NodeConfigCached) 
     } else if path.starts_with("/api/4/documentation/") {
         if req.method() == Method::GET {
             static_http!(path, "", "index.html");
-            static_http!(path, "page.css");
+            static_http!(path, "style.css");
+            static_http!(path, "script.js");
+            static_http!(path, "status-main.html");
             Ok(response(StatusCode::NOT_FOUND).body(Body::empty())?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)

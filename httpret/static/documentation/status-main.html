@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8"/>
+    <title>Main Status</title>
+    <link rel="shortcut icon" href="about:blank"/>
+    <link rel="stylesheet" href="style.css"/>
+    <script src="script.js"></script>
+</head>
+<body>
+<h1>daqbuffer - Main Status</h1>
+
+<p class="buttonrow">
+    <input type="button" id="btn_load" data-btn-label="Reload Overview" value="Reload" onclick="load_status_main(event)"/>
+    <input id="retrieval_instance" type="text" value="main">
+</p>
+
+<p id="load_status"></p>
+<div id="response" class="prejson"></div>
+</body>
+</html>
