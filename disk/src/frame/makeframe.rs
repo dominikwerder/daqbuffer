@@ -15,6 +15,7 @@ pub trait FrameType {
     const FRAME_TYPE_ID: u32;
 }
 
+// TODO replaced by Result<StreamItem<BinnedStreamItem>, Error>
 impl FrameType for BinnedBytesForHttpStreamFrame {
     const FRAME_TYPE_ID: u32 = 0x02;
 }

@@ -24,6 +24,7 @@ pub mod binnedt;
 pub mod binnedx;
 pub mod eventbatch;
 pub mod scalarbinbatch;
+pub mod streams;
 
 pub trait AggregatableXdim1Bin {
     type Output: AggregatableXdim1Bin + AggregatableTdim;

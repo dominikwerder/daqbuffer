@@ -1,4 +1,5 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
+use crate::agg::streams::{Batchable, Bins};
 use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
 use crate::binned::MakeBytesFrame;
 use crate::frame::makeframe::make_frame;
@@ -230,6 +231,23 @@ impl AggregatableTdim for MinMaxAvgScalarBinBatch {
 
     fn make_stats_item(_item: EventDataReadStats) -> Option<Self> {
         None
+    }
+}
+
+impl Batchable for MinMaxAvgScalarBinBatch {
+    fn append(&mut self, k: &mut Self) {
+        self.ts1s.append(&mut k.ts1s);
+        self.ts2s.append(&mut k.ts2s);
+        self.counts.append(&mut k.counts);
+        self.mins.append(&mut k.mins);
+        self.maxs.append(&mut k.maxs);
+        self.avgs.append(&mut k.avgs);
+    }
+}
+
+impl Bins for MinMaxAvgScalarBinBatch {
+    fn bin_count(&self) -> u32 {
+        self.ts1s.len() as u32
     }
 }
 
