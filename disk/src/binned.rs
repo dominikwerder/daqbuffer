@@ -10,7 +10,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::{BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange};
+use netpod::{AggKind, BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange};
 use num_traits::Zero;
 use serde::{Deserialize, Serialize, Serializer};
 use std::pin::Pin;
@@ -100,12 +100,15 @@ pub async fn binned_bytes_for_http(
     query: &BinnedQuery,
 ) -> Result<BinnedStreamBox, Error> {
     // TODO must decide here already which AggKind so that I can call into the generic code.
-
-    todo::todo;
-
-    let res = binned_stream(node_config, query).await?;
-    let ret = BinnedBytesForHttpStream::new(res.binned_stream);
-    Ok(Box::pin(ret))
+    //todo::todo;
+    match query.agg_kind() {
+        AggKind::DimXBins1 => {
+            let res = binned_stream(node_config, query).await?;
+            let ret = BinnedBytesForHttpStream::new(res.binned_stream);
+            Ok(Box::pin(ret))
+        }
+        AggKind::DimXBinsN(_) => err::todoval(),
+    }
 }
 
 pub type BinnedBytesForHttpStreamFrame = <BinnedStreamFromPreBinnedPatches as Stream>::Item;

@@ -186,7 +186,7 @@ impl PreBinnedQuery {
             patch: PreBinnedPatchCoord::new(bin_t_len, patch_t_len, patch_ix),
             agg_kind: params
                 .get("agg_kind")
-                .map_or(&format!("{:?}", AggKind::DimXBins1), |k| k)
+                .map_or(&format!("{}", AggKind::DimXBins1), |k| k)
                 .parse()
                 .map_err(|e| Error::with_msg(format!("can not parse agg_kind {:?}", e)))?,
             channel: channel_from_params(&params)?,
@@ -198,7 +198,7 @@ impl PreBinnedQuery {
 
     pub fn make_query_string(&self) -> String {
         format!(
-            "{}&channel_backend={}&channel_name={}&agg_kind={:?}&cache_usage={}&disk_stats_every_kb={}",
+            "{}&channel_backend={}&channel_name={}&agg_kind={}&cache_usage={}&disk_stats_every_kb={}",
             self.patch.to_url_params_strings(),
             self.channel.backend,
             self.channel.name,
@@ -452,7 +452,7 @@ impl CacheFileDesc {
         h.update(b"V000");
         h.update(self.channel.backend.as_bytes());
         h.update(self.channel.name.as_bytes());
-        h.update(format!("{:?}", self.agg_kind).as_bytes());
+        h.update(format!("{}", self.agg_kind).as_bytes());
         h.update(&self.patch.spec().bin_t_len().to_le_bytes());
         h.update(&self.patch.spec().patch_t_len().to_le_bytes());
         h.update(&self.patch.ix().to_le_bytes());
@@ -481,7 +481,7 @@ impl CacheFileDesc {
             .join(&hc[0..3])
             .join(&hc[3..6])
             .join(&self.channel.name)
-            .join(format!("{:?}", self.agg_kind))
+            .join(format!("{}", self.agg_kind))
             .join(format!(
                 "{:010}-{:010}",
                 self.patch.spec().bin_t_len() / SEC,

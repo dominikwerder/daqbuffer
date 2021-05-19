@@ -3,6 +3,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::str::FromStr;
@@ -591,17 +592,41 @@ impl BinnedRange {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum AggKind {
     DimXBins1,
+    DimXBinsN(u32),
+}
+
+impl Display for AggKind {
+    fn fmt(&self, fmt: &mut Formatter) -> std::fmt::Result {
+        match self {
+            Self::DimXBins1 => {
+                write!(fmt, "DimXBins1")
+            }
+            Self::DimXBinsN(n) => {
+                write!(fmt, "DimXBinsN{}", n)
+            }
+        }
+    }
+}
+
+impl Debug for AggKind {
+    fn fmt(&self, fmt: &mut Formatter) -> std::fmt::Result {
+        Display::fmt(self, fmt)
+    }
 }
 
 impl FromStr for AggKind {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let nmark = "DimXBinsN";
         if s == "DimXBins1" {
             Ok(AggKind::DimXBins1)
+        } else if s.starts_with(nmark) {
+            let nbins: u32 = s[nmark.len()..].parse()?;
+            Ok(AggKind::DimXBinsN(nbins))
         } else {
             Err(Error::with_msg(format!("can not parse {} as AggKind", s)))
         }
