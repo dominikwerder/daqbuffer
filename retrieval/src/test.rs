@@ -1,7 +1,7 @@
 use crate::spawn_test_hosts;
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
-use disk::agg::scalarbinbatch::MinMaxAvgScalarBinBatchStreamItem;
+use disk::agg::streams::StreamItem;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::streamlog::Streamlog;
 use err::Error;
@@ -157,9 +157,9 @@ where
                     match bincode::deserialize::<ExpectedType>(frame.buf()) {
                         Ok(item) => match item {
                             Ok(item) => match item {
-                                MinMaxAvgScalarBinBatchStreamItem::Log(item) => {
+                                StreamItem::Log(item) => {
                                     Streamlog::emit(&item);
-                                    Some(Ok(MinMaxAvgScalarBinBatchStreamItem::Log(item)))
+                                    Some(Ok(StreamItem::Log(item)))
                                 }
                                 item => {
                                     info!("TEST GOT ITEM {:?}", item);
@@ -183,13 +183,15 @@ where
         })
         .fold(Ok(BinnedResponse::new()), |a, k| {
             let g = match a {
-                Ok(mut a) => match k {
-                    Ok(MinMaxAvgScalarBinBatchStreamItem::Values(k)) => {
-                        a.bin_count += k.ts1s.len();
+                Ok(a) => match k {
+                    Ok(StreamItem::DataItem(_item)) => {
+                        // TODO extract bin count from item
+                        //a.bin_count += k.ts1s.len();
                         Ok(a)
                     }
-                    Ok(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(stats)) => {
-                        a.bytes_read += stats.parsed_bytes;
+                    Ok(StreamItem::Stats(_item)) => {
+                        // TODO adapt to new Stats type:
+                        //a.bytes_read += stats.parsed_bytes;
                         Ok(a)
                     }
                     Ok(_) => Ok(a),

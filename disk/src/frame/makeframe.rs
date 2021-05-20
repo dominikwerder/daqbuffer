@@ -1,5 +1,6 @@
+use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatchStreamItem;
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedBytesForHttpStreamFrame, BinnedScalarStreamItem};
+use crate::binned::BinnedScalarStreamItem;
 use crate::cache::pbvfs::PreBinnedItem;
 use crate::frame::inmem::InMemoryFrame;
 use crate::raw::conn::RawConnOut;
@@ -16,11 +17,6 @@ pub trait FrameType {
     const FRAME_TYPE_ID: u32;
 }
 
-// TODO replaced by Result<StreamItem<BinnedStreamItem>, Error>
-impl FrameType for BinnedBytesForHttpStreamFrame {
-    const FRAME_TYPE_ID: u32 = 0x02;
-}
-
 impl FrameType for EventQueryJsonStringFrame {
     const FRAME_TYPE_ID: u32 = 0x03;
 }
@@ -35,6 +31,10 @@ impl FrameType for Result<PreBinnedItem, Error> {
 
 impl FrameType for Result<StreamItem<BinnedScalarStreamItem>, Error> {
     const FRAME_TYPE_ID: u32 = 0x06;
+}
+
+impl FrameType for Result<MinMaxAvgScalarBinBatchStreamItem, Error> {
+    const FRAME_TYPE_ID: u32 = 0x07;
 }
 
 pub fn make_frame<FT>(item: &FT) -> Result<BytesMut, Error>

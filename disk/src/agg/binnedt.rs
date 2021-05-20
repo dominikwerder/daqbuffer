@@ -38,13 +38,14 @@ pub trait IntoBinnedT {
     fn into_binned_t(self, spec: BinnedRange) -> Self::StreamOut;
 }
 
-impl<T, I> IntoBinnedT for T
+impl<S, I> IntoBinnedT for S
 where
+    S: Stream<Item = Result<I, Error>> + Unpin,
     I: AggregatableTdim + Unpin,
-    T: Stream<Item = Result<I, Error>> + Unpin,
+    //I: AggregatableTdim,
     I::Aggregator: Unpin,
 {
-    type StreamOut = IntoBinnedTDefaultStream<T, I>;
+    type StreamOut = IntoBinnedTDefaultStream<S, I>;
 
     fn into_binned_t(self, spec: BinnedRange) -> Self::StreamOut {
         IntoBinnedTDefaultStream::new(self, spec)
@@ -53,8 +54,8 @@ where
 
 pub struct IntoBinnedTDefaultStream<S, I>
 where
-    I: AggregatableTdim,
     S: Stream<Item = Result<I, Error>>,
+    I: AggregatableTdim,
 {
     inp: S,
     aggtor: Option<I::Aggregator>,
@@ -72,8 +73,8 @@ where
 
 impl<S, I> IntoBinnedTDefaultStream<S, I>
 where
-    I: AggregatableTdim,
     S: Stream<Item = Result<I, Error>> + Unpin,
+    I: AggregatableTdim,
 {
     pub fn new(inp: S, spec: BinnedRange) -> Self {
         let range = spec.get_range(0);
@@ -200,20 +201,15 @@ where
 
 impl<S, I> Stream for IntoBinnedTDefaultStream<S, I>
 where
-    I: AggregatableTdim + Unpin,
     S: Stream<Item = Result<I, Error>> + Unpin,
+    //I: AggregatableTdim,
+    I: AggregatableTdim + Unpin,
     I::Aggregator: Unpin,
 {
     type Item = Result<<I::Aggregator as AggregatorTdim>::OutputValue, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        /*
-        Reconsider structure here:
-        I want to exhaust the input stream until it gives Ready(None) because there can be more Status or other new events.
-        The first time that I recognize that the requested data range is complete, I can set a flag.
-        After that, I can dismiss incoming data events.
-        */
         'outer: loop {
             break if self.completed {
                 panic!("IntoBinnedTDefaultStream  poll_next on completed");

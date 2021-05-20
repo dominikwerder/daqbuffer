@@ -1,23 +1,27 @@
-use crate::agg::binnedt::IntoBinnedT;
-use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatchStreamItem};
-use crate::agg::streams::{Collectable, Collected, StatsItem, StreamItem, ToJsonResult};
-use crate::binnedstream::{BinnedStream, BinnedStreamFromPreBinnedPatches};
-use crate::cache::{BinnedQuery, MergedFromRemotes};
+use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
+use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
+use crate::agg::streams::{Collectable, Collected, StreamItem, ToJsonResult};
+use crate::agg::AggregatableXdim1Bin;
+use crate::binned::scalar::binned_scalar_stream;
+use crate::binnedstream::{BinnedScalarStreamFromPreBinnedPatches, BinnedStream};
+use crate::cache::BinnedQuery;
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
 use crate::frame::makeframe::make_frame;
-use crate::raw::EventsQuery;
+use crate::streamlog::LogItem;
 use bytes::Bytes;
 use chrono::{TimeZone, Utc};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::{AggKind, BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange};
+use netpod::{AggKind, BinnedRange, EventDataReadStats, NodeConfigCached};
 use num_traits::Zero;
 use serde::{Deserialize, Serialize, Serializer};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
+
+pub mod scalar;
 
 pub struct BinnedStreamRes<I> {
     pub binned_stream: BinnedStream<I>,
@@ -133,92 +137,82 @@ impl MakeBytesFrame for Result<StreamItem<BinnedScalarStreamItem>, Error> {
     }
 }
 
-fn adapter_to_stream_item(
-    k: Result<MinMaxAvgScalarBinBatchStreamItem, Error>,
-) -> Result<StreamItem<BinnedScalarStreamItem>, Error> {
-    match k {
-        Ok(k) => match k {
-            MinMaxAvgScalarBinBatchStreamItem::Log(item) => Ok(StreamItem::Log(item)),
-            MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(item) => {
-                Ok(StreamItem::Stats(StatsItem::EventDataReadStats(item)))
-            }
-            MinMaxAvgScalarBinBatchStreamItem::RangeComplete => {
-                Ok(StreamItem::DataItem(BinnedScalarStreamItem::RangeComplete))
-            }
-            MinMaxAvgScalarBinBatchStreamItem::Values(item) => {
-                Ok(StreamItem::DataItem(BinnedScalarStreamItem::Values(item)))
-            }
-        },
-        Err(e) => Err(e),
+impl AggregatableXdim1Bin for BinnedScalarStreamItem {
+    // TODO does this already include all cases?
+    type Output = BinnedScalarStreamItem;
+
+    fn into_agg(self) -> Self::Output {
+        todo!()
     }
 }
 
-pub async fn binned_scalar_stream(
-    node_config: &NodeConfigCached,
-    query: &BinnedQuery,
-) -> Result<BinnedStreamRes<Result<StreamItem<BinnedScalarStreamItem>, Error>>, Error> {
-    if query.channel().backend != node_config.node.backend {
-        let err = Error::with_msg(format!(
-            "backend mismatch  node: {}  requested: {}",
-            node_config.node.backend,
-            query.channel().backend
-        ));
-        return Err(err);
+pub struct BinnedScalarStreamItemAggregator {}
+
+impl AggregatorTdim for BinnedScalarStreamItemAggregator {
+    type InputValue = BinnedScalarStreamItem;
+    // TODO using the same type for the output, does this cover all cases?
+    type OutputValue = BinnedScalarStreamItem;
+
+    fn ends_before(&self, inp: &Self::InputValue) -> bool {
+        todo!()
     }
-    let range = BinnedRange::covering_range(query.range().clone(), query.bin_count())?.ok_or(Error::with_msg(
-        format!("binned_bytes_for_http  BinnedRange::covering_range returned None"),
-    ))?;
-    let perf_opts = PerfOpts { inmem_bufcap: 512 };
-    //let _shape = entry.to_shape()?;
-    match PreBinnedPatchRange::covering_range(query.range().clone(), query.bin_count()) {
-        Ok(Some(pre_range)) => {
-            info!("binned_bytes_for_http  found pre_range: {:?}", pre_range);
-            if range.grid_spec.bin_t_len() < pre_range.grid_spec.bin_t_len() {
-                let msg = format!(
-                    "binned_bytes_for_http  incompatible ranges:\npre_range: {:?}\nrange: {:?}",
-                    pre_range, range
-                );
-                return Err(Error::with_msg(msg));
-            }
-            let s1 = BinnedStreamFromPreBinnedPatches::new(
-                PreBinnedPatchIterator::from_range(pre_range),
-                query.channel().clone(),
-                range.clone(),
-                query.agg_kind().clone(),
-                query.cache_usage().clone(),
-                node_config,
-                query.disk_stats_every().clone(),
-            )?
-            .map(adapter_to_stream_item);
-            let s = BinnedStream::new(Box::pin(s1))?;
-            let ret = BinnedStreamRes {
-                binned_stream: s,
-                range,
-            };
-            Ok(ret)
-        }
-        Ok(None) => {
-            info!(
-                "binned_bytes_for_http  no covering range for prebinned, merge from remotes instead {:?}",
-                range
-            );
-            let evq = EventsQuery {
-                channel: query.channel().clone(),
-                range: query.range().clone(),
-                agg_kind: query.agg_kind().clone(),
-            };
-            // TODO do I need to set up more transformations or binning to deliver the requested data?
-            let s = MergedFromRemotes::new(evq, perf_opts, node_config.node_config.cluster.clone());
-            let s = s.into_binned_t(range.clone());
-            let s = s.map(adapter_to_stream_item);
-            let s = BinnedStream::new(Box::pin(s))?;
-            let ret = BinnedStreamRes {
-                binned_stream: s,
-                range,
-            };
-            Ok(ret)
-        }
-        Err(e) => Err(e),
+
+    fn ends_after(&self, inp: &Self::InputValue) -> bool {
+        todo!()
+    }
+
+    fn starts_after(&self, inp: &Self::InputValue) -> bool {
+        todo!()
+    }
+
+    fn ingest(&mut self, inp: &mut Self::InputValue) {
+        todo!()
+    }
+
+    fn result(self) -> Vec<Self::OutputValue> {
+        todo!()
+    }
+}
+
+impl AggregatableTdim for BinnedScalarStreamItem {
+    type Aggregator = BinnedScalarStreamItemAggregator;
+    // TODO isn't this already defined in terms of the Aggregator?
+    type Output = BinnedScalarStreamItem;
+
+    fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator {
+        todo!()
+    }
+
+    fn is_range_complete(&self) -> bool {
+        todo!()
+    }
+
+    fn make_range_complete_item() -> Option<Self> {
+        todo!()
+    }
+
+    fn is_log_item(&self) -> bool {
+        todo!()
+    }
+
+    fn log_item(self) -> Option<LogItem> {
+        todo!()
+    }
+
+    fn make_log_item(item: LogItem) -> Option<Self> {
+        todo!()
+    }
+
+    fn is_stats_item(&self) -> bool {
+        todo!()
+    }
+
+    fn stats_item(self) -> Option<EventDataReadStats> {
+        todo!()
+    }
+
+    fn make_stats_item(item: EventDataReadStats) -> Option<Self> {
+        todo!()
     }
 }
 
@@ -237,12 +231,16 @@ pub async fn binned_bytes_for_http(
             let ret = BinnedBytesForHttpStream::new(res.binned_stream);
             Ok(Box::pin(ret))
         }
-        AggKind::DimXBinsN(_) => err::todoval(),
+        AggKind::DimXBinsN(_) => {
+            let res = binned_scalar_stream(node_config, query).await?;
+            let ret = BinnedBytesForHttpStream::new(res.binned_stream);
+            Ok(Box::pin(ret))
+        }
     }
 }
 
 // TODO remove this when no longer used, gets replaced by Result<StreamItem<BinnedStreamItem>, Error>
-pub type BinnedBytesForHttpStreamFrame = <BinnedStreamFromPreBinnedPatches as Stream>::Item;
+pub type BinnedBytesForHttpStreamFrame = <BinnedScalarStreamFromPreBinnedPatches as Stream>::Item;
 
 pub struct BinnedBytesForHttpStream<S> {
     inp: S,
