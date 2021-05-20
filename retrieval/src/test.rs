@@ -151,32 +151,41 @@ where
         .map_err(|e| error!("TEST GOT ERROR {:?}", e))
         .filter_map(|item| {
             let g = match item {
-                Ok(frame) => {
-                    type ExpectedType = disk::binned::BinnedBytesForHttpStreamFrame;
-                    //info!("TEST GOT FRAME  len {}", frame.buf().len());
-                    match bincode::deserialize::<ExpectedType>(frame.buf()) {
-                        Ok(item) => match item {
+                Ok(item) => match item {
+                    StreamItem::Log(item) => {
+                        Streamlog::emit(&item);
+                        None
+                    }
+                    StreamItem::Stats(item) => {
+                        info!("Stats: {:?}", item);
+                        None
+                    }
+                    StreamItem::DataItem(frame) => {
+                        type ExpectedType = disk::binned::BinnedBytesForHttpStreamFrame;
+                        match bincode::deserialize::<ExpectedType>(frame.buf()) {
                             Ok(item) => match item {
-                                StreamItem::Log(item) => {
-                                    Streamlog::emit(&item);
-                                    Some(Ok(StreamItem::Log(item)))
-                                }
-                                item => {
-                                    info!("TEST GOT ITEM {:?}", item);
-                                    Some(Ok(item))
+                                Ok(item) => match item {
+                                    StreamItem::Log(item) => {
+                                        Streamlog::emit(&item);
+                                        Some(Ok(StreamItem::Log(item)))
+                                    }
+                                    item => {
+                                        info!("TEST GOT ITEM {:?}", item);
+                                        Some(Ok(item))
+                                    }
+                                },
+                                Err(e) => {
+                                    error!("TEST GOT ERROR FRAME: {:?}", e);
+                                    Some(Err(e))
                                 }
                             },
                             Err(e) => {
-                                error!("TEST GOT ERROR FRAME: {:?}", e);
-                                Some(Err(e))
+                                error!("bincode error: {:?}", e);
+                                Some(Err(e.into()))
                             }
-                        },
-                        Err(e) => {
-                            error!("bincode error: {:?}", e);
-                            Some(Err(e.into()))
                         }
                     }
-                }
+                },
                 Err(e) => Some(Err(Error::with_msg(format!("WEIRD EMPTY ERROR {:?}", e)))),
             };
             ready(g)

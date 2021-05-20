@@ -5,20 +5,18 @@ Aggregation and binning support.
 use super::eventchunker::EventFull;
 use crate::agg::binnedt::AggregatableTdim;
 use crate::agg::eventbatch::{MinMaxAvgScalarEventBatch, MinMaxAvgScalarEventBatchStreamItem};
+use crate::agg::streams::StreamItem;
 use crate::eventchunker::EventChunkerItem;
-use crate::streamlog::LogItem;
 use bytes::BytesMut;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use netpod::NanoRange;
 use netpod::ScalarType;
-use netpod::{EventDataReadStats, NanoRange};
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
-#[allow(unused_imports)]
-use tracing::{debug, error, info, span, trace, warn, Level};
 
 pub mod binnedt;
 pub mod binnedx;
@@ -35,7 +33,6 @@ pub trait AggregatableXdim1Bin {
 pub struct ValuesDim0 {
     tss: Vec<u64>,
     values: Vec<Vec<f32>>,
-    // TODO add the stats and flags
 }
 
 impl std::fmt::Debug for ValuesDim0 {
@@ -509,15 +506,13 @@ impl<S> Dim1F32Stream<S> {
 pub enum Dim1F32StreamItem {
     Values(ValuesDim1),
     RangeComplete,
-    EventDataReadStats(EventDataReadStats),
-    Log(LogItem),
 }
 
 impl<S> Stream for Dim1F32Stream<S>
 where
-    S: Stream<Item = Result<EventChunkerItem, Error>> + Unpin,
+    S: Stream<Item = Result<StreamItem<EventChunkerItem>, Error>> + Unpin,
 {
-    type Item = Result<Dim1F32StreamItem, Error>;
+    type Item = Result<StreamItem<Dim1F32StreamItem>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -532,22 +527,23 @@ where
             Ready(Some(Ok(k))) => {
                 let inst1 = Instant::now();
                 let u = match k {
-                    EventChunkerItem::Events(events) => match self.process_event_data(&events) {
-                        Ok(k) => {
-                            let ret = Dim1F32StreamItem::Values(k);
-                            Ready(Some(Ok(ret)))
-                        }
-                        Err(e) => {
-                            self.errored = true;
-                            Ready(Some(Err(e)))
+                    StreamItem::DataItem(item) => match item {
+                        EventChunkerItem::Events(events) => match self.process_event_data(&events) {
+                            Ok(k) => {
+                                let ret = Dim1F32StreamItem::Values(k);
+                                Ready(Some(Ok(StreamItem::DataItem(ret))))
+                            }
+                            Err(e) => {
+                                self.errored = true;
+                                Ready(Some(Err(e)))
+                            }
+                        },
+                        EventChunkerItem::RangeComplete => {
+                            Ready(Some(Ok(StreamItem::DataItem(Dim1F32StreamItem::RangeComplete))))
                         }
                     },
-                    EventChunkerItem::RangeComplete => Ready(Some(Ok(Dim1F32StreamItem::RangeComplete))),
-                    EventChunkerItem::Log(item) => Ready(Some(Ok(Dim1F32StreamItem::Log(item)))),
-                    EventChunkerItem::EventDataReadStats(stats) => {
-                        let ret = Dim1F32StreamItem::EventDataReadStats(stats);
-                        Ready(Some(Ok(ret)))
-                    }
+                    StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
+                    StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
                 };
                 let inst2 = Instant::now();
                 // TODO  do something with the measured time.
@@ -570,12 +566,12 @@ where
 pub trait IntoDim1F32Stream {
     fn into_dim_1_f32_stream(self) -> Dim1F32Stream<Self>
     where
-        Self: Stream<Item = Result<EventChunkerItem, Error>> + Sized;
+        Self: Stream<Item = Result<StreamItem<EventChunkerItem>, Error>> + Sized;
 }
 
 impl<T> IntoDim1F32Stream for T
 where
-    T: Stream<Item = Result<EventChunkerItem, Error>>,
+    T: Stream<Item = Result<StreamItem<EventChunkerItem>, Error>>,
 {
     fn into_dim_1_f32_stream(self) -> Dim1F32Stream<T> {
         Dim1F32Stream::new(self)
@@ -588,10 +584,6 @@ impl AggregatableXdim1Bin for Dim1F32StreamItem {
     fn into_agg(self) -> Self::Output {
         match self {
             Dim1F32StreamItem::Values(vals) => MinMaxAvgScalarEventBatchStreamItem::Values(vals.into_agg()),
-            Dim1F32StreamItem::EventDataReadStats(stats) => {
-                MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats)
-            }
-            Dim1F32StreamItem::Log(item) => MinMaxAvgScalarEventBatchStreamItem::Log(item),
             Dim1F32StreamItem::RangeComplete => MinMaxAvgScalarEventBatchStreamItem::RangeComplete,
         }
     }

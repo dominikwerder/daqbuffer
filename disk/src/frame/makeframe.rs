@@ -25,16 +25,16 @@ impl FrameType for RawConnOut {
     const FRAME_TYPE_ID: u32 = 0x04;
 }
 
-impl FrameType for Result<PreBinnedItem, Error> {
-    const FRAME_TYPE_ID: u32 = 0x05;
-}
-
 impl FrameType for Result<StreamItem<BinnedScalarStreamItem>, Error> {
     const FRAME_TYPE_ID: u32 = 0x06;
 }
 
 impl FrameType for Result<MinMaxAvgScalarBinBatchStreamItem, Error> {
     const FRAME_TYPE_ID: u32 = 0x07;
+}
+
+impl FrameType for Result<StreamItem<PreBinnedItem>, Error> {
+    const FRAME_TYPE_ID: u32 = 0x08;
 }
 
 pub fn make_frame<FT>(item: &FT) -> Result<BytesMut, Error>

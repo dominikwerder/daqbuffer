@@ -1,3 +1,4 @@
+use crate::agg::streams::StreamItem;
 use crate::dataopen::{open_files, OpenedFile};
 use crate::eventchunker::{EventChunker, EventChunkerConf, EventChunkerItem};
 use crate::file_content_stream;
@@ -55,9 +56,9 @@ impl EventBlobsComplete {
 }
 
 impl Stream for EventBlobsComplete {
-    type Item = Result<EventChunkerItem, Error>;
+    type Item = Result<StreamItem<EventChunkerItem>, Error>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         'outer: loop {
             break if self.completed {
@@ -99,7 +100,7 @@ impl Stream for EventBlobsComplete {
                                     }
                                     None => {}
                                 }
-                                Ready(Some(Ok(EventChunkerItem::Log(item))))
+                                Ready(Some(Ok(StreamItem::Log(item))))
                             }
                             Err(e) => {
                                 self.errored = true;
@@ -118,7 +119,7 @@ impl Stream for EventBlobsComplete {
                                     self.node_ix
                                 ),
                             );
-                            Ready(Some(Ok(EventChunkerItem::Log(item))))
+                            Ready(Some(Ok(StreamItem::Log(item))))
                         }
                         Pending => Pending,
                     },

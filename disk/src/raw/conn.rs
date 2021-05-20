@@ -1,5 +1,6 @@
 use crate::agg::binnedx::IntoBinnedXBins1;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
+use crate::agg::streams::StreamItem;
 use crate::agg::IntoDim1F32Stream;
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
 use crate::eventblobs::EventBlobsComplete;
@@ -45,7 +46,7 @@ async fn raw_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: Node
     }
 }
 
-pub type RawConnOut = Result<MinMaxAvgScalarEventBatchStreamItem, Error>;
+pub type RawConnOut = Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>;
 
 async fn raw_conn_handler_inner(
     stream: TcpStream,
@@ -95,9 +96,10 @@ async fn raw_conn_handler_inner_try(
         .await
     {
         match k {
-            Ok(k) => {
-                frames.push(k);
+            Ok(StreamItem::DataItem(item)) => {
+                frames.push(item);
             }
+            Ok(_) => {}
             Err(e) => {
                 return Err((e, netout))?;
             }
@@ -162,10 +164,11 @@ async fn raw_conn_handler_inner_try(
     let mut e = 0;
     while let Some(item) = s1.next().await {
         match &item {
-            Ok(MinMaxAvgScalarEventBatchStreamItem::Values(_)) => {
+            Ok(StreamItem::DataItem(_)) => {
                 e += 1;
             }
-            _ => (),
+            Ok(_) => {}
+            Err(_) => {}
         }
         match make_frame::<RawConnOut>(&item) {
             Ok(buf) => match netout.write_all(&buf).await {

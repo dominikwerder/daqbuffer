@@ -3,12 +3,11 @@ use crate::agg::streams::Bins;
 use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
 use crate::binned::MakeBytesFrame;
 use crate::frame::makeframe::make_frame;
-use crate::streamlog::LogItem;
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
 use netpod::log::*;
 use netpod::timeunits::SEC;
-use netpod::{EventDataReadStats, NanoRange};
+use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;
 
@@ -208,30 +207,6 @@ impl AggregatableTdim for MinMaxAvgScalarBinBatch {
     fn make_range_complete_item() -> Option<Self> {
         None
     }
-
-    fn is_log_item(&self) -> bool {
-        false
-    }
-
-    fn log_item(self) -> Option<LogItem> {
-        None
-    }
-
-    fn make_log_item(_item: LogItem) -> Option<Self> {
-        None
-    }
-
-    fn is_stats_item(&self) -> bool {
-        false
-    }
-
-    fn stats_item(self) -> Option<EventDataReadStats> {
-        None
-    }
-
-    fn make_stats_item(_item: EventDataReadStats) -> Option<Self> {
-        None
-    }
 }
 
 impl Bins for MinMaxAvgScalarBinBatch {
@@ -339,8 +314,6 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchAggregator {
 pub enum MinMaxAvgScalarBinBatchStreamItem {
     Values(MinMaxAvgScalarBinBatch),
     RangeComplete,
-    EventDataReadStats(EventDataReadStats),
-    Log(LogItem),
 }
 
 impl AggregatableTdim for MinMaxAvgScalarBinBatchStreamItem {
@@ -361,46 +334,6 @@ impl AggregatableTdim for MinMaxAvgScalarBinBatchStreamItem {
 
     fn make_range_complete_item() -> Option<Self> {
         Some(MinMaxAvgScalarBinBatchStreamItem::RangeComplete)
-    }
-
-    fn is_log_item(&self) -> bool {
-        if let MinMaxAvgScalarBinBatchStreamItem::Log(_) = self {
-            true
-        } else {
-            false
-        }
-    }
-
-    fn log_item(self) -> Option<LogItem> {
-        if let MinMaxAvgScalarBinBatchStreamItem::Log(item) = self {
-            Some(item)
-        } else {
-            None
-        }
-    }
-
-    fn make_log_item(item: LogItem) -> Option<Self> {
-        Some(MinMaxAvgScalarBinBatchStreamItem::Log(item))
-    }
-
-    fn is_stats_item(&self) -> bool {
-        if let MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(_) = self {
-            true
-        } else {
-            false
-        }
-    }
-
-    fn stats_item(self) -> Option<EventDataReadStats> {
-        if let MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(item) = self {
-            Some(item)
-        } else {
-            None
-        }
-    }
-
-    fn make_stats_item(item: EventDataReadStats) -> Option<Self> {
-        Some(MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(item))
     }
 }
 
@@ -457,9 +390,7 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchStreamItemAggregator {
     fn ingest(&mut self, inp: &mut Self::InputValue) {
         match inp {
             MinMaxAvgScalarBinBatchStreamItem::Values(vals) => self.agg.ingest(vals),
-            MinMaxAvgScalarBinBatchStreamItem::EventDataReadStats(_) => panic!(),
             MinMaxAvgScalarBinBatchStreamItem::RangeComplete => panic!(),
-            MinMaxAvgScalarBinBatchStreamItem::Log(_) => panic!(),
         }
     }
 

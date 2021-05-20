@@ -1,5 +1,5 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
-use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
+use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatchAggregator};
 use crate::agg::streams::{Collectable, Collected, StreamItem, ToJsonResult};
 use crate::agg::AggregatableXdim1Bin;
 use crate::binned::scalar::binned_scalar_stream;
@@ -7,14 +7,13 @@ use crate::binnedstream::{BinnedScalarStreamFromPreBinnedPatches, BinnedStream};
 use crate::cache::BinnedQuery;
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
 use crate::frame::makeframe::make_frame;
-use crate::streamlog::LogItem;
 use bytes::Bytes;
 use chrono::{TimeZone, Utc};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::{AggKind, BinnedRange, EventDataReadStats, NodeConfigCached};
+use netpod::{AggKind, BinnedRange, NodeConfigCached};
 use num_traits::Zero;
 use serde::{Deserialize, Serialize, Serializer};
 use std::pin::Pin;
@@ -146,31 +145,58 @@ impl AggregatableXdim1Bin for BinnedScalarStreamItem {
     }
 }
 
-pub struct BinnedScalarStreamItemAggregator {}
+pub struct BinnedScalarStreamItemAggregator {
+    inner_agg: MinMaxAvgScalarBinBatchAggregator,
+}
 
+impl BinnedScalarStreamItemAggregator {
+    pub fn new(ts1: u64, ts2: u64) -> Self {
+        Self {
+            inner_agg: MinMaxAvgScalarBinBatchAggregator::new(ts1, ts2),
+        }
+    }
+}
+
+// TODO  this could be some generic impl for all wrapper that can carry some AggregatableTdim variant.
 impl AggregatorTdim for BinnedScalarStreamItemAggregator {
     type InputValue = BinnedScalarStreamItem;
     // TODO using the same type for the output, does this cover all cases?
     type OutputValue = BinnedScalarStreamItem;
 
     fn ends_before(&self, inp: &Self::InputValue) -> bool {
-        todo!()
+        match inp {
+            Self::OutputValue::Values(item) => self.inner_agg.ends_before(item),
+            Self::OutputValue::RangeComplete => false,
+        }
     }
 
     fn ends_after(&self, inp: &Self::InputValue) -> bool {
-        todo!()
+        match inp {
+            Self::OutputValue::Values(item) => self.inner_agg.ends_after(item),
+            Self::OutputValue::RangeComplete => false,
+        }
     }
 
     fn starts_after(&self, inp: &Self::InputValue) -> bool {
-        todo!()
+        match inp {
+            Self::OutputValue::Values(item) => self.inner_agg.starts_after(item),
+            Self::OutputValue::RangeComplete => false,
+        }
     }
 
     fn ingest(&mut self, inp: &mut Self::InputValue) {
-        todo!()
+        match inp {
+            Self::OutputValue::Values(item) => self.inner_agg.ingest(item),
+            Self::OutputValue::RangeComplete => (),
+        }
     }
 
     fn result(self) -> Vec<Self::OutputValue> {
-        todo!()
+        self.inner_agg
+            .result()
+            .into_iter()
+            .map(|k| BinnedScalarStreamItem::Values(k))
+            .collect()
     }
 }
 
@@ -180,39 +206,19 @@ impl AggregatableTdim for BinnedScalarStreamItem {
     type Output = BinnedScalarStreamItem;
 
     fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator {
-        todo!()
+        BinnedScalarStreamItemAggregator::new(ts1, ts2)
     }
 
     fn is_range_complete(&self) -> bool {
-        todo!()
+        if let Self::RangeComplete = self {
+            true
+        } else {
+            false
+        }
     }
 
     fn make_range_complete_item() -> Option<Self> {
-        todo!()
-    }
-
-    fn is_log_item(&self) -> bool {
-        todo!()
-    }
-
-    fn log_item(self) -> Option<LogItem> {
-        todo!()
-    }
-
-    fn make_log_item(item: LogItem) -> Option<Self> {
-        todo!()
-    }
-
-    fn is_stats_item(&self) -> bool {
-        todo!()
-    }
-
-    fn stats_item(self) -> Option<EventDataReadStats> {
-        todo!()
-    }
-
-    fn make_stats_item(item: EventDataReadStats) -> Option<Self> {
-        todo!()
+        Some(Self::RangeComplete)
     }
 }
 

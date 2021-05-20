@@ -1,5 +1,6 @@
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
+use crate::agg::streams::StreamItem;
 use crate::cache::pbv::PreBinnedValueByteStream;
 use crate::cache::pbvfs::PreBinnedItem;
 use crate::merge::MergedMinMaxAvgScalarStream;
@@ -313,7 +314,7 @@ impl AsyncRead for HttpBodyAsAsyncRead {
     }
 }
 
-type T001 = Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>> + Send>>;
+type T001 = Pin<Box<dyn Stream<Item = Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>> + Send>>;
 type T002 = Pin<Box<dyn Future<Output = Result<T001, Error>> + Send>>;
 pub struct MergedFromRemotes {
     tcp_establish_futs: Vec<T002>,
@@ -344,19 +345,17 @@ impl MergedFromRemotes {
 
 impl Stream for MergedFromRemotes {
     // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
-    type Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>;
+    type Item = Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        if self.completed {
-            panic!("MergedFromRemotes  poll_next on completed");
-        }
-        if self.errored {
-            self.completed = true;
-            return Ready(None);
-        }
         'outer: loop {
-            break if let Some(fut) = &mut self.merged {
+            break if self.completed {
+                panic!("MergedFromRemotes  poll_next on completed");
+            } else if self.errored {
+                self.completed = true;
+                return Ready(None);
+            } else if let Some(fut) = &mut self.merged {
                 match fut.poll_next_unpin(cx) {
                     Ready(Some(Ok(k))) => Ready(Some(Ok(k))),
                     Ready(Some(Err(e))) => {
@@ -527,10 +526,10 @@ pub async fn write_pb_cache_min_max_avg_scalar(
     Ok(())
 }
 
-pub async fn read_pbv(mut file: File) -> Result<PreBinnedItem, Error> {
+pub async fn read_pbv(mut file: File) -> Result<StreamItem<PreBinnedItem>, Error> {
     let mut buf = vec![];
     file.read_to_end(&mut buf).await?;
     trace!("Read cached file  len {}", buf.len());
     let dec: MinMaxAvgScalarBinBatch = serde_cbor::from_slice(&buf)?;
-    Ok(PreBinnedItem::Batch(dec))
+    Ok(StreamItem::DataItem(PreBinnedItem::Batch(dec)))
 }

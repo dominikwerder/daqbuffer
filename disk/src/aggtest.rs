@@ -1,6 +1,7 @@
 use super::agg::IntoDim1F32Stream;
 use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::binnedx::IntoBinnedXBins1;
+use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventChunkerConf;
 use futures_util::StreamExt;
 use netpod::timeunits::*;
@@ -56,30 +57,25 @@ async fn agg_x_dim_0_inner() {
     let ts2 = ts1 + HOUR * 24;
     let range = NanoRange { beg: ts1, end: ts2 };
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
-    let fut1 = super::eventblobs::EventBlobsComplete::new(
+    let fut1 = EventBlobsComplete::new(
         range.clone(),
         query.channel_config.clone(),
         node.clone(),
         0,
         query.buffer_size as usize,
         event_chunker_conf,
-    )
-    .into_dim_1_f32_stream()
-    .into_binned_x_bins_1()
-    .map(|k| {
-        if false {
-            trace!("after X binning  {:?}", k.as_ref().unwrap());
-        }
-        k
-    })
-    .into_binned_t(BinnedRange::covering_range(range, bin_count).unwrap().unwrap())
-    .map(|k| {
-        if false {
-            trace!("after T binning  {:?}", k.as_ref().unwrap());
-        }
-        k
-    })
-    .for_each(|_k| ready(()));
+    );
+    let fut1 = IntoDim1F32Stream::into_dim_1_f32_stream(fut1);
+    let fut1 = IntoBinnedXBins1::into_binned_x_bins_1(fut1);
+    let fut1 = fut1
+        .into_binned_t(BinnedRange::covering_range(range, bin_count).unwrap().unwrap())
+        .map(|k| {
+            if false {
+                trace!("after T binning  {:?}", k.as_ref().unwrap());
+            }
+            k
+        })
+        .for_each(|_k| ready(()));
     fut1.await;
 }
 

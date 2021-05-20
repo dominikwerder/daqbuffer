@@ -6,6 +6,7 @@ to request such data from nodes.
 */
 
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
+use crate::agg::streams::StreamItem;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{make_frame, make_term_frame};
 use crate::raw::bffr::MinMaxAvgScalarEventBatchStreamFromFrames;
@@ -39,7 +40,7 @@ pub async fn x_processed_stream_from_node(
     query: EventsQuery,
     perf_opts: PerfOpts,
     node: Node,
-) -> Result<Pin<Box<dyn Stream<Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>> + Send>>, Error> {
+) -> Result<Pin<Box<dyn Stream<Item = Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>> + Send>>, Error> {
     let net = TcpStream::connect(format!("{}:{}", node.host, node.port_raw)).await?;
     let qjs = serde_json::to_string(&query)?;
     let (netin, mut netout) = net.into_split();

@@ -1,6 +1,5 @@
 use bytes::Bytes;
 use disk::cache::{BinnedQuery, PreBinnedQuery};
-use disk::eventchunker::EventChunkerConf;
 use disk::raw::conn::raw_service;
 use err::Error;
 use future::Future;
@@ -11,7 +10,7 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
 use netpod::log::*;
-use netpod::{ByteSize, Node, NodeConfigCached};
+use netpod::NodeConfigCached;
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
 use serde::{Deserialize, Serialize};
@@ -124,12 +123,6 @@ async fn data_api_proxy_try(req: Request<Body>, node_config: &NodeConfigCached) 
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/4/parsed_raw" {
-        if req.method() == Method::POST {
-            Ok(parsed_raw(req, &node_config.node).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
-        }
     } else if path == "/api/4/binned" {
         if req.method() == Method::GET {
             Ok(binned(req, node_config).await?)
@@ -173,28 +166,17 @@ where
         .header("access-control-allow-headers", "*")
 }
 
-async fn parsed_raw(req: Request<Body>, node: &Node) -> Result<Response<Body>, Error> {
-    use netpod::AggQuerySingleChannel;
-    let reqbody = req.into_body();
-    let bodyslice = hyper::body::to_bytes(reqbody).await?;
-    let query: AggQuerySingleChannel = serde_json::from_slice(&bodyslice)?;
-    let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
-    let s = disk::parsed1(&query, node, event_chunker_conf);
-    let res = response(StatusCode::OK).body(Body::wrap_stream(s))?;
-    Ok(res)
-}
-
 struct BodyStreamWrap(netpod::BodyStream);
 
 impl hyper::body::HttpBody for BodyStreamWrap {
     type Data = bytes::Bytes;
     type Error = Error;
 
-    fn poll_data(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+    fn poll_data(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         todo!()
     }
 
-    fn poll_trailers(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
+    fn poll_trailers(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
         Poll::Ready(Ok(None))
     }
 }

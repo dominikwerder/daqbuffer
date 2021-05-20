@@ -1,15 +1,15 @@
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
+use crate::agg::streams::StreamItem;
 use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead, PreBinnedQuery};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::decode_frame;
-use crate::streamlog::LogItem;
 use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, FutureExt};
 use http::StatusCode;
 #[allow(unused_imports)]
 use netpod::log::*;
-use netpod::{EventDataReadStats, NodeConfigCached, PerfOpts};
+use netpod::{NodeConfigCached, PerfOpts};
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -48,14 +48,11 @@ impl PreBinnedValueFetchedStream {
 pub enum PreBinnedItem {
     Batch(MinMaxAvgScalarBinBatch),
     RangeComplete,
-    EventDataReadStats(EventDataReadStats),
-    //ValuesExtractStats(ValuesExtractStats),
-    Log(LogItem),
 }
 
 impl Stream for PreBinnedValueFetchedStream {
     // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
-    type Item = Result<PreBinnedItem, Error>;
+    type Item = Result<StreamItem<PreBinnedItem>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -70,23 +67,21 @@ impl Stream for PreBinnedValueFetchedStream {
             break if let Some(res) = self.res.as_mut() {
                 pin_mut!(res);
                 match res.poll_next(cx) {
-                    Ready(Some(Ok(frame))) => match decode_frame::<Result<PreBinnedItem, Error>>(&frame) {
-                        Ok(Ok(item)) => {
-                            match &item {
-                                PreBinnedItem::EventDataReadStats(stats) if false => {
-                                    info!("PreBinnedValueFetchedStream  ✕ ✕ ✕ ✕ ✕ ✕ ✕ ✕ ✕  stats {:?}", stats);
+                    Ready(Some(Ok(item))) => match item {
+                        StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
+                        StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
+                        StreamItem::DataItem(item) => {
+                            match decode_frame::<Result<StreamItem<PreBinnedItem>, Error>>(&item) {
+                                Ok(Ok(item)) => Ready(Some(Ok(item))),
+                                Ok(Err(e)) => {
+                                    self.errored = true;
+                                    Ready(Some(Err(e)))
                                 }
-                                _ => {}
+                                Err(e) => {
+                                    self.errored = true;
+                                    Ready(Some(Err(e)))
+                                }
                             }
-                            Ready(Some(Ok(item)))
-                        }
-                        Ok(Err(e)) => {
-                            self.errored = true;
-                            Ready(Some(Err(e)))
-                        }
-                        Err(e) => {
-                            self.errored = true;
-                            Ready(Some(Err(e)))
                         }
                     },
                     Ready(Some(Err(e))) => {

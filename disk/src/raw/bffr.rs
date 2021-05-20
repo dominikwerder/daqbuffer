@@ -1,4 +1,5 @@
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
+use crate::agg::streams::StreamItem;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::decode_frame;
 use crate::raw::conn::RawConnOut;
@@ -36,7 +37,7 @@ impl<T> Stream for MinMaxAvgScalarEventBatchStreamFromFrames<T>
 where
     T: AsyncRead + Unpin,
 {
-    type Item = Result<MinMaxAvgScalarEventBatchStreamItem, Error>;
+    type Item = Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -48,38 +49,30 @@ where
                 Ready(None)
             } else {
                 match self.inp.poll_next_unpin(cx) {
-                    Ready(Some(Ok(frame))) => {
-                        type ExpectedType = RawConnOut;
-                        match decode_frame::<ExpectedType>(&frame) {
-                            Ok(item) => match item {
-                                Ok(item) => {
-                                    if false {
-                                        match &item {
-                                            MinMaxAvgScalarEventBatchStreamItem::EventDataReadStats(stats) => {
-                                                info!("✒✒ ✒✒ ✒✒ ✒✒ ✒✒ ✒✒  stats  {:?}", stats);
-                                            }
-                                            _ => {
-                                                info!("✒ ✒ ✒ ✒  other kind")
-                                            }
-                                        }
+                    Ready(Some(Ok(item))) => match item {
+                        StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
+                        StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
+                        StreamItem::DataItem(frame) => {
+                            type ExpectedType = RawConnOut;
+                            match decode_frame::<ExpectedType>(&frame) {
+                                Ok(item) => match item {
+                                    Ok(item) => Ready(Some(Ok(item))),
+                                    Err(e) => {
+                                        self.errored = true;
+                                        Ready(Some(Err(e)))
                                     }
-                                    Ready(Some(Ok(item)))
-                                }
+                                },
                                 Err(e) => {
+                                    error!(
+                                        "MinMaxAvgScalarEventBatchStreamFromFrames  ~~~~~~~~   ERROR on frame payload {}",
+                                        frame.buf().len(),
+                                    );
                                     self.errored = true;
                                     Ready(Some(Err(e)))
                                 }
-                            },
-                            Err(e) => {
-                                error!(
-                                    "MinMaxAvgScalarEventBatchStreamFromFrames  ~~~~~~~~   ERROR on frame payload {}",
-                                    frame.buf().len(),
-                                );
-                                self.errored = true;
-                                Ready(Some(Err(e)))
                             }
                         }
-                    }
+                    },
                     Ready(Some(Err(e))) => {
                         self.errored = true;
                         Ready(Some(Err(e)))

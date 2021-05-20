@@ -1,10 +1,10 @@
+use crate::agg::streams::StreamItem;
 use crate::agg::AggregatableXdim1Bin;
-use crate::streamlog::LogItem;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::{BinnedRange, EventDataReadStats};
+use netpod::BinnedRange;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -25,12 +25,6 @@ pub trait AggregatableTdim: Sized {
     fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator;
     fn is_range_complete(&self) -> bool;
     fn make_range_complete_item() -> Option<Self>;
-    fn is_log_item(&self) -> bool;
-    fn log_item(self) -> Option<LogItem>;
-    fn make_log_item(item: LogItem) -> Option<Self>;
-    fn is_stats_item(&self) -> bool;
-    fn stats_item(self) -> Option<EventDataReadStats>;
-    fn make_stats_item(item: EventDataReadStats) -> Option<Self>;
 }
 
 pub trait IntoBinnedT {
@@ -40,9 +34,8 @@ pub trait IntoBinnedT {
 
 impl<S, I> IntoBinnedT for S
 where
-    S: Stream<Item = Result<I, Error>> + Unpin,
+    S: Stream<Item = Result<StreamItem<I>, Error>> + Unpin,
     I: AggregatableTdim + Unpin,
-    //I: AggregatableTdim,
     I::Aggregator: Unpin,
 {
     type StreamOut = IntoBinnedTDefaultStream<S, I>;
@@ -54,7 +47,7 @@ where
 
 pub struct IntoBinnedTDefaultStream<S, I>
 where
-    S: Stream<Item = Result<I, Error>>,
+    S: Stream<Item = Result<StreamItem<I>, Error>>,
     I: AggregatableTdim,
 {
     inp: S,
@@ -65,7 +58,7 @@ where
     all_bins_emitted: bool,
     range_complete_observed: bool,
     range_complete_emitted: bool,
-    left: Option<Poll<Option<Result<I, Error>>>>,
+    left: Option<Poll<Option<Result<StreamItem<I>, Error>>>>,
     errored: bool,
     completed: bool,
     tmp_agg_results: VecDeque<<I::Aggregator as AggregatorTdim>::OutputValue>,
@@ -73,7 +66,7 @@ where
 
 impl<S, I> IntoBinnedTDefaultStream<S, I>
 where
-    S: Stream<Item = Result<I, Error>> + Unpin,
+    S: Stream<Item = Result<StreamItem<I>, Error>> + Unpin,
     I: AggregatableTdim,
 {
     pub fn new(inp: S, spec: BinnedRange) -> Self {
@@ -94,7 +87,7 @@ where
         }
     }
 
-    fn cur(&mut self, cx: &mut Context) -> Poll<Option<Result<I, Error>>> {
+    fn cur(&mut self, cx: &mut Context) -> Poll<Option<Result<StreamItem<I>, Error>>> {
         if let Some(cur) = self.left.take() {
             cur
         } else if self.inp_completed {
@@ -122,64 +115,44 @@ where
 
     fn handle(
         &mut self,
-        cur: Poll<Option<Result<I, Error>>>,
-    ) -> Option<Poll<Option<Result<<I::Aggregator as AggregatorTdim>::OutputValue, Error>>>> {
+        cur: Poll<Option<Result<StreamItem<I>, Error>>>,
+    ) -> Option<Poll<Option<Result<StreamItem<<I::Aggregator as AggregatorTdim>::OutputValue>, Error>>>> {
         use Poll::*;
         match cur {
-            Ready(Some(Ok(k))) => {
-                if k.is_range_complete() {
-                    self.range_complete_observed = true;
-                    None
-                } else if k.is_log_item() {
-                    if let Some(item) = k.log_item() {
-                        if let Some(item) = <I::Aggregator as AggregatorTdim>::OutputValue::make_log_item(item) {
-                            Some(Ready(Some(Ok(item))))
-                        } else {
-                            error!("IntoBinnedTDefaultStream  can not create log item");
+            Ready(Some(Ok(item))) => match item {
+                StreamItem::Log(item) => Some(Ready(Some(Ok(StreamItem::Log(item))))),
+                StreamItem::Stats(item) => Some(Ready(Some(Ok(StreamItem::Stats(item))))),
+                StreamItem::DataItem(item) => {
+                    if item.is_range_complete() {
+                        self.range_complete_observed = true;
+                        None
+                    } else if self.all_bins_emitted {
+                        // Just drop the item because we will not emit anymore data.
+                        // Could also at least gather some stats.
+                        None
+                    } else {
+                        let ag = self.aggtor.as_mut().unwrap();
+                        if ag.ends_before(&item) {
                             None
-                        }
-                    } else {
-                        error!("supposed to be log item but can't take it");
-                        None
-                    }
-                } else if k.is_stats_item() {
-                    if let Some(item) = k.stats_item() {
-                        if let Some(item) = <I::Aggregator as AggregatorTdim>::OutputValue::make_stats_item(item) {
-                            Some(Ready(Some(Ok(item))))
-                        } else {
-                            error!("IntoBinnedTDefaultStream  can not create stats item");
-                            None
-                        }
-                    } else {
-                        error!("supposed to be stats item but can't take it");
-                        None
-                    }
-                } else if self.all_bins_emitted {
-                    // Just drop the item because we will not emit anymore data.
-                    // Could also at least gather some stats.
-                    None
-                } else {
-                    let ag = self.aggtor.as_mut().unwrap();
-                    if ag.ends_before(&k) {
-                        None
-                    } else if ag.starts_after(&k) {
-                        self.left = Some(Ready(Some(Ok(k))));
-                        self.cycle_current_bin();
-                        // TODO cycle_current_bin enqueues the bin, can I return here instead?
-                        None
-                    } else {
-                        let mut k = k;
-                        ag.ingest(&mut k);
-                        let k = k;
-                        if ag.ends_after(&k) {
-                            self.left = Some(Ready(Some(Ok(k))));
+                        } else if ag.starts_after(&item) {
+                            self.left = Some(Ready(Some(Ok(StreamItem::DataItem(item)))));
                             self.cycle_current_bin();
+                            // TODO cycle_current_bin enqueues the bin, can I return here instead?
+                            None
+                        } else {
+                            let mut item = item;
+                            ag.ingest(&mut item);
+                            let item = item;
+                            if ag.ends_after(&item) {
+                                self.left = Some(Ready(Some(Ok(StreamItem::DataItem(item)))));
+                                self.cycle_current_bin();
+                            }
+                            // TODO cycle_current_bin enqueues the bin, can I return here instead?
+                            None
                         }
-                        // TODO cycle_current_bin enqueues the bin, can I return here instead?
-                        None
                     }
                 }
-            }
+            },
             Ready(Some(Err(e))) => {
                 self.errored = true;
                 Some(Ready(Some(Err(e))))
@@ -201,12 +174,11 @@ where
 
 impl<S, I> Stream for IntoBinnedTDefaultStream<S, I>
 where
-    S: Stream<Item = Result<I, Error>> + Unpin,
-    //I: AggregatableTdim,
+    S: Stream<Item = Result<StreamItem<I>, Error>> + Unpin,
     I: AggregatableTdim + Unpin,
     I::Aggregator: Unpin,
 {
-    type Item = Result<<I::Aggregator as AggregatorTdim>::OutputValue, Error>;
+    type Item = Result<StreamItem<<I::Aggregator as AggregatorTdim>::OutputValue>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -217,17 +189,15 @@ where
                 self.completed = true;
                 Ready(None)
             } else if let Some(item) = self.tmp_agg_results.pop_front() {
-                Ready(Some(Ok(item)))
+                Ready(Some(Ok(StreamItem::DataItem(item))))
             } else if self.range_complete_emitted {
                 self.completed = true;
                 Ready(None)
             } else if self.inp_completed && self.all_bins_emitted {
                 self.range_complete_emitted = true;
                 if self.range_complete_observed {
-                    // TODO why can't I declare that type alias?
-                    //type TT = I;
                     if let Some(item) = <I::Aggregator as AggregatorTdim>::OutputValue::make_range_complete_item() {
-                        Ready(Some(Ok(item)))
+                        Ready(Some(Ok(StreamItem::DataItem(item))))
                     } else {
                         warn!("IntoBinnedTDefaultStream  should emit RangeComplete but it doesn't have one");
                         continue 'outer;

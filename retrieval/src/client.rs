@@ -81,41 +81,51 @@ pub async fn get_binned(
         .map_err(|e| error!("get_binned  {:?}", e))
         .filter_map(|item| {
             let g = match item {
-                Ok(frame) => {
-                    type _ExpectedType2 = disk::binned::BinnedBytesForHttpStreamFrame;
-                    type ExpectedType = Result<StreamItem<BinnedScalarStreamItem>, Error>;
-                    let type_id_exp = <ExpectedType as FrameType>::FRAME_TYPE_ID;
-                    if frame.tyid() != type_id_exp {
-                        error!("unexpected type id  got {}  exp {}", frame.tyid(), type_id_exp);
+                Ok(item) => match item {
+                    StreamItem::Log(item) => {
+                        Streamlog::emit(&item);
+                        None
                     }
-                    let n1 = frame.buf().len();
-                    match bincode::deserialize::<ExpectedType>(frame.buf()) {
-                        Ok(item) => match item {
-                            Ok(item) => {
-                                match item {
-                                    StreamItem::Log(item) => {
-                                        Streamlog::emit(&item);
+                    StreamItem::Stats(item) => {
+                        info!("Stats: {:?}", item);
+                        None
+                    }
+                    StreamItem::DataItem(frame) => {
+                        type _ExpectedType2 = disk::binned::BinnedBytesForHttpStreamFrame;
+                        type ExpectedType = Result<StreamItem<BinnedScalarStreamItem>, Error>;
+                        let type_id_exp = <ExpectedType as FrameType>::FRAME_TYPE_ID;
+                        if frame.tyid() != type_id_exp {
+                            error!("unexpected type id  got {}  exp {}", frame.tyid(), type_id_exp);
+                        }
+                        let n1 = frame.buf().len();
+                        match bincode::deserialize::<ExpectedType>(frame.buf()) {
+                            Ok(item) => match item {
+                                Ok(item) => {
+                                    match item {
+                                        StreamItem::Log(item) => {
+                                            Streamlog::emit(&item);
+                                        }
+                                        StreamItem::Stats(item) => {
+                                            info!("Stats: {:?}", item);
+                                        }
+                                        StreamItem::DataItem(item) => {
+                                            info!("DataItem: {:?}", item);
+                                        }
                                     }
-                                    StreamItem::Stats(item) => {
-                                        info!("Stats: {:?}", item);
-                                    }
-                                    StreamItem::DataItem(item) => {
-                                        info!("DataItem: {:?}", item);
-                                    }
+                                    Some(Ok(()))
                                 }
-                                Some(Ok(()))
-                            }
+                                Err(e) => {
+                                    error!("len {}  error frame {:?}", n1, e);
+                                    Some(Err(e))
+                                }
+                            },
                             Err(e) => {
-                                error!("len {}  error frame {:?}", n1, e);
-                                Some(Err(e))
+                                error!("len {}  bincode error {:?}", n1, e);
+                                Some(Err(e.into()))
                             }
-                        },
-                        Err(e) => {
-                            error!("len {}  bincode error {:?}", n1, e);
-                            Some(Err(e.into()))
                         }
                     }
-                }
+                },
                 Err(e) => Some(Err(Error::with_msg(format!("{:?}", e)))),
             };
             ready(g)

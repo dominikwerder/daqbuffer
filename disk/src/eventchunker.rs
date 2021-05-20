@@ -1,4 +1,4 @@
-use crate::streamlog::LogItem;
+use crate::agg::streams::{StatsItem, StreamItem};
 use crate::{FileChunkRead, NeedMinBuffer};
 use bitshuffle::bitshuffle_decompress;
 use bytes::{Buf, BytesMut};
@@ -348,12 +348,10 @@ impl EventFull {
 pub enum EventChunkerItem {
     Events(EventFull),
     RangeComplete,
-    EventDataReadStats(EventDataReadStats),
-    Log(LogItem),
 }
 
 impl Stream for EventChunker {
-    type Item = Result<EventChunkerItem, Error>;
+    type Item = Result<StreamItem<EventChunkerItem>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -368,7 +366,7 @@ impl Stream for EventChunker {
                     parsed_bytes: self.parsed_bytes,
                 };
                 self.parsed_bytes = 0;
-                let ret = EventChunkerItem::EventDataReadStats(item);
+                let ret = StreamItem::Stats(StatsItem::EventDataReadStats(item));
                 Ready(Some(Ok(ret)))
             } else if self.sent_beyond_range {
                 self.completed = true;
@@ -376,7 +374,7 @@ impl Stream for EventChunker {
             } else if self.final_stats_sent {
                 self.sent_beyond_range = true;
                 if self.seen_beyond_range {
-                    Ready(Some(Ok(EventChunkerItem::RangeComplete)))
+                    Ready(Some(Ok(StreamItem::DataItem(EventChunkerItem::RangeComplete))))
                 } else {
                     continue 'outer;
                 }
@@ -385,7 +383,7 @@ impl Stream for EventChunker {
                     parsed_bytes: self.parsed_bytes,
                 };
                 self.parsed_bytes = 0;
-                let ret = EventChunkerItem::EventDataReadStats(item);
+                let ret = StreamItem::Stats(StatsItem::EventDataReadStats(item));
                 self.final_stats_sent = true;
                 Ready(Some(Ok(ret)))
             } else {
@@ -406,7 +404,7 @@ impl Stream for EventChunker {
                                 } else {
                                     let x = self.need_min;
                                     self.inp.set_need_min(x);
-                                    let ret = EventChunkerItem::Events(res.events);
+                                    let ret = StreamItem::DataItem(EventChunkerItem::Events(res.events));
                                     Ready(Some(Ok(ret)))
                                 }
                             }

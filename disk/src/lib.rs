@@ -1,6 +1,5 @@
 use crate::dataopen::open_files;
 use crate::dtflags::{ARRAY, BIG_ENDIAN, COMPRESSION, SHAPE};
-use crate::eventchunker::EventChunkerConf;
 use bytes::{Bytes, BytesMut};
 use err::Error;
 use futures_core::Stream;
@@ -329,51 +328,6 @@ pub fn file_content_stream(
                     duration: inst2.duration_since(inst1),
                 };
                 yield Ok(ret);
-            }
-        }
-    }
-}
-
-pub fn parsed1(
-    query: &netpod::AggQuerySingleChannel,
-    node: &Node,
-    stats_conf: EventChunkerConf,
-) -> impl Stream<Item = Result<Bytes, Error>> + Send {
-    let query = query.clone();
-    let node = node.clone();
-    async_stream::stream! {
-        let filerx = open_files(err::todoval(), err::todoval(), node);
-        while let Ok(fileres) = filerx.recv().await {
-            match fileres {
-                Ok(file) => {
-                    let inp = Box::pin(file_content_stream(file.file.unwrap(), query.buffer_size as usize));
-                    let range = err::todoval();
-                    let max_ts = err::todoval();
-                    let mut chunker = eventchunker::EventChunker::from_event_boundary(inp, err::todoval(), range, stats_conf.clone(), file.path, max_ts);
-                    while let Some(evres) = chunker.next().await {
-                        use eventchunker::EventChunkerItem;
-                        match evres {
-                            Ok(EventChunkerItem::Events(evres)) => {
-                                //let mut buf = BytesMut::with_capacity(16);
-                                // TODO put some interesting information to test
-                                //buf.put_u64_le(0xcafecafe);
-                                //yield Ok(buf.freeze())
-                                for bufopt in evres.decomps {
-                                    if let Some(buf) = bufopt {
-                                        yield Ok(buf.freeze());
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                yield Err(e)
-                            }
-                            _ => todo!(),
-                        }
-                    }
-                }
-                Err(e) => {
-                    yield Err(e);
-                }
             }
         }
     }

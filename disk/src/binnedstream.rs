@@ -1,7 +1,5 @@
 use crate::agg::binnedt::IntoBinnedT;
-use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatchStreamItem;
-use crate::agg::streams::{StatsItem, StreamItem};
-use crate::binned::scalar::adapter_to_stream_item;
+use crate::agg::streams::StreamItem;
 use crate::binned::BinnedScalarStreamItem;
 use crate::cache::pbvfs::{PreBinnedItem, PreBinnedValueFetchedStream};
 use crate::cache::{CacheUsage, PreBinnedQuery};
@@ -66,37 +64,34 @@ impl BinnedScalarStreamFromPreBinnedPatches {
                 move |k| {
                     let fit_range = range.full_range();
                     let g = match k {
-                        Ok(PreBinnedItem::Batch(k)) => {
-                            use super::agg::{Fits, FitsInside};
-                            match k.fits_inside(fit_range) {
-                                Fits::Inside
-                                | Fits::PartlyGreater
-                                | Fits::PartlyLower
-                                | Fits::PartlyLowerAndGreater => {
-                                    Some(Ok(StreamItem::DataItem(BinnedScalarStreamItem::Values(k))))
+                        Ok(item) => match item {
+                            StreamItem::Log(item) => Some(Ok(StreamItem::Log(item))),
+                            StreamItem::Stats(item) => Some(Ok(StreamItem::Stats(item))),
+                            StreamItem::DataItem(item) => match item {
+                                PreBinnedItem::RangeComplete => {
+                                    Some(Ok(StreamItem::DataItem(BinnedScalarStreamItem::RangeComplete)))
                                 }
-                                _ => None,
-                            }
-                        }
-                        Ok(PreBinnedItem::RangeComplete) => {
-                            Some(Ok(StreamItem::DataItem(BinnedScalarStreamItem::RangeComplete)))
-                        }
-                        Ok(PreBinnedItem::EventDataReadStats(item)) => {
-                            Some(Ok(StreamItem::Stats(StatsItem::EventDataReadStats(item))))
-                        }
-                        Ok(PreBinnedItem::Log(item)) => Some(Ok(StreamItem::Log(item))),
+                                PreBinnedItem::Batch(item) => {
+                                    use super::agg::{Fits, FitsInside};
+                                    match item.fits_inside(fit_range) {
+                                        Fits::Inside
+                                        | Fits::PartlyGreater
+                                        | Fits::PartlyLower
+                                        | Fits::PartlyLowerAndGreater => {
+                                            Some(Ok(StreamItem::DataItem(BinnedScalarStreamItem::Values(item))))
+                                        }
+                                        _ => None,
+                                    }
+                                }
+                            },
+                        },
                         Err(e) => Some(Err(e)),
                     };
                     ready(g)
                 }
-            });
-        //let inp: Box<dyn Stream<Item = Result<StreamItem<BinnedScalarStreamItem>, Error>> + Send + Unpin> =
-        //    Box::new(inp);
-        //let inp: &Stream<Item = Result<StreamItem<BinnedScalarStreamItem>, Error>> + Send + Unpin>> = &inp
-        //() == inp;
-        let inp = IntoBinnedT::into_binned_t(inp, range);
+            })
+            .into_binned_t(range);
         Ok(Self { inp: Box::pin(inp) })
-        //err::todoval()
     }
 }
 

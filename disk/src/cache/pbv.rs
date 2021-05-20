@@ -1,5 +1,6 @@
 use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatchStreamItem};
+use crate::agg::streams::StreamItem;
 use crate::cache::pbvfs::{PreBinnedItem, PreBinnedValueFetchedStream};
 use crate::cache::{CacheFileDesc, MergedFromRemotes, PreBinnedQuery};
 use crate::frame::makeframe::make_frame;
@@ -38,7 +39,7 @@ impl Stream for PreBinnedValueByteStreamInner {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         match self.inp.poll_next_unpin(cx) {
-            Ready(Some(item)) => match make_frame::<Result<PreBinnedItem, Error>>(&item) {
+            Ready(Some(item)) => match make_frame::<Result<StreamItem<PreBinnedItem>, Error>>(&item) {
                 Ok(buf) => Ready(Some(Ok(buf.freeze()))),
                 Err(e) => Ready(Some(Err(e.into()))),
             },
@@ -52,7 +53,7 @@ pub struct PreBinnedValueStream {
     query: PreBinnedQuery,
     node_config: NodeConfigCached,
     open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<tokio::fs::File, std::io::Error>> + Send>>>,
-    fut2: Option<Pin<Box<dyn Stream<Item = Result<PreBinnedItem, Error>> + Send>>>,
+    fut2: Option<Pin<Box<dyn Stream<Item = Result<StreamItem<PreBinnedItem>, Error>> + Send>>>,
     read_from_cache: bool,
     cache_written: bool,
     data_complete: bool,
@@ -63,7 +64,7 @@ pub struct PreBinnedValueStream {
     streamlog: Streamlog,
     values: MinMaxAvgScalarBinBatch,
     write_fut: Option<Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>>,
-    read_cache_fut: Option<Pin<Box<dyn Future<Output = Result<PreBinnedItem, Error>> + Send>>>,
+    read_cache_fut: Option<Pin<Box<dyn Future<Output = Result<StreamItem<PreBinnedItem>, Error>> + Send>>>,
 }
 
 impl PreBinnedValueStream {
@@ -111,13 +112,21 @@ impl PreBinnedValueStream {
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
         let s1 = MergedFromRemotes::new(evq, perf_opts, self.node_config.node_config.cluster.clone());
         let s1 = s1.into_binned_t(range);
-        let s1 = s1.map(|k| {
-            use MinMaxAvgScalarBinBatchStreamItem::*;
-            match k {
-                Ok(Values(k)) => Ok(PreBinnedItem::Batch(k)),
-                Ok(RangeComplete) => Ok(PreBinnedItem::RangeComplete),
-                Ok(EventDataReadStats(stats)) => Ok(PreBinnedItem::EventDataReadStats(stats)),
-                Ok(Log(item)) => Ok(PreBinnedItem::Log(item)),
+        let s1 = s1.map(|item| {
+            // TODO does this do anything?
+            match item {
+                Ok(item) => match item {
+                    StreamItem::Log(item) => Ok(StreamItem::Log(item)),
+                    StreamItem::Stats(item) => Ok(StreamItem::Stats(item)),
+                    StreamItem::DataItem(item) => match item {
+                        MinMaxAvgScalarBinBatchStreamItem::RangeComplete => {
+                            Ok(StreamItem::DataItem(PreBinnedItem::RangeComplete))
+                        }
+                        MinMaxAvgScalarBinBatchStreamItem::Values(item) => {
+                            Ok(StreamItem::DataItem(PreBinnedItem::Batch(item)))
+                        }
+                    },
+                },
                 Err(e) => Err(e),
             }
         });
@@ -192,7 +201,7 @@ impl PreBinnedValueStream {
 
 impl Stream for PreBinnedValueStream {
     // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
-    type Item = Result<PreBinnedItem, Error>;
+    type Item = Result<StreamItem<PreBinnedItem>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -203,7 +212,7 @@ impl Stream for PreBinnedValueStream {
                 self.completed = true;
                 Ready(None)
             } else if let Some(item) = self.streamlog.pop() {
-                Ready(Some(Ok(PreBinnedItem::Log(item))))
+                Ready(Some(Ok(StreamItem::Log(item))))
             } else if let Some(fut) = &mut self.write_fut {
                 match fut.poll_unpin(cx) {
                     Ready(item) => {
@@ -247,7 +256,7 @@ impl Stream for PreBinnedValueStream {
                 if self.cache_written {
                     if self.range_complete_observed {
                         self.range_complete_emitted = true;
-                        Ready(Some(Ok(PreBinnedItem::RangeComplete)))
+                        Ready(Some(Ok(StreamItem::DataItem(PreBinnedItem::RangeComplete))))
                     } else {
                         self.completed = true;
                         Ready(None)
@@ -284,26 +293,25 @@ impl Stream for PreBinnedValueStream {
             } else if let Some(fut) = self.fut2.as_mut() {
                 match fut.poll_next_unpin(cx) {
                     Ready(Some(k)) => match k {
-                        Ok(PreBinnedItem::RangeComplete) => {
-                            self.range_complete_observed = true;
-                            continue 'outer;
-                        }
-                        Ok(PreBinnedItem::Batch(batch)) => {
-                            self.values.ts1s.extend(batch.ts1s.iter());
-                            self.values.ts2s.extend(batch.ts2s.iter());
-                            self.values.counts.extend(batch.counts.iter());
-                            self.values.mins.extend(batch.mins.iter());
-                            self.values.maxs.extend(batch.maxs.iter());
-                            self.values.avgs.extend(batch.avgs.iter());
-                            Ready(Some(Ok(PreBinnedItem::Batch(batch))))
-                        }
-                        Ok(PreBinnedItem::EventDataReadStats(stats)) => {
-                            if false {
-                                info!("PreBinnedValueStream  ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙ ✙  stats {:?}", stats);
-                            }
-                            Ready(Some(Ok(PreBinnedItem::EventDataReadStats(stats))))
-                        }
-                        Ok(PreBinnedItem::Log(item)) => Ready(Some(Ok(PreBinnedItem::Log(item)))),
+                        Ok(item) => match item {
+                            StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
+                            StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
+                            StreamItem::DataItem(item) => match item {
+                                PreBinnedItem::RangeComplete => {
+                                    self.range_complete_observed = true;
+                                    continue 'outer;
+                                }
+                                PreBinnedItem::Batch(batch) => {
+                                    self.values.ts1s.extend(batch.ts1s.iter());
+                                    self.values.ts2s.extend(batch.ts2s.iter());
+                                    self.values.counts.extend(batch.counts.iter());
+                                    self.values.mins.extend(batch.mins.iter());
+                                    self.values.maxs.extend(batch.maxs.iter());
+                                    self.values.avgs.extend(batch.avgs.iter());
+                                    Ready(Some(Ok(StreamItem::DataItem(PreBinnedItem::Batch(batch)))))
+                                }
+                            },
+                        },
                         Err(e) => {
                             self.errored = true;
                             Ready(Some(Err(e)))

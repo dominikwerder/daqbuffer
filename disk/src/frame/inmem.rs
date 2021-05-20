@@ -1,3 +1,4 @@
+use crate::agg::streams::StreamItem;
 use crate::frame::makeframe::{INMEM_FRAME_FOOT, INMEM_FRAME_HEAD, INMEM_FRAME_MAGIC};
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
@@ -241,7 +242,7 @@ impl<T> Stream for InMemoryFrameAsyncReadStream<T>
 where
     T: AsyncRead + Unpin,
 {
-    type Item = Result<InMemoryFrame, Error>;
+    type Item = Result<StreamItem<InMemoryFrame>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -270,7 +271,7 @@ where
                         self.completed = true;
                         Ready(None)
                     }
-                    Some(Some(Ok(k))) => Ready(Some(Ok(k))),
+                    Some(Some(Ok(item))) => Ready(Some(Ok(StreamItem::DataItem(item)))),
                     Some(Some(Err(e))) => {
                         self.tryparse = false;
                         self.errored = true;

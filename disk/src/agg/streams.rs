@@ -38,20 +38,16 @@ pub trait ToJsonResult {
 
 impl<T> AggregatableXdim1Bin for StreamItem<T>
 where
-    // TODO bound on the Output ???
-    //T: AggregatableTdim + AggregatableXdim1Bin<Output = T>,
     T: AggregatableTdim + AggregatableXdim1Bin,
 {
     type Output = StreamItem<<T as AggregatableXdim1Bin>::Output>;
 
     fn into_agg(self) -> Self::Output {
-        // TODO how to handle the type mismatch?
-        /*match self {
-            Self::Log(item) => Self::Log(item),
-            Self::Stats(item) => Self::Stats(item),
-            Self::DataItem(item) => Self::DataItem(item.into_agg()),
-        }*/
-        err::todoval()
+        match self {
+            Self::Log(item) => Self::Output::Log(item),
+            Self::Stats(item) => Self::Output::Stats(item),
+            Self::DataItem(item) => Self::Output::DataItem(item.into_agg()),
+        }
     }
 }
 
@@ -60,7 +56,6 @@ where
     T: AggregatableTdim,
 {
     inner_agg: <T as AggregatableTdim>::Aggregator,
-    _mark: std::marker::PhantomData<T>,
 }
 
 impl<T> StreamItemAggregator<T>
@@ -70,7 +65,6 @@ where
     pub fn new(ts1: u64, ts2: u64) -> Self {
         Self {
             inner_agg: <T as AggregatableTdim>::aggregator_new_static(ts1, ts2),
-            _mark: std::marker::PhantomData::default(),
         }
     }
 }
@@ -83,23 +77,45 @@ where
     type OutputValue = StreamItem<<<T as AggregatableTdim>::Aggregator as AggregatorTdim>::OutputValue>;
 
     fn ends_before(&self, inp: &Self::InputValue) -> bool {
-        todo!()
+        match inp {
+            StreamItem::Log(_) => false,
+            StreamItem::Stats(_) => false,
+            StreamItem::DataItem(item) => self.inner_agg.ends_before(item),
+        }
     }
 
     fn ends_after(&self, inp: &Self::InputValue) -> bool {
-        todo!()
+        match inp {
+            StreamItem::Log(_) => false,
+            StreamItem::Stats(_) => false,
+            StreamItem::DataItem(item) => self.inner_agg.ends_after(item),
+        }
     }
 
     fn starts_after(&self, inp: &Self::InputValue) -> bool {
-        todo!()
+        match inp {
+            StreamItem::Log(_) => false,
+            StreamItem::Stats(_) => false,
+            StreamItem::DataItem(item) => self.inner_agg.starts_after(item),
+        }
     }
 
     fn ingest(&mut self, inp: &mut Self::InputValue) {
-        todo!()
+        match inp {
+            StreamItem::Log(_) => {}
+            StreamItem::Stats(_) => {}
+            StreamItem::DataItem(item) => {
+                self.inner_agg.ingest(item);
+            }
+        }
     }
 
     fn result(self) -> Vec<Self::OutputValue> {
-        todo!()
+        self.inner_agg
+            .result()
+            .into_iter()
+            .map(|k| StreamItem::DataItem(k))
+            .collect()
     }
 }
 
@@ -128,52 +144,5 @@ where
             Some(k) => Some(Self::DataItem(k)),
             None => None,
         }
-    }
-
-    // TODO refactor: the point of having the StreamItem is that this function is no longer necessary:
-    fn is_log_item(&self) -> bool {
-        if let Self::Log(_) = self {
-            true
-        } else {
-            false
-        }
-    }
-
-    // TODO should be able to remove this from trait:
-    fn log_item(self) -> Option<LogItem> {
-        if let Self::Log(item) = self {
-            Some(item)
-        } else {
-            None
-        }
-    }
-
-    // TODO should be able to remove this from trait:
-    fn make_log_item(item: LogItem) -> Option<Self> {
-        Some(Self::Log(item))
-    }
-
-    // TODO should be able to remove this from trait:
-    fn is_stats_item(&self) -> bool {
-        if let Self::Stats(_) = self {
-            true
-        } else {
-            false
-        }
-    }
-
-    // TODO should be able to remove this from trait:
-    fn stats_item(self) -> Option<EventDataReadStats> {
-        if let Self::Stats(_item) = self {
-            // TODO this whole function should no longer be needed.
-            Some(err::todoval())
-        } else {
-            None
-        }
-    }
-
-    // TODO should be able to remove this from trait:
-    fn make_stats_item(item: EventDataReadStats) -> Option<Self> {
-        Some(Self::Stats(StatsItem::EventDataReadStats(item)))
     }
 }
