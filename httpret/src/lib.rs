@@ -145,7 +145,7 @@ async fn data_api_proxy_try(req: Request<Body>, node_config: &NodeConfigCached) 
     } else if path.starts_with("/api/4/documentation/") {
         if req.method() == Method::GET {
             static_http!(path, "", "index.html", "text/html");
-            static_http!(path, "style.css", "text/stylesheet");
+            static_http!(path, "style.css", "text/css");
             static_http!(path, "script.js", "text/javascript");
             static_http!(path, "status-main.html", "text/html");
             Ok(response(StatusCode::NOT_FOUND).body(Body::empty())?)

@@ -1,4 +1,5 @@
-use crate::binned::BinnedBytesForHttpStreamFrame;
+use crate::agg::streams::StreamItem;
+use crate::binned::{BinnedBytesForHttpStreamFrame, BinnedScalarStreamItem};
 use crate::cache::pbvfs::PreBinnedItem;
 use crate::frame::inmem::InMemoryFrame;
 use crate::raw::conn::RawConnOut;
@@ -30,6 +31,10 @@ impl FrameType for RawConnOut {
 
 impl FrameType for Result<PreBinnedItem, Error> {
     const FRAME_TYPE_ID: u32 = 0x05;
+}
+
+impl FrameType for Result<StreamItem<BinnedScalarStreamItem>, Error> {
+    const FRAME_TYPE_ID: u32 = 0x06;
 }
 
 pub fn make_frame<FT>(item: &FT) -> Result<BytesMut, Error>

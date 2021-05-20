@@ -1,4 +1,5 @@
 use crate::streamlog::LogItem;
+use err::Error;
 use netpod::EventDataReadStats;
 use serde::{Deserialize, Serialize};
 
@@ -18,6 +19,17 @@ pub trait Bins {
     fn bin_count(&self) -> u32;
 }
 
-pub trait Batchable {
-    fn append(&mut self, k: &mut Self);
+pub trait Collected {
+    fn new(bin_count_exp: u32) -> Self;
+    fn timed_out(&mut self, k: bool);
+}
+
+pub trait Collectable {
+    type Collected: Collected;
+    fn append_to(&mut self, collected: &mut Self::Collected);
+}
+
+pub trait ToJsonResult {
+    type Output;
+    fn to_json_result(&self) -> Result<Self::Output, Error>;
 }

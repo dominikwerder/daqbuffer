@@ -1,7 +1,9 @@
 use chrono::{DateTime, Utc};
-use disk::agg::scalarbinbatch::MinMaxAvgScalarBinBatchStreamItem;
+use disk::agg::streams::StreamItem;
+use disk::binned::BinnedScalarStreamItem;
 use disk::cache::CacheUsage;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
+use disk::frame::makeframe::FrameType;
 use disk::streamlog::Streamlog;
 use err::Error;
 use futures_util::TryStreamExt;
@@ -75,30 +77,33 @@ pub async fn get_binned(
     let s2 = InMemoryFrameAsyncReadStream::new(s1, perf_opts.inmem_bufcap);
     use futures_util::StreamExt;
     use std::future::ready;
-    let mut bin_count = 0;
     let s3 = s2
         .map_err(|e| error!("get_binned  {:?}", e))
         .filter_map(|item| {
             let g = match item {
                 Ok(frame) => {
-                    type ExpectedType = disk::binned::BinnedBytesForHttpStreamFrame;
+                    type _ExpectedType2 = disk::binned::BinnedBytesForHttpStreamFrame;
+                    type ExpectedType = Result<StreamItem<BinnedScalarStreamItem>, Error>;
+                    let type_id_exp = <ExpectedType as FrameType>::FRAME_TYPE_ID;
+                    if frame.tyid() != type_id_exp {
+                        error!("unexpected type id  got {}  exp {}", frame.tyid(), type_id_exp);
+                    }
                     let n1 = frame.buf().len();
                     match bincode::deserialize::<ExpectedType>(frame.buf()) {
                         Ok(item) => match item {
                             Ok(item) => {
-                                match &item {
-                                    MinMaxAvgScalarBinBatchStreamItem::Log(item) => {
-                                        Streamlog::emit(item);
+                                match item {
+                                    StreamItem::Log(item) => {
+                                        Streamlog::emit(&item);
                                     }
-                                    MinMaxAvgScalarBinBatchStreamItem::Values(item) => {
-                                        bin_count += 1;
-                                        info!("len {}  values {:?}", n1, item);
+                                    StreamItem::Stats(item) => {
+                                        info!("Stats: {:?}", item);
                                     }
-                                    item => {
-                                        info!("len {}  item {:?}", n1, item);
+                                    StreamItem::DataItem(item) => {
+                                        info!("DataItem: {:?}", item);
                                     }
                                 }
-                                Some(Ok(item))
+                                Some(Ok(()))
                             }
                             Err(e) => {
                                 error!("len {}  error frame {:?}", n1, e);
