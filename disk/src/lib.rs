@@ -376,9 +376,7 @@ impl Stream for NeedMinBuffer {
         }
         loop {
             let mut again = false;
-            let g = &mut self.inp;
-            pin_mut!(g);
-            let z = match g.poll_next(cx) {
+            let z = match self.inp.poll_next_unpin(cx) {
                 Ready(Some(Ok(fcr))) => {
                     //info!("NeedMin got buf  len {}", buf.len());
                     match self.left.take() {
