@@ -3,11 +3,196 @@
 <head>
     <meta charset="utf-8"/>
     <title>Retrieval Documentation</title>
+    <meta name="keywords" content="PSI, DAQ, Databuffer">
+    <meta name="author" content="Dominik Werder">
     <link rel="shortcut icon" href="about:blank"/>
     <link rel="stylesheet" href="style.css"/>
 </head>
+
 <body>
 <h1>Retrieval 4.0 Documentation</h1>
-<p>Some docs to be shown here...</p>
+
+<h2>HTTP API documentation</h2>
+
+<p>This API follows the common convention that the addition of a key to a json object is not considered a breaking change.</p>
+
+<p>Currently available:</p>
+<ul>
+    <li><a href="#query-binned">Query binned data</a></li>
+</ul>
+
+<a id="query-binned"></a>
+<h2>Query binned data</h2>
+<p><strong>Method:</strong> GET</p>
+<p><strong>URL:</strong> https://data-api.psi.ch/api/4/binned</p>
+<p><strong>Query parameters:</strong></p>
+<ul>
+    <li>channel_backend</li>
+    <li>channel_name</li>
+    <li>beg_date</li>
+    <li>end_date</li>
+    <li>bin_count</li>
+</ul>
+<p><strong>Request header:</strong> "Accept" must be "application/json"</p>
+<p><strong>Example:</strong></p>
+<pre>http://sf-daqbuf-21:8380/api/4/binned?channel_backend=sf-databuffer&channel_name=SLAAR-LSCP4-LAS6891:CH7:1&beg_date=2021-05-21T00:00:00.000Z&end_date=2021-05-21T02:00:00.000Z&bin_count=20</pre>
+<p><strong>Result body example:</strong></p>
+<pre>
+[
+    {
+        "backend": "sf-databuffer",
+        "channels": [
+            "SARES20-LSCP9:CH0:2",
+            "SARES20-LSCP9:CH0:1"
+        ]
+    },
+    {
+        "backend": "hipa-archive",
+        "channels": [],
+        "error": {
+            "code": "Error"  // can be: "Error" | "Timeout" (more to be added in the future)
+        }
+    }
+]
+</pre>
+
+<h4>CURL example:</h4>
+<pre>
+curl -H 'Accept: application/json' 'http://sf-daqbuf-21:8380/api/4/binned?channel_backend=sf-databuffer&channel_name=SLAAR-LSCP4-LAS6891:CH7:1&beg_date=2021-05-21T00:00:00.000Z&end_date=2021-05-21T02:00:00.000Z&bin_count=20'
+</pre>
+<p>Answer:</p>
+<pre>
+{
+    "counts": [
+        458,
+        459,
+        458,
+        459,
+        459,
+        458,
+        459,
+        458,
+        459,
+        459,
+        458,
+        459,
+        458,
+        459,
+        458,
+        459,
+        459,
+        458,
+        459,
+        458,
+        459,
+        458,
+        459,
+        459
+    ],
+    "ts_bin_edges": [
+        "2021-05-21T00:00:00.000Z",
+        "2021-05-21T00:05:00.000Z",
+        "2021-05-21T00:10:00.000Z",
+        "2021-05-21T00:15:00.000Z",
+        "2021-05-21T00:20:00.000Z",
+        "2021-05-21T00:25:00.000Z",
+        "2021-05-21T00:30:00.000Z",
+        "2021-05-21T00:35:00.000Z",
+        "2021-05-21T00:40:00.000Z",
+        "2021-05-21T00:45:00.000Z",
+        "2021-05-21T00:50:00.000Z",
+        "2021-05-21T00:55:00.000Z",
+        "2021-05-21T01:00:00.000Z",
+        "2021-05-21T01:05:00.000Z",
+        "2021-05-21T01:10:00.000Z",
+        "2021-05-21T01:15:00.000Z",
+        "2021-05-21T01:20:00.000Z",
+        "2021-05-21T01:25:00.000Z",
+        "2021-05-21T01:30:00.000Z",
+        "2021-05-21T01:35:00.000Z",
+        "2021-05-21T01:40:00.000Z",
+        "2021-05-21T01:45:00.000Z",
+        "2021-05-21T01:50:00.000Z",
+        "2021-05-21T01:55:00.000Z",
+        "2021-05-21T02:00:00.000Z"
+    ]
+}
+</pre>
+
+
+
+<a name="channel-search-configs"></a>
+<h2>Channel Search, with return of configuration information</h2>
+<p><strong>Method:</strong> POST</p>
+<p><strong>URL:</strong> https://data-api.psi.ch/api/1/channels/config</p>
+<p><strong>Request body:</strong> JSON with search parameters</p>
+<p><strong>Request body outline:</strong></p>
+<pre>
+{
+  "regex":             "[Optional: Regular expression to search in channel name]",
+  "sourceRegex":       "[Optional: Search in sourcename of the channel]",
+  "descriptionRegex":  "[Optional: Search in the channel's description]",
+  "backends":          ["gls-archive", "hipa-archive", "sf-databuffer"]
+}
+</pre>
+<p><strong>Result body example:</strong></p>
+<p>Assuming that "hipa-archive" would be unavailable:</p>
+<pre>
+[
+    {
+        "backend": "sf-databuffer",
+        "channels": [
+            {
+                "backend": "sf-databuffer",
+                "description": "",
+                "name": "SARES20-LSCP9:CH0:2",
+                "shape": [
+                    512
+                ],
+                "source": "tcp://SARES20-CVME-01:9999",
+                "type": "Float32",
+                "unit": ""
+            },
+            {
+                "backend": "sf-databuffer",
+                "description": "",
+                "name": "SARES20-LSCP9:CH0:1",
+                "shape": [
+                    512
+                ],
+                "source": "tcp://SARES20-CVME-01:9999",
+                "type": "Int16",
+                "unit": ""
+            }
+        ]
+    },
+    {
+        "backend": "hipa-archive",
+        "channels": [],
+        "error": {
+            "code": "Error"  // can be: "Error" | "Timeout" (more to be added in the future)
+        }
+    }
+]
+</pre>
+<p>Notes:</p>
+<p>The search constraints are AND'ed together.</p>
+<p>If some backend responds with an error, that error is indicated by the error key in the affected backend (see example above).</p>
+
+
+<h4>CURL example:</h4>
+<pre>
+QUERY='{ "regex": "LSCP9:CH0", "backends": ["sf-databuffer"] }'
+curl -H 'Content-Type: application/json' -H 'Accept: application/json' -d "$QUERY" https://data-api.psi.ch/api/1/channels/config
+</pre>
+
+<h2>Feedback and comments</h2>
+<p>Feedback is very much appreciated:</p>
+<p>dominik.werder@psi.ch</p>
+<p>or please assign me a JIRA ticket.</p>
+
+<div id="footer"></div>
+
+
 </body>
 </html>

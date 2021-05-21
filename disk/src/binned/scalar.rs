@@ -1,14 +1,14 @@
-use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatchStreamItem;
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedScalarStreamItem, BinnedStreamRes};
-use crate::binnedstream::{BinnedScalarStreamFromPreBinnedPatches, BinnedStream};
-use crate::cache::{BinnedQuery, MergedFromRemotes};
+use crate::binned::{BinnedScalarStreamItem, BinnedStreamKind, BinnedStreamRes};
+use crate::binnedstream::BinnedStream;
+use crate::cache::BinnedQuery;
 use crate::raw::EventsQuery;
 use err::Error;
+use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::{BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange};
+use netpod::{BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchRange};
 
 pub fn adapter_to_stream_item(
     k: Result<StreamItem<MinMaxAvgScalarBinBatchStreamItem>, Error>,
@@ -30,10 +30,14 @@ pub fn adapter_to_stream_item(
     }
 }
 
-pub async fn binned_scalar_stream(
+pub async fn binned_stream<BK>(
     node_config: &NodeConfigCached,
     query: &BinnedQuery,
-) -> Result<BinnedStreamRes<Result<StreamItem<BinnedScalarStreamItem>, Error>>, Error> {
+    stream_kind: BK,
+) -> Result<BinnedStreamRes<<BK::BinnedStreamType as Stream>::Item>, Error>
+where
+    BK: BinnedStreamKind,
+{
     if query.channel().backend != node_config.node.backend {
         let err = Error::with_msg(format!(
             "backend mismatch  node: {}  requested: {}",
@@ -57,16 +61,8 @@ pub async fn binned_scalar_stream(
                 );
                 return Err(Error::with_msg(msg));
             }
-            let s1 = BinnedScalarStreamFromPreBinnedPatches::new(
-                PreBinnedPatchIterator::from_range(pre_range),
-                query.channel().clone(),
-                range.clone(),
-                query.agg_kind().clone(),
-                query.cache_usage().clone(),
-                node_config,
-                query.disk_stats_every().clone(),
-            )?;
-            let s = BinnedStream::new(Box::pin(s1))?;
+            let s = BK::new_binned_from_prebinned(query, range.clone(), pre_range, node_config)?;
+            let s = BinnedStream::new(Box::pin(s))?;
             let ret = BinnedStreamRes {
                 binned_stream: s,
                 range,
@@ -84,9 +80,7 @@ pub async fn binned_scalar_stream(
                 agg_kind: query.agg_kind().clone(),
             };
             // TODO do I need to set up more transformations or binning to deliver the requested data?
-            let s = MergedFromRemotes::new(evq, perf_opts, node_config.node_config.cluster.clone());
-            let s = s.into_binned_t(range.clone());
-            let s = s.map(adapter_to_stream_item);
+            let s = BK::new_binned_from_merged(evq, perf_opts, range.clone(), node_config)?;
             let s = BinnedStream::new(Box::pin(s))?;
             let ret = BinnedStreamRes {
                 binned_stream: s,
