@@ -1,7 +1,7 @@
 use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatchStreamItem};
 use crate::agg::streams::StreamItem;
-use crate::cache::pbvfs::{PreBinnedItem, PreBinnedValueFetchedStream};
+use crate::cache::pbvfs::{PreBinnedScalarItem, PreBinnedScalarValueFetchedStream};
 use crate::cache::{CacheFileDesc, MergedFromRemotes, PreBinnedQuery};
 use crate::frame::makeframe::make_frame;
 use crate::raw::EventsQuery;
@@ -39,7 +39,7 @@ impl Stream for PreBinnedValueByteStreamInner {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         match self.inp.poll_next_unpin(cx) {
-            Ready(Some(item)) => match make_frame::<Result<StreamItem<PreBinnedItem>, Error>>(&item) {
+            Ready(Some(item)) => match make_frame::<Result<StreamItem<PreBinnedScalarItem>, Error>>(&item) {
                 Ok(buf) => Ready(Some(Ok(buf.freeze()))),
                 Err(e) => Ready(Some(Err(e.into()))),
             },
@@ -53,7 +53,7 @@ pub struct PreBinnedValueStream {
     query: PreBinnedQuery,
     node_config: NodeConfigCached,
     open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<tokio::fs::File, std::io::Error>> + Send>>>,
-    fut2: Option<Pin<Box<dyn Stream<Item = Result<StreamItem<PreBinnedItem>, Error>> + Send>>>,
+    fut2: Option<Pin<Box<dyn Stream<Item = Result<StreamItem<PreBinnedScalarItem>, Error>> + Send>>>,
     read_from_cache: bool,
     cache_written: bool,
     data_complete: bool,
@@ -64,7 +64,7 @@ pub struct PreBinnedValueStream {
     streamlog: Streamlog,
     values: MinMaxAvgScalarBinBatch,
     write_fut: Option<Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>>,
-    read_cache_fut: Option<Pin<Box<dyn Future<Output = Result<StreamItem<PreBinnedItem>, Error>> + Send>>>,
+    read_cache_fut: Option<Pin<Box<dyn Future<Output = Result<StreamItem<PreBinnedScalarItem>, Error>> + Send>>>,
 }
 
 impl PreBinnedValueStream {
@@ -120,10 +120,10 @@ impl PreBinnedValueStream {
                     StreamItem::Stats(item) => Ok(StreamItem::Stats(item)),
                     StreamItem::DataItem(item) => match item {
                         MinMaxAvgScalarBinBatchStreamItem::RangeComplete => {
-                            Ok(StreamItem::DataItem(PreBinnedItem::RangeComplete))
+                            Ok(StreamItem::DataItem(PreBinnedScalarItem::RangeComplete))
                         }
                         MinMaxAvgScalarBinBatchStreamItem::Values(item) => {
-                            Ok(StreamItem::DataItem(PreBinnedItem::Batch(item)))
+                            Ok(StreamItem::DataItem(PreBinnedScalarItem::Batch(item)))
                         }
                     },
                 },
@@ -170,7 +170,7 @@ impl PreBinnedValueStream {
                         cache_usage: q2.cache_usage.clone(),
                         disk_stats_every: disk_stats_every.clone(),
                     };
-                    PreBinnedValueFetchedStream::new(&query, &node_config)
+                    PreBinnedScalarValueFetchedStream::new(&query, &node_config)
                 }
             })
             .map(|k| {
@@ -201,7 +201,7 @@ impl PreBinnedValueStream {
 
 impl Stream for PreBinnedValueStream {
     // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
-    type Item = Result<StreamItem<PreBinnedItem>, Error>;
+    type Item = Result<StreamItem<PreBinnedScalarItem>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -256,7 +256,7 @@ impl Stream for PreBinnedValueStream {
                 if self.cache_written {
                     if self.range_complete_observed {
                         self.range_complete_emitted = true;
-                        Ready(Some(Ok(StreamItem::DataItem(PreBinnedItem::RangeComplete))))
+                        Ready(Some(Ok(StreamItem::DataItem(PreBinnedScalarItem::RangeComplete))))
                     } else {
                         self.completed = true;
                         Ready(None)
@@ -297,18 +297,18 @@ impl Stream for PreBinnedValueStream {
                             StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
                             StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
                             StreamItem::DataItem(item) => match item {
-                                PreBinnedItem::RangeComplete => {
+                                PreBinnedScalarItem::RangeComplete => {
                                     self.range_complete_observed = true;
                                     continue 'outer;
                                 }
-                                PreBinnedItem::Batch(batch) => {
+                                PreBinnedScalarItem::Batch(batch) => {
                                     self.values.ts1s.extend(batch.ts1s.iter());
                                     self.values.ts2s.extend(batch.ts2s.iter());
                                     self.values.counts.extend(batch.counts.iter());
                                     self.values.mins.extend(batch.mins.iter());
                                     self.values.maxs.extend(batch.maxs.iter());
                                     self.values.avgs.extend(batch.avgs.iter());
-                                    Ready(Some(Ok(StreamItem::DataItem(PreBinnedItem::Batch(batch)))))
+                                    Ready(Some(Ok(StreamItem::DataItem(PreBinnedScalarItem::Batch(batch)))))
                                 }
                             },
                         },

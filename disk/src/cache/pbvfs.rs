@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub struct PreBinnedValueFetchedStream {
+pub struct PreBinnedScalarValueFetchedStream {
     uri: http::Uri,
     resfut: Option<hyper::client::ResponseFuture>,
     res: Option<InMemoryFrameAsyncReadStream<HttpBodyAsAsyncRead>>,
@@ -22,7 +22,7 @@ pub struct PreBinnedValueFetchedStream {
     completed: bool,
 }
 
-impl PreBinnedValueFetchedStream {
+impl PreBinnedScalarValueFetchedStream {
     pub fn new(query: &PreBinnedQuery, node_config: &NodeConfigCached) -> Result<Self, Error> {
         let nodeix = node_ix_for_patch(&query.patch, &query.channel, &node_config.node_config.cluster);
         let node = &node_config.node_config.cluster.nodes[nodeix as usize];
@@ -45,33 +45,30 @@ impl PreBinnedValueFetchedStream {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub enum PreBinnedItem {
+pub enum PreBinnedScalarItem {
     Batch(MinMaxAvgScalarBinBatch),
     RangeComplete,
 }
 
-impl Stream for PreBinnedValueFetchedStream {
-    // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
-    type Item = Result<StreamItem<PreBinnedItem>, Error>;
+impl Stream for PreBinnedScalarValueFetchedStream {
+    type Item = Result<StreamItem<PreBinnedScalarItem>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        if self.completed {
-            panic!("poll_next on completed");
-        }
-        if self.errored {
-            self.completed = true;
-            return Ready(None);
-        }
         'outer: loop {
-            break if let Some(res) = self.res.as_mut() {
+            break if self.completed {
+                panic!("poll_next on completed");
+            } else if self.errored {
+                self.completed = true;
+                return Ready(None);
+            } else if let Some(res) = self.res.as_mut() {
                 pin_mut!(res);
                 match res.poll_next(cx) {
                     Ready(Some(Ok(item))) => match item {
                         StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
                         StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
                         StreamItem::DataItem(item) => {
-                            match decode_frame::<Result<StreamItem<PreBinnedItem>, Error>>(&item) {
+                            match decode_frame::<Result<StreamItem<PreBinnedScalarItem>, Error>>(&item) {
                                 Ok(Ok(item)) => Ready(Some(Ok(item))),
                                 Ok(Err(e)) => {
                                     self.errored = true;

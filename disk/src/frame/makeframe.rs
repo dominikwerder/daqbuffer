@@ -1,7 +1,7 @@
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatchStreamItem;
 use crate::agg::streams::StreamItem;
 use crate::binned::BinnedScalarStreamItem;
-use crate::cache::pbvfs::PreBinnedItem;
+use crate::cache::pbvfs::PreBinnedScalarItem;
 use crate::frame::inmem::InMemoryFrame;
 use crate::raw::conn::RawConnOut;
 use crate::raw::EventQueryJsonStringFrame;
@@ -33,7 +33,7 @@ impl FrameType for Result<MinMaxAvgScalarBinBatchStreamItem, Error> {
     const FRAME_TYPE_ID: u32 = 0x07;
 }
 
-impl FrameType for Result<StreamItem<PreBinnedItem>, Error> {
+impl FrameType for Result<StreamItem<PreBinnedScalarItem>, Error> {
     const FRAME_TYPE_ID: u32 = 0x08;
 }
 

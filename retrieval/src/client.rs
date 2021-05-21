@@ -91,7 +91,6 @@ pub async fn get_binned(
                         None
                     }
                     StreamItem::DataItem(frame) => {
-                        type _ExpectedType2 = disk::binned::BinnedBytesForHttpStreamFrame;
                         type ExpectedType = Result<StreamItem<BinnedScalarStreamItem>, Error>;
                         let type_id_exp = <ExpectedType as FrameType>::FRAME_TYPE_ID;
                         if frame.tyid() != type_id_exp {

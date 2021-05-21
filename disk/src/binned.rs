@@ -246,9 +246,6 @@ pub async fn binned_bytes_for_http(
     }
 }
 
-// TODO remove this when no longer used, gets replaced by Result<StreamItem<BinnedStreamItem>, Error>
-pub type BinnedBytesForHttpStreamFrame = <BinnedScalarStreamFromPreBinnedPatches as Stream>::Item;
-
 pub struct BinnedBytesForHttpStream<S> {
     inp: S,
     errored: bool,
@@ -397,8 +394,10 @@ pub async fn binned_json(node_config: &NodeConfigCached, query: &BinnedQuery) ->
 pub trait BinnedStreamKind {
     type BinnedStreamItem: MakeBytesFrame;
     type BinnedStreamType: Stream + Send + 'static;
+    type Dummy: Default + Unpin;
 
     fn new_binned_from_prebinned(
+        &self,
         query: &BinnedQuery,
         range: BinnedRange,
         pre_range: PreBinnedPatchRange,
@@ -406,6 +405,7 @@ pub trait BinnedStreamKind {
     ) -> Result<Self::BinnedStreamType, Error>;
 
     fn new_binned_from_merged(
+        &self,
         evq: EventsQuery,
         perf_opts: PerfOpts,
         range: BinnedRange,
@@ -432,8 +432,10 @@ impl BinnedStreamKindWave {
 impl BinnedStreamKind for BinnedStreamKindScalar {
     type BinnedStreamItem = Result<StreamItem<BinnedScalarStreamItem>, Error>;
     type BinnedStreamType = BinnedStream<Self::BinnedStreamItem>;
+    type Dummy = u32;
 
     fn new_binned_from_prebinned(
+        &self,
         query: &BinnedQuery,
         range: BinnedRange,
         pre_range: PreBinnedPatchRange,
@@ -447,11 +449,13 @@ impl BinnedStreamKind for BinnedStreamKindScalar {
             query.cache_usage().clone(),
             node_config,
             query.disk_stats_every().clone(),
+            self,
         )?;
         Ok(BinnedStream::new(Box::pin(s))?)
     }
 
     fn new_binned_from_merged(
+        &self,
         evq: EventsQuery,
         perf_opts: PerfOpts,
         range: BinnedRange,

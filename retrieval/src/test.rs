@@ -2,6 +2,7 @@ use crate::spawn_test_hosts;
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
 use disk::agg::streams::StreamItem;
+use disk::binned::BinnedScalarStreamItem;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::streamlog::Streamlog;
 use err::Error;
@@ -161,7 +162,7 @@ where
                         None
                     }
                     StreamItem::DataItem(frame) => {
-                        type ExpectedType = disk::binned::BinnedBytesForHttpStreamFrame;
+                        type ExpectedType = Result<StreamItem<BinnedScalarStreamItem>, Error>;
                         match bincode::deserialize::<ExpectedType>(frame.buf()) {
                             Ok(item) => match item {
                                 Ok(item) => match item {

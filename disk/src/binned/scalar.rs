@@ -61,7 +61,7 @@ where
                 );
                 return Err(Error::with_msg(msg));
             }
-            let s = BK::new_binned_from_prebinned(query, range.clone(), pre_range, node_config)?;
+            let s = BK::new_binned_from_prebinned(&stream_kind, query, range.clone(), pre_range, node_config)?;
             let s = BinnedStream::new(Box::pin(s))?;
             let ret = BinnedStreamRes {
                 binned_stream: s,
@@ -80,7 +80,7 @@ where
                 agg_kind: query.agg_kind().clone(),
             };
             // TODO do I need to set up more transformations or binning to deliver the requested data?
-            let s = BK::new_binned_from_merged(evq, perf_opts, range.clone(), node_config)?;
+            let s = BK::new_binned_from_merged(&stream_kind, evq, perf_opts, range.clone(), node_config)?;
             let s = BinnedStream::new(Box::pin(s))?;
             let ret = BinnedStreamRes {
                 binned_stream: s,

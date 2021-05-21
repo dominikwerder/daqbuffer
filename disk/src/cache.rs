@@ -2,7 +2,7 @@ use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
 use crate::cache::pbv::PreBinnedValueByteStream;
-use crate::cache::pbvfs::PreBinnedItem;
+use crate::cache::pbvfs::PreBinnedScalarItem;
 use crate::merge::MergedMinMaxAvgScalarStream;
 use crate::raw::EventsQuery;
 use bytes::Bytes;
@@ -526,10 +526,10 @@ pub async fn write_pb_cache_min_max_avg_scalar(
     Ok(())
 }
 
-pub async fn read_pbv(mut file: File) -> Result<StreamItem<PreBinnedItem>, Error> {
+pub async fn read_pbv(mut file: File) -> Result<StreamItem<PreBinnedScalarItem>, Error> {
     let mut buf = vec![];
     file.read_to_end(&mut buf).await?;
     trace!("Read cached file  len {}", buf.len());
     let dec: MinMaxAvgScalarBinBatch = serde_cbor::from_slice(&buf)?;
-    Ok(StreamItem::DataItem(PreBinnedItem::Batch(dec)))
+    Ok(StreamItem::DataItem(PreBinnedScalarItem::Batch(dec)))
 }
