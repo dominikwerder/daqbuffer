@@ -391,10 +391,10 @@ pub async fn binned_json(node_config: &NodeConfigCached, query: &BinnedQuery) ->
     Ok(serde_json::to_value(ret)?)
 }
 
-pub trait BinnedStreamKind {
+pub trait BinnedStreamKind: Clone + Unpin + Send + Sync + 'static {
     type BinnedStreamItem: MakeBytesFrame;
     type BinnedStreamType: Stream + Send + 'static;
-    type Dummy: Default + Unpin;
+    type Dummy: Default + Unpin + Send;
 
     fn new_binned_from_prebinned(
         &self,
@@ -413,6 +413,7 @@ pub trait BinnedStreamKind {
     ) -> Result<Self::BinnedStreamType, Error>;
 }
 
+#[derive(Clone)]
 pub struct BinnedStreamKindScalar {}
 
 pub struct BinnedStreamKindWave {}
@@ -449,7 +450,7 @@ impl BinnedStreamKind for BinnedStreamKindScalar {
             query.cache_usage().clone(),
             node_config,
             query.disk_stats_every().clone(),
-            self,
+            self.clone(),
         )?;
         Ok(BinnedStream::new(Box::pin(s))?)
     }

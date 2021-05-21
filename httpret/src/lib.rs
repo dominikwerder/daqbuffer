@@ -1,4 +1,5 @@
 use bytes::Bytes;
+use disk::binned::BinnedStreamKindScalar;
 use disk::cache::{BinnedQuery, PreBinnedQuery};
 use disk::raw::conn::raw_service;
 use err::Error;
@@ -271,17 +272,22 @@ async fn binned_json(query: BinnedQuery, node_config: &NodeConfigCached) -> Resu
 
 async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
-    let q = PreBinnedQuery::from_request(&head)?;
-    let desc = format!("pre-b-{}", q.patch().bin_t_len() / 1000000000);
+    let query = PreBinnedQuery::from_request(&head)?;
+    let desc = format!("pre-b-{}", query.patch().bin_t_len() / 1000000000);
     let span1 = span!(Level::INFO, "httpret::prebinned", desc = &desc.as_str());
+
+    // TODO factor from the inner scopes the fetch of the channel entry so that I can
+    // provide the stream_kind here:
+    let stream_kind = BinnedStreamKindScalar::new();
+
     span1.in_scope(|| {
-        let ret = match disk::cache::pre_binned_bytes_for_http(node_config, &q) {
+        let ret = match disk::cache::pre_binned_bytes_for_http(node_config, &query, stream_kind) {
             Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(
                 s,
                 format!(
                     "pre-b-{}-p-{}",
-                    q.patch().bin_t_len() / 1000000000,
-                    q.patch().patch_beg() / 1000000000,
+                    query.patch().bin_t_len() / 1000000000,
+                    query.patch().patch_beg() / 1000000000,
                 ),
             ))?,
             Err(e) => {

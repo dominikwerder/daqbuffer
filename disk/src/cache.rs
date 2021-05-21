@@ -1,6 +1,7 @@
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
+use crate::binned::BinnedStreamKind;
 use crate::cache::pbv::PreBinnedValueByteStream;
 use crate::cache::pbvfs::PreBinnedScalarItem;
 use crate::merge::MergedMinMaxAvgScalarStream;
@@ -231,10 +232,14 @@ fn channel_from_params(params: &BTreeMap<String, String>) -> Result<Channel, Err
 // NOTE  This answers a request for a single valid pre-binned patch.
 // A user must first make sure that the grid spec is valid, and that this node is responsible for it.
 // Otherwise it is an error.
-pub fn pre_binned_bytes_for_http(
+pub fn pre_binned_bytes_for_http<BK>(
     node_config: &NodeConfigCached,
     query: &PreBinnedQuery,
-) -> Result<PreBinnedValueByteStream, Error> {
+    stream_kind: BK,
+) -> Result<PreBinnedValueByteStream<BK>, Error>
+where
+    BK: BinnedStreamKind,
+{
     if query.channel.backend != node_config.node.backend {
         let err = Error::with_msg(format!(
             "backend mismatch  node: {}  requested: {}",
@@ -249,7 +254,7 @@ pub fn pre_binned_bytes_for_http(
             node_config.ix, patch_node_ix
         )))
     } else {
-        let ret = super::cache::pbv::pre_binned_value_byte_stream_new(query, node_config);
+        let ret = super::cache::pbv::pre_binned_value_byte_stream_new(query, node_config, stream_kind);
         Ok(ret)
     }
 }

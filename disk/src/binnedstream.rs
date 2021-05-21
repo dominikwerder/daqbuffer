@@ -32,7 +32,7 @@ where
         cache_usage: CacheUsage,
         node_config: &NodeConfigCached,
         disk_stats_every: ByteSize,
-        stream_kind: &BK,
+        stream_kind: BK,
     ) -> Result<Self, Error> {
         let patches: Vec<_> = patch_it.collect();
         let mut sp = String::new();
@@ -55,15 +55,15 @@ where
                         cache_usage.clone(),
                         disk_stats_every.clone(),
                     );
-                    let s: Pin<Box<dyn Stream<Item = _> + Send>> =
-                        match PreBinnedScalarValueFetchedStream::new(&query, &node_config) {
+                    let ret: Pin<Box<dyn Stream<Item = _> + Send>> =
+                        match PreBinnedScalarValueFetchedStream::new(&query, &node_config, &stream_kind) {
                             Ok(k) => Box::pin(k),
                             Err(e) => {
                                 error!("error from PreBinnedValueFetchedStream::new {:?}", e);
                                 Box::pin(futures_util::stream::iter(vec![Err(e)]))
                             }
                         };
-                    s
+                    ret
                 }
             })
             .flatten()
@@ -99,9 +99,10 @@ where
                 }
             })
             .into_binned_t(range);
+        let mm = BK::Dummy::default();
         Ok(Self {
             inp: Box::pin(inp),
-            _marker: BK::Dummy::default(),
+            _marker: mm,
         })
     }
 }

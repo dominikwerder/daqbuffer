@@ -1,5 +1,6 @@
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
+use crate::binned::BinnedStreamKind;
 use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead, PreBinnedQuery};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::decode_frame;
@@ -7,23 +8,29 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, FutureExt};
 use http::StatusCode;
-#[allow(unused_imports)]
 use netpod::log::*;
 use netpod::{NodeConfigCached, PerfOpts};
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub struct PreBinnedScalarValueFetchedStream {
+pub struct PreBinnedScalarValueFetchedStream<BK>
+where
+    BK: BinnedStreamKind,
+{
     uri: http::Uri,
     resfut: Option<hyper::client::ResponseFuture>,
     res: Option<InMemoryFrameAsyncReadStream<HttpBodyAsAsyncRead>>,
     errored: bool,
     completed: bool,
+    stream_kind: BK,
 }
 
-impl PreBinnedScalarValueFetchedStream {
-    pub fn new(query: &PreBinnedQuery, node_config: &NodeConfigCached) -> Result<Self, Error> {
+impl<BK> PreBinnedScalarValueFetchedStream<BK>
+where
+    BK: BinnedStreamKind,
+{
+    pub fn new(query: &PreBinnedQuery, node_config: &NodeConfigCached, stream_kind: &BK) -> Result<Self, Error> {
         let nodeix = node_ix_for_patch(&query.patch, &query.channel, &node_config.node_config.cluster);
         let node = &node_config.node_config.cluster.nodes[nodeix as usize];
         let uri: hyper::Uri = format!(
@@ -39,6 +46,7 @@ impl PreBinnedScalarValueFetchedStream {
             res: None,
             errored: false,
             completed: false,
+            stream_kind: stream_kind.clone(),
         };
         Ok(ret)
     }
@@ -50,7 +58,10 @@ pub enum PreBinnedScalarItem {
     RangeComplete,
 }
 
-impl Stream for PreBinnedScalarValueFetchedStream {
+impl<BK> Stream for PreBinnedScalarValueFetchedStream<BK>
+where
+    BK: BinnedStreamKind,
+{
     type Item = Result<StreamItem<PreBinnedScalarItem>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {

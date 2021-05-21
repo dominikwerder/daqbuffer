@@ -1,6 +1,7 @@
 use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatchStreamItem};
 use crate::agg::streams::StreamItem;
+use crate::binned::BinnedStreamKind;
 use crate::cache::pbvfs::{PreBinnedScalarItem, PreBinnedScalarValueFetchedStream};
 use crate::cache::{CacheFileDesc, MergedFromRemotes, PreBinnedQuery};
 use crate::frame::makeframe::make_frame;
@@ -18,22 +19,32 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub type PreBinnedValueByteStream = SCC<PreBinnedValueByteStreamInner>;
+pub type PreBinnedValueByteStream<BK> = SCC<PreBinnedValueByteStreamInner<BK>>;
 
-pub struct PreBinnedValueByteStreamInner {
-    inp: PreBinnedValueStream,
+pub struct PreBinnedValueByteStreamInner<BK>
+where
+    BK: BinnedStreamKind,
+{
+    inp: PreBinnedValueStream<BK>,
 }
 
-pub fn pre_binned_value_byte_stream_new(
+pub fn pre_binned_value_byte_stream_new<BK>(
     query: &PreBinnedQuery,
     node_config: &NodeConfigCached,
-) -> PreBinnedValueByteStream {
-    let s1 = PreBinnedValueStream::new(query.clone(), node_config);
+    stream_kind: BK,
+) -> PreBinnedValueByteStream<BK>
+where
+    BK: BinnedStreamKind + Unpin,
+{
+    let s1 = PreBinnedValueStream::new(query.clone(), node_config, stream_kind);
     let s2 = PreBinnedValueByteStreamInner { inp: s1 };
     SCC::new(s2)
 }
 
-impl Stream for PreBinnedValueByteStreamInner {
+impl<BK> Stream for PreBinnedValueByteStreamInner<BK>
+where
+    BK: BinnedStreamKind + Unpin,
+{
     type Item = Result<Bytes, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
@@ -49,7 +60,10 @@ impl Stream for PreBinnedValueByteStreamInner {
     }
 }
 
-pub struct PreBinnedValueStream {
+pub struct PreBinnedValueStream<BK>
+where
+    BK: BinnedStreamKind,
+{
     query: PreBinnedQuery,
     node_config: NodeConfigCached,
     open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<tokio::fs::File, std::io::Error>> + Send>>>,
@@ -65,10 +79,14 @@ pub struct PreBinnedValueStream {
     values: MinMaxAvgScalarBinBatch,
     write_fut: Option<Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>>,
     read_cache_fut: Option<Pin<Box<dyn Future<Output = Result<StreamItem<PreBinnedScalarItem>, Error>> + Send>>>,
+    stream_kind: BK,
 }
 
-impl PreBinnedValueStream {
-    pub fn new(query: PreBinnedQuery, node_config: &NodeConfigCached) -> Self {
+impl<BK> PreBinnedValueStream<BK>
+where
+    BK: BinnedStreamKind,
+{
+    pub fn new(query: PreBinnedQuery, node_config: &NodeConfigCached, stream_kind: BK) -> Self {
         Self {
             query,
             node_config: node_config.clone(),
@@ -85,6 +103,7 @@ impl PreBinnedValueStream {
             values: MinMaxAvgScalarBinBatch::empty(),
             write_fut: None,
             read_cache_fut: None,
+            stream_kind,
         }
     }
 
@@ -162,6 +181,7 @@ impl PreBinnedValueStream {
             .map({
                 let q2 = self.query.clone();
                 let disk_stats_every = self.query.disk_stats_every.clone();
+                let stream_kind = self.stream_kind.clone();
                 move |patch| {
                     let query = PreBinnedQuery {
                         patch,
@@ -170,7 +190,7 @@ impl PreBinnedValueStream {
                         cache_usage: q2.cache_usage.clone(),
                         disk_stats_every: disk_stats_every.clone(),
                     };
-                    PreBinnedScalarValueFetchedStream::new(&query, &node_config)
+                    PreBinnedScalarValueFetchedStream::new(&query, &node_config, &stream_kind)
                 }
             })
             .map(|k| {
@@ -199,7 +219,10 @@ impl PreBinnedValueStream {
     }
 }
 
-impl Stream for PreBinnedValueStream {
+impl<BK> Stream for PreBinnedValueStream<BK>
+where
+    BK: BinnedStreamKind,
+{
     // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
     type Item = Result<StreamItem<PreBinnedScalarItem>, Error>;
 
