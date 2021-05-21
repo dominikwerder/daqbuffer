@@ -1,7 +1,7 @@
 use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatchStreamItem};
 use crate::agg::streams::StreamItem;
-use crate::binned::BinnedStreamKind;
+use crate::binned::{BinnedStreamKind, PreBinnedItem};
 use crate::cache::pbvfs::{PreBinnedScalarItem, PreBinnedScalarValueFetchedStream};
 use crate::cache::{CacheFileDesc, MergedFromRemotes, PreBinnedQuery};
 use crate::frame::makeframe::make_frame;
@@ -67,7 +67,8 @@ where
     query: PreBinnedQuery,
     node_config: NodeConfigCached,
     open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<tokio::fs::File, std::io::Error>> + Send>>>,
-    fut2: Option<Pin<Box<dyn Stream<Item = Result<StreamItem<PreBinnedScalarItem>, Error>> + Send>>>,
+    fut2:
+        Option<Pin<Box<dyn Stream<Item = Result<StreamItem<<BK as BinnedStreamKind>::PreBinnedItem>, Error>> + Send>>>,
     read_from_cache: bool,
     cache_written: bool,
     data_complete: bool,
@@ -149,6 +150,9 @@ where
                 Err(e) => Err(e),
             }
         });
+
+        // TODO
+        // In the above must introduce a trait to convert to the generic item type:
         self.fut2 = Some(Box::pin(s1));
     }
 
