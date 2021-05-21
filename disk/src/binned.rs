@@ -1,9 +1,10 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim, IntoBinnedT};
 use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatchAggregator};
 use crate::agg::streams::{Collectable, Collected, StreamItem, ToJsonResult};
-use crate::agg::AggregatableXdim1Bin;
+use crate::agg::{AggregatableXdim1Bin, FitsInside};
 use crate::binned::scalar::{adapter_to_stream_item, binned_stream};
 use crate::binnedstream::{BinnedScalarStreamFromPreBinnedPatches, BinnedStream};
+use crate::cache::pbvfs::PreBinnedScalarItem;
 use crate::cache::{BinnedQuery, MergedFromRemotes};
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
 use crate::frame::makeframe::make_frame;
@@ -14,7 +15,9 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::{AggKind, BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange};
+use netpod::{
+    AggKind, BinnedRange, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange,
+};
 use num_traits::Zero;
 use serde::{Deserialize, Serialize, Serializer};
 use std::pin::Pin;
@@ -391,10 +394,35 @@ pub async fn binned_json(node_config: &NodeConfigCached, query: &BinnedQuery) ->
     Ok(serde_json::to_value(ret)?)
 }
 
+pub trait PreBinnedItem: Unpin {
+    type BinnedStreamItem: AggregatableTdim + Unpin + Send;
+    fn into_binned_stream_item(self, fit_range: NanoRange) -> Option<Self::BinnedStreamItem>;
+}
+
+impl PreBinnedItem for PreBinnedScalarItem {
+    type BinnedStreamItem = BinnedScalarStreamItem;
+
+    fn into_binned_stream_item(self, fit_range: NanoRange) -> Option<Self::BinnedStreamItem> {
+        match self {
+            Self::RangeComplete => Some(Self::BinnedStreamItem::RangeComplete),
+            Self::Batch(item) => {
+                use super::agg::{Fits, FitsInside};
+                match item.fits_inside(fit_range) {
+                    Fits::Inside | Fits::PartlyGreater | Fits::PartlyLower | Fits::PartlyLowerAndGreater => {
+                        Some(Self::BinnedStreamItem::Values(item))
+                    }
+                    _ => None,
+                }
+            }
+        }
+    }
+}
+
 pub trait BinnedStreamKind: Clone + Unpin + Send + Sync + 'static {
     type BinnedStreamItem: MakeBytesFrame;
     type BinnedStreamType: Stream + Send + 'static;
     type Dummy: Default + Unpin + Send;
+    type PreBinnedItem: PreBinnedItem + Send;
 
     fn new_binned_from_prebinned(
         &self,
@@ -434,6 +462,7 @@ impl BinnedStreamKind for BinnedStreamKindScalar {
     type BinnedStreamItem = Result<StreamItem<BinnedScalarStreamItem>, Error>;
     type BinnedStreamType = BinnedStream<Self::BinnedStreamItem>;
     type Dummy = u32;
+    type PreBinnedItem = PreBinnedScalarItem;
 
     fn new_binned_from_prebinned(
         &self,

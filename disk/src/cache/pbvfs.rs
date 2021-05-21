@@ -62,7 +62,7 @@ impl<BK> Stream for PreBinnedScalarValueFetchedStream<BK>
 where
     BK: BinnedStreamKind,
 {
-    type Item = Result<StreamItem<PreBinnedScalarItem>, Error>;
+    type Item = Result<StreamItem<BK::PreBinnedItem>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;

@@ -1,6 +1,6 @@
 use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedScalarStreamItem, BinnedStreamKind};
+use crate::binned::{BinnedScalarStreamItem, BinnedStreamKind, PreBinnedItem};
 use crate::cache::pbvfs::{PreBinnedScalarItem, PreBinnedScalarValueFetchedStream};
 use crate::cache::{CacheUsage, PreBinnedQuery};
 use err::Error;
@@ -16,8 +16,18 @@ pub struct BinnedScalarStreamFromPreBinnedPatches<BK>
 where
     BK: BinnedStreamKind,
 {
-    inp: Pin<Box<dyn Stream<Item = Result<StreamItem<BinnedScalarStreamItem>, Error>> + Send>>,
-    _marker: BK::Dummy,
+    //inp: Pin<Box<dyn Stream<Item = Result<StreamItem<BinnedScalarStreamItem>, Error>> + Send>>,
+    inp: Pin<
+        Box<
+            dyn Stream<
+                    Item = Result<
+                        StreamItem<<<BK as BinnedStreamKind>::PreBinnedItem as PreBinnedItem>::BinnedStreamItem>,
+                        Error,
+                    >,
+                > + Send,
+        >,
+    >,
+    stream_kind: BK,
 }
 
 impl<BK> BinnedScalarStreamFromPreBinnedPatches<BK>
@@ -75,34 +85,24 @@ where
                         Ok(item) => match item {
                             StreamItem::Log(item) => Some(Ok(StreamItem::Log(item))),
                             StreamItem::Stats(item) => Some(Ok(StreamItem::Stats(item))),
-                            StreamItem::DataItem(item) => match item {
-                                PreBinnedScalarItem::RangeComplete => {
-                                    Some(Ok(StreamItem::DataItem(BinnedScalarStreamItem::RangeComplete)))
+                            StreamItem::DataItem(item) => {
+                                match crate::binned::PreBinnedItem::into_binned_stream_item(item, fit_range) {
+                                    Some(item) => Some(Ok(StreamItem::DataItem(item))),
+                                    None => None,
                                 }
-                                PreBinnedScalarItem::Batch(item) => {
-                                    use super::agg::{Fits, FitsInside};
-                                    match item.fits_inside(fit_range) {
-                                        Fits::Inside
-                                        | Fits::PartlyGreater
-                                        | Fits::PartlyLower
-                                        | Fits::PartlyLowerAndGreater => {
-                                            Some(Ok(StreamItem::DataItem(BinnedScalarStreamItem::Values(item))))
-                                        }
-                                        _ => None,
-                                    }
-                                }
-                            },
+                            }
                         },
                         Err(e) => Some(Err(e)),
                     };
                     ready(g)
                 }
-            })
-            .into_binned_t(range);
-        let mm = BK::Dummy::default();
+            });
+        // TODO activate the T-binning via the bin-to-bin binning trait.
+        err::todo();
+        //let inp = IntoBinnedT::into_binned_t(inp, range);
         Ok(Self {
             inp: Box::pin(inp),
-            _marker: mm,
+            stream_kind,
         })
     }
 }
@@ -111,7 +111,7 @@ impl<BK> Stream for BinnedScalarStreamFromPreBinnedPatches<BK>
 where
     BK: BinnedStreamKind,
 {
-    type Item = Result<StreamItem<BinnedScalarStreamItem>, Error>;
+    type Item = Result<StreamItem<<<BK as BinnedStreamKind>::PreBinnedItem as PreBinnedItem>::BinnedStreamItem>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;

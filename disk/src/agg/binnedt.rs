@@ -9,7 +9,7 @@ use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub trait AggregatorTdim {
+pub trait AggregatorTdim: Sized + Unpin {
     type InputValue;
     type OutputValue: AggregatableXdim1Bin + AggregatableTdim + Unpin;
     fn ends_before(&self, inp: &Self::InputValue) -> bool;
