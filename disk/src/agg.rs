@@ -4,9 +4,9 @@ Aggregation and binning support.
 
 use super::eventchunker::EventFull;
 use crate::agg::binnedt::AggregatableTdim;
-use crate::agg::eventbatch::{MinMaxAvgScalarEventBatch, MinMaxAvgScalarEventBatchStreamItem};
+use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::streams::StreamItem;
-use crate::eventchunker::EventChunkerItem;
+use crate::binned::RangeCompletableItem;
 use bytes::BytesMut;
 use err::Error;
 use futures_core::Stream;
@@ -19,6 +19,7 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
 pub mod binnedt;
+pub mod binnedt2;
 pub mod binnedx;
 pub mod eventbatch;
 pub mod scalarbinbatch;
@@ -502,17 +503,11 @@ impl<S> Dim1F32Stream<S> {
     }
 }
 
-#[derive(Debug)]
-pub enum Dim1F32StreamItem {
-    Values(ValuesDim1),
-    RangeComplete,
-}
-
 impl<S> Stream for Dim1F32Stream<S>
 where
-    S: Stream<Item = Result<StreamItem<EventChunkerItem>, Error>> + Unpin,
+    S: Stream<Item = Result<StreamItem<RangeCompletableItem<EventFull>>, Error>> + Unpin,
 {
-    type Item = Result<StreamItem<Dim1F32StreamItem>, Error>;
+    type Item = Result<StreamItem<RangeCompletableItem<ValuesDim1>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -528,19 +523,20 @@ where
                 let inst1 = Instant::now();
                 let u = match k {
                     StreamItem::DataItem(item) => match item {
-                        EventChunkerItem::Events(events) => match self.process_event_data(&events) {
-                            Ok(k) => {
-                                let ret = Dim1F32StreamItem::Values(k);
-                                Ready(Some(Ok(StreamItem::DataItem(ret))))
+                        RangeCompletableItem::RangeComplete => {
+                            Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
+                        }
+                        RangeCompletableItem::Data(item) => match self.process_event_data(&item) {
+                            Ok(item) => {
+                                let ret = RangeCompletableItem::Data(item);
+                                let ret = StreamItem::DataItem(ret);
+                                Ready(Some(Ok(ret)))
                             }
                             Err(e) => {
                                 self.errored = true;
                                 Ready(Some(Err(e)))
                             }
                         },
-                        EventChunkerItem::RangeComplete => {
-                            Ready(Some(Ok(StreamItem::DataItem(Dim1F32StreamItem::RangeComplete))))
-                        }
                     },
                     StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
                     StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
@@ -566,25 +562,14 @@ where
 pub trait IntoDim1F32Stream {
     fn into_dim_1_f32_stream(self) -> Dim1F32Stream<Self>
     where
-        Self: Stream<Item = Result<StreamItem<EventChunkerItem>, Error>> + Sized;
+        Self: Stream<Item = Result<StreamItem<RangeCompletableItem<EventFull>>, Error>> + Sized;
 }
 
 impl<T> IntoDim1F32Stream for T
 where
-    T: Stream<Item = Result<StreamItem<EventChunkerItem>, Error>>,
+    T: Stream<Item = Result<StreamItem<RangeCompletableItem<EventFull>>, Error>>,
 {
     fn into_dim_1_f32_stream(self) -> Dim1F32Stream<T> {
         Dim1F32Stream::new(self)
-    }
-}
-
-impl AggregatableXdim1Bin for Dim1F32StreamItem {
-    type Output = MinMaxAvgScalarEventBatchStreamItem;
-
-    fn into_agg(self) -> Self::Output {
-        match self {
-            Dim1F32StreamItem::Values(vals) => MinMaxAvgScalarEventBatchStreamItem::Values(vals.into_agg()),
-            Dim1F32StreamItem::RangeComplete => MinMaxAvgScalarEventBatchStreamItem::RangeComplete,
-        }
     }
 }

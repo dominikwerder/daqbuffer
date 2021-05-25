@@ -129,20 +129,4 @@ where
     fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator {
         Self::Aggregator::new(ts1, ts2)
     }
-
-    fn is_range_complete(&self) -> bool {
-        match self {
-            Self::DataItem(item) => item.is_range_complete(),
-            Self::Log(_) => false,
-            Self::Stats(_) => false,
-        }
-    }
-
-    // TODO refactor: is this necessary to have on the trait?
-    fn make_range_complete_item() -> Option<Self> {
-        match <T as AggregatableTdim>::make_range_complete_item() {
-            Some(k) => Some(Self::DataItem(k)),
-            None => None,
-        }
-    }
 }

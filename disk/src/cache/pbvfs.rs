@@ -3,7 +3,7 @@ use crate::agg::streams::StreamItem;
 use crate::binned::BinnedStreamKind;
 use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead, PreBinnedQuery};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
-use crate::frame::makeframe::decode_frame;
+use crate::frame::makeframe::{decode_frame, FrameType};
 use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, FutureExt};
@@ -61,6 +61,7 @@ pub enum PreBinnedScalarItem {
 impl<BK> Stream for PreBinnedScalarValueFetchedStream<BK>
 where
     BK: BinnedStreamKind,
+    Result<StreamItem<<BK as BinnedStreamKind>::PreBinnedItem>, err::Error>: FrameType,
 {
     type Item = Result<StreamItem<BK::PreBinnedItem>, Error>;
 
@@ -79,7 +80,9 @@ where
                         StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
                         StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
                         StreamItem::DataItem(item) => {
-                            match decode_frame::<Result<StreamItem<PreBinnedScalarItem>, Error>>(&item) {
+                            match decode_frame::<Result<StreamItem<<BK as BinnedStreamKind>::PreBinnedItem>, Error>>(
+                                &item,
+                            ) {
                                 Ok(Ok(item)) => Ready(Some(Ok(item))),
                                 Ok(Err(e)) => {
                                     self.errored = true;

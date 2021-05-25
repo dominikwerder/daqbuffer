@@ -1,7 +1,7 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
 use crate::agg::streams::Bins;
 use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
-use crate::binned::MakeBytesFrame;
+use crate::binned::{MakeBytesFrame, RangeCompletableItem};
 use crate::frame::makeframe::make_frame;
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
@@ -199,14 +199,6 @@ impl AggregatableTdim for MinMaxAvgScalarBinBatch {
     fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator {
         MinMaxAvgScalarBinBatchAggregator::new(ts1, ts2)
     }
-
-    fn is_range_complete(&self) -> bool {
-        false
-    }
-
-    fn make_range_complete_item() -> Option<Self> {
-        None
-    }
 }
 
 impl Bins for MinMaxAvgScalarBinBatch {
@@ -310,97 +302,8 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchAggregator {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub enum MinMaxAvgScalarBinBatchStreamItem {
-    Values(MinMaxAvgScalarBinBatch),
-    RangeComplete,
-}
-
-impl AggregatableTdim for MinMaxAvgScalarBinBatchStreamItem {
-    type Output = MinMaxAvgScalarBinBatchStreamItem;
-    type Aggregator = MinMaxAvgScalarBinBatchStreamItemAggregator;
-
-    fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator {
-        Self::Aggregator::new(ts1, ts2)
-    }
-
-    fn is_range_complete(&self) -> bool {
-        if let MinMaxAvgScalarBinBatchStreamItem::RangeComplete = self {
-            true
-        } else {
-            false
-        }
-    }
-
-    fn make_range_complete_item() -> Option<Self> {
-        Some(MinMaxAvgScalarBinBatchStreamItem::RangeComplete)
-    }
-}
-
-impl AggregatableXdim1Bin for MinMaxAvgScalarBinBatchStreamItem {
-    type Output = MinMaxAvgScalarBinBatchStreamItem;
-
-    fn into_agg(self) -> Self::Output {
-        self
-    }
-}
-
-impl MakeBytesFrame for Result<MinMaxAvgScalarBinBatchStreamItem, Error> {
+impl MakeBytesFrame for Result<RangeCompletableItem<MinMaxAvgScalarBinBatch>, Error> {
     fn make_bytes_frame(&self) -> Result<Bytes, Error> {
         Ok(make_frame(self)?.freeze())
-    }
-}
-
-pub struct MinMaxAvgScalarBinBatchStreamItemAggregator {
-    agg: MinMaxAvgScalarBinBatchAggregator,
-}
-
-impl MinMaxAvgScalarBinBatchStreamItemAggregator {
-    pub fn new(ts1: u64, ts2: u64) -> Self {
-        let agg = <MinMaxAvgScalarBinBatch as AggregatableTdim>::aggregator_new_static(ts1, ts2);
-        Self { agg }
-    }
-}
-
-impl AggregatorTdim for MinMaxAvgScalarBinBatchStreamItemAggregator {
-    type InputValue = MinMaxAvgScalarBinBatchStreamItem;
-    type OutputValue = MinMaxAvgScalarBinBatchStreamItem;
-
-    fn ends_before(&self, inp: &Self::InputValue) -> bool {
-        match inp {
-            MinMaxAvgScalarBinBatchStreamItem::Values(vals) => self.agg.ends_before(vals),
-            _ => false,
-        }
-    }
-
-    fn ends_after(&self, inp: &Self::InputValue) -> bool {
-        match inp {
-            MinMaxAvgScalarBinBatchStreamItem::Values(vals) => self.agg.ends_after(vals),
-            _ => false,
-        }
-    }
-
-    fn starts_after(&self, inp: &Self::InputValue) -> bool {
-        match inp {
-            MinMaxAvgScalarBinBatchStreamItem::Values(vals) => self.agg.starts_after(vals),
-            _ => false,
-        }
-    }
-
-    fn ingest(&mut self, inp: &mut Self::InputValue) {
-        match inp {
-            MinMaxAvgScalarBinBatchStreamItem::Values(vals) => self.agg.ingest(vals),
-            MinMaxAvgScalarBinBatchStreamItem::RangeComplete => panic!(),
-        }
-    }
-
-    fn result(self) -> Vec<Self::OutputValue> {
-        let ret: Vec<_> = self
-            .agg
-            .result()
-            .into_iter()
-            .map(MinMaxAvgScalarBinBatchStreamItem::Values)
-            .collect();
-        ret
     }
 }

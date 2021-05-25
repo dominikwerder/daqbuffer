@@ -1,8 +1,7 @@
-use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
 use crate::agg::streams::StreamItem;
+use crate::binned::{BinnedStreamKind, RangeCompletableItem};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::decode_frame;
-use crate::raw::conn::RawConnOut;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -11,39 +10,44 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::AsyncRead;
 
-pub struct MinMaxAvgScalarEventBatchStreamFromFrames<T>
+pub struct EventsFromFrames<T, SK>
 where
     T: AsyncRead + Unpin,
+    SK: BinnedStreamKind,
 {
     inp: InMemoryFrameAsyncReadStream<T>,
     errored: bool,
     completed: bool,
+    stream_kind: SK,
 }
 
-impl<T> MinMaxAvgScalarEventBatchStreamFromFrames<T>
+impl<T, SK> EventsFromFrames<T, SK>
 where
     T: AsyncRead + Unpin,
+    SK: BinnedStreamKind,
 {
-    pub fn new(inp: InMemoryFrameAsyncReadStream<T>) -> Self {
+    pub fn new(inp: InMemoryFrameAsyncReadStream<T>, stream_kind: SK) -> Self {
         Self {
             inp,
             errored: false,
             completed: false,
+            stream_kind,
         }
     }
 }
 
-impl<T> Stream for MinMaxAvgScalarEventBatchStreamFromFrames<T>
+impl<T, SK> Stream for EventsFromFrames<T, SK>
 where
     T: AsyncRead + Unpin,
+    SK: BinnedStreamKind,
 {
-    type Item = Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>;
+    type Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         loop {
             break if self.completed {
-                panic!("MinMaxAvgScalarEventBatchStreamFromFrames  poll_next on completed");
+                panic!("EventsFromFrames  poll_next on completed");
             } else if self.errored {
                 self.completed = true;
                 Ready(None)
@@ -53,8 +57,7 @@ where
                         StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
                         StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
                         StreamItem::DataItem(frame) => {
-                            type ExpectedType = RawConnOut;
-                            match decode_frame::<ExpectedType>(&frame) {
+                            match decode_frame::<<SK as BinnedStreamKind>::XBinnedEvents>(&frame) {
                                 Ok(item) => match item {
                                     Ok(item) => Ready(Some(Ok(item))),
                                     Err(e) => {
@@ -64,7 +67,7 @@ where
                                 },
                                 Err(e) => {
                                     error!(
-                                        "MinMaxAvgScalarEventBatchStreamFromFrames  ~~~~~~~~   ERROR on frame payload {}",
+                                        "EventsFromFrames  ~~~~~~~~   ERROR on frame payload {}",
                                         frame.buf().len(),
                                     );
                                     self.errored = true;

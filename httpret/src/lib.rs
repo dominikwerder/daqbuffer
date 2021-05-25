@@ -1,7 +1,7 @@
 use bytes::Bytes;
 use disk::binned::BinnedStreamKindScalar;
 use disk::cache::{BinnedQuery, PreBinnedQuery};
-use disk::raw::conn::raw_service;
+use disk::raw::conn::events_service;
 use err::Error;
 use future::Future;
 use futures_core::Stream;
@@ -23,7 +23,7 @@ pub mod gather;
 
 pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
     let node_config = node_config.clone();
-    let rawjh = taskrun::spawn(raw_service(node_config.clone()));
+    let rawjh = taskrun::spawn(events_service(node_config.clone()));
     use std::str::FromStr;
     let addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen, node_config.node.port))?;
     let make_service = make_service_fn({

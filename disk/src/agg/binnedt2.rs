@@ -9,20 +9,20 @@ use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub trait AggregatorTdim: Sized + Unpin {
+pub trait AggregatorTdim2: Sized + Unpin {
     type InputValue;
-    type OutputValue: AggregatableXdim1Bin + AggregatableTdim + Unpin;
     fn ends_before(&self, inp: &Self::InputValue) -> bool;
     fn ends_after(&self, inp: &Self::InputValue) -> bool;
     fn starts_after(&self, inp: &Self::InputValue) -> bool;
     fn ingest(&mut self, inp: &mut Self::InputValue);
-    fn result(self) -> Vec<Self::OutputValue>;
+    fn result(self) -> Vec<Self::InputValue>;
 }
 
-pub trait AggregatableTdim: Sized {
-    type Output: AggregatableXdim1Bin + AggregatableTdim;
-    type Aggregator: AggregatorTdim<InputValue = Self>;
+pub trait AggregatableTdim2: Sized {
+    type Aggregator: AggregatorTdim2<InputValue = Self>;
     fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator;
+    fn is_range_complete(&self) -> bool;
+    fn make_range_complete_item() -> Option<Self>;
 }
 
 pub trait IntoBinnedT {
@@ -33,7 +33,7 @@ pub trait IntoBinnedT {
 impl<S, I> IntoBinnedT for S
 where
     S: Stream<Item = Result<StreamItem<I>, Error>> + Unpin,
-    I: AggregatableTdim + Unpin,
+    I: AggregatableTdim2 + Unpin,
     I::Aggregator: Unpin,
 {
     type StreamOut = IntoBinnedTDefaultStream<S, I>;
@@ -46,7 +46,7 @@ where
 pub struct IntoBinnedTDefaultStream<S, I>
 where
     S: Stream<Item = Result<StreamItem<I>, Error>>,
-    I: AggregatableTdim,
+    I: AggregatableTdim2,
 {
     inp: S,
     aggtor: Option<I::Aggregator>,
@@ -59,13 +59,13 @@ where
     left: Option<Poll<Option<Result<StreamItem<I>, Error>>>>,
     errored: bool,
     completed: bool,
-    tmp_agg_results: VecDeque<<I::Aggregator as AggregatorTdim>::OutputValue>,
+    tmp_agg_results: VecDeque<I>,
 }
 
 impl<S, I> IntoBinnedTDefaultStream<S, I>
 where
     S: Stream<Item = Result<StreamItem<I>, Error>> + Unpin,
-    I: AggregatableTdim,
+    I: AggregatableTdim2,
 {
     pub fn new(inp: S, spec: BinnedRange) -> Self {
         let range = spec.get_range(0);
@@ -114,7 +114,7 @@ where
     fn handle(
         &mut self,
         cur: Poll<Option<Result<StreamItem<I>, Error>>>,
-    ) -> Option<Poll<Option<Result<StreamItem<<I::Aggregator as AggregatorTdim>::OutputValue>, Error>>>> {
+    ) -> Option<Poll<Option<Result<StreamItem<I>, Error>>>> {
         use Poll::*;
         match cur {
             Ready(Some(Ok(item))) => match item {
@@ -173,10 +173,10 @@ where
 impl<S, I> Stream for IntoBinnedTDefaultStream<S, I>
 where
     S: Stream<Item = Result<StreamItem<I>, Error>> + Unpin,
-    I: AggregatableTdim + Unpin,
+    I: AggregatableTdim2 + Unpin,
     I::Aggregator: Unpin,
 {
-    type Item = Result<StreamItem<<I::Aggregator as AggregatorTdim>::OutputValue>, Error>;
+    type Item = Result<StreamItem<I>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -194,7 +194,7 @@ where
             } else if self.inp_completed && self.all_bins_emitted {
                 self.range_complete_emitted = true;
                 if self.range_complete_observed {
-                    if let Some(item) = <I::Aggregator as AggregatorTdim>::OutputValue::make_range_complete_item() {
+                    if let Some(item) = I::make_range_complete_item() {
                         Ready(Some(Ok(StreamItem::DataItem(item))))
                     } else {
                         warn!("IntoBinnedTDefaultStream  should emit RangeComplete but it doesn't have one");

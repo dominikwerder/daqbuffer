@@ -1,5 +1,7 @@
-use crate::agg::eventbatch::{MinMaxAvgScalarEventBatch, MinMaxAvgScalarEventBatchStreamItem};
-use crate::agg::streams::{StatsItem, StreamItem};
+use crate::agg::binnedt::AggregatableTdim;
+use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
+use crate::agg::streams::{Collectable, Collected, StatsItem, StreamItem};
+use crate::binned::{BinnedStreamKind, XBinnedEventsStreamItem};
 use crate::streamlog::LogItem;
 use err::Error;
 use futures_core::Stream;
@@ -10,16 +12,17 @@ use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub struct MergedMinMaxAvgScalarStream<S>
+pub struct MergedMinMaxAvgScalarStream<S, SK>
 where
-    S: Stream<Item = Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>>,
+    S: Stream<Item = Result<StreamItem<<SK as BinnedStreamKind>::XBinnedEvents>, Error>> + Unpin,
+    SK: BinnedStreamKind,
 {
     inps: Vec<S>,
-    current: Vec<MergedMinMaxAvgScalarStreamCurVal>,
+    current: Vec<MergedCurVal<<SK as BinnedStreamKind>::XBinnedEvents>>,
     ixs: Vec<usize>,
     errored: bool,
     completed: bool,
-    batch: MinMaxAvgScalarEventBatch,
+    batch: <SK as BinnedStreamKind>::XBinnedEvents,
     ts_last_emit: u64,
     range_complete_observed: Vec<bool>,
     range_complete_observed_all: bool,
@@ -30,23 +33,21 @@ where
     event_data_read_stats_items: VecDeque<EventDataReadStats>,
 }
 
-impl<S> MergedMinMaxAvgScalarStream<S>
+impl<S, SK> MergedMinMaxAvgScalarStream<S, SK>
 where
-    S: Stream<Item = Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>> + Unpin,
+    S: Stream<Item = Result<StreamItem<<SK as BinnedStreamKind>::XBinnedEvents>, Error>> + Unpin,
+    SK: BinnedStreamKind,
 {
     pub fn new(inps: Vec<S>) -> Self {
         let n = inps.len();
-        let current = (0..n)
-            .into_iter()
-            .map(|_| MergedMinMaxAvgScalarStreamCurVal::None)
-            .collect();
+        let current = (0..n).into_iter().map(|_| MergedCurVal::None).collect();
         Self {
             inps,
             current: current,
             ixs: vec![0; n],
             errored: false,
             completed: false,
-            batch: MinMaxAvgScalarEventBatch::empty(),
+            batch: <<SK as BinnedStreamKind>::XBinnedEvents as Collected>::new(0),
             ts_last_emit: 0,
             range_complete_observed: vec![false; n],
             range_complete_observed_all: false,
@@ -63,7 +64,7 @@ where
         let mut pending = 0;
         for i1 in 0..self.inps.len() {
             match self.current[i1] {
-                MergedMinMaxAvgScalarStreamCurVal::None => {
+                MergedCurVal::None => {
                     'l1: loop {
                         break match self.inps[i1].poll_next_unpin(cx) {
                             Ready(Some(Ok(k))) => match k {
@@ -79,23 +80,23 @@ where
                                     }
                                     continue 'l1;
                                 }
-                                StreamItem::DataItem(item) => match item {
-                                    MinMaxAvgScalarEventBatchStreamItem::Values(vals) => {
-                                        self.ixs[i1] = 0;
-                                        self.current[i1] = MergedMinMaxAvgScalarStreamCurVal::Val(vals);
-                                    }
-                                    MinMaxAvgScalarEventBatchStreamItem::RangeComplete => {
+                                StreamItem::DataItem(item) => {
+                                    // TODO factor out the concept of RangeComplete into another trait layer.
+                                    if item.is_range_complete() {
                                         self.range_complete_observed[i1] = true;
                                         let d = self.range_complete_observed.iter().filter(|&&k| k).count();
                                         if d == self.range_complete_observed.len() {
                                             self.range_complete_observed_all = true;
-                                            debug!("MergedMinMaxAvgScalarStream  range_complete  d  {}  COMPLETE", d);
+                                            debug!("MergedStream  range_complete  d  {}  COMPLETE", d);
                                         } else {
-                                            trace!("MergedMinMaxAvgScalarStream  range_complete  d  {}", d);
+                                            trace!("MergedStream  range_complete  d  {}", d);
                                         }
                                         continue 'l1;
+                                    } else {
+                                        self.ixs[i1] = 0;
+                                        self.current[i1] = MergedCurVal::Val(item);
                                     }
-                                },
+                                }
                             },
                             Ready(Some(Err(e))) => {
                                 // TODO emit this error, consider this stream as done, anything more to do here?
@@ -104,7 +105,7 @@ where
                                 return Ready(Err(e));
                             }
                             Ready(None) => {
-                                self.current[i1] = MergedMinMaxAvgScalarStreamCurVal::Finish;
+                                self.current[i1] = MergedCurVal::Finish;
                             }
                             Pending => {
                                 pending += 1;
@@ -123,17 +124,18 @@ where
     }
 }
 
-impl<S> Stream for MergedMinMaxAvgScalarStream<S>
+impl<S, SK> Stream for MergedMinMaxAvgScalarStream<S, SK>
 where
-    S: Stream<Item = Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>> + Unpin,
+    S: Stream<Item = Result<StreamItem<<SK as BinnedStreamKind>::XBinnedEvents>, Error>> + Unpin,
+    SK: BinnedStreamKind,
 {
-    type Item = Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>;
+    type Item = Result<StreamItem<<SK as BinnedStreamKind>::XBinnedEvents>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         'outer: loop {
             break if self.completed {
-                panic!("MergedMinMaxAvgScalarStream  poll_next on completed");
+                panic!("MergedStream  poll_next on completed");
             } else if self.errored {
                 self.completed = true;
                 Ready(None)
@@ -149,7 +151,7 @@ where
                     } else {
                         self.range_complete_observed_all_emitted = true;
                         Ready(Some(Ok(StreamItem::DataItem(
-                            MinMaxAvgScalarEventBatchStreamItem::RangeComplete,
+                            <<SK as BinnedStreamKind>::XBinnedEvents as XBinnedEventsStreamItem>::make_range_complete(),
                         ))))
                     }
                 } else {
@@ -163,11 +165,11 @@ where
                         let mut lowest_ix = usize::MAX;
                         let mut lowest_ts = u64::MAX;
                         for i1 in 0..self.inps.len() {
-                            if let MergedMinMaxAvgScalarStreamCurVal::Val(val) = &self.current[i1] {
+                            if let MergedCurVal::Val(val) = &self.current[i1] {
                                 let u = self.ixs[i1];
                                 if u >= val.tss.len() {
                                     self.ixs[i1] = 0;
-                                    self.current[i1] = MergedMinMaxAvgScalarStreamCurVal::None;
+                                    self.current[i1] = MergedCurVal::None;
                                     continue 'outer;
                                 } else {
                                     let ts = val.tss[u];
@@ -180,8 +182,10 @@ where
                         }
                         if lowest_ix == usize::MAX {
                             if self.batch.tss.len() != 0 {
-                                let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
-                                let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
+                                //let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
+                                //let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
+                                let emp = <<SK as BinnedStreamKind>::XBinnedEvents as Collected>::new(0);
+                                let ret = std::mem::replace(&mut self.batch, emp);
                                 self.data_emit_complete = true;
                                 Ready(Some(Ok(StreamItem::DataItem(ret))))
                             } else {
@@ -194,9 +198,7 @@ where
                             self.batch.tss.push(lowest_ts);
                             let rix = self.ixs[lowest_ix];
                             let z = match &self.current[lowest_ix] {
-                                MergedMinMaxAvgScalarStreamCurVal::Val(k) => {
-                                    (k.mins[rix], k.maxs[rix], k.avgs[rix], k.tss.len())
-                                }
+                                MergedCurVal::Val(k) => (k.mins[rix], k.maxs[rix], k.avgs[rix], k.tss.len()),
                                 _ => panic!(),
                             };
                             self.batch.mins.push(z.0);
@@ -205,11 +207,13 @@ where
                             self.ixs[lowest_ix] += 1;
                             if self.ixs[lowest_ix] >= z.3 {
                                 self.ixs[lowest_ix] = 0;
-                                self.current[lowest_ix] = MergedMinMaxAvgScalarStreamCurVal::None;
+                                self.current[lowest_ix] = MergedCurVal::None;
                             }
                             if self.batch.tss.len() >= self.batch_size {
-                                let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
-                                let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
+                                //let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
+                                //let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
+                                let emp = <<SK as BinnedStreamKind>::XBinnedEvents as Collected>::new(0);
+                                let ret = std::mem::replace(&mut self.batch, emp);
                                 Ready(Some(Ok(StreamItem::DataItem(ret))))
                             } else {
                                 continue 'outer;
@@ -227,8 +231,8 @@ where
     }
 }
 
-enum MergedMinMaxAvgScalarStreamCurVal {
+enum MergedCurVal<T> {
     None,
     Finish,
-    Val(MinMaxAvgScalarEventBatch),
+    Val(T),
 }

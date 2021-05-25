@@ -1,6 +1,6 @@
 use crate::agg::streams::StreamItem;
 use crate::dataopen::{open_files, OpenedFile};
-use crate::eventchunker::{EventChunker, EventChunkerConf, EventChunkerItem};
+use crate::eventchunker::{EventChunker, EventChunkerConf};
 use crate::file_content_stream;
 use crate::streamlog::LogItem;
 use err::Error;

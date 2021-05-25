@@ -1,4 +1,5 @@
 use crate::agg::streams::{StatsItem, StreamItem};
+use crate::binned::RangeCompletableItem;
 use crate::{FileChunkRead, NeedMinBuffer};
 use bitshuffle::bitshuffle_decompress;
 use bytes::{Buf, BytesMut};
@@ -345,13 +346,8 @@ impl EventFull {
     }
 }
 
-pub enum EventChunkerItem {
-    Events(EventFull),
-    RangeComplete,
-}
-
 impl Stream for EventChunker {
-    type Item = Result<StreamItem<EventChunkerItem>, Error>;
+    type Item = Result<StreamItem<RangeCompletableItem<EventFull>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -374,7 +370,7 @@ impl Stream for EventChunker {
             } else if self.final_stats_sent {
                 self.sent_beyond_range = true;
                 if self.seen_beyond_range {
-                    Ready(Some(Ok(StreamItem::DataItem(EventChunkerItem::RangeComplete))))
+                    Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
                 } else {
                     continue 'outer;
                 }
@@ -404,7 +400,7 @@ impl Stream for EventChunker {
                                 } else {
                                     let x = self.need_min;
                                     self.inp.set_need_min(x);
-                                    let ret = StreamItem::DataItem(EventChunkerItem::Events(res.events));
+                                    let ret = StreamItem::DataItem(RangeCompletableItem::Data(res.events));
                                     Ready(Some(Ok(ret)))
                                 }
                             }

@@ -1,9 +1,8 @@
-use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
-use crate::binned::BinnedStreamKind;
+use crate::binned::{BinnedStreamKind, RangeCompletableItem};
 use crate::cache::pbv::PreBinnedValueByteStream;
-use crate::cache::pbvfs::PreBinnedScalarItem;
+use crate::frame::makeframe::FrameType;
 use crate::merge::MergedMinMaxAvgScalarStream;
 use crate::raw::EventsQuery;
 use bytes::Bytes;
@@ -24,8 +23,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tiny_keccak::Hasher;
-use tokio::fs::File;
-use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
+use tokio::io::{AsyncRead, ReadBuf};
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
@@ -232,13 +230,14 @@ fn channel_from_params(params: &BTreeMap<String, String>) -> Result<Channel, Err
 // NOTE  This answers a request for a single valid pre-binned patch.
 // A user must first make sure that the grid spec is valid, and that this node is responsible for it.
 // Otherwise it is an error.
-pub fn pre_binned_bytes_for_http<BK>(
+pub fn pre_binned_bytes_for_http<'a, BK>(
     node_config: &NodeConfigCached,
     query: &PreBinnedQuery,
     stream_kind: BK,
 ) -> Result<PreBinnedValueByteStream<BK>, Error>
 where
     BK: BinnedStreamKind,
+    Result<StreamItem<<BK as BinnedStreamKind>::PreBinnedItem>, err::Error>: FrameType,
 {
     if query.channel.backend != node_config.node.backend {
         let err = Error::with_msg(format!(
@@ -319,22 +318,34 @@ impl AsyncRead for HttpBodyAsAsyncRead {
     }
 }
 
-type T001 = Pin<Box<dyn Stream<Item = Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>> + Send>>;
-type T002 = Pin<Box<dyn Future<Output = Result<T001, Error>> + Send>>;
-pub struct MergedFromRemotes {
-    tcp_establish_futs: Vec<T002>,
-    nodein: Vec<Option<T001>>,
-    merged: Option<T001>,
+type T001<T> = Pin<Box<dyn Stream<Item = Result<StreamItem<T>, Error>> + Send>>;
+type T002<T> = Pin<Box<dyn Future<Output = Result<T001<T>, Error>> + Send>>;
+
+pub struct MergedFromRemotes<SK>
+where
+    SK: BinnedStreamKind,
+{
+    tcp_establish_futs: Vec<T002<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>>,
+    nodein: Vec<Option<T001<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>>>,
+    merged: Option<T001<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>>,
     completed: bool,
     errored: bool,
 }
 
-impl MergedFromRemotes {
-    pub fn new(evq: EventsQuery, perf_opts: PerfOpts, cluster: Cluster) -> Self {
+impl<SK> MergedFromRemotes<SK>
+where
+    SK: BinnedStreamKind,
+{
+    pub fn new(evq: EventsQuery, perf_opts: PerfOpts, cluster: Cluster, stream_kind: SK) -> Self {
         let mut tcp_establish_futs = vec![];
         for node in &cluster.nodes {
-            let f = super::raw::x_processed_stream_from_node(evq.clone(), perf_opts.clone(), node.clone());
-            let f: T002 = Box::pin(f);
+            let f = super::raw::x_processed_stream_from_node(
+                evq.clone(),
+                perf_opts.clone(),
+                node.clone(),
+                stream_kind.clone(),
+            );
+            let f: T002<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>> = Box::pin(f);
             tcp_establish_futs.push(f);
         }
         let n = tcp_establish_futs.len();
@@ -348,9 +359,11 @@ impl MergedFromRemotes {
     }
 }
 
-impl Stream for MergedFromRemotes {
-    // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
-    type Item = Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>;
+impl<SK> Stream for MergedFromRemotes<SK>
+where
+    SK: BinnedStreamKind,
+{
+    type Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -402,7 +415,7 @@ impl Stream for MergedFromRemotes {
                     if c1 == self.tcp_establish_futs.len() {
                         debug!("MergedFromRemotes  setting up merged stream");
                         let inps = self.nodein.iter_mut().map(|k| k.take().unwrap()).collect();
-                        let s1 = MergedMinMaxAvgScalarStream::new(inps);
+                        let s1 = MergedMinMaxAvgScalarStream::<_, SK>::new(inps);
                         self.merged = Some(Box::pin(s1));
                     } else {
                         debug!(
@@ -529,12 +542,4 @@ pub async fn write_pb_cache_min_max_avg_scalar(
     })
     .await??;
     Ok(())
-}
-
-pub async fn read_pbv(mut file: File) -> Result<StreamItem<PreBinnedScalarItem>, Error> {
-    let mut buf = vec![];
-    file.read_to_end(&mut buf).await?;
-    trace!("Read cached file  len {}", buf.len());
-    let dec: MinMaxAvgScalarBinBatch = serde_cbor::from_slice(&buf)?;
-    Ok(StreamItem::DataItem(PreBinnedScalarItem::Batch(dec)))
 }

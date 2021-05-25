@@ -1,13 +1,11 @@
-use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatchStreamItem;
+use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::streams::StreamItem;
-use crate::binned::BinnedScalarStreamItem;
 use crate::cache::pbvfs::PreBinnedScalarItem;
 use crate::frame::inmem::InMemoryFrame;
-use crate::raw::conn::RawConnOut;
 use crate::raw::EventQueryJsonStringFrame;
 use bytes::{BufMut, BytesMut};
 use err::Error;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Serialize};
 
 pub const INMEM_FRAME_HEAD: usize = 20;
 pub const INMEM_FRAME_FOOT: usize = 4;
@@ -21,10 +19,6 @@ impl FrameType for EventQueryJsonStringFrame {
     const FRAME_TYPE_ID: u32 = 0x03;
 }
 
-impl FrameType for RawConnOut {
-    const FRAME_TYPE_ID: u32 = 0x04;
-}
-
 impl FrameType for Result<StreamItem<BinnedScalarStreamItem>, Error> {
     const FRAME_TYPE_ID: u32 = 0x06;
 }
@@ -35,6 +29,10 @@ impl FrameType for Result<MinMaxAvgScalarBinBatchStreamItem, Error> {
 
 impl FrameType for Result<StreamItem<PreBinnedScalarItem>, Error> {
     const FRAME_TYPE_ID: u32 = 0x08;
+}
+
+impl FrameType for Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error> {
+    const FRAME_TYPE_ID: u32 = 0x09;
 }
 
 pub fn make_frame<FT>(item: &FT) -> Result<BytesMut, Error>
@@ -85,9 +83,9 @@ pub fn make_term_frame() -> BytesMut {
     buf
 }
 
-pub fn decode_frame<'a, FT>(frame: &'a InMemoryFrame) -> Result<FT, Error>
+pub fn decode_frame<FT>(frame: &InMemoryFrame) -> Result<FT, Error>
 where
-    FT: FrameType + Deserialize<'a>,
+    FT: FrameType + DeserializeOwned,
 {
     if frame.encid() != 0x12121212 {
         return Err(Error::with_msg(format!("unknown encoder id {:?}", frame)));

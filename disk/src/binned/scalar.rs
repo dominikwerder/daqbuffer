@@ -1,34 +1,13 @@
-use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatchStreamItem;
+use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedScalarStreamItem, BinnedStreamKind, BinnedStreamRes};
+use crate::binned::{BinnedStreamKind, BinnedStreamRes, RangeCompletableItem};
 use crate::binnedstream::BinnedStream;
 use crate::cache::BinnedQuery;
 use crate::raw::EventsQuery;
 use err::Error;
 use futures_core::Stream;
-use futures_util::StreamExt;
 use netpod::log::*;
 use netpod::{BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchRange};
-
-pub fn adapter_to_stream_item(
-    k: Result<StreamItem<MinMaxAvgScalarBinBatchStreamItem>, Error>,
-) -> Result<StreamItem<BinnedScalarStreamItem>, Error> {
-    match k {
-        Ok(k) => match k {
-            StreamItem::Log(item) => Ok(StreamItem::Log(item)),
-            StreamItem::Stats(item) => Ok(StreamItem::Stats(item)),
-            StreamItem::DataItem(item) => match item {
-                MinMaxAvgScalarBinBatchStreamItem::RangeComplete => {
-                    Ok(StreamItem::DataItem(BinnedScalarStreamItem::RangeComplete))
-                }
-                MinMaxAvgScalarBinBatchStreamItem::Values(item) => {
-                    Ok(StreamItem::DataItem(BinnedScalarStreamItem::Values(item)))
-                }
-            },
-        },
-        Err(e) => Err(e),
-    }
-}
 
 pub async fn binned_stream<BK>(
     node_config: &NodeConfigCached,

@@ -1,7 +1,8 @@
 use crate::agg::binnedx::IntoBinnedXBins1;
-use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
+use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::streams::StreamItem;
 use crate::agg::IntoDim1F32Stream;
+use crate::binned::{BinnedStreamKind, BinnedStreamKindScalar, RangeCompletableItem};
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
 use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventChunkerConf;
@@ -11,30 +12,30 @@ use crate::raw::{EventQueryJsonStringFrame, EventsQuery};
 use err::Error;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::{ByteSize, NodeConfigCached, PerfOpts};
+use netpod::{AggKind, ByteSize, NodeConfigCached, PerfOpts};
 use std::net::SocketAddr;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
 use tracing::Instrument;
 
-pub async fn raw_service(node_config: NodeConfigCached) -> Result<(), Error> {
+pub async fn events_service(node_config: NodeConfigCached) -> Result<(), Error> {
     let addr = format!("{}:{}", node_config.node.listen, node_config.node.port_raw);
     let lis = tokio::net::TcpListener::bind(addr).await?;
     loop {
         match lis.accept().await {
             Ok((stream, addr)) => {
-                taskrun::spawn(raw_conn_handler(stream, addr, node_config.clone()));
+                taskrun::spawn(events_conn_handler(stream, addr, node_config.clone()));
             }
             Err(e) => Err(e)?,
         }
     }
 }
 
-async fn raw_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: NodeConfigCached) -> Result<(), Error> {
+async fn events_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: NodeConfigCached) -> Result<(), Error> {
     //use tracing_futures::Instrument;
     let span1 = span!(Level::INFO, "raw::raw_conn_handler");
-    let r = raw_conn_handler_inner(stream, addr, &node_config)
+    let r = events_conn_handler_inner(stream, addr, &node_config)
         .instrument(span1)
         .await;
     match r {
@@ -46,17 +47,16 @@ async fn raw_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: Node
     }
 }
 
-pub type RawConnOut = Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>;
-
-async fn raw_conn_handler_inner(
+async fn events_conn_handler_inner(
     stream: TcpStream,
     addr: SocketAddr,
     node_config: &NodeConfigCached,
 ) -> Result<(), Error> {
-    match raw_conn_handler_inner_try(stream, addr, node_config).await {
+    match events_conn_handler_inner_try(stream, addr, node_config).await {
         Ok(_) => (),
         Err(mut ce) => {
-            let buf = make_frame::<RawConnOut>(&Err(ce.err))?;
+            // TODO is it guaranteed to be compatible to serialize this way?
+            let buf = make_frame::<Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>>(&Err(ce.err))?;
             match ce.netout.write_all(&buf).await {
                 Ok(_) => (),
                 Err(e) => return Err(e)?,
@@ -80,7 +80,7 @@ impl<E: Into<Error>> From<(E, OwnedWriteHalf)> for ConnErr {
     }
 }
 
-async fn raw_conn_handler_inner_try(
+async fn events_conn_handler_inner_try(
     stream: TcpStream,
     addr: SocketAddr,
     node_config: &NodeConfigCached,
@@ -170,14 +170,40 @@ async fn raw_conn_handler_inner_try(
             Ok(_) => {}
             Err(_) => {}
         }
-        match make_frame::<RawConnOut>(&item) {
-            Ok(buf) => match netout.write_all(&buf).await {
-                Ok(_) => {}
-                Err(e) => return Err((e, netout))?,
-            },
-            Err(e) => {
-                return Err((e, netout))?;
+        match evq.agg_kind {
+            AggKind::DimXBins1 => {
+                match make_frame::<
+                    Result<
+                        StreamItem<RangeCompletableItem<<BinnedStreamKindScalar as BinnedStreamKind>::XBinnedEvents>>,
+                        Error,
+                    >,
+                >(&item)
+                {
+                    Ok(buf) => match netout.write_all(&buf).await {
+                        Ok(_) => {}
+                        Err(e) => return Err((e, netout))?,
+                    },
+                    Err(e) => {
+                        return Err((e, netout))?;
+                    }
+                }
             }
+            // TODO define this case:
+            AggKind::DimXBinsN(n1) => match make_frame::<
+                Result<
+                    StreamItem<RangeCompletableItem<<BinnedStreamKindScalar as BinnedStreamKind>::XBinnedEvents>>,
+                    Error,
+                >,
+            >(err::todoval())
+            {
+                Ok(buf) => match netout.write_all(&buf).await {
+                    Ok(_) => {}
+                    Err(e) => return Err((e, netout))?,
+                },
+                Err(e) => {
+                    return Err((e, netout))?;
+                }
+            },
         }
     }
     let buf = make_term_frame();

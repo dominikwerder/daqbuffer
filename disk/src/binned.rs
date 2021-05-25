@@ -1,8 +1,9 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim, IntoBinnedT};
+use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatchAggregator};
 use crate::agg::streams::{Collectable, Collected, StreamItem, ToJsonResult};
-use crate::agg::{AggregatableXdim1Bin, FitsInside};
-use crate::binned::scalar::{adapter_to_stream_item, binned_stream};
+use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
+use crate::binned::scalar::binned_stream;
 use crate::binnedstream::{BinnedScalarStreamFromPreBinnedPatches, BinnedStream};
 use crate::cache::pbvfs::PreBinnedScalarItem;
 use crate::cache::{BinnedQuery, MergedFromRemotes};
@@ -19,22 +20,20 @@ use netpod::{
     AggKind, BinnedRange, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange,
 };
 use num_traits::Zero;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize, Serializer};
+use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
+use tokio::fs::File;
+use tokio::io::{AsyncRead, ReadBuf};
 
 pub mod scalar;
 
 pub struct BinnedStreamRes<I> {
     pub binned_stream: BinnedStream<I>,
     pub range: BinnedRange,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum BinnedScalarStreamItem {
-    Values(MinMaxAvgScalarBinBatch),
-    RangeComplete,
 }
 
 pub struct MinMaxAvgScalarBinBatchCollected {
@@ -51,22 +50,6 @@ impl MinMaxAvgScalarBinBatchCollected {
             timed_out: false,
             finalised_range: false,
             bin_count_exp,
-        }
-    }
-}
-
-impl Collectable for BinnedScalarStreamItem {
-    type Collected = MinMaxAvgScalarBinBatchCollected;
-
-    fn append_to(&mut self, collected: &mut Self::Collected) {
-        use BinnedScalarStreamItem::*;
-        match self {
-            Values(item) => {
-                append_to_min_max_avg_scalar_bin_batch(&mut collected.batch, item);
-            }
-            RangeComplete => {
-                // TODO use some other batch type in order to raise the range complete flag.
-            }
         }
     }
 }
@@ -134,95 +117,9 @@ impl ToJsonResult for MinMaxAvgScalarBinBatchCollected {
     }
 }
 
-impl MakeBytesFrame for Result<StreamItem<BinnedScalarStreamItem>, Error> {
+impl MakeBytesFrame for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>, Error> {
     fn make_bytes_frame(&self) -> Result<Bytes, Error> {
         Ok(make_frame(self)?.freeze())
-    }
-}
-
-impl AggregatableXdim1Bin for BinnedScalarStreamItem {
-    // TODO does this already include all cases?
-    type Output = BinnedScalarStreamItem;
-
-    fn into_agg(self) -> Self::Output {
-        todo!()
-    }
-}
-
-pub struct BinnedScalarStreamItemAggregator {
-    inner_agg: MinMaxAvgScalarBinBatchAggregator,
-}
-
-impl BinnedScalarStreamItemAggregator {
-    pub fn new(ts1: u64, ts2: u64) -> Self {
-        Self {
-            inner_agg: MinMaxAvgScalarBinBatchAggregator::new(ts1, ts2),
-        }
-    }
-}
-
-// TODO  this could be some generic impl for all wrapper that can carry some AggregatableTdim variant.
-impl AggregatorTdim for BinnedScalarStreamItemAggregator {
-    type InputValue = BinnedScalarStreamItem;
-    // TODO using the same type for the output, does this cover all cases?
-    type OutputValue = BinnedScalarStreamItem;
-
-    fn ends_before(&self, inp: &Self::InputValue) -> bool {
-        match inp {
-            Self::OutputValue::Values(item) => self.inner_agg.ends_before(item),
-            Self::OutputValue::RangeComplete => false,
-        }
-    }
-
-    fn ends_after(&self, inp: &Self::InputValue) -> bool {
-        match inp {
-            Self::OutputValue::Values(item) => self.inner_agg.ends_after(item),
-            Self::OutputValue::RangeComplete => false,
-        }
-    }
-
-    fn starts_after(&self, inp: &Self::InputValue) -> bool {
-        match inp {
-            Self::OutputValue::Values(item) => self.inner_agg.starts_after(item),
-            Self::OutputValue::RangeComplete => false,
-        }
-    }
-
-    fn ingest(&mut self, inp: &mut Self::InputValue) {
-        match inp {
-            Self::OutputValue::Values(item) => self.inner_agg.ingest(item),
-            Self::OutputValue::RangeComplete => (),
-        }
-    }
-
-    fn result(self) -> Vec<Self::OutputValue> {
-        self.inner_agg
-            .result()
-            .into_iter()
-            .map(|k| BinnedScalarStreamItem::Values(k))
-            .collect()
-    }
-}
-
-impl AggregatableTdim for BinnedScalarStreamItem {
-    type Aggregator = BinnedScalarStreamItemAggregator;
-    // TODO isn't this already defined in terms of the Aggregator?
-    type Output = BinnedScalarStreamItem;
-
-    fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator {
-        BinnedScalarStreamItemAggregator::new(ts1, ts2)
-    }
-
-    fn is_range_complete(&self) -> bool {
-        if let Self::RangeComplete = self {
-            true
-        } else {
-            false
-        }
-    }
-
-    fn make_range_complete_item() -> Option<Self> {
-        Some(Self::RangeComplete)
     }
 }
 
@@ -394,9 +291,70 @@ pub async fn binned_json(node_config: &NodeConfigCached, query: &BinnedQuery) ->
     Ok(serde_json::to_value(ret)?)
 }
 
-pub trait PreBinnedItem: Unpin {
+pub struct ReadPbv<PBI>
+where
+    PBI: PreBinnedItem,
+{
+    buf: Vec<u8>,
+    file: Option<File>,
+    _mark: std::marker::PhantomData<PBI>,
+}
+
+impl<PBI> ReadPbv<PBI>
+where
+    PBI: PreBinnedItem,
+{
+    fn new(file: File) -> Self {
+        Self {
+            buf: vec![],
+            file: Some(file),
+            _mark: std::marker::PhantomData::default(),
+        }
+    }
+}
+
+impl<PBI> Future for ReadPbv<PBI>
+where
+    PBI: PreBinnedItem,
+{
+    type Output = Result<StreamItem<PBI>, Error>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        use Poll::*;
+        let mut buf = vec![];
+        let mut dst = ReadBuf::new(&mut buf);
+        let fp = self.file.as_mut().unwrap();
+        let f = Pin::new(fp);
+        match File::poll_read(f, cx, &mut dst) {
+            Ready(res) => match res {
+                Ok(_) => {
+                    if dst.filled().len() > 0 {
+                        self.buf.extend_from_slice(&mut buf);
+                        Pending
+                    } else {
+                        match PBI::from_buf(&mut self.buf) {
+                            Ok(item) => Ready(Ok(StreamItem::DataItem(item))),
+                            Err(e) => Ready(Err(e)),
+                        }
+                    }
+                }
+                Err(e) => Ready(Err(e.into())),
+            },
+            Pending => Pending,
+        }
+    }
+}
+
+pub trait PreBinnedItem: Send + Serialize + DeserializeOwned + Unpin {
     type BinnedStreamItem: AggregatableTdim + Unpin + Send;
     fn into_binned_stream_item(self, fit_range: NanoRange) -> Option<Self::BinnedStreamItem>;
+    fn make_range_complete() -> Self;
+    fn read_pbv(file: File) -> Result<ReadPbv<Self>, Error>
+    where
+        Self: Sized;
+    fn from_buf(buf: &[u8]) -> Result<Self, Error>
+    where
+        Self: Sized;
 }
 
 impl PreBinnedItem for PreBinnedScalarItem {
@@ -405,24 +363,99 @@ impl PreBinnedItem for PreBinnedScalarItem {
     fn into_binned_stream_item(self, fit_range: NanoRange) -> Option<Self::BinnedStreamItem> {
         match self {
             Self::RangeComplete => Some(Self::BinnedStreamItem::RangeComplete),
-            Self::Batch(item) => {
-                use super::agg::{Fits, FitsInside};
-                match item.fits_inside(fit_range) {
-                    Fits::Inside | Fits::PartlyGreater | Fits::PartlyLower | Fits::PartlyLowerAndGreater => {
-                        Some(Self::BinnedStreamItem::Values(item))
-                    }
-                    _ => None,
+            Self::Batch(item) => match item.fits_inside(fit_range) {
+                Fits::Inside | Fits::PartlyGreater | Fits::PartlyLower | Fits::PartlyLowerAndGreater => {
+                    Some(Self::BinnedStreamItem::Values(item))
                 }
-            }
+                _ => None,
+            },
         }
+    }
+
+    fn make_range_complete() -> Self {
+        Self::RangeComplete
+    }
+
+    fn read_pbv(file: File) -> Result<ReadPbv<Self>, Error> {
+        Ok(ReadPbv::new(file))
+    }
+
+    fn from_buf(buf: &[u8]) -> Result<Self, Error> {
+        let dec: MinMaxAvgScalarBinBatch = serde_cbor::from_slice(&buf)?;
+        Ok(Self::Batch(dec))
+    }
+}
+
+pub trait XBinnedEventsStreamItem:
+    Send + Serialize + DeserializeOwned + Unpin + Collectable + Collected + AggregatableTdim
+{
+    fn make_range_complete() -> Self;
+}
+
+impl Collected for MinMaxAvgScalarEventBatchStreamItem {
+    // TODO for this case we don't have an expected number of events. Factor out into another trait?
+    fn new(bin_count_exp: u32) -> Self {
+        // TODO factor out the concept of RangeComplete into another trait layer:
+        Self::Values(MinMaxAvgScalarEventBatch::empty())
+    }
+    fn timed_out(&mut self, k: bool) {}
+}
+
+impl Collectable for MinMaxAvgScalarEventBatchStreamItem {
+    type Collected = MinMaxAvgScalarEventBatchStreamItem;
+    fn append_to(&mut self, collected: &mut Self::Collected) {
+        match self {
+            Self::RangeComplete => {
+                // TODO would be more nice to insert another type layer for RangeComplete concept.
+                panic!()
+            }
+            Self::Values(this) => match collected {
+                Self::RangeComplete => {}
+                Self::Values(coll) => {
+                    coll.tss.append(&mut coll.tss);
+                    coll.mins.append(&mut coll.mins);
+                    coll.maxs.append(&mut coll.maxs);
+                    coll.avgs.append(&mut coll.avgs);
+                }
+            },
+        }
+    }
+}
+
+impl XBinnedEventsStreamItem for MinMaxAvgScalarEventBatchStreamItem {
+    fn make_range_complete() -> Self {
+        Self::RangeComplete
+    }
+}
+
+pub trait TBinned: Send + Serialize + DeserializeOwned + Unpin + Collectable + AggregatableTdim<Output = Self> {}
+
+impl TBinned for MinMaxAvgScalarBinBatchStreamItem {}
+
+impl Collected for MinMaxAvgScalarBinBatch {
+    fn new(bin_count_exp: u32) -> Self {
+        MinMaxAvgScalarBinBatch::empty()
+    }
+    fn timed_out(&mut self, k: bool) {}
+}
+
+impl Collectable for MinMaxAvgScalarBinBatch {
+    type Collected = MinMaxAvgScalarBinBatch;
+    fn append_to(&mut self, collected: &mut Self::Collected) {
+        collected.ts1s.append(&mut self.ts1s);
+        collected.ts2s.append(&mut self.ts2s);
+        collected.counts.append(&mut self.counts);
+        collected.mins.append(&mut self.mins);
+        collected.maxs.append(&mut self.maxs);
+        collected.avgs.append(&mut self.avgs);
     }
 }
 
 pub trait BinnedStreamKind: Clone + Unpin + Send + Sync + 'static {
     type BinnedStreamItem: MakeBytesFrame;
     type BinnedStreamType: Stream + Send + 'static;
-    type Dummy: Default + Unpin + Send;
-    type PreBinnedItem: PreBinnedItem + Send;
+    type PreBinnedItem: PreBinnedItem;
+    type XBinnedEvents;
 
     fn new_binned_from_prebinned(
         &self,
@@ -439,6 +472,8 @@ pub trait BinnedStreamKind: Clone + Unpin + Send + Sync + 'static {
         range: BinnedRange,
         node_config: &NodeConfigCached,
     ) -> Result<Self::BinnedStreamType, Error>;
+
+    fn pbv_handle_fut2_item(item: StreamItem<Self::PreBinnedItem>) -> Option<StreamItem<Self::PreBinnedItem>>;
 }
 
 #[derive(Clone)]
@@ -458,11 +493,16 @@ impl BinnedStreamKindWave {
     }
 }
 
+pub enum RangeCompletableItem<T> {
+    RangeComplete,
+    Data(T),
+}
+
 impl BinnedStreamKind for BinnedStreamKindScalar {
     type BinnedStreamItem = Result<StreamItem<BinnedScalarStreamItem>, Error>;
     type BinnedStreamType = BinnedStream<Self::BinnedStreamItem>;
-    type Dummy = u32;
     type PreBinnedItem = PreBinnedScalarItem;
+    type XBinnedEvents = MinMaxAvgScalarEventBatch;
 
     fn new_binned_from_prebinned(
         &self,
@@ -491,9 +531,36 @@ impl BinnedStreamKind for BinnedStreamKindScalar {
         range: BinnedRange,
         node_config: &NodeConfigCached,
     ) -> Result<Self::BinnedStreamType, Error> {
-        let s = MergedFromRemotes::new(evq, perf_opts, node_config.node_config.cluster.clone())
-            .into_binned_t(range.clone())
-            .map(adapter_to_stream_item);
+        let s = MergedFromRemotes::new(evq, perf_opts, node_config.node_config.cluster.clone(), self.clone());
+        // TODO use the binned2 instead
+        let s = crate::agg::binnedt::IntoBinnedT::into_binned_t(s, range);
+        let s = s.map(adapter_to_stream_item);
         Ok(BinnedStream::new(Box::pin(s))?)
+    }
+
+    fn pbv_handle_fut2_item(item: StreamItem<Self::PreBinnedItem>) -> Option<StreamItem<Self::PreBinnedItem>> {
+        // TODO make this code work in this context:
+        // Do I need more parameters here?
+        /*Ok(item) => match item {
+            StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
+            StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
+            StreamItem::DataItem(item) => match item {
+                PreBinnedScalarItem::RangeComplete => {
+                    self.range_complete_observed = true;
+                    None
+                }
+                PreBinnedScalarItem::Batch(batch) => {
+                    self.values.ts1s.extend(batch.ts1s.iter());
+                    self.values.ts2s.extend(batch.ts2s.iter());
+                    self.values.counts.extend(batch.counts.iter());
+                    self.values.mins.extend(batch.mins.iter());
+                    self.values.maxs.extend(batch.maxs.iter());
+                    self.values.avgs.extend(batch.avgs.iter());
+                    StreamItem::DataItem(PreBinnedScalarItem::Batch(batch))
+                }
+            },
+        },*/
+        err::todo();
+        None
     }
 }

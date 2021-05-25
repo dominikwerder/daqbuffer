@@ -1,10 +1,10 @@
 use crate::agg::binnedt::IntoBinnedT;
-use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatchStreamItem};
+use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedStreamKind, PreBinnedItem};
+use crate::binned::{BinnedStreamKind, PreBinnedItem, RangeCompletableItem};
 use crate::cache::pbvfs::{PreBinnedScalarItem, PreBinnedScalarValueFetchedStream};
 use crate::cache::{CacheFileDesc, MergedFromRemotes, PreBinnedQuery};
-use crate::frame::makeframe::make_frame;
+use crate::frame::makeframe::{make_frame, FrameType};
 use crate::raw::EventsQuery;
 use crate::streamlog::Streamlog;
 use bytes::Bytes;
@@ -18,57 +18,63 @@ use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tokio::fs::File;
 
 pub type PreBinnedValueByteStream<BK> = SCC<PreBinnedValueByteStreamInner<BK>>;
 
-pub struct PreBinnedValueByteStreamInner<BK>
+pub struct PreBinnedValueByteStreamInner<SK>
 where
-    BK: BinnedStreamKind,
+    SK: BinnedStreamKind,
 {
-    inp: PreBinnedValueStream<BK>,
+    inp: PreBinnedValueStream<SK>,
 }
 
-pub fn pre_binned_value_byte_stream_new<BK>(
+pub fn pre_binned_value_byte_stream_new<SK>(
     query: &PreBinnedQuery,
     node_config: &NodeConfigCached,
-    stream_kind: BK,
-) -> PreBinnedValueByteStream<BK>
+    stream_kind: SK,
+) -> PreBinnedValueByteStream<SK>
 where
-    BK: BinnedStreamKind + Unpin,
+    SK: BinnedStreamKind + Unpin,
+    Result<StreamItem<<SK as BinnedStreamKind>::PreBinnedItem>, err::Error>: FrameType,
 {
     let s1 = PreBinnedValueStream::new(query.clone(), node_config, stream_kind);
     let s2 = PreBinnedValueByteStreamInner { inp: s1 };
     SCC::new(s2)
 }
 
-impl<BK> Stream for PreBinnedValueByteStreamInner<BK>
+impl<SK> Stream for PreBinnedValueByteStreamInner<SK>
 where
-    BK: BinnedStreamKind + Unpin,
+    SK: BinnedStreamKind + Unpin,
+    Result<StreamItem<<SK as BinnedStreamKind>::PreBinnedItem>, err::Error>: FrameType,
+    PreBinnedValueStream<SK>: Unpin,
 {
     type Item = Result<Bytes, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         match self.inp.poll_next_unpin(cx) {
-            Ready(Some(item)) => match make_frame::<Result<StreamItem<PreBinnedScalarItem>, Error>>(&item) {
-                Ok(buf) => Ready(Some(Ok(buf.freeze()))),
-                Err(e) => Ready(Some(Err(e.into()))),
-            },
+            Ready(Some(item)) => {
+                match make_frame::<Result<StreamItem<<SK as BinnedStreamKind>::PreBinnedItem>, Error>>(&item) {
+                    Ok(buf) => Ready(Some(Ok(buf.freeze()))),
+                    Err(e) => Ready(Some(Err(e.into()))),
+                }
+            }
             Ready(None) => Ready(None),
             Pending => Pending,
         }
     }
 }
 
-pub struct PreBinnedValueStream<BK>
+pub struct PreBinnedValueStream<SK>
 where
-    BK: BinnedStreamKind,
+    SK: BinnedStreamKind,
 {
     query: PreBinnedQuery,
     node_config: NodeConfigCached,
-    open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<tokio::fs::File, std::io::Error>> + Send>>>,
+    open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<File, std::io::Error>> + Send>>>,
     fut2:
-        Option<Pin<Box<dyn Stream<Item = Result<StreamItem<<BK as BinnedStreamKind>::PreBinnedItem>, Error>> + Send>>>,
+        Option<Pin<Box<dyn Stream<Item = Result<StreamItem<<SK as BinnedStreamKind>::PreBinnedItem>, Error>> + Send>>>,
     read_from_cache: bool,
     cache_written: bool,
     data_complete: bool,
@@ -79,15 +85,18 @@ where
     streamlog: Streamlog,
     values: MinMaxAvgScalarBinBatch,
     write_fut: Option<Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>>,
-    read_cache_fut: Option<Pin<Box<dyn Future<Output = Result<StreamItem<PreBinnedScalarItem>, Error>> + Send>>>,
-    stream_kind: BK,
+    read_cache_fut: Option<
+        Pin<Box<dyn Future<Output = Result<StreamItem<<SK as BinnedStreamKind>::PreBinnedItem>, Error>> + Send>>,
+    >,
+    stream_kind: SK,
 }
 
-impl<BK> PreBinnedValueStream<BK>
+impl<SK> PreBinnedValueStream<SK>
 where
-    BK: BinnedStreamKind,
+    SK: BinnedStreamKind,
+    Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::PreBinnedItem>>, err::Error>: FrameType,
 {
-    pub fn new(query: PreBinnedQuery, node_config: &NodeConfigCached, stream_kind: BK) -> Self {
+    pub fn new(query: PreBinnedQuery, node_config: &NodeConfigCached, stream_kind: SK) -> Self {
         Self {
             query,
             node_config: node_config.clone(),
@@ -130,22 +139,28 @@ where
             .ok_or(Error::with_msg("covering_range returns None"))
             .unwrap();
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
-        let s1 = MergedFromRemotes::new(evq, perf_opts, self.node_config.node_config.cluster.clone());
-        let s1 = s1.into_binned_t(range);
+        let s1 = MergedFromRemotes::new(
+            evq,
+            perf_opts,
+            self.node_config.node_config.cluster.clone(),
+            self.stream_kind.clone(),
+        );
+        let s1 = IntoBinnedT::into_binned_t(s1, range);
         let s1 = s1.map(|item| {
             // TODO does this do anything?
             match item {
                 Ok(item) => match item {
                     StreamItem::Log(item) => Ok(StreamItem::Log(item)),
                     StreamItem::Stats(item) => Ok(StreamItem::Stats(item)),
-                    StreamItem::DataItem(item) => match item {
+                    StreamItem::DataItem(item) => Ok(StreamItem::DataItem(item)),
+                    /*StreamItem::DataItem(item) => match item {
                         MinMaxAvgScalarBinBatchStreamItem::RangeComplete => {
                             Ok(StreamItem::DataItem(PreBinnedScalarItem::RangeComplete))
                         }
                         MinMaxAvgScalarBinBatchStreamItem::Values(item) => {
                             Ok(StreamItem::DataItem(PreBinnedScalarItem::Batch(item)))
                         }
-                    },
+                    },*/
                 },
                 Err(e) => Err(e),
             }
@@ -153,7 +168,10 @@ where
 
         // TODO
         // In the above must introduce a trait to convert to the generic item type:
-        self.fut2 = Some(Box::pin(s1));
+
+        // TODO!!
+        self.fut2 = Some(err::todoval());
+        //self.fut2 = Some(Box::pin(s1));
     }
 
     fn setup_from_higher_res_prebinned(&mut self, range: PreBinnedPatchRange) {
@@ -223,12 +241,12 @@ where
     }
 }
 
-impl<BK> Stream for PreBinnedValueStream<BK>
+impl<SK> Stream for PreBinnedValueStream<SK>
 where
-    BK: BinnedStreamKind,
+    SK: BinnedStreamKind + Unpin,
+    Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::PreBinnedItem>>, err::Error>: FrameType,
 {
-    // TODO need this generic for scalar and array (when wave is not binned down to a single scalar point)
-    type Item = Result<StreamItem<PreBinnedScalarItem>, Error>;
+    type Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::PreBinnedItem>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -283,7 +301,8 @@ where
                 if self.cache_written {
                     if self.range_complete_observed {
                         self.range_complete_emitted = true;
-                        Ready(Some(Ok(StreamItem::DataItem(PreBinnedScalarItem::RangeComplete))))
+                        let item = <<SK as BinnedStreamKind>::PreBinnedItem as PreBinnedItem>::make_range_complete();
+                        Ready(Some(Ok(StreamItem::DataItem(item))))
                     } else {
                         self.completed = true;
                         Ready(None)
@@ -320,24 +339,9 @@ where
             } else if let Some(fut) = self.fut2.as_mut() {
                 match fut.poll_next_unpin(cx) {
                     Ready(Some(k)) => match k {
-                        Ok(item) => match item {
-                            StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
-                            StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
-                            StreamItem::DataItem(item) => match item {
-                                PreBinnedScalarItem::RangeComplete => {
-                                    self.range_complete_observed = true;
-                                    continue 'outer;
-                                }
-                                PreBinnedScalarItem::Batch(batch) => {
-                                    self.values.ts1s.extend(batch.ts1s.iter());
-                                    self.values.ts2s.extend(batch.ts2s.iter());
-                                    self.values.counts.extend(batch.counts.iter());
-                                    self.values.mins.extend(batch.mins.iter());
-                                    self.values.maxs.extend(batch.maxs.iter());
-                                    self.values.avgs.extend(batch.avgs.iter());
-                                    Ready(Some(Ok(StreamItem::DataItem(PreBinnedScalarItem::Batch(batch)))))
-                                }
-                            },
+                        Ok(item) => match SK::pbv_handle_fut2_item(item) {
+                            None => continue 'outer,
+                            Some(item) => Ready(Some(Ok(item))),
                         },
                         Err(e) => {
                             self.errored = true;
@@ -357,7 +361,7 @@ where
                         match item {
                             Ok(file) => {
                                 self.read_from_cache = true;
-                                let fut = super::read_pbv(file);
+                                let fut = <SK as BinnedStreamKind>::PreBinnedItem::read_pbv(file)?;
                                 self.read_cache_fut = Some(Box::pin(fut));
                                 continue 'outer;
                             }

@@ -5,11 +5,11 @@ Delivers event data (not yet time-binned) from local storage and provides client
 to request such data from nodes.
 */
 
-use crate::agg::eventbatch::MinMaxAvgScalarEventBatchStreamItem;
 use crate::agg::streams::StreamItem;
+use crate::binned::{BinnedStreamKind, RangeCompletableItem};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{make_frame, make_term_frame};
-use crate::raw::bffr::MinMaxAvgScalarEventBatchStreamFromFrames;
+use crate::raw::bffr::EventsFromFrames;
 use err::Error;
 use futures_core::Stream;
 use netpod::{AggKind, Channel, NanoRange, Node, PerfOpts};
@@ -36,11 +36,23 @@ pub struct EventsQuery {
 #[derive(Serialize, Deserialize)]
 pub struct EventQueryJsonStringFrame(String);
 
-pub async fn x_processed_stream_from_node(
+pub async fn x_processed_stream_from_node<SK>(
     query: EventsQuery,
     perf_opts: PerfOpts,
     node: Node,
-) -> Result<Pin<Box<dyn Stream<Item = Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>> + Send>>, Error> {
+    stream_kind: SK,
+) -> Result<
+    Pin<
+        Box<
+            dyn Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>>
+                + Send,
+        >,
+    >,
+    Error,
+>
+where
+    SK: BinnedStreamKind,
+{
     let net = TcpStream::connect(format!("{}:{}", node.host, node.port_raw)).await?;
     let qjs = serde_json::to_string(&query)?;
     let (netin, mut netout) = net.into_split();
@@ -51,7 +63,7 @@ pub async fn x_processed_stream_from_node(
     netout.flush().await?;
     netout.forget();
     let frames = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
-    let items = MinMaxAvgScalarEventBatchStreamFromFrames::new(frames);
+    let items = EventsFromFrames::new(frames, stream_kind);
     Ok(Box::pin(items))
 }
 

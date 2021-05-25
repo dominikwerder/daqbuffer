@@ -1,8 +1,8 @@
-use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedScalarStreamItem, BinnedStreamKind, PreBinnedItem};
-use crate::cache::pbvfs::{PreBinnedScalarItem, PreBinnedScalarValueFetchedStream};
+use crate::binned::{BinnedStreamKind, PreBinnedItem};
+use crate::cache::pbvfs::PreBinnedScalarValueFetchedStream;
 use crate::cache::{CacheUsage, PreBinnedQuery};
+use crate::frame::makeframe::FrameType;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -33,6 +33,7 @@ where
 impl<BK> BinnedScalarStreamFromPreBinnedPatches<BK>
 where
     BK: BinnedStreamKind,
+    Result<StreamItem<<BK as BinnedStreamKind>::PreBinnedItem>, err::Error>: FrameType,
 {
     pub fn new(
         patch_it: PreBinnedPatchIterator,
@@ -57,6 +58,7 @@ where
         let inp = futures_util::stream::iter(patches.into_iter())
             .map({
                 let node_config = node_config.clone();
+                let stream_kind = stream_kind.clone();
                 move |patch| {
                     let query = PreBinnedQuery::new(
                         patch,
