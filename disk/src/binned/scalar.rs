@@ -1,7 +1,7 @@
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
 use crate::binned::{BinnedStreamKind, BinnedStreamRes, RangeCompletableItem};
-use crate::binnedstream::BinnedStream;
+use crate::binnedstream::BoxedStream;
 use crate::cache::BinnedQuery;
 use crate::raw::EventsQuery;
 use err::Error;
@@ -9,13 +9,13 @@ use futures_core::Stream;
 use netpod::log::*;
 use netpod::{BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchRange};
 
-pub async fn binned_stream<BK>(
+pub async fn binned_stream<SK>(
     node_config: &NodeConfigCached,
     query: &BinnedQuery,
-    stream_kind: BK,
-) -> Result<BinnedStreamRes<<BK::BinnedStreamType as Stream>::Item>, Error>
+    stream_kind: SK,
+) -> Result<BinnedStreamRes<SK::TBinnedBins>, Error>
 where
-    BK: BinnedStreamKind,
+    SK: BinnedStreamKind,
 {
     if query.channel().backend != node_config.node.backend {
         let err = Error::with_msg(format!(
@@ -40,8 +40,8 @@ where
                 );
                 return Err(Error::with_msg(msg));
             }
-            let s = BK::new_binned_from_prebinned(&stream_kind, query, range.clone(), pre_range, node_config)?;
-            let s = BinnedStream::new(Box::pin(s))?;
+            let s = SK::new_binned_from_prebinned(&stream_kind, query, range.clone(), pre_range, node_config)?;
+            let s = BoxedStream::new(Box::pin(s))?;
             let ret = BinnedStreamRes {
                 binned_stream: s,
                 range,
@@ -59,8 +59,8 @@ where
                 agg_kind: query.agg_kind().clone(),
             };
             // TODO do I need to set up more transformations or binning to deliver the requested data?
-            let s = BK::new_binned_from_merged(&stream_kind, evq, perf_opts, range.clone(), node_config)?;
-            let s = BinnedStream::new(Box::pin(s))?;
+            let s = SK::new_binned_from_merged(&stream_kind, evq, perf_opts, range.clone(), node_config)?;
+            let s = BoxedStream::new(Box::pin(s))?;
             let ret = BinnedStreamRes {
                 binned_stream: s,
                 range,

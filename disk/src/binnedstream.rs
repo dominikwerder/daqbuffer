@@ -1,5 +1,5 @@
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedStreamKind, PreBinnedItem};
+use crate::binned::{BinnedStreamKind, RangeCompletableItem};
 use crate::cache::pbvfs::PreBinnedScalarValueFetchedStream;
 use crate::cache::{CacheUsage, PreBinnedQuery};
 use crate::frame::makeframe::FrameType;
@@ -16,15 +16,10 @@ pub struct BinnedScalarStreamFromPreBinnedPatches<BK>
 where
     BK: BinnedStreamKind,
 {
-    //inp: Pin<Box<dyn Stream<Item = Result<StreamItem<BinnedScalarStreamItem>, Error>> + Send>>,
     inp: Pin<
         Box<
-            dyn Stream<
-                    Item = Result<
-                        StreamItem<<<BK as BinnedStreamKind>::PreBinnedItem as PreBinnedItem>::BinnedStreamItem>,
-                        Error,
-                    >,
-                > + Send,
+            dyn Stream<Item = Result<StreamItem<RangeCompletableItem<<BK as BinnedStreamKind>::TBinnedBins>>, Error>>
+                + Send,
         >,
     >,
     stream_kind: BK,
@@ -33,7 +28,7 @@ where
 impl<BK> BinnedScalarStreamFromPreBinnedPatches<BK>
 where
     BK: BinnedStreamKind,
-    Result<StreamItem<<BK as BinnedStreamKind>::PreBinnedItem>, err::Error>: FrameType,
+    Result<StreamItem<RangeCompletableItem<<BK as BinnedStreamKind>::TBinnedBins>>, Error>: FrameType,
 {
     pub fn new(
         patch_it: PreBinnedPatchIterator,
@@ -87,12 +82,17 @@ where
                         Ok(item) => match item {
                             StreamItem::Log(item) => Some(Ok(StreamItem::Log(item))),
                             StreamItem::Stats(item) => Some(Ok(StreamItem::Stats(item))),
-                            StreamItem::DataItem(item) => {
-                                match crate::binned::PreBinnedItem::into_binned_stream_item(item, fit_range) {
-                                    Some(item) => Some(Ok(StreamItem::DataItem(item))),
-                                    None => None,
+                            StreamItem::DataItem(item) => match item {
+                                RangeCompletableItem::RangeComplete => {
+                                    Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)))
                                 }
-                            }
+                                RangeCompletableItem::Data(item) => {
+                                    match crate::binned::FilterFittingInside::filter_fitting_inside(item, fit_range) {
+                                        Some(item) => Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))),
+                                        None => None,
+                                    }
+                                }
+                            },
                         },
                         Err(e) => Some(Err(e)),
                     };
@@ -100,8 +100,8 @@ where
                 }
             });
         // TODO activate the T-binning via the bin-to-bin binning trait.
-        err::todo();
-        //let inp = IntoBinnedT::into_binned_t(inp, range);
+        //err::todo();
+        let inp = crate::agg::binnedt2::IntoBinnedT::into_binned_t(inp, range);
         Ok(Self {
             inp: Box::pin(inp),
             stream_kind,
@@ -109,33 +109,33 @@ where
     }
 }
 
-impl<BK> Stream for BinnedScalarStreamFromPreBinnedPatches<BK>
+// TODO change name, type is generic now:
+// Can I remove the whole type or keep for static check?
+impl<SK> Stream for BinnedScalarStreamFromPreBinnedPatches<SK>
 where
-    BK: BinnedStreamKind,
+    SK: BinnedStreamKind,
 {
-    type Item = Result<StreamItem<<<BK as BinnedStreamKind>::PreBinnedItem as PreBinnedItem>::BinnedStreamItem>, Error>;
+    type Item = Result<StreamItem<RangeCompletableItem<SK::TBinnedBins>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        use Poll::*;
-        match self.inp.poll_next_unpin(cx) {
-            Ready(Some(item)) => Ready(Some(item)),
-            Ready(None) => Ready(None),
-            Pending => Pending,
-        }
+        self.inp.poll_next_unpin(cx)
     }
 }
 
-pub struct BinnedStream<I> {
+pub struct BoxedStream<I> {
     inp: Pin<Box<dyn Stream<Item = I> + Send>>,
 }
 
-impl<I> BinnedStream<I> {
-    pub fn new(inp: Pin<Box<dyn Stream<Item = I> + Send>>) -> Result<Self, Error> {
-        Ok(Self { inp })
+impl<I> BoxedStream<I> {
+    pub fn new<T>(inp: T) -> Result<Self, Error>
+    where
+        T: Stream<Item = I> + Send + 'static,
+    {
+        Ok(Self { inp: Box::pin(inp) })
     }
 }
 
-impl<I> Stream for BinnedStream<I> {
+impl<I> Stream for BoxedStream<I> {
     type Item = I;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {

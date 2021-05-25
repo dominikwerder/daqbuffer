@@ -1,5 +1,6 @@
 use crate::agg::binnedx::IntoBinnedXBins1;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
+use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
 use crate::agg::IntoDim1F32Stream;
 use crate::binned::{BinnedStreamKind, BinnedStreamKindScalar, RangeCompletableItem};
@@ -56,7 +57,8 @@ async fn events_conn_handler_inner(
         Ok(_) => (),
         Err(mut ce) => {
             // TODO is it guaranteed to be compatible to serialize this way?
-            let buf = make_frame::<Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error>>(&Err(ce.err))?;
+            let buf =
+                make_frame::<Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error>>(&Err(ce.err))?;
             match ce.netout.write_all(&buf).await {
                 Ok(_) => (),
                 Err(e) => return Err(e)?,

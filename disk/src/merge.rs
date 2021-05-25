@@ -1,7 +1,7 @@
 use crate::agg::binnedt::AggregatableTdim;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::streams::{Collectable, Collected, StatsItem, StreamItem};
-use crate::binned::{BinnedStreamKind, XBinnedEventsStreamItem};
+use crate::binned::{BinnedStreamKind, RangeCompletableItem};
 use crate::streamlog::LogItem;
 use err::Error;
 use futures_core::Stream;
@@ -14,7 +14,7 @@ use std::task::{Context, Poll};
 
 pub struct MergedMinMaxAvgScalarStream<S, SK>
 where
-    S: Stream<Item = Result<StreamItem<<SK as BinnedStreamKind>::XBinnedEvents>, Error>> + Unpin,
+    S: Stream<Item = Result<StreamItem<RangeCompletableItem<SK::XBinnedEvents>>, Error>> + Unpin,
     SK: BinnedStreamKind,
 {
     inps: Vec<S>,
@@ -35,7 +35,7 @@ where
 
 impl<S, SK> MergedMinMaxAvgScalarStream<S, SK>
 where
-    S: Stream<Item = Result<StreamItem<<SK as BinnedStreamKind>::XBinnedEvents>, Error>> + Unpin,
+    S: Stream<Item = Result<StreamItem<RangeCompletableItem<SK::XBinnedEvents>>, Error>> + Unpin,
     SK: BinnedStreamKind,
 {
     pub fn new(inps: Vec<S>) -> Self {
@@ -80,9 +80,8 @@ where
                                     }
                                     continue 'l1;
                                 }
-                                StreamItem::DataItem(item) => {
-                                    // TODO factor out the concept of RangeComplete into another trait layer.
-                                    if item.is_range_complete() {
+                                StreamItem::DataItem(item) => match item {
+                                    RangeCompletableItem::RangeComplete => {
                                         self.range_complete_observed[i1] = true;
                                         let d = self.range_complete_observed.iter().filter(|&&k| k).count();
                                         if d == self.range_complete_observed.len() {
@@ -92,11 +91,12 @@ where
                                             trace!("MergedStream  range_complete  d  {}", d);
                                         }
                                         continue 'l1;
-                                    } else {
+                                    }
+                                    RangeCompletableItem::Data(item) => {
                                         self.ixs[i1] = 0;
                                         self.current[i1] = MergedCurVal::Val(item);
                                     }
-                                }
+                                },
                             },
                             Ready(Some(Err(e))) => {
                                 // TODO emit this error, consider this stream as done, anything more to do here?
@@ -124,12 +124,13 @@ where
     }
 }
 
+// TODO change name, it is generic now:
 impl<S, SK> Stream for MergedMinMaxAvgScalarStream<S, SK>
 where
-    S: Stream<Item = Result<StreamItem<<SK as BinnedStreamKind>::XBinnedEvents>, Error>> + Unpin,
+    S: Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>> + Unpin,
     SK: BinnedStreamKind,
 {
-    type Item = Result<StreamItem<<SK as BinnedStreamKind>::XBinnedEvents>, Error>;
+    type Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -150,9 +151,7 @@ where
                         Ready(None)
                     } else {
                         self.range_complete_observed_all_emitted = true;
-                        Ready(Some(Ok(StreamItem::DataItem(
-                            <<SK as BinnedStreamKind>::XBinnedEvents as XBinnedEventsStreamItem>::make_range_complete(),
-                        ))))
+                        Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
                     }
                 } else {
                     self.completed = true;

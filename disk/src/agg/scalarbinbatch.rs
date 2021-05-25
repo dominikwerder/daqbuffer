@@ -1,5 +1,5 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
-use crate::agg::streams::Bins;
+use crate::agg::streams::{Bins, StreamItem};
 use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
 use crate::binned::{MakeBytesFrame, RangeCompletableItem};
 use crate::frame::makeframe::make_frame;
@@ -302,7 +302,7 @@ impl AggregatorTdim for MinMaxAvgScalarBinBatchAggregator {
     }
 }
 
-impl MakeBytesFrame for Result<RangeCompletableItem<MinMaxAvgScalarBinBatch>, Error> {
+impl MakeBytesFrame for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>, Error> {
     fn make_bytes_frame(&self) -> Result<Bytes, Error> {
         Ok(make_frame(self)?.freeze())
     }

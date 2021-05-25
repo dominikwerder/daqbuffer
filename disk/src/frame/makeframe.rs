@@ -1,6 +1,7 @@
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
+use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
-use crate::cache::pbvfs::PreBinnedScalarItem;
+use crate::binned::RangeCompletableItem;
 use crate::frame::inmem::InMemoryFrame;
 use crate::raw::EventQueryJsonStringFrame;
 use bytes::{BufMut, BytesMut};
@@ -19,20 +20,12 @@ impl FrameType for EventQueryJsonStringFrame {
     const FRAME_TYPE_ID: u32 = 0x03;
 }
 
-impl FrameType for Result<StreamItem<BinnedScalarStreamItem>, Error> {
-    const FRAME_TYPE_ID: u32 = 0x06;
+impl FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>, Error> {
+    const FRAME_TYPE_ID: u32 = 0x10;
 }
 
-impl FrameType for Result<MinMaxAvgScalarBinBatchStreamItem, Error> {
-    const FRAME_TYPE_ID: u32 = 0x07;
-}
-
-impl FrameType for Result<StreamItem<PreBinnedScalarItem>, Error> {
-    const FRAME_TYPE_ID: u32 = 0x08;
-}
-
-impl FrameType for Result<StreamItem<MinMaxAvgScalarEventBatchStreamItem>, Error> {
-    const FRAME_TYPE_ID: u32 = 0x09;
+impl FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error> {
+    const FRAME_TYPE_ID: u32 = 0x11;
 }
 
 pub fn make_frame<FT>(item: &FT) -> Result<BytesMut, Error>

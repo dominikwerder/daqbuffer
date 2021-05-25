@@ -1,7 +1,11 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
+use crate::agg::streams::StreamItem;
 use crate::agg::AggregatableXdim1Bin;
+use crate::binned::{MakeBytesFrame, RangeCompletableItem};
+use crate::frame::makeframe::make_frame;
 use bytes::{BufMut, Bytes, BytesMut};
+use err::Error;
 use netpod::log::*;
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;
@@ -228,5 +232,11 @@ impl AggregatorTdim for MinMaxAvgScalarEventBatchAggregator {
             avgs: vec![avg],
         };
         vec![v]
+    }
+}
+
+impl MakeBytesFrame for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error> {
+    fn make_bytes_frame(&self) -> Result<Bytes, Error> {
+        Ok(make_frame(self)?.freeze())
     }
 }

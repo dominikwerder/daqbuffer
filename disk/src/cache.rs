@@ -230,14 +230,14 @@ fn channel_from_params(params: &BTreeMap<String, String>) -> Result<Channel, Err
 // NOTE  This answers a request for a single valid pre-binned patch.
 // A user must first make sure that the grid spec is valid, and that this node is responsible for it.
 // Otherwise it is an error.
-pub fn pre_binned_bytes_for_http<'a, BK>(
+pub fn pre_binned_bytes_for_http<SK>(
     node_config: &NodeConfigCached,
     query: &PreBinnedQuery,
-    stream_kind: BK,
-) -> Result<PreBinnedValueByteStream<BK>, Error>
+    stream_kind: SK,
+) -> Result<PreBinnedValueByteStream<SK>, Error>
 where
-    BK: BinnedStreamKind,
-    Result<StreamItem<<BK as BinnedStreamKind>::PreBinnedItem>, err::Error>: FrameType,
+    SK: BinnedStreamKind,
+    Result<StreamItem<RangeCompletableItem<SK::TBinnedBins>>, err::Error>: FrameType,
 {
     if query.channel.backend != node_config.node.backend {
         let err = Error::with_msg(format!(
@@ -508,13 +508,16 @@ impl CacheFileDesc {
     }
 }
 
-pub async fn write_pb_cache_min_max_avg_scalar(
-    values: MinMaxAvgScalarBinBatch,
+pub async fn write_pb_cache_min_max_avg_scalar<T>(
+    values: T,
     patch: PreBinnedPatchCoord,
     agg_kind: AggKind,
     channel: Channel,
     node_config: NodeConfigCached,
-) -> Result<(), Error> {
+) -> Result<(), Error>
+where
+    T: Serialize,
+{
     let cfd = CacheFileDesc {
         channel: channel.clone(),
         patch: patch.clone(),

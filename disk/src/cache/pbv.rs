@@ -1,8 +1,9 @@
 use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
-use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedStreamKind, PreBinnedItem, RangeCompletableItem};
-use crate::cache::pbvfs::{PreBinnedScalarItem, PreBinnedScalarValueFetchedStream};
+use crate::agg::streams::{Collectable, Collected, StreamItem};
+use crate::binned::RangeCompletableItem::RangeComplete;
+use crate::binned::{BinnedStreamKind, RangeCompletableItem};
+use crate::cache::pbvfs::PreBinnedScalarValueFetchedStream;
 use crate::cache::{CacheFileDesc, MergedFromRemotes, PreBinnedQuery};
 use crate::frame::makeframe::{make_frame, FrameType};
 use crate::raw::EventsQuery;
@@ -35,8 +36,8 @@ pub fn pre_binned_value_byte_stream_new<SK>(
     stream_kind: SK,
 ) -> PreBinnedValueByteStream<SK>
 where
-    SK: BinnedStreamKind + Unpin,
-    Result<StreamItem<<SK as BinnedStreamKind>::PreBinnedItem>, err::Error>: FrameType,
+    SK: BinnedStreamKind,
+    Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>, err::Error>: FrameType,
 {
     let s1 = PreBinnedValueStream::new(query.clone(), node_config, stream_kind);
     let s2 = PreBinnedValueByteStreamInner { inp: s1 };
@@ -45,9 +46,8 @@ where
 
 impl<SK> Stream for PreBinnedValueByteStreamInner<SK>
 where
-    SK: BinnedStreamKind + Unpin,
-    Result<StreamItem<<SK as BinnedStreamKind>::PreBinnedItem>, err::Error>: FrameType,
-    PreBinnedValueStream<SK>: Unpin,
+    SK: BinnedStreamKind,
+    Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>, err::Error>: FrameType,
 {
     type Item = Result<Bytes, Error>;
 
@@ -55,7 +55,10 @@ where
         use Poll::*;
         match self.inp.poll_next_unpin(cx) {
             Ready(Some(item)) => {
-                match make_frame::<Result<StreamItem<<SK as BinnedStreamKind>::PreBinnedItem>, Error>>(&item) {
+                match make_frame::<
+                    Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>, err::Error>,
+                >(&item)
+                {
                     Ok(buf) => Ready(Some(Ok(buf.freeze()))),
                     Err(e) => Ready(Some(Err(e.into()))),
                 }
@@ -73,8 +76,18 @@ where
     query: PreBinnedQuery,
     node_config: NodeConfigCached,
     open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<File, std::io::Error>> + Send>>>,
-    fut2:
-        Option<Pin<Box<dyn Stream<Item = Result<StreamItem<<SK as BinnedStreamKind>::PreBinnedItem>, Error>> + Send>>>,
+    fut2: Option<
+        Pin<
+            Box<
+                dyn Stream<
+                        Item = Result<
+                            StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>,
+                            err::Error,
+                        >,
+                    > + Send,
+            >,
+        >,
+    >,
     read_from_cache: bool,
     cache_written: bool,
     data_complete: bool,
@@ -83,10 +96,19 @@ where
     errored: bool,
     completed: bool,
     streamlog: Streamlog,
-    values: MinMaxAvgScalarBinBatch,
+    values: <SK as BinnedStreamKind>::TBinnedBins,
     write_fut: Option<Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>>,
     read_cache_fut: Option<
-        Pin<Box<dyn Future<Output = Result<StreamItem<<SK as BinnedStreamKind>::PreBinnedItem>, Error>> + Send>>,
+        Pin<
+            Box<
+                dyn Future<
+                        Output = Result<
+                            StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>,
+                            err::Error,
+                        >,
+                    > + Send,
+            >,
+        >,
     >,
     stream_kind: SK,
 }
@@ -94,7 +116,7 @@ where
 impl<SK> PreBinnedValueStream<SK>
 where
     SK: BinnedStreamKind,
-    Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::PreBinnedItem>>, err::Error>: FrameType,
+    Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>, err::Error>: FrameType,
 {
     pub fn new(query: PreBinnedQuery, node_config: &NodeConfigCached, stream_kind: SK) -> Self {
         Self {
@@ -110,7 +132,8 @@ where
             errored: false,
             completed: false,
             streamlog: Streamlog::new(node_config.ix as u32),
-            values: MinMaxAvgScalarBinBatch::empty(),
+            // TODO refactor usage of parameter
+            values: <<SK as BinnedStreamKind>::TBinnedBins as Collected>::new(0),
             write_fut: None,
             read_cache_fut: None,
             stream_kind,
@@ -244,9 +267,9 @@ where
 impl<SK> Stream for PreBinnedValueStream<SK>
 where
     SK: BinnedStreamKind + Unpin,
-    Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::PreBinnedItem>>, err::Error>: FrameType,
+    Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>, err::Error>: FrameType,
 {
-    type Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::PreBinnedItem>>, Error>;
+    type Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>, err::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -301,7 +324,7 @@ where
                 if self.cache_written {
                     if self.range_complete_observed {
                         self.range_complete_emitted = true;
-                        let item = <<SK as BinnedStreamKind>::PreBinnedItem as PreBinnedItem>::make_range_complete();
+                        let item = RangeCompletableItem::RangeComplete;
                         Ready(Some(Ok(StreamItem::DataItem(item))))
                     } else {
                         self.completed = true;
@@ -316,10 +339,16 @@ where
                             let msg = format!(
                                 "write cache file  query: {:?}  bin count: {}",
                                 self.query.patch,
-                                self.values.ts1s.len()
+                                //self.values.ts1s.len()
+                                // TODO create trait to extract number of bins from item:
+                                0
                             );
                             self.streamlog.append(Level::INFO, msg);
-                            let values = std::mem::replace(&mut self.values, MinMaxAvgScalarBinBatch::empty());
+                            let values = std::mem::replace(
+                                &mut self.values,
+                                // Do not use expectation on the number of bins here:
+                                <<SK as BinnedStreamKind>::TBinnedBins as Collected>::new(0),
+                            );
                             let fut = super::write_pb_cache_min_max_avg_scalar(
                                 values,
                                 self.query.patch.clone(),
@@ -339,9 +368,22 @@ where
             } else if let Some(fut) = self.fut2.as_mut() {
                 match fut.poll_next_unpin(cx) {
                     Ready(Some(k)) => match k {
-                        Ok(item) => match SK::pbv_handle_fut2_item(item) {
-                            None => continue 'outer,
-                            Some(item) => Ready(Some(Ok(item))),
+                        Ok(item) => match item {
+                            StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
+                            StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
+                            StreamItem::DataItem(item) => match item {
+                                RangeCompletableItem::RangeComplete => {
+                                    self.range_complete_observed = true;
+                                    continue 'outer;
+                                }
+                                RangeCompletableItem::Data(item) => {
+                                    // TODO need trait Appendable which simply appends to the same type, so that I can
+                                    // write later the whole batch of numbers in one go.
+                                    err::todo();
+                                    //item.append_to(&mut self.values);
+                                    Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))))
+                                }
+                            },
                         },
                         Err(e) => {
                             self.errored = true;
@@ -361,7 +403,8 @@ where
                         match item {
                             Ok(file) => {
                                 self.read_from_cache = true;
-                                let fut = <SK as BinnedStreamKind>::PreBinnedItem::read_pbv(file)?;
+                                use crate::binned::ReadableFromFile;
+                                let fut = <<SK as BinnedStreamKind>::TBinnedBins as crate::binned::ReadableFromFile>::read_from_file(file)?;
                                 self.read_cache_fut = Some(Box::pin(fut));
                                 continue 'outer;
                             }

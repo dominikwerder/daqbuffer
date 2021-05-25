@@ -1,6 +1,6 @@
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
-use crate::binned::BinnedStreamKind;
+use crate::binned::{BinnedStreamKind, RangeCompletableItem};
 use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead, PreBinnedQuery};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{decode_frame, FrameType};
@@ -52,18 +52,13 @@ where
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub enum PreBinnedScalarItem {
-    Batch(MinMaxAvgScalarBinBatch),
-    RangeComplete,
-}
-
-impl<BK> Stream for PreBinnedScalarValueFetchedStream<BK>
+// TODO change name, is now generic:
+impl<SK> Stream for PreBinnedScalarValueFetchedStream<SK>
 where
-    BK: BinnedStreamKind,
-    Result<StreamItem<<BK as BinnedStreamKind>::PreBinnedItem>, err::Error>: FrameType,
+    SK: BinnedStreamKind,
+    Result<StreamItem<RangeCompletableItem<SK::TBinnedBins>>, err::Error>: FrameType,
 {
-    type Item = Result<StreamItem<BK::PreBinnedItem>, Error>;
+    type Item = Result<StreamItem<RangeCompletableItem<SK::TBinnedBins>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -80,7 +75,7 @@ where
                         StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
                         StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
                         StreamItem::DataItem(item) => {
-                            match decode_frame::<Result<StreamItem<<BK as BinnedStreamKind>::PreBinnedItem>, Error>>(
+                            match decode_frame::<Result<StreamItem<RangeCompletableItem<SK::TBinnedBins>>, Error>>(
                                 &item,
                             ) {
                                 Ok(Ok(item)) => Ready(Some(Ok(item))),

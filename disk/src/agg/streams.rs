@@ -28,7 +28,7 @@ pub trait Collected {
 
 pub trait Collectable {
     type Collected: Collected;
-    fn append_to(&mut self, collected: &mut Self::Collected);
+    fn append_to(&self, collected: &mut Self::Collected);
 }
 
 pub trait ToJsonResult {
