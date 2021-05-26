@@ -167,9 +167,8 @@ where
             self.node_config.node_config.cluster.clone(),
             self.stream_kind.clone(),
         );
-        let s1 = crate::agg::binnedt::IntoBinnedT::<SK, _>::into_binned_t(s1, range);
-        //self.fut2 = Some(Box::pin(s1));
-        self.fut2 = err::todoval();
+        let s1 = <SK as BinnedStreamKind>::xbinned_to_tbinned(s1, range);
+        self.fut2 = Some(Box::pin(s1));
     }
 
     fn setup_from_higher_res_prebinned(&mut self, range: PreBinnedPatchRange) {

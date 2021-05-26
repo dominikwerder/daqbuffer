@@ -1,10 +1,12 @@
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedStreamKind, RangeCompletableItem};
+use crate::binned::{BinnedStreamKind, RangeCompletableItem, RangeOverlapInfo};
 use err::Error;
 use futures_core::Stream;
-use netpod::BinnedRange;
+use futures_util::StreamExt;
+use netpod::log::*;
+use netpod::{BinnedRange, NanoRange};
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -14,7 +16,71 @@ pub trait Aggregator3Tdim {
     type OutputValue;
 }
 
-pub struct Agg3 {}
+pub struct Agg3 {
+    range: NanoRange,
+    count: u64,
+    min: f32,
+    max: f32,
+    sum: f32,
+    sumc: u64,
+}
+
+impl Agg3 {
+    fn new(range: NanoRange) -> Self {
+        Self {
+            range,
+            count: 0,
+            min: f32::MAX,
+            max: f32::MIN,
+            sum: f32::NAN,
+            sumc: 0,
+        }
+    }
+
+    fn ingest(&mut self, item: &mut MinMaxAvgScalarEventBatch) {
+        for i1 in 0..item.tss.len() {
+            let ts = item.tss[i1];
+            if ts < self.range.beg {
+                continue;
+            } else if ts >= self.range.end {
+                continue;
+            } else {
+                self.count += 1;
+                self.min = self.min.min(item.mins[i1]);
+                self.max = self.max.max(item.maxs[i1]);
+                let x = item.avgs[i1];
+                if x.is_nan() {
+                } else {
+                    if self.sum.is_nan() {
+                        self.sum = x;
+                    } else {
+                        self.sum += x;
+                    }
+                    self.sumc += 1;
+                }
+            }
+        }
+    }
+
+    fn result(self) -> Vec<MinMaxAvgScalarBinBatch> {
+        let min = if self.min == f32::MAX { f32::NAN } else { self.min };
+        let max = if self.max == f32::MIN { f32::NAN } else { self.max };
+        let avg = if self.sumc == 0 {
+            f32::NAN
+        } else {
+            self.sum / self.sumc as f32
+        };
+        let v = MinMaxAvgScalarBinBatch {
+            ts1s: vec![self.range.beg],
+            ts2s: vec![self.range.end],
+            counts: vec![self.count],
+            mins: vec![min],
+            maxs: vec![max],
+            avgs: vec![avg],
+        };
+        vec![v]
+    }
+}
 
 impl Aggregator3Tdim for Agg3 {
     type InputValue = MinMaxAvgScalarEventBatch;
@@ -23,17 +89,16 @@ impl Aggregator3Tdim for Agg3 {
 
 pub struct BinnedT3Stream {
     // TODO get rid of box:
-    inp: Pin<Box<dyn Stream<Item = MinMaxAvgScalarEventBatch> + Send>>,
+    inp: Pin<Box<dyn Stream<Item = Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error>> + Send>>,
     //aggtor: Option<<<SK as BinnedStreamKind>::XBinnedEvents as AggregatableTdim<SK>>::Aggregator>,
-    aggtor: Option<()>,
+    aggtor: Option<Agg3>,
     spec: BinnedRange,
     curbin: u32,
     inp_completed: bool,
     all_bins_emitted: bool,
     range_complete_observed: bool,
     range_complete_emitted: bool,
-    //left: Option<Poll<Option<Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>>>>,
-    left: Option<()>,
+    left: Option<Poll<Option<Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error>>>>,
     errored: bool,
     completed: bool,
     tmp_agg_results: VecDeque<MinMaxAvgScalarBinBatch>,
@@ -42,13 +107,12 @@ pub struct BinnedT3Stream {
 impl BinnedT3Stream {
     pub fn new<S>(inp: S, spec: BinnedRange) -> Self
     where
-        S: Stream<Item = MinMaxAvgScalarEventBatch> + Send + 'static,
+        S: Stream<Item = Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error>> + Send + 'static,
     {
-        // TODO simplify here, get rid of numeric parameter:
         let range = spec.get_range(0);
         Self {
             inp: Box::pin(inp),
-            aggtor: None,
+            aggtor: Some(Agg3::new(range)),
             spec,
             curbin: 0,
             inp_completed: false,
@@ -59,6 +123,100 @@ impl BinnedT3Stream {
             errored: false,
             completed: false,
             tmp_agg_results: VecDeque::new(),
+        }
+    }
+
+    fn cur(
+        &mut self,
+        cx: &mut Context,
+    ) -> Poll<Option<Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error>>> {
+        if let Some(cur) = self.left.take() {
+            cur
+        } else if self.inp_completed {
+            Poll::Ready(None)
+        } else {
+            let inp_poll_span = span!(Level::TRACE, "into_t_inp_poll");
+            inp_poll_span.in_scope(|| self.inp.poll_next_unpin(cx))
+        }
+    }
+
+    fn cycle_current_bin(&mut self) {
+        self.curbin += 1;
+        let range = self.spec.get_range(self.curbin);
+        let ret = self
+            .aggtor
+            .replace(Agg3::new(range))
+            // TODO handle None case, or remove Option if Agg is always present
+            .unwrap()
+            .result();
+        self.tmp_agg_results = VecDeque::from(ret);
+        if self.curbin >= self.spec.count as u32 {
+            self.all_bins_emitted = true;
+        }
+    }
+
+    fn handle(
+        &mut self,
+        cur: Poll<Option<Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error>>>,
+    ) -> Option<Poll<Option<Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>, Error>>>> {
+        use Poll::*;
+        match cur {
+            Ready(Some(Ok(item))) => match item {
+                StreamItem::Log(item) => Some(Ready(Some(Ok(StreamItem::Log(item))))),
+                StreamItem::Stats(item) => Some(Ready(Some(Ok(StreamItem::Stats(item))))),
+                StreamItem::DataItem(item) => match item {
+                    RangeCompletableItem::RangeComplete => {
+                        self.range_complete_observed = true;
+                        None
+                    }
+                    RangeCompletableItem::Data(item) => {
+                        if self.all_bins_emitted {
+                            // Just drop the item because we will not emit anymore data.
+                            // Could also at least gather some stats.
+                            None
+                        } else {
+                            let ag = self.aggtor.as_mut().unwrap();
+                            if item.ends_before(ag.range.clone()) {
+                                None
+                            } else if item.starts_after(ag.range.clone()) {
+                                self.left =
+                                    Some(Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))))));
+                                self.cycle_current_bin();
+                                // TODO cycle_current_bin enqueues the bin, can I return here instead?
+                                None
+                            } else {
+                                let mut item = item;
+                                err::todo();
+                                // TODO ingest the data into Agg3
+                                let item = item;
+                                //if ag.ends_after(&item) {
+                                if item.ends_after(ag.range.clone()) {
+                                    self.left =
+                                        Some(Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))))));
+                                    self.cycle_current_bin();
+                                }
+                                // TODO cycle_current_bin enqueues the bin, can I return here instead?
+                                None
+                            }
+                        }
+                    }
+                },
+            },
+            Ready(Some(Err(e))) => {
+                self.errored = true;
+                Some(Ready(Some(Err(e))))
+            }
+            Ready(None) => {
+                self.inp_completed = true;
+                if self.all_bins_emitted {
+                    None
+                } else {
+                    self.cycle_current_bin();
+                    // TODO cycle_current_bin enqueues the bin, can I return here instead?
+                    None
+                }
+            }
+            Pending => Some(Pending),
         }
     }
 }
@@ -87,14 +245,11 @@ impl Stream for BinnedT3Stream {
                     continue 'outer;
                 }
             } else {
-                err::todo();
-                Pending
-                // TODO `cur` and `handle` are not yet taken over from binnedt.rs
-                /*let cur = self.cur(cx);
+                let cur = self.cur(cx);
                 match self.handle(cur) {
                     Some(item) => item,
                     None => continue 'outer,
-                }*/
+                }
             };
         }
     }

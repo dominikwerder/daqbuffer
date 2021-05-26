@@ -2,11 +2,12 @@ use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
 use crate::agg::AggregatableXdim1Bin;
-use crate::binned::{BinnedStreamKind, MakeBytesFrame, RangeCompletableItem};
+use crate::binned::{BinnedStreamKind, MakeBytesFrame, RangeCompletableItem, RangeOverlapInfo};
 use crate::frame::makeframe::make_frame;
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
 use netpod::log::*;
+use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;
 
@@ -253,5 +254,28 @@ where
 impl MakeBytesFrame for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error> {
     fn make_bytes_frame(&self) -> Result<Bytes, Error> {
         Ok(make_frame(self)?.freeze())
+    }
+}
+
+impl RangeOverlapInfo for MinMaxAvgScalarEventBatch {
+    fn ends_before(&self, range: NanoRange) -> bool {
+        match self.tss.last() {
+            Some(&ts) => ts < range.beg,
+            None => true,
+        }
+    }
+
+    fn ends_after(&self, range: NanoRange) -> bool {
+        match self.tss.last() {
+            Some(&ts) => ts >= range.end,
+            None => panic!(),
+        }
+    }
+
+    fn starts_after(&self, range: NanoRange) -> bool {
+        match self.tss.first() {
+            Some(&ts) => ts >= range.end,
+            None => panic!(),
+        }
     }
 }

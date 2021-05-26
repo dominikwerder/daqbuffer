@@ -480,6 +480,12 @@ impl Collectable for MinMaxAvgScalarBinBatch {
     }
 }
 
+pub trait RangeOverlapInfo {
+    fn ends_before(&self, range: NanoRange) -> bool;
+    fn ends_after(&self, range: NanoRange) -> bool;
+    fn starts_after(&self, range: NanoRange) -> bool;
+}
+
 pub trait XBinnedEvents<SK>:
     Sized
     + Unpin
@@ -539,7 +545,8 @@ pub trait BinnedStreamKind: Clone + Unpin + Send + Sync + 'static
     type XBinnedEvents: XBinnedEvents<Self>;
     type TBinnedBins: TBinnedBins;
     type XBinnedToTBinnedAggregator;
-    type XBinnedToTBinnedStream;
+    type XBinnedToTBinnedStream: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::TBinnedBins>>, Error>>
+        + Send;
 
     fn new_binned_from_prebinned(
         &self,
