@@ -1,7 +1,7 @@
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedStreamKind, RangeCompletableItem};
+use crate::binned::{BinnedStreamKind, RangeCompletableItem, XBinnedEvents};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
-use crate::frame::makeframe::decode_frame;
+use crate::frame::makeframe::{decode_frame, FrameType};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -40,6 +40,8 @@ impl<T, SK> Stream for EventsFromFrames<T, SK>
 where
     T: AsyncRead + Unpin,
     SK: BinnedStreamKind,
+    // TODO see binned.rs better to express it on trait?
+    //Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>: FrameType,
 {
     type Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>;
 
@@ -57,7 +59,15 @@ where
                         StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
                         StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
                         StreamItem::DataItem(frame) => {
-                            match decode_frame::<<SK as BinnedStreamKind>::XBinnedEvents>(&frame) {
+                            match decode_frame::<
+                                Result<
+                                    StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>,
+                                    Error,
+                                >,
+                            >(
+                                &frame,
+                                <<SK as BinnedStreamKind>::XBinnedEvents as XBinnedEvents>::frame_type(),
+                            ) {
                                 Ok(item) => match item {
                                     Ok(item) => Ready(Some(Ok(item))),
                                     Err(e) => {

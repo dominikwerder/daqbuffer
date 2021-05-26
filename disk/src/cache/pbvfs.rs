@@ -76,7 +76,7 @@ where
                         StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
                         StreamItem::DataItem(item) => {
                             match decode_frame::<Result<StreamItem<RangeCompletableItem<SK::TBinnedBins>>, Error>>(
-                                &item,
+                                &item, <Result<StreamItem<RangeCompletableItem<SK::TBinnedBins>>, Error> as FrameType>::FRAME_TYPE_ID,
                             ) {
                                 Ok(Ok(item)) => Ready(Some(Ok(item))),
                                 Ok(Err(e)) => {

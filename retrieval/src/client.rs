@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
+use disk::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use disk::agg::streams::StreamItem;
-use disk::binned::BinnedScalarStreamItem;
+use disk::binned::RangeCompletableItem;
 use disk::cache::CacheUsage;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::frame::makeframe::FrameType;
@@ -91,7 +92,7 @@ pub async fn get_binned(
                         None
                     }
                     StreamItem::DataItem(frame) => {
-                        type ExpectedType = Result<StreamItem<BinnedScalarStreamItem>, Error>;
+                        type ExpectedType = Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>, Error>;
                         let type_id_exp = <ExpectedType as FrameType>::FRAME_TYPE_ID;
                         if frame.tyid() != type_id_exp {
                             error!("unexpected type id  got {}  exp {}", frame.tyid(), type_id_exp);

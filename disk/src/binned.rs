@@ -8,7 +8,7 @@ use crate::binned::scalar::binned_stream;
 use crate::binnedstream::{BinnedScalarStreamFromPreBinnedPatches, BoxedStream};
 use crate::cache::{BinnedQuery, MergedFromRemotes};
 use crate::channelconfig::{extract_matching_config_entry, read_local_config};
-use crate::frame::makeframe::make_frame;
+use crate::frame::makeframe::{make_frame, FrameType};
 use crate::raw::EventsQuery;
 use bytes::Bytes;
 use chrono::{TimeZone, Utc};
@@ -332,7 +332,7 @@ where
 
 impl<T> Future for ReadPbv<T>
 where
-    T: ReadableFromFile,
+    T: ReadableFromFile + Unpin,
 {
     type Output = Result<StreamItem<RangeCompletableItem<T>>, Error>;
 
@@ -391,6 +391,45 @@ impl FilterFittingInside for MinMaxAvgScalarBinBatch {
     }
 }
 
+pub trait WithLen {
+    fn len(&self) -> usize;
+}
+
+impl WithLen for MinMaxAvgScalarEventBatch {
+    fn len(&self) -> usize {
+        self.tss.len()
+    }
+}
+
+impl WithLen for MinMaxAvgScalarBinBatch {
+    fn len(&self) -> usize {
+        self.ts1s.len()
+    }
+}
+
+pub trait WithTimestamps {
+    fn ts(&self, ix: usize) -> u64;
+}
+
+impl WithTimestamps for MinMaxAvgScalarEventBatch {
+    fn ts(&self, ix: usize) -> u64 {
+        self.tss[ix]
+    }
+}
+
+pub trait PushableIndex {
+    fn push_index(&mut self, src: &Self, ix: usize);
+}
+
+impl PushableIndex for MinMaxAvgScalarEventBatch {
+    fn push_index(&mut self, src: &Self, ix: usize) {
+        self.tss.push(src.tss[ix]);
+        self.mins.push(src.mins[ix]);
+        self.maxs.push(src.maxs[ix]);
+        self.avgs.push(src.avgs[ix]);
+    }
+}
+
 impl Collected for MinMaxAvgScalarEventBatch {
     // TODO for this case we don't have an expected number of events. Factor out into another trait?
     fn new(bin_count_exp: u32) -> Self {
@@ -415,8 +454,6 @@ impl Collectable for MinMaxAvgScalarEventBatch {
     }
 }
 
-pub trait TBinned: Send + Serialize + DeserializeOwned + Unpin + Collectable + AggregatableTdim<Output = Self> {}
-
 impl Collected for MinMaxAvgScalarBinBatch {
     fn new(bin_count_exp: u32) -> Self {
         MinMaxAvgScalarBinBatch::empty()
@@ -437,13 +474,20 @@ impl Collectable for MinMaxAvgScalarBinBatch {
 }
 
 pub trait XBinnedEvents:
-    Sized + Unpin + Send + Serialize + DeserializeOwned + Collectable + Collected + AggregatableTdim
+    Sized
+    + Unpin
+    + Send
+    + Serialize
+    + DeserializeOwned
+    + Collectable
+    + Collected
+    + AggregatableTdim
+    + WithLen
+    + WithTimestamps
+    + PushableIndex
 {
+    fn frame_type() -> u32;
 }
-
-impl XBinnedEvents for MinMaxAvgScalarEventBatch {}
-
-impl TBinnedBins for MinMaxAvgScalarBinBatch {}
 
 pub trait TBinnedBins:
     Sized
@@ -456,10 +500,27 @@ pub trait TBinnedBins:
     + ReadableFromFile
     + FilterFittingInside
     + AggregatableTdim2
+    + WithLen
 {
+    fn frame_type() -> u32;
 }
 
-pub trait BinnedStreamKind: Clone + Unpin + Send + Sync + 'static {
+impl XBinnedEvents for MinMaxAvgScalarEventBatch {
+    fn frame_type() -> u32 {
+        <Result<StreamItem<RangeCompletableItem<Self>>, Error> as FrameType>::FRAME_TYPE_ID
+    }
+}
+
+impl TBinnedBins for MinMaxAvgScalarBinBatch {
+    fn frame_type() -> u32 {
+        <Result<StreamItem<RangeCompletableItem<Self>>, Error> as FrameType>::FRAME_TYPE_ID
+    }
+}
+
+pub trait BinnedStreamKind: Clone + Unpin + Send + Sync + 'static
+// TODO would it be better to express it here?
+//where Result<StreamItem<RangeCompletableItem<Self::XBinnedEvents>>, Error>: FrameType,
+{
     type TBinnedStreamType: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::TBinnedBins>>, Error>>
         + Send
         + 'static;

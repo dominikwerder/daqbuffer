@@ -3,6 +3,7 @@ use crate::agg::streams::StreamItem;
 use crate::binned::{BinnedStreamKind, BinnedStreamRes, RangeCompletableItem};
 use crate::binnedstream::BoxedStream;
 use crate::cache::BinnedQuery;
+use crate::frame::makeframe::FrameType;
 use crate::raw::EventsQuery;
 use err::Error;
 use futures_core::Stream;

@@ -1,8 +1,9 @@
 use crate::spawn_test_hosts;
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
+use disk::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use disk::agg::streams::StreamItem;
-use disk::binned::BinnedScalarStreamItem;
+use disk::binned::RangeCompletableItem;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::streamlog::Streamlog;
 use err::Error;
@@ -162,7 +163,7 @@ where
                         None
                     }
                     StreamItem::DataItem(frame) => {
-                        type ExpectedType = Result<StreamItem<BinnedScalarStreamItem>, Error>;
+                        type ExpectedType = Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>, Error>;
                         match bincode::deserialize::<ExpectedType>(frame.buf()) {
                             Ok(item) => match item {
                                 Ok(item) => match item {

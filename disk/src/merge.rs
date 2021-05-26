@@ -1,7 +1,7 @@
 use crate::agg::binnedt::AggregatableTdim;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::streams::{Collectable, Collected, StatsItem, StreamItem};
-use crate::binned::{BinnedStreamKind, RangeCompletableItem};
+use crate::binned::{BinnedStreamKind, PushableIndex, RangeCompletableItem, WithLen, WithTimestamps};
 use crate::streamlog::LogItem;
 use err::Error;
 use futures_core::Stream;
@@ -166,12 +166,12 @@ where
                         for i1 in 0..self.inps.len() {
                             if let MergedCurVal::Val(val) = &self.current[i1] {
                                 let u = self.ixs[i1];
-                                if u >= val.tss.len() {
+                                if u >= val.len() {
                                     self.ixs[i1] = 0;
                                     self.current[i1] = MergedCurVal::None;
                                     continue 'outer;
                                 } else {
-                                    let ts = val.tss[u];
+                                    let ts = val.ts(u);
                                     if ts < lowest_ts {
                                         lowest_ix = i1;
                                         lowest_ts = ts;
@@ -180,40 +180,56 @@ where
                             }
                         }
                         if lowest_ix == usize::MAX {
-                            if self.batch.tss.len() != 0 {
+                            if self.batch.len() != 0 {
                                 //let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
                                 //let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
                                 let emp = <<SK as BinnedStreamKind>::XBinnedEvents as Collected>::new(0);
                                 let ret = std::mem::replace(&mut self.batch, emp);
                                 self.data_emit_complete = true;
-                                Ready(Some(Ok(StreamItem::DataItem(ret))))
+                                Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
                             } else {
                                 self.data_emit_complete = true;
                                 continue 'outer;
                             }
                         } else {
                             assert!(lowest_ts >= self.ts_last_emit);
+                            let emp = <<SK as BinnedStreamKind>::XBinnedEvents as Collected>::new(0);
+                            let mut local_batch = std::mem::replace(&mut self.batch, emp);
                             self.ts_last_emit = lowest_ts;
-                            self.batch.tss.push(lowest_ts);
                             let rix = self.ixs[lowest_ix];
-                            let z = match &self.current[lowest_ix] {
+                            match &self.current[lowest_ix] {
+                                MergedCurVal::Val(val) => {
+                                    local_batch.push_index(val, rix);
+                                }
+                                MergedCurVal::None => panic!(),
+                                MergedCurVal::Finish => panic!(),
+                            }
+                            self.batch = local_batch;
+                            self.ixs[lowest_ix] += 1;
+                            let curlen = match &self.current[lowest_ix] {
+                                MergedCurVal::Val(val) => val.len(),
+                                MergedCurVal::None => panic!(),
+                                MergedCurVal::Finish => panic!(),
+                            };
+                            if self.ixs[lowest_ix] >= curlen {
+                                self.ixs[lowest_ix] = 0;
+                                self.current[lowest_ix] = MergedCurVal::None;
+                            }
+                            //self.batch.tss.push(lowest_ts);
+                            /*let z = match &self.current[lowest_ix] {
                                 MergedCurVal::Val(k) => (k.mins[rix], k.maxs[rix], k.avgs[rix], k.tss.len()),
                                 _ => panic!(),
                             };
                             self.batch.mins.push(z.0);
                             self.batch.maxs.push(z.1);
                             self.batch.avgs.push(z.2);
-                            self.ixs[lowest_ix] += 1;
-                            if self.ixs[lowest_ix] >= z.3 {
-                                self.ixs[lowest_ix] = 0;
-                                self.current[lowest_ix] = MergedCurVal::None;
-                            }
-                            if self.batch.tss.len() >= self.batch_size {
+                            */
+                            if self.batch.len() >= self.batch_size {
                                 //let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
                                 //let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
                                 let emp = <<SK as BinnedStreamKind>::XBinnedEvents as Collected>::new(0);
                                 let ret = std::mem::replace(&mut self.batch, emp);
-                                Ready(Some(Ok(StreamItem::DataItem(ret))))
+                                Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
                             } else {
                                 continue 'outer;
                             }

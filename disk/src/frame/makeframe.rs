@@ -1,7 +1,7 @@
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
-use crate::binned::RangeCompletableItem;
+use crate::binned::{RangeCompletableItem, XBinnedEvents};
 use crate::frame::inmem::InMemoryFrame;
 use crate::raw::EventQueryJsonStringFrame;
 use bytes::{BufMut, BytesMut};
@@ -76,18 +76,17 @@ pub fn make_term_frame() -> BytesMut {
     buf
 }
 
-pub fn decode_frame<FT>(frame: &InMemoryFrame) -> Result<FT, Error>
+pub fn decode_frame<T>(frame: &InMemoryFrame, frame_type: u32) -> Result<T, Error>
 where
-    FT: FrameType + DeserializeOwned,
+    T: DeserializeOwned,
 {
     if frame.encid() != 0x12121212 {
         return Err(Error::with_msg(format!("unknown encoder id {:?}", frame)));
     }
-    if frame.tyid() != FT::FRAME_TYPE_ID {
+    if frame.tyid() != frame_type {
         return Err(Error::with_msg(format!(
             "type id mismatch expect {}  found {:?}",
-            FT::FRAME_TYPE_ID,
-            frame
+            frame_type, frame
         )));
     }
     if frame.len() as usize != frame.buf().len() {

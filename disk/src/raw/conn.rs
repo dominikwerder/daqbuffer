@@ -8,7 +8,7 @@ use crate::channelconfig::{extract_matching_config_entry, read_local_config};
 use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventChunkerConf;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
-use crate::frame::makeframe::{decode_frame, make_frame, make_term_frame};
+use crate::frame::makeframe::{decode_frame, make_frame, make_term_frame, FrameType};
 use crate::raw::{EventQueryJsonStringFrame, EventsQuery};
 use err::Error;
 use futures_util::StreamExt;
@@ -111,7 +111,8 @@ async fn events_conn_handler_inner_try(
         error!("missing command frame");
         return Err((Error::with_msg("missing command frame"), netout))?;
     }
-    let qitem: EventQueryJsonStringFrame = match decode_frame(&frames[0]) {
+    let frame_type = <EventQueryJsonStringFrame as FrameType>::FRAME_TYPE_ID;
+    let qitem: EventQueryJsonStringFrame = match decode_frame(&frames[0], frame_type) {
         Ok(k) => k,
         Err(e) => return Err((e, netout).into()),
     };
