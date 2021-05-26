@@ -37,7 +37,7 @@ impl Agg3 {
         }
     }
 
-    fn ingest(&mut self, item: &mut MinMaxAvgScalarEventBatch) {
+    fn ingest(&mut self, item: &MinMaxAvgScalarEventBatch) {
         for i1 in 0..item.tss.len() {
             let ts = item.tss[i1];
             if ts < self.range.beg {
@@ -185,11 +185,7 @@ impl BinnedT3Stream {
                                 // TODO cycle_current_bin enqueues the bin, can I return here instead?
                                 None
                             } else {
-                                let mut item = item;
-                                err::todo();
-                                // TODO ingest the data into Agg3
-                                let item = item;
-                                //if ag.ends_after(&item) {
+                                ag.ingest(&item);
                                 if item.ends_after(ag.range.clone()) {
                                     self.left =
                                         Some(Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))))));

@@ -1,6 +1,6 @@
 use crate::agg::binnedt::AggregatableTdim;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
-use crate::agg::streams::{Collectable, Collected, StatsItem, StreamItem};
+use crate::agg::streams::{Appendable, Collectable, Collected, StatsItem, StreamItem};
 use crate::binned::{BinnedStreamKind, PushableIndex, RangeCompletableItem, WithLen, WithTimestamps};
 use crate::streamlog::LogItem;
 use err::Error;
@@ -47,7 +47,7 @@ where
             ixs: vec![0; n],
             errored: false,
             completed: false,
-            batch: <<SK as BinnedStreamKind>::XBinnedEvents as Collected>::new(0),
+            batch: <<SK as BinnedStreamKind>::XBinnedEvents as Appendable>::empty(),
             ts_last_emit: 0,
             range_complete_observed: vec![false; n],
             range_complete_observed_all: false,
@@ -183,7 +183,7 @@ where
                             if self.batch.len() != 0 {
                                 //let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
                                 //let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
-                                let emp = <<SK as BinnedStreamKind>::XBinnedEvents as Collected>::new(0);
+                                let emp = <<SK as BinnedStreamKind>::XBinnedEvents as Appendable>::empty();
                                 let ret = std::mem::replace(&mut self.batch, emp);
                                 self.data_emit_complete = true;
                                 Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
@@ -193,7 +193,7 @@ where
                             }
                         } else {
                             assert!(lowest_ts >= self.ts_last_emit);
-                            let emp = <<SK as BinnedStreamKind>::XBinnedEvents as Collected>::new(0);
+                            let emp = <<SK as BinnedStreamKind>::XBinnedEvents as Appendable>::empty();
                             let mut local_batch = std::mem::replace(&mut self.batch, emp);
                             self.ts_last_emit = lowest_ts;
                             let rix = self.ixs[lowest_ix];
@@ -227,7 +227,7 @@ where
                             if self.batch.len() >= self.batch_size {
                                 //let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
                                 //let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
-                                let emp = <<SK as BinnedStreamKind>::XBinnedEvents as Collected>::new(0);
+                                let emp = <<SK as BinnedStreamKind>::XBinnedEvents as Appendable>::empty();
                                 let ret = std::mem::replace(&mut self.batch, emp);
                                 Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
                             } else {

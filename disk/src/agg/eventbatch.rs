@@ -1,8 +1,8 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
-use crate::agg::streams::StreamItem;
+use crate::agg::streams::{Appendable, StreamItem};
 use crate::agg::AggregatableXdim1Bin;
-use crate::binned::{BinnedStreamKind, MakeBytesFrame, RangeCompletableItem, RangeOverlapInfo};
+use crate::binned::{BinnedStreamKind, MakeBytesFrame, RangeCompletableItem, RangeOverlapInfo, WithTimestamps};
 use crate::frame::makeframe::make_frame;
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
@@ -277,5 +277,18 @@ impl RangeOverlapInfo for MinMaxAvgScalarEventBatch {
             Some(&ts) => ts >= range.end,
             None => panic!(),
         }
+    }
+}
+
+impl Appendable for MinMaxAvgScalarEventBatch {
+    fn empty() -> Self {
+        Self::empty()
+    }
+
+    fn append(&mut self, src: &Self) {
+        self.tss.extend_from_slice(&src.tss);
+        self.mins.extend_from_slice(&src.mins);
+        self.maxs.extend_from_slice(&src.maxs);
+        self.avgs.extend_from_slice(&src.avgs);
     }
 }

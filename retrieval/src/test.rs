@@ -44,11 +44,11 @@ fn test_cluster() -> Cluster {
 }
 
 #[test]
-fn get_binned() {
-    taskrun::run(get_binned_0_inner()).unwrap();
+fn get_binned_binary() {
+    taskrun::run(get_binned_binary_inner()).unwrap();
 }
 
-async fn get_binned_0_inner() -> Result<(), Error> {
+async fn get_binned_binary_inner() -> Result<(), Error> {
     let cluster = test_cluster();
     let _hosts = spawn_test_hosts(cluster.clone());
     get_binned_channel(
@@ -115,6 +115,7 @@ where
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(uri)
+        .header("accept", "application/octet-stream")
         .body(Body::empty())?;
     let client = hyper::Client::new();
     let res = client.request(req).await?;

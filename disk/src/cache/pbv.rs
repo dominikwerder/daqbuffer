@@ -1,5 +1,5 @@
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
-use crate::agg::streams::{Collectable, Collected, StreamItem};
+use crate::agg::streams::{Appendable, Collectable, Collected, StreamItem};
 use crate::binned::RangeCompletableItem::RangeComplete;
 use crate::binned::{BinnedStreamKind, RangeCompletableItem};
 use crate::cache::pbvfs::PreBinnedScalarValueFetchedStream;
@@ -131,8 +131,7 @@ where
             errored: false,
             completed: false,
             streamlog: Streamlog::new(node_config.ix as u32),
-            // TODO refactor usage of parameter
-            values: <<SK as BinnedStreamKind>::TBinnedBins as Collected>::new(0),
+            values: <<SK as BinnedStreamKind>::TBinnedBins as Appendable>::empty(),
             write_fut: None,
             read_cache_fut: None,
             stream_kind,
@@ -310,6 +309,7 @@ where
                 } else {
                     match self.query.cache_usage {
                         super::CacheUsage::Use | super::CacheUsage::Recreate => {
+                            err::todo();
                             let msg = format!(
                                 "write cache file  query: {:?}  bin count: {}",
                                 self.query.patch,
@@ -320,8 +320,7 @@ where
                             self.streamlog.append(Level::INFO, msg);
                             let values = std::mem::replace(
                                 &mut self.values,
-                                // Do not use expectation on the number of bins here:
-                                <<SK as BinnedStreamKind>::TBinnedBins as Collected>::new(0),
+                                <<SK as BinnedStreamKind>::TBinnedBins as Appendable>::empty(),
                             );
                             let fut = super::write_pb_cache_min_max_avg_scalar(
                                 values,
@@ -351,10 +350,7 @@ where
                                     continue 'outer;
                                 }
                                 RangeCompletableItem::Data(item) => {
-                                    // TODO need trait Appendable which simply appends to the same type, so that I can
-                                    // write later the whole batch of numbers in one go.
-                                    err::todo();
-                                    //item.append_to(&mut self.values);
+                                    self.values.append(&item);
                                     Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))))
                                 }
                             },

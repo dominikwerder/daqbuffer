@@ -3,7 +3,7 @@ use crate::agg::binnedt2::AggregatableTdim2;
 use crate::agg::binnedt3::{Agg3, BinnedT3Stream};
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatchAggregator};
-use crate::agg::streams::{Collectable, Collected, StreamItem, ToJsonResult};
+use crate::agg::streams::{Appendable, Collectable, Collected, StreamItem, ToJsonResult};
 use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
 use crate::binned::scalar::binned_stream;
 use crate::binnedstream::{BinnedScalarStreamFromPreBinnedPatches, BoxedStream};
@@ -71,6 +71,20 @@ impl Collected for MinMaxAvgScalarBinBatchCollected {
 
     fn timed_out(&mut self, k: bool) {
         self.timed_out = k;
+    }
+}
+
+impl Collectable for MinMaxAvgScalarBinBatch {
+    type Collected = MinMaxAvgScalarBinBatchCollected;
+
+    fn append_to(&self, collected: &mut Self::Collected) {
+        let batch = &mut collected.batch;
+        batch.ts1s.extend_from_slice(&self.ts1s);
+        batch.ts2s.extend_from_slice(&self.ts2s);
+        batch.counts.extend_from_slice(&self.counts);
+        batch.mins.extend_from_slice(&self.mins);
+        batch.maxs.extend_from_slice(&self.maxs);
+        batch.avgs.extend_from_slice(&self.avgs);
     }
 }
 
@@ -437,49 +451,6 @@ impl PushableIndex for MinMaxAvgScalarEventBatch {
     }
 }
 
-impl Collected for MinMaxAvgScalarEventBatch {
-    // TODO for this case we don't have an expected number of events. Factor out into another trait?
-    fn new(bin_count_exp: u32) -> Self {
-        // TODO factor out the concept of RangeComplete into another trait layer:
-        MinMaxAvgScalarEventBatch::empty()
-    }
-
-    fn timed_out(&mut self, k: bool) {}
-}
-
-impl Collectable for MinMaxAvgScalarEventBatch {
-    type Collected = MinMaxAvgScalarEventBatch;
-
-    fn append_to(&self, collected: &mut Self::Collected) {
-        // TODO create separate traits for different concerns:
-        // Some occasion I want to just append.
-        // In other case, I need to collect also timeout flag, missing bin count and such.
-        collected.tss.extend_from_slice(&self.tss);
-        collected.mins.extend_from_slice(&self.mins);
-        collected.maxs.extend_from_slice(&self.maxs);
-        collected.avgs.extend_from_slice(&self.avgs);
-    }
-}
-
-impl Collected for MinMaxAvgScalarBinBatch {
-    fn new(bin_count_exp: u32) -> Self {
-        MinMaxAvgScalarBinBatch::empty()
-    }
-    fn timed_out(&mut self, k: bool) {}
-}
-
-impl Collectable for MinMaxAvgScalarBinBatch {
-    type Collected = MinMaxAvgScalarBinBatch;
-    fn append_to(&self, collected: &mut Self::Collected) {
-        collected.ts1s.extend_from_slice(&self.ts1s);
-        collected.ts2s.extend_from_slice(&self.ts2s);
-        collected.counts.extend_from_slice(&self.counts);
-        collected.mins.extend_from_slice(&self.mins);
-        collected.maxs.extend_from_slice(&self.maxs);
-        collected.avgs.extend_from_slice(&self.avgs);
-    }
-}
-
 pub trait RangeOverlapInfo {
     fn ends_before(&self, range: NanoRange) -> bool;
     fn ends_after(&self, range: NanoRange) -> bool;
@@ -492,12 +463,11 @@ pub trait XBinnedEvents<SK>:
     + Send
     + Serialize
     + DeserializeOwned
-    + Collectable
-    + Collected
     + AggregatableTdim<SK>
     + WithLen
     + WithTimestamps
     + PushableIndex
+    + Appendable
 where
     SK: BinnedStreamKind,
 {
@@ -511,11 +481,11 @@ pub trait TBinnedBins:
     + Serialize
     + DeserializeOwned
     + Collectable
-    + Collected
     + ReadableFromFile
     + FilterFittingInside
     + AggregatableTdim2
     + WithLen
+    + Appendable
 {
     fn frame_type() -> u32;
 }
@@ -565,9 +535,8 @@ pub trait BinnedStreamKind: Clone + Unpin + Send + Sync + 'static
     ) -> Result<Self::TBinnedStreamType, Error>;
 
     fn xbinned_to_tbinned<S>(inp: S, spec: BinnedRange) -> Self::XBinnedToTBinnedStream
-/*where
-        S: Stream<Item = Result<StreamItem<RangeCompletableItem<<Self as BinnedStreamKind>::XBinnedEvents>>, Error>>
-            + Unpin*/;
+    where
+        S: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::XBinnedEvents>>, Error>> + Send + 'static;
 }
 
 #[derive(Clone)]
@@ -635,8 +604,11 @@ impl BinnedStreamKind for BinnedStreamKindScalar {
         Ok(BoxedStream::new(Box::pin(s))?)
     }
 
-    fn xbinned_to_tbinned<S>(inp: S, spec: BinnedRange) -> Self::XBinnedToTBinnedStream {
-        err::todoval()
+    fn xbinned_to_tbinned<S>(inp: S, spec: BinnedRange) -> Self::XBinnedToTBinnedStream
+    where
+        S: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::XBinnedEvents>>, Error>> + Send + 'static,
+    {
+        Self::XBinnedToTBinnedStream::new(inp, spec)
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
-use crate::agg::streams::{Bins, StreamItem};
+use crate::agg::streams::{Appendable, Bins, StreamItem};
 use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
 use crate::binned::{BinnedStreamKind, MakeBytesFrame, RangeCompletableItem};
 use crate::frame::makeframe::make_frame;
@@ -314,5 +314,20 @@ where
 impl MakeBytesFrame for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>, Error> {
     fn make_bytes_frame(&self) -> Result<Bytes, Error> {
         Ok(make_frame(self)?.freeze())
+    }
+}
+
+impl Appendable for MinMaxAvgScalarBinBatch {
+    fn empty() -> Self {
+        Self::empty()
+    }
+
+    fn append(&mut self, src: &Self) {
+        self.ts1s.extend_from_slice(&src.ts1s);
+        self.ts2s.extend_from_slice(&src.ts2s);
+        self.counts.extend_from_slice(&src.counts);
+        self.mins.extend_from_slice(&src.mins);
+        self.maxs.extend_from_slice(&src.maxs);
+        self.avgs.extend_from_slice(&src.avgs);
     }
 }

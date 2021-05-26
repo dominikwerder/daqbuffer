@@ -22,6 +22,8 @@ pub trait Bins {
     fn bin_count(&self) -> u32;
 }
 
+// TODO this is meant for bins, count them, collect range-complete, and deliver these
+// information also to the client.
 pub trait Collected {
     fn new(bin_count_exp: u32) -> Self;
     fn timed_out(&mut self, k: bool);
@@ -35,4 +37,9 @@ pub trait Collectable {
 pub trait ToJsonResult {
     type Output;
     fn to_json_result(&self) -> Result<Self::Output, Error>;
+}
+
+pub trait Appendable {
+    fn empty() -> Self;
+    fn append(&mut self, src: &Self);
 }

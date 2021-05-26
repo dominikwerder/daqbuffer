@@ -61,7 +61,10 @@ async fn events_conn_handler_inner(
                 make_frame::<Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error>>(&Err(ce.err))?;
             match ce.netout.write_all(&buf).await {
                 Ok(_) => (),
-                Err(e) => return Err(e)?,
+                Err(e) => {
+                    error!("events_conn_handler_inner sees: {:?}", e);
+                    return Err(e)?;
+                }
             }
         }
     }
