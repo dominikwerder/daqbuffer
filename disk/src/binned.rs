@@ -1,15 +1,15 @@
-use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim, IntoBinnedT};
+use crate::agg::binnedt::AggregatableTdim;
 use crate::agg::binnedt2::AggregatableTdim2;
 use crate::agg::binnedt3::{Agg3, BinnedT3Stream};
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
-use crate::agg::scalarbinbatch::{MinMaxAvgScalarBinBatch, MinMaxAvgScalarBinBatchAggregator};
+use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::{Appendable, Collectable, Collected, StreamItem, ToJsonResult};
-use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
+use crate::agg::{Fits, FitsInside};
 use crate::binned::scalar::binned_stream;
 use crate::binnedstream::{BinnedScalarStreamFromPreBinnedPatches, BoxedStream};
 use crate::cache::{BinnedQuery, MergedFromRemotes};
-use crate::channelconfig::{extract_matching_config_entry, read_local_config};
-use crate::frame::makeframe::{make_frame, FrameType};
+use crate::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
+use crate::frame::makeframe::FrameType;
 use crate::raw::EventsQuery;
 use bytes::Bytes;
 use chrono::{TimeZone, Utc};
@@ -23,6 +23,7 @@ use netpod::{
 use num_traits::Zero;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize, Serializer};
+use serde_json::Map;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -53,15 +54,6 @@ impl MinMaxAvgScalarBinBatchCollected {
             bin_count_exp,
         }
     }
-}
-
-fn append_to_min_max_avg_scalar_bin_batch(batch: &mut MinMaxAvgScalarBinBatch, item: &mut MinMaxAvgScalarBinBatch) {
-    batch.ts1s.append(&mut item.ts1s);
-    batch.ts2s.append(&mut item.ts2s);
-    batch.counts.append(&mut item.counts);
-    batch.mins.append(&mut item.mins);
-    batch.maxs.append(&mut item.maxs);
-    batch.avgs.append(&mut item.avgs);
 }
 
 impl Collected for MinMaxAvgScalarBinBatchCollected {
@@ -162,20 +154,29 @@ pub async fn binned_bytes_for_http(
     query: &BinnedQuery,
 ) -> Result<BinnedBytesStreamBox, Error> {
     let channel_config = read_local_config(&query.channel(), &node_config.node).await?;
-    let entry = extract_matching_config_entry(query.range(), &channel_config)?;
-    info!("binned_bytes_for_http  found config entry {:?}", entry);
-    match query.agg_kind() {
-        AggKind::DimXBins1 => {
-            let res = binned_stream(node_config, query, BinnedStreamKindScalar::new()).await?;
-            let ret = BinnedBytesForHttpStream::new(res.binned_stream);
-            Ok(Box::pin(ret))
+    match extract_matching_config_entry(query.range(), &channel_config)? {
+        MatchingConfigEntry::None => {
+            // TODO can I use the same binned_stream machinery to construct the matching empty result?
+            let s = futures_util::stream::empty();
+            Ok(Box::pin(s))
         }
-        AggKind::DimXBinsN(_) => {
-            // TODO pass a different stream kind here:
-            err::todo();
-            let res = binned_stream(node_config, query, BinnedStreamKindScalar::new()).await?;
-            let ret = BinnedBytesForHttpStream::new(res.binned_stream);
-            Ok(Box::pin(ret))
+        MatchingConfigEntry::Multiple => Err(Error::with_msg("multiple config entries found"))?,
+        MatchingConfigEntry::Entry(entry) => {
+            info!("binned_bytes_for_http  found config entry {:?}", entry);
+            match query.agg_kind() {
+                AggKind::DimXBins1 => {
+                    let res = binned_stream(node_config, query, BinnedStreamKindScalar::new()).await?;
+                    let ret = BinnedBytesForHttpStream::new(res.binned_stream);
+                    Ok(Box::pin(ret))
+                }
+                AggKind::DimXBinsN(_) => {
+                    // TODO pass a different stream kind here:
+                    err::todo();
+                    let res = binned_stream(node_config, query, BinnedStreamKindScalar::new()).await?;
+                    let ret = BinnedBytesForHttpStream::new(res.binned_stream);
+                    Ok(Box::pin(ret))
+                }
+            }
         }
     }
 }
@@ -285,7 +286,7 @@ where
                         StreamItem::Stats(_) => {}
                         StreamItem::DataItem(item) => match item {
                             RangeCompletableItem::RangeComplete => {}
-                            RangeCompletableItem::Data(mut item) => {
+                            RangeCompletableItem::Data(item) => {
                                 item.append_to(&mut main_item);
                                 i1 += 1;
                             }
@@ -317,16 +318,36 @@ pub struct BinnedJsonResult {
 
 pub async fn binned_json(node_config: &NodeConfigCached, query: &BinnedQuery) -> Result<serde_json::Value, Error> {
     let channel_config = read_local_config(&query.channel(), &node_config.node).await?;
-    let entry = extract_matching_config_entry(query.range(), &channel_config)?;
-    info!("binned_json  found config entry {:?}", entry);
-
-    // TODO create the matching stream based on AggKind and ConfigEntry.
-
-    let t = binned_stream(node_config, query, BinnedStreamKindScalar::new()).await?;
-    // TODO need to collect also timeout, number of missing expected bins, ...
-    let collected = collect_all(t.binned_stream, t.range.count as u32).await?;
-    let ret = ToJsonResult::to_json_result(&collected)?;
-    Ok(serde_json::to_value(ret)?)
+    match extract_matching_config_entry(query.range(), &channel_config)? {
+        MatchingConfigEntry::None => {
+            // TODO can I use the same binned_stream machinery to construct the matching empty result?
+            Ok(serde_json::Value::Object(Map::new()))
+        }
+        MatchingConfigEntry::Multiple => Err(Error::with_msg("multiple config entries found"))?,
+        MatchingConfigEntry::Entry(entry) => {
+            info!("binned_json  found config entry {:?}", entry);
+            match query.agg_kind() {
+                AggKind::DimXBins1 => {
+                    let res = binned_stream(node_config, query, BinnedStreamKindScalar::new()).await?;
+                    //let ret = BinnedBytesForHttpStream::new(res.binned_stream);
+                    //Ok(Box::pin(ret))
+                    // TODO need to collect also timeout, number of missing expected bins, ...
+                    let collected = collect_all(res.binned_stream, res.range.count as u32).await?;
+                    let ret = ToJsonResult::to_json_result(&collected)?;
+                    Ok(serde_json::to_value(ret)?)
+                }
+                AggKind::DimXBinsN(_xbincount) => {
+                    // TODO pass a different stream kind here:
+                    err::todo();
+                    let res = binned_stream(node_config, query, BinnedStreamKindScalar::new()).await?;
+                    // TODO need to collect also timeout, number of missing expected bins, ...
+                    let collected = collect_all(res.binned_stream, res.range.count as u32).await?;
+                    let ret = ToJsonResult::to_json_result(&collected)?;
+                    Ok(serde_json::to_value(ret)?)
+                }
+            }
+        }
+    }
 }
 
 pub struct ReadPbv<T>
@@ -586,6 +607,7 @@ impl BinnedStreamKind for BinnedStreamKindScalar {
             query.cache_usage().clone(),
             node_config,
             query.disk_stats_every().clone(),
+            query.report_error(),
             self.clone(),
         )?;
         Ok(BoxedStream::new(Box::pin(s))?)
@@ -610,27 +632,4 @@ impl BinnedStreamKind for BinnedStreamKindScalar {
     {
         Self::XBinnedToTBinnedStream::new(inp, spec)
     }
-}
-
-// TODO this code is needed somewhere:
-fn pbv_handle_fut2_item(
-    item: StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>,
-) -> Option<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>> {
-    // TODO make this code work in this context:
-    // Do I need more parameters here?
-    /*Ok(item) => match item {
-        StreamItem::DataItem(item) => match item {
-            PreBinnedScalarItem::Batch(batch) => {
-                self.values.ts1s.extend(batch.ts1s.iter());
-                self.values.ts2s.extend(batch.ts2s.iter());
-                self.values.counts.extend(batch.counts.iter());
-                self.values.mins.extend(batch.mins.iter());
-                self.values.maxs.extend(batch.maxs.iter());
-                self.values.avgs.extend(batch.avgs.iter());
-                StreamItem::DataItem(PreBinnedScalarItem::Batch(batch))
-            }
-        },
-    },*/
-    err::todo();
-    None
 }

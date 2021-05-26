@@ -1,7 +1,7 @@
 use crate::agg::streams::StreamItem;
 use crate::binned::{BinnedStreamKind, RangeCompletableItem, XBinnedEvents};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
-use crate::frame::makeframe::{decode_frame, FrameType};
+use crate::frame::makeframe::decode_frame;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -18,7 +18,7 @@ where
     inp: InMemoryFrameAsyncReadStream<T>,
     errored: bool,
     completed: bool,
-    stream_kind: SK,
+    _stream_kind: SK,
 }
 
 impl<T, SK> EventsFromFrames<T, SK>
@@ -31,7 +31,7 @@ where
             inp,
             errored: false,
             completed: false,
-            stream_kind,
+            _stream_kind: stream_kind,
         }
     }
 }

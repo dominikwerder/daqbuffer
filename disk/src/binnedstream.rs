@@ -22,7 +22,7 @@ where
                 + Send,
         >,
     >,
-    stream_kind: BK,
+    _stream_kind: BK,
 }
 
 impl<BK> BinnedScalarStreamFromPreBinnedPatches<BK>
@@ -38,6 +38,7 @@ where
         cache_usage: CacheUsage,
         node_config: &NodeConfigCached,
         disk_stats_every: ByteSize,
+        report_error: bool,
         stream_kind: BK,
     ) -> Result<Self, Error> {
         let patches: Vec<_> = patch_it.collect();
@@ -61,6 +62,7 @@ where
                         agg_kind.clone(),
                         cache_usage.clone(),
                         disk_stats_every.clone(),
+                        report_error,
                     );
                     let ret: Pin<Box<dyn Stream<Item = _> + Send>> =
                         match PreBinnedScalarValueFetchedStream::new(&query, &node_config, &stream_kind) {
@@ -104,7 +106,7 @@ where
         let inp = crate::agg::binnedt2::IntoBinnedT::into_binned_t(inp, range);
         Ok(Self {
             inp: Box::pin(inp),
-            stream_kind,
+            _stream_kind: stream_kind,
         })
     }
 }

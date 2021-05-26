@@ -1,9 +1,7 @@
-use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
-use crate::agg::streams::{Appendable, Collectable, Collected, StreamItem};
-use crate::binned::RangeCompletableItem::RangeComplete;
-use crate::binned::{BinnedStreamKind, RangeCompletableItem};
+use crate::agg::streams::{Appendable, StreamItem};
+use crate::binned::{BinnedStreamKind, RangeCompletableItem, WithLen};
 use crate::cache::pbvfs::PreBinnedScalarValueFetchedStream;
-use crate::cache::{CacheFileDesc, MergedFromRemotes, PreBinnedQuery};
+use crate::cache::{CacheFileDesc, MergedFromRemotes, PreBinnedQuery, WrittenPbCache};
 use crate::frame::makeframe::{make_frame, FrameType};
 use crate::raw::EventsQuery;
 use crate::streamlog::Streamlog;
@@ -96,7 +94,7 @@ where
     completed: bool,
     streamlog: Streamlog,
     values: <SK as BinnedStreamKind>::TBinnedBins,
-    write_fut: Option<Pin<Box<dyn Future<Output = Result<(), Error>> + Send>>>,
+    write_fut: Option<Pin<Box<dyn Future<Output = Result<WrittenPbCache, Error>> + Send>>>,
     read_cache_fut: Option<
         Pin<
             Box<
@@ -200,6 +198,7 @@ where
                 let q2 = self.query.clone();
                 let disk_stats_every = self.query.disk_stats_every.clone();
                 let stream_kind = self.stream_kind.clone();
+                let report_error = self.query.report_error();
                 move |patch| {
                     let query = PreBinnedQuery {
                         patch,
@@ -207,6 +206,7 @@ where
                         agg_kind: q2.agg_kind.clone(),
                         cache_usage: q2.cache_usage.clone(),
                         disk_stats_every: disk_stats_every.clone(),
+                        report_error,
                     };
                     PreBinnedScalarValueFetchedStream::new(&query, &node_config, &stream_kind)
                 }
@@ -260,8 +260,9 @@ where
                         self.cache_written = true;
                         self.write_fut = None;
                         match item {
-                            Ok(()) => {
-                                self.streamlog.append(Level::INFO, format!("cache file written"));
+                            Ok(res) => {
+                                self.streamlog
+                                    .append(Level::INFO, format!("cache file written  bytes: {}", res.bytes));
                                 continue 'outer;
                             }
                             Err(e) => {
@@ -309,13 +310,10 @@ where
                 } else {
                     match self.query.cache_usage {
                         super::CacheUsage::Use | super::CacheUsage::Recreate => {
-                            err::todo();
                             let msg = format!(
                                 "write cache file  query: {:?}  bin count: {}",
                                 self.query.patch,
-                                //self.values.ts1s.len()
-                                // TODO create trait to extract number of bins from item:
-                                0
+                                self.values.len(),
                             );
                             self.streamlog.append(Level::INFO, msg);
                             let values = std::mem::replace(
@@ -373,7 +371,6 @@ where
                         match item {
                             Ok(file) => {
                                 self.read_from_cache = true;
-                                use crate::binned::ReadableFromFile;
                                 let fut = <<SK as BinnedStreamKind>::TBinnedBins as crate::binned::ReadableFromFile>::read_from_file(file)?;
                                 self.read_cache_fut = Some(Box::pin(fut));
                                 continue 'outer;

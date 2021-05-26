@@ -1,6 +1,4 @@
-use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
-use crate::agg::AggregatableXdim1Bin;
-use crate::binned::BinnedStreamKind;
+use crate::binned::WithLen;
 use crate::streamlog::LogItem;
 use err::Error;
 use netpod::EventDataReadStats;
@@ -39,7 +37,7 @@ pub trait ToJsonResult {
     fn to_json_result(&self) -> Result<Self::Output, Error>;
 }
 
-pub trait Appendable {
+pub trait Appendable: WithLen {
     fn empty() -> Self;
     fn append(&mut self, src: &Self);
 }

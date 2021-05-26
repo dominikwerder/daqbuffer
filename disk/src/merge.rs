@@ -1,6 +1,4 @@
-use crate::agg::binnedt::AggregatableTdim;
-use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
-use crate::agg::streams::{Appendable, Collectable, Collected, StatsItem, StreamItem};
+use crate::agg::streams::{Appendable, StatsItem, StreamItem};
 use crate::binned::{BinnedStreamKind, PushableIndex, RangeCompletableItem, WithLen, WithTimestamps};
 use crate::streamlog::LogItem;
 use err::Error;

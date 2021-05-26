@@ -268,10 +268,16 @@ pub async fn read_local_config(channel: &Channel, node: &Node) -> Result<Config,
     Ok(config.1)
 }
 
+pub enum MatchingConfigEntry<'a> {
+    None,
+    Multiple,
+    Entry(&'a ConfigEntry),
+}
+
 pub fn extract_matching_config_entry<'a>(
     range: &NanoRange,
     channel_config: &'a Config,
-) -> Result<&'a ConfigEntry, Error> {
+) -> Result<MatchingConfigEntry<'a>, Error> {
     let mut ixs = vec![];
     for i1 in 0..channel_config.entries.len() {
         let e1 = &channel_config.entries[i1];
@@ -287,11 +293,12 @@ pub fn extract_matching_config_entry<'a>(
         }
     }
     if ixs.len() == 0 {
-        return Err(Error::with_msg(format!("no config entries found")));
+        Ok(MatchingConfigEntry::None)
     } else if ixs.len() > 1 {
-        return Err(Error::with_msg(format!("too many config entries found: {}", ixs.len())));
+        Ok(MatchingConfigEntry::Multiple)
+    } else {
+        Ok(MatchingConfigEntry::Entry(&channel_config.entries[ixs[0]]))
     }
-    Ok(&channel_config.entries[ixs[0]])
 }
 
 #[cfg(test)]

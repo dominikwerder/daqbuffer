@@ -1,7 +1,7 @@
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedStreamKind, RangeCompletableItem, RangeOverlapInfo};
+use crate::binned::{RangeCompletableItem, RangeOverlapInfo};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;

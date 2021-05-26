@@ -1,6 +1,5 @@
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
-use crate::agg::AggregatableXdim1Bin;
 use crate::binned::RangeCompletableItem;
 use err::Error;
 use futures_core::Stream;

@@ -244,27 +244,33 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
 }
 
 async fn binned_binary(query: BinnedQuery, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("binned_binary");
     let ret = match disk::binned::binned_bytes_for_http(node_config, &query).await {
         Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, format!("desc-BINNED")))?,
         Err(e) => {
-            error!("fn binned: {:?}", e);
-            response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
+            if query.report_error() {
+                response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?
+            } else {
+                error!("fn binned_binary: {:?}", e);
+                response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
+            }
         }
     };
     Ok(ret)
 }
 
 async fn binned_json(query: BinnedQuery, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("binned_json");
     let ret = match disk::binned::binned_json(node_config, &query).await {
         Ok(val) => {
             let body = serde_json::to_string(&val)?;
             response(StatusCode::OK).body(Body::from(body))
         }?,
         Err(e) => {
-            error!("fn binned: {:?}", e);
-            response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
+            if query.report_error() {
+                response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?
+            } else {
+                error!("fn binned_json: {:?}", e);
+                response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
+            }
         }
     };
     Ok(ret)
@@ -291,8 +297,12 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
                 ),
             ))?,
             Err(e) => {
-                error!("fn prebinned: {:?}", e);
-                response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
+                if query.report_error() {
+                    response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?
+                } else {
+                    error!("fn prebinned: {:?}", e);
+                    response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
+                }
             }
         };
         Ok(ret)

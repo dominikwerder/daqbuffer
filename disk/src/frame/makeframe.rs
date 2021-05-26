@@ -1,7 +1,7 @@
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
-use crate::binned::{RangeCompletableItem, XBinnedEvents};
+use crate::binned::RangeCompletableItem;
 use crate::frame::inmem::InMemoryFrame;
 use crate::raw::EventQueryJsonStringFrame;
 use bytes::{BufMut, BytesMut};

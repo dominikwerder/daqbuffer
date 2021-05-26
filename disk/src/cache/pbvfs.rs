@@ -1,4 +1,3 @@
-use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
 use crate::binned::{BinnedStreamKind, RangeCompletableItem};
 use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead, PreBinnedQuery};
@@ -10,7 +9,6 @@ use futures_util::{pin_mut, FutureExt};
 use http::StatusCode;
 use netpod::log::*;
 use netpod::{NodeConfigCached, PerfOpts};
-use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -23,7 +21,7 @@ where
     res: Option<InMemoryFrameAsyncReadStream<HttpBodyAsAsyncRead>>,
     errored: bool,
     completed: bool,
-    stream_kind: BK,
+    _stream_kind: BK,
 }
 
 impl<BK> PreBinnedScalarValueFetchedStream<BK>
@@ -46,7 +44,7 @@ where
             res: None,
             errored: false,
             completed: false,
-            stream_kind: stream_kind.clone(),
+            _stream_kind: stream_kind.clone(),
         };
         Ok(ret)
     }

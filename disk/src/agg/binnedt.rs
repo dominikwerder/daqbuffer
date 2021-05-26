@@ -1,5 +1,4 @@
 use crate::agg::streams::StreamItem;
-use crate::agg::AggregatableXdim1Bin;
 use crate::binned::{BinnedStreamKind, RangeCompletableItem};
 use err::Error;
 use futures_core::Stream;
@@ -115,7 +114,7 @@ where
     fn cycle_current_bin(&mut self) {
         self.curbin += 1;
         let range = self.spec.get_range(self.curbin);
-        let ret = self
+        let _ret = self
             .aggtor
             .replace(
                 <<SK as BinnedStreamKind>::XBinnedEvents as AggregatableTdim<SK>>::aggregator_new_static(
@@ -125,8 +124,10 @@ where
             // TODO handle None case, or remove Option if Agg is always present
             .unwrap()
             .result();
-        //self.tmp_agg_results = VecDeque::from(ret);
+        // TODO retire this module
+        err::todo();
         self.tmp_agg_results = VecDeque::new();
+        //self.tmp_agg_results = VecDeque::from(ret);
         if self.curbin >= self.spec.count as u32 {
             self.all_bins_emitted = true;
         }
@@ -165,7 +166,8 @@ where
                                 // TODO cycle_current_bin enqueues the bin, can I return here instead?
                                 None
                             } else {
-                                let mut item = item;
+                                let item = item;
+                                // TODO can we retire this module?
                                 //ag.ingest(&mut item);
                                 ag.ingest(err::todoval());
                                 let item = item;

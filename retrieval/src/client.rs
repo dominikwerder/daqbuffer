@@ -50,7 +50,11 @@ pub async fn get_binned(
     let t1 = Utc::now();
     let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
     let uri = format!(
-        "http://{}:{}/api/4/binned?channel_backend={}&channel_name={}&beg_date={}&end_date={}&bin_count={}&cache_usage={}&disk_stats_every_kb={}",
+        concat!(
+            "http://{}:{}/api/4/binned?channel_backend={}&channel_name={}",
+            "&beg_date={}&end_date={}&bin_count={}&cache_usage={}",
+            "&disk_stats_every_kb={}&report_error=true",
+        ),
         host,
         port,
         channel_backend,
@@ -65,13 +69,16 @@ pub async fn get_binned(
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(uri)
-        .header("aCCepT", "application/octet-stream")
+        .header("accept", "application/octet-stream")
         .body(Body::empty())?;
     let client = hyper::Client::new();
     let res = client.request(req).await?;
     if res.status() != StatusCode::OK {
         error!("Server error  {:?}", res);
-        return Err(Error::with_msg(format!("Server error  {:?}", res)));
+        let (head, body) = res.into_parts();
+        let buf = hyper::body::to_bytes(body).await?;
+        let s = String::from_utf8_lossy(&buf);
+        return Err(Error::with_msg(format!("Server error  {:?}\n---------------------- message from http body:\n{}\n---------------------- end of http body", head, s)));
     }
     let perf_opts = PerfOpts { inmem_bufcap: 512 };
     let s1 = disk::cache::HttpBodyAsAsyncRead::new(res);

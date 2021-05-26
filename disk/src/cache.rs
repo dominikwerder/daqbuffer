@@ -1,4 +1,3 @@
-use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
 use crate::binned::{BinnedStreamKind, RangeCompletableItem};
 use crate::cache::pbv::PreBinnedValueByteStream;
@@ -77,6 +76,7 @@ pub struct BinnedQuery {
     channel: Channel,
     cache_usage: CacheUsage,
     disk_stats_every: ByteSize,
+    report_error: bool,
 }
 
 impl BinnedQuery {
@@ -106,6 +106,11 @@ impl BinnedQuery {
             channel: channel_from_params(&params)?,
             cache_usage: CacheUsage::from_params(&params)?,
             disk_stats_every: ByteSize::kb(disk_stats_every),
+            report_error: params
+                .get("report_error")
+                .map_or("false", |k| k)
+                .parse()
+                .map_err(|e| Error::with_msg(format!("can not parse report_error {:?}", e)))?,
         };
         info!("BinnedQuery::from_request  {:?}", ret);
         Ok(ret)
@@ -134,6 +139,10 @@ impl BinnedQuery {
     pub fn disk_stats_every(&self) -> &ByteSize {
         &self.disk_stats_every
     }
+
+    pub fn report_error(&self) -> bool {
+        self.report_error
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -143,6 +152,7 @@ pub struct PreBinnedQuery {
     channel: Channel,
     cache_usage: CacheUsage,
     disk_stats_every: ByteSize,
+    report_error: bool,
 }
 
 impl PreBinnedQuery {
@@ -152,6 +162,7 @@ impl PreBinnedQuery {
         agg_kind: AggKind,
         cache_usage: CacheUsage,
         disk_stats_every: ByteSize,
+        report_error: bool,
     ) -> Self {
         Self {
             patch,
@@ -159,6 +170,7 @@ impl PreBinnedQuery {
             channel,
             cache_usage,
             disk_stats_every,
+            report_error,
         }
     }
 
@@ -192,24 +204,34 @@ impl PreBinnedQuery {
             channel: channel_from_params(&params)?,
             cache_usage: CacheUsage::from_params(&params)?,
             disk_stats_every: ByteSize::kb(disk_stats_every),
+            report_error: params
+                .get("report_error")
+                .map_or("false", |k| k)
+                .parse()
+                .map_err(|e| Error::with_msg(format!("can not parse report_error {:?}", e)))?,
         };
         Ok(ret)
     }
 
     pub fn make_query_string(&self) -> String {
         format!(
-            "{}&channel_backend={}&channel_name={}&agg_kind={}&cache_usage={}&disk_stats_every_kb={}",
+            "{}&channel_backend={}&channel_name={}&agg_kind={}&cache_usage={}&disk_stats_every_kb={}&report_error={}",
             self.patch.to_url_params_strings(),
             self.channel.backend,
             self.channel.name,
             self.agg_kind,
             self.cache_usage,
             self.disk_stats_every.bytes() / 1024,
+            self.report_error(),
         )
     }
 
     pub fn patch(&self) -> &PreBinnedPatchCoord {
         &self.patch
+    }
+
+    pub fn report_error(&self) -> bool {
+        self.report_error
     }
 }
 
@@ -508,13 +530,17 @@ impl CacheFileDesc {
     }
 }
 
+pub struct WrittenPbCache {
+    bytes: u64,
+}
+
 pub async fn write_pb_cache_min_max_avg_scalar<T>(
     values: T,
     patch: PreBinnedPatchCoord,
     agg_kind: AggKind,
     channel: Channel,
     node_config: NodeConfigCached,
-) -> Result<(), Error>
+) -> Result<WrittenPbCache, Error>
 where
     T: Serialize,
 {
@@ -527,7 +553,7 @@ where
     let enc = serde_cbor::to_vec(&values)?;
     info!("Writing cache file  size {}\n{:?}\npath: {:?}", enc.len(), cfd, path);
     tokio::fs::create_dir_all(path.parent().unwrap()).await?;
-    tokio::task::spawn_blocking({
+    let res = tokio::task::spawn_blocking({
         let path = path.clone();
         move || {
             use fs2::FileExt;
@@ -540,9 +566,10 @@ where
             f.lock_exclusive()?;
             f.write_all(&enc)?;
             f.unlock()?;
-            Ok::<_, Error>(())
+            Ok::<_, Error>(enc.len())
         }
     })
     .await??;
-    Ok(())
+    let ret = WrittenPbCache { bytes: res as u64 };
+    Ok(ret)
 }

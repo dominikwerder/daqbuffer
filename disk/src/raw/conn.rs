@@ -1,10 +1,9 @@
 use crate::agg::binnedx::IntoBinnedXBins1;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
-use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
 use crate::agg::IntoDim1F32Stream;
 use crate::binned::{BinnedStreamKind, BinnedStreamKindScalar, RangeCompletableItem};
-use crate::channelconfig::{extract_matching_config_entry, read_local_config};
+use crate::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventChunkerConf;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
@@ -136,9 +135,14 @@ async fn events_conn_handler_inner_try(
         Ok(k) => k,
         Err(e) => return Err((e, netout))?,
     };
-    let entry = match extract_matching_config_entry(range, &channel_config) {
+    let entry_res = match extract_matching_config_entry(range, &channel_config) {
         Ok(k) => k,
         Err(e) => return Err((e, netout))?,
+    };
+    let entry = match entry_res {
+        MatchingConfigEntry::None => return Err((Error::with_msg("no config entry found"), netout))?,
+        MatchingConfigEntry::Multiple => return Err((Error::with_msg("multiple config entries found"), netout))?,
+        MatchingConfigEntry::Entry(entry) => entry,
     };
     let shape = match entry.to_shape() {
         Ok(k) => k,
@@ -196,7 +200,7 @@ async fn events_conn_handler_inner_try(
                 }
             }
             // TODO define this case:
-            AggKind::DimXBinsN(n1) => match make_frame::<
+            AggKind::DimXBinsN(_xbincount) => match make_frame::<
                 Result<
                     StreamItem<RangeCompletableItem<<BinnedStreamKindScalar as BinnedStreamKind>::XBinnedEvents>>,
                     Error,

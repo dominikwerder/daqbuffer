@@ -2,7 +2,7 @@ use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::{Appendable, StreamItem};
 use crate::agg::AggregatableXdim1Bin;
-use crate::binned::{BinnedStreamKind, MakeBytesFrame, RangeCompletableItem, RangeOverlapInfo, WithTimestamps};
+use crate::binned::{BinnedStreamKind, MakeBytesFrame, RangeCompletableItem, RangeOverlapInfo};
 use crate::frame::makeframe::make_frame;
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
