@@ -66,7 +66,7 @@ where
                                 >,
                             >(
                                 &frame,
-                                <<SK as BinnedStreamKind>::XBinnedEvents as XBinnedEvents>::frame_type(),
+                                <<SK as BinnedStreamKind>::XBinnedEvents as XBinnedEvents<SK>>::frame_type(),
                             ) {
                                 Ok(item) => match item {
                                     Ok(item) => Ready(Some(Ok(item))),

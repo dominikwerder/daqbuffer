@@ -68,7 +68,7 @@ async fn agg_x_dim_0_inner() {
     );
     let fut1 = IntoDim1F32Stream::into_dim_1_f32_stream(fut1);
     let fut1 = IntoBinnedXBins1::<_, BinnedStreamKindScalar>::into_binned_x_bins_1(fut1);
-    let fut1 = IntoBinnedT::<BinnedStreamKindScalar>::into_binned_t(
+    let fut1 = IntoBinnedT::<BinnedStreamKindScalar, _>::into_binned_t(
         fut1,
         BinnedRange::covering_range(range, bin_count).unwrap().unwrap(),
     );
@@ -138,7 +138,7 @@ async fn agg_x_dim_1_inner() {
         //info!("after X binning  {:?}", k.as_ref().unwrap());
         k
     });
-    let fut1 = crate::agg::binnedt::IntoBinnedT::<BinnedStreamKindScalar>::into_binned_t(
+    let fut1 = crate::agg::binnedt::IntoBinnedT::<BinnedStreamKindScalar, _>::into_binned_t(
         fut1,
         BinnedRange::covering_range(range, bin_count).unwrap().unwrap(),
     );

@@ -167,7 +167,7 @@ where
             self.node_config.node_config.cluster.clone(),
             self.stream_kind.clone(),
         );
-        let s1 = crate::agg::binnedt::IntoBinnedT::<SK>::into_binned_t(s1, range);
+        let s1 = crate::agg::binnedt::IntoBinnedT::<SK, _>::into_binned_t(s1, range);
         //self.fut2 = Some(Box::pin(s1));
         self.fut2 = err::todoval();
     }

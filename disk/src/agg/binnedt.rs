@@ -15,7 +15,7 @@ where
     SK: BinnedStreamKind,
 {
     type InputValue;
-    type OutputValue: AggregatableXdim1Bin<SK> + AggregatableTdim<SK> + Unpin;
+    type OutputValue;
     fn ends_before(&self, inp: &Self::InputValue) -> bool;
     fn ends_after(&self, inp: &Self::InputValue) -> bool;
     fn starts_after(&self, inp: &Self::InputValue) -> bool;
@@ -27,67 +27,63 @@ pub trait AggregatableTdim<SK>: Sized
 where
     SK: BinnedStreamKind,
 {
-    //type Output: AggregatableXdim1Bin + AggregatableTdim;
-    type Aggregator: AggregatorTdim<SK, InputValue = Self, OutputValue = <SK as BinnedStreamKind>::TBinnedBins>;
+    type Aggregator: AggregatorTdim<SK>;
     fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator;
 }
 
-pub trait IntoBinnedT<SK>
+pub trait IntoBinnedT<SK, S>
 where
     SK: BinnedStreamKind,
+    S: Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>> + Unpin,
 {
-    type StreamOut: Stream<
-        Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>, Error>,
-    >;
-    fn into_binned_t(self, spec: BinnedRange) -> Self::StreamOut;
+    fn into_binned_t(self, spec: BinnedRange) -> IntoBinnedTDefaultStream<SK, S>;
 }
 
-impl<S, I, SK> IntoBinnedT<SK> for S
+impl<SK, S> IntoBinnedT<SK, S> for S
 where
     SK: BinnedStreamKind,
-    S: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
-    I: AggregatableTdim<SK> + Unpin,
-    I::Aggregator: Unpin,
+    S: Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>> + Unpin,
 {
-    type StreamOut = IntoBinnedTDefaultStream<S, I, SK>;
-
-    fn into_binned_t(self, spec: BinnedRange) -> Self::StreamOut {
+    fn into_binned_t(self, spec: BinnedRange) -> IntoBinnedTDefaultStream<SK, S> {
         IntoBinnedTDefaultStream::new(self, spec)
     }
 }
 
-pub struct IntoBinnedTDefaultStream<S, I, SK>
+pub struct IntoBinnedTDefaultStream<SK, S>
 where
-    S: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
-    I: AggregatableTdim<SK>,
     SK: BinnedStreamKind,
+    S: Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>> + Unpin,
 {
     inp: S,
-    aggtor: Option<I::Aggregator>,
+    aggtor: Option<<<SK as BinnedStreamKind>::XBinnedEvents as AggregatableTdim<SK>>::Aggregator>,
     spec: BinnedRange,
     curbin: u32,
     inp_completed: bool,
     all_bins_emitted: bool,
     range_complete_observed: bool,
     range_complete_emitted: bool,
-    left: Option<Poll<Option<Result<StreamItem<RangeCompletableItem<I>>, Error>>>>,
+    left:
+        Option<Poll<Option<Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>>>>,
     errored: bool,
     completed: bool,
-    tmp_agg_results: VecDeque<<I::Aggregator as AggregatorTdim<SK>>::OutputValue>,
+    tmp_agg_results: VecDeque<<SK as BinnedStreamKind>::TBinnedBins>,
     _marker: std::marker::PhantomData<SK>,
 }
 
-impl<S, I, SK> IntoBinnedTDefaultStream<S, I, SK>
+impl<SK, S> IntoBinnedTDefaultStream<SK, S>
 where
-    S: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
-    I: AggregatableTdim<SK>,
     SK: BinnedStreamKind,
+    S: Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>> + Unpin,
 {
     pub fn new(inp: S, spec: BinnedRange) -> Self {
         let range = spec.get_range(0);
         Self {
             inp,
-            aggtor: Some(I::aggregator_new_static(range.beg, range.end)),
+            aggtor: Some(
+                <<SK as BinnedStreamKind>::XBinnedEvents as AggregatableTdim<SK>>::aggregator_new_static(
+                    range.beg, range.end,
+                ),
+            ),
             spec,
             curbin: 0,
             inp_completed: false,
@@ -102,7 +98,10 @@ where
         }
     }
 
-    fn cur(&mut self, cx: &mut Context) -> Poll<Option<Result<StreamItem<RangeCompletableItem<I>>, Error>>> {
+    fn cur(
+        &mut self,
+        cx: &mut Context,
+    ) -> Poll<Option<Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>>> {
         if let Some(cur) = self.left.take() {
             cur
         } else if self.inp_completed {
@@ -118,11 +117,16 @@ where
         let range = self.spec.get_range(self.curbin);
         let ret = self
             .aggtor
-            .replace(I::aggregator_new_static(range.beg, range.end))
+            .replace(
+                <<SK as BinnedStreamKind>::XBinnedEvents as AggregatableTdim<SK>>::aggregator_new_static(
+                    range.beg, range.end,
+                ),
+            )
             // TODO handle None case, or remove Option if Agg is always present
             .unwrap()
             .result();
-        self.tmp_agg_results = ret.into();
+        //self.tmp_agg_results = VecDeque::from(ret);
+        self.tmp_agg_results = VecDeque::new();
         if self.curbin >= self.spec.count as u32 {
             self.all_bins_emitted = true;
         }
@@ -130,12 +134,9 @@ where
 
     fn handle(
         &mut self,
-        cur: Poll<Option<Result<StreamItem<RangeCompletableItem<I>>, Error>>>,
-    ) -> Option<
-        Poll<
-            Option<Result<StreamItem<RangeCompletableItem<<I::Aggregator as AggregatorTdim<SK>>::OutputValue>>, Error>>,
-        >,
-    > {
+        cur: Poll<Option<Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>>>,
+    ) -> Option<Poll<Option<Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>, Error>>>>
+    {
         use Poll::*;
         match cur {
             Ready(Some(Ok(item))) => match item {
@@ -153,9 +154,11 @@ where
                             None
                         } else {
                             let ag = self.aggtor.as_mut().unwrap();
-                            if ag.ends_before(&item) {
+                            //if ag.ends_before(&item) {
+                            if ag.ends_before(err::todoval()) {
                                 None
-                            } else if ag.starts_after(&item) {
+                            //} else if ag.starts_after(&item) {
+                            } else if ag.starts_after(err::todoval()) {
                                 self.left =
                                     Some(Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))))));
                                 self.cycle_current_bin();
@@ -163,9 +166,11 @@ where
                                 None
                             } else {
                                 let mut item = item;
-                                ag.ingest(&mut item);
+                                //ag.ingest(&mut item);
+                                ag.ingest(err::todoval());
                                 let item = item;
-                                if ag.ends_after(&item) {
+                                //if ag.ends_after(&item) {
+                                if ag.ends_after(err::todoval()) {
                                     self.left =
                                         Some(Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))))));
                                     self.cycle_current_bin();
@@ -196,14 +201,11 @@ where
     }
 }
 
-impl<S, I, SK> Stream for IntoBinnedTDefaultStream<S, I, SK>
+impl<SK, S> Stream for IntoBinnedTDefaultStream<SK, S>
 where
-    S: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
-    I: AggregatableTdim<SK> + Unpin,
-    I::Aggregator: Unpin,
     SK: BinnedStreamKind,
+    S: Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>> + Unpin,
 {
-    //type Item = Result<StreamItem<RangeCompletableItem<<I::Aggregator as AggregatorTdim>::OutputValue>>, Error>;
     type Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {

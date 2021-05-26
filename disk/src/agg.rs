@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 
 pub mod binnedt;
 pub mod binnedt2;
+pub mod binnedt3;
 pub mod binnedx;
 pub mod eventbatch;
 pub mod scalarbinbatch;

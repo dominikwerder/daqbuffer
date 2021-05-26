@@ -232,6 +232,12 @@ where
         } else {
             self.sum / self.sumc as f32
         };
+
+        // TODO impl problem:
+        // The return type of this function must be the concrete type that I implement for.
+        // Otherwise I have no chance building that values.
+        // I must somehow differently couple that to the SK.
+
         let v = MinMaxAvgScalarBinBatch {
             ts1s: vec![self.ts1],
             ts2s: vec![self.ts2],
