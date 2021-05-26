@@ -1,6 +1,6 @@
 use crate::agg::streams::StreamItem;
 use crate::agg::AggregatableXdim1Bin;
-use crate::binned::RangeCompletableItem;
+use crate::binned::{BinnedStreamKind, RangeCompletableItem};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -10,9 +10,12 @@ use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub trait AggregatorTdim: Sized + Unpin {
+pub trait AggregatorTdim<SK>: Sized + Unpin
+where
+    SK: BinnedStreamKind,
+{
     type InputValue;
-    type OutputValue: AggregatableXdim1Bin + AggregatableTdim + Unpin;
+    type OutputValue: AggregatableXdim1Bin<SK> + AggregatableTdim<SK> + Unpin;
     fn ends_before(&self, inp: &Self::InputValue) -> bool;
     fn ends_after(&self, inp: &Self::InputValue) -> bool;
     fn starts_after(&self, inp: &Self::InputValue) -> bool;
@@ -20,34 +23,44 @@ pub trait AggregatorTdim: Sized + Unpin {
     fn result(self) -> Vec<Self::OutputValue>;
 }
 
-pub trait AggregatableTdim: Sized {
-    type Output: AggregatableXdim1Bin + AggregatableTdim;
-    type Aggregator: AggregatorTdim<InputValue = Self>;
+pub trait AggregatableTdim<SK>: Sized
+where
+    SK: BinnedStreamKind,
+{
+    //type Output: AggregatableXdim1Bin + AggregatableTdim;
+    type Aggregator: AggregatorTdim<SK, InputValue = Self, OutputValue = <SK as BinnedStreamKind>::TBinnedBins>;
     fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator;
 }
 
-pub trait IntoBinnedT {
-    type StreamOut: Stream;
+pub trait IntoBinnedT<SK>
+where
+    SK: BinnedStreamKind,
+{
+    type StreamOut: Stream<
+        Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>, Error>,
+    >;
     fn into_binned_t(self, spec: BinnedRange) -> Self::StreamOut;
 }
 
-impl<S, I> IntoBinnedT for S
+impl<S, I, SK> IntoBinnedT<SK> for S
 where
+    SK: BinnedStreamKind,
     S: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
-    I: AggregatableTdim + Unpin,
+    I: AggregatableTdim<SK> + Unpin,
     I::Aggregator: Unpin,
 {
-    type StreamOut = IntoBinnedTDefaultStream<S, I>;
+    type StreamOut = IntoBinnedTDefaultStream<S, I, SK>;
 
     fn into_binned_t(self, spec: BinnedRange) -> Self::StreamOut {
         IntoBinnedTDefaultStream::new(self, spec)
     }
 }
 
-pub struct IntoBinnedTDefaultStream<S, I>
+pub struct IntoBinnedTDefaultStream<S, I, SK>
 where
     S: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
-    I: AggregatableTdim,
+    I: AggregatableTdim<SK>,
+    SK: BinnedStreamKind,
 {
     inp: S,
     aggtor: Option<I::Aggregator>,
@@ -60,13 +73,15 @@ where
     left: Option<Poll<Option<Result<StreamItem<RangeCompletableItem<I>>, Error>>>>,
     errored: bool,
     completed: bool,
-    tmp_agg_results: VecDeque<<I::Aggregator as AggregatorTdim>::OutputValue>,
+    tmp_agg_results: VecDeque<<I::Aggregator as AggregatorTdim<SK>>::OutputValue>,
+    _marker: std::marker::PhantomData<SK>,
 }
 
-impl<S, I> IntoBinnedTDefaultStream<S, I>
+impl<S, I, SK> IntoBinnedTDefaultStream<S, I, SK>
 where
     S: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
-    I: AggregatableTdim,
+    I: AggregatableTdim<SK>,
+    SK: BinnedStreamKind,
 {
     pub fn new(inp: S, spec: BinnedRange) -> Self {
         let range = spec.get_range(0);
@@ -83,6 +98,7 @@ where
             errored: false,
             completed: false,
             tmp_agg_results: VecDeque::new(),
+            _marker: std::marker::PhantomData::default(),
         }
     }
 
@@ -116,7 +132,9 @@ where
         &mut self,
         cur: Poll<Option<Result<StreamItem<RangeCompletableItem<I>>, Error>>>,
     ) -> Option<
-        Poll<Option<Result<StreamItem<RangeCompletableItem<<I::Aggregator as AggregatorTdim>::OutputValue>>, Error>>>,
+        Poll<
+            Option<Result<StreamItem<RangeCompletableItem<<I::Aggregator as AggregatorTdim<SK>>::OutputValue>>, Error>>,
+        >,
     > {
         use Poll::*;
         match cur {
@@ -178,13 +196,15 @@ where
     }
 }
 
-impl<S, I> Stream for IntoBinnedTDefaultStream<S, I>
+impl<S, I, SK> Stream for IntoBinnedTDefaultStream<S, I, SK>
 where
     S: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
-    I: AggregatableTdim + Unpin,
+    I: AggregatableTdim<SK> + Unpin,
     I::Aggregator: Unpin,
+    SK: BinnedStreamKind,
 {
-    type Item = Result<StreamItem<RangeCompletableItem<<I::Aggregator as AggregatorTdim>::OutputValue>>, Error>;
+    //type Item = Result<StreamItem<RangeCompletableItem<<I::Aggregator as AggregatorTdim>::OutputValue>>, Error>;
+    type Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;

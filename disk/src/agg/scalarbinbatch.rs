@@ -1,7 +1,7 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
 use crate::agg::streams::{Bins, StreamItem};
 use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
-use crate::binned::{MakeBytesFrame, RangeCompletableItem};
+use crate::binned::{BinnedStreamKind, MakeBytesFrame, RangeCompletableItem};
 use crate::frame::makeframe::make_frame;
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
@@ -185,15 +185,21 @@ impl MinMaxAvgScalarBinBatch {
     }
 }
 
-impl AggregatableXdim1Bin for MinMaxAvgScalarBinBatch {
+impl<SK> AggregatableXdim1Bin<SK> for MinMaxAvgScalarBinBatch
+where
+    SK: BinnedStreamKind,
+{
     type Output = MinMaxAvgScalarBinBatch;
     fn into_agg(self) -> Self::Output {
         todo!()
     }
 }
 
-impl AggregatableTdim for MinMaxAvgScalarBinBatch {
-    type Output = MinMaxAvgScalarBinBatch;
+impl<SK> AggregatableTdim<SK> for MinMaxAvgScalarBinBatch
+where
+    SK: BinnedStreamKind,
+{
+    //type Output = MinMaxAvgScalarBinBatch;
     type Aggregator = MinMaxAvgScalarBinBatchAggregator;
 
     fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator {
@@ -231,7 +237,10 @@ impl MinMaxAvgScalarBinBatchAggregator {
     }
 }
 
-impl AggregatorTdim for MinMaxAvgScalarBinBatchAggregator {
+impl<SK> AggregatorTdim<SK> for MinMaxAvgScalarBinBatchAggregator
+where
+    SK: BinnedStreamKind,
+{
     type InputValue = MinMaxAvgScalarBinBatch;
     type OutputValue = MinMaxAvgScalarBinBatch;
 

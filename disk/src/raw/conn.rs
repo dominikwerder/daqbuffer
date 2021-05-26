@@ -154,7 +154,7 @@ async fn events_conn_handler_inner_try(
     // TODO use a requested buffer size
     let buffer_size = 1024 * 4;
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
-    let mut s1 = EventBlobsComplete::new(
+    let s1 = EventBlobsComplete::new(
         range.clone(),
         channel_config.clone(),
         node_config.node.clone(),
@@ -162,8 +162,9 @@ async fn events_conn_handler_inner_try(
         buffer_size,
         event_chunker_conf,
     )
-    .into_dim_1_f32_stream()
-    .into_binned_x_bins_1();
+    .into_dim_1_f32_stream();
+    // TODO need to decide already here on the type I want to use.
+    let mut s1 = IntoBinnedXBins1::<_, BinnedStreamKindScalar>::into_binned_x_bins_1(s1);
     let mut e = 0;
     while let Some(item) = s1.next().await {
         match &item {

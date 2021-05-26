@@ -1,4 +1,3 @@
-use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::{Collectable, Collected, StreamItem};
 use crate::binned::RangeCompletableItem::RangeComplete;
@@ -168,33 +167,9 @@ where
             self.node_config.node_config.cluster.clone(),
             self.stream_kind.clone(),
         );
-        let s1 = IntoBinnedT::into_binned_t(s1, range);
-        let s1 = s1.map(|item| {
-            // TODO does this do anything?
-            match item {
-                Ok(item) => match item {
-                    StreamItem::Log(item) => Ok(StreamItem::Log(item)),
-                    StreamItem::Stats(item) => Ok(StreamItem::Stats(item)),
-                    StreamItem::DataItem(item) => Ok(StreamItem::DataItem(item)),
-                    /*StreamItem::DataItem(item) => match item {
-                        MinMaxAvgScalarBinBatchStreamItem::RangeComplete => {
-                            Ok(StreamItem::DataItem(PreBinnedScalarItem::RangeComplete))
-                        }
-                        MinMaxAvgScalarBinBatchStreamItem::Values(item) => {
-                            Ok(StreamItem::DataItem(PreBinnedScalarItem::Batch(item)))
-                        }
-                    },*/
-                },
-                Err(e) => Err(e),
-            }
-        });
-
-        // TODO
-        // In the above must introduce a trait to convert to the generic item type:
-
-        // TODO!!
-        self.fut2 = Some(err::todoval());
+        let s1 = crate::agg::binnedt::IntoBinnedT::<SK>::into_binned_t(s1, range);
         //self.fut2 = Some(Box::pin(s1));
+        self.fut2 = err::todoval();
     }
 
     fn setup_from_higher_res_prebinned(&mut self, range: PreBinnedPatchRange) {

@@ -1,45 +1,53 @@
 use crate::agg::streams::StreamItem;
 use crate::agg::AggregatableXdim1Bin;
-use crate::binned::RangeCompletableItem;
+use crate::binned::{BinnedStreamKind, RangeCompletableItem};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub trait IntoBinnedXBins1<I>
+pub trait IntoBinnedXBins1<I, SK>
 where
+    SK: BinnedStreamKind,
     Self: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
-    I: AggregatableXdim1Bin,
+    I: AggregatableXdim1Bin<SK>,
 {
     type StreamOut;
     fn into_binned_x_bins_1(self) -> Self::StreamOut;
 }
 
-impl<S, I> IntoBinnedXBins1<I> for S
+impl<S, I, SK> IntoBinnedXBins1<I, SK> for S
 where
+    SK: BinnedStreamKind,
     S: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
-    I: AggregatableXdim1Bin,
+    I: AggregatableXdim1Bin<SK>,
 {
-    type StreamOut = IntoBinnedXBins1DefaultStream<S, I>;
+    type StreamOut = IntoBinnedXBins1DefaultStream<S, I, SK>;
 
     fn into_binned_x_bins_1(self) -> Self::StreamOut {
-        IntoBinnedXBins1DefaultStream { inp: self }
+        IntoBinnedXBins1DefaultStream {
+            inp: self,
+            _marker: std::marker::PhantomData::default(),
+        }
     }
 }
 
-pub struct IntoBinnedXBins1DefaultStream<S, I>
+pub struct IntoBinnedXBins1DefaultStream<S, I, SK>
 where
+    SK: BinnedStreamKind,
     S: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
-    I: AggregatableXdim1Bin,
+    I: AggregatableXdim1Bin<SK>,
 {
     inp: S,
+    _marker: std::marker::PhantomData<SK>,
 }
 
-impl<S, I> Stream for IntoBinnedXBins1DefaultStream<S, I>
+impl<S, I, SK> Stream for IntoBinnedXBins1DefaultStream<S, I, SK>
 where
+    SK: BinnedStreamKind,
     S: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
-    I: AggregatableXdim1Bin,
+    I: AggregatableXdim1Bin<SK>,
 {
     type Item = Result<StreamItem<RangeCompletableItem<I::Output>>, Error>;
 

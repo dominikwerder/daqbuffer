@@ -6,7 +6,7 @@ use super::eventchunker::EventFull;
 use crate::agg::binnedt::AggregatableTdim;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::streams::StreamItem;
-use crate::binned::RangeCompletableItem;
+use crate::binned::{BinnedStreamKind, RangeCompletableItem};
 use bytes::BytesMut;
 use err::Error;
 use futures_core::Stream;
@@ -25,8 +25,11 @@ pub mod eventbatch;
 pub mod scalarbinbatch;
 pub mod streams;
 
-pub trait AggregatableXdim1Bin {
-    type Output: AggregatableXdim1Bin + AggregatableTdim;
+pub trait AggregatableXdim1Bin<SK>
+where
+    SK: BinnedStreamKind,
+{
+    type Output: AggregatableXdim1Bin<SK> + AggregatableTdim<SK>;
     fn into_agg(self) -> Self::Output;
 }
 
@@ -48,7 +51,10 @@ impl std::fmt::Debug for ValuesDim0 {
     }
 }
 
-impl AggregatableXdim1Bin for ValuesDim1 {
+impl<SK> AggregatableXdim1Bin<SK> for ValuesDim1
+where
+    SK: BinnedStreamKind,
+{
     type Output = MinMaxAvgScalarEventBatch;
 
     fn into_agg(self) -> Self::Output {
@@ -142,7 +148,10 @@ impl std::fmt::Debug for ValuesDim1 {
     }
 }
 
-impl AggregatableXdim1Bin for ValuesDim0 {
+impl<SK> AggregatableXdim1Bin<SK> for ValuesDim0
+where
+    SK: BinnedStreamKind,
+{
     type Output = MinMaxAvgScalarEventBatch;
 
     fn into_agg(self) -> Self::Output {

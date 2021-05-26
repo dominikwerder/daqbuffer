@@ -1,5 +1,6 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
 use crate::agg::AggregatableXdim1Bin;
+use crate::binned::BinnedStreamKind;
 use crate::streamlog::LogItem;
 use err::Error;
 use netpod::EventDataReadStats;
@@ -36,11 +37,12 @@ pub trait ToJsonResult {
     fn to_json_result(&self) -> Result<Self::Output, Error>;
 }
 
-impl<T> AggregatableXdim1Bin for StreamItem<T>
+impl<T, SK> AggregatableXdim1Bin<SK> for StreamItem<T>
 where
-    T: AggregatableTdim + AggregatableXdim1Bin,
+    SK: BinnedStreamKind,
+    T: AggregatableTdim<SK> + AggregatableXdim1Bin<SK>,
 {
-    type Output = StreamItem<<T as AggregatableXdim1Bin>::Output>;
+    type Output = StreamItem<<T as AggregatableXdim1Bin<SK>>::Output>;
 
     fn into_agg(self) -> Self::Output {
         match self {
@@ -51,30 +53,33 @@ where
     }
 }
 
-pub struct StreamItemAggregator<T>
+pub struct StreamItemAggregator<T, SK>
 where
-    T: AggregatableTdim,
+    T: AggregatableTdim<SK>,
+    SK: BinnedStreamKind,
 {
-    inner_agg: <T as AggregatableTdim>::Aggregator,
+    inner_agg: <T as AggregatableTdim<SK>>::Aggregator,
 }
 
-impl<T> StreamItemAggregator<T>
+impl<T, SK> StreamItemAggregator<T, SK>
 where
-    T: AggregatableTdim,
+    T: AggregatableTdim<SK>,
+    SK: BinnedStreamKind,
 {
     pub fn new(ts1: u64, ts2: u64) -> Self {
         Self {
-            inner_agg: <T as AggregatableTdim>::aggregator_new_static(ts1, ts2),
+            inner_agg: <T as AggregatableTdim<SK>>::aggregator_new_static(ts1, ts2),
         }
     }
 }
 
-impl<T> AggregatorTdim for StreamItemAggregator<T>
+impl<T, SK> AggregatorTdim<SK> for StreamItemAggregator<T, SK>
 where
-    T: AggregatableTdim,
+    T: AggregatableTdim<SK>,
+    SK: BinnedStreamKind,
 {
     type InputValue = StreamItem<T>;
-    type OutputValue = StreamItem<<<T as AggregatableTdim>::Aggregator as AggregatorTdim>::OutputValue>;
+    type OutputValue = StreamItem<<<T as AggregatableTdim<SK>>::Aggregator as AggregatorTdim<SK>>::OutputValue>;
 
     fn ends_before(&self, inp: &Self::InputValue) -> bool {
         match inp {
@@ -119,12 +124,13 @@ where
     }
 }
 
-impl<T> AggregatableTdim for StreamItem<T>
+impl<T, SK> AggregatableTdim<SK> for StreamItem<T>
 where
-    T: AggregatableTdim,
+    T: AggregatableTdim<SK>,
+    SK: BinnedStreamKind,
 {
-    type Output = StreamItem<<StreamItemAggregator<T> as AggregatorTdim>::OutputValue>;
-    type Aggregator = StreamItemAggregator<T>;
+    //type Output = StreamItem<<StreamItemAggregator<T> as AggregatorTdim>::OutputValue>;
+    type Aggregator = StreamItemAggregator<T, SK>;
 
     fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator {
         Self::Aggregator::new(ts1, ts2)

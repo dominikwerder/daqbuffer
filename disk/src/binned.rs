@@ -473,7 +473,7 @@ impl Collectable for MinMaxAvgScalarBinBatch {
     }
 }
 
-pub trait XBinnedEvents:
+pub trait XBinnedEvents<SK>:
     Sized
     + Unpin
     + Send
@@ -481,10 +481,12 @@ pub trait XBinnedEvents:
     + DeserializeOwned
     + Collectable
     + Collected
-    + AggregatableTdim
+    + AggregatableTdim<SK>
     + WithLen
     + WithTimestamps
     + PushableIndex
+where
+    SK: BinnedStreamKind,
 {
     fn frame_type() -> u32;
 }
@@ -505,7 +507,10 @@ pub trait TBinnedBins:
     fn frame_type() -> u32;
 }
 
-impl XBinnedEvents for MinMaxAvgScalarEventBatch {
+impl<SK> XBinnedEvents<SK> for MinMaxAvgScalarEventBatch
+where
+    SK: BinnedStreamKind,
+{
     fn frame_type() -> u32 {
         <Result<StreamItem<RangeCompletableItem<Self>>, Error> as FrameType>::FRAME_TYPE_ID
     }
@@ -524,7 +529,7 @@ pub trait BinnedStreamKind: Clone + Unpin + Send + Sync + 'static
     type TBinnedStreamType: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::TBinnedBins>>, Error>>
         + Send
         + 'static;
-    type XBinnedEvents: XBinnedEvents;
+    type XBinnedEvents: XBinnedEvents<Self>;
     type TBinnedBins: TBinnedBins;
 
     fn new_binned_from_prebinned(
@@ -603,7 +608,7 @@ impl BinnedStreamKind for BinnedStreamKindScalar {
     ) -> Result<Self::TBinnedStreamType, Error> {
         let s = MergedFromRemotes::new(evq, perf_opts, node_config.node_config.cluster.clone(), self.clone());
         // TODO use the binned2 instead
-        let s = crate::agg::binnedt::IntoBinnedT::into_binned_t(s, range);
+        let s = crate::agg::binnedt::IntoBinnedT::<Self>::into_binned_t(s, range);
         Ok(BoxedStream::new(Box::pin(s))?)
     }
 }

@@ -1,6 +1,7 @@
 use super::agg::IntoDim1F32Stream;
 use crate::agg::binnedt::IntoBinnedT;
 use crate::agg::binnedx::IntoBinnedXBins1;
+use crate::binned::BinnedStreamKindScalar;
 use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventChunkerConf;
 use futures_util::StreamExt;
@@ -66,8 +67,11 @@ async fn agg_x_dim_0_inner() {
         event_chunker_conf,
     );
     let fut1 = IntoDim1F32Stream::into_dim_1_f32_stream(fut1);
-    let fut1 = IntoBinnedXBins1::into_binned_x_bins_1(fut1);
-    let fut1 = IntoBinnedT::into_binned_t(fut1, BinnedRange::covering_range(range, bin_count).unwrap().unwrap());
+    let fut1 = IntoBinnedXBins1::<_, BinnedStreamKindScalar>::into_binned_x_bins_1(fut1);
+    let fut1 = IntoBinnedT::<BinnedStreamKindScalar>::into_binned_t(
+        fut1,
+        BinnedRange::covering_range(range, bin_count).unwrap().unwrap(),
+    );
     let fut1 = fut1
         //.into_binned_t(BinnedRange::covering_range(range, bin_count).unwrap().unwrap())
         .for_each(|_k| ready(()));
@@ -128,17 +132,21 @@ async fn agg_x_dim_1_inner() {
             }
         }
         q
-    })
-    .into_binned_x_bins_1()
-    .map(|k| {
+    });
+    let fut1 = IntoBinnedXBins1::<_, BinnedStreamKindScalar>::into_binned_x_bins_1(fut1);
+    let fut1 = fut1.map(|k| {
         //info!("after X binning  {:?}", k.as_ref().unwrap());
         k
-    })
-    .into_binned_t(BinnedRange::covering_range(range, bin_count).unwrap().unwrap())
-    .map(|k| {
-        info!("after T binning  {:?}", k.as_ref().unwrap());
-        k
-    })
-    .for_each(|_k| ready(()));
+    });
+    let fut1 = crate::agg::binnedt::IntoBinnedT::<BinnedStreamKindScalar>::into_binned_t(
+        fut1,
+        BinnedRange::covering_range(range, bin_count).unwrap().unwrap(),
+    );
+    let fut1 = fut1
+        .map(|k| {
+            info!("after T binning  {:?}", k.as_ref().unwrap());
+            k
+        })
+        .for_each(|_k| ready(()));
     fut1.await;
 }
