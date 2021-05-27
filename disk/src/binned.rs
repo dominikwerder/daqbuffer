@@ -355,6 +355,7 @@ where
     T: ReadableFromFile,
 {
     buf: Vec<u8>,
+    all: Vec<u8>,
     file: Option<File>,
     _marker: std::marker::PhantomData<T>,
 }
@@ -365,7 +366,9 @@ where
 {
     fn new(file: File) -> Self {
         Self {
-            buf: vec![],
+            // TODO make buffer size a parameter:
+            buf: vec![0; 4096],
+            all: vec![],
             file: Some(file),
             _marker: std::marker::PhantomData::default(),
         }
@@ -380,20 +383,22 @@ where
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         use Poll::*;
-        'outer: loop {
-            // TODO make buffer size a parameter:
-            let mut buf = vec![0; 4096];
+        let mut buf = std::mem::replace(&mut self.buf, Vec::new());
+        let ret = 'outer: loop {
             let mut dst = ReadBuf::new(&mut buf);
+            if dst.remaining() == 0 || dst.capacity() == 0 {
+                break Ready(Err(Error::with_msg("bad read buffer")));
+            }
             let fp = self.file.as_mut().unwrap();
             let f = Pin::new(fp);
             break match File::poll_read(f, cx, &mut dst) {
                 Ready(res) => match res {
                     Ok(_) => {
                         if dst.filled().len() > 0 {
-                            self.buf.extend_from_slice(&mut buf);
+                            self.all.extend_from_slice(dst.filled());
                             continue 'outer;
                         } else {
-                            match T::from_buf(&mut self.buf) {
+                            match T::from_buf(&mut self.all) {
                                 Ok(item) => Ready(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))),
                                 Err(e) => Ready(Err(e)),
                             }
@@ -403,7 +408,9 @@ where
                 },
                 Pending => Pending,
             };
-        }
+        };
+        self.buf = buf;
+        ret
     }
 }
 
