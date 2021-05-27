@@ -1,3 +1,4 @@
+use crate::gather::gather_get_json;
 use bytes::Bytes;
 use disk::binned::BinnedStreamKindScalar;
 use disk::cache::{BinnedQuery, PreBinnedQuery};
@@ -88,17 +89,19 @@ macro_rules! static_http {
     ($path:expr, $tgt:expr, $tgtex:expr, $ctype:expr) => {
         if $path == concat!("/api/4/documentation/", $tgt) {
             let c = include_bytes!(concat!("../static/documentation/", $tgtex));
-            return Ok(response(StatusCode::OK)
+            let ret = response(StatusCode::OK)
                 .header("content-type", $ctype)
-                .body(Body::from(&c[..]))?);
+                .body(Body::from(&c[..]))?;
+            return Ok(ret);
         }
     };
     ($path:expr, $tgt:expr, $ctype:expr) => {
         if $path == concat!("/api/4/documentation/", $tgt) {
             let c = include_bytes!(concat!("../static/documentation/", $tgt));
-            return Ok(response(StatusCode::OK)
+            let ret = response(StatusCode::OK)
                 .header("content-type", $ctype)
-                .body(Body::from(&c[..]))?);
+                .body(Body::from(&c[..]))?;
+            return Ok(ret);
         }
     };
 }
@@ -133,6 +136,18 @@ async fn data_api_proxy_try(req: Request<Body>, node_config: &NodeConfigCached) 
     } else if path == "/api/4/prebinned" {
         if req.method() == Method::GET {
             Ok(prebinned(req, &node_config).await?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    } else if path.starts_with("/api/4/gather/") {
+        if req.method() == Method::GET {
+            Ok(gather_get_json(req, &node_config).await?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    } else if path == "/api/4/clear_cache" {
+        if req.method() == Method::GET {
+            Ok(clear_cache_all(req, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -340,5 +355,18 @@ pub async fn random_channel(req: Request<Body>, node_config: &NodeConfigCached) 
     let (_head, _body) = req.into_parts();
     let ret = dbconn::random_channel(node_config).await?;
     let ret = response(StatusCode::OK).body(Body::from(ret))?;
+    Ok(ret)
+}
+
+pub async fn clear_cache_all(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    let (head, _body) = req.into_parts();
+    let dry = match head.uri.query() {
+        Some(q) => q.contains("dry"),
+        None => false,
+    };
+    let res = disk::cache::clear_cache_all(node_config, dry).await?;
+    let ret = response(StatusCode::OK)
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_string(&res)?))?;
     Ok(ret)
 }

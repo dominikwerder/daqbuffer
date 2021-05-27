@@ -10,7 +10,7 @@
 </head>
 
 <body>
-<h1>Retrieval 4.0 Documentation</h1>
+<h1>Retrieval Documentation</h1>
 
 <h2>HTTP API documentation</h2>
 
@@ -27,172 +27,73 @@
 <p><strong>URL:</strong> https://data-api.psi.ch/api/4/binned</p>
 <p><strong>Query parameters:</strong></p>
 <ul>
-    <li>channel_backend</li>
-    <li>channel_name</li>
-    <li>beg_date</li>
-    <li>end_date</li>
-    <li>bin_count</li>
+    <li>channel_backend (e.g. "sf-databuffer")</li>
+    <li>channel_name  (e.g. "SLAAR-LSCP4-LAS6891:CH7:1")</li>
+    <li>beg_date  (e.g. "2021-05-26T07:10:00.000Z")</li>
+    <li>end_date  (e.g. "2021-05-26T07:16:00.000Z")</li>
+    <li>bin_count  (e.g. "6")</li>
 </ul>
 <p><strong>Request header:</strong> "Accept" must be "application/json"</p>
-<p><strong>Example:</strong></p>
-<pre>http://sf-daqbuf-21:8380/api/4/binned?channel_backend=sf-databuffer&channel_name=SLAAR-LSCP4-LAS6891:CH7:1&beg_date=2021-05-21T00:00:00.000Z&end_date=2021-05-21T02:00:00.000Z&bin_count=20</pre>
-<p><strong>Result body example:</strong></p>
-<pre>
-[
-    {
-        "backend": "sf-databuffer",
-        "channels": [
-            "SARES20-LSCP9:CH0:2",
-            "SARES20-LSCP9:CH0:1"
-        ]
-    },
-    {
-        "backend": "hipa-archive",
-        "channels": [],
-        "error": {
-            "code": "Error"  // can be: "Error" | "Timeout" (more to be added in the future)
-        }
-    }
-]
-</pre>
 
 <h4>CURL example:</h4>
 <pre>
-curl -H 'Accept: application/json' 'http://sf-daqbuf-21:8380/api/4/binned?channel_backend=sf-databuffer&channel_name=SLAAR-LSCP4-LAS6891:CH7:1&beg_date=2021-05-21T00:00:00.000Z&end_date=2021-05-21T02:00:00.000Z&bin_count=20'
+curl -H 'Accept: application/json' 'http://sf-daqbuf-21:8380/api/4/binned?channel_backend=sf-databuffer
+  &channel_name=SLAAR-LSCP4-LAS6891:CH7:1&beg_date=2021-05-25T00:00:00.000Z&end_date=2021-05-26T00:00:00.000Z&bin_count=3'
 </pre>
-<p>Answer:</p>
+
+<h4>Partial result</h4>
+<p>Note the keys <strong>continue_at</strong> and <strong>missing_bins</strong>.</p>
 <pre>
 {
-    "counts": [
-        458,
-        459,
-        458,
-        459,
-        459,
-        458,
-        459,
-        458,
-        459,
-        459,
-        458,
-        459,
-        458,
-        459,
-        458,
-        459,
-        459,
-        458,
-        459,
-        458,
-        459,
-        458,
-        459,
-        459
-    ],
-    "ts_bin_edges": [
-        "2021-05-21T00:00:00.000Z",
-        "2021-05-21T00:05:00.000Z",
-        "2021-05-21T00:10:00.000Z",
-        "2021-05-21T00:15:00.000Z",
-        "2021-05-21T00:20:00.000Z",
-        "2021-05-21T00:25:00.000Z",
-        "2021-05-21T00:30:00.000Z",
-        "2021-05-21T00:35:00.000Z",
-        "2021-05-21T00:40:00.000Z",
-        "2021-05-21T00:45:00.000Z",
-        "2021-05-21T00:50:00.000Z",
-        "2021-05-21T00:55:00.000Z",
-        "2021-05-21T01:00:00.000Z",
-        "2021-05-21T01:05:00.000Z",
-        "2021-05-21T01:10:00.000Z",
-        "2021-05-21T01:15:00.000Z",
-        "2021-05-21T01:20:00.000Z",
-        "2021-05-21T01:25:00.000Z",
-        "2021-05-21T01:30:00.000Z",
-        "2021-05-21T01:35:00.000Z",
-        "2021-05-21T01:40:00.000Z",
-        "2021-05-21T01:45:00.000Z",
-        "2021-05-21T01:50:00.000Z",
-        "2021-05-21T01:55:00.000Z",
-        "2021-05-21T02:00:00.000Z"
-    ]
+  "continue_at": "2021-05-25T16:00:00.000Z",
+  "missing_bins": 2,
+  "avgs": [
+    340.87640380859375,
+    340.7442321777344,
+    340.58685302734375,
+    341.04608154296875
+  ],
+  "counts": [
+    143076,
+    143077,
+    143076,
+    143076
+  ],
+  "maxs": [
+    452,
+    452,
+    459,
+    458
+  ],
+  "mins": [
+    231,
+    240,
+    239,
+    239
+  ],
+  "ts_bin_edges": [
+    "2021-05-25T00:00:00.000Z",
+    "2021-05-25T04:00:00.000Z",
+    "2021-05-25T08:00:00.000Z",
+    "2021-05-25T12:00:00.000Z",
+    "2021-05-25T16:00:00.000Z"
+  ]
 }
 </pre>
 
+<h4>Complete result</h4>
+<p>A complete result will not have a <strong>continue_at</strong> key.</p>
+
+<h4>Finalised range</h4>
+<p>If the server can determine that no more data will be added to the requested time range
+then it will add the flag <strong>finalised_range</strong> to the response.</p>
 
 
-<a name="channel-search-configs"></a>
-<h2>Channel Search, with return of configuration information</h2>
-<p><strong>Method:</strong> POST</p>
-<p><strong>URL:</strong> https://data-api.psi.ch/api/1/channels/config</p>
-<p><strong>Request body:</strong> JSON with search parameters</p>
-<p><strong>Request body outline:</strong></p>
-<pre>
-{
-  "regex":             "[Optional: Regular expression to search in channel name]",
-  "sourceRegex":       "[Optional: Search in sourcename of the channel]",
-  "descriptionRegex":  "[Optional: Search in the channel's description]",
-  "backends":          ["gls-archive", "hipa-archive", "sf-databuffer"]
-}
-</pre>
-<p><strong>Result body example:</strong></p>
-<p>Assuming that "hipa-archive" would be unavailable:</p>
-<pre>
-[
-    {
-        "backend": "sf-databuffer",
-        "channels": [
-            {
-                "backend": "sf-databuffer",
-                "description": "",
-                "name": "SARES20-LSCP9:CH0:2",
-                "shape": [
-                    512
-                ],
-                "source": "tcp://SARES20-CVME-01:9999",
-                "type": "Float32",
-                "unit": ""
-            },
-            {
-                "backend": "sf-databuffer",
-                "description": "",
-                "name": "SARES20-LSCP9:CH0:1",
-                "shape": [
-                    512
-                ],
-                "source": "tcp://SARES20-CVME-01:9999",
-                "type": "Int16",
-                "unit": ""
-            }
-        ]
-    },
-    {
-        "backend": "hipa-archive",
-        "channels": [],
-        "error": {
-            "code": "Error"  // can be: "Error" | "Timeout" (more to be added in the future)
-        }
-    }
-]
-</pre>
-<p>Notes:</p>
-<p>The search constraints are AND'ed together.</p>
-<p>If some backend responds with an error, that error is indicated by the error key in the affected backend (see example above).</p>
-
-
-<h4>CURL example:</h4>
-<pre>
-QUERY='{ "regex": "LSCP9:CH0", "backends": ["sf-databuffer"] }'
-curl -H 'Content-Type: application/json' -H 'Accept: application/json' -d "$QUERY" https://data-api.psi.ch/api/1/channels/config
-</pre>
-
-<h2>Feedback and comments</h2>
-<p>Feedback is very much appreciated:</p>
+<h2>Feedback and comments very much appreciated!</h2>
 <p>dominik.werder@psi.ch</p>
 <p>or please assign me a JIRA ticket.</p>
 
 <div id="footer"></div>
-
 
 </body>
 </html>

@@ -58,10 +58,8 @@ pub struct BinnedClient {
     pub end: String,
     #[clap(long)]
     pub bins: u32,
-    #[clap(long)]
-    pub ignore_cache: bool,
-    #[clap(long)]
-    pub recreate_cache: bool,
+    #[clap(long, default_value = "use")]
+    pub cache: String,
     #[clap(long, default_value = "1048576")]
     pub disk_stats_every_kb: u32,
 }

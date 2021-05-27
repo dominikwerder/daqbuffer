@@ -23,7 +23,7 @@ p {
 
 body {
     font-family: monospace;
-    font-size: 80%;
+    font-size: 100%;
     line-height: 1.4;
     color: #000;
 }
@@ -72,12 +72,12 @@ code#output {
 }
 
 p#load_status {
-    margin-top: 10em;
+    margin-top: 0em;
 }
 
 p.buttonrow {
-    position: fixed;
-    margin-top: 20px;
+    --position: fixed;
+    --margin-top: 20px;
 }
 
 div#footer {

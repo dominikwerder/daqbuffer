@@ -356,7 +356,7 @@ where
 {
     buf: Vec<u8>,
     file: Option<File>,
-    _mark: std::marker::PhantomData<T>,
+    _marker: std::marker::PhantomData<T>,
 }
 
 impl<T> ReadPbv<T>
@@ -367,7 +367,7 @@ where
         Self {
             buf: vec![],
             file: Some(file),
-            _mark: std::marker::PhantomData::default(),
+            _marker: std::marker::PhantomData::default(),
         }
     }
 }
@@ -380,26 +380,29 @@ where
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         use Poll::*;
-        let mut buf = vec![];
-        let mut dst = ReadBuf::new(&mut buf);
-        let fp = self.file.as_mut().unwrap();
-        let f = Pin::new(fp);
-        match File::poll_read(f, cx, &mut dst) {
-            Ready(res) => match res {
-                Ok(_) => {
-                    if dst.filled().len() > 0 {
-                        self.buf.extend_from_slice(&mut buf);
-                        Pending
-                    } else {
-                        match T::from_buf(&mut self.buf) {
-                            Ok(item) => Ready(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))),
-                            Err(e) => Ready(Err(e)),
+        'outer: loop {
+            // TODO make buffer size a parameter:
+            let mut buf = vec![0; 4096];
+            let mut dst = ReadBuf::new(&mut buf);
+            let fp = self.file.as_mut().unwrap();
+            let f = Pin::new(fp);
+            break match File::poll_read(f, cx, &mut dst) {
+                Ready(res) => match res {
+                    Ok(_) => {
+                        if dst.filled().len() > 0 {
+                            self.buf.extend_from_slice(&mut buf);
+                            continue 'outer;
+                        } else {
+                            match T::from_buf(&mut self.buf) {
+                                Ok(item) => Ready(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))),
+                                Err(e) => Ready(Err(e)),
+                            }
                         }
                     }
-                }
-                Err(e) => Ready(Err(e.into())),
-            },
-            Pending => Pending,
+                    Err(e) => Ready(Err(e.into())),
+                },
+                Pending => Pending,
+            };
         }
     }
 }
@@ -415,6 +418,9 @@ impl ReadableFromFile for MinMaxAvgScalarBinBatch {
         Ok(ReadPbv::new(file))
     }
     fn from_buf(buf: &[u8]) -> Result<Self, Error> {
+        let mut h = crc32fast::Hasher::new();
+        h.update(&buf);
+        info!("try to deserialize from buf len {}  crc {}", buf.len(), h.finalize());
         let dec: MinMaxAvgScalarBinBatch = serde_cbor::from_slice(&buf)?;
         Ok(dec)
     }

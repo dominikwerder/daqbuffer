@@ -1,9 +1,9 @@
+use chrono::{DateTime, Duration, Utc};
 use disk::cache::CacheUsage;
 use err::Error;
+use netpod::log::*;
 use netpod::{NodeConfig, NodeConfigCached};
 use tokio::io::AsyncReadExt;
-#[allow(unused_imports)]
-use tracing::{debug, error, info, trace, warn};
 
 pub fn main() {
     match taskrun::run(go()) {
@@ -13,6 +13,28 @@ pub fn main() {
         Err(k) => {
             error!("{:?}", k);
         }
+    }
+}
+
+fn parse_ts_rel(s: &str) -> Result<DateTime<Utc>, Error> {
+    let (sign, rem) = if s.starts_with("p") { (1, &s[1..]) } else { (-1, s) };
+    let (fac, rem) = if rem.ends_with("h") {
+        (1000 * 60 * 60, &rem[..rem.len() - 1])
+    } else if rem.ends_with("m") {
+        (1000 * 60, &rem[..rem.len() - 1])
+    } else if rem.ends_with("s") {
+        (1000, &rem[..rem.len() - 1])
+    } else {
+        return Err(Error::with_msg(format!("can not understand relative time: {}", s)))?;
+    };
+    if rem.contains(".") {
+        let num: f32 = rem.parse()?;
+        let dur = Duration::milliseconds((num * fac as f32 * sign as f32) as i64);
+        Ok(Utc::now() + dur)
+    } else {
+        let num: i64 = rem.parse()?;
+        let dur = Duration::milliseconds(num * fac * sign);
+        Ok(Utc::now() + dur)
     }
 }
 
@@ -38,14 +60,24 @@ async fn go() -> Result<(), Error> {
                 retrieval::client::status(opts.host, opts.port).await?;
             }
             ClientType::Binned(opts) => {
-                let beg = opts.beg.parse()?;
-                let end = opts.end.parse()?;
-                let cache_usage = if opts.ignore_cache {
-                    CacheUsage::Ignore
-                } else if opts.recreate_cache {
-                    CacheUsage::Recreate
+                let beg = if opts.beg.contains("-") {
+                    opts.beg.parse()?
                 } else {
+                    parse_ts_rel(&opts.beg)?
+                };
+                let end = if opts.end.contains("-") {
+                    opts.end.parse()?
+                } else {
+                    parse_ts_rel(&opts.end)?
+                };
+                let cache_usage = if opts.cache == "ignore" {
+                    CacheUsage::Ignore
+                } else if opts.cache == "recreate" {
+                    CacheUsage::Recreate
+                } else if opts.cache == "use" {
                     CacheUsage::Use
+                } else {
+                    return Err(Error::with_msg(format!("can not interpret --cache {}", opts.cache)));
                 };
                 retrieval::client::get_binned(
                     opts.host,

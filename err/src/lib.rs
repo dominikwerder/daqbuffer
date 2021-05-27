@@ -7,7 +7,7 @@ use nom::error::ErrorKind;
 use serde::{Deserialize, Serialize, Serializer};
 use std::fmt::Debug;
 use std::net::AddrParseError;
-use std::num::ParseIntError;
+use std::num::{ParseFloatError, ParseIntError};
 use std::string::FromUtf8Error;
 use tokio::task::JoinError;
 
@@ -157,6 +157,12 @@ impl From<chrono::format::ParseError> for Error {
 
 impl From<ParseIntError> for Error {
     fn from(k: ParseIntError) -> Self {
+        Self::with_msg(k.to_string())
+    }
+}
+
+impl From<ParseFloatError> for Error {
+    fn from(k: ParseFloatError) -> Self {
         Self::with_msg(k.to_string())
     }
 }

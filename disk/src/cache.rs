@@ -9,22 +9,22 @@ use chrono::{DateTime, Utc};
 use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
-use hyper::Response;
+use hyper::{Body, Response};
+use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{
     AggKind, ByteSize, Channel, Cluster, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchCoord, ToNanos,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt::{Display, Formatter};
 use std::future::Future;
+use std::io;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tiny_keccak::Hasher;
 use tokio::io::{AsyncRead, ReadBuf};
-#[allow(unused_imports)]
-use tracing::{debug, error, info, trace, warn};
 
 pub mod pbv;
 pub mod pbvfs;
@@ -275,19 +275,19 @@ where
             node_config.ix, patch_node_ix
         )))
     } else {
-        let ret = super::cache::pbv::pre_binned_value_byte_stream_new(query, node_config, stream_kind);
+        let ret = crate::cache::pbv::pre_binned_value_byte_stream_new(query, node_config, stream_kind);
         Ok(ret)
     }
 }
 
 pub struct HttpBodyAsAsyncRead {
-    inp: Response<hyper::Body>,
+    inp: Response<Body>,
     left: Bytes,
     rp: usize,
 }
 
 impl HttpBodyAsAsyncRead {
-    pub fn new(inp: hyper::Response<hyper::Body>) -> Self {
+    pub fn new(inp: Response<Body>) -> Self {
         Self {
             inp,
             left: Bytes::new(),
@@ -297,7 +297,7 @@ impl HttpBodyAsAsyncRead {
 }
 
 impl AsyncRead for HttpBodyAsAsyncRead {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut ReadBuf) -> Poll<std::io::Result<()>> {
+    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut ReadBuf) -> Poll<io::Result<()>> {
         use hyper::body::HttpBody;
         use Poll::*;
         if self.left.len() != 0 {
@@ -329,8 +329,8 @@ impl AsyncRead for HttpBodyAsAsyncRead {
                         Ready(Ok(()))
                     }
                 }
-                Ready(Some(Err(e))) => Ready(Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                Ready(Some(Err(e))) => Ready(Err(io::Error::new(
+                    io::ErrorKind::Other,
                     Error::with_msg(format!("Received by HttpBodyAsAsyncRead: {:?}", e)),
                 ))),
                 Ready(None) => Ready(Ok(())),
@@ -551,13 +551,22 @@ where
     };
     let path = cfd.path(&node_config);
     let enc = serde_cbor::to_vec(&values)?;
-    info!("Writing cache file  size {}\n{:?}\npath: {:?}", enc.len(), cfd, path);
+    let mut h = crc32fast::Hasher::new();
+    h.update(&enc);
+    info!(
+        "Writing cache file  len {}  crc {}\n{:?}\npath: {:?}",
+        enc.len(),
+        h.finalize(),
+        cfd,
+        path
+    );
     tokio::fs::create_dir_all(path.parent().unwrap()).await?;
     let res = tokio::task::spawn_blocking({
         let path = path.clone();
         move || {
             use fs2::FileExt;
-            use std::io::Write;
+            use io::Write;
+            // TODO write to random tmp file first and then move into place.
             let mut f = std::fs::OpenOptions::new()
                 .create(true)
                 .truncate(true)
@@ -571,5 +580,85 @@ where
     })
     .await??;
     let ret = WrittenPbCache { bytes: res as u64 };
+    Ok(ret)
+}
+
+#[derive(Serialize)]
+pub struct ClearCacheAllResult {
+    pub log: Vec<String>,
+}
+
+pub async fn clear_cache_all(node_config: &NodeConfigCached, dry: bool) -> Result<ClearCacheAllResult, Error> {
+    let mut log = vec![];
+    log.push(format!("begin at {:?}", chrono::Utc::now()));
+    if dry {
+        log.push(format!("dry run"));
+    }
+    let mut dirs = VecDeque::new();
+    let mut stack = VecDeque::new();
+    stack.push_front(node_config.node.data_base_path.join("cache"));
+    loop {
+        match stack.pop_front() {
+            Some(path) => {
+                let mut rd = tokio::fs::read_dir(path).await?;
+                while let Some(entry) = rd.next_entry().await? {
+                    let path = entry.path();
+                    match path.to_str() {
+                        Some(_pathstr) => {
+                            let meta = path.symlink_metadata()?;
+                            //log.push(format!("len {:7}  pathstr {}", meta.len(), pathstr,));
+                            let filename_str = path.file_name().unwrap().to_str().unwrap();
+                            if filename_str.ends_with("..") || filename_str.ends_with(".") {
+                                log.push(format!("ERROR encountered . or .."));
+                            } else {
+                                if meta.is_dir() {
+                                    stack.push_front(path.clone());
+                                    dirs.push_front((meta.len(), path));
+                                } else if meta.is_file() {
+                                    log.push(format!("remove file  len {:7}  {}", meta.len(), path.to_string_lossy()));
+                                    if !dry {
+                                        match tokio::fs::remove_file(&path).await {
+                                            Ok(_) => {}
+                                            Err(e) => {
+                                                log.push(format!(
+                                                    "can not remove file  {}  {:?}",
+                                                    path.to_string_lossy(),
+                                                    e
+                                                ));
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    log.push(format!("not file, note dir"));
+                                }
+                            }
+                        }
+                        None => {
+                            log.push(format!("Invalid utf-8 path encountered"));
+                        }
+                    }
+                }
+            }
+            None => break,
+        }
+    }
+    log.push(format!(
+        "start to remove {} dirs at {:?}",
+        dirs.len(),
+        chrono::Utc::now()
+    ));
+    for (len, path) in dirs {
+        log.push(format!("remove dir  len {}  {}", len, path.to_string_lossy()));
+        if !dry {
+            match tokio::fs::remove_dir(&path).await {
+                Ok(_) => {}
+                Err(e) => {
+                    log.push(format!("can not remove dir  {}  {:?}", path.to_string_lossy(), e));
+                }
+            }
+        }
+    }
+    log.push(format!("done at {:?}", chrono::Utc::now()));
+    let ret = ClearCacheAllResult { log };
     Ok(ret)
 }
