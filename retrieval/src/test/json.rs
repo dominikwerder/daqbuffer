@@ -1,5 +1,4 @@
-use crate::spawn_test_hosts;
-use crate::test::test_cluster;
+use crate::test::require_test_hosts_running;
 use chrono::{DateTime, Utc};
 use disk::cache::BinnedQuery;
 use err::Error;
@@ -14,14 +13,14 @@ fn get_binned_json_0() {
 }
 
 async fn get_binned_json_0_inner() -> Result<(), Error> {
-    let cluster = test_cluster();
-    let _hosts = spawn_test_hosts(cluster.clone());
+    let rh = require_test_hosts_running()?;
+    let cluster = &rh.cluster;
     get_binned_json_0_inner2(
         "wave-f64-be-n21",
         "1970-01-01T00:20:10.000Z",
         "1970-01-01T01:20:30.000Z",
         10,
-        &cluster,
+        cluster,
     )
     .await
 }

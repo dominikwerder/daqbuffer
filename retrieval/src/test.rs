@@ -15,9 +15,38 @@ use hyper::Body;
 use netpod::log::*;
 use netpod::{AggKind, Channel, Cluster, Database, HostPort, NanoRange, Node, PerfOpts};
 use std::future::ready;
+use std::sync::{Arc, Mutex};
 use tokio::io::AsyncRead;
+use tokio::task::JoinHandle;
 
 pub mod json;
+
+struct RunningHosts {
+    cluster: Cluster,
+    _jhs: Vec<JoinHandle<Result<(), Error>>>,
+}
+
+lazy_static::lazy_static! {
+    static ref HOSTS_RUNNING: Mutex<Option<Arc<RunningHosts>>> = Mutex::new(None);
+}
+
+fn require_test_hosts_running() -> Result<Arc<RunningHosts>, Error> {
+    let mut g = HOSTS_RUNNING.lock().unwrap();
+    match g.as_ref() {
+        None => {
+            let cluster = test_cluster();
+            let jhs = spawn_test_hosts(cluster.clone());
+            let ret = RunningHosts {
+                cluster: cluster.clone(),
+                _jhs: jhs,
+            };
+            let a = Arc::new(ret);
+            *g = Some(a.clone());
+            Ok(a)
+        }
+        Some(gg) => Ok(gg.clone()),
+    }
+}
 
 fn test_cluster() -> Cluster {
     let nodes = (0..3)
@@ -50,15 +79,15 @@ fn get_binned_binary() {
 }
 
 async fn get_binned_binary_inner() -> Result<(), Error> {
-    let cluster = test_cluster();
-    let _hosts = spawn_test_hosts(cluster.clone());
+    let rh = require_test_hosts_running()?;
+    let cluster = &rh.cluster;
     if true {
         get_binned_channel(
             "wave-f64-be-n21",
             "1970-01-01T00:20:10.000Z",
             "1970-01-01T00:20:30.000Z",
             2,
-            &cluster,
+            cluster,
             true,
             2,
         )
@@ -70,7 +99,7 @@ async fn get_binned_binary_inner() -> Result<(), Error> {
             "1970-01-01T01:11:00.000Z",
             "1970-01-01T01:35:00.000Z",
             7,
-            &cluster,
+            cluster,
             true,
             24,
         )
@@ -82,7 +111,7 @@ async fn get_binned_binary_inner() -> Result<(), Error> {
             "1970-01-01T01:42:00.000Z",
             "1970-01-01T03:55:00.000Z",
             2,
-            &cluster,
+            cluster,
             true,
             3,
         )

@@ -376,6 +376,7 @@ where
                                 continue 'outer;
                             }
                             Err(e) => match e.kind() {
+                                // TODO other error kinds
                                 std::io::ErrorKind::NotFound => match self.try_setup_fetch_prebinned_higher_res() {
                                     Ok(_) => {
                                         if self.fut2.is_none() {
@@ -398,7 +399,7 @@ where
                                     }
                                 },
                                 _ => {
-                                    error!("File I/O error: {:?}", e);
+                                    error!("File I/O error:  kind {:?}  {:?}\n\n..............", e.kind(), e);
                                     self.errored = true;
                                     Ready(Some(Err(e.into())))
                                 }
