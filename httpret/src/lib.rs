@@ -21,6 +21,7 @@ use task::{Context, Poll};
 use tracing::field::Empty;
 
 pub mod gather;
+pub mod search;
 
 pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
     let node_config = node_config.clone();
@@ -112,6 +113,13 @@ async fn data_api_proxy_try(req: Request<Body>, node_config: &NodeConfigCached) 
     if path == "/api/4/node_status" {
         if req.method() == Method::GET {
             Ok(node_status(req, &node_config).await?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    } else if path == "/api/4/search/channel" {
+        if req.method() == Method::GET {
+            // TODO multi-facility search
+            Ok(search::channel_search(req, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -254,7 +262,8 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
     let query = disk::cache::BinnedQuery::from_request(&head)?;
     match head.headers.get("accept") {
         Some(v) if v == "application/octet-stream" => binned_binary(query, node_config).await,
-        _ => binned_json(query, node_config).await,
+        Some(v) if v == "application/json" => binned_json(query, node_config).await,
+        _ => Err(Error::with_msg("binned with unknown accept")),
     }
 }
 

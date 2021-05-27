@@ -10,6 +10,7 @@
 </head>
 
 <body>
+
 <h1>Retrieval Documentation</h1>
 
 <h2>HTTP API documentation</h2>
@@ -19,12 +20,13 @@
 <p>Currently available:</p>
 <ul>
     <li><a href="#query-binned">Query binned data</a></li>
+    <li><a href="#search-channel">Search channel</a></li>
 </ul>
 
 <a id="query-binned"></a>
 <h2>Query binned data</h2>
 <p><strong>Method:</strong> GET</p>
-<p><strong>URL:</strong> https://data-api.psi.ch/api/4/binned</p>
+<p><strong>URL:</strong> http://sf-daqbuf-21:8380/api/4/binned</p>
 <p><strong>Query parameters:</strong></p>
 <ul>
     <li>channel_backend (e.g. "sf-databuffer")</li>
@@ -87,6 +89,19 @@ curl -H 'Accept: application/json' 'http://sf-daqbuf-21:8380/api/4/binned?channe
 <h4>Finalised range</h4>
 <p>If the server can determine that no more data will be added to the requested time range
 then it will add the flag <strong>finalised_range</strong> to the response.</p>
+
+
+<a id="search-channel"></a>
+<h2>Search channel</h2>
+<p><strong>Method:</strong> GET</p>
+<p><strong>URL:</strong> http://sf-daqbuf-21:8380/api/4/search/channel</p>
+<p><strong>Query parameters:</strong></p>
+<ul>
+    <li>nameRegex (e.g. "LSCP.*6")</li>
+    <li>sourceRegex  (e.g. "178:9999")</li>
+    <li>descriptionRegex  (e.g. "celsius")</li>
+</ul>
+<p><strong>Request header:</strong> "Accept" must be "application/json"</p>
 
 
 <h2>Feedback and comments very much appreciated!</h2>

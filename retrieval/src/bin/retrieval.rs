@@ -38,6 +38,11 @@ fn parse_ts_rel(s: &str) -> Result<DateTime<Utc>, Error> {
     }
 }
 
+fn parse_ts(s: &str) -> Result<DateTime<Utc>, Error> {
+    let ret = if s.contains("-") { s.parse()? } else { parse_ts_rel(s)? };
+    Ok(ret)
+}
+
 async fn go() -> Result<(), Error> {
     use clap::Clap;
     use retrieval::cli::{ClientType, Opts, SubCmd};
@@ -60,25 +65,9 @@ async fn go() -> Result<(), Error> {
                 retrieval::client::status(opts.host, opts.port).await?;
             }
             ClientType::Binned(opts) => {
-                let beg = if opts.beg.contains("-") {
-                    opts.beg.parse()?
-                } else {
-                    parse_ts_rel(&opts.beg)?
-                };
-                let end = if opts.end.contains("-") {
-                    opts.end.parse()?
-                } else {
-                    parse_ts_rel(&opts.end)?
-                };
-                let cache_usage = if opts.cache == "ignore" {
-                    CacheUsage::Ignore
-                } else if opts.cache == "recreate" {
-                    CacheUsage::Recreate
-                } else if opts.cache == "use" {
-                    CacheUsage::Use
-                } else {
-                    return Err(Error::with_msg(format!("can not interpret --cache {}", opts.cache)));
-                };
+                let beg = parse_ts(&opts.beg)?;
+                let end = parse_ts(&opts.end)?;
+                let cache_usage = CacheUsage::from_string(&opts.cache)?;
                 retrieval::client::get_binned(
                     opts.host,
                     opts.port,

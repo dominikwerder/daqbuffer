@@ -367,7 +367,7 @@ where
     fn new(file: File) -> Self {
         Self {
             // TODO make buffer size a parameter:
-            buf: vec![0; 4096],
+            buf: vec![0; 1024 * 32],
             all: vec![],
             file: Some(file),
             _marker: std::marker::PhantomData::default(),

@@ -60,6 +60,19 @@ impl CacheUsage {
         })?;
         Ok(ret)
     }
+
+    pub fn from_string(s: &str) -> Result<Self, Error> {
+        let ret = if s == "ignore" {
+            CacheUsage::Ignore
+        } else if s == "recreate" {
+            CacheUsage::Recreate
+        } else if s == "use" {
+            CacheUsage::Use
+        } else {
+            return Err(Error::with_msg(format!("can not interpret cache usage string: {}", s)));
+        };
+        Ok(ret)
+    }
 }
 
 impl Display for CacheUsage {

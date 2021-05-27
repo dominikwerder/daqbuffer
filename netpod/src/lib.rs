@@ -758,3 +758,38 @@ impl ByteSize {
         self.0
     }
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct ChannelSearchQuery {
+    pub name_regex: String,
+    pub source_regex: String,
+    pub description_regex: String,
+}
+
+impl ChannelSearchQuery {
+    pub fn from_request(query: Option<&str>) -> Result<Self, Error> {
+        let params = query_params(query);
+        let ret = Self {
+            name_regex: params.get("nameRegex").map_or("".into(), |k| k.into()),
+            source_regex: params.get("sourceRegex").map_or("".into(), |k| k.into()),
+            description_regex: params.get("descriptionRegex").map_or("".into(), |k| k.into()),
+        };
+        Ok(ret)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ChannelSearchSingleResult {
+    pub name: String,
+    pub source: String,
+    #[serde(rename = "type")]
+    pub ty: String,
+    pub shape: Vec<u32>,
+    pub unit: String,
+    pub description: String,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ChannelSearchResult {
+    pub channels: Vec<ChannelSearchSingleResult>,
+}

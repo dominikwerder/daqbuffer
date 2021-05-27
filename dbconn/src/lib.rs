@@ -3,6 +3,8 @@ use netpod::log::*;
 use netpod::{Channel, NodeConfigCached};
 use tokio_postgres::{Client, NoTls};
 
+pub mod search;
+
 pub async fn create_connection(node_config: &NodeConfigCached) -> Result<Client, Error> {
     let d = &node_config.node_config.cluster.database;
     let uri = format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, 5432, d.name);
