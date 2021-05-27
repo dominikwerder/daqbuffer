@@ -44,7 +44,12 @@ curl -H 'Accept: application/json' 'http://sf-daqbuf-21:8380/api/4/binned?channe
 </pre>
 
 <h4>Partial result</h4>
-<p>Note the keys <strong>continue_at</strong> and <strong>missing_bins</strong>.</p>
+<p>If the requested range takes longer time to retrieve, then a partial result with at least one bin is returned.</p>
+<p>The partial result will contain the necessary information to send another request with a range that
+starts with the first missing bin.</p>
+<p>This information is provided by the <strong>continue_at</strong> and <strong>missing_bins</strong> fields.</p>
+<p>This enables the user agent to start the presentation to the user while updating the UI as new bins are retrieved.</p>
+<p>Example:</p>
 <pre>
 {
   "continue_at": "2021-05-25T16:00:00.000Z",
@@ -88,7 +93,7 @@ curl -H 'Accept: application/json' 'http://sf-daqbuf-21:8380/api/4/binned?channe
 
 <h4>Finalised range</h4>
 <p>If the server can determine that no more data will be added to the requested time range
-then it will add the flag <strong>finalised_range</strong> to the response.</p>
+then it will add the flag <strong>finalised_range: true</strong> to the response.</p>
 
 
 <a id="search-channel"></a>
@@ -102,6 +107,35 @@ then it will add the flag <strong>finalised_range</strong> to the response.</p>
     <li>descriptionRegex  (e.g. "celsius")</li>
 </ul>
 <p><strong>Request header:</strong> "Accept" must be "application/json"</p>
+
+<h4>CURL example:</h4>
+<pre>
+curl -H 'Accept: application/json' 'http://sf-daqbuf-21:8380/api/4/search/channel?sourceRegex=CV.E.+37&nameRegex=120.+y2$'
+</pre>
+
+<h4>Example result</h4>
+<pre>
+{
+  "channels": [
+    {
+      "name": "S10MA01-DBPM120:Y2",
+      "source": "tcp://S20-CVME-DBPM2371:9000",
+      "type": "Float32",
+      "shape": [],
+      "unit": "",
+      "description": ""
+    },
+    {
+      "name": "S20SY02-DBPM120:Y2",
+      "source": "tcp://S20-CVME-DBPM2371:9000",
+      "type": "Float32",
+      "shape": [],
+      "unit": "",
+      "description": ""
+    }
+  ]
+}
+</pre>
 
 
 <h2>Feedback and comments very much appreciated!</h2>
