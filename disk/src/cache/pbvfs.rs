@@ -12,23 +12,23 @@ use netpod::{NodeConfigCached, PerfOpts};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub struct PreBinnedScalarValueFetchedStream<BK>
+pub struct PreBinnedScalarValueFetchedStream<SK>
 where
-    BK: BinnedStreamKind,
+    SK: BinnedStreamKind,
 {
     uri: http::Uri,
     resfut: Option<hyper::client::ResponseFuture>,
     res: Option<InMemoryFrameAsyncReadStream<HttpBodyAsAsyncRead>>,
     errored: bool,
     completed: bool,
-    _stream_kind: BK,
+    _stream_kind: SK,
 }
 
-impl<BK> PreBinnedScalarValueFetchedStream<BK>
+impl<SK> PreBinnedScalarValueFetchedStream<SK>
 where
-    BK: BinnedStreamKind,
+    SK: BinnedStreamKind,
 {
-    pub fn new(query: &PreBinnedQuery, node_config: &NodeConfigCached, stream_kind: &BK) -> Result<Self, Error> {
+    pub fn new(query: &PreBinnedQuery, node_config: &NodeConfigCached, stream_kind: &SK) -> Result<Self, Error> {
         let nodeix = node_ix_for_patch(&query.patch, &query.channel, &node_config.node_config.cluster);
         let node = &node_config.node_config.cluster.nodes[nodeix as usize];
         let uri: hyper::Uri = format!(

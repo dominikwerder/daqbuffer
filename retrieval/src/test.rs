@@ -52,23 +52,27 @@ fn get_binned_binary() {
 async fn get_binned_binary_inner() -> Result<(), Error> {
     let cluster = test_cluster();
     let _hosts = spawn_test_hosts(cluster.clone());
-    if false {
+    if true {
         get_binned_channel(
             "wave-f64-be-n21",
             "1970-01-01T00:20:10.000Z",
             "1970-01-01T00:20:30.000Z",
             2,
             &cluster,
+            true,
+            2,
         )
         .await?;
     }
-    if false {
+    if true {
         get_binned_channel(
             "wave-u16-le-n77",
             "1970-01-01T01:11:00.000Z",
-            "1970-01-01T01:40:00.000Z",
+            "1970-01-01T01:35:00.000Z",
             7,
             &cluster,
+            true,
+            24,
         )
         .await?;
     }
@@ -79,6 +83,8 @@ async fn get_binned_binary_inner() -> Result<(), Error> {
             "1970-01-01T03:55:00.000Z",
             2,
             &cluster,
+            true,
+            3,
         )
         .await?;
     }
@@ -91,7 +97,9 @@ async fn get_binned_channel<S>(
     end_date: S,
     bin_count: u32,
     cluster: &Cluster,
-) -> Result<(), Error>
+    expect_range_complete: bool,
+    expect_bin_count: u64,
+) -> Result<BinnedResponse, Error>
 where
     S: AsRef<str>,
 {
@@ -128,10 +136,13 @@ where
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     info!("get_cached_0  DONE  bin_count {}  time {} ms", res.bin_count, ms);
     if !res.is_valid() {
-        error!("result is not valid:\n{:?}", res);
-        Err(Error::with_msg("result not valid"))
+        Err(Error::with_msg(format!("invalid response: {:?}", res)))
+    } else if res.range_complete_count == 0 && expect_range_complete {
+        Err(Error::with_msg(format!("expect range complete: {:?}", res)))
+    } else if res.bin_count != expect_bin_count {
+        Err(Error::with_msg(format!("bin count mismatch: {:?}", res)))
     } else {
-        Ok(())
+        Ok(res)
     }
 }
 

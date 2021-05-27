@@ -12,23 +12,23 @@ use std::future::ready;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub struct BinnedScalarStreamFromPreBinnedPatches<BK>
+pub struct BinnedScalarStreamFromPreBinnedPatches<SK>
 where
-    BK: BinnedStreamKind,
+    SK: BinnedStreamKind,
 {
     inp: Pin<
         Box<
-            dyn Stream<Item = Result<StreamItem<RangeCompletableItem<<BK as BinnedStreamKind>::TBinnedBins>>, Error>>
+            dyn Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>, Error>>
                 + Send,
         >,
     >,
-    _stream_kind: BK,
+    _stream_kind: SK,
 }
 
-impl<BK> BinnedScalarStreamFromPreBinnedPatches<BK>
+impl<SK> BinnedScalarStreamFromPreBinnedPatches<SK>
 where
-    BK: BinnedStreamKind,
-    Result<StreamItem<RangeCompletableItem<<BK as BinnedStreamKind>::TBinnedBins>>, Error>: FrameType,
+    SK: BinnedStreamKind,
+    Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>, Error>: FrameType,
 {
     pub fn new(
         patch_it: PreBinnedPatchIterator,
@@ -39,7 +39,7 @@ where
         node_config: &NodeConfigCached,
         disk_stats_every: ByteSize,
         report_error: bool,
-        stream_kind: BK,
+        stream_kind: SK,
     ) -> Result<Self, Error> {
         let patches: Vec<_> = patch_it.collect();
         let mut sp = String::new();
@@ -51,11 +51,12 @@ where
             }
             info!("Using these pre-binned patches:\n{}", sp);
         }
-        let inp = futures_util::stream::iter(patches.into_iter())
+        let pmax = patches.len();
+        let inp = futures_util::stream::iter(patches.into_iter().enumerate())
             .map({
                 let node_config = node_config.clone();
                 let stream_kind = stream_kind.clone();
-                move |patch| {
+                move |(pix, patch)| {
                     let query = PreBinnedQuery::new(
                         patch,
                         channel.clone(),
@@ -66,10 +67,10 @@ where
                     );
                     let ret: Pin<Box<dyn Stream<Item = _> + Send>> =
                         match PreBinnedScalarValueFetchedStream::new(&query, &node_config, &stream_kind) {
-                            Ok(k) => Box::pin(k),
+                            Ok(stream) => Box::pin(stream.map(move |q| (pix, q))),
                             Err(e) => {
                                 error!("error from PreBinnedValueFetchedStream::new {:?}", e);
-                                Box::pin(futures_util::stream::iter(vec![Err(e)]))
+                                Box::pin(futures_util::stream::iter(vec![(pix, Err(e))]))
                             }
                         };
                     ret
@@ -78,7 +79,7 @@ where
             .flatten()
             .filter_map({
                 let range = range.clone();
-                move |k| {
+                move |(pix, k)| {
                     let fit_range = range.full_range();
                     let g = match k {
                         Ok(item) => match item {
@@ -86,7 +87,11 @@ where
                             StreamItem::Stats(item) => Some(Ok(StreamItem::Stats(item))),
                             StreamItem::DataItem(item) => match item {
                                 RangeCompletableItem::RangeComplete => {
-                                    Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)))
+                                    if pix + 1 == pmax {
+                                        Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)))
+                                    } else {
+                                        None
+                                    }
                                 }
                                 RangeCompletableItem::Data(item) => {
                                     match crate::binned::FilterFittingInside::filter_fitting_inside(item, fit_range) {

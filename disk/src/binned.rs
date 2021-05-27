@@ -537,13 +537,8 @@ impl TBinnedBins for MinMaxAvgScalarBinBatch {
     }
 }
 
-pub trait BinnedStreamKind: Clone + Unpin + Send + Sync + 'static
-// TODO would it be better to express it here?
-//where Result<StreamItem<RangeCompletableItem<Self::XBinnedEvents>>, Error>: FrameType,
-{
-    type TBinnedStreamType: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::TBinnedBins>>, Error>>
-        + Send
-        + 'static;
+pub trait BinnedStreamKind: Clone + Unpin + Send + Sync + 'static {
+    type TBinnedStreamType: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::TBinnedBins>>, Error>> + Send;
     type XBinnedEvents: XBinnedEvents<Self>;
     type TBinnedBins: TBinnedBins;
     type XBinnedToTBinnedAggregator;
@@ -633,7 +628,6 @@ impl BinnedStreamKind for BinnedStreamKindScalar {
     ) -> Result<Self::TBinnedStreamType, Error> {
         let s = MergedFromRemotes::new(evq, perf_opts, node_config.node_config.cluster.clone(), self.clone());
         let s = Self::xbinned_to_tbinned(s, range);
-        //let s = crate::agg::binnedt::IntoBinnedT::<Self>::into_binned_t(s, range);
         Ok(BoxedStream::new(Box::pin(s))?)
     }
 

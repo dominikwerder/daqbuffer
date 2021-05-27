@@ -1,6 +1,7 @@
 use err::Error;
 use std::future::Future;
 use std::panic;
+use std::sync::Mutex;
 use tokio::task::JoinHandle;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
@@ -49,16 +50,24 @@ pub fn run<T, F: std::future::Future<Output = Result<T, Error>>>(f: F) -> Result
     }
 }
 
+lazy_static::lazy_static! {
+    pub static ref INITMX: Mutex<u32> = Mutex::new(0);
+}
+
 pub fn tracing_init() {
-    tracing_subscriber::fmt()
-        //.with_timer(tracing_subscriber::fmt::time::uptime())
-        .with_target(true)
-        .with_thread_names(true)
-        //.with_max_level(tracing::Level::INFO)
-        .with_env_filter(tracing_subscriber::EnvFilter::new(
-            "info,retrieval=trace,retrieval::test=trace,disk::raw::conn=info",
-        ))
-        .init();
+    let mut g = INITMX.lock().unwrap();
+    if *g == 0 {
+        tracing_subscriber::fmt()
+            //.with_timer(tracing_subscriber::fmt::time::uptime())
+            .with_target(true)
+            .with_thread_names(true)
+            //.with_max_level(tracing::Level::INFO)
+            .with_env_filter(tracing_subscriber::EnvFilter::new(
+                "info,retrieval=trace,retrieval::test=trace,disk::raw::conn=info",
+            ))
+            .init();
+        *g = 1;
+    }
 }
 
 pub fn spawn<T>(task: T) -> JoinHandle<T::Output>
