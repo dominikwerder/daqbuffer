@@ -426,9 +426,6 @@ impl ReadableFromFile for MinMaxAvgScalarBinBatch {
         Ok(ReadPbv::new(file))
     }
     fn from_buf(buf: &[u8]) -> Result<Self, Error> {
-        let mut h = crc32fast::Hasher::new();
-        h.update(&buf);
-        info!("try to deserialize from buf len {}  crc {}", buf.len(), h.finalize());
         let dec: MinMaxAvgScalarBinBatch = serde_cbor::from_slice(&buf)?;
         Ok(dec)
     }

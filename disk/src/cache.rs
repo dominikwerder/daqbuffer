@@ -602,34 +602,38 @@ where
     };
     let path = cfd.path(&node_config);
     let enc = serde_cbor::to_vec(&values)?;
-    let mut h = crc32fast::Hasher::new();
-    h.update(&enc);
-    info!(
-        "Writing cache file  len {}  crc {}\n{:?}\npath: {:?}",
-        enc.len(),
-        h.finalize(),
-        cfd,
-        path
-    );
     tokio::fs::create_dir_all(path.parent().unwrap()).await?;
+    let now = Utc::now();
+    let mut h = crc32fast::Hasher::new();
+    h.update(&now.timestamp_nanos().to_le_bytes());
+    let r = h.finalize();
+    let tmp_path =
+        path.parent()
+            .unwrap()
+            .join(format!("{}.tmp.{:08x}", path.file_name().unwrap().to_str().unwrap(), r));
     let res = tokio::task::spawn_blocking({
-        let path = path.clone();
+        let tmp_path = tmp_path.clone();
         move || {
             use fs2::FileExt;
             use io::Write;
-            // TODO write to random tmp file first and then move into place.
+            info!("try to write tmp at {:?}", tmp_path);
             let mut f = std::fs::OpenOptions::new()
-                .create(true)
-                .truncate(true)
+                .create_new(true)
                 .write(true)
-                .open(&path)?;
-            f.lock_exclusive()?;
+                .open(&tmp_path)?;
+            if false {
+                f.lock_exclusive()?;
+            }
             f.write_all(&enc)?;
-            f.unlock()?;
+            if false {
+                f.unlock()?;
+            }
+            f.flush()?;
             Ok::<_, Error>(enc.len())
         }
     })
     .await??;
+    tokio::fs::rename(&tmp_path, &path).await?;
     let ret = WrittenPbCache { bytes: res as u64 };
     Ok(ret)
 }
