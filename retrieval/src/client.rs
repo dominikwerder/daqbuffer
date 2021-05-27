@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use disk::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use disk::agg::streams::StreamItem;
 use disk::binned::RangeCompletableItem;
-use disk::cache::CacheUsage;
+use disk::cache::{BinnedQuery, CacheUsage};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::frame::makeframe::FrameType;
 use disk::streamlog::Streamlog;
@@ -11,7 +11,7 @@ use futures_util::TryStreamExt;
 use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
-use netpod::PerfOpts;
+use netpod::{AggKind, ByteSize, Channel, HostPort, NanoRange, PerfOpts};
 
 pub async fn status(host: String, port: u16) -> Result<(), Error> {
     let t1 = Utc::now();
@@ -52,26 +52,20 @@ pub async fn get_binned(
     info!("end  {}", end_date);
     info!("-------");
     let t1 = Utc::now();
-    let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
-    let uri = format!(
-        concat!(
-            "http://{}:{}/api/4/binned?channelBackend={}&channelName={}",
-            "&begDate={}&endDate={}&binCount={}&cacheUsage={}",
-            "&diskStatsEveryKb={}&reportError=true",
-        ),
-        host,
-        port,
-        channel_backend,
-        channel_name,
-        beg_date.format(date_fmt),
-        end_date.format(date_fmt),
-        bin_count,
-        cache_usage.query_param_value(),
-        disk_stats_every_kb,
-    );
+    let channel = Channel {
+        backend: channel_backend.clone(),
+        name: channel_name.into(),
+    };
+    let agg_kind = AggKind::DimXBins1;
+    let range = NanoRange::from_date_time(beg_date, end_date);
+    let mut query = BinnedQuery::new(channel, range, bin_count, agg_kind);
+    query.set_cache_usage(cache_usage);
+    query.set_disk_stats_every(ByteSize(1024 * disk_stats_every_kb));
+    let hp = HostPort { host: host, port: port };
+    let url = query.url(&hp);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
-        .uri(uri)
+        .uri(url)
         .header("accept", "application/octet-stream")
         .body(Body::empty())?;
     let client = hyper::Client::new();

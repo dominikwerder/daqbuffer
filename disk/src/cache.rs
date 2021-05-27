@@ -5,7 +5,7 @@ use crate::frame::makeframe::FrameType;
 use crate::merge::MergedMinMaxAvgScalarStream;
 use crate::raw::EventsQuery;
 use bytes::Bytes;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
@@ -13,7 +13,7 @@ use hyper::{Body, Response};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{
-    AggKind, ByteSize, Channel, Cluster, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchCoord, ToNanos,
+    AggKind, ByteSize, Channel, Cluster, HostPort, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchCoord, ToNanos,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, VecDeque};
@@ -83,16 +83,28 @@ impl Display for CacheUsage {
 
 #[derive(Clone, Debug)]
 pub struct BinnedQuery {
-    range: NanoRange,
-    bin_count: u64,
-    agg_kind: AggKind,
     channel: Channel,
+    range: NanoRange,
+    bin_count: u32,
+    agg_kind: AggKind,
     cache_usage: CacheUsage,
     disk_stats_every: ByteSize,
     report_error: bool,
 }
 
 impl BinnedQuery {
+    pub fn new(channel: Channel, range: NanoRange, bin_count: u32, agg_kind: AggKind) -> BinnedQuery {
+        BinnedQuery {
+            channel,
+            range,
+            bin_count,
+            agg_kind,
+            cache_usage: CacheUsage::Use,
+            disk_stats_every: ByteSize(1024 * 1024 * 4),
+            report_error: false,
+        }
+    }
+
     pub fn from_request(req: &http::request::Parts) -> Result<Self, Error> {
         let params = netpod::query_params(req.uri.query());
         let beg_date = params.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
@@ -137,7 +149,7 @@ impl BinnedQuery {
         &self.channel
     }
 
-    pub fn bin_count(&self) -> u64 {
+    pub fn bin_count(&self) -> u32 {
         self.bin_count
     }
 
@@ -155,6 +167,32 @@ impl BinnedQuery {
 
     pub fn report_error(&self) -> bool {
         self.report_error
+    }
+
+    pub fn set_cache_usage(&mut self, k: CacheUsage) {
+        self.cache_usage = k;
+    }
+
+    pub fn set_disk_stats_every(&mut self, k: ByteSize) {
+        self.disk_stats_every = k;
+    }
+
+    // TODO the BinnedQuery itself should maybe already carry the full HostPort?
+    // On the other hand, want to keep the flexibility for the fail over possibility..
+    pub fn url(&self, host: &HostPort) -> String {
+        let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
+        format!(
+            "http://{}:{}/api/4/binned?cacheUsage={}&channelBackend={}&channelName={}&binCount={}&begDate={}&endDate={}&diskStatsEveryKb={}",
+            host.host,
+            host.port,
+            self.cache_usage,
+            self.channel.backend,
+            self.channel.name,
+            self.bin_count,
+            Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt),
+            Utc.timestamp_nanos(self.range.end as i64).format(date_fmt),
+            self.disk_stats_every.bytes() / 1024,
+        )
     }
 }
 
@@ -190,45 +228,45 @@ impl PreBinnedQuery {
     pub fn from_request(req: &http::request::Parts) -> Result<Self, Error> {
         let params = netpod::query_params(req.uri.query());
         let patch_ix = params
-            .get("patch_ix")
-            .ok_or(Error::with_msg("missing patch_ix"))?
+            .get("patchIx")
+            .ok_or(Error::with_msg("missing patchIx"))?
             .parse()?;
         let bin_t_len = params
-            .get("bin_t_len")
-            .ok_or(Error::with_msg("missing bin_t_len"))?
+            .get("binTlen")
+            .ok_or(Error::with_msg("missing binTlen"))?
             .parse()?;
         let patch_t_len = params
-            .get("patch_t_len")
-            .ok_or(Error::with_msg("missing patch_t_len"))?
+            .get("patchTlen")
+            .ok_or(Error::with_msg("missing patchTlen"))?
             .parse()?;
         let disk_stats_every = params
-            .get("disk_stats_every_kb")
-            .ok_or(Error::with_msg("missing disk_stats_every_kb"))?;
+            .get("diskStatsEveryKb")
+            .ok_or(Error::with_msg("missing diskStatsEveryKb"))?;
         let disk_stats_every = disk_stats_every
             .parse()
-            .map_err(|e| Error::with_msg(format!("can not parse disk_stats_every_kb {:?}", e)))?;
+            .map_err(|e| Error::with_msg(format!("can not parse diskStatsEveryKb {:?}", e)))?;
         let ret = PreBinnedQuery {
             patch: PreBinnedPatchCoord::new(bin_t_len, patch_t_len, patch_ix),
             agg_kind: params
-                .get("agg_kind")
+                .get("aggKind")
                 .map_or(&format!("{}", AggKind::DimXBins1), |k| k)
                 .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse agg_kind {:?}", e)))?,
+                .map_err(|e| Error::with_msg(format!("can not parse aggKind {:?}", e)))?,
             channel: channel_from_params(&params)?,
             cache_usage: CacheUsage::from_params(&params)?,
             disk_stats_every: ByteSize::kb(disk_stats_every),
             report_error: params
-                .get("report_error")
+                .get("reportError")
                 .map_or("false", |k| k)
                 .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse report_error {:?}", e)))?,
+                .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,
         };
         Ok(ret)
     }
 
     pub fn make_query_string(&self) -> String {
         format!(
-            "{}&channel_backend={}&channel_name={}&agg_kind={}&cache_usage={}&disk_stats_every_kb={}&report_error={}",
+            "{}&channelBackend={}&channelName={}&aggKind={}&cacheUsage={}&diskStatsEveryKb={}&reportError={}",
             self.patch.to_url_params_strings(),
             self.channel.backend,
             self.channel.name,

@@ -153,7 +153,7 @@ where
         }
         // TODO do I need to set up more transformations or binning to deliver the requested data?
         let count = self.query.patch.patch_t_len() / self.query.patch.bin_t_len();
-        let range = BinnedRange::covering_range(evq.range.clone(), count)
+        let range = BinnedRange::covering_range(evq.range.clone(), count as u32)
             .unwrap()
             .ok_or(Error::with_msg("covering_range returns None"))
             .unwrap();

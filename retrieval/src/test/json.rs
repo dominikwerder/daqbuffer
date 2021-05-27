@@ -1,11 +1,12 @@
 use crate::spawn_test_hosts;
 use crate::test::test_cluster;
 use chrono::{DateTime, Utc};
+use disk::cache::BinnedQuery;
 use err::Error;
 use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
-use netpod::{ByteSize, Cluster};
+use netpod::{AggKind, Channel, Cluster, HostPort, NanoRange};
 
 #[test]
 fn get_binned_json_0() {
@@ -33,28 +34,22 @@ async fn get_binned_json_0_inner2(
     cluster: &Cluster,
 ) -> Result<(), Error> {
     let t1 = Utc::now();
+    let agg_kind = AggKind::DimXBins1;
     let node0 = &cluster.nodes[0];
     let beg_date: DateTime<Utc> = beg_date.parse()?;
     let end_date: DateTime<Utc> = end_date.parse()?;
     let channel_backend = "testbackend";
-    let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
-    let disk_stats_every = ByteSize::kb(1024);
-    // TODO have a function to form the uri, including perf opts:
-    let uri = format!(
-        "http://{}:{}/api/4/binned?cache_usage=ignore&channel_backend={}&channel_name={}&bin_count={}&beg_date={}&end_date={}&disk_stats_every_kb={}",
-        node0.host,
-        node0.port,
-        channel_backend,
-        channel_name,
-        bin_count,
-        beg_date.format(date_fmt),
-        end_date.format(date_fmt),
-        disk_stats_every.bytes() / 1024,
-    );
-    info!("get_binned_json_0  get {}", uri);
+    let channel = Channel {
+        backend: channel_backend.into(),
+        name: channel_name.into(),
+    };
+    let range = NanoRange::from_date_time(beg_date, end_date);
+    let query = BinnedQuery::new(channel, range, bin_count, agg_kind);
+    let url = query.url(&HostPort::from_node(node0));
+    info!("get_binned_json_0  get {}", url);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
-        .uri(uri)
+        .uri(url)
         .header("Accept", "application/json")
         .body(Body::empty())?;
     let client = hyper::Client::new();

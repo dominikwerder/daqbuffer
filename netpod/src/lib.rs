@@ -182,6 +182,27 @@ pub struct Channel {
     pub name: String,
 }
 
+pub struct HostPort {
+    pub host: String,
+    pub port: u16,
+}
+
+impl HostPort {
+    pub fn new<S: Into<String>>(host: S, port: u16) -> Self {
+        Self {
+            host: host.into(),
+            port,
+        }
+    }
+
+    pub fn from_node(node: &Node) -> Self {
+        Self {
+            host: node.host.clone(),
+            port: node.port,
+        }
+    }
+}
+
 impl Channel {
     pub fn name(&self) -> &str {
         &self.name
@@ -218,6 +239,13 @@ impl std::fmt::Debug for NanoRange {
 }
 
 impl NanoRange {
+    pub fn from_date_time(beg: DateTime<Utc>, end: DateTime<Utc>) -> Self {
+        Self {
+            beg: beg.timestamp_nanos() as u64,
+            end: end.timestamp_nanos() as u64,
+        }
+    }
+
     pub fn delta(&self) -> u64 {
         self.end - self.beg
     }
@@ -364,7 +392,7 @@ fn get_patch_t_len(bin_t_len: u64) -> u64 {
 
 impl PreBinnedPatchRange {
     /// Cover at least the given range with at least as many as the requested number of bins.
-    pub fn covering_range(range: NanoRange, min_bin_count: u64) -> Result<Option<Self>, Error> {
+    pub fn covering_range(range: NanoRange, min_bin_count: u32) -> Result<Option<Self>, Error> {
         if min_bin_count < 1 {
             Err(Error::with_msg("min_bin_count < 1"))?;
         }
@@ -375,7 +403,7 @@ impl PreBinnedPatchRange {
         if dt > DAY * 14 {
             Err(Error::with_msg("dt > DAY * 14"))?;
         }
-        let bs = dt / min_bin_count;
+        let bs = dt / min_bin_count as u64;
         let mut i1 = BIN_T_LEN_OPTIONS.len();
         loop {
             if i1 <= 0 {
@@ -434,8 +462,8 @@ impl PreBinnedPatchCoord {
         }
     }
 
-    pub fn bin_count(&self) -> u64 {
-        self.spec.patch_t_len() / self.spec.bin_t_len
+    pub fn bin_count(&self) -> u32 {
+        (self.spec.patch_t_len() / self.spec.bin_t_len) as u32
     }
 
     pub fn spec(&self) -> &PreBinnedPatchGridSpec {
@@ -448,7 +476,7 @@ impl PreBinnedPatchCoord {
 
     pub fn to_url_params_strings(&self) -> String {
         format!(
-            "patch_t_len={}&bin_t_len={}&patch_ix={}",
+            "patchTlen={}&binTlen={}&patchIx={}",
             self.spec.patch_t_len(),
             self.spec.bin_t_len(),
             self.ix()
@@ -542,7 +570,7 @@ pub struct BinnedRange {
 }
 
 impl BinnedRange {
-    pub fn covering_range(range: NanoRange, min_bin_count: u64) -> Result<Option<Self>, Error> {
+    pub fn covering_range(range: NanoRange, min_bin_count: u32) -> Result<Option<Self>, Error> {
         if min_bin_count < 1 {
             Err(Error::with_msg("min_bin_count < 1"))?;
         }
@@ -553,7 +581,7 @@ impl BinnedRange {
         if dt > DAY * 14 {
             Err(Error::with_msg("dt > DAY * 14"))?;
         }
-        let bs = dt / min_bin_count;
+        let bs = dt / min_bin_count as u64;
         let mut i1 = BIN_THRESHOLDS.len();
         loop {
             if i1 <= 0 {
@@ -742,7 +770,7 @@ pub struct PerfOpts {
 }
 
 #[derive(Clone, Debug)]
-pub struct ByteSize(u32);
+pub struct ByteSize(pub u32);
 
 impl ByteSize {
     pub fn b(b: u32) -> Self {

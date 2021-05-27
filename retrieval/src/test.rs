@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use disk::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use disk::agg::streams::StreamItem;
 use disk::binned::RangeCompletableItem;
+use disk::cache::BinnedQuery;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::streamlog::Streamlog;
 use err::Error;
@@ -12,7 +13,7 @@ use futures_util::TryStreamExt;
 use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
-use netpod::{ByteSize, Cluster, Database, Node, PerfOpts};
+use netpod::{AggKind, Channel, Cluster, Database, HostPort, NanoRange, Node, PerfOpts};
 use std::future::ready;
 use tokio::io::AsyncRead;
 
@@ -92,29 +93,24 @@ where
     S: AsRef<str>,
 {
     let t1 = Utc::now();
+    let agg_kind = AggKind::DimXBins1;
     let node0 = &cluster.nodes[0];
     let beg_date: DateTime<Utc> = beg_date.as_ref().parse()?;
     let end_date: DateTime<Utc> = end_date.as_ref().parse()?;
     let channel_backend = "testbackend";
-    let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
     let perf_opts = PerfOpts { inmem_bufcap: 512 };
-    let disk_stats_every = ByteSize::kb(1024);
-    // TODO have a function to form the uri, including perf opts:
-    let uri = format!(
-        "http://{}:{}/api/4/binned?cache_usage=use&channel_backend={}&channel_name={}&bin_count={}&beg_date={}&end_date={}&disk_stats_every_kb={}",
-        node0.host,
-        node0.port,
-        channel_backend,
-        channel_name,
-        bin_count,
-        beg_date.format(date_fmt),
-        end_date.format(date_fmt),
-        disk_stats_every.bytes() / 1024,
-    );
-    info!("get_binned_channel  get {}", uri);
+    let channel = Channel {
+        backend: channel_backend.into(),
+        name: channel_name.into(),
+    };
+    let range = NanoRange::from_date_time(beg_date, end_date);
+    let query = BinnedQuery::new(channel, range, bin_count, agg_kind);
+    let hp = HostPort::from_node(node0);
+    let url = query.url(&hp);
+    info!("get_binned_channel  get {}", url);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
-        .uri(uri)
+        .uri(url)
         .header("accept", "application/octet-stream")
         .body(Body::empty())?;
     let client = hyper::Client::new();

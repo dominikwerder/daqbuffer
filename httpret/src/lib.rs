@@ -34,7 +34,7 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
             async move {
                 Ok::<_, Error>(service_fn({
                     move |req| {
-                        let f = data_api_proxy(req, node_config.clone());
+                        let f = http_service(req, node_config.clone());
                         Cont { f: Box::pin(f) }
                     }
                 }))
@@ -46,8 +46,8 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
     Ok(())
 }
 
-async fn data_api_proxy(req: Request<Body>, node_config: NodeConfigCached) -> Result<Response<Body>, Error> {
-    match data_api_proxy_try(req, &node_config).await {
+async fn http_service(req: Request<Body>, node_config: NodeConfigCached) -> Result<Response<Body>, Error> {
+    match http_service_try(req, &node_config).await {
         Ok(k) => Ok(k),
         Err(e) => {
             error!("data_api_proxy sees error: {:?}", e);
@@ -107,7 +107,7 @@ macro_rules! static_http {
     };
 }
 
-async fn data_api_proxy_try(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/4/node_status" {
