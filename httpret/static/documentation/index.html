@@ -29,31 +29,31 @@
 <p><strong>URL:</strong> http://sf-daqbuf-21:8380/api/4/binned</p>
 <p><strong>Query parameters:</strong></p>
 <ul>
-    <li>channel_backend (e.g. "sf-databuffer")</li>
-    <li>channel_name  (e.g. "SLAAR-LSCP4-LAS6891:CH7:1")</li>
-    <li>beg_date  (e.g. "2021-05-26T07:10:00.000Z")</li>
-    <li>end_date  (e.g. "2021-05-26T07:16:00.000Z")</li>
-    <li>bin_count  (e.g. "6")</li>
+    <li>channelBackend (e.g. "sf-databuffer")</li>
+    <li>channelName  (e.g. "SLAAR-LSCP4-LAS6891:CH7:1")</li>
+    <li>begDate  (e.g. "2021-05-26T07:10:00.000Z")</li>
+    <li>endDate  (e.g. "2021-05-26T07:16:00.000Z")</li>
+    <li>binCount  (e.g. "6")</li>
 </ul>
 <p><strong>Request header:</strong> "Accept" must be "application/json"</p>
 
 <h4>CURL example:</h4>
 <pre>
-curl -H 'Accept: application/json' 'http://sf-daqbuf-21:8380/api/4/binned?channel_backend=sf-databuffer
-  &channel_name=SLAAR-LSCP4-LAS6891:CH7:1&beg_date=2021-05-25T00:00:00.000Z&end_date=2021-05-26T00:00:00.000Z&bin_count=3'
+curl -H 'Accept: application/json' 'http://sf-daqbuf-21:8380/api/4/binned?channelBackend=sf-databuffer
+  &channelName=SLAAR-LSCP4-LAS6891:CH7:1&begDate=2021-05-25T00:00:00.000Z&endDate=2021-05-26T00:00:00.000Z&binCount=3'
 </pre>
 
 <h4>Partial result</h4>
 <p>If the requested range takes longer time to retrieve, then a partial result with at least one bin is returned.</p>
 <p>The partial result will contain the necessary information to send another request with a range that
 starts with the first missing bin.</p>
-<p>This information is provided by the <strong>continue_at</strong> and <strong>missing_bins</strong> fields.</p>
+<p>This information is provided by the <strong>continueAt</strong> and <strong>missingBins</strong> fields.</p>
 <p>This enables the user agent to start the presentation to the user while updating the UI as new bins are retrieved.</p>
 <p>Example:</p>
 <pre>
 {
-  "continue_at": "2021-05-25T16:00:00.000Z",
-  "missing_bins": 2,
+  "continueAt": "2021-05-25T16:00:00.000Z",
+  "missingBins": 2,
   "avgs": [
     340.87640380859375,
     340.7442321777344,
@@ -78,7 +78,7 @@ starts with the first missing bin.</p>
     239,
     239
   ],
-  "ts_bin_edges": [
+  "tsBinEdges": [
     "2021-05-25T00:00:00.000Z",
     "2021-05-25T04:00:00.000Z",
     "2021-05-25T08:00:00.000Z",
@@ -89,11 +89,11 @@ starts with the first missing bin.</p>
 </pre>
 
 <h4>Complete result</h4>
-<p>A complete result will not have a <strong>continue_at</strong> key.</p>
+<p>A complete result will not have a <strong>continueAt</strong> key.</p>
 
 <h4>Finalised range</h4>
 <p>If the server can determine that no more data will be added to the requested time range
-then it will add the flag <strong>finalised_range: true</strong> to the response.</p>
+then it will add the flag <strong>finalisedRange: true</strong> to the response.</p>
 
 
 <a id="search-channel"></a>

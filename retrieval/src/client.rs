@@ -55,9 +55,9 @@ pub async fn get_binned(
     let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
     let uri = format!(
         concat!(
-            "http://{}:{}/api/4/binned?channel_backend={}&channel_name={}",
-            "&beg_date={}&end_date={}&bin_count={}&cache_usage={}",
-            "&disk_stats_every_kb={}&report_error=true",
+            "http://{}:{}/api/4/binned?channelBackend={}&channelName={}",
+            "&begDate={}&endDate={}&binCount={}&cacheUsage={}",
+            "&diskStatsEveryKb={}&reportError=true",
         ),
         host,
         port,

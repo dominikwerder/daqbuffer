@@ -47,7 +47,7 @@ impl CacheUsage {
     }
 
     pub fn from_params(params: &BTreeMap<String, String>) -> Result<Self, Error> {
-        let ret = params.get("cache_usage").map_or(Ok::<_, Error>(CacheUsage::Use), |k| {
+        let ret = params.get("cacheUsage").map_or(Ok::<_, Error>(CacheUsage::Use), |k| {
             if k == "use" {
                 Ok(CacheUsage::Use)
             } else if k == "ignore" {
@@ -55,7 +55,7 @@ impl CacheUsage {
             } else if k == "recreate" {
                 Ok(CacheUsage::Recreate)
             } else {
-                Err(Error::with_msg(format!("unexpected cache_usage {:?}", k)))?
+                Err(Error::with_msg(format!("unexpected cacheUsage {:?}", k)))?
             }
         })?;
         Ok(ret)
@@ -95,35 +95,35 @@ pub struct BinnedQuery {
 impl BinnedQuery {
     pub fn from_request(req: &http::request::Parts) -> Result<Self, Error> {
         let params = netpod::query_params(req.uri.query());
-        let beg_date = params.get("beg_date").ok_or(Error::with_msg("missing beg_date"))?;
-        let end_date = params.get("end_date").ok_or(Error::with_msg("missing end_date"))?;
-        let disk_stats_every = params.get("disk_stats_every_kb").map_or("2000", |k| k);
+        let beg_date = params.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
+        let end_date = params.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
+        let disk_stats_every = params.get("diskStatsEveryKb").map_or("2000", |k| k);
         let disk_stats_every = disk_stats_every
             .parse()
-            .map_err(|e| Error::with_msg(format!("can not parse disk_stats_every_kb {:?}", e)))?;
+            .map_err(|e| Error::with_msg(format!("can not parse diskStatsEveryKb {:?}", e)))?;
         let ret = BinnedQuery {
             range: NanoRange {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
             },
             bin_count: params
-                .get("bin_count")
-                .ok_or(Error::with_msg("missing bin_count"))?
+                .get("binCount")
+                .ok_or(Error::with_msg("missing binCount"))?
                 .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse bin_count {:?}", e)))?,
+                .map_err(|e| Error::with_msg(format!("can not parse binCount {:?}", e)))?,
             agg_kind: params
-                .get("agg_kind")
+                .get("aggKind")
                 .map_or("DimXBins1", |k| k)
                 .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse agg_kind {:?}", e)))?,
+                .map_err(|e| Error::with_msg(format!("can not parse aggKind {:?}", e)))?,
             channel: channel_from_params(&params)?,
             cache_usage: CacheUsage::from_params(&params)?,
             disk_stats_every: ByteSize::kb(disk_stats_every),
             report_error: params
-                .get("report_error")
+                .get("reportError")
                 .map_or("false", |k| k)
                 .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse report_error {:?}", e)))?,
+                .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,
         };
         info!("BinnedQuery::from_request  {:?}", ret);
         Ok(ret)
@@ -251,12 +251,12 @@ impl PreBinnedQuery {
 fn channel_from_params(params: &BTreeMap<String, String>) -> Result<Channel, Error> {
     let ret = Channel {
         backend: params
-            .get("channel_backend")
-            .ok_or(Error::with_msg("missing channel_backend"))?
+            .get("channelBackend")
+            .ok_or(Error::with_msg("missing channelBackend"))?
             .into(),
         name: params
-            .get("channel_name")
-            .ok_or(Error::with_msg("missing channel_name"))?
+            .get("channelName")
+            .ok_or(Error::with_msg("missing channelName"))?
             .into(),
     };
     Ok(ret)

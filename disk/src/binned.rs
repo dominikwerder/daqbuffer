@@ -82,16 +82,17 @@ impl Collectable for MinMaxAvgScalarBinBatch {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MinMaxAvgScalarBinBatchCollectedJsonResult {
+    #[serde(rename = "tsBinEdges")]
     ts_bin_edges: Vec<IsoDateTime>,
     counts: Vec<u64>,
     mins: Vec<f32>,
     maxs: Vec<f32>,
     avgs: Vec<f32>,
-    #[serde(skip_serializing_if = "Bool::is_false")]
+    #[serde(skip_serializing_if = "Bool::is_false", rename = "finalisedRange")]
     finalised_range: bool,
-    #[serde(skip_serializing_if = "Zero::is_zero")]
+    #[serde(skip_serializing_if = "Zero::is_zero", rename = "missingBins")]
     missing_bins: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "continueAt")]
     continue_at: Option<IsoDateTime>,
 }
 
