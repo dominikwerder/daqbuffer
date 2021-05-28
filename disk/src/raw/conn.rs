@@ -13,6 +13,7 @@ use err::Error;
 use futures_util::StreamExt;
 use netpod::log::*;
 use netpod::{AggKind, ByteSize, NodeConfigCached, PerfOpts};
+use std::io;
 use std::net::SocketAddr;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
@@ -60,10 +61,13 @@ async fn events_conn_handler_inner(
                 make_frame::<Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error>>(&Err(ce.err))?;
             match ce.netout.write_all(&buf).await {
                 Ok(_) => (),
-                Err(e) => {
-                    error!("events_conn_handler_inner sees: {:?}", e);
-                    return Err(e)?;
-                }
+                Err(e) => match e.kind() {
+                    io::ErrorKind::BrokenPipe => {}
+                    _ => {
+                        error!("events_conn_handler_inner sees: {:?}", e);
+                        return Err(e)?;
+                    }
+                },
             }
         }
     }
