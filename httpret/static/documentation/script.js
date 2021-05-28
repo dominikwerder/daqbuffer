@@ -109,25 +109,33 @@ function clear_cache_all(ev) {
 }
 
 const g_config = {
-    api_base: "http://localhost:8059/api/4/",
+    api_base: "/api/4/",
     ui_delay_test: x => x,
     ui_delay_blink: x => new Promise(resolve => setTimeout(() => resolve(x), 50)),
     //ui_delay_blink: x => x,
 };
 
-function config_for_test() {
-    g_config.api_base = "http://localhost:8059/api/4/";
+function init_for_dev() {
+    g_config.api_base = "http://dev-retrieval-rs:8059/api/4/";
 }
 
 function init() {
+    {
+        const u = document.location.href;
+        const a = u.match("^(.+)/[^/]+/[^/]+$");
+        if (a.length === 2) {
+            g_config.api_base = a[1] + "/";
+        }
+    }
     // keydown event..
     document.getElementById("btn_clear_cache").addEventListener("click", clear_cache_all)
+    if (document.location.href.includes("dev-retrieval-rs")) {
+        init_for_dev();
+    }
+    console.info("api_base: ", g_config.api_base);
 }
 
 window.addEventListener("load", ev => {
-    if (document.location.href.includes("8060")) {
-        config_for_test();
-    }
     init();
     const init_load_ele = document.getElementById("none");
     if (init_load_ele != null) {

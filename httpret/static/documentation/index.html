@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8"/>
     <title>Retrieval Documentation</title>
@@ -11,13 +11,14 @@
 
 <body>
 
-<h1>Retrieval Documentation</h1>
+<h1>Retrieval /api/4 Documentation</h1>
 
 <h2>HTTP API documentation</h2>
 
-<p>This API follows the common convention that the addition of a key to a json object is not considered a breaking change.</p>
+<h3>Limitations</h3>
+<p>These services currently only serve data from the sf-databuffer backend.</p>
 
-<p>Currently available:</p>
+<p>Currently available functionality:</p>
 <ul>
     <li><a href="#query-binned">Query binned data</a></li>
     <li><a href="#search-channel">Search channel</a></li>
@@ -26,7 +27,7 @@
 <a id="query-binned"></a>
 <h2>Query binned data</h2>
 <p><strong>Method:</strong> GET</p>
-<p><strong>URL:</strong> http://sf-daqbuf-21:8380/api/4/binned</p>
+<p><strong>URL:</strong> https://data-api.psi.ch/api/4/binned</p>
 <p><strong>Query parameters:</strong></p>
 <ul>
     <li>channelBackend (e.g. "sf-databuffer")</li>
@@ -39,16 +40,17 @@
 
 <h4>CURL example:</h4>
 <pre>
-curl -H 'Accept: application/json' 'http://sf-daqbuf-21:8380/api/4/binned?channelBackend=sf-databuffer
+curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/binned?channelBackend=sf-databuffer
   &channelName=SLAAR-LSCP4-LAS6891:CH7:1&begDate=2021-05-25T00:00:00.000Z&endDate=2021-05-26T00:00:00.000Z&binCount=3'
 </pre>
 
 <h4>Partial result</h4>
 <p>If the requested range takes longer time to retrieve, then a partial result with at least one bin is returned.</p>
 <p>The partial result will contain the necessary information to send another request with a range that
-starts with the first missing bin.</p>
+starts with the first not-yet-retrieved bin.</p>
 <p>This information is provided by the <strong>continueAt</strong> and <strong>missingBins</strong> fields.</p>
-<p>This enables the user agent to start the presentation to the user while updating the UI as new bins are retrieved.</p>
+<p>This enables the user agent to start the presentation to the user while updating the user interface
+as new bins are received.</p>
 <p>Example:</p>
 <pre>
 {
@@ -89,7 +91,7 @@ starts with the first missing bin.</p>
 </pre>
 
 <h4>Complete result</h4>
-<p>A complete result will not have a <strong>continueAt</strong> key.</p>
+<p>If the result does not contain a <strong>continueAt</strong> key then the result is complete.</p>
 
 <h4>Finalised range</h4>
 <p>If the server can determine that no more data will be added to the requested time range
@@ -99,7 +101,7 @@ then it will add the flag <strong>finalisedRange: true</strong> to the response.
 <a id="search-channel"></a>
 <h2>Search channel</h2>
 <p><strong>Method:</strong> GET</p>
-<p><strong>URL:</strong> http://sf-daqbuf-21:8380/api/4/search/channel</p>
+<p><strong>URL:</strong> https://data-api.psi.ch/api/4/search/channel</p>
 <p><strong>Query parameters:</strong></p>
 <ul>
     <li>nameRegex (e.g. "LSCP.*6")</li>
@@ -110,7 +112,7 @@ then it will add the flag <strong>finalisedRange: true</strong> to the response.
 
 <h4>CURL example:</h4>
 <pre>
-curl -H 'Accept: application/json' 'http://sf-daqbuf-21:8380/api/4/search/channel?sourceRegex=CV.E.+37&nameRegex=120.+y2$'
+curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/search/channel?sourceRegex=CV.E.+37&nameRegex=120.+y2$'
 </pre>
 
 <h4>Example result</h4>
