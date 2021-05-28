@@ -263,7 +263,7 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
     match head.headers.get("accept") {
         Some(v) if v == "application/octet-stream" => binned_binary(query, node_config).await,
         Some(v) if v == "application/json" => binned_json(query, node_config).await,
-        _ => Err(Error::with_msg("binned with unknown accept")),
+        _ => Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?),
     }
 }
 
