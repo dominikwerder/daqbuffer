@@ -231,6 +231,12 @@ impl From<std::fmt::Error> for Error {
     }
 }
 
+impl From<regex::Error> for Error {
+    fn from(k: regex::Error) -> Self {
+        Self::with_msg(k.to_string())
+    }
+}
+
 pub fn todo() {
     todo!("TODO");
 }

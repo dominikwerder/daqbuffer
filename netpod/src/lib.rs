@@ -808,6 +808,7 @@ impl ChannelSearchQuery {
 
 #[derive(Serialize, Deserialize)]
 pub struct ChannelSearchSingleResult {
+    pub backend: String,
     pub name: String,
     pub source: String,
     #[serde(rename = "type")]

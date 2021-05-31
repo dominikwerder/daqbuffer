@@ -8,7 +8,6 @@ use crate::agg::{Fits, FitsInside};
 use crate::binned::scalar::binned_stream;
 use crate::binnedstream::{BinnedScalarStreamFromPreBinnedPatches, BoxedStream};
 use crate::cache::{BinnedQuery, MergedFromRemotes};
-use crate::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use crate::frame::makeframe::FrameType;
 use crate::raw::EventsQuery;
 use bytes::Bytes;
@@ -21,6 +20,7 @@ use netpod::{
     AggKind, BinnedRange, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange,
 };
 use num_traits::Zero;
+use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Map;

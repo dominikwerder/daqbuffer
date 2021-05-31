@@ -1,9 +1,23 @@
 use err::Error;
 use netpod::log::*;
 use netpod::{Channel, NodeConfigCached};
+use std::time::Duration;
 use tokio_postgres::{Client, NoTls};
 
+pub mod scan;
 pub mod search;
+
+pub async fn delay_us(mu: u64) {
+    tokio::time::sleep(Duration::from_micros(mu)).await;
+}
+
+pub async fn delay_io_short() {
+    delay_us(1000).await;
+}
+
+pub async fn delay_io_medium() {
+    delay_us(2000).await;
+}
 
 pub async fn create_connection(node_config: &NodeConfigCached) -> Result<Client, Error> {
     let d = &node_config.node_config.cluster.database;

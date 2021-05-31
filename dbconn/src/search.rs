@@ -8,7 +8,7 @@ pub async fn search_channel(
 ) -> Result<ChannelSearchResult, Error> {
     let sql = format!(concat!(
         "select ",
-        "channel_id, channel_name, source_name, dtype, shape, unit, description",
+        "channel_id, channel_name, source_name, dtype, shape, unit, description, channel_backend",
         " from searchext($1, $2, $3, $4)",
     ));
     let cl = create_connection(node_config).await?;
@@ -44,6 +44,7 @@ pub async fn search_channel(
             None => vec![],
         };
         let k = ChannelSearchSingleResult {
+            backend: row.get(7),
             name: row.get(1),
             source: row.get(2),
             ty: row.get(3),
