@@ -4,6 +4,7 @@ use err::Error;
 use netpod::log::*;
 use netpod::{NodeConfig, NodeConfigCached};
 use tokio::io::AsyncReadExt;
+use tokio::fs::File;
 
 pub fn main() {
     match taskrun::run(go()) {
@@ -45,30 +46,30 @@ fn parse_ts(s: &str) -> Result<DateTime<Utc>, Error> {
 
 async fn go() -> Result<(), Error> {
     use clap::Clap;
-    use retrieval::cli::{ClientType, Opts, SubCmd};
+    use daqbuffer::cli::{ClientType, Opts, SubCmd};
     let opts = Opts::parse();
     match opts.subcmd {
         SubCmd::Retrieval(subcmd) => {
-            trace!("testout");
-            info!("testout");
-            error!("testout");
-            let mut config_file = tokio::fs::File::open(subcmd.config).await?;
+            trace!("test trace");
+            error!("test error");
+            info!("daqbuffer {}", clap::crate_version!());
+            let mut config_file = File::open(subcmd.config).await?;
             let mut buf = vec![];
             config_file.read_to_end(&mut buf).await?;
             let node_config: NodeConfig = serde_json::from_slice(&buf)?;
             let node_config: Result<NodeConfigCached, Error> = node_config.into();
             let node_config = node_config?;
-            retrieval::run_node(node_config.clone()).await?;
+            daqbuffer::run_node(node_config.clone()).await?;
         }
         SubCmd::Client(client) => match client.client_type {
             ClientType::Status(opts) => {
-                retrieval::client::status(opts.host, opts.port).await?;
+                daqbuffer::client::status(opts.host, opts.port).await?;
             }
             ClientType::Binned(opts) => {
                 let beg = parse_ts(&opts.beg)?;
                 let end = parse_ts(&opts.end)?;
                 let cache_usage = CacheUsage::from_string(&opts.cache)?;
-                retrieval::client::get_binned(
+                daqbuffer::client::get_binned(
                     opts.host,
                     opts.port,
                     opts.backend,

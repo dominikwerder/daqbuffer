@@ -1,5 +1,5 @@
 [workspace]
-members = ["retrieval"]
+members = ["daqbuffer"]
 
 [profile.release]
 debug = 1
