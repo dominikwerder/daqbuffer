@@ -171,6 +171,12 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if path == "/api/4/update_search_cache" {
+        if req.method() == Method::GET {
+            Ok(update_search_cache(req, &node_config).await?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
     } else if path.starts_with("/api/4/documentation/") {
         if req.method() == Method::GET {
             static_http!(path, "", "index.html", "text/html");
@@ -387,31 +393,54 @@ pub async fn clear_cache_all(req: Request<Body>, node_config: &NodeConfigCached)
     };
     let res = disk::cache::clear_cache_all(node_config, dry).await?;
     let ret = response(StatusCode::OK)
-    .header(http::header::CONTENT_TYPE, "application/json")
-    .body(Body::from(serde_json::to_string(&res)?))?;
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_string(&res)?))?;
     Ok(ret)
 }
 
-pub async fn update_db_with_channel_names(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+pub async fn update_db_with_channel_names(
+    req: Request<Body>,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
         Some(q) => q.contains("dry"),
         None => false,
     };
-    let res = dbconn::scan::update_db_with_channel_names(node_config).await?;
+    let res = dbconn::scan::UpdatedDbWithChannelNamesStream::new(node_config.clone())?;
+    //let res = dbconn::scan::update_db_with_channel_names(node_config).await?;
     let ret = response(StatusCode::OK)
-    .header(http::header::CONTENT_TYPE, "application/json")
-    .body(Body::from(serde_json::to_string(&res)?))?;
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {
+            Ok(item) => Ok(item),
+            Err(e) => Err(e),
+        })))?;
     Ok(ret)
 }
 
-pub async fn update_db_with_all_channel_configs(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+pub async fn update_db_with_all_channel_configs(
+    req: Request<Body>,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
         Some(q) => q.contains("dry"),
         None => false,
     };
     let res = dbconn::scan::update_db_with_all_channel_configs(node_config).await?;
+    let ret = response(StatusCode::OK)
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_string(&res)?))?;
+    Ok(ret)
+}
+
+pub async fn update_search_cache(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    let (head, _body) = req.into_parts();
+    let _dry = match head.uri.query() {
+        Some(q) => q.contains("dry"),
+        None => false,
+    };
+    let res = dbconn::scan::update_search_cache(node_config).await?;
     let ret = response(StatusCode::OK)
         .header(http::header::CONTENT_TYPE, "application/json")
         .body(Body::from(serde_json::to_string(&res)?))?;

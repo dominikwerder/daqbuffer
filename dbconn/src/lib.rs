@@ -33,6 +33,20 @@ pub async fn create_connection(node_config: &NodeConfigCached) -> Result<Client,
     Ok(cl)
 }
 
+pub async fn create_connection_2(node_config: NodeConfigCached) -> Result<Client, Error> {
+    let d = &node_config.node_config.cluster.database;
+    let uri = format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, 5432, d.name);
+    let (cl, conn) = tokio_postgres::connect(&uri, NoTls).await?;
+    // TODO monitor connection drop.
+    let _cjh = tokio::spawn(async move {
+        if let Err(e) = conn.await {
+            error!("connection error: {}", e);
+        }
+        Ok::<_, Error>(())
+    });
+    Ok(cl)
+}
+
 pub async fn channel_exists(channel: &Channel, node_config: &NodeConfigCached) -> Result<bool, Error> {
     let cl = create_connection(node_config).await?;
     let rows = cl
