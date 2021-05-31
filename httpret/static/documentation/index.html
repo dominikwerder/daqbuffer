@@ -121,6 +121,7 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/search/channel
   "channels": [
     {
       "name": "S10MA01-DBPM120:Y2",
+      "backend": "sf-databuffer",
       "source": "tcp://S20-CVME-DBPM2371:9000",
       "type": "Float32",
       "shape": [],
@@ -129,6 +130,7 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/search/channel
     },
     {
       "name": "S20SY02-DBPM120:Y2",
+      "backend": "sf-databuffer",
       "source": "tcp://S20-CVME-DBPM2371:9000",
       "type": "Float32",
       "shape": [],

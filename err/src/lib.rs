@@ -10,6 +10,7 @@ use std::net::AddrParseError;
 use std::num::{ParseFloatError, ParseIntError};
 use std::string::FromUtf8Error;
 use tokio::task::JoinError;
+use std::sync::PoisonError;
 
 /**
 The common error type for this application.
@@ -234,6 +235,12 @@ impl From<std::fmt::Error> for Error {
 impl From<regex::Error> for Error {
     fn from(k: regex::Error) -> Self {
         Self::with_msg(k.to_string())
+    }
+}
+
+impl<T> From<PoisonError<T>> for Error {
+    fn from(_: PoisonError<T>) -> Self {
+        Self::with_msg("PoisonError")
     }
 }
 
