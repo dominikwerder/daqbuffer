@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8"/>
-    <title>Retrieval Documentation</title>
+    <title>Databuffer API 4 Documentation</title>
     <meta name="keywords" content="PSI, DAQ, Databuffer">
     <meta name="author" content="Dominik Werder">
     <link rel="shortcut icon" href="about:blank"/>
@@ -11,13 +11,19 @@
 
 <body>
 
-<h1>Retrieval /api/4 Documentation</h1>
+<h1>Databuffer API 4 Documentation</h1>
 
-<h2>HTTP API documentation</h2>
+<p>Documented here are the endpoints for databuffer API 4. The endpoints of the "original" unversioned API is documented at
+<a href="https://git.psi.ch/sf_daq/ch.psi.daq.databuffer/blob/master/ch.psi.daq.queryrest/Readme.md">this location</a>.</p>
 
-<h3>Limitations</h3>
-<p>These services currently only serve data from the sf-databuffer backend.</p>
+<h2>Available backends</h2>
+Currently available:
+<ul>
+    <li>sf-databuffer</li>
+</ul>
 
+
+<h2>API functions</h2>
 <p>Currently available functionality:</p>
 <ul>
     <li><a href="#query-binned">Query binned data</a></li>
@@ -140,6 +146,7 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/search/channel
   ]
 }
 </pre>
+<p>The search constraints are AND'd.</p>
 
 
 <h2>Feedback and comments very much appreciated!</h2>

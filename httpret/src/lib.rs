@@ -12,7 +12,7 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
 use netpod::log::*;
-use netpod::NodeConfigCached;
+use netpod::{Channel, NodeConfigCached};
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
 use serde::{Deserialize, Serialize};
@@ -107,6 +107,27 @@ macro_rules! static_http {
     };
 }
 
+macro_rules! static_http_api1 {
+    ($path:expr, $tgt:expr, $tgtex:expr, $ctype:expr) => {
+        if $path == concat!("/api/1/documentation/", $tgt) {
+            let c = include_bytes!(concat!("../static/documentation/", $tgtex));
+            let ret = response(StatusCode::OK)
+                .header("content-type", $ctype)
+                .body(Body::from(&c[..]))?;
+            return Ok(ret);
+        }
+    };
+    ($path:expr, $tgt:expr, $ctype:expr) => {
+        if $path == concat!("/api/1/documentation/", $tgt) {
+            let c = include_bytes!(concat!("../static/documentation/", $tgt));
+            let ret = response(StatusCode::OK)
+                .header("content-type", $ctype)
+                .body(Body::from(&c[..]))?;
+            return Ok(ret);
+        }
+    };
+}
+
 async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let uri = req.uri().clone();
     let path = uri.path();
@@ -177,9 +198,24 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if path == "/api/4/channel/config" {
+        if req.method() == Method::GET {
+            Ok(channel_config(req, &node_config).await?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    } else if path.starts_with("/api/1/documentation/") {
+        if req.method() == Method::GET {
+            static_http_api1!(path, "", "api1.html", "text/html");
+            static_http_api1!(path, "style.css", "text/css");
+            static_http_api1!(path, "script.js", "text/javascript");
+            Ok(response(StatusCode::NOT_FOUND).body(Body::empty())?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
     } else if path.starts_with("/api/4/documentation/") {
         if req.method() == Method::GET {
-            static_http!(path, "", "index.html", "text/html");
+            static_http!(path, "", "api4.html", "text/html");
             static_http!(path, "style.css", "text/css");
             static_http!(path, "script.js", "text/javascript");
             static_http!(path, "status-main.html", "text/html");
@@ -441,6 +477,24 @@ pub async fn update_search_cache(req: Request<Body>, node_config: &NodeConfigCac
         None => false,
     };
     let res = dbconn::scan::update_search_cache(node_config).await?;
+    let ret = response(StatusCode::OK)
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .body(Body::from(serde_json::to_string(&res)?))?;
+    Ok(ret)
+}
+
+pub async fn channel_config(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    let (head, _body) = req.into_parts();
+    let _dry = match head.uri.query() {
+        Some(q) => q.contains("dry"),
+        None => false,
+    };
+    let params = netpod::query_params(head.uri.query());
+    let channel = Channel {
+        backend: node_config.node.backend.clone(),
+        name: params.get("channelName").unwrap().into(),
+    };
+    let res = parse::channelconfig::read_local_config(&channel, &node_config.node).await?;
     let ret = response(StatusCode::OK)
         .header(http::header::CONTENT_TYPE, "application/json")
         .body(Body::from(serde_json::to_string(&res)?))?;

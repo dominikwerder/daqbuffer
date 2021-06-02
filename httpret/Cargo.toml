@@ -20,4 +20,5 @@ err = { path = "../err" }
 netpod = { path = "../netpod" }
 dbconn = { path = "../dbconn" }
 disk = { path = "../disk" }
+parse = { path = "../parse" }
 taskrun = { path = "../taskrun" }
