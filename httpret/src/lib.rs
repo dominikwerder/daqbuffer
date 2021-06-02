@@ -443,12 +443,38 @@ pub async fn update_db_with_channel_names(
         Some(q) => q.contains("dry"),
         None => false,
     };
-    let res = dbconn::scan::UpdatedDbWithChannelNamesStream::new(node_config.clone())?;
-    //let res = dbconn::scan::update_db_with_channel_names(node_config).await?;
+    let res =
+        dbconn::scan::update_db_with_channel_names(node_config.clone(), &node_config.node_config.cluster.database)
+            .await?;
     let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, "application/json")
+        .header(http::header::CONTENT_TYPE, "application/jsonlines")
         .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {
-            Ok(item) => Ok(item),
+            Ok(mut item) => {
+                item.push('\n');
+                Ok(item)
+            }
+            Err(e) => Err(e),
+        })))?;
+    Ok(ret)
+}
+
+pub async fn update_db_with_channel_names_3(
+    req: Request<Body>,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
+    let (head, _body) = req.into_parts();
+    let _dry = match head.uri.query() {
+        Some(q) => q.contains("dry"),
+        None => false,
+    };
+    let res = dbconn::scan::update_db_with_channel_names_3(node_config);
+    let ret = response(StatusCode::OK)
+        .header(http::header::CONTENT_TYPE, "application/jsonlines")
+        .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {
+            Ok(mut item) => {
+                item.push('\n');
+                Ok(item)
+            }
             Err(e) => Err(e),
         })))?;
     Ok(ret)
@@ -463,10 +489,16 @@ pub async fn update_db_with_all_channel_configs(
         Some(q) => q.contains("dry"),
         None => false,
     };
-    let res = dbconn::scan::update_db_with_all_channel_configs(node_config).await?;
+    let res = dbconn::scan::update_db_with_all_channel_configs(node_config.clone()).await?;
     let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, "application/json")
-        .body(Body::from(serde_json::to_string(&res)?))?;
+        .header(http::header::CONTENT_TYPE, "application/jsonlines")
+        .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {
+            Ok(mut item) => {
+                item.push('\n');
+                Ok(item)
+            }
+            Err(e) => Err(e),
+        })))?;
     Ok(ret)
 }
 

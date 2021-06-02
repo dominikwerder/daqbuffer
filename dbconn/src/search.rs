@@ -11,7 +11,7 @@ pub async fn search_channel(
         "channel_id, channel_name, source_name, dtype, shape, unit, description, channel_backend",
         " from searchext($1, $2, $3, $4)",
     ));
-    let cl = create_connection(node_config).await?;
+    let cl = create_connection(&node_config.node_config.cluster.database).await?;
     let rows = cl
         .query(
             sql.as_str(),

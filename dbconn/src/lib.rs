@@ -1,6 +1,6 @@
 use err::Error;
 use netpod::log::*;
-use netpod::{Channel, NodeConfigCached};
+use netpod::{Channel, Database, NodeConfigCached};
 use std::time::Duration;
 use tokio_postgres::{Client, NoTls};
 
@@ -19,8 +19,8 @@ pub async fn delay_io_medium() {
     delay_us(2000).await;
 }
 
-pub async fn create_connection(node_config: &NodeConfigCached) -> Result<Client, Error> {
-    let d = &node_config.node_config.cluster.database;
+pub async fn create_connection(db_config: &Database) -> Result<Client, Error> {
+    let d = db_config;
     let uri = format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, 5432, d.name);
     let (cl, conn) = tokio_postgres::connect(&uri, NoTls).await?;
     // TODO monitor connection drop.
@@ -34,7 +34,7 @@ pub async fn create_connection(node_config: &NodeConfigCached) -> Result<Client,
 }
 
 pub async fn channel_exists(channel: &Channel, node_config: &NodeConfigCached) -> Result<bool, Error> {
-    let cl = create_connection(node_config).await?;
+    let cl = create_connection(&node_config.node_config.cluster.database).await?;
     let rows = cl
         .query("select rowid from channels where name = $1::text", &[&channel.name])
         .await?;
@@ -51,7 +51,7 @@ pub async fn channel_exists(channel: &Channel, node_config: &NodeConfigCached) -
 }
 
 pub async fn database_size(node_config: &NodeConfigCached) -> Result<u64, Error> {
-    let cl = create_connection(node_config).await?;
+    let cl = create_connection(&node_config.node_config.cluster.database).await?;
     let rows = cl
         .query(
             "select pg_database_size($1::text)",
@@ -82,7 +82,7 @@ pub async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, E
         "ORDER BY pg_total_relation_size(C.oid) DESC LIMIT 20",
     );
     let sql = sql.as_str();
-    let cl = create_connection(node_config).await?;
+    let cl = create_connection(&node_config.node_config.cluster.database).await?;
     let rows = cl.query(sql, &[]).await?;
     let mut sizes = TableSizes { sizes: vec![] };
     sizes.sizes.push((format!("table"), format!("size")));
@@ -94,7 +94,7 @@ pub async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, E
 
 pub async fn random_channel(node_config: &NodeConfigCached) -> Result<String, Error> {
     let sql = "select name from channels order by rowid limit 1 offset (random() * (select count(rowid) from channels))::bigint";
-    let cl = create_connection(node_config).await?;
+    let cl = create_connection(&node_config.node_config.cluster.database).await?;
     let rows = cl.query(sql, &[]).await?;
     if rows.len() == 0 {
         Err(Error::with_msg("can not get random channel"))?;
