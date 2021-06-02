@@ -198,6 +198,12 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if path == "/api/4/ca_connect_1" {
+        if req.method() == Method::GET {
+            Ok(ca_connect_1(req, &node_config).await?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
     } else if path == "/api/4/channel/config" {
         if req.method() == Method::GET {
             Ok(channel_config(req, &node_config).await?)
@@ -530,5 +536,22 @@ pub async fn channel_config(req: Request<Body>, node_config: &NodeConfigCached) 
     let ret = response(StatusCode::OK)
         .header(http::header::CONTENT_TYPE, "application/json")
         .body(Body::from(serde_json::to_string(&res)?))?;
+    Ok(ret)
+}
+
+pub async fn ca_connect_1(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    let (head, _body) = req.into_parts();
+    let params = netpod::query_params(head.uri.query());
+    let addr = params.get("addr").unwrap().into();
+    let res = netfetch::ca_connect_1(addr, node_config).await?;
+    let ret = response(StatusCode::OK)
+        .header(http::header::CONTENT_TYPE, "application/jsonlines")
+        .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {
+            Ok(mut item) => {
+                item.push('\n');
+                Ok(item)
+            }
+            Err(e) => Err(e),
+        })))?;
     Ok(ret)
 }
