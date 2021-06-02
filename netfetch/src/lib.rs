@@ -31,8 +31,10 @@ pub async fn ca_connect_1(
             let mut conn = tokio::net::TcpStream::connect(addr).await?;
             let (mut inp, mut out) = conn.split();
             tx.send(Ok(FetchItem::Log(format!("connected")))).await?;
+            let mut buf = [0; 64];
+
             let mut b2 = BytesMut::with_capacity(128);
-            b2.put_u16(0);
+            b2.put_u16(0x00);
             b2.put_u16(0);
             b2.put_u16(0);
             b2.put_u16(0xb);
@@ -40,10 +42,26 @@ pub async fn ca_connect_1(
             b2.put_u32(0);
             out.write_all(&b2).await?;
             tx.send(Ok(FetchItem::Log(format!("written")))).await?;
-            let mut buf = [0; 64];
             let n1 = inp.read(&mut buf).await?;
             tx.send(Ok(FetchItem::Log(format!("received: {} {:?}", n1, buf))))
                 .await?;
+
+            // Search to get cid:
+            let chn = b"SATCB01-DBPM220:Y2";
+            b2.clear();
+            b2.put_u16(0x06);
+            b2.put_u16((16 + chn.len()) as u16);
+            b2.put_u16(0x00);
+            b2.put_u16(0x0b);
+            b2.put_u32(0x71803472);
+            b2.put_u32(0x71803472);
+            b2.put_slice(chn);
+            out.write_all(&b2).await?;
+            tx.send(Ok(FetchItem::Log(format!("written")))).await?;
+            let n1 = inp.read(&mut buf).await?;
+            tx.send(Ok(FetchItem::Log(format!("received: {} {:?}", n1, buf))))
+                .await?;
+
             Ok::<_, Error>(())
         }
         .then({
