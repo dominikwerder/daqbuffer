@@ -2,7 +2,7 @@ use crate::agg::streams::StreamItem;
 use crate::binned::{RangeCompletableItem, StreamKind};
 use crate::cache::pbv::PreBinnedValueByteStream;
 use crate::frame::makeframe::FrameType;
-use crate::merge::MergedMinMaxAvgScalarStream;
+use crate::merge::MergedStream;
 use crate::raw::EventsQuery;
 use bytes::Bytes;
 use chrono::{DateTime, TimeZone, Utc};
@@ -488,7 +488,7 @@ where
                     if c1 == self.tcp_establish_futs.len() {
                         debug!("MergedFromRemotes  setting up merged stream");
                         let inps = self.nodein.iter_mut().map(|k| k.take().unwrap()).collect();
-                        let s1 = MergedMinMaxAvgScalarStream::<_, SK>::new(inps);
+                        let s1 = MergedStream::<_, SK>::new(inps);
                         self.merged = Some(Box::pin(s1));
                     } else {
                         debug!(

@@ -10,7 +10,13 @@ use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub struct MergedMinMaxAvgScalarStream<S, SK>
+enum MergedCurVal<T> {
+    None,
+    Finish,
+    Val(T),
+}
+
+pub struct MergedStream<S, SK>
 where
     S: Stream<Item = Result<StreamItem<RangeCompletableItem<SK::XBinnedEvents>>, Error>> + Unpin,
     SK: StreamKind,
@@ -31,7 +37,7 @@ where
     event_data_read_stats_items: VecDeque<EventDataReadStats>,
 }
 
-impl<S, SK> MergedMinMaxAvgScalarStream<S, SK>
+impl<S, SK> MergedStream<S, SK>
 where
     S: Stream<Item = Result<StreamItem<RangeCompletableItem<SK::XBinnedEvents>>, Error>> + Unpin,
     SK: StreamKind,
@@ -122,8 +128,7 @@ where
     }
 }
 
-// TODO change name, it is generic now:
-impl<S, SK> Stream for MergedMinMaxAvgScalarStream<S, SK>
+impl<S, SK> Stream for MergedStream<S, SK>
 where
     S: Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>, Error>> + Unpin,
     SK: StreamKind,
@@ -213,18 +218,7 @@ where
                                 self.ixs[lowest_ix] = 0;
                                 self.current[lowest_ix] = MergedCurVal::None;
                             }
-                            //self.batch.tss.push(lowest_ts);
-                            /*let z = match &self.current[lowest_ix] {
-                                MergedCurVal::Val(k) => (k.mins[rix], k.maxs[rix], k.avgs[rix], k.tss.len()),
-                                _ => panic!(),
-                            };
-                            self.batch.mins.push(z.0);
-                            self.batch.maxs.push(z.1);
-                            self.batch.avgs.push(z.2);
-                            */
                             if self.batch.len() >= self.batch_size {
-                                //let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
-                                //let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
                                 let emp = <<SK as StreamKind>::XBinnedEvents as Appendable>::empty();
                                 let ret = std::mem::replace(&mut self.batch, emp);
                                 Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
@@ -242,10 +236,4 @@ where
             };
         }
     }
-}
-
-enum MergedCurVal<T> {
-    None,
-    Finish,
-    Val(T),
 }
