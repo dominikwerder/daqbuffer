@@ -537,6 +537,49 @@ impl TBinnedBins for MinMaxAvgScalarBinBatch {
     }
 }
 
+// TODO
+
+// TODO
+
+// Write a function (as demo instead of a full Stream) which couples together the flow between the
+// event decoding and the event node processing.
+// That should require me to require Input/Output combinations in the StreamKind.
+
+// TODO try to get the binning generic over the actual numeric disk-dtype.
+// That should require me to make StreamKind generic over the numeric dtype.
+// I then need a away to compose the StreamKind:
+// Instead of writing some if-else-match-monster over all possible disk-dtype and AggKind combinations,
+// I would like to decide on the disk-dtype first and get some generic intermediate type, and the
+// decide the AggKind, and maybe even other generic types.
+
+pub trait EventDecoder {
+    type Output;
+}
+
+pub struct U32EventsDecoder {}
+
+pub struct U32Events {}
+pub struct U32SingleBins {}
+
+impl EventDecoder for U32EventsDecoder {
+    // TODO U32Event is just for demo.
+    type Output = U32Events;
+}
+
+pub trait EventsNodeProcessor {
+    type Input;
+    type Output;
+}
+
+// TODO the avg needs to be f32, but the min/max have to be the regular type of the disk data.
+// Try to make that generic...
+pub struct U32XAggToSingleBin {}
+
+impl EventsNodeProcessor for U32XAggToSingleBin {
+    type Input = U32Events;
+    type Output = U32SingleBins;
+}
+
 pub trait StreamKind: Clone + Unpin + Send + Sync + 'static {
     type TBinnedStreamType: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::TBinnedBins>>, Error>> + Send;
     type XBinnedEvents: XBinnedEvents<Self>;
@@ -544,6 +587,8 @@ pub trait StreamKind: Clone + Unpin + Send + Sync + 'static {
     type XBinnedToTBinnedAggregator;
     type XBinnedToTBinnedStream: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::TBinnedBins>>, Error>>
         + Send;
+    type EventsDecoder: EventDecoder;
+    type EventsNodeProcessor: EventsNodeProcessor;
 
     fn new_binned_from_prebinned(
         &self,
@@ -597,6 +642,8 @@ impl StreamKind for BinnedStreamKindScalar {
     type TBinnedBins = MinMaxAvgScalarBinBatch;
     type XBinnedToTBinnedAggregator = Agg3;
     type XBinnedToTBinnedStream = BinnedT3Stream;
+    type EventsDecoder = U32EventsDecoder;
+    type EventsNodeProcessor = U32XAggToSingleBin;
 
     fn new_binned_from_prebinned(
         &self,
