@@ -1,5 +1,5 @@
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedStreamKind, RangeCompletableItem};
+use crate::binned::{RangeCompletableItem, StreamKind};
 use crate::cache::pbvfs::PreBinnedScalarValueFetchedStream;
 use crate::cache::{CacheUsage, PreBinnedQuery};
 use crate::frame::makeframe::FrameType;
@@ -14,21 +14,18 @@ use std::task::{Context, Poll};
 
 pub struct BinnedScalarStreamFromPreBinnedPatches<SK>
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     inp: Pin<
-        Box<
-            dyn Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>, Error>>
-                + Send,
-        >,
+        Box<dyn Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::TBinnedBins>>, Error>> + Send>,
     >,
     _stream_kind: SK,
 }
 
 impl<SK> BinnedScalarStreamFromPreBinnedPatches<SK>
 where
-    SK: BinnedStreamKind,
-    Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::TBinnedBins>>, Error>: FrameType,
+    SK: StreamKind,
+    Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::TBinnedBins>>, Error>: FrameType,
 {
     pub fn new(
         patch_it: PreBinnedPatchIterator,
@@ -120,7 +117,7 @@ where
 // Can I remove the whole type or keep for static check?
 impl<SK> Stream for BinnedScalarStreamFromPreBinnedPatches<SK>
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     type Item = Result<StreamItem<RangeCompletableItem<SK::TBinnedBins>>, Error>;
 

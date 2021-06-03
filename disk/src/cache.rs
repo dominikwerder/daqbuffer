@@ -1,5 +1,5 @@
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedStreamKind, RangeCompletableItem};
+use crate::binned::{RangeCompletableItem, StreamKind};
 use crate::cache::pbv::PreBinnedValueByteStream;
 use crate::frame::makeframe::FrameType;
 use crate::merge::MergedMinMaxAvgScalarStream;
@@ -309,7 +309,7 @@ pub fn pre_binned_bytes_for_http<SK>(
     stream_kind: SK,
 ) -> Result<PreBinnedValueByteStream<SK>, Error>
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
     Result<StreamItem<RangeCompletableItem<SK::TBinnedBins>>, err::Error>: FrameType,
 {
     if query.channel.backend != node_config.node.backend {
@@ -396,18 +396,18 @@ type T002<T> = Pin<Box<dyn Future<Output = Result<T001<T>, Error>> + Send>>;
 
 pub struct MergedFromRemotes<SK>
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
-    tcp_establish_futs: Vec<T002<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>>,
-    nodein: Vec<Option<T001<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>>>,
-    merged: Option<T001<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>>,
+    tcp_establish_futs: Vec<T002<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>>,
+    nodein: Vec<Option<T001<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>>>,
+    merged: Option<T001<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>>,
     completed: bool,
     errored: bool,
 }
 
 impl<SK> MergedFromRemotes<SK>
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     pub fn new(evq: EventsQuery, perf_opts: PerfOpts, cluster: Cluster, stream_kind: SK) -> Self {
         let mut tcp_establish_futs = vec![];
@@ -418,7 +418,7 @@ where
                 node.clone(),
                 stream_kind.clone(),
             );
-            let f: T002<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>> = Box::pin(f);
+            let f: T002<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>> = Box::pin(f);
             tcp_establish_futs.push(f);
         }
         let n = tcp_establish_futs.len();
@@ -434,9 +434,9 @@ where
 
 impl<SK> Stream for MergedFromRemotes<SK>
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
-    type Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>;
+    type Item = Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;

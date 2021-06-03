@@ -1,5 +1,5 @@
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedStreamKind, RangeCompletableItem, XBinnedEvents};
+use crate::binned::{RangeCompletableItem, StreamKind, XBinnedEvents};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::decode_frame;
 use err::Error;
@@ -13,7 +13,7 @@ use tokio::io::AsyncRead;
 pub struct EventsFromFrames<T, SK>
 where
     T: AsyncRead + Unpin,
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     inp: InMemoryFrameAsyncReadStream<T>,
     errored: bool,
@@ -24,7 +24,7 @@ where
 impl<T, SK> EventsFromFrames<T, SK>
 where
     T: AsyncRead + Unpin,
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     pub fn new(inp: InMemoryFrameAsyncReadStream<T>, stream_kind: SK) -> Self {
         Self {
@@ -39,11 +39,11 @@ where
 impl<T, SK> Stream for EventsFromFrames<T, SK>
 where
     T: AsyncRead + Unpin,
-    SK: BinnedStreamKind,
+    SK: StreamKind,
     // TODO see binned.rs better to express it on trait?
     //Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>: FrameType,
 {
-    type Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>;
+    type Item = Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -60,13 +60,10 @@ where
                         StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
                         StreamItem::DataItem(frame) => {
                             match decode_frame::<
-                                Result<
-                                    StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>,
-                                    Error,
-                                >,
+                                Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>, Error>,
                             >(
                                 &frame,
-                                <<SK as BinnedStreamKind>::XBinnedEvents as XBinnedEvents<SK>>::frame_type(),
+                                <<SK as StreamKind>::XBinnedEvents as XBinnedEvents<SK>>::frame_type(),
                             ) {
                                 Ok(item) => match item {
                                     Ok(item) => Ready(Some(Ok(item))),

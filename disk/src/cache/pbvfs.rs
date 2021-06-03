@@ -1,5 +1,5 @@
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedStreamKind, RangeCompletableItem};
+use crate::binned::{RangeCompletableItem, StreamKind};
 use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead, PreBinnedQuery};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{decode_frame, FrameType};
@@ -14,7 +14,7 @@ use std::task::{Context, Poll};
 
 pub struct PreBinnedScalarValueFetchedStream<SK>
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     uri: http::Uri,
     resfut: Option<hyper::client::ResponseFuture>,
@@ -26,7 +26,7 @@ where
 
 impl<SK> PreBinnedScalarValueFetchedStream<SK>
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     pub fn new(query: &PreBinnedQuery, node_config: &NodeConfigCached, stream_kind: &SK) -> Result<Self, Error> {
         let nodeix = node_ix_for_patch(&query.patch, &query.channel, &node_config.node_config.cluster);
@@ -53,7 +53,7 @@ where
 // TODO change name, is now generic:
 impl<SK> Stream for PreBinnedScalarValueFetchedStream<SK>
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
     Result<StreamItem<RangeCompletableItem<SK::TBinnedBins>>, err::Error>: FrameType,
 {
     type Item = Result<StreamItem<RangeCompletableItem<SK::TBinnedBins>>, Error>;

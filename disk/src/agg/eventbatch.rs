@@ -2,7 +2,7 @@ use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::{Appendable, StreamItem};
 use crate::agg::AggregatableXdim1Bin;
-use crate::binned::{BinnedStreamKind, MakeBytesFrame, RangeCompletableItem, RangeOverlapInfo};
+use crate::binned::{MakeBytesFrame, RangeCompletableItem, RangeOverlapInfo, StreamKind};
 use crate::frame::makeframe::make_frame;
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
@@ -103,7 +103,7 @@ impl std::fmt::Debug for MinMaxAvgScalarEventBatch {
 
 impl<SK> AggregatableXdim1Bin<SK> for MinMaxAvgScalarEventBatch
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     type Output = MinMaxAvgScalarEventBatch;
     fn into_agg(self) -> Self::Output {
@@ -113,7 +113,7 @@ where
 
 impl<SK> AggregatableTdim<SK> for MinMaxAvgScalarEventBatch
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     //type Output = MinMaxAvgScalarBinBatch;
     type Aggregator = MinMaxAvgScalarEventBatchAggregator;
@@ -174,7 +174,7 @@ impl MinMaxAvgScalarEventBatchAggregator {
 
 impl<SK> AggregatorTdim<SK> for MinMaxAvgScalarEventBatchAggregator
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     type InputValue = MinMaxAvgScalarEventBatch;
     type OutputValue = MinMaxAvgScalarBinBatch;

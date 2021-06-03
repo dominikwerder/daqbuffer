@@ -6,7 +6,7 @@ to request such data from nodes.
 */
 
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedStreamKind, RangeCompletableItem};
+use crate::binned::{RangeCompletableItem, StreamKind};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{make_frame, make_term_frame};
 use crate::raw::bffr::EventsFromFrames;
@@ -44,14 +44,14 @@ pub async fn x_processed_stream_from_node<SK>(
 ) -> Result<
     Pin<
         Box<
-            dyn Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>>
+            dyn Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>, Error>>
                 + Send,
         >,
     >,
     Error,
 >
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     let net = TcpStream::connect(format!("{}:{}", node.host, node.port_raw)).await?;
     let qjs = serde_json::to_string(&query)?;

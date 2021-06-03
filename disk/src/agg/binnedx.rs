@@ -1,6 +1,6 @@
 use crate::agg::streams::StreamItem;
 use crate::agg::AggregatableXdim1Bin;
-use crate::binned::{BinnedStreamKind, RangeCompletableItem};
+use crate::binned::{RangeCompletableItem, StreamKind};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -9,7 +9,7 @@ use std::task::{Context, Poll};
 
 pub trait IntoBinnedXBins1<I, SK>
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
     Self: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
     I: AggregatableXdim1Bin<SK>,
 {
@@ -19,7 +19,7 @@ where
 
 impl<S, I, SK> IntoBinnedXBins1<I, SK> for S
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
     S: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
     I: AggregatableXdim1Bin<SK>,
 {
@@ -35,7 +35,7 @@ where
 
 pub struct IntoBinnedXBins1DefaultStream<S, I, SK>
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
     S: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
     I: AggregatableXdim1Bin<SK>,
 {
@@ -45,7 +45,7 @@ where
 
 impl<S, I, SK> Stream for IntoBinnedXBins1DefaultStream<S, I, SK>
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
     S: Stream<Item = Result<StreamItem<RangeCompletableItem<I>>, Error>> + Unpin,
     I: AggregatableXdim1Bin<SK>,
 {

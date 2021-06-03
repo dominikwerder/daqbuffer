@@ -501,7 +501,7 @@ pub trait XBinnedEvents<SK>:
     + PushableIndex
     + Appendable
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     fn frame_type() -> u32;
 }
@@ -524,7 +524,7 @@ pub trait TBinnedBins:
 
 impl<SK> XBinnedEvents<SK> for MinMaxAvgScalarEventBatch
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     fn frame_type() -> u32 {
         <Result<StreamItem<RangeCompletableItem<Self>>, Error> as FrameType>::FRAME_TYPE_ID
@@ -537,7 +537,7 @@ impl TBinnedBins for MinMaxAvgScalarBinBatch {
     }
 }
 
-pub trait BinnedStreamKind: Clone + Unpin + Send + Sync + 'static {
+pub trait StreamKind: Clone + Unpin + Send + Sync + 'static {
     type TBinnedStreamType: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::TBinnedBins>>, Error>> + Send;
     type XBinnedEvents: XBinnedEvents<Self>;
     type TBinnedBins: TBinnedBins;
@@ -590,7 +590,7 @@ pub enum RangeCompletableItem<T> {
     Data(T),
 }
 
-impl BinnedStreamKind for BinnedStreamKindScalar {
+impl StreamKind for BinnedStreamKindScalar {
     // TODO is this really needed?
     type TBinnedStreamType = BoxedStream<Result<StreamItem<RangeCompletableItem<Self::TBinnedBins>>, Error>>;
     type XBinnedEvents = MinMaxAvgScalarEventBatch;

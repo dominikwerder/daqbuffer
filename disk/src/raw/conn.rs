@@ -2,7 +2,7 @@ use crate::agg::binnedx::IntoBinnedXBins1;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::streams::StreamItem;
 use crate::agg::IntoDim1F32Stream;
-use crate::binned::{BinnedStreamKind, BinnedStreamKindScalar, RangeCompletableItem};
+use crate::binned::{BinnedStreamKindScalar, RangeCompletableItem, StreamKind};
 use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventChunkerConf;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
@@ -189,7 +189,7 @@ async fn events_conn_handler_inner_try(
             AggKind::DimXBins1 => {
                 match make_frame::<
                     Result<
-                        StreamItem<RangeCompletableItem<<BinnedStreamKindScalar as BinnedStreamKind>::XBinnedEvents>>,
+                        StreamItem<RangeCompletableItem<<BinnedStreamKindScalar as StreamKind>::XBinnedEvents>>,
                         Error,
                     >,
                 >(&item)
@@ -205,10 +205,7 @@ async fn events_conn_handler_inner_try(
             }
             // TODO define this case:
             AggKind::DimXBinsN(_xbincount) => match make_frame::<
-                Result<
-                    StreamItem<RangeCompletableItem<<BinnedStreamKindScalar as BinnedStreamKind>::XBinnedEvents>>,
-                    Error,
-                >,
+                Result<StreamItem<RangeCompletableItem<<BinnedStreamKindScalar as StreamKind>::XBinnedEvents>>, Error>,
             >(err::todoval())
             {
                 Ok(buf) => match netout.write_all(&buf).await {

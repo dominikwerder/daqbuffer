@@ -1,4 +1,4 @@
-use crate::binned::{BinnedStreamKind, BinnedStreamRes};
+use crate::binned::{BinnedStreamRes, StreamKind};
 use crate::binnedstream::BoxedStream;
 use crate::cache::BinnedQuery;
 use crate::raw::EventsQuery;
@@ -12,7 +12,7 @@ pub async fn binned_stream<SK>(
     stream_kind: SK,
 ) -> Result<BinnedStreamRes<SK::TBinnedBins>, Error>
 where
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     if query.channel().backend != node_config.node.backend {
         let err = Error::with_msg(format!(

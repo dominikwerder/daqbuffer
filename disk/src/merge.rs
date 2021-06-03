@@ -1,5 +1,5 @@
 use crate::agg::streams::{Appendable, StatsItem, StreamItem};
-use crate::binned::{BinnedStreamKind, PushableIndex, RangeCompletableItem, WithLen, WithTimestamps};
+use crate::binned::{PushableIndex, RangeCompletableItem, StreamKind, WithLen, WithTimestamps};
 use crate::streamlog::LogItem;
 use err::Error;
 use futures_core::Stream;
@@ -13,14 +13,14 @@ use std::task::{Context, Poll};
 pub struct MergedMinMaxAvgScalarStream<S, SK>
 where
     S: Stream<Item = Result<StreamItem<RangeCompletableItem<SK::XBinnedEvents>>, Error>> + Unpin,
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     inps: Vec<S>,
-    current: Vec<MergedCurVal<<SK as BinnedStreamKind>::XBinnedEvents>>,
+    current: Vec<MergedCurVal<<SK as StreamKind>::XBinnedEvents>>,
     ixs: Vec<usize>,
     errored: bool,
     completed: bool,
-    batch: <SK as BinnedStreamKind>::XBinnedEvents,
+    batch: <SK as StreamKind>::XBinnedEvents,
     ts_last_emit: u64,
     range_complete_observed: Vec<bool>,
     range_complete_observed_all: bool,
@@ -34,7 +34,7 @@ where
 impl<S, SK> MergedMinMaxAvgScalarStream<S, SK>
 where
     S: Stream<Item = Result<StreamItem<RangeCompletableItem<SK::XBinnedEvents>>, Error>> + Unpin,
-    SK: BinnedStreamKind,
+    SK: StreamKind,
 {
     pub fn new(inps: Vec<S>) -> Self {
         let n = inps.len();
@@ -45,7 +45,7 @@ where
             ixs: vec![0; n],
             errored: false,
             completed: false,
-            batch: <<SK as BinnedStreamKind>::XBinnedEvents as Appendable>::empty(),
+            batch: <<SK as StreamKind>::XBinnedEvents as Appendable>::empty(),
             ts_last_emit: 0,
             range_complete_observed: vec![false; n],
             range_complete_observed_all: false,
@@ -125,10 +125,10 @@ where
 // TODO change name, it is generic now:
 impl<S, SK> Stream for MergedMinMaxAvgScalarStream<S, SK>
 where
-    S: Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>> + Unpin,
-    SK: BinnedStreamKind,
+    S: Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>, Error>> + Unpin,
+    SK: StreamKind,
 {
-    type Item = Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>;
+    type Item = Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -181,7 +181,7 @@ where
                             if self.batch.len() != 0 {
                                 //let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
                                 //let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
-                                let emp = <<SK as BinnedStreamKind>::XBinnedEvents as Appendable>::empty();
+                                let emp = <<SK as StreamKind>::XBinnedEvents as Appendable>::empty();
                                 let ret = std::mem::replace(&mut self.batch, emp);
                                 self.data_emit_complete = true;
                                 Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
@@ -191,7 +191,7 @@ where
                             }
                         } else {
                             assert!(lowest_ts >= self.ts_last_emit);
-                            let emp = <<SK as BinnedStreamKind>::XBinnedEvents as Appendable>::empty();
+                            let emp = <<SK as StreamKind>::XBinnedEvents as Appendable>::empty();
                             let mut local_batch = std::mem::replace(&mut self.batch, emp);
                             self.ts_last_emit = lowest_ts;
                             let rix = self.ixs[lowest_ix];
@@ -225,7 +225,7 @@ where
                             if self.batch.len() >= self.batch_size {
                                 //let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
                                 //let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
-                                let emp = <<SK as BinnedStreamKind>::XBinnedEvents as Appendable>::empty();
+                                let emp = <<SK as StreamKind>::XBinnedEvents as Appendable>::empty();
                                 let ret = std::mem::replace(&mut self.batch, emp);
                                 Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
                             } else {
