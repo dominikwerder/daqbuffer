@@ -3,8 +3,8 @@ use disk::cache::CacheUsage;
 use err::Error;
 use netpod::log::*;
 use netpod::{NodeConfig, NodeConfigCached};
-use tokio::io::AsyncReadExt;
 use tokio::fs::File;
+use tokio::io::AsyncReadExt;
 
 pub fn main() {
     match taskrun::run(go()) {
@@ -93,7 +93,9 @@ async fn go() -> Result<(), Error> {
 #[test]
 fn simple_fetch() {
     use netpod::Nanos;
-    use netpod::{timeunits::*, Channel, ChannelConfig, Cluster, Database, Node, NodeConfig, ScalarType, Shape};
+    use netpod::{
+        timeunits::*, ByteOrder, Channel, ChannelConfig, Cluster, Database, Node, NodeConfig, ScalarType, Shape,
+    };
     taskrun::run(async {
         let t1 = chrono::Utc::now();
         let node = Node {
@@ -117,7 +119,7 @@ fn simple_fetch() {
                 array: true,
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(err::todoval()),
-                big_endian: true,
+                byte_order: ByteOrder::big_endian(),
                 compression: true,
             },
             timebin: 18720,

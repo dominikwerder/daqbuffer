@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use disk::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use disk::agg::streams::{Bins, StatsItem, StreamItem};
 use disk::binned::RangeCompletableItem;
-use disk::cache::BinnedQuery;
+use disk::cache::{BinnedQuery, CacheUsage};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::streamlog::Streamlog;
 use err::Error;
@@ -93,7 +93,7 @@ async fn get_binned_binary_inner() -> Result<(), Error> {
         )
         .await?;
     }
-    if true {
+    if false {
         get_binned_channel(
             "wave-u16-le-n77",
             "1970-01-01T01:11:00.000Z",
@@ -105,7 +105,7 @@ async fn get_binned_binary_inner() -> Result<(), Error> {
         )
         .await?;
     }
-    if true {
+    if false {
         get_binned_channel(
             "wave-u16-le-n77",
             "1970-01-01T01:42:00.000Z",
@@ -144,7 +144,8 @@ where
         name: channel_name.into(),
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let query = BinnedQuery::new(channel, range, bin_count, agg_kind);
+    let mut query = BinnedQuery::new(channel, range, bin_count, agg_kind);
+    query.set_cache_usage(CacheUsage::Ignore);
     let hp = HostPort::from_node(node0);
     let url = query.url(&hp);
     info!("get_binned_channel  get {}", url);

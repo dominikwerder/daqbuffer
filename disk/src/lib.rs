@@ -23,6 +23,7 @@ pub mod binnedstream;
 pub mod cache;
 pub mod channelconfig;
 pub mod dataopen;
+pub mod decode;
 pub mod eventblobs;
 pub mod eventchunker;
 pub mod frame;
@@ -536,7 +537,7 @@ impl ChannelConfigExt for ChannelConfig {
                 ret |= SHAPE;
             }
         }
-        if self.big_endian {
+        if self.byte_order.is_be() {
             ret |= BIG_ENDIAN;
         }
         if self.array {

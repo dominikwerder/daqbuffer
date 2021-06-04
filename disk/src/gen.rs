@@ -2,7 +2,7 @@ use crate::ChannelConfigExt;
 use bitshuffle::bitshuffle_compress;
 use bytes::{BufMut, BytesMut};
 use err::Error;
-use netpod::{timeunits::*, Channel, ChannelConfig, Node, Shape};
+use netpod::{timeunits::*, ByteOrder, Channel, ChannelConfig, Node, Shape};
 use netpod::{Nanos, ScalarType};
 use std::path::{Path, PathBuf};
 use tokio::fs::{File, OpenOptions};
@@ -22,6 +22,23 @@ pub async fn gen_test_data() -> Result<(), Error> {
             config: ChannelConfig {
                 channel: Channel {
                     backend: "testbackend".into(),
+                    name: "scalar-i32-be".into(),
+                },
+                keyspace: 2,
+                time_bin_size: Nanos { ns: DAY },
+                array: false,
+                scalar_type: ScalarType::I32,
+                shape: Shape::Scalar,
+                byte_order: ByteOrder::big_endian(),
+                compression: false,
+            },
+            time_spacing: MS * 100,
+        };
+        ensemble.channels.push(chn);
+        let chn = ChannelGenProps {
+            config: ChannelConfig {
+                channel: Channel {
+                    backend: "testbackend".into(),
                     name: "wave-f64-be-n21".into(),
                 },
                 keyspace: 3,
@@ -29,7 +46,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 array: true,
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(21),
-                big_endian: true,
+                byte_order: ByteOrder::big_endian(),
                 compression: true,
             },
             time_spacing: MS * 1000,
@@ -46,7 +63,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 array: true,
                 scalar_type: ScalarType::U16,
                 shape: Shape::Wave(77),
-                big_endian: false,
+                byte_order: ByteOrder::little_endian(),
                 compression: true,
             },
             time_spacing: MS * 100,
@@ -338,7 +355,11 @@ async fn gen_event(
     if config.compression {
         match config.shape {
             Shape::Wave(ele_count) => {
-                buf.put_u8(COMPRESSION | ARRAY | SHAPE | BIG_ENDIAN);
+                let mut flags = COMPRESSION | ARRAY | SHAPE;
+                if config.byte_order.is_be() {
+                    flags |= BIG_ENDIAN;
+                }
+                buf.put_u8(flags);
                 buf.put_u8(config.scalar_type.index());
                 let comp_method = 0 as u8;
                 buf.put_u8(comp_method);
@@ -350,7 +371,7 @@ async fn gen_event(
                         let mut vals = vec![0; (ele_size * ele_count) as usize];
                         for i1 in 0..ele_count {
                             let v = evix as f64;
-                            let a = if config.big_endian {
+                            let a = if config.byte_order.is_be() {
                                 v.to_be_bytes()
                             } else {
                                 v.to_le_bytes()
@@ -373,7 +394,7 @@ async fn gen_event(
                         let mut vals = vec![0; (ele_size * ele_count) as usize];
                         for i1 in 0..ele_count {
                             let v = evix as u16;
-                            let a = if config.big_endian {
+                            let a = if config.byte_order.is_be() {
                                 v.to_be_bytes()
                             } else {
                                 v.to_le_bytes()
@@ -397,7 +418,28 @@ async fn gen_event(
             _ => todo!("Shape not yet supported: {:?}", config.shape),
         }
     } else {
-        todo!("Uncompressed not yet supported");
+        match config.shape {
+            Shape::Scalar => {
+                let mut flags = 0;
+                if config.byte_order.is_be() {
+                    flags |= BIG_ENDIAN;
+                }
+                buf.put_u8(flags);
+                buf.put_u8(config.scalar_type.index());
+                match &config.scalar_type {
+                    ScalarType::I32 => {
+                        let v = evix as i32;
+                        if config.byte_order.is_be() {
+                            buf.put_i32(v);
+                        } else {
+                            buf.put_i32_le(v);
+                        };
+                    }
+                    _ => todo!("Datatype not yet supported: {:?}", config.scalar_type),
+                }
+            }
+            _ => todo!("Shape not yet supported: {:?}", config.shape),
+        }
     }
     {
         let len = buf.len() as u32 + 4;

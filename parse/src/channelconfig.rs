@@ -1,6 +1,6 @@
 use err::Error;
 use netpod::timeunits::MS;
-use netpod::{Channel, NanoRange, Nanos, Node, ScalarType, Shape};
+use netpod::{ByteOrder, Channel, NanoRange, Nanos, Node, ScalarType, Shape};
 use nom::bytes::complete::take;
 use nom::number::complete::{be_i16, be_i32, be_i64, be_i8, be_u8};
 use nom::Needed;
@@ -54,7 +54,7 @@ pub struct ConfigEntry {
     pub is_compressed: bool,
     pub is_shaped: bool,
     pub is_array: bool,
-    pub is_big_endian: bool,
+    pub byte_order: ByteOrder,
     pub compression_method: Option<CompressionMethod>,
     pub shape: Option<Vec<u32>>,
     pub source_name: Option<String>,
@@ -135,7 +135,7 @@ pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
     let (inp, dtmask) = be_u8(inp)?;
     let is_compressed = dtmask & 0x80 != 0;
     let is_array = dtmask & 0x40 != 0;
-    let is_big_endian = dtmask & 0x20 != 0;
+    let byte_order = ByteOrder::from_dtype_flags(dtmask);
     let is_shaped = dtmask & 0x10 != 0;
     let (inp, dtype) = be_u8(inp)?;
     if dtype > 13 {
@@ -202,7 +202,7 @@ pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
             is_compressed: is_compressed,
             is_array: is_array,
             is_shaped: is_shaped,
-            is_big_endian: is_big_endian,
+            byte_order,
             compression_method: compression_method,
             shape,
             source_name: source_name,

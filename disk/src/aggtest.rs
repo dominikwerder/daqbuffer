@@ -6,7 +6,7 @@ use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventChunkerConf;
 use futures_util::StreamExt;
 use netpod::timeunits::*;
-use netpod::{BinnedRange, ByteSize, Channel, ChannelConfig, NanoRange, Nanos, Node, ScalarType, Shape};
+use netpod::{BinnedRange, ByteOrder, ByteSize, Channel, ChannelConfig, NanoRange, Nanos, Node, ScalarType, Shape};
 use std::future::ready;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
@@ -46,7 +46,7 @@ async fn agg_x_dim_0_inner() {
             array: false,
             shape: Shape::Scalar,
             scalar_type: ScalarType::F64,
-            big_endian: true,
+            byte_order: ByteOrder::big_endian(),
             compression: true,
         },
         timebin: 18723,
@@ -103,7 +103,7 @@ async fn agg_x_dim_1_inner() {
             array: true,
             shape: Shape::Wave(1024),
             scalar_type: ScalarType::F64,
-            big_endian: true,
+            byte_order: ByteOrder::big_endian(),
             compression: true,
         },
         timebin: 0,

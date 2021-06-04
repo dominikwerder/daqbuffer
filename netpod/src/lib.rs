@@ -252,6 +252,46 @@ impl NanoRange {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ByteOrder {
+    LE,
+    BE,
+}
+
+impl ByteOrder {
+    pub fn little_endian() -> Self {
+        Self::LE
+    }
+
+    pub fn big_endian() -> Self {
+        Self::BE
+    }
+
+    pub fn from_dtype_flags(flags: u8) -> Self {
+        if flags & 0x20 == 0 {
+            Self::LE
+        } else {
+            Self::BE
+        }
+    }
+
+    pub fn is_le(&self) -> bool {
+        if let Self::LE = self {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn is_be(&self) -> bool {
+        if let Self::BE = self {
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChannelConfig {
     pub channel: Channel,
     pub keyspace: u8,
@@ -260,7 +300,7 @@ pub struct ChannelConfig {
     pub compression: bool,
     pub shape: Shape,
     pub array: bool,
-    pub big_endian: bool,
+    pub byte_order: ByteOrder,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

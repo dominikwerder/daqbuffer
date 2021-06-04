@@ -8,6 +8,7 @@ use crate::agg::{Fits, FitsInside};
 use crate::binned::scalar::binned_stream;
 use crate::binnedstream::{BinnedScalarStreamFromPreBinnedPatches, BoxedStream};
 use crate::cache::{BinnedQuery, MergedFromRemotes};
+use crate::decode::{Endianness, EventValues};
 use crate::frame::makeframe::FrameType;
 use crate::raw::EventsQuery;
 use bytes::Bytes;
@@ -25,6 +26,8 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Map;
 use std::future::Future;
+use std::marker::PhantomData;
+use std::ops::BitXor;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -552,32 +555,130 @@ impl TBinnedBins for MinMaxAvgScalarBinBatch {
 // I would like to decide on the disk-dtype first and get some generic intermediate type, and the
 // decide the AggKind, and maybe even other generic types.
 
-pub trait EventDecoder {
+pub trait NumOps: Sized + Send + Unpin + Zero + BitXor {}
+impl<T> NumOps for T where T: Sized + Send + Unpin + Zero + BitXor {}
+
+pub trait EventsDecoder {
     type Output;
-}
-
-pub struct U32EventsDecoder {}
-
-pub struct U32Events {}
-pub struct U32SingleBins {}
-
-impl EventDecoder for U32EventsDecoder {
-    // TODO U32Event is just for demo.
-    type Output = U32Events;
+    fn ingest(&mut self, event: &[u8]);
+    fn result(&mut self) -> Self::Output;
 }
 
 pub trait EventsNodeProcessor {
     type Input;
     type Output;
+    fn process(inp: &EventValues<Self::Input>) -> Self::Output;
 }
 
-// TODO the avg needs to be f32, but the min/max have to be the regular type of the disk data.
-// Try to make that generic...
-pub struct U32XAggToSingleBin {}
+pub struct NumEvents<N> {
+    _m: PhantomData<N>,
+}
+impl<N> NumEvents<N> {
+    pub fn new() -> Self {
+        Self { _m: PhantomData }
+    }
+}
 
-impl EventsNodeProcessor for U32XAggToSingleBin {
-    type Input = U32Events;
-    type Output = U32SingleBins;
+pub struct NumSingleXBin<N> {
+    _m: PhantomData<N>,
+}
+impl<N> NumSingleXBin<N> {
+    pub fn new() -> Self {
+        Self { _m: PhantomData }
+    }
+}
+
+pub struct NumEventsDecoder<N, END>
+where
+    END: Endianness,
+{
+    _m1: PhantomData<N>,
+    _m2: PhantomData<END>,
+}
+
+impl<N, END> NumEventsDecoder<N, END>
+where
+    END: Endianness,
+{
+    pub fn new() -> Self {
+        Self {
+            _m1: PhantomData,
+            _m2: PhantomData,
+        }
+    }
+}
+
+impl<N, END> EventsDecoder for NumEventsDecoder<N, END>
+where
+    END: Endianness,
+{
+    type Output = NumEvents<N>;
+    fn ingest(&mut self, _event: &[u8]) {}
+    fn result(&mut self) -> Self::Output {
+        err::todoval()
+    }
+}
+
+pub struct NumXAggToSingleBin<VT> {
+    _m: PhantomData<VT>,
+}
+
+impl<VT> NumXAggToSingleBin<VT> {
+    pub fn new() -> Self {
+        Self { _m: PhantomData }
+    }
+}
+
+impl<VT> EventsNodeProcessor for NumXAggToSingleBin<VT> {
+    type Input = VT;
+    type Output = NumSingleXBin<VT>;
+    fn process(inp: &EventValues<Self::Input>) -> Self::Output {
+        err::todoval()
+    }
+}
+
+pub trait BinnedPipeline {
+    type EventsDecoder: EventsDecoder;
+    type EventsNodeProcessor: EventsNodeProcessor;
+    fn events_decoder(&self) -> Self::EventsDecoder;
+    fn events_node_processor(&self) -> Self::EventsNodeProcessor;
+}
+
+pub struct NumBinnedPipeline<N, END, ENP>
+where
+    END: Endianness,
+{
+    _m1: PhantomData<N>,
+    _m2: PhantomData<END>,
+    _m3: PhantomData<ENP>,
+}
+
+impl<N, END, ENP> NumBinnedPipeline<N, END, ENP>
+where
+    END: Endianness,
+{
+    pub fn new() -> Self {
+        Self {
+            _m1: PhantomData,
+            _m2: PhantomData,
+            _m3: PhantomData,
+        }
+    }
+}
+
+impl<N, END, ENP> BinnedPipeline for NumBinnedPipeline<N, END, ENP>
+where
+    ENP: EventsNodeProcessor,
+    END: Endianness,
+{
+    type EventsDecoder = NumEventsDecoder<N, END>;
+    type EventsNodeProcessor = ENP;
+    fn events_decoder(&self) -> Self::EventsDecoder {
+        todo!()
+    }
+    fn events_node_processor(&self) -> Self::EventsNodeProcessor {
+        todo!()
+    }
 }
 
 pub trait StreamKind: Clone + Unpin + Send + Sync + 'static {
@@ -587,8 +688,6 @@ pub trait StreamKind: Clone + Unpin + Send + Sync + 'static {
     type XBinnedToTBinnedAggregator;
     type XBinnedToTBinnedStream: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::TBinnedBins>>, Error>>
         + Send;
-    type EventsDecoder: EventDecoder;
-    type EventsNodeProcessor: EventsNodeProcessor;
 
     fn new_binned_from_prebinned(
         &self,
@@ -642,8 +741,6 @@ impl StreamKind for BinnedStreamKindScalar {
     type TBinnedBins = MinMaxAvgScalarBinBatch;
     type XBinnedToTBinnedAggregator = Agg3;
     type XBinnedToTBinnedStream = BinnedT3Stream;
-    type EventsDecoder = U32EventsDecoder;
-    type EventsNodeProcessor = U32XAggToSingleBin;
 
     fn new_binned_from_prebinned(
         &self,

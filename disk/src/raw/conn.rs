@@ -2,19 +2,28 @@ use crate::agg::binnedx::IntoBinnedXBins1;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::streams::StreamItem;
 use crate::agg::IntoDim1F32Stream;
-use crate::binned::{BinnedStreamKindScalar, RangeCompletableItem, StreamKind};
+use crate::binned::{
+    BinnedStreamKindScalar, EventsNodeProcessor, NumBinnedPipeline, NumOps, NumXAggToSingleBin, RangeCompletableItem,
+    StreamKind,
+};
+use crate::decode::{
+    BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValues, EventValuesDim0Case, EventValuesDim1Case,
+    EventsDecodedStream, LittleEndian, NumFromBytes,
+};
 use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventChunkerConf;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{decode_frame, make_frame, make_term_frame, FrameType};
 use crate::raw::{EventQueryJsonStringFrame, EventsQuery};
 use err::Error;
+use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::{AggKind, ByteSize, NodeConfigCached, PerfOpts};
+use netpod::{AggKind, ByteOrder, ByteSize, NodeConfigCached, PerfOpts, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use std::io;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
@@ -88,6 +97,96 @@ impl<E: Into<Error>> From<(E, OwnedWriteHalf)> for ConnErr {
     }
 }
 
+fn make_num_pipeline_stream_evs<NTY, END, EVS, ENP>(
+    event_value_shape: EVS,
+    event_blobs: EventBlobsComplete,
+) -> Pin<
+    Box<
+        dyn Stream<Item = Result<StreamItem<RangeCompletableItem<<ENP as EventsNodeProcessor>::Output>>, Error>> + Send,
+    >,
+>
+where
+    NTY: NumOps + NumFromBytes<NTY, END> + 'static,
+    END: Endianness + 'static,
+    EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
+    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output>,
+{
+    let p1 = NumBinnedPipeline::<NTY, END, ENP>::new();
+    // TODO implement first and statically assume that we have a wave.
+    // TODO then implement scalar case with a different container type and get the type check working.
+    let decs = EventsDecodedStream::<NTY, END, EVS>::new(event_blobs);
+    let s2 = StreamExt::map(decs, |item| match item {
+        Ok(item) => match item {
+            StreamItem::DataItem(item) => match item {
+                RangeCompletableItem::Data(item) => {
+                    let item = <ENP as EventsNodeProcessor>::process(&item);
+                    Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
+                }
+                RangeCompletableItem::RangeComplete => Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)),
+            },
+            StreamItem::Log(item) => Ok(StreamItem::Log(item)),
+            StreamItem::Stats(item) => Ok(StreamItem::Stats(item)),
+        },
+        Err(e) => Err(e),
+    });
+    Box::pin(s2)
+}
+
+macro_rules! pipe3 {
+    ($nty:ident, $end:ident, $evs:ident, $evsv:expr, $agg_kind:expr, $event_blobs:expr) => {
+        match $agg_kind {
+            AggKind::DimXBins1 => make_num_pipeline_stream_evs::<
+                $nty,
+                $end,
+                $evs<$nty>,
+                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToSingleBin,
+            >($evsv, $event_blobs),
+            AggKind::DimXBinsN(_) => make_num_pipeline_stream_evs::<
+                $nty,
+                $end,
+                $evs<$nty>,
+                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToSingleBin,
+            >($evsv, $event_blobs),
+        }
+    };
+}
+
+macro_rules! pipe2 {
+    ($nty:ident, $end:ident, $shape:expr, $agg_kind:expr, $event_blobs:expr) => {
+        match $shape {
+            Shape::Scalar => {
+                pipe3!(
+                    $nty,
+                    $end,
+                    EventValuesDim0Case,
+                    EventValuesDim0Case::<$nty>::new(),
+                    $agg_kind,
+                    $event_blobs
+                )
+            }
+            Shape::Wave(n) => {
+                pipe3!(
+                    $nty,
+                    $end,
+                    EventValuesDim1Case,
+                    EventValuesDim1Case::<$nty>::new(n),
+                    $agg_kind,
+                    $event_blobs
+                )
+            }
+        }
+    };
+}
+
+macro_rules! pipe1 {
+    ($nty:ident, $end:expr, $shape:expr, $agg_kind:expr, $event_blobs:expr) => {
+        match $end {
+            ByteOrder::LE => pipe2!($nty, LittleEndian, $shape, $agg_kind, $event_blobs),
+            ByteOrder::BE => pipe2!($nty, BigEndian, $shape, $agg_kind, $event_blobs),
+        }
+    };
+}
+
 async fn events_conn_handler_inner_try(
     stream: TcpStream,
     addr: SocketAddr,
@@ -158,10 +257,27 @@ async fn events_conn_handler_inner_try(
         time_bin_size: entry.bs,
         shape: shape,
         scalar_type: entry.scalar_type.clone(),
-        big_endian: entry.is_big_endian,
+        byte_order: entry.byte_order.clone(),
         array: entry.is_array,
         compression: entry.is_compressed,
     };
+
+    if true {
+        // TODO use a requested buffer size
+        let buffer_size = 1024 * 4;
+        let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
+        let event_blobs = EventBlobsComplete::new(
+            range.clone(),
+            channel_config.clone(),
+            node_config.node.clone(),
+            node_config.ix,
+            buffer_size,
+            event_chunker_conf,
+        );
+        let shape = entry.to_shape().unwrap();
+        let p1 = pipe1!(i32, entry.byte_order, shape, evq.agg_kind, event_blobs);
+    }
+
     // TODO use a requested buffer size
     let buffer_size = 1024 * 4;
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
