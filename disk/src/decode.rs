@@ -1,3 +1,5 @@
+use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
+use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
 use crate::binned::{EventsNodeProcessor, NumOps, RangeCompletableItem};
 use crate::eventblobs::EventBlobsComplete;
@@ -93,7 +95,7 @@ pub struct ProcAA<NTY> {
 
 impl<NTY> EventsNodeProcessor for ProcAA<NTY> {
     type Input = NTY;
-    type Output = ();
+    type Output = MinMaxAvgScalarEventBatch;
     fn process(inp: &EventValues<Self::Input>) -> Self::Output {
         todo!()
     }
@@ -124,7 +126,7 @@ pub struct ProcBB<NTY> {
 
 impl<NTY> EventsNodeProcessor for ProcBB<NTY> {
     type Input = Vec<NTY>;
-    type Output = ();
+    type Output = MinMaxAvgScalarBinBatch;
     fn process(inp: &EventValues<Self::Input>) -> Self::Output {
         todo!()
     }

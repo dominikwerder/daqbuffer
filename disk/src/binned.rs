@@ -619,24 +619,6 @@ where
     }
 }
 
-pub struct NumXAggToSingleBin<VT> {
-    _m: PhantomData<VT>,
-}
-
-impl<VT> NumXAggToSingleBin<VT> {
-    pub fn new() -> Self {
-        Self { _m: PhantomData }
-    }
-}
-
-impl<VT> EventsNodeProcessor for NumXAggToSingleBin<VT> {
-    type Input = VT;
-    type Output = NumSingleXBin<VT>;
-    fn process(inp: &EventValues<Self::Input>) -> Self::Output {
-        err::todoval()
-    }
-}
-
 pub trait BinnedPipeline {
     type EventsDecoder: EventsDecoder;
     type EventsNodeProcessor: EventsNodeProcessor;
