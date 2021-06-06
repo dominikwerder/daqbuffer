@@ -9,7 +9,7 @@ use crate::binned::scalar::binned_stream;
 use crate::binnedstream::{BinnedScalarStreamFromPreBinnedPatches, BoxedStream};
 use crate::cache::{BinnedQuery, MergedFromRemotes};
 use crate::decode::{Endianness, EventValues};
-use crate::frame::makeframe::FrameType;
+use crate::frame::makeframe::{FrameType, SubFrId};
 use crate::raw::EventsQuery;
 use bytes::Bytes;
 use chrono::{TimeZone, Utc};
@@ -27,7 +27,6 @@ use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Map;
 use std::future::Future;
 use std::marker::PhantomData;
-use std::ops::BitXor;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -540,23 +539,8 @@ impl TBinnedBins for MinMaxAvgScalarBinBatch {
     }
 }
 
-// TODO
-
-// TODO
-
-// Write a function (as demo instead of a full Stream) which couples together the flow between the
-// event decoding and the event node processing.
-// That should require me to require Input/Output combinations in the StreamKind.
-
-// TODO try to get the binning generic over the actual numeric disk-dtype.
-// That should require me to make StreamKind generic over the numeric dtype.
-// I then need a away to compose the StreamKind:
-// Instead of writing some if-else-match-monster over all possible disk-dtype and AggKind combinations,
-// I would like to decide on the disk-dtype first and get some generic intermediate type, and the
-// decide the AggKind, and maybe even other generic types.
-
-pub trait NumOps: Sized + Copy + Send + Unpin + Zero + BitXor + AsPrimitive<f32> + Bounded + PartialOrd {}
-impl<T> NumOps for T where T: Sized + Copy + Send + Unpin + Zero + BitXor + AsPrimitive<f32> + Bounded + PartialOrd {}
+pub trait NumOps: Sized + Copy + Send + Unpin + Zero + AsPrimitive<f32> + Bounded + PartialOrd + SubFrId {}
+impl<T> NumOps for T where T: Sized + Copy + Send + Unpin + Zero + AsPrimitive<f32> + Bounded + PartialOrd + SubFrId {}
 
 pub trait EventsDecoder {
     type Output;

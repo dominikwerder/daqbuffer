@@ -29,8 +29,55 @@ impl FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBa
     const FRAME_TYPE_ID: u32 = 0x11;
 }
 
-impl<NTY> FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatchGen<NTY>>>, Error> {
-    const FRAME_TYPE_ID: u32 = 888888;
+impl<NTY> FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatchGen<NTY>>>, Error>
+where
+    NTY: SubFrId,
+{
+    const FRAME_TYPE_ID: u32 = 0x28c4a100 + NTY::SUB;
+}
+
+pub trait SubFrId {
+    const SUB: u32;
+}
+
+impl SubFrId for u8 {
+    const SUB: u32 = 3;
+}
+
+impl SubFrId for u16 {
+    const SUB: u32 = 5;
+}
+
+impl SubFrId for u32 {
+    const SUB: u32 = 8;
+}
+
+impl SubFrId for u64 {
+    const SUB: u32 = 10;
+}
+
+impl SubFrId for i8 {
+    const SUB: u32 = 2;
+}
+
+impl SubFrId for i16 {
+    const SUB: u32 = 4;
+}
+
+impl SubFrId for i32 {
+    const SUB: u32 = 7;
+}
+
+impl SubFrId for i64 {
+    const SUB: u32 = 9;
+}
+
+impl SubFrId for f32 {
+    const SUB: u32 = 11;
+}
+
+impl SubFrId for f64 {
+    const SUB: u32 = 12;
 }
 
 pub trait ProvidesFrameType {

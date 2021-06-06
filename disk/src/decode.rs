@@ -24,17 +24,33 @@ pub trait NumFromBytes<NTY, END> {
     fn convert(buf: &[u8]) -> NTY;
 }
 
-impl NumFromBytes<i32, LittleEndian> for i32 {
-    fn convert(buf: &[u8]) -> i32 {
-        i32::from_le_bytes(*arrayref::array_ref![buf, 0, 4])
-    }
+macro_rules! impl_num_from_bytes_end {
+    ($nty:ident, $nl:expr, $end:ident, $ec:ident) => {
+        impl NumFromBytes<$nty, $end> for $nty {
+            fn convert(buf: &[u8]) -> $nty {
+                $nty::$ec(*arrayref::array_ref![buf, 0, $nl])
+            }
+        }
+    };
 }
 
-impl NumFromBytes<i32, BigEndian> for i32 {
-    fn convert(buf: &[u8]) -> i32 {
-        i32::from_be_bytes(*arrayref::array_ref![buf, 0, 4])
-    }
+macro_rules! impl_num_from_bytes {
+    ($nty:ident, $nl:expr) => {
+        impl_num_from_bytes_end!($nty, $nl, LittleEndian, from_le_bytes);
+        impl_num_from_bytes_end!($nty, $nl, BigEndian, from_be_bytes);
+    };
 }
+
+impl_num_from_bytes!(u8, 1);
+impl_num_from_bytes!(u16, 2);
+impl_num_from_bytes!(u32, 4);
+impl_num_from_bytes!(u64, 8);
+impl_num_from_bytes!(i8, 1);
+impl_num_from_bytes!(i16, 2);
+impl_num_from_bytes!(i32, 4);
+impl_num_from_bytes!(i64, 8);
+impl_num_from_bytes!(f32, 4);
+impl_num_from_bytes!(f64, 8);
 
 pub trait EventValueFromBytes<NTY, END>
 where

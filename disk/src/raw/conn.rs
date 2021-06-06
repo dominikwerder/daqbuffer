@@ -189,8 +189,16 @@ macro_rules! pipe2 {
 macro_rules! pipe1 {
     ($nty:expr, $end:expr, $shape:expr, $agg_kind:expr, $event_blobs:expr) => {
         match $nty {
+            ScalarType::U8 => pipe2!(u8, $end, $shape, $agg_kind, $event_blobs),
+            ScalarType::U16 => pipe2!(u16, $end, $shape, $agg_kind, $event_blobs),
+            ScalarType::U32 => pipe2!(u32, $end, $shape, $agg_kind, $event_blobs),
+            ScalarType::U64 => pipe2!(u64, $end, $shape, $agg_kind, $event_blobs),
+            ScalarType::I8 => pipe2!(i8, $end, $shape, $agg_kind, $event_blobs),
+            ScalarType::I16 => pipe2!(i16, $end, $shape, $agg_kind, $event_blobs),
             ScalarType::I32 => pipe2!(i32, $end, $shape, $agg_kind, $event_blobs),
-            _ => err::todoval(),
+            ScalarType::I64 => pipe2!(i64, $end, $shape, $agg_kind, $event_blobs),
+            ScalarType::F32 => pipe2!(f32, $end, $shape, $agg_kind, $event_blobs),
+            ScalarType::F64 => pipe2!(f64, $end, $shape, $agg_kind, $event_blobs),
         }
     };
 }
