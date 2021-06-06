@@ -1,8 +1,8 @@
 use crate::agg::streams::{Appendable, StreamItem};
-use crate::binned::query::PreBinnedQuery;
+use crate::binned::query::{CacheUsage, PreBinnedQuery};
 use crate::binned::{RangeCompletableItem, StreamKind, WithLen};
 use crate::cache::pbvfs::PreBinnedScalarValueFetchedStream;
-use crate::cache::{CacheFileDesc, MergedFromRemotes, WrittenPbCache};
+use crate::cache::{write_pb_cache_min_max_avg_scalar, CacheFileDesc, MergedFromRemotes, WrittenPbCache};
 use crate::frame::makeframe::{make_frame, FrameType};
 use crate::raw::EventsQuery;
 use crate::streamlog::Streamlog;
@@ -14,12 +14,13 @@ use netpod::log::*;
 use netpod::streamext::SCC;
 use netpod::{BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange};
 use std::future::Future;
+use std::io;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use tokio::fs::File;
+use tokio::fs::{File, OpenOptions};
 
-pub type PreBinnedValueByteStream<BK> = SCC<PreBinnedValueByteStreamInner<BK>>;
+pub type PreBinnedValueByteStream<SK> = SCC<PreBinnedValueByteStreamInner<SK>>;
 
 pub struct PreBinnedValueByteStreamInner<SK>
 where
@@ -301,7 +302,6 @@ where
                     self.cache_written = true;
                     continue 'outer;
                 } else {
-                    use crate::binned::query::CacheUsage;
                     match self.query.cache_usage() {
                         CacheUsage::Use | CacheUsage::Recreate => {
                             let msg = format!(
@@ -314,7 +314,7 @@ where
                                 &mut self.values,
                                 <<SK as StreamKind>::TBinnedBins as Appendable>::empty(),
                             );
-                            let fut = super::write_pb_cache_min_max_avg_scalar(
+                            let fut = write_pb_cache_min_max_avg_scalar(
                                 values,
                                 self.query.patch().clone(),
                                 self.query.agg_kind().clone(),
@@ -371,7 +371,7 @@ where
                             }
                             Err(e) => match e.kind() {
                                 // TODO other error kinds
-                                std::io::ErrorKind::NotFound => match self.try_setup_fetch_prebinned_higher_res() {
+                                io::ErrorKind::NotFound => match self.try_setup_fetch_prebinned_higher_res() {
                                     Ok(_) => {
                                         if self.fut2.is_none() {
                                             let e = Err(Error::with_msg(format!(
@@ -403,17 +403,16 @@ where
                     Pending => Pending,
                 }
             } else {
-                let cfd = CacheFileDesc {
-                    channel: self.query.channel().clone(),
-                    patch: self.query.patch().clone(),
-                    agg_kind: self.query.agg_kind().clone(),
-                };
-                use crate::binned::query::CacheUsage;
+                let cfd = CacheFileDesc::new(
+                    self.query.channel().clone(),
+                    self.query.patch().clone(),
+                    self.query.agg_kind().clone(),
+                );
                 let path = match self.query.cache_usage() {
                     CacheUsage::Use => cfd.path(&self.node_config),
                     _ => PathBuf::from("DOESNOTEXIST"),
                 };
-                let fut = async { tokio::fs::OpenOptions::new().read(true).open(path).await };
+                let fut = async { OpenOptions::new().read(true).open(path).await };
                 self.open_check_local_file = Some(Box::pin(fut));
                 continue 'outer;
             };

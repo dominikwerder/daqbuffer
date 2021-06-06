@@ -21,7 +21,6 @@ use std::task::{Context, Poll};
 use tiny_keccak::Hasher;
 use tokio::io::{AsyncRead, ReadBuf};
 
-pub mod pbv;
 pub mod pbvfs;
 
 pub struct HttpBodyAsAsyncRead {
@@ -225,11 +224,19 @@ pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoord, channel: &Channel, c
 pub struct CacheFileDesc {
     // What identifies a cached file?
     channel: Channel,
-    agg_kind: AggKind,
     patch: PreBinnedPatchCoord,
+    agg_kind: AggKind,
 }
 
 impl CacheFileDesc {
+    pub fn new(channel: Channel, patch: PreBinnedPatchCoord, agg_kind: AggKind) -> Self {
+        Self {
+            channel,
+            patch,
+            agg_kind,
+        }
+    }
+
     pub fn hash(&self) -> String {
         let mut h = tiny_keccak::Sha3::v256();
         h.update(b"V000");
@@ -275,7 +282,7 @@ impl CacheFileDesc {
 }
 
 pub struct WrittenPbCache {
-    bytes: u64,
+    pub bytes: u64,
 }
 
 pub async fn write_pb_cache_min_max_avg_scalar<T>(

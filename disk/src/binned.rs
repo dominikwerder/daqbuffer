@@ -34,6 +34,8 @@ use std::time::Duration;
 use tokio::fs::File;
 use tokio::io::{AsyncRead, ReadBuf};
 
+pub mod pbv;
+pub mod pbv2;
 pub mod prebinned;
 pub mod query;
 pub mod scalar;
