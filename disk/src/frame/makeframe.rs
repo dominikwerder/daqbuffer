@@ -2,6 +2,7 @@ use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
 use crate::binned::RangeCompletableItem;
+use crate::decode::MinMaxAvgScalarEventBatchGen;
 use crate::frame::inmem::InMemoryFrame;
 use crate::raw::EventQueryJsonStringFrame;
 use bytes::{BufMut, BytesMut};
@@ -26,6 +27,30 @@ impl FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatc
 
 impl FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error> {
     const FRAME_TYPE_ID: u32 = 0x11;
+}
+
+impl<NTY> FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatchGen<NTY>>>, Error> {
+    const FRAME_TYPE_ID: u32 = 888888;
+}
+
+pub trait ProvidesFrameType {
+    fn frame_type_id(&self) -> u32;
+}
+
+pub trait Framable: Send {
+    fn make_frame(&self) -> Result<BytesMut, Error>;
+}
+
+impl Framable for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>, Error> {
+    fn make_frame(&self) -> Result<BytesMut, Error> {
+        make_frame(self)
+    }
+}
+
+impl Framable for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error> {
+    fn make_frame(&self) -> Result<BytesMut, Error> {
+        make_frame(self)
+    }
 }
 
 pub fn make_frame<FT>(item: &FT) -> Result<BytesMut, Error>

@@ -1,13 +1,14 @@
-use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
 use crate::binned::{EventsNodeProcessor, NumOps, RangeCompletableItem};
 use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventFull;
+use crate::frame::makeframe::{make_frame, Framable};
+use bytes::BytesMut;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use netpod::ScalarType;
+use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::pin::Pin;
@@ -40,7 +41,7 @@ where
     NTY: NumFromBytes<NTY, END>,
 {
     type Output;
-    fn convert(buf: &[u8]) -> Self::Output;
+    fn convert(&self, buf: &[u8]) -> Result<Self::Output, Error>;
 }
 
 impl<NTY, END> EventValueFromBytes<NTY, END> for EventValuesDim0Case<NTY>
@@ -48,8 +49,9 @@ where
     NTY: NumFromBytes<NTY, END>,
 {
     type Output = NTY;
-    fn convert(buf: &[u8]) -> Self::Output {
-        NTY::convert(buf)
+
+    fn convert(&self, buf: &[u8]) -> Result<Self::Output, Error> {
+        Ok(NTY::convert(buf))
     }
 }
 
@@ -58,16 +60,20 @@ where
     NTY: NumFromBytes<NTY, END>,
 {
     type Output = Vec<NTY>;
-    fn convert(buf: &[u8]) -> Self::Output {
+
+    fn convert(&self, buf: &[u8]) -> Result<Self::Output, Error> {
         let es = size_of::<NTY>();
         let n1 = buf.len() / es;
+        if n1 != self.n as usize {
+            return Err(Error::with_msg(format!("ele count  got {}  exp {}", n1, self.n)));
+        }
         let mut vals = vec![];
         // TODO could optimize using unsafe code..
         for n2 in 0..n1 {
             let i1 = es * n2;
             vals.push(<NTY as NumFromBytes<NTY, END>>::convert(&buf[i1..(i1 + es)]));
         }
-        vals
+        Ok(vals)
     }
 }
 
@@ -95,8 +101,9 @@ pub struct ProcAA<NTY> {
 
 impl<NTY> EventsNodeProcessor for ProcAA<NTY> {
     type Input = NTY;
-    type Output = MinMaxAvgScalarEventBatch;
-    fn process(inp: &EventValues<Self::Input>) -> Self::Output {
+    type Output = MinMaxAvgScalarBinBatch;
+
+    fn process(_inp: EventValues<Self::Input>) -> Self::Output {
         todo!()
     }
 }
@@ -124,11 +131,93 @@ pub struct ProcBB<NTY> {
     _m1: PhantomData<NTY>,
 }
 
-impl<NTY> EventsNodeProcessor for ProcBB<NTY> {
+#[derive(Serialize, Deserialize)]
+pub struct MinMaxAvgScalarEventBatchGen<NTY> {
+    pub tss: Vec<u64>,
+    pub mins: Vec<Option<NTY>>,
+    pub maxs: Vec<Option<NTY>>,
+    pub avgs: Vec<Option<f32>>,
+}
+
+impl<NTY> MinMaxAvgScalarEventBatchGen<NTY> {
+    pub fn empty() -> Self {
+        Self {
+            tss: vec![],
+            mins: vec![],
+            maxs: vec![],
+            avgs: vec![],
+        }
+    }
+}
+
+impl<NTY> Framable for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatchGen<NTY>>>, Error>
+where
+    NTY: NumOps + Serialize,
+{
+    fn make_frame(&self) -> Result<BytesMut, Error> {
+        make_frame(self)
+    }
+}
+
+impl<NTY> EventsNodeProcessor for ProcBB<NTY>
+where
+    NTY: NumOps,
+{
     type Input = Vec<NTY>;
-    type Output = MinMaxAvgScalarBinBatch;
-    fn process(inp: &EventValues<Self::Input>) -> Self::Output {
-        todo!()
+    type Output = MinMaxAvgScalarEventBatchGen<NTY>;
+
+    fn process(inp: EventValues<Self::Input>) -> Self::Output {
+        let nev = inp.tss.len();
+        let mut ret = MinMaxAvgScalarEventBatchGen {
+            tss: inp.tss,
+            mins: Vec::with_capacity(nev),
+            maxs: Vec::with_capacity(nev),
+            avgs: Vec::with_capacity(nev),
+        };
+        for i1 in 0..nev {
+            let mut min = None;
+            let mut max = None;
+            let mut sum = 0f32;
+            let mut count = 0;
+            let vals = &inp.values[i1];
+            for i2 in 0..vals.len() {
+                let v = vals[i2];
+                min = match min {
+                    None => Some(v),
+                    Some(min) => {
+                        if v < min {
+                            Some(v)
+                        } else {
+                            Some(min)
+                        }
+                    }
+                };
+                max = match max {
+                    None => Some(v),
+                    Some(max) => {
+                        if v > max {
+                            Some(v)
+                        } else {
+                            Some(max)
+                        }
+                    }
+                };
+                let vf = v.as_();
+                if vf.is_nan() {
+                } else {
+                    sum += vf;
+                    count += 1;
+                }
+            }
+            ret.mins.push(min);
+            ret.maxs.push(max);
+            if count == 0 {
+                ret.avgs.push(None);
+            } else {
+                ret.avgs.push(Some(sum / count as f32));
+            }
+        }
+        ret
     }
 }
 
@@ -177,6 +266,7 @@ where
     END: Endianness,
     EVS: EventValueShape<NTY, END>,
 {
+    evs: EVS,
     event_blobs: EventBlobsComplete,
     completed: bool,
     errored: bool,
@@ -191,8 +281,9 @@ where
     END: Endianness,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END>,
 {
-    pub fn new(event_blobs: EventBlobsComplete) -> Self {
+    pub fn new(evs: EVS, event_blobs: EventBlobsComplete) -> Self {
         Self {
+            evs,
             event_blobs,
             completed: false,
             errored: false,
@@ -212,7 +303,7 @@ where
 
             let decomp = ev.decomps[i1].as_ref().unwrap().as_ref();
 
-            let val = <EVS as EventValueFromBytes<NTY, END>>::convert(decomp);
+            let val = self.evs.convert(decomp)?;
             ret.tss.push(ev.tss[i1]);
             ret.values.push(val);
         }

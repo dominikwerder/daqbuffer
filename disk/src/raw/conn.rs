@@ -3,17 +3,16 @@ use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::streams::StreamItem;
 use crate::agg::IntoDim1F32Stream;
 use crate::binned::{
-    BinnedStreamKindScalar, EventsNodeProcessor, MakeBytesFrame, NumBinnedPipeline, NumOps, RangeCompletableItem,
-    StreamKind,
+    BinnedStreamKindScalar, EventsNodeProcessor, NumBinnedPipeline, NumOps, RangeCompletableItem, StreamKind,
 };
 use crate::decode::{
-    BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValues, EventValuesDim0Case, EventValuesDim1Case,
+    BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
     EventsDecodedStream, LittleEndian, NumFromBytes,
 };
 use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventChunkerConf;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
-use crate::frame::makeframe::{decode_frame, make_frame, make_term_frame, FrameType};
+use crate::frame::makeframe::{decode_frame, make_frame, make_term_frame, Framable, FrameType};
 use crate::raw::{EventQueryJsonStringFrame, EventsQuery};
 use crate::Sitemty;
 use err::Error;
@@ -22,7 +21,6 @@ use futures_util::StreamExt;
 use netpod::log::*;
 use netpod::{AggKind, ByteOrder, ByteSize, NodeConfigCached, PerfOpts, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
-use serde::Serialize;
 use std::io;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -99,12 +97,10 @@ impl<E: Into<Error>> From<(E, OwnedWriteHalf)> for ConnErr {
     }
 }
 
-pub trait Framable: FrameType + Serialize + Send {}
-
 // returns Pin<Box<dyn Stream<Item = Sitemty<<ENP as EventsNodeProcessor>::Output>> + Send>>
 
 fn make_num_pipeline_stream_evs<NTY, END, EVS, ENP>(
-    _event_value_shape: EVS,
+    event_value_shape: EVS,
     event_blobs: EventBlobsComplete,
 ) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>
 where
@@ -112,15 +108,16 @@ where
     END: Endianness + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output>,
-    Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Serialize,
+    Sitemty<<ENP as EventsNodeProcessor>::Output>: Framable + 'static,
+    <ENP as EventsNodeProcessor>::Output: 'static,
 {
     NumBinnedPipeline::<NTY, END, ENP>::new();
-    let decs = EventsDecodedStream::<NTY, END, EVS>::new(event_blobs);
+    let decs = EventsDecodedStream::<NTY, END, EVS>::new(event_value_shape, event_blobs);
     let s2 = StreamExt::map(decs, |item| match item {
         Ok(item) => match item {
             StreamItem::DataItem(item) => match item {
                 RangeCompletableItem::Data(item) => {
-                    let item = <ENP as EventsNodeProcessor>::process(&item);
+                    let item = <ENP as EventsNodeProcessor>::process(item);
                     Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                 }
                 RangeCompletableItem::RangeComplete => Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)),
@@ -129,7 +126,8 @@ where
             StreamItem::Stats(item) => Ok(StreamItem::Stats(item)),
         },
         Err(e) => Err(e),
-    });
+    })
+    .map(|item| Box::new(item) as Box<dyn Framable>);
     Box::pin(s2)
 }
 
@@ -192,6 +190,7 @@ macro_rules! pipe1 {
     ($nty:expr, $end:expr, $shape:expr, $agg_kind:expr, $event_blobs:expr) => {
         match $nty {
             ScalarType::I32 => pipe2!(i32, $end, $shape, $agg_kind, $event_blobs),
+            _ => err::todoval(),
         }
     };
 }
@@ -290,7 +289,8 @@ async fn events_conn_handler_inner_try(
         // The writeout does not need to be generic.
         let mut p1 = pipe1!(entry.scalar_type, entry.byte_order, shape, evq.agg_kind, event_blobs);
         while let Some(item) = p1.next().await {
-            match make_frame(&item) {
+            let item = item.make_frame();
+            match item {
                 Ok(buf) => match netout.write_all(&buf).await {
                     Ok(_) => {}
                     Err(e) => return Err((e, netout))?,

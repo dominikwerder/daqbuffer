@@ -52,6 +52,7 @@ impl std::fmt::Debug for ValuesDim0 {
     }
 }
 
+// TODO get rid of AggregatableXdim1Bin and ValuesDim1
 impl<SK> AggregatableXdim1Bin<SK> for ValuesDim1
 where
     SK: StreamKind,

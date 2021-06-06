@@ -20,7 +20,7 @@ use netpod::log::*;
 use netpod::{
     AggKind, BinnedRange, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange,
 };
-use num_traits::Zero;
+use num_traits::{AsPrimitive, Bounded, Zero};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize, Serializer};
@@ -555,8 +555,8 @@ impl TBinnedBins for MinMaxAvgScalarBinBatch {
 // I would like to decide on the disk-dtype first and get some generic intermediate type, and the
 // decide the AggKind, and maybe even other generic types.
 
-pub trait NumOps: Sized + Send + Unpin + Zero + BitXor {}
-impl<T> NumOps for T where T: Sized + Send + Unpin + Zero + BitXor {}
+pub trait NumOps: Sized + Copy + Send + Unpin + Zero + BitXor + AsPrimitive<f32> + Bounded + PartialOrd {}
+impl<T> NumOps for T where T: Sized + Copy + Send + Unpin + Zero + BitXor + AsPrimitive<f32> + Bounded + PartialOrd {}
 
 pub trait EventsDecoder {
     type Output;
@@ -567,7 +567,7 @@ pub trait EventsDecoder {
 pub trait EventsNodeProcessor {
     type Input;
     type Output;
-    fn process(inp: &EventValues<Self::Input>) -> Self::Output;
+    fn process(inp: EventValues<Self::Input>) -> Self::Output;
 }
 
 pub struct NumEvents<N> {
