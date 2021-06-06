@@ -5,9 +5,10 @@ use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::{Appendable, Collectable, Collected, StreamItem, ToJsonResult};
 use crate::agg::{Fits, FitsInside};
+use crate::binned::query::BinnedQuery;
 use crate::binned::scalar::binned_stream;
 use crate::binnedstream::{BinnedScalarStreamFromPreBinnedPatches, BoxedStream};
-use crate::cache::{BinnedQuery, MergedFromRemotes};
+use crate::cache::MergedFromRemotes;
 use crate::decode::{Endianness, EventValues};
 use crate::frame::makeframe::{FrameType, SubFrId};
 use crate::raw::EventsQuery;
@@ -33,6 +34,8 @@ use std::time::Duration;
 use tokio::fs::File;
 use tokio::io::{AsyncRead, ReadBuf};
 
+pub mod prebinned;
+pub mod query;
 pub mod scalar;
 
 pub struct BinnedStreamRes<I> {

@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
 use disk::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use disk::agg::streams::StreamItem;
+use disk::binned::query::{BinnedQuery, CacheUsage};
 use disk::binned::RangeCompletableItem;
-use disk::cache::{BinnedQuery, CacheUsage};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::frame::makeframe::FrameType;
 use disk::streamlog::Streamlog;

@@ -1,7 +1,7 @@
 use crate::agg::streams::StreamItem;
+use crate::binned::query::{CacheUsage, PreBinnedQuery};
 use crate::binned::{RangeCompletableItem, StreamKind};
 use crate::cache::pbvfs::PreBinnedScalarValueFetchedStream;
-use crate::cache::{CacheUsage, PreBinnedQuery};
 use crate::frame::makeframe::FrameType;
 use err::Error;
 use futures_core::Stream;

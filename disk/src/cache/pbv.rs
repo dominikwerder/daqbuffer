@@ -1,7 +1,8 @@
 use crate::agg::streams::{Appendable, StreamItem};
+use crate::binned::query::PreBinnedQuery;
 use crate::binned::{RangeCompletableItem, StreamKind, WithLen};
 use crate::cache::pbvfs::PreBinnedScalarValueFetchedStream;
-use crate::cache::{CacheFileDesc, MergedFromRemotes, PreBinnedQuery, WrittenPbCache};
+use crate::cache::{CacheFileDesc, MergedFromRemotes, WrittenPbCache};
 use crate::frame::makeframe::{make_frame, FrameType};
 use crate::raw::EventsQuery;
 use crate::streamlog::Streamlog;
@@ -131,20 +132,20 @@ where
     // TODO handle errors also here via return type.
     fn setup_merged_from_remotes(&mut self) {
         let evq = EventsQuery {
-            channel: self.query.channel.clone(),
-            range: self.query.patch.patch_range(),
-            agg_kind: self.query.agg_kind.clone(),
+            channel: self.query.channel().clone(),
+            range: self.query.patch().patch_range(),
+            agg_kind: self.query.agg_kind().clone(),
         };
-        if self.query.patch.patch_t_len() % self.query.patch.bin_t_len() != 0 {
+        if self.query.patch().patch_t_len() % self.query.patch().bin_t_len() != 0 {
             error!(
                 "Patch length inconsistency  {}  {}",
-                self.query.patch.patch_t_len(),
-                self.query.patch.bin_t_len()
+                self.query.patch().patch_t_len(),
+                self.query.patch().bin_t_len()
             );
             return;
         }
         // TODO do I need to set up more transformations or binning to deliver the requested data?
-        let count = self.query.patch.patch_t_len() / self.query.patch.bin_t_len();
+        let count = self.query.patch().patch_t_len() / self.query.patch().bin_t_len();
         let range = BinnedRange::covering_range(evq.range.clone(), count as u32)
             .unwrap()
             .ok_or(Error::with_msg("covering_range returns None"))
@@ -161,7 +162,7 @@ where
     }
 
     fn setup_from_higher_res_prebinned(&mut self, range: PreBinnedPatchRange) {
-        let g = self.query.patch.bin_t_len();
+        let g = self.query.patch().bin_t_len();
         let h = range.grid_spec.bin_t_len();
         trace!(
             "try_setup_fetch_prebinned_higher_res  found  g {}  h {}  ratio {}  mod {}  {:?}",
@@ -188,18 +189,18 @@ where
         let s = futures_util::stream::iter(patch_it)
             .map({
                 let q2 = self.query.clone();
-                let disk_stats_every = self.query.disk_stats_every.clone();
+                let disk_stats_every = self.query.disk_stats_every().clone();
                 let stream_kind = self.stream_kind.clone();
                 let report_error = self.query.report_error();
                 move |patch| {
-                    let query = PreBinnedQuery {
+                    let query = PreBinnedQuery::new(
                         patch,
-                        channel: q2.channel.clone(),
-                        agg_kind: q2.agg_kind.clone(),
-                        cache_usage: q2.cache_usage.clone(),
-                        disk_stats_every: disk_stats_every.clone(),
+                        q2.channel().clone(),
+                        q2.agg_kind().clone(),
+                        q2.cache_usage().clone(),
+                        disk_stats_every.clone(),
                         report_error,
-                    };
+                    );
                     PreBinnedScalarValueFetchedStream::new(&query, &node_config, &stream_kind)
                 }
             })
@@ -215,8 +216,8 @@ where
     }
 
     fn try_setup_fetch_prebinned_higher_res(&mut self) -> Result<(), Error> {
-        let range = self.query.patch.patch_range();
-        match PreBinnedPatchRange::covering_range(range, self.query.patch.bin_count() + 1) {
+        let range = self.query.patch().patch_range();
+        match PreBinnedPatchRange::covering_range(range, self.query.patch().bin_count() + 1) {
             Ok(Some(range)) => {
                 self.setup_from_higher_res_prebinned(range);
             }
@@ -300,11 +301,12 @@ where
                     self.cache_written = true;
                     continue 'outer;
                 } else {
-                    match self.query.cache_usage {
-                        super::CacheUsage::Use | super::CacheUsage::Recreate => {
+                    use crate::binned::query::CacheUsage;
+                    match self.query.cache_usage() {
+                        CacheUsage::Use | CacheUsage::Recreate => {
                             let msg = format!(
                                 "write cache file  query: {:?}  bin count: {}",
-                                self.query.patch,
+                                self.query.patch(),
                                 self.values.len(),
                             );
                             self.streamlog.append(Level::INFO, msg);
@@ -314,9 +316,9 @@ where
                             );
                             let fut = super::write_pb_cache_min_max_avg_scalar(
                                 values,
-                                self.query.patch.clone(),
-                                self.query.agg_kind.clone(),
-                                self.query.channel.clone(),
+                                self.query.patch().clone(),
+                                self.query.agg_kind().clone(),
+                                self.query.channel().clone(),
                                 self.node_config.clone(),
                             );
                             self.write_fut = Some(Box::pin(fut));
@@ -402,12 +404,12 @@ where
                 }
             } else {
                 let cfd = CacheFileDesc {
-                    channel: self.query.channel.clone(),
-                    patch: self.query.patch.clone(),
-                    agg_kind: self.query.agg_kind.clone(),
+                    channel: self.query.channel().clone(),
+                    patch: self.query.patch().clone(),
+                    agg_kind: self.query.agg_kind().clone(),
                 };
-                use super::CacheUsage;
-                let path = match self.query.cache_usage {
+                use crate::binned::query::CacheUsage;
+                let path = match self.query.cache_usage() {
                     CacheUsage::Use => cfd.path(&self.node_config),
                     _ => PathBuf::from("DOESNOTEXIST"),
                 };

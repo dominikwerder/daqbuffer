@@ -1,5 +1,5 @@
 use chrono::{DateTime, Duration, Utc};
-use disk::cache::CacheUsage;
+use disk::binned::query::CacheUsage;
 use err::Error;
 use netpod::log::*;
 use netpod::{NodeConfig, NodeConfigCached};

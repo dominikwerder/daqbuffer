@@ -478,44 +478,6 @@ pub fn raw_concat_channel_read_stream_timebin(
     }
 }
 
-/**
-Read all events from all timebins for the given channel and split.
-*/
-#[allow(dead_code)]
-pub struct RawConcatChannelReader {
-    ksprefix: String,
-    keyspace: u32,
-    channel: netpod::Channel,
-    split: u32,
-    tbsize: u32,
-    buffer_size: u32,
-    tb: u32,
-    //file_reader: Option<FileReader>,
-
-    // TODO
-    // Not enough to store a simple future here.
-    // That will only resolve to a single output.
-    // • How can I transition between Stream and async world?
-    // • I guess I must not poll a completed Future which comes from some async fn again after it completed.
-    // • relevant crates:  async-stream, tokio-stream
-    fopen: Option<Box<dyn Future<Output = Option<Result<Bytes, Error>>> + Send>>,
-}
-
-impl RawConcatChannelReader {
-    pub fn read(self) -> Result<netpod::BodyStream, Error> {
-        let res = netpod::BodyStream { inner: Box::new(self) };
-        Ok(res)
-    }
-}
-
-impl futures_core::Stream for RawConcatChannelReader {
-    type Item = Result<Bytes, Error>;
-
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!()
-    }
-}
-
 type Sitemty<T> = Result<StreamItem<RangeCompletableItem<T>>, Error>;
 
 pub mod dtflags {

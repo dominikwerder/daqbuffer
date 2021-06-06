@@ -1,7 +1,8 @@
 use crate::gather::gather_get_json;
 use bytes::Bytes;
+use disk::binned::prebinned::pre_binned_bytes_for_http;
+use disk::binned::query::{BinnedQuery, PreBinnedQuery};
 use disk::binned::BinnedStreamKindScalar;
-use disk::cache::{BinnedQuery, PreBinnedQuery};
 use disk::raw::conn::events_service;
 use err::Error;
 use future::Future;
@@ -319,7 +320,7 @@ where
 
 async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
-    let query = disk::cache::BinnedQuery::from_request(&head)?;
+    let query = BinnedQuery::from_request(&head)?;
     match head.headers.get("accept") {
         Some(v) if v == "application/octet-stream" => binned_binary(query, node_config).await,
         Some(v) if v == "application/json" => binned_json(query, node_config).await,
@@ -365,13 +366,10 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
     let query = PreBinnedQuery::from_request(&head)?;
     let desc = format!("pre-b-{}", query.patch().bin_t_len() / 1000000000);
     let span1 = span!(Level::INFO, "httpret::prebinned", desc = &desc.as_str());
-
-    // TODO factor from the inner scopes the fetch of the channel entry so that I can
-    // provide the stream_kind here:
+    // TODO remove StreamKind
     let stream_kind = BinnedStreamKindScalar::new();
-
     span1.in_scope(|| {
-        let ret = match disk::cache::pre_binned_bytes_for_http(node_config, &query, stream_kind) {
+        let ret = match pre_binned_bytes_for_http(node_config, &query, stream_kind) {
             Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(
                 s,
                 format!(

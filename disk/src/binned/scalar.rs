@@ -1,6 +1,6 @@
+use crate::binned::query::BinnedQuery;
 use crate::binned::{BinnedStreamRes, StreamKind};
 use crate::binnedstream::BoxedStream;
-use crate::cache::BinnedQuery;
 use crate::raw::EventsQuery;
 use err::Error;
 use netpod::log::*;

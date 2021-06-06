@@ -1,6 +1,6 @@
 use crate::test::require_test_hosts_running;
 use chrono::{DateTime, Utc};
-use disk::cache::BinnedQuery;
+use disk::binned::query::BinnedQuery;
 use err::Error;
 use http::StatusCode;
 use hyper::Body;

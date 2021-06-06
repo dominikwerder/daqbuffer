@@ -1,6 +1,7 @@
 use crate::agg::streams::StreamItem;
+use crate::binned::query::PreBinnedQuery;
 use crate::binned::{RangeCompletableItem, StreamKind};
-use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead, PreBinnedQuery};
+use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{decode_frame, FrameType};
 use err::Error;
@@ -29,7 +30,7 @@ where
     SK: StreamKind,
 {
     pub fn new(query: &PreBinnedQuery, node_config: &NodeConfigCached, stream_kind: &SK) -> Result<Self, Error> {
-        let nodeix = node_ix_for_patch(&query.patch, &query.channel, &node_config.node_config.cluster);
+        let nodeix = node_ix_for_patch(&query.patch(), &query.channel(), &node_config.node_config.cluster);
         let node = &node_config.node_config.cluster.nodes[nodeix as usize];
         let uri: hyper::Uri = format!(
             "http://{}:{}/api/4/prebinned?{}",
