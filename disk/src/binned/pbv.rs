@@ -6,7 +6,6 @@ use crate::cache::{write_pb_cache_min_max_avg_scalar, CacheFileDesc, MergedFromR
 use crate::frame::makeframe::{make_frame, FrameType};
 use crate::raw::EventsQuery;
 use crate::streamlog::Streamlog;
-use bytes::Bytes;
 use err::Error;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};

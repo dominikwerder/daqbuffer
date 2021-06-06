@@ -20,6 +20,7 @@ use serde::{Deserialize, Serialize};
 use std::{future, net, panic, pin, task};
 use task::{Context, Poll};
 use tracing::field::Empty;
+use tracing::Instrument;
 
 pub mod gather;
 pub mod search;
@@ -365,30 +366,30 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
     let (head, _body) = req.into_parts();
     let query = PreBinnedQuery::from_request(&head)?;
     let desc = format!("pre-b-{}", query.patch().bin_t_len() / 1000000000);
-    let span1 = span!(Level::INFO, "httpret::prebinned", desc = &desc.as_str());
+    let span1 = span!(Level::INFO, "httpret::prebinned_DISABLED", desc = &desc.as_str());
     // TODO remove StreamKind
     let stream_kind = BinnedStreamKindScalar::new();
-    span1.in_scope(|| {
-        let ret = match pre_binned_bytes_for_http(node_config, &query, stream_kind) {
-            Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(
-                s,
-                format!(
-                    "pre-b-{}-p-{}",
-                    query.patch().bin_t_len() / 1000000000,
-                    query.patch().patch_beg() / 1000000000,
-                ),
-            ))?,
-            Err(e) => {
-                if query.report_error() {
-                    response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?
-                } else {
-                    error!("fn prebinned: {:?}", e);
-                    response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
-                }
+    //span1.in_scope(|| {});
+    let fut = pre_binned_bytes_for_http(node_config, &query, stream_kind).instrument(span1);
+    let ret = match fut.await {
+        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(
+            s,
+            format!(
+                "pre-b-{}-p-{}",
+                query.patch().bin_t_len() / 1000000000,
+                query.patch().patch_beg() / 1000000000,
+            ),
+        ))?,
+        Err(e) => {
+            if query.report_error() {
+                response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?
+            } else {
+                error!("fn prebinned: {:?}", e);
+                response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
             }
-        };
-        Ok(ret)
-    })
+        }
+    };
+    Ok(ret)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
