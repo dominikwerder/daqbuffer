@@ -1,40 +1,19 @@
+use crate::agg::enp::XBinnedScalarEvents;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
-use crate::binned::RangeCompletableItem;
-use crate::decode::MinMaxAvgScalarEventBatchGen;
+use crate::binned::{NumOps, RangeCompletableItem};
+use crate::decode::{EventValues, MinMaxAvgScalarEventBatchGen};
 use crate::frame::inmem::InMemoryFrame;
 use crate::raw::EventQueryJsonStringFrame;
 use bytes::{BufMut, BytesMut};
 use err::Error;
 use serde::{de::DeserializeOwned, Serialize};
 
+pub const INMEM_FRAME_ENCID: u32 = 0x12121212;
 pub const INMEM_FRAME_HEAD: usize = 20;
 pub const INMEM_FRAME_FOOT: usize = 4;
 pub const INMEM_FRAME_MAGIC: u32 = 0xc6c3b73d;
-
-pub trait FrameType {
-    const FRAME_TYPE_ID: u32;
-}
-
-impl FrameType for EventQueryJsonStringFrame {
-    const FRAME_TYPE_ID: u32 = 0x03;
-}
-
-impl FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>, Error> {
-    const FRAME_TYPE_ID: u32 = 0x10;
-}
-
-impl FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error> {
-    const FRAME_TYPE_ID: u32 = 0x11;
-}
-
-impl<NTY> FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatchGen<NTY>>>, Error>
-where
-    NTY: SubFrId,
-{
-    const FRAME_TYPE_ID: u32 = 0x28c4a100 + NTY::SUB;
-}
 
 pub trait SubFrId {
     const SUB: u32;
@@ -80,6 +59,43 @@ impl SubFrId for f64 {
     const SUB: u32 = 12;
 }
 
+pub trait FrameType {
+    const FRAME_TYPE_ID: u32;
+}
+
+impl FrameType for EventQueryJsonStringFrame {
+    const FRAME_TYPE_ID: u32 = 0x100;
+}
+
+impl FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>, Error> {
+    const FRAME_TYPE_ID: u32 = 0x200;
+}
+
+impl FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error> {
+    const FRAME_TYPE_ID: u32 = 0x300;
+}
+
+impl<NTY> FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatchGen<NTY>>>, Error>
+where
+    NTY: SubFrId,
+{
+    const FRAME_TYPE_ID: u32 = 0x400 + NTY::SUB;
+}
+
+impl<NTY> FrameType for Result<StreamItem<RangeCompletableItem<EventValues<NTY>>>, Error>
+where
+    NTY: SubFrId,
+{
+    const FRAME_TYPE_ID: u32 = 0x500 + NTY::SUB;
+}
+
+impl<NTY> FrameType for Result<StreamItem<RangeCompletableItem<XBinnedScalarEvents<NTY>>>, Error>
+where
+    NTY: SubFrId,
+{
+    const FRAME_TYPE_ID: u32 = 0x600 + NTY::SUB;
+}
+
 pub trait ProvidesFrameType {
     fn frame_type_id(&self) -> u32;
 }
@@ -100,6 +116,24 @@ impl Framable for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBat
     }
 }
 
+impl<NTY> Framable for Result<StreamItem<RangeCompletableItem<EventValues<NTY>>>, err::Error>
+where
+    NTY: NumOps + Serialize,
+{
+    fn make_frame(&self) -> Result<BytesMut, Error> {
+        make_frame(self)
+    }
+}
+
+impl<NTY> Framable for Result<StreamItem<RangeCompletableItem<XBinnedScalarEvents<NTY>>>, err::Error>
+where
+    NTY: NumOps + Serialize,
+{
+    fn make_frame(&self) -> Result<BytesMut, Error> {
+        make_frame(self)
+    }
+}
+
 pub fn make_frame<FT>(item: &FT) -> Result<BytesMut, Error>
 where
     FT: FrameType + Serialize,
@@ -112,10 +146,9 @@ where
             let mut h = crc32fast::Hasher::new();
             h.update(&enc);
             let payload_crc = h.finalize();
-            let encid = 0x12121212;
             let mut buf = BytesMut::with_capacity(enc.len() + INMEM_FRAME_HEAD);
             buf.put_u32_le(INMEM_FRAME_MAGIC);
-            buf.put_u32_le(encid);
+            buf.put_u32_le(INMEM_FRAME_ENCID);
             buf.put_u32_le(FT::FRAME_TYPE_ID);
             buf.put_u32_le(enc.len() as u32);
             buf.put_u32_le(payload_crc);
@@ -134,10 +167,9 @@ pub fn make_term_frame() -> BytesMut {
     let mut h = crc32fast::Hasher::new();
     h.update(&[]);
     let payload_crc = h.finalize();
-    let encid = 0x12121313;
     let mut buf = BytesMut::with_capacity(INMEM_FRAME_HEAD);
     buf.put_u32_le(INMEM_FRAME_MAGIC);
-    buf.put_u32_le(encid);
+    buf.put_u32_le(INMEM_FRAME_ENCID);
     buf.put_u32_le(0x01);
     buf.put_u32_le(0);
     buf.put_u32_le(payload_crc);
@@ -150,15 +182,16 @@ pub fn make_term_frame() -> BytesMut {
 
 pub fn decode_frame<T>(frame: &InMemoryFrame, frame_type: u32) -> Result<T, Error>
 where
-    T: DeserializeOwned,
+    T: FrameType + DeserializeOwned,
 {
-    if frame.encid() != 0x12121212 {
+    if frame.encid() != INMEM_FRAME_ENCID {
         return Err(Error::with_msg(format!("unknown encoder id {:?}", frame)));
     }
-    if frame.tyid() != frame_type {
+    if frame.tyid() != <T as FrameType>::FRAME_TYPE_ID {
         return Err(Error::with_msg(format!(
-            "type id mismatch expect {}  found {:?}",
-            frame_type, frame
+            "type id mismatch  expect {}  found {:?}",
+            <T as FrameType>::FRAME_TYPE_ID,
+            frame
         )));
     }
     if frame.len() as usize != frame.buf().len() {

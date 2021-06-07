@@ -1,7 +1,9 @@
 use crate::agg::streams::StreamItem;
 use crate::binned::{RangeCompletableItem, StreamKind};
+use crate::frame::makeframe::FrameType;
 use crate::merge::MergedStream;
-use crate::raw::EventsQuery;
+use crate::raw::{x_processed_stream_from_node, EventsQuery};
+use crate::Sitemty;
 use bytes::Bytes;
 use chrono::Utc;
 use err::Error;
@@ -86,6 +88,7 @@ impl AsyncRead for HttpBodyAsAsyncRead {
 type T001<T> = Pin<Box<dyn Stream<Item = Result<StreamItem<T>, Error>> + Send>>;
 type T002<T> = Pin<Box<dyn Future<Output = Result<T001<T>, Error>> + Send>>;
 
+// TODO remove after refactoring.
 pub struct MergedFromRemotes<SK>
 where
     SK: StreamKind,
@@ -100,16 +103,12 @@ where
 impl<SK> MergedFromRemotes<SK>
 where
     SK: StreamKind,
+    Sitemty<<SK as StreamKind>::XBinnedEvents>: FrameType,
 {
     pub fn new(evq: EventsQuery, perf_opts: PerfOpts, cluster: Cluster, stream_kind: SK) -> Self {
         let mut tcp_establish_futs = vec![];
         for node in &cluster.nodes {
-            let f = super::raw::x_processed_stream_from_node(
-                evq.clone(),
-                perf_opts.clone(),
-                node.clone(),
-                stream_kind.clone(),
-            );
+            let f = x_processed_stream_from_node(evq.clone(), perf_opts.clone(), node.clone(), stream_kind.clone());
             let f: T002<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>> = Box::pin(f);
             tcp_establish_futs.push(f);
         }

@@ -544,8 +544,14 @@ impl TBinnedBins for MinMaxAvgScalarBinBatch {
     }
 }
 
-pub trait NumOps: Sized + Copy + Send + Unpin + Zero + AsPrimitive<f32> + Bounded + PartialOrd + SubFrId {}
-impl<T> NumOps for T where T: Sized + Copy + Send + Unpin + Zero + AsPrimitive<f32> + Bounded + PartialOrd + SubFrId {}
+pub trait NumOps:
+    Sized + Copy + Send + Unpin + Zero + AsPrimitive<f32> + Bounded + PartialOrd + SubFrId + DeserializeOwned
+{
+}
+impl<T> NumOps for T where
+    T: Sized + Copy + Send + Unpin + Zero + AsPrimitive<f32> + Bounded + PartialOrd + SubFrId + DeserializeOwned
+{
+}
 
 pub trait EventsDecoder {
     type Output;
@@ -555,100 +561,83 @@ pub trait EventsDecoder {
 
 pub trait EventsNodeProcessor {
     type Input;
-    type Output;
+    type Output: Send + DeserializeOwned;
     fn process(inp: EventValues<Self::Input>) -> Self::Output;
 }
 
-pub struct NumEvents<N> {
-    _m: PhantomData<N>,
-}
-impl<N> NumEvents<N> {
-    pub fn new() -> Self {
-        Self { _m: PhantomData }
-    }
+pub trait TimeBins: Send + Unpin + WithLen + Appendable {
+    fn ts1s(&self) -> &Vec<u64>;
+    fn ts2s(&self) -> &Vec<u64>;
 }
 
-pub struct NumSingleXBin<N> {
-    _m: PhantomData<N>,
-}
-impl<N> NumSingleXBin<N> {
-    pub fn new() -> Self {
-        Self { _m: PhantomData }
-    }
+pub trait EventsTimeBinner {
+    type Input;
+    type Output: TimeBins;
+    fn process(inp: Self::Input) -> Self::Output;
 }
 
-pub struct NumEventsDecoder<N, END>
-where
-    END: Endianness,
-{
-    _m1: PhantomData<N>,
-    _m2: PhantomData<END>,
+pub trait BinsTimeBinner {
+    type Input: TimeBins;
+    type Output: TimeBins;
+    fn process(inp: Self::Input) -> Self::Output;
 }
 
-impl<N, END> NumEventsDecoder<N, END>
-where
-    END: Endianness,
-{
-    pub fn new() -> Self {
+pub struct MinMaxAvgBins<NTY> {
+    ts1s: Vec<u64>,
+    ts2s: Vec<u64>,
+    counts: Vec<u64>,
+    mins: Vec<Option<NTY>>,
+    maxs: Vec<Option<NTY>>,
+    avgs: Vec<Option<f32>>,
+}
+
+impl<NTY> MinMaxAvgBins<NTY> {
+    pub fn empty() -> Self {
         Self {
-            _m1: PhantomData,
-            _m2: PhantomData,
+            ts1s: vec![],
+            ts2s: vec![],
+            counts: vec![],
+            mins: vec![],
+            maxs: vec![],
+            avgs: vec![],
         }
     }
 }
 
-impl<N, END> EventsDecoder for NumEventsDecoder<N, END>
+impl<NTY> TimeBins for MinMaxAvgBins<NTY>
 where
-    END: Endianness,
+    NTY: NumOps,
 {
-    type Output = NumEvents<N>;
-    fn ingest(&mut self, _event: &[u8]) {}
-    fn result(&mut self) -> Self::Output {
-        err::todoval()
+    fn ts1s(&self) -> &Vec<u64> {
+        &self.ts1s
+    }
+
+    fn ts2s(&self) -> &Vec<u64> {
+        &self.ts2s
     }
 }
 
-pub trait BinnedPipeline {
-    type EventsDecoder: EventsDecoder;
-    type EventsNodeProcessor: EventsNodeProcessor;
-    fn events_decoder(&self) -> Self::EventsDecoder;
-    fn events_node_processor(&self) -> Self::EventsNodeProcessor;
-}
-
-pub struct NumBinnedPipeline<N, END, ENP>
-where
-    END: Endianness,
-{
-    _m1: PhantomData<N>,
-    _m2: PhantomData<END>,
-    _m3: PhantomData<ENP>,
-}
-
-impl<N, END, ENP> NumBinnedPipeline<N, END, ENP>
-where
-    END: Endianness,
-{
-    pub fn new() -> Self {
-        Self {
-            _m1: PhantomData,
-            _m2: PhantomData,
-            _m3: PhantomData,
-        }
+impl<NTY> WithLen for MinMaxAvgBins<NTY> {
+    fn len(&self) -> usize {
+        self.ts1s.len()
     }
 }
 
-impl<N, END, ENP> BinnedPipeline for NumBinnedPipeline<N, END, ENP>
+impl<NTY> Appendable for MinMaxAvgBins<NTY>
 where
-    ENP: EventsNodeProcessor,
-    END: Endianness,
+    NTY: NumOps,
 {
-    type EventsDecoder = NumEventsDecoder<N, END>;
-    type EventsNodeProcessor = ENP;
-    fn events_decoder(&self) -> Self::EventsDecoder {
-        todo!()
+    fn empty() -> Self {
+        Self::empty()
     }
-    fn events_node_processor(&self) -> Self::EventsNodeProcessor {
-        todo!()
+
+    fn append(&mut self, src: &Self) {
+        self.ts1s.extend_from_slice(&src.ts1s);
+        self.ts2s.extend_from_slice(&src.ts2s);
+        self.counts.extend_from_slice(&src.counts);
+        self.mins.extend_from_slice(&src.mins);
+        self.maxs.extend_from_slice(&src.maxs);
+        self.avgs.extend_from_slice(&src.avgs);
     }
 }
 

@@ -245,6 +245,10 @@ where
     type NumXAggToNBins = ProcBB<NTY>;
 }
 
+// TODO why not Serialize?
+// TODO add pulse.
+// TODO change name, it's not only about values, but more like batch of whole events.
+#[derive(Serialize, Deserialize)]
 pub struct EventValues<VT> {
     pub tss: Vec<u64>,
     pub values: Vec<VT>,

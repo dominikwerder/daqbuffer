@@ -152,14 +152,17 @@ where
             .ok_or(Error::with_msg("covering_range returns None"))
             .unwrap();
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
-        let s1 = MergedFromRemotes::new(
+        // TODO remove whole mod after refactor
+        /*let s1 = MergedFromRemotes::new(
             evq,
             perf_opts,
             self.node_config.node_config.cluster.clone(),
             self.stream_kind.clone(),
         );
         let s1 = <SK as StreamKind>::xbinned_to_tbinned(s1, range);
-        self.fut2 = Some(Box::pin(s1));
+        self.fut2 = Some(Box::pin(s1));*/
+        err::todo();
+        self.fut2 = None;
     }
 
     fn setup_from_higher_res_prebinned(&mut self, range: PreBinnedPatchRange) {

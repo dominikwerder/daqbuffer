@@ -1,7 +1,11 @@
+use crate::agg::binnedt4::{DefaultBinsTimeBinner, DefaultScalarEventsTimeBinner, DefaultSingleXBinTimeBinner};
+use crate::agg::enp::{Identity, WaveXBinner};
 use crate::agg::streams::StreamItem;
-use crate::binned::pbv2::{pre_binned_value_byte_stream_new, PreBinnedValueByteStream, PreBinnedValueStream};
+use crate::binned::pbv2::{
+    pre_binned_value_byte_stream_new, PreBinnedValueByteStream, PreBinnedValueByteStreamInner, PreBinnedValueStream,
+};
 use crate::binned::query::PreBinnedQuery;
-use crate::binned::{EventsNodeProcessor, NumOps, RangeCompletableItem, StreamKind};
+use crate::binned::{BinsTimeBinner, EventsNodeProcessor, EventsTimeBinner, NumOps, RangeCompletableItem, StreamKind};
 use crate::cache::node_ix_for_patch;
 use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
@@ -9,37 +13,54 @@ use crate::decode::{
 };
 use crate::frame::makeframe::{Framable, FrameType};
 use crate::Sitemty;
+use bytes::Bytes;
 use err::Error;
 use futures_core::Stream;
+use futures_util::StreamExt;
+use netpod::streamext::SCC;
 use netpod::{ByteOrder, NodeConfigCached, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
+use serde::Serialize;
 use std::pin::Pin;
 
 // TODO instead of EventNodeProcessor, use a T-binning processor here
 // TODO might also want another stateful processor which can run on the merged event stream, like smoothing.
 
-fn make_num_pipeline_nty_end_evs_enp<NTY, END, EVS, ENP>(
+fn make_num_pipeline_nty_end_evs_enp<NTY, END, EVS, ENP, ETB>(
     event_value_shape: EVS,
 ) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>
 where
-    NTY: NumOps + NumFromBytes<NTY, END> + 'static,
+    NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
     END: Endianness + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output>,
+    ETB: EventsTimeBinner<Input = <ENP as EventsNodeProcessor>::Output>,
     Sitemty<<ENP as EventsNodeProcessor>::Output>: Framable + 'static,
     <ENP as EventsNodeProcessor>::Output: 'static,
 {
+    // TODO
+    // Use the pre-binned fetch machinery, refactored...
     err::todoval()
 }
 
 fn make_num_pipeline_nty_end<NTY, END>(shape: Shape) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>
 where
-    NTY: NumOps + NumFromBytes<NTY, END> + 'static,
+    NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
     END: Endianness + 'static,
 {
+    // TODO pass all the correct types.
+    err::todo();
     match shape {
-        Shape::Scalar => make_num_pipeline_nty_end_evs_enp::<NTY, END, _, ProcAA<NTY>>(EventValuesDim0Case::new()),
-        Shape::Wave(n) => make_num_pipeline_nty_end_evs_enp::<NTY, END, _, ProcBB<NTY>>(EventValuesDim1Case::new(n)),
+        Shape::Scalar => {
+            make_num_pipeline_nty_end_evs_enp::<NTY, END, _, Identity<NTY>, DefaultScalarEventsTimeBinner<NTY>>(
+                EventValuesDim0Case::new(),
+            )
+        }
+        Shape::Wave(n) => {
+            make_num_pipeline_nty_end_evs_enp::<NTY, END, _, WaveXBinner<NTY>, DefaultSingleXBinTimeBinner<NTY>>(
+                EventValuesDim1Case::new(n),
+            )
+        }
     }
 }
 
@@ -59,15 +80,17 @@ fn make_num_pipeline(
 ) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>> {
     match scalar_type {
         ScalarType::I32 => match_end!(i32, byte_order, shape),
+        ScalarType::F32 => match_end!(f32, byte_order, shape),
         _ => todo!(),
     }
 }
 
+// TODO after the refactor, return direct value instead of boxed.
 pub async fn pre_binned_bytes_for_http<SK>(
     node_config: &NodeConfigCached,
     query: &PreBinnedQuery,
     stream_kind: SK,
-) -> Result<PreBinnedValueByteStream<SK>, Error>
+) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>, Error>
 where
     SK: StreamKind,
     Result<StreamItem<RangeCompletableItem<SK::TBinnedBins>>, err::Error>: FrameType,
@@ -101,15 +124,21 @@ where
         Err(e) => return Err(e),
     };
 
-    // TODO enable
-    if false {
-        // TODO
-        // Decide here analogue to conn in some steps which generic pipeline we use.
-
-        PreBinnedValueStream::new(query.clone(), node_config, stream_kind.clone());
-        err::todoval()
+    if true {
+        let ret = make_num_pipeline(
+            entry.scalar_type.clone(),
+            entry.byte_order.clone(),
+            entry.to_shape().unwrap(),
+        )
+        .map(|item| match item.make_frame() {
+            Ok(item) => Ok(item.freeze()),
+            Err(e) => Err(e),
+        });
+        let ret = Box::pin(ret);
+        Ok(ret)
     } else {
         let ret = pre_binned_value_byte_stream_new(query, node_config, stream_kind);
+        let ret = Box::pin(ret);
         Ok(ret)
     }
 }

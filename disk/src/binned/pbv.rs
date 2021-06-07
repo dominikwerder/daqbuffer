@@ -1,18 +1,25 @@
 use crate::agg::streams::{Appendable, StreamItem};
 use crate::binned::query::{CacheUsage, PreBinnedQuery};
-use crate::binned::{RangeCompletableItem, StreamKind, WithLen};
+use crate::binned::{
+    BinnedStreamKindScalar, BinsTimeBinner, EventsNodeProcessor, EventsTimeBinner, NumOps, RangeCompletableItem,
+    ReadableFromFile, StreamKind, WithLen,
+};
 use crate::cache::pbvfs::PreBinnedScalarValueFetchedStream;
 use crate::cache::{write_pb_cache_min_max_avg_scalar, CacheFileDesc, MergedFromRemotes, WrittenPbCache};
+use crate::decode::{Endianness, EventValueFromBytes, EventValueShape, NumFromBytes};
 use crate::frame::makeframe::{make_frame, FrameType};
 use crate::raw::EventsQuery;
 use crate::streamlog::Streamlog;
+use crate::Sitemty;
 use err::Error;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use netpod::log::*;
 use netpod::{BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange};
+use serde::Serialize;
 use std::future::Future;
 use std::io;
+use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -20,21 +27,19 @@ use tokio::fs::{File, OpenOptions};
 
 //pub type SomeScc = netpod::streamext::SCC<u32>;
 
-pub struct PreBinnedValueStream<SK>
+pub struct PreBinnedValueStream<NTY, END, EVS, ENP, ETB, BTB>
 where
-    SK: StreamKind,
+    NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
+    END: Endianness + 'static,
+    EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
+    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output>,
+    ETB: EventsTimeBinner<Input = <ENP as EventsNodeProcessor>::Output>,
+    BTB: BinsTimeBinner<Input = <ETB as EventsTimeBinner>::Output, Output = <ETB as EventsTimeBinner>::Output>,
 {
     query: PreBinnedQuery,
     node_config: NodeConfigCached,
-    open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<File, std::io::Error>> + Send>>>,
-    fut2: Option<
-        Pin<
-            Box<
-                dyn Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::TBinnedBins>>, err::Error>>
-                    + Send,
-            >,
-        >,
-    >,
+    open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<File, io::Error>> + Send>>>,
+    fut2: Option<Pin<Box<dyn Stream<Item = Sitemty<<BTB as BinsTimeBinner>::Output>> + Send>>>,
     read_from_cache: bool,
     cache_written: bool,
     data_complete: bool,
@@ -43,26 +48,27 @@ where
     errored: bool,
     completed: bool,
     streamlog: Streamlog,
-    values: <SK as StreamKind>::TBinnedBins,
+    values: <BTB as BinsTimeBinner>::Output,
     write_fut: Option<Pin<Box<dyn Future<Output = Result<WrittenPbCache, Error>> + Send>>>,
-    read_cache_fut: Option<
-        Pin<
-            Box<
-                dyn Future<
-                        Output = Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::TBinnedBins>>, err::Error>,
-                    > + Send,
-            >,
-        >,
-    >,
-    stream_kind: SK,
+    read_cache_fut: Option<Pin<Box<dyn Future<Output = Sitemty<<BTB as BinsTimeBinner>::Output>> + Send>>>,
+    _m1: PhantomData<NTY>,
+    _m2: PhantomData<END>,
+    _m3: PhantomData<EVS>,
+    _m4: PhantomData<ENP>,
+    _m5: PhantomData<ETB>,
 }
 
-impl<SK> PreBinnedValueStream<SK>
+impl<NTY, END, EVS, ENP, ETB, BTB> PreBinnedValueStream<NTY, END, EVS, ENP, ETB, BTB>
 where
-    SK: StreamKind,
-    Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::TBinnedBins>>, err::Error>: FrameType,
+    NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
+    END: Endianness + 'static,
+    EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
+    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output>,
+    ETB: EventsTimeBinner<Input = <ENP as EventsNodeProcessor>::Output>,
+    BTB: BinsTimeBinner<Input = <ETB as EventsTimeBinner>::Output, Output = <ETB as EventsTimeBinner>::Output>,
+    <BTB as BinsTimeBinner>::Output: Appendable,
 {
-    pub fn new(query: PreBinnedQuery, node_config: &NodeConfigCached, stream_kind: SK) -> Self {
+    pub fn new(query: PreBinnedQuery, node_config: &NodeConfigCached) -> Self {
         Self {
             query,
             node_config: node_config.clone(),
@@ -76,27 +82,34 @@ where
             errored: false,
             completed: false,
             streamlog: Streamlog::new(node_config.ix as u32),
-            values: <<SK as StreamKind>::TBinnedBins as Appendable>::empty(),
+            values: <<BTB as BinsTimeBinner>::Output as Appendable>::empty(),
             write_fut: None,
             read_cache_fut: None,
-            stream_kind,
+            _m1: PhantomData,
+            _m2: PhantomData,
+            _m3: PhantomData,
+            _m4: PhantomData,
+            _m5: PhantomData,
         }
     }
 
     // TODO handle errors also here via return type.
-    fn setup_merged_from_remotes(&mut self) {
+    fn setup_merged_from_remotes(
+        &mut self,
+    ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<<BTB as BinsTimeBinner>::Output>> + Send>>, Error> {
         let evq = EventsQuery {
             channel: self.query.channel().clone(),
             range: self.query.patch().patch_range(),
             agg_kind: self.query.agg_kind().clone(),
         };
         if self.query.patch().patch_t_len() % self.query.patch().bin_t_len() != 0 {
-            error!(
+            let msg = format!(
                 "Patch length inconsistency  {}  {}",
                 self.query.patch().patch_t_len(),
                 self.query.patch().bin_t_len()
             );
-            return;
+            error!("{}", msg);
+            return Err(Error::with_msg(msg));
         }
         // TODO do I need to set up more transformations or binning to deliver the requested data?
         let count = self.query.patch().patch_t_len() / self.query.patch().bin_t_len();
@@ -105,17 +118,25 @@ where
             .ok_or(Error::with_msg("covering_range returns None"))
             .unwrap();
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
-        let s1 = MergedFromRemotes::new(
+
+        // TODO copy the MergedFromRemotes and adapt...
+        /*let s1 = MergedFromRemotes::new(
             evq,
             perf_opts,
             self.node_config.node_config.cluster.clone(),
-            self.stream_kind.clone(),
-        );
-        let s1 = <SK as StreamKind>::xbinned_to_tbinned(s1, range);
-        self.fut2 = Some(Box::pin(s1));
+            ..........,
+        );*/
+        let s1: MergedFromRemotes<BinnedStreamKindScalar> = err::todoval();
+
+        // TODO
+        //let s1 = todo_convert_stream_to_tbinned_stream(s1, range);
+        Ok(err::todoval())
     }
 
-    fn setup_from_higher_res_prebinned(&mut self, range: PreBinnedPatchRange) {
+    fn setup_from_higher_res_prebinned(
+        &mut self,
+        range: PreBinnedPatchRange,
+    ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<<BTB as BinsTimeBinner>::Output>> + Send>>, Error> {
         let g = self.query.patch().bin_t_len();
         let h = range.grid_spec.bin_t_len();
         trace!(
@@ -127,16 +148,16 @@ where
             range,
         );
         if g / h <= 1 {
-            error!("try_setup_fetch_prebinned_higher_res  g {}  h {}", g, h);
-            return;
+            let msg = format!("try_setup_fetch_prebinned_higher_res  g {}  h {}", g, h);
+            return Err(Error::with_msg(msg));
         }
         if g / h > 1024 * 10 {
-            error!("try_setup_fetch_prebinned_higher_res  g {}  h {}", g, h);
-            return;
+            let msg = format!("try_setup_fetch_prebinned_higher_res  g {}  h {}", g, h);
+            return Err(Error::with_msg(msg));
         }
         if g % h != 0 {
-            error!("try_setup_fetch_prebinned_higher_res  g {}  h {}", g, h);
-            return;
+            let msg = format!("try_setup_fetch_prebinned_higher_res  g {}  h {}", g, h);
+            return Err(Error::with_msg(msg));
         }
         let node_config = self.node_config.clone();
         let patch_it = PreBinnedPatchIterator::from_range(range);
@@ -144,7 +165,6 @@ where
             .map({
                 let q2 = self.query.clone();
                 let disk_stats_every = self.query.disk_stats_every().clone();
-                let stream_kind = self.stream_kind.clone();
                 let report_error = self.query.report_error();
                 move |patch| {
                     let query = PreBinnedQuery::new(
@@ -155,7 +175,10 @@ where
                         disk_stats_every.clone(),
                         report_error,
                     );
-                    PreBinnedScalarValueFetchedStream::new(&query, &node_config, &stream_kind)
+                    // TODO copy and adapt PreBinnedScalarValueFetchedStream
+                    //PreBinnedScalarValueFetchedStream::new(&query, &node_config, &stream_kind)
+                    let tmp: PreBinnedScalarValueFetchedStream<BinnedStreamKindScalar> = err::todoval();
+                    Ok(tmp)
                 }
             })
             .map(|k| {
@@ -166,17 +189,17 @@ where
                 s
             })
             .flatten();
-        self.fut2 = Some(Box::pin(s));
+        Err(err::todoval())
     }
 
     fn try_setup_fetch_prebinned_higher_res(&mut self) -> Result<(), Error> {
         let range = self.query.patch().patch_range();
         match PreBinnedPatchRange::covering_range(range, self.query.patch().bin_count() + 1) {
             Ok(Some(range)) => {
-                self.setup_from_higher_res_prebinned(range);
+                self.fut2 = Some(self.setup_from_higher_res_prebinned(range)?);
             }
             Ok(None) => {
-                self.setup_merged_from_remotes();
+                self.fut2 = Some(self.setup_merged_from_remotes()?);
             }
             Err(e) => return Err(e),
         }
@@ -184,12 +207,17 @@ where
     }
 }
 
-impl<SK> Stream for PreBinnedValueStream<SK>
+impl<NTY, END, EVS, ENP, ETB, BTB> Stream for PreBinnedValueStream<NTY, END, EVS, ENP, ETB, BTB>
 where
-    SK: StreamKind + Unpin,
-    Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::TBinnedBins>>, err::Error>: FrameType,
+    NTY: NumOps + NumFromBytes<NTY, END> + Serialize + Unpin + 'static,
+    END: Endianness + Unpin + 'static,
+    EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + Unpin + 'static,
+    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + Unpin,
+    ETB: EventsTimeBinner<Input = <ENP as EventsNodeProcessor>::Output> + Unpin,
+    BTB: BinsTimeBinner<Input = <ETB as EventsTimeBinner>::Output, Output = <ETB as EventsTimeBinner>::Output>,
+    <ETB as EventsTimeBinner>::Output: Serialize + ReadableFromFile + 'static,
 {
-    type Item = Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::TBinnedBins>>, err::Error>;
+    type Item = Sitemty<<BTB as BinsTimeBinner>::Output>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -263,10 +291,8 @@ where
                                 self.values.len(),
                             );
                             self.streamlog.append(Level::INFO, msg);
-                            let values = std::mem::replace(
-                                &mut self.values,
-                                <<SK as StreamKind>::TBinnedBins as Appendable>::empty(),
-                            );
+                            let emp = <<BTB as BinsTimeBinner>::Output as Appendable>::empty();
+                            let values = std::mem::replace(&mut self.values, emp);
                             let fut = write_pb_cache_min_max_avg_scalar(
                                 values,
                                 self.query.patch().clone(),
@@ -318,7 +344,7 @@ where
                         match item {
                             Ok(file) => {
                                 self.read_from_cache = true;
-                                let fut = <<SK as StreamKind>::TBinnedBins as crate::binned::ReadableFromFile>::read_from_file(file)?;
+                                let fut = <<BTB as BinsTimeBinner>::Output as ReadableFromFile>::read_from_file(file)?;
                                 self.read_cache_fut = Some(Box::pin(fut));
                                 continue 'outer;
                             }

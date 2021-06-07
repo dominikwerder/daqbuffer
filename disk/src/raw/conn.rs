@@ -2,9 +2,7 @@ use crate::agg::binnedx::IntoBinnedXBins1;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::streams::StreamItem;
 use crate::agg::IntoDim1F32Stream;
-use crate::binned::{
-    BinnedStreamKindScalar, EventsNodeProcessor, NumBinnedPipeline, NumOps, RangeCompletableItem, StreamKind,
-};
+use crate::binned::{BinnedStreamKindScalar, EventsNodeProcessor, NumOps, RangeCompletableItem, StreamKind};
 use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
     EventsDecodedStream, LittleEndian, NumFromBytes,
@@ -111,7 +109,6 @@ where
     Sitemty<<ENP as EventsNodeProcessor>::Output>: Framable + 'static,
     <ENP as EventsNodeProcessor>::Output: 'static,
 {
-    NumBinnedPipeline::<NTY, END, ENP>::new();
     let decs = EventsDecodedStream::<NTY, END, EVS>::new(event_value_shape, event_blobs);
     let s2 = StreamExt::map(decs, |item| match item {
         Ok(item) => match item {
