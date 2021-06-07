@@ -1,11 +1,14 @@
 use crate::agg::binnedt4::{DefaultBinsTimeBinner, DefaultScalarEventsTimeBinner, DefaultSingleXBinTimeBinner};
 use crate::agg::enp::{Identity, WaveXBinner};
-use crate::agg::streams::StreamItem;
+use crate::agg::streams::{Appendable, StreamItem};
 use crate::binned::pbv2::{
     pre_binned_value_byte_stream_new, PreBinnedValueByteStream, PreBinnedValueByteStreamInner, PreBinnedValueStream,
 };
 use crate::binned::query::PreBinnedQuery;
-use crate::binned::{BinsTimeBinner, EventsNodeProcessor, EventsTimeBinner, NumOps, RangeCompletableItem, StreamKind};
+use crate::binned::{
+    BinsTimeBinner, EventsNodeProcessor, EventsTimeBinner, NumOps, PushableIndex, RangeCompletableItem,
+    ReadableFromFile, StreamKind,
+};
 use crate::cache::node_ix_for_patch;
 use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
@@ -23,52 +26,62 @@ use parse::channelconfig::{extract_matching_config_entry, read_local_config, Mat
 use serde::Serialize;
 use std::pin::Pin;
 
-// TODO instead of EventNodeProcessor, use a T-binning processor here
-// TODO might also want another stateful processor which can run on the merged event stream, like smoothing.
-
 fn make_num_pipeline_nty_end_evs_enp<NTY, END, EVS, ENP, ETB>(
+    query: PreBinnedQuery,
     event_value_shape: EVS,
+    node_config: &NodeConfigCached,
 ) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>
 where
     NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
     END: Endianness + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
-    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output>,
-    ETB: EventsTimeBinner<Input = <ENP as EventsNodeProcessor>::Output>,
+    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
+    ETB: EventsTimeBinner<Input = <ENP as EventsNodeProcessor>::Output> + 'static,
     Sitemty<<ENP as EventsNodeProcessor>::Output>: Framable + 'static,
-    <ENP as EventsNodeProcessor>::Output: 'static,
+    <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable + 'static,
+    <ETB as EventsTimeBinner>::Output: Serialize + ReadableFromFile + 'static,
+    Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType,
+    Sitemty<<ETB as EventsTimeBinner>::Output>: Framable,
 {
     // TODO
-    // Use the pre-binned fetch machinery, refactored...
-    err::todoval()
+    // Currently, this mod uses stuff from pbv2, therefore complete path:
+    let ret = crate::binned::pbv::PreBinnedValueStream::<NTY, END, EVS, ENP, ETB>::new(query, node_config);
+    let ret = StreamExt::map(ret, |item| Box::new(item) as Box<dyn Framable>);
+    Box::pin(ret)
 }
 
-fn make_num_pipeline_nty_end<NTY, END>(shape: Shape) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>
+fn make_num_pipeline_nty_end<NTY, END>(
+    shape: Shape,
+    query: PreBinnedQuery,
+    node_config: &NodeConfigCached,
+) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>
 where
     NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
     END: Endianness + 'static,
 {
-    // TODO pass all the correct types.
-    err::todo();
     match shape {
         Shape::Scalar => {
             make_num_pipeline_nty_end_evs_enp::<NTY, END, _, Identity<NTY>, DefaultScalarEventsTimeBinner<NTY>>(
+                query,
                 EventValuesDim0Case::new(),
+                node_config,
             )
         }
         Shape::Wave(n) => {
             make_num_pipeline_nty_end_evs_enp::<NTY, END, _, WaveXBinner<NTY>, DefaultSingleXBinTimeBinner<NTY>>(
+                query,
                 EventValuesDim1Case::new(n),
+                node_config,
             )
         }
     }
 }
 
 macro_rules! match_end {
-    ($nty:ident, $end:expr, $shape:expr) => {
+    ($nty:ident, $end:expr, $shape:expr, $query:expr, $node_config:expr) => {
         match $end {
-            ByteOrder::LE => make_num_pipeline_nty_end::<$nty, LittleEndian>($shape),
-            ByteOrder::BE => make_num_pipeline_nty_end::<$nty, BigEndian>($shape),
+            ByteOrder::LE => make_num_pipeline_nty_end::<$nty, LittleEndian>($shape, $query, $node_config),
+            ByteOrder::BE => make_num_pipeline_nty_end::<$nty, BigEndian>($shape, $query, $node_config),
         }
     };
 }
@@ -77,10 +90,12 @@ fn make_num_pipeline(
     scalar_type: ScalarType,
     byte_order: ByteOrder,
     shape: Shape,
+    query: PreBinnedQuery,
+    node_config: &NodeConfigCached,
 ) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>> {
     match scalar_type {
-        ScalarType::I32 => match_end!(i32, byte_order, shape),
-        ScalarType::F32 => match_end!(f32, byte_order, shape),
+        ScalarType::I32 => match_end!(i32, byte_order, shape, query, node_config),
+        ScalarType::F64 => match_end!(f64, byte_order, shape, query, node_config),
         _ => todo!(),
     }
 }
@@ -129,6 +144,8 @@ where
             entry.scalar_type.clone(),
             entry.byte_order.clone(),
             entry.to_shape().unwrap(),
+            query.clone(),
+            node_config,
         )
         .map(|item| match item.make_frame() {
             Ok(item) => Ok(item.freeze()),

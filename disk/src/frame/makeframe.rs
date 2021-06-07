@@ -2,10 +2,11 @@ use crate::agg::enp::XBinnedScalarEvents;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
-use crate::binned::{NumOps, RangeCompletableItem};
+use crate::binned::{MinMaxAvgBins, NumOps, RangeCompletableItem};
 use crate::decode::{EventValues, MinMaxAvgScalarEventBatchGen};
 use crate::frame::inmem::InMemoryFrame;
 use crate::raw::EventQueryJsonStringFrame;
+use crate::Sitemty;
 use bytes::{BufMut, BytesMut};
 use err::Error;
 use serde::{de::DeserializeOwned, Serialize};
@@ -67,33 +68,40 @@ impl FrameType for EventQueryJsonStringFrame {
     const FRAME_TYPE_ID: u32 = 0x100;
 }
 
-impl FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>, Error> {
+impl FrameType for Sitemty<MinMaxAvgScalarBinBatch> {
     const FRAME_TYPE_ID: u32 = 0x200;
 }
 
-impl FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error> {
+impl FrameType for Sitemty<MinMaxAvgScalarEventBatch> {
     const FRAME_TYPE_ID: u32 = 0x300;
 }
 
-impl<NTY> FrameType for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatchGen<NTY>>>, Error>
+impl<NTY> FrameType for Sitemty<MinMaxAvgScalarEventBatchGen<NTY>>
 where
     NTY: SubFrId,
 {
     const FRAME_TYPE_ID: u32 = 0x400 + NTY::SUB;
 }
 
-impl<NTY> FrameType for Result<StreamItem<RangeCompletableItem<EventValues<NTY>>>, Error>
+impl<NTY> FrameType for Sitemty<EventValues<NTY>>
 where
     NTY: SubFrId,
 {
     const FRAME_TYPE_ID: u32 = 0x500 + NTY::SUB;
 }
 
-impl<NTY> FrameType for Result<StreamItem<RangeCompletableItem<XBinnedScalarEvents<NTY>>>, Error>
+impl<NTY> FrameType for Sitemty<XBinnedScalarEvents<NTY>>
 where
     NTY: SubFrId,
 {
     const FRAME_TYPE_ID: u32 = 0x600 + NTY::SUB;
+}
+
+impl<NTY> FrameType for Sitemty<MinMaxAvgBins<NTY>>
+where
+    NTY: SubFrId,
+{
+    const FRAME_TYPE_ID: u32 = 0x700 + NTY::SUB;
 }
 
 pub trait ProvidesFrameType {
@@ -126,6 +134,15 @@ where
 }
 
 impl<NTY> Framable for Result<StreamItem<RangeCompletableItem<XBinnedScalarEvents<NTY>>>, err::Error>
+where
+    NTY: NumOps + Serialize,
+{
+    fn make_frame(&self) -> Result<BytesMut, Error> {
+        make_frame(self)
+    }
+}
+
+impl<NTY> Framable for Sitemty<MinMaxAvgBins<NTY>>
 where
     NTY: NumOps + Serialize,
 {

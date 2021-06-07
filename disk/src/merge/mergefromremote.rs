@@ -1,5 +1,7 @@
-use crate::binned::EventsNodeProcessor;
+use crate::agg::streams::Appendable;
+use crate::binned::{EventsNodeProcessor, PushableIndex};
 use crate::frame::makeframe::FrameType;
+use crate::merge::{MergedStream, MergedStream2};
 use crate::raw::{x_processed_stream_from_node2, EventsQuery};
 use crate::Sitemty;
 use err::Error;
@@ -31,7 +33,7 @@ where
     <ENP as EventsNodeProcessor>::Output: Unpin,
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType,
 {
-    pub fn new(evq: EventsQuery, perf_opts: PerfOpts, cluster: Cluster, stream_kind: ENP) -> Self {
+    pub fn new(evq: EventsQuery, perf_opts: PerfOpts, cluster: Cluster) -> Self {
         let mut tcp_establish_futs = vec![];
         for node in &cluster.nodes {
             let f = x_processed_stream_from_node2::<ENP>(evq.clone(), perf_opts.clone(), node.clone());
@@ -51,7 +53,8 @@ where
 
 impl<ENP> Stream for MergedFromRemotes2<ENP>
 where
-    ENP: EventsNodeProcessor,
+    ENP: EventsNodeProcessor + 'static,
+    <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable,
 {
     type Item = Sitemty<<ENP as EventsNodeProcessor>::Output>;
 
@@ -104,13 +107,8 @@ where
                 } else {
                     if c1 == self.tcp_establish_futs.len() {
                         let inps: Vec<_> = self.nodein.iter_mut().map(|k| k.take().unwrap()).collect();
-                        //let s1 = MergedStream::<_, ENP>::new(inps);
-
-                        // TODO
-
-                        err::todo();
-                        //let s1 = err::todoval();
-                        //self.merged = Some(Box::pin(s1));
+                        let s1 = MergedStream2::<_, ENP>::new(inps);
+                        self.merged = Some(Box::pin(s1));
                     }
                     continue 'outer;
                 }

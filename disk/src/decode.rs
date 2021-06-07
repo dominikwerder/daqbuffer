@@ -1,6 +1,8 @@
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
-use crate::agg::streams::StreamItem;
-use crate::binned::{EventsNodeProcessor, NumOps, RangeCompletableItem};
+use crate::agg::streams::{Appendable, StreamItem};
+use crate::binned::{
+    EventsNodeProcessor, NumOps, PushableIndex, RangeCompletableItem, RangeOverlapInfo, WithLen, WithTimestamps,
+};
 use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventFull;
 use crate::frame::makeframe::{make_frame, Framable};
@@ -8,6 +10,7 @@ use bytes::BytesMut;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use std::mem::size_of;
@@ -111,13 +114,17 @@ impl<NTY> EventValuesDim0Case<NTY> {
     }
 }
 
+// TODO get rid of this dummy:
 pub struct ProcAA<NTY> {
     _m1: PhantomData<NTY>,
 }
 
-impl<NTY> EventsNodeProcessor for ProcAA<NTY> {
+impl<NTY> EventsNodeProcessor for ProcAA<NTY>
+where
+    NTY: NumOps,
+{
     type Input = NTY;
-    type Output = MinMaxAvgScalarBinBatch;
+    type Output = EventValues<NTY>;
 
     fn process(_inp: EventValues<Self::Input>) -> Self::Output {
         todo!()
@@ -130,6 +137,12 @@ where
 {
     type NumXAggToSingleBin = ProcAA<NTY>;
     type NumXAggToNBins = ProcAA<NTY>;
+}
+
+impl<NTY> WithTimestamps for ProcAA<NTY> {
+    fn ts(&self, ix: usize) -> u64 {
+        todo!()
+    }
 }
 
 pub struct EventValuesDim1Case<NTY> {
@@ -166,6 +179,12 @@ impl<NTY> MinMaxAvgScalarEventBatchGen<NTY> {
     }
 }
 
+impl<NTY> WithTimestamps for MinMaxAvgScalarEventBatchGen<NTY> {
+    fn ts(&self, ix: usize) -> u64 {
+        self.tss[ix]
+    }
+}
+
 impl<NTY> Framable for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatchGen<NTY>>>, Error>
 where
     NTY: NumOps + Serialize,
@@ -183,57 +202,7 @@ where
     type Output = MinMaxAvgScalarEventBatchGen<NTY>;
 
     fn process(inp: EventValues<Self::Input>) -> Self::Output {
-        let nev = inp.tss.len();
-        let mut ret = MinMaxAvgScalarEventBatchGen {
-            tss: inp.tss,
-            mins: Vec::with_capacity(nev),
-            maxs: Vec::with_capacity(nev),
-            avgs: Vec::with_capacity(nev),
-        };
-        for i1 in 0..nev {
-            let mut min = None;
-            let mut max = None;
-            let mut sum = 0f32;
-            let mut count = 0;
-            let vals = &inp.values[i1];
-            for i2 in 0..vals.len() {
-                let v = vals[i2];
-                min = match min {
-                    None => Some(v),
-                    Some(min) => {
-                        if v < min {
-                            Some(v)
-                        } else {
-                            Some(min)
-                        }
-                    }
-                };
-                max = match max {
-                    None => Some(v),
-                    Some(max) => {
-                        if v > max {
-                            Some(v)
-                        } else {
-                            Some(max)
-                        }
-                    }
-                };
-                let vf = v.as_();
-                if vf.is_nan() {
-                } else {
-                    sum += vf;
-                    count += 1;
-                }
-            }
-            ret.mins.push(min);
-            ret.maxs.push(max);
-            if count == 0 {
-                ret.avgs.push(None);
-            } else {
-                ret.avgs.push(Some(sum / count as f32));
-            }
-        }
-        ret
+        err::todoval()
     }
 }
 
@@ -277,6 +246,65 @@ where
             self.values.first(),
             self.values.last(),
         )
+    }
+}
+
+impl<VT> WithLen for EventValues<VT> {
+    fn len(&self) -> usize {
+        self.tss.len()
+    }
+}
+
+impl<VT> WithTimestamps for EventValues<VT> {
+    fn ts(&self, ix: usize) -> u64 {
+        self.tss[ix]
+    }
+}
+
+impl<VT> RangeOverlapInfo for EventValues<VT> {
+    fn ends_before(&self, range: NanoRange) -> bool {
+        match self.tss.last() {
+            Some(&ts) => ts < range.beg,
+            None => true,
+        }
+    }
+
+    fn ends_after(&self, range: NanoRange) -> bool {
+        match self.tss.last() {
+            Some(&ts) => ts >= range.end,
+            None => panic!(),
+        }
+    }
+
+    fn starts_after(&self, range: NanoRange) -> bool {
+        match self.tss.first() {
+            Some(&ts) => ts >= range.end,
+            None => panic!(),
+        }
+    }
+}
+
+impl<NTY> PushableIndex for EventValues<NTY>
+where
+    NTY: NumOps,
+{
+    fn push_index(&mut self, src: &Self, ix: usize) {
+        self.tss.push(src.tss[ix]);
+        self.values.push(src.values[ix]);
+    }
+}
+
+impl<NTY> Appendable for EventValues<NTY>
+where
+    NTY: NumOps,
+{
+    fn empty() -> Self {
+        Self::empty()
+    }
+
+    fn append(&mut self, src: &Self) {
+        self.tss.extend_from_slice(&src.tss);
+        self.values.extend_from_slice(&src.values);
     }
 }
 

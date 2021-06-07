@@ -1,6 +1,7 @@
 use crate::agg::binnedt::AggregatableTdim;
 use crate::agg::binnedt2::AggregatableTdim2;
 use crate::agg::binnedt3::{Agg3, BinnedT3Stream};
+use crate::agg::enp::XBinnedScalarEvents;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::{Appendable, Collectable, Collected, StreamItem, ToJsonResult};
@@ -559,9 +560,9 @@ pub trait EventsDecoder {
     fn result(&mut self) -> Self::Output;
 }
 
-pub trait EventsNodeProcessor {
+pub trait EventsNodeProcessor: Send + Unpin {
     type Input;
-    type Output: Send + DeserializeOwned;
+    type Output: Send + Unpin + DeserializeOwned + WithTimestamps;
     fn process(inp: EventValues<Self::Input>) -> Self::Output;
 }
 
@@ -570,10 +571,19 @@ pub trait TimeBins: Send + Unpin + WithLen + Appendable {
     fn ts2s(&self) -> &Vec<u64>;
 }
 
-pub trait EventsTimeBinner {
-    type Input;
+pub trait EventsTimeBinner: Send + Unpin {
+    type Input: Unpin + RangeOverlapInfo;
     type Output: TimeBins;
-    fn process(inp: Self::Input) -> Self::Output;
+    type Aggregator: EventsTimeBinnerAggregator<Input = Self::Input, Output = Self::Output> + Unpin;
+    fn aggregator(range: NanoRange) -> Self::Aggregator;
+}
+
+pub trait EventsTimeBinnerAggregator: Send {
+    type Input: Unpin;
+    type Output: Unpin;
+    fn range(&self) -> &NanoRange;
+    fn ingest(&mut self, item: &Self::Input);
+    fn result(self) -> Self::Output;
 }
 
 pub trait BinsTimeBinner {
@@ -582,6 +592,7 @@ pub trait BinsTimeBinner {
     fn process(inp: Self::Input) -> Self::Output;
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct MinMaxAvgBins<NTY> {
     ts1s: Vec<u64>,
     ts2s: Vec<u64>,
@@ -638,6 +649,102 @@ where
         self.mins.extend_from_slice(&src.mins);
         self.maxs.extend_from_slice(&src.maxs);
         self.avgs.extend_from_slice(&src.avgs);
+    }
+}
+
+impl<NTY> ReadableFromFile for MinMaxAvgBins<NTY>
+where
+    NTY: NumOps,
+{
+    // TODO this function is not needed in the trait:
+    fn read_from_file(file: File) -> Result<ReadPbv<Self>, Error> {
+        Ok(ReadPbv::new(file))
+    }
+
+    fn from_buf(buf: &[u8]) -> Result<Self, Error> {
+        let dec = serde_cbor::from_slice(&buf)?;
+        Ok(dec)
+    }
+}
+
+pub struct MinMaxAvgAggregator<NTY> {
+    range: NanoRange,
+    count: u32,
+    min: Option<NTY>,
+    max: Option<NTY>,
+    avg: Option<f32>,
+}
+
+impl<NTY> MinMaxAvgAggregator<NTY> {
+    pub fn new(range: NanoRange) -> Self {
+        Self {
+            range,
+            count: 0,
+            min: None,
+            max: None,
+            avg: None,
+        }
+    }
+}
+
+impl<NTY> EventsTimeBinnerAggregator for MinMaxAvgAggregator<NTY>
+where
+    NTY: NumOps,
+{
+    type Input = EventValues<NTY>;
+    type Output = MinMaxAvgBins<NTY>;
+
+    fn range(&self) -> &NanoRange {
+        &self.range
+    }
+
+    fn ingest(&mut self, item: &Self::Input) {
+        todo!()
+    }
+
+    fn result(self) -> Self::Output {
+        todo!()
+    }
+}
+
+pub struct SingleXBinAggregator<NTY> {
+    range: NanoRange,
+    count: u32,
+    min: Option<NTY>,
+    max: Option<NTY>,
+    avg: Option<f32>,
+}
+
+impl<NTY> SingleXBinAggregator<NTY> {
+    pub fn new(range: NanoRange) -> Self {
+        Self {
+            range,
+            count: 0,
+            min: None,
+            max: None,
+            avg: None,
+        }
+    }
+}
+
+impl<NTY> EventsTimeBinnerAggregator for SingleXBinAggregator<NTY>
+where
+    NTY: NumOps,
+{
+    type Input = XBinnedScalarEvents<NTY>;
+    // TODO do I need another type to carry the x-bin count as well?  No xbincount is static anyways.
+    type Output = MinMaxAvgBins<NTY>;
+
+    fn range(&self) -> &NanoRange {
+        &self.range
+    }
+
+    fn ingest(&mut self, item: &Self::Input) {
+        todo!()
+    }
+
+    fn result(self) -> Self::Output {
+        todo!()
     }
 }
 
