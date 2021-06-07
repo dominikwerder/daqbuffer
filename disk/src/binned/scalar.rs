@@ -6,6 +6,7 @@ use err::Error;
 use netpod::log::*;
 use netpod::{BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchRange};
 
+// TODO can be removed when StreamKind no longer used.
 pub async fn binned_stream<SK>(
     node_config: &NodeConfigCached,
     query: &BinnedQuery,

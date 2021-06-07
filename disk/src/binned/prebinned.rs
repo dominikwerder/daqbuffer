@@ -28,7 +28,7 @@ use std::pin::Pin;
 
 fn make_num_pipeline_nty_end_evs_enp<NTY, END, EVS, ENP, ETB>(
     query: PreBinnedQuery,
-    event_value_shape: EVS,
+    _event_value_shape: EVS,
     node_config: &NodeConfigCached,
 ) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>
 where
@@ -37,10 +37,9 @@ where
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
     ETB: EventsTimeBinner<Input = <ENP as EventsNodeProcessor>::Output> + 'static,
-    Sitemty<<ENP as EventsNodeProcessor>::Output>: Framable + 'static,
     <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable + 'static,
     <ETB as EventsTimeBinner>::Output: Serialize + ReadableFromFile + 'static,
-    Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType,
+    Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
     Sitemty<<ETB as EventsTimeBinner>::Output>: Framable,
 {
     // TODO

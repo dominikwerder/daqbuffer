@@ -206,7 +206,7 @@ where
     }
     if frame.tyid() != <T as FrameType>::FRAME_TYPE_ID {
         return Err(Error::with_msg(format!(
-            "type id mismatch  expect {}  found {:?}",
+            "type id mismatch  expect {:x}  found {:?}",
             <T as FrameType>::FRAME_TYPE_ID,
             frame
         )));
