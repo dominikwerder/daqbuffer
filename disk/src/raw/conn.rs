@@ -1,4 +1,5 @@
 use crate::agg::binnedx::IntoBinnedXBins1;
+use crate::agg::enp::{Identity, WaveXBinner};
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::streams::StreamItem;
 use crate::agg::IntoDim1F32Stream;
@@ -104,6 +105,9 @@ fn make_num_pipeline_stream_evs<NTY, END, EVS, ENP>(
 where
     NTY: NumOps + NumFromBytes<NTY, END> + 'static,
     END: Endianness + 'static,
+
+    // TODO
+    // Can this work?
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output>,
     Sitemty<<ENP as EventsNodeProcessor>::Output>: Framable + 'static,
@@ -136,12 +140,14 @@ macro_rules! pipe4 {
                 $end,
                 $evs<$nty>,
                 <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToSingleBin,
+                //Identity<$nty>,
             >($evsv, $event_blobs),
             AggKind::DimXBinsN(_) => make_num_pipeline_stream_evs::<
                 $nty,
                 $end,
                 $evs<$nty>,
                 <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToSingleBin,
+                //WaveXBinner<$nty>,
             >($evsv, $event_blobs),
         }
     };
@@ -161,6 +167,9 @@ macro_rules! pipe3 {
                 )
             }
             Shape::Wave(n) => {
+                // TODO
+                // Issue is that I try to generate too many combinations.
+                // e.g. I try to generic code for the combination of Shape::Scalar with WaveXBinner which does not match.
                 pipe4!(
                     $nty,
                     $end,
@@ -229,8 +238,7 @@ async fn events_conn_handler_inner_try(
         error!("missing command frame");
         return Err((Error::with_msg("missing command frame"), netout))?;
     }
-    let frame_type = <EventQueryJsonStringFrame as FrameType>::FRAME_TYPE_ID;
-    let qitem: EventQueryJsonStringFrame = match decode_frame(&frames[0], frame_type) {
+    let qitem: EventQueryJsonStringFrame = match decode_frame(&frames[0]) {
         Ok(k) => k,
         Err(e) => return Err((e, netout).into()),
     };
@@ -275,7 +283,7 @@ async fn events_conn_handler_inner_try(
         compression: entry.is_compressed,
     };
 
-    if false {
+    if true {
         // TODO use a requested buffer size
         let buffer_size = 1024 * 4;
         let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
@@ -288,10 +296,6 @@ async fn events_conn_handler_inner_try(
             event_chunker_conf,
         );
         let shape = entry.to_shape().unwrap();
-        // TODO
-        // First, generalize over the number types.
-        // Then return boxed trait objects from the stream which are MakeFrame.
-        // The writeout does not need to be generic.
         let mut p1 = pipe1!(entry.scalar_type, entry.byte_order, shape, evq.agg_kind, event_blobs);
         while let Some(item) = p1.next().await {
             let item = item.make_frame();
@@ -316,7 +320,7 @@ async fn events_conn_handler_inner_try(
         }
         Ok(())
     } else {
-        // TODO use a requested buffer size
+        // TODO remove this scope after refactor.
         let buffer_size = 1024 * 4;
         let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
         let s1 = EventBlobsComplete::new(

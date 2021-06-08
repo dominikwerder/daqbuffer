@@ -13,7 +13,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::AsyncRead;
 
-// TODO remove usage of SK, no longer needed.
 pub struct EventsFromFrames<T, I>
 where
     T: AsyncRead + Unpin,
@@ -21,7 +20,7 @@ where
     inp: InMemoryFrameAsyncReadStream<T>,
     errored: bool,
     completed: bool,
-    _m2: PhantomData<I>,
+    _m1: PhantomData<I>,
 }
 
 impl<T, I> EventsFromFrames<T, I>
@@ -33,7 +32,7 @@ where
             inp,
             errored: false,
             completed: false,
-            _m2: PhantomData,
+            _m1: PhantomData,
         }
     }
 }
@@ -41,10 +40,7 @@ where
 impl<T, I> Stream for EventsFromFrames<T, I>
 where
     T: AsyncRead + Unpin,
-    //SK: StreamKind,
     I: DeserializeOwned + Unpin,
-    // TODO see binned.rs better to express it on trait?
-    //Result<StreamItem<RangeCompletableItem<<SK as BinnedStreamKind>::XBinnedEvents>>, Error>: FrameType,
     Sitemty<I>: FrameType,
 {
     type Item = Sitemty<I>;
@@ -53,7 +49,7 @@ where
         use Poll::*;
         loop {
             break if self.completed {
-                panic!("EventsFromFrames  poll_next on completed");
+                panic!("poll_next on completed");
             } else if self.errored {
                 self.completed = true;
                 Ready(None)
@@ -62,7 +58,7 @@ where
                     Ready(Some(Ok(item))) => match item {
                         StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
                         StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
-                        StreamItem::DataItem(frame) => match decode_frame::<Sitemty<I>>(&frame, 0) {
+                        StreamItem::DataItem(frame) => match decode_frame::<Sitemty<I>>(&frame) {
                             Ok(item) => match item {
                                 Ok(item) => Ready(Some(Ok(item))),
                                 Err(e) => {

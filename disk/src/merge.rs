@@ -11,7 +11,7 @@ use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub mod mergefromremote;
+pub mod mergedfromremotes;
 
 enum MergedCurVal<T> {
     None,

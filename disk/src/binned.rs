@@ -1,12 +1,16 @@
 use crate::agg::binnedt::AggregatableTdim;
 use crate::agg::binnedt2::AggregatableTdim2;
 use crate::agg::binnedt3::{Agg3, BinnedT3Stream};
-use crate::agg::binnedt4::{DefaultScalarEventsTimeBinner, DefaultSingleXBinTimeBinner};
+use crate::agg::binnedt4::{
+    DefaultScalarEventsTimeBinner, DefaultSingleXBinTimeBinner, TBinnerStream, TimeBinnableType,
+    TimeBinnableTypeAggregator,
+};
 use crate::agg::enp::{Identity, WaveXBinner, XBinnedScalarEvents};
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::{Appendable, Collectable, Collected, StreamItem, ToJsonResult};
 use crate::agg::{Fits, FitsInside};
+use crate::binned::binnedfrompbv::BinnedFromPreBinned;
 use crate::binned::query::{BinnedQuery, PreBinnedQuery};
 use crate::binned::scalar::binned_stream;
 use crate::binnedstream::{BinnedScalarStreamFromPreBinnedPatches, BoxedStream};
@@ -16,15 +20,16 @@ use crate::decode::{
     LittleEndian, NumFromBytes,
 };
 use crate::frame::makeframe::{Framable, FrameType, SubFrId};
-use crate::merge::mergefromremote::MergedFromRemotes2;
+use crate::merge::mergedfromremotes::MergedFromRemotes2;
 use crate::raw::EventsQuery;
 use crate::Sitemty;
 use bytes::Bytes;
 use chrono::{TimeZone, Utc};
 use err::Error;
 use futures_core::Stream;
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt};
 use netpod::log::*;
+use netpod::timeunits::SEC;
 use netpod::{
     AggKind, BinnedRange, ByteOrder, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator,
     PreBinnedPatchRange, ScalarType, Shape,
@@ -42,6 +47,7 @@ use std::time::Duration;
 use tokio::fs::File;
 use tokio::io::{AsyncRead, ReadBuf};
 
+pub mod binnedfrompbv;
 pub mod pbv;
 pub mod pbv2;
 pub mod prebinned;
@@ -179,10 +185,19 @@ where
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
     ETB: EventsTimeBinner<Input = <ENP as EventsNodeProcessor>::Output> + 'static,
-    <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable + 'static,
+    <ENP as EventsNodeProcessor>::Output: TimeBinnableType + PushableIndex + Appendable + 'static,
+    <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output:
+        TimeBinnableType<Output = <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output> + Unpin,
     <ETB as EventsTimeBinner>::Output: Serialize + ReadableFromFile + 'static,
+    Sitemty<
+        <<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Aggregator as TimeBinnableTypeAggregator>::Output,
+    >: Framable,
+    // TODO require these things in general?
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
-    Sitemty<<ETB as EventsTimeBinner>::Output>: Framable,
+    Sitemty<<ETB as EventsTimeBinner>::Output>: FrameType + Framable + DeserializeOwned,
+    Sitemty<
+        <<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Aggregator as TimeBinnableTypeAggregator>::Output,
+    >: FrameType + Framable + DeserializeOwned,
 {
     // TODO construct the binned pipeline:
     // Either take from prebinned sub sstream, or directly from a merged.
@@ -212,11 +227,7 @@ where
                 );
                 return Err(Error::with_msg(msg));
             }
-
-            // TODO
-            // Must generify the BinnedScalarStreamFromPreBinnedPatches.
-            // Copy code and introduce type parameters.
-            let s = BinnedScalarStreamFromPreBinnedPatches::new(
+            let s = BinnedFromPreBinned::<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>::new(
                 PreBinnedPatchIterator::from_range(pre_range),
                 query.channel().clone(),
                 range.clone(),
@@ -225,15 +236,9 @@ where
                 node_config,
                 query.disk_stats_every().clone(),
                 query.report_error(),
-                self.clone(),
-            )?;
-
-            let s = BoxedStream::new(Box::pin(s))?;
-            let ret = BinnedStreamRes {
-                binned_stream: s,
-                range,
-            };
-            Ok(ret)
+            )?
+            .map(|item| Box::new(item) as Box<dyn Framable>);
+            Ok(Box::pin(s))
         }
         Ok(None) => {
             info!(
@@ -245,24 +250,13 @@ where
                 range: query.range().clone(),
                 agg_kind: query.agg_kind().clone(),
             };
-
-            // TODO do I need to set up more transformations or binning to deliver the requested data?
-            //let s = SK::new_binned_from_merged(&stream_kind, evq, perf_opts, range.clone(), node_config)?;
-
-            // TODO adapt the usage the same way how I do in prebinned.rs:
-            let s = MergedFromRemotes2::new(evq, perf_opts, node_config.node_config.cluster.clone(), self.clone());
-            let s = Self::xbinned_to_tbinned(s, range);
-
-            let s = BoxedStream::new(Box::pin(s))?;
-            let ret = BinnedStreamRes {
-                binned_stream: s,
-                range,
-            };
-            Ok(ret)
+            let s = MergedFromRemotes2::<ENP>::new(evq, perf_opts, node_config.node_config.cluster.clone());
+            let s = TBinnerStream::<_, <ENP as EventsNodeProcessor>::Output>::new(s, range);
+            let s = StreamExt::map(s, |item| Box::new(item) as Box<dyn Framable>);
+            Ok(Box::pin(s))
         }
         Err(e) => Err(e),
     }
-    err::todoval()
 }
 
 fn make_num_pipeline_nty_end<NTY, END>(
@@ -719,11 +713,21 @@ impl TBinnedBins for MinMaxAvgScalarBinBatch {
 }
 
 pub trait NumOps:
-    Sized + Copy + Send + Unpin + Zero + AsPrimitive<f32> + Bounded + PartialOrd + SubFrId + DeserializeOwned
+    Sized + Copy + Send + Unpin + Zero + AsPrimitive<f32> + Bounded + PartialOrd + SubFrId + Serialize + DeserializeOwned
 {
 }
 impl<T> NumOps for T where
-    T: Sized + Copy + Send + Unpin + Zero + AsPrimitive<f32> + Bounded + PartialOrd + SubFrId + DeserializeOwned
+    T: Sized
+        + Copy
+        + Send
+        + Unpin
+        + Zero
+        + AsPrimitive<f32>
+        + Bounded
+        + PartialOrd
+        + SubFrId
+        + Serialize
+        + DeserializeOwned
 {
 }
 
@@ -735,15 +739,16 @@ pub trait EventsDecoder {
 
 pub trait EventsNodeProcessor: Send + Unpin {
     type Input;
-    type Output: Send + Unpin + DeserializeOwned + WithTimestamps;
+    type Output: Send + Unpin + DeserializeOwned + WithTimestamps + TimeBinnableType;
     fn process(inp: EventValues<Self::Input>) -> Self::Output;
 }
 
-pub trait TimeBins: Send + Unpin + WithLen + Appendable {
+pub trait TimeBins: Send + Unpin + WithLen + Appendable + FilterFittingInside {
     fn ts1s(&self) -> &Vec<u64>;
     fn ts2s(&self) -> &Vec<u64>;
 }
 
+// TODO remove in favor of the one in binnedt4
 pub trait EventsTimeBinner: Send + Unpin {
     type Input: Unpin + RangeOverlapInfo;
     type Output: TimeBins;
@@ -751,6 +756,7 @@ pub trait EventsTimeBinner: Send + Unpin {
     fn aggregator(range: NanoRange) -> Self::Aggregator;
 }
 
+// TODO remove in favor of the one in binnedt4
 pub trait EventsTimeBinnerAggregator: Send {
     type Input: Unpin;
     type Output: Unpin;
@@ -767,12 +773,31 @@ pub trait BinsTimeBinner {
 
 #[derive(Serialize, Deserialize)]
 pub struct MinMaxAvgBins<NTY> {
-    ts1s: Vec<u64>,
-    ts2s: Vec<u64>,
-    counts: Vec<u64>,
-    mins: Vec<Option<NTY>>,
-    maxs: Vec<Option<NTY>>,
-    avgs: Vec<Option<f32>>,
+    pub ts1s: Vec<u64>,
+    pub ts2s: Vec<u64>,
+    pub counts: Vec<u64>,
+    pub mins: Vec<Option<NTY>>,
+    pub maxs: Vec<Option<NTY>>,
+    pub avgs: Vec<Option<f32>>,
+}
+
+impl<NTY> std::fmt::Debug for MinMaxAvgBins<NTY>
+where
+    NTY: std::fmt::Debug,
+{
+    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(
+            fmt,
+            "MinMaxAvgBins  count {}  ts1s {:?}  ts2s {:?}  counts {:?}  mins {:?}  maxs {:?}  avgs {:?}",
+            self.ts1s.len(),
+            self.ts1s.iter().map(|k| k / SEC).collect::<Vec<_>>(),
+            self.ts2s.iter().map(|k| k / SEC).collect::<Vec<_>>(),
+            self.counts,
+            self.mins,
+            self.maxs,
+            self.avgs,
+        )
+    }
 }
 
 impl<NTY> MinMaxAvgBins<NTY> {
@@ -784,6 +809,62 @@ impl<NTY> MinMaxAvgBins<NTY> {
             mins: vec![],
             maxs: vec![],
             avgs: vec![],
+        }
+    }
+}
+
+impl<NTY> FitsInside for MinMaxAvgBins<NTY> {
+    fn fits_inside(&self, range: NanoRange) -> Fits {
+        if self.ts1s.is_empty() {
+            Fits::Empty
+        } else {
+            let t1 = *self.ts1s.first().unwrap();
+            let t2 = *self.ts2s.last().unwrap();
+            if t2 <= range.beg {
+                Fits::Lower
+            } else if t1 >= range.end {
+                Fits::Greater
+            } else if t1 < range.beg && t2 > range.end {
+                Fits::PartlyLowerAndGreater
+            } else if t1 < range.beg {
+                Fits::PartlyLower
+            } else if t2 > range.end {
+                Fits::PartlyGreater
+            } else {
+                Fits::Inside
+            }
+        }
+    }
+}
+
+impl<NTY> FilterFittingInside for MinMaxAvgBins<NTY> {
+    fn filter_fitting_inside(self, fit_range: NanoRange) -> Option<Self> {
+        match self.fits_inside(fit_range) {
+            Fits::Inside | Fits::PartlyGreater | Fits::PartlyLower | Fits::PartlyLowerAndGreater => Some(self),
+            _ => None,
+        }
+    }
+}
+
+impl<NTY> RangeOverlapInfo for MinMaxAvgBins<NTY> {
+    fn ends_before(&self, range: NanoRange) -> bool {
+        match self.ts2s.last() {
+            Some(&ts) => ts <= range.beg,
+            None => true,
+        }
+    }
+
+    fn ends_after(&self, range: NanoRange) -> bool {
+        match self.ts2s.last() {
+            Some(&ts) => ts > range.end,
+            None => panic!(),
+        }
+    }
+
+    fn starts_after(&self, range: NanoRange) -> bool {
+        match self.ts1s.first() {
+            Some(&ts) => ts >= range.end,
+            None => panic!(),
         }
     }
 }
@@ -840,6 +921,18 @@ where
     }
 }
 
+impl<NTY> TimeBinnableType for MinMaxAvgBins<NTY>
+where
+    NTY: NumOps,
+{
+    type Output = MinMaxAvgBins<NTY>;
+    type Aggregator = MinMaxAvgBinsAggregator<NTY>;
+
+    fn aggregator(range: NanoRange) -> Self::Aggregator {
+        Self::Aggregator::new(range)
+    }
+}
+
 pub struct MinMaxAvgAggregator<NTY> {
     range: NanoRange,
     count: u32,
@@ -860,6 +953,28 @@ impl<NTY> MinMaxAvgAggregator<NTY> {
     }
 }
 
+// TODO rename to EventValuesAggregator
+impl<NTY> TimeBinnableTypeAggregator for MinMaxAvgAggregator<NTY>
+where
+    NTY: NumOps,
+{
+    type Input = EventValues<NTY>;
+    type Output = MinMaxAvgBins<NTY>;
+
+    fn range(&self) -> &NanoRange {
+        &self.range
+    }
+
+    fn ingest(&mut self, item: &Self::Input) {
+        todo!()
+    }
+
+    fn result(self) -> Self::Output {
+        todo!()
+    }
+}
+
+// TODO after refactor get rid of this impl:
 impl<NTY> EventsTimeBinnerAggregator for MinMaxAvgAggregator<NTY>
 where
     NTY: NumOps,
@@ -877,6 +992,107 @@ where
 
     fn result(self) -> Self::Output {
         todo!()
+    }
+}
+
+pub struct MinMaxAvgBinsAggregator<NTY> {
+    range: NanoRange,
+    count: u32,
+    min: Option<NTY>,
+    max: Option<NTY>,
+    avg: Option<f32>,
+    sum: f32,
+    sumc: u32,
+}
+
+impl<NTY> MinMaxAvgBinsAggregator<NTY> {
+    pub fn new(range: NanoRange) -> Self {
+        Self {
+            range,
+            // TODO: count events here?
+            count: 0,
+            min: None,
+            max: None,
+            avg: None,
+            sum: 0f32,
+            sumc: 0,
+        }
+    }
+}
+
+impl<NTY> TimeBinnableTypeAggregator for MinMaxAvgBinsAggregator<NTY>
+where
+    NTY: NumOps,
+{
+    type Input = MinMaxAvgBins<NTY>;
+    type Output = MinMaxAvgBins<NTY>;
+
+    fn range(&self) -> &NanoRange {
+        &self.range
+    }
+
+    fn ingest(&mut self, item: &Self::Input) {
+        for i1 in 0..item.ts1s.len() {
+            if item.ts2s[i1] <= self.range.beg {
+                continue;
+            } else if item.ts1s[i1] >= self.range.end {
+                continue;
+            } else {
+                self.min = match self.min {
+                    None => item.mins[i1],
+                    Some(min) => match item.mins[i1] {
+                        None => Some(min),
+                        Some(v) => {
+                            if v < min {
+                                Some(v)
+                            } else {
+                                Some(min)
+                            }
+                        }
+                    },
+                };
+                self.max = match self.max {
+                    None => item.maxs[i1],
+                    Some(max) => match item.maxs[i1] {
+                        None => Some(max),
+                        Some(v) => {
+                            if v > max {
+                                Some(v)
+                            } else {
+                                Some(max)
+                            }
+                        }
+                    },
+                };
+                match item.avgs[i1] {
+                    None => {}
+                    Some(v) => {
+                        if v.is_nan() {
+                        } else {
+                            self.sum += v;
+                            self.sumc += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn result(self) -> Self::Output {
+        let avg = if self.sumc == 0 {
+            None
+        } else {
+            Some(self.sum / self.sumc as f32)
+        };
+        Self::Output {
+            ts1s: vec![self.range.beg],
+            ts2s: vec![self.range.end],
+            // TODO
+            counts: vec![0],
+            mins: vec![self.min],
+            maxs: vec![self.max],
+            avgs: vec![avg],
+        }
     }
 }
 

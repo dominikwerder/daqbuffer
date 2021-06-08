@@ -12,6 +12,7 @@ use std::future::ready;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+// TODO remove after refactor.
 pub struct BinnedScalarStreamFromPreBinnedPatches<SK>
 where
     SK: StreamKind,
@@ -113,8 +114,7 @@ where
     }
 }
 
-// TODO change name, type is generic now:
-// Can I remove the whole type or keep for static check?
+// TODO remove after SK no longer needed.
 impl<SK> Stream for BinnedScalarStreamFromPreBinnedPatches<SK>
 where
     SK: StreamKind,
@@ -126,6 +126,7 @@ where
     }
 }
 
+// TODO remove after refactor.
 pub struct BoxedStream<I> {
     inp: Pin<Box<dyn Stream<Item = I> + Send>>,
 }

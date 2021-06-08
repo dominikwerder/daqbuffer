@@ -13,6 +13,7 @@ use netpod::{NodeConfigCached, PerfOpts};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+// TODO remove when SK no longer needed.
 pub struct PreBinnedScalarValueFetchedStream<SK>
 where
     SK: StreamKind,
@@ -75,7 +76,7 @@ where
                         StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
                         StreamItem::DataItem(item) => {
                             match decode_frame::<Result<StreamItem<RangeCompletableItem<SK::TBinnedBins>>, Error>>(
-                                &item, <Result<StreamItem<RangeCompletableItem<SK::TBinnedBins>>, Error> as FrameType>::FRAME_TYPE_ID,
+                                &item,
                             ) {
                                 Ok(Ok(item)) => Ready(Some(Ok(item))),
                                 Ok(Err(e)) => {

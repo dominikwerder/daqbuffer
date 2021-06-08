@@ -1,7 +1,10 @@
+use crate::agg::binnedt4::{TimeBinnableType, TimeBinnableTypeAggregator};
+use crate::agg::enp::{Identity, WaveXBinner};
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::{Appendable, StreamItem};
 use crate::binned::{
-    EventsNodeProcessor, NumOps, PushableIndex, RangeCompletableItem, RangeOverlapInfo, WithLen, WithTimestamps,
+    EventsNodeProcessor, FilterFittingInside, MinMaxAvgAggregator, MinMaxAvgBins, MinMaxAvgBinsAggregator, NumOps,
+    PushableIndex, RangeCompletableItem, RangeOverlapInfo, ReadPbv, ReadableFromFile, WithLen, WithTimestamps,
 };
 use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventFull;
@@ -11,11 +14,13 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::NanoRange;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tokio::fs::File;
 
 pub trait Endianness: Send + Unpin {}
 pub struct LittleEndian {}
@@ -135,7 +140,8 @@ impl<NTY, END> EventValueShape<NTY, END> for EventValuesDim0Case<NTY>
 where
     NTY: NumOps + NumFromBytes<NTY, END>,
 {
-    type NumXAggToSingleBin = ProcAA<NTY>;
+    type NumXAggToSingleBin = Identity<NTY>;
+    // TODO:
     type NumXAggToNBins = ProcAA<NTY>;
 }
 
@@ -160,6 +166,7 @@ pub struct ProcBB<NTY> {
     _m1: PhantomData<NTY>,
 }
 
+// TODO still in use or can go away?
 #[derive(Serialize, Deserialize)]
 pub struct MinMaxAvgScalarEventBatchGen<NTY> {
     pub tss: Vec<u64>,
@@ -168,7 +175,10 @@ pub struct MinMaxAvgScalarEventBatchGen<NTY> {
     pub avgs: Vec<Option<f32>>,
 }
 
-impl<NTY> MinMaxAvgScalarEventBatchGen<NTY> {
+impl<NTY> MinMaxAvgScalarEventBatchGen<NTY>
+where
+    NTY: NumOps,
+{
     pub fn empty() -> Self {
         Self {
             tss: vec![],
@@ -179,9 +189,60 @@ impl<NTY> MinMaxAvgScalarEventBatchGen<NTY> {
     }
 }
 
-impl<NTY> WithTimestamps for MinMaxAvgScalarEventBatchGen<NTY> {
+impl<NTY> WithTimestamps for MinMaxAvgScalarEventBatchGen<NTY>
+where
+    NTY: NumOps,
+{
     fn ts(&self, ix: usize) -> u64 {
         self.tss[ix]
+    }
+}
+
+impl<NTY> FilterFittingInside for MinMaxAvgScalarEventBatchGen<NTY>
+where
+    NTY: NumOps,
+{
+    fn filter_fitting_inside(self, fit_range: NanoRange) -> Option<Self> {
+        todo!()
+    }
+}
+
+impl<NTY> WithLen for MinMaxAvgScalarEventBatchGen<NTY>
+where
+    NTY: NumOps,
+{
+    fn len(&self) -> usize {
+        todo!()
+    }
+}
+
+impl<NTY> Appendable for MinMaxAvgScalarEventBatchGen<NTY>
+where
+    NTY: NumOps,
+{
+    fn empty() -> Self {
+        todo!()
+    }
+
+    fn append(&mut self, src: &Self) {
+        todo!()
+    }
+}
+
+impl<NTY> RangeOverlapInfo for MinMaxAvgScalarEventBatchGen<NTY>
+where
+    NTY: NumOps,
+{
+    fn ends_before(&self, range: NanoRange) -> bool {
+        todo!()
+    }
+
+    fn ends_after(&self, range: NanoRange) -> bool {
+        todo!()
+    }
+
+    fn starts_after(&self, range: NanoRange) -> bool {
+        todo!()
     }
 }
 
@@ -210,11 +271,11 @@ impl<NTY, END> EventValueShape<NTY, END> for EventValuesDim1Case<NTY>
 where
     NTY: NumOps + NumFromBytes<NTY, END>,
 {
-    type NumXAggToSingleBin = ProcBB<NTY>;
+    type NumXAggToSingleBin = WaveXBinner<NTY>;
+    // TODO:
     type NumXAggToNBins = ProcBB<NTY>;
 }
 
-// TODO why not Serialize?
 // TODO add pulse.
 // TODO change name, it's not only about values, but more like batch of whole events.
 #[derive(Serialize, Deserialize)]
@@ -284,6 +345,12 @@ impl<VT> RangeOverlapInfo for EventValues<VT> {
     }
 }
 
+impl<VT> FilterFittingInside for EventValues<VT> {
+    fn filter_fitting_inside(self, fit_range: NanoRange) -> Option<Self> {
+        todo!()
+    }
+}
+
 impl<NTY> PushableIndex for EventValues<NTY>
 where
     NTY: NumOps,
@@ -305,6 +372,31 @@ where
     fn append(&mut self, src: &Self) {
         self.tss.extend_from_slice(&src.tss);
         self.values.extend_from_slice(&src.values);
+    }
+}
+
+impl<NTY> ReadableFromFile for EventValues<NTY>
+where
+    NTY: NumOps,
+{
+    fn read_from_file(file: File) -> Result<ReadPbv<Self>, Error> {
+        todo!()
+    }
+
+    fn from_buf(buf: &[u8]) -> Result<Self, Error> {
+        todo!()
+    }
+}
+
+impl<NTY> TimeBinnableType for EventValues<NTY>
+where
+    NTY: NumOps,
+{
+    type Output = MinMaxAvgBins<NTY>;
+    type Aggregator = MinMaxAvgAggregator<NTY>;
+
+    fn aggregator(range: NanoRange) -> Self::Aggregator {
+        Self::Aggregator::new(range)
     }
 }
 

@@ -9,7 +9,7 @@ use crate::agg::streams::StreamItem;
 use crate::binned::{EventsNodeProcessor, RangeCompletableItem, StreamKind};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{make_frame, make_term_frame, FrameType};
-use crate::raw::bffr::EventsFromFrames;
+use crate::raw::eventsfromframes::EventsFromFrames;
 use crate::Sitemty;
 use err::Error;
 use futures_core::Stream;
@@ -21,8 +21,8 @@ use tokio::net::TcpStream;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, span, trace, warn, Level};
 
-pub mod bffr;
 pub mod conn;
+pub mod eventsfromframes;
 
 /**
 Query parameters to request (optionally) X-processed, but not T-processed events.

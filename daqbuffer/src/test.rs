@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use disk::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use disk::agg::streams::{Bins, StatsItem, StreamItem};
 use disk::binned::query::{BinnedQuery, CacheUsage};
-use disk::binned::RangeCompletableItem;
+use disk::binned::{MinMaxAvgBins, RangeCompletableItem, WithLen};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::streamlog::Streamlog;
 use err::Error;
@@ -227,7 +227,8 @@ where
                         None
                     }
                     StreamItem::DataItem(frame) => {
-                        type ExpectedType = Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>, Error>;
+                        info!("test receives tyid {:x}", frame.tyid());
+                        type ExpectedType = Result<StreamItem<RangeCompletableItem<MinMaxAvgBins<f64>>>, Error>;
                         match bincode::deserialize::<ExpectedType>(frame.buf()) {
                             Ok(item) => match item {
                                 Ok(item) => match item {
@@ -275,7 +276,7 @@ where
                     }
                     RangeCompletableItem::Data(item) => {
                         a.data_item_count += 1;
-                        a.bin_count += item.bin_count() as u64;
+                        a.bin_count += WithLen::len(&item) as u64;
                         a
                     }
                 },

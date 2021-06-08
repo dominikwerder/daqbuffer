@@ -78,14 +78,14 @@ impl FrameType for Sitemty<MinMaxAvgScalarEventBatch> {
 
 impl<NTY> FrameType for Sitemty<MinMaxAvgScalarEventBatchGen<NTY>>
 where
-    NTY: SubFrId,
+    NTY: NumOps,
 {
     const FRAME_TYPE_ID: u32 = 0x400 + NTY::SUB;
 }
 
 impl<NTY> FrameType for Sitemty<EventValues<NTY>>
 where
-    NTY: SubFrId,
+    NTY: NumOps,
 {
     const FRAME_TYPE_ID: u32 = 0x500 + NTY::SUB;
 }
@@ -197,7 +197,7 @@ pub fn make_term_frame() -> BytesMut {
     buf
 }
 
-pub fn decode_frame<T>(frame: &InMemoryFrame, frame_type: u32) -> Result<T, Error>
+pub fn decode_frame<T>(frame: &InMemoryFrame) -> Result<T, Error>
 where
     T: FrameType + DeserializeOwned,
 {

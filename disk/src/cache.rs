@@ -25,6 +25,7 @@ use tokio::io::{AsyncRead, ReadBuf};
 
 pub mod pbvfs;
 
+// TODO move to a better fitting module:
 pub struct HttpBodyAsAsyncRead {
     inp: Response<Body>,
     left: Bytes,

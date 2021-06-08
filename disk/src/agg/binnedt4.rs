@@ -1,22 +1,25 @@
 use crate::agg::enp::XBinnedScalarEvents;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
-use crate::agg::streams::StreamItem;
+use crate::agg::streams::{Appendable, StreamItem};
 use crate::binned::{
-    BinsTimeBinner, EventsTimeBinner, EventsTimeBinnerAggregator, MinMaxAvgAggregator, MinMaxAvgBins, NumOps,
-    RangeCompletableItem, RangeOverlapInfo, SingleXBinAggregator,
+    BinsTimeBinner, EventsTimeBinner, EventsTimeBinnerAggregator, FilterFittingInside, MinMaxAvgAggregator,
+    MinMaxAvgBins, NumOps, RangeCompletableItem, RangeOverlapInfo, ReadPbv, ReadableFromFile, SingleXBinAggregator,
 };
-use crate::decode::EventValues;
+use crate::decode::{EventValues, MinMaxAvgScalarEventBatchGen};
+use crate::frame::makeframe::Framable;
 use crate::Sitemty;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;
 use netpod::{BinnedRange, NanoRange};
+use serde::Serialize;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use tokio::fs::File;
 
 pub struct DefaultScalarEventsTimeBinner<VT> {
     _m1: PhantomData<VT>,
@@ -141,17 +144,33 @@ impl Agg3 {
     }
 }
 
-pub struct TBinnerStream<S, ETB>
-where
-    S: Stream<Item = Sitemty<<ETB as EventsTimeBinner>::Input>> + Send + Unpin + 'static,
-    ETB: EventsTimeBinner + Send + Unpin + 'static,
+pub trait TimeBinnableTypeAggregator: Send {
+    type Input: TimeBinnableType;
+    type Output: TimeBinnableType;
+    fn range(&self) -> &NanoRange;
+    fn ingest(&mut self, item: &Self::Input);
+    fn result(self) -> Self::Output;
+}
+
+pub trait TimeBinnableType:
+    Send + Unpin + RangeOverlapInfo + FilterFittingInside + Appendable + Serialize + ReadableFromFile
 {
-    inp: S,
+    type Output: TimeBinnableType;
+    type Aggregator: TimeBinnableTypeAggregator<Input = Self, Output = Self::Output> + Send + Unpin;
+    fn aggregator(range: NanoRange) -> Self::Aggregator;
+}
+
+pub struct TBinnerStream<S, TBT>
+where
+    S: Stream<Item = Sitemty<TBT>>,
+    TBT: TimeBinnableType,
+{
+    inp: Pin<Box<S>>,
     spec: BinnedRange,
     curbin: u32,
-    left: Option<Poll<Option<Sitemty<<ETB as EventsTimeBinner>::Input>>>>,
-    aggtor: Option<<ETB as EventsTimeBinner>::Aggregator>,
-    tmp_agg_results: VecDeque<<<ETB as EventsTimeBinner>::Aggregator as EventsTimeBinnerAggregator>::Output>,
+    left: Option<Poll<Option<Sitemty<TBT>>>>,
+    aggtor: Option<<TBT as TimeBinnableType>::Aggregator>,
+    tmp_agg_results: VecDeque<<<TBT as TimeBinnableType>::Aggregator as TimeBinnableTypeAggregator>::Output>,
     inp_completed: bool,
     all_bins_emitted: bool,
     range_complete_observed: bool,
@@ -160,19 +179,19 @@ where
     completed: bool,
 }
 
-impl<S, ETB> TBinnerStream<S, ETB>
+impl<S, TBT> TBinnerStream<S, TBT>
 where
-    S: Stream<Item = Sitemty<<ETB as EventsTimeBinner>::Input>> + Send + Unpin + 'static,
-    ETB: EventsTimeBinner,
+    S: Stream<Item = Sitemty<TBT>> + Send + Unpin + 'static,
+    TBT: TimeBinnableType,
 {
     pub fn new(inp: S, spec: BinnedRange) -> Self {
         let range = spec.get_range(0);
         Self {
-            inp,
+            inp: Box::pin(inp),
             spec,
             curbin: 0,
             left: None,
-            aggtor: Some(<ETB as EventsTimeBinner>::aggregator(range)),
+            aggtor: Some(<TBT as TimeBinnableType>::aggregator(range)),
             tmp_agg_results: VecDeque::new(),
             inp_completed: false,
             all_bins_emitted: false,
@@ -183,7 +202,7 @@ where
         }
     }
 
-    fn cur(&mut self, cx: &mut Context) -> Poll<Option<Sitemty<<ETB as EventsTimeBinner>::Input>>> {
+    fn cur(&mut self, cx: &mut Context) -> Poll<Option<Sitemty<TBT>>> {
         if let Some(cur) = self.left.take() {
             cur
         } else if self.inp_completed {
@@ -194,13 +213,13 @@ where
         }
     }
 
+    // TODO handle unwrap error, or use a mem replace type instead of option:
     fn cycle_current_bin(&mut self) {
         self.curbin += 1;
         let range = self.spec.get_range(self.curbin);
         let ret = self
             .aggtor
-            .replace(<ETB as EventsTimeBinner>::aggregator(range))
-            // TODO handle None case, or remove Option if Agg is always present
+            .replace(<TBT as TimeBinnableType>::aggregator(range))
             .unwrap()
             .result();
         // TODO should we accumulate bins before emit? Maybe not, we want to stay responsive.
@@ -213,8 +232,9 @@ where
 
     fn handle(
         &mut self,
-        cur: Poll<Option<Sitemty<<ETB as EventsTimeBinner>::Input>>>,
-    ) -> Option<Poll<Option<Sitemty<<ETB as EventsTimeBinner>::Output>>>> {
+        cur: Poll<Option<Sitemty<TBT>>>,
+    ) -> Option<Poll<Option<Sitemty<<<TBT as TimeBinnableType>::Aggregator as TimeBinnableTypeAggregator>::Output>>>>
+    {
         use Poll::*;
         match cur {
             Ready(Some(Ok(item))) => match item {
@@ -228,7 +248,7 @@ where
                     RangeCompletableItem::Data(item) => {
                         if self.all_bins_emitted {
                             // Just drop the item because we will not emit anymore data.
-                            // Could also at least gather some stats.
+                            // TODO gather stats.
                             None
                         } else {
                             let ag = self.aggtor.as_mut().unwrap();
@@ -273,18 +293,20 @@ where
     }
 }
 
-impl<S, ETB> Stream for TBinnerStream<S, ETB>
+impl<S, TBT> Stream for TBinnerStream<S, TBT>
 where
-    S: Stream<Item = Sitemty<<ETB as EventsTimeBinner>::Input>> + Send + Unpin + 'static,
-    ETB: EventsTimeBinner + Send + Unpin + 'static,
+    S: Stream<Item = Sitemty<TBT>> + Send + Unpin + 'static,
+    TBT: TimeBinnableType + Send + Unpin + 'static,
+    <TBT as TimeBinnableType>::Aggregator: Unpin,
+    <<TBT as TimeBinnableType>::Aggregator as TimeBinnableTypeAggregator>::Output: Unpin,
 {
-    type Item = Sitemty<<ETB as EventsTimeBinner>::Output>;
+    type Item = Sitemty<<<TBT as TimeBinnableType>::Aggregator as TimeBinnableTypeAggregator>::Output>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         'outer: loop {
             break if self.completed {
-                panic!("IntoBinnedTDefaultStream  poll_next on completed");
+                panic!("poll_next on completed");
             } else if self.errored {
                 self.completed = true;
                 Ready(None)
@@ -308,5 +330,59 @@ where
                 }
             };
         }
+    }
+}
+
+pub struct MinMaxAvgScalarEventBatchGenAggregator<NTY>
+where
+    NTY: NumOps,
+{
+    _m1: PhantomData<NTY>,
+}
+
+impl<NTY> TimeBinnableTypeAggregator for MinMaxAvgScalarEventBatchGenAggregator<NTY>
+where
+    NTY: NumOps,
+{
+    type Input = MinMaxAvgScalarEventBatchGen<NTY>;
+    type Output = MinMaxAvgScalarEventBatchGen<NTY>;
+
+    fn range(&self) -> &NanoRange {
+        todo!()
+    }
+
+    fn ingest(&mut self, item: &Self::Input) {
+        todo!()
+    }
+
+    fn result(self) -> Self::Output {
+        todo!()
+    }
+}
+
+impl<NTY> ReadableFromFile for MinMaxAvgScalarEventBatchGen<NTY>
+where
+    NTY: NumOps,
+{
+    fn read_from_file(file: File) -> Result<ReadPbv<Self>, Error> {
+        todo!()
+    }
+
+    fn from_buf(buf: &[u8]) -> Result<Self, Error> {
+        todo!()
+    }
+}
+
+// TODO this is just dummy, do I use this in the refactored code?
+impl<NTY> TimeBinnableType for MinMaxAvgScalarEventBatchGen<NTY>
+where
+    NTY: NumOps,
+{
+    // TODO Output is just dummy, because this type is probably unused anyways.
+    type Output = MinMaxAvgScalarEventBatchGen<NTY>;
+    type Aggregator = MinMaxAvgScalarEventBatchGenAggregator<NTY>;
+
+    fn aggregator(range: NanoRange) -> Self::Aggregator {
+        todo!()
     }
 }

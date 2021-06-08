@@ -1,4 +1,6 @@
-use crate::agg::binnedt4::{DefaultBinsTimeBinner, DefaultScalarEventsTimeBinner, DefaultSingleXBinTimeBinner};
+use crate::agg::binnedt4::{
+    DefaultBinsTimeBinner, DefaultScalarEventsTimeBinner, DefaultSingleXBinTimeBinner, TimeBinnableType,
+};
 use crate::agg::enp::{Identity, WaveXBinner};
 use crate::agg::streams::{Appendable, StreamItem};
 use crate::binned::pbv2::{
@@ -41,6 +43,7 @@ where
     <ETB as EventsTimeBinner>::Output: Serialize + ReadableFromFile + 'static,
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
     Sitemty<<ETB as EventsTimeBinner>::Output>: Framable,
+    Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>: Framable,
 {
     // TODO
     // Currently, this mod uses stuff from pbv2, therefore complete path:
