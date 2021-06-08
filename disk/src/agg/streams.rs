@@ -3,6 +3,7 @@ use crate::streamlog::LogItem;
 use err::Error;
 use netpod::EventDataReadStats;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum StatsItem {
@@ -30,6 +31,21 @@ pub trait Collected {
 pub trait Collectable {
     type Collected: Collected;
     fn append_to(&self, collected: &mut Self::Collected);
+}
+
+pub trait Collectable2: Any {
+    fn as_any_ref(&self) -> &dyn Any;
+    fn append(&mut self, src: &dyn Any);
+}
+
+pub trait CollectionSpec2 {
+    // TODO Can I use here associated types and return concrete types?
+    // Probably not object safe.
+    fn empty(&self) -> Box<dyn Collectable2>;
+}
+
+pub trait CollectionSpecMaker2 {
+    fn spec(bin_count_exp: u32) -> Box<dyn CollectionSpec2>;
 }
 
 pub trait ToJsonResult {

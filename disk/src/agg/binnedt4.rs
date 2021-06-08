@@ -21,6 +21,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::fs::File;
 
+// TODO no longer needed
 pub struct DefaultScalarEventsTimeBinner<VT> {
     _m1: PhantomData<VT>,
 }
@@ -38,6 +39,7 @@ where
     }
 }
 
+// TODO no longer needed
 pub struct DefaultSingleXBinTimeBinner<VT> {
     _m1: PhantomData<VT>,
 }
