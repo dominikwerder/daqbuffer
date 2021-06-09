@@ -1,4 +1,3 @@
-use crate::agg::binnedt3::{Agg3, BinnedT3Stream};
 use crate::agg::binnedt4::{TBinnerStream, TimeBinnableType, TimeBinnableTypeAggregator};
 use crate::agg::enp::{Identity, WaveXBinner, XBinnedScalarEvents};
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
@@ -1258,6 +1257,18 @@ pub enum RangeCompletableItem<T> {
     Data(T),
 }
 
+pub struct Agg3 {}
+
+pub struct BinnedT3Stream {}
+
+impl Stream for BinnedT3Stream {
+    type Item = Sitemty<MinMaxAvgScalarBinBatch>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        todo!()
+    }
+}
+
 impl StreamKind for BinnedStreamKindScalar {
     // TODO is this really needed?
     type TBinnedStreamType = BoxedStream<Result<StreamItem<RangeCompletableItem<Self::TBinnedBins>>, Error>>;
@@ -1283,15 +1294,13 @@ impl StreamKind for BinnedStreamKindScalar {
         range: BinnedRange,
         node_config: &NodeConfigCached,
     ) -> Result<Self::TBinnedStreamType, Error> {
-        let s = MergedFromRemotes::new(evq, perf_opts, node_config.node_config.cluster.clone(), self.clone());
-        let s = Self::xbinned_to_tbinned(s, range);
-        Ok(BoxedStream::new(Box::pin(s))?)
+        err::todoval()
     }
 
     fn xbinned_to_tbinned<S>(inp: S, spec: BinnedRange) -> Self::XBinnedToTBinnedStream
     where
         S: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::XBinnedEvents>>, Error>> + Send + 'static,
     {
-        Self::XBinnedToTBinnedStream::new(inp, spec)
+        err::todoval()
     }
 }
