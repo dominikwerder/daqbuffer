@@ -1,20 +1,16 @@
-use crate::agg::binnedt4::{TimeBinnableType, TimeBinnableTypeAggregator};
+use crate::agg::binnedt4::TimeBinnableType;
 use crate::agg::enp::{Identity, WaveXBinner};
-use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::{Appendable, StreamItem};
 use crate::binned::{
-    EventsNodeProcessor, FilterFittingInside, MinMaxAvgAggregator, MinMaxAvgBins, MinMaxAvgBinsAggregator, NumOps,
-    PushableIndex, RangeCompletableItem, RangeOverlapInfo, ReadPbv, ReadableFromFile, WithLen, WithTimestamps,
+    EventValuesAggregator, EventsNodeProcessor, FilterFittingInside, MinMaxAvgBins, NumOps, PushableIndex,
+    RangeCompletableItem, RangeOverlapInfo, ReadPbv, ReadableFromFile, WithLen, WithTimestamps,
 };
 use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventFull;
-use crate::frame::makeframe::{make_frame, Framable};
-use bytes::BytesMut;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::NanoRange;
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use std::mem::size_of;
@@ -218,7 +214,7 @@ impl<VT> RangeOverlapInfo for EventValues<VT> {
 }
 
 impl<VT> FilterFittingInside for EventValues<VT> {
-    fn filter_fitting_inside(self, fit_range: NanoRange) -> Option<Self> {
+    fn filter_fitting_inside(self, _fit_range: NanoRange) -> Option<Self> {
         todo!()
     }
 }
@@ -251,12 +247,13 @@ impl<NTY> ReadableFromFile for EventValues<NTY>
 where
     NTY: NumOps,
 {
-    fn read_from_file(file: File) -> Result<ReadPbv<Self>, Error> {
-        todo!()
+    fn read_from_file(_file: File) -> Result<ReadPbv<Self>, Error> {
+        // TODO refactor types such that this can be removed.
+        panic!()
     }
 
-    fn from_buf(buf: &[u8]) -> Result<Self, Error> {
-        todo!()
+    fn from_buf(_buf: &[u8]) -> Result<Self, Error> {
+        panic!()
     }
 }
 
@@ -265,7 +262,7 @@ where
     NTY: NumOps,
 {
     type Output = MinMaxAvgBins<NTY>;
-    type Aggregator = MinMaxAvgAggregator<NTY>;
+    type Aggregator = EventValuesAggregator<NTY>;
 
     fn aggregator(range: NanoRange) -> Self::Aggregator {
         Self::Aggregator::new(range)

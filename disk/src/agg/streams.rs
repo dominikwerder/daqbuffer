@@ -3,7 +3,6 @@ use crate::streamlog::LogItem;
 use err::Error;
 use netpod::EventDataReadStats;
 use serde::{Deserialize, Serialize};
-use std::any::Any;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum StatsItem {

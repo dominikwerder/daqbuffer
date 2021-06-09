@@ -1,7 +1,6 @@
-use crate::agg::enp::{Identity, WaveXBinner};
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::streams::StreamItem;
-use crate::binned::{BinnedStreamKindScalar, EventsNodeProcessor, NumOps, RangeCompletableItem, StreamKind};
+use crate::binned::{EventsNodeProcessor, NumOps, RangeCompletableItem};
 use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
     EventsDecodedStream, LittleEndian, NumFromBytes,
@@ -9,7 +8,7 @@ use crate::decode::{
 use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventChunkerConf;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
-use crate::frame::makeframe::{decode_frame, make_frame, make_term_frame, Framable, FrameType};
+use crate::frame::makeframe::{decode_frame, make_frame, make_term_frame, Framable};
 use crate::raw::{EventQueryJsonStringFrame, EventsQuery};
 use crate::Sitemty;
 use err::Error;

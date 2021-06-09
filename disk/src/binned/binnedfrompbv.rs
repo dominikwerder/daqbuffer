@@ -1,4 +1,4 @@
-use crate::agg::binnedt4::{TBinnerStream, TimeBinnableType, TimeBinnableTypeAggregator};
+use crate::agg::binnedt4::{TBinnerStream, TimeBinnableType};
 use crate::agg::streams::StreamItem;
 use crate::binned::query::{CacheUsage, PreBinnedQuery};
 use crate::binned::RangeCompletableItem;
@@ -13,7 +13,6 @@ use http::{StatusCode, Uri};
 use netpod::log::*;
 use netpod::{AggKind, BinnedRange, ByteSize, Channel, NodeConfigCached, PerfOpts, PreBinnedPatchIterator};
 use serde::de::DeserializeOwned;
-use serde::Deserialize;
 use std::future::ready;
 use std::marker::PhantomData;
 use std::pin::Pin;

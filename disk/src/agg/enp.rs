@@ -7,7 +7,6 @@ use crate::binned::{
 use crate::decode::EventValues;
 use err::Error;
 use netpod::NanoRange;
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use tokio::fs::File;
@@ -23,7 +22,7 @@ where
     type Input = NTY;
     type Output = EventValues<NTY>;
 
-    fn process(inp: EventValues<Self::Input>) -> Self::Output {
+    fn process(_inp: EventValues<Self::Input>) -> Self::Output {
         todo!()
     }
 }
@@ -85,7 +84,7 @@ impl<NTY> RangeOverlapInfo for XBinnedScalarEvents<NTY> {
 }
 
 impl<NTY> FilterFittingInside for XBinnedScalarEvents<NTY> {
-    fn filter_fitting_inside(self, fit_range: NanoRange) -> Option<Self> {
+    fn filter_fitting_inside(self, _fit_range: NanoRange) -> Option<Self> {
         todo!()
     }
 }
@@ -124,12 +123,13 @@ impl<NTY> ReadableFromFile for XBinnedScalarEvents<NTY>
 where
     NTY: NumOps,
 {
-    fn read_from_file(file: File) -> Result<ReadPbv<Self>, Error> {
-        todo!()
+    fn read_from_file(_file: File) -> Result<ReadPbv<Self>, Error> {
+        // TODO refactor types such that this impl is not needed.
+        panic!()
     }
 
-    fn from_buf(buf: &[u8]) -> Result<Self, Error> {
-        todo!()
+    fn from_buf(_buf: &[u8]) -> Result<Self, Error> {
+        panic!()
     }
 }
 

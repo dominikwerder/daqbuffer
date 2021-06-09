@@ -1,29 +1,19 @@
-use crate::agg::streams::StreamItem;
-use crate::binned::{RangeCompletableItem, StreamKind};
-use crate::frame::makeframe::FrameType;
-use crate::merge::MergedStream;
-use crate::raw::{x_processed_stream_from_node, EventsQuery};
-use crate::Sitemty;
 use bytes::Bytes;
 use chrono::Utc;
 use err::Error;
-use futures_core::Stream;
-use futures_util::{pin_mut, StreamExt};
+use futures_util::pin_mut;
 use hyper::{Body, Response};
 use netpod::log::*;
 use netpod::timeunits::SEC;
-use netpod::{AggKind, Channel, Cluster, NodeConfigCached, PerfOpts, PreBinnedPatchCoord};
+use netpod::{AggKind, Channel, Cluster, NodeConfigCached, PreBinnedPatchCoord};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
-use std::future::Future;
 use std::io;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tiny_keccak::Hasher;
 use tokio::io::{AsyncRead, ReadBuf};
-
-pub mod pbvfs;
 
 // TODO move to a better fitting module:
 pub struct HttpBodyAsAsyncRead {
@@ -82,116 +72,6 @@ impl AsyncRead for HttpBodyAsAsyncRead {
                 Ready(None) => Ready(Ok(())),
                 Pending => Pending,
             }
-        }
-    }
-}
-
-type T001<T> = Pin<Box<dyn Stream<Item = Result<StreamItem<T>, Error>> + Send>>;
-type T002<T> = Pin<Box<dyn Future<Output = Result<T001<T>, Error>> + Send>>;
-
-// TODO remove after refactoring.
-pub struct MergedFromRemotes<SK>
-where
-    SK: StreamKind,
-{
-    tcp_establish_futs: Vec<T002<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>>,
-    nodein: Vec<Option<T001<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>>>,
-    merged: Option<T001<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>>,
-    completed: bool,
-    errored: bool,
-}
-
-impl<SK> MergedFromRemotes<SK>
-where
-    SK: StreamKind,
-    Sitemty<<SK as StreamKind>::XBinnedEvents>: FrameType,
-{
-    pub fn new(evq: EventsQuery, perf_opts: PerfOpts, cluster: Cluster, stream_kind: SK) -> Self {
-        let mut tcp_establish_futs = vec![];
-        for node in &cluster.nodes {
-            let f = x_processed_stream_from_node(evq.clone(), perf_opts.clone(), node.clone(), stream_kind.clone());
-            let f: T002<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>> = Box::pin(f);
-            tcp_establish_futs.push(f);
-        }
-        let n = tcp_establish_futs.len();
-        Self {
-            tcp_establish_futs,
-            nodein: (0..n).into_iter().map(|_| None).collect(),
-            merged: None,
-            completed: false,
-            errored: false,
-        }
-    }
-}
-
-impl<SK> Stream for MergedFromRemotes<SK>
-where
-    SK: StreamKind,
-{
-    type Item = Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>, Error>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        use Poll::*;
-        'outer: loop {
-            break if self.completed {
-                panic!("MergedFromRemotes  poll_next on completed");
-            } else if self.errored {
-                self.completed = true;
-                return Ready(None);
-            } else if let Some(fut) = &mut self.merged {
-                match fut.poll_next_unpin(cx) {
-                    Ready(Some(Ok(k))) => Ready(Some(Ok(k))),
-                    Ready(Some(Err(e))) => {
-                        self.errored = true;
-                        Ready(Some(Err(e)))
-                    }
-                    Ready(None) => {
-                        self.completed = true;
-                        Ready(None)
-                    }
-                    Pending => Pending,
-                }
-            } else {
-                let mut pend = false;
-                let mut c1 = 0;
-                for i1 in 0..self.tcp_establish_futs.len() {
-                    if self.nodein[i1].is_none() {
-                        let f = &mut self.tcp_establish_futs[i1];
-                        pin_mut!(f);
-                        match f.poll(cx) {
-                            Ready(Ok(k)) => {
-                                self.nodein[i1] = Some(k);
-                            }
-                            Ready(Err(e)) => {
-                                self.errored = true;
-                                return Ready(Some(Err(e)));
-                            }
-                            Pending => {
-                                pend = true;
-                            }
-                        }
-                    } else {
-                        c1 += 1;
-                    }
-                }
-                if pend {
-                    Pending
-                } else {
-                    if c1 == self.tcp_establish_futs.len() {
-                        debug!("MergedFromRemotes  setting up merged stream");
-                        let inps = self.nodein.iter_mut().map(|k| k.take().unwrap()).collect();
-                        let s1 = MergedStream::<_, SK>::new(inps);
-                        self.merged = Some(Box::pin(s1));
-                    } else {
-                        debug!(
-                            "MergedFromRemotes  raw / estab  {}  {}",
-                            c1,
-                            self.tcp_establish_futs.len()
-                        );
-                    }
-                    continue 'outer;
-                }
-            };
         }
     }
 }

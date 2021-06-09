@@ -1,18 +1,17 @@
 use crate::agg::binnedt4::{TBinnerStream, TimeBinnableType, TimeBinnableTypeAggregator};
-use crate::agg::enp::{Identity, WaveXBinner, XBinnedScalarEvents};
+use crate::agg::enp::{Identity, WaveXBinner};
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::{Appendable, Collectable, Collector, StreamItem, ToJsonBytes, ToJsonResult};
 use crate::agg::{Fits, FitsInside};
 use crate::binned::binnedfrompbv::BinnedFromPreBinned;
-use crate::binned::query::{BinnedQuery, PreBinnedQuery};
+use crate::binned::query::BinnedQuery;
 use crate::binnedstream::BoxedStream;
-use crate::cache::MergedFromRemotes;
 use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValues, EventValuesDim0Case, EventValuesDim1Case,
     LittleEndian, NumFromBytes,
 };
-use crate::frame::makeframe::{make_frame, Framable, FrameType, SubFrId};
+use crate::frame::makeframe::{Framable, FrameType, SubFrId};
 use crate::merge::mergedfromremotes::MergedFromRemotes2;
 use crate::raw::EventsQuery;
 use crate::Sitemty;
@@ -24,15 +23,13 @@ use futures_util::{FutureExt, StreamExt};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{
-    AggKind, BinnedRange, ByteOrder, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator,
-    PreBinnedPatchRange, ScalarType, Shape,
+    BinnedRange, ByteOrder, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange,
+    ScalarType, Shape,
 };
 use num_traits::{AsPrimitive, Bounded, Zero};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize, Serializer};
-use serde_json::Map;
-use std::any::Any;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -45,7 +42,6 @@ pub mod binnedfrompbv;
 pub mod pbv;
 pub mod prebinned;
 pub mod query;
-pub mod scalar;
 
 pub struct BinnedStreamRes<I> {
     pub binned_stream: BoxedStream<Result<StreamItem<RangeCompletableItem<I>>, Error>>,
@@ -143,7 +139,6 @@ impl<T> BinnedResponseItem for T where T: Send + ToJsonResult + Framable {}
 
 pub struct BinnedResponseDyn {
     stream: Pin<Box<dyn Stream<Item = Box<dyn BinnedResponseItem>> + Send>>,
-    bin_count: u32,
 }
 
 fn make_num_pipeline_nty_end_evs_enp<PPP, NTY, END, EVS, ENP>(
@@ -174,10 +169,7 @@ where
 {
     let res = make_num_pipeline_nty_end_evs_enp_stat::<_, _, _, ENP>(event_value_shape, query, node_config)?;
     let s = ppp.convert(res.stream, res.bin_count);
-    let ret = BinnedResponseDyn {
-        stream: Box::pin(s),
-        bin_count: res.bin_count,
-    };
+    let ret = BinnedResponseDyn { stream: Box::pin(s) };
     Ok(ret)
 }
 
@@ -267,10 +259,7 @@ where
             // TODO can I use the same binned_stream machinery to construct the matching empty result?
             // Need the requested range all with empty/nan values and zero counts.
             let s = futures_util::stream::empty();
-            let ret = BinnedResponseDyn {
-                stream: Box::pin(s),
-                bin_count: 0,
-            };
+            let ret = BinnedResponseDyn { stream: Box::pin(s) };
             Ok(ret)
         }
         MatchingConfigEntry::Entry(entry) => {
@@ -310,7 +299,7 @@ where
     fn convert(
         &self,
         inp: Pin<Box<dyn Stream<Item = Sitemty<MinMaxAvgBins<NTY>>> + Send>>,
-        bin_count_exp: u32,
+        _bin_count_exp: u32,
     ) -> Pin<Box<dyn Stream<Item = Box<dyn BinnedResponseItem>> + Send>> {
         let s = StreamExt::map(inp, |item| Box::new(item) as Box<dyn BinnedResponseItem>);
         Box::pin(s)
@@ -700,35 +689,6 @@ pub trait RangeOverlapInfo {
     fn starts_after(&self, range: NanoRange) -> bool;
 }
 
-pub trait XBinnedEvents<SK>:
-    Sized + Unpin + Send + Serialize + DeserializeOwned + WithLen + WithTimestamps + PushableIndex + Appendable
-where
-    SK: StreamKind,
-{
-    fn frame_type() -> u32;
-}
-
-pub trait TBinnedBins:
-    Sized + Unpin + Send + Serialize + DeserializeOwned + ReadableFromFile + FilterFittingInside + WithLen + Appendable
-{
-    fn frame_type() -> u32;
-}
-
-impl<SK> XBinnedEvents<SK> for MinMaxAvgScalarEventBatch
-where
-    SK: StreamKind,
-{
-    fn frame_type() -> u32 {
-        <Result<StreamItem<RangeCompletableItem<Self>>, Error> as FrameType>::FRAME_TYPE_ID
-    }
-}
-
-impl TBinnedBins for MinMaxAvgScalarBinBatch {
-    fn frame_type() -> u32 {
-        <Result<StreamItem<RangeCompletableItem<Self>>, Error> as FrameType>::FRAME_TYPE_ID
-    }
-}
-
 pub trait NumOps:
     Sized + Copy + Send + Unpin + Zero + AsPrimitive<f32> + Bounded + PartialOrd + SubFrId + Serialize + DeserializeOwned
 {
@@ -938,11 +898,6 @@ impl<NTY> MinMaxAvgBinsCollected<NTY> {
     }
 }
 
-pub struct MinMaxAvgBinsCollectionSpec<NTY> {
-    bin_count_exp: u32,
-    _m1: PhantomData<NTY>,
-}
-
 #[derive(Serialize)]
 pub struct MinMaxAvgBinsCollectedResult<NTY> {
     ts_bin_edges: Vec<IsoDateTime>,
@@ -1042,7 +997,7 @@ where
     }
 }
 
-pub struct MinMaxAvgAggregator<NTY> {
+pub struct EventValuesAggregator<NTY> {
     range: NanoRange,
     count: u32,
     min: Option<NTY>,
@@ -1050,7 +1005,7 @@ pub struct MinMaxAvgAggregator<NTY> {
     avg: Option<f32>,
 }
 
-impl<NTY> MinMaxAvgAggregator<NTY> {
+impl<NTY> EventValuesAggregator<NTY> {
     pub fn new(range: NanoRange) -> Self {
         Self {
             range,
@@ -1062,8 +1017,7 @@ impl<NTY> MinMaxAvgAggregator<NTY> {
     }
 }
 
-// TODO rename to EventValuesAggregator
-impl<NTY> TimeBinnableTypeAggregator for MinMaxAvgAggregator<NTY>
+impl<NTY> TimeBinnableTypeAggregator for EventValuesAggregator<NTY>
 where
     NTY: NumOps,
 {
@@ -1074,7 +1028,8 @@ where
         &self.range
     }
 
-    fn ingest(&mut self, item: &Self::Input) {
+    fn ingest(&mut self, _item: &Self::Input) {
+        // TODO construct test case to hit this:
         todo!()
     }
 
@@ -1085,10 +1040,9 @@ where
 
 pub struct MinMaxAvgBinsAggregator<NTY> {
     range: NanoRange,
-    count: u32,
+    count: u64,
     min: Option<NTY>,
     max: Option<NTY>,
-    avg: Option<f32>,
     sum: f32,
     sumc: u32,
 }
@@ -1097,11 +1051,10 @@ impl<NTY> MinMaxAvgBinsAggregator<NTY> {
     pub fn new(range: NanoRange) -> Self {
         Self {
             range,
-            // TODO: count events here?
+            // TODO: actually count events through the whole pipeline.
             count: 0,
             min: None,
             max: None,
-            avg: None,
             sum: 0f32,
             sumc: 0,
         }
@@ -1175,8 +1128,7 @@ where
         Self::Output {
             ts1s: vec![self.range.beg],
             ts2s: vec![self.range.end],
-            // TODO
-            counts: vec![0],
+            counts: vec![self.count as u64],
             mins: vec![self.min],
             maxs: vec![self.max],
             avgs: vec![avg],
@@ -1184,123 +1136,8 @@ where
     }
 }
 
-pub struct SingleXBinAggregator<NTY> {
-    range: NanoRange,
-    count: u32,
-    min: Option<NTY>,
-    max: Option<NTY>,
-    avg: Option<f32>,
-}
-
-impl<NTY> SingleXBinAggregator<NTY> {
-    pub fn new(range: NanoRange) -> Self {
-        Self {
-            range,
-            count: 0,
-            min: None,
-            max: None,
-            avg: None,
-        }
-    }
-}
-
-pub trait StreamKind: Clone + Unpin + Send + Sync + 'static {
-    type TBinnedStreamType: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::TBinnedBins>>, Error>> + Send;
-    type XBinnedEvents: XBinnedEvents<Self>;
-    type TBinnedBins: TBinnedBins;
-    type XBinnedToTBinnedAggregator;
-    type XBinnedToTBinnedStream: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::TBinnedBins>>, Error>>
-        + Send;
-
-    fn new_binned_from_prebinned(
-        &self,
-        query: &BinnedQuery,
-        range: BinnedRange,
-        pre_range: PreBinnedPatchRange,
-        node_config: &NodeConfigCached,
-    ) -> Result<Self::TBinnedStreamType, Error>;
-
-    fn new_binned_from_merged(
-        &self,
-        evq: EventsQuery,
-        perf_opts: PerfOpts,
-        range: BinnedRange,
-        node_config: &NodeConfigCached,
-    ) -> Result<Self::TBinnedStreamType, Error>;
-
-    fn xbinned_to_tbinned<S>(inp: S, spec: BinnedRange) -> Self::XBinnedToTBinnedStream
-    where
-        S: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::XBinnedEvents>>, Error>> + Send + 'static;
-}
-
-#[derive(Clone)]
-pub struct BinnedStreamKindScalar {}
-
-#[derive(Clone)]
-pub struct BinnedStreamKindWave {}
-
-impl BinnedStreamKindScalar {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-impl BinnedStreamKindWave {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub enum RangeCompletableItem<T> {
     RangeComplete,
     Data(T),
-}
-
-pub struct Agg3 {}
-
-pub struct BinnedT3Stream {}
-
-impl Stream for BinnedT3Stream {
-    type Item = Sitemty<MinMaxAvgScalarBinBatch>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        todo!()
-    }
-}
-
-impl StreamKind for BinnedStreamKindScalar {
-    // TODO is this really needed?
-    type TBinnedStreamType = BoxedStream<Result<StreamItem<RangeCompletableItem<Self::TBinnedBins>>, Error>>;
-    type XBinnedEvents = MinMaxAvgScalarEventBatch;
-    type TBinnedBins = MinMaxAvgScalarBinBatch;
-    type XBinnedToTBinnedAggregator = Agg3;
-    type XBinnedToTBinnedStream = BinnedT3Stream;
-
-    fn new_binned_from_prebinned(
-        &self,
-        query: &BinnedQuery,
-        range: BinnedRange,
-        pre_range: PreBinnedPatchRange,
-        node_config: &NodeConfigCached,
-    ) -> Result<Self::TBinnedStreamType, Error> {
-        err::todoval()
-    }
-
-    fn new_binned_from_merged(
-        &self,
-        evq: EventsQuery,
-        perf_opts: PerfOpts,
-        range: BinnedRange,
-        node_config: &NodeConfigCached,
-    ) -> Result<Self::TBinnedStreamType, Error> {
-        err::todoval()
-    }
-
-    fn xbinned_to_tbinned<S>(inp: S, spec: BinnedRange) -> Self::XBinnedToTBinnedStream
-    where
-        S: Stream<Item = Result<StreamItem<RangeCompletableItem<Self::XBinnedEvents>>, Error>> + Send + 'static,
-    {
-        err::todoval()
-    }
 }

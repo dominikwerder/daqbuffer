@@ -1,7 +1,7 @@
 use crate::agg::streams::Appendable;
 use crate::binned::{EventsNodeProcessor, PushableIndex};
 use crate::frame::makeframe::FrameType;
-use crate::merge::{MergedStream, MergedStream2};
+use crate::merge::MergedStream2;
 use crate::raw::{x_processed_stream_from_node2, EventsQuery};
 use crate::Sitemty;
 use err::Error;

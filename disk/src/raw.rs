@@ -6,7 +6,7 @@ to request such data from nodes.
 */
 
 use crate::agg::streams::StreamItem;
-use crate::binned::{EventsNodeProcessor, RangeCompletableItem, StreamKind};
+use crate::binned::{EventsNodeProcessor, RangeCompletableItem};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{make_frame, make_term_frame, FrameType};
 use crate::raw::eventsfromframes::EventsFromFrames;
@@ -36,40 +36,6 @@ pub struct EventsQuery {
 
 #[derive(Serialize, Deserialize)]
 pub struct EventQueryJsonStringFrame(String);
-
-// TODO remove after refactor.
-pub async fn x_processed_stream_from_node<SK>(
-    query: EventsQuery,
-    perf_opts: PerfOpts,
-    node: Node,
-    stream_kind: SK,
-) -> Result<
-    Pin<
-        Box<
-            dyn Stream<Item = Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>, Error>>
-                + Send,
-        >,
-    >,
-    Error,
->
-where
-    SK: StreamKind,
-    Result<StreamItem<RangeCompletableItem<<SK as StreamKind>::XBinnedEvents>>, err::Error>: FrameType,
-{
-    let net = TcpStream::connect(format!("{}:{}", node.host, node.port_raw)).await?;
-    let qjs = serde_json::to_string(&query)?;
-    let (netin, mut netout) = net.into_split();
-    let buf = make_frame(&EventQueryJsonStringFrame(qjs))?;
-    netout.write_all(&buf).await?;
-    let buf = make_term_frame();
-    netout.write_all(&buf).await?;
-    netout.flush().await?;
-    netout.forget();
-    let frames = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
-    //let items = EventsFromFrames::new(frames);
-    //Ok(Box::pin(items))
-    Ok(err::todoval())
-}
 
 pub async fn x_processed_stream_from_node2<ENP>(
     query: EventsQuery,

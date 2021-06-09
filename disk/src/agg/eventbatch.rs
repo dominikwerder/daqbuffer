@@ -1,6 +1,5 @@
-use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::{Appendable, StreamItem};
-use crate::binned::{MakeBytesFrame, RangeCompletableItem, RangeOverlapInfo, StreamKind};
+use crate::binned::{MakeBytesFrame, RangeCompletableItem, RangeOverlapInfo};
 use crate::frame::makeframe::make_frame;
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
@@ -121,30 +120,6 @@ impl MinMaxAvgScalarEventBatch {
         }
         info!("impl Frameable for MinMaxAvgScalarEventBatch  g.len() {}", g.len());
         g.freeze()
-    }
-}
-
-pub struct MinMaxAvgScalarEventBatchAggregator {
-    ts1: u64,
-    ts2: u64,
-    count: u64,
-    min: f32,
-    max: f32,
-    sum: f32,
-    sumc: u64,
-}
-
-impl MinMaxAvgScalarEventBatchAggregator {
-    pub fn new(ts1: u64, ts2: u64) -> Self {
-        Self {
-            ts1,
-            ts2,
-            count: 0,
-            min: f32::MAX,
-            max: f32::MIN,
-            sum: f32::NAN,
-            sumc: 0,
-        }
     }
 }
 

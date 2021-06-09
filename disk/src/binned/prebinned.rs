@@ -1,12 +1,9 @@
-use crate::agg::binnedt4::{DefaultBinsTimeBinner, TimeBinnableType};
+use crate::agg::binnedt4::TimeBinnableType;
 use crate::agg::enp::{Identity, WaveXBinner};
-use crate::agg::streams::{Appendable, StreamItem};
-// use crate::binned::pbv2::{
-//     pre_binned_value_byte_stream_new, PreBinnedValueByteStream, PreBinnedValueByteStreamInner, PreBinnedValueStream,
-// };
+use crate::agg::streams::Appendable;
 use crate::binned::pbv::PreBinnedValueStream;
 use crate::binned::query::PreBinnedQuery;
-use crate::binned::{EventsNodeProcessor, NumOps, PushableIndex, RangeCompletableItem, ReadableFromFile, StreamKind};
+use crate::binned::{EventsNodeProcessor, NumOps, PushableIndex};
 use crate::cache::node_ix_for_patch;
 use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
@@ -18,7 +15,6 @@ use bytes::Bytes;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use netpod::streamext::SCC;
 use netpod::{ByteOrder, NodeConfigCached, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use serde::de::DeserializeOwned;

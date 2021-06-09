@@ -2,7 +2,6 @@ use crate::gather::gather_get_json;
 use bytes::Bytes;
 use disk::binned::prebinned::pre_binned_bytes_for_http;
 use disk::binned::query::{BinnedQuery, PreBinnedQuery};
-use disk::binned::BinnedStreamKindScalar;
 use disk::raw::conn::events_service;
 use err::Error;
 use future::Future;
@@ -364,8 +363,6 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
     let query = PreBinnedQuery::from_request(&head)?;
     let desc = format!("pre-b-{}", query.patch().bin_t_len() / 1000000000);
     let span1 = span!(Level::INFO, "httpret::prebinned_DISABLED", desc = &desc.as_str());
-    // TODO remove StreamKind
-    let stream_kind = BinnedStreamKindScalar::new();
     //span1.in_scope(|| {});
     let fut = pre_binned_bytes_for_http(node_config, &query).instrument(span1);
     let ret = match fut.await {

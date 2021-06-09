@@ -1,10 +1,7 @@
-use crate::binned::BinnedStreamKindScalar;
 use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventChunkerConf;
-use futures_util::StreamExt;
 use netpod::timeunits::*;
-use netpod::{BinnedRange, ByteOrder, ByteSize, Channel, ChannelConfig, NanoRange, Nanos, Node, ScalarType, Shape};
-use std::future::ready;
+use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, NanoRange, Nanos, Node, ScalarType, Shape};
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
@@ -50,7 +47,7 @@ async fn agg_x_dim_0_inner() {
         tb_file_count: 1,
         buffer_size: 1024 * 4,
     };
-    let bin_count = 20;
+    let _bin_count = 20;
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.ns;
     let ts2 = ts1 + HOUR * 24;
     let range = NanoRange { beg: ts1, end: ts2 };
@@ -63,6 +60,7 @@ async fn agg_x_dim_0_inner() {
         query.buffer_size as usize,
         event_chunker_conf,
     );
+    let _ = fut1;
     // TODO add the binning and expectation and await the result.
 }
 
@@ -98,7 +96,7 @@ async fn agg_x_dim_1_inner() {
         tb_file_count: 1,
         buffer_size: 17,
     };
-    let bin_count = 10;
+    let _bin_count = 10;
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.ns;
     let ts2 = ts1 + HOUR * 24;
     let range = NanoRange { beg: ts1, end: ts2 };
@@ -111,5 +109,6 @@ async fn agg_x_dim_1_inner() {
         query.buffer_size as usize,
         event_chunker_conf,
     );
+    let _ = fut1;
     // TODO add the binning and expectation and await the result.
 }

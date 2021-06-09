@@ -1,9 +1,7 @@
 use crate::agg::streams::StreamItem;
-use crate::binned::{RangeCompletableItem, StreamKind, XBinnedEvents};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{decode_frame, FrameType};
 use crate::Sitemty;
-use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;

@@ -1,45 +1,17 @@
-/*!
-Aggregation and binning support.
-*/
+//! Aggregation and binning support.
 
-use super::eventchunker::EventFull;
-use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
-use crate::agg::streams::StreamItem;
-use crate::binned::{RangeCompletableItem, StreamKind};
 use bytes::BytesMut;
 use err::Error;
-use futures_core::Stream;
-use futures_util::StreamExt;
 use netpod::NanoRange;
 use netpod::ScalarType;
 use serde::{Deserialize, Serialize};
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 pub mod binnedt4;
 pub mod enp;
 pub mod eventbatch;
 pub mod scalarbinbatch;
 pub mod streams;
-
-/// Batch of events with a scalar (zero dimensions) numeric value.
-pub struct ValuesDim0 {
-    tss: Vec<u64>,
-    values: Vec<Vec<f32>>,
-}
-
-impl std::fmt::Debug for ValuesDim0 {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            fmt,
-            "count {}  tsA {:?}  tsB {:?}",
-            self.tss.len(),
-            self.tss.first(),
-            self.tss.last()
-        )
-    }
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ValuesExtractStats {
@@ -110,6 +82,7 @@ impl NumEx for NumF32 {
 
 macro_rules! make_get_values {
     ($n:ident, $TY:ident, $FROM_BYTES:ident, $BY:expr) => {
+        #[allow(unused)]
         fn $n(decomp: &BytesMut, ty: &ScalarType) -> Result<Vec<f32>, Error> {
             let n1 = decomp.len();
             if ty.bytes() as usize != $BY {

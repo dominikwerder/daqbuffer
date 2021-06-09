@@ -2,14 +2,10 @@ use crate::agg::binnedt4::{TBinnerStream, TimeBinnableType};
 use crate::agg::streams::{Appendable, StreamItem};
 use crate::binned::binnedfrompbv::FetchedPreBinned;
 use crate::binned::query::{CacheUsage, PreBinnedQuery};
-use crate::binned::{
-    BinnedStreamKindScalar, EventsNodeProcessor, NumOps, PushableIndex, RangeCompletableItem, ReadableFromFile,
-    StreamKind, WithLen,
-};
-use crate::cache::pbvfs::PreBinnedScalarValueFetchedStream;
-use crate::cache::{write_pb_cache_min_max_avg_scalar, CacheFileDesc, MergedFromRemotes, WrittenPbCache};
+use crate::binned::{EventsNodeProcessor, NumOps, PushableIndex, RangeCompletableItem, ReadableFromFile, WithLen};
+use crate::cache::{write_pb_cache_min_max_avg_scalar, CacheFileDesc, WrittenPbCache};
 use crate::decode::{Endianness, EventValueFromBytes, EventValueShape, NumFromBytes};
-use crate::frame::makeframe::{make_frame, FrameType};
+use crate::frame::makeframe::FrameType;
 use crate::merge::mergedfromremotes::MergedFromRemotes2;
 use crate::raw::EventsQuery;
 use crate::streamlog::Streamlog;
