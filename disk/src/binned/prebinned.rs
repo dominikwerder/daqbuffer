@@ -10,7 +10,7 @@ use crate::binned::{EventsNodeProcessor, NumOps, PushableIndex, RangeCompletable
 use crate::cache::node_ix_for_patch;
 use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
-    LittleEndian, NumFromBytes, ProcAA, ProcBB,
+    LittleEndian, NumFromBytes,
 };
 use crate::frame::makeframe::{Framable, FrameType};
 use crate::Sitemty;

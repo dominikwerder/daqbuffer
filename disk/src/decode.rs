@@ -119,36 +119,13 @@ impl<NTY> EventValuesDim0Case<NTY> {
     }
 }
 
-// TODO get rid of this dummy:
-pub struct ProcAA<NTY> {
-    _m1: PhantomData<NTY>,
-}
-
-impl<NTY> EventsNodeProcessor for ProcAA<NTY>
-where
-    NTY: NumOps,
-{
-    type Input = NTY;
-    type Output = EventValues<NTY>;
-
-    fn process(_inp: EventValues<Self::Input>) -> Self::Output {
-        todo!()
-    }
-}
-
 impl<NTY, END> EventValueShape<NTY, END> for EventValuesDim0Case<NTY>
 where
     NTY: NumOps + NumFromBytes<NTY, END>,
 {
     type NumXAggToSingleBin = Identity<NTY>;
-    // TODO:
-    type NumXAggToNBins = ProcAA<NTY>;
-}
-
-impl<NTY> WithTimestamps for ProcAA<NTY> {
-    fn ts(&self, ix: usize) -> u64 {
-        todo!()
-    }
+    // TODO is this sufficient?
+    type NumXAggToNBins = Identity<NTY>;
 }
 
 pub struct EventValuesDim1Case<NTY> {
@@ -162,118 +139,13 @@ impl<NTY> EventValuesDim1Case<NTY> {
     }
 }
 
-pub struct ProcBB<NTY> {
-    _m1: PhantomData<NTY>,
-}
-
-// TODO still in use or can go away?
-#[derive(Serialize, Deserialize)]
-pub struct MinMaxAvgScalarEventBatchGen<NTY> {
-    pub tss: Vec<u64>,
-    pub mins: Vec<Option<NTY>>,
-    pub maxs: Vec<Option<NTY>>,
-    pub avgs: Vec<Option<f32>>,
-}
-
-impl<NTY> MinMaxAvgScalarEventBatchGen<NTY>
-where
-    NTY: NumOps,
-{
-    pub fn empty() -> Self {
-        Self {
-            tss: vec![],
-            mins: vec![],
-            maxs: vec![],
-            avgs: vec![],
-        }
-    }
-}
-
-impl<NTY> WithTimestamps for MinMaxAvgScalarEventBatchGen<NTY>
-where
-    NTY: NumOps,
-{
-    fn ts(&self, ix: usize) -> u64 {
-        self.tss[ix]
-    }
-}
-
-impl<NTY> FilterFittingInside for MinMaxAvgScalarEventBatchGen<NTY>
-where
-    NTY: NumOps,
-{
-    fn filter_fitting_inside(self, fit_range: NanoRange) -> Option<Self> {
-        todo!()
-    }
-}
-
-impl<NTY> WithLen for MinMaxAvgScalarEventBatchGen<NTY>
-where
-    NTY: NumOps,
-{
-    fn len(&self) -> usize {
-        todo!()
-    }
-}
-
-impl<NTY> Appendable for MinMaxAvgScalarEventBatchGen<NTY>
-where
-    NTY: NumOps,
-{
-    fn empty() -> Self {
-        todo!()
-    }
-
-    fn append(&mut self, src: &Self) {
-        todo!()
-    }
-}
-
-impl<NTY> RangeOverlapInfo for MinMaxAvgScalarEventBatchGen<NTY>
-where
-    NTY: NumOps,
-{
-    fn ends_before(&self, range: NanoRange) -> bool {
-        todo!()
-    }
-
-    fn ends_after(&self, range: NanoRange) -> bool {
-        todo!()
-    }
-
-    fn starts_after(&self, range: NanoRange) -> bool {
-        todo!()
-    }
-}
-
-impl<NTY> Framable for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatchGen<NTY>>>, Error>
-where
-    NTY: NumOps + Serialize,
-{
-    fn make_frame(&self) -> Result<BytesMut, Error> {
-        make_frame(self)
-    }
-}
-
-impl<NTY> EventsNodeProcessor for ProcBB<NTY>
-where
-    NTY: NumOps,
-{
-    type Input = Vec<NTY>;
-    type Output = MinMaxAvgScalarEventBatchGen<NTY>;
-
-    fn process(inp: EventValues<Self::Input>) -> Self::Output {
-        err::todoval()
-    }
-}
-
 impl<NTY, END> EventValueShape<NTY, END> for EventValuesDim1Case<NTY>
 where
     NTY: NumOps + NumFromBytes<NTY, END>,
 {
     type NumXAggToSingleBin = WaveXBinner<NTY>;
-    // TODO:
-    type NumXAggToNBins = ProcBB<NTY>;
+    // TODO implement this method:
+    type NumXAggToNBins = WaveXBinner<NTY>;
 }
 
 // TODO add pulse.

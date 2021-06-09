@@ -3,7 +3,7 @@ use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
 use crate::binned::{MinMaxAvgBins, NumOps, RangeCompletableItem};
-use crate::decode::{EventValues, MinMaxAvgScalarEventBatchGen};
+use crate::decode::EventValues;
 use crate::frame::inmem::InMemoryFrame;
 use crate::raw::EventQueryJsonStringFrame;
 use crate::Sitemty;
@@ -74,13 +74,6 @@ impl FrameType for Sitemty<MinMaxAvgScalarBinBatch> {
 
 impl FrameType for Sitemty<MinMaxAvgScalarEventBatch> {
     const FRAME_TYPE_ID: u32 = 0x300;
-}
-
-impl<NTY> FrameType for Sitemty<MinMaxAvgScalarEventBatchGen<NTY>>
-where
-    NTY: NumOps,
-{
-    const FRAME_TYPE_ID: u32 = 0x400 + NTY::SUB;
 }
 
 impl<NTY> FrameType for Sitemty<EventValues<NTY>>

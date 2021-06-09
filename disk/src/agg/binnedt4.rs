@@ -6,7 +6,7 @@ use crate::binned::{
     FilterFittingInside, MinMaxAvgAggregator, MinMaxAvgBins, NumOps, RangeCompletableItem, RangeOverlapInfo, ReadPbv,
     ReadableFromFile, SingleXBinAggregator,
 };
-use crate::decode::{EventValues, MinMaxAvgScalarEventBatchGen};
+use crate::decode::EventValues;
 use crate::frame::makeframe::Framable;
 use crate::Sitemty;
 use err::Error;
@@ -23,11 +23,6 @@ use tokio::fs::File;
 
 pub struct DefaultBinsTimeBinner<NTY> {
     _m1: PhantomData<NTY>,
-}
-
-pub trait Aggregator3Tdim {
-    type InputValue;
-    type OutputValue;
 }
 
 pub trait TimeBinnableTypeAggregator: Send {
@@ -216,59 +211,5 @@ where
                 }
             };
         }
-    }
-}
-
-pub struct MinMaxAvgScalarEventBatchGenAggregator<NTY>
-where
-    NTY: NumOps,
-{
-    _m1: PhantomData<NTY>,
-}
-
-impl<NTY> TimeBinnableTypeAggregator for MinMaxAvgScalarEventBatchGenAggregator<NTY>
-where
-    NTY: NumOps,
-{
-    type Input = MinMaxAvgScalarEventBatchGen<NTY>;
-    type Output = MinMaxAvgScalarEventBatchGen<NTY>;
-
-    fn range(&self) -> &NanoRange {
-        todo!()
-    }
-
-    fn ingest(&mut self, item: &Self::Input) {
-        todo!()
-    }
-
-    fn result(self) -> Self::Output {
-        todo!()
-    }
-}
-
-impl<NTY> ReadableFromFile for MinMaxAvgScalarEventBatchGen<NTY>
-where
-    NTY: NumOps,
-{
-    fn read_from_file(file: File) -> Result<ReadPbv<Self>, Error> {
-        todo!()
-    }
-
-    fn from_buf(buf: &[u8]) -> Result<Self, Error> {
-        todo!()
-    }
-}
-
-// TODO this is just dummy, do I use this in the refactored code?
-impl<NTY> TimeBinnableType for MinMaxAvgScalarEventBatchGen<NTY>
-where
-    NTY: NumOps,
-{
-    // TODO Output is just dummy, because this type is probably unused anyways.
-    type Output = MinMaxAvgScalarEventBatchGen<NTY>;
-    type Aggregator = MinMaxAvgScalarEventBatchGenAggregator<NTY>;
-
-    fn aggregator(range: NanoRange) -> Self::Aggregator {
-        todo!()
     }
 }

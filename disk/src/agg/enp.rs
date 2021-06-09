@@ -4,7 +4,7 @@ use crate::binned::{
     EventsNodeProcessor, FilterFittingInside, MinMaxAvgBins, NumOps, PushableIndex, RangeOverlapInfo, ReadPbv,
     ReadableFromFile, WithLen, WithTimestamps,
 };
-use crate::decode::{EventValues, MinMaxAvgScalarEventBatchGen};
+use crate::decode::EventValues;
 use err::Error;
 use netpod::NanoRange;
 use serde::de::DeserializeOwned;
