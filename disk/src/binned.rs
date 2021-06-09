@@ -1,4 +1,3 @@
-use crate::agg::binnedt2::AggregatableTdim2;
 use crate::agg::binnedt3::{Agg3, BinnedT3Stream};
 use crate::agg::binnedt4::{TBinnerStream, TimeBinnableType, TimeBinnableTypeAggregator};
 use crate::agg::enp::{Identity, WaveXBinner, XBinnedScalarEvents};
@@ -711,16 +710,7 @@ where
 }
 
 pub trait TBinnedBins:
-    Sized
-    + Unpin
-    + Send
-    + Serialize
-    + DeserializeOwned
-    + ReadableFromFile
-    + FilterFittingInside
-    + AggregatableTdim2
-    + WithLen
-    + Appendable
+    Sized + Unpin + Send + Serialize + DeserializeOwned + ReadableFromFile + FilterFittingInside + WithLen + Appendable
 {
     fn frame_type() -> u32;
 }

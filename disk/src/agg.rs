@@ -17,7 +17,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 
-pub mod binnedt2;
 pub mod binnedt3;
 pub mod binnedt4;
 pub mod binnedx;
