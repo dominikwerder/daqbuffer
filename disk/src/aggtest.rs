@@ -1,4 +1,3 @@
-use super::agg::IntoDim1F32Stream;
 use crate::binned::BinnedStreamKindScalar;
 use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventChunkerConf;
@@ -111,16 +110,6 @@ async fn agg_x_dim_1_inner() {
         0,
         query.buffer_size as usize,
         event_chunker_conf,
-    )
-    .into_dim_1_f32_stream()
-    //.take(1000)
-    .map(|q| {
-        if false {
-            if let Ok(ref k) = q {
-                info!("vals: {:?}", k);
-            }
-        }
-        q
-    });
+    );
     // TODO add the binning and expectation and await the result.
 }
