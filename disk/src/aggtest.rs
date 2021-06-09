@@ -1,5 +1,4 @@
 use super::agg::IntoDim1F32Stream;
-use crate::agg::binnedx::IntoBinnedXBins1;
 use crate::binned::BinnedStreamKindScalar;
 use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventChunkerConf;
@@ -65,12 +64,7 @@ async fn agg_x_dim_0_inner() {
         query.buffer_size as usize,
         event_chunker_conf,
     );
-    let fut1 = IntoDim1F32Stream::into_dim_1_f32_stream(fut1);
-    let fut1 = IntoBinnedXBins1::<_, BinnedStreamKindScalar>::into_binned_x_bins_1(fut1);
-
-    // TODO add the t binning and expectation.
-    let fut1 = fut1.for_each(|_k| ready(()));
-    fut1.await;
+    // TODO add the binning and expectation and await the result.
 }
 
 #[test]
@@ -128,18 +122,5 @@ async fn agg_x_dim_1_inner() {
         }
         q
     });
-    let fut1 = IntoBinnedXBins1::<_, BinnedStreamKindScalar>::into_binned_x_bins_1(fut1);
-    let fut1 = fut1.map(|k| {
-        //info!("after X binning  {:?}", k.as_ref().unwrap());
-        k
-    });
-
-    // TODO add T-binning and expectation.
-    let fut1 = fut1
-        .map(|k| {
-            info!("after T binning  {:?}", k.as_ref().unwrap());
-            k
-        })
-        .for_each(|_k| ready(()));
-    fut1.await;
+    // TODO add the binning and expectation and await the result.
 }
