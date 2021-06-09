@@ -331,7 +331,7 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
 
 async fn binned_binary(query: BinnedQuery, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let ret = match disk::binned::binned_bytes_for_http(&query, node_config).await {
-        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, format!("desc-BINNED")))?,
+        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, format!("binned_binary")))?,
         Err(e) => {
             if query.report_error() {
                 response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?
@@ -346,10 +346,7 @@ async fn binned_binary(query: BinnedQuery, node_config: &NodeConfigCached) -> Re
 
 async fn binned_json(query: BinnedQuery, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let ret = match disk::binned::binned_json(node_config, &query).await {
-        Ok(val) => {
-            let body = serde_json::to_string(&val)?;
-            response(StatusCode::OK).body(Body::from(body))
-        }?,
+        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, format!("binned_json")))?,
         Err(e) => {
             if query.report_error() {
                 response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?

@@ -58,7 +58,11 @@ async fn get_binned_json_0_inner2(
     }
     let res = hyper::body::to_bytes(res.into_body()).await?;
     let res = String::from_utf8(res.to_vec())?;
-    info!("result from endpoint: [[[\n{}\n]]]", res);
+    let res: serde_json::Value = serde_json::from_str(res.as_str())?;
+    info!(
+        "result from endpoint: --------------\n{}\n--------------",
+        serde_json::to_string_pretty(&res)?
+    );
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     info!("get_binned_json_0  DONE  time {} ms", ms);
