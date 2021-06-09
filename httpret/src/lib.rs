@@ -330,7 +330,7 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
 }
 
 async fn binned_binary(query: BinnedQuery, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    let ret = match disk::binned::binned_bytes_for_http(node_config, &query).await {
+    let ret = match disk::binned::binned_bytes_for_http(&query, node_config).await {
         Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, format!("desc-BINNED")))?,
         Err(e) => {
             if query.report_error() {

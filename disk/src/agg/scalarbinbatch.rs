@@ -1,5 +1,5 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
-use crate::agg::streams::{Appendable, Bins, StreamItem};
+use crate::agg::streams::{Appendable, Bins, StreamItem, ToJsonBytes};
 use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
 use crate::binned::{MakeBytesFrame, RangeCompletableItem, StreamKind};
 use crate::frame::makeframe::make_frame;
@@ -329,5 +329,11 @@ impl Appendable for MinMaxAvgScalarBinBatch {
         self.mins.extend_from_slice(&src.mins);
         self.maxs.extend_from_slice(&src.maxs);
         self.avgs.extend_from_slice(&src.avgs);
+    }
+}
+
+impl ToJsonBytes for MinMaxAvgScalarBinBatch {
+    fn to_json_bytes(&self) -> Result<Vec<u8>, Error> {
+        Ok(serde_json::to_vec(self)?)
     }
 }

@@ -48,9 +48,12 @@ pub trait CollectionSpecMaker2 {
     fn spec(bin_count_exp: u32) -> Box<dyn CollectionSpec2>;
 }
 
+pub trait ToJsonBytes {
+    fn to_json_bytes(&self) -> Result<Vec<u8>, Error>;
+}
+
 pub trait ToJsonResult {
-    type Output;
-    fn to_json_result(&self) -> Result<Self::Output, Error>;
+    fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error>;
 }
 
 pub trait Appendable: WithLen {
