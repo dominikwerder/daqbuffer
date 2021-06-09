@@ -236,11 +236,6 @@ where
                     ready(g)
                 }
             });
-
-        // TODO TBinnerStream is for T-binning events.
-        // But here, we need to bin bins into bigger bins.
-        // The logic in TBinnerStream is actually the same I think..
-        // Reuse??
         let inp = TBinnerStream::<_, TBT>::new(inp, range);
         Ok(Self {
             inp: Box::pin(inp),

@@ -33,6 +33,7 @@ pub trait Collectable {
     fn append_to(&self, collected: &mut Self::Collected);
 }
 
+// TODO can be removed?
 pub trait Collectable2: Any {
     fn as_any_ref(&self) -> &dyn Any;
     fn append(&mut self, src: &dyn Any);

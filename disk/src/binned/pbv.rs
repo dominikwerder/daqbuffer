@@ -1,5 +1,6 @@
 use crate::agg::binnedt4::{TBinnerStream, TimeBinnableType};
 use crate::agg::streams::{Appendable, StreamItem};
+use crate::binned::binnedfrompbv::FetchedPreBinned;
 use crate::binned::query::{CacheUsage, PreBinnedQuery};
 use crate::binned::{
     BinnedStreamKindScalar, BinsTimeBinner, EventsNodeProcessor, EventsTimeBinner, NumOps, PushableIndex,
@@ -18,6 +19,7 @@ use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use netpod::log::*;
 use netpod::{BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange};
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::future::Future;
 use std::io;
@@ -27,15 +29,12 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::fs::{File, OpenOptions};
 
-//pub type SomeScc = netpod::streamext::SCC<u32>;
-
-pub struct PreBinnedValueStream<NTY, END, EVS, ENP, ETB>
+pub struct PreBinnedValueStream<NTY, END, EVS, ENP>
 where
     NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
     END: Endianness + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output>,
-    ETB: EventsTimeBinner<Input = <ENP as EventsNodeProcessor>::Output>,
 {
     query: PreBinnedQuery,
     node_config: NodeConfigCached,
@@ -64,19 +63,19 @@ where
     _m2: PhantomData<END>,
     _m3: PhantomData<EVS>,
     _m4: PhantomData<ENP>,
-    _m5: PhantomData<ETB>,
 }
 
-impl<NTY, END, EVS, ENP, ETB> PreBinnedValueStream<NTY, END, EVS, ENP, ETB>
+impl<NTY, END, EVS, ENP> PreBinnedValueStream<NTY, END, EVS, ENP>
 where
     NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
     END: Endianness + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
-    ETB: EventsTimeBinner<Input = <ENP as EventsNodeProcessor>::Output> + 'static,
     <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable,
+    // TODO is this needed:
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType,
-    <ETB as EventsTimeBinner>::Output: Appendable,
+    // TODO who exactly needs this DeserializeOwned?
+    Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>: FrameType + DeserializeOwned,
 {
     pub fn new(query: PreBinnedQuery, node_config: &NodeConfigCached) -> Self {
         Self {
@@ -100,7 +99,6 @@ where
             _m2: PhantomData,
             _m3: PhantomData,
             _m4: PhantomData,
-            _m5: PhantomData,
         }
     }
 
@@ -179,10 +177,12 @@ where
                         disk_stats_every.clone(),
                         report_error,
                     );
-                    // TODO copy and adapt PreBinnedScalarValueFetchedStream
-                    //PreBinnedScalarValueFetchedStream::new(&query, &node_config, &stream_kind)
-                    let tmp: PreBinnedScalarValueFetchedStream<BinnedStreamKindScalar> = err::todoval();
-                    Ok(tmp)
+                    let ret =
+                        FetchedPreBinned::<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>::new(
+                            &query,
+                            &node_config,
+                        )?;
+                    Ok(ret)
                 }
             })
             .map(|k| {
@@ -193,7 +193,7 @@ where
                 s
             })
             .flatten();
-        Err(err::todoval())
+        Ok(Box::pin(s))
     }
 
     fn try_setup_fetch_prebinned_higher_res(&mut self) -> Result<(), Error> {
@@ -211,16 +211,16 @@ where
     }
 }
 
-impl<NTY, END, EVS, ENP, ETB> Stream for PreBinnedValueStream<NTY, END, EVS, ENP, ETB>
+impl<NTY, END, EVS, ENP> Stream for PreBinnedValueStream<NTY, END, EVS, ENP>
 where
     NTY: NumOps + NumFromBytes<NTY, END> + Serialize + Unpin + 'static,
     END: Endianness + Unpin + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + Unpin + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + Unpin + 'static,
-    ETB: EventsTimeBinner<Input = <ENP as EventsNodeProcessor>::Output> + Unpin + 'static,
     <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable,
+    // TODO needed?
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType,
-    <ETB as EventsTimeBinner>::Output: Serialize + ReadableFromFile + 'static,
+    Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>: FrameType + DeserializeOwned,
 {
     type Item = Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>;
 

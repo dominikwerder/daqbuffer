@@ -370,7 +370,7 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
     // TODO remove StreamKind
     let stream_kind = BinnedStreamKindScalar::new();
     //span1.in_scope(|| {});
-    let fut = pre_binned_bytes_for_http(node_config, &query, stream_kind).instrument(span1);
+    let fut = pre_binned_bytes_for_http(node_config, &query).instrument(span1);
     let ret = match fut.await {
         Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(
             s,

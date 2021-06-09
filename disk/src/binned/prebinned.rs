@@ -3,9 +3,10 @@ use crate::agg::binnedt4::{
 };
 use crate::agg::enp::{Identity, WaveXBinner};
 use crate::agg::streams::{Appendable, StreamItem};
-use crate::binned::pbv2::{
-    pre_binned_value_byte_stream_new, PreBinnedValueByteStream, PreBinnedValueByteStreamInner, PreBinnedValueStream,
-};
+// use crate::binned::pbv2::{
+//     pre_binned_value_byte_stream_new, PreBinnedValueByteStream, PreBinnedValueByteStreamInner, PreBinnedValueStream,
+// };
+use crate::binned::pbv::PreBinnedValueStream;
 use crate::binned::query::PreBinnedQuery;
 use crate::binned::{
     BinsTimeBinner, EventsNodeProcessor, EventsTimeBinner, NumOps, PushableIndex, RangeCompletableItem,
@@ -25,12 +26,13 @@ use futures_util::StreamExt;
 use netpod::streamext::SCC;
 use netpod::{ByteOrder, NodeConfigCached, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::pin::Pin;
 
-fn make_num_pipeline_nty_end_evs_enp<NTY, END, EVS, ENP, ETB>(
-    query: PreBinnedQuery,
+fn make_num_pipeline_nty_end_evs_enp<NTY, END, EVS, ENP>(
     _event_value_shape: EVS,
+    query: PreBinnedQuery,
     node_config: &NodeConfigCached,
 ) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>
 where
@@ -38,16 +40,12 @@ where
     END: Endianness + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
-    ETB: EventsTimeBinner<Input = <ENP as EventsNodeProcessor>::Output> + 'static,
     <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable + 'static,
-    <ETB as EventsTimeBinner>::Output: Serialize + ReadableFromFile + 'static,
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
-    Sitemty<<ETB as EventsTimeBinner>::Output>: Framable,
-    Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>: Framable,
+    Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
+        Framable + FrameType + DeserializeOwned,
 {
-    // TODO
-    // Currently, this mod uses stuff from pbv2, therefore complete path:
-    let ret = crate::binned::pbv::PreBinnedValueStream::<NTY, END, EVS, ENP, ETB>::new(query, node_config);
+    let ret = PreBinnedValueStream::<NTY, END, EVS, ENP>::new(query, node_config);
     let ret = StreamExt::map(ret, |item| Box::new(item) as Box<dyn Framable>);
     Box::pin(ret)
 }
@@ -62,20 +60,16 @@ where
     END: Endianness + 'static,
 {
     match shape {
-        Shape::Scalar => {
-            make_num_pipeline_nty_end_evs_enp::<NTY, END, _, Identity<NTY>, DefaultScalarEventsTimeBinner<NTY>>(
-                query,
-                EventValuesDim0Case::new(),
-                node_config,
-            )
-        }
-        Shape::Wave(n) => {
-            make_num_pipeline_nty_end_evs_enp::<NTY, END, _, WaveXBinner<NTY>, DefaultSingleXBinTimeBinner<NTY>>(
-                query,
-                EventValuesDim1Case::new(n),
-                node_config,
-            )
-        }
+        Shape::Scalar => make_num_pipeline_nty_end_evs_enp::<NTY, END, _, Identity<NTY>>(
+            EventValuesDim0Case::new(),
+            query,
+            node_config,
+        ),
+        Shape::Wave(n) => make_num_pipeline_nty_end_evs_enp::<NTY, END, _, WaveXBinner<NTY>>(
+            EventValuesDim1Case::new(n),
+            query,
+            node_config,
+        ),
     }
 }
 
@@ -96,22 +90,24 @@ fn make_num_pipeline(
     node_config: &NodeConfigCached,
 ) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>> {
     match scalar_type {
+        ScalarType::U8 => match_end!(u8, byte_order, shape, query, node_config),
+        ScalarType::U16 => match_end!(u16, byte_order, shape, query, node_config),
+        ScalarType::U32 => match_end!(u32, byte_order, shape, query, node_config),
+        ScalarType::U64 => match_end!(u64, byte_order, shape, query, node_config),
+        ScalarType::I8 => match_end!(i8, byte_order, shape, query, node_config),
+        ScalarType::I16 => match_end!(i16, byte_order, shape, query, node_config),
         ScalarType::I32 => match_end!(i32, byte_order, shape, query, node_config),
+        ScalarType::I64 => match_end!(i64, byte_order, shape, query, node_config),
+        ScalarType::F32 => match_end!(f64, byte_order, shape, query, node_config),
         ScalarType::F64 => match_end!(f64, byte_order, shape, query, node_config),
-        _ => todo!(),
     }
 }
 
 // TODO after the refactor, return direct value instead of boxed.
-pub async fn pre_binned_bytes_for_http<SK>(
+pub async fn pre_binned_bytes_for_http(
     node_config: &NodeConfigCached,
     query: &PreBinnedQuery,
-    stream_kind: SK,
-) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>, Error>
-where
-    SK: StreamKind,
-    Result<StreamItem<RangeCompletableItem<SK::TBinnedBins>>, err::Error>: FrameType,
-{
+) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>, Error> {
     if query.channel().backend != node_config.node.backend {
         let err = Error::with_msg(format!(
             "backend mismatch  node: {}  requested: {}",
@@ -128,7 +124,6 @@ where
         ));
         return Err(err);
     }
-
     let channel_config = read_local_config(&query.channel(), &node_config.node).await?;
     let entry_res = extract_matching_config_entry(&query.patch().patch_range(), &channel_config)?;
     let entry = match entry_res {
@@ -136,28 +131,17 @@ where
         MatchingConfigEntry::Multiple => return Err(Error::with_msg("multiple config entries found")),
         MatchingConfigEntry::Entry(entry) => entry,
     };
-    let _shape = match entry.to_shape() {
-        Ok(k) => k,
-        Err(e) => return Err(e),
-    };
-
-    if true {
-        let ret = make_num_pipeline(
-            entry.scalar_type.clone(),
-            entry.byte_order.clone(),
-            entry.to_shape().unwrap(),
-            query.clone(),
-            node_config,
-        )
-        .map(|item| match item.make_frame() {
-            Ok(item) => Ok(item.freeze()),
-            Err(e) => Err(e),
-        });
-        let ret = Box::pin(ret);
-        Ok(ret)
-    } else {
-        let ret = pre_binned_value_byte_stream_new(query, node_config, stream_kind);
-        let ret = Box::pin(ret);
-        Ok(ret)
-    }
+    let ret = make_num_pipeline(
+        entry.scalar_type.clone(),
+        entry.byte_order.clone(),
+        entry.to_shape()?,
+        query.clone(),
+        node_config,
+    )
+    .map(|item| match item.make_frame() {
+        Ok(item) => Ok(item.freeze()),
+        Err(e) => Err(e),
+    });
+    let ret = Box::pin(ret);
+    Ok(ret)
 }

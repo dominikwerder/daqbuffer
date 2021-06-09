@@ -478,7 +478,7 @@ pub fn raw_concat_channel_read_stream_timebin(
     }
 }
 
-type Sitemty<T> = Result<StreamItem<RangeCompletableItem<T>>, Error>;
+pub type Sitemty<T> = Result<StreamItem<RangeCompletableItem<T>>, Error>;
 
 pub mod dtflags {
     pub const COMPRESSION: u8 = 0x80;

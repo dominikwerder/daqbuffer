@@ -15,7 +15,6 @@ use crate::agg::streams::{
 use crate::agg::{Fits, FitsInside};
 use crate::binned::binnedfrompbv::BinnedFromPreBinned;
 use crate::binned::query::{BinnedQuery, PreBinnedQuery};
-use crate::binned::scalar::binned_stream;
 use crate::binnedstream::{BinnedScalarStreamFromPreBinnedPatches, BoxedStream};
 use crate::cache::MergedFromRemotes;
 use crate::decode::{
@@ -53,8 +52,6 @@ use tokio::io::{AsyncRead, ReadBuf};
 
 pub mod binnedfrompbv;
 pub mod pbv;
-// TODO get rid of whole pbv2 mod?
-pub mod pbv2;
 pub mod prebinned;
 pub mod query;
 pub mod scalar;
@@ -261,34 +258,12 @@ where
     }
 }
 
-pub trait MakeFrame2 {
-    fn make_frame_2(&self) -> Result<BytesMut, Error>;
-}
+pub trait BinnedResponseItem: Send + ToJsonResult + Framable {}
 
-impl<T> MakeFrame2 for Sitemty<T>
-where
-    Sitemty<T>: Framable,
-{
-    fn make_frame_2(&self) -> Result<BytesMut, Error> {
-        todo!()
-    }
-}
-
-pub trait DataFramable {
-    fn make_data_frame(&self) -> Result<BytesMut, Error>;
-}
-
-pub trait BinnedResponseItem: Send + ToJsonResult + DataFramable {}
-
-impl<T> BinnedResponseItem for T
-where
-    T: Send + ToJsonResult + DataFramable,
-    Sitemty<T>: Framable,
-{
-}
+impl<T> BinnedResponseItem for T where T: Send + ToJsonResult + Framable {}
 
 pub struct BinnedResponseDyn {
-    stream: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn BinnedResponseItem>>> + Send>>,
+    stream: Pin<Box<dyn Stream<Item = Box<dyn BinnedResponseItem>> + Send>>,
     bin_count: u32,
 }
 
@@ -313,10 +288,12 @@ where
     >: Framable,
     // TODO require these things in general?
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
+    // TODO is this correct? why do I want the Output to be Framable?
     Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
         FrameType + Framable + DeserializeOwned,
-    <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: ToJsonResult + DataFramable,
+    Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>: ToJsonResult + Framable,
 {
+    let _ = ppp;
     let res = make_num_pipeline_nty_end_evs_enp_stat::<_, _, _, ENP>(event_value_shape, query, node_config)?;
     let s = PPP::convert(res.stream);
     let ret = BinnedResponseDyn {
@@ -373,12 +350,15 @@ fn make_num_pipeline_entry<PPP>(
 ) -> Result<BinnedResponseDyn, Error>
 where
     PPP: PipelinePostProcessA,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<u16>>,
     PPP: PipelinePostProcessB<MinMaxAvgBins<i32>>,
     PPP: PipelinePostProcessB<MinMaxAvgBins<f64>>,
 {
     match scalar_type {
+        ScalarType::U16 => match_end!(u16, byte_order, shape, query, ppp, node_config),
         ScalarType::I32 => match_end!(i32, byte_order, shape, query, ppp, node_config),
         ScalarType::F64 => match_end!(f64, byte_order, shape, query, ppp, node_config),
+        // TODO complete set
         _ => todo!(),
     }
 }
@@ -390,6 +370,7 @@ async fn make_num_pipeline<PPP>(
 ) -> Result<BinnedResponseDyn, Error>
 where
     PPP: PipelinePostProcessA,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<u16>>,
     PPP: PipelinePostProcessB<MinMaxAvgBins<i32>>,
     PPP: PipelinePostProcessB<MinMaxAvgBins<f64>>,
 {
@@ -445,7 +426,7 @@ impl PipelinePostProcessA for Ppp1 {
 pub trait PipelinePostProcessB<T> {
     fn convert(
         inp: Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>,
-    ) -> Pin<Box<dyn Stream<Item = Sitemty<Box<dyn BinnedResponseItem>>> + Send>>;
+    ) -> Pin<Box<dyn Stream<Item = Box<dyn BinnedResponseItem>> + Send>>;
 }
 
 impl<NTY> PipelinePostProcessB<MinMaxAvgBins<NTY>> for Ppp1
@@ -454,20 +435,8 @@ where
 {
     fn convert(
         inp: Pin<Box<dyn Stream<Item = Sitemty<MinMaxAvgBins<NTY>>> + Send>>,
-    ) -> Pin<Box<dyn Stream<Item = Sitemty<Box<dyn BinnedResponseItem>>> + Send>> {
-        let s = StreamExt::map(inp, |item| match item {
-            Ok(item) => Ok(match item {
-                StreamItem::DataItem(item) => StreamItem::DataItem(match item {
-                    RangeCompletableItem::Data(item) => {
-                        RangeCompletableItem::Data(Box::new(item) as Box<dyn BinnedResponseItem>)
-                    }
-                    RangeCompletableItem::RangeComplete => RangeCompletableItem::RangeComplete,
-                }),
-                StreamItem::Log(item) => StreamItem::Log(item),
-                StreamItem::Stats(item) => StreamItem::Stats(item),
-            }),
-            Err(e) => Err(e),
-        });
+    ) -> Pin<Box<dyn Stream<Item = Box<dyn BinnedResponseItem>> + Send>> {
+        let s = StreamExt::map(inp, |item| Box::new(item) as Box<dyn BinnedResponseItem>);
         Box::pin(s)
     }
 }
@@ -478,29 +447,7 @@ pub async fn binned_bytes_for_http(
 ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>, Error> {
     let pl = make_num_pipeline::<Ppp1>(query, Ppp1 {}, node_config).await?;
     let ret = pl.stream.map(|item| {
-        // TODO
-
-        // TODO
-
-        // Even for the "common" frame types I need the type of the inner item because the serialization
-        // depends on the full type. The representation of the "common" variants are not necessarily
-        // the same for different inner type!
-
-        // Therefore, need a "make frame" on the full Sitemty<Box<BinnedResponseItem>>
-
-        let fr = match item {
-            Ok(item) => match item {
-                StreamItem::DataItem(item) => match item {
-                    RangeCompletableItem::Data(item) => item.make_data_frame(),
-                    RangeCompletableItem::RangeComplete => {
-                        make_frame(&Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)))
-                    }
-                },
-                StreamItem::Log(item) => make_frame(&Ok(StreamItem::Log(item))),
-                StreamItem::Stats(item) => make_frame(&Ok(StreamItem::Stats(item))),
-            },
-            Err(e) => make_frame(&Err(e)),
-        };
+        let fr = item.make_frame();
         let fr = fr?;
         Ok(fr.freeze())
     });
@@ -1057,25 +1004,7 @@ where
     }
 }
 
-impl<NTY> DataFramable for MinMaxAvgBins<NTY>
-where
-    NTY: NumOps,
-    Sitemty<Self>: FrameType,
-{
-    fn make_data_frame(&self) -> Result<BytesMut, Error> {
-        let item = Self {
-            ts1s: self.ts1s.clone(),
-            ts2s: self.ts2s.clone(),
-            counts: self.counts.clone(),
-            mins: self.mins.clone(),
-            maxs: self.maxs.clone(),
-            avgs: self.avgs.clone(),
-        };
-        make_frame(&Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))))
-    }
-}
-
-impl<NTY> ToJsonResult for MinMaxAvgBins<NTY>
+impl<NTY> ToJsonResult for Sitemty<MinMaxAvgBins<NTY>>
 where
     NTY: NumOps,
 {

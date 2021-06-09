@@ -5,8 +5,9 @@ use disk::agg::streams::{Bins, StatsItem, StreamItem};
 use disk::binned::query::{BinnedQuery, CacheUsage};
 use disk::binned::{MinMaxAvgBins, RangeCompletableItem, WithLen};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
-use disk::frame::makeframe::FrameType;
+use disk::frame::makeframe::{FrameType, SubFrId};
 use disk::streamlog::Streamlog;
+use disk::Sitemty;
 use err::Error;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
@@ -14,6 +15,8 @@ use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
 use netpod::{AggKind, Channel, Cluster, Database, HostPort, NanoRange, Node, PerfOpts};
+use serde::de::DeserializeOwned;
+use std::fmt::Debug;
 use std::future::ready;
 use std::sync::{Arc, Mutex};
 use tokio::io::AsyncRead;
@@ -82,7 +85,7 @@ async fn get_binned_binary_inner() -> Result<(), Error> {
     let rh = require_test_hosts_running()?;
     let cluster = &rh.cluster;
     if true {
-        get_binned_channel(
+        get_binned_channel::<f64>(
             "wave-f64-be-n21",
             "1970-01-01T00:20:10.000Z",
             "1970-01-01T00:20:30.000Z",
@@ -93,8 +96,8 @@ async fn get_binned_binary_inner() -> Result<(), Error> {
         )
         .await?;
     }
-    if false {
-        get_binned_channel(
+    if true {
+        get_binned_channel::<u16>(
             "wave-u16-le-n77",
             "1970-01-01T01:11:00.000Z",
             "1970-01-01T01:35:00.000Z",
@@ -105,8 +108,8 @@ async fn get_binned_binary_inner() -> Result<(), Error> {
         )
         .await?;
     }
-    if false {
-        get_binned_channel(
+    if true {
+        get_binned_channel::<u16>(
             "wave-u16-le-n77",
             "1970-01-01T01:42:00.000Z",
             "1970-01-01T03:55:00.000Z",
@@ -120,23 +123,23 @@ async fn get_binned_binary_inner() -> Result<(), Error> {
     Ok(())
 }
 
-async fn get_binned_channel<S>(
+async fn get_binned_channel<NTY>(
     channel_name: &str,
-    beg_date: S,
-    end_date: S,
+    beg_date: &str,
+    end_date: &str,
     bin_count: u32,
     cluster: &Cluster,
     expect_range_complete: bool,
     expect_bin_count: u64,
 ) -> Result<BinnedResponse, Error>
 where
-    S: AsRef<str>,
+    NTY: Debug + SubFrId + DeserializeOwned,
 {
     let t1 = Utc::now();
     let agg_kind = AggKind::DimXBins1;
     let node0 = &cluster.nodes[0];
-    let beg_date: DateTime<Utc> = beg_date.as_ref().parse()?;
-    let end_date: DateTime<Utc> = end_date.as_ref().parse()?;
+    let beg_date: DateTime<Utc> = beg_date.parse()?;
+    let end_date: DateTime<Utc> = end_date.parse()?;
     let channel_backend = "testbackend";
     let perf_opts = PerfOpts { inmem_bufcap: 512 };
     let channel = Channel {
@@ -161,7 +164,7 @@ where
     }
     let s1 = disk::cache::HttpBodyAsAsyncRead::new(res);
     let s2 = InMemoryFrameAsyncReadStream::new(s1, perf_opts.inmem_bufcap);
-    let res = consume_binned_response(s2).await?;
+    let res = consume_binned_response::<NTY, _>(s2).await?;
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     info!("get_cached_0  DONE  bin_count {}  time {} ms", res.bin_count, ms);
@@ -209,8 +212,9 @@ impl BinnedResponse {
     }
 }
 
-async fn consume_binned_response<T>(inp: InMemoryFrameAsyncReadStream<T>) -> Result<BinnedResponse, Error>
+async fn consume_binned_response<NTY, T>(inp: InMemoryFrameAsyncReadStream<T>) -> Result<BinnedResponse, Error>
 where
+    NTY: Debug + SubFrId + DeserializeOwned,
     T: AsyncRead + Unpin,
 {
     let s1 = inp
@@ -227,11 +231,10 @@ where
                         None
                     }
                     StreamItem::DataItem(frame) => {
-                        type ExpectedType = Result<StreamItem<RangeCompletableItem<MinMaxAvgBins<f64>>>, Error>;
-                        if frame.tyid() != <ExpectedType as FrameType>::FRAME_TYPE_ID {
+                        if frame.tyid() != <Sitemty<MinMaxAvgBins<NTY>> as FrameType>::FRAME_TYPE_ID {
                             error!("test receives unexpected tyid {:x}", frame.tyid());
                         }
-                        match bincode::deserialize::<ExpectedType>(frame.buf()) {
+                        match bincode::deserialize::<Sitemty<MinMaxAvgBins<NTY>>>(frame.buf()) {
                             Ok(item) => match item {
                                 Ok(item) => match item {
                                     StreamItem::Log(item) => {
