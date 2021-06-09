@@ -23,14 +23,6 @@ pub mod eventbatch;
 pub mod scalarbinbatch;
 pub mod streams;
 
-pub trait AggregatableXdim1Bin<SK>
-where
-    SK: StreamKind,
-{
-    type Output: AggregatableXdim1Bin<SK>;
-    fn into_agg(self) -> Self::Output;
-}
-
 /// Batch of events with a scalar (zero dimensions) numeric value.
 pub struct ValuesDim0 {
     tss: Vec<u64>,
@@ -46,60 +38,6 @@ impl std::fmt::Debug for ValuesDim0 {
             self.tss.first(),
             self.tss.last()
         )
-    }
-}
-
-// TODO get rid of AggregatableXdim1Bin and ValuesDim1
-impl<SK> AggregatableXdim1Bin<SK> for ValuesDim1
-where
-    SK: StreamKind,
-{
-    type Output = MinMaxAvgScalarEventBatch;
-
-    fn into_agg(self) -> Self::Output {
-        let mut ret = MinMaxAvgScalarEventBatch {
-            tss: Vec::with_capacity(self.tss.len()),
-            mins: Vec::with_capacity(self.tss.len()),
-            maxs: Vec::with_capacity(self.tss.len()),
-            avgs: Vec::with_capacity(self.tss.len()),
-        };
-        for i1 in 0..self.tss.len() {
-            let ts = self.tss[i1];
-            let mut min = f32::MAX;
-            let mut max = f32::MIN;
-            let mut sum = f32::NAN;
-            let mut count = 0;
-            let vals = &self.values[i1];
-            for i2 in 0..vals.len() {
-                let v = vals[i2];
-                min = min.min(v);
-                max = max.max(v);
-                if v.is_nan() {
-                } else {
-                    if sum.is_nan() {
-                        sum = v;
-                    } else {
-                        sum += v;
-                    }
-                    count += 1;
-                }
-            }
-            if min == f32::MAX {
-                min = f32::NAN;
-            }
-            if max == f32::MIN {
-                max = f32::NAN;
-            }
-            ret.tss.push(ts);
-            ret.mins.push(min);
-            ret.maxs.push(max);
-            if sum.is_nan() {
-                ret.avgs.push(sum);
-            } else {
-                ret.avgs.push(sum / count as f32);
-            }
-        }
-        ret
     }
 }
 
@@ -144,53 +82,6 @@ impl std::fmt::Debug for ValuesDim1 {
             self.tss.first(),
             self.tss.last()
         )
-    }
-}
-
-impl<SK> AggregatableXdim1Bin<SK> for ValuesDim0
-where
-    SK: StreamKind,
-{
-    type Output = MinMaxAvgScalarEventBatch;
-
-    fn into_agg(self) -> Self::Output {
-        let mut ret = MinMaxAvgScalarEventBatch {
-            tss: Vec::with_capacity(self.tss.len()),
-            mins: Vec::with_capacity(self.tss.len()),
-            maxs: Vec::with_capacity(self.tss.len()),
-            avgs: Vec::with_capacity(self.tss.len()),
-        };
-        // TODO stats are not yet in ValuesDim0
-        err::todoval::<u32>();
-        //if self.range_complete_observed {
-        //    ret.range_complete_observed = true;
-        //}
-        for i1 in 0..self.tss.len() {
-            let ts = self.tss[i1];
-            let mut min = f32::MAX;
-            let mut max = f32::MIN;
-            let mut sum = 0f32;
-            let vals = &self.values[i1];
-            assert!(vals.len() > 0);
-            for i2 in 0..vals.len() {
-                let v = vals[i2];
-                //info!("value  {}  {}  {}", i1, i2, v);
-                min = min.min(v);
-                max = max.max(v);
-                sum += v;
-            }
-            if min == f32::MAX {
-                min = f32::NAN;
-            }
-            if max == f32::MIN {
-                max = f32::NAN;
-            }
-            ret.tss.push(ts);
-            ret.mins.push(min);
-            ret.maxs.push(max);
-            ret.avgs.push(sum / vals.len() as f32);
-        }
-        ret
     }
 }
 

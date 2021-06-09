@@ -1,6 +1,5 @@
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::{Appendable, StreamItem};
-use crate::agg::AggregatableXdim1Bin;
 use crate::binned::{MakeBytesFrame, RangeCompletableItem, RangeOverlapInfo, StreamKind};
 use crate::frame::makeframe::make_frame;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -97,16 +96,6 @@ impl std::fmt::Debug for MinMaxAvgScalarEventBatch {
             self.maxs,
             self.avgs,
         )
-    }
-}
-
-impl<SK> AggregatableXdim1Bin<SK> for MinMaxAvgScalarEventBatch
-where
-    SK: StreamKind,
-{
-    type Output = MinMaxAvgScalarEventBatch;
-    fn into_agg(self) -> Self::Output {
-        self
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::agg::streams::{Appendable, StreamItem, ToJsonBytes};
-use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
+use crate::agg::{Fits, FitsInside};
 use crate::binned::{MakeBytesFrame, RangeCompletableItem, StreamKind};
 use crate::frame::makeframe::make_frame;
 use bytes::{BufMut, Bytes, BytesMut};
@@ -181,16 +181,6 @@ impl MinMaxAvgScalarBinBatch {
             g.put(a);
         }
         g.freeze()
-    }
-}
-
-impl<SK> AggregatableXdim1Bin<SK> for MinMaxAvgScalarBinBatch
-where
-    SK: StreamKind,
-{
-    type Output = MinMaxAvgScalarBinBatch;
-    fn into_agg(self) -> Self::Output {
-        todo!()
     }
 }
 
