@@ -8,7 +8,7 @@ use crate::agg::streams::{Appendable, Collectable, Collector, StreamItem, ToJson
 use crate::agg::{Fits, FitsInside};
 use crate::binned::binnedfrompbv::BinnedFromPreBinned;
 use crate::binned::query::{BinnedQuery, PreBinnedQuery};
-use crate::binnedstream::{BinnedScalarStreamFromPreBinnedPatches, BoxedStream};
+use crate::binnedstream::BoxedStream;
 use crate::cache::MergedFromRemotes;
 use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValues, EventValuesDim0Case, EventValuesDim1Case,
@@ -1283,18 +1283,7 @@ impl StreamKind for BinnedStreamKindScalar {
         pre_range: PreBinnedPatchRange,
         node_config: &NodeConfigCached,
     ) -> Result<Self::TBinnedStreamType, Error> {
-        let s = BinnedScalarStreamFromPreBinnedPatches::new(
-            PreBinnedPatchIterator::from_range(pre_range),
-            query.channel().clone(),
-            range.clone(),
-            query.agg_kind().clone(),
-            query.cache_usage().clone(),
-            node_config,
-            query.disk_stats_every().clone(),
-            query.report_error(),
-            self.clone(),
-        )?;
-        Ok(BoxedStream::new(Box::pin(s))?)
+        err::todoval()
     }
 
     fn new_binned_from_merged(
