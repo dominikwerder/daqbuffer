@@ -8,10 +8,7 @@ use crate::agg::binnedt4::{
 use crate::agg::enp::{Identity, WaveXBinner, XBinnedScalarEvents};
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
-use crate::agg::streams::{
-    Appendable, Collectable, Collectable2, Collected, CollectionSpec2, CollectionSpecMaker2, Collector, StreamItem,
-    ToJsonBytes, ToJsonResult,
-};
+use crate::agg::streams::{Appendable, Collectable, Collector, StreamItem, ToJsonBytes, ToJsonResult};
 use crate::agg::{Fits, FitsInside};
 use crate::binned::binnedfrompbv::BinnedFromPreBinned;
 use crate::binned::query::{BinnedQuery, PreBinnedQuery};
@@ -59,104 +56,6 @@ pub mod scalar;
 pub struct BinnedStreamRes<I> {
     pub binned_stream: BoxedStream<Result<StreamItem<RangeCompletableItem<I>>, Error>>,
     pub range: BinnedRange,
-}
-
-pub struct MinMaxAvgScalarBinBatchCollected {
-    batch: MinMaxAvgScalarBinBatch,
-    timed_out: bool,
-    finalised_range: bool,
-    bin_count_exp: u32,
-}
-
-impl MinMaxAvgScalarBinBatchCollected {
-    pub fn empty(bin_count_exp: u32) -> Self {
-        Self {
-            batch: MinMaxAvgScalarBinBatch::empty(),
-            timed_out: false,
-            finalised_range: false,
-            bin_count_exp,
-        }
-    }
-}
-
-impl Collected for MinMaxAvgScalarBinBatchCollected {
-    fn new(bin_count_exp: u32) -> Self {
-        Self::empty(bin_count_exp)
-    }
-
-    fn timed_out(&mut self, k: bool) {
-        self.timed_out = k;
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MinMaxAvgScalarBinBatchCollectedJsonResult {
-    #[serde(rename = "tsBinEdges")]
-    ts_bin_edges: Vec<IsoDateTime>,
-    counts: Vec<u64>,
-    mins: Vec<f32>,
-    maxs: Vec<f32>,
-    avgs: Vec<f32>,
-    #[serde(skip_serializing_if = "Bool::is_false", rename = "finalisedRange")]
-    finalised_range: bool,
-    #[serde(skip_serializing_if = "Zero::is_zero", rename = "missingBins")]
-    missing_bins: u32,
-    #[serde(skip_serializing_if = "Option::is_none", rename = "continueAt")]
-    continue_at: Option<IsoDateTime>,
-}
-
-impl ToJsonBytes for MinMaxAvgScalarBinBatchCollectedJsonResult {
-    fn to_json_bytes(&self) -> Result<Vec<u8>, Error> {
-        Ok(serde_json::to_vec(self)?)
-    }
-}
-
-impl ToJsonResult for MinMaxAvgScalarBinBatchCollected {
-    fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error> {
-        let mut tsa: Vec<_> = self
-            .batch
-            .ts1s
-            .iter()
-            .map(|&k| IsoDateTime(Utc.timestamp_nanos(k as i64)))
-            .collect();
-        if let Some(&z) = self.batch.ts2s.last() {
-            tsa.push(IsoDateTime(Utc.timestamp_nanos(z as i64)));
-        }
-        let continue_at = if self.batch.ts1s.len() < self.bin_count_exp as usize {
-            match tsa.last() {
-                Some(k) => Some(k.clone()),
-                None => Err(Error::with_msg("partial_content but no bin in result"))?,
-            }
-        } else {
-            None
-        };
-        let ret = MinMaxAvgScalarBinBatchCollectedJsonResult {
-            counts: self.batch.counts.clone(),
-            mins: self.batch.mins.clone(),
-            maxs: self.batch.maxs.clone(),
-            avgs: self.batch.avgs.clone(),
-            missing_bins: self.bin_count_exp - self.batch.ts1s.len() as u32,
-            finalised_range: self.finalised_range,
-            ts_bin_edges: tsa,
-            continue_at,
-        };
-        Ok(Box::new(ret))
-    }
-}
-
-impl ToJsonResult for MinMaxAvgScalarBinBatch {
-    fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error> {
-        err::todo();
-        let ret = MinMaxAvgScalarBinBatch {
-            ts1s: self.ts1s.clone(),
-            ts2s: self.ts2s.clone(),
-            counts: self.counts.clone(),
-            mins: self.mins.clone(),
-            maxs: self.maxs.clone(),
-            avgs: self.avgs.clone(),
-        };
-        Ok(Box::new(ret))
-    }
 }
 
 pub struct BinnedResponseStat<T> {
@@ -616,7 +515,6 @@ where
     let mut i1 = 0;
     let mut stream = stream;
     loop {
-        // TODO use the trait instead to check if we have already at least one bin in the result:
         let item = if i1 == 0 {
             stream.next().await
         } else {
@@ -677,7 +575,7 @@ where
     buf: Vec<u8>,
     all: Vec<u8>,
     file: Option<File>,
-    _marker: std::marker::PhantomData<T>,
+    _m1: PhantomData<T>,
 }
 
 impl<T> ReadPbv<T>
@@ -690,7 +588,7 @@ where
             buf: vec![0; 1024 * 32],
             all: vec![],
             file: Some(file),
-            _marker: std::marker::PhantomData::default(),
+            _m1: PhantomData,
         }
     }
 }
@@ -1087,43 +985,9 @@ impl<NTY> MinMaxAvgBinsCollected<NTY> {
     }
 }
 
-impl<NTY> Collectable2 for MinMaxAvgBins<NTY>
-where
-    NTY: 'static,
-{
-    fn as_any_ref(&self) -> &dyn Any {
-        self
-    }
-
-    fn append(&mut self, src: &dyn Any) {
-        todo!()
-    }
-}
-
 pub struct MinMaxAvgBinsCollectionSpec<NTY> {
     bin_count_exp: u32,
     _m1: PhantomData<NTY>,
-}
-
-impl<NTY> CollectionSpec2 for MinMaxAvgBinsCollectionSpec<NTY>
-where
-    NTY: 'static,
-{
-    fn empty(&self) -> Box<dyn Collectable2> {
-        Box::new(MinMaxAvgBins::<NTY>::empty())
-    }
-}
-
-impl<NTY> CollectionSpecMaker2 for MinMaxAvgBins<NTY>
-where
-    NTY: 'static,
-{
-    fn spec(bin_count_exp: u32) -> Box<dyn CollectionSpec2> {
-        Box::new(MinMaxAvgBinsCollectionSpec::<NTY> {
-            bin_count_exp,
-            _m1: PhantomData,
-        })
-    }
 }
 
 #[derive(Serialize)]
