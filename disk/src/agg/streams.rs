@@ -17,11 +17,6 @@ pub enum StreamItem<T> {
     Stats(StatsItem),
 }
 
-// TODO remove in favor of WithLen:
-pub trait Bins {
-    fn bin_count(&self) -> u32;
-}
-
 pub trait Collector {
     type Input: Collectable;
     type Output: Serialize;

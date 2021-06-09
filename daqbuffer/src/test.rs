@@ -1,7 +1,7 @@
 use crate::spawn_test_hosts;
 use bytes::BytesMut;
 use chrono::{DateTime, Utc};
-use disk::agg::streams::{Bins, StatsItem, StreamItem};
+use disk::agg::streams::{StatsItem, StreamItem};
 use disk::binned::query::{BinnedQuery, CacheUsage};
 use disk::binned::{MinMaxAvgBins, RangeCompletableItem, WithLen};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;

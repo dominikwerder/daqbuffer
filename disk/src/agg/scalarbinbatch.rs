@@ -1,5 +1,5 @@
 use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
-use crate::agg::streams::{Appendable, Bins, StreamItem, ToJsonBytes};
+use crate::agg::streams::{Appendable, StreamItem, ToJsonBytes};
 use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
 use crate::binned::{MakeBytesFrame, RangeCompletableItem, StreamKind};
 use crate::frame::makeframe::make_frame;
@@ -204,12 +204,6 @@ where
 
     fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator {
         MinMaxAvgScalarBinBatchAggregator::new(ts1, ts2)
-    }
-}
-
-impl Bins for MinMaxAvgScalarBinBatch {
-    fn bin_count(&self) -> u32 {
-        self.ts1s.len() as u32
     }
 }
 
