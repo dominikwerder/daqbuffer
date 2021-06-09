@@ -1,9 +1,6 @@
 use crate::agg::binnedt2::AggregatableTdim2;
 use crate::agg::binnedt3::{Agg3, BinnedT3Stream};
-use crate::agg::binnedt4::{
-    DefaultScalarEventsTimeBinner, DefaultSingleXBinTimeBinner, TBinnerStream, TimeBinnableType,
-    TimeBinnableTypeAggregator,
-};
+use crate::agg::binnedt4::{TBinnerStream, TimeBinnableType, TimeBinnableTypeAggregator};
 use crate::agg::enp::{Identity, WaveXBinner, XBinnedScalarEvents};
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
@@ -770,29 +767,6 @@ pub trait TimeBins: Send + Unpin + WithLen + Appendable + FilterFittingInside {
     fn ts2s(&self) -> &Vec<u64>;
 }
 
-// TODO remove in favor of the one in binnedt4
-pub trait EventsTimeBinner: Send + Unpin {
-    type Input: Unpin + RangeOverlapInfo;
-    type Output: TimeBins;
-    type Aggregator: EventsTimeBinnerAggregator<Input = Self::Input, Output = Self::Output> + Unpin;
-    fn aggregator(range: NanoRange) -> Self::Aggregator;
-}
-
-// TODO remove in favor of the one in binnedt4
-pub trait EventsTimeBinnerAggregator: Send {
-    type Input: Unpin;
-    type Output: Unpin;
-    fn range(&self) -> &NanoRange;
-    fn ingest(&mut self, item: &Self::Input);
-    fn result(self) -> Self::Output;
-}
-
-pub trait BinsTimeBinner {
-    type Input: TimeBins;
-    type Output: TimeBins;
-    fn process(inp: Self::Input) -> Self::Output;
-}
-
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MinMaxAvgBins<NTY> {
     pub ts1s: Vec<u64>,
@@ -1120,27 +1094,6 @@ where
     }
 }
 
-// TODO after refactor get rid of this impl:
-impl<NTY> EventsTimeBinnerAggregator for MinMaxAvgAggregator<NTY>
-where
-    NTY: NumOps,
-{
-    type Input = EventValues<NTY>;
-    type Output = MinMaxAvgBins<NTY>;
-
-    fn range(&self) -> &NanoRange {
-        &self.range
-    }
-
-    fn ingest(&mut self, item: &Self::Input) {
-        todo!()
-    }
-
-    fn result(self) -> Self::Output {
-        todo!()
-    }
-}
-
 pub struct MinMaxAvgBinsAggregator<NTY> {
     range: NanoRange,
     count: u32,
@@ -1259,27 +1212,6 @@ impl<NTY> SingleXBinAggregator<NTY> {
             max: None,
             avg: None,
         }
-    }
-}
-
-impl<NTY> EventsTimeBinnerAggregator for SingleXBinAggregator<NTY>
-where
-    NTY: NumOps,
-{
-    type Input = XBinnedScalarEvents<NTY>;
-    // TODO do I need another type to carry the x-bin count as well?  No xbincount is static anyways.
-    type Output = MinMaxAvgBins<NTY>;
-
-    fn range(&self) -> &NanoRange {
-        &self.range
-    }
-
-    fn ingest(&mut self, item: &Self::Input) {
-        todo!()
-    }
-
-    fn result(self) -> Self::Output {
-        todo!()
     }
 }
 

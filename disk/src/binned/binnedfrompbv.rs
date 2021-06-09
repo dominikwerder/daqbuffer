@@ -1,7 +1,7 @@
 use crate::agg::binnedt4::{TBinnerStream, TimeBinnableType, TimeBinnableTypeAggregator};
 use crate::agg::streams::StreamItem;
 use crate::binned::query::{CacheUsage, PreBinnedQuery};
-use crate::binned::{EventsTimeBinner, RangeCompletableItem};
+use crate::binned::RangeCompletableItem;
 use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{decode_frame, FrameType};

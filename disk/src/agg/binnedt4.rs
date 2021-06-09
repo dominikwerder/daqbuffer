@@ -3,8 +3,8 @@ use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::{Appendable, StreamItem};
 use crate::binned::{
-    BinsTimeBinner, EventsTimeBinner, EventsTimeBinnerAggregator, FilterFittingInside, MinMaxAvgAggregator,
-    MinMaxAvgBins, NumOps, RangeCompletableItem, RangeOverlapInfo, ReadPbv, ReadableFromFile, SingleXBinAggregator,
+    FilterFittingInside, MinMaxAvgAggregator, MinMaxAvgBins, NumOps, RangeCompletableItem, RangeOverlapInfo, ReadPbv,
+    ReadableFromFile, SingleXBinAggregator,
 };
 use crate::decode::{EventValues, MinMaxAvgScalarEventBatchGen};
 use crate::frame::makeframe::Framable;
@@ -21,129 +21,13 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::fs::File;
 
-// TODO no longer needed
-pub struct DefaultScalarEventsTimeBinner<VT> {
-    _m1: PhantomData<VT>,
-}
-
-impl<NTY> EventsTimeBinner for DefaultScalarEventsTimeBinner<NTY>
-where
-    NTY: NumOps,
-{
-    type Input = EventValues<NTY>;
-    type Output = MinMaxAvgBins<NTY>;
-    type Aggregator = MinMaxAvgAggregator<NTY>;
-
-    fn aggregator(range: NanoRange) -> Self::Aggregator {
-        Self::Aggregator::new(range)
-    }
-}
-
-// TODO no longer needed
-pub struct DefaultSingleXBinTimeBinner<VT> {
-    _m1: PhantomData<VT>,
-}
-
-impl<NTY> EventsTimeBinner for DefaultSingleXBinTimeBinner<NTY>
-where
-    NTY: NumOps,
-{
-    type Input = XBinnedScalarEvents<NTY>;
-    // TODO is that output type good enough for now? Maybe better with a new one also
-    // to distinguish from the earlier one.
-    type Output = MinMaxAvgBins<NTY>;
-    type Aggregator = SingleXBinAggregator<NTY>;
-
-    fn aggregator(range: NanoRange) -> Self::Aggregator {
-        Self::Aggregator::new(range)
-    }
-}
-
 pub struct DefaultBinsTimeBinner<NTY> {
     _m1: PhantomData<NTY>,
-}
-
-impl<NTY> BinsTimeBinner for DefaultBinsTimeBinner<NTY>
-where
-    NTY: NumOps,
-{
-    type Input = MinMaxAvgBins<NTY>;
-    type Output = MinMaxAvgBins<NTY>;
-
-    fn process(inp: Self::Input) -> Self::Output {
-        todo!()
-    }
 }
 
 pub trait Aggregator3Tdim {
     type InputValue;
     type OutputValue;
-}
-
-pub struct Agg3 {
-    range: NanoRange,
-    count: u64,
-    min: f32,
-    max: f32,
-    sum: f32,
-    sumc: u64,
-}
-
-impl Agg3 {
-    fn new(range: NanoRange) -> Self {
-        Self {
-            range,
-            count: 0,
-            min: f32::MAX,
-            max: f32::MIN,
-            sum: f32::NAN,
-            sumc: 0,
-        }
-    }
-
-    fn ingest(&mut self, item: &MinMaxAvgScalarEventBatch) {
-        for i1 in 0..item.tss.len() {
-            let ts = item.tss[i1];
-            if ts < self.range.beg {
-                continue;
-            } else if ts >= self.range.end {
-                continue;
-            } else {
-                self.count += 1;
-                self.min = self.min.min(item.mins[i1]);
-                self.max = self.max.max(item.maxs[i1]);
-                let x = item.avgs[i1];
-                if x.is_nan() {
-                } else {
-                    if self.sum.is_nan() {
-                        self.sum = x;
-                    } else {
-                        self.sum += x;
-                    }
-                    self.sumc += 1;
-                }
-            }
-        }
-    }
-
-    fn result(self) -> Vec<MinMaxAvgScalarBinBatch> {
-        let min = if self.min == f32::MAX { f32::NAN } else { self.min };
-        let max = if self.max == f32::MIN { f32::NAN } else { self.max };
-        let avg = if self.sumc == 0 {
-            f32::NAN
-        } else {
-            self.sum / self.sumc as f32
-        };
-        let v = MinMaxAvgScalarBinBatch {
-            ts1s: vec![self.range.beg],
-            ts2s: vec![self.range.end],
-            counts: vec![self.count],
-            mins: vec![min],
-            maxs: vec![max],
-            avgs: vec![avg],
-        };
-        vec![v]
-    }
 }
 
 pub trait TimeBinnableTypeAggregator: Send {

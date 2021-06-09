@@ -3,8 +3,8 @@ use crate::agg::streams::{Appendable, StreamItem};
 use crate::binned::binnedfrompbv::FetchedPreBinned;
 use crate::binned::query::{CacheUsage, PreBinnedQuery};
 use crate::binned::{
-    BinnedStreamKindScalar, BinsTimeBinner, EventsNodeProcessor, EventsTimeBinner, NumOps, PushableIndex,
-    RangeCompletableItem, ReadableFromFile, StreamKind, WithLen,
+    BinnedStreamKindScalar, EventsNodeProcessor, NumOps, PushableIndex, RangeCompletableItem, ReadableFromFile,
+    StreamKind, WithLen,
 };
 use crate::cache::pbvfs::PreBinnedScalarValueFetchedStream;
 use crate::cache::{write_pb_cache_min_max_avg_scalar, CacheFileDesc, MergedFromRemotes, WrittenPbCache};

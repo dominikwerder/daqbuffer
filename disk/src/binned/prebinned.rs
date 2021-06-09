@@ -1,6 +1,4 @@
-use crate::agg::binnedt4::{
-    DefaultBinsTimeBinner, DefaultScalarEventsTimeBinner, DefaultSingleXBinTimeBinner, TimeBinnableType,
-};
+use crate::agg::binnedt4::{DefaultBinsTimeBinner, TimeBinnableType};
 use crate::agg::enp::{Identity, WaveXBinner};
 use crate::agg::streams::{Appendable, StreamItem};
 // use crate::binned::pbv2::{
@@ -8,10 +6,7 @@ use crate::agg::streams::{Appendable, StreamItem};
 // };
 use crate::binned::pbv::PreBinnedValueStream;
 use crate::binned::query::PreBinnedQuery;
-use crate::binned::{
-    BinsTimeBinner, EventsNodeProcessor, EventsTimeBinner, NumOps, PushableIndex, RangeCompletableItem,
-    ReadableFromFile, StreamKind,
-};
+use crate::binned::{EventsNodeProcessor, NumOps, PushableIndex, RangeCompletableItem, ReadableFromFile, StreamKind};
 use crate::cache::node_ix_for_patch;
 use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
