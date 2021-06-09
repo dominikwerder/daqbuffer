@@ -1,4 +1,3 @@
-use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
 use crate::agg::streams::{Appendable, StreamItem, ToJsonBytes};
 use crate::agg::{AggregatableXdim1Bin, Fits, FitsInside};
 use crate::binned::{MakeBytesFrame, RangeCompletableItem, StreamKind};
@@ -195,18 +194,6 @@ where
     }
 }
 
-impl<SK> AggregatableTdim<SK> for MinMaxAvgScalarBinBatch
-where
-    SK: StreamKind,
-{
-    //type Output = MinMaxAvgScalarBinBatch;
-    type Aggregator = MinMaxAvgScalarBinBatchAggregator;
-
-    fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator {
-        MinMaxAvgScalarBinBatchAggregator::new(ts1, ts2)
-    }
-}
-
 pub struct MinMaxAvgScalarBinBatchAggregator {
     ts1: u64,
     ts2: u64,
@@ -228,80 +215,6 @@ impl MinMaxAvgScalarBinBatchAggregator {
             sum: 0f32,
             sumc: 0,
         }
-    }
-}
-
-impl<SK> AggregatorTdim<SK> for MinMaxAvgScalarBinBatchAggregator
-where
-    SK: StreamKind,
-{
-    type InputValue = MinMaxAvgScalarBinBatch;
-    type OutputValue = MinMaxAvgScalarBinBatch;
-
-    fn ends_before(&self, inp: &Self::InputValue) -> bool {
-        match inp.ts2s.last() {
-            Some(&ts) => ts <= self.ts1,
-            None => true,
-        }
-    }
-
-    fn ends_after(&self, inp: &Self::InputValue) -> bool {
-        match inp.ts2s.last() {
-            Some(&ts) => ts >= self.ts2,
-            _ => panic!(),
-        }
-    }
-
-    fn starts_after(&self, inp: &Self::InputValue) -> bool {
-        match inp.ts1s.first() {
-            Some(&ts) => ts >= self.ts2,
-            _ => panic!(),
-        }
-    }
-
-    fn ingest(&mut self, v: &mut Self::InputValue) {
-        for i1 in 0..v.ts1s.len() {
-            let ts1 = v.ts1s[i1];
-            let ts2 = v.ts2s[i1];
-            if ts2 <= self.ts1 {
-                continue;
-            } else if ts1 >= self.ts2 {
-                continue;
-            } else {
-                self.count += v.counts[i1];
-                self.min = self.min.min(v.mins[i1]);
-                self.max = self.max.max(v.maxs[i1]);
-                let x = v.avgs[i1];
-                if x.is_nan() {
-                } else {
-                    if self.sum.is_nan() {
-                        self.sum = x;
-                    } else {
-                        self.sum += x;
-                    }
-                    self.sumc += 1;
-                }
-            }
-        }
-    }
-
-    fn result(self) -> Vec<Self::OutputValue> {
-        let min = if self.min == f32::MAX { f32::NAN } else { self.min };
-        let max = if self.max == f32::MIN { f32::NAN } else { self.max };
-        let avg = if self.sumc == 0 {
-            f32::NAN
-        } else {
-            self.sum / self.sumc as f32
-        };
-        let v = MinMaxAvgScalarBinBatch {
-            ts1s: vec![self.ts1],
-            ts2s: vec![self.ts2],
-            counts: vec![self.count],
-            mins: vec![min],
-            maxs: vec![max],
-            avgs: vec![avg],
-        };
-        vec![v]
     }
 }
 

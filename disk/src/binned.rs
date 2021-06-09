@@ -1,4 +1,3 @@
-use crate::agg::binnedt::AggregatableTdim;
 use crate::agg::binnedt2::AggregatableTdim2;
 use crate::agg::binnedt3::{Agg3, BinnedT3Stream};
 use crate::agg::binnedt4::{
@@ -707,16 +706,7 @@ pub trait RangeOverlapInfo {
 }
 
 pub trait XBinnedEvents<SK>:
-    Sized
-    + Unpin
-    + Send
-    + Serialize
-    + DeserializeOwned
-    + AggregatableTdim<SK>
-    + WithLen
-    + WithTimestamps
-    + PushableIndex
-    + Appendable
+    Sized + Unpin + Send + Serialize + DeserializeOwned + WithLen + WithTimestamps + PushableIndex + Appendable
 where
     SK: StreamKind,
 {

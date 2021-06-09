@@ -3,7 +3,6 @@ Aggregation and binning support.
 */
 
 use super::eventchunker::EventFull;
-use crate::agg::binnedt::AggregatableTdim;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::streams::StreamItem;
 use crate::binned::{RangeCompletableItem, StreamKind};
@@ -32,7 +31,7 @@ pub trait AggregatableXdim1Bin<SK>
 where
     SK: StreamKind,
 {
-    type Output: AggregatableXdim1Bin<SK> + AggregatableTdim<SK>;
+    type Output: AggregatableXdim1Bin<SK>;
     fn into_agg(self) -> Self::Output;
 }
 

@@ -1,4 +1,3 @@
-use crate::agg::binnedt::{AggregatableTdim, AggregatorTdim};
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::{Appendable, StreamItem};
 use crate::agg::AggregatableXdim1Bin;
@@ -111,18 +110,6 @@ where
     }
 }
 
-impl<SK> AggregatableTdim<SK> for MinMaxAvgScalarEventBatch
-where
-    SK: StreamKind,
-{
-    //type Output = MinMaxAvgScalarBinBatch;
-    type Aggregator = MinMaxAvgScalarEventBatchAggregator;
-
-    fn aggregator_new_static(ts1: u64, ts2: u64) -> Self::Aggregator {
-        MinMaxAvgScalarEventBatchAggregator::new(ts1, ts2)
-    }
-}
-
 impl MinMaxAvgScalarEventBatch {
     #[allow(dead_code)]
     fn old_serialized(&self) -> Bytes {
@@ -169,85 +156,6 @@ impl MinMaxAvgScalarEventBatchAggregator {
             sum: f32::NAN,
             sumc: 0,
         }
-    }
-}
-
-impl<SK> AggregatorTdim<SK> for MinMaxAvgScalarEventBatchAggregator
-where
-    SK: StreamKind,
-{
-    type InputValue = MinMaxAvgScalarEventBatch;
-    type OutputValue = MinMaxAvgScalarBinBatch;
-
-    fn ends_before(&self, inp: &Self::InputValue) -> bool {
-        match inp.tss.last() {
-            Some(&ts) => ts < self.ts1,
-            None => true,
-        }
-    }
-
-    fn ends_after(&self, inp: &Self::InputValue) -> bool {
-        match inp.tss.last() {
-            Some(&ts) => ts >= self.ts2,
-            None => panic!(),
-        }
-    }
-
-    fn starts_after(&self, inp: &Self::InputValue) -> bool {
-        match inp.tss.first() {
-            Some(&ts) => ts >= self.ts2,
-            None => panic!(),
-        }
-    }
-
-    fn ingest(&mut self, v: &mut Self::InputValue) {
-        for i1 in 0..v.tss.len() {
-            let ts = v.tss[i1];
-            if ts < self.ts1 {
-                continue;
-            } else if ts >= self.ts2 {
-                continue;
-            } else {
-                self.count += 1;
-                self.min = self.min.min(v.mins[i1]);
-                self.max = self.max.max(v.maxs[i1]);
-                let x = v.avgs[i1];
-                if x.is_nan() {
-                } else {
-                    if self.sum.is_nan() {
-                        self.sum = x;
-                    } else {
-                        self.sum += x;
-                    }
-                    self.sumc += 1;
-                }
-            }
-        }
-    }
-
-    fn result(self) -> Vec<Self::OutputValue> {
-        let min = if self.min == f32::MAX { f32::NAN } else { self.min };
-        let max = if self.max == f32::MIN { f32::NAN } else { self.max };
-        let avg = if self.sumc == 0 {
-            f32::NAN
-        } else {
-            self.sum / self.sumc as f32
-        };
-
-        // TODO impl problem:
-        // The return type of this function must be the concrete type that I implement for.
-        // Otherwise I have no chance building that values.
-        // I must somehow differently couple that to the SK.
-
-        let v = MinMaxAvgScalarBinBatch {
-            ts1s: vec![self.ts1],
-            ts2s: vec![self.ts2],
-            counts: vec![self.count],
-            mins: vec![min],
-            maxs: vec![max],
-            avgs: vec![avg],
-        };
-        vec![v]
     }
 }
 
