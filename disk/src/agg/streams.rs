@@ -16,7 +16,7 @@ pub enum StreamItem<T> {
     Stats(StatsItem),
 }
 
-pub trait Collector: WithLen {
+pub trait Collector: Send + Unpin + WithLen {
     type Input: Collectable;
     type Output: Serialize;
     fn ingest(&mut self, src: &Self::Input);

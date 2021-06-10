@@ -14,20 +14,21 @@ use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
 use netpod::{Channel, Cluster, HostPort, NanoRange, PerfOpts};
+use serde_json::Value as JsonValue;
 use std::fmt::Debug;
 use std::future::ready;
 use tokio::io::AsyncRead;
 
 #[test]
-fn get_plain_events_0() {
-    taskrun::run(get_plain_events_0_inner()).unwrap();
+fn get_plain_events_binary_0() {
+    taskrun::run(get_plain_events_binary_0_inner()).unwrap();
 }
 
-async fn get_plain_events_0_inner() -> Result<(), Error> {
+async fn get_plain_events_binary_0_inner() -> Result<(), Error> {
     let rh = require_test_hosts_running()?;
     let cluster = &rh.cluster;
     if true {
-        get_plain_events::<i32>(
+        get_plain_events_binary::<i32>(
             "scalar-i32-be",
             "1970-01-01T00:20:10.000Z",
             "1970-01-01T00:20:50.000Z",
@@ -40,7 +41,7 @@ async fn get_plain_events_0_inner() -> Result<(), Error> {
     Ok(())
 }
 
-async fn get_plain_events<NTY>(
+async fn get_plain_events_binary<NTY>(
     channel_name: &str,
     beg_date: &str,
     end_date: &str,
@@ -78,7 +79,7 @@ where
     }
     let s1 = disk::cache::HttpBodyAsAsyncRead::new(res);
     let s2 = InMemoryFrameAsyncReadStream::new(s1, perf_opts.inmem_bufcap);
-    let res = consume_plain_events::<NTY, _>(s2).await?;
+    let res = consume_plain_events_binary::<NTY, _>(s2).await?;
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     info!("time {} ms", ms);
@@ -122,7 +123,7 @@ impl EventsResponse {
     }
 }
 
-async fn consume_plain_events<NTY, T>(inp: InMemoryFrameAsyncReadStream<T>) -> Result<EventsResponse, Error>
+async fn consume_plain_events_binary<NTY, T>(inp: InMemoryFrameAsyncReadStream<T>) -> Result<EventsResponse, Error>
 where
     NTY: NumOps,
     T: AsyncRead + Unpin,
@@ -207,4 +208,66 @@ where
     let ret = s1.await;
     info!("result: {:?}", ret);
     Ok(ret)
+}
+
+#[test]
+fn get_plain_events_json_0() {
+    taskrun::run(get_plain_events_json_0_inner()).unwrap();
+}
+
+async fn get_plain_events_json_0_inner() -> Result<(), Error> {
+    let rh = require_test_hosts_running()?;
+    let cluster = &rh.cluster;
+    get_plain_events_json(
+        "scalar-i32-be",
+        "1970-01-01T00:20:10.000Z",
+        "1970-01-01T00:20:12.000Z",
+        cluster,
+        true,
+        4,
+    )
+    .await?;
+    Ok(())
+}
+
+async fn get_plain_events_json(
+    channel_name: &str,
+    beg_date: &str,
+    end_date: &str,
+    cluster: &Cluster,
+    _expect_range_complete: bool,
+    _expect_event_count: u64,
+) -> Result<(), Error> {
+    let t1 = Utc::now();
+    let node0 = &cluster.nodes[0];
+    let beg_date: DateTime<Utc> = beg_date.parse()?;
+    let end_date: DateTime<Utc> = end_date.parse()?;
+    let channel_backend = "testbackend";
+    let channel = Channel {
+        backend: channel_backend.into(),
+        name: channel_name.into(),
+    };
+    let range = NanoRange::from_date_time(beg_date, end_date);
+    let query = PlainEventsQuery::new(channel, range);
+    let hp = HostPort::from_node(node0);
+    let url = query.url(&hp);
+    info!("get_plain_events  get {}", url);
+    let req = hyper::Request::builder()
+        .method(http::Method::GET)
+        .uri(url)
+        .header("accept", "application/octet-stream")
+        .body(Body::empty())?;
+    let client = hyper::Client::new();
+    let res = client.request(req).await?;
+    if res.status() != StatusCode::OK {
+        error!("client response {:?}", res);
+    }
+    let buf = hyper::body::to_bytes(res.into_body()).await?;
+    let s = String::from_utf8_lossy(&buf);
+    let res: JsonValue = serde_json::from_str(&s)?;
+    info!("GOT: {}", serde_json::to_string_pretty(&res)?);
+    let t2 = chrono::Utc::now();
+    let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
+    info!("time {} ms", ms);
+    Ok(())
 }

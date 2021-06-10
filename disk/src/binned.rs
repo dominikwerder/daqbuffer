@@ -509,7 +509,7 @@ where
     }
 }
 
-struct Bool {}
+pub struct Bool {}
 
 impl Bool {
     pub fn is_false(x: &bool) -> bool {

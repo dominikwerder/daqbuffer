@@ -1,9 +1,9 @@
 use crate::agg::binnedt::TimeBinnableType;
 use crate::agg::enp::{Identity, WaveXBinner};
-use crate::agg::streams::{Appendable, StreamItem};
+use crate::agg::streams::{Appendable, Collectable, Collector, StreamItem};
 use crate::agg::{Fits, FitsInside};
 use crate::binned::{
-    EventValuesAggregator, EventsNodeProcessor, FilterFittingInside, MinMaxAvgBins, NumOps, PushableIndex,
+    Bool, EventValuesAggregator, EventsNodeProcessor, FilterFittingInside, MinMaxAvgBins, NumOps, PushableIndex,
     RangeCompletableItem, RangeOverlapInfo, ReadPbv, ReadableFromFile, WithLen, WithTimestamps,
 };
 use crate::eventblobs::EventBlobsComplete;
@@ -294,6 +294,83 @@ where
 
     fn aggregator(range: NanoRange) -> Self::Aggregator {
         Self::Aggregator::new(range)
+    }
+}
+
+pub struct EventValuesCollector<NTY> {
+    vals: EventValues<NTY>,
+    range_complete: bool,
+    timed_out: bool,
+}
+
+impl<NTY> EventValuesCollector<NTY> {
+    pub fn new() -> Self {
+        Self {
+            vals: EventValues::empty(),
+            range_complete: false,
+            timed_out: false,
+        }
+    }
+}
+
+impl<NTY> WithLen for EventValuesCollector<NTY> {
+    fn len(&self) -> usize {
+        self.vals.tss.len()
+    }
+}
+
+#[derive(Serialize)]
+pub struct EventValuesCollectorOutput<NTY> {
+    ts0: u64,
+    tsoff: Vec<u64>,
+    values: Vec<NTY>,
+    #[serde(skip_serializing_if = "Bool::is_false", rename = "finalisedRange")]
+    range_complete: bool,
+    #[serde(skip_serializing_if = "Bool::is_false", rename = "timedOut")]
+    timed_out: bool,
+}
+
+impl<NTY> Collector for EventValuesCollector<NTY>
+where
+    NTY: NumOps,
+{
+    type Input = EventValues<NTY>;
+    type Output = EventValuesCollectorOutput<NTY>;
+
+    fn ingest(&mut self, src: &Self::Input) {
+        self.vals.append(src);
+    }
+
+    fn set_range_complete(&mut self) {
+        self.range_complete = true;
+    }
+
+    fn set_timed_out(&mut self) {
+        self.timed_out = true;
+    }
+
+    fn result(self) -> Result<Self::Output, Error> {
+        let ts0 = self.vals.tss.first().map_or(0, |k| *k);
+        let tsoff = self.vals.tss.into_iter().map(|k| k - ts0).collect();
+        let ret = Self::Output {
+            ts0,
+            tsoff,
+            values: self.vals.values,
+            range_complete: self.range_complete,
+            timed_out: self.timed_out,
+        };
+        Ok(ret)
+    }
+}
+
+impl<NTY> Collectable for EventValues<NTY>
+where
+    NTY: NumOps,
+{
+    type Collector = EventValuesCollector<NTY>;
+
+    fn new_collector(_bin_count_exp: u32) -> Self::Collector {
+        Self::Collector::new()
     }
 }
 

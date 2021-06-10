@@ -175,6 +175,12 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if path == "/api/4/plain_events_json" {
+        if req.method() == Method::GET {
+            Ok(plain_events_json(req, &node_config).await?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
     } else if path.starts_with("/api/4/gather/") {
         if req.method() == Method::GET {
             Ok(gather_get_json(req, &node_config).await?)
@@ -398,6 +404,16 @@ async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Res
     let op = disk::channelexec::PlainEvents::new(query.channel().clone(), query.range().clone(), node_config.clone());
     let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), node_config).await?;
     let s = s.map(|item| item.make_frame());
+    let ret = response(StatusCode::OK).body(BodyStream::wrapped(s, format!("plain_events")))?;
+    Ok(ret)
+}
+
+async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    let (head, _body) = req.into_parts();
+    let query = PlainEventsQuery::from_request(&head)?;
+    let op =
+        disk::channelexec::PlainEventsJson::new(query.channel().clone(), query.range().clone(), node_config.clone());
+    let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), node_config).await?;
     let ret = response(StatusCode::OK).body(BodyStream::wrapped(s, format!("plain_events")))?;
     Ok(ret)
 }

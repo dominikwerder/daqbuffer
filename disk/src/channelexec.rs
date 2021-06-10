@@ -1,18 +1,24 @@
 use crate::agg::enp::Identity;
-use crate::binned::NumOps;
+use crate::agg::streams::{Collectable, Collector, StreamItem};
+use crate::binned::{NumOps, RangeCompletableItem};
 use crate::decode::{
-    BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
+    BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValues, EventValuesDim0Case, EventValuesDim1Case,
     LittleEndian, NumFromBytes,
 };
 use crate::frame::makeframe::Framable;
 use crate::merge::mergedfromremotes::MergedFromRemotes;
 use crate::raw::EventsQuery;
+use crate::Sitemty;
+use bytes::Bytes;
 use err::Error;
 use futures_core::Stream;
+use futures_util::future::FutureExt;
 use futures_util::StreamExt;
 use netpod::{AggKind, ByteOrder, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
+use serde_json::Value as JsonValue;
 use std::pin::Pin;
+use std::time::Duration;
 
 pub trait ChannelExecFunction {
     type Output;
@@ -21,7 +27,8 @@ pub trait ChannelExecFunction {
     where
         NTY: NumOps + NumFromBytes<NTY, END> + 'static,
         END: Endianness + 'static,
-        EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static;
+        EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
+        EventValues<NTY>: Collectable;
 }
 
 fn channel_exec_nty_end_evs_enp<F, NTY, END, EVS>(
@@ -34,6 +41,7 @@ where
     NTY: NumOps + NumFromBytes<NTY, END> + 'static,
     END: Endianness + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
+    EventValues<NTY>: Collectable,
 {
     Ok(f.exec::<NTY, _, _>(byte_order, event_value_shape)?)
 }
@@ -43,6 +51,7 @@ where
     F: ChannelExecFunction,
     NTY: NumOps + NumFromBytes<NTY, END> + 'static,
     END: Endianness + 'static,
+    EventValues<NTY>: Collectable,
 {
     match shape {
         Shape::Scalar => channel_exec_nty_end_evs_enp::<_, NTY, _, _>(f, byte_order, EventValuesDim0Case::new()),
@@ -146,6 +155,7 @@ impl ChannelExecFunction for PlainEvents {
         NTY: NumOps + NumFromBytes<NTY, END> + 'static,
         END: Endianness + 'static,
         EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
+        EventValues<NTY>: Collectable,
     {
         let _ = byte_order;
         let _ = event_value_shape;
@@ -157,6 +167,121 @@ impl ChannelExecFunction for PlainEvents {
         };
         let s = MergedFromRemotes::<Identity<NTY>>::new(evq, perf_opts, self.node_config.node_config.cluster);
         let s = s.map(|item| Box::new(item) as Box<dyn Framable>);
+        Ok(Box::pin(s))
+    }
+}
+
+pub struct PlainEventsJson {
+    channel: Channel,
+    range: NanoRange,
+    agg_kind: AggKind,
+    node_config: NodeConfigCached,
+}
+
+impl PlainEventsJson {
+    pub fn new(channel: Channel, range: NanoRange, node_config: NodeConfigCached) -> Self {
+        Self {
+            channel,
+            range,
+            agg_kind: AggKind::DimXBins1,
+            node_config,
+        }
+    }
+
+    pub fn channel(&self) -> &Channel {
+        &self.channel
+    }
+
+    pub fn range(&self) -> &NanoRange {
+        &self.range
+    }
+}
+
+pub async fn collect_plain_events_json<T, S>(stream: S, timeout: Duration) -> Result<JsonValue, Error>
+where
+    S: Stream<Item = Sitemty<T>> + Unpin,
+    T: Collectable,
+{
+    let deadline = tokio::time::Instant::now() + timeout;
+    // TODO in general a Collector does not need to know about the expected number of bins.
+    // It would make more sense for some specific Collector kind to know.
+    // Therefore introduce finer grained types.
+    let mut collector = <T as Collectable>::new_collector(0);
+    let mut i1 = 0;
+    let mut stream = stream;
+    loop {
+        let item = if i1 == 0 {
+            stream.next().await
+        } else {
+            if false {
+                None
+            } else {
+                match tokio::time::timeout_at(deadline, stream.next()).await {
+                    Ok(k) => k,
+                    Err(_) => {
+                        collector.set_timed_out();
+                        None
+                    }
+                }
+            }
+        };
+        match item {
+            Some(item) => {
+                match item {
+                    Ok(item) => match item {
+                        StreamItem::Log(_) => {}
+                        StreamItem::Stats(_) => {}
+                        StreamItem::DataItem(item) => match item {
+                            RangeCompletableItem::RangeComplete => {
+                                collector.set_range_complete();
+                            }
+                            RangeCompletableItem::Data(item) => {
+                                collector.ingest(&item);
+                                i1 += 1;
+                            }
+                        },
+                    },
+                    Err(e) => {
+                        // TODO  Need to use some flags to get good enough error message for remote user.
+                        Err(e)?;
+                    }
+                };
+            }
+            None => break,
+        }
+    }
+    let ret = serde_json::to_value(collector.result()?)?;
+    Ok(ret)
+}
+
+impl ChannelExecFunction for PlainEventsJson {
+    type Output = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>;
+
+    fn exec<NTY, END, EVS>(self, byte_order: END, event_value_shape: EVS) -> Result<Self::Output, Error>
+    where
+        NTY: NumOps + NumFromBytes<NTY, END> + 'static,
+        END: Endianness + 'static,
+        EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
+        EventValues<NTY>: Collectable,
+        EventValues<NTY>: Collectable,
+    {
+        let _ = byte_order;
+        let _ = event_value_shape;
+        let perf_opts = PerfOpts { inmem_bufcap: 4096 };
+        let evq = EventsQuery {
+            channel: self.channel,
+            range: self.range,
+            agg_kind: self.agg_kind,
+        };
+        let s = MergedFromRemotes::<Identity<NTY>>::new(evq, perf_opts, self.node_config.node_config.cluster);
+        // TODO take time out from query parameter.
+        let f = collect_plain_events_json(s, Duration::from_millis(2000));
+        //let s = s.map(|item| Box::new(item) as Box<dyn Framable>);
+        let f = FutureExt::map(f, |item| match item {
+            Ok(item) => Ok(Bytes::from(serde_json::to_vec(&item)?)),
+            Err(e) => Err(e.into()),
+        });
+        let s = futures_util::stream::once(f);
         Ok(Box::pin(s))
     }
 }
