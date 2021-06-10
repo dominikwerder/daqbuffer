@@ -89,7 +89,7 @@ fn make_num_pipeline(
         ScalarType::I16 => match_end!(i16, byte_order, shape, query, node_config),
         ScalarType::I32 => match_end!(i32, byte_order, shape, query, node_config),
         ScalarType::I64 => match_end!(i64, byte_order, shape, query, node_config),
-        ScalarType::F32 => match_end!(f64, byte_order, shape, query, node_config),
+        ScalarType::F32 => match_end!(f32, byte_order, shape, query, node_config),
         ScalarType::F64 => match_end!(f64, byte_order, shape, query, node_config),
     }
 }
