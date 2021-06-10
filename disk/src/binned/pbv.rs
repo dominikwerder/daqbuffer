@@ -1,4 +1,4 @@
-use crate::agg::binnedt4::{TBinnerStream, TimeBinnableType};
+use crate::agg::binnedt::{TBinnerStream, TimeBinnableType};
 use crate::agg::streams::{Appendable, StreamItem};
 use crate::binned::binnedfrompbv::FetchedPreBinned;
 use crate::binned::query::{CacheUsage, PreBinnedQuery};

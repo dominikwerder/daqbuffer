@@ -1,4 +1,4 @@
-use crate::agg::binnedt4::{TimeBinnableType, TimeBinnableTypeAggregator};
+use crate::agg::binnedt::{TimeBinnableType, TimeBinnableTypeAggregator};
 use crate::agg::streams::Appendable;
 use crate::binned::{
     EventsNodeProcessor, FilterFittingInside, MinMaxAvgBins, NumOps, PushableIndex, RangeOverlapInfo, ReadPbv,

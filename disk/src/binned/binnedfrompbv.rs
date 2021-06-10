@@ -1,4 +1,4 @@
-use crate::agg::binnedt4::{TBinnerStream, TimeBinnableType};
+use crate::agg::binnedt::{TBinnerStream, TimeBinnableType};
 use crate::agg::streams::StreamItem;
 use crate::binned::query::{CacheUsage, PreBinnedQuery};
 use crate::binned::RangeCompletableItem;

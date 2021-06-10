@@ -1,4 +1,4 @@
-use crate::agg::binnedt4::TimeBinnableType;
+use crate::agg::binnedt::TimeBinnableType;
 use crate::agg::enp::{Identity, WaveXBinner};
 use crate::agg::streams::Appendable;
 use crate::binned::pbv::PreBinnedValueStream;

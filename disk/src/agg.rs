@@ -7,7 +7,7 @@ use netpod::ScalarType;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
-pub mod binnedt4;
+pub mod binnedt;
 pub mod enp;
 pub mod eventbatch;
 pub mod scalarbinbatch;
