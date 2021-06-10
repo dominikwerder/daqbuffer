@@ -22,8 +22,8 @@ where
     type Input = NTY;
     type Output = EventValues<NTY>;
 
-    fn process(_inp: EventValues<Self::Input>) -> Self::Output {
-        todo!()
+    fn process(inp: EventValues<Self::Input>) -> Self::Output {
+        inp
     }
 }
 
@@ -150,9 +150,10 @@ where
     NTY: NumOps,
 {
     range: NanoRange,
+    count: u64,
     min: Option<NTY>,
     max: Option<NTY>,
-    sumc: u32,
+    sumc: u64,
     sum: f32,
 }
 
@@ -163,6 +164,7 @@ where
     pub fn new(range: NanoRange) -> Self {
         Self {
             range,
+            count: 0,
             min: None,
             max: None,
             sumc: 0,
@@ -216,6 +218,7 @@ where
                     self.sum += x;
                     self.sumc += 1;
                 }
+                self.count += 1;
             }
         }
     }
@@ -229,8 +232,7 @@ where
         Self::Output {
             ts1s: vec![self.range.beg],
             ts2s: vec![self.range.end],
-            // TODO
-            counts: vec![0],
+            counts: vec![self.count],
             mins: vec![self.min],
             maxs: vec![self.max],
             avgs: vec![avg],

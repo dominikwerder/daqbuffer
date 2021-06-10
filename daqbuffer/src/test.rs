@@ -85,6 +85,18 @@ async fn get_binned_binary_inner() -> Result<(), Error> {
     let rh = require_test_hosts_running()?;
     let cluster = &rh.cluster;
     if true {
+        get_binned_channel::<i32>(
+            "scalar-i32-be",
+            "1970-01-01T00:20:10.000Z",
+            "1970-01-01T00:20:50.000Z",
+            3,
+            cluster,
+            true,
+            4,
+        )
+        .await?;
+    }
+    if true {
         get_binned_channel::<f64>(
             "wave-f64-be-n21",
             "1970-01-01T00:20:10.000Z",

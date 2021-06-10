@@ -999,10 +999,11 @@ where
 
 pub struct EventValuesAggregator<NTY> {
     range: NanoRange,
-    count: u32,
+    count: u64,
     min: Option<NTY>,
     max: Option<NTY>,
-    avg: Option<f32>,
+    sumc: u64,
+    sum: f32,
 }
 
 impl<NTY> EventValuesAggregator<NTY> {
@@ -1012,7 +1013,8 @@ impl<NTY> EventValuesAggregator<NTY> {
             count: 0,
             min: None,
             max: None,
-            avg: None,
+            sumc: 0,
+            sum: 0f32,
         }
     }
 }
@@ -1028,13 +1030,60 @@ where
         &self.range
     }
 
-    fn ingest(&mut self, _item: &Self::Input) {
-        // TODO construct test case to hit this:
-        todo!()
+    fn ingest(&mut self, item: &Self::Input) {
+        for i1 in 0..item.tss.len() {
+            let ts = item.tss[i1];
+            if ts < self.range.beg {
+                continue;
+            } else if ts >= self.range.end {
+                continue;
+            } else {
+                let v = item.values[i1];
+                let vf = v.as_();
+                self.min = match self.min {
+                    None => Some(v),
+                    Some(min) => {
+                        if v < min {
+                            Some(v)
+                        } else {
+                            Some(min)
+                        }
+                    }
+                };
+                self.max = match self.max {
+                    None => Some(v),
+                    Some(max) => {
+                        if v > max {
+                            Some(v)
+                        } else {
+                            Some(max)
+                        }
+                    }
+                };
+                if vf.is_nan() {
+                } else {
+                    self.sum += vf;
+                    self.sumc += 1;
+                }
+                self.count += 1;
+            }
+        }
     }
 
     fn result(self) -> Self::Output {
-        todo!()
+        let avg = if self.sumc == 0 {
+            None
+        } else {
+            Some(self.sum / self.sumc as f32)
+        };
+        Self::Output {
+            ts1s: vec![self.range.beg],
+            ts2s: vec![self.range.end],
+            counts: vec![self.count],
+            mins: vec![self.min],
+            maxs: vec![self.max],
+            avgs: vec![avg],
+        }
     }
 }
 
@@ -1043,20 +1092,19 @@ pub struct MinMaxAvgBinsAggregator<NTY> {
     count: u64,
     min: Option<NTY>,
     max: Option<NTY>,
+    sumc: u64,
     sum: f32,
-    sumc: u32,
 }
 
 impl<NTY> MinMaxAvgBinsAggregator<NTY> {
     pub fn new(range: NanoRange) -> Self {
         Self {
             range,
-            // TODO: actually count events through the whole pipeline.
             count: 0,
             min: None,
             max: None,
-            sum: 0f32,
             sumc: 0,
+            sum: 0f32,
         }
     }
 }
@@ -1115,6 +1163,7 @@ where
                         }
                     }
                 }
+                self.count += item.counts[i1];
             }
         }
     }
@@ -1128,7 +1177,7 @@ where
         Self::Output {
             ts1s: vec![self.range.beg],
             ts2s: vec![self.range.end],
-            counts: vec![self.count as u64],
+            counts: vec![self.count],
             mins: vec![self.min],
             maxs: vec![self.max],
             avgs: vec![avg],
