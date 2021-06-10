@@ -6,6 +6,7 @@ use tracing::{debug, error, info, trace, warn};
 
 pub mod cli;
 pub mod client;
+pub mod nodes;
 #[cfg(test)]
 pub mod test;
 

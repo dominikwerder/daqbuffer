@@ -91,8 +91,8 @@ impl Stream for FileReader {
     }
 }
 
-#[allow(dead_code)]
 struct Fopen1 {
+    #[allow(dead_code)]
     opts: OpenOptions,
     fut: Pin<Box<dyn Future<Output = Result<File, std::io::Error>>>>,
     term: bool,
@@ -104,8 +104,6 @@ impl Fopen1 {
             let mut o1 = OpenOptions::new();
             let o2 = o1.read(true);
             let res = o2.open(path);
-            //() == res;
-            //todo!()
             res.await
         }) as Pin<Box<dyn Future<Output = Result<File, std::io::Error>>>>;
         let _fut2: Box<dyn Future<Output = u32>> = Box::new(async { 123 });

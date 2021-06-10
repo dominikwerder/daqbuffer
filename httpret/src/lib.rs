@@ -257,8 +257,8 @@ impl hyper::body::HttpBody for BodyStreamWrap {
     type Data = bytes::Bytes;
     type Error = Error;
 
-    fn poll_data(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        todo!()
+    fn poll_data(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        self.0.inner.poll_next_unpin(cx)
     }
 
     fn poll_trailers(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Result<Option<HeaderMap>, Self::Error>> {

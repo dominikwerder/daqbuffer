@@ -4,13 +4,13 @@ Error handling and reporting.
 
 use http::uri::InvalidUri;
 use nom::error::ErrorKind;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::net::AddrParseError;
 use std::num::{ParseFloatError, ParseIntError};
 use std::string::FromUtf8Error;
-use tokio::task::JoinError;
 use std::sync::PoisonError;
+use tokio::task::JoinError;
 
 /**
 The common error type for this application.
@@ -21,14 +21,6 @@ pub struct Error {
     #[serde(skip)]
     trace: Option<backtrace::Backtrace>,
     trace_str: Option<String>,
-}
-
-#[allow(dead_code)]
-fn ser_trace<S>(_: &Option<backtrace::Backtrace>, _: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    todoval()
 }
 
 impl Error {

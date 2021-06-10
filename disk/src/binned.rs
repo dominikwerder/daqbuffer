@@ -220,16 +220,28 @@ fn make_num_pipeline_entry<PPP>(
 ) -> Result<BinnedResponseDyn, Error>
 where
     PPP: PipelinePostProcessA,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<u8>>,
     PPP: PipelinePostProcessB<MinMaxAvgBins<u16>>,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<u32>>,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<u64>>,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<i8>>,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<i16>>,
     PPP: PipelinePostProcessB<MinMaxAvgBins<i32>>,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<i64>>,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<f32>>,
     PPP: PipelinePostProcessB<MinMaxAvgBins<f64>>,
 {
     match scalar_type {
+        ScalarType::U8 => match_end!(u8, byte_order, shape, query, ppp, node_config),
         ScalarType::U16 => match_end!(u16, byte_order, shape, query, ppp, node_config),
+        ScalarType::U32 => match_end!(u32, byte_order, shape, query, ppp, node_config),
+        ScalarType::U64 => match_end!(u64, byte_order, shape, query, ppp, node_config),
+        ScalarType::I8 => match_end!(i8, byte_order, shape, query, ppp, node_config),
+        ScalarType::I16 => match_end!(i16, byte_order, shape, query, ppp, node_config),
         ScalarType::I32 => match_end!(i32, byte_order, shape, query, ppp, node_config),
+        ScalarType::I64 => match_end!(i64, byte_order, shape, query, ppp, node_config),
+        ScalarType::F32 => match_end!(f32, byte_order, shape, query, ppp, node_config),
         ScalarType::F64 => match_end!(f64, byte_order, shape, query, ppp, node_config),
-        // TODO complete set
-        _ => todo!(),
     }
 }
 
@@ -240,8 +252,15 @@ async fn make_num_pipeline<PPP>(
 ) -> Result<BinnedResponseDyn, Error>
 where
     PPP: PipelinePostProcessA,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<u8>>,
     PPP: PipelinePostProcessB<MinMaxAvgBins<u16>>,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<u32>>,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<u64>>,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<i8>>,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<i16>>,
     PPP: PipelinePostProcessB<MinMaxAvgBins<i32>>,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<i64>>,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<f32>>,
     PPP: PipelinePostProcessB<MinMaxAvgBins<f64>>,
 {
     if query.channel().backend != node_config.node.backend {
@@ -306,11 +325,17 @@ where
     }
 }
 
-struct CollectForJson {}
+struct CollectForJson {
+    timeout: Duration,
+    abort_after_bin_count: u32,
+}
 
 impl CollectForJson {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(timeout: Duration, abort_after_bin_count: u32) -> Self {
+        Self {
+            timeout,
+            abort_after_bin_count,
+        }
     }
 }
 
@@ -322,11 +347,16 @@ pub struct JsonCollector {
 }
 
 impl JsonCollector {
-    pub fn new<NTY>(inp: Pin<Box<dyn Stream<Item = Sitemty<MinMaxAvgBins<NTY>>> + Send>>, bin_count_exp: u32) -> Self
+    pub fn new<NTY>(
+        inp: Pin<Box<dyn Stream<Item = Sitemty<MinMaxAvgBins<NTY>>> + Send>>,
+        bin_count_exp: u32,
+        timeout: Duration,
+        abort_after_bin_count: u32,
+    ) -> Self
     where
         NTY: NumOps + Serialize + 'static,
     {
-        let fut = collect_all(inp, bin_count_exp);
+        let fut = collect_all(inp, bin_count_exp, timeout, abort_after_bin_count);
         let fut = Box::pin(fut);
         Self { fut, done: false }
     }
@@ -397,7 +427,7 @@ where
         inp: Pin<Box<dyn Stream<Item = Sitemty<MinMaxAvgBins<NTY>>> + Send>>,
         bin_count_exp: u32,
     ) -> Pin<Box<dyn Stream<Item = Box<dyn BinnedResponseItem>> + Send>> {
-        let s = JsonCollector::new(inp, bin_count_exp);
+        let s = JsonCollector::new(inp, bin_count_exp, self.timeout, self.abort_after_bin_count);
         Box::pin(s)
     }
 }
@@ -488,12 +518,17 @@ impl Serialize for IsoDateTime {
     }
 }
 
-pub async fn collect_all<T, S>(stream: S, bin_count_exp: u32) -> Result<serde_json::Value, Error>
+pub async fn collect_all<T, S>(
+    stream: S,
+    bin_count_exp: u32,
+    timeout: Duration,
+    abort_after_bin_count: u32,
+) -> Result<serde_json::Value, Error>
 where
     S: Stream<Item = Sitemty<T>> + Unpin,
     T: Collectable,
 {
-    let deadline = tokio::time::Instant::now() + Duration::from_millis(1000);
+    let deadline = tokio::time::Instant::now() + timeout;
     let mut collector = <T as Collectable>::new_collector(bin_count_exp);
     let mut i1 = 0;
     let mut stream = stream;
@@ -501,11 +536,15 @@ where
         let item = if i1 == 0 {
             stream.next().await
         } else {
-            match tokio::time::timeout_at(deadline, stream.next()).await {
-                Ok(k) => k,
-                Err(_) => {
-                    collector.set_timed_out();
-                    None
+            if abort_after_bin_count > 0 && collector.len() >= abort_after_bin_count as usize {
+                None
+            } else {
+                match tokio::time::timeout_at(deadline, stream.next()).await {
+                    Ok(k) => k,
+                    Err(_) => {
+                        collector.set_timed_out();
+                        None
+                    }
                 }
             }
         };
@@ -542,7 +581,12 @@ pub async fn binned_json(
     node_config: &NodeConfigCached,
     query: &BinnedQuery,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>, Error> {
-    let pl = make_num_pipeline(query, CollectForJson::new(), node_config).await?;
+    let pl = make_num_pipeline(
+        query,
+        CollectForJson::new(query.timeout(), query.abort_after_bin_count()),
+        node_config,
+    )
+    .await?;
     let ret = pl.stream.map(|item| {
         let fr = item.to_json_result()?;
         let buf = fr.to_json_bytes()?;
@@ -933,6 +977,15 @@ impl<NTY> MinMaxAvgBinsCollector<NTY> {
     }
 }
 
+impl<NTY> WithLen for MinMaxAvgBinsCollector<NTY>
+where
+    NTY: NumOps + Serialize,
+{
+    fn len(&self) -> usize {
+        self.vals.ts1s.len()
+    }
+}
+
 impl<NTY> Collector for MinMaxAvgBinsCollector<NTY>
 where
     NTY: NumOps + Serialize,
@@ -974,7 +1027,7 @@ where
         };
         let ret = MinMaxAvgBinsCollectedResult::<NTY> {
             ts_bin_edges: tsa,
-            counts: vec![],
+            counts: self.vals.counts,
             mins: self.vals.mins,
             maxs: self.vals.maxs,
             avgs: self.vals.avgs,

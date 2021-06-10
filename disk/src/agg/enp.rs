@@ -1,5 +1,6 @@
 use crate::agg::binnedt::{TimeBinnableType, TimeBinnableTypeAggregator};
 use crate::agg::streams::Appendable;
+use crate::agg::{Fits, FitsInside};
 use crate::binned::{
     EventsNodeProcessor, FilterFittingInside, MinMaxAvgBins, NumOps, PushableIndex, RangeOverlapInfo, ReadPbv,
     ReadableFromFile, WithLen, WithTimestamps,
@@ -83,9 +84,36 @@ impl<NTY> RangeOverlapInfo for XBinnedScalarEvents<NTY> {
     }
 }
 
+impl<NTY> FitsInside for XBinnedScalarEvents<NTY> {
+    fn fits_inside(&self, range: NanoRange) -> Fits {
+        if self.tss.is_empty() {
+            Fits::Empty
+        } else {
+            let t1 = *self.tss.first().unwrap();
+            let t2 = *self.tss.last().unwrap();
+            if t2 < range.beg {
+                Fits::Lower
+            } else if t1 > range.end {
+                Fits::Greater
+            } else if t1 < range.beg && t2 > range.end {
+                Fits::PartlyLowerAndGreater
+            } else if t1 < range.beg {
+                Fits::PartlyLower
+            } else if t2 > range.end {
+                Fits::PartlyGreater
+            } else {
+                Fits::Inside
+            }
+        }
+    }
+}
+
 impl<NTY> FilterFittingInside for XBinnedScalarEvents<NTY> {
-    fn filter_fitting_inside(self, _fit_range: NanoRange) -> Option<Self> {
-        todo!()
+    fn filter_fitting_inside(self, fit_range: NanoRange) -> Option<Self> {
+        match self.fits_inside(fit_range) {
+            Fits::Inside | Fits::PartlyGreater | Fits::PartlyLower | Fits::PartlyLowerAndGreater => Some(self),
+            _ => None,
+        }
     }
 }
 

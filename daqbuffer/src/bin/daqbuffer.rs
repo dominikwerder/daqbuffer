@@ -93,21 +93,10 @@ async fn go() -> Result<(), Error> {
 #[test]
 fn simple_fetch() {
     use netpod::Nanos;
-    use netpod::{
-        timeunits::*, ByteOrder, Channel, ChannelConfig, Cluster, Database, Node, NodeConfig, ScalarType, Shape,
-    };
+    use netpod::{timeunits::*, ByteOrder, Channel, ChannelConfig, ScalarType, Shape};
     taskrun::run(async {
+        let _rh = daqbuffer::nodes::require_test_hosts_running()?;
         let t1 = chrono::Utc::now();
-        let node = Node {
-            host: "localhost".into(),
-            listen: "0.0.0.0".into(),
-            port: 8360,
-            port_raw: 8360 + 100,
-            data_base_path: err::todoval(),
-            ksprefix: "daq_swissfel".into(),
-            split: 0,
-            backend: "testbackend".into(),
-        };
         let query = netpod::AggQuerySingleChannel {
             channel_config: ChannelConfig {
                 channel: Channel {
@@ -118,7 +107,7 @@ fn simple_fetch() {
                 time_bin_size: Nanos { ns: DAY },
                 array: true,
                 scalar_type: ScalarType::F64,
-                shape: Shape::Wave(err::todoval()),
+                shape: Shape::Wave(42),
                 byte_order: ByteOrder::big_endian(),
                 compression: true,
             },
@@ -126,23 +115,7 @@ fn simple_fetch() {
             tb_file_count: 1,
             buffer_size: 1024 * 8,
         };
-        let cluster = Cluster {
-            nodes: vec![node],
-            database: Database {
-                name: "daqbuffer".into(),
-                host: "localhost".into(),
-                user: "daqbuffer".into(),
-                pass: "daqbuffer".into(),
-            },
-        };
-        let node_config = NodeConfig {
-            name: format!("{}:{}", cluster.nodes[0].host, cluster.nodes[0].port),
-            cluster,
-        };
-        let node_config: Result<NodeConfigCached, Error> = node_config.into();
-        let node_config = node_config?;
         let query_string = serde_json::to_string(&query).unwrap();
-        let host = tokio::spawn(httpret::host(node_config.clone()));
         let req = hyper::Request::builder()
             .method(http::Method::POST)
             .uri("http://localhost:8360/api/4/parsed_raw")
@@ -176,8 +149,6 @@ fn simple_fetch() {
             ntot / 1024 / 1024,
             throughput
         );
-        drop(host);
-        //Err::<(), _>(format!("test error").into())
         Ok(())
     })
     .unwrap();

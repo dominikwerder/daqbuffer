@@ -3,6 +3,7 @@ use err::Error;
 use netpod::log::*;
 use netpod::{AggKind, ByteSize, Channel, HostPort, NanoRange, PreBinnedPatchCoord, ToNanos};
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct PreBinnedQuery {
@@ -171,6 +172,8 @@ pub struct BinnedQuery {
     cache_usage: CacheUsage,
     disk_stats_every: ByteSize,
     report_error: bool,
+    timeout: Duration,
+    abort_after_bin_count: u32,
 }
 
 impl BinnedQuery {
@@ -183,6 +186,8 @@ impl BinnedQuery {
             cache_usage: CacheUsage::Use,
             disk_stats_every: ByteSize(1024 * 1024 * 4),
             report_error: false,
+            timeout: Duration::from_millis(2000),
+            abort_after_bin_count: 0,
         }
     }
 
@@ -217,6 +222,17 @@ impl BinnedQuery {
                 .map_or("false", |k| k)
                 .parse()
                 .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,
+            timeout: params
+                .get("timeout")
+                .map_or("2000", |k| k)
+                .parse::<u64>()
+                .map(|k| Duration::from_millis(k))
+                .map_err(|e| Error::with_msg(format!("can not parse timeout {:?}", e)))?,
+            abort_after_bin_count: params
+                .get("abortAfterBinCount")
+                .map_or("0", |k| k)
+                .parse()
+                .map_err(|e| Error::with_msg(format!("can not parse abortAfterBinCount {:?}", e)))?,
         };
         info!("BinnedQuery::from_request  {:?}", ret);
         Ok(ret)
@@ -250,6 +266,14 @@ impl BinnedQuery {
         self.report_error
     }
 
+    pub fn timeout(&self) -> Duration {
+        self.timeout
+    }
+
+    pub fn abort_after_bin_count(&self) -> u32 {
+        self.abort_after_bin_count
+    }
+
     pub fn set_cache_usage(&mut self, k: CacheUsage) {
         self.cache_usage = k;
     }
@@ -258,12 +282,16 @@ impl BinnedQuery {
         self.disk_stats_every = k;
     }
 
+    pub fn set_timeout(&mut self, k: Duration) {
+        self.timeout = k;
+    }
+
     // TODO the BinnedQuery itself should maybe already carry the full HostPort?
     // On the other hand, want to keep the flexibility for the fail over possibility..
     pub fn url(&self, host: &HostPort) -> String {
         let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
         format!(
-            "http://{}:{}/api/4/binned?cacheUsage={}&channelBackend={}&channelName={}&binCount={}&begDate={}&endDate={}&diskStatsEveryKb={}",
+            "http://{}:{}/api/4/binned?cacheUsage={}&channelBackend={}&channelName={}&binCount={}&begDate={}&endDate={}&diskStatsEveryKb={}&timeout={}&abortAfterBinCount={}",
             host.host,
             host.port,
             self.cache_usage,
@@ -273,6 +301,8 @@ impl BinnedQuery {
             Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt),
             Utc.timestamp_nanos(self.range.end as i64).format(date_fmt),
             self.disk_stats_every.bytes() / 1024,
+            self.timeout.as_millis(),
+            self.abort_after_bin_count,
         )
     }
 }

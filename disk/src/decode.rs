@@ -1,6 +1,7 @@
 use crate::agg::binnedt::TimeBinnableType;
 use crate::agg::enp::{Identity, WaveXBinner};
 use crate::agg::streams::{Appendable, StreamItem};
+use crate::agg::{Fits, FitsInside};
 use crate::binned::{
     EventValuesAggregator, EventsNodeProcessor, FilterFittingInside, MinMaxAvgBins, NumOps, PushableIndex,
     RangeCompletableItem, RangeOverlapInfo, ReadPbv, ReadableFromFile, WithLen, WithTimestamps,
@@ -213,9 +214,36 @@ impl<VT> RangeOverlapInfo for EventValues<VT> {
     }
 }
 
+impl<VT> FitsInside for EventValues<VT> {
+    fn fits_inside(&self, range: NanoRange) -> Fits {
+        if self.tss.is_empty() {
+            Fits::Empty
+        } else {
+            let t1 = *self.tss.first().unwrap();
+            let t2 = *self.tss.last().unwrap();
+            if t2 < range.beg {
+                Fits::Lower
+            } else if t1 > range.end {
+                Fits::Greater
+            } else if t1 < range.beg && t2 > range.end {
+                Fits::PartlyLowerAndGreater
+            } else if t1 < range.beg {
+                Fits::PartlyLower
+            } else if t2 > range.end {
+                Fits::PartlyGreater
+            } else {
+                Fits::Inside
+            }
+        }
+    }
+}
+
 impl<VT> FilterFittingInside for EventValues<VT> {
-    fn filter_fitting_inside(self, _fit_range: NanoRange) -> Option<Self> {
-        todo!()
+    fn filter_fitting_inside(self, fit_range: NanoRange) -> Option<Self> {
+        match self.fits_inside(fit_range) {
+            Fits::Inside | Fits::PartlyGreater | Fits::PartlyLower | Fits::PartlyLowerAndGreater => Some(self),
+            _ => None,
+        }
     }
 }
 

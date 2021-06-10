@@ -76,15 +76,6 @@ impl AsyncRead for HttpBodyAsAsyncRead {
     }
 }
 
-pub struct BytesWrap {}
-
-impl From<BytesWrap> for Bytes {
-    fn from(_k: BytesWrap) -> Self {
-        error!("TODO convert result to octets");
-        todo!("TODO convert result to octets")
-    }
-}
-
 pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoord, channel: &Channel, cluster: &Cluster) -> u32 {
     let mut hash = tiny_keccak::Sha3::v256();
     hash.update(channel.backend.as_bytes());
