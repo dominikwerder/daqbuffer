@@ -6,7 +6,7 @@ use crate::binned::{EventsNodeProcessor, NumOps, PushableIndex, RangeCompletable
 use crate::cache::{write_pb_cache_min_max_avg_scalar, CacheFileDesc, WrittenPbCache};
 use crate::decode::{Endianness, EventValueFromBytes, EventValueShape, NumFromBytes};
 use crate::frame::makeframe::FrameType;
-use crate::merge::mergedfromremotes::MergedFromRemotes2;
+use crate::merge::mergedfromremotes::MergedFromRemotes;
 use crate::raw::EventsQuery;
 use crate::streamlog::Streamlog;
 use crate::Sitemty;
@@ -123,7 +123,7 @@ where
         let range = BinnedRange::covering_range(evq.range.clone(), count as u32)?
             .ok_or(Error::with_msg("covering_range returns None"))?;
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
-        let s = MergedFromRemotes2::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster.clone());
+        let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster.clone());
         let ret = TBinnerStream::<_, <ENP as EventsNodeProcessor>::Output>::new(s, range);
         Ok(Box::pin(ret))
     }

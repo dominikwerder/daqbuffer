@@ -15,7 +15,7 @@ use std::task::{Context, Poll};
 type T001<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;
 type T002<T> = Pin<Box<dyn Future<Output = Result<T001<T>, Error>> + Send>>;
 
-pub struct MergedFromRemotes2<ENP>
+pub struct MergedFromRemotes<ENP>
 where
     ENP: EventsNodeProcessor,
 {
@@ -26,7 +26,7 @@ where
     errored: bool,
 }
 
-impl<ENP> MergedFromRemotes2<ENP>
+impl<ENP> MergedFromRemotes<ENP>
 where
     ENP: EventsNodeProcessor + 'static,
     <ENP as EventsNodeProcessor>::Output: 'static,
@@ -51,7 +51,7 @@ where
     }
 }
 
-impl<ENP> Stream for MergedFromRemotes2<ENP>
+impl<ENP> Stream for MergedFromRemotes<ENP>
 where
     ENP: EventsNodeProcessor + 'static,
     <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable,
@@ -62,7 +62,7 @@ where
         use Poll::*;
         'outer: loop {
             break if self.completed {
-                panic!("MergedFromRemotes  poll_next on completed");
+                panic!("poll_next on completed");
             } else if self.errored {
                 self.completed = true;
                 return Ready(None);
