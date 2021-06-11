@@ -10,6 +10,7 @@ use nom::Needed;
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
+use tokio::io::ErrorKind;
 
 type NRes<'a, O> = nom::IResult<&'a [u8], O, err::Error>;
 
@@ -259,7 +260,13 @@ pub async fn read_local_config(channel: &Channel, node: &Node) -> Result<Config,
         .join(&channel.name)
         .join("latest")
         .join("00000_Config");
-    let buf = tokio::fs::read(&path).await?;
+    let buf = match tokio::fs::read(&path).await {
+        Ok(k) => k,
+        Err(e) => match e.kind() {
+            ErrorKind::NotFound => return Err(Error::with_msg("ErrorKind::NotFound")),
+            _ => return Err(e.into()),
+        },
+    };
     let config = parse_config(&buf)?;
     Ok(config.1)
 }

@@ -1,9 +1,9 @@
 use crate::nodes::require_test_hosts_running;
 use chrono::{DateTime, Utc};
 use disk::agg::streams::{StatsItem, StreamItem};
-use disk::binned::query::PlainEventsQuery;
 use disk::binned::{NumOps, RangeCompletableItem, WithLen};
 use disk::decode::EventValues;
+use disk::events::{PlainEventsJsonQuery, PlainEventsQuery};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::frame::makeframe::FrameType;
 use disk::streamlog::Streamlog;
@@ -70,7 +70,7 @@ where
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(url)
-        .header("accept", "application/octet-stream")
+        .header("Accept", "application/octet-stream")
         .body(Body::empty())?;
     let client = hyper::Client::new();
     let res = client.request(req).await?;
@@ -230,6 +230,26 @@ async fn get_plain_events_json_0_inner() -> Result<(), Error> {
     Ok(())
 }
 
+#[test]
+fn get_plain_events_json_1() {
+    taskrun::run(get_plain_events_json_1_inner()).unwrap();
+}
+
+async fn get_plain_events_json_1_inner() -> Result<(), Error> {
+    let rh = require_test_hosts_running()?;
+    let cluster = &rh.cluster;
+    get_plain_events_json(
+        "wave-f64-be-n21",
+        "1970-01-01T00:20:10.000Z",
+        "1970-01-01T00:20:12.000Z",
+        cluster,
+        true,
+        4,
+    )
+    .await?;
+    Ok(())
+}
+
 async fn get_plain_events_json(
     channel_name: &str,
     beg_date: &str,
@@ -248,14 +268,14 @@ async fn get_plain_events_json(
         name: channel_name.into(),
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let query = PlainEventsQuery::new(channel, range);
+    let query = PlainEventsJsonQuery::new(channel, range);
     let hp = HostPort::from_node(node0);
     let url = query.url(&hp);
     info!("get_plain_events  get {}", url);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(url)
-        .header("accept", "application/octet-stream")
+        .header("Accept", "application/octet-stream")
         .body(Body::empty())?;
     let client = hyper::Client::new();
     let res = client.request(req).await?;

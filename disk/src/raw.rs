@@ -18,8 +18,6 @@ use serde::{Deserialize, Serialize};
 use std::pin::Pin;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
-#[allow(unused_imports)]
-use tracing::{debug, error, info, span, trace, warn, Level};
 
 pub mod conn;
 pub mod eventsfromframes;
@@ -37,7 +35,7 @@ pub struct EventsQuery {
 #[derive(Serialize, Deserialize)]
 pub struct EventQueryJsonStringFrame(String);
 
-pub async fn x_processed_stream_from_node2<ENP>(
+pub async fn x_processed_stream_from_node<ENP>(
     query: EventsQuery,
     perf_opts: PerfOpts,
     node: Node,

@@ -1,8 +1,8 @@
 use crate::agg::streams::Appendable;
 use crate::binned::{EventsNodeProcessor, PushableIndex};
 use crate::frame::makeframe::FrameType;
-use crate::merge::MergedStream2;
-use crate::raw::{x_processed_stream_from_node2, EventsQuery};
+use crate::merge::MergedStream;
+use crate::raw::{x_processed_stream_from_node, EventsQuery};
 use crate::Sitemty;
 use err::Error;
 use futures_core::Stream;
@@ -36,7 +36,7 @@ where
     pub fn new(evq: EventsQuery, perf_opts: PerfOpts, cluster: Cluster) -> Self {
         let mut tcp_establish_futs = vec![];
         for node in &cluster.nodes {
-            let f = x_processed_stream_from_node2::<ENP>(evq.clone(), perf_opts.clone(), node.clone());
+            let f = x_processed_stream_from_node::<ENP>(evq.clone(), perf_opts.clone(), node.clone());
             let f: T002<<ENP as EventsNodeProcessor>::Output> = Box::pin(f);
             tcp_establish_futs.push(f);
         }
@@ -107,7 +107,7 @@ where
                 } else {
                     if c1 == self.tcp_establish_futs.len() {
                         let inps: Vec<_> = self.nodein.iter_mut().map(|k| k.take().unwrap()).collect();
-                        let s1 = MergedStream2::<_, ENP>::new(inps);
+                        let s1 = MergedStream::<_, ENP>::new(inps);
                         self.merged = Some(Box::pin(s1));
                     }
                     continue 'outer;

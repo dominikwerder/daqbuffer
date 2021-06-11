@@ -19,8 +19,7 @@ enum MergedCurVal<T> {
     Val(T),
 }
 
-// TODO rename after refactor
-pub struct MergedStream2<S, ENP>
+pub struct MergedStream<S, ENP>
 where
     S: Stream<Item = Sitemty<<ENP as EventsNodeProcessor>::Output>>,
     ENP: EventsNodeProcessor,
@@ -41,7 +40,7 @@ where
     event_data_read_stats_items: VecDeque<EventDataReadStats>,
 }
 
-impl<S, ENP> MergedStream2<S, ENP>
+impl<S, ENP> MergedStream<S, ENP>
 where
     S: Stream<Item = Sitemty<<ENP as EventsNodeProcessor>::Output>> + Unpin,
     ENP: EventsNodeProcessor,
@@ -133,7 +132,7 @@ where
     }
 }
 
-impl<S, ENP> Stream for MergedStream2<S, ENP>
+impl<S, ENP> Stream for MergedStream<S, ENP>
 where
     S: Stream<Item = Sitemty<<ENP as EventsNodeProcessor>::Output>> + Unpin,
     ENP: EventsNodeProcessor,

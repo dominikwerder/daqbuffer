@@ -40,6 +40,7 @@ use tokio::fs::File;
 use tokio::io::{AsyncRead, ReadBuf};
 
 pub mod binnedfrompbv;
+pub mod dim1;
 pub mod pbv;
 pub mod prebinned;
 pub mod query;
@@ -272,7 +273,18 @@ where
         ));
         return Err(err);
     }
-    let channel_config = read_local_config(&query.channel(), &node_config.node).await?;
+    let channel_config = match read_local_config(&query.channel(), &node_config.node).await {
+        Ok(k) => k,
+        Err(e) => {
+            if e.msg().contains("ErrorKind::NotFound") {
+                let s = futures_util::stream::empty();
+                let ret = BinnedResponseDyn { stream: Box::pin(s) };
+                return Ok(ret);
+            } else {
+                return Err(e);
+            }
+        }
+    };
     match extract_matching_config_entry(query.range(), &channel_config)? {
         MatchingConfigEntry::Multiple => Err(Error::with_msg("multiple config entries found"))?,
         MatchingConfigEntry::None => {

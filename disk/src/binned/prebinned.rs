@@ -115,7 +115,18 @@ pub async fn pre_binned_bytes_for_http(
         ));
         return Err(err);
     }
-    let channel_config = read_local_config(&query.channel(), &node_config.node).await?;
+    let channel_config = match read_local_config(&query.channel(), &node_config.node).await {
+        Ok(k) => k,
+        Err(e) => {
+            if e.msg().contains("ErrorKind::NotFound") {
+                let s = futures_util::stream::empty();
+                let ret = Box::pin(s);
+                return Ok(ret);
+            } else {
+                return Err(e);
+            }
+        }
+    };
     let entry_res = extract_matching_config_entry(&query.patch().patch_range(), &channel_config)?;
     let entry = match entry_res {
         MatchingConfigEntry::None => return Err(Error::with_msg("no config entry found")),

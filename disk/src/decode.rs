@@ -1,5 +1,5 @@
 use crate::agg::binnedt::TimeBinnableType;
-use crate::agg::enp::{Identity, WaveXBinner};
+use crate::agg::enp::{Identity, WaveNBinner, WavePlainProc, WaveXBinner};
 use crate::agg::streams::{Appendable, Collectable, Collector, StreamItem};
 use crate::agg::{Fits, FitsInside};
 use crate::binned::{
@@ -11,6 +11,7 @@ use crate::eventchunker::EventFull;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use netpod::timeunits::SEC;
 use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
@@ -104,6 +105,7 @@ where
 {
     type NumXAggToSingleBin: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Output>;
     type NumXAggToNBins: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Output>;
+    type NumXAggPlain: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Output>;
 }
 
 pub struct EventValuesDim0Case<NTY> {
@@ -123,6 +125,7 @@ where
     type NumXAggToSingleBin = Identity<NTY>;
     // TODO is this sufficient?
     type NumXAggToNBins = Identity<NTY>;
+    type NumXAggPlain = Identity<NTY>;
 }
 
 pub struct EventValuesDim1Case<NTY> {
@@ -141,8 +144,8 @@ where
     NTY: NumOps + NumFromBytes<NTY, END>,
 {
     type NumXAggToSingleBin = WaveXBinner<NTY>;
-    // TODO implement this method:
-    type NumXAggToNBins = WaveXBinner<NTY>;
+    type NumXAggToNBins = WaveNBinner<NTY>;
+    type NumXAggPlain = WavePlainProc<NTY>;
 }
 
 // TODO add pulse.
@@ -350,8 +353,8 @@ where
     }
 
     fn result(self) -> Result<Self::Output, Error> {
-        let ts0 = self.vals.tss.first().map_or(0, |k| *k);
-        let tsoff = self.vals.tss.into_iter().map(|k| k - ts0).collect();
+        let ts0 = self.vals.tss.first().map_or(0, |k| *k / SEC);
+        let tsoff = self.vals.tss.into_iter().map(|k| k - ts0 * SEC).collect();
         let ret = Self::Output {
             ts0,
             tsoff,

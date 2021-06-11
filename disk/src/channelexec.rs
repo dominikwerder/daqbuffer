@@ -1,11 +1,11 @@
-use crate::agg::enp::Identity;
+use crate::agg::enp::{Identity, WavePlainProc};
 use crate::agg::streams::{Collectable, Collector, StreamItem};
-use crate::binned::{NumOps, RangeCompletableItem};
+use crate::binned::{EventsNodeProcessor, NumOps, PushableIndex, RangeCompletableItem};
 use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValues, EventValuesDim0Case, EventValuesDim1Case,
     LittleEndian, NumFromBytes,
 };
-use crate::frame::makeframe::Framable;
+use crate::frame::makeframe::{Framable, FrameType};
 use crate::merge::mergedfromremotes::MergedFromRemotes;
 use crate::raw::EventsQuery;
 use crate::Sitemty;
@@ -19,6 +19,7 @@ use parse::channelconfig::{extract_matching_config_entry, read_local_config, Mat
 use serde_json::Value as JsonValue;
 use std::pin::Pin;
 use std::time::Duration;
+use tokio::time::timeout_at;
 
 pub trait ChannelExecFunction {
     type Output;
@@ -27,8 +28,12 @@ pub trait ChannelExecFunction {
     where
         NTY: NumOps + NumFromBytes<NTY, END> + 'static,
         END: Endianness + 'static,
-        EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
-        EventValues<NTY>: Collectable;
+        EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + PlainEventsAggMethod + 'static,
+        EventValues<NTY>: Collectable,
+        Sitemty<<<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output>: FrameType,
+        <<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output: Collectable + PushableIndex;
+
+    fn empty() -> Self::Output;
 }
 
 fn channel_exec_nty_end_evs_enp<F, NTY, END, EVS>(
@@ -40,8 +45,10 @@ where
     F: ChannelExecFunction,
     NTY: NumOps + NumFromBytes<NTY, END> + 'static,
     END: Endianness + 'static,
-    EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
+    EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + PlainEventsAggMethod + 'static,
     EventValues<NTY>: Collectable,
+    Sitemty<<<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output>: FrameType,
+    <<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output: Collectable + PushableIndex,
 {
     Ok(f.exec::<NTY, _, _>(byte_order, event_value_shape)?)
 }
@@ -101,7 +108,16 @@ pub async fn channel_exec<F>(
 where
     F: ChannelExecFunction,
 {
-    let channel_config = read_local_config(channel, &node_config.node).await?;
+    let channel_config = match read_local_config(channel, &node_config.node).await {
+        Ok(k) => k,
+        Err(e) => {
+            if e.msg().contains("ErrorKind::NotFound") {
+                return Ok(F::empty());
+            } else {
+                return Err(e);
+            }
+        }
+    };
     match extract_matching_config_entry(range, &channel_config)? {
         MatchingConfigEntry::Multiple => Err(Error::with_msg("multiple config entries found"))?,
         MatchingConfigEntry::None => {
@@ -133,7 +149,7 @@ impl PlainEvents {
         Self {
             channel,
             range,
-            agg_kind: AggKind::DimXBins1,
+            agg_kind: AggKind::Plain,
             node_config,
         }
     }
@@ -169,21 +185,27 @@ impl ChannelExecFunction for PlainEvents {
         let s = s.map(|item| Box::new(item) as Box<dyn Framable>);
         Ok(Box::pin(s))
     }
+
+    fn empty() -> Self::Output {
+        Box::pin(futures_util::stream::empty())
+    }
 }
 
 pub struct PlainEventsJson {
     channel: Channel,
     range: NanoRange,
     agg_kind: AggKind,
+    timeout: Duration,
     node_config: NodeConfigCached,
 }
 
 impl PlainEventsJson {
-    pub fn new(channel: Channel, range: NanoRange, node_config: NodeConfigCached) -> Self {
+    pub fn new(channel: Channel, range: NanoRange, timeout: Duration, node_config: NodeConfigCached) -> Self {
         Self {
             channel,
             range,
-            agg_kind: AggKind::DimXBins1,
+            agg_kind: AggKind::Plain,
+            timeout,
             node_config,
         }
     }
@@ -216,7 +238,7 @@ where
             if false {
                 None
             } else {
-                match tokio::time::timeout_at(deadline, stream.next()).await {
+                match timeout_at(deadline, stream.next()).await {
                     Ok(k) => k,
                     Err(_) => {
                         collector.set_timed_out();
@@ -254,6 +276,24 @@ where
     Ok(ret)
 }
 
+pub trait PlainEventsAggMethod {
+    type Method: EventsNodeProcessor;
+}
+
+impl<NTY> PlainEventsAggMethod for EventValuesDim0Case<NTY>
+where
+    NTY: NumOps,
+{
+    type Method = Identity<NTY>;
+}
+
+impl<NTY> PlainEventsAggMethod for EventValuesDim1Case<NTY>
+where
+    NTY: NumOps,
+{
+    type Method = WavePlainProc<NTY>;
+}
+
 impl ChannelExecFunction for PlainEventsJson {
     type Output = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>;
 
@@ -261,9 +301,10 @@ impl ChannelExecFunction for PlainEventsJson {
     where
         NTY: NumOps + NumFromBytes<NTY, END> + 'static,
         END: Endianness + 'static,
-        EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
+        EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + PlainEventsAggMethod + 'static,
         EventValues<NTY>: Collectable,
-        EventValues<NTY>: Collectable,
+        Sitemty<<<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output>: FrameType,
+        <<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output: Collectable + PushableIndex,
     {
         let _ = byte_order;
         let _ = event_value_shape;
@@ -273,15 +314,21 @@ impl ChannelExecFunction for PlainEventsJson {
             range: self.range,
             agg_kind: self.agg_kind,
         };
-        let s = MergedFromRemotes::<Identity<NTY>>::new(evq, perf_opts, self.node_config.node_config.cluster);
-        // TODO take time out from query parameter.
-        let f = collect_plain_events_json(s, Duration::from_millis(2000));
-        //let s = s.map(|item| Box::new(item) as Box<dyn Framable>);
+        let s = MergedFromRemotes::<<EVS as PlainEventsAggMethod>::Method>::new(
+            evq,
+            perf_opts,
+            self.node_config.node_config.cluster,
+        );
+        let f = collect_plain_events_json(s, self.timeout);
         let f = FutureExt::map(f, |item| match item {
             Ok(item) => Ok(Bytes::from(serde_json::to_vec(&item)?)),
             Err(e) => Err(e.into()),
         });
         let s = futures_util::stream::once(f);
         Ok(Box::pin(s))
+    }
+
+    fn empty() -> Self::Output {
+        Box::pin(futures_util::stream::empty())
     }
 }

@@ -31,6 +31,10 @@ impl Error {
             trace_str: Some(fmt_backtrace(&backtrace::Backtrace::new())),
         }
     }
+
+    pub fn msg(&self) -> &str {
+        &self.msg
+    }
 }
 
 fn fmt_backtrace(trace: &backtrace::Backtrace) -> String {

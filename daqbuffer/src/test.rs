@@ -20,8 +20,8 @@ use std::fmt::Debug;
 use std::future::ready;
 use tokio::io::AsyncRead;
 
+pub mod binnedjson;
 pub mod events;
-pub mod json;
 
 #[test]
 fn get_binned_binary() {
@@ -114,7 +114,7 @@ where
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(url)
-        .header("accept", "application/octet-stream")
+        .header("Accept", "application/octet-stream")
         .body(Body::empty())?;
     let client = hyper::Client::new();
     let res = client.request(req).await?;

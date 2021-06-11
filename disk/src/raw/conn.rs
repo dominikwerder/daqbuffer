@@ -61,18 +61,21 @@ async fn events_conn_handler_inner(
     match events_conn_handler_inner_try(stream, addr, node_config).await {
         Ok(_) => (),
         Err(mut ce) => {
-            // TODO is it guaranteed to be compatible to serialize this way?
-            let buf =
-                make_frame::<Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error>>(&Err(ce.err))?;
-            match ce.netout.write_all(&buf).await {
-                Ok(_) => (),
-                Err(e) => match e.kind() {
-                    io::ErrorKind::BrokenPipe => {}
-                    _ => {
-                        error!("events_conn_handler_inner sees: {:?}", e);
-                        return Err(e)?;
-                    }
-                },
+            error!("events_conn_handler_inner: {:?}", ce.err);
+            if false {
+                let buf = make_frame::<Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error>>(
+                    &Err(ce.err),
+                )?;
+                match ce.netout.write_all(&buf).await {
+                    Ok(_) => (),
+                    Err(e) => match e.kind() {
+                        io::ErrorKind::BrokenPipe => {}
+                        _ => {
+                            error!("events_conn_handler_inner sees: {:?}", e);
+                            return Err(e)?;
+                        }
+                    },
+                }
             }
         }
     }
@@ -143,7 +146,15 @@ macro_rules! pipe4 {
                 $nty,
                 $end,
                 $evs<$nty>,
-                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToSingleBin,
+                // TODO must pass on the requested number of bins:
+                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToNBins,
+                //WaveXBinner<$nty>,
+            >($evsv, $event_blobs),
+            AggKind::Plain => make_num_pipeline_stream_evs::<
+                $nty,
+                $end,
+                $evs<$nty>,
+                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggPlain,
                 //WaveXBinner<$nty>,
             >($evsv, $event_blobs),
         }
@@ -254,7 +265,13 @@ async fn events_conn_handler_inner_try(
     let range = &evq.range;
     let channel_config = match read_local_config(&evq.channel, &node_config.node).await {
         Ok(k) => k,
-        Err(e) => return Err((e, netout))?,
+        Err(e) => {
+            if e.msg().contains("ErrorKind::NotFound") {
+                return Ok(());
+            } else {
+                return Err((e, netout))?;
+            }
+        }
     };
     let entry_res = match extract_matching_config_entry(range, &channel_config) {
         Ok(k) => k,

@@ -533,18 +533,12 @@ impl PreBinnedPatchCoord {
 
 pub struct PreBinnedPatchIterator {
     range: PreBinnedPatchRange,
-    #[allow(dead_code)]
-    agg_kind: AggKind,
     ix: u64,
 }
 
 impl PreBinnedPatchIterator {
     pub fn from_range(range: PreBinnedPatchRange) -> Self {
-        Self {
-            range,
-            agg_kind: AggKind::DimXBins1,
-            ix: 0,
-        }
+        Self { range, ix: 0 }
     }
 }
 
@@ -664,6 +658,7 @@ impl BinnedRange {
 pub enum AggKind {
     DimXBins1,
     DimXBinsN(u32),
+    Plain,
 }
 
 impl Display for AggKind {
@@ -674,6 +669,9 @@ impl Display for AggKind {
             }
             Self::DimXBinsN(n) => {
                 write!(fmt, "DimXBinsN{}", n)
+            }
+            Self::Plain => {
+                write!(fmt, "Plain")
             }
         }
     }
