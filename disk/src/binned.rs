@@ -979,7 +979,9 @@ impl<NTY> MinMaxAvgBinsCollected<NTY> {
 
 #[derive(Serialize)]
 pub struct MinMaxAvgBinsCollectedResult<NTY> {
-    ts_bin_edges: Vec<IsoDateTime>,
+    ts0: u64,
+    tsoff: Vec<u64>,
+    //ts_bin_edges: Vec<IsoDateTime>,
     counts: Vec<u64>,
     mins: Vec<Option<NTY>>,
     maxs: Vec<Option<NTY>>,
@@ -989,7 +991,8 @@ pub struct MinMaxAvgBinsCollectedResult<NTY> {
     #[serde(skip_serializing_if = "Zero::is_zero", rename = "missingBins")]
     missing_bins: u32,
     #[serde(skip_serializing_if = "Option::is_none", rename = "continueAt")]
-    continue_at: Option<IsoDateTime>,
+    //continue_at: Option<IsoDateTime>,
+    continue_at: Option<u64>,
 }
 
 pub struct MinMaxAvgBinsCollector<NTY> {
@@ -1041,19 +1044,19 @@ where
     }
 
     fn result(self) -> Result<Self::Output, Error> {
+        let ts0 = self.vals.ts1s.first().map_or(0, |k| *k / SEC);
         let bin_count = self.vals.ts1s.len() as u32;
-        let mut tsa: Vec<_> = self
-            .vals
-            .ts1s
+        let mut tsoff: Vec<_> = self.vals.ts1s.iter().map(|k| *k - ts0 * SEC).collect();
+        if let Some(&k) = self.vals.ts2s.last() {
+            tsoff.push(k - ts0 * SEC);
+        }
+        let tsoff = tsoff;
+        let _iso: Vec<_> = tsoff
             .iter()
             .map(|&k| IsoDateTime(Utc.timestamp_nanos(k as i64)))
             .collect();
-        if let Some(&z) = self.vals.ts2s.last() {
-            tsa.push(IsoDateTime(Utc.timestamp_nanos(z as i64)));
-        }
-        let tsa = tsa;
         let continue_at = if self.vals.ts1s.len() < self.bin_count_exp as usize {
-            match tsa.last() {
+            match tsoff.last() {
                 Some(k) => Some(k.clone()),
                 None => Err(Error::with_msg("partial_content but no bin in result"))?,
             }
@@ -1061,7 +1064,8 @@ where
             None
         };
         let ret = MinMaxAvgBinsCollectedResult::<NTY> {
-            ts_bin_edges: tsa,
+            ts0,
+            tsoff,
             counts: self.vals.counts,
             mins: self.vals.mins,
             maxs: self.vals.maxs,

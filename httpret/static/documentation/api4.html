@@ -95,13 +95,14 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/search/channel
 
 <h4>CURL example:</h4>
 <pre>
-curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/events?channelBackend=sf-databuffer&channelName=SLAAR-LSCP4-LAS6891:CH7:1&begDate=2021-06-11T07:00:00.000Z&endDate=2021-06-11T07:00:01.000Z'
+curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/events?channelBackend=sf-databuffer
+  &channelName=SLAAR-LSCP4-LAS6891:CH7:1&begDate=2021-06-11T07:00:00.000Z&endDate=2021-06-11T07:00:01.000Z'
 </pre>
 
 <h4>Timestamp format</h4>
 <p>Javascript can not represent the full 64-bit integer and the databuffer nanosecond timestamps would lose precision.
 Therefore, timestamps are represented in the response by <strong>ts0</strong> which gives an absolute anchor
-in time in units of seconds, and the array <strong>tsoff</strong> with the offset of each event in microseconds.</p>
+in time in units of seconds, and the array <strong>tsoff</strong> with the offset of each event in nanoseconds.</p>
 
 <h4>Timeout</h4>
 <p>If the requested range takes too long to retrieve, then the flags <strong>timedOut: true</strong> will be set.</p>
@@ -127,9 +128,6 @@ in time in units of seconds, and the array <strong>tsoff</strong> with the offse
   ]
 }
 </pre>
-
-<h4>Complete result</h4>
-<p>If the result does not contain a <strong>continueAt</strong> key then the result is complete.</p>
 
 <h4>Finalised range</h4>
 <p>If the server can determine that no more data will be added to the requested time range
@@ -169,38 +167,79 @@ as new bins are received.</p>
 <p>Example response:</p>
 <pre>
 {
-  "continueAt": "2021-05-25T16:00:00.000Z",
-  "missingBins": 2,
+  "ts0": 1623304800,
+  "missingBins": 1,
+  "continueAt": 86400000000000,
+  "tsoff": [
+    0,
+    7200000000000,
+    14400000000000,
+    21600000000000,
+    28800000000000,
+    36000000000000,
+    43200000000000,
+    50400000000000,
+    57600000000000,
+    64800000000000,
+    72000000000000,
+    79200000000000,
+    86400000000000
+  ],
   "avgs": [
-    340.87640380859375,
-    340.7442321777344,
-    340.58685302734375,
-    341.04608154296875
+    341.3874206542969,
+    341.5171203613281,
+    341.70989990234375,
+    341.2113952636719,
+    341.84088134765625,
+    342.1435546875,
+    341.16558837890625,
+    342.2756652832031,
+    342.9447326660156,
+    343.0351867675781,
+    342.6963195800781,
+    342.054931640625
   ],
   "counts": [
-    143076,
-    143077,
-    143076,
-    143076
+    71539,
+    71537,
+    71538,
+    71539,
+    71538,
+    71537,
+    71538,
+    71539,
+    71539,
+    71539,
+    71538,
+    71299
   ],
   "maxs": [
+    450,
+    450,
+    462,
+    458,
+    454,
+    450,
     452,
-    452,
-    459,
-    458
+    451,
+    450,
+    453,
+    464,
+    448
   ],
   "mins": [
-    231,
-    240,
+    224,
     239,
-    239
-  ],
-  "tsBinEdges": [
-    "2021-05-25T00:00:00.000Z",
-    "2021-05-25T04:00:00.000Z",
-    "2021-05-25T08:00:00.000Z",
-    "2021-05-25T12:00:00.000Z",
-    "2021-05-25T16:00:00.000Z"
+    242,
+    235,
+    243,
+    239,
+    239,
+    241,
+    243,
+    229,
+    244,
+    225
   ]
 }
 </pre>
