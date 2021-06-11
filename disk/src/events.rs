@@ -71,7 +71,7 @@ impl PlainEventsQuery {
     pub fn url(&self, host: &HostPort) -> String {
         let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
         format!(
-            "http://{}:{}/api/4/plain_events?channelBackend={}&channelName={}&begDate={}&endDate={}&timeout={}",
+            "http://{}:{}/api/4/events?channelBackend={}&channelName={}&begDate={}&endDate={}&timeout={}",
             host.host,
             host.port,
             self.channel.backend,
@@ -150,7 +150,7 @@ impl PlainEventsJsonQuery {
     pub fn url(&self, host: &HostPort) -> String {
         let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
         format!(
-            "http://{}:{}/api/4/alpha_plain_events_json?channelBackend={}&channelName={}&begDate={}&endDate={}&timeout={}",
+            "http://{}:{}/api/4/events?channelBackend={}&channelName={}&begDate={}&endDate={}&timeout={}",
             host.host,
             host.port,
             self.channel.backend,

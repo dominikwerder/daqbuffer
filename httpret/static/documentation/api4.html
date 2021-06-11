@@ -26,9 +26,117 @@ Currently available:
 <h2>API functions</h2>
 <p>Currently available functionality:</p>
 <ul>
-    <li><a href="#query-binned">Query binned data</a></li>
     <li><a href="#search-channel">Search channel</a></li>
+    <li><a href="#query-binned">Query binned data</a></li>
+    <li><a href="#query-events">Query event data</a></li>
 </ul>
+
+
+
+<a id="search-channel"></a>
+<h2>Search channel</h2>
+<p><strong>Method:</strong> GET</p>
+<p><strong>URL:</strong> https://data-api.psi.ch/api/4/search/channel</p>
+<p><strong>Query parameters:</strong></p>
+<ul>
+    <li>nameRegex (e.g. "LSCP.*6")</li>
+    <li>sourceRegex  (e.g. "178:9999")</li>
+    <li>descriptionRegex  (e.g. "celsius")</li>
+</ul>
+<p><strong>Request header:</strong> "Accept" must be "application/json"</p>
+
+<h4>CURL example:</h4>
+<pre>
+curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/search/channel?sourceRegex=CV.E.+37&nameRegex=120.+y2$'
+</pre>
+
+<h4>Example response:</h4>
+<pre>
+{
+  "channels": [
+    {
+      "name": "S10MA01-DBPM120:Y2",
+      "backend": "sf-databuffer",
+      "source": "tcp://S20-CVME-DBPM2371:9000",
+      "type": "Float32",
+      "shape": [],
+      "unit": "",
+      "description": ""
+    },
+    {
+      "name": "S20SY02-DBPM120:Y2",
+      "backend": "sf-databuffer",
+      "source": "tcp://S20-CVME-DBPM2371:9000",
+      "type": "Float32",
+      "shape": [],
+      "unit": "",
+      "description": ""
+    }
+  ]
+}
+</pre>
+<p>The search constraints are AND'd.</p>
+
+
+
+
+<a id="query-events"></a>
+<h2>Query event data</h2>
+<p><strong>Method:</strong> GET</p>
+<p><strong>URL:</strong> https://data-api.psi.ch/api/4/events</p>
+<p><strong>Query parameters:</strong></p>
+<ul>
+    <li>channelBackend (e.g. "sf-databuffer")</li>
+    <li>channelName  (e.g. "SLAAR-LSCP4-LAS6891:CH7:1")</li>
+    <li>begDate  (e.g. "2021-05-26T07:10:00.000Z")</li>
+    <li>endDate  (e.g. "2021-05-26T07:16:00.000Z")</li>
+</ul>
+<p><strong>Request header:</strong> "Accept" must be "application/json"</p>
+
+<h4>CURL example:</h4>
+<pre>
+curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/events?channelBackend=sf-databuffer&channelName=SLAAR-LSCP4-LAS6891:CH7:1&begDate=2021-06-11T07:00:00.000Z&endDate=2021-06-11T07:00:01.000Z'
+</pre>
+
+<h4>Timestamp format</h4>
+<p>Javascript can not represent the full 64-bit integer and the databuffer nanosecond timestamps would lose precision.
+Therefore, timestamps are represented in the response by <strong>ts0</strong> which gives an absolute anchor
+in time in units of seconds, and the array <strong>tsoff</strong> with the offset of each event in microseconds.</p>
+
+<h4>Timeout</h4>
+<p>If the requested range takes too long to retrieve, then the flags <strong>timedOut: true</strong> will be set.</p>
+
+<p>Example response:</p>
+<pre>
+{
+  "finalisedRange": true,
+  "ts0": 1623394800,
+  "tsoff": [
+    68461150,
+    169461160,
+    269461170,
+    369461180,
+    479461191,
+    579461201,
+    ...
+  ],
+  "values": [
+    [378, 325, 321, 381, ... waveform of 1st event ],
+    [334, 355, 360, 345, ... waveform of 2nd event ],
+    ...
+  ]
+}
+</pre>
+
+<h4>Complete result</h4>
+<p>If the result does not contain a <strong>continueAt</strong> key then the result is complete.</p>
+
+<h4>Finalised range</h4>
+<p>If the server can determine that no more data will be added to the requested time range
+    then it will add the flag <strong>finalisedRange: true</strong> to the response.</p>
+
+
+
 
 <a id="query-binned"></a>
 <h2>Query binned data</h2>
@@ -57,7 +165,8 @@ starts with the first not-yet-retrieved bin.</p>
 <p>This information is provided by the <strong>continueAt</strong> and <strong>missingBins</strong> fields.</p>
 <p>This enables the user agent to start the presentation to the user while updating the user interface
 as new bins are received.</p>
-<p>Example:</p>
+
+<p>Example response:</p>
 <pre>
 {
   "continueAt": "2021-05-25T16:00:00.000Z",
@@ -103,50 +212,6 @@ as new bins are received.</p>
 <p>If the server can determine that no more data will be added to the requested time range
 then it will add the flag <strong>finalisedRange: true</strong> to the response.</p>
 
-
-<a id="search-channel"></a>
-<h2>Search channel</h2>
-<p><strong>Method:</strong> GET</p>
-<p><strong>URL:</strong> https://data-api.psi.ch/api/4/search/channel</p>
-<p><strong>Query parameters:</strong></p>
-<ul>
-    <li>nameRegex (e.g. "LSCP.*6")</li>
-    <li>sourceRegex  (e.g. "178:9999")</li>
-    <li>descriptionRegex  (e.g. "celsius")</li>
-</ul>
-<p><strong>Request header:</strong> "Accept" must be "application/json"</p>
-
-<h4>CURL example:</h4>
-<pre>
-curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/search/channel?sourceRegex=CV.E.+37&nameRegex=120.+y2$'
-</pre>
-
-<h4>Example result</h4>
-<pre>
-{
-  "channels": [
-    {
-      "name": "S10MA01-DBPM120:Y2",
-      "backend": "sf-databuffer",
-      "source": "tcp://S20-CVME-DBPM2371:9000",
-      "type": "Float32",
-      "shape": [],
-      "unit": "",
-      "description": ""
-    },
-    {
-      "name": "S20SY02-DBPM120:Y2",
-      "backend": "sf-databuffer",
-      "source": "tcp://S20-CVME-DBPM2371:9000",
-      "type": "Float32",
-      "shape": [],
-      "unit": "",
-      "description": ""
-    }
-  ]
-}
-</pre>
-<p>The search constraints are AND'd.</p>
 
 
 <h2>Feedback and comments very much appreciated!</h2>

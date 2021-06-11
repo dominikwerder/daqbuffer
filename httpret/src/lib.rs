@@ -2,7 +2,7 @@ use crate::gather::gather_get_json;
 use bytes::Bytes;
 use disk::binned::prebinned::pre_binned_bytes_for_http;
 use disk::binned::query::{BinnedQuery, PreBinnedQuery};
-use disk::events::PlainEventsQuery;
+use disk::events::{PlainEventsJsonQuery, PlainEventsQuery};
 use disk::raw::conn::events_service;
 use err::Error;
 use future::Future;
@@ -170,15 +170,9 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/4/plain_events" {
+    } else if path == "/api/4/events" {
         if req.method() == Method::GET {
             Ok(plain_events(req, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
-        }
-    } else if path == "/api/4/alpha_plain_events_json" {
-        if req.method() == Method::GET {
-            Ok(plain_events_json(req, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -260,8 +254,8 @@ where
 {
     Response::builder()
         .status(status)
-        .header("access-control-allow-origin", "*")
-        .header("access-control-allow-headers", "*")
+        .header("Access-Control-Allow-Origin", "*")
+        .header("Access-Control-Allow-Headers", "*")
 }
 
 struct BodyStreamWrap(netpod::BodyStream);
@@ -400,6 +394,21 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
 }
 
 async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    let accept_def = "";
+    let accept = req
+        .headers()
+        .get("Accept")
+        .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
+    if accept == "application/json" {
+        Ok(plain_events_json(req, node_config).await?)
+    } else if accept == "application/octet-stream" {
+        Ok(plain_events_binary(req, node_config).await?)
+    } else {
+        Err(Error::with_msg(format!("unexpected Accept: {:?}", accept)))
+    }
+}
+
+async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let query = PlainEventsQuery::from_request(&head)?;
     let op = disk::channelexec::PlainEvents::new(query.channel().clone(), query.range().clone(), node_config.clone());
@@ -411,7 +420,7 @@ async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Res
 
 async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
-    let query = PlainEventsQuery::from_request(&head)?;
+    let query = PlainEventsJsonQuery::from_request(&head)?;
     let op = disk::channelexec::PlainEventsJson::new(
         query.channel().clone(),
         query.range().clone(),

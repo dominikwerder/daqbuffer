@@ -275,7 +275,7 @@ async fn get_plain_events_json(
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(url)
-        .header("Accept", "application/octet-stream")
+        .header("Accept", "application/json")
         .body(Body::empty())?;
     let client = hyper::Client::new();
     let res = client.request(req).await?;

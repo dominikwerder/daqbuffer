@@ -321,7 +321,12 @@ impl ChannelExecFunction for PlainEventsJson {
         );
         let f = collect_plain_events_json(s, self.timeout);
         let f = FutureExt::map(f, |item| match item {
-            Ok(item) => Ok(Bytes::from(serde_json::to_vec(&item)?)),
+            Ok(item) => {
+                // TODO add channel entry info here?
+                //let obj = item.as_object_mut().unwrap();
+                //obj.insert("channelName", JsonValue::String(en));
+                Ok(Bytes::from(serde_json::to_vec(&item)?))
+            }
             Err(e) => Err(e.into()),
         });
         let s = futures_util::stream::once(f);
