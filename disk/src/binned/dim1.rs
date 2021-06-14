@@ -173,7 +173,7 @@ where
     type Output = MinMaxAvgDim1Bins<NTY>;
     type Aggregator = MinMaxAvgDim1BinsAggregator<NTY>;
 
-    fn aggregator(range: NanoRange) -> Self::Aggregator {
+    fn aggregator(range: NanoRange, bin_count: usize) -> Self::Aggregator {
         Self::Aggregator::new(range)
     }
 }
@@ -317,11 +317,12 @@ pub struct MinMaxAvgDim1BinsAggregator<NTY> {
 }
 
 impl<NTY> MinMaxAvgDim1BinsAggregator<NTY> {
-    pub fn new(range: NanoRange) -> Self {
+    pub fn new(range: NanoRange, bin_count: usize) -> Self {
         Self {
             range,
             count: 0,
-            min: None,
+            // TODO get rid of Option
+            min: err::todoval(),
             max: None,
             sumc: 0,
             sum: None,

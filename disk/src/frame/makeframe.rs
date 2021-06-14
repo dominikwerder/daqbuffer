@@ -1,4 +1,4 @@
-use crate::agg::enp::{WaveEvents, XBinnedScalarEvents};
+use crate::agg::enp::{WaveEvents, XBinnedScalarEvents, XBinnedWaveEvents};
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
@@ -104,6 +104,13 @@ where
     const FRAME_TYPE_ID: u32 = 0x800 + NTY::SUB;
 }
 
+impl<NTY> FrameType for Sitemty<XBinnedWaveEvents<NTY>>
+where
+    NTY: SubFrId,
+{
+    const FRAME_TYPE_ID: u32 = 0x800 + NTY::SUB;
+}
+
 pub trait ProvidesFrameType {
     fn frame_type_id(&self) -> u32;
 }
@@ -152,6 +159,15 @@ where
 }
 
 impl<NTY> Framable for Sitemty<WaveEvents<NTY>>
+where
+    NTY: NumOps + Serialize,
+{
+    fn make_frame(&self) -> Result<BytesMut, Error> {
+        make_frame(self)
+    }
+}
+
+impl<NTY> Framable for Sitemty<XBinnedWaveEvents<NTY>>
 where
     NTY: NumOps + Serialize,
 {

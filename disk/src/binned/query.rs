@@ -57,11 +57,7 @@ impl PreBinnedQuery {
             .map_err(|e| Error::with_msg(format!("can not parse diskStatsEveryKb {:?}", e)))?;
         let ret = Self {
             patch: PreBinnedPatchCoord::new(bin_t_len, patch_t_len, patch_ix),
-            agg_kind: params
-                .get("aggKind")
-                .map_or(&format!("{}", AggKind::DimXBins1), |k| k)
-                .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse aggKind {:?}", e)))?,
+            agg_kind: agg_kind_from_binning_scheme(&params).unwrap_or(AggKind::DimXBins1),
             channel: channel_from_params(&params)?,
             cache_usage: CacheUsage::from_params(&params)?,
             disk_stats_every: ByteSize::kb(disk_stats_every),
@@ -76,11 +72,11 @@ impl PreBinnedQuery {
 
     pub fn make_query_string(&self) -> String {
         format!(
-            "{}&channelBackend={}&channelName={}&aggKind={}&cacheUsage={}&diskStatsEveryKb={}&reportError={}",
+            "{}&channelBackend={}&channelName={}&binningScheme={}&cacheUsage={}&diskStatsEveryKb={}&reportError={}",
             self.patch.to_url_params_strings(),
             self.channel.backend,
             self.channel.name,
-            self.agg_kind,
+            binning_scheme_string(&self.agg_kind),
             self.cache_usage,
             self.disk_stats_every.bytes() / 1024,
             self.report_error(),
@@ -201,6 +197,7 @@ impl BinnedQuery {
             .parse()
             .map_err(|e| Error::with_msg(format!("can not parse diskStatsEveryKb {:?}", e)))?;
         let ret = Self {
+            channel: channel_from_params(&params)?,
             range: NanoRange {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
@@ -210,12 +207,7 @@ impl BinnedQuery {
                 .ok_or(Error::with_msg("missing binCount"))?
                 .parse()
                 .map_err(|e| Error::with_msg(format!("can not parse binCount {:?}", e)))?,
-            agg_kind: params
-                .get("aggKind")
-                .map_or(&format!("{}", AggKind::DimXBins1), |k| k)
-                .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse aggKind {:?}", e)))?,
-            channel: channel_from_params(&params)?,
+            agg_kind: agg_kind_from_binning_scheme(&params).unwrap_or(AggKind::DimXBins1),
             cache_usage: CacheUsage::from_params(&params)?,
             disk_stats_every: ByteSize::kb(disk_stats_every),
             report_error: params
@@ -292,7 +284,7 @@ impl BinnedQuery {
     pub fn url(&self, host: &HostPort) -> String {
         let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
         format!(
-            "http://{}:{}/api/4/binned?cacheUsage={}&channelBackend={}&channelName={}&binCount={}&begDate={}&endDate={}&diskStatsEveryKb={}&timeout={}&abortAfterBinCount={}",
+            "http://{}:{}/api/4/binned?cacheUsage={}&channelBackend={}&channelName={}&binCount={}&begDate={}&endDate={}&binningScheme={}&diskStatsEveryKb={}&timeout={}&abortAfterBinCount={}",
             host.host,
             host.port,
             self.cache_usage,
@@ -301,9 +293,35 @@ impl BinnedQuery {
             self.bin_count,
             Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt),
             Utc.timestamp_nanos(self.range.end as i64).format(date_fmt),
+            binning_scheme_string(&self.agg_kind),
             self.disk_stats_every.bytes() / 1024,
             self.timeout.as_millis(),
             self.abort_after_bin_count,
         )
     }
+}
+
+fn binning_scheme_string(agg_kind: &AggKind) -> String {
+    match agg_kind {
+        AggKind::Plain => "fullValue".into(),
+        AggKind::DimXBins1 => "toScalarX".into(),
+        AggKind::DimXBinsN(n) => format!("binnedXcount{}", n),
+    }
+}
+
+fn agg_kind_from_binning_scheme(params: &BTreeMap<String, String>) -> Result<AggKind, Error> {
+    let key = "binningScheme";
+    let s = params
+        .get(key)
+        .map_or(Err(Error::with_msg(format!("can not find {}", key))), |k| Ok(k))?;
+    let ret = if s == "fullValue" {
+        AggKind::Plain
+    } else if s == "toScalarX" {
+        AggKind::DimXBins1
+    } else if s.starts_with("binnedXcount") {
+        AggKind::DimXBinsN(s[12..].parse()?)
+    } else {
+        return Err(Error::with_msg("can not extract binningScheme"));
+    };
+    Ok(ret)
 }

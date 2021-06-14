@@ -21,6 +21,7 @@ async fn get_binned_json_0_inner() -> Result<(), Error> {
         "1970-01-01T00:20:10.000Z",
         "1970-01-01T01:20:30.000Z",
         10,
+        AggKind::DimXBins1,
         cluster,
         13,
         true,
@@ -41,8 +42,30 @@ async fn get_binned_json_1_inner() -> Result<(), Error> {
         "1970-01-01T00:20:10.000Z",
         "1970-01-01T01:20:45.000Z",
         10,
+        AggKind::DimXBins1,
         cluster,
         13,
+        true,
+    )
+    .await
+}
+
+#[test]
+fn get_binned_json_2() {
+    taskrun::run(get_binned_json_2_inner()).unwrap();
+}
+
+async fn get_binned_json_2_inner() -> Result<(), Error> {
+    let rh = require_test_hosts_running()?;
+    let cluster = &rh.cluster;
+    get_binned_json_common(
+        "wave-f64-be-n21",
+        "1970-01-01T00:20:10.000Z",
+        "1970-01-01T02:20:10.000Z",
+        2,
+        AggKind::DimXBinsN(0),
+        cluster,
+        2,
         true,
     )
     .await
@@ -53,12 +76,12 @@ async fn get_binned_json_common(
     beg_date: &str,
     end_date: &str,
     bin_count: u32,
+    agg_kind: AggKind,
     cluster: &Cluster,
     expect_bin_count: u32,
     expect_finalised_range: bool,
 ) -> Result<(), Error> {
     let t1 = Utc::now();
-    let agg_kind = AggKind::DimXBins1;
     let node0 = &cluster.nodes[0];
     let beg_date: DateTime<Utc> = beg_date.parse()?;
     let end_date: DateTime<Utc> = end_date.parse()?;

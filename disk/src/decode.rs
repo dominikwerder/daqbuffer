@@ -295,7 +295,7 @@ where
     type Output = MinMaxAvgBins<NTY>;
     type Aggregator = EventValuesAggregator<NTY>;
 
-    fn aggregator(range: NanoRange) -> Self::Aggregator {
+    fn aggregator(range: NanoRange, _bin_count: usize) -> Self::Aggregator {
         Self::Aggregator::new(range)
     }
 }

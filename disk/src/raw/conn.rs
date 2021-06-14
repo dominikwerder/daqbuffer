@@ -96,18 +96,14 @@ impl<E: Into<Error>> From<(E, OwnedWriteHalf)> for ConnErr {
     }
 }
 
-// returns Pin<Box<dyn Stream<Item = Sitemty<<ENP as EventsNodeProcessor>::Output>> + Send>>
-
 fn make_num_pipeline_stream_evs<NTY, END, EVS, ENP>(
     event_value_shape: EVS,
+    events_node_proc: ENP,
     event_blobs: EventBlobsComplete,
 ) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>
 where
     NTY: NumOps + NumFromBytes<NTY, END> + 'static,
     END: Endianness + 'static,
-
-    // TODO
-    // Can this work?
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output>,
     Sitemty<<ENP as EventsNodeProcessor>::Output>: Framable + 'static,
@@ -118,7 +114,7 @@ where
         Ok(item) => match item {
             StreamItem::DataItem(item) => match item {
                 RangeCompletableItem::Data(item) => {
-                    let item = <ENP as EventsNodeProcessor>::process(item);
+                    let item = events_node_proc.process(item);
                     Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                 }
                 RangeCompletableItem::RangeComplete => Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)),
@@ -133,30 +129,44 @@ where
 }
 
 macro_rules! pipe4 {
-    ($nty:ident, $end:ident, $evs:ident, $evsv:expr, $agg_kind:expr, $event_blobs:expr) => {
+    ($nty:ident, $end:ident, $shape:expr, $evs:ident, $evsv:expr, $agg_kind:expr, $event_blobs:expr) => {
         match $agg_kind {
             AggKind::DimXBins1 => make_num_pipeline_stream_evs::<
                 $nty,
                 $end,
                 $evs<$nty>,
-                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToSingleBin,
+                //<$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToSingleBin,
+                _,
                 //Identity<$nty>,
-            >($evsv, $event_blobs),
+            >(
+                $evsv,
+                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToSingleBin::create($shape),
+                $event_blobs,
+            ),
             AggKind::DimXBinsN(_) => make_num_pipeline_stream_evs::<
                 $nty,
                 $end,
                 $evs<$nty>,
-                // TODO must pass on the requested number of bins:
-                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToNBins,
+                //<$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToNBins,
+                _,
                 //WaveXBinner<$nty>,
-            >($evsv, $event_blobs),
+            >(
+                $evsv,
+                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToNBins::create($shape),
+                $event_blobs,
+            ),
             AggKind::Plain => make_num_pipeline_stream_evs::<
                 $nty,
                 $end,
                 $evs<$nty>,
-                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggPlain,
+                //<$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggPlain,
+                _,
                 //WaveXBinner<$nty>,
-            >($evsv, $event_blobs),
+            >(
+                $evsv,
+                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggPlain::create($shape),
+                $event_blobs,
+            ),
         }
     };
 }
@@ -168,6 +178,7 @@ macro_rules! pipe3 {
                 pipe4!(
                     $nty,
                     $end,
+                    $shape,
                     EventValuesDim0Case,
                     EventValuesDim0Case::<$nty>::new(),
                     $agg_kind,
@@ -181,6 +192,7 @@ macro_rules! pipe3 {
                 pipe4!(
                     $nty,
                     $end,
+                    $shape,
                     EventValuesDim1Case,
                     EventValuesDim1Case::<$nty>::new(n),
                     $agg_kind,
@@ -258,6 +270,7 @@ async fn events_conn_handler_inner_try(
             return Err((Error::with_msg("json parse error"), netout))?;
         }
     };
+    info!("---------------------------------------------------\nevq {:?}", evq);
     match dbconn::channel_exists(&evq.channel, &node_config).await {
         Ok(_) => (),
         Err(e) => return Err((e, netout))?,
