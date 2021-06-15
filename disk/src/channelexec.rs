@@ -1,3 +1,4 @@
+use crate::agg::binnedt::TimeBinnableType;
 use crate::agg::enp::{Identity, WavePlainProc};
 use crate::agg::streams::{Collectable, Collector, StreamItem};
 use crate::binned::{EventsNodeProcessor, NumOps, PushableIndex, RangeCompletableItem};
@@ -16,6 +17,7 @@ use futures_util::future::FutureExt;
 use futures_util::StreamExt;
 use netpod::{AggKind, ByteOrder, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
+use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
 use std::pin::Pin;
 use std::time::Duration;
@@ -24,36 +26,62 @@ use tokio::time::timeout_at;
 pub trait ChannelExecFunction {
     type Output;
 
-    fn exec<NTY, END, EVS>(self, byte_order: END, event_value_shape: EVS) -> Result<Self::Output, Error>
+    fn exec<NTY, END, EVS, ENP>(
+        self,
+        byte_order: END,
+        shape: Shape,
+        event_value_shape: EVS,
+        events_node_proc: ENP,
+    ) -> Result<Self::Output, Error>
     where
         NTY: NumOps + NumFromBytes<NTY, END> + 'static,
         END: Endianness + 'static,
         EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + PlainEventsAggMethod + 'static,
-        EventValues<NTY>: Collectable,
+        ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
         Sitemty<<<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output>: FrameType,
-        <<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output: Collectable + PushableIndex;
+        <<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output: Collectable + PushableIndex,
+        <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output:
+            TimeBinnableType<Output = <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output> + Unpin,
+        // TODO require these things in general?
+        <ENP as EventsNodeProcessor>::Output: PushableIndex,
+        Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
+        Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
+            FrameType + Framable + DeserializeOwned;
 
     fn empty() -> Self::Output;
 }
 
-fn channel_exec_nty_end_evs_enp<F, NTY, END, EVS>(
+fn channel_exec_nty_end_evs_enp<F, NTY, END, EVS, ENP>(
     f: F,
     byte_order: END,
+    shape: Shape,
     event_value_shape: EVS,
+    events_node_proc: ENP,
 ) -> Result<F::Output, Error>
 where
     F: ChannelExecFunction,
     NTY: NumOps + NumFromBytes<NTY, END> + 'static,
     END: Endianness + 'static,
+
+    // TODO
+
+    // TODO
+
+    // TODO
+
+    // TODO
+
+    // Can I replace the PlainEventsAggMethod by EventsNodeProcessor?
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + PlainEventsAggMethod + 'static,
-    EventValues<NTY>: Collectable,
+
+    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
     Sitemty<<<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output>: FrameType,
     <<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output: Collectable + PushableIndex,
 {
-    Ok(f.exec::<NTY, _, _>(byte_order, event_value_shape)?)
+    Ok(f.exec(byte_order, shape, event_value_shape, events_node_proc)?)
 }
 
-fn channel_exec_nty_end<F, NTY, END>(f: F, byte_order: END, shape: Shape) -> Result<F::Output, Error>
+fn channel_exec_nty_end<F, NTY, END>(f: F, byte_order: END, shape: Shape, agg_kind: AggKind) -> Result<F::Output, Error>
 where
     F: ChannelExecFunction,
     NTY: NumOps + NumFromBytes<NTY, END> + 'static,
@@ -61,16 +89,54 @@ where
     EventValues<NTY>: Collectable,
 {
     match shape {
-        Shape::Scalar => channel_exec_nty_end_evs_enp::<_, NTY, _, _>(f, byte_order, EventValuesDim0Case::new()),
-        Shape::Wave(n) => channel_exec_nty_end_evs_enp::<_, NTY, _, _>(f, byte_order, EventValuesDim1Case::new(n)),
+        Shape::Scalar => {
+            //
+            match agg_kind {
+                AggKind::Plain => {
+                    let evs = EventValuesDim0Case::new();
+                    let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggPlain as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
+                    channel_exec_nty_end_evs_enp(f, byte_order, shape, evs, events_node_proc)
+                }
+                AggKind::DimXBins1 => {
+                    let evs = EventValuesDim0Case::new();
+                    let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggToSingleBin as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
+                    channel_exec_nty_end_evs_enp(f, byte_order, shape, evs, events_node_proc)
+                }
+                AggKind::DimXBinsN(_) => {
+                    let evs = EventValuesDim0Case::new();
+                    let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggToNBins as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
+                    channel_exec_nty_end_evs_enp(f, byte_order, shape, evs, events_node_proc)
+                }
+            }
+        }
+        Shape::Wave(n) => {
+            //
+            match agg_kind {
+                AggKind::Plain => {
+                    let evs = EventValuesDim1Case::new(n);
+                    let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggPlain as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
+                    channel_exec_nty_end_evs_enp(f, byte_order, shape, evs, events_node_proc)
+                }
+                AggKind::DimXBins1 => {
+                    let evs = EventValuesDim1Case::new(n);
+                    let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggToSingleBin as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
+                    channel_exec_nty_end_evs_enp(f, byte_order, shape, evs, events_node_proc)
+                }
+                AggKind::DimXBinsN(_) => {
+                    let evs = EventValuesDim1Case::new(n);
+                    let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggToNBins as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
+                    channel_exec_nty_end_evs_enp(f, byte_order, shape, evs, events_node_proc)
+                }
+            }
+        }
     }
 }
 
 macro_rules! match_end {
-    ($f:expr, $nty:ident, $end:expr, $shape:expr, $node_config:expr) => {
+    ($f:expr, $nty:ident, $end:expr, $shape:expr, $agg_kind:expr, $node_config:expr) => {
         match $end {
-            ByteOrder::LE => channel_exec_nty_end::<_, $nty, _>($f, LittleEndian {}, $shape),
-            ByteOrder::BE => channel_exec_nty_end::<_, $nty, _>($f, BigEndian {}, $shape),
+            ByteOrder::LE => channel_exec_nty_end::<_, $nty, _>($f, LittleEndian {}, $shape, $agg_kind),
+            ByteOrder::BE => channel_exec_nty_end::<_, $nty, _>($f, BigEndian {}, $shape, $agg_kind),
         }
     };
 }
@@ -80,22 +146,23 @@ fn channel_exec_config<F>(
     scalar_type: ScalarType,
     byte_order: ByteOrder,
     shape: Shape,
+    agg_kind: AggKind,
     _node_config: &NodeConfigCached,
 ) -> Result<F::Output, Error>
 where
     F: ChannelExecFunction,
 {
     match scalar_type {
-        ScalarType::U8 => match_end!(f, u8, byte_order, shape, node_config),
-        ScalarType::U16 => match_end!(f, u16, byte_order, shape, node_config),
-        ScalarType::U32 => match_end!(f, u32, byte_order, shape, node_config),
-        ScalarType::U64 => match_end!(f, u64, byte_order, shape, node_config),
-        ScalarType::I8 => match_end!(f, i8, byte_order, shape, node_config),
-        ScalarType::I16 => match_end!(f, i16, byte_order, shape, node_config),
-        ScalarType::I32 => match_end!(f, i32, byte_order, shape, node_config),
-        ScalarType::I64 => match_end!(f, i64, byte_order, shape, node_config),
-        ScalarType::F32 => match_end!(f, f32, byte_order, shape, node_config),
-        ScalarType::F64 => match_end!(f, f64, byte_order, shape, node_config),
+        ScalarType::U8 => match_end!(f, u8, byte_order, shape, agg_kind, node_config),
+        ScalarType::U16 => match_end!(f, u16, byte_order, shape, agg_kind, node_config),
+        ScalarType::U32 => match_end!(f, u32, byte_order, shape, agg_kind, node_config),
+        ScalarType::U64 => match_end!(f, u64, byte_order, shape, agg_kind, node_config),
+        ScalarType::I8 => match_end!(f, i8, byte_order, shape, agg_kind, node_config),
+        ScalarType::I16 => match_end!(f, i16, byte_order, shape, agg_kind, node_config),
+        ScalarType::I32 => match_end!(f, i32, byte_order, shape, agg_kind, node_config),
+        ScalarType::I64 => match_end!(f, i64, byte_order, shape, agg_kind, node_config),
+        ScalarType::F32 => match_end!(f, f32, byte_order, shape, agg_kind, node_config),
+        ScalarType::F64 => match_end!(f, f64, byte_order, shape, agg_kind, node_config),
     }
 }
 
@@ -103,6 +170,7 @@ pub async fn channel_exec<F>(
     f: F,
     channel: &Channel,
     range: &NanoRange,
+    agg_kind: AggKind,
     node_config: &NodeConfigCached,
 ) -> Result<F::Output, Error>
 where
@@ -130,6 +198,7 @@ where
                 entry.scalar_type.clone(),
                 entry.byte_order.clone(),
                 entry.to_shape()?,
+                agg_kind,
                 node_config,
             )?;
             Ok(ret)
@@ -166,12 +235,18 @@ impl PlainEvents {
 impl ChannelExecFunction for PlainEvents {
     type Output = Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>;
 
-    fn exec<NTY, END, EVS>(self, byte_order: END, event_value_shape: EVS) -> Result<Self::Output, Error>
+    fn exec<NTY, END, EVS, ENP>(
+        self,
+        byte_order: END,
+        shape: Shape,
+        event_value_shape: EVS,
+        events_node_proc: ENP,
+    ) -> Result<Self::Output, Error>
     where
         NTY: NumOps + NumFromBytes<NTY, END> + 'static,
         END: Endianness + 'static,
         EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
-        EventValues<NTY>: Collectable,
+        ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
     {
         let _ = byte_order;
         let _ = event_value_shape;
@@ -297,12 +372,18 @@ where
 impl ChannelExecFunction for PlainEventsJson {
     type Output = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>;
 
-    fn exec<NTY, END, EVS>(self, byte_order: END, event_value_shape: EVS) -> Result<Self::Output, Error>
+    fn exec<NTY, END, EVS, ENP>(
+        self,
+        byte_order: END,
+        shape: Shape,
+        event_value_shape: EVS,
+        _events_node_proc: ENP,
+    ) -> Result<Self::Output, Error>
     where
         NTY: NumOps + NumFromBytes<NTY, END> + 'static,
         END: Endianness + 'static,
         EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + PlainEventsAggMethod + 'static,
-        EventValues<NTY>: Collectable,
+        ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
         Sitemty<<<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output>: FrameType,
         <<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output: Collectable + PushableIndex,
     {

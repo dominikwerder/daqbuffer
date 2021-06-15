@@ -13,7 +13,7 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
 use netpod::log::*;
-use netpod::{Channel, NodeConfigCached};
+use netpod::{AggKind, Channel, NodeConfigCached};
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
 use serde::{Deserialize, Serialize};
@@ -351,7 +351,7 @@ async fn binned_binary(query: BinnedQuery, node_config: &NodeConfigCached) -> Re
 }
 
 async fn binned_json(query: BinnedQuery, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    let ret = match disk::binned::binned_json(node_config, &query).await {
+    let ret = match disk::binned::binned_json(&query, node_config).await {
         Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, format!("binned_json")))?,
         Err(e) => {
             if query.report_error() {
@@ -412,7 +412,7 @@ async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached)
     let (head, _body) = req.into_parts();
     let query = PlainEventsQuery::from_request(&head)?;
     let op = disk::channelexec::PlainEvents::new(query.channel().clone(), query.range().clone(), node_config.clone());
-    let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), node_config).await?;
+    let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), AggKind::Plain, node_config).await?;
     let s = s.map(|item| item.make_frame());
     let ret = response(StatusCode::OK).body(BodyStream::wrapped(s, format!("plain_events")))?;
     Ok(ret)
@@ -427,7 +427,7 @@ async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -
         query.timeout(),
         node_config.clone(),
     );
-    let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), node_config).await?;
+    let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), AggKind::Plain, node_config).await?;
     let ret = response(StatusCode::OK).body(BodyStream::wrapped(s, format!("plain_events")))?;
     Ok(ret)
 }

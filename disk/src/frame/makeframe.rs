@@ -2,7 +2,7 @@ use crate::agg::enp::{WaveEvents, XBinnedScalarEvents, XBinnedWaveEvents};
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
-use crate::binned::{MinMaxAvgBins, NumOps, RangeCompletableItem};
+use crate::binned::{MinMaxAvgBins, MinMaxAvgWaveBins, NumOps, RangeCompletableItem};
 use crate::decode::EventValues;
 use crate::frame::inmem::InMemoryFrame;
 use crate::raw::EventQueryJsonStringFrame;
@@ -108,7 +108,14 @@ impl<NTY> FrameType for Sitemty<XBinnedWaveEvents<NTY>>
 where
     NTY: SubFrId,
 {
-    const FRAME_TYPE_ID: u32 = 0x800 + NTY::SUB;
+    const FRAME_TYPE_ID: u32 = 0x900 + NTY::SUB;
+}
+
+impl<NTY> FrameType for Sitemty<MinMaxAvgWaveBins<NTY>>
+where
+    NTY: SubFrId,
+{
+    const FRAME_TYPE_ID: u32 = 0xa00 + NTY::SUB;
 }
 
 pub trait ProvidesFrameType {
@@ -116,16 +123,32 @@ pub trait ProvidesFrameType {
 }
 
 pub trait Framable: Send {
+    fn typeid(&self) -> u32;
     fn make_frame(&self) -> Result<BytesMut, Error>;
 }
 
+impl Framable for Sitemty<serde_json::Value> {
+    fn typeid(&self) -> u32 {
+        EventQueryJsonStringFrame::FRAME_TYPE_ID
+    }
+    fn make_frame(&self) -> Result<BytesMut, Error> {
+        panic!()
+    }
+}
+
 impl Framable for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>, Error> {
+    fn typeid(&self) -> u32 {
+        Self::FRAME_TYPE_ID
+    }
     fn make_frame(&self) -> Result<BytesMut, Error> {
         make_frame(self)
     }
 }
 
 impl Framable for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error> {
+    fn typeid(&self) -> u32 {
+        Self::FRAME_TYPE_ID
+    }
     fn make_frame(&self) -> Result<BytesMut, Error> {
         make_frame(self)
     }
@@ -135,6 +158,9 @@ impl<NTY> Framable for Result<StreamItem<RangeCompletableItem<EventValues<NTY>>>
 where
     NTY: NumOps + Serialize,
 {
+    fn typeid(&self) -> u32 {
+        Self::FRAME_TYPE_ID
+    }
     fn make_frame(&self) -> Result<BytesMut, Error> {
         make_frame(self)
     }
@@ -144,6 +170,9 @@ impl<NTY> Framable for Result<StreamItem<RangeCompletableItem<XBinnedScalarEvent
 where
     NTY: NumOps + Serialize,
 {
+    fn typeid(&self) -> u32 {
+        Self::FRAME_TYPE_ID
+    }
     fn make_frame(&self) -> Result<BytesMut, Error> {
         make_frame(self)
     }
@@ -153,6 +182,9 @@ impl<NTY> Framable for Sitemty<MinMaxAvgBins<NTY>>
 where
     NTY: NumOps + Serialize,
 {
+    fn typeid(&self) -> u32 {
+        Self::FRAME_TYPE_ID
+    }
     fn make_frame(&self) -> Result<BytesMut, Error> {
         make_frame(self)
     }
@@ -162,6 +194,9 @@ impl<NTY> Framable for Sitemty<WaveEvents<NTY>>
 where
     NTY: NumOps + Serialize,
 {
+    fn typeid(&self) -> u32 {
+        Self::FRAME_TYPE_ID
+    }
     fn make_frame(&self) -> Result<BytesMut, Error> {
         make_frame(self)
     }
@@ -171,6 +206,21 @@ impl<NTY> Framable for Sitemty<XBinnedWaveEvents<NTY>>
 where
     NTY: NumOps + Serialize,
 {
+    fn typeid(&self) -> u32 {
+        Self::FRAME_TYPE_ID
+    }
+    fn make_frame(&self) -> Result<BytesMut, Error> {
+        make_frame(self)
+    }
+}
+
+impl<NTY> Framable for Sitemty<MinMaxAvgWaveBins<NTY>>
+where
+    NTY: NumOps + Serialize,
+{
+    fn typeid(&self) -> u32 {
+        Self::FRAME_TYPE_ID
+    }
     fn make_frame(&self) -> Result<BytesMut, Error> {
         make_frame(self)
     }
@@ -248,4 +298,14 @@ where
         Ok(item) => Ok(item),
         Err(e) => Err(e.into()),
     }
+}
+
+pub fn crchex<T>(t: T) -> String
+where
+    T: AsRef<[u8]>,
+{
+    let mut h = crc32fast::Hasher::new();
+    h.update(t.as_ref());
+    let crc = h.finalize();
+    format!("{:08x}", crc)
 }

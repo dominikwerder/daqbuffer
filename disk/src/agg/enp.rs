@@ -8,7 +8,8 @@ use crate::binned::{
 };
 use crate::decode::EventValues;
 use err::Error;
-use netpod::{NanoRange, Shape};
+use netpod::log::*;
+use netpod::{x_bin_count, AggKind, NanoRange, Shape};
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use tokio::fs::File;
@@ -24,7 +25,7 @@ where
     type Input = NTY;
     type Output = EventValues<NTY>;
 
-    fn create(shape: Shape) -> Self {
+    fn create(_shape: Shape, _agg_kind: AggKind) -> Self {
         Self { _m1: PhantomData }
     }
 
@@ -174,7 +175,7 @@ where
     type Output = MinMaxAvgBins<NTY>;
     type Aggregator = XBinnedScalarEventsAggregator<NTY>;
 
-    fn aggregator(range: NanoRange, bin_count: usize) -> Self::Aggregator {
+    fn aggregator(range: NanoRange, _x_bin_count: usize) -> Self::Aggregator {
         Self::Aggregator::new(range)
     }
 }
@@ -368,9 +369,10 @@ where
 {
     fn push_index(&mut self, src: &Self, ix: usize) {
         self.tss.push(src.tss[ix]);
-        self.mins.push(src.mins[ix]);
-        self.maxs.push(src.maxs[ix]);
-        self.avgs.push(src.avgs[ix]);
+        // TODO not nice.
+        self.mins.push(src.mins[ix].clone());
+        self.maxs.push(src.maxs[ix].clone());
+        self.avgs.push(src.avgs[ix].clone());
     }
 }
 
@@ -659,7 +661,7 @@ impl<NTY> WaveEventsAggregator<NTY>
 where
     NTY: NumOps,
 {
-    pub fn new(range: NanoRange, bin_count: usize) -> Self {
+    pub fn new(range: NanoRange, _x_bin_count: usize) -> Self {
         Self {
             range,
             count: 0,
@@ -766,7 +768,7 @@ where
     type Input = Vec<NTY>;
     type Output = XBinnedScalarEvents<NTY>;
 
-    fn create(shape: Shape) -> Self {
+    fn create(_shape: Shape, _agg_kind: AggKind) -> Self {
         Self { _m1: PhantomData }
     }
 
@@ -831,7 +833,8 @@ where
 }
 
 pub struct WaveNBinner<NTY> {
-    bin_count: usize,
+    shape_bin_count: usize,
+    x_bin_count: usize,
     _m1: PhantomData<NTY>,
 }
 
@@ -842,11 +845,15 @@ where
     type Input = Vec<NTY>;
     type Output = XBinnedWaveEvents<NTY>;
 
-    fn create(shape: Shape) -> Self {
+    fn create(shape: Shape, agg_kind: AggKind) -> Self {
+        info!("WaveNBinner::create");
         // TODO get rid of panic potential
-        let bin_count = if let Shape::Wave(n) = shape { n } else { panic!() } as usize;
+        let shape_bin_count = if let Shape::Wave(n) = shape { n } else { panic!() } as usize;
+        let x_bin_count = x_bin_count(&shape, &agg_kind);
+        info!("shape_bin_count {}  x_bin_count {}", shape_bin_count, x_bin_count);
         Self {
-            bin_count,
+            shape_bin_count,
+            x_bin_count,
             _m1: PhantomData,
         }
     }
@@ -860,12 +867,12 @@ where
             avgs: Vec::with_capacity(nev),
         };
         for i1 in 0..nev {
-            let mut min = vec![NTY::min_or_nan(); self.bin_count];
-            let mut max = vec![NTY::max_or_nan(); self.bin_count];
-            let mut sum = vec![0f32; self.bin_count];
-            let mut sumc = vec![0; self.bin_count];
+            let mut min = vec![NTY::min_or_nan(); self.x_bin_count];
+            let mut max = vec![NTY::max_or_nan(); self.x_bin_count];
+            let mut sum = vec![0f32; self.x_bin_count];
+            let mut sumc = vec![0u64; self.x_bin_count];
             for (i2, &v) in inp.values[i1].iter().enumerate() {
-                let i3 = i2 * self.bin_count / inp.values[i1].len();
+                let i3 = i2 * self.x_bin_count / self.shape_bin_count;
                 if v < min[i3] {
                     min[i3] = v;
                 }
@@ -881,15 +888,9 @@ where
             ret.mins.push(min);
             ret.maxs.push(max);
             let avg = sum
-                .iter()
-                .enumerate()
-                .map(|(i3, &k)| {
-                    if sumc[i3] > 0 {
-                        sum[i3] / sumc[i3] as f32
-                    } else {
-                        f32::NAN
-                    }
-                })
+                .into_iter()
+                .zip(sumc.into_iter())
+                .map(|(j, k)| if k > 0 { j / k as f32 } else { f32::NAN })
                 .collect();
             ret.avgs.push(avg);
         }
@@ -908,7 +909,7 @@ where
     type Input = Vec<NTY>;
     type Output = WaveEvents<NTY>;
 
-    fn create(shape: Shape) -> Self {
+    fn create(_shape: Shape, _agg_kind: AggKind) -> Self {
         Self { _m1: PhantomData }
     }
 

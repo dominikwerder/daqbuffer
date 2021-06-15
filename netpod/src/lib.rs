@@ -661,6 +661,26 @@ pub enum AggKind {
     Plain,
 }
 
+pub fn x_bin_count(shape: &Shape, agg_kind: &AggKind) -> usize {
+    match agg_kind {
+        AggKind::DimXBins1 => 0,
+        AggKind::DimXBinsN(n) => {
+            if *n == 0 {
+                match shape {
+                    Shape::Scalar => 0,
+                    Shape::Wave(n) => *n as usize,
+                }
+            } else {
+                *n as usize
+            }
+        }
+        AggKind::Plain => match shape {
+            Shape::Scalar => 0,
+            Shape::Wave(n) => *n as usize,
+        },
+    }
+}
+
 impl Display for AggKind {
     fn fmt(&self, fmt: &mut Formatter) -> std::fmt::Result {
         match self {

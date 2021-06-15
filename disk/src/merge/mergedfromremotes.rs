@@ -7,6 +7,7 @@ use crate::Sitemty;
 use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
+use netpod::log::*;
 use netpod::{Cluster, PerfOpts};
 use std::future::Future;
 use std::pin::Pin;
@@ -34,6 +35,7 @@ where
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType,
 {
     pub fn new(evq: EventsQuery, perf_opts: PerfOpts, cluster: Cluster) -> Self {
+        info!("MergedFromRemotes  evq {:?}", evq);
         let mut tcp_establish_futs = vec![];
         for node in &cluster.nodes {
             let f = x_processed_stream_from_node::<ENP>(evq.clone(), perf_opts.clone(), node.clone());

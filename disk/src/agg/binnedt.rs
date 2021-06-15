@@ -38,7 +38,7 @@ where
 {
     inp: Pin<Box<S>>,
     spec: BinnedRange,
-    bin_count: usize,
+    x_bin_count: usize,
     curbin: u32,
     left: Option<Poll<Option<Sitemty<TBT>>>>,
     aggtor: Option<<TBT as TimeBinnableType>::Aggregator>,
@@ -56,15 +56,15 @@ where
     S: Stream<Item = Sitemty<TBT>> + Send + Unpin + 'static,
     TBT: TimeBinnableType,
 {
-    pub fn new(inp: S, spec: BinnedRange, bin_count: usize) -> Self {
+    pub fn new(inp: S, spec: BinnedRange, x_bin_count: usize) -> Self {
         let range = spec.get_range(0);
         Self {
             inp: Box::pin(inp),
             spec,
-            bin_count,
+            x_bin_count,
             curbin: 0,
             left: None,
-            aggtor: Some(<TBT as TimeBinnableType>::aggregator(range, bin_count)),
+            aggtor: Some(<TBT as TimeBinnableType>::aggregator(range, x_bin_count)),
             tmp_agg_results: VecDeque::new(),
             inp_completed: false,
             all_bins_emitted: false,
@@ -92,7 +92,7 @@ where
         let range = self.spec.get_range(self.curbin);
         let ret = self
             .aggtor
-            .replace(<TBT as TimeBinnableType>::aggregator(range, self.bin_count))
+            .replace(<TBT as TimeBinnableType>::aggregator(range, self.x_bin_count))
             .unwrap()
             .result();
         // TODO should we accumulate bins before emit? Maybe not, we want to stay responsive.

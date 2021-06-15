@@ -7,6 +7,7 @@ use crate::agg::{Fits, FitsInside};
 use crate::binned::binnedfrompbv::BinnedFromPreBinned;
 use crate::binned::query::BinnedQuery;
 use crate::binnedstream::BoxedStream;
+use crate::channelexec::{channel_exec, collect_plain_events_json, ChannelExecFunction, PlainEventsAggMethod};
 use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValues, EventValuesDim0Case, EventValuesDim1Case,
     LittleEndian, NumFromBytes,
@@ -15,7 +16,7 @@ use crate::frame::makeframe::{Framable, FrameType, SubFrId};
 use crate::merge::mergedfromremotes::MergedFromRemotes;
 use crate::raw::EventsQuery;
 use crate::Sitemty;
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
 use chrono::{TimeZone, Utc};
 use err::Error;
 use futures_core::Stream;
@@ -23,7 +24,7 @@ use futures_util::{FutureExt, StreamExt};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{
-    AggKind, BinnedRange, ByteOrder, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator,
+    AggKind, BinnedRange, ByteOrder, Channel, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator,
     PreBinnedPatchRange, ScalarType, Shape,
 };
 use num_traits::{AsPrimitive, Bounded, Float, Zero};
@@ -60,6 +61,7 @@ pub struct BinnedResponseStat<T> {
 // They also must resolve to the same types, so would be good to unify.
 
 fn make_num_pipeline_nty_end_evs_enp_stat<NTY, END, EVS, ENP>(
+    shape: Shape,
     event_value_shape: EVS,
     query: BinnedQuery,
     node_config: &NodeConfigCached,
@@ -100,6 +102,7 @@ where
                 PreBinnedPatchIterator::from_range(pre_range),
                 query.channel().clone(),
                 range.clone(),
+                shape,
                 query.agg_kind().clone(),
                 query.cache_usage().clone(),
                 node_config,
@@ -149,7 +152,10 @@ pub struct BinnedResponseDyn {
 }
 
 fn make_num_pipeline_nty_end_evs_enp<PPP, NTY, END, EVS, ENP>(
+    shape: Shape,
+    _agg_kind: AggKind,
     event_value_shape: EVS,
+    _events_node_proc: ENP,
     query: BinnedQuery,
     ppp: PPP,
     node_config: &NodeConfigCached,
@@ -175,7 +181,7 @@ where
         FrameType + Framable + DeserializeOwned,
     Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>: ToJsonResult + Framable,
 {
-    let res = make_num_pipeline_nty_end_evs_enp_stat::<_, _, _, ENP>(event_value_shape, query, node_config)?;
+    let res = make_num_pipeline_nty_end_evs_enp_stat::<_, _, _, ENP>(shape, event_value_shape, query, node_config)?;
     let s = ppp.convert(res.stream, res.bin_count);
     let ret = BinnedResponseDyn { stream: Box::pin(s) };
     Ok(ret)
@@ -190,18 +196,108 @@ fn make_num_pipeline_nty_end<PPP, NTY, END>(
 where
     PPP: PipelinePostProcessA,
     PPP: PipelinePostProcessB<MinMaxAvgBins<NTY>>,
+    NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
+    END: Endianness + 'static,
+{
+    let agg_kind = query.agg_kind().clone();
+    match shape {
+        Shape::Scalar => {
+            let evs = EventValuesDim0Case::new();
+            match agg_kind {
+                AggKind::DimXBins1 => {
+                    let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggToSingleBin as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
+                    make_num_pipeline_nty_end_evs_enp::<_, NTY, END, _, _>(
+                        shape,
+                        agg_kind,
+                        evs,
+                        events_node_proc,
+                        query,
+                        ppp,
+                        node_config,
+                    )
+                }
+                AggKind::DimXBinsN(_) => {
+                    let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggToNBins as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
+                    make_num_pipeline_nty_end_evs_enp::<_, NTY, END, _, _>(
+                        shape,
+                        agg_kind,
+                        evs,
+                        events_node_proc,
+                        query,
+                        ppp,
+                        node_config,
+                    )
+                }
+                AggKind::Plain => {
+                    panic!();
+                }
+            }
+        }
+        Shape::Wave(n) => {
+            let evs = EventValuesDim1Case::new(n);
+            match agg_kind {
+                AggKind::DimXBins1 => {
+                    let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggToSingleBin as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
+                    make_num_pipeline_nty_end_evs_enp::<PPP, NTY, END, _, _>(
+                        shape,
+                        agg_kind,
+                        evs,
+                        events_node_proc,
+                        query,
+                        ppp,
+                        node_config,
+                    )
+                }
+                AggKind::DimXBinsN(_) => {
+                    /*let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggToNBins as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
+                    let yo = make_num_pipeline_nty_end_evs_enp::<PPP, NTY, END, _, _>(
+                        shape,
+                        agg_kind,
+                        evs,
+                        events_node_proc,
+                        query,
+                        ppp,
+                        node_config,
+                    );*/
+                    err::todoval()
+                }
+                AggKind::Plain => {
+                    panic!();
+                }
+            }
+        }
+    }
+}
+
+fn make_num_pipeline_nty_end_old<PPP, NTY, END>(
+    shape: Shape,
+    query: BinnedQuery,
+    ppp: PPP,
+    node_config: &NodeConfigCached,
+) -> Result<BinnedResponseDyn, Error>
+where
+    PPP: PipelinePostProcessA,
+    PPP: PipelinePostProcessB<MinMaxAvgBins<NTY>>,
+    PPP: PipelinePostProcessB<MinMaxAvgWaveBins<NTY>>,
     NTY: NumOps + NumFromBytes<NTY, END> + 'static,
     END: Endianness + 'static,
 {
+    let agg_kind = query.agg_kind().clone();
     match shape {
         Shape::Scalar => make_num_pipeline_nty_end_evs_enp::<_, NTY, _, _, Identity<_>>(
+            shape.clone(),
+            agg_kind.clone(),
             EventValuesDim0Case::new(),
+            Identity::create(shape.clone(), agg_kind.clone()),
             query,
             ppp,
             node_config,
         ),
         Shape::Wave(n) => make_num_pipeline_nty_end_evs_enp::<_, NTY, _, _, WaveXBinner<_>>(
+            shape.clone(),
+            agg_kind.clone(),
             EventValuesDim1Case::new(n),
+            WaveXBinner::create(shape.clone(), agg_kind.clone()),
             query,
             ppp,
             node_config,
@@ -383,12 +479,6 @@ impl JsonCollector {
             completed: false,
             done: false,
         }
-    }
-}
-
-impl Framable for Sitemty<serde_json::Value> {
-    fn make_frame(&self) -> Result<BytesMut, Error> {
-        panic!()
     }
 }
 
@@ -606,11 +696,167 @@ where
     Ok(ret)
 }
 
+pub struct BinnedJsonChannelExec {
+    query: BinnedQuery,
+    node_config: NodeConfigCached,
+    timeout: Duration,
+}
+
+impl BinnedJsonChannelExec {
+    pub fn new(query: BinnedQuery, node_config: NodeConfigCached) -> Self {
+        Self {
+            query,
+            node_config,
+            timeout: Duration::from_millis(3000),
+        }
+    }
+}
+
+impl ChannelExecFunction for BinnedJsonChannelExec {
+    type Output = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>;
+
+    fn exec<NTY, END, EVS, ENP>(
+        self,
+        byte_order: END,
+        shape: Shape,
+        event_value_shape: EVS,
+        _events_node_proc: ENP,
+    ) -> Result<Self::Output, Error>
+    where
+        NTY: NumOps + NumFromBytes<NTY, END> + 'static,
+        END: Endianness + 'static,
+        EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + PlainEventsAggMethod + 'static,
+        ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
+        Sitemty<<<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output>: FrameType,
+        <<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output: Collectable + PushableIndex,
+        <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output:
+            TimeBinnableType<Output = <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output> + Unpin,
+        // TODO require these things in general?
+        <ENP as EventsNodeProcessor>::Output: PushableIndex,
+        Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
+        Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
+            FrameType + Framable + DeserializeOwned,
+    {
+        let _ = event_value_shape;
+        let range =
+            BinnedRange::covering_range(self.query.range().clone(), self.query.bin_count())?.ok_or(Error::with_msg(
+                format!("binned_bytes_for_http  BinnedRange::covering_range returned None"),
+            ))?;
+        let perf_opts = PerfOpts { inmem_bufcap: 512 };
+        match PreBinnedPatchRange::covering_range(self.query.range().clone(), self.query.bin_count()) {
+            Ok(Some(pre_range)) => {
+                info!("binned_bytes_for_http  found pre_range: {:?}", pre_range);
+                if range.grid_spec.bin_t_len() < pre_range.grid_spec.bin_t_len() {
+                    let msg = format!(
+                        "binned_bytes_for_http  incompatible ranges:\npre_range: {:?}\nrange: {:?}",
+                        pre_range, range
+                    );
+                    return Err(Error::with_msg(msg));
+                }
+                let s = BinnedFromPreBinned::<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>::new(
+                    PreBinnedPatchIterator::from_range(pre_range),
+                    self.query.channel().clone(),
+                    range.clone(),
+                    shape,
+                    self.query.agg_kind().clone(),
+                    self.query.cache_usage().clone(),
+                    &self.node_config,
+                    self.query.disk_stats_every().clone(),
+                    self.query.report_error(),
+                )?
+                .map(|item| match item.make_frame() {
+                    Ok(item) => Ok(item.freeze()),
+                    Err(e) => Err(e),
+                });
+                // TODO remove?
+                /*let ret = BinnedResponseStat {
+                    stream: Box::pin(s),
+                    bin_count: range.count as u32,
+                };*/
+                Ok(Box::pin(s))
+            }
+            Ok(None) => {
+                info!(
+                    "binned_bytes_for_http  no covering range for prebinned, merge from remotes instead {:?}",
+                    range
+                );
+                let bin_count = range.count as u32;
+                let evq = EventsQuery {
+                    channel: self.query.channel().clone(),
+                    range: self.query.range().clone(),
+                    agg_kind: self.query.agg_kind().clone(),
+                };
+                let x_bin_count = if let AggKind::DimXBinsN(n) = self.query.agg_kind() {
+                    *n as usize
+                } else {
+                    0
+                };
+                let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster.clone());
+                let s =
+                    TBinnerStream::<_, <ENP as EventsNodeProcessor>::Output>::new(s, range, x_bin_count).map(|item| {
+                        match item.make_frame() {
+                            Ok(item) => Ok(item.freeze()),
+                            Err(e) => Err(e),
+                        }
+                    });
+                /*let ret = BinnedResponseStat {
+                    stream: Box::pin(s),
+                    bin_count,
+                };*/
+                Ok(Box::pin(s))
+            }
+            Err(e) => Err(e),
+        }
+
+        /*let perf_opts = PerfOpts { inmem_bufcap: 4096 };
+        let evq = EventsQuery {
+            channel: self.channel,
+            range: self.range,
+            agg_kind: self.agg_kind,
+        };
+        let s = MergedFromRemotes::<<EVS as PlainEventsAggMethod>::Method>::new(
+            evq,
+            perf_opts,
+            self.node_config.node_config.cluster,
+        );
+        let f = collect_plain_events_json(s, self.timeout);
+        let f = FutureExt::map(f, |item| match item {
+            Ok(item) => {
+                // TODO add channel entry info here?
+                //let obj = item.as_object_mut().unwrap();
+                //obj.insert("channelName", JsonValue::String(en));
+                Ok(Bytes::from(serde_json::to_vec(&item)?))
+            }
+            Err(e) => Err(e.into()),
+        });
+        let s = futures_util::stream::once(f);
+        Ok(Box::pin(s))*/
+    }
+
+    fn empty() -> Self::Output {
+        Box::pin(futures_util::stream::empty())
+    }
+}
+
 pub async fn binned_json(
-    node_config: &NodeConfigCached,
     query: &BinnedQuery,
+    node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>, Error> {
-    let pl = make_num_pipeline(
+    // TODO try the channelexec approach.
+    // TODO why does channel_exec need the range, and what does it use it for?
+    // do I want there the user-requested range or the bin-edge-adjusted range?
+    // TODO currently, channel_exec resolves NTY, END, EVS but not ENP!
+    // can I add that or does that break other things?
+    let ret = channel_exec(
+        BinnedJsonChannelExec::new(query.clone(), node_config.clone()),
+        query.channel(),
+        query.range(),
+        query.agg_kind().clone(),
+        node_config,
+    )
+    .await?;
+
+    /*let pl = make_num_pipeline(
         query,
         CollectForJson::new(query.timeout(), query.abort_after_bin_count()),
         node_config,
@@ -620,7 +866,8 @@ pub async fn binned_json(
         let fr = item.to_json_result()?;
         let buf = fr.to_json_bytes()?;
         Ok(Bytes::from(buf))
-    });
+    });*/
+
     Ok(Box::pin(ret))
 }
 
@@ -744,6 +991,7 @@ impl WithTimestamps for MinMaxAvgScalarEventBatch {
 }
 
 pub trait PushableIndex {
+    // TODO check whether it makes sense to allow a move out of src. Or use a deque for src type and pop?
     fn push_index(&mut self, src: &Self, ix: usize);
 }
 
@@ -781,7 +1029,6 @@ pub trait NumOps:
     fn is_nan(&self) -> bool;
 }
 
-fn tmp() {}
 macro_rules! impl_num_ops {
     ($ty:ident, $min_or_nan:ident, $max_or_nan:ident, $is_nan:ident) => {
         impl NumOps for $ty {
@@ -798,7 +1045,7 @@ macro_rules! impl_num_ops {
     };
 }
 
-fn is_nan_int<T>(x: &T) -> bool {
+fn is_nan_int<T>(_x: &T) -> bool {
     false
 }
 
@@ -826,7 +1073,7 @@ pub trait EventsDecoder {
 pub trait EventsNodeProcessor: Send + Unpin {
     type Input;
     type Output: Send + Unpin + DeserializeOwned + WithTimestamps + TimeBinnableType;
-    fn create(shape: Shape) -> Self;
+    fn create(shape: Shape, agg_kind: AggKind) -> Self;
     fn process(&self, inp: EventValues<Self::Input>) -> Self::Output;
 }
 
@@ -993,7 +1240,7 @@ where
     type Output = MinMaxAvgBins<NTY>;
     type Aggregator = MinMaxAvgBinsAggregator<NTY>;
 
-    fn aggregator(range: NanoRange, bin_count: usize) -> Self::Aggregator {
+    fn aggregator(range: NanoRange, _x_bin_count: usize) -> Self::Aggregator {
         Self::Aggregator::new(range)
     }
 }

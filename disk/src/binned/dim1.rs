@@ -8,6 +8,7 @@ use crate::binned::{
 use crate::Sitemty;
 use chrono::{TimeZone, Utc};
 use err::Error;
+use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::NanoRange;
 use num_traits::Zero;
@@ -173,8 +174,8 @@ where
     type Output = MinMaxAvgDim1Bins<NTY>;
     type Aggregator = MinMaxAvgDim1BinsAggregator<NTY>;
 
-    fn aggregator(range: NanoRange, bin_count: usize) -> Self::Aggregator {
-        Self::Aggregator::new(range)
+    fn aggregator(range: NanoRange, x_bin_count: usize) -> Self::Aggregator {
+        Self::Aggregator::new(range, x_bin_count)
     }
 }
 
@@ -317,7 +318,7 @@ pub struct MinMaxAvgDim1BinsAggregator<NTY> {
 }
 
 impl<NTY> MinMaxAvgDim1BinsAggregator<NTY> {
-    pub fn new(range: NanoRange, bin_count: usize) -> Self {
+    pub fn new(range: NanoRange, _x_bin_count: usize) -> Self {
         Self {
             range,
             count: 0,
@@ -439,6 +440,7 @@ pub struct WaveEventsCollector<NTY> {
 
 impl<NTY> WaveEventsCollector<NTY> {
     pub fn new(_bin_count_exp: u32) -> Self {
+        info!("\n\nWaveEventsCollector\n\n");
         Self {
             vals: WaveEvents::empty(),
             range_complete: false,

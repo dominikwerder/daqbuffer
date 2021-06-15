@@ -14,7 +14,9 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use netpod::log::*;
-use netpod::{BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange};
+use netpod::{
+    x_bin_count, AggKind, BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange, Shape,
+};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::future::Future;
@@ -33,6 +35,8 @@ where
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output>,
 {
     query: PreBinnedQuery,
+    shape: Shape,
+    agg_kind: AggKind,
     node_config: NodeConfigCached,
     open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<File, io::Error>> + Send>>>,
     fut2: Option<
@@ -73,9 +77,11 @@ where
     // TODO who exactly needs this DeserializeOwned?
     Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>: FrameType + DeserializeOwned,
 {
-    pub fn new(query: PreBinnedQuery, node_config: &NodeConfigCached) -> Self {
+    pub fn new(query: PreBinnedQuery, shape: Shape, agg_kind: AggKind, node_config: &NodeConfigCached) -> Self {
         Self {
             query,
+            shape,
+            agg_kind,
             node_config: node_config.clone(),
             open_check_local_file: None,
             fut2: None,
@@ -124,7 +130,11 @@ where
             .ok_or(Error::with_msg("covering_range returns None"))?;
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
         let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster.clone());
-        let ret = TBinnerStream::<_, <ENP as EventsNodeProcessor>::Output>::new(s, range);
+        let ret = TBinnerStream::<_, <ENP as EventsNodeProcessor>::Output>::new(
+            s,
+            range,
+            x_bin_count(&self.shape, &self.agg_kind),
+        );
         Ok(Box::pin(ret))
     }
 

@@ -11,7 +11,9 @@ use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use http::{StatusCode, Uri};
 use netpod::log::*;
-use netpod::{AggKind, BinnedRange, ByteSize, Channel, NodeConfigCached, PerfOpts, PreBinnedPatchIterator};
+use netpod::{
+    x_bin_count, AggKind, BinnedRange, ByteSize, Channel, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, Shape,
+};
 use serde::de::DeserializeOwned;
 use std::future::ready;
 use std::marker::PhantomData;
@@ -165,6 +167,7 @@ where
         patch_it: PreBinnedPatchIterator,
         channel: Channel,
         range: BinnedRange,
+        shape: Shape,
         agg_kind: AggKind,
         cache_usage: CacheUsage,
         node_config: &NodeConfigCached,
@@ -184,6 +187,7 @@ where
         let pmax = patches.len();
         let inp = futures_util::stream::iter(patches.into_iter().enumerate())
             .map({
+                let agg_kind = agg_kind.clone();
                 let node_config = node_config.clone();
                 move |(pix, patch)| {
                     let query = PreBinnedQuery::new(
@@ -235,7 +239,7 @@ where
                     ready(g)
                 }
             });
-        let inp = TBinnerStream::<_, TBT>::new(inp, range);
+        let inp = TBinnerStream::<_, TBT>::new(inp, range, x_bin_count(&shape, &agg_kind));
         Ok(Self {
             inp: Box::pin(inp),
             _m1: PhantomData,

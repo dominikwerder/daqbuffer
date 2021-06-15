@@ -1,6 +1,6 @@
 use crate::nodes::require_test_hosts_running;
 use chrono::{DateTime, Utc};
-use disk::binned::query::BinnedQuery;
+use disk::binned::query::{BinnedQuery, CacheUsage};
 use err::Error;
 use http::StatusCode;
 use hyper::Body;
@@ -93,6 +93,7 @@ async fn get_binned_json_common(
     let range = NanoRange::from_date_time(beg_date, end_date);
     let mut query = BinnedQuery::new(channel, range, bin_count, agg_kind);
     query.set_timeout(Duration::from_millis(15000));
+    query.set_cache_usage(CacheUsage::Ignore);
     let url = query.url(&HostPort::from_node(node0));
     info!("get_binned_json_0  get {}", url);
     let req = hyper::Request::builder()

@@ -13,6 +13,7 @@ use crate::raw::eventsfromframes::EventsFromFrames;
 use crate::Sitemty;
 use err::Error;
 use futures_core::Stream;
+use netpod::log::*;
 use netpod::{AggKind, Channel, NanoRange, Node, PerfOpts};
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
@@ -47,6 +48,7 @@ where
 {
     let net = TcpStream::connect(format!("{}:{}", node.host, node.port_raw)).await?;
     let qjs = serde_json::to_string(&query)?;
+    info!("x_processed_stream_from_node  qjs {:?}", qjs);
     let (netin, mut netout) = net.into_split();
     let buf = make_frame(&EventQueryJsonStringFrame(qjs))?;
     netout.write_all(&buf).await?;
@@ -57,14 +59,4 @@ where
     let frames = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
     let items = EventsFromFrames::new(frames);
     Ok(Box::pin(items))
-}
-
-pub fn crchex<T>(t: T) -> String
-where
-    T: AsRef<[u8]>,
-{
-    let mut h = crc32fast::Hasher::new();
-    h.update(t.as_ref());
-    let crc = h.finalize();
-    format!("{:08x}", crc)
 }

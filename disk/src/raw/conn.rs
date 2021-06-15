@@ -105,12 +105,12 @@ where
     NTY: NumOps + NumFromBytes<NTY, END> + 'static,
     END: Endianness + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
-    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output>,
+    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
     Sitemty<<ENP as EventsNodeProcessor>::Output>: Framable + 'static,
     <ENP as EventsNodeProcessor>::Output: 'static,
 {
     let decs = EventsDecodedStream::<NTY, END, EVS>::new(event_value_shape, event_blobs);
-    let s2 = StreamExt::map(decs, |item| match item {
+    let s2 = StreamExt::map(decs, move |item| match item {
         Ok(item) => match item {
             StreamItem::DataItem(item) => match item {
                 RangeCompletableItem::Data(item) => {
@@ -131,40 +131,19 @@ where
 macro_rules! pipe4 {
     ($nty:ident, $end:ident, $shape:expr, $evs:ident, $evsv:expr, $agg_kind:expr, $event_blobs:expr) => {
         match $agg_kind {
-            AggKind::DimXBins1 => make_num_pipeline_stream_evs::<
-                $nty,
-                $end,
-                $evs<$nty>,
-                //<$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToSingleBin,
-                _,
-                //Identity<$nty>,
-            >(
+            AggKind::DimXBins1 => make_num_pipeline_stream_evs::<$nty, $end, $evs<$nty>, _>(
                 $evsv,
-                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToSingleBin::create($shape),
+                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToSingleBin::create($shape, $agg_kind),
                 $event_blobs,
             ),
-            AggKind::DimXBinsN(_) => make_num_pipeline_stream_evs::<
-                $nty,
-                $end,
-                $evs<$nty>,
-                //<$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToNBins,
-                _,
-                //WaveXBinner<$nty>,
-            >(
+            AggKind::DimXBinsN(_) => make_num_pipeline_stream_evs::<$nty, $end, $evs<$nty>, _>(
                 $evsv,
-                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToNBins::create($shape),
+                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToNBins::create($shape, $agg_kind),
                 $event_blobs,
             ),
-            AggKind::Plain => make_num_pipeline_stream_evs::<
-                $nty,
-                $end,
-                $evs<$nty>,
-                //<$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggPlain,
-                _,
-                //WaveXBinner<$nty>,
-            >(
+            AggKind::Plain => make_num_pipeline_stream_evs::<$nty, $end, $evs<$nty>, _>(
                 $evsv,
-                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggPlain::create($shape),
+                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggPlain::create($shape, $agg_kind),
                 $event_blobs,
             ),
         }
@@ -186,9 +165,6 @@ macro_rules! pipe3 {
                 )
             }
             Shape::Wave(n) => {
-                // TODO
-                // Issue is that I try to generate too many combinations.
-                // e.g. I try to generic code for the combination of Shape::Scalar with WaveXBinner which does not match.
                 pipe4!(
                     $nty,
                     $end,
@@ -322,8 +298,13 @@ async fn events_conn_handler_inner_try(
         event_chunker_conf,
     );
     let shape = entry.to_shape().unwrap();
+    info!(
+        "+++++--- conn.rs call pipe1  shape {:?}  agg_kind {:?}",
+        shape, evq.agg_kind
+    );
     let mut p1 = pipe1!(entry.scalar_type, entry.byte_order, shape, evq.agg_kind, event_blobs);
     while let Some(item) = p1.next().await {
+        //info!("conn.rs  encode frame typeid {:x}", item.typeid());
         let item = item.make_frame();
         match item {
             Ok(buf) => match netout.write_all(&buf).await {
