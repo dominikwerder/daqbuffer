@@ -17,7 +17,7 @@ use std::fmt;
 use std::marker::PhantomData;
 use tokio::fs::File;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct MinMaxAvgDim1Bins<NTY> {
     pub ts1s: Vec<u64>,
     pub ts2s: Vec<u64>,

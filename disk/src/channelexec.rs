@@ -1,5 +1,5 @@
 use crate::agg::binnedt::TimeBinnableType;
-use crate::agg::enp::{Identity, WavePlainProc};
+use crate::agg::enp::Identity;
 use crate::agg::streams::{Collectable, Collector, StreamItem};
 use crate::binned::{EventsNodeProcessor, NumOps, PushableIndex, RangeCompletableItem};
 use crate::decode::{
@@ -15,10 +15,12 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::StreamExt;
+use netpod::log::*;
 use netpod::{AggKind, ByteOrder, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
+use std::fmt::Debug;
 use std::pin::Pin;
 use std::time::Duration;
 use tokio::time::timeout_at;
@@ -36,14 +38,14 @@ pub trait ChannelExecFunction {
     where
         NTY: NumOps + NumFromBytes<NTY, END> + 'static,
         END: Endianness + 'static,
-        EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + PlainEventsAggMethod + 'static,
+        EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
         ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
-        Sitemty<<<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output>: FrameType,
-        <<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output: Collectable + PushableIndex,
-        <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output:
-            TimeBinnableType<Output = <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output> + Unpin,
         // TODO require these things in general?
-        <ENP as EventsNodeProcessor>::Output: PushableIndex,
+        <ENP as EventsNodeProcessor>::Output: Debug + Collectable + PushableIndex,
+        <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: Debug
+            + TimeBinnableType<Output = <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>
+            + Collectable
+            + Unpin,
         Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
         Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
             FrameType + Framable + DeserializeOwned;
@@ -62,21 +64,17 @@ where
     F: ChannelExecFunction,
     NTY: NumOps + NumFromBytes<NTY, END> + 'static,
     END: Endianness + 'static,
-
-    // TODO
-
-    // TODO
-
-    // TODO
-
-    // TODO
-
-    // Can I replace the PlainEventsAggMethod by EventsNodeProcessor?
-    EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + PlainEventsAggMethod + 'static,
-
+    EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
-    Sitemty<<<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output>: FrameType,
-    <<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output: Collectable + PushableIndex,
+    // TODO require these things in general?
+    <ENP as EventsNodeProcessor>::Output: Debug + Collectable + PushableIndex,
+    <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: Debug
+        + TimeBinnableType<Output = <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>
+        + Collectable
+        + Unpin,
+    Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
+    Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
+        FrameType + Framable + DeserializeOwned,
 {
     Ok(f.exec(byte_order, shape, event_value_shape, events_node_proc)?)
 }
@@ -238,9 +236,9 @@ impl ChannelExecFunction for PlainEvents {
     fn exec<NTY, END, EVS, ENP>(
         self,
         byte_order: END,
-        shape: Shape,
+        _shape: Shape,
         event_value_shape: EVS,
-        events_node_proc: ENP,
+        _events_node_proc: ENP,
     ) -> Result<Self::Output, Error>
     where
         NTY: NumOps + NumFromBytes<NTY, END> + 'static,
@@ -294,16 +292,20 @@ impl PlainEventsJson {
     }
 }
 
-pub async fn collect_plain_events_json<T, S>(stream: S, timeout: Duration) -> Result<JsonValue, Error>
+pub async fn collect_plain_events_json<T, S>(
+    stream: S,
+    timeout: Duration,
+    bin_count_exp: u32,
+) -> Result<JsonValue, Error>
 where
     S: Stream<Item = Sitemty<T>> + Unpin,
-    T: Collectable,
+    T: Collectable + Debug,
 {
     let deadline = tokio::time::Instant::now() + timeout;
     // TODO in general a Collector does not need to know about the expected number of bins.
     // It would make more sense for some specific Collector kind to know.
     // Therefore introduce finer grained types.
-    let mut collector = <T as Collectable>::new_collector(0);
+    let mut collector = <T as Collectable>::new_collector(bin_count_exp);
     let mut i1 = 0;
     let mut stream = stream;
     loop {
@@ -333,6 +335,7 @@ where
                                 collector.set_range_complete();
                             }
                             RangeCompletableItem::Data(item) => {
+                                info!("collect_plain_events_json  GOT ITEM  {:?}", item);
                                 collector.ingest(&item);
                                 i1 += 1;
                             }
@@ -351,41 +354,30 @@ where
     Ok(ret)
 }
 
-pub trait PlainEventsAggMethod {
-    type Method: EventsNodeProcessor;
-}
-
-impl<NTY> PlainEventsAggMethod for EventValuesDim0Case<NTY>
-where
-    NTY: NumOps,
-{
-    type Method = Identity<NTY>;
-}
-
-impl<NTY> PlainEventsAggMethod for EventValuesDim1Case<NTY>
-where
-    NTY: NumOps,
-{
-    type Method = WavePlainProc<NTY>;
-}
-
 impl ChannelExecFunction for PlainEventsJson {
     type Output = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>;
 
     fn exec<NTY, END, EVS, ENP>(
         self,
         byte_order: END,
-        shape: Shape,
+        _shape: Shape,
         event_value_shape: EVS,
         _events_node_proc: ENP,
     ) -> Result<Self::Output, Error>
     where
         NTY: NumOps + NumFromBytes<NTY, END> + 'static,
         END: Endianness + 'static,
-        EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + PlainEventsAggMethod + 'static,
+        EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
         ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
-        Sitemty<<<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output>: FrameType,
-        <<EVS as PlainEventsAggMethod>::Method as EventsNodeProcessor>::Output: Collectable + PushableIndex,
+        // TODO require these things in general?
+        <ENP as EventsNodeProcessor>::Output: Debug + Collectable + PushableIndex,
+        <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: Debug
+            + TimeBinnableType<Output = <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>
+            + Collectable
+            + Unpin,
+        Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
+        Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
+            FrameType + Framable + DeserializeOwned,
     {
         let _ = byte_order;
         let _ = event_value_shape;
@@ -395,12 +387,8 @@ impl ChannelExecFunction for PlainEventsJson {
             range: self.range,
             agg_kind: self.agg_kind,
         };
-        let s = MergedFromRemotes::<<EVS as PlainEventsAggMethod>::Method>::new(
-            evq,
-            perf_opts,
-            self.node_config.node_config.cluster,
-        );
-        let f = collect_plain_events_json(s, self.timeout);
+        let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster);
+        let f = collect_plain_events_json(s, self.timeout, 0);
         let f = FutureExt::map(f, |item| match item {
             Ok(item) => {
                 // TODO add channel entry info here?

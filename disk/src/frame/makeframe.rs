@@ -2,6 +2,7 @@ use crate::agg::enp::{WaveEvents, XBinnedScalarEvents, XBinnedWaveEvents};
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use crate::agg::streams::StreamItem;
+use crate::binned::dim1::MinMaxAvgDim1Bins;
 use crate::binned::{MinMaxAvgBins, MinMaxAvgWaveBins, NumOps, RangeCompletableItem};
 use crate::decode::EventValues;
 use crate::frame::inmem::InMemoryFrame;
@@ -118,6 +119,13 @@ where
     const FRAME_TYPE_ID: u32 = 0xa00 + NTY::SUB;
 }
 
+impl<NTY> FrameType for Sitemty<MinMaxAvgDim1Bins<NTY>>
+where
+    NTY: SubFrId,
+{
+    const FRAME_TYPE_ID: u32 = 0xb00 + NTY::SUB;
+}
+
 pub trait ProvidesFrameType {
     fn frame_type_id(&self) -> u32;
 }
@@ -215,6 +223,18 @@ where
 }
 
 impl<NTY> Framable for Sitemty<MinMaxAvgWaveBins<NTY>>
+where
+    NTY: NumOps + Serialize,
+{
+    fn typeid(&self) -> u32 {
+        Self::FRAME_TYPE_ID
+    }
+    fn make_frame(&self) -> Result<BytesMut, Error> {
+        make_frame(self)
+    }
+}
+
+impl<NTY> Framable for Sitemty<MinMaxAvgDim1Bins<NTY>>
 where
     NTY: NumOps + Serialize,
 {

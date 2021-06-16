@@ -370,7 +370,7 @@ async fn gen_event(
                         let ele_size = 8;
                         let mut vals = vec![0; (ele_size * ele_count) as usize];
                         for i1 in 0..ele_count {
-                            let v = evix as f64;
+                            let v = (evix as f64) * 100.0 + i1 as f64;
                             let a = if config.byte_order.is_be() {
                                 v.to_be_bytes()
                             } else {
@@ -393,7 +393,7 @@ async fn gen_event(
                         let ele_size = 2;
                         let mut vals = vec![0; (ele_size * ele_count) as usize];
                         for i1 in 0..ele_count {
-                            let v = evix as u16;
+                            let v = (evix as u16).wrapping_mul(100).wrapping_add(i1 as u16);
                             let a = if config.byte_order.is_be() {
                                 v.to_be_bytes()
                             } else {

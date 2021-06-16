@@ -311,6 +311,7 @@ fn binning_scheme_string(agg_kind: &AggKind) -> String {
 
 fn agg_kind_from_binning_scheme(params: &BTreeMap<String, String>) -> Result<AggKind, Error> {
     let key = "binningScheme";
+    let tok1 = "binnedXcount";
     let s = params
         .get(key)
         .map_or(Err(Error::with_msg(format!("can not find {}", key))), |k| Ok(k))?;
@@ -318,8 +319,8 @@ fn agg_kind_from_binning_scheme(params: &BTreeMap<String, String>) -> Result<Agg
         AggKind::Plain
     } else if s == "toScalarX" {
         AggKind::DimXBins1
-    } else if s.starts_with("binnedXcount") {
-        AggKind::DimXBinsN(s[12..].parse()?)
+    } else if s.starts_with(tok1) {
+        AggKind::DimXBinsN(s[tok1.len()..].parse()?)
     } else {
         return Err(Error::with_msg("can not extract binningScheme"));
     };

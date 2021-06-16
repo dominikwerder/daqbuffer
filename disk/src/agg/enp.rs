@@ -1,14 +1,15 @@
 use crate::agg::binnedt::{TimeBinnableType, TimeBinnableTypeAggregator};
-use crate::agg::streams::Appendable;
+use crate::agg::streams::{Appendable, Collectable, Collector};
 use crate::agg::{Fits, FitsInside};
 use crate::binned::dim1::MinMaxAvgDim1Bins;
 use crate::binned::{
-    EventsNodeProcessor, FilterFittingInside, MinMaxAvgBins, MinMaxAvgWaveBins, NumOps, PushableIndex,
+    Bool, EventsNodeProcessor, FilterFittingInside, MinMaxAvgBins, MinMaxAvgWaveBins, NumOps, PushableIndex,
     RangeOverlapInfo, ReadPbv, ReadableFromFile, WithLen, WithTimestamps,
 };
 use crate::decode::EventValues;
 use err::Error;
 use netpod::log::*;
+use netpod::timeunits::{MS, SEC};
 use netpod::{x_bin_count, AggKind, NanoRange, Shape};
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
@@ -35,7 +36,7 @@ where
 }
 
 // TODO rename Scalar -> Dim0
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct XBinnedScalarEvents<NTY> {
     tss: Vec<u64>,
     mins: Vec<NTY>,
@@ -275,8 +276,108 @@ where
     }
 }
 
-// TODO  rename Wave -> Dim1
 #[derive(Serialize, Deserialize)]
+pub struct XBinnedScalarEventsCollectedResult<NTY> {
+    #[serde(rename = "tsAnchor")]
+    ts_anchor_sec: u64,
+    #[serde(rename = "tsMs")]
+    ts_off_ms: Vec<u64>,
+    #[serde(rename = "tsNs")]
+    ts_off_ns: Vec<u64>,
+    mins: Vec<NTY>,
+    maxs: Vec<NTY>,
+    avgs: Vec<f32>,
+    #[serde(skip_serializing_if = "Bool::is_false", rename = "finalisedRange")]
+    finalised_range: bool,
+    #[serde(skip_serializing_if = "Bool::is_false", rename = "timedOut")]
+    timed_out: bool,
+}
+
+pub struct XBinnedScalarEventsCollector<NTY> {
+    vals: XBinnedScalarEvents<NTY>,
+    finalised_range: bool,
+    timed_out: bool,
+    #[allow(dead_code)]
+    bin_count_exp: u32,
+}
+
+impl<NTY> XBinnedScalarEventsCollector<NTY> {
+    pub fn new(bin_count_exp: u32) -> Self {
+        Self {
+            finalised_range: false,
+            timed_out: false,
+            vals: XBinnedScalarEvents::empty(),
+            bin_count_exp,
+        }
+    }
+}
+
+impl<NTY> WithLen for XBinnedScalarEventsCollector<NTY> {
+    fn len(&self) -> usize {
+        self.vals.tss.len()
+    }
+}
+
+pub fn ts_offs_from_abs(tss: &[u64]) -> (u64, Vec<u64>, Vec<u64>) {
+    let ts_anchor_sec = tss.first().map_or(0, |&k| k) / SEC;
+    let ts_anchor_ns = ts_anchor_sec * SEC;
+    let ts_off_ms: Vec<_> = tss.iter().map(|&k| (k - ts_anchor_ns) / MS).collect();
+    let ts_off_ns = tss
+        .iter()
+        .zip(ts_off_ms.iter().map(|&k| k * MS))
+        .map(|(&j, k)| (j - ts_anchor_ns - k))
+        .collect();
+    (ts_anchor_sec, ts_off_ms, ts_off_ns)
+}
+
+impl<NTY> Collector for XBinnedScalarEventsCollector<NTY>
+where
+    NTY: NumOps,
+{
+    type Input = XBinnedScalarEvents<NTY>;
+    type Output = XBinnedScalarEventsCollectedResult<NTY>;
+
+    fn ingest(&mut self, src: &Self::Input) {
+        self.vals.append(src);
+    }
+
+    fn set_range_complete(&mut self) {
+        self.finalised_range = true;
+    }
+
+    fn set_timed_out(&mut self) {
+        self.timed_out = true;
+    }
+
+    fn result(self) -> Result<Self::Output, Error> {
+        let tst = ts_offs_from_abs(&self.vals.tss);
+        let ret = Self::Output {
+            ts_anchor_sec: tst.0,
+            ts_off_ms: tst.1,
+            ts_off_ns: tst.2,
+            mins: self.vals.mins,
+            maxs: self.vals.maxs,
+            avgs: self.vals.avgs,
+            finalised_range: self.finalised_range,
+            timed_out: self.timed_out,
+        };
+        Ok(ret)
+    }
+}
+
+impl<NTY> Collectable for XBinnedScalarEvents<NTY>
+where
+    NTY: NumOps,
+{
+    type Collector = XBinnedScalarEventsCollector<NTY>;
+
+    fn new_collector(bin_count_exp: u32) -> Self::Collector {
+        Self::Collector::new(bin_count_exp)
+    }
+}
+
+// TODO  rename Wave -> Dim1
+#[derive(Debug, Serialize, Deserialize)]
 pub struct XBinnedWaveEvents<NTY> {
     tss: Vec<u64>,
     mins: Vec<Vec<NTY>>,
@@ -435,11 +536,15 @@ where
     NTY: NumOps,
 {
     pub fn new(range: NanoRange, bin_count: usize) -> Self {
+        if bin_count == 0 {
+            panic!("bin_count == 0");
+        }
         Self {
             range,
             count: 0,
             min: vec![NTY::min_or_nan(); bin_count],
-            max: vec![NTY::max_or_nan(); bin_count],
+            //min: vec![NTY::fourty_two(); bin_count],
+            max: vec![NTY::fourty_two(); bin_count],
             sum: vec![0f32; bin_count],
             sumc: 0,
         }
@@ -458,6 +563,7 @@ where
     }
 
     fn ingest(&mut self, item: &Self::Input) {
+        //info!("XBinnedWaveEventsAggregator  ingest  item {:?}", item);
         for i1 in 0..item.tss.len() {
             let ts = item.tss[i1];
             if ts < self.range.beg {
@@ -465,17 +571,17 @@ where
             } else if ts >= self.range.end {
                 continue;
             } else {
-                for (i2, v) in item.mins[i1].iter().enumerate() {
-                    if *v < self.min[i2] || self.min[i2].is_nan() {
-                        self.min[i2] = *v;
+                for (i2, &v) in item.mins[i1].iter().enumerate() {
+                    if v < self.min[i2] || self.min[i2].is_nan() {
+                        self.min[i2] = v;
                     }
                 }
-                for (i2, v) in item.maxs[i1].iter().enumerate() {
-                    if *v > self.max[i2] || self.max[i2].is_nan() {
-                        self.max[i2] = *v;
+                for (i2, &v) in item.maxs[i1].iter().enumerate() {
+                    if v > self.max[i2] || self.max[i2].is_nan() {
+                        self.max[i2] = v;
                     }
                 }
-                for (i2, v) in item.avgs[i1].iter().enumerate() {
+                for (i2, &v) in item.avgs[i1].iter().enumerate() {
                     if v.is_nan() {
                     } else {
                         self.sum[i2] += v;
@@ -499,19 +605,120 @@ where
             }
         } else {
             let avg = self.sum.iter().map(|k| *k / self.sumc as f32).collect();
-            Self::Output {
+            let ret = Self::Output {
                 ts1s: vec![self.range.beg],
                 ts2s: vec![self.range.end],
                 counts: vec![self.count],
                 mins: vec![Some(self.min)],
                 maxs: vec![Some(self.max)],
                 avgs: vec![Some(avg)],
+            };
+            if ret.ts1s[0] < 1300 {
+                info!("XBinnedWaveEventsAggregator  result  {:?}", ret);
             }
+            ret
         }
     }
 }
 
 #[derive(Serialize, Deserialize)]
+pub struct XBinnedWaveEventsCollectedResult<NTY> {
+    #[serde(rename = "tsAnchor")]
+    ts_anchor_sec: u64,
+    #[serde(rename = "tsMs")]
+    ts_off_ms: Vec<u64>,
+    #[serde(rename = "tsNs")]
+    ts_off_ns: Vec<u64>,
+    mins: Vec<Vec<NTY>>,
+    maxs: Vec<Vec<NTY>>,
+    avgs: Vec<Vec<f32>>,
+    #[serde(skip_serializing_if = "Bool::is_false", rename = "finalisedRange")]
+    finalised_range: bool,
+    #[serde(skip_serializing_if = "Bool::is_false", rename = "timedOut")]
+    timed_out: bool,
+}
+
+pub struct XBinnedWaveEventsCollector<NTY> {
+    vals: XBinnedWaveEvents<NTY>,
+    finalised_range: bool,
+    timed_out: bool,
+    #[allow(dead_code)]
+    bin_count_exp: u32,
+}
+
+impl<NTY> XBinnedWaveEventsCollector<NTY> {
+    pub fn new(bin_count_exp: u32) -> Self {
+        Self {
+            finalised_range: false,
+            timed_out: false,
+            vals: XBinnedWaveEvents::empty(),
+            bin_count_exp,
+        }
+    }
+}
+
+impl<NTY> WithLen for XBinnedWaveEventsCollector<NTY> {
+    fn len(&self) -> usize {
+        self.vals.tss.len()
+    }
+}
+
+impl<NTY> Collector for XBinnedWaveEventsCollector<NTY>
+where
+    NTY: NumOps,
+{
+    type Input = XBinnedWaveEvents<NTY>;
+    type Output = XBinnedWaveEventsCollectedResult<NTY>;
+
+    fn ingest(&mut self, src: &Self::Input) {
+        self.vals.append(src);
+    }
+
+    fn set_range_complete(&mut self) {
+        self.finalised_range = true;
+    }
+
+    fn set_timed_out(&mut self) {
+        self.timed_out = true;
+    }
+
+    fn result(self) -> Result<Self::Output, Error> {
+        let ts_anchor_sec = self.vals.tss.first().map_or(0, |&k| k) / SEC;
+        let ts_anchor_ns = ts_anchor_sec * SEC;
+        let ts_off_ms: Vec<_> = self.vals.tss.iter().map(|&k| (k - ts_anchor_ns) / MS).collect();
+        let ts_off_ns = self
+            .vals
+            .tss
+            .iter()
+            .zip(ts_off_ms.iter().map(|&k| k * MS))
+            .map(|(&j, k)| (j - ts_anchor_ns - k))
+            .collect();
+        let ret = Self::Output {
+            finalised_range: self.finalised_range,
+            timed_out: self.timed_out,
+            ts_anchor_sec,
+            ts_off_ms,
+            ts_off_ns,
+            mins: self.vals.mins,
+            maxs: self.vals.maxs,
+            avgs: self.vals.avgs,
+        };
+        Ok(ret)
+    }
+}
+
+impl<NTY> Collectable for XBinnedWaveEvents<NTY>
+where
+    NTY: NumOps,
+{
+    type Collector = XBinnedWaveEventsCollector<NTY>;
+
+    fn new_collector(bin_count_exp: u32) -> Self::Collector {
+        Self::Collector::new(bin_count_exp)
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct WaveEvents<NTY> {
     pub tss: Vec<u64>,
     pub vals: Vec<Vec<NTY>>,
@@ -861,22 +1068,23 @@ where
     fn process(&self, inp: EventValues<Self::Input>) -> Self::Output {
         let nev = inp.tss.len();
         let mut ret = Self::Output {
-            tss: inp.tss,
+            // TODO get rid of this clone:
+            tss: inp.tss.clone(),
             mins: Vec::with_capacity(nev),
             maxs: Vec::with_capacity(nev),
             avgs: Vec::with_capacity(nev),
         };
         for i1 in 0..nev {
-            let mut min = vec![NTY::min_or_nan(); self.x_bin_count];
-            let mut max = vec![NTY::max_or_nan(); self.x_bin_count];
+            let mut min = vec![NTY::max_or_nan(); self.x_bin_count];
+            let mut max = vec![NTY::min_or_nan(); self.x_bin_count];
             let mut sum = vec![0f32; self.x_bin_count];
             let mut sumc = vec![0u64; self.x_bin_count];
             for (i2, &v) in inp.values[i1].iter().enumerate() {
                 let i3 = i2 * self.x_bin_count / self.shape_bin_count;
-                if v < min[i3] {
+                if v < min[i3] || min[i3].is_nan() {
                     min[i3] = v;
                 }
-                if v > max[i3] {
+                if v > max[i3] || max[i3].is_nan() {
                     max[i3] = v;
                 }
                 if v.is_nan() {
@@ -884,6 +1092,10 @@ where
                     sum[i3] += v.as_();
                     sumc[i3] += 1;
                 }
+            }
+            // TODO
+            if false && inp.tss[0] < 1300 {
+                info!("WaveNBinner  process  push min  {:?}", min);
             }
             ret.mins.push(min);
             ret.maxs.push(max);
