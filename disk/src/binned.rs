@@ -1365,11 +1365,10 @@ impl<NTY> EventValuesAggregator<NTY> {
         Self {
             range,
             count: 0,
-            // TODO get rid of Option
-            min: err::todoval(),
+            min: None,
             max: None,
-            sumc: 0,
             sum: 0f32,
+            sumc: 0,
         }
     }
 }
@@ -1394,7 +1393,6 @@ where
                 continue;
             } else {
                 let v = item.values[i1];
-                let vf = v.as_();
                 self.min = match self.min {
                     None => Some(v),
                     Some(min) => {
@@ -1415,6 +1413,7 @@ where
                         }
                     }
                 };
+                let vf = v.as_();
                 if vf.is_nan() {
                 } else {
                     self.sum += vf;
