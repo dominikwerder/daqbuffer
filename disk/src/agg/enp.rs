@@ -542,9 +542,8 @@ where
         Self {
             range,
             count: 0,
-            min: vec![NTY::min_or_nan(); bin_count],
-            //min: vec![NTY::fourty_two(); bin_count],
-            max: vec![NTY::fourty_two(); bin_count],
+            min: vec![NTY::max_or_nan(); bin_count],
+            max: vec![NTY::min_or_nan(); bin_count],
             sum: vec![0f32; bin_count],
             sumc: 0,
         }
