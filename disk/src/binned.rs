@@ -1246,8 +1246,7 @@ pub struct MinMaxAvgBinsCollectedResult<NTY> {
     #[serde(skip_serializing_if = "Zero::is_zero", rename = "missingBins")]
     missing_bins: u32,
     #[serde(skip_serializing_if = "Option::is_none", rename = "continueAt")]
-    //continue_at: Option<IsoDateTime>,
-    continue_at: Option<u64>,
+    continue_at: Option<IsoDateTime>,
 }
 
 pub struct MinMaxAvgBinsCollector<NTY> {
@@ -1299,30 +1298,23 @@ where
     }
 
     fn result(self) -> Result<Self::Output, Error> {
-        let ts0 = self.vals.ts1s.first().map_or(0, |k| *k / SEC);
         let bin_count = self.vals.ts1s.len() as u32;
-        let mut tsoff: Vec<_> = self.vals.ts1s.iter().map(|k| *k - ts0 * SEC).collect();
-        if let Some(&k) = self.vals.ts2s.last() {
-            tsoff.push(k - ts0 * SEC);
-        }
-        let tsoff = tsoff;
-        let _iso: Vec<_> = tsoff
-            .iter()
-            .map(|&k| IsoDateTime(Utc.timestamp_nanos(k as i64)))
-            .collect();
-        let continue_at = if self.vals.ts1s.len() < self.bin_count_exp as usize {
-            match tsoff.last() {
-                Some(k) => Some(k.clone()),
-                None => Err(Error::with_msg("partial_content but no bin in result"))?,
-            }
-        } else {
-            None
-        };
         // TODO could save the copy:
         let mut ts_all = self.vals.ts1s.clone();
         if self.vals.ts2s.len() > 0 {
             ts_all.push(*self.vals.ts2s.last().unwrap());
         }
+        let continue_at = if self.vals.ts1s.len() < self.bin_count_exp as usize {
+            match ts_all.last() {
+                Some(&k) => {
+                    let iso = IsoDateTime(Utc.timestamp_nanos(k as i64));
+                    Some(iso)
+                }
+                None => Err(Error::with_msg("partial_content but no bin in result"))?,
+            }
+        } else {
+            None
+        };
         let tst = ts_offs_from_abs(&ts_all);
         let ret = MinMaxAvgBinsCollectedResult::<NTY> {
             ts_anchor_sec: tst.0,

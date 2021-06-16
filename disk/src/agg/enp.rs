@@ -42,7 +42,6 @@ pub struct XBinnedScalarEvents<NTY> {
     mins: Vec<NTY>,
     maxs: Vec<NTY>,
     avgs: Vec<f32>,
-    xbincount: Vec<u32>,
 }
 
 impl<NTY> XBinnedScalarEvents<NTY> {
@@ -52,7 +51,6 @@ impl<NTY> XBinnedScalarEvents<NTY> {
             mins: vec![],
             maxs: vec![],
             avgs: vec![],
-            xbincount: vec![],
         }
     }
 }
@@ -131,7 +129,6 @@ where
 {
     fn push_index(&mut self, src: &Self, ix: usize) {
         self.tss.push(src.tss[ix]);
-        self.xbincount.push(src.xbincount[ix]);
         self.mins.push(src.mins[ix]);
         self.maxs.push(src.maxs[ix]);
         self.avgs.push(src.avgs[ix]);
@@ -148,7 +145,6 @@ where
 
     fn append(&mut self, src: &Self) {
         self.tss.extend_from_slice(&src.tss);
-        self.xbincount.extend_from_slice(&src.xbincount);
         self.mins.extend_from_slice(&src.mins);
         self.maxs.extend_from_slice(&src.maxs);
         self.avgs.extend_from_slice(&src.avgs);
@@ -982,56 +978,36 @@ where
         let nev = inp.tss.len();
         let mut ret = Self::Output {
             tss: inp.tss,
-            xbincount: Vec::with_capacity(nev),
             mins: Vec::with_capacity(nev),
             maxs: Vec::with_capacity(nev),
             avgs: Vec::with_capacity(nev),
         };
         for i1 in 0..nev {
-            // TODO why do I work here with Option?
-            err::todo();
-            let mut min = None;
-            let mut max = None;
+            let mut min = NTY::max_or_nan();
+            let mut max = NTY::min_or_nan();
             let mut sum = 0f32;
-            let mut count = 0;
+            let mut sumc = 0;
             let vals = &inp.values[i1];
-            for i2 in 0..vals.len() {
-                let v = vals[i2];
-                min = match min {
-                    None => Some(v),
-                    Some(min) => {
-                        if v < min {
-                            Some(v)
-                        } else {
-                            Some(min)
-                        }
-                    }
-                };
-                max = match max {
-                    None => Some(v),
-                    Some(max) => {
-                        if v > max {
-                            Some(v)
-                        } else {
-                            Some(max)
-                        }
-                    }
-                };
+            for &v in vals {
+                if v < min || min.is_nan() {
+                    min = v;
+                }
+                if v > max || max.is_nan() {
+                    max = v;
+                }
                 let vf = v.as_();
                 if vf.is_nan() {
                 } else {
                     sum += vf;
-                    count += 1;
+                    sumc += 1;
                 }
             }
-            // TODO while X-binning I expect values, otherwise it is illegal input.
-            ret.xbincount.push(nev as u32);
-            ret.mins.push(min.unwrap());
-            ret.maxs.push(max.unwrap());
-            if count == 0 {
+            ret.mins.push(min);
+            ret.maxs.push(max);
+            if sumc == 0 {
                 ret.avgs.push(f32::NAN);
             } else {
-                ret.avgs.push(sum / count as f32);
+                ret.avgs.push(sum / sumc as f32);
             }
         }
         ret

@@ -63,7 +63,7 @@ async fn get_binned_json_2_inner() -> Result<(), Error> {
         "1970-01-01T00:20:10.000Z",
         "1970-01-01T00:20:20.000Z",
         2,
-        AggKind::DimXBinsN(2),
+        AggKind::DimXBinsN(3),
         cluster,
         2,
         true,

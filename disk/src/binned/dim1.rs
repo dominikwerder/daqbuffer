@@ -1,5 +1,5 @@
 use crate::agg::binnedt::{TimeBinnableType, TimeBinnableTypeAggregator};
-use crate::agg::enp::WaveEvents;
+use crate::agg::enp::{ts_offs_from_abs, WaveEvents};
 use crate::agg::streams::{Appendable, Collectable, Collector, ToJsonBytes, ToJsonResult};
 use crate::agg::{Fits, FitsInside};
 use crate::binned::{
@@ -423,8 +423,12 @@ where
 
 #[derive(Serialize)]
 pub struct WaveEventsCollectedResult<NTY> {
-    ts0: u64,
-    tsoff: Vec<u64>,
+    #[serde(rename = "tsAnchor")]
+    ts_anchor_sec: u64,
+    #[serde(rename = "tsMs")]
+    ts_off_ms: Vec<u64>,
+    #[serde(rename = "tsNs")]
+    ts_off_ns: Vec<u64>,
     values: Vec<Vec<NTY>>,
     #[serde(skip_serializing_if = "Bool::is_false", rename = "finalisedRange")]
     range_complete: bool,
@@ -475,11 +479,11 @@ where
     }
 
     fn result(self) -> Result<Self::Output, Error> {
-        let ts0 = self.vals.tss.first().map_or(0, |k| *k / SEC);
-        let tsoff = self.vals.tss.into_iter().map(|k| k - ts0 * SEC).collect();
+        let tst = ts_offs_from_abs(&self.vals.tss);
         let ret = Self::Output {
-            ts0,
-            tsoff,
+            ts_anchor_sec: tst.0,
+            ts_off_ms: tst.1,
+            ts_off_ns: tst.2,
             values: self.vals.vals,
             range_complete: self.range_complete,
             timed_out: self.timed_out,
