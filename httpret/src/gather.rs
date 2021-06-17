@@ -1,10 +1,15 @@
 use crate::response;
 use err::Error;
+use futures_util::{select, FutureExt};
 use http::{Method, StatusCode};
 use hyper::{Body, Client, Request, Response};
 use netpod::{Node, NodeConfigCached};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::future::Future;
+use std::pin::Pin;
+use std::time::Duration;
+use tokio::time::sleep;
 
 #[derive(Clone, Serialize, Deserialize)]
 struct GatherFrom {
@@ -44,7 +49,7 @@ async fn process_answer(res: Response<Body>) -> Result<JsonValue, Error> {
     }
 }
 
-pub async fn gather_json_from_hosts(req: Request<Body>, pathpre: &str) -> Result<Response<Body>, Error> {
+pub async fn unused_gather_json_from_hosts(req: Request<Body>, pathpre: &str) -> Result<Response<Body>, Error> {
     let (part_head, part_body) = req.into_parts();
     let bodyslice = hyper::body::to_bytes(part_body).await?;
     let gather_from: GatherFrom = serde_json::from_slice(&bodyslice)?;
@@ -61,10 +66,6 @@ pub async fn gather_json_from_hosts(req: Request<Body>, pathpre: &str) -> Result
         };
         let req = req.header(http::header::ACCEPT, "application/json");
         let req = req.body(Body::empty());
-        use futures_util::select;
-        use futures_util::FutureExt;
-        use std::time::Duration;
-        use tokio::time::sleep;
         let task = tokio::spawn(async move {
             select! {
               _ = sleep(Duration::from_millis(1500)).fuse() => {
@@ -114,13 +115,9 @@ pub async fn gather_get_json(req: Request<Body>, node_config: &NodeConfigCached)
         .map(|node| {
             let uri = format!("http://{}:{}/api/4/{}", node.host, node.port, pathsuf);
             let req = Request::builder().method(Method::GET).uri(uri);
-            let req = req.header("x-node-from-name", format!("{}", node_config.node_config.name));
+            let req = req.header("x-log-from-node-name", format!("{}", node_config.node_config.name));
             let req = req.header(http::header::ACCEPT, "application/json");
             let req = req.body(Body::empty());
-            use futures_util::select;
-            use futures_util::FutureExt;
-            use std::time::Duration;
-            use tokio::time::sleep;
             let task = tokio::spawn(async move {
                 select! {
                   _ = sleep(Duration::from_millis(1500)).fuse() => {
@@ -161,4 +158,78 @@ pub async fn gather_get_json(req: Request<Body>, node_config: &NodeConfigCached)
         .header(http::header::CONTENT_TYPE, "application/json")
         .body(serde_json::to_string(&Jres { hosts: a })?.into())?;
     Ok(res)
+}
+
+pub async fn gather_get_json_generic<SM, NT, FT>(
+    method: http::Method,
+    uri: String,
+    schemehostports: Vec<String>,
+    nt: NT,
+    ft: FT,
+    timeout: Duration,
+) -> Result<Response<Body>, Error>
+where
+    SM: Send + 'static,
+    NT: Fn(Response<Body>) -> Pin<Box<dyn Future<Output = Result<SM, Error>> + Send>> + Send + Sync + Copy + 'static,
+    FT: Fn(Vec<SM>) -> Result<Response<Body>, Error>,
+{
+    let spawned: Vec<_> = schemehostports
+        .iter()
+        .map(move |schemehostport| {
+            let uri = format!("{}{}", schemehostport, uri.clone());
+            let req = Request::builder().method(method.clone()).uri(uri);
+            //let req = req.header("x-log-from-node-name", format!("{}", node_config.node_config.name));
+            let req = req.header(http::header::ACCEPT, "application/json");
+            let req = req.body(Body::empty());
+            let task = tokio::spawn(async move {
+                select! {
+                  _ = sleep(timeout).fuse() => {
+                    Err(Error::with_msg("timeout"))
+                  }
+                  res = Client::new().request(req?).fuse() => Ok(nt(res?).await?)
+                }
+            });
+            (schemehostport.clone(), task)
+        })
+        .collect();
+    let mut a = vec![];
+    for (_schemehostport, jh) in spawned {
+        let res = match jh.await {
+            Ok(k) => match k {
+                Ok(k) => k,
+                Err(e) => return Err(e),
+            },
+            Err(e) => return Err(e.into()),
+        };
+        a.push(res);
+    }
+    let a = a;
+    ft(a)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn try_search() {
+        let schemehostports = ["http://sf-daqbuf-22:8371".into()];
+        let fut = gather_get_json_generic(
+            hyper::Method::GET,
+            format!("/api/4/search/channel"),
+            schemehostports.to_vec(),
+            |_res| {
+                let fut = async { Ok(()) };
+                Box::pin(fut)
+            },
+            |_all| {
+                let res = response(StatusCode::OK)
+                    .header(http::header::CONTENT_TYPE, "application/json")
+                    .body(serde_json::to_string(&42)?.into())?;
+                Ok(res)
+            },
+            Duration::from_millis(4000),
+        );
+        let _ = fut;
+    }
 }

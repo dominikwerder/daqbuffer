@@ -655,6 +655,7 @@ where
     S: Stream<Item = Sitemty<T>> + Unpin,
     T: Collectable,
 {
+    info!("\n\nConstruct deadline with timeout {:?}\n\n", timeout);
     let deadline = tokio::time::Instant::now() + timeout;
     let mut collector = <T as Collectable>::new_collector(bin_count_exp);
     let mut i1 = 0;
@@ -711,15 +712,11 @@ pub struct BinnedJsonChannelExec {
 }
 
 impl BinnedJsonChannelExec {
-    pub fn new(query: BinnedQuery, node_config: NodeConfigCached) -> Self {
-        info!(
-            "BinnedJsonChannelExec  AggKind: {:?}\n--------------------------------------------------------------",
-            query.agg_kind()
-        );
+    pub fn new(query: BinnedQuery, timeout: Duration, node_config: NodeConfigCached) -> Self {
         Self {
             query,
             node_config,
-            timeout: Duration::from_millis(3000),
+            timeout,
         }
     }
 }
@@ -819,7 +816,7 @@ pub async fn binned_json(
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>, Error> {
     let ret = channel_exec(
-        BinnedJsonChannelExec::new(query.clone(), node_config.clone()),
+        BinnedJsonChannelExec::new(query.clone(), query.timeout(), node_config.clone()),
         query.channel(),
         query.range(),
         query.agg_kind().clone(),

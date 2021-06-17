@@ -880,3 +880,10 @@ pub struct ChannelSearchSingleResult {
 pub struct ChannelSearchResult {
     pub channels: Vec<ChannelSearchSingleResult>,
 }
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProxyConfig {
+    pub listen: String,
+    pub port: u16,
+    pub search_hosts: Vec<String>,
+}

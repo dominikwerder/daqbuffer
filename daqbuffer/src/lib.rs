@@ -1,5 +1,5 @@
 use err::Error;
-use netpod::{Cluster, NodeConfig, NodeConfigCached};
+use netpod::{Cluster, NodeConfig, NodeConfigCached, ProxyConfig};
 use tokio::task::JoinHandle;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
@@ -27,5 +27,10 @@ pub fn spawn_test_hosts(cluster: Cluster) -> Vec<JoinHandle<Result<(), Error>>> 
 
 pub async fn run_node(node_config: NodeConfigCached) -> Result<(), Error> {
     httpret::host(node_config).await?;
+    Ok(())
+}
+
+pub async fn run_proxy(proxy_config: ProxyConfig) -> Result<(), Error> {
+    httpret::proxy(proxy_config).await?;
     Ok(())
 }

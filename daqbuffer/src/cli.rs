@@ -12,12 +12,19 @@ pub struct Opts {
 #[derive(Debug, Clap)]
 pub enum SubCmd {
     Retrieval(Retrieval),
+    Proxy(Proxy),
     Client(Client),
     GenerateTestData,
 }
 
 #[derive(Debug, Clap)]
 pub struct Retrieval {
+    #[clap(long)]
+    pub config: String,
+}
+
+#[derive(Debug, Clap)]
+pub struct Proxy {
     #[clap(long)]
     pub config: String,
 }

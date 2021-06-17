@@ -301,6 +301,7 @@ where
     S: Stream<Item = Sitemty<T>> + Unpin,
     T: Collectable + Debug,
 {
+    info!("\n\nConstruct deadline with timeout {:?}\n\n", timeout);
     let deadline = tokio::time::Instant::now() + timeout;
     // TODO in general a Collector does not need to know about the expected number of bins.
     // It would make more sense for some specific Collector kind to know.
@@ -335,7 +336,6 @@ where
                                 collector.set_range_complete();
                             }
                             RangeCompletableItem::Data(item) => {
-                                info!("collect_plain_events_json  GOT ITEM  {:?}", item);
                                 collector.ingest(&item);
                                 i1 += 1;
                             }

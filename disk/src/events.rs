@@ -19,7 +19,7 @@ impl PlainEventsQuery {
             channel,
             range,
             report_error: false,
-            timeout: Duration::from_millis(2000),
+            timeout: Duration::from_millis(10000),
         }
     }
 
@@ -40,7 +40,7 @@ impl PlainEventsQuery {
                 .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,
             timeout: params
                 .get("timeout")
-                .map_or("2000", |k| k)
+                .map_or("10000", |k| k)
                 .parse::<u64>()
                 .map(|k| Duration::from_millis(k))
                 .map_err(|e| Error::with_msg(format!("can not parse timeout {:?}", e)))?,
@@ -98,7 +98,7 @@ impl PlainEventsJsonQuery {
             channel,
             range,
             report_error: false,
-            timeout: Duration::from_millis(2000),
+            timeout: Duration::from_millis(10000),
         }
     }
 
@@ -119,7 +119,7 @@ impl PlainEventsJsonQuery {
                 .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,
             timeout: params
                 .get("timeout")
-                .map_or("2000", |k| k)
+                .map_or("10000", |k| k)
                 .parse::<u64>()
                 .map(|k| Duration::from_millis(k))
                 .map_err(|e| Error::with_msg(format!("can not parse timeout {:?}", e)))?,

@@ -1,8 +1,10 @@
 use chrono::{DateTime, Duration, Utc};
+use clap::Clap;
+use daqbuffer::cli::{ClientType, Opts, SubCmd};
 use disk::binned::query::CacheUsage;
 use err::Error;
 use netpod::log::*;
-use netpod::{NodeConfig, NodeConfigCached};
+use netpod::{NodeConfig, NodeConfigCached, ProxyConfig};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -45,8 +47,6 @@ fn parse_ts(s: &str) -> Result<DateTime<Utc>, Error> {
 }
 
 async fn go() -> Result<(), Error> {
-    use clap::Clap;
-    use daqbuffer::cli::{ClientType, Opts, SubCmd};
     let opts = Opts::parse();
     match opts.subcmd {
         SubCmd::Retrieval(subcmd) => {
@@ -60,6 +60,14 @@ async fn go() -> Result<(), Error> {
             let node_config: Result<NodeConfigCached, Error> = node_config.into();
             let node_config = node_config?;
             daqbuffer::run_node(node_config.clone()).await?;
+        }
+        SubCmd::Proxy(subcmd) => {
+            info!("daqbuffer proxy {}", clap::crate_version!());
+            let mut config_file = File::open(subcmd.config).await?;
+            let mut buf = vec![];
+            config_file.read_to_end(&mut buf).await?;
+            let proxy_config: ProxyConfig = serde_json::from_slice(&buf)?;
+            daqbuffer::run_proxy(proxy_config.clone()).await?;
         }
         SubCmd::Client(client) => match client.client_type {
             ClientType::Status(opts) => {

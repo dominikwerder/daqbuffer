@@ -148,7 +148,6 @@ fn make_num_pipeline(
     }
 }
 
-// TODO after the refactor, return direct value instead of boxed.
 pub async fn pre_binned_bytes_for_http(
     node_config: &NodeConfigCached,
     query: &PreBinnedQuery,

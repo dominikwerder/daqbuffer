@@ -2,6 +2,7 @@
 Error handling and reporting.
 */
 
+use http::header::InvalidHeaderValue;
 use http::uri::InvalidUri;
 use nom::error::ErrorKind;
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,7 @@ use std::num::{ParseFloatError, ParseIntError};
 use std::string::FromUtf8Error;
 use std::sync::PoisonError;
 use tokio::task::JoinError;
+use tokio::time::error::Elapsed;
 
 /**
 The common error type for this application.
@@ -237,6 +239,18 @@ impl From<regex::Error> for Error {
 impl<T> From<PoisonError<T>> for Error {
     fn from(_: PoisonError<T>) -> Self {
         Self::with_msg("PoisonError")
+    }
+}
+
+impl From<InvalidHeaderValue> for Error {
+    fn from(k: InvalidHeaderValue) -> Self {
+        Self::with_msg(format!("{:?}", k))
+    }
+}
+
+impl From<Elapsed> for Error {
+    fn from(k: Elapsed) -> Self {
+        Self::with_msg(format!("{:?}", k))
     }
 }
 

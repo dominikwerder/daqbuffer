@@ -76,7 +76,7 @@ impl PreBinnedQuery {
             self.patch.to_url_params_strings(),
             self.channel.backend,
             self.channel.name,
-            binning_scheme_string(&self.agg_kind),
+            binning_scheme_query_string(&self.agg_kind),
             self.cache_usage,
             self.disk_stats_every.bytes() / 1024,
             self.report_error(),
@@ -293,7 +293,7 @@ impl BinnedQuery {
             self.bin_count,
             Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt),
             Utc.timestamp_nanos(self.range.end as i64).format(date_fmt),
-            binning_scheme_string(&self.agg_kind),
+            binning_scheme_query_string(&self.agg_kind),
             self.disk_stats_every.bytes() / 1024,
             self.timeout.as_millis(),
             self.abort_after_bin_count,
@@ -301,17 +301,16 @@ impl BinnedQuery {
     }
 }
 
-fn binning_scheme_string(agg_kind: &AggKind) -> String {
+fn binning_scheme_query_string(agg_kind: &AggKind) -> String {
     match agg_kind {
         AggKind::Plain => "fullValue".into(),
         AggKind::DimXBins1 => "toScalarX".into(),
-        AggKind::DimXBinsN(n) => format!("binnedXcount{}", n),
+        AggKind::DimXBinsN(n) => format!("binnedX&binnedXcount={}", n),
     }
 }
 
 fn agg_kind_from_binning_scheme(params: &BTreeMap<String, String>) -> Result<AggKind, Error> {
     let key = "binningScheme";
-    let tok1 = "binnedXcount";
     let s = params
         .get(key)
         .map_or(Err(Error::with_msg(format!("can not find {}", key))), |k| Ok(k))?;
@@ -319,8 +318,9 @@ fn agg_kind_from_binning_scheme(params: &BTreeMap<String, String>) -> Result<Agg
         AggKind::Plain
     } else if s == "toScalarX" {
         AggKind::DimXBins1
-    } else if s.starts_with(tok1) {
-        AggKind::DimXBinsN(s[tok1.len()..].parse()?)
+    } else if s == "binnedX" {
+        let u = params.get("binnedXcount").map_or("1", |k| k).parse()?;
+        AggKind::DimXBinsN(u)
     } else {
         return Err(Error::with_msg("can not extract binningScheme"));
     };
