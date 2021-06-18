@@ -3,6 +3,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -11,6 +12,7 @@ use std::task::{Context, Poll};
 use timeunits::*;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
+use url::Url;
 
 pub mod status;
 pub mod streamext;
@@ -853,7 +855,7 @@ pub struct ChannelSearchQuery {
 }
 
 impl ChannelSearchQuery {
-    pub fn from_request(query: Option<&str>) -> Result<Self, Error> {
+    pub fn from_query_string(query: Option<&str>) -> Result<Self, Error> {
         let params = query_params(query);
         let ret = Self {
             name_regex: params.get("nameRegex").map_or("".into(), |k| k.into()),
@@ -861,6 +863,42 @@ impl ChannelSearchQuery {
             description_regex: params.get("descriptionRegex").map_or("".into(), |k| k.into()),
         };
         Ok(ret)
+    }
+
+    pub fn from_url(url: &Url) -> Result<Self, Error> {
+        let mut pairs = BTreeMap::new();
+        for (j, k) in url.query_pairs() {
+            pairs.insert(j.to_string(), k.to_string());
+        }
+        let ret = Self {
+            name_regex: pairs.get("nameRegex").map_or(String::new(), |k| k.clone()),
+            source_regex: pairs.get("sourceRegex").map_or(String::new(), |k| k.clone()),
+            description_regex: pairs.get("descriptionRegex").map_or(String::new(), |k| k.clone()),
+        };
+        Ok(ret)
+    }
+
+    pub fn append_to_url(&self, url: &mut Url) {
+        url.query_pairs_mut().append_pair("nameRegex", &self.name_regex);
+        url.query_pairs_mut().append_pair("sourceRegex", &self.source_regex);
+        url.query_pairs_mut()
+            .append_pair("descriptionRegex", &self.description_regex);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    #[test]
+    fn parse_url_1() {
+        let mut url = url::Url::parse("http://host/123").unwrap();
+        url.query_pairs_mut().append_pair("text", "jo jo • yo");
+        assert_eq!(url.to_string(), "http://host/123?text=jo+jo+%E2%80%A2+yo");
+    }
+
+    #[test]
+    fn parse_url_2() {
+        let url = url::Url::parse("dummy:?123").unwrap();
+        assert_eq!(url.query().unwrap(), "123")
     }
 }
 
@@ -882,8 +920,16 @@ pub struct ChannelSearchResult {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProxyBackend {
+    pub name: String,
+    pub host: String,
+    pub port: u16,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProxyConfig {
     pub listen: String,
     pub port: u16,
     pub search_hosts: Vec<String>,
+    pub backends: Vec<ProxyBackend>,
 }

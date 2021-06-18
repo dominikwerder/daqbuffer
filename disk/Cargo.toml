@@ -30,6 +30,7 @@ hex = "0.4.3"
 nom = "6.1.2"
 num-traits = "0.2"
 num-derive = "0.3"
+url = "2.2.2"
 tiny-keccak = { version = "2.0", features = ["sha3"] }
 err = { path = "../err" }
 taskrun = { path = "../taskrun" }

@@ -1,4 +1,3 @@
-use crate::api1::{channels_config_v1, channels_list_v1, gather_json_v1};
 use crate::gather::gather_get_json;
 use bytes::Bytes;
 use disk::binned::prebinned::pre_binned_bytes_for_http;
@@ -14,7 +13,7 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
 use netpod::log::*;
-use netpod::{AggKind, Channel, NodeConfigCached, ProxyConfig};
+use netpod::{AggKind, Channel, NodeConfigCached};
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
 use serde::{Deserialize, Serialize};
@@ -27,6 +26,10 @@ pub mod api1;
 pub mod gather;
 pub mod proxy;
 pub mod search;
+
+fn proxy_mark() -> &'static str {
+    "7c5e408a"
+}
 
 pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
     let rawjh = taskrun::spawn(events_service(node_config.clone()));
@@ -238,14 +241,6 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/1/channels" {
-        Ok(channels_list_v1(req).await?)
-    } else if path == "/api/1/channels/config" {
-        Ok(channels_config_v1(req).await?)
-    } else if path == "/api/1/stats/version" {
-        Ok(gather_json_v1(req, "/stats/version").await?)
-    } else if path.starts_with("/api/1/stats/") {
-        Ok(gather_json_v1(req, path).await?)
     } else {
         Ok(response(StatusCode::NOT_FOUND).body(Body::from(format!(
             "Sorry, not found: {:?}  {:?}  {:?}",
@@ -602,53 +597,4 @@ pub async fn ca_connect_1(req: Request<Body>, node_config: &NodeConfigCached) ->
             Err(e) => Err(e),
         })))?;
     Ok(ret)
-}
-
-pub async fn proxy(proxy_config: ProxyConfig) -> Result<(), Error> {
-    use std::str::FromStr;
-    let addr = SocketAddr::from_str(&format!("{}:{}", proxy_config.listen, proxy_config.port))?;
-    let make_service = make_service_fn({
-        move |_conn| {
-            let proxy_config = proxy_config.clone();
-            async move {
-                Ok::<_, Error>(service_fn({
-                    move |req| {
-                        let f = proxy_http_service(req, proxy_config.clone());
-                        Cont { f: Box::pin(f) }
-                    }
-                }))
-            }
-        }
-    });
-    Server::bind(&addr).serve(make_service).await?;
-    Ok(())
-}
-
-async fn proxy_http_service(req: Request<Body>, proxy_config: ProxyConfig) -> Result<Response<Body>, Error> {
-    match proxy_http_service_try(req, &proxy_config).await {
-        Ok(k) => Ok(k),
-        Err(e) => {
-            error!("data_api_proxy sees error: {:?}", e);
-            Err(e)
-        }
-    }
-}
-
-async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) -> Result<Response<Body>, Error> {
-    let uri = req.uri().clone();
-    let path = uri.path();
-    if path == "/api/4/search/channel" {
-        if req.method() == Method::GET {
-            Ok(proxy::channel_search(req, &proxy_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
-        }
-    } else {
-        Ok(response(StatusCode::NOT_FOUND).body(Body::from(format!(
-            "Sorry, not found: {:?}  {:?}  {:?}",
-            req.method(),
-            req.uri().path(),
-            req.uri().query(),
-        )))?)
-    }
 }

@@ -1,10 +1,12 @@
 use crate::query::channel_from_params;
 use chrono::{DateTime, TimeZone, Utc};
 use err::Error;
+use http::request::Parts;
 use netpod::log::*;
 use netpod::{AggKind, ByteSize, Channel, HostPort, NanoRange, PreBinnedPatchCoord, ToNanos};
 use std::collections::BTreeMap;
 use std::time::Duration;
+use url::Url;
 
 #[derive(Clone, Debug)]
 pub struct PreBinnedQuery {
@@ -35,21 +37,25 @@ impl PreBinnedQuery {
         }
     }
 
-    pub fn from_request(req: &http::request::Parts) -> Result<Self, Error> {
-        let params = netpod::query_params(req.uri.query());
-        let patch_ix = params
-            .get("patchIx")
-            .ok_or(Error::with_msg("missing patchIx"))?
-            .parse()?;
-        let bin_t_len = params
+    pub fn from_url(url: &Url) -> Result<Self, Error> {
+        let mut pairs = BTreeMap::new();
+        for (j, k) in url.query_pairs() {
+            pairs.insert(j.to_string(), k.to_string());
+        }
+        let pairs = pairs;
+        let bin_t_len = pairs
             .get("binTlen")
             .ok_or(Error::with_msg("missing binTlen"))?
             .parse()?;
-        let patch_t_len = params
+        let patch_t_len = pairs
             .get("patchTlen")
             .ok_or(Error::with_msg("missing patchTlen"))?
             .parse()?;
-        let disk_stats_every = params
+        let patch_ix = pairs
+            .get("patchIx")
+            .ok_or(Error::with_msg("missing patchIx"))?
+            .parse()?;
+        let disk_stats_every = pairs
             .get("diskStatsEveryKb")
             .ok_or(Error::with_msg("missing diskStatsEveryKb"))?;
         let disk_stats_every = disk_stats_every
@@ -57,17 +63,23 @@ impl PreBinnedQuery {
             .map_err(|e| Error::with_msg(format!("can not parse diskStatsEveryKb {:?}", e)))?;
         let ret = Self {
             patch: PreBinnedPatchCoord::new(bin_t_len, patch_t_len, patch_ix),
-            agg_kind: agg_kind_from_binning_scheme(&params).unwrap_or(AggKind::DimXBins1),
-            channel: channel_from_params(&params)?,
-            cache_usage: CacheUsage::from_params(&params)?,
+            channel: channel_from_params(&pairs)?,
+            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::DimXBins1),
+            cache_usage: CacheUsage::from_params(&pairs)?,
             disk_stats_every: ByteSize::kb(disk_stats_every),
-            report_error: params
+            report_error: pairs
                 .get("reportError")
                 .map_or("false", |k| k)
                 .parse()
                 .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,
         };
         Ok(ret)
+    }
+
+    pub fn from_request(head: &Parts) -> Result<Self, Error> {
+        let s1 = format!("dummy:{}", head.uri);
+        let url = Url::parse(&s1)?;
+        Self::from_url(&url)
     }
 
     pub fn make_query_string(&self) -> String {

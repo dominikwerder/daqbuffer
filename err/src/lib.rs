@@ -254,6 +254,12 @@ impl From<Elapsed> for Error {
     }
 }
 
+impl From<url::ParseError> for Error {
+    fn from(k: url::ParseError) -> Self {
+        Self::with_msg(format!("{:?}", k))
+    }
+}
+
 pub fn todo() {
     todo!("TODO");
 }

@@ -31,6 +31,6 @@ pub async fn run_node(node_config: NodeConfigCached) -> Result<(), Error> {
 }
 
 pub async fn run_proxy(proxy_config: ProxyConfig) -> Result<(), Error> {
-    httpret::proxy(proxy_config).await?;
+    httpret::proxy::proxy(proxy_config).await?;
     Ok(())
 }

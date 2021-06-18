@@ -2,12 +2,17 @@ use crate::response;
 use err::Error;
 use hyper::{Body, Request, Response, StatusCode};
 use netpod::{ChannelSearchQuery, NodeConfigCached};
+use url::Url;
 
 pub async fn channel_search(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     match head.headers.get("accept") {
         Some(v) if v == "application/json" => {
-            let query = ChannelSearchQuery::from_request(head.uri.query())?;
+            let s1 = format!("dummy:{}", head.uri);
+            //netpod::log::info!("try to parse {}", s1);
+            let url = Url::parse(&s1)?;
+            let query = ChannelSearchQuery::from_url(&url)?;
+            //let query = ChannelSearchQuery::from_query_string(head.uri.query())?;
             let res = dbconn::search::search_channel(query, node_config).await?;
             let body = Body::from(serde_json::to_string(&res)?);
             let ret = super::response(StatusCode::OK).body(body)?;

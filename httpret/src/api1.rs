@@ -3,6 +3,7 @@ use err::Error;
 use http::{Method, StatusCode};
 use hyper::{Body, Client, Request, Response};
 use netpod::log::*;
+use netpod::{ProxyBackend, ProxyConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::future::Future;
@@ -10,41 +11,10 @@ use std::pin::Pin;
 use std::time::Duration;
 use tokio::time::timeout_at;
 
-fn get_backends() -> [(&'static str, &'static str, u16); 6] {
-    // TODO take from config.
-    err::todo();
-    [
-        ("gls-archive", "gls-data-api.psi.ch", 8371),
-        ("hipa-archive", "hipa-data-api.psi.ch", 8082),
-        ("sf-databuffer", "sf-daqbuf-33.psi.ch", 8371),
-        ("sf-imagebuffer", "sf-daq-5.psi.ch", 8371),
-        ("timeout", "sf-daqbuf-33.psi.ch", 8371),
-        ("error500", "sf-daqbuf-33.psi.ch", 8371),
-    ]
-}
-
 fn get_live_hosts() -> &'static [(&'static str, u16)] {
     // TODO take from config.
     err::todo();
-    &[
-        ("sf-daqbuf-21", 8371),
-        ("sf-daqbuf-22", 8371),
-        ("sf-daqbuf-23", 8371),
-        ("sf-daqbuf-24", 8371),
-        ("sf-daqbuf-25", 8371),
-        ("sf-daqbuf-26", 8371),
-        ("sf-daqbuf-27", 8371),
-        ("sf-daqbuf-28", 8371),
-        ("sf-daqbuf-29", 8371),
-        ("sf-daqbuf-30", 8371),
-        ("sf-daqbuf-31", 8371),
-        ("sf-daqbuf-32", 8371),
-        ("sf-daqbuf-33", 8371),
-        ("sf-daq-5", 8371),
-        ("sf-daq-6", 8371),
-        ("hipa-data-api", 8082),
-        ("gls-data-api", 8371),
-    ]
+    &[]
 }
 
 pub trait BackendAware {
@@ -117,7 +87,7 @@ impl FromErrorCode for ChannelSearchResultItemV1 {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelSearchResultV1(pub Vec<ChannelSearchResultItemV1>);
 
-pub async fn channels_list_v1(req: Request<Body>) -> Result<Response<Body>, Error> {
+pub async fn channels_list_v1(req: Request<Body>, proxy_config: &ProxyConfig) -> Result<Response<Body>, Error> {
     let reqbody = req.into_body();
     let bodyslice = hyper::body::to_bytes(reqbody).await?;
     let query: ChannelSearchQueryV1 = serde_json::from_slice(&bodyslice)?;
@@ -132,7 +102,7 @@ pub async fn channels_list_v1(req: Request<Body>) -> Result<Response<Body>, Erro
         .unwrap()
     };
     let back2: Vec<_> = query.backends.iter().map(|x| x.as_str()).collect();
-    let spawned = subreq(&back2[..], "channels", &subq_maker)?;
+    let spawned = subreq(&back2[..], "channels", &subq_maker, proxy_config)?;
     let mut res = vec![];
     for (backend, s) in spawned {
         res.push((backend, s.await));
@@ -143,54 +113,58 @@ pub async fn channels_list_v1(req: Request<Body>) -> Result<Response<Body>, Erro
     Ok(res)
 }
 
-type TT0 = (
-    (&'static str, &'static str, u16),
-    http::response::Parts,
-    hyper::body::Bytes,
-);
+type TT0 = (ProxyBackend, http::response::Parts, hyper::body::Bytes);
 type TT1 = Result<TT0, Error>;
 type TT2 = tokio::task::JoinHandle<TT1>;
 type TT3 = Result<TT1, tokio::task::JoinError>;
 type TT4 = Result<TT3, tokio::time::error::Elapsed>;
 type TT7 = Pin<Box<dyn Future<Output = TT4> + Send>>;
-type TT8 = (&'static str, TT7);
+type TT8 = (String, TT7);
 
-fn subreq(backends_req: &[&str], endp: &str, subq_maker: &dyn Fn(&str) -> JsonValue) -> Result<Vec<TT8>, Error> {
-    let backends = get_backends();
+fn subreq(
+    backends_req: &[&str],
+    endp: &str,
+    subq_maker: &dyn Fn(&str) -> JsonValue,
+    proxy_config: &ProxyConfig,
+) -> Result<Vec<TT8>, Error> {
+    let backends = proxy_config.backends.clone();
     let mut spawned = vec![];
     for back in &backends {
-        if backends_req.contains(&back.0) {
+        if backends_req.contains(&back.name.as_str()) {
             let back = back.clone();
-            let q = subq_maker(back.0);
-            let endp = match back.0 {
+            let q = subq_maker(&back.name);
+            let endp = match back.name.as_str() {
                 "timeout" => "channels_timeout",
                 "error500" => "channels_error500",
                 _ => endp,
             };
-            let uri = format!("http://{}:{}{}/{}", back.1, back.2, "/api/1", endp);
+            let uri = format!("http://{}:{}{}/{}", back.host, back.port, "/api/1", endp);
             let req = Request::builder()
                 .method(Method::POST)
                 .uri(uri)
                 .header("content-type", "application/json")
                 .body(Body::from(serde_json::to_string(&q)?))?;
-            let jh: TT2 = tokio::spawn(async move {
-                let res = Client::new().request(req).await?;
-                let (pre, body) = res.into_parts();
-                //info!("Answer from {}  status {}", back.1, pre.status);
-                let body_all = hyper::body::to_bytes(body).await?;
-                //info!("Got {} bytes from {}", body_all.len(), back.1);
-                Ok::<_, Error>((back, pre, body_all))
+            let jh: TT2 = tokio::spawn({
+                let back = back.clone();
+                async move {
+                    let res = Client::new().request(req).await?;
+                    let (pre, body) = res.into_parts();
+                    //info!("Answer from {}  status {}", back.1, pre.status);
+                    let body_all = hyper::body::to_bytes(body).await?;
+                    //info!("Got {} bytes from {}", body_all.len(), back.1);
+                    Ok::<_, Error>((back, pre, body_all))
+                }
             });
             let jh = tokio::time::timeout(std::time::Duration::from_millis(5000), jh);
             let bx: TT7 = Box::pin(jh);
-            spawned.push((back.0, bx));
+            spawned.push((back.name.clone(), bx));
         }
     }
     Ok(spawned)
 }
 
 //fn extr<'a, T: BackendAware + FromErrorCode + Deserialize<'a>>(results: Vec<(&str, TT4)>) -> Vec<T> {
-fn extr<T: BackendAware + FromErrorCode + for<'a> Deserialize<'a>>(results: Vec<(&str, TT4)>) -> Vec<T> {
+fn extr<T: BackendAware + FromErrorCode + for<'a> Deserialize<'a>>(results: Vec<(String, TT4)>) -> Vec<T> {
     let mut ret = vec![];
     for (backend, r) in results {
         if let Ok(r20) = r {
@@ -203,30 +177,30 @@ fn extr<T: BackendAware + FromErrorCode + for<'a> Deserialize<'a>>(results: Vec<
                                 error!("more than one result item from {:?}", r2.0);
                             } else {
                                 for inp2 in inp {
-                                    if inp2.backend() == r2.0 .0 {
+                                    if inp2.backend() == r2.0.name {
                                         ret.push(inp2);
                                     }
                                 }
                             }
                         } else {
                             error!("malformed answer from {:?}", r2.0);
-                            ret.push(T::from_error_code(backend, ErrorCode::Error));
+                            ret.push(T::from_error_code(backend.as_str(), ErrorCode::Error));
                         }
                     } else {
                         error!("bad answer from {:?}", r2.0);
-                        ret.push(T::from_error_code(backend, ErrorCode::Error));
+                        ret.push(T::from_error_code(backend.as_str(), ErrorCode::Error));
                     }
                 } else {
                     error!("bad answer from {:?}", r30);
-                    ret.push(T::from_error_code(backend, ErrorCode::Error));
+                    ret.push(T::from_error_code(backend.as_str(), ErrorCode::Error));
                 }
             } else {
                 error!("subrequest join handle error {:?}", r20);
-                ret.push(T::from_error_code(backend, ErrorCode::Error));
+                ret.push(T::from_error_code(backend.as_str(), ErrorCode::Error));
             }
         } else {
             error!("subrequest timeout {:?}", r);
-            ret.push(T::from_error_code(backend, ErrorCode::Timeout));
+            ret.push(T::from_error_code(backend.as_str(), ErrorCode::Timeout));
         }
     }
     ret
@@ -288,7 +262,7 @@ impl FromErrorCode for ChannelBackendConfigsV1 {
     }
 }
 
-pub async fn channels_config_v1(req: Request<Body>) -> Result<Response<Body>, Error> {
+pub async fn channels_config_v1(req: Request<Body>, proxy_config: &ProxyConfig) -> Result<Response<Body>, Error> {
     let reqbody = req.into_body();
     let bodyslice = hyper::body::to_bytes(reqbody).await?;
     let query: ChannelConfigsQueryV1 = serde_json::from_slice(&bodyslice)?;
@@ -303,7 +277,7 @@ pub async fn channels_config_v1(req: Request<Body>) -> Result<Response<Body>, Er
         .unwrap()
     };
     let back2: Vec<_> = query.backends.iter().map(|x| x.as_str()).collect();
-    let spawned = subreq(&back2[..], "channels/config", &subq_maker)?;
+    let spawned = subreq(&back2[..], "channels/config", &subq_maker, proxy_config)?;
     let mut res = vec![];
     for (backend, s) in spawned {
         res.push((backend, s.await));
@@ -315,6 +289,8 @@ pub async fn channels_config_v1(req: Request<Body>) -> Result<Response<Body>, Er
 }
 
 pub async fn gather_json_v1(req_m: Request<Body>, path: &str) -> Result<Response<Body>, Error> {
+    // TODO can this be removed?
+    err::todo();
     let mut spawned = vec![];
     let (req_h, _) = req_m.into_parts();
     for host in get_live_hosts() {
@@ -386,5 +362,130 @@ pub async fn gather_json_v1(req_m: Request<Body>, path: &str) -> Result<Response
     let res = response(200)
         .header("Content-Type", "application/json")
         .body(serde_json::to_string(&m)?.into())?;
+    Ok(res)
+}
+
+pub async fn gather_json_2_v1(
+    req: Request<Body>,
+    pathpre: &str,
+    _proxy_config: &ProxyConfig,
+) -> Result<Response<Body>, Error> {
+    let (part_head, part_body) = req.into_parts();
+    let bodyslice = hyper::body::to_bytes(part_body).await?;
+    let gather_from: GatherFromV1 = serde_json::from_slice(&bodyslice)?;
+    let mut spawned = vec![];
+    let uri = part_head.uri;
+    let path_post = &uri.path()[pathpre.len()..];
+    //let hds = part_head.headers;
+    for gh in gather_from.hosts {
+        let uri = format!("http://{}:{}/{}", gh.host, gh.port, path_post);
+        let req = Request::builder().method(Method::GET).uri(uri);
+        let req = if gh.inst.len() > 0 {
+            req.header("retrieval_instance", &gh.inst)
+        } else {
+            req
+        };
+        let req = req.header(http::header::ACCEPT, "application/json");
+        //.body(Body::from(serde_json::to_string(&q)?))?;
+        let req = req.body(Body::empty());
+        let task = tokio::spawn(async move {
+            //let res = Client::new().request(req);
+            let res = Client::new().request(req?).await;
+            Ok::<_, Error>(process_answer(res?).await?)
+        });
+        let task = tokio::time::timeout(std::time::Duration::from_millis(5000), task);
+        spawned.push((gh.clone(), task));
+    }
+    #[derive(Serialize)]
+    struct Hres {
+        gh: GatherHostV1,
+        res: JsonValue,
+    }
+    #[derive(Serialize)]
+    struct Jres {
+        hosts: Vec<Hres>,
+    }
+    let mut a = vec![];
+    for tr in spawned {
+        let res = match tr.1.await {
+            Ok(k) => match k {
+                Ok(k) => match k {
+                    Ok(k) => k,
+                    Err(e) => JsonValue::String(format!("ERROR({:?})", e)),
+                },
+                Err(e) => JsonValue::String(format!("ERROR({:?})", e)),
+            },
+            Err(e) => JsonValue::String(format!("ERROR({:?})", e)),
+        };
+        a.push(Hres { gh: tr.0, res });
+    }
+    let res = response(StatusCode::OK)
+        .header(http::header::CONTENT_TYPE, "application/json")
+        .body(serde_json::to_string(&Jres { hosts: a })?.into())?;
+    Ok(res)
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct GatherFromV1 {
+    hosts: Vec<GatherHostV1>,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+struct GatherHostV1 {
+    host: String,
+    port: u16,
+    inst: String,
+}
+
+async fn process_answer(res: Response<Body>) -> Result<JsonValue, Error> {
+    let (pre, mut body) = res.into_parts();
+    if pre.status != StatusCode::OK {
+        use hyper::body::HttpBody;
+        if let Some(c) = body.data().await {
+            let c: bytes::Bytes = c?;
+            let s1 = String::from_utf8(c.to_vec())?;
+            Ok(JsonValue::String(format!(
+                "status {}  body {}",
+                pre.status.as_str(),
+                s1
+            )))
+        } else {
+            //use snafu::IntoError;
+            //Err(Bad{msg:format!("API error")}.into_error(NoneError)).ctxb(SE!(AddPos))
+            Ok(JsonValue::String(format!("status {}", pre.status.as_str())))
+        }
+    } else {
+        let body: hyper::Body = body;
+        let body_all = hyper::body::to_bytes(body).await?;
+        let val = match serde_json::from_slice(&body_all) {
+            Ok(k) => k,
+            Err(_e) => JsonValue::String(String::from_utf8(body_all.to_vec())?),
+        };
+        Ok::<_, Error>(val)
+    }
+}
+
+pub async fn proxy_distribute_v1(req: Request<Body>) -> Result<Response<Body>, Error> {
+    let (mut sink, body) = Body::channel();
+    let uri = format!("http://sf-daqbuf-33:8371{}", req.uri().path());
+    let res = Response::builder().status(StatusCode::OK).body(body)?;
+    tokio::spawn(async move {
+        let req = Request::builder().method(Method::GET).uri(uri).body(Body::empty())?;
+        let res = Client::new().request(req).await?;
+        if res.status() == StatusCode::OK {
+            let (_heads, mut body) = res.into_parts();
+            loop {
+                use hyper::body::HttpBody;
+                let chunk = body.data().await;
+                if let Some(k) = chunk {
+                    let k = k?;
+                    sink.send_data(k).await?;
+                } else {
+                    break;
+                }
+            }
+        }
+        Ok::<_, Error>(())
+    });
     Ok(res)
 }

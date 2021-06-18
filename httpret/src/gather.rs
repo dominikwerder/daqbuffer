@@ -10,6 +10,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 use tokio::time::sleep;
+use url::Url;
 
 #[derive(Clone, Serialize, Deserialize)]
 struct GatherFrom {
@@ -162,8 +163,7 @@ pub async fn gather_get_json(req: Request<Body>, node_config: &NodeConfigCached)
 
 pub async fn gather_get_json_generic<SM, NT, FT>(
     method: http::Method,
-    uri: String,
-    schemehostports: Vec<String>,
+    urls: Vec<Url>,
     nt: NT,
     ft: FT,
     timeout: Duration,
@@ -173,11 +173,10 @@ where
     NT: Fn(Response<Body>) -> Pin<Box<dyn Future<Output = Result<SM, Error>> + Send>> + Send + Sync + Copy + 'static,
     FT: Fn(Vec<SM>) -> Result<Response<Body>, Error>,
 {
-    let spawned: Vec<_> = schemehostports
-        .iter()
-        .map(move |schemehostport| {
-            let uri = format!("{}{}", schemehostport, uri.clone());
-            let req = Request::builder().method(method.clone()).uri(uri);
+    let spawned: Vec<_> = urls
+        .into_iter()
+        .map(move |url| {
+            let req = Request::builder().method(method.clone()).uri(url.as_str());
             //let req = req.header("x-log-from-node-name", format!("{}", node_config.node_config.name));
             let req = req.header(http::header::ACCEPT, "application/json");
             let req = req.body(Body::empty());
@@ -189,7 +188,7 @@ where
                   res = Client::new().request(req?).fuse() => Ok(nt(res?).await?)
                 }
             });
-            (schemehostport.clone(), task)
+            (url, task)
         })
         .collect();
     let mut a = vec![];
@@ -213,11 +212,9 @@ mod test {
 
     #[test]
     fn try_search() {
-        let schemehostports = ["http://sf-daqbuf-22:8371".into()];
         let fut = gather_get_json_generic(
             hyper::Method::GET,
-            format!("/api/4/search/channel"),
-            schemehostports.to_vec(),
+            vec![],
             |_res| {
                 let fut = async { Ok(()) };
                 Box::pin(fut)
