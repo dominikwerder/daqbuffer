@@ -8,14 +8,13 @@ use crate::decode::{
 };
 use crate::frame::makeframe::{Framable, FrameType};
 use crate::merge::mergedfromremotes::MergedFromRemotes;
-use crate::raw::EventsQuery;
+use crate::raw::RawEventsQuery;
 use crate::Sitemty;
 use bytes::Bytes;
 use err::Error;
 use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::StreamExt;
-use netpod::log::*;
 use netpod::{AggKind, ByteOrder, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use serde::de::DeserializeOwned;
@@ -249,7 +248,7 @@ impl ChannelExecFunction for PlainEvents {
         let _ = byte_order;
         let _ = event_value_shape;
         let perf_opts = PerfOpts { inmem_bufcap: 4096 };
-        let evq = EventsQuery {
+        let evq = RawEventsQuery {
             channel: self.channel,
             range: self.range,
             agg_kind: self.agg_kind,
@@ -301,7 +300,6 @@ where
     S: Stream<Item = Sitemty<T>> + Unpin,
     T: Collectable + Debug,
 {
-    info!("\n\nConstruct deadline with timeout {:?}\n\n", timeout);
     let deadline = tokio::time::Instant::now() + timeout;
     // TODO in general a Collector does not need to know about the expected number of bins.
     // It would make more sense for some specific Collector kind to know.
@@ -382,7 +380,7 @@ impl ChannelExecFunction for PlainEventsJson {
         let _ = byte_order;
         let _ = event_value_shape;
         let perf_opts = PerfOpts { inmem_bufcap: 4096 };
-        let evq = EventsQuery {
+        let evq = RawEventsQuery {
             channel: self.channel,
             range: self.range,
             agg_kind: self.agg_kind,

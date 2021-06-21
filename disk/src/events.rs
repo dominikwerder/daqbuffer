@@ -1,19 +1,23 @@
-use crate::query::channel_from_params;
 use chrono::{DateTime, TimeZone, Utc};
 use err::Error;
-use netpod::{Channel, HostPort, NanoRange, ToNanos};
+use netpod::log::*;
+use netpod::{
+    channel_from_pairs, get_url_query_pairs, AppendToUrl, Channel, FromUrl, HasBackend, HasTimeout, HostPort,
+    NanoRange, ToNanos,
+};
 use std::time::Duration;
+use url::Url;
 
 // TODO move this query type out of this `binned` mod
 #[derive(Clone, Debug)]
-pub struct PlainEventsQuery {
+pub struct PlainEventsBinaryQuery {
     channel: Channel,
     range: NanoRange,
     report_error: bool,
     timeout: Duration,
 }
 
-impl PlainEventsQuery {
+impl PlainEventsBinaryQuery {
     pub fn new(channel: Channel, range: NanoRange) -> Self {
         Self {
             channel,
@@ -24,7 +28,10 @@ impl PlainEventsQuery {
     }
 
     pub fn from_request(req: &http::request::Parts) -> Result<Self, Error> {
+        // TODO use Url
         let params = netpod::query_params(req.uri.query());
+        info!("PlainEventsBinaryQuery  from_request  uri: {:?}", req.uri);
+        info!("PlainEventsBinaryQuery  from_request  params: {:?}", params);
         let beg_date = params.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
         let end_date = params.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
         let ret = Self {
@@ -32,7 +39,7 @@ impl PlainEventsQuery {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
             },
-            channel: channel_from_params(&params)?,
+            channel: channel_from_pairs(&params)?,
             report_error: params
                 .get("reportError")
                 .map_or("false", |k| k)
@@ -102,22 +109,22 @@ impl PlainEventsJsonQuery {
         }
     }
 
-    pub fn from_request(req: &http::request::Parts) -> Result<Self, Error> {
-        let params = netpod::query_params(req.uri.query());
-        let beg_date = params.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
-        let end_date = params.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
+    pub fn from_url(url: &Url) -> Result<Self, Error> {
+        let pairs = get_url_query_pairs(url);
+        let beg_date = pairs.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
+        let end_date = pairs.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
         let ret = Self {
             range: NanoRange {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
             },
-            channel: channel_from_params(&params)?,
-            report_error: params
+            channel: channel_from_pairs(&pairs)?,
+            report_error: pairs
                 .get("reportError")
                 .map_or("false", |k| k)
                 .parse()
                 .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,
-            timeout: params
+            timeout: pairs
                 .get("timeout")
                 .map_or("10000", |k| k)
                 .parse::<u64>()
@@ -125,6 +132,12 @@ impl PlainEventsJsonQuery {
                 .map_err(|e| Error::with_msg(format!("can not parse timeout {:?}", e)))?,
         };
         Ok(ret)
+    }
+
+    pub fn from_request_head(head: &http::request::Parts) -> Result<Self, Error> {
+        let s1 = format!("dummy:{}", head.uri);
+        let url = Url::parse(&s1)?;
+        Self::from_url(&url)
     }
 
     pub fn range(&self) -> &NanoRange {
@@ -147,6 +160,7 @@ impl PlainEventsJsonQuery {
         self.timeout = k;
     }
 
+    // TODO remove in favor of Self::append_to_url
     pub fn url(&self, host: &HostPort) -> String {
         let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
         format!(
@@ -159,5 +173,45 @@ impl PlainEventsJsonQuery {
             Utc.timestamp_nanos(self.range.end as i64).format(date_fmt),
             self.timeout.as_millis(),
         )
+    }
+
+    pub fn append_to_url(&self, url: &mut Url) {
+        let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
+        let mut g = url.query_pairs_mut();
+        g.append_pair("channelBackend", &self.channel.backend);
+        g.append_pair("channelName", &self.channel.name);
+        g.append_pair(
+            "begDate",
+            &Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt).to_string(),
+        );
+        g.append_pair(
+            "endDate",
+            &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
+        );
+        g.append_pair("timeout", &format!("{}", self.timeout.as_millis()));
+    }
+}
+
+impl HasBackend for PlainEventsJsonQuery {
+    fn backend(&self) -> &str {
+        &self.channel.backend
+    }
+}
+
+impl HasTimeout for PlainEventsJsonQuery {
+    fn timeout(&self) -> Duration {
+        self.timeout.clone()
+    }
+}
+
+impl FromUrl for PlainEventsJsonQuery {
+    fn from_url(url: &Url) -> Result<Self, Error> {
+        Self::from_url(url)
+    }
+}
+
+impl AppendToUrl for PlainEventsJsonQuery {
+    fn append_to_url(&self, url: &mut Url) {
+        self.append_to_url(url)
     }
 }

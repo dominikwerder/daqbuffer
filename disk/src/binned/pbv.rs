@@ -7,7 +7,7 @@ use crate::cache::{write_pb_cache_min_max_avg_scalar, CacheFileDesc, WrittenPbCa
 use crate::decode::{Endianness, EventValueFromBytes, EventValueShape, NumFromBytes};
 use crate::frame::makeframe::FrameType;
 use crate::merge::mergedfromremotes::MergedFromRemotes;
-use crate::raw::EventsQuery;
+use crate::raw::RawEventsQuery;
 use crate::streamlog::Streamlog;
 use crate::Sitemty;
 use err::Error;
@@ -110,7 +110,7 @@ where
         Pin<Box<dyn Stream<Item = Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>> + Send>>,
         Error,
     > {
-        let evq = EventsQuery {
+        let evq = RawEventsQuery {
             channel: self.query.channel().clone(),
             range: self.query.patch().patch_range(),
             agg_kind: self.query.agg_kind().clone(),

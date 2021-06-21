@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use disk::agg::streams::{StatsItem, StreamItem};
 use disk::binned::{NumOps, RangeCompletableItem, WithLen};
 use disk::decode::EventValues;
-use disk::events::{PlainEventsJsonQuery, PlainEventsQuery};
+use disk::events::{PlainEventsBinaryQuery, PlainEventsJsonQuery};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::frame::makeframe::FrameType;
 use disk::streamlog::Streamlog;
@@ -63,7 +63,7 @@ where
         name: channel_name.into(),
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let query = PlainEventsQuery::new(channel, range);
+    let query = PlainEventsBinaryQuery::new(channel, range);
     let hp = HostPort::from_node(node0);
     let url = query.url(&hp);
     info!("get_plain_events  get {}", url);

@@ -2,7 +2,7 @@ use crate::agg::streams::Appendable;
 use crate::binned::{EventsNodeProcessor, PushableIndex};
 use crate::frame::makeframe::FrameType;
 use crate::merge::MergedStream;
-use crate::raw::{x_processed_stream_from_node, EventsQuery};
+use crate::raw::{x_processed_stream_from_node, RawEventsQuery};
 use crate::Sitemty;
 use err::Error;
 use futures_core::Stream;
@@ -34,7 +34,7 @@ where
     <ENP as EventsNodeProcessor>::Output: Unpin,
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType,
 {
-    pub fn new(evq: EventsQuery, perf_opts: PerfOpts, cluster: Cluster) -> Self {
+    pub fn new(evq: RawEventsQuery, perf_opts: PerfOpts, cluster: Cluster) -> Self {
         info!("MergedFromRemotes  evq {:?}", evq);
         let mut tcp_establish_futs = vec![];
         for node in &cluster.nodes {

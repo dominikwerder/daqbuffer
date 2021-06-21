@@ -2,7 +2,7 @@ use crate::gather::gather_get_json;
 use bytes::Bytes;
 use disk::binned::prebinned::pre_binned_bytes_for_http;
 use disk::binned::query::{BinnedQuery, PreBinnedQuery};
-use disk::events::{PlainEventsJsonQuery, PlainEventsQuery};
+use disk::events::{PlainEventsBinaryQuery, PlainEventsJsonQuery};
 use disk::raw::conn::events_service;
 use err::Error;
 use future::Future;
@@ -13,7 +13,7 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
 use netpod::log::*;
-use netpod::{AggKind, Channel, NodeConfigCached};
+use netpod::{AggKind, Channel, FromUrl, NodeConfigCached};
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
 use serde::{Deserialize, Serialize};
@@ -21,6 +21,7 @@ use std::{future, net, panic, pin, task};
 use task::{Context, Poll};
 use tracing::field::Empty;
 use tracing::Instrument;
+use url::Url;
 
 pub mod api1;
 pub mod gather;
@@ -150,15 +151,9 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/4/table_sizes" {
+    } else if path == "/api/4/events" {
         if req.method() == Method::GET {
-            Ok(table_sizes(req, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
-        }
-    } else if path == "/api/4/random_channel" {
-        if req.method() == Method::GET {
-            Ok(random_channel(req, &node_config).await?)
+            Ok(plain_events(req, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -174,9 +169,15 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/4/events" {
+    } else if path == "/api/4/table_sizes" {
         if req.method() == Method::GET {
-            Ok(plain_events(req, &node_config).await?)
+            Ok(table_sizes(req, &node_config).await?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    } else if path == "/api/4/random_channel" {
+        if req.method() == Method::GET {
+            Ok(random_channel(req, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -331,7 +332,8 @@ where
 
 async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
-    let query = BinnedQuery::from_request(&head)?;
+    let url = Url::parse(&format!("dummy:{}", head.uri))?;
+    let query = BinnedQuery::from_url(&url)?;
     match head.headers.get("accept") {
         Some(v) if v == "application/octet-stream" => binned_binary(query, node_config).await,
         Some(v) if v == "application/json" => binned_json(query, node_config).await,
@@ -398,6 +400,7 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
 }
 
 async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    info!("httpret  plain_events  headers: {:?}", req.headers());
     let accept_def = "";
     let accept = req
         .headers()
@@ -414,7 +417,7 @@ async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Res
 
 async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
-    let query = PlainEventsQuery::from_request(&head)?;
+    let query = PlainEventsBinaryQuery::from_request(&head)?;
     let op = disk::channelexec::PlainEvents::new(query.channel().clone(), query.range().clone(), node_config.clone());
     let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), AggKind::Plain, node_config).await?;
     let s = s.map(|item| item.make_frame());
@@ -424,7 +427,7 @@ async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached)
 
 async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
-    let query = PlainEventsJsonQuery::from_request(&head)?;
+    let query = PlainEventsJsonQuery::from_request_head(&head)?;
     let op = disk::channelexec::PlainEventsJson::new(
         query.channel().clone(),
         query.range().clone(),

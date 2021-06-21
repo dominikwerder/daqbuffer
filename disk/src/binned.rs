@@ -14,7 +14,7 @@ use crate::decode::{
 };
 use crate::frame::makeframe::{Framable, FrameType, SubFrId};
 use crate::merge::mergedfromremotes::MergedFromRemotes;
-use crate::raw::EventsQuery;
+use crate::raw::RawEventsQuery;
 use crate::Sitemty;
 use bytes::Bytes;
 use chrono::{TimeZone, Utc};
@@ -121,7 +121,7 @@ where
                 range
             );
             let bin_count = range.count as u32;
-            let evq = EventsQuery {
+            let evq = RawEventsQuery {
                 channel: query.channel().clone(),
                 range: query.range().clone(),
                 agg_kind: query.agg_kind().clone(),
@@ -786,7 +786,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
                     "binned_bytes_for_http  no covering range for prebinned, merge from remotes instead {:?}",
                     range
                 );
-                let evq = EventsQuery {
+                let evq = RawEventsQuery {
                     channel: self.query.channel().clone(),
                     range: self.query.range().clone(),
                     agg_kind: self.query.agg_kind().clone(),

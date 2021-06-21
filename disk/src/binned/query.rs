@@ -1,9 +1,11 @@
-use crate::query::channel_from_params;
 use chrono::{DateTime, TimeZone, Utc};
 use err::Error;
 use http::request::Parts;
 use netpod::log::*;
-use netpod::{AggKind, ByteSize, Channel, HostPort, NanoRange, PreBinnedPatchCoord, ToNanos};
+use netpod::{
+    channel_from_pairs, get_url_query_pairs, AggKind, AppendToUrl, ByteSize, Channel, FromUrl, HasBackend, HasTimeout,
+    HostPort, NanoRange, PreBinnedPatchCoord, ToNanos,
+};
 use std::collections::BTreeMap;
 use std::time::Duration;
 use url::Url;
@@ -63,9 +65,9 @@ impl PreBinnedQuery {
             .map_err(|e| Error::with_msg(format!("can not parse diskStatsEveryKb {:?}", e)))?;
         let ret = Self {
             patch: PreBinnedPatchCoord::new(bin_t_len, patch_t_len, patch_ix),
-            channel: channel_from_params(&pairs)?,
+            channel: channel_from_pairs(&pairs)?,
             agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::DimXBins1),
-            cache_usage: CacheUsage::from_params(&pairs)?,
+            cache_usage: CacheUsage::from_pairs(&pairs)?,
             disk_stats_every: ByteSize::kb(disk_stats_every),
             report_error: pairs
                 .get("reportError")
@@ -137,7 +139,7 @@ impl CacheUsage {
         .into()
     }
 
-    pub fn from_params(params: &BTreeMap<String, String>) -> Result<Self, Error> {
+    pub fn from_pairs(params: &BTreeMap<String, String>) -> Result<Self, Error> {
         let ret = params.get("cacheUsage").map_or(Ok::<_, Error>(CacheUsage::Use), |k| {
             if k == "use" {
                 Ok(CacheUsage::Use)
@@ -200,49 +202,6 @@ impl BinnedQuery {
         }
     }
 
-    pub fn from_request(req: &http::request::Parts) -> Result<Self, Error> {
-        let params = netpod::query_params(req.uri.query());
-        let beg_date = params.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
-        let end_date = params.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
-        let disk_stats_every = params.get("diskStatsEveryKb").map_or("2000", |k| k);
-        let disk_stats_every = disk_stats_every
-            .parse()
-            .map_err(|e| Error::with_msg(format!("can not parse diskStatsEveryKb {:?}", e)))?;
-        let ret = Self {
-            channel: channel_from_params(&params)?,
-            range: NanoRange {
-                beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
-                end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
-            },
-            bin_count: params
-                .get("binCount")
-                .ok_or(Error::with_msg("missing binCount"))?
-                .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse binCount {:?}", e)))?,
-            agg_kind: agg_kind_from_binning_scheme(&params).unwrap_or(AggKind::DimXBins1),
-            cache_usage: CacheUsage::from_params(&params)?,
-            disk_stats_every: ByteSize::kb(disk_stats_every),
-            report_error: params
-                .get("reportError")
-                .map_or("false", |k| k)
-                .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,
-            timeout: params
-                .get("timeout")
-                .map_or("2000", |k| k)
-                .parse::<u64>()
-                .map(|k| Duration::from_millis(k))
-                .map_err(|e| Error::with_msg(format!("can not parse timeout {:?}", e)))?,
-            abort_after_bin_count: params
-                .get("abortAfterBinCount")
-                .map_or("0", |k| k)
-                .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse abortAfterBinCount {:?}", e)))?,
-        };
-        info!("BinnedQuery::from_request  {:?}", ret);
-        Ok(ret)
-    }
-
     pub fn range(&self) -> &NanoRange {
         &self.range
     }
@@ -291,8 +250,7 @@ impl BinnedQuery {
         self.timeout = k;
     }
 
-    // TODO the BinnedQuery itself should maybe already carry the full HostPort?
-    // On the other hand, want to keep the flexibility for the fail over possibility..
+    // TODO remove in favor of AppendToUrl
     pub fn url(&self, host: &HostPort) -> String {
         let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
         format!(
@@ -313,6 +271,86 @@ impl BinnedQuery {
     }
 }
 
+impl HasBackend for BinnedQuery {
+    fn backend(&self) -> &str {
+        &self.channel.backend
+    }
+}
+
+impl HasTimeout for BinnedQuery {
+    fn timeout(&self) -> Duration {
+        self.timeout.clone()
+    }
+}
+
+impl FromUrl for BinnedQuery {
+    fn from_url(url: &Url) -> Result<Self, Error> {
+        let pairs = get_url_query_pairs(url);
+        let beg_date = pairs.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
+        let end_date = pairs.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
+        let disk_stats_every = pairs.get("diskStatsEveryKb").map_or("2000", |k| k);
+        let disk_stats_every = disk_stats_every
+            .parse()
+            .map_err(|e| Error::with_msg(format!("can not parse diskStatsEveryKb {:?}", e)))?;
+        let ret = Self {
+            channel: channel_from_pairs(&pairs)?,
+            range: NanoRange {
+                beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
+                end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
+            },
+            bin_count: pairs
+                .get("binCount")
+                .ok_or(Error::with_msg("missing binCount"))?
+                .parse()
+                .map_err(|e| Error::with_msg(format!("can not parse binCount {:?}", e)))?,
+            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::DimXBins1),
+            cache_usage: CacheUsage::from_pairs(&pairs)?,
+            disk_stats_every: ByteSize::kb(disk_stats_every),
+            report_error: pairs
+                .get("reportError")
+                .map_or("false", |k| k)
+                .parse()
+                .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,
+            timeout: pairs
+                .get("timeout")
+                .map_or("2000", |k| k)
+                .parse::<u64>()
+                .map(|k| Duration::from_millis(k))
+                .map_err(|e| Error::with_msg(format!("can not parse timeout {:?}", e)))?,
+            abort_after_bin_count: pairs
+                .get("abortAfterBinCount")
+                .map_or("0", |k| k)
+                .parse()
+                .map_err(|e| Error::with_msg(format!("can not parse abortAfterBinCount {:?}", e)))?,
+        };
+        info!("BinnedQuery::from_url  {:?}", ret);
+        Ok(ret)
+    }
+}
+
+impl AppendToUrl for BinnedQuery {
+    fn append_to_url(&self, url: &mut Url) {
+        let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
+        let mut g = url.query_pairs_mut();
+        g.append_pair("cacheUsage", &self.cache_usage.to_string());
+        g.append_pair("channelBackend", &self.channel.backend);
+        g.append_pair("channelName", &self.channel.name);
+        g.append_pair("binCount", &format!("{}", self.bin_count));
+        g.append_pair(
+            "begDate",
+            &Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt).to_string(),
+        );
+        g.append_pair(
+            "endDate",
+            &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
+        );
+        g.append_pair("binningScheme", &binning_scheme_query_string(&self.agg_kind));
+        g.append_pair("diskStatsEveryKb", &format!("{}", self.disk_stats_every.bytes() / 1024));
+        g.append_pair("timeout", &format!("{}", self.timeout.as_millis()));
+        g.append_pair("abortAfterBinCount", &format!("{}", self.abort_after_bin_count));
+    }
+}
+
 fn binning_scheme_query_string(agg_kind: &AggKind) -> String {
     match agg_kind {
         AggKind::Plain => "fullValue".into(),
@@ -321,9 +359,9 @@ fn binning_scheme_query_string(agg_kind: &AggKind) -> String {
     }
 }
 
-fn agg_kind_from_binning_scheme(params: &BTreeMap<String, String>) -> Result<AggKind, Error> {
+fn agg_kind_from_binning_scheme(pairs: &BTreeMap<String, String>) -> Result<AggKind, Error> {
     let key = "binningScheme";
-    let s = params
+    let s = pairs
         .get(key)
         .map_or(Err(Error::with_msg(format!("can not find {}", key))), |k| Ok(k))?;
     let ret = if s == "fullValue" {
@@ -331,7 +369,7 @@ fn agg_kind_from_binning_scheme(params: &BTreeMap<String, String>) -> Result<Agg
     } else if s == "toScalarX" {
         AggKind::DimXBins1
     } else if s == "binnedX" {
-        let u = params.get("binnedXcount").map_or("1", |k| k).parse()?;
+        let u = pairs.get("binnedXcount").map_or("1", |k| k).parse()?;
         AggKind::DimXBinsN(u)
     } else {
         return Err(Error::with_msg("can not extract binningScheme"));

@@ -5,10 +5,12 @@ use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display, Formatter};
+use std::iter::FromIterator;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::task::{Context, Poll};
+use std::time::Duration;
 use timeunits::*;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
@@ -847,6 +849,20 @@ impl ByteSize {
     }
 }
 
+pub fn channel_from_pairs(pairs: &BTreeMap<String, String>) -> Result<Channel, Error> {
+    let ret = Channel {
+        backend: pairs
+            .get("channelBackend")
+            .ok_or(Error::with_msg("missing channelBackend"))?
+            .into(),
+        name: pairs
+            .get("channelName")
+            .ok_or(Error::with_msg("missing channelName"))?
+            .into(),
+    };
+    Ok(ret)
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct ChannelSearchQuery {
     pub name_regex: String,
@@ -922,8 +938,10 @@ pub struct ChannelSearchResult {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProxyBackend {
     pub name: String,
+    // TODO remove host+port from struct and config json, keep only url:
     pub host: String,
     pub port: u16,
+    pub url: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -932,4 +950,59 @@ pub struct ProxyConfig {
     pub port: u16,
     pub search_hosts: Vec<String>,
     pub backends: Vec<ProxyBackend>,
+}
+
+pub trait HasBackend {
+    fn backend(&self) -> &str;
+}
+
+pub trait HasTimeout {
+    fn timeout(&self) -> Duration;
+}
+
+pub trait FromUrl: Sized {
+    fn from_url(url: &Url) -> Result<Self, Error>;
+}
+
+pub trait AppendToUrl {
+    fn append_to_url(&self, url: &mut Url);
+}
+
+pub fn get_url_query_pairs(url: &Url) -> BTreeMap<String, String> {
+    BTreeMap::from_iter(url.query_pairs().map(|(j, k)| (j.to_string(), k.to_string())))
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ChannelConfigQuery {
+    pub channel: Channel,
+}
+
+impl HasBackend for ChannelConfigQuery {
+    fn backend(&self) -> &str {
+        &self.channel.backend
+    }
+}
+
+impl HasTimeout for ChannelConfigQuery {
+    fn timeout(&self) -> Duration {
+        Duration::from_millis(2000)
+    }
+}
+
+impl FromUrl for ChannelConfigQuery {
+    fn from_url(url: &Url) -> Result<Self, Error> {
+        let pairs = get_url_query_pairs(url);
+        let ret = Self {
+            channel: channel_from_pairs(&pairs)?,
+        };
+        Ok(ret)
+    }
+}
+
+impl AppendToUrl for ChannelConfigQuery {
+    fn append_to_url(&self, url: &mut Url) {
+        let mut g = url.query_pairs_mut();
+        g.append_pair("channelBackend", &self.channel.backend);
+        g.append_pair("channelName", &self.channel.name);
+    }
 }

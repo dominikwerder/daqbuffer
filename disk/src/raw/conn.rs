@@ -9,7 +9,7 @@ use crate::eventblobs::EventBlobsComplete;
 use crate::eventchunker::EventChunkerConf;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{decode_frame, make_frame, make_term_frame, Framable};
-use crate::raw::{EventQueryJsonStringFrame, EventsQuery};
+use crate::raw::{EventQueryJsonStringFrame, RawEventsQuery};
 use crate::Sitemty;
 use err::Error;
 use futures_core::Stream;
@@ -238,7 +238,7 @@ async fn events_conn_handler_inner_try(
         Ok(k) => k,
         Err(e) => return Err((e, netout).into()),
     };
-    let res: Result<EventsQuery, _> = serde_json::from_str(&qitem.0);
+    let res: Result<RawEventsQuery, _> = serde_json::from_str(&qitem.0);
     let evq = match res {
         Ok(k) => k,
         Err(e) => {

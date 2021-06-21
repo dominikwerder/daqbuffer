@@ -3,6 +3,7 @@ use err::Error;
 use futures_util::{select, FutureExt};
 use http::{Method, StatusCode};
 use hyper::{Body, Client, Request, Response};
+use hyper_tls::HttpsConnector;
 use netpod::{Node, NodeConfigCached};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -176,7 +177,9 @@ where
     let spawned: Vec<_> = urls
         .into_iter()
         .map(move |url| {
-            let req = Request::builder().method(method.clone()).uri(url.as_str());
+            let url_str = url.as_str();
+            let is_tls = if url_str.starts_with("https://") { true } else { false };
+            let req = Request::builder().method(method.clone()).uri(url_str);
             //let req = req.header("x-log-from-node-name", format!("{}", node_config.node_config.name));
             let req = req.header(http::header::ACCEPT, "application/json");
             let req = req.body(Body::empty());
@@ -185,7 +188,17 @@ where
                   _ = sleep(timeout).fuse() => {
                     Err(Error::with_msg("timeout"))
                   }
-                  res = Client::new().request(req?).fuse() => Ok(nt(res?).await?)
+                  res = {
+                        if is_tls {
+                            let https = HttpsConnector::new();
+                            let client = Client::builder().build::<_, hyper::Body>(https);
+                            client.request(req?).fuse()
+                        }
+                        else {
+                            let client = Client::new();
+                            client.request(req?).fuse()
+                        }
+                    } => Ok(nt(res?).await?)
                 }
             });
             (url, task)

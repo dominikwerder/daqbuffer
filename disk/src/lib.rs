@@ -34,7 +34,6 @@ pub mod gen;
 pub mod index;
 pub mod merge;
 pub mod paths;
-pub mod query;
 pub mod raw;
 pub mod streamlog;
 

@@ -13,7 +13,6 @@ use crate::raw::eventsfromframes::EventsFromFrames;
 use crate::Sitemty;
 use err::Error;
 use futures_core::Stream;
-use netpod::log::*;
 use netpod::{AggKind, Channel, NanoRange, Node, PerfOpts};
 use serde::{Deserialize, Serialize};
 use std::pin::Pin;
@@ -27,7 +26,7 @@ pub mod eventsfromframes;
 Query parameters to request (optionally) X-processed, but not T-processed events.
 */
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EventsQuery {
+pub struct RawEventsQuery {
     pub channel: Channel,
     pub range: NanoRange,
     pub agg_kind: AggKind,
@@ -37,7 +36,7 @@ pub struct EventsQuery {
 pub struct EventQueryJsonStringFrame(String);
 
 pub async fn x_processed_stream_from_node<ENP>(
-    query: EventsQuery,
+    query: RawEventsQuery,
     perf_opts: PerfOpts,
     node: Node,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<<ENP as EventsNodeProcessor>::Output>> + Send>>, Error>
@@ -48,7 +47,6 @@ where
 {
     let net = TcpStream::connect(format!("{}:{}", node.host, node.port_raw)).await?;
     let qjs = serde_json::to_string(&query)?;
-    info!("x_processed_stream_from_node  qjs {:?}", qjs);
     let (netin, mut netout) = net.into_split();
     let buf = make_frame(&EventQueryJsonStringFrame(qjs))?;
     netout.write_all(&buf).await?;
