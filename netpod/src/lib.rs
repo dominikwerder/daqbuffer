@@ -20,6 +20,7 @@ pub mod status;
 pub mod streamext;
 
 pub const APP_JSON: &'static str = "application/json";
+pub const APP_OCTET: &'static str = "application/octet-stream";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AggQuerySingleChannel {
@@ -865,7 +866,7 @@ pub fn channel_from_pairs(pairs: &BTreeMap<String, String>) -> Result<Channel, E
     Ok(ret)
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelSearchQuery {
     pub name_regex: String,
     pub source_regex: String,
@@ -873,21 +874,8 @@ pub struct ChannelSearchQuery {
 }
 
 impl ChannelSearchQuery {
-    pub fn from_query_string(query: Option<&str>) -> Result<Self, Error> {
-        let params = query_params(query);
-        let ret = Self {
-            name_regex: params.get("nameRegex").map_or("".into(), |k| k.into()),
-            source_regex: params.get("sourceRegex").map_or("".into(), |k| k.into()),
-            description_regex: params.get("descriptionRegex").map_or("".into(), |k| k.into()),
-        };
-        Ok(ret)
-    }
-
     pub fn from_url(url: &Url) -> Result<Self, Error> {
-        let mut pairs = BTreeMap::new();
-        for (j, k) in url.query_pairs() {
-            pairs.insert(j.to_string(), k.to_string());
-        }
+        let pairs = get_url_query_pairs(url);
         let ret = Self {
             name_regex: pairs.get("nameRegex").map_or(String::new(), |k| k.clone()),
             source_regex: pairs.get("sourceRegex").map_or(String::new(), |k| k.clone()),
@@ -940,9 +928,6 @@ pub struct ChannelSearchResult {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProxyBackend {
     pub name: String,
-    // TODO remove host+port from struct and config json, keep only url:
-    pub host: String,
-    pub port: u16,
     pub url: String,
 }
 

@@ -1,7 +1,4 @@
-use crate::api1::{
-    channel_search_configs_v1, channel_search_list_v1, channels_config_v1, gather_json_2_v1, gather_json_v1,
-    proxy_distribute_v1,
-};
+use crate::api1::{channel_search_configs_v1, channel_search_list_v1, gather_json_2_v1, proxy_distribute_v1};
 use crate::gather::{gather_get_json_generic, SubRes};
 use crate::{response, Cont};
 use disk::binned::query::BinnedQuery;
@@ -60,13 +57,11 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
     if path == "/api/1/channels" {
         Ok(channel_search_list_v1(req, proxy_config).await?)
     } else if path == "/api/1/channels/config" {
-        Ok(channels_config_v1(req, proxy_config).await?)
-    } else if path == "/api/1/channelsA/config" {
         Ok(channel_search_configs_v1(req, proxy_config).await?)
     } else if path == "/api/1/stats/version" {
-        Ok(gather_json_v1(req, "/stats/version").await?)
+        Err(Error::with_msg("todo"))
     } else if path == "/api/1/stats/" {
-        Ok(gather_json_v1(req, path).await?)
+        Err(Error::with_msg("todo"))
     } else if path.starts_with("/api/1/gather/") {
         Ok(gather_json_2_v1(req, "/api/1/gather/", proxy_config).await?)
     } else if path == "/api/4/backends" {
@@ -105,10 +100,11 @@ pub async fn backends(_req: Request<Body>, proxy_config: &ProxyConfig) -> Result
 
 pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
-    match head.headers.get("accept") {
+    match head.headers.get(http::header::ACCEPT) {
         Some(v) => {
-            if v == "application/json" {
-                let query = ChannelSearchQuery::from_query_string(head.uri.query())?;
+            if v == APP_JSON {
+                let url = Url::parse(&format!("dummy:{}", head.uri))?;
+                let query = ChannelSearchQuery::from_url(&url)?;
                 let urls = proxy_config
                     .search_hosts
                     .iter()
@@ -145,7 +141,7 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                     }
                     let res = ChannelSearchResult { channels: res };
                     let res = response(StatusCode::OK)
-                        .header(http::header::CONTENT_TYPE, "application/json")
+                        .header(http::header::CONTENT_TYPE, APP_JSON)
                         .body(Body::from(serde_json::to_string(&res)?))?;
                     Ok(res)
                 };
@@ -169,9 +165,9 @@ where
     QT: FromUrl + HasBackend + AppendToUrl + HasTimeout,
 {
     let (head, _body) = req.into_parts();
-    match head.headers.get("accept") {
+    match head.headers.get(http::header::ACCEPT) {
         Some(v) => {
-            if v == "application/json" {
+            if v == APP_JSON {
                 let url = Url::parse(&format!("dummy:{}", head.uri))?;
                 let query = QT::from_url(&url)?;
                 let sh = get_query_host_for_backend(&query.backend(), proxy_config)?;

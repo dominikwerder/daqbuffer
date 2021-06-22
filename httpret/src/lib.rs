@@ -13,7 +13,7 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
 use netpod::log::*;
-use netpod::{AggKind, Channel, FromUrl, NodeConfigCached};
+use netpod::{AggKind, Channel, FromUrl, NodeConfigCached, APP_JSON, APP_OCTET};
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
 use serde::{Deserialize, Serialize};
@@ -335,9 +335,9 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
     let (head, _body) = req.into_parts();
     let url = Url::parse(&format!("dummy:{}", head.uri))?;
     let query = BinnedQuery::from_url(&url)?;
-    match head.headers.get("accept") {
-        Some(v) if v == "application/octet-stream" => binned_binary(query, node_config).await,
-        Some(v) if v == "application/json" => binned_json(query, node_config).await,
+    match head.headers.get(http::header::ACCEPT) {
+        Some(v) if v == APP_OCTET => binned_binary(query, node_config).await,
+        Some(v) if v == APP_JSON => binned_json(query, node_config).await,
         _ => Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?),
     }
 }
@@ -405,11 +405,11 @@ async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Res
     let accept_def = "";
     let accept = req
         .headers()
-        .get("Accept")
+        .get(http::header::ACCEPT)
         .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
-    if accept == "application/json" {
+    if accept == APP_JSON {
         Ok(plain_events_json(req, node_config).await?)
-    } else if accept == "application/octet-stream" {
+    } else if accept == APP_OCTET {
         Ok(plain_events_binary(req, node_config).await?)
     } else {
         Err(Error::with_msg(format!("unexpected Accept: {:?}", accept)))
@@ -482,7 +482,7 @@ pub async fn clear_cache_all(req: Request<Body>, node_config: &NodeConfigCached)
     };
     let res = disk::cache::clear_cache_all(node_config, dry).await?;
     let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, "application/json")
+        .header(http::header::CONTENT_TYPE, APP_JSON)
         .body(Body::from(serde_json::to_string(&res)?))?;
     Ok(ret)
 }
@@ -563,7 +563,7 @@ pub async fn update_search_cache(req: Request<Body>, node_config: &NodeConfigCac
     };
     let res = dbconn::scan::update_search_cache(node_config).await?;
     let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, "application/json")
+        .header(http::header::CONTENT_TYPE, APP_JSON)
         .body(Body::from(serde_json::to_string(&res)?))?;
     Ok(ret)
 }
@@ -581,7 +581,7 @@ pub async fn channel_config(req: Request<Body>, node_config: &NodeConfigCached) 
     };
     let res = parse::channelconfig::read_local_config(&channel, &node_config.node).await?;
     let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, "application/json")
+        .header(http::header::CONTENT_TYPE, APP_JSON)
         .body(Body::from(serde_json::to_string(&res)?))?;
     Ok(ret)
 }
