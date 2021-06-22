@@ -261,6 +261,7 @@ where
         .status(status)
         .header("Access-Control-Allow-Origin", "*")
         .header("Access-Control-Allow-Headers", "*")
+        .header("x-proxy-log-mark", proxy_mark())
 }
 
 struct BodyStreamWrap(netpod::BodyStream);

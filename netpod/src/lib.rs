@@ -19,6 +19,8 @@ use url::Url;
 pub mod status;
 pub mod streamext;
 
+pub const APP_JSON: &'static str = "application/json";
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AggQuerySingleChannel {
     pub channel_config: ChannelConfig,

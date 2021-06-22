@@ -1,15 +1,18 @@
+use crate::gather::{gather_get_json_generic, SubRes};
 use crate::response;
 use err::Error;
 use http::{Method, StatusCode};
 use hyper::{Body, Client, Request, Response};
+use itertools::Itertools;
 use netpod::log::*;
-use netpod::{ProxyBackend, ProxyConfig};
+use netpod::{ChannelSearchQuery, ChannelSearchResult, ProxyBackend, ProxyConfig, APP_JSON};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 use tokio::time::timeout_at;
+use url::Url;
 
 fn get_live_hosts() -> &'static [(&'static str, u16)] {
     // TODO take from config.
@@ -87,30 +90,186 @@ impl FromErrorCode for ChannelSearchResultItemV1 {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelSearchResultV1(pub Vec<ChannelSearchResultItemV1>);
 
-pub async fn channels_list_v1(req: Request<Body>, proxy_config: &ProxyConfig) -> Result<Response<Body>, Error> {
-    let reqbody = req.into_body();
-    let bodyslice = hyper::body::to_bytes(reqbody).await?;
-    let query: ChannelSearchQueryV1 = serde_json::from_slice(&bodyslice)?;
-    let subq_maker = |backend: &str| -> JsonValue {
-        serde_json::to_value(ChannelSearchQueryV1 {
-            regex: query.regex.clone(),
-            source_regex: query.source_regex.clone(),
-            description_regex: query.description_regex.clone(),
-            backends: vec![backend.into()],
-            ordering: query.ordering.clone(),
-        })
-        .unwrap()
-    };
-    let back2: Vec<_> = query.backends.iter().map(|x| x.as_str()).collect();
-    let spawned = subreq(&back2[..], "channels", &subq_maker, proxy_config)?;
-    let mut res = vec![];
-    for (backend, s) in spawned {
-        res.push((backend, s.await));
+pub async fn channel_search_list_v1(req: Request<Body>, proxy_config: &ProxyConfig) -> Result<Response<Body>, Error> {
+    let (head, reqbody) = req.into_parts();
+    let bodybytes = hyper::body::to_bytes(reqbody).await?;
+    let query: ChannelSearchQueryV1 = serde_json::from_slice(&bodybytes)?;
+    match head.headers.get("accept") {
+        Some(v) => {
+            if v == APP_JSON {
+                let query = ChannelSearchQuery {
+                    name_regex: query.regex.map_or(String::new(), |k| k),
+                    source_regex: query.source_regex.map_or(String::new(), |k| k),
+                    description_regex: query.description_regex.map_or(String::new(), |k| k),
+                };
+                let urls = proxy_config
+                    .search_hosts
+                    .iter()
+                    .map(|sh| match Url::parse(&format!("{}/api/4/search/channel", sh)) {
+                        Ok(mut url) => {
+                            query.append_to_url(&mut url);
+                            Ok(url)
+                        }
+                        Err(e) => Err(Error::with_msg(format!("parse error for: {:?}  {:?}", sh, e))),
+                    })
+                    .fold_ok(vec![], |mut a, x| {
+                        a.push(x);
+                        a
+                    })?;
+                let tags: Vec<_> = urls.iter().map(|k| k.to_string()).collect();
+                let nt = |res| {
+                    let fut = async {
+                        let body = hyper::body::to_bytes(res).await?;
+                        let res: ChannelSearchResult = match serde_json::from_slice(&body) {
+                            Ok(k) => k,
+                            Err(_) => ChannelSearchResult { channels: vec![] },
+                        };
+                        Ok(res)
+                    };
+                    Box::pin(fut) as Pin<Box<dyn Future<Output = _> + Send>>
+                };
+                let ft = |all: Vec<SubRes<ChannelSearchResult>>| {
+                    let mut res = ChannelSearchResultV1(vec![]);
+                    for j in all {
+                        for k in j.val.channels {
+                            let mut found = false;
+                            let mut i2 = 0;
+                            for i1 in 0..res.0.len() {
+                                if res.0[i1].backend == k.backend {
+                                    found = true;
+                                    i2 = i1;
+                                    break;
+                                }
+                            }
+                            if !found {
+                                let u = ChannelSearchResultItemV1 {
+                                    backend: k.backend,
+                                    channels: vec![],
+                                    error: None,
+                                };
+                                res.0.push(u);
+                                i2 = res.0.len() - 1;
+                            }
+                            res.0[i2].channels.push(k.name);
+                        }
+                    }
+                    let res = response(StatusCode::OK)
+                        .header(http::header::CONTENT_TYPE, APP_JSON)
+                        .body(Body::from(serde_json::to_string(&res)?))?;
+                    Ok(res)
+                };
+                let ret =
+                    gather_get_json_generic(http::Method::GET, urls, None, tags, nt, ft, Duration::from_millis(3000))
+                        .await?;
+                Ok(ret)
+            } else {
+                Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)
+            }
+        }
+        None => Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?),
     }
-    let res2 = ChannelSearchResultV1(extr(res));
-    let body = serde_json::to_string(&res2.0)?;
-    let res = response(StatusCode::OK).body(body.into())?;
-    Ok(res)
+}
+
+pub async fn channel_search_configs_v1(
+    req: Request<Body>,
+    proxy_config: &ProxyConfig,
+) -> Result<Response<Body>, Error> {
+    let (head, reqbody) = req.into_parts();
+    let bodybytes = hyper::body::to_bytes(reqbody).await?;
+    let query: ChannelSearchQueryV1 = serde_json::from_slice(&bodybytes)?;
+    match head.headers.get("accept") {
+        Some(v) => {
+            if v == APP_JSON {
+                // Transform the ChannelSearchQueryV1 to ChannelSearchQuery
+                let query = ChannelSearchQuery {
+                    name_regex: query.regex.map_or(String::new(), |k| k),
+                    source_regex: query.source_regex.map_or(String::new(), |k| k),
+                    description_regex: query.description_regex.map_or(String::new(), |k| k),
+                };
+                let urls = proxy_config
+                    .search_hosts
+                    .iter()
+                    .map(|sh| match Url::parse(&format!("{}/api/4/search/channel", sh)) {
+                        Ok(mut url) => {
+                            query.append_to_url(&mut url);
+                            Ok(url)
+                        }
+                        Err(e) => Err(Error::with_msg(format!("parse error for: {:?}  {:?}", sh, e))),
+                    })
+                    .fold_ok(vec![], |mut a, x| {
+                        a.push(x);
+                        a
+                    })?;
+                let tags: Vec<_> = urls.iter().map(|k| k.to_string()).collect();
+                let nt = |res| {
+                    let fut = async {
+                        let body = hyper::body::to_bytes(res).await?;
+                        let res: ChannelSearchResult = match serde_json::from_slice(&body) {
+                            Ok(k) => k,
+                            Err(_) => ChannelSearchResult { channels: vec![] },
+                        };
+                        Ok(res)
+                    };
+                    Box::pin(fut) as Pin<Box<dyn Future<Output = _> + Send>>
+                };
+                let ft = |all: Vec<SubRes<ChannelSearchResult>>| {
+                    let mut res = ChannelConfigsResponseV1(vec![]);
+                    for j in all {
+                        for k in j.val.channels {
+                            let mut found = false;
+                            let mut i2 = 0;
+                            for i1 in 0..res.0.len() {
+                                if res.0[i1].backend == k.backend {
+                                    found = true;
+                                    i2 = i1;
+                                    break;
+                                }
+                            }
+                            if !found {
+                                let u = ChannelBackendConfigsV1 {
+                                    backend: k.backend.clone(),
+                                    channels: vec![],
+                                    error: None,
+                                };
+                                res.0.push(u);
+                                i2 = res.0.len() - 1;
+                            }
+                            {
+                                let shape = if k.shape.len() == 0 { None } else { Some(k.shape) };
+                                let unit = if k.unit.len() == 0 { None } else { Some(k.unit) };
+                                let description = if k.description.len() == 0 {
+                                    None
+                                } else {
+                                    Some(k.description)
+                                };
+                                let t = ChannelConfigV1 {
+                                    backend: k.backend,
+                                    name: k.name,
+                                    source: k.source,
+                                    description,
+                                    ty: k.ty,
+                                    shape,
+                                    unit,
+                                };
+                                res.0[i2].channels.push(t);
+                            }
+                        }
+                    }
+                    let res = response(StatusCode::OK)
+                        .header(http::header::CONTENT_TYPE, APP_JSON)
+                        .body(Body::from(serde_json::to_string(&res)?))?;
+                    Ok(res)
+                };
+                let ret =
+                    gather_get_json_generic(http::Method::GET, urls, None, tags, nt, ft, Duration::from_millis(3000))
+                        .await?;
+                Ok(ret)
+            } else {
+                Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)
+            }
+        }
+        None => Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?),
+    }
 }
 
 type TT0 = (ProxyBackend, http::response::Parts, hyper::body::Bytes);
@@ -120,6 +279,8 @@ type TT3 = Result<TT1, tokio::task::JoinError>;
 type TT4 = Result<TT3, tokio::time::error::Elapsed>;
 type TT7 = Pin<Box<dyn Future<Output = TT4> + Send>>;
 type TT8 = (String, TT7);
+
+// TODO try to get rid of this.
 
 fn subreq(
     backends_req: &[&str],

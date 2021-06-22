@@ -1,17 +1,20 @@
-use crate::api1::{channels_config_v1, channels_list_v1, gather_json_2_v1, gather_json_v1, proxy_distribute_v1};
-use crate::gather::gather_get_json_generic;
-use crate::{proxy_mark, response, Cont};
+use crate::api1::{
+    channel_search_configs_v1, channel_search_list_v1, channels_config_v1, gather_json_2_v1, gather_json_v1,
+    proxy_distribute_v1,
+};
+use crate::gather::{gather_get_json_generic, SubRes};
+use crate::{response, Cont};
 use disk::binned::query::BinnedQuery;
 use disk::events::PlainEventsJsonQuery;
 use err::Error;
-use http::{HeaderValue, StatusCode};
+use http::StatusCode;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
 use itertools::Itertools;
 use netpod::log::*;
 use netpod::{
     AppendToUrl, ChannelConfigQuery, ChannelSearchQuery, ChannelSearchResult, FromUrl, HasBackend, HasTimeout,
-    ProxyConfig,
+    ProxyConfig, APP_JSON,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -55,9 +58,11 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/1/channels" {
-        Ok(channels_list_v1(req, proxy_config).await?)
+        Ok(channel_search_list_v1(req, proxy_config).await?)
     } else if path == "/api/1/channels/config" {
         Ok(channels_config_v1(req, proxy_config).await?)
+    } else if path == "/api/1/channelsA/config" {
+        Ok(channel_search_configs_v1(req, proxy_config).await?)
     } else if path == "/api/1/stats/version" {
         Ok(gather_json_v1(req, "/stats/version").await?)
     } else if path == "/api/1/stats/" {
@@ -118,6 +123,7 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                         a.push(x);
                         a
                     })?;
+                let tags = urls.iter().map(|k| k.to_string()).collect();
                 let nt = |res| {
                     let fut = async {
                         let body = hyper::body::to_bytes(res).await?;
@@ -130,10 +136,10 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                     };
                     Box::pin(fut) as Pin<Box<dyn Future<Output = _> + Send>>
                 };
-                let ft = |all: Vec<ChannelSearchResult>| {
+                let ft = |all: Vec<SubRes<ChannelSearchResult>>| {
                     let mut res = vec![];
                     for j in all {
-                        for k in j.channels {
+                        for k in j.val.channels {
                             res.push(k);
                         }
                     }
@@ -143,10 +149,9 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                         .body(Body::from(serde_json::to_string(&res)?))?;
                     Ok(res)
                 };
-                let mut ret =
-                    gather_get_json_generic(http::Method::GET, urls, nt, ft, Duration::from_millis(3000)).await?;
-                ret.headers_mut()
-                    .append("x-proxy-log-mark", HeaderValue::from_str(proxy_mark())?);
+                let ret =
+                    gather_get_json_generic(http::Method::GET, urls, None, tags, nt, ft, Duration::from_millis(3000))
+                        .await?;
                 Ok(ret)
             } else {
                 Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)
@@ -183,6 +188,7 @@ where
                         a.push(x);
                         a
                     })?;
+                let tags: Vec<_> = urls.iter().map(|k| k.to_string()).collect();
                 let nt = |res| {
                     let fut = async {
                         let body = hyper::body::to_bytes(res).await?;
@@ -193,19 +199,20 @@ where
                     };
                     Box::pin(fut) as Pin<Box<dyn Future<Output = _> + Send>>
                 };
-                let ft = |all: Vec<JsonValue>| {
-                    let res = match all.first() {
-                        Some(item) => Ok(item),
-                        None => Err(Error::with_msg("no response from upstream")),
-                    }?;
-                    let res = response(StatusCode::OK)
-                        .header(http::header::CONTENT_TYPE, "application/json")
-                        .body(Body::from(serde_json::to_string(res)?))?;
-                    Ok(res)
+                let ft = |mut all: Vec<SubRes<JsonValue>>| {
+                    if all.len() > 0 {
+                        all.truncate(1);
+                        let z = all.pop().unwrap();
+                        let res = z.val;
+                        let res = response(StatusCode::OK)
+                            .header(http::header::CONTENT_TYPE, APP_JSON)
+                            .body(Body::from(serde_json::to_string(&res)?))?;
+                        return Ok(res);
+                    } else {
+                        return Err(Error::with_msg("no response from upstream"));
+                    }
                 };
-                let mut ret = gather_get_json_generic(http::Method::GET, urls, nt, ft, query.timeout()).await?;
-                ret.headers_mut()
-                    .append("x-proxy-log-mark", HeaderValue::from_str(proxy_mark())?);
+                let ret = gather_get_json_generic(http::Method::GET, urls, None, tags, nt, ft, query.timeout()).await?;
                 Ok(ret)
             } else {
                 Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)

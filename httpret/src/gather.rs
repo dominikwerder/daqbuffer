@@ -4,7 +4,7 @@ use futures_util::{select, FutureExt};
 use http::{Method, StatusCode};
 use hyper::{Body, Client, Request, Response};
 use hyper_tls::HttpsConnector;
-use netpod::{Node, NodeConfigCached};
+use netpod::{Node, NodeConfigCached, APP_JSON};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::future::Future;
@@ -162,9 +162,16 @@ pub async fn gather_get_json(req: Request<Body>, node_config: &NodeConfigCached)
     Ok(res)
 }
 
+pub struct SubRes<T> {
+    pub tag: String,
+    pub val: T,
+}
+
 pub async fn gather_get_json_generic<SM, NT, FT>(
     method: http::Method,
     urls: Vec<Url>,
+    bodies: Option<Vec<Body>>,
+    tags: Vec<String>,
     nt: NT,
     ft: FT,
     timeout: Duration,
@@ -172,23 +179,30 @@ pub async fn gather_get_json_generic<SM, NT, FT>(
 where
     SM: Send + 'static,
     NT: Fn(Response<Body>) -> Pin<Box<dyn Future<Output = Result<SM, Error>> + Send>> + Send + Sync + Copy + 'static,
-    FT: Fn(Vec<SM>) -> Result<Response<Body>, Error>,
+    FT: Fn(Vec<SubRes<SM>>) -> Result<Response<Body>, Error>,
 {
+    assert!(urls.len() == tags.len());
+    let bodies: Vec<_> = match bodies {
+        None => (0..urls.len()).into_iter().map(|_| Body::empty()).collect(),
+        Some(bodies) => bodies,
+    };
     let spawned: Vec<_> = urls
         .into_iter()
-        .map(move |url| {
+        .zip(bodies.into_iter())
+        .zip(tags.into_iter())
+        .map(move |((url, body), tag)| {
             let url_str = url.as_str();
             let is_tls = if url_str.starts_with("https://") { true } else { false };
             let req = Request::builder().method(method.clone()).uri(url_str);
             //let req = req.header("x-log-from-node-name", format!("{}", node_config.node_config.name));
-            let req = req.header(http::header::ACCEPT, "application/json");
-            let req = req.body(Body::empty());
+            let req = req.header(http::header::ACCEPT, APP_JSON);
+            let req = req.body(body);
             let task = tokio::spawn(async move {
                 select! {
-                  _ = sleep(timeout).fuse() => {
-                    Err(Error::with_msg("timeout"))
-                  }
-                  res = {
+                    _ = sleep(timeout).fuse() => {
+                        Err(Error::with_msg("timeout"))
+                    }
+                    res = {
                         if is_tls {
                             let https = HttpsConnector::new();
                             let client = Client::builder().build::<_, hyper::Body>(https);
@@ -198,7 +212,13 @@ where
                             let client = Client::new();
                             client.request(req?).fuse()
                         }
-                    } => Ok(nt(res?).await?)
+                    } => {
+                        let ret = SubRes {
+                            tag: tag,
+                            val:nt(res?).await?,
+                        };
+                        Ok(ret)
+                    }
                 }
             });
             (url, task)
@@ -227,6 +247,8 @@ mod test {
     fn try_search() {
         let fut = gather_get_json_generic(
             hyper::Method::GET,
+            vec![],
+            None,
             vec![],
             |_res| {
                 let fut = async { Ok(()) };
