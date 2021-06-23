@@ -522,20 +522,20 @@ impl PreBinnedPatchCoord {
         self.ix
     }
 
-    pub fn to_url_params_strings(&self) -> String {
-        format!(
-            "patchTlen={}&binTlen={}&patchIx={}",
-            self.spec.patch_t_len(),
-            self.spec.bin_t_len(),
-            self.ix()
-        )
-    }
-
     pub fn new(bin_t_len: u64, patch_t_len: u64, patch_ix: u64) -> Self {
         Self {
             spec: PreBinnedPatchGridSpec::new(bin_t_len, patch_t_len),
             ix: patch_ix,
         }
+    }
+}
+
+impl AppendToUrl for PreBinnedPatchCoord {
+    fn append_to_url(&self, url: &mut Url) {
+        let mut g = url.query_pairs_mut();
+        g.append_pair("patchTlen", &format!("{}", self.spec.patch_t_len()));
+        g.append_pair("binTlen", &format!("{}", self.spec.bin_t_len()));
+        g.append_pair("patchIx", &format!("{}", self.ix()));
     }
 }
 

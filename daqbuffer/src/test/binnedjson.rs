@@ -5,8 +5,9 @@ use err::Error;
 use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
-use netpod::{AggKind, Channel, Cluster, HostPort, NanoRange};
+use netpod::{AggKind, AppendToUrl, Channel, Cluster, NanoRange, APP_JSON};
 use std::time::Duration;
+use url::Url;
 
 #[test]
 fn get_binned_json_0() {
@@ -94,12 +95,14 @@ async fn get_binned_json_common(
     let mut query = BinnedQuery::new(channel, range, bin_count, agg_kind);
     query.set_timeout(Duration::from_millis(15000));
     query.set_cache_usage(CacheUsage::Ignore);
-    let url = query.url(&HostPort::from_node(node0));
+    let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", node0.host, node0.port))?;
+    query.append_to_url(&mut url);
+    let url = url;
     info!("get_binned_json_common  get {}", url);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
-        .uri(url)
-        .header("Accept", "application/json")
+        .uri(url.to_string())
+        .header(http::header::ACCEPT, APP_JSON)
         .body(Body::empty())?;
     let client = hyper::Client::new();
     let res = client.request(req).await?;

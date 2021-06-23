@@ -19,21 +19,38 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::fs::File;
 
-pub trait Endianness: Send + Unpin {}
+pub trait Endianness: Send + Unpin {
+    fn is_big() -> bool;
+}
 pub struct LittleEndian {}
 pub struct BigEndian {}
-impl Endianness for LittleEndian {}
-impl Endianness for BigEndian {}
+impl Endianness for LittleEndian {
+    fn is_big() -> bool {
+        false
+    }
+}
+impl Endianness for BigEndian {
+    fn is_big() -> bool {
+        true
+    }
+}
 
 pub trait NumFromBytes<NTY, END> {
-    fn convert(buf: &[u8]) -> NTY;
+    fn convert(buf: &[u8], big_endian: bool) -> NTY;
 }
 
 macro_rules! impl_num_from_bytes_end {
     ($nty:ident, $nl:expr, $end:ident, $ec:ident) => {
         impl NumFromBytes<$nty, $end> for $nty {
-            fn convert(buf: &[u8]) -> $nty {
-                $nty::$ec(*arrayref::array_ref![buf, 0, $nl])
+            fn convert(buf: &[u8], big_endian: bool) -> $nty {
+                // Error in data on disk:
+                // Can not rely on byte order as stated in the channel config.
+                //$nty::$ec(*arrayref::array_ref![buf, 0, $nl])
+                if big_endian {
+                    $nty::from_be_bytes(*arrayref::array_ref![buf, 0, $nl])
+                } else {
+                    $nty::from_le_bytes(*arrayref::array_ref![buf, 0, $nl])
+                }
             }
         }
     };
@@ -62,7 +79,10 @@ where
     NTY: NumFromBytes<NTY, END>,
 {
     type Output;
-    fn convert(&self, buf: &[u8]) -> Result<Self::Output, Error>;
+    // The written data on disk has errors:
+    // The endian as stated in the channel config does not match written events.
+    // Therefore, can not rely on that but have to check for each single event...
+    fn convert(&self, buf: &[u8], big_endian: bool) -> Result<Self::Output, Error>;
 }
 
 impl<NTY, END> EventValueFromBytes<NTY, END> for EventValuesDim0Case<NTY>
@@ -71,8 +91,8 @@ where
 {
     type Output = NTY;
 
-    fn convert(&self, buf: &[u8]) -> Result<Self::Output, Error> {
-        Ok(NTY::convert(buf))
+    fn convert(&self, buf: &[u8], big_endian: bool) -> Result<Self::Output, Error> {
+        Ok(NTY::convert(buf, big_endian))
     }
 }
 
@@ -82,7 +102,7 @@ where
 {
     type Output = Vec<NTY>;
 
-    fn convert(&self, buf: &[u8]) -> Result<Self::Output, Error> {
+    fn convert(&self, buf: &[u8], big_endian: bool) -> Result<Self::Output, Error> {
         let es = size_of::<NTY>();
         let n1 = buf.len() / es;
         if n1 != self.n as usize {
@@ -92,7 +112,10 @@ where
         // TODO could optimize using unsafe code..
         for n2 in 0..n1 {
             let i1 = es * n2;
-            vals.push(<NTY as NumFromBytes<NTY, END>>::convert(&buf[i1..(i1 + es)]));
+            vals.push(<NTY as NumFromBytes<NTY, END>>::convert(
+                &buf[i1..(i1 + es)],
+                big_endian,
+            ));
         }
         Ok(vals)
     }
@@ -419,11 +442,17 @@ where
             // TODO check that dtype, event endianness and event shape match our static
             // expectation about the data in this channel.
             let _ty = &ev.scalar_types[i1];
-            let _be = ev.be[i1];
-
+            let be = ev.be[i1];
+            // Too bad, data on disk is inconsistent, can not rely on endian as stated in channel config.
+            if false && be != END::is_big() {
+                return Err(Error::with_msg(format!(
+                    "endian mismatch in event  got {}  exp {}",
+                    be,
+                    END::is_big()
+                )));
+            }
             let decomp = ev.decomps[i1].as_ref().unwrap().as_ref();
-
-            let val = self.evs.convert(decomp)?;
+            let val = self.evs.convert(decomp, be)?;
             ret.tss.push(ev.tss[i1]);
             ret.values.push(val);
         }

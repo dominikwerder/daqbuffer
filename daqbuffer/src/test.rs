@@ -14,11 +14,12 @@ use futures_util::TryStreamExt;
 use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
-use netpod::{AggKind, Channel, Cluster, HostPort, NanoRange, PerfOpts};
+use netpod::{AggKind, AppendToUrl, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_OCTET};
 use serde::de::DeserializeOwned;
 use std::fmt::Debug;
 use std::future::ready;
 use tokio::io::AsyncRead;
+use url::Url;
 
 pub mod binnedjson;
 pub mod events;
@@ -109,12 +110,14 @@ where
     let mut query = BinnedQuery::new(channel, range, bin_count, agg_kind);
     query.set_cache_usage(CacheUsage::Ignore);
     let hp = HostPort::from_node(node0);
-    let url = query.url(&hp);
+    let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", hp.host, hp.port))?;
+    query.append_to_url(&mut url);
+    let url = url;
     info!("get_binned_channel  get {}", url);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
-        .uri(url)
-        .header("Accept", "application/octet-stream")
+        .uri(url.to_string())
+        .header(http::header::ACCEPT, APP_OCTET)
         .body(Body::empty())?;
     let client = hyper::Client::new();
     let res = client.request(req).await?;

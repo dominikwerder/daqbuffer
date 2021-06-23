@@ -12,13 +12,16 @@ use futures_util::{FutureExt, StreamExt};
 use http::{StatusCode, Uri};
 use netpod::log::*;
 use netpod::{
-    x_bin_count, AggKind, BinnedRange, ByteSize, Channel, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, Shape,
+    x_bin_count, AggKind, AppendToUrl, BinnedRange, ByteSize, Channel, NodeConfigCached, PerfOpts,
+    PreBinnedPatchIterator, Shape,
 };
 use serde::de::DeserializeOwned;
 use std::future::ready;
 use std::marker::PhantomData;
 use std::pin::Pin;
+use std::str::FromStr;
 use std::task::{Context, Poll};
+use url::Url;
 
 pub struct FetchedPreBinned<TBT> {
     uri: Uri,
@@ -33,15 +36,10 @@ impl<TBT> FetchedPreBinned<TBT> {
     pub fn new(query: &PreBinnedQuery, node_config: &NodeConfigCached) -> Result<Self, Error> {
         let nodeix = node_ix_for_patch(&query.patch(), &query.channel(), &node_config.node_config.cluster);
         let node = &node_config.node_config.cluster.nodes[nodeix as usize];
-        let uri: hyper::Uri = format!(
-            "http://{}:{}/api/4/prebinned?{}",
-            node.host,
-            node.port,
-            query.make_query_string()
-        )
-        .parse()?;
+        let mut url = Url::parse(&format!("http://{}:{}/api/4/prebinned", node.host, node.port))?;
+        query.append_to_url(&mut url);
         let ret = Self {
-            uri,
+            uri: Uri::from_str(&url.to_string())?,
             resfut: None,
             res: None,
             errored: false,

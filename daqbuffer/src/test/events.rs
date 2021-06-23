@@ -13,7 +13,7 @@ use futures_util::{StreamExt, TryStreamExt};
 use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
-use netpod::{AppendToUrl, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_OCTET};
+use netpod::{AppendToUrl, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_JSON, APP_OCTET};
 use serde_json::Value as JsonValue;
 use std::fmt::Debug;
 use std::future::ready;
@@ -271,14 +271,16 @@ async fn get_plain_events_json(
         name: channel_name.into(),
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let query = PlainEventsJsonQuery::new(channel, range);
+    let query = PlainEventsJsonQuery::new(channel, range, false);
     let hp = HostPort::from_node(node0);
-    let url = query.url(&hp);
+    let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
+    query.append_to_url(&mut url);
+    let url = url;
     info!("get_plain_events  get {}", url);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
-        .uri(url)
-        .header("Accept", "application/json")
+        .uri(url.to_string())
+        .header(http::header::ACCEPT, APP_JSON)
         .body(Body::empty())?;
     let client = hyper::Client::new();
     let res = client.request(req).await?;

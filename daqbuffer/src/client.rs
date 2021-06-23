@@ -11,7 +11,8 @@ use futures_util::TryStreamExt;
 use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
-use netpod::{AggKind, ByteSize, Channel, HostPort, NanoRange, PerfOpts};
+use netpod::{AggKind, AppendToUrl, ByteSize, Channel, HostPort, NanoRange, PerfOpts, APP_OCTET};
+use url::Url;
 
 pub async fn status(host: String, port: u16) -> Result<(), Error> {
     let t1 = Utc::now();
@@ -62,11 +63,13 @@ pub async fn get_binned(
     query.set_cache_usage(cache_usage);
     query.set_disk_stats_every(ByteSize(1024 * disk_stats_every_kb));
     let hp = HostPort { host: host, port: port };
-    let url = query.url(&hp);
+    let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", hp.host, hp.port))?;
+    query.append_to_url(&mut url);
+    let url = url;
     let req = hyper::Request::builder()
         .method(http::Method::GET)
-        .uri(url)
-        .header("accept", "application/octet-stream")
+        .uri(url.to_string())
+        .header(http::header::ACCEPT, APP_OCTET)
         .body(Body::empty())?;
     let client = hyper::Client::new();
     let res = client.request(req).await?;

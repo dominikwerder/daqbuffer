@@ -4,7 +4,7 @@ use http::request::Parts;
 use netpod::log::*;
 use netpod::{
     channel_from_pairs, get_url_query_pairs, AggKind, AppendToUrl, ByteSize, Channel, FromUrl, HasBackend, HasTimeout,
-    HostPort, NanoRange, PreBinnedPatchCoord, ToNanos,
+    NanoRange, PreBinnedPatchCoord, ToNanos,
 };
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -84,19 +84,6 @@ impl PreBinnedQuery {
         Self::from_url(&url)
     }
 
-    pub fn make_query_string(&self) -> String {
-        format!(
-            "{}&channelBackend={}&channelName={}&binningScheme={}&cacheUsage={}&diskStatsEveryKb={}&reportError={}",
-            self.patch.to_url_params_strings(),
-            self.channel.backend,
-            self.channel.name,
-            binning_scheme_query_string(&self.agg_kind),
-            self.cache_usage,
-            self.disk_stats_every.bytes() / 1024,
-            self.report_error(),
-        )
-    }
-
     pub fn patch(&self) -> &PreBinnedPatchCoord {
         &self.patch
     }
@@ -122,6 +109,19 @@ impl PreBinnedQuery {
     }
 }
 
+impl AppendToUrl for PreBinnedQuery {
+    fn append_to_url(&self, url: &mut Url) {
+        self.patch.append_to_url(url);
+        binning_scheme_append_to_url(&self.agg_kind, url);
+        let mut g = url.query_pairs_mut();
+        g.append_pair("channelBackend", &self.channel.backend);
+        g.append_pair("channelName", &self.channel.name);
+        g.append_pair("cacheUsage", &format!("{}", self.cache_usage.query_param_value()));
+        g.append_pair("diskStatsEveryKb", &format!("{}", self.disk_stats_every.bytes() / 1024));
+        g.append_pair("reportError", &format!("{}", self.report_error()));
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum CacheUsage {
     Use,
@@ -139,8 +139,8 @@ impl CacheUsage {
         .into()
     }
 
-    pub fn from_pairs(params: &BTreeMap<String, String>) -> Result<Self, Error> {
-        let ret = params.get("cacheUsage").map_or(Ok::<_, Error>(CacheUsage::Use), |k| {
+    pub fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+        let ret = pairs.get("cacheUsage").map_or(Ok::<_, Error>(CacheUsage::Use), |k| {
             if k == "use" {
                 Ok(CacheUsage::Use)
             } else if k == "ignore" {
@@ -185,6 +185,7 @@ pub struct BinnedQuery {
     report_error: bool,
     timeout: Duration,
     abort_after_bin_count: u32,
+    do_log: bool,
 }
 
 impl BinnedQuery {
@@ -199,6 +200,7 @@ impl BinnedQuery {
             report_error: false,
             timeout: Duration::from_millis(2000),
             abort_after_bin_count: 0,
+            do_log: false,
         }
     }
 
@@ -238,6 +240,10 @@ impl BinnedQuery {
         self.abort_after_bin_count
     }
 
+    pub fn do_log(&self) -> bool {
+        self.do_log
+    }
+
     pub fn set_cache_usage(&mut self, k: CacheUsage) {
         self.cache_usage = k;
     }
@@ -248,26 +254,6 @@ impl BinnedQuery {
 
     pub fn set_timeout(&mut self, k: Duration) {
         self.timeout = k;
-    }
-
-    // TODO remove in favor of AppendToUrl
-    pub fn url(&self, host: &HostPort) -> String {
-        let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
-        format!(
-            "http://{}:{}/api/4/binned?cacheUsage={}&channelBackend={}&channelName={}&binCount={}&begDate={}&endDate={}&binningScheme={}&diskStatsEveryKb={}&timeout={}&abortAfterBinCount={}",
-            host.host,
-            host.port,
-            self.cache_usage,
-            self.channel.backend,
-            self.channel.name,
-            self.bin_count,
-            Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt),
-            Utc.timestamp_nanos(self.range.end as i64).format(date_fmt),
-            binning_scheme_query_string(&self.agg_kind),
-            self.disk_stats_every.bytes() / 1024,
-            self.timeout.as_millis(),
-            self.abort_after_bin_count,
-        )
     }
 }
 
@@ -322,6 +308,11 @@ impl FromUrl for BinnedQuery {
                 .map_or("0", |k| k)
                 .parse()
                 .map_err(|e| Error::with_msg(format!("can not parse abortAfterBinCount {:?}", e)))?,
+            do_log: pairs
+                .get("doLog")
+                .map_or("false", |k| k)
+                .parse()
+                .map_err(|e| Error::with_msg(format!("can not parse doLog {:?}", e)))?,
         };
         info!("BinnedQuery::from_url  {:?}", ret);
         Ok(ret)
@@ -331,31 +322,47 @@ impl FromUrl for BinnedQuery {
 impl AppendToUrl for BinnedQuery {
     fn append_to_url(&self, url: &mut Url) {
         let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
-        let mut g = url.query_pairs_mut();
-        g.append_pair("cacheUsage", &self.cache_usage.to_string());
-        g.append_pair("channelBackend", &self.channel.backend);
-        g.append_pair("channelName", &self.channel.name);
-        g.append_pair("binCount", &format!("{}", self.bin_count));
-        g.append_pair(
-            "begDate",
-            &Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt).to_string(),
-        );
-        g.append_pair(
-            "endDate",
-            &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
-        );
-        g.append_pair("binningScheme", &binning_scheme_query_string(&self.agg_kind));
-        g.append_pair("diskStatsEveryKb", &format!("{}", self.disk_stats_every.bytes() / 1024));
-        g.append_pair("timeout", &format!("{}", self.timeout.as_millis()));
-        g.append_pair("abortAfterBinCount", &format!("{}", self.abort_after_bin_count));
+        {
+            let mut g = url.query_pairs_mut();
+            g.append_pair("cacheUsage", &self.cache_usage.to_string());
+            g.append_pair("channelBackend", &self.channel.backend);
+            g.append_pair("channelName", &self.channel.name);
+            g.append_pair("binCount", &format!("{}", self.bin_count));
+            g.append_pair(
+                "begDate",
+                &Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt).to_string(),
+            );
+            g.append_pair(
+                "endDate",
+                &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
+            );
+        }
+        {
+            binning_scheme_append_to_url(&self.agg_kind, url);
+        }
+        {
+            let mut g = url.query_pairs_mut();
+            g.append_pair("diskStatsEveryKb", &format!("{}", self.disk_stats_every.bytes() / 1024));
+            g.append_pair("timeout", &format!("{}", self.timeout.as_millis()));
+            g.append_pair("abortAfterBinCount", &format!("{}", self.abort_after_bin_count));
+            g.append_pair("doLog", &format!("{}", self.do_log));
+        }
     }
 }
 
-fn binning_scheme_query_string(agg_kind: &AggKind) -> String {
+fn binning_scheme_append_to_url(agg_kind: &AggKind, url: &mut Url) {
+    let mut g = url.query_pairs_mut();
     match agg_kind {
-        AggKind::Plain => "fullValue".into(),
-        AggKind::DimXBins1 => "toScalarX".into(),
-        AggKind::DimXBinsN(n) => format!("binnedX&binnedXcount={}", n),
+        AggKind::Plain => {
+            g.append_pair("binningScheme", "fullValue");
+        }
+        AggKind::DimXBins1 => {
+            g.append_pair("binningScheme", "toScalarX");
+        }
+        AggKind::DimXBinsN(n) => {
+            g.append_pair("binningScheme", "toScalarX");
+            g.append_pair("binnedXcount", &format!("{}", n));
+        }
     }
 }
 

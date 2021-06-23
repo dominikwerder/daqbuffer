@@ -434,6 +434,7 @@ async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -
         query.range().clone(),
         query.timeout(),
         node_config.clone(),
+        query.do_log(),
     );
     let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), AggKind::Plain, node_config).await?;
     let ret = response(StatusCode::OK).body(BodyStream::wrapped(s, format!("plain_events")))?;

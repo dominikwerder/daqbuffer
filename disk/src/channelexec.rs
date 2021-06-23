@@ -15,6 +15,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::StreamExt;
+use netpod::log::*;
 use netpod::{AggKind, ByteOrder, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use serde::de::DeserializeOwned;
@@ -269,16 +270,24 @@ pub struct PlainEventsJson {
     agg_kind: AggKind,
     timeout: Duration,
     node_config: NodeConfigCached,
+    do_log: bool,
 }
 
 impl PlainEventsJson {
-    pub fn new(channel: Channel, range: NanoRange, timeout: Duration, node_config: NodeConfigCached) -> Self {
+    pub fn new(
+        channel: Channel,
+        range: NanoRange,
+        timeout: Duration,
+        node_config: NodeConfigCached,
+        do_log: bool,
+    ) -> Self {
         Self {
             channel,
             range,
             agg_kind: AggKind::Plain,
             timeout,
             node_config,
+            do_log,
         }
     }
 
@@ -291,10 +300,12 @@ impl PlainEventsJson {
     }
 }
 
+// TODO rename, it is also used for binned:
 pub async fn collect_plain_events_json<T, S>(
     stream: S,
     timeout: Duration,
     bin_count_exp: u32,
+    do_log: bool,
 ) -> Result<JsonValue, Error>
 where
     S: Stream<Item = Sitemty<T>> + Unpin,
@@ -327,8 +338,16 @@ where
             Some(item) => {
                 match item {
                     Ok(item) => match item {
-                        StreamItem::Log(_) => {}
-                        StreamItem::Stats(_) => {}
+                        StreamItem::Log(item) => {
+                            if do_log {
+                                info!("collect_plain_events_json log {:?}", item);
+                            }
+                        }
+                        StreamItem::Stats(item) => {
+                            if do_log {
+                                info!("collect_plain_events_json stats {:?}", item);
+                            }
+                        }
                         StreamItem::DataItem(item) => match item {
                             RangeCompletableItem::RangeComplete => {
                                 collector.set_range_complete();
@@ -386,7 +405,7 @@ impl ChannelExecFunction for PlainEventsJson {
             agg_kind: self.agg_kind,
         };
         let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster);
-        let f = collect_plain_events_json(s, self.timeout, 0);
+        let f = collect_plain_events_json(s, self.timeout, 0, self.do_log);
         let f = FutureExt::map(f, |item| match item {
             Ok(item) => {
                 // TODO add channel entry info here?

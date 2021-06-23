@@ -1,8 +1,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 use err::Error;
 use netpod::{
-    channel_from_pairs, get_url_query_pairs, AppendToUrl, Channel, FromUrl, HasBackend, HasTimeout, HostPort,
-    NanoRange, ToNanos,
+    channel_from_pairs, get_url_query_pairs, AppendToUrl, Channel, FromUrl, HasBackend, HasTimeout, NanoRange, ToNanos,
 };
 use std::time::Duration;
 use url::Url;
@@ -97,15 +96,17 @@ pub struct PlainEventsJsonQuery {
     range: NanoRange,
     report_error: bool,
     timeout: Duration,
+    do_log: bool,
 }
 
 impl PlainEventsJsonQuery {
-    pub fn new(channel: Channel, range: NanoRange) -> Self {
+    pub fn new(channel: Channel, range: NanoRange, do_log: bool) -> Self {
         Self {
             channel,
             range,
             report_error: false,
             timeout: Duration::from_millis(10000),
+            do_log,
         }
     }
 
@@ -130,6 +131,11 @@ impl PlainEventsJsonQuery {
                 .parse::<u64>()
                 .map(|k| Duration::from_millis(k))
                 .map_err(|e| Error::with_msg(format!("can not parse timeout {:?}", e)))?,
+            do_log: pairs
+                .get("doLog")
+                .map_or("false", |k| k)
+                .parse()
+                .map_err(|e| Error::with_msg(format!("can not parse doLog {:?}", e)))?,
         };
         Ok(ret)
     }
@@ -156,23 +162,12 @@ impl PlainEventsJsonQuery {
         self.timeout
     }
 
-    pub fn set_timeout(&mut self, k: Duration) {
-        self.timeout = k;
+    pub fn do_log(&self) -> bool {
+        self.do_log
     }
 
-    // TODO remove in favor of Self::append_to_url
-    pub fn url(&self, host: &HostPort) -> String {
-        let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
-        format!(
-            "http://{}:{}/api/4/events?channelBackend={}&channelName={}&begDate={}&endDate={}&timeout={}",
-            host.host,
-            host.port,
-            self.channel.backend,
-            self.channel.name,
-            Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt),
-            Utc.timestamp_nanos(self.range.end as i64).format(date_fmt),
-            self.timeout.as_millis(),
-        )
+    pub fn set_timeout(&mut self, k: Duration) {
+        self.timeout = k;
     }
 
     pub fn append_to_url(&self, url: &mut Url) {
@@ -189,6 +184,7 @@ impl PlainEventsJsonQuery {
             &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
         );
         g.append_pair("timeout", &format!("{}", self.timeout.as_millis()));
+        g.append_pair("doLog", &format!("{}", self.do_log));
     }
 }
 
