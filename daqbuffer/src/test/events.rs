@@ -13,11 +13,12 @@ use futures_util::{StreamExt, TryStreamExt};
 use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
-use netpod::{Channel, Cluster, HostPort, NanoRange, PerfOpts};
+use netpod::{AppendToUrl, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_OCTET};
 use serde_json::Value as JsonValue;
 use std::fmt::Debug;
 use std::future::ready;
 use tokio::io::AsyncRead;
+use url::Url;
 
 #[test]
 fn get_plain_events_binary_0() {
@@ -65,12 +66,14 @@ where
     let range = NanoRange::from_date_time(beg_date, end_date);
     let query = PlainEventsBinaryQuery::new(channel, range);
     let hp = HostPort::from_node(node0);
-    let url = query.url(&hp);
+    let mut url = Url::parse(&format!("http://{}:{}", hp.host, hp.port))?;
+    query.append_to_url(&mut url);
+    let url = url;
     info!("get_plain_events  get {}", url);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
-        .uri(url)
-        .header("Accept", "application/octet-stream")
+        .uri(url.to_string())
+        .header(http::header::ACCEPT, APP_OCTET)
         .body(Body::empty())?;
     let client = hyper::Client::new();
     let res = client.request(req).await?;

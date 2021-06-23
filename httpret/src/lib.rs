@@ -13,7 +13,7 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
 use netpod::log::*;
-use netpod::{AggKind, Channel, FromUrl, NodeConfigCached, APP_JSON, APP_OCTET};
+use netpod::{get_url_query_pairs, AggKind, Channel, FromUrl, NodeConfigCached, APP_JSON, APP_JSON_LINES, APP_OCTET};
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
 use serde::{Deserialize, Serialize};
@@ -417,8 +417,8 @@ async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Res
 }
 
 async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    let (head, _body) = req.into_parts();
-    let query = PlainEventsBinaryQuery::from_request(&head)?;
+    let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+    let query = PlainEventsBinaryQuery::from_url(&url)?;
     let op = disk::channelexec::PlainEvents::new(query.channel().clone(), query.range().clone(), node_config.clone());
     let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), AggKind::Plain, node_config).await?;
     let s = s.map(|item| item.make_frame());
@@ -500,7 +500,7 @@ pub async fn update_db_with_channel_names(
         dbconn::scan::update_db_with_channel_names(node_config.clone(), &node_config.node_config.cluster.database)
             .await?;
     let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, "application/jsonlines")
+        .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
         .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {
             Ok(mut item) => {
                 item.push('\n');
@@ -522,7 +522,7 @@ pub async fn update_db_with_channel_names_3(
     };
     let res = dbconn::scan::update_db_with_channel_names_3(node_config);
     let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, "application/jsonlines")
+        .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
         .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {
             Ok(mut item) => {
                 item.push('\n');
@@ -544,7 +544,7 @@ pub async fn update_db_with_all_channel_configs(
     };
     let res = dbconn::scan::update_db_with_all_channel_configs(node_config.clone()).await?;
     let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, "application/jsonlines")
+        .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
         .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {
             Ok(mut item) => {
                 item.push('\n');
@@ -569,15 +569,12 @@ pub async fn update_search_cache(req: Request<Body>, node_config: &NodeConfigCac
 }
 
 pub async fn channel_config(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    let (head, _body) = req.into_parts();
-    let _dry = match head.uri.query() {
-        Some(q) => q.contains("dry"),
-        None => false,
-    };
-    let params = netpod::query_params(head.uri.query());
+    let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+    let pairs = get_url_query_pairs(&url);
+    let _dry = pairs.contains_key("dry");
     let channel = Channel {
         backend: node_config.node.backend.clone(),
-        name: params.get("channelName").unwrap().into(),
+        name: pairs.get("channelName").unwrap().into(),
     };
     let res = parse::channelconfig::read_local_config(&channel, &node_config.node).await?;
     let ret = response(StatusCode::OK)
@@ -587,12 +584,12 @@ pub async fn channel_config(req: Request<Body>, node_config: &NodeConfigCached) 
 }
 
 pub async fn ca_connect_1(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    let (head, _body) = req.into_parts();
-    let params = netpod::query_params(head.uri.query());
-    let addr = params.get("addr").unwrap().into();
+    let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+    let pairs = get_url_query_pairs(&url);
+    let addr = pairs.get("addr").unwrap().into();
     let res = netfetch::ca_connect_1(addr, node_config).await?;
     let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, "application/jsonlines")
+        .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
         .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {
             Ok(mut item) => {
                 item.push('\n');

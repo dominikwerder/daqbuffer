@@ -20,6 +20,7 @@ pub mod status;
 pub mod streamext;
 
 pub const APP_JSON: &'static str = "application/json";
+pub const APP_JSON_LINES: &'static str = "application/jsonlines";
 pub const APP_OCTET: &'static str = "application/octet-stream";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -724,24 +725,6 @@ impl FromStr for AggKind {
             Err(Error::with_msg(format!("can not parse {} as AggKind", s)))
         }
     }
-}
-
-pub fn query_params(q: Option<&str>) -> std::collections::BTreeMap<String, String> {
-    let mut map = std::collections::BTreeMap::new();
-    match q {
-        Some(k) => {
-            for par in k.split("&") {
-                let mut u = par.split("=");
-                if let Some(t1) = u.next() {
-                    if let Some(t2) = u.next() {
-                        map.insert(t1.into(), t2.into());
-                    }
-                }
-            }
-        }
-        None => {}
-    }
-    map
 }
 
 pub trait ToNanos {
