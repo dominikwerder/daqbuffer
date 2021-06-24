@@ -9,8 +9,8 @@ use crate::binned::query::BinnedQuery;
 use crate::binnedstream::BoxedStream;
 use crate::channelexec::{channel_exec, collect_plain_events_json, ChannelExecFunction};
 use crate::decode::{
-    BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValues, EventValuesDim0Case, EventValuesDim1Case,
-    LittleEndian, NumFromBytes,
+    Endianness, EventValueFromBytes, EventValueShape, EventValues, EventValuesDim0Case, EventValuesDim1Case,
+    NumFromBytes,
 };
 use crate::frame::makeframe::{Framable, FrameType, SubFrId};
 use crate::merge::mergedfromremotes::MergedFromRemotes;
@@ -24,8 +24,8 @@ use futures_util::{FutureExt, StreamExt};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{
-    x_bin_count, AggKind, BinnedRange, ByteOrder, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator,
-    PreBinnedPatchRange, ScalarType, Shape,
+    x_bin_count, AggKind, BinnedRange, BoolNum, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator,
+    PreBinnedPatchRange, Shape,
 };
 use num_traits::{AsPrimitive, Bounded, Float, Zero};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
@@ -84,11 +84,20 @@ where
     <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: Sized,
 {
     let _ = event_value_shape;
-    let range = BinnedRange::covering_range(query.range().clone(), query.bin_count())?.ok_or(Error::with_msg(
-        format!("binned_bytes_for_http  BinnedRange::covering_range returned None"),
-    ))?;
+    let range = BinnedRange::covering_range(
+        query.range().clone(),
+        query.bin_count(),
+        node_config.node.bin_grain_kind,
+    )?
+    .ok_or(Error::with_msg(format!(
+        "binned_bytes_for_http  BinnedRange::covering_range returned None"
+    )))?;
     let perf_opts = PerfOpts { inmem_bufcap: 512 };
-    match PreBinnedPatchRange::covering_range(query.range().clone(), query.bin_count()) {
+    match PreBinnedPatchRange::covering_range(
+        query.range().clone(),
+        query.bin_count(),
+        node_config.node.bin_grain_kind,
+    ) {
         Ok(Some(pre_range)) => {
             info!("binned_bytes_for_http  found pre_range: {:?}", pre_range);
             if range.grid_spec.bin_t_len() < pre_range.grid_spec.bin_t_len() {
@@ -151,6 +160,7 @@ pub struct BinnedResponseDyn {
     stream: Pin<Box<dyn Stream<Item = Box<dyn BinnedResponseItem>> + Send>>,
 }
 
+// TODO remove after refactor of PPP:
 fn make_num_pipeline_nty_end_evs_enp<PPP, NTY, END, EVS, ENP>(
     shape: Shape,
     _agg_kind: AggKind,
@@ -187,6 +197,8 @@ where
     Ok(ret)
 }
 
+// TODO remove after refactor of PPP:
+#[allow(dead_code)]
 fn make_num_pipeline_nty_end<PPP, NTY, END>(
     shape: Shape,
     query: BinnedQuery,
@@ -249,8 +261,8 @@ where
                     )
                 }
                 AggKind::DimXBinsN(_) => {
-                    /*let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggToNBins as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
-                    let yo = make_num_pipeline_nty_end_evs_enp::<PPP, NTY, END, _, _>(
+                    let _events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggToNBins as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
+                    /*let yo = make_num_pipeline_nty_end_evs_enp::<PPP, NTY, END, _, _>(
                         shape,
                         agg_kind,
                         evs,
@@ -269,6 +281,7 @@ where
     }
 }
 
+// TODO remove after refactor of PPP:
 #[allow(dead_code)]
 fn make_num_pipeline_nty_end_old<PPP, NTY, END>(
     shape: Shape,
@@ -306,6 +319,8 @@ where
     }
 }
 
+// TODO remove after refactor of PPP:
+#[allow(unused_macros)]
 macro_rules! match_end {
     ($nty:ident, $end:expr, $shape:expr, $query:expr, $ppp:expr, $node_config:expr) => {
         match $end {
@@ -315,7 +330,8 @@ macro_rules! match_end {
     };
 }
 
-fn make_num_pipeline_entry<PPP>(
+// TODO remove after refactor of PPP
+/*fn make_num_pipeline_entry<PPP>(
     scalar_type: ScalarType,
     byte_order: ByteOrder,
     shape: Shape,
@@ -347,27 +363,15 @@ where
         ScalarType::I64 => match_end!(i64, byte_order, shape, query, ppp, node_config),
         ScalarType::F32 => match_end!(f32, byte_order, shape, query, ppp, node_config),
         ScalarType::F64 => match_end!(f64, byte_order, shape, query, ppp, node_config),
+        ScalarType::BOOL => match_end!(BoolNum, byte_order, shape, query, ppp, node_config),
     }
-}
+}*/
 
 async fn make_num_pipeline<PPP>(
     query: &BinnedQuery,
-    ppp: PPP,
+    _ppp: PPP,
     node_config: &NodeConfigCached,
-) -> Result<BinnedResponseDyn, Error>
-where
-    PPP: PipelinePostProcessA,
-    PPP: PipelinePostProcessB<MinMaxAvgBins<u8>>,
-    PPP: PipelinePostProcessB<MinMaxAvgBins<u16>>,
-    PPP: PipelinePostProcessB<MinMaxAvgBins<u32>>,
-    PPP: PipelinePostProcessB<MinMaxAvgBins<u64>>,
-    PPP: PipelinePostProcessB<MinMaxAvgBins<i8>>,
-    PPP: PipelinePostProcessB<MinMaxAvgBins<i16>>,
-    PPP: PipelinePostProcessB<MinMaxAvgBins<i32>>,
-    PPP: PipelinePostProcessB<MinMaxAvgBins<i64>>,
-    PPP: PipelinePostProcessB<MinMaxAvgBins<f32>>,
-    PPP: PipelinePostProcessB<MinMaxAvgBins<f64>>,
-{
+) -> Result<BinnedResponseDyn, Error> {
     if query.channel().backend != node_config.node.backend {
         let err = Error::with_msg(format!(
             "backend mismatch  node: {}  requested: {}",
@@ -400,7 +404,7 @@ where
         MatchingConfigEntry::Entry(entry) => {
             // TODO make this a stream log:
             info!("binned_bytes_for_http  found config entry {:?}", entry);
-            let ret = make_num_pipeline_entry(
+            /*let ret = make_num_pipeline_entry(
                 entry.scalar_type.clone(),
                 entry.byte_order.clone(),
                 entry.to_shape()?,
@@ -408,7 +412,8 @@ where
                 ppp,
                 node_config,
             )?;
-            Ok(ret)
+            Ok(ret)*/
+            err::todoval()
         }
     }
 }
@@ -747,13 +752,21 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
             FrameType + Framable + DeserializeOwned,
     {
         let _ = event_value_shape;
-        let range =
-            BinnedRange::covering_range(self.query.range().clone(), self.query.bin_count())?.ok_or(Error::with_msg(
-                format!("binned_bytes_for_http  BinnedRange::covering_range returned None"),
-            ))?;
+        let range = BinnedRange::covering_range(
+            self.query.range().clone(),
+            self.query.bin_count(),
+            self.node_config.node.bin_grain_kind,
+        )?
+        .ok_or(Error::with_msg(format!(
+            "binned_bytes_for_http  BinnedRange::covering_range returned None"
+        )))?;
         let t_bin_count = range.count as u32;
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
-        let souter = match PreBinnedPatchRange::covering_range(self.query.range().clone(), self.query.bin_count()) {
+        let souter = match PreBinnedPatchRange::covering_range(
+            self.query.range().clone(),
+            self.query.bin_count(),
+            self.node_config.node.bin_grain_kind,
+        ) {
             Ok(Some(pre_range)) => {
                 info!("binned_bytes_for_http  found pre_range: {:?}", pre_range);
                 if range.grid_spec.bin_t_len() < pre_range.grid_spec.bin_t_len() {
@@ -982,7 +995,6 @@ pub trait NumOps:
     fn min_or_nan() -> Self;
     fn max_or_nan() -> Self;
     fn is_nan(&self) -> bool;
-    fn fourty_two() -> Self;
 }
 
 macro_rules! impl_num_ops {
@@ -996,9 +1008,6 @@ macro_rules! impl_num_ops {
             }
             fn is_nan(&self) -> bool {
                 $is_nan(self)
-            }
-            fn fourty_two() -> Self {
-                42 as Self
             }
         }
     };
@@ -1022,6 +1031,7 @@ impl_num_ops!(i32, MIN, MAX, is_nan_int);
 impl_num_ops!(i64, MIN, MAX, is_nan_int);
 impl_num_ops!(f32, NAN, NAN, is_nan_float);
 impl_num_ops!(f64, NAN, NAN, is_nan_float);
+impl_num_ops!(BoolNum, MIN, MAX, is_nan_int);
 
 pub trait EventsDecoder {
     type Output;

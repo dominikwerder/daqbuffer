@@ -11,7 +11,7 @@ use crate::eventchunker::EventFull;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use netpod::NanoRange;
+use netpod::{BoolNum, NanoRange};
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
 use std::mem::size_of;
@@ -37,6 +37,18 @@ impl Endianness for BigEndian {
 
 pub trait NumFromBytes<NTY, END> {
     fn convert(buf: &[u8], big_endian: bool) -> NTY;
+}
+
+impl NumFromBytes<BoolNum, LittleEndian> for BoolNum {
+    fn convert(buf: &[u8], _big_endian: bool) -> BoolNum {
+        BoolNum(buf[0])
+    }
+}
+
+impl NumFromBytes<BoolNum, BigEndian> for BoolNum {
+    fn convert(buf: &[u8], _big_endian: bool) -> BoolNum {
+        BoolNum(buf[0])
+    }
 }
 
 macro_rules! impl_num_from_bytes_end {

@@ -1,10 +1,10 @@
 use crate::api1::{channel_search_configs_v1, channel_search_list_v1, gather_json_2_v1, proxy_distribute_v1};
 use crate::gather::{gather_get_json_generic, SubRes};
-use crate::{response, Cont};
+use crate::{api_4_docs, response, Cont};
 use disk::binned::query::BinnedQuery;
 use disk::events::PlainEventsJsonQuery;
 use err::Error;
-use http::StatusCode;
+use http::{Method, StatusCode};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
 use itertools::Itertools;
@@ -76,6 +76,18 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
         Ok(proxy_single_backend_query::<ChannelConfigQuery>(req, proxy_config).await?)
     } else if path.starts_with("/distribute") {
         proxy_distribute_v1(req).await
+    } else if path.starts_with("/api/1/documentation/") {
+        if req.method() == Method::GET {
+            Ok(response(StatusCode::NOT_FOUND).body(Body::empty())?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    } else if path.starts_with("/api/4/documentation/") {
+        if req.method() == Method::GET {
+            api_4_docs(path)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
     } else {
         Ok(response(StatusCode::NOT_FOUND).body(Body::from(format!(
             "Sorry, not found: {:?}  {:?}  {:?}",

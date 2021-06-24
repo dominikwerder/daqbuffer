@@ -80,6 +80,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
             data_base_path: data_base_path.join(format!("node{:02}", i1)),
             ksprefix: ksprefix.clone(),
             backend: "testbackend".into(),
+            bin_grain_kind: 0,
         };
         ensemble.nodes.push(node);
     }

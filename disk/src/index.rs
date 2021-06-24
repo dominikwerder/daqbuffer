@@ -1,31 +1,10 @@
 use arrayref::array_ref;
 use err::Error;
 use netpod::log::*;
-use netpod::{ChannelConfig, Nanos, Node};
+use netpod::Nanos;
 use std::mem::size_of;
-use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncReadExt, AsyncSeekExt, ErrorKind, SeekFrom};
-
-pub async fn find_start_pos_for_config(
-    ts: Nanos,
-    channel_config: &ChannelConfig,
-    node: &Node,
-) -> Result<Option<u64>, Error> {
-    let index_path = super::paths::index_path(ts, channel_config, node)?;
-    let ret = match OpenOptions::new().open(&index_path).await {
-        Ok(_file) => {
-            info!("opened index file");
-            error!("???????????????    TODO   search index for start");
-            err::todoval::<u32>();
-            None
-        }
-        Err(e) => match e.kind() {
-            ErrorKind::NotFound => None,
-            _ => Err(e)?,
-        },
-    };
-    Ok(ret)
-}
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 
 pub fn find_ge(h: u64, buf: &[u8]) -> Result<Option<(u64, u64)>, Error> {
     const N: usize = 2 * size_of::<u64>();

@@ -5,6 +5,7 @@ use futures_util::StreamExt;
 use netpod::log::*;
 use netpod::{ChannelConfig, NanoRange, Nanos, Node};
 use std::path::PathBuf;
+use std::time::Instant;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, ErrorKind, SeekFrom};
 
@@ -125,7 +126,14 @@ async fn open_files_inner(
                 }
                 Err(e) => match e.kind() {
                     ErrorKind::NotFound => {
+                        let ts1 = Instant::now();
                         let res = super::index::position_static_len_datafile(file, range.beg).await?;
+                        let ts2 = Instant::now();
+                        if false {
+                            // TODO collect for stats:
+                            let dur = ts2.duration_since(ts1);
+                            info!("position_static_len_datafile took  ms {}", dur.as_millis());
+                        }
                         file = res.0;
                         if res.1 {
                             OpenedFile {

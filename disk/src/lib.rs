@@ -316,10 +316,10 @@ pub fn file_content_stream(
     async_stream::stream! {
         use tokio::io::AsyncReadExt;
         loop {
+            let ts1 = Instant::now();
             let mut buf = BytesMut::with_capacity(buffer_size);
-            let inst1 = Instant::now();
             let n1 = file.read_buf(&mut buf).await?;
-            let inst2 = Instant::now();
+            let ts2 = Instant::now();
             if n1 == 0 {
                 info!("file EOF");
                 break;
@@ -327,7 +327,7 @@ pub fn file_content_stream(
             else {
                 let ret = FileChunkRead {
                     buf,
-                    duration: inst2.duration_since(inst1),
+                    duration: ts2.duration_since(ts1),
                 };
                 yield Ok(ret);
             }

@@ -385,6 +385,10 @@ impl Stream for EventChunker {
             } else {
                 match self.inp.poll_next_unpin(cx) {
                     Ready(Some(Ok(mut fcr))) => {
+                        if false {
+                            // TODO collect for stats:
+                            info!("file read  bytes {}  ms {}", fcr.buf.len(), fcr.duration.as_millis());
+                        }
                         let r = self.parse_buf(&mut fcr.buf);
                         match r {
                             Ok(res) => {

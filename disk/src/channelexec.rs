@@ -16,7 +16,7 @@ use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::{AggKind, ByteOrder, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape};
+use netpod::{AggKind, BoolNum, ByteOrder, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
@@ -161,6 +161,7 @@ where
         ScalarType::I64 => match_end!(f, i64, byte_order, shape, agg_kind, node_config),
         ScalarType::F32 => match_end!(f, f32, byte_order, shape, agg_kind, node_config),
         ScalarType::F64 => match_end!(f, f64, byte_order, shape, agg_kind, node_config),
+        ScalarType::BOOL => match_end!(f, BoolNum, byte_order, shape, agg_kind, node_config),
     }
 }
 

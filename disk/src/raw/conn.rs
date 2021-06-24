@@ -15,7 +15,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::{AggKind, ByteOrder, ByteSize, NodeConfigCached, PerfOpts, ScalarType, Shape};
+use netpod::{AggKind, BoolNum, ByteOrder, ByteSize, NodeConfigCached, PerfOpts, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use std::io;
 use std::net::SocketAddr;
@@ -201,6 +201,7 @@ macro_rules! pipe1 {
             ScalarType::I64 => pipe2!(i64, $end, $shape, $agg_kind, $event_blobs),
             ScalarType::F32 => pipe2!(f32, $end, $shape, $agg_kind, $event_blobs),
             ScalarType::F64 => pipe2!(f64, $end, $shape, $agg_kind, $event_blobs),
+            ScalarType::BOOL => pipe2!(BoolNum, $end, $shape, $agg_kind, $event_blobs),
         }
     };
 }
@@ -298,10 +299,6 @@ async fn events_conn_handler_inner_try(
         event_chunker_conf,
     );
     let shape = entry.to_shape().unwrap();
-    info!(
-        "+++++--- conn.rs call pipe1  shape {:?}  agg_kind {:?}",
-        shape, evq.agg_kind
-    );
     let mut p1 = pipe1!(entry.scalar_type, entry.byte_order, shape, evq.agg_kind, event_blobs);
     while let Some(item) = p1.next().await {
         //info!("conn.rs  encode frame typeid {:x}", item.typeid());

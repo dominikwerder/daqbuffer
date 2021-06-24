@@ -43,6 +43,7 @@ fn test_cluster() -> Cluster {
             ksprefix: "ks".into(),
             split: id,
             backend: "testbackend".into(),
+            bin_grain_kind: 0,
         })
         .collect();
     Cluster {

@@ -3,9 +3,11 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::{self, Debug, Display, Formatter};
 use std::iter::FromIterator;
+use std::ops::Add;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::str::FromStr;
@@ -22,6 +24,60 @@ pub mod streamext;
 pub const APP_JSON: &'static str = "application/json";
 pub const APP_JSON_LINES: &'static str = "application/jsonlines";
 pub const APP_OCTET: &'static str = "application/octet-stream";
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+pub struct BoolNum(pub u8);
+
+impl BoolNum {
+    pub const MIN: Self = Self(0);
+    pub const MAX: Self = Self(1);
+}
+
+impl Add<BoolNum> for BoolNum {
+    type Output = BoolNum;
+
+    fn add(self, rhs: BoolNum) -> Self::Output {
+        Self(self.0 + rhs.0)
+    }
+}
+
+impl num_traits::Zero for BoolNum {
+    fn zero() -> Self {
+        Self(0)
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0 == 0
+    }
+}
+
+impl num_traits::AsPrimitive<f32> for BoolNum {
+    fn as_(self) -> f32 {
+        self.0 as f32
+    }
+}
+
+impl num_traits::Bounded for BoolNum {
+    fn min_value() -> Self {
+        Self(0)
+    }
+
+    fn max_value() -> Self {
+        Self(1)
+    }
+}
+
+impl PartialEq for BoolNum {
+    fn eq(&self, other: &Self) -> bool {
+        PartialEq::eq(&self.0, &other.0)
+    }
+}
+
+impl PartialOrd for BoolNum {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        PartialOrd::partial_cmp(&self.0, &other.0)
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AggQuerySingleChannel {
@@ -48,14 +104,15 @@ pub enum ScalarType {
     I64,
     F32,
     F64,
+    BOOL,
 }
 
 impl ScalarType {
     pub fn from_dtype_index(ix: u8) -> Result<Self, Error> {
         use ScalarType::*;
         let g = match ix {
-            0 => return Err(Error::with_msg(format!("BOOL not supported"))),
-            1 => return Err(Error::with_msg(format!("BOOL8 not supported"))),
+            0 => BOOL,
+            1 => BOOL,
             3 => U8,
             5 => U16,
             8 => U32,
@@ -86,6 +143,7 @@ impl ScalarType {
             I64 => 8,
             F32 => 4,
             F64 => 8,
+            BOOL => 1,
         }
     }
 
@@ -102,6 +160,7 @@ impl ScalarType {
             I64 => 9,
             F32 => 11,
             F64 => 12,
+            BOOL => 0,
         }
     }
 }
@@ -116,6 +175,8 @@ pub struct Node {
     pub data_base_path: PathBuf,
     pub ksprefix: String,
     pub backend: String,
+    #[serde(default)]
+    pub bin_grain_kind: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -326,11 +387,18 @@ pub mod timeunits {
     pub const DAY: u64 = HOUR * 24;
 }
 
-const BIN_T_LEN_OPTIONS: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
+const BIN_T_LEN_OPTIONS_0: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
 
-const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 4] = [MIN * 60, HOUR * 2, DAY * 4, DAY * 32];
+const BIN_T_LEN_OPTIONS_1: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
 
-const PATCH_T_LEN_OPTIONS_WAVE: [u64; 4] = [MIN * 20, HOUR * 2, DAY * 4, DAY * 32];
+const PATCH_T_LEN_KEY: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
+
+//const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 4] = [MIN * 60, HOUR * 4, DAY * 4, DAY * 32];
+
+// Testing this for GLS:
+const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 4] = [HOUR * 4, DAY * 4, DAY * 16, DAY * 32];
+
+const PATCH_T_LEN_OPTIONS_WAVE: [u64; 4] = [MIN * 10, HOUR * 2, DAY * 4, DAY * 32];
 
 const BIN_THRESHOLDS: [u64; 31] = [
     2,
@@ -385,7 +453,7 @@ impl PreBinnedPatchGridSpec {
     }
 
     pub fn is_valid_bin_t_len(bin_t_len: u64) -> bool {
-        for &j in BIN_T_LEN_OPTIONS.iter() {
+        for &j in PATCH_T_LEN_KEY.iter() {
             if bin_t_len == j {
                 return true;
             }
@@ -421,14 +489,14 @@ fn get_patch_t_len(bin_t_len: u64) -> u64 {
     let shape = Shape::Scalar;
     match shape {
         Shape::Scalar => {
-            for (i1, &j) in BIN_T_LEN_OPTIONS.iter().enumerate() {
+            for (i1, &j) in PATCH_T_LEN_KEY.iter().enumerate() {
                 if bin_t_len == j {
                     return PATCH_T_LEN_OPTIONS_SCALAR[i1];
                 }
             }
         }
         Shape::Wave(_) => {
-            for (i1, &j) in BIN_T_LEN_OPTIONS.iter().enumerate() {
+            for (i1, &j) in PATCH_T_LEN_KEY.iter().enumerate() {
                 if bin_t_len == j {
                     return PATCH_T_LEN_OPTIONS_WAVE[i1];
                 }
@@ -440,25 +508,30 @@ fn get_patch_t_len(bin_t_len: u64) -> u64 {
 
 impl PreBinnedPatchRange {
     /// Cover at least the given range with at least as many as the requested number of bins.
-    pub fn covering_range(range: NanoRange, min_bin_count: u32) -> Result<Option<Self>, Error> {
+    pub fn covering_range(range: NanoRange, min_bin_count: u32, bin_grain_kind: u32) -> Result<Option<Self>, Error> {
+        let bin_t_len_options = if bin_grain_kind == 1 {
+            &BIN_T_LEN_OPTIONS_1
+        } else {
+            &BIN_T_LEN_OPTIONS_0
+        };
         if min_bin_count < 1 {
             Err(Error::with_msg("min_bin_count < 1"))?;
         }
-        if min_bin_count > 4000 {
-            Err(Error::with_msg("min_bin_count > 4000"))?;
+        if min_bin_count > 6000 {
+            Err(Error::with_msg("min_bin_count > 6000"))?;
         }
         let dt = range.delta();
-        if dt > DAY * 14 {
-            Err(Error::with_msg("dt > DAY * 14"))?;
+        if dt > DAY * 200 {
+            Err(Error::with_msg("dt > DAY * 200"))?;
         }
         let bs = dt / min_bin_count as u64;
-        let mut i1 = BIN_T_LEN_OPTIONS.len();
+        let mut i1 = bin_t_len_options.len();
         loop {
             if i1 <= 0 {
                 break Ok(None);
             } else {
                 i1 -= 1;
-                let t = BIN_T_LEN_OPTIONS[i1];
+                let t = bin_t_len_options[i1];
                 if t <= bs {
                     let bin_t_len = t;
                     let patch_t_len = get_patch_t_len(bin_t_len);
@@ -585,7 +658,7 @@ impl BinnedGridSpec {
     }
 
     pub fn is_valid_bin_t_len(bin_t_len: u64) -> bool {
-        for &j in BIN_T_LEN_OPTIONS.iter() {
+        for &j in PATCH_T_LEN_KEY.iter() {
             if bin_t_len == j {
                 return true;
             }
@@ -594,8 +667,8 @@ impl BinnedGridSpec {
     }
 }
 
-impl std::fmt::Debug for BinnedGridSpec {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Debug for BinnedGridSpec {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         if self.bin_t_len < SEC * 90 {
             write!(fmt, "BinnedGridSpec {{ bin_t_len: {:?} ms }}", self.bin_t_len / MS,)
         } else {
@@ -612,25 +685,26 @@ pub struct BinnedRange {
 }
 
 impl BinnedRange {
-    pub fn covering_range(range: NanoRange, min_bin_count: u32) -> Result<Option<Self>, Error> {
+    pub fn covering_range(range: NanoRange, min_bin_count: u32, _bin_grain_kind: u32) -> Result<Option<Self>, Error> {
+        let thresholds = &BIN_THRESHOLDS;
         if min_bin_count < 1 {
             Err(Error::with_msg("min_bin_count < 1"))?;
         }
-        if min_bin_count > 4000 {
-            Err(Error::with_msg("min_bin_count > 4000"))?;
+        if min_bin_count > 6000 {
+            Err(Error::with_msg("min_bin_count > 6000"))?;
         }
         let dt = range.delta();
-        if dt > DAY * 14 {
-            Err(Error::with_msg("dt > DAY * 14"))?;
+        if dt > DAY * 200 {
+            Err(Error::with_msg("dt > DAY * 200"))?;
         }
         let bs = dt / min_bin_count as u64;
-        let mut i1 = BIN_THRESHOLDS.len();
+        let mut i1 = thresholds.len();
         loop {
             if i1 <= 0 {
                 break Ok(None);
             } else {
                 i1 -= 1;
-                let t = BIN_THRESHOLDS[i1];
+                let t = thresholds[i1];
                 if t <= bs || i1 == 0 {
                     let grid_spec = BinnedGridSpec { bin_t_len: t };
                     let bl = grid_spec.bin_t_len();
@@ -648,12 +722,14 @@ impl BinnedRange {
             }
         }
     }
+
     pub fn get_range(&self, ix: u32) -> NanoRange {
         NanoRange {
             beg: (self.offset + ix as u64) * self.grid_spec.bin_t_len,
             end: (self.offset + ix as u64 + 1) * self.grid_spec.bin_t_len,
         }
     }
+
     pub fn full_range(&self) -> NanoRange {
         NanoRange {
             beg: (self.offset + 0) * self.grid_spec.bin_t_len,

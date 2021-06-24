@@ -10,6 +10,7 @@ use crate::raw::EventQueryJsonStringFrame;
 use crate::Sitemty;
 use bytes::{BufMut, BytesMut};
 use err::Error;
+use netpod::BoolNum;
 use serde::{de::DeserializeOwned, Serialize};
 
 pub const INMEM_FRAME_ENCID: u32 = 0x12121212;
@@ -59,6 +60,10 @@ impl SubFrId for f32 {
 
 impl SubFrId for f64 {
     const SUB: u32 = 12;
+}
+
+impl SubFrId for BoolNum {
+    const SUB: u32 = 13;
 }
 
 pub trait FrameType {

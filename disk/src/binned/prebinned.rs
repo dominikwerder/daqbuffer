@@ -14,7 +14,7 @@ use bytes::Bytes;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use netpod::{AggKind, ByteOrder, NodeConfigCached, ScalarType, Shape};
+use netpod::{AggKind, BoolNum, ByteOrder, NodeConfigCached, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -145,6 +145,7 @@ fn make_num_pipeline(
         ScalarType::I64 => match_end!(i64, byte_order, shape, agg_kind, query, node_config),
         ScalarType::F32 => match_end!(f32, byte_order, shape, agg_kind, query, node_config),
         ScalarType::F64 => match_end!(f64, byte_order, shape, agg_kind, query, node_config),
+        ScalarType::BOOL => match_end!(BoolNum, byte_order, shape, agg_kind, query, node_config),
     }
 }
 

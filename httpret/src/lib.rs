@@ -225,20 +225,13 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         }
     } else if path.starts_with("/api/1/documentation/") {
         if req.method() == Method::GET {
-            static_http_api1!(path, "", "api1.html", "text/html");
-            static_http_api1!(path, "style.css", "text/css");
-            static_http_api1!(path, "script.js", "text/javascript");
-            Ok(response(StatusCode::NOT_FOUND).body(Body::empty())?)
+            api_1_docs(path)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else if path.starts_with("/api/4/documentation/") {
         if req.method() == Method::GET {
-            static_http!(path, "", "api4.html", "text/html");
-            static_http!(path, "style.css", "text/css");
-            static_http!(path, "script.js", "text/javascript");
-            static_http!(path, "status-main.html", "text/html");
-            Ok(response(StatusCode::NOT_FOUND).body(Body::empty())?)
+            api_4_docs(path)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -250,6 +243,21 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
             req.uri().query(),
         )))?)
     }
+}
+
+pub fn api_4_docs(path: &str) -> Result<Response<Body>, Error> {
+    static_http!(path, "", "api4.html", "text/html");
+    static_http!(path, "style.css", "text/css");
+    static_http!(path, "script.js", "text/javascript");
+    static_http!(path, "status-main.html", "text/html");
+    Ok(response(StatusCode::NOT_FOUND).body(Body::empty())?)
+}
+
+pub fn api_1_docs(path: &str) -> Result<Response<Body>, Error> {
+    static_http_api1!(path, "", "api1.html", "text/html");
+    static_http_api1!(path, "style.css", "text/css");
+    static_http_api1!(path, "script.js", "text/javascript");
+    Ok(response(StatusCode::NOT_FOUND).body(Body::empty())?)
 }
 
 fn response<T>(status: T) -> http::response::Builder

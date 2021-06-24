@@ -12,6 +12,7 @@ use std::io;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 use tiny_keccak::Hasher;
 use tokio::io::{AsyncRead, ReadBuf};
 
@@ -154,6 +155,7 @@ impl CacheFileDesc {
 
 pub struct WrittenPbCache {
     pub bytes: u64,
+    pub duration: Duration,
 }
 
 pub async fn write_pb_cache_min_max_avg_scalar<T>(
@@ -173,6 +175,7 @@ where
     };
     let path = cfd.path(&node_config);
     let enc = serde_cbor::to_vec(&values)?;
+    let ts1 = Instant::now();
     tokio::fs::create_dir_all(path.parent().unwrap()).await?;
     let now = Utc::now();
     let mut h = crc32fast::Hasher::new();
@@ -205,7 +208,11 @@ where
     })
     .await??;
     tokio::fs::rename(&tmp_path, &path).await?;
-    let ret = WrittenPbCache { bytes: res as u64 };
+    let ts2 = Instant::now();
+    let ret = WrittenPbCache {
+        bytes: res as u64,
+        duration: ts2.duration_since(ts1),
+    };
     Ok(ret)
 }
 
