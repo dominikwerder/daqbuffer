@@ -393,10 +393,9 @@ const BIN_T_LEN_OPTIONS_1: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
 
 const PATCH_T_LEN_KEY: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
 
-//const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 4] = [MIN * 60, HOUR * 4, DAY * 4, DAY * 32];
-
-// Testing this for GLS:
-const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 4] = [HOUR * 4, DAY * 4, DAY * 16, DAY * 32];
+const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 4] = [MIN * 60, HOUR * 4, DAY * 4, DAY * 32];
+// Maybe alternative for GLS:
+//const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 4] = [HOUR * 4, DAY * 4, DAY * 16, DAY * 32];
 
 const PATCH_T_LEN_OPTIONS_WAVE: [u64; 4] = [MIN * 10, HOUR * 2, DAY * 4, DAY * 32];
 
@@ -517,8 +516,8 @@ impl PreBinnedPatchRange {
         if min_bin_count < 1 {
             Err(Error::with_msg("min_bin_count < 1"))?;
         }
-        if min_bin_count > 6000 {
-            Err(Error::with_msg("min_bin_count > 6000"))?;
+        if min_bin_count > 20000 {
+            Err(Error::with_msg(format!("min_bin_count > 20000: {}", min_bin_count)))?;
         }
         let dt = range.delta();
         if dt > DAY * 200 {
@@ -690,8 +689,8 @@ impl BinnedRange {
         if min_bin_count < 1 {
             Err(Error::with_msg("min_bin_count < 1"))?;
         }
-        if min_bin_count > 6000 {
-            Err(Error::with_msg("min_bin_count > 6000"))?;
+        if min_bin_count > 20000 {
+            Err(Error::with_msg(format!("min_bin_count > 20000: {}", min_bin_count)))?;
         }
         let dt = range.delta();
         if dt > DAY * 200 {
