@@ -189,8 +189,6 @@ where
                         }
                         if lowest_ix == usize::MAX {
                             if self.batch.len() != 0 {
-                                //let k = std::mem::replace(&mut self.batch, MinMaxAvgScalarEventBatch::empty());
-                                //let ret = MinMaxAvgScalarEventBatchStreamItem::Values(k);
                                 let emp = <<ENP as EventsNodeProcessor>::Output>::empty();
                                 let ret = std::mem::replace(&mut self.batch, emp);
                                 self.data_emit_complete = true;

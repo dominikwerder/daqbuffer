@@ -30,6 +30,7 @@ pub struct RawEventsQuery {
     pub channel: Channel,
     pub range: NanoRange,
     pub agg_kind: AggKind,
+    pub disk_io_buffer_size: usize,
 }
 
 #[derive(Serialize, Deserialize)]

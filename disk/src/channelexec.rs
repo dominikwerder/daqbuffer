@@ -209,15 +209,17 @@ pub struct PlainEvents {
     channel: Channel,
     range: NanoRange,
     agg_kind: AggKind,
+    disk_io_buffer_size: usize,
     node_config: NodeConfigCached,
 }
 
 impl PlainEvents {
-    pub fn new(channel: Channel, range: NanoRange, node_config: NodeConfigCached) -> Self {
+    pub fn new(channel: Channel, range: NanoRange, disk_io_buffer_size: usize, node_config: NodeConfigCached) -> Self {
         Self {
             channel,
             range,
             agg_kind: AggKind::Plain,
+            disk_io_buffer_size,
             node_config,
         }
     }
@@ -254,6 +256,7 @@ impl ChannelExecFunction for PlainEvents {
             channel: self.channel,
             range: self.range,
             agg_kind: self.agg_kind,
+            disk_io_buffer_size: self.disk_io_buffer_size,
         };
         let s = MergedFromRemotes::<Identity<NTY>>::new(evq, perf_opts, self.node_config.node_config.cluster);
         let s = s.map(|item| Box::new(item) as Box<dyn Framable>);
@@ -269,6 +272,7 @@ pub struct PlainEventsJson {
     channel: Channel,
     range: NanoRange,
     agg_kind: AggKind,
+    disk_io_buffer_size: usize,
     timeout: Duration,
     node_config: NodeConfigCached,
     do_log: bool,
@@ -278,6 +282,7 @@ impl PlainEventsJson {
     pub fn new(
         channel: Channel,
         range: NanoRange,
+        disk_io_buffer_size: usize,
         timeout: Duration,
         node_config: NodeConfigCached,
         do_log: bool,
@@ -286,6 +291,7 @@ impl PlainEventsJson {
             channel,
             range,
             agg_kind: AggKind::Plain,
+            disk_io_buffer_size,
             timeout,
             node_config,
             do_log,
@@ -404,6 +410,7 @@ impl ChannelExecFunction for PlainEventsJson {
             channel: self.channel,
             range: self.range,
             agg_kind: self.agg_kind,
+            disk_io_buffer_size: self.disk_io_buffer_size,
         };
         let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster);
         let f = collect_plain_events_json(s, self.timeout, 0, self.do_log);

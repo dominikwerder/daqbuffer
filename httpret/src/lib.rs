@@ -427,7 +427,12 @@ async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Res
 async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let url = Url::parse(&format!("dummy:{}", req.uri()))?;
     let query = PlainEventsBinaryQuery::from_url(&url)?;
-    let op = disk::channelexec::PlainEvents::new(query.channel().clone(), query.range().clone(), node_config.clone());
+    let op = disk::channelexec::PlainEvents::new(
+        query.channel().clone(),
+        query.range().clone(),
+        query.disk_io_buffer_size(),
+        node_config.clone(),
+    );
     let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), AggKind::Plain, node_config).await?;
     let s = s.map(|item| item.make_frame());
     let ret = response(StatusCode::OK).body(BodyStream::wrapped(s, format!("plain_events")))?;
@@ -440,6 +445,7 @@ async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -
     let op = disk::channelexec::PlainEventsJson::new(
         query.channel().clone(),
         query.range().clone(),
+        query.disk_io_buffer_size(),
         query.timeout(),
         node_config.clone(),
         query.do_log(),
@@ -595,8 +601,7 @@ pub async fn channel_config(req: Request<Body>, node_config: &NodeConfigCached) 
 pub async fn ca_connect_1(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let url = Url::parse(&format!("dummy:{}", req.uri()))?;
     let pairs = get_url_query_pairs(&url);
-    let addr = pairs.get("addr").unwrap().into();
-    let res = netfetch::ca_connect_1(addr, node_config).await?;
+    let res = netfetch::ca_connect_1(pairs, node_config).await?;
     let ret = response(StatusCode::OK)
         .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
         .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {

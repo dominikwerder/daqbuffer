@@ -5,7 +5,7 @@ use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
     EventsDecodedStream, LittleEndian, NumFromBytes,
 };
-use crate::eventblobs::EventBlobsComplete;
+use crate::eventblobs::EventChunkerMultifile;
 use crate::eventchunker::EventChunkerConf;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::frame::makeframe::{decode_frame, make_frame, make_term_frame, Framable};
@@ -99,7 +99,7 @@ impl<E: Into<Error>> From<(E, OwnedWriteHalf)> for ConnErr {
 fn make_num_pipeline_stream_evs<NTY, END, EVS, ENP>(
     event_value_shape: EVS,
     events_node_proc: ENP,
-    event_blobs: EventBlobsComplete,
+    event_blobs: EventChunkerMultifile,
 ) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>
 where
     NTY: NumOps + NumFromBytes<NTY, END> + 'static,
@@ -286,16 +286,13 @@ async fn events_conn_handler_inner_try(
         array: entry.is_array,
         compression: entry.is_compressed,
     };
-
-    // TODO use a requested buffer size
-    let buffer_size = 1024 * 4;
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
-    let event_blobs = EventBlobsComplete::new(
+    let event_blobs = EventChunkerMultifile::new(
         range.clone(),
         channel_config.clone(),
         node_config.node.clone(),
         node_config.ix,
-        buffer_size,
+        evq.disk_io_buffer_size,
         event_chunker_conf,
     );
     let shape = entry.to_shape().unwrap();

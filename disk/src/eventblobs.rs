@@ -15,7 +15,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-pub struct EventBlobsComplete {
+pub struct EventChunkerMultifile {
     channel_config: ChannelConfig,
     file_chan: async_channel::Receiver<Result<OpenedFile, Error>>,
     evs: Option<EventChunker>,
@@ -30,7 +30,7 @@ pub struct EventBlobsComplete {
     node_ix: usize,
 }
 
-impl EventBlobsComplete {
+impl EventChunkerMultifile {
     pub fn new(
         range: NanoRange,
         channel_config: ChannelConfig,
@@ -56,7 +56,7 @@ impl EventBlobsComplete {
     }
 }
 
-impl Stream for EventBlobsComplete {
+impl Stream for EventChunkerMultifile {
     type Item = Result<StreamItem<RangeCompletableItem<EventFull>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {

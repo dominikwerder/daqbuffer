@@ -6,7 +6,7 @@ use crate::binned::{
     Bool, EventValuesAggregator, EventsNodeProcessor, FilterFittingInside, MinMaxAvgBins, NumOps, PushableIndex,
     RangeCompletableItem, RangeOverlapInfo, ReadPbv, ReadableFromFile, WithLen, WithTimestamps,
 };
-use crate::eventblobs::EventBlobsComplete;
+use crate::eventblobs::EventChunkerMultifile;
 use crate::eventchunker::EventFull;
 use err::Error;
 use futures_core::Stream;
@@ -422,7 +422,7 @@ where
     EVS: EventValueShape<NTY, END>,
 {
     evs: EVS,
-    event_blobs: EventBlobsComplete,
+    event_blobs: EventChunkerMultifile,
     completed: bool,
     errored: bool,
     _m1: PhantomData<NTY>,
@@ -436,7 +436,7 @@ where
     END: Endianness,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END>,
 {
-    pub fn new(evs: EVS, event_blobs: EventBlobsComplete) -> Self {
+    pub fn new(evs: EVS, event_blobs: EventChunkerMultifile) -> Self {
         Self {
             evs,
             event_blobs,
@@ -450,6 +450,8 @@ where
 
     fn decode(&mut self, ev: &EventFull) -> Result<EventValues<<EVS as EventValueFromBytes<NTY, END>>::Output>, Error> {
         let mut ret = EventValues::empty();
+        ret.tss.reserve(ev.tss.len());
+        ret.values.reserve(ev.tss.len());
         for i1 in 0..ev.tss.len() {
             // TODO check that dtype, event endianness and event shape match our static
             // expectation about the data in this channel.

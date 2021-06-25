@@ -82,7 +82,30 @@ where
             Poll::Ready(None)
         } else {
             let inp_poll_span = span!(Level::TRACE, "into_t_inp_poll");
-            inp_poll_span.in_scope(|| self.inp.poll_next_unpin(cx))
+            let t = inp_poll_span.in_scope(|| self.inp.poll_next_unpin(cx));
+            if false {
+                // TODO collect as stats:
+                use Poll::*;
+                match &t {
+                    Ready(item) => match item {
+                        Some(item) => match item {
+                            Ok(item) => match item {
+                                StreamItem::DataItem(item) => match item {
+                                    RangeCompletableItem::Data(item) => {
+                                        info!("time binner got batch  len {}", item.len());
+                                    }
+                                    _ => {}
+                                },
+                                _ => {}
+                            },
+                            _ => {}
+                        },
+                        _ => {}
+                    },
+                    _ => {}
+                }
+            }
+            t
         }
     }
 

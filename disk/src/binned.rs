@@ -137,6 +137,7 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
                     shape,
                     self.query.agg_kind().clone(),
                     self.query.cache_usage().clone(),
+                    self.query.disk_io_buffer_size(),
                     &self.node_config,
                     self.query.disk_stats_every().clone(),
                     self.query.report_error(),
@@ -156,6 +157,7 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
                     channel: self.query.channel().clone(),
                     range: self.query.range().clone(),
                     agg_kind: self.query.agg_kind().clone(),
+                    disk_io_buffer_size: self.query.disk_io_buffer_size(),
                 };
                 let x_bin_count = x_bin_count(&shape, self.query.agg_kind());
                 let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster.clone());
@@ -403,6 +405,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
                     shape,
                     self.query.agg_kind().clone(),
                     self.query.cache_usage().clone(),
+                    self.query.disk_io_buffer_size(),
                     &self.node_config,
                     self.query.disk_stats_every().clone(),
                     self.query.report_error(),
@@ -423,6 +426,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
                     channel: self.query.channel().clone(),
                     range: self.query.range().clone(),
                     agg_kind: self.query.agg_kind().clone(),
+                    disk_io_buffer_size: self.query.disk_io_buffer_size(),
                 };
                 let x_bin_count = x_bin_count(&shape, self.query.agg_kind());
                 let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster.clone());

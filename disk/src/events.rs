@@ -11,15 +11,17 @@ use url::Url;
 pub struct PlainEventsBinaryQuery {
     channel: Channel,
     range: NanoRange,
+    disk_io_buffer_size: usize,
     report_error: bool,
     timeout: Duration,
 }
 
 impl PlainEventsBinaryQuery {
-    pub fn new(channel: Channel, range: NanoRange) -> Self {
+    pub fn new(channel: Channel, range: NanoRange, disk_io_buffer_size: usize) -> Self {
         Self {
             channel,
             range,
+            disk_io_buffer_size,
             report_error: false,
             timeout: Duration::from_millis(10000),
         }
@@ -35,6 +37,11 @@ impl PlainEventsBinaryQuery {
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
             },
             channel: channel_from_pairs(&pairs)?,
+            disk_io_buffer_size: pairs
+                .get("diskIoBufferSize")
+                .map_or("4096", |k| k)
+                .parse()
+                .map_err(|e| Error::with_msg(format!("can not parse diskIoBufferSize {:?}", e)))?,
             report_error: pairs
                 .get("reportError")
                 .map_or("false", |k| k)
@@ -56,6 +63,10 @@ impl PlainEventsBinaryQuery {
 
     pub fn channel(&self) -> &Channel {
         &self.channel
+    }
+
+    pub fn disk_io_buffer_size(&self) -> usize {
+        self.disk_io_buffer_size
     }
 
     pub fn report_error(&self) -> bool {
@@ -85,6 +96,7 @@ impl AppendToUrl for PlainEventsBinaryQuery {
             "endDate",
             &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
         );
+        g.append_pair("diskIoBufferSize", &format!("{}", self.disk_io_buffer_size));
         g.append_pair("timeout", &format!("{}", self.timeout.as_millis()));
     }
 }
@@ -94,16 +106,18 @@ impl AppendToUrl for PlainEventsBinaryQuery {
 pub struct PlainEventsJsonQuery {
     channel: Channel,
     range: NanoRange,
+    disk_io_buffer_size: usize,
     report_error: bool,
     timeout: Duration,
     do_log: bool,
 }
 
 impl PlainEventsJsonQuery {
-    pub fn new(channel: Channel, range: NanoRange, do_log: bool) -> Self {
+    pub fn new(channel: Channel, range: NanoRange, disk_io_buffer_size: usize, do_log: bool) -> Self {
         Self {
             channel,
             range,
+            disk_io_buffer_size,
             report_error: false,
             timeout: Duration::from_millis(10000),
             do_log,
@@ -120,6 +134,11 @@ impl PlainEventsJsonQuery {
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
             },
             channel: channel_from_pairs(&pairs)?,
+            disk_io_buffer_size: pairs
+                .get("diskIoBufferSize")
+                .map_or("4096", |k| k)
+                .parse()
+                .map_err(|e| Error::with_msg(format!("can not parse diskIoBufferSize {:?}", e)))?,
             report_error: pairs
                 .get("reportError")
                 .map_or("false", |k| k)
@@ -158,6 +177,10 @@ impl PlainEventsJsonQuery {
         self.report_error
     }
 
+    pub fn disk_io_buffer_size(&self) -> usize {
+        self.disk_io_buffer_size
+    }
+
     pub fn timeout(&self) -> Duration {
         self.timeout
     }
@@ -183,6 +206,7 @@ impl PlainEventsJsonQuery {
             "endDate",
             &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
         );
+        g.append_pair("diskIoBufferSize", &format!("{}", self.disk_io_buffer_size));
         g.append_pair("timeout", &format!("{}", self.timeout.as_millis()));
         g.append_pair("doLog", &format!("{}", self.do_log));
     }

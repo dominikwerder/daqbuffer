@@ -168,6 +168,7 @@ where
         shape: Shape,
         agg_kind: AggKind,
         cache_usage: CacheUsage,
+        disk_io_buffer_size: usize,
         node_config: &NodeConfigCached,
         disk_stats_every: ByteSize,
         report_error: bool,
@@ -193,6 +194,7 @@ where
                         channel.clone(),
                         agg_kind.clone(),
                         cache_usage.clone(),
+                        disk_io_buffer_size,
                         disk_stats_every.clone(),
                         report_error,
                     );

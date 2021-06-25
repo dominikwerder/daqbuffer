@@ -114,6 +114,7 @@ where
             channel: self.query.channel().clone(),
             range: self.query.patch().patch_range(),
             agg_kind: self.query.agg_kind().clone(),
+            disk_io_buffer_size: self.query.disk_io_buffer_size(),
         };
         if self.query.patch().patch_t_len() % self.query.patch().bin_t_len() != 0 {
             let msg = format!(
@@ -172,6 +173,7 @@ where
         let s = futures_util::stream::iter(patch_it)
             .map({
                 let q2 = self.query.clone();
+                let disk_io_buffer_size = self.query.disk_io_buffer_size();
                 let disk_stats_every = self.query.disk_stats_every().clone();
                 let report_error = self.query.report_error();
                 move |patch| {
@@ -180,6 +182,7 @@ where
                         q2.channel().clone(),
                         q2.agg_kind().clone(),
                         q2.cache_usage().clone(),
+                        disk_io_buffer_size,
                         disk_stats_every.clone(),
                         report_error,
                     );
