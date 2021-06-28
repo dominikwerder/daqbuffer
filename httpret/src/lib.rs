@@ -513,17 +513,28 @@ pub async fn update_db_with_channel_names(
     };
     let res =
         dbconn::scan::update_db_with_channel_names(node_config.clone(), &node_config.node_config.cluster.database)
-            .await?;
-    let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
-        .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {
-            Ok(mut item) => {
-                item.push('\n');
-                Ok(item)
-            }
-            Err(e) => Err(e),
-        })))?;
-    Ok(ret)
+            .await;
+    match res {
+        Ok(res) => {
+            let ret = response(StatusCode::OK)
+                .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
+                .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {
+                    Ok(mut item) => {
+                        item.push('\n');
+                        Ok(item)
+                    }
+                    Err(e) => Err(e),
+                })))?;
+            Ok(ret)
+        }
+        Err(e) => {
+            let p = serde_json::to_string(&e)?;
+            let res = response(StatusCode::OK)
+                .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
+                .body(Body::from(p))?;
+            Ok(res)
+        }
+    }
 }
 
 pub async fn update_db_with_channel_names_3(

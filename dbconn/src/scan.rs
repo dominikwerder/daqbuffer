@@ -326,8 +326,11 @@ pub async fn update_db_with_channel_names(
     db_config: &Database,
 ) -> Result<Receiver<Result<UpdatedDbWithChannelNames, Error>>, Error> {
     let (tx, rx) = bounded(16);
+    let tx2 = tx.clone();
     let db_config = db_config.clone();
-    tokio::spawn(async move {
+    let block1 = async move {
+        //return Err(Error::with_msg("some test error1"));
+        //tx.send(Err(Error::with_msg("some test error2"))).await?;
         let dbc = crate::create_connection(&db_config).await?;
         let node_disk_ident = get_node_disk_ident(&node_config, &dbc).await?;
         let c1 = Arc::new(RwLock::new(0u32));
@@ -374,7 +377,19 @@ pub async fn update_db_with_channel_names(
         };
         tx.send(Ok(ret)).await?;
         Ok::<_, Error>(())
-    });
+    };
+    let block2 = async move {
+        match block1.await {
+            Ok(_) => {}
+            Err(e) => match tx2.send(Err(e)).await {
+                Ok(_) => {}
+                Err(e) => {
+                    error!("can not report error through channel: {:?}", e);
+                }
+            },
+        }
+    };
+    tokio::spawn(block2);
     Ok(rx)
 }
 
@@ -410,84 +425,95 @@ pub async fn update_db_with_all_channel_configs(
     let (tx, rx) = bounded(16);
     let tx = Arc::new(tx);
     let tx2 = tx.clone();
-    tokio::spawn(
-        async move {
-            let node_config = &node_config;
-            let dbc = crate::create_connection(&node_config.node_config.cluster.database).await?;
-            let dbc = Arc::new(dbc);
-            let node_disk_ident = &get_node_disk_ident(node_config, &dbc).await?;
-            let rows = dbc
-                .query(
-                    "select rowid, facility, name from channels where facility = $1 order by facility, name",
-                    &[&node_disk_ident.facility],
-                )
-                .await?;
-            let mut c1 = 0;
-            dbc.query("begin", &[]).await?;
-            let mut count_inserted = 0;
-            let mut count_updated = 0;
-            for row in rows {
-                let rowid: i64 = row.try_get(0)?;
-                let _facility: i64 = row.try_get(1)?;
-                let channel: String = row.try_get(2)?;
-                match update_db_with_channel_config(
-                    node_config,
-                    node_disk_ident,
-                    rowid,
-                    &channel,
-                    dbc.clone(),
-                    &mut count_inserted,
-                    &mut count_updated,
-                )
-                .await
-                {
-                    /*Err(Error::ChannelConfigdirNotFound { .. }) => {
-                        warn!("can not find channel config {}", channel);
-                        crate::delay_io_medium().await;
-                    }*/
-                    Err(e) => {
-                        error!("{:?}", e);
-                        crate::delay_io_medium().await;
+    let tx3 = tx.clone();
+    let block1 = async move {
+        let node_config = &node_config;
+        let dbc = crate::create_connection(&node_config.node_config.cluster.database).await?;
+        let dbc = Arc::new(dbc);
+        let node_disk_ident = &get_node_disk_ident(node_config, &dbc).await?;
+        let rows = dbc
+            .query(
+                "select rowid, facility, name from channels where facility = $1 order by facility, name",
+                &[&node_disk_ident.facility],
+            )
+            .await?;
+        let mut c1 = 0;
+        dbc.query("begin", &[]).await?;
+        let mut count_inserted = 0;
+        let mut count_updated = 0;
+        for row in rows {
+            let rowid: i64 = row.try_get(0)?;
+            let _facility: i64 = row.try_get(1)?;
+            let channel: String = row.try_get(2)?;
+            match update_db_with_channel_config(
+                node_config,
+                node_disk_ident,
+                rowid,
+                &channel,
+                dbc.clone(),
+                &mut count_inserted,
+                &mut count_updated,
+            )
+            .await
+            {
+                Err(e) => {
+                    error!("{:?}", e);
+                    crate::delay_io_medium().await;
+                }
+                Ok(UpdateChannelConfigResult::NotFound) => {
+                    warn!("can not find channel config {}", channel);
+                    crate::delay_io_medium().await;
+                }
+                Ok(UpdateChannelConfigResult::Done) => {
+                    c1 += 1;
+                    if c1 % 200 == 0 {
+                        dbc.query("commit", &[]).await?;
+                        let msg = format!(
+                            "channel no {:6}  inserted {:6}  updated {:6}",
+                            c1, count_inserted, count_updated
+                        );
+                        let ret = UpdatedDbWithAllChannelConfigs { msg, count: c1 };
+                        tx.send(Ok(ret)).await?;
+                        dbc.query("begin", &[]).await?;
                     }
-                    _ => {
-                        c1 += 1;
-                        if c1 % 200 == 0 {
-                            dbc.query("commit", &[]).await?;
-                            let msg = format!(
-                                "channel no {:6}  inserted {:6}  updated {:6}",
-                                c1, count_inserted, count_updated
-                            );
-                            let ret = UpdatedDbWithAllChannelConfigs { msg, count: c1 };
-                            tx.send(Ok(ret)).await?;
-                            dbc.query("begin", &[]).await?;
-                        }
-                        crate::delay_io_short().await;
-                    }
+                    crate::delay_io_short().await;
                 }
             }
-            dbc.query("commit", &[]).await?;
-            let msg = format!(
-                "ALL DONE  channel no {:6}  inserted {:6}  updated {:6}",
-                c1, count_inserted, count_updated
-            );
-            let ret = UpdatedDbWithAllChannelConfigs { msg, count: c1 };
-            tx.send(Ok(ret)).await?;
+        }
+        dbc.query("commit", &[]).await?;
+        let msg = format!(
+            "ALL DONE  channel no {:6}  inserted {:6}  updated {:6}",
+            c1, count_inserted, count_updated
+        );
+        let ret = UpdatedDbWithAllChannelConfigs { msg, count: c1 };
+        tx.send(Ok(ret)).await?;
+        Ok::<_, Error>(())
+    }
+    .then({
+        |item| async move {
+            match item {
+                Ok(_) => {}
+                Err(e) => {
+                    let msg = format!("Seeing error: {:?}", e);
+                    let ret = UpdatedDbWithAllChannelConfigs { msg, count: 0 };
+                    tx2.send(Ok(ret)).await?;
+                }
+            }
             Ok::<_, Error>(())
         }
-        .then({
-            |item| async move {
-                match item {
-                    Ok(_) => {}
-                    Err(e) => {
-                        let msg = format!("Seeing error: {:?}", e);
-                        let ret = UpdatedDbWithAllChannelConfigs { msg, count: 0 };
-                        tx2.send(Ok(ret)).await?;
-                    }
+    });
+    let block2 = async move {
+        match block1.await {
+            Ok(_) => {}
+            Err(e) => match tx3.send(Err(e)).await {
+                Ok(_) => {}
+                Err(e) => {
+                    error!("can not deliver error through channel: {:?}", e);
                 }
-                Ok::<_, Error>(())
-            }
-        }),
-    );
+            },
+        }
+    };
+    tokio::spawn(block2);
     Ok(rx)
 }
 
@@ -495,6 +521,11 @@ pub async fn update_search_cache(node_config: &NodeConfigCached) -> Result<(), E
     let dbc = crate::create_connection(&node_config.node_config.cluster.database).await?;
     dbc.query("select update_cache()", &[]).await?;
     Ok(())
+}
+
+pub enum UpdateChannelConfigResult {
+    NotFound,
+    Done,
 }
 
 /**
@@ -508,7 +539,7 @@ pub async fn update_db_with_channel_config(
     dbc: Arc<Client>,
     count_inserted: &mut usize,
     count_updated: &mut usize,
-) -> Result<(), Error> {
+) -> Result<UpdateChannelConfigResult, Error> {
     let path = node_config
         .node
         .data_base_path
@@ -516,7 +547,11 @@ pub async fn update_db_with_channel_config(
         .join(channel)
         .join("latest")
         .join("00000_Config");
-    let meta = tokio::fs::metadata(&path).await?;
+    let meta = if let Ok(k) = tokio::fs::metadata(&path).await {
+        k
+    } else {
+        return Ok(UpdateChannelConfigResult::NotFound);
+    };
     if meta.len() > 8 * 1024 * 1024 {
         return Err(Error::with_msg("meta data too long"));
     }
@@ -548,7 +583,7 @@ pub async fn update_db_with_channel_config(
     };
     if do_parse {
         let buf = tokio::fs::read(&path).await?;
-        let config = parse::channelconfig::parse_config(&buf)?;
+        let config = parse::channelconfig::parse_config(&buf)?.1;
         match config_id {
             None => {
                 dbc.query(
@@ -573,7 +608,7 @@ pub async fn update_db_with_channel_config(
             }
         }
     }
-    Ok(())
+    Ok(UpdateChannelConfigResult::Done)
 }
 
 pub async fn update_db_with_all_channel_datafiles(

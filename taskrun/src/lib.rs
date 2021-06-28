@@ -1,10 +1,17 @@
-use err::Error;
 use std::future::Future;
 use std::panic;
 use std::sync::Mutex;
+
 use tokio::task::JoinHandle;
-#[allow(unused_imports)]
-use tracing::{debug, error, info, trace, warn};
+
+use err::Error;
+
+use crate::log::*;
+
+pub mod log {
+    #[allow(unused_imports)]
+    pub use tracing::{debug, error, info, trace, warn};
+}
 
 pub fn run<T, F: std::future::Future<Output = Result<T, Error>>>(f: F) -> Result<T, Error> {
     tracing_init();
