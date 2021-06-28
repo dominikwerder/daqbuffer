@@ -1,5 +1,5 @@
 [workspace]
-members = ["daqbuffer", "h5out"]
+members = ["daqbuffer", "h5out", "archapp"]
 
 [profile.release]
 debug = 1
