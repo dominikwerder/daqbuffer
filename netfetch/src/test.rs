@@ -20,6 +20,7 @@ fn ca_connect_1() {
                 data_base_path: "".into(),
                 listen: "".into(),
                 ksprefix: "".into(),
+                archiver_appliance: None,
             },
             node_config: NodeConfig {
                 name: "".into(),

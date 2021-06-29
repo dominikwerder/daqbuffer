@@ -59,7 +59,7 @@ async fn go() -> Result<(), Error> {
             let node_config: NodeConfig = serde_json::from_slice(&buf)?;
             let node_config: Result<NodeConfigCached, Error> = node_config.into();
             let node_config = node_config?;
-            daqbuffer::run_node(node_config.clone()).await?;
+            daqbufp2::run_node(node_config.clone()).await?;
         }
         SubCmd::Proxy(subcmd) => {
             info!("daqbuffer proxy {}", clap::crate_version!());
@@ -67,17 +67,17 @@ async fn go() -> Result<(), Error> {
             let mut buf = vec![];
             config_file.read_to_end(&mut buf).await?;
             let proxy_config: ProxyConfig = serde_json::from_slice(&buf)?;
-            daqbuffer::run_proxy(proxy_config.clone()).await?;
+            daqbufp2::run_proxy(proxy_config.clone()).await?;
         }
         SubCmd::Client(client) => match client.client_type {
             ClientType::Status(opts) => {
-                daqbuffer::client::status(opts.host, opts.port).await?;
+                daqbufp2::client::status(opts.host, opts.port).await?;
             }
             ClientType::Binned(opts) => {
                 let beg = parse_ts(&opts.beg)?;
                 let end = parse_ts(&opts.end)?;
                 let cache_usage = CacheUsage::from_string(&opts.cache)?;
-                daqbuffer::client::get_binned(
+                daqbufp2::client::get_binned(
                     opts.host,
                     opts.port,
                     opts.backend,
@@ -103,7 +103,7 @@ fn simple_fetch() {
     use netpod::Nanos;
     use netpod::{timeunits::*, ByteOrder, Channel, ChannelConfig, ScalarType, Shape};
     taskrun::run(async {
-        let _rh = daqbuffer::nodes::require_test_hosts_running()?;
+        let _rh = daqbufp2::nodes::require_test_hosts_running()?;
         let t1 = chrono::Utc::now();
         let query = netpod::AggQuerySingleChannel {
             channel_config: ChannelConfig {

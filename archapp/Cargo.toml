@@ -15,6 +15,7 @@ serde_derive = "1.0"
 serde_json = "1.0"
 chrono = "0.4"
 protobuf = "2.24.1"
+async-channel = "1.6"
 err = { path = "../err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }

@@ -166,6 +166,11 @@ impl ScalarType {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ArchiverAppliance {
+    pub data_base_path: PathBuf,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Node {
     pub host: String,
     pub listen: String,
@@ -177,6 +182,7 @@ pub struct Node {
     pub backend: String,
     #[serde(default)]
     pub bin_grain_kind: u32,
+    pub archiver_appliance: Option<ArchiverAppliance>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

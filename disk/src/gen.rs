@@ -81,6 +81,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
             ksprefix: ksprefix.clone(),
             backend: "testbackend".into(),
             bin_grain_kind: 0,
+            archiver_appliance: None,
         };
         ensemble.nodes.push(node);
     }

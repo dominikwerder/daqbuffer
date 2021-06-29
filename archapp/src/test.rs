@@ -1,30 +1,7 @@
+use crate::unescape_archapp_msg;
 use err::Error;
 use netpod::log::*;
 use protobuf::Message;
-
-fn unescape_archapp_msg(inp: &[u8]) -> Result<Vec<u8>, Error> {
-    let mut ret = Vec::with_capacity(inp.len() * 5 / 4);
-    let mut esc = false;
-    for &k in inp.iter() {
-        if k == 0x1b {
-            esc = true;
-        } else if esc {
-            if k == 0x1 {
-                ret.push(0x1b);
-            } else if k == 0x2 {
-                ret.push(0xa);
-            } else if k == 0x3 {
-                ret.push(0xd);
-            } else {
-                return Err(Error::with_msg("malformed escaped archapp message"));
-            }
-            esc = false;
-        } else {
-            ret.push(k);
-        }
-    }
-    Ok(ret)
-}
 
 #[test]
 fn read_pb_00() -> Result<(), Error> {

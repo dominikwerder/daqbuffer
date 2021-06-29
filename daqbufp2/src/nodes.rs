@@ -44,6 +44,7 @@ fn test_cluster() -> Cluster {
             split: id,
             backend: "testbackend".into(),
             bin_grain_kind: 0,
+            archiver_appliance: None,
         })
         .collect();
     Cluster {

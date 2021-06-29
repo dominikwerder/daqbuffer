@@ -24,4 +24,5 @@ dbconn = { path = "../dbconn" }
 disk = { path = "../disk" }
 parse = { path = "../parse" }
 netfetch = { path = "../netfetch" }
+archapp = { path = "../archapp" }
 taskrun = { path = "../taskrun" }

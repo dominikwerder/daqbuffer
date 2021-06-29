@@ -217,6 +217,12 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if path == "/api/4/archapp/files" {
+        if req.method() == Method::GET {
+            Ok(archapp_scan_files(req, &node_config).await?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
     } else if path == "/api/4/channel/config" {
         if req.method() == Method::GET {
             Ok(channel_config(req, &node_config).await?)
@@ -621,6 +627,31 @@ pub async fn ca_connect_1(req: Request<Body>, node_config: &NodeConfigCached) ->
                 Ok(item)
             }
             Err(e) => Err(e),
+        })))?;
+    Ok(ret)
+}
+
+pub async fn archapp_scan_files(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+    let pairs = get_url_query_pairs(&url);
+    let res = archapp::scan_files(pairs, node_config).await?;
+    let ret = response(StatusCode::OK)
+        .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
+        .body(Body::wrap_stream(res.map(|k| match k {
+            Ok(k) => match k.serialize() {
+                Ok(mut item) => {
+                    item.push(0xa);
+                    Ok(item)
+                }
+                Err(e) => Err(e),
+            },
+            Err(e) => match serde_json::to_vec(&e) {
+                Ok(mut item) => {
+                    item.push(0xa);
+                    Ok(item)
+                }
+                Err(e) => Err(e.into()),
+            },
         })))?;
     Ok(ret)
 }
