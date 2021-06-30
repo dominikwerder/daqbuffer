@@ -101,3 +101,18 @@ pub async fn random_channel(node_config: &NodeConfigCached) -> Result<String, Er
     }
     Ok(rows[0].get(0))
 }
+
+pub async fn insert_channel(name: String, facility: i64, dbc: &Client) -> Result<(), Error> {
+    let rows = dbc
+        .query(
+            "select count(rowid) from channels where facility = $1 and name = $2",
+            &[&facility, &name],
+        )
+        .await?;
+    if rows[0].get::<_, i64>(0) == 0 {
+        let sql =
+            concat!("insert into channels (facility, name) values ($1, $2) on conflict (facility, name) do nothing");
+        dbc.query(sql, &[&facility, &name]).await?;
+    }
+    Ok(())
+}

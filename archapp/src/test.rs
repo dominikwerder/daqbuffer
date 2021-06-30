@@ -3,6 +3,11 @@ use err::Error;
 use netpod::log::*;
 use protobuf::Message;
 
+pub fn read_pb_dummy() -> Result<(), Error> {
+    Ok(())
+}
+
+#[cfg(feature = "devread")]
 #[test]
 fn read_pb_00() -> Result<(), Error> {
     let block1 = async move {

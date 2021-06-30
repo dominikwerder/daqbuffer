@@ -19,3 +19,8 @@ async-channel = "1.6"
 err = { path = "../err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }
+dbconn = { path = "../dbconn" }
+
+[features]
+default = []
+devread = []

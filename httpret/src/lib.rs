@@ -634,7 +634,7 @@ pub async fn ca_connect_1(req: Request<Body>, node_config: &NodeConfigCached) ->
 pub async fn archapp_scan_files(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let url = Url::parse(&format!("dummy:{}", req.uri()))?;
     let pairs = get_url_query_pairs(&url);
-    let res = archapp::scan_files(pairs, node_config).await?;
+    let res = archapp::parse::scan_files(pairs, node_config.clone()).await?;
     let ret = response(StatusCode::OK)
         .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
         .body(Body::wrap_stream(res.map(|k| match k {

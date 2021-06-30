@@ -42,7 +42,10 @@ fn _get_hostname() -> Result<String, Error> {
 }
 
 pub async fn get_node_disk_ident(node_config: &NodeConfigCached, dbc: &Client) -> Result<NodeDiskIdent, Error> {
-    let rows = dbc.query("select nodes.rowid, facility, split, hostname from nodes, facilities where facilities.name = $1 and facility = facilities.rowid and hostname = $2", &[&node_config.node.backend, &node_config.node.host]).await?;
+    let sql = "select nodes.rowid, facility, split, hostname from nodes, facilities where facilities.name = $1 and facility = facilities.rowid and hostname = $2";
+    let rows = dbc
+        .query(sql, &[&node_config.node.backend, &node_config.node.host])
+        .await?;
     if rows.len() != 1 {
         return Err(Error::with_msg(format!(
             "get_node can't find unique entry for {} {}",
@@ -62,7 +65,10 @@ pub async fn get_node_disk_ident_2(
     node_config: Pin<&NodeConfigCached>,
     dbc: Pin<&Client>,
 ) -> Result<NodeDiskIdent, Error> {
-    let rows = dbc.query("select nodes.rowid, facility, split, hostname from nodes, facilities where facilities.name = $1 and facility = facilities.rowid and hostname = $2", &[&node_config.node.backend, &node_config.node.host]).await?;
+    let sql = "select nodes.rowid, facility, split, hostname from nodes, facilities where facilities.name = $1 and facility = facilities.rowid and hostname = $2";
+    let rows = dbc
+        .query(sql, &[&node_config.node.backend, &node_config.node.host])
+        .await?;
     if rows.len() != 1 {
         return Err(Error::with_msg(format!(
             "get_node can't find unique entry for {} {}",
@@ -571,10 +577,11 @@ pub async fn update_db_with_channel_config(
         let parsed_until: u32 = row.get::<_, i64>(2) as u32;
         let _channel_id = row.get::<_, i64>(2) as i64;
         if meta.len() < file_size as u64 || meta.len() < parsed_until as u64 {
-            dbc.query(
-                "insert into configs_history (rowid_original, node, channel, fileSize, parsedUntil, config, tsinsert) select rowid as rowid_original, node, channel, fileSize, parsedUntil, config, now() from configs where rowid = $1",
-                &[&rowid],
-            ).await?;
+            let sql = concat!(
+            "insert into configs_history (rowid_original, node, channel, fileSize, parsedUntil, config, tsinsert) ",
+            "select rowid as rowid_original, node, channel, fileSize, parsedUntil, config, now() from configs where rowid = $1"
+            );
+            dbc.query(sql, &[&rowid]).await?;
         }
         //ensure!(meta.len() >= parsed_until as u64, ConfigFileOnDiskShrunk{path});
         (Some(rowid), true)
