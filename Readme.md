@@ -37,6 +37,15 @@ Installation will by default be done only for your user. No superuser privileges
 You should have the commands `cargo` and `rustup` now available in your terminal.
 
 
+# HTTP API docs
+
+The documentation of the currently running service is served by the service itself:
+
+<https://data-api.psi.ch/api/4/documentation/>
+
+The docs are found in this repository here: <httpret/static/documentation/>
+
+
 # License
 
 GNU General Public License version 3 or later.
