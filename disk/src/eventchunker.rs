@@ -1,11 +1,10 @@
-use crate::agg::streams::{StatsItem, StreamItem};
-use crate::binned::RangeCompletableItem;
 use crate::{FileChunkRead, NeedMinBuffer};
 use bitshuffle::bitshuffle_decompress;
 use bytes::{Buf, BytesMut};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use items::{RangeCompletableItem, StatsItem, StreamItem};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{ByteSize, ChannelConfig, EventDataReadStats, NanoRange, ScalarType, Shape};

@@ -1,8 +1,3 @@
-use chrono::{DateTime, TimeZone, Utc};
-use err::Error;
-use futures_core::Stream;
-use futures_util::StreamExt;
-use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Display, Formatter};
@@ -13,11 +8,19 @@ use std::pin::Pin;
 use std::str::FromStr;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use timeunits::*;
+
+use chrono::{DateTime, TimeZone, Utc};
+use futures_core::Stream;
+use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 use url::Url;
 
+use err::Error;
+use timeunits::*;
+
+pub mod query;
 pub mod status;
 pub mod streamext;
 
@@ -1056,4 +1059,16 @@ impl AppendToUrl for ChannelConfigQuery {
         g.append_pair("channelBackend", &self.channel.backend);
         g.append_pair("channelName", &self.channel.name);
     }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct EventQueryJsonStringFrame(pub String);
+
+/**
+Provide basic information about a channel, especially it's shape.
+*/
+#[derive(Serialize, Deserialize)]
+pub struct ChannelInfo {
+    pub shape: Shape,
+    pub msg: String,
 }

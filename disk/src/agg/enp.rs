@@ -8,6 +8,7 @@ use crate::binned::{
 };
 use crate::decode::EventValues;
 use err::Error;
+use items::{SitemtyFrameType, SubFrId};
 use netpod::log::*;
 use netpod::timeunits::{MS, SEC};
 use netpod::{x_bin_count, AggKind, NanoRange, Shape};
@@ -42,6 +43,13 @@ pub struct XBinnedScalarEvents<NTY> {
     mins: Vec<NTY>,
     maxs: Vec<NTY>,
     avgs: Vec<f32>,
+}
+
+impl<NTY> SitemtyFrameType for XBinnedScalarEvents<NTY>
+where
+    NTY: SubFrId,
+{
+    const FRAME_TYPE_ID: u32 = 0x600 + NTY::SUB;
 }
 
 impl<NTY> XBinnedScalarEvents<NTY> {
@@ -381,6 +389,13 @@ pub struct XBinnedWaveEvents<NTY> {
     avgs: Vec<Vec<f32>>,
 }
 
+impl<NTY> SitemtyFrameType for XBinnedWaveEvents<NTY>
+where
+    NTY: SubFrId,
+{
+    const FRAME_TYPE_ID: u32 = 0x900 + NTY::SUB;
+}
+
 impl<NTY> XBinnedWaveEvents<NTY> {
     pub fn empty() -> Self {
         Self {
@@ -717,6 +732,13 @@ where
 pub struct WaveEvents<NTY> {
     pub tss: Vec<u64>,
     pub vals: Vec<Vec<NTY>>,
+}
+
+impl<NTY> SitemtyFrameType for WaveEvents<NTY>
+where
+    NTY: SubFrId,
+{
+    const FRAME_TYPE_ID: u32 = 0x800 + NTY::SUB;
 }
 
 impl<NTY> WaveEvents<NTY> {

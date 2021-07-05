@@ -1,5 +1,3 @@
-use crate::agg::streams::StreamItem;
-use crate::binned::RangeCompletableItem;
 use crate::dataopen::open_files;
 use crate::dtflags::{ARRAY, BIG_ENDIAN, COMPRESSION, SHAPE};
 use bytes::{Bytes, BytesMut};
@@ -476,8 +474,6 @@ pub fn raw_concat_channel_read_stream_timebin(
         }
     }
 }
-
-pub type Sitemty<T> = Result<StreamItem<RangeCompletableItem<T>>, Error>;
 
 pub mod dtflags {
     pub const COMPRESSION: u8 = 0x80;

@@ -1,8 +1,9 @@
-use crate::agg::streams::{Appendable, StreamItem};
-use crate::binned::{MakeBytesFrame, RangeCompletableItem, RangeOverlapInfo};
+use crate::agg::streams::Appendable;
+use crate::binned::{MakeBytesFrame, RangeOverlapInfo};
 use crate::frame::makeframe::make_frame;
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
+use items::{RangeCompletableItem, SitemtyFrameType, StreamItem};
 use netpod::log::*;
 use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
@@ -14,6 +15,10 @@ pub struct MinMaxAvgScalarEventBatch {
     pub mins: Vec<f32>,
     pub maxs: Vec<f32>,
     pub avgs: Vec<f32>,
+}
+
+impl SitemtyFrameType for MinMaxAvgScalarEventBatch {
+    const FRAME_TYPE_ID: u32 = 0x300;
 }
 
 impl MinMaxAvgScalarEventBatch {

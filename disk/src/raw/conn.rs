@@ -1,100 +1,18 @@
-use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
-use crate::agg::streams::StreamItem;
-use crate::binned::{EventsNodeProcessor, NumOps, RangeCompletableItem};
+use crate::binned::{EventsNodeProcessor, NumOps};
 use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
     EventsDecodedStream, LittleEndian, NumFromBytes,
 };
 use crate::eventblobs::EventChunkerMultifile;
 use crate::eventchunker::EventChunkerConf;
-use crate::frame::inmem::InMemoryFrameAsyncReadStream;
-use crate::frame::makeframe::{decode_frame, make_frame, make_term_frame, Framable};
-use crate::raw::{EventQueryJsonStringFrame, RawEventsQuery};
-use crate::Sitemty;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use netpod::log::*;
-use netpod::{AggKind, BoolNum, ByteOrder, ByteSize, NodeConfigCached, PerfOpts, ScalarType, Shape};
+use items::{Framable, RangeCompletableItem, Sitemty, StreamItem};
+use netpod::query::RawEventsQuery;
+use netpod::{AggKind, BoolNum, ByteOrder, ByteSize, NodeConfigCached, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
-use std::io;
-use std::net::SocketAddr;
 use std::pin::Pin;
-use tokio::io::AsyncWriteExt;
-use tokio::net::tcp::OwnedWriteHalf;
-use tokio::net::TcpStream;
-use tracing::Instrument;
-
-pub async fn events_service(node_config: NodeConfigCached) -> Result<(), Error> {
-    let addr = format!("{}:{}", node_config.node.listen, node_config.node.port_raw);
-    let lis = tokio::net::TcpListener::bind(addr).await?;
-    loop {
-        match lis.accept().await {
-            Ok((stream, addr)) => {
-                taskrun::spawn(events_conn_handler(stream, addr, node_config.clone()));
-            }
-            Err(e) => Err(e)?,
-        }
-    }
-}
-
-async fn events_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: NodeConfigCached) -> Result<(), Error> {
-    //use tracing_futures::Instrument;
-    let span1 = span!(Level::INFO, "raw::raw_conn_handler");
-    let r = events_conn_handler_inner(stream, addr, &node_config)
-        .instrument(span1)
-        .await;
-    match r {
-        Ok(k) => Ok(k),
-        Err(e) => {
-            error!("raw_conn_handler sees error: {:?}", e);
-            Err(e)
-        }
-    }
-}
-
-async fn events_conn_handler_inner(
-    stream: TcpStream,
-    addr: SocketAddr,
-    node_config: &NodeConfigCached,
-) -> Result<(), Error> {
-    match events_conn_handler_inner_try(stream, addr, node_config).await {
-        Ok(_) => (),
-        Err(mut ce) => {
-            error!("events_conn_handler_inner: {:?}", ce.err);
-            if false {
-                let buf = make_frame::<Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error>>(
-                    &Err(ce.err),
-                )?;
-                match ce.netout.write_all(&buf).await {
-                    Ok(_) => (),
-                    Err(e) => match e.kind() {
-                        io::ErrorKind::BrokenPipe => {}
-                        _ => {
-                            error!("events_conn_handler_inner sees: {:?}", e);
-                            return Err(e)?;
-                        }
-                    },
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-struct ConnErr {
-    err: Error,
-    netout: OwnedWriteHalf,
-}
-
-impl<E: Into<Error>> From<(E, OwnedWriteHalf)> for ConnErr {
-    fn from((err, netout): (E, OwnedWriteHalf)) -> Self {
-        Self {
-            err: err.into(),
-            netout,
-        }
-    }
-}
 
 fn make_num_pipeline_stream_evs<NTY, END, EVS, ENP>(
     event_value_shape: EVS,
@@ -206,75 +124,38 @@ macro_rules! pipe1 {
     };
 }
 
-async fn events_conn_handler_inner_try(
-    stream: TcpStream,
-    addr: SocketAddr,
+pub async fn make_event_pipe(
+    evq: &RawEventsQuery,
     node_config: &NodeConfigCached,
-) -> Result<(), ConnErr> {
-    let _ = addr;
-    let (netin, mut netout) = stream.into_split();
-    let perf_opts = PerfOpts { inmem_bufcap: 512 };
-    let mut h = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
-    let mut frames = vec![];
-    while let Some(k) = h
-        .next()
-        .instrument(span!(Level::INFO, "raw_conn_handler  INPUT STREAM READ"))
-        .await
-    {
-        match k {
-            Ok(StreamItem::DataItem(item)) => {
-                frames.push(item);
-            }
-            Ok(_) => {}
-            Err(e) => {
-                return Err((e, netout))?;
-            }
-        }
-    }
-    if frames.len() != 1 {
-        error!("missing command frame");
-        return Err((Error::with_msg("missing command frame"), netout))?;
-    }
-    let qitem: EventQueryJsonStringFrame = match decode_frame(&frames[0]) {
-        Ok(k) => k,
-        Err(e) => return Err((e, netout).into()),
-    };
-    let res: Result<RawEventsQuery, _> = serde_json::from_str(&qitem.0);
-    let evq = match res {
-        Ok(k) => k,
-        Err(e) => {
-            error!("json parse error: {:?}", e);
-            return Err((Error::with_msg("json parse error"), netout))?;
-        }
-    };
-    info!("---------------------------------------------------\nevq {:?}", evq);
+) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error> {
     match dbconn::channel_exists(&evq.channel, &node_config).await {
         Ok(_) => (),
-        Err(e) => return Err((e, netout))?,
+        Err(e) => return Err(e)?,
     }
     let range = &evq.range;
     let channel_config = match read_local_config(&evq.channel, &node_config.node).await {
         Ok(k) => k,
         Err(e) => {
             if e.msg().contains("ErrorKind::NotFound") {
-                return Ok(());
+                let s = futures_util::stream::empty();
+                return Ok(Box::pin(s));
             } else {
-                return Err((e, netout))?;
+                return Err(e)?;
             }
         }
     };
     let entry_res = match extract_matching_config_entry(range, &channel_config) {
         Ok(k) => k,
-        Err(e) => return Err((e, netout))?,
+        Err(e) => return Err(e)?,
     };
     let entry = match entry_res {
-        MatchingConfigEntry::None => return Err((Error::with_msg("no config entry found"), netout))?,
-        MatchingConfigEntry::Multiple => return Err((Error::with_msg("multiple config entries found"), netout))?,
+        MatchingConfigEntry::None => return Err(Error::with_msg("no config entry found"))?,
+        MatchingConfigEntry::Multiple => return Err(Error::with_msg("multiple config entries found"))?,
         MatchingConfigEntry::Entry(entry) => entry,
     };
     let shape = match entry.to_shape() {
         Ok(k) => k,
-        Err(e) => return Err((e, netout))?,
+        Err(e) => return Err(e)?,
     };
     let channel_config = netpod::ChannelConfig {
         channel: evq.channel.clone(),
@@ -296,28 +177,12 @@ async fn events_conn_handler_inner_try(
         event_chunker_conf,
     );
     let shape = entry.to_shape().unwrap();
-    let mut p1 = pipe1!(entry.scalar_type, entry.byte_order, shape, evq.agg_kind, event_blobs);
-    while let Some(item) = p1.next().await {
-        //info!("conn.rs  encode frame typeid {:x}", item.typeid());
-        let item = item.make_frame();
-        match item {
-            Ok(buf) => match netout.write_all(&buf).await {
-                Ok(_) => {}
-                Err(e) => return Err((e, netout))?,
-            },
-            Err(e) => {
-                return Err((e, netout))?;
-            }
-        }
-    }
-    let buf = make_term_frame();
-    match netout.write_all(&buf).await {
-        Ok(_) => (),
-        Err(e) => return Err((e, netout))?,
-    }
-    match netout.flush().await {
-        Ok(_) => (),
-        Err(e) => return Err((e, netout))?,
-    }
-    Ok(())
+    let pipe = pipe1!(
+        entry.scalar_type,
+        entry.byte_order,
+        shape,
+        evq.agg_kind.clone(),
+        event_blobs
+    );
+    Ok(pipe)
 }

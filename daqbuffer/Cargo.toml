@@ -5,7 +5,7 @@ authors = ["Dominik Werder <dominik.werder@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-tokio = { version = "1.4.0", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
+tokio = { version = "1.7.1", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
 hyper = "0.14"
 http = "0.2"
 tracing = "0.1.25"

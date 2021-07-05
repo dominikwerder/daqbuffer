@@ -1,20 +1,6 @@
 use crate::binned::WithLen;
-use crate::streamlog::LogItem;
 use err::Error;
-use netpod::EventDataReadStats;
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum StatsItem {
-    EventDataReadStats(EventDataReadStats),
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum StreamItem<T> {
-    DataItem(T),
-    Log(LogItem),
-    Stats(StatsItem),
-}
+use serde::Serialize;
 
 pub trait Collector: Send + Unpin + WithLen {
     type Input: Collectable;

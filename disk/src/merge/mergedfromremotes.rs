@@ -1,13 +1,13 @@
 use crate::agg::streams::Appendable;
 use crate::binned::{EventsNodeProcessor, PushableIndex};
-use crate::frame::makeframe::FrameType;
 use crate::merge::MergedStream;
-use crate::raw::{x_processed_stream_from_node, RawEventsQuery};
-use crate::Sitemty;
+use crate::raw::client::x_processed_stream_from_node;
 use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
+use items::{FrameType, Sitemty};
 use netpod::log::*;
+use netpod::query::RawEventsQuery;
 use netpod::{Cluster, PerfOpts};
 use std::future::Future;
 use std::pin::Pin;

@@ -2,23 +2,22 @@ use crate::agg::binnedt::{TBinnerStream, TimeBinnableType, TimeBinnableTypeAggre
 use crate::agg::enp::ts_offs_from_abs;
 use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
-use crate::agg::streams::{Appendable, Collectable, Collector, StreamItem, ToJsonBytes, ToJsonResult};
+use crate::agg::streams::{Appendable, Collectable, Collector, ToJsonBytes, ToJsonResult};
 use crate::agg::{Fits, FitsInside};
 use crate::binned::binnedfrompbv::BinnedFromPreBinned;
 use crate::binned::query::BinnedQuery;
 use crate::binnedstream::BoxedStream;
 use crate::channelexec::{channel_exec, collect_plain_events_json, ChannelExecFunction};
 use crate::decode::{Endianness, EventValueFromBytes, EventValueShape, EventValues, NumFromBytes};
-use crate::frame::makeframe::{Framable, FrameType, SubFrId};
 use crate::merge::mergedfromremotes::MergedFromRemotes;
-use crate::raw::RawEventsQuery;
-use crate::Sitemty;
 use bytes::Bytes;
 use chrono::{TimeZone, Utc};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use items::{Framable, FrameType, RangeCompletableItem, Sitemty, SitemtyFrameType, StreamItem, SubFrId};
 use netpod::log::*;
+use netpod::query::RawEventsQuery;
 use netpod::timeunits::SEC;
 use netpod::{
     x_bin_count, AggKind, BinnedRange, BoolNum, NanoRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator,
@@ -686,6 +685,13 @@ pub struct MinMaxAvgBins<NTY> {
     pub avgs: Vec<Option<f32>>,
 }
 
+impl<NTY> SitemtyFrameType for MinMaxAvgBins<NTY>
+where
+    NTY: SubFrId,
+{
+    const FRAME_TYPE_ID: u32 = 0x700 + NTY::SUB;
+}
+
 impl<NTY> fmt::Debug for MinMaxAvgBins<NTY>
 where
     NTY: fmt::Debug,
@@ -1162,12 +1168,6 @@ where
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub enum RangeCompletableItem<T> {
-    RangeComplete,
-    Data(T),
-}
-
 #[derive(Serialize, Deserialize)]
 pub struct MinMaxAvgWaveBins<NTY> {
     pub ts1s: Vec<u64>,
@@ -1176,6 +1176,13 @@ pub struct MinMaxAvgWaveBins<NTY> {
     pub mins: Vec<Option<Vec<NTY>>>,
     pub maxs: Vec<Option<Vec<NTY>>>,
     pub avgs: Vec<Option<Vec<f32>>>,
+}
+
+impl<NTY> SitemtyFrameType for MinMaxAvgWaveBins<NTY>
+where
+    NTY: SubFrId,
+{
+    const FRAME_TYPE_ID: u32 = 0xa00 + NTY::SUB;
 }
 
 impl<NTY> fmt::Debug for MinMaxAvgWaveBins<NTY>

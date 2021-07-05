@@ -1,15 +1,13 @@
 use crate::agg::binnedt::{TBinnerStream, TimeBinnableType};
-use crate::agg::streams::StreamItem;
 use crate::binned::query::{CacheUsage, PreBinnedQuery};
-use crate::binned::RangeCompletableItem;
 use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
-use crate::frame::makeframe::{decode_frame, FrameType};
-use crate::Sitemty;
+use crate::frame::makeframe::decode_frame;
 use err::Error;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use http::{StatusCode, Uri};
+use items::{FrameType, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::log::*;
 use netpod::{
     x_bin_count, AggKind, AppendToUrl, BinnedRange, ByteSize, Channel, NodeConfigCached, PerfOpts,

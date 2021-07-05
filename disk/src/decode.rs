@@ -1,16 +1,17 @@
 use crate::agg::binnedt::TimeBinnableType;
 use crate::agg::enp::{ts_offs_from_abs, Identity, WaveNBinner, WavePlainProc, WaveXBinner};
-use crate::agg::streams::{Appendable, Collectable, Collector, StreamItem};
+use crate::agg::streams::{Appendable, Collectable, Collector};
 use crate::agg::{Fits, FitsInside};
 use crate::binned::{
     Bool, EventValuesAggregator, EventsNodeProcessor, FilterFittingInside, MinMaxAvgBins, NumOps, PushableIndex,
-    RangeCompletableItem, RangeOverlapInfo, ReadPbv, ReadableFromFile, WithLen, WithTimestamps,
+    RangeOverlapInfo, ReadPbv, ReadableFromFile, WithLen, WithTimestamps,
 };
 use crate::eventblobs::EventChunkerMultifile;
 use crate::eventchunker::EventFull;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use items::{RangeCompletableItem, SitemtyFrameType, StreamItem};
 use netpod::{BoolNum, NanoRange};
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
@@ -188,6 +189,13 @@ where
 pub struct EventValues<VT> {
     pub tss: Vec<u64>,
     pub values: Vec<VT>,
+}
+
+impl<NTY> SitemtyFrameType for EventValues<NTY>
+where
+    NTY: NumOps,
+{
+    const FRAME_TYPE_ID: u32 = 0x500 + NTY::SUB;
 }
 
 impl<VT> EventValues<VT> {

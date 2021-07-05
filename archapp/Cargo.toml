@@ -5,22 +5,24 @@ authors = ["Dominik Werder <dominik.werder@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-tokio = { version = "1.4.0", features = ["io-util", "net", "time", "sync", "fs"] }
-tracing = "0.1.25"
-futures-core = "0.3.14"
-futures-util = "0.3.14"
+tokio = { version = "1.7.1", features = ["io-util", "net", "time", "sync", "fs"] }
+tracing = "0.1.26"
+futures-core = "0.3.15"
+futures-util = "0.3.15"
 bytes = "1.0.1"
-serde = "1.0"
-serde_derive = "1.0"
-serde_json = "1.0"
-chrono = "0.4"
+serde = "1.0.126"
+serde_derive = "1.0.126"
+serde_json = "1.0.64"
+chrono = "0.4.19"
 protobuf = "2.24.1"
 async-channel = "1.6"
+archapp_xc = { path = "../archapp_xc" }
 err = { path = "../err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }
 dbconn = { path = "../dbconn" }
+items = { path = "../items" }
 
 [features]
-default = []
+default = ["devread"]
 devread = []

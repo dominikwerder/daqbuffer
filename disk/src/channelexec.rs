@@ -1,21 +1,20 @@
 use crate::agg::binnedt::TimeBinnableType;
 use crate::agg::enp::Identity;
-use crate::agg::streams::{Collectable, Collector, StreamItem};
-use crate::binned::{EventsNodeProcessor, NumOps, PushableIndex, RangeCompletableItem};
+use crate::agg::streams::{Collectable, Collector};
+use crate::binned::{EventsNodeProcessor, NumOps, PushableIndex};
 use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValues, EventValuesDim0Case, EventValuesDim1Case,
     LittleEndian, NumFromBytes,
 };
-use crate::frame::makeframe::{Framable, FrameType};
 use crate::merge::mergedfromremotes::MergedFromRemotes;
-use crate::raw::RawEventsQuery;
-use crate::Sitemty;
 use bytes::Bytes;
 use err::Error;
 use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::StreamExt;
+use items::{Framable, FrameType, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::log::*;
+use netpod::query::RawEventsQuery;
 use netpod::{AggKind, BoolNum, ByteOrder, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use serde::de::DeserializeOwned;

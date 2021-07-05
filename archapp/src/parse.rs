@@ -1,4 +1,5 @@
-use crate::{unescape_archapp_msg, ItemSer};
+use crate::unescape_archapp_msg;
+use archapp_xc::*;
 use async_channel::{bounded, Receiver};
 use err::Error;
 use netpod::log::*;
@@ -16,6 +17,9 @@ pub struct EpicsEventPayloadInfo {
     headers: Vec<(String, String)>,
     year: i32,
     pvname: String,
+    datatype: String,
+    ts0: u32,
+    val0: f32,
 }
 
 async fn read_pb_file(path: PathBuf) -> Result<EpicsEventPayloadInfo, Error> {
@@ -35,6 +39,15 @@ async fn read_pb_file(path: PathBuf) -> Result<EpicsEventPayloadInfo, Error> {
         }
     }
     let mut j1 = 0;
+    let mut payload_info = crate::generated::EPICSEvent::PayloadInfo::new();
+    let mut z = EpicsEventPayloadInfo {
+        pvname: String::new(),
+        headers: vec![],
+        year: 0,
+        datatype: String::new(),
+        ts0: 0,
+        val0: 0.0,
+    };
     loop {
         let mut i2 = usize::MAX;
         for (i1, &k) in buf[j1..].iter().enumerate() {
@@ -47,10 +60,10 @@ async fn read_pb_file(path: PathBuf) -> Result<EpicsEventPayloadInfo, Error> {
             //info!("got NL  {} .. {}", j1, i2);
             let m = unescape_archapp_msg(&buf[j1..i2])?;
             if j1 == 0 {
-                let payload_info = crate::generated::EPICSEvent::PayloadInfo::parse_from_bytes(&m)
+                payload_info = crate::generated::EPICSEvent::PayloadInfo::parse_from_bytes(&m)
                     .map_err(|_| Error::with_msg("can not parse PayloadInfo"))?;
                 //info!("got payload_info: {:?}", payload_info);
-                let z = EpicsEventPayloadInfo {
+                z = EpicsEventPayloadInfo {
                     headers: payload_info
                         .get_headers()
                         .iter()
@@ -58,12 +71,57 @@ async fn read_pb_file(path: PathBuf) -> Result<EpicsEventPayloadInfo, Error> {
                         .collect(),
                     year: payload_info.get_year(),
                     pvname: payload_info.get_pvname().into(),
+                    datatype: String::new(),
+                    ts0: 0,
+                    val0: 0.0,
                 };
-                return Ok(z);
             } else {
-                let _scalar_double = crate::generated::EPICSEvent::ScalarDouble::parse_from_bytes(&m)
-                    .map_err(|_| Error::with_msg("can not parse EPICSEvent::ScalarDouble"))?;
-                //info!("got scalar_double: {:?}", scalar_double);
+                let ft = payload_info.get_field_type();
+                {
+                    use crate::generated::EPICSEvent::PayloadType::*;
+                    let (ts, val) = match ft {
+                        SCALAR_BYTE => {
+                            let d = crate::generated::EPICSEvent::ScalarByte::parse_from_bytes(&m)
+                                .map_err(|_| Error::with_msg("can not parse EPICSEvent::ScalarByte"))?;
+                            (d.get_secondsintoyear(), d.get_val()[0] as f32)
+                        }
+                        SCALAR_SHORT => {
+                            let d = crate::generated::EPICSEvent::ScalarShort::parse_from_bytes(&m)
+                                .map_err(|_| Error::with_msg("can not parse EPICSEvent::ScalarShort"))?;
+                            (d.get_secondsintoyear(), d.get_val() as f32)
+                        }
+                        SCALAR_INT => {
+                            let d = crate::generated::EPICSEvent::ScalarInt::parse_from_bytes(&m)
+                                .map_err(|_| Error::with_msg("can not parse EPICSEvent::ScalarInt"))?;
+                            (d.get_secondsintoyear(), d.get_val() as f32)
+                        }
+                        SCALAR_FLOAT => {
+                            let d = crate::generated::EPICSEvent::ScalarFloat::parse_from_bytes(&m)
+                                .map_err(|_| Error::with_msg("can not parse EPICSEvent::ScalarFloat"))?;
+                            (d.get_secondsintoyear(), d.get_val() as f32)
+                        }
+                        SCALAR_DOUBLE => {
+                            let d = crate::generated::EPICSEvent::ScalarDouble::parse_from_bytes(&m)
+                                .map_err(|_| Error::with_msg("can not parse EPICSEvent::ScalarDouble"))?;
+                            (d.get_secondsintoyear(), d.get_val() as f32)
+                        }
+                        WAVEFORM_FLOAT => {
+                            let d = crate::generated::EPICSEvent::VectorFloat::parse_from_bytes(&m)
+                                .map_err(|_| Error::with_msg("can not parse EPICSEvent::VectorFloat"))?;
+                            (d.get_secondsintoyear(), d.get_val()[0] as f32)
+                        }
+                        WAVEFORM_DOUBLE => {
+                            let d = crate::generated::EPICSEvent::VectorDouble::parse_from_bytes(&m)
+                                .map_err(|_| Error::with_msg("can not parse EPICSEvent::VectorDouble"))?;
+                            (d.get_secondsintoyear(), d.get_val()[0] as f32)
+                        }
+                        _ => (0, 0.0),
+                    };
+                    z.datatype = format!("{:?}", ft);
+                    z.ts0 = ts;
+                    z.val0 = val;
+                    return Ok(z);
+                }
             }
         } else {
             //info!("no more packets");
@@ -71,12 +129,10 @@ async fn read_pb_file(path: PathBuf) -> Result<EpicsEventPayloadInfo, Error> {
         }
         j1 = i2 + 1;
     }
-    Err(Error::with_msg(format!("no header entry found in file")))
+    Err(Error::with_msg(format!("no data found in file")))
 }
 
-type RT1 = Box<dyn ItemSer + Send>;
-
-pub async fn scan_files(
+pub async fn scan_files_inner(
     pairs: BTreeMap<String, String>,
     node_config: NodeConfigCached,
 ) -> Result<Receiver<Result<RT1, Error>>, Error> {
@@ -120,7 +176,7 @@ pub async fn scan_files(
                         }
                     }
                 } else if meta.is_file() {
-                    tx.send(Ok(Box::new(path.clone()) as RT1)).await?;
+                    //tx.send(Ok(Box::new(path.clone()) as RT1)).await?;
                     if path
                         .to_str()
                         .ok_or_else(|| Error::with_msg("invalid path string"))?
@@ -143,7 +199,10 @@ pub async fn scan_files(
                             ))
                             .await?;
                         } else {
-                            dbconn::insert_channel(packet.pvname.clone(), ndi.facility, &dbc).await?;
+                            if false {
+                                dbconn::insert_channel(packet.pvname.clone(), ndi.facility, &dbc).await?;
+                            }
+                            tx.send(Ok(Box::new(serde_json::to_value(&packet)?) as RT1)).await?;
                         }
                     }
                 }

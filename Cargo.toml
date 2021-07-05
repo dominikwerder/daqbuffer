@@ -1,9 +1,10 @@
 [workspace]
-members = ["daqbuffer", "h5out", "archapp"]
+members = ["daqbuffer", "h5out", "archapp", "archapp_xc", "archapp_wrap", "items", "nodenet"]
 
 [profile.release]
 debug = 1
-opt-level = 2
+opt-level = 1
 #overflow-checks = true
 #debug-assertions = true
-lto = false
+lto = "off"
+codegen-units = 40

@@ -4,6 +4,7 @@ rustflags = [
     "-C", "force-unwind-tables=yes",
     "-C", "embed-bitcode=no",
     "-C", "relocation-model=pic",
+    #"-C", "inline-threshold=1000",
     #"-Z", "time-passes=yes",
     #"-Z", "time-llvm-passes=yes",
 ]

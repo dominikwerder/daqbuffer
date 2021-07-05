@@ -5,9 +5,9 @@ use crate::agg::{Fits, FitsInside};
 use crate::binned::{
     Bool, FilterFittingInside, IsoDateTime, NumOps, RangeOverlapInfo, ReadPbv, ReadableFromFile, TimeBins, WithLen,
 };
-use crate::Sitemty;
 use chrono::{TimeZone, Utc};
 use err::Error;
+use items::{Sitemty, SitemtyFrameType, SubFrId};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::NanoRange;
@@ -25,6 +25,13 @@ pub struct MinMaxAvgDim1Bins<NTY> {
     pub mins: Vec<Option<Vec<NTY>>>,
     pub maxs: Vec<Option<Vec<NTY>>>,
     pub avgs: Vec<Option<Vec<f32>>>,
+}
+
+impl<NTY> SitemtyFrameType for MinMaxAvgDim1Bins<NTY>
+where
+    NTY: SubFrId,
+{
+    const FRAME_TYPE_ID: u32 = 0xb00 + NTY::SUB;
 }
 
 impl<NTY> fmt::Debug for MinMaxAvgDim1Bins<NTY>

@@ -1,9 +1,10 @@
-use crate::agg::streams::{Appendable, StreamItem, ToJsonBytes};
+use crate::agg::streams::{Appendable, ToJsonBytes};
 use crate::agg::{Fits, FitsInside};
-use crate::binned::{MakeBytesFrame, RangeCompletableItem};
+use crate::binned::MakeBytesFrame;
 use crate::frame::makeframe::make_frame;
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
+use items::{RangeCompletableItem, SitemtyFrameType, StreamItem};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::NanoRange;
@@ -19,6 +20,10 @@ pub struct MinMaxAvgScalarBinBatch {
     pub mins: Vec<f32>,
     pub maxs: Vec<f32>,
     pub avgs: Vec<f32>,
+}
+
+impl SitemtyFrameType for MinMaxAvgScalarBinBatch {
+    const FRAME_TYPE_ID: u32 = 0x200;
 }
 
 impl MinMaxAvgScalarBinBatch {

@@ -1,5 +1,4 @@
 use err::Error;
-use serde::Serialize;
 
 #[cfg(feature = "devread")]
 pub mod generated;
@@ -11,25 +10,12 @@ pub mod parse;
 pub mod parsestub;
 #[cfg(not(feature = "devread"))]
 pub use parsestub as parse;
+pub mod events;
 #[cfg(feature = "devread")]
 #[cfg(test)]
 pub mod test;
 
-pub trait ItemSer {
-    fn serialize(&self) -> Result<Vec<u8>, Error>;
-}
-
-impl<T> ItemSer for T
-where
-    T: Serialize,
-{
-    fn serialize(&self) -> Result<Vec<u8>, Error> {
-        let u = serde_json::to_vec(self)?;
-        Ok(u)
-    }
-}
-
-pub fn unescape_archapp_msg(inp: &[u8]) -> Result<Vec<u8>, Error> {
+fn unescape_archapp_msg(inp: &[u8]) -> Result<Vec<u8>, Error> {
     let mut ret = Vec::with_capacity(inp.len() * 5 / 4);
     let mut esc = false;
     for &k in inp.iter() {

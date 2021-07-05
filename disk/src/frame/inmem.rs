@@ -1,9 +1,9 @@
-use crate::agg::streams::StreamItem;
-use crate::frame::makeframe::{INMEM_FRAME_FOOT, INMEM_FRAME_HEAD, INMEM_FRAME_MAGIC};
 use bytes::{BufMut, Bytes, BytesMut};
 use err::Error;
 use futures_core::Stream;
 use futures_util::pin_mut;
+use items::StreamItem;
+use items::{INMEM_FRAME_FOOT, INMEM_FRAME_HEAD, INMEM_FRAME_MAGIC};
 use netpod::log::*;
 use std::pin::Pin;
 use std::task::{Context, Poll};

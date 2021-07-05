@@ -1,15 +1,13 @@
 use chrono::{DateTime, Utc};
 use disk::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
-use disk::agg::streams::StreamItem;
 use disk::binned::query::{BinnedQuery, CacheUsage};
-use disk::binned::RangeCompletableItem;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
-use disk::frame::makeframe::FrameType;
 use disk::streamlog::Streamlog;
 use err::Error;
 use futures_util::TryStreamExt;
 use http::StatusCode;
 use hyper::Body;
+use items::{FrameType, RangeCompletableItem, StreamItem};
 use netpod::log::*;
 use netpod::{AggKind, AppendToUrl, ByteSize, Channel, HostPort, NanoRange, PerfOpts, APP_OCTET};
 use url::Url;

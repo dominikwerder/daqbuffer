@@ -3,7 +3,6 @@ use bytes::Bytes;
 use disk::binned::prebinned::pre_binned_bytes_for_http;
 use disk::binned::query::{BinnedQuery, PreBinnedQuery};
 use disk::events::{PlainEventsBinaryQuery, PlainEventsJsonQuery};
-use disk::raw::conn::events_service;
 use err::Error;
 use future::Future;
 use futures_core::Stream;
@@ -13,7 +12,11 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
 use netpod::log::*;
-use netpod::{get_url_query_pairs, AggKind, Channel, FromUrl, NodeConfigCached, APP_JSON, APP_JSON_LINES, APP_OCTET};
+use netpod::{
+    channel_from_pairs, get_url_query_pairs, AggKind, Channel, FromUrl, NodeConfigCached, APP_JSON, APP_JSON_LINES,
+    APP_OCTET,
+};
+use nodenet::conn::events_service;
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
 use serde::{Deserialize, Serialize};
@@ -220,6 +223,12 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
     } else if path == "/api/4/archapp/files" {
         if req.method() == Method::GET {
             Ok(archapp_scan_files(req, &node_config).await?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    } else if path == "/api/4/archapp/channel/info" {
+        if req.method() == Method::GET {
+            Ok(archapp_channel_info(req, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -634,7 +643,7 @@ pub async fn ca_connect_1(req: Request<Body>, node_config: &NodeConfigCached) ->
 pub async fn archapp_scan_files(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let url = Url::parse(&format!("dummy:{}", req.uri()))?;
     let pairs = get_url_query_pairs(&url);
-    let res = archapp::parse::scan_files(pairs, node_config.clone()).await?;
+    let res = archapp_wrap::scan_files(pairs, node_config.clone()).await?;
     let ret = response(StatusCode::OK)
         .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
         .body(Body::wrap_stream(res.map(|k| match k {
@@ -653,5 +662,17 @@ pub async fn archapp_scan_files(req: Request<Body>, node_config: &NodeConfigCach
                 Err(e) => Err(e.into()),
             },
         })))?;
+    Ok(ret)
+}
+
+pub async fn archapp_channel_info(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+    let pairs = get_url_query_pairs(&url);
+    let channel = channel_from_pairs(&pairs)?;
+    let res = archapp_wrap::channel_info(&channel, node_config).await?;
+    let buf = serde_json::to_vec(&res)?;
+    let ret = response(StatusCode::OK)
+        .header(http::header::CONTENT_TYPE, APP_JSON)
+        .body(Body::from(buf))?;
     Ok(ret)
 }
