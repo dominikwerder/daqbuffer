@@ -1,9 +1,10 @@
+use crate::parse::PbFileReader;
 use err::Error;
 use futures_core::Stream;
 use items::Framable;
-use netpod::log::*;
 use netpod::query::RawEventsQuery;
 use netpod::{ArchiverAppliance, Channel, ChannelInfo, NodeConfigCached, Shape};
+use serde_json::Value as JsonValue;
 use std::pin::Pin;
 
 pub async fn make_event_pipe(
@@ -24,11 +25,24 @@ pub async fn channel_info(channel: &Channel, node_config: &NodeConfigCached) -> 
         .unwrap()
         .data_base_path
         .clone();
-    let path2 = a.iter().fold(path1, |a, &x| a.join(x));
-    info!("path2: {}", path2.to_str().unwrap());
+    let path2 = a.iter().take(a.len() - 1).fold(path1, |a, &x| a.join(x));
+    let mut msgs = vec![];
+    msgs.push(format!("a: {:?}", a));
+    msgs.push(format!("path2: {}", path2.to_string_lossy()));
+    let mut rd = tokio::fs::read_dir(&path2).await?;
+    while let Some(de) = rd.next_entry().await? {
+        let s = de.file_name().to_string_lossy().into_owned();
+        if s.starts_with(a.last().unwrap()) && s.ends_with(".pb") {
+            msgs.push(s);
+            let f1 = tokio::fs::File::open(de.path()).await?;
+            let mut pbr = PbFileReader::new(f1).await;
+            pbr.read_header().await?;
+            msgs.push(format!("got header {}", pbr.channel_name()));
+        }
+    }
     let ret = ChannelInfo {
         shape: Shape::Scalar,
-        msg: format!("{:?}  path2: {:?}", a, path2),
+        msg: JsonValue::Array(msgs.into_iter().map(JsonValue::String).collect()),
     };
     Ok(ret)
 }

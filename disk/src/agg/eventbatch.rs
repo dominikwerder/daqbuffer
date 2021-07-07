@@ -1,9 +1,5 @@
-use crate::agg::streams::Appendable;
-use crate::binned::{MakeBytesFrame, RangeOverlapInfo};
-use crate::frame::makeframe::make_frame;
 use bytes::{BufMut, Bytes, BytesMut};
-use err::Error;
-use items::{RangeCompletableItem, SitemtyFrameType, StreamItem};
+use items::{Appendable, RangeOverlapInfo, SitemtyFrameType};
 use netpod::log::*;
 use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
@@ -128,11 +124,13 @@ impl MinMaxAvgScalarEventBatch {
     }
 }
 
+/*
+TODO remove?
 impl MakeBytesFrame for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error> {
     fn make_bytes_frame(&self) -> Result<Bytes, Error> {
         Ok(make_frame(self)?.freeze())
     }
-}
+}*/
 
 impl RangeOverlapInfo for MinMaxAvgScalarEventBatch {
     fn ends_before(&self, range: NanoRange) -> bool {

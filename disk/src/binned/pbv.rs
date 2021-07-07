@@ -1,8 +1,7 @@
-use crate::agg::binnedt::{TBinnerStream, TimeBinnableType};
-use crate::agg::streams::Appendable;
+use crate::agg::binnedt::TBinnerStream;
 use crate::binned::binnedfrompbv::FetchedPreBinned;
 use crate::binned::query::{CacheUsage, PreBinnedQuery};
-use crate::binned::{EventsNodeProcessor, NumOps, PushableIndex, ReadableFromFile, WithLen};
+use crate::binned::WithLen;
 use crate::cache::{write_pb_cache_min_max_avg_scalar, CacheFileDesc, WrittenPbCache};
 use crate::decode::{Endianness, EventValueFromBytes, EventValueShape, NumFromBytes};
 use crate::merge::mergedfromremotes::MergedFromRemotes;
@@ -10,7 +9,11 @@ use crate::streamlog::Streamlog;
 use err::Error;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
-use items::{FrameType, RangeCompletableItem, Sitemty, StreamItem};
+use items::numops::NumOps;
+use items::{
+    Appendable, EventsNodeProcessor, FrameType, PushableIndex, RangeCompletableItem, ReadableFromFile, Sitemty,
+    StreamItem, TimeBinnableType,
+};
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
 use netpod::{

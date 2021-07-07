@@ -5,13 +5,12 @@ Delivers event data (not yet time-binned) from local storage and provides client
 to request such data from nodes.
  */
 
-use crate::binned::EventsNodeProcessor;
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
-use crate::frame::makeframe::{make_frame, make_term_frame};
 use crate::raw::eventsfromframes::EventsFromFrames;
 use err::Error;
 use futures_core::Stream;
-use items::{FrameType, RangeCompletableItem, Sitemty, StreamItem};
+use items::frame::{make_frame, make_term_frame};
+use items::{EventsNodeProcessor, FrameType, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::query::RawEventsQuery;
 use netpod::{EventQueryJsonStringFrame, Node, PerfOpts};
 use std::pin::Pin;

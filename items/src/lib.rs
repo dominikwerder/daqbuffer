@@ -1,9 +1,35 @@
+use crate::eventvalues::EventValues;
+use crate::numops::BoolNum;
 use bytes::BytesMut;
+use chrono::{TimeZone, Utc};
 use err::Error;
-use netpod::{log::Level, BoolNum, EventDataReadStats, EventQueryJsonStringFrame};
-use serde::de::{self, Visitor};
-use serde::{Deserialize, Serialize};
+use netpod::timeunits::{MS, SEC};
+use netpod::{log::Level, AggKind, EventDataReadStats, EventQueryJsonStringFrame, NanoRange, Shape};
+use serde::de::{self, DeserializeOwned, Visitor};
+use serde::{Deserialize, Serialize, Serializer};
 use std::fmt;
+use std::future::Future;
+use std::marker::PhantomData;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use tokio::fs::File;
+use tokio::io::{AsyncRead, ReadBuf};
+
+pub mod eventvalues;
+pub mod frame;
+pub mod inmem;
+pub mod minmaxavgbins;
+pub mod minmaxavgdim1bins;
+pub mod minmaxavgwavebins;
+pub mod numops;
+pub mod streams;
+pub mod waveevents;
+pub mod xbinnedscalarevents;
+pub mod xbinnedwaveevents;
+
+pub fn bool_is_false(j: &bool) -> bool {
+    *j == false
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum RangeCompletableItem<T> {
@@ -313,3 +339,175 @@ where
     }
 }
 */
+
+pub trait EventsNodeProcessor: Send + Unpin {
+    type Input;
+    type Output: Send + Unpin + DeserializeOwned + WithTimestamps + TimeBinnableType;
+    fn create(shape: Shape, agg_kind: AggKind) -> Self;
+    fn process(&self, inp: EventValues<Self::Input>) -> Self::Output;
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct IsoDateTime(chrono::DateTime<Utc>);
+
+impl Serialize for IsoDateTime {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.0.format("%Y-%m-%dT%H:%M:%S.%3fZ").to_string())
+    }
+}
+
+pub fn make_iso_ts(tss: &[u64]) -> Vec<IsoDateTime> {
+    tss.iter()
+        .map(|&k| IsoDateTime(Utc.timestamp_nanos(k as i64)))
+        .collect()
+}
+
+pub enum Fits {
+    Empty,
+    Lower,
+    Greater,
+    Inside,
+    PartlyLower,
+    PartlyGreater,
+    PartlyLowerAndGreater,
+}
+
+pub trait WithLen {
+    fn len(&self) -> usize;
+}
+
+pub trait WithTimestamps {
+    fn ts(&self, ix: usize) -> u64;
+}
+
+pub trait RangeOverlapInfo {
+    fn ends_before(&self, range: NanoRange) -> bool;
+    fn ends_after(&self, range: NanoRange) -> bool;
+    fn starts_after(&self, range: NanoRange) -> bool;
+}
+
+pub trait FitsInside {
+    fn fits_inside(&self, range: NanoRange) -> Fits;
+}
+
+pub trait FilterFittingInside: Sized {
+    fn filter_fitting_inside(self, fit_range: NanoRange) -> Option<Self>;
+}
+
+pub trait PushableIndex {
+    // TODO check whether it makes sense to allow a move out of src. Or use a deque for src type and pop?
+    fn push_index(&mut self, src: &Self, ix: usize);
+}
+
+pub trait Appendable: WithLen {
+    fn empty() -> Self;
+    fn append(&mut self, src: &Self);
+}
+
+pub trait TimeBins: Send + Unpin + WithLen + Appendable + FilterFittingInside {
+    fn ts1s(&self) -> &Vec<u64>;
+    fn ts2s(&self) -> &Vec<u64>;
+}
+
+pub trait TimeBinnableType:
+    Send + Unpin + RangeOverlapInfo + FilterFittingInside + Appendable + Serialize + ReadableFromFile
+{
+    type Output: TimeBinnableType;
+    type Aggregator: TimeBinnableTypeAggregator<Input = Self, Output = Self::Output> + Send + Unpin;
+    fn aggregator(range: NanoRange, bin_count: usize) -> Self::Aggregator;
+}
+
+// TODO should get I/O and tokio dependence out of this crate
+pub trait ReadableFromFile: Sized {
+    fn read_from_file(file: File) -> Result<ReadPbv<Self>, Error>;
+    // TODO should not need this:
+    fn from_buf(buf: &[u8]) -> Result<Self, Error>;
+}
+
+// TODO should get I/O and tokio dependence out of this crate
+pub struct ReadPbv<T>
+where
+    T: ReadableFromFile,
+{
+    buf: Vec<u8>,
+    all: Vec<u8>,
+    file: Option<File>,
+    _m1: PhantomData<T>,
+}
+
+impl<T> ReadPbv<T>
+where
+    T: ReadableFromFile,
+{
+    fn new(file: File) -> Self {
+        Self {
+            // TODO make buffer size a parameter:
+            buf: vec![0; 1024 * 32],
+            all: vec![],
+            file: Some(file),
+            _m1: PhantomData,
+        }
+    }
+}
+
+impl<T> Future for ReadPbv<T>
+where
+    T: ReadableFromFile + Unpin,
+{
+    type Output = Result<StreamItem<RangeCompletableItem<T>>, Error>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        use Poll::*;
+        let mut buf = std::mem::replace(&mut self.buf, Vec::new());
+        let ret = 'outer: loop {
+            let mut dst = ReadBuf::new(&mut buf);
+            if dst.remaining() == 0 || dst.capacity() == 0 {
+                break Ready(Err(Error::with_msg("bad read buffer")));
+            }
+            let fp = self.file.as_mut().unwrap();
+            let f = Pin::new(fp);
+            break match File::poll_read(f, cx, &mut dst) {
+                Ready(res) => match res {
+                    Ok(_) => {
+                        if dst.filled().len() > 0 {
+                            self.all.extend_from_slice(dst.filled());
+                            continue 'outer;
+                        } else {
+                            match T::from_buf(&mut self.all) {
+                                Ok(item) => Ready(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))),
+                                Err(e) => Ready(Err(e)),
+                            }
+                        }
+                    }
+                    Err(e) => Ready(Err(e.into())),
+                },
+                Pending => Pending,
+            };
+        };
+        self.buf = buf;
+        ret
+    }
+}
+
+pub fn ts_offs_from_abs(tss: &[u64]) -> (u64, Vec<u64>, Vec<u64>) {
+    let ts_anchor_sec = tss.first().map_or(0, |&k| k) / SEC;
+    let ts_anchor_ns = ts_anchor_sec * SEC;
+    let ts_off_ms: Vec<_> = tss.iter().map(|&k| (k - ts_anchor_ns) / MS).collect();
+    let ts_off_ns = tss
+        .iter()
+        .zip(ts_off_ms.iter().map(|&k| k * MS))
+        .map(|(&j, k)| (j - ts_anchor_ns - k))
+        .collect();
+    (ts_anchor_sec, ts_off_ms, ts_off_ns)
+}
+
+pub trait TimeBinnableTypeAggregator: Send {
+    type Input: TimeBinnableType;
+    type Output: TimeBinnableType;
+    fn range(&self) -> &NanoRange;
+    fn ingest(&mut self, item: &Self::Input);
+    fn result(self) -> Self::Output;
+}

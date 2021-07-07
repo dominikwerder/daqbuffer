@@ -1,4 +1,3 @@
-use crate::binned::{EventsNodeProcessor, NumOps};
 use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
     EventsDecodedStream, LittleEndian, NumFromBytes,
@@ -8,9 +7,10 @@ use crate::eventchunker::EventChunkerConf;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use items::{Framable, RangeCompletableItem, Sitemty, StreamItem};
+use items::numops::{BoolNum, NumOps};
+use items::{EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::query::RawEventsQuery;
-use netpod::{AggKind, BoolNum, ByteOrder, ByteSize, NodeConfigCached, ScalarType, Shape};
+use netpod::{AggKind, ByteOrder, ByteSize, NodeConfigCached, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use std::pin::Pin;
 

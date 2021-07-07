@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use disk::agg::scalarbinbatch::MinMaxAvgScalarBinBatch;
 use disk::binned::query::{BinnedQuery, CacheUsage};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::streamlog::Streamlog;
@@ -7,7 +6,8 @@ use err::Error;
 use futures_util::TryStreamExt;
 use http::StatusCode;
 use hyper::Body;
-use items::{FrameType, RangeCompletableItem, StreamItem};
+use items::xbinnedwaveevents::XBinnedWaveEvents;
+use items::{FrameType, Sitemty, StreamItem};
 use netpod::log::*;
 use netpod::{AggKind, AppendToUrl, ByteSize, Channel, HostPort, NanoRange, PerfOpts, APP_OCTET};
 use url::Url;
@@ -105,7 +105,10 @@ pub async fn get_binned(
                         None
                     }
                     StreamItem::DataItem(frame) => {
-                        type ExpectedType = Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>, Error>;
+                        // TODO
+                        // The expected type nowadays depends on the channel and agg-kind.
+                        err::todo();
+                        type ExpectedType = Sitemty<XBinnedWaveEvents<u8>>;
                         let type_id_exp = <ExpectedType as FrameType>::FRAME_TYPE_ID;
                         if frame.tyid() != type_id_exp {
                             error!("unexpected type id  got {}  exp {}", frame.tyid(), type_id_exp);

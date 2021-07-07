@@ -1,11 +1,8 @@
-use crate::agg::streams::Appendable;
-use crate::binned::{FilterFittingInside, RangeOverlapInfo, ReadableFromFile};
 use futures_core::Stream;
 use futures_util::StreamExt;
-use items::{RangeCompletableItem, Sitemty, StreamItem};
+use items::{RangeCompletableItem, Sitemty, StreamItem, TimeBinnableType, TimeBinnableTypeAggregator};
 use netpod::log::*;
-use netpod::{BinnedRange, NanoRange};
-use serde::Serialize;
+use netpod::BinnedRange;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -13,22 +10,6 @@ use std::task::{Context, Poll};
 
 pub struct DefaultBinsTimeBinner<NTY> {
     _m1: PhantomData<NTY>,
-}
-
-pub trait TimeBinnableTypeAggregator: Send {
-    type Input: TimeBinnableType;
-    type Output: TimeBinnableType;
-    fn range(&self) -> &NanoRange;
-    fn ingest(&mut self, item: &Self::Input);
-    fn result(self) -> Self::Output;
-}
-
-pub trait TimeBinnableType:
-    Send + Unpin + RangeOverlapInfo + FilterFittingInside + Appendable + Serialize + ReadableFromFile
-{
-    type Output: TimeBinnableType;
-    type Aggregator: TimeBinnableTypeAggregator<Input = Self, Output = Self::Output> + Send + Unpin;
-    fn aggregator(range: NanoRange, bin_count: usize) -> Self::Aggregator;
 }
 
 pub struct TBinnerStream<S, TBT>

@@ -1,8 +1,6 @@
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::iter::FromIterator;
-use std::ops::Add;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::str::FromStr;
@@ -27,60 +25,6 @@ pub mod streamext;
 pub const APP_JSON: &'static str = "application/json";
 pub const APP_JSON_LINES: &'static str = "application/jsonlines";
 pub const APP_OCTET: &'static str = "application/octet-stream";
-
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
-pub struct BoolNum(pub u8);
-
-impl BoolNum {
-    pub const MIN: Self = Self(0);
-    pub const MAX: Self = Self(1);
-}
-
-impl Add<BoolNum> for BoolNum {
-    type Output = BoolNum;
-
-    fn add(self, rhs: BoolNum) -> Self::Output {
-        Self(self.0 + rhs.0)
-    }
-}
-
-impl num_traits::Zero for BoolNum {
-    fn zero() -> Self {
-        Self(0)
-    }
-
-    fn is_zero(&self) -> bool {
-        self.0 == 0
-    }
-}
-
-impl num_traits::AsPrimitive<f32> for BoolNum {
-    fn as_(self) -> f32 {
-        self.0 as f32
-    }
-}
-
-impl num_traits::Bounded for BoolNum {
-    fn min_value() -> Self {
-        Self(0)
-    }
-
-    fn max_value() -> Self {
-        Self(1)
-    }
-}
-
-impl PartialEq for BoolNum {
-    fn eq(&self, other: &Self) -> bool {
-        PartialEq::eq(&self.0, &other.0)
-    }
-}
-
-impl PartialOrd for BoolNum {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        PartialOrd::partial_cmp(&self.0, &other.0)
-    }
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AggQuerySingleChannel {
@@ -1070,5 +1014,5 @@ Provide basic information about a channel, especially it's shape.
 #[derive(Serialize, Deserialize)]
 pub struct ChannelInfo {
     pub shape: Shape,
-    pub msg: String,
+    pub msg: serde_json::Value,
 }

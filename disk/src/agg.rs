@@ -2,7 +2,6 @@
 
 use bytes::BytesMut;
 use err::Error;
-use netpod::NanoRange;
 use netpod::ScalarType;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -55,20 +54,6 @@ impl std::fmt::Debug for ValuesDim1 {
             self.tss.last()
         )
     }
-}
-
-pub enum Fits {
-    Empty,
-    Lower,
-    Greater,
-    Inside,
-    PartlyLower,
-    PartlyGreater,
-    PartlyLowerAndGreater,
-}
-
-pub trait FitsInside {
-    fn fits_inside(&self, range: NanoRange) -> Fits;
 }
 
 trait NumEx {

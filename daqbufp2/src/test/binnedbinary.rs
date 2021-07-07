@@ -1,14 +1,14 @@
 use crate::nodes::require_test_hosts_running;
 use chrono::{DateTime, Utc};
 use disk::binned::query::{BinnedQuery, CacheUsage};
-use disk::binned::{MinMaxAvgBins, WithLen};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::streamlog::Streamlog;
 use err::Error;
 use futures_util::{StreamExt, TryStreamExt};
 use http::StatusCode;
 use hyper::Body;
-use items::{FrameType, RangeCompletableItem, Sitemty, StatsItem, StreamItem, SubFrId};
+use items::minmaxavgbins::MinMaxAvgBins;
+use items::{FrameType, RangeCompletableItem, Sitemty, StatsItem, StreamItem, SubFrId, WithLen};
 use netpod::log::*;
 use netpod::{AggKind, AppendToUrl, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_OCTET};
 use serde::de::DeserializeOwned;

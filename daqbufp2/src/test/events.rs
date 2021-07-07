@@ -1,7 +1,5 @@
 use crate::nodes::require_test_hosts_running;
 use chrono::{DateTime, Utc};
-use disk::binned::{NumOps, WithLen};
-use disk::decode::EventValues;
 use disk::events::{PlainEventsBinaryQuery, PlainEventsJsonQuery};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::streamlog::Streamlog;
@@ -9,7 +7,9 @@ use err::Error;
 use futures_util::{StreamExt, TryStreamExt};
 use http::StatusCode;
 use hyper::Body;
-use items::{FrameType, RangeCompletableItem, Sitemty, StatsItem, StreamItem};
+use items::eventvalues::EventValues;
+use items::numops::NumOps;
+use items::{FrameType, RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithLen};
 use netpod::log::*;
 use netpod::{AppendToUrl, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_JSON, APP_OCTET};
 use serde_json::Value as JsonValue;

@@ -1,9 +1,9 @@
 // TODO move these frame-related things out of crate disk. Probably better into `nodenet`
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
-use disk::frame::makeframe::{decode_frame, make_term_frame};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use items::frame::{decode_frame, make_term_frame};
 use items::{Framable, StreamItem};
 use netpod::log::*;
 use netpod::query::RawEventsQuery;

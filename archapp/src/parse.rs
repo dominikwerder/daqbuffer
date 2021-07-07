@@ -1,3 +1,4 @@
+use crate::generated::EPICSEvent::PayloadType;
 use crate::unescape_archapp_msg;
 use archapp_xc::*;
 use async_channel::{bounded, Receiver};
@@ -8,9 +9,103 @@ use protobuf::Message;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, VecDeque};
-use std::path::PathBuf;
 use std::sync::Arc;
+use tokio::fs::File;
 use tokio::io::AsyncReadExt;
+
+pub struct PbFileReader {
+    file: File,
+    buf: Vec<u8>,
+    wp: usize,
+    rp: usize,
+    channel_name: String,
+    payload_type: PayloadType,
+}
+
+impl PbFileReader {
+    pub async fn new(file: File) -> Self {
+        Self {
+            file,
+            buf: vec![0; 1024 * 128],
+            wp: 0,
+            rp: 0,
+            channel_name: String::new(),
+            payload_type: PayloadType::V4_GENERIC_BYTES,
+        }
+    }
+
+    pub async fn read_header(&mut self) -> Result<(), Error> {
+        self.fill_buf().await?;
+        let k = self.find_next_nl()?;
+        let buf = &mut self.buf;
+        let m = unescape_archapp_msg(&buf[self.rp..k])?;
+        let payload_info = crate::generated::EPICSEvent::PayloadInfo::parse_from_bytes(&m)
+            .map_err(|_| Error::with_msg("can not parse PayloadInfo"))?;
+        self.channel_name = payload_info.get_pvname().into();
+        self.payload_type = payload_info.get_field_type();
+        self.rp = k + 1;
+        Ok(())
+    }
+
+    pub async fn read_msg(&mut self) -> Result<(), Error> {
+        self.fill_buf().await?;
+        let k = self.find_next_nl()?;
+        let buf = &mut self.buf;
+        let m = unescape_archapp_msg(&buf[self.rp..k])?;
+        // TODO
+        // Handle the different types.
+        // Must anyways reuse the Events NTY types. Where are they?
+        // Attempt with big enum...
+        let msg = crate::generated::EPICSEvent::VectorFloat::parse_from_bytes(&m)
+            .map_err(|_| Error::with_msg("can not parse VectorFloat"))?;
+        self.rp = k + 1;
+        Ok(())
+    }
+
+    async fn fill_buf(&mut self) -> Result<(), Error> {
+        if self.wp - self.rp >= 1024 * 16 {
+            return Ok(());
+        }
+        if self.rp >= 1024 * 42 {
+            let n = self.wp - self.rp;
+            for i in 0..n {
+                self.buf[i] = self.buf[self.rp + i];
+            }
+            self.rp = 0;
+            self.wp = n;
+        }
+        let buf = &mut self.buf;
+        loop {
+            let sl = &mut buf[self.wp..];
+            if sl.len() == 0 {
+                break;
+            }
+            let n = self.file.read(sl).await?;
+            if n == 0 {
+                break;
+            } else {
+                self.wp += n;
+            }
+        }
+        Ok(())
+    }
+
+    fn find_next_nl(&self) -> Result<usize, Error> {
+        let buf = &self.buf;
+        let mut k = self.rp;
+        while k < self.wp && buf[k] != 0xa {
+            k += 1;
+        }
+        if k == self.wp {
+            return Err(Error::with_msg("no header in pb file"));
+        }
+        Ok(k)
+    }
+
+    pub fn channel_name(&self) -> &str {
+        &self.channel_name
+    }
+}
 
 #[derive(Serialize)]
 pub struct EpicsEventPayloadInfo {
@@ -22,8 +117,7 @@ pub struct EpicsEventPayloadInfo {
     val0: f32,
 }
 
-async fn read_pb_file(path: PathBuf) -> Result<EpicsEventPayloadInfo, Error> {
-    let mut f1 = tokio::fs::File::open(path).await?;
+async fn read_pb_file(mut f1: File) -> Result<(EpicsEventPayloadInfo, File), Error> {
     let mut buf = vec![0; 1024 * 4];
     {
         let mut i1 = 0;
@@ -120,7 +214,7 @@ async fn read_pb_file(path: PathBuf) -> Result<EpicsEventPayloadInfo, Error> {
                     z.datatype = format!("{:?}", ft);
                     z.ts0 = ts;
                     z.val0 = val;
-                    return Ok(z);
+                    return Ok((z, f1));
                 }
             }
         } else {
@@ -182,7 +276,8 @@ pub async fn scan_files_inner(
                         .ok_or_else(|| Error::with_msg("invalid path string"))?
                         .ends_with(".pb")
                     {
-                        let packet = read_pb_file(path.clone()).await?;
+                        let f1 = tokio::fs::File::open(&path).await?;
+                        let (packet, f1) = read_pb_file(f1).await?;
                         let pvn = packet.pvname.replace("-", "/");
                         let pvn = pvn.replace(":", "/");
                         let pre = "/arch/lts/ArchiverStore/";
