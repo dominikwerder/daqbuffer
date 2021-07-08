@@ -38,6 +38,16 @@ pub async fn channel_info(channel: &Channel, node_config: &NodeConfigCached) -> 
             let mut pbr = PbFileReader::new(f1).await;
             pbr.read_header().await?;
             msgs.push(format!("got header {}", pbr.channel_name()));
+            let ev = pbr.read_msg().await;
+            match ev {
+                Ok(item) => {
+                    msgs.push(format!("got event {:?}", item));
+                }
+                Err(e) => {
+                    msgs.push(format!("can not read event! {:?}", e));
+                }
+            }
+            msgs.push(format!("got header {}", pbr.channel_name()));
         }
     }
     let ret = ChannelInfo {

@@ -669,10 +669,19 @@ pub async fn archapp_channel_info(req: Request<Body>, node_config: &NodeConfigCa
     let url = Url::parse(&format!("dummy:{}", req.uri()))?;
     let pairs = get_url_query_pairs(&url);
     let channel = channel_from_pairs(&pairs)?;
-    let res = archapp_wrap::channel_info(&channel, node_config).await?;
-    let buf = serde_json::to_vec(&res)?;
-    let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, APP_JSON)
-        .body(Body::from(buf))?;
-    Ok(ret)
+    match archapp_wrap::channel_info(&channel, node_config).await {
+        Ok(res) => {
+            let buf = serde_json::to_vec(&res)?;
+            let ret = response(StatusCode::OK)
+                .header(http::header::CONTENT_TYPE, APP_JSON)
+                .body(Body::from(buf))?;
+            Ok(ret)
+        }
+        Err(e) => {
+            let ret = response(StatusCode::INTERNAL_SERVER_ERROR)
+                .header(http::header::CONTENT_TYPE, "text/text")
+                .body(Body::from(format!("{:?}", e)))?;
+            Ok(ret)
+        }
+    }
 }

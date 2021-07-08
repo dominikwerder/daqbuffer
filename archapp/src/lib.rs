@@ -8,8 +8,11 @@ pub mod generated {}
 pub mod parse;
 #[cfg(not(feature = "devread"))]
 pub mod parsestub;
+use items::eventvalues::EventValues;
+use items::waveevents::WaveEvents;
 #[cfg(not(feature = "devread"))]
 pub use parsestub as parse;
+
 pub mod events;
 #[cfg(feature = "devread")]
 #[cfg(test)]
@@ -37,4 +40,18 @@ fn unescape_archapp_msg(inp: &[u8]) -> Result<Vec<u8>, Error> {
         }
     }
     Ok(ret)
+}
+
+#[derive(Debug)]
+pub enum EventsItem {
+    ScalarByte(EventValues<i32>),
+    ScalarShort(EventValues<i32>),
+    ScalarInt(EventValues<i32>),
+    ScalarFloat(EventValues<f32>),
+    ScalarDouble(EventValues<f64>),
+    WaveByte(WaveEvents<i32>),
+    WaveShort(WaveEvents<i32>),
+    WaveInt(WaveEvents<i32>),
+    WaveFloat(WaveEvents<f32>),
+    WaveDouble(WaveEvents<f64>),
 }

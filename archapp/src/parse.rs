@@ -1,8 +1,10 @@
 use crate::generated::EPICSEvent::PayloadType;
-use crate::unescape_archapp_msg;
+use crate::{unescape_archapp_msg, EventsItem};
 use archapp_xc::*;
 use async_channel::{bounded, Receiver};
 use err::Error;
+use items::eventvalues::EventValues;
+use items::waveevents::WaveEvents;
 use netpod::log::*;
 use netpod::NodeConfigCached;
 use protobuf::Message;
@@ -20,6 +22,8 @@ pub struct PbFileReader {
     rp: usize,
     channel_name: String,
     payload_type: PayloadType,
+    year: u32,
+    month: u32,
 }
 
 impl PbFileReader {
@@ -31,6 +35,8 @@ impl PbFileReader {
             rp: 0,
             channel_name: String::new(),
             payload_type: PayloadType::V4_GENERIC_BYTES,
+            year: 0,
+            month: 0,
         }
     }
 
@@ -43,11 +49,15 @@ impl PbFileReader {
             .map_err(|_| Error::with_msg("can not parse PayloadInfo"))?;
         self.channel_name = payload_info.get_pvname().into();
         self.payload_type = payload_info.get_field_type();
+        self.year = payload_info.get_year() as u32;
+
+        // TODO only the year in the pb?
+        self.month = 0;
         self.rp = k + 1;
         Ok(())
     }
 
-    pub async fn read_msg(&mut self) -> Result<(), Error> {
+    pub async fn read_msg(&mut self) -> Result<EventsItem, Error> {
         self.fill_buf().await?;
         let k = self.find_next_nl()?;
         let buf = &mut self.buf;
@@ -56,10 +66,71 @@ impl PbFileReader {
         // Handle the different types.
         // Must anyways reuse the Events NTY types. Where are they?
         // Attempt with big enum...
-        let msg = crate::generated::EPICSEvent::VectorFloat::parse_from_bytes(&m)
-            .map_err(|_| Error::with_msg("can not parse VectorFloat"))?;
+        use PayloadType::*;
+        let ei = match self.payload_type {
+            SCALAR_INT => {
+                let msg = crate::generated::EPICSEvent::ScalarInt::parse_from_bytes(&m)
+                    .map_err(|_| Error::with_msg("can not parse ScalarInt"))?;
+                let mut t = EventValues::<i32> {
+                    tss: vec![],
+                    values: vec![],
+                };
+                // TODO Translate by the file-time-offset.
+                let ts = msg.get_secondsintoyear() as u64;
+                let v = msg.get_val();
+                t.tss.push(ts);
+                t.values.push(v);
+                EventsItem::ScalarInt(t)
+            }
+            SCALAR_DOUBLE => {
+                let msg = crate::generated::EPICSEvent::ScalarDouble::parse_from_bytes(&m)
+                    .map_err(|_| Error::with_msg("can not parse ScalarDouble"))?;
+                let mut t = EventValues::<f64> {
+                    tss: vec![],
+                    values: vec![],
+                };
+                // TODO Translate by the file-time-offset.
+                let ts = msg.get_secondsintoyear() as u64;
+                let v = msg.get_val();
+                t.tss.push(ts);
+                t.values.push(v);
+                EventsItem::ScalarDouble(t)
+            }
+            WAVEFORM_FLOAT => {
+                let msg = crate::generated::EPICSEvent::VectorFloat::parse_from_bytes(&m)
+                    .map_err(|_| Error::with_msg("can not parse VectorFloat"))?;
+                // TODO homogenize struct and field names w.r.t. EventValues:
+                let mut t = WaveEvents::<f32> {
+                    tss: vec![],
+                    vals: vec![],
+                };
+                // TODO Translate by the file-time-offset.
+                let ts = msg.get_secondsintoyear() as u64;
+                let v = msg.get_val().to_vec();
+                t.tss.push(ts);
+                t.vals.push(v);
+                EventsItem::WaveFloat(t)
+            }
+            WAVEFORM_DOUBLE => {
+                let msg = crate::generated::EPICSEvent::VectorDouble::parse_from_bytes(&m)
+                    .map_err(|_| Error::with_msg("can not parse VectorDouble"))?;
+                let mut t = WaveEvents::<f64> {
+                    tss: vec![],
+                    vals: vec![],
+                };
+                // TODO Translate by the file-time-offset.
+                let ts = msg.get_secondsintoyear() as u64;
+                let v = msg.get_val().to_vec();
+                t.tss.push(ts);
+                t.vals.push(v);
+                EventsItem::WaveDouble(t)
+            }
+            _ => {
+                return Err(Error::with_msg(format!("not supported: {:?}", self.payload_type)));
+            }
+        };
         self.rp = k + 1;
-        Ok(())
+        Ok(ei)
     }
 
     async fn fill_buf(&mut self) -> Result<(), Error> {
