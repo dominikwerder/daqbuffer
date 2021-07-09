@@ -34,6 +34,14 @@ impl Error {
         }
     }
 
+    pub fn with_msg_no_trace<S: Into<String>>(s: S) -> Self {
+        Self {
+            msg: s.into(),
+            trace: None,
+            trace_str: None,
+        }
+    }
+
     pub fn msg(&self) -> &str {
         &self.msg
     }

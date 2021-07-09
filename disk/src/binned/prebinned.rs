@@ -11,8 +11,7 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use items::numops::{BoolNum, NumOps};
 use items::{Appendable, EventsNodeProcessor, Framable, FrameType, PushableIndex, Sitemty, TimeBinnableType};
-use netpod::{AggKind, ByteOrder, NodeConfigCached, ScalarType, Shape};
-use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
+use netpod::{AggKind, ByteOrder, ChannelConfigQuery, NodeConfigCached, ScalarType, Shape};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::pin::Pin;
@@ -123,6 +122,9 @@ macro_rules! match_end {
     };
 }
 
+// TODO is the distinction on byte order necessary here?
+// We should rely on the "events" http api to deliver data, and the cache, both
+// of those have fixed endianness.
 fn make_num_pipeline(
     scalar_type: ScalarType,
     byte_order: ByteOrder,
@@ -166,28 +168,17 @@ pub async fn pre_binned_bytes_for_http(
         ));
         return Err(err);
     }
-    let channel_config = match read_local_config(&query.channel(), &node_config.node).await {
-        Ok(k) => k,
-        Err(e) => {
-            if e.msg().contains("ErrorKind::NotFound") {
-                let s = futures_util::stream::empty();
-                let ret = Box::pin(s);
-                return Ok(ret);
-            } else {
-                return Err(e);
-            }
-        }
+
+    let q = ChannelConfigQuery {
+        channel: query.channel().clone(),
+        range: query.patch().patch_range(),
     };
-    let entry_res = extract_matching_config_entry(&query.patch().patch_range(), &channel_config)?;
-    let entry = match entry_res {
-        MatchingConfigEntry::None => return Err(Error::with_msg("no config entry found")),
-        MatchingConfigEntry::Multiple => return Err(Error::with_msg("multiple config entries found")),
-        MatchingConfigEntry::Entry(entry) => entry,
-    };
+    let conf = httpclient::get_channel_config(&q, node_config).await?;
     let ret = make_num_pipeline(
-        entry.scalar_type.clone(),
-        entry.byte_order.clone(),
-        entry.to_shape()?,
+        conf.scalar_type.clone(),
+        // TODO actually, make_num_pipeline should not depend on endianness.
+        conf.byte_order.unwrap_or(ByteOrder::LE).clone(),
+        conf.shape.clone(),
         query.agg_kind().clone(),
         query.clone(),
         node_config,

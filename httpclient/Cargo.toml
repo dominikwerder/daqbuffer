@@ -1,0 +1,22 @@
+[package]
+name = "httpclient"
+version = "0.0.1-a.0"
+authors = ["Dominik Werder <dominik.werder@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+http = "0.2"
+url = "2.2"
+tokio = { version = "1.7.1", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
+hyper = { version = "0.14", features = ["http1", "http2", "client", "server", "tcp", "stream"] }
+hyper-tls = { version="0.5.0" }
+bytes = "1.0.1"
+futures-core = "0.3.14"
+futures-util = "0.3.14"
+tracing = "0.1.25"
+async-channel = "1.6"
+err = { path = "../err" }
+netpod = { path = "../netpod" }
+parse = { path = "../parse" }

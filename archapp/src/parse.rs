@@ -2,11 +2,12 @@ use crate::generated::EPICSEvent::PayloadType;
 use crate::{unescape_archapp_msg, EventsItem};
 use archapp_xc::*;
 use async_channel::{bounded, Receiver};
+use chrono::{TimeZone, Utc};
 use err::Error;
 use items::eventvalues::EventValues;
 use items::waveevents::WaveEvents;
 use netpod::log::*;
-use netpod::NodeConfigCached;
+use netpod::{ArchiverAppliance, ChannelConfigQuery, ChannelConfigResponse, NodeConfigCached};
 use protobuf::Message;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -25,16 +26,32 @@ pub struct PbFileReader {
     year: u32,
 }
 
+fn parse_scalar_byte(m: &[u8], year: u32) -> Result<EventsItem, Error> {
+    let msg = crate::generated::EPICSEvent::ScalarByte::parse_from_bytes(m)
+        .map_err(|_| Error::with_msg(format!("can not parse pb-type {}", "ScalarByte")))?;
+    let mut t = EventValues::<i32> {
+        tss: vec![],
+        values: vec![],
+    };
+    let yd = Utc.ymd(year as i32, 1, 1).and_hms(0, 0, 0);
+    let ts = yd.timestamp() as u64 * 1000000000 + msg.get_secondsintoyear() as u64 * 1000000000 + msg.get_nano() as u64;
+    let v = msg.get_val().first().map_or(0, |k| *k as i32);
+    t.tss.push(ts);
+    t.values.push(v);
+    Ok(EventsItem::ScalarByte(t))
+}
+
 macro_rules! scalar_parse {
-    ($m:expr, $pbt:ident, $eit:ident, $evty:ident) => {{
+    ($m:expr, $year:expr, $pbt:ident, $eit:ident, $evty:ident) => {{
         let msg = crate::generated::EPICSEvent::$pbt::parse_from_bytes($m)
             .map_err(|_| Error::with_msg(format!("can not parse pb-type {}", stringify!($pbt))))?;
         let mut t = EventValues::<$evty> {
             tss: vec![],
             values: vec![],
         };
-        // TODO Translate by the file-time-offset.
-        let ts = msg.get_secondsintoyear() as u64;
+        let yd = Utc.ymd($year as i32, 1, 1).and_hms(0, 0, 0);
+        let ts =
+            yd.timestamp() as u64 * 1000000000 + msg.get_secondsintoyear() as u64 * 1000000000 + msg.get_nano() as u64;
         let v = msg.get_val();
         t.tss.push(ts);
         t.values.push(v);
@@ -43,15 +60,16 @@ macro_rules! scalar_parse {
 }
 
 macro_rules! wave_parse {
-    ($m:expr, $pbt:ident, $eit:ident, $evty:ident) => {{
+    ($m:expr, $year:expr, $pbt:ident, $eit:ident, $evty:ident) => {{
         let msg = crate::generated::EPICSEvent::$pbt::parse_from_bytes($m)
             .map_err(|_| Error::with_msg(format!("can not parse pb-type {}", stringify!($pbt))))?;
         let mut t = WaveEvents::<$evty> {
             tss: vec![],
             vals: vec![],
         };
-        // TODO Translate by the file-time-offset.
-        let ts = msg.get_secondsintoyear() as u64;
+        let yd = Utc.ymd($year as i32, 1, 1).and_hms(0, 0, 0);
+        let ts =
+            yd.timestamp() as u64 * 1000000000 + msg.get_secondsintoyear() as u64 * 1000000000 + msg.get_nano() as u64;
         let v = msg.get_val();
         t.tss.push(ts);
         t.vals.push(v.to_vec());
@@ -59,11 +77,13 @@ macro_rules! wave_parse {
     }};
 }
 
+const MIN_BUF_FILL: usize = 1024 * 16;
+
 impl PbFileReader {
     pub async fn new(file: File) -> Self {
         Self {
             file,
-            buf: vec![0; 1024 * 128],
+            buf: vec![0; MIN_BUF_FILL * 4],
             wp: 0,
             rp: 0,
             channel_name: String::new(),
@@ -93,42 +113,39 @@ impl PbFileReader {
         let m = unescape_archapp_msg(&buf[self.rp..k])?;
         use PayloadType::*;
         let ei = match self.payload_type {
-            SCALAR_BYTE => {
-                //scalar_parse!(&m, ScalarByte, ScalarByte, u8)
-                err::todoval()
-            }
+            SCALAR_BYTE => parse_scalar_byte(&m, self.year)?,
             SCALAR_ENUM => {
-                scalar_parse!(&m, ScalarEnum, ScalarInt, i32)
+                scalar_parse!(&m, self.year, ScalarEnum, ScalarInt, i32)
             }
             SCALAR_SHORT => {
-                scalar_parse!(&m, ScalarShort, ScalarShort, i32)
+                scalar_parse!(&m, self.year, ScalarShort, ScalarShort, i32)
             }
             SCALAR_INT => {
-                scalar_parse!(&m, ScalarInt, ScalarInt, i32)
+                scalar_parse!(&m, self.year, ScalarInt, ScalarInt, i32)
             }
             SCALAR_FLOAT => {
-                scalar_parse!(&m, ScalarFloat, ScalarFloat, f32)
+                scalar_parse!(&m, self.year, ScalarFloat, ScalarFloat, f32)
             }
             SCALAR_DOUBLE => {
-                scalar_parse!(&m, ScalarDouble, ScalarDouble, f64)
+                scalar_parse!(&m, self.year, ScalarDouble, ScalarDouble, f64)
             }
             WAVEFORM_BYTE => {
-                wave_parse!(&m, VectorChar, WaveByte, u8)
+                wave_parse!(&m, self.year, VectorChar, WaveByte, u8)
             }
             WAVEFORM_SHORT => {
-                wave_parse!(&m, VectorShort, WaveShort, i32)
+                wave_parse!(&m, self.year, VectorShort, WaveShort, i32)
             }
             WAVEFORM_ENUM => {
-                wave_parse!(&m, VectorEnum, WaveInt, i32)
+                wave_parse!(&m, self.year, VectorEnum, WaveInt, i32)
             }
             WAVEFORM_INT => {
-                wave_parse!(&m, VectorInt, WaveInt, i32)
+                wave_parse!(&m, self.year, VectorInt, WaveInt, i32)
             }
             WAVEFORM_FLOAT => {
-                wave_parse!(&m, VectorFloat, WaveFloat, f32)
+                wave_parse!(&m, self.year, VectorFloat, WaveFloat, f32)
             }
             WAVEFORM_DOUBLE => {
-                wave_parse!(&m, VectorDouble, WaveDouble, f64)
+                wave_parse!(&m, self.year, VectorDouble, WaveDouble, f64)
             }
             SCALAR_STRING | WAVEFORM_STRING | V4_GENERIC_BYTES => {
                 return Err(Error::with_msg(format!("not supported: {:?}", self.payload_type)));
@@ -139,10 +156,10 @@ impl PbFileReader {
     }
 
     async fn fill_buf(&mut self) -> Result<(), Error> {
-        if self.wp - self.rp >= 1024 * 16 {
+        if self.wp - self.rp >= MIN_BUF_FILL {
             return Ok(());
         }
-        if self.rp >= 1024 * 42 {
+        if self.rp >= self.buf.len() - MIN_BUF_FILL {
             let n = self.wp - self.rp;
             for i in 0..n {
                 self.buf[i] = self.buf[self.rp + i];
@@ -396,4 +413,15 @@ pub async fn scan_files_inner(
     };
     tokio::spawn(block2);
     Ok(rx)
+}
+
+pub async fn channel_config(q: &ChannelConfigQuery, aa: &ArchiverAppliance) -> Result<ChannelConfigResponse, Error> {
+    let ci = crate::events::channel_info(&q.channel, aa).await?;
+    let ret = ChannelConfigResponse {
+        channel: q.channel.clone(),
+        scalar_type: ci.scalar_type,
+        byte_order: ci.byte_order,
+        shape: ci.shape,
+    };
+    Ok(ret)
 }

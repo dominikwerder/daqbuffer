@@ -39,3 +39,4 @@ bitshuffle = { path = "../bitshuffle" }
 dbconn = { path = "../dbconn" }
 parse = { path = "../parse" }
 items = { path = "../items" }
+httpclient = { path = "../httpclient" }

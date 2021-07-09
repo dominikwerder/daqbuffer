@@ -13,8 +13,8 @@ use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
 use netpod::log::*;
 use netpod::{
-    channel_from_pairs, get_url_query_pairs, AggKind, Channel, FromUrl, NodeConfigCached, APP_JSON, APP_JSON_LINES,
-    APP_OCTET,
+    channel_from_pairs, get_url_query_pairs, AggKind, ChannelConfigQuery, FromUrl, NodeConfigCached, APP_JSON,
+    APP_JSON_LINES, APP_OCTET,
 };
 use nodenet::conn::events_service;
 use panic::{AssertUnwindSafe, UnwindSafe};
@@ -431,11 +431,19 @@ async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Res
         .get(http::header::ACCEPT)
         .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
     if accept == APP_JSON {
-        Ok(plain_events_json(req, node_config).await?)
+        Ok(plain_events_json(req, node_config).await.map_err(|e| {
+            error!("{:?}", e);
+            e
+        })?)
     } else if accept == APP_OCTET {
-        Ok(plain_events_binary(req, node_config).await?)
+        Ok(plain_events_binary(req, node_config).await.map_err(|e| {
+            error!("{:?}", e);
+            e
+        })?)
     } else {
-        Err(Error::with_msg(format!("unexpected Accept: {:?}", accept)))
+        let e = Error::with_msg(format!("unexpected Accept: {:?}", accept));
+        error!("{:?}", e);
+        Err(e)
     }
 }
 
@@ -455,6 +463,7 @@ async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached)
 }
 
 async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    info!("plain_events_json  req: {:?}", req);
     let (head, _body) = req.into_parts();
     let query = PlainEventsJsonQuery::from_request_head(&head)?;
     let op = disk::channelexec::PlainEventsJson::new(
@@ -610,17 +619,19 @@ pub async fn update_search_cache(req: Request<Body>, node_config: &NodeConfigCac
 }
 
 pub async fn channel_config(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    info!("channel_config");
     let url = Url::parse(&format!("dummy:{}", req.uri()))?;
-    let pairs = get_url_query_pairs(&url);
-    let _dry = pairs.contains_key("dry");
-    let channel = Channel {
-        backend: node_config.node.backend.clone(),
-        name: pairs.get("channelName").unwrap().into(),
+    //let pairs = get_url_query_pairs(&url);
+    let q = ChannelConfigQuery::from_url(&url)?;
+    info!("ChannelConfigQuery {:?}", q);
+    let conf = if let Some(aa) = &node_config.node.archiver_appliance {
+        archapp_wrap::channel_config(&q, aa).await?
+    } else {
+        parse::channelconfig::channel_config(&q, &node_config.node).await?
     };
-    let res = parse::channelconfig::read_local_config(&channel, &node_config.node).await?;
     let ret = response(StatusCode::OK)
         .header(http::header::CONTENT_TYPE, APP_JSON)
-        .body(Body::from(serde_json::to_string(&res)?))?;
+        .body(Body::from(serde_json::to_string(&conf)?))?;
     Ok(ret)
 }
 

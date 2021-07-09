@@ -1,5 +1,5 @@
 [workspace]
-members = ["daqbuffer", "h5out", "archapp", "archapp_xc", "archapp_wrap", "items", "nodenet"]
+members = ["daqbuffer", "h5out", "archapp", "archapp_xc", "archapp_wrap", "items", "nodenet", "httpclient"]
 
 [profile.release]
 debug = 1

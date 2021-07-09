@@ -970,9 +970,16 @@ pub fn get_url_query_pairs(url: &Url) -> BTreeMap<String, String> {
     BTreeMap::from_iter(url.query_pairs().map(|(j, k)| (j.to_string(), k.to_string())))
 }
 
-#[derive(Serialize, Deserialize)]
+/**
+Request type of the channel/config api. \
+At least on some backends the channel configuration may change depending on the queried range.
+Therefore, the query includes the range.
+The presence of a configuration in some range does not imply that there is any data available.
+*/
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelConfigQuery {
     pub channel: Channel,
+    pub range: NanoRange,
 }
 
 impl HasBackend for ChannelConfigQuery {
@@ -990,8 +997,14 @@ impl HasTimeout for ChannelConfigQuery {
 impl FromUrl for ChannelConfigQuery {
     fn from_url(url: &Url) -> Result<Self, Error> {
         let pairs = get_url_query_pairs(url);
+        let beg_date = pairs.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
+        let end_date = pairs.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
         let ret = Self {
             channel: channel_from_pairs(&pairs)?,
+            range: NanoRange {
+                beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
+                end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
+            },
         };
         Ok(ret)
     }
@@ -999,10 +1012,28 @@ impl FromUrl for ChannelConfigQuery {
 
 impl AppendToUrl for ChannelConfigQuery {
     fn append_to_url(&self, url: &mut Url) {
+        let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
         let mut g = url.query_pairs_mut();
         g.append_pair("channelBackend", &self.channel.backend);
         g.append_pair("channelName", &self.channel.name);
+        g.append_pair(
+            "begDate",
+            &Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt).to_string(),
+        );
+        g.append_pair(
+            "endDate",
+            &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
+        );
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChannelConfigResponse {
+    pub channel: Channel,
+    #[serde(rename = "scalarType")]
+    pub scalar_type: ScalarType,
+    pub byte_order: Option<ByteOrder>,
+    pub shape: Shape,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1013,6 +1044,8 @@ Provide basic information about a channel, especially it's shape.
 */
 #[derive(Serialize, Deserialize)]
 pub struct ChannelInfo {
+    pub scalar_type: ScalarType,
+    pub byte_order: Option<ByteOrder>,
     pub shape: Shape,
     pub msg: serde_json::Value,
 }

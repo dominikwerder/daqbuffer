@@ -4,7 +4,7 @@ use err::Error;
 use futures_core::Stream;
 use items::Framable;
 use netpod::query::RawEventsQuery;
-use netpod::{ArchiverAppliance, Channel, ChannelInfo, NodeConfigCached};
+use netpod::{ArchiverAppliance, Channel, ChannelConfigQuery, ChannelConfigResponse, ChannelInfo, NodeConfigCached};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -24,5 +24,9 @@ pub async fn make_event_pipe(
 }
 
 pub async fn channel_info(channel: &Channel, node_config: &NodeConfigCached) -> Result<ChannelInfo, Error> {
-    archapp::events::channel_info(channel, node_config).await
+    archapp::events::channel_info(channel, node_config.node.archiver_appliance.as_ref().unwrap()).await
+}
+
+pub async fn channel_config(q: &ChannelConfigQuery, aa: &ArchiverAppliance) -> Result<ChannelConfigResponse, Error> {
+    archapp::parse::channel_config(q, aa).await
 }

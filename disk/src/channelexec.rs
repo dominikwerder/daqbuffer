@@ -433,3 +433,13 @@ impl ChannelExecFunction for PlainEventsJson {
         Box::pin(futures_util::stream::empty())
     }
 }
+
+pub fn dummy_impl() {
+    let channel: Channel = err::todoval();
+    let range: NanoRange = err::todoval();
+    let agg_kind: AggKind = err::todoval();
+    let node_config: NodeConfigCached = err::todoval();
+    let timeout: Duration = err::todoval();
+    let f = PlainEventsJson::new(channel.clone(), range.clone(), 0, timeout, node_config.clone(), false);
+    let _ = channel_exec(f, &channel, &range, agg_kind, &node_config);
+}

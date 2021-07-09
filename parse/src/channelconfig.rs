@@ -1,6 +1,8 @@
 use err::Error;
 use netpod::timeunits::MS;
-use netpod::{ByteOrder, Channel, NanoRange, Nanos, Node, ScalarType, Shape};
+use netpod::{
+    ByteOrder, Channel, ChannelConfigQuery, ChannelConfigResponse, NanoRange, Nanos, Node, ScalarType, Shape,
+};
 use nom::bytes::complete::take;
 use nom::number::complete::{be_i16, be_i32, be_i64, be_i8, be_u8};
 use nom::Needed;
@@ -251,6 +253,23 @@ pub fn parse_config(inp: &[u8]) -> NRes<Config> {
         entries: entries,
     };
     Ok((inp, ret))
+}
+
+pub async fn channel_config(q: &ChannelConfigQuery, node: &Node) -> Result<ChannelConfigResponse, Error> {
+    let conf = read_local_config(&q.channel, node).await?;
+    let entry_res = extract_matching_config_entry(&q.range, &conf)?;
+    let entry = match entry_res {
+        MatchingConfigEntry::None => return Err(Error::with_msg("no config entry found")),
+        MatchingConfigEntry::Multiple => return Err(Error::with_msg("multiple config entries found")),
+        MatchingConfigEntry::Entry(entry) => entry,
+    };
+    let ret = ChannelConfigResponse {
+        channel: q.channel.clone(),
+        scalar_type: entry.scalar_type.clone(),
+        byte_order: Some(entry.byte_order.clone()),
+        shape: entry.to_shape()?,
+    };
+    Ok(ret)
 }
 
 pub async fn read_local_config(channel: &Channel, node: &Node) -> Result<Config, Error> {
