@@ -49,7 +49,7 @@ pub enum EventsItem {
     ScalarInt(EventValues<i32>),
     ScalarFloat(EventValues<f32>),
     ScalarDouble(EventValues<f64>),
-    WaveByte(WaveEvents<i32>),
+    WaveByte(WaveEvents<u8>),
     WaveShort(WaveEvents<i32>),
     WaveInt(WaveEvents<i32>),
     WaveFloat(WaveEvents<f32>),

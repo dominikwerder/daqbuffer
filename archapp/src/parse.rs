@@ -23,7 +23,40 @@ pub struct PbFileReader {
     channel_name: String,
     payload_type: PayloadType,
     year: u32,
-    month: u32,
+}
+
+macro_rules! scalar_parse {
+    ($m:expr, $pbt:ident, $eit:ident, $evty:ident) => {{
+        let msg = crate::generated::EPICSEvent::$pbt::parse_from_bytes($m)
+            .map_err(|_| Error::with_msg(format!("can not parse pb-type {}", stringify!($pbt))))?;
+        let mut t = EventValues::<$evty> {
+            tss: vec![],
+            values: vec![],
+        };
+        // TODO Translate by the file-time-offset.
+        let ts = msg.get_secondsintoyear() as u64;
+        let v = msg.get_val();
+        t.tss.push(ts);
+        t.values.push(v);
+        EventsItem::$eit(t)
+    }};
+}
+
+macro_rules! wave_parse {
+    ($m:expr, $pbt:ident, $eit:ident, $evty:ident) => {{
+        let msg = crate::generated::EPICSEvent::$pbt::parse_from_bytes($m)
+            .map_err(|_| Error::with_msg(format!("can not parse pb-type {}", stringify!($pbt))))?;
+        let mut t = WaveEvents::<$evty> {
+            tss: vec![],
+            vals: vec![],
+        };
+        // TODO Translate by the file-time-offset.
+        let ts = msg.get_secondsintoyear() as u64;
+        let v = msg.get_val();
+        t.tss.push(ts);
+        t.vals.push(v.to_vec());
+        EventsItem::$eit(t)
+    }};
 }
 
 impl PbFileReader {
@@ -36,7 +69,6 @@ impl PbFileReader {
             channel_name: String::new(),
             payload_type: PayloadType::V4_GENERIC_BYTES,
             year: 0,
-            month: 0,
         }
     }
 
@@ -50,9 +82,6 @@ impl PbFileReader {
         self.channel_name = payload_info.get_pvname().into();
         self.payload_type = payload_info.get_field_type();
         self.year = payload_info.get_year() as u32;
-
-        // TODO only the year in the pb?
-        self.month = 0;
         self.rp = k + 1;
         Ok(())
     }
@@ -62,70 +91,46 @@ impl PbFileReader {
         let k = self.find_next_nl()?;
         let buf = &mut self.buf;
         let m = unescape_archapp_msg(&buf[self.rp..k])?;
-        // TODO
-        // Handle the different types.
-        // Must anyways reuse the Events NTY types. Where are they?
-        // Attempt with big enum...
         use PayloadType::*;
         let ei = match self.payload_type {
+            SCALAR_BYTE => {
+                //scalar_parse!(&m, ScalarByte, ScalarByte, u8)
+                err::todoval()
+            }
+            SCALAR_ENUM => {
+                scalar_parse!(&m, ScalarEnum, ScalarInt, i32)
+            }
+            SCALAR_SHORT => {
+                scalar_parse!(&m, ScalarShort, ScalarShort, i32)
+            }
             SCALAR_INT => {
-                let msg = crate::generated::EPICSEvent::ScalarInt::parse_from_bytes(&m)
-                    .map_err(|_| Error::with_msg("can not parse ScalarInt"))?;
-                let mut t = EventValues::<i32> {
-                    tss: vec![],
-                    values: vec![],
-                };
-                // TODO Translate by the file-time-offset.
-                let ts = msg.get_secondsintoyear() as u64;
-                let v = msg.get_val();
-                t.tss.push(ts);
-                t.values.push(v);
-                EventsItem::ScalarInt(t)
+                scalar_parse!(&m, ScalarInt, ScalarInt, i32)
+            }
+            SCALAR_FLOAT => {
+                scalar_parse!(&m, ScalarFloat, ScalarFloat, f32)
             }
             SCALAR_DOUBLE => {
-                let msg = crate::generated::EPICSEvent::ScalarDouble::parse_from_bytes(&m)
-                    .map_err(|_| Error::with_msg("can not parse ScalarDouble"))?;
-                let mut t = EventValues::<f64> {
-                    tss: vec![],
-                    values: vec![],
-                };
-                // TODO Translate by the file-time-offset.
-                let ts = msg.get_secondsintoyear() as u64;
-                let v = msg.get_val();
-                t.tss.push(ts);
-                t.values.push(v);
-                EventsItem::ScalarDouble(t)
+                scalar_parse!(&m, ScalarDouble, ScalarDouble, f64)
+            }
+            WAVEFORM_BYTE => {
+                wave_parse!(&m, VectorChar, WaveByte, u8)
+            }
+            WAVEFORM_SHORT => {
+                wave_parse!(&m, VectorShort, WaveShort, i32)
+            }
+            WAVEFORM_ENUM => {
+                wave_parse!(&m, VectorEnum, WaveInt, i32)
+            }
+            WAVEFORM_INT => {
+                wave_parse!(&m, VectorInt, WaveInt, i32)
             }
             WAVEFORM_FLOAT => {
-                let msg = crate::generated::EPICSEvent::VectorFloat::parse_from_bytes(&m)
-                    .map_err(|_| Error::with_msg("can not parse VectorFloat"))?;
-                // TODO homogenize struct and field names w.r.t. EventValues:
-                let mut t = WaveEvents::<f32> {
-                    tss: vec![],
-                    vals: vec![],
-                };
-                // TODO Translate by the file-time-offset.
-                let ts = msg.get_secondsintoyear() as u64;
-                let v = msg.get_val().to_vec();
-                t.tss.push(ts);
-                t.vals.push(v);
-                EventsItem::WaveFloat(t)
+                wave_parse!(&m, VectorFloat, WaveFloat, f32)
             }
             WAVEFORM_DOUBLE => {
-                let msg = crate::generated::EPICSEvent::VectorDouble::parse_from_bytes(&m)
-                    .map_err(|_| Error::with_msg("can not parse VectorDouble"))?;
-                let mut t = WaveEvents::<f64> {
-                    tss: vec![],
-                    vals: vec![],
-                };
-                // TODO Translate by the file-time-offset.
-                let ts = msg.get_secondsintoyear() as u64;
-                let v = msg.get_val().to_vec();
-                t.tss.push(ts);
-                t.vals.push(v);
-                EventsItem::WaveDouble(t)
+                wave_parse!(&m, VectorDouble, WaveDouble, f64)
             }
-            _ => {
+            SCALAR_STRING | WAVEFORM_STRING | V4_GENERIC_BYTES => {
                 return Err(Error::with_msg(format!("not supported: {:?}", self.payload_type)));
             }
         };
