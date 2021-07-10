@@ -1,4 +1,6 @@
 use bytes::{BufMut, Bytes, BytesMut};
+use err::Error;
+use items::frame::make_frame;
 use items::{Appendable, RangeOverlapInfo, SitemtyFrameType};
 use netpod::log::*;
 use netpod::NanoRange;

@@ -7,7 +7,7 @@ use items::eventvalues::EventValues;
 use items::{Framable, RangeCompletableItem, StreamItem};
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
-use netpod::timeunits::DAY;
+use netpod::timeunits::{DAY, SEC};
 use netpod::{ArchiverAppliance, Channel, ChannelInfo, ScalarType, Shape};
 use serde_json::Value as JsonValue;
 use std::path::PathBuf;
@@ -50,66 +50,85 @@ pub async fn make_event_pipe(
     //let dtbeg = Utc.timestamp((evq.range.beg / 1000000000) as i64, (evq.range.beg % 1000000000) as u32);
     let (tx, rx) = async_channel::bounded(16);
     let block1 = async move {
+        trace!("++++++++++++++++++++++++++++");
+        info!("++++++++++++++++++++++++++++");
+        info!("start read of {:?}", dir);
+
+        // TODO first collect all matching filenames, then sort, then open files.
         let mut rd = tokio::fs::read_dir(&dir).await?;
         while let Some(de) = rd.next_entry().await? {
             let s = de.file_name().to_string_lossy().into_owned();
             if s.starts_with(&prefix) && s.ends_with(".pb") {
                 match parse_data_filename(&s) {
                     Ok(df) => {
-                        let ts0 = Utc.ymd(df.year as i32, df.month, 0).and_hms(0, 0, 0);
-                        let ts1 = ts0.timestamp() as u64 * 1000000000 + ts0.timestamp_subsec_nanos() as u64;
-                        if evq.range.beg < ts1 + DAY * 32 && evq.range.end > ts1 {
+                        info!("parse went ok: {} {}", df.year, df.month);
+                        let ts0 = Utc.ymd(df.year as i32, df.month, 1).and_hms(0, 0, 0);
+                        let ts1 = ts0.timestamp() as u64 * SEC + ts0.timestamp_subsec_nanos() as u64;
+                        info!("file    {}   {}", ts1, ts1 + DAY * 27);
+                        info!("range   {}   {}", evq.range.beg, evq.range.end);
+                        if evq.range.beg < ts1 + DAY * 27 && evq.range.end > ts1 {
+                            info!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
                             let f1 = File::open(de.path()).await?;
                             info!("opened {:?}", de.path());
                             let mut pbr = PbFileReader::new(f1).await;
                             pbr.read_header().await?;
+                            info!("✓ read header {:?}", pbr.payload_type());
                             loop {
                                 match pbr.read_msg().await {
-                                    Ok(ev) => match ev {
-                                        EventsItem::ScalarDouble(h) => {
-                                            //
-                                            let (x, y) = h
-                                                .tss
-                                                .into_iter()
-                                                .zip(h.values.into_iter())
-                                                .filter_map(|(j, k)| {
-                                                    if j < evq.range.beg || j >= evq.range.end {
-                                                        None
-                                                    } else {
-                                                        Some((j, k))
-                                                    }
-                                                })
-                                                .fold((vec![], vec![]), |(mut a, mut b), (j, k)| {
-                                                    a.push(j);
-                                                    b.push(k);
-                                                    (a, b)
-                                                });
-                                            let b = EventValues { tss: x, values: y };
-                                            let b = Ok(StreamItem::DataItem(RangeCompletableItem::Data(b)));
-                                            tx.send(Box::new(b) as Box<dyn Framable>).await?;
+                                    Ok(ev) => {
+                                        //
+                                        info!("read msg from file");
+                                        match ev {
+                                            EventsItem::ScalarDouble(h) => {
+                                                //
+                                                let (x, y) = h
+                                                    .tss
+                                                    .into_iter()
+                                                    .zip(h.values.into_iter())
+                                                    .filter_map(|(j, k)| {
+                                                        if j < evq.range.beg || j >= evq.range.end {
+                                                            None
+                                                        } else {
+                                                            Some((j, k))
+                                                        }
+                                                    })
+                                                    .fold((vec![], vec![]), |(mut a, mut b), (j, k)| {
+                                                        a.push(j);
+                                                        b.push(k);
+                                                        (a, b)
+                                                    });
+                                                let b = EventValues { tss: x, values: y };
+                                                let b = Ok(StreamItem::DataItem(RangeCompletableItem::Data(b)));
+                                                tx.send(Box::new(b) as Box<dyn Framable>).await?;
+                                            }
+                                            _ => {
+                                                //
+                                                error!("case not covered");
+                                                return Err(Error::with_msg_no_trace("todo"));
+                                            }
                                         }
-                                        _ => {
-                                            //
-                                            error!("case not covered");
-                                            return Err(Error::with_msg_no_trace("todo"));
-                                        }
-                                    },
-                                    Err(e) => {}
+                                    }
+                                    Err(e) => {
+                                        error!("error while reading msg  {:?}", e);
+                                        break;
+                                    }
                                 }
                             }
                         }
                     }
-                    Err(e) => {}
+                    Err(e) => {
+                        error!("bad filename parse {:?}", e);
+                    }
                 }
+            } else {
+                info!("prefix {}  s {}", prefix, s);
             }
         }
         Ok::<_, Error>(())
     };
     let block2 = async move {
         match block1.await {
-            Ok(_) => {
-                info!("block1 done ok");
-            }
+            Ok(_) => {}
             Err(e) => {
                 error!("{:?}", e);
             }

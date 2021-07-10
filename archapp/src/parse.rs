@@ -190,13 +190,17 @@ impl PbFileReader {
             k += 1;
         }
         if k == self.wp {
-            return Err(Error::with_msg("no header in pb file"));
+            return Err(Error::with_msg("no nl in pb file"));
         }
         Ok(k)
     }
 
     pub fn channel_name(&self) -> &str {
         &self.channel_name
+    }
+
+    pub fn payload_type(&self) -> &PayloadType {
+        &self.payload_type
     }
 }
 

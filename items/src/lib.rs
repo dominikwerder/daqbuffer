@@ -1,4 +1,5 @@
 use crate::eventvalues::EventValues;
+use crate::frame::make_frame_2;
 use crate::numops::BoolNum;
 use bytes::BytesMut;
 use chrono::{TimeZone, Utc};
@@ -212,133 +213,19 @@ pub trait Framable: Send {
     fn make_frame(&self) -> Result<BytesMut, Error>;
 }
 
-// TODO need als Framable for those types defined in other crates.
+// TODO need also Framable for those types defined in other crates.
 impl<T> Framable for Sitemty<T>
 where
-    T: SitemtyFrameType + Send,
+    T: SitemtyFrameType + Serialize + Send,
 {
     fn typeid(&self) -> u32 {
-        todo!()
+        T::FRAME_TYPE_ID
     }
 
     fn make_frame(&self) -> Result<BytesMut, Error> {
-        todo!()
+        make_frame_2(self, T::FRAME_TYPE_ID)
     }
 }
-
-/*
-
-impl Framable for Sitemty<serde_json::Value> {
-    fn typeid(&self) -> u32 {
-        EventQueryJsonStringFrame::FRAME_TYPE_ID
-    }
-    fn make_frame(&self) -> Result<BytesMut, Error> {
-        panic!()
-    }
-}
-
-impl Framable for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarBinBatch>>, Error> {
-    fn typeid(&self) -> u32 {
-        Self::FRAME_TYPE_ID
-    }
-    fn make_frame(&self) -> Result<BytesMut, Error> {
-        make_frame(self)
-    }
-}
-
-impl Framable for Result<StreamItem<RangeCompletableItem<MinMaxAvgScalarEventBatch>>, Error> {
-    fn typeid(&self) -> u32 {
-        Self::FRAME_TYPE_ID
-    }
-    fn make_frame(&self) -> Result<BytesMut, Error> {
-        make_frame(self)
-    }
-}
-
-impl<NTY> Framable for Result<StreamItem<RangeCompletableItem<EventValues<NTY>>>, err::Error>
-where
-    NTY: NumOps + Serialize,
-{
-    fn typeid(&self) -> u32 {
-        Self::FRAME_TYPE_ID
-    }
-    fn make_frame(&self) -> Result<BytesMut, Error> {
-        make_frame(self)
-    }
-}
-
-impl<NTY> Framable for Result<StreamItem<RangeCompletableItem<XBinnedScalarEvents<NTY>>>, err::Error>
-where
-    NTY: NumOps + Serialize,
-{
-    fn typeid(&self) -> u32 {
-        Self::FRAME_TYPE_ID
-    }
-    fn make_frame(&self) -> Result<BytesMut, Error> {
-        make_frame(self)
-    }
-}
-
-impl<NTY> Framable for Sitemty<MinMaxAvgBins<NTY>>
-where
-    NTY: NumOps + Serialize,
-{
-    fn typeid(&self) -> u32 {
-        Self::FRAME_TYPE_ID
-    }
-    fn make_frame(&self) -> Result<BytesMut, Error> {
-        make_frame(self)
-    }
-}
-
-impl<NTY> Framable for Sitemty<WaveEvents<NTY>>
-where
-    NTY: NumOps + Serialize,
-{
-    fn typeid(&self) -> u32 {
-        Self::FRAME_TYPE_ID
-    }
-    fn make_frame(&self) -> Result<BytesMut, Error> {
-        make_frame(self)
-    }
-}
-
-impl<NTY> Framable for Sitemty<XBinnedWaveEvents<NTY>>
-where
-    NTY: NumOps + Serialize,
-{
-    fn typeid(&self) -> u32 {
-        Self::FRAME_TYPE_ID
-    }
-    fn make_frame(&self) -> Result<BytesMut, Error> {
-        make_frame(self)
-    }
-}
-
-impl<NTY> Framable for Sitemty<MinMaxAvgWaveBins<NTY>>
-where
-    NTY: NumOps + Serialize,
-{
-    fn typeid(&self) -> u32 {
-        Self::FRAME_TYPE_ID
-    }
-    fn make_frame(&self) -> Result<BytesMut, Error> {
-        make_frame(self)
-    }
-}
-
-impl<NTY> Framable for Sitemty<MinMaxAvgDim1Bins<NTY>>
-where
-    NTY: NumOps + Serialize,
-{
-    fn typeid(&self) -> u32 {
-        Self::FRAME_TYPE_ID
-    }
-    fn make_frame(&self) -> Result<BytesMut, Error> {
-        make_frame(self)
-    }
-}
-*/
 
 pub trait EventsNodeProcessor: Send + Unpin {
     type Input;

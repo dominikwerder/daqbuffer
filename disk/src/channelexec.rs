@@ -18,8 +18,9 @@ use items::{
 };
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
-use netpod::{AggKind, ByteOrder, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape};
-use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
+use netpod::{
+    AggKind, ByteOrder, Channel, ChannelConfigQuery, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape,
+};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
 use std::fmt::Debug;
@@ -177,34 +178,21 @@ pub async fn channel_exec<F>(
 where
     F: ChannelExecFunction,
 {
-    let channel_config = match read_local_config(channel, &node_config.node).await {
-        Ok(k) => k,
-        Err(e) => {
-            if e.msg().contains("ErrorKind::NotFound") {
-                return Ok(F::empty());
-            } else {
-                return Err(e);
-            }
-        }
+    let q = ChannelConfigQuery {
+        channel: channel.clone(),
+        range: range.clone(),
     };
-    match extract_matching_config_entry(range, &channel_config)? {
-        MatchingConfigEntry::Multiple => Err(Error::with_msg("multiple config entries found"))?,
-        MatchingConfigEntry::None => {
-            // TODO function needs to provide some default.
-            err::todoval()
-        }
-        MatchingConfigEntry::Entry(entry) => {
-            let ret = channel_exec_config(
-                f,
-                entry.scalar_type.clone(),
-                entry.byte_order.clone(),
-                entry.to_shape()?,
-                agg_kind,
-                node_config,
-            )?;
-            Ok(ret)
-        }
-    }
+    let conf = httpclient::get_channel_config(&q, node_config).await?;
+    let ret = channel_exec_config(
+        f,
+        conf.scalar_type.clone(),
+        // TODO is the byte order ever important here?
+        conf.byte_order.unwrap_or(ByteOrder::LE).clone(),
+        conf.shape.clone(),
+        agg_kind,
+        node_config,
+    )?;
+    Ok(ret)
 }
 
 pub struct PlainEvents {

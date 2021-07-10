@@ -40,6 +40,36 @@ where
     }
 }
 
+// TODO decide for either make_frame or make_frame_2
+pub fn make_frame_2<FT>(item: &FT, fty: u32) -> Result<BytesMut, Error>
+where
+    FT: Serialize,
+{
+    match bincode::serialize(item) {
+        Ok(enc) => {
+            if enc.len() > u32::MAX as usize {
+                return Err(Error::with_msg(format!("too long payload {}", enc.len())));
+            }
+            let mut h = crc32fast::Hasher::new();
+            h.update(&enc);
+            let payload_crc = h.finalize();
+            let mut buf = BytesMut::with_capacity(enc.len() + INMEM_FRAME_HEAD);
+            buf.put_u32_le(INMEM_FRAME_MAGIC);
+            buf.put_u32_le(INMEM_FRAME_ENCID);
+            buf.put_u32_le(fty);
+            buf.put_u32_le(enc.len() as u32);
+            buf.put_u32_le(payload_crc);
+            buf.put(enc.as_ref());
+            let mut h = crc32fast::Hasher::new();
+            h.update(&buf);
+            let frame_crc = h.finalize();
+            buf.put_u32_le(frame_crc);
+            Ok(buf)
+        }
+        Err(e) => Err(e)?,
+    }
+}
+
 pub fn make_term_frame() -> BytesMut {
     let mut h = crc32fast::Hasher::new();
     h.update(&[]);
