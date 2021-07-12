@@ -340,7 +340,7 @@ pub async fn scan_files_inner(
         let ndi = dbconn::scan::get_node_disk_ident(&node_config, &dbc).await?;
         let mut paths = VecDeque::new();
         paths.push_back(
-            aa.data_base_path.join(
+            aa.data_base_paths.first().unwrap().join(
                 pairs
                     .get("subpath")
                     .ok_or_else(|| Error::with_msg("subpatch not given"))?,

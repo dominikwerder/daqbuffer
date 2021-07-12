@@ -114,7 +114,7 @@ impl ScalarType {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ArchiverAppliance {
-    pub data_base_path: PathBuf,
+    pub data_base_paths: Vec<PathBuf>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
