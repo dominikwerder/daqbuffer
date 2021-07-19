@@ -220,7 +220,7 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/4/archapp/files" {
+    } else if path == "/api/4/archapp/files/scan" {
         if req.method() == Method::GET {
             Ok(archapp_scan_files(req, &node_config).await?)
         } else {

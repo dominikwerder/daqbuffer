@@ -1,4 +1,3 @@
-use crate::frame::{make_frame, make_frame_2};
 use crate::minmaxavgbins::MinMaxAvgBins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
@@ -6,7 +5,6 @@ use crate::{
     ts_offs_from_abs, Appendable, FilterFittingInside, Fits, FitsInside, PushableIndex, RangeOverlapInfo, ReadPbv,
     ReadableFromFile, SitemtyFrameType, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
-use bytes::BytesMut;
 use err::Error;
 use netpod::NanoRange;
 use serde::{Deserialize, Serialize};

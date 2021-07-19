@@ -1,3 +1,4 @@
+use crate::events::parse_data_filename;
 use crate::generated::EPICSEvent::PayloadType;
 use crate::{unescape_archapp_msg, EventsItem};
 use archapp_xc::*;
@@ -12,7 +13,10 @@ use protobuf::Message;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, VecDeque};
+use std::fs::FileType;
+use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -214,6 +218,7 @@ pub struct EpicsEventPayloadInfo {
     val0: f32,
 }
 
+// TODO remove in favor of PbFileRead
 async fn read_pb_file(mut f1: File) -> Result<(EpicsEventPayloadInfo, File), Error> {
     let mut buf = vec![0; 1024 * 4];
     {
@@ -323,14 +328,41 @@ async fn read_pb_file(mut f1: File) -> Result<(EpicsEventPayloadInfo, File), Err
     Err(Error::with_msg(format!("no data found in file")))
 }
 
+struct LruCache {
+    map: BTreeMap<String, Instant>,
+}
+
+impl LruCache {
+    fn new() -> Self {
+        Self { map: BTreeMap::new() }
+    }
+
+    fn insert(&mut self, key: &str) {
+        self.map.insert(key.into(), Instant::now());
+        if self.map.len() > 2000 {
+            let mut tss: Vec<Instant> = self.map.values().map(|j| j.clone()).collect();
+            tss.sort_unstable();
+            let thr = tss[1500];
+            let m1 = std::mem::replace(&mut self.map, BTreeMap::new());
+            self.map = m1.into_iter().filter(|(j, k)| k > &thr).collect();
+        }
+    }
+
+    fn query(&self, key: &str) -> bool {
+        self.map.get(key).map_or(false, |_| true)
+    }
+}
+
 pub async fn scan_files_inner(
     pairs: BTreeMap<String, String>,
     node_config: NodeConfigCached,
-) -> Result<Receiver<Result<RT1, Error>>, Error> {
+) -> Result<Receiver<Result<ItemSerBox, Error>>, Error> {
+    let _ = pairs;
     let (tx, rx) = bounded(16);
     let tx = Arc::new(tx);
     let tx2 = tx.clone();
     let block1 = async move {
+        let mut lru = LruCache::new();
         let aa = if let Some(aa) = &node_config.node.archiver_appliance {
             aa.clone()
         } else {
@@ -338,24 +370,31 @@ pub async fn scan_files_inner(
         };
         let dbc = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
         let ndi = dbconn::scan::get_node_disk_ident(&node_config, &dbc).await?;
+        struct PE {
+            path: PathBuf,
+            fty: FileType,
+        }
+        let proot = aa.data_base_paths.last().unwrap().clone();
+        let proots = proot.to_str().unwrap().to_string();
+        let meta = tokio::fs::metadata(&proot).await?;
         let mut paths = VecDeque::new();
-        paths.push_back(
-            aa.data_base_paths.first().unwrap().join(
-                pairs
-                    .get("subpath")
-                    .ok_or_else(|| Error::with_msg("subpatch not given"))?,
-            ),
-        );
+        let mut waves_found = 0;
+        paths.push_back(PE {
+            path: proot,
+            fty: meta.file_type(),
+        });
         loop {
-            if let Some(path) = paths.pop_back() {
-                let meta = tokio::fs::metadata(&path).await?;
-                if meta.is_dir() {
-                    let mut rd = tokio::fs::read_dir(&path).await?;
+            if let Some(pe) = paths.pop_back() {
+                if pe.fty.is_dir() {
+                    let mut rd = tokio::fs::read_dir(&pe.path).await?;
                     loop {
                         match rd.next_entry().await {
                             Ok(item) => match item {
                                 Some(item) => {
-                                    paths.push_back(item.path());
+                                    paths.push_back(PE {
+                                        path: item.path(),
+                                        fty: item.file_type().await?,
+                                    });
                                 }
                                 None => {
                                     break;
@@ -366,35 +405,49 @@ pub async fn scan_files_inner(
                             }
                         }
                     }
-                } else if meta.is_file() {
+                } else if pe.fty.is_file() {
                     //tx.send(Ok(Box::new(path.clone()) as RT1)).await?;
-                    if path
-                        .to_str()
-                        .ok_or_else(|| Error::with_msg("invalid path string"))?
-                        .ends_with(".pb")
-                    {
-                        let f1 = tokio::fs::File::open(&path).await?;
-                        let (packet, f1) = read_pb_file(f1).await?;
-                        let pvn = packet.pvname.replace("-", "/");
-                        let pvn = pvn.replace(":", "/");
-                        let pre = "/arch/lts/ArchiverStore/";
-                        let p3 = &path.to_str().unwrap()[pre.len()..];
-                        let p3 = &p3[..p3.len() - 11];
-                        if p3 != pvn {
-                            tx.send(Ok(Box::new(serde_json::to_value(&packet)?) as RT1)).await?;
-                            {
-                                let s = format!("{} - {}", p3, packet.pvname);
-                                tx.send(Ok(Box::new(serde_json::to_value(&s)?) as RT1)).await?;
+                    let fns = pe.path.to_str().ok_or_else(|| Error::with_msg("invalid path string"))?;
+                    if let Ok(fnp) = parse_data_filename(&fns) {
+                        tx.send(Ok(Box::new(serde_json::to_value(fns)?) as ItemSerBox)).await?;
+                        let channel_path = &fns[proots.len() + 1..fns.len() - 11];
+                        if !lru.query(channel_path) {
+                            let mut pbr = PbFileReader::new(tokio::fs::File::open(&pe.path).await?).await;
+                            pbr.read_header().await?;
+                            let normalized_channel_name = {
+                                let pvn = pbr.channel_name().replace("-", "/");
+                                pvn.replace(":", "/")
+                            };
+                            if channel_path != normalized_channel_name {
+                                {
+                                    let s = format!("{} - {}", channel_path, normalized_channel_name);
+                                    tx.send(Ok(Box::new(serde_json::to_value(&s)?) as ItemSerBox)).await?;
+                                }
+                                tx.send(Ok(
+                                    Box::new(JsonValue::String(format!("MISMATCH --------------------"))) as ItemSerBox,
+                                ))
+                                .await?;
+                            } else {
+                                if false {
+                                    dbconn::insert_channel(channel_path.into(), ndi.facility, &dbc).await?;
+                                }
+                                if let Ok(msg) = pbr.read_msg().await {
+                                    if msg.is_wave() {
+                                        tx.send(Ok(Box::new(serde_json::to_value(format!(
+                                            "found  {}  {}",
+                                            msg.variant_name(),
+                                            channel_path
+                                        ))?) as ItemSerBox))
+                                            .await?;
+                                        waves_found += 1;
+                                        if waves_found >= 20 {
+                                            break;
+                                        }
+                                    }
+                                } else {
+                                }
                             }
-                            tx.send(Ok(
-                                Box::new(JsonValue::String(format!("MISMATCH --------------------"))) as RT1,
-                            ))
-                            .await?;
-                        } else {
-                            if false {
-                                dbconn::insert_channel(packet.pvname.clone(), ndi.facility, &dbc).await?;
-                            }
-                            tx.send(Ok(Box::new(serde_json::to_value(&packet)?) as RT1)).await?;
+                            lru.insert(channel_path);
                         }
                     }
                 }

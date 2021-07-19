@@ -1,7 +1,7 @@
 use err::Error;
 use serde::Serialize;
 
-pub type RT1 = Box<dyn ItemSer + Send>;
+pub type ItemSerBox = Box<dyn ItemSer + Send>;
 
 pub trait ItemSer {
     fn serialize(&self) -> Result<Vec<u8>, Error>;

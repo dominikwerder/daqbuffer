@@ -1,4 +1,4 @@
-use archapp_xc::RT1;
+use archapp_xc::ItemSerBox;
 use async_channel::Receiver;
 use err::Error;
 use futures_core::Stream;
@@ -12,7 +12,7 @@ use std::pin::Pin;
 pub fn scan_files(
     pairs: BTreeMap<String, String>,
     node_config: NodeConfigCached,
-) -> Pin<Box<dyn Future<Output = Result<Receiver<Result<RT1, Error>>, Error>> + Send>> {
+) -> Pin<Box<dyn Future<Output = Result<Receiver<Result<ItemSerBox, Error>>, Error>> + Send>> {
     Box::pin(archapp::parse::scan_files_inner(pairs, node_config))
 }
 
