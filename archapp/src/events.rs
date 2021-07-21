@@ -1,15 +1,20 @@
 use crate::parse::PbFileReader;
-use crate::EventsItem;
+use crate::{EventsItem, PlainEvents, ScalarPlainEvents, WavePlainEvents, XBinnedEvents};
 use chrono::{TimeZone, Utc};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::eventvalues::EventValues;
-use items::{Framable, RangeCompletableItem, Sitemty, StreamItem};
+use items::waveevents::{WaveEvents, WaveXBinner};
+use items::xbinnedscalarevents::XBinnedScalarEvents;
+use items::xbinnedwaveevents::XBinnedWaveEvents;
+use items::RangeCompletableItem::RangeComplete;
+use items::{EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, SitemtyFrameType, StreamItem};
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
 use netpod::timeunits::{DAY, SEC};
-use netpod::{ArchiverAppliance, Channel, ChannelInfo, NanoRange, ScalarType, Shape};
+use netpod::{AggKind, ArchiverAppliance, Channel, ChannelInfo, HasScalarType, HasShape, NanoRange, ScalarType, Shape};
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -159,18 +164,47 @@ trait FrameMakerTrait: Send {
 struct FrameMaker {
     scalar_type: ScalarType,
     shape: Shape,
+    agg_kind: AggKind,
+}
+
+impl FrameMaker {
+    fn make_frame_gen<T>(item: Sitemty<EventsItem>) -> Box<dyn Framable>
+    where
+        T: SitemtyFrameType + Serialize + Send + 'static,
+    {
+        match item {
+            Ok(_) => err::todoval(),
+            Err(e) => {
+                //let t = Ok(StreamItem::DataItem(RangeCompletableItem::Data()))
+                let t: Sitemty<T> = Err(e);
+                Box::new(t)
+            }
+        }
+    }
 }
 
 macro_rules! events_item_to_sitemty {
-    ($ei:expr, $var:ident) => {{
-        let d = match $ei {
-            Ok(j) => match j {
-                StreamItem::DataItem(j) => match j {
-                    RangeCompletableItem::Data(j) => {
-                        if let EventsItem::$var(j) = j {
-                            Ok(StreamItem::DataItem(RangeCompletableItem::Data(j)))
-                        } else {
-                            Err(Error::with_msg_no_trace("unexpected variant"))
+    ($ei:expr, $t1:ident, $t2:ident, $t3:ident) => {{
+        let ret = match $ei {
+            Ok(k) => match k {
+                StreamItem::DataItem(k) => match k {
+                    RangeCompletableItem::Data(k) => {
+                        //
+                        match k {
+                            EventsItem::Plain(h) => {
+                                //
+                                match h {
+                                    PlainEvents::$t1(h) => {
+                                        //
+                                        match h {
+                                            $t2::$t3(h) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(h))),
+                                            _ => panic!(),
+                                        }
+                                    }
+                                    _ => panic!(),
+                                }
+                            }
+                            _ => panic!(),
                         }
                     }
                     RangeCompletableItem::RangeComplete => {
@@ -182,30 +216,40 @@ macro_rules! events_item_to_sitemty {
             },
             Err(e) => Err(e),
         };
-        Box::new(d)
+        Box::new(ret)
+    }};
+}
+
+macro_rules! arm1 {
+    ($item:expr, $sty:ident, $shape:expr, $ak:expr) => {{
+        match $shape {
+            Shape::Scalar => match $ak {
+                AggKind::Plain => Self::make_frame_gen::<EventValues<$sty>>($item),
+                AggKind::DimXBins1 => Self::make_frame_gen::<EventValues<$sty>>($item),
+                AggKind::DimXBinsN(_) => Self::make_frame_gen::<EventValues<$sty>>($item),
+            },
+            Shape::Wave(_) => match $ak {
+                AggKind::Plain => Self::make_frame_gen::<WaveEvents<$sty>>($item),
+                AggKind::DimXBins1 => Self::make_frame_gen::<XBinnedScalarEvents<$sty>>($item),
+                AggKind::DimXBinsN(_) => Self::make_frame_gen::<XBinnedWaveEvents<$sty>>($item),
+            },
+        }
     }};
 }
 
 impl FrameMakerTrait for FrameMaker {
-    fn make_frame(&self, ei: Sitemty<EventsItem>) -> Box<dyn Framable> {
+    fn make_frame(&self, item: Sitemty<EventsItem>) -> Box<dyn Framable> {
+        // Take from `self` the expected inner type.
+        // If `ei` is not some data, then I can't dynamically determine the expected T of Sitemty.
+        // Therefore, I need to decide that based on given parameters.
         // see also channel_info in this mod.
-        match self.shape {
-            Shape::Scalar => match self.scalar_type {
-                ScalarType::I8 => events_item_to_sitemty!(ei, ScalarByte),
-                ScalarType::I16 => events_item_to_sitemty!(ei, ScalarShort),
-                ScalarType::I32 => events_item_to_sitemty!(ei, ScalarInt),
-                ScalarType::F32 => events_item_to_sitemty!(ei, ScalarFloat),
-                ScalarType::F64 => events_item_to_sitemty!(ei, ScalarDouble),
-                _ => panic!(),
-            },
-            Shape::Wave(_) => match self.scalar_type {
-                ScalarType::I8 => events_item_to_sitemty!(ei, WaveByte),
-                ScalarType::I16 => events_item_to_sitemty!(ei, WaveShort),
-                ScalarType::I32 => events_item_to_sitemty!(ei, WaveInt),
-                ScalarType::F32 => events_item_to_sitemty!(ei, WaveFloat),
-                ScalarType::F64 => events_item_to_sitemty!(ei, WaveDouble),
-                _ => panic!(),
-            },
+        match self.scalar_type {
+            ScalarType::I8 => arm1!(item, i8, self.shape, self.agg_kind),
+            ScalarType::I16 => arm1!(item, i16, self.shape, self.agg_kind),
+            ScalarType::I32 => arm1!(item, i32, self.shape, self.agg_kind),
+            ScalarType::F32 => arm1!(item, f32, self.shape, self.agg_kind),
+            ScalarType::F64 => arm1!(item, f64, self.shape, self.agg_kind),
+            _ => err::todoval(),
         }
     }
 }
@@ -230,6 +274,7 @@ pub async fn make_event_pipe(
     let frame_maker = Box::new(FrameMaker {
         scalar_type: ci.scalar_type.clone(),
         shape: ci.shape.clone(),
+        agg_kind: evq.agg_kind.clone(),
     }) as Box<dyn FrameMakerTrait>;
     let ret = sm.map(move |j| frame_maker.make_frame(j));
     Ok(Box::pin(ret))
@@ -239,6 +284,8 @@ pub async fn make_single_event_pipe(
     evq: &RawEventsQuery,
     base_path: PathBuf,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventsItem>> + Send>>, Error> {
+    // TODO must apply the proper x-binning depending on the requested AggKind.
+
     info!("make_event_pipe  {:?}", evq);
     let evq = evq.clone();
     let DirAndPrefix { dir, prefix } = directory_for_channel_files(&evq.channel, base_path)?;
@@ -249,6 +296,7 @@ pub async fn make_single_event_pipe(
         info!("start read of {:?}", dir);
 
         // TODO first collect all matching filenames, then sort, then open files.
+        // TODO if dir does not exist, should notify client but not log as error.
         let mut rd = tokio::fs::read_dir(&dir).await?;
         while let Some(de) = rd.next_entry().await? {
             let s = de.file_name().to_string_lossy().into_owned();
@@ -271,7 +319,8 @@ pub async fn make_single_event_pipe(
                                 match pbr.read_msg().await {
                                     Ok(ei) => {
                                         info!("read msg from file");
-                                        let g = Ok(StreamItem::DataItem(RangeCompletableItem::Data(ei)));
+                                        let ei2 = ei.x_aggregate(&evq.agg_kind);
+                                        let g = Ok(StreamItem::DataItem(RangeCompletableItem::Data(ei2)));
                                         tx.send(g).await?;
                                     }
                                     Err(e) => {
@@ -307,7 +356,7 @@ pub async fn make_single_event_pipe(
 #[allow(unused)]
 fn events_item_to_framable(ei: EventsItem) -> Result<Box<dyn Framable + Send>, Error> {
     match ei {
-        EventsItem::ScalarDouble(h) => {
+        EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::Int(h))) => {
             let range: NanoRange = err::todoval();
             let (x, y) = h
                 .tss
@@ -378,57 +427,9 @@ pub async fn channel_info(channel: &Channel, aa: &ArchiverAppliance) -> Result<C
             match ev {
                 Ok(item) => {
                     msgs.push(format!("got event {:?}", item));
-                    shape = Some(match &item {
-                        EventsItem::ScalarByte(_) => Shape::Scalar,
-                        EventsItem::ScalarShort(_) => Shape::Scalar,
-                        EventsItem::ScalarInt(_) => Shape::Scalar,
-                        EventsItem::ScalarFloat(_) => Shape::Scalar,
-                        EventsItem::ScalarDouble(_) => Shape::Scalar,
-                        // TODO use macro:
-                        EventsItem::WaveByte(item) => Shape::Wave(
-                            item.vals
-                                .first()
-                                .ok_or_else(|| Error::with_msg_no_trace("empty event batch"))?
-                                .len() as u32,
-                        ),
-                        EventsItem::WaveShort(item) => Shape::Wave(
-                            item.vals
-                                .first()
-                                .ok_or_else(|| Error::with_msg_no_trace("empty event batch"))?
-                                .len() as u32,
-                        ),
-                        EventsItem::WaveInt(item) => Shape::Wave(
-                            item.vals
-                                .first()
-                                .ok_or_else(|| Error::with_msg_no_trace("empty event batch"))?
-                                .len() as u32,
-                        ),
-                        EventsItem::WaveFloat(item) => Shape::Wave(
-                            item.vals
-                                .first()
-                                .ok_or_else(|| Error::with_msg_no_trace("empty event batch"))?
-                                .len() as u32,
-                        ),
-                        EventsItem::WaveDouble(item) => Shape::Wave(
-                            item.vals
-                                .first()
-                                .ok_or_else(|| Error::with_msg_no_trace("empty event batch"))?
-                                .len() as u32,
-                        ),
-                    });
+                    shape = Some(item.shape());
                     // These type mappings are defined by the protobuffer schema.
-                    scalar_type = Some(match item {
-                        EventsItem::ScalarByte(_) => ScalarType::I8,
-                        EventsItem::ScalarShort(_) => ScalarType::I16,
-                        EventsItem::ScalarInt(_) => ScalarType::I32,
-                        EventsItem::ScalarFloat(_) => ScalarType::F32,
-                        EventsItem::ScalarDouble(_) => ScalarType::F64,
-                        EventsItem::WaveByte(_) => ScalarType::I8,
-                        EventsItem::WaveShort(_) => ScalarType::I16,
-                        EventsItem::WaveInt(_) => ScalarType::I32,
-                        EventsItem::WaveFloat(_) => ScalarType::F32,
-                        EventsItem::WaveDouble(_) => ScalarType::F64,
-                    });
+                    scalar_type = Some(item.scalar_type());
                     break;
                 }
                 Err(e) => {

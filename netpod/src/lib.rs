@@ -54,6 +54,10 @@ pub enum ScalarType {
     BOOL,
 }
 
+pub trait HasScalarType {
+    fn scalar_type(&self) -> ScalarType;
+}
+
 impl ScalarType {
     pub fn from_dtype_index(ix: u8) -> Result<Self, Error> {
         use ScalarType::*;
@@ -329,6 +333,10 @@ pub struct ChannelConfig {
 pub enum Shape {
     Scalar,
     Wave(u32),
+}
+
+pub trait HasShape {
+    fn shape(&self) -> Shape;
 }
 
 pub mod timeunits {

@@ -64,7 +64,7 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
         NTY: NumOps + NumFromBytes<NTY, END> + 'static,
         END: Endianness + 'static,
         EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
-        ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
+        ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
         // TODO require these things in general?
         <ENP as EventsNodeProcessor>::Output: Collectable + PushableIndex,
         <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: Debug
@@ -309,7 +309,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
         NTY: NumOps + NumFromBytes<NTY, END> + 'static,
         END: Endianness + 'static,
         EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
-        ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
+        ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
         // TODO require these things in general?
         <ENP as EventsNodeProcessor>::Output: Collectable + PushableIndex,
         <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: Debug

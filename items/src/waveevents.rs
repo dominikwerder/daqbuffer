@@ -4,8 +4,9 @@ use crate::numops::NumOps;
 use crate::xbinnedscalarevents::XBinnedScalarEvents;
 use crate::xbinnedwaveevents::XBinnedWaveEvents;
 use crate::{
-    Appendable, EventsNodeProcessor, FilterFittingInside, Fits, FitsInside, PushableIndex, RangeOverlapInfo, ReadPbv,
-    ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    Appendable, EventAppendable, EventsNodeProcessor, FilterFittingInside, Fits, FitsInside, PushableIndex,
+    RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType,
+    TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
@@ -267,6 +268,18 @@ where
     }
 }
 
+impl<NTY> EventAppendable for WaveEvents<NTY>
+where
+    NTY: NumOps,
+{
+    type Value = Vec<NTY>;
+
+    fn append_event(&mut self, ts: u64, value: Self::Value) {
+        self.tss.push(ts);
+        self.vals.push(value);
+    }
+}
+
 pub struct WaveXBinner<NTY> {
     _m1: PhantomData<NTY>,
 }
@@ -275,14 +288,14 @@ impl<NTY> EventsNodeProcessor for WaveXBinner<NTY>
 where
     NTY: NumOps,
 {
-    type Input = Vec<NTY>;
+    type Input = WaveEvents<NTY>;
     type Output = XBinnedScalarEvents<NTY>;
 
     fn create(_shape: Shape, _agg_kind: AggKind) -> Self {
         Self { _m1: PhantomData }
     }
 
-    fn process(&self, inp: EventValues<Self::Input>) -> Self::Output {
+    fn process(&self, inp: Self::Input) -> Self::Output {
         let nev = inp.tss.len();
         let mut ret = Self::Output {
             tss: inp.tss,
@@ -295,7 +308,7 @@ where
             let mut max = NTY::min_or_nan();
             let mut sum = 0f32;
             let mut sumc = 0;
-            let vals = &inp.values[i1];
+            let vals = &inp.vals[i1];
             for &v in vals {
                 if v < min || min.is_nan() {
                     min = v;
@@ -332,7 +345,7 @@ impl<NTY> EventsNodeProcessor for WaveNBinner<NTY>
 where
     NTY: NumOps,
 {
-    type Input = Vec<NTY>;
+    type Input = WaveEvents<NTY>;
     type Output = XBinnedWaveEvents<NTY>;
 
     fn create(shape: Shape, agg_kind: AggKind) -> Self {
@@ -348,7 +361,7 @@ where
         }
     }
 
-    fn process(&self, inp: EventValues<Self::Input>) -> Self::Output {
+    fn process(&self, inp: Self::Input) -> Self::Output {
         let nev = inp.tss.len();
         let mut ret = Self::Output {
             // TODO get rid of this clone:
@@ -362,7 +375,7 @@ where
             let mut max = vec![NTY::min_or_nan(); self.x_bin_count];
             let mut sum = vec![0f32; self.x_bin_count];
             let mut sumc = vec![0u64; self.x_bin_count];
-            for (i2, &v) in inp.values[i1].iter().enumerate() {
+            for (i2, &v) in inp.vals[i1].iter().enumerate() {
                 let i3 = i2 * self.x_bin_count / self.shape_bin_count;
                 if v < min[i3] || min[i3].is_nan() {
                     min[i3] = v;
@@ -401,25 +414,25 @@ impl<NTY> EventsNodeProcessor for WavePlainProc<NTY>
 where
     NTY: NumOps,
 {
-    type Input = Vec<NTY>;
+    type Input = WaveEvents<NTY>;
     type Output = WaveEvents<NTY>;
 
     fn create(_shape: Shape, _agg_kind: AggKind) -> Self {
         Self { _m1: PhantomData }
     }
 
-    fn process(&self, inp: EventValues<Self::Input>) -> Self::Output {
+    fn process(&self, inp: Self::Input) -> Self::Output {
         if false {
-            let n = if inp.values.len() > 0 { inp.values[0].len() } else { 0 };
+            let n = if inp.vals.len() > 0 { inp.vals[0].len() } else { 0 };
             let n = if n > 5 { 5 } else { n };
             WaveEvents {
                 tss: inp.tss,
-                vals: inp.values.iter().map(|k| k[..n].to_vec()).collect(),
+                vals: inp.vals.iter().map(|k| k[..n].to_vec()).collect(),
             }
         } else {
             WaveEvents {
                 tss: inp.tss,
-                vals: inp.values,
+                vals: inp.vals,
             }
         }
     }

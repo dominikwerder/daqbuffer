@@ -42,7 +42,7 @@ pub trait ChannelExecFunction {
         NTY: NumOps + NumFromBytes<NTY, END> + 'static,
         END: Endianness + 'static,
         EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
-        ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
+        ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
         // TODO require these things in general?
         <ENP as EventsNodeProcessor>::Output: Debug + Collectable + PushableIndex,
         <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: Debug
@@ -68,7 +68,7 @@ where
     NTY: NumOps + NumFromBytes<NTY, END> + 'static,
     END: Endianness + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
-    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
+    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
     // TODO require these things in general?
     <ENP as EventsNodeProcessor>::Output: Debug + Collectable + PushableIndex,
     <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: Debug
@@ -237,7 +237,7 @@ impl ChannelExecFunction for PlainEvents {
         NTY: NumOps + NumFromBytes<NTY, END> + 'static,
         END: Endianness + 'static,
         EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
-        ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
+        ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
     {
         let _ = byte_order;
         let _ = event_value_shape;
@@ -382,7 +382,7 @@ impl ChannelExecFunction for PlainEventsJson {
         NTY: NumOps + NumFromBytes<NTY, END> + 'static,
         END: Endianness + 'static,
         EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
-        ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
+        ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
         // TODO require these things in general?
         <ENP as EventsNodeProcessor>::Output: Debug + Collectable + PushableIndex,
         <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: Debug

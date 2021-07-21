@@ -34,7 +34,7 @@ where
     NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
     END: Endianness + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
-    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output>,
+    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch>,
 {
     query: PreBinnedQuery,
     shape: Shape,
@@ -72,7 +72,7 @@ where
     NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
     END: Endianness + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
-    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
+    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
     <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable,
     // TODO is this needed:
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType,
@@ -231,7 +231,7 @@ where
     NTY: NumOps + NumFromBytes<NTY, END> + Serialize + Unpin + 'static,
     END: Endianness + Unpin + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + Unpin + 'static,
-    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + Unpin + 'static,
+    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + Unpin + 'static,
     <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable,
     // TODO needed?
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType,

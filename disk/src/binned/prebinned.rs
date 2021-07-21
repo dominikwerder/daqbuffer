@@ -28,7 +28,7 @@ where
     NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
     END: Endianness + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
-    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
+    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
     <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable + 'static,
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
     Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:

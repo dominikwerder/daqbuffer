@@ -12,14 +12,14 @@ impl<NTY> EventsNodeProcessor for Identity<NTY>
 where
     NTY: NumOps,
 {
-    type Input = NTY;
+    type Input = EventValues<NTY>;
     type Output = EventValues<NTY>;
 
     fn create(_shape: Shape, _agg_kind: AggKind) -> Self {
         Self { _m1: PhantomData }
     }
 
-    fn process(&self, inp: EventValues<Self::Input>) -> Self::Output {
+    fn process(&self, inp: Self::Input) -> Self::Output {
         inp
     }
 }

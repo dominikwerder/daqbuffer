@@ -1,6 +1,6 @@
 use crate::events::parse_data_filename;
 use crate::generated::EPICSEvent::PayloadType;
-use crate::{unescape_archapp_msg, EventsItem};
+use crate::{unescape_archapp_msg, EventsItem, PlainEvents, ScalarPlainEvents, WavePlainEvents};
 use archapp_xc::*;
 use async_channel::{bounded, Receiver};
 use chrono::{TimeZone, Utc};
@@ -33,16 +33,16 @@ pub struct PbFileReader {
 fn parse_scalar_byte(m: &[u8], year: u32) -> Result<EventsItem, Error> {
     let msg = crate::generated::EPICSEvent::ScalarByte::parse_from_bytes(m)
         .map_err(|_| Error::with_msg(format!("can not parse pb-type {}", "ScalarByte")))?;
-    let mut t = EventValues::<i32> {
+    let mut t = EventValues::<i8> {
         tss: vec![],
         values: vec![],
     };
     let yd = Utc.ymd(year as i32, 1, 1).and_hms(0, 0, 0);
     let ts = yd.timestamp() as u64 * 1000000000 + msg.get_secondsintoyear() as u64 * 1000000000 + msg.get_nano() as u64;
-    let v = msg.get_val().first().map_or(0, |k| *k as i32);
+    let v = msg.get_val().first().map_or(0, |k| *k as i8);
     t.tss.push(ts);
     t.values.push(v);
-    Ok(EventsItem::ScalarByte(t))
+    Ok(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::Byte(t))))
 }
 
 macro_rules! scalar_parse {
@@ -58,8 +58,8 @@ macro_rules! scalar_parse {
             yd.timestamp() as u64 * 1000000000 + msg.get_secondsintoyear() as u64 * 1000000000 + msg.get_nano() as u64;
         let v = msg.get_val();
         t.tss.push(ts);
-        t.values.push(v);
-        EventsItem::$eit(t)
+        t.values.push(v as $evty);
+        EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::$eit(t)))
     }};
 }
 
@@ -76,8 +76,8 @@ macro_rules! wave_parse {
             yd.timestamp() as u64 * 1000000000 + msg.get_secondsintoyear() as u64 * 1000000000 + msg.get_nano() as u64;
         let v = msg.get_val();
         t.tss.push(ts);
-        t.vals.push(v.to_vec());
-        EventsItem::$eit(t)
+        t.vals.push(v.into_iter().map(|&x| x as $evty).collect());
+        EventsItem::Plain(PlainEvents::Wave(WavePlainEvents::$eit(t)))
     }};
 }
 
@@ -119,37 +119,37 @@ impl PbFileReader {
         let ei = match self.payload_type {
             SCALAR_BYTE => parse_scalar_byte(&m, self.year)?,
             SCALAR_ENUM => {
-                scalar_parse!(&m, self.year, ScalarEnum, ScalarInt, i32)
+                scalar_parse!(&m, self.year, ScalarEnum, Int, i32)
             }
             SCALAR_SHORT => {
-                scalar_parse!(&m, self.year, ScalarShort, ScalarShort, i32)
+                scalar_parse!(&m, self.year, ScalarShort, Short, i16)
             }
             SCALAR_INT => {
-                scalar_parse!(&m, self.year, ScalarInt, ScalarInt, i32)
+                scalar_parse!(&m, self.year, ScalarInt, Int, i32)
             }
             SCALAR_FLOAT => {
-                scalar_parse!(&m, self.year, ScalarFloat, ScalarFloat, f32)
+                scalar_parse!(&m, self.year, ScalarFloat, Float, f32)
             }
             SCALAR_DOUBLE => {
-                scalar_parse!(&m, self.year, ScalarDouble, ScalarDouble, f64)
+                scalar_parse!(&m, self.year, ScalarDouble, Double, f64)
             }
             WAVEFORM_BYTE => {
-                wave_parse!(&m, self.year, VectorChar, WaveByte, u8)
+                wave_parse!(&m, self.year, VectorChar, Byte, i8)
             }
             WAVEFORM_SHORT => {
-                wave_parse!(&m, self.year, VectorShort, WaveShort, i32)
+                wave_parse!(&m, self.year, VectorShort, Short, i16)
             }
             WAVEFORM_ENUM => {
-                wave_parse!(&m, self.year, VectorEnum, WaveInt, i32)
+                wave_parse!(&m, self.year, VectorEnum, Int, i32)
             }
             WAVEFORM_INT => {
-                wave_parse!(&m, self.year, VectorInt, WaveInt, i32)
+                wave_parse!(&m, self.year, VectorInt, Int, i32)
             }
             WAVEFORM_FLOAT => {
-                wave_parse!(&m, self.year, VectorFloat, WaveFloat, f32)
+                wave_parse!(&m, self.year, VectorFloat, Float, f32)
             }
             WAVEFORM_DOUBLE => {
-                wave_parse!(&m, self.year, VectorDouble, WaveDouble, f64)
+                wave_parse!(&m, self.year, VectorDouble, Double, f64)
             }
             SCALAR_STRING | WAVEFORM_STRING | V4_GENERIC_BYTES => {
                 return Err(Error::with_msg(format!("not supported: {:?}", self.payload_type)));
@@ -409,7 +409,7 @@ pub async fn scan_files_inner(
                     //tx.send(Ok(Box::new(path.clone()) as RT1)).await?;
                     let fns = pe.path.to_str().ok_or_else(|| Error::with_msg("invalid path string"))?;
                     if let Ok(fnp) = parse_data_filename(&fns) {
-                        tx.send(Ok(Box::new(serde_json::to_value(fns)?) as ItemSerBox)).await?;
+                        //tx.send(Ok(Box::new(serde_json::to_value(fns)?) as ItemSerBox)).await?;
                         let channel_path = &fns[proots.len() + 1..fns.len() - 11];
                         if !lru.query(channel_path) {
                             let mut pbr = PbFileReader::new(tokio::fs::File::open(&pe.path).await?).await;
@@ -432,22 +432,21 @@ pub async fn scan_files_inner(
                                     dbconn::insert_channel(channel_path.into(), ndi.facility, &dbc).await?;
                                 }
                                 if let Ok(msg) = pbr.read_msg().await {
-                                    if msg.is_wave() {
+                                    lru.insert(channel_path);
+                                    {
                                         tx.send(Ok(Box::new(serde_json::to_value(format!(
-                                            "found  {}  {}",
-                                            msg.variant_name(),
-                                            channel_path
+                                            "channel  {}  type {}",
+                                            pbr.channel_name(),
+                                            msg.variant_name()
                                         ))?) as ItemSerBox))
                                             .await?;
-                                        waves_found += 1;
+                                        /*waves_found += 1;
                                         if waves_found >= 20 {
                                             break;
-                                        }
+                                        }*/
                                     }
-                                } else {
                                 }
                             }
-                            lru.insert(channel_path);
                         }
                     }
                 }

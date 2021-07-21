@@ -2,8 +2,9 @@ use crate::minmaxavgbins::MinMaxAvgBins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
-    ts_offs_from_abs, Appendable, FilterFittingInside, Fits, FitsInside, PushableIndex, RangeOverlapInfo, ReadPbv,
-    ReadableFromFile, SitemtyFrameType, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    ts_offs_from_abs, Appendable, EventAppendable, FilterFittingInside, Fits, FitsInside, PushableIndex,
+    RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, TimeBinnableType, TimeBinnableTypeAggregator,
+    WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::NanoRange;
@@ -250,6 +251,7 @@ where
         Self::Collector::new()
     }
 }
+
 pub struct EventValuesAggregator<NTY> {
     range: NanoRange,
     count: u64,
@@ -337,5 +339,17 @@ where
             maxs: vec![self.max],
             avgs: vec![avg],
         }
+    }
+}
+
+impl<NTY> EventAppendable for EventValues<NTY>
+where
+    NTY: NumOps,
+{
+    type Value = NTY;
+
+    fn append_event(&mut self, ts: u64, value: Self::Value) {
+        self.tss.push(ts);
+        self.values.push(value);
     }
 }

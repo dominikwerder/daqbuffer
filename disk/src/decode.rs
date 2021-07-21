@@ -6,8 +6,8 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use items::eventvalues::EventValues;
 use items::numops::{BoolNum, NumOps};
-use items::waveevents::{WaveNBinner, WavePlainProc, WaveXBinner};
-use items::{EventsNodeProcessor, RangeCompletableItem, StreamItem};
+use items::waveevents::{WaveEvents, WaveNBinner, WavePlainProc, WaveXBinner};
+use items::{Appendable, EventAppendable, EventsNodeProcessor, RangeCompletableItem, StreamItem};
 use std::marker::PhantomData;
 use std::mem::size_of;
 use std::pin::Pin;
@@ -85,6 +85,7 @@ where
     NTY: NumFromBytes<NTY, END>,
 {
     type Output;
+    type Batch: Appendable + EventAppendable<Value = Self::Output>;
     // The written data on disk has errors:
     // The endian as stated in the channel config does not match written events.
     // Therefore, can not rely on that but have to check for each single event...
@@ -93,9 +94,10 @@ where
 
 impl<NTY, END> EventValueFromBytes<NTY, END> for EventValuesDim0Case<NTY>
 where
-    NTY: NumFromBytes<NTY, END>,
+    NTY: NumOps + NumFromBytes<NTY, END>,
 {
     type Output = NTY;
+    type Batch = EventValues<NTY>;
 
     fn convert(&self, buf: &[u8], big_endian: bool) -> Result<Self::Output, Error> {
         Ok(NTY::convert(buf, big_endian))
@@ -104,9 +106,10 @@ where
 
 impl<NTY, END> EventValueFromBytes<NTY, END> for EventValuesDim1Case<NTY>
 where
-    NTY: NumFromBytes<NTY, END>,
+    NTY: NumOps + NumFromBytes<NTY, END>,
 {
     type Output = Vec<NTY>;
+    type Batch = WaveEvents<NTY>;
 
     fn convert(&self, buf: &[u8], big_endian: bool) -> Result<Self::Output, Error> {
         let es = size_of::<NTY>();
@@ -131,9 +134,9 @@ pub trait EventValueShape<NTY, END>: EventValueFromBytes<NTY, END> + Send + Unpi
 where
     NTY: NumFromBytes<NTY, END>,
 {
-    type NumXAggToSingleBin: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Output>;
-    type NumXAggToNBins: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Output>;
-    type NumXAggPlain: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Output>;
+    type NumXAggToSingleBin: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Batch>;
+    type NumXAggToNBins: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Batch>;
+    type NumXAggPlain: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Batch>;
 }
 
 pub struct EventValuesDim0Case<NTY> {
@@ -209,10 +212,10 @@ where
         }
     }
 
-    fn decode(&mut self, ev: &EventFull) -> Result<EventValues<<EVS as EventValueFromBytes<NTY, END>>::Output>, Error> {
-        let mut ret = EventValues::empty();
-        ret.tss.reserve(ev.tss.len());
-        ret.values.reserve(ev.tss.len());
+    fn decode(&mut self, ev: &EventFull) -> Result<<EVS as EventValueFromBytes<NTY, END>>::Batch, Error> {
+        let mut ret = <<EVS as EventValueFromBytes<NTY, END>>::Batch as Appendable>::empty();
+        //ret.tss.reserve(ev.tss.len());
+        //ret.values.reserve(ev.tss.len());
         for i1 in 0..ev.tss.len() {
             // TODO check that dtype, event endianness and event shape match our static
             // expectation about the data in this channel.
@@ -228,8 +231,9 @@ where
             }
             let decomp = ev.decomps[i1].as_ref().unwrap().as_ref();
             let val = self.evs.convert(decomp, be)?;
-            ret.tss.push(ev.tss[i1]);
-            ret.values.push(val);
+            <<EVS as EventValueFromBytes<NTY, END>>::Batch as EventAppendable>::append_event(&mut ret, ev.tss[i1], val);
+            //ret.tss.push(ev.tss[i1]);
+            //ret.values.push(val);
         }
         Ok(ret)
     }
@@ -241,8 +245,7 @@ where
     END: Endianness,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END>,
 {
-    type Item =
-        Result<StreamItem<RangeCompletableItem<EventValues<<EVS as EventValueFromBytes<NTY, END>>::Output>>>, Error>;
+    type Item = Result<StreamItem<RangeCompletableItem<<EVS as EventValueFromBytes<NTY, END>>::Batch>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;

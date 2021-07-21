@@ -23,7 +23,7 @@ where
     NTY: NumOps + NumFromBytes<NTY, END> + 'static,
     END: Endianness + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
-    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Output> + 'static,
+    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
     Sitemty<<ENP as EventsNodeProcessor>::Output>: Framable + 'static,
     <ENP as EventsNodeProcessor>::Output: 'static,
 {

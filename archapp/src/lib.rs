@@ -9,8 +9,11 @@ pub mod parse;
 #[cfg(not(feature = "devread"))]
 pub mod parsestub;
 use items::eventvalues::EventValues;
-use items::waveevents::WaveEvents;
-use items::{WithLen, WithTimestamps};
+use items::numops::NumOps;
+use items::waveevents::{WaveEvents, WaveXBinner};
+use items::xbinnedscalarevents::XBinnedScalarEvents;
+use items::{EventsNodeProcessor, Framable, SitemtyFrameType, WithLen, WithTimestamps};
+use netpod::{AggKind, HasScalarType, HasShape, ScalarType, Shape};
 #[cfg(not(feature = "devread"))]
 pub use parsestub as parse;
 
@@ -44,45 +47,434 @@ fn unescape_archapp_msg(inp: &[u8]) -> Result<Vec<u8>, Error> {
 }
 
 #[derive(Debug)]
+pub enum ScalarPlainEvents {
+    Byte(EventValues<i8>),
+    Short(EventValues<i16>),
+    Int(EventValues<i32>),
+    Float(EventValues<f32>),
+    Double(EventValues<f64>),
+}
+
+impl ScalarPlainEvents {
+    pub fn variant_name(&self) -> String {
+        use ScalarPlainEvents::*;
+        match self {
+            Byte(h) => format!("Byte"),
+            Short(h) => format!("Short"),
+            Int(h) => format!("Int"),
+            Float(h) => format!("Float"),
+            Double(h) => format!("Double"),
+        }
+    }
+}
+
+impl WithLen for ScalarPlainEvents {
+    fn len(&self) -> usize {
+        use ScalarPlainEvents::*;
+        match self {
+            Byte(j) => j.len(),
+            Short(j) => j.len(),
+            Int(j) => j.len(),
+            Float(j) => j.len(),
+            Double(j) => j.len(),
+        }
+    }
+}
+
+impl WithTimestamps for ScalarPlainEvents {
+    fn ts(&self, ix: usize) -> u64 {
+        use ScalarPlainEvents::*;
+        match self {
+            Byte(j) => j.ts(ix),
+            Short(j) => j.ts(ix),
+            Int(j) => j.ts(ix),
+            Float(j) => j.ts(ix),
+            Double(j) => j.ts(ix),
+        }
+    }
+}
+
+impl HasShape for ScalarPlainEvents {
+    fn shape(&self) -> Shape {
+        use ScalarPlainEvents::*;
+        match self {
+            _ => Shape::Scalar,
+        }
+    }
+}
+
+impl HasScalarType for ScalarPlainEvents {
+    fn scalar_type(&self) -> ScalarType {
+        use ScalarPlainEvents::*;
+        match self {
+            Byte(h) => ScalarType::I8,
+            Short(h) => ScalarType::I16,
+            Int(h) => ScalarType::I32,
+            Float(h) => ScalarType::F32,
+            Double(h) => ScalarType::F64,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum WavePlainEvents {
+    Byte(WaveEvents<i8>),
+    Short(WaveEvents<i16>),
+    Int(WaveEvents<i32>),
+    Float(WaveEvents<f32>),
+    Double(WaveEvents<f64>),
+}
+
+fn tmp1() {
+    let ev = EventValues::<u8> {
+        tss: vec![],
+        values: vec![],
+    };
+    <u8 as NumOps>::is_nan(err::todoval());
+    <EventValues<u8> as SitemtyFrameType>::FRAME_TYPE_ID;
+    //<Vec<u8> as NumOps>::is_nan(err::todoval());
+    //<EventValues<Vec<u8>> as SitemtyFrameType>::FRAME_TYPE_ID;
+}
+
+impl WavePlainEvents {
+    pub fn variant_name(&self) -> String {
+        use WavePlainEvents::*;
+        match self {
+            Byte(h) => format!("Byte({})", h.vals.first().map_or(0, |j| j.len())),
+            Short(h) => format!("Short({})", h.vals.first().map_or(0, |j| j.len())),
+            Int(h) => format!("Int({})", h.vals.first().map_or(0, |j| j.len())),
+            Float(h) => format!("Float({})", h.vals.first().map_or(0, |j| j.len())),
+            Double(h) => format!("Double({})", h.vals.first().map_or(0, |j| j.len())),
+        }
+    }
+
+    fn x_aggregate(self, ak: &AggKind) -> EventsItem {
+        use WavePlainEvents::*;
+        let shape = self.shape();
+        match self {
+            Byte(k) => match ak {
+                AggKind::Plain => EventsItem::Plain(PlainEvents::Wave(WavePlainEvents::Byte(k))),
+                AggKind::DimXBins1 => {
+                    let p = WaveXBinner::create(shape, ak.clone());
+                    let j = p.process(k);
+                    EventsItem::XBinnedEvents(XBinnedEvents::SingleBinWave(SingleBinWaveEvents::Byte(j)))
+                }
+                AggKind::DimXBinsN(_) => EventsItem::Plain(PlainEvents::Wave(err::todoval())),
+            },
+            _ => panic!(),
+        }
+    }
+}
+
+impl WithLen for WavePlainEvents {
+    fn len(&self) -> usize {
+        use WavePlainEvents::*;
+        match self {
+            Byte(j) => j.len(),
+            Short(j) => j.len(),
+            Int(j) => j.len(),
+            Float(j) => j.len(),
+            Double(j) => j.len(),
+        }
+    }
+}
+
+impl WithTimestamps for WavePlainEvents {
+    fn ts(&self, ix: usize) -> u64 {
+        use WavePlainEvents::*;
+        match self {
+            Byte(j) => j.ts(ix),
+            Short(j) => j.ts(ix),
+            Int(j) => j.ts(ix),
+            Float(j) => j.ts(ix),
+            Double(j) => j.ts(ix),
+        }
+    }
+}
+
+impl HasShape for WavePlainEvents {
+    fn shape(&self) -> Shape {
+        use WavePlainEvents::*;
+        match self {
+            Byte(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
+            Short(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
+            Int(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
+            Float(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
+            Double(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
+        }
+    }
+}
+
+impl HasScalarType for WavePlainEvents {
+    fn scalar_type(&self) -> ScalarType {
+        use WavePlainEvents::*;
+        match self {
+            Byte(h) => ScalarType::I8,
+            Short(h) => ScalarType::I16,
+            Int(h) => ScalarType::I32,
+            Float(h) => ScalarType::F32,
+            Double(h) => ScalarType::F64,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum SingleBinWaveEvents {
+    Byte(XBinnedScalarEvents<i8>),
+    Short(XBinnedScalarEvents<i16>),
+    Int(XBinnedScalarEvents<i32>),
+    Float(XBinnedScalarEvents<f32>),
+    Double(XBinnedScalarEvents<f64>),
+}
+
+impl SingleBinWaveEvents {
+    pub fn variant_name(&self) -> String {
+        use SingleBinWaveEvents::*;
+        match self {
+            Byte(h) => format!("Byte"),
+            Short(h) => format!("Short"),
+            Int(h) => format!("Int"),
+            Float(h) => format!("Float"),
+            Double(h) => format!("Double"),
+        }
+    }
+
+    fn x_aggregate(self, ak: &AggKind) -> EventsItem {
+        use SingleBinWaveEvents::*;
+        match self {
+            Byte(k) => match ak {
+                AggKind::Plain => EventsItem::XBinnedEvents(XBinnedEvents::SingleBinWave(SingleBinWaveEvents::Byte(k))),
+                AggKind::DimXBins1 => err::todoval(),
+                AggKind::DimXBinsN(_) => EventsItem::Plain(PlainEvents::Wave(err::todoval())),
+            },
+            _ => panic!(),
+        }
+    }
+}
+
+impl WithLen for SingleBinWaveEvents {
+    fn len(&self) -> usize {
+        use SingleBinWaveEvents::*;
+        match self {
+            Byte(j) => j.len(),
+            Short(j) => j.len(),
+            Int(j) => j.len(),
+            Float(j) => j.len(),
+            Double(j) => j.len(),
+        }
+    }
+}
+
+impl WithTimestamps for SingleBinWaveEvents {
+    fn ts(&self, ix: usize) -> u64 {
+        use SingleBinWaveEvents::*;
+        match self {
+            Byte(j) => j.ts(ix),
+            Short(j) => j.ts(ix),
+            Int(j) => j.ts(ix),
+            Float(j) => j.ts(ix),
+            Double(j) => j.ts(ix),
+        }
+    }
+}
+
+impl HasShape for SingleBinWaveEvents {
+    fn shape(&self) -> Shape {
+        use SingleBinWaveEvents::*;
+        match self {
+            Byte(h) => Shape::Scalar,
+            Short(h) => Shape::Scalar,
+            Int(h) => Shape::Scalar,
+            Float(h) => Shape::Scalar,
+            Double(h) => Shape::Scalar,
+        }
+    }
+}
+
+impl HasScalarType for SingleBinWaveEvents {
+    fn scalar_type(&self) -> ScalarType {
+        use SingleBinWaveEvents::*;
+        match self {
+            Byte(h) => ScalarType::I8,
+            Short(h) => ScalarType::I16,
+            Int(h) => ScalarType::I32,
+            Float(h) => ScalarType::F32,
+            Double(h) => ScalarType::F64,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum XBinnedEvents {
+    Scalar(ScalarPlainEvents),
+    SingleBinWave(SingleBinWaveEvents),
+    //MultiBinWave,
+}
+
+impl XBinnedEvents {
+    pub fn variant_name(&self) -> String {
+        use XBinnedEvents::*;
+        match self {
+            Scalar(h) => format!("Scalar({})", h.variant_name()),
+            SingleBinWave(h) => format!("SingleBinWave({})", h.variant_name()),
+        }
+    }
+
+    pub fn x_aggregate(self, ak: &AggKind) -> EventsItem {
+        use XBinnedEvents::*;
+        match self {
+            Scalar(k) => EventsItem::Plain(PlainEvents::Scalar(k)),
+            SingleBinWave(k) => k.x_aggregate(ak),
+        }
+    }
+}
+
+impl WithLen for XBinnedEvents {
+    fn len(&self) -> usize {
+        use XBinnedEvents::*;
+        match self {
+            Scalar(j) => j.len(),
+            SingleBinWave(j) => j.len(),
+        }
+    }
+}
+
+impl WithTimestamps for XBinnedEvents {
+    fn ts(&self, ix: usize) -> u64 {
+        use XBinnedEvents::*;
+        match self {
+            Scalar(j) => j.ts(ix),
+            SingleBinWave(j) => j.ts(ix),
+        }
+    }
+}
+
+impl HasShape for XBinnedEvents {
+    fn shape(&self) -> Shape {
+        use XBinnedEvents::*;
+        match self {
+            Scalar(h) => h.shape(),
+            SingleBinWave(h) => h.shape(),
+        }
+    }
+}
+
+impl HasScalarType for XBinnedEvents {
+    fn scalar_type(&self) -> ScalarType {
+        use XBinnedEvents::*;
+        match self {
+            Scalar(h) => h.scalar_type(),
+            SingleBinWave(h) => h.scalar_type(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum PlainEvents {
+    Scalar(ScalarPlainEvents),
+    Wave(WavePlainEvents),
+}
+
+impl PlainEvents {
+    pub fn is_wave(&self) -> bool {
+        use PlainEvents::*;
+        match self {
+            Scalar(_) => false,
+            Wave(_) => true,
+        }
+    }
+
+    pub fn variant_name(&self) -> String {
+        use PlainEvents::*;
+        match self {
+            Scalar(h) => format!("Scalar({})", h.variant_name()),
+            Wave(h) => format!("Scalar({})", h.variant_name()),
+        }
+    }
+
+    pub fn x_aggregate(self, ak: &AggKind) -> EventsItem {
+        use PlainEvents::*;
+        match self {
+            Scalar(k) => EventsItem::Plain(PlainEvents::Scalar(k)),
+            Wave(k) => k.x_aggregate(ak),
+        }
+    }
+}
+
+impl WithLen for PlainEvents {
+    fn len(&self) -> usize {
+        use PlainEvents::*;
+        match self {
+            Scalar(j) => j.len(),
+            Wave(j) => j.len(),
+        }
+    }
+}
+
+impl WithTimestamps for PlainEvents {
+    fn ts(&self, ix: usize) -> u64 {
+        use PlainEvents::*;
+        match self {
+            Scalar(j) => j.ts(ix),
+            Wave(j) => j.ts(ix),
+        }
+    }
+}
+
+impl HasShape for PlainEvents {
+    fn shape(&self) -> Shape {
+        use PlainEvents::*;
+        match self {
+            Scalar(h) => h.shape(),
+            Wave(h) => h.shape(),
+        }
+    }
+}
+
+impl HasScalarType for PlainEvents {
+    fn scalar_type(&self) -> ScalarType {
+        use PlainEvents::*;
+        match self {
+            Scalar(h) => h.scalar_type(),
+            Wave(h) => h.scalar_type(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum EventsItem {
-    ScalarByte(EventValues<i8>),
-    ScalarShort(EventValues<i16>),
-    ScalarInt(EventValues<i32>),
-    ScalarFloat(EventValues<f32>),
-    ScalarDouble(EventValues<f64>),
-    WaveByte(WaveEvents<i8>),
-    WaveShort(WaveEvents<i16>),
-    WaveInt(WaveEvents<i32>),
-    WaveFloat(WaveEvents<f32>),
-    WaveDouble(WaveEvents<f64>),
+    Plain(PlainEvents),
+    XBinnedEvents(XBinnedEvents),
 }
 
 impl EventsItem {
     pub fn is_wave(&self) -> bool {
         use EventsItem::*;
         match self {
-            WaveByte(_) => true,
-            WaveShort(_) => true,
-            WaveInt(_) => true,
-            WaveFloat(_) => true,
-            WaveDouble(_) => true,
-            _ => false,
+            Plain(h) => h.is_wave(),
+            XBinnedEvents(h) => {
+                if let Shape::Wave(_) = h.shape() {
+                    true
+                } else {
+                    false
+                }
+            }
         }
     }
 
     pub fn variant_name(&self) -> String {
         use EventsItem::*;
         match self {
-            ScalarByte(item) => format!("ScalarByte"),
-            ScalarShort(item) => format!("ScalarShort"),
-            ScalarInt(item) => format!("ScalarInt"),
-            ScalarFloat(item) => format!("ScalarFloat"),
-            ScalarDouble(item) => format!("ScalarDouble"),
-            WaveByte(item) => format!("WaveByte({})", item.len()),
-            WaveShort(item) => format!("WaveShort({})", item.len()),
-            WaveInt(item) => format!("WaveInt({})", item.len()),
-            WaveFloat(item) => format!("WaveFloat({})", item.len()),
-            WaveDouble(item) => format!("WaveDouble({})", item.len()),
+            Plain(h) => format!("Plain({})", h.variant_name()),
+            XBinnedEvents(h) => format!("Plain({})", h.variant_name()),
+        }
+    }
+
+    pub fn x_aggregate(self, ak: &AggKind) -> EventsItem {
+        use EventsItem::*;
+        match self {
+            Plain(k) => k.x_aggregate(ak),
+            XBinnedEvents(k) => k.x_aggregate(ak),
         }
     }
 }
@@ -91,16 +483,8 @@ impl WithLen for EventsItem {
     fn len(&self) -> usize {
         use EventsItem::*;
         match self {
-            ScalarByte(j) => j.len(),
-            ScalarShort(j) => j.len(),
-            ScalarInt(j) => j.len(),
-            ScalarFloat(j) => j.len(),
-            ScalarDouble(j) => j.len(),
-            WaveByte(j) => j.len(),
-            WaveShort(j) => j.len(),
-            WaveInt(j) => j.len(),
-            WaveFloat(j) => j.len(),
-            WaveDouble(j) => j.len(),
+            Plain(j) => j.len(),
+            XBinnedEvents(j) => j.len(),
         }
     }
 }
@@ -109,16 +493,28 @@ impl WithTimestamps for EventsItem {
     fn ts(&self, ix: usize) -> u64 {
         use EventsItem::*;
         match self {
-            ScalarByte(j) => j.ts(ix),
-            ScalarShort(j) => j.ts(ix),
-            ScalarInt(j) => j.ts(ix),
-            ScalarFloat(j) => j.ts(ix),
-            ScalarDouble(j) => j.ts(ix),
-            WaveByte(j) => j.ts(ix),
-            WaveShort(j) => j.ts(ix),
-            WaveInt(j) => j.ts(ix),
-            WaveFloat(j) => j.ts(ix),
-            WaveDouble(j) => j.ts(ix),
+            Plain(j) => j.ts(ix),
+            XBinnedEvents(j) => j.ts(ix),
+        }
+    }
+}
+
+impl HasShape for EventsItem {
+    fn shape(&self) -> Shape {
+        use EventsItem::*;
+        match self {
+            Plain(h) => h.shape(),
+            XBinnedEvents(h) => h.shape(),
+        }
+    }
+}
+
+impl HasScalarType for EventsItem {
+    fn scalar_type(&self) -> ScalarType {
+        use EventsItem::*;
+        match self {
+            Plain(h) => h.scalar_type(),
+            XBinnedEvents(h) => h.scalar_type(),
         }
     }
 }

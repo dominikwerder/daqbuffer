@@ -231,7 +231,7 @@ pub trait EventsNodeProcessor: Send + Unpin {
     type Input;
     type Output: Send + Unpin + DeserializeOwned + WithTimestamps + TimeBinnableType;
     fn create(shape: Shape, agg_kind: AggKind) -> Self;
-    fn process(&self, inp: EventValues<Self::Input>) -> Self::Output;
+    fn process(&self, inp: Self::Input) -> Self::Output;
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -292,6 +292,11 @@ pub trait PushableIndex {
 pub trait Appendable: WithLen {
     fn empty() -> Self;
     fn append(&mut self, src: &Self);
+}
+
+pub trait EventAppendable {
+    type Value;
+    fn append_event(&mut self, ts: u64, value: Self::Value);
 }
 
 pub trait TimeBins: Send + Unpin + WithLen + Appendable + FilterFittingInside {
