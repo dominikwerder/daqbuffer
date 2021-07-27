@@ -136,6 +136,20 @@ fn tmp1() {
     //<EventValues<Vec<u8>> as SitemtyFrameType>::FRAME_TYPE_ID;
 }
 
+macro_rules! wagg1 {
+    ($k:expr, $ak:expr, $shape:expr, $sty:ident) => {
+        match $ak {
+            AggKind::Plain => EventsItem::Plain(PlainEvents::Wave(WavePlainEvents::$sty($k))),
+            AggKind::DimXBins1 => {
+                let p = WaveXBinner::create($shape, $ak.clone());
+                let j = p.process($k);
+                EventsItem::XBinnedEvents(XBinnedEvents::SingleBinWave(SingleBinWaveEvents::$sty(j)))
+            }
+            AggKind::DimXBinsN(_) => EventsItem::Plain(PlainEvents::Wave(err::todoval())),
+        }
+    };
+}
+
 impl WavePlainEvents {
     pub fn variant_name(&self) -> String {
         use WavePlainEvents::*;
@@ -152,16 +166,11 @@ impl WavePlainEvents {
         use WavePlainEvents::*;
         let shape = self.shape();
         match self {
-            Byte(k) => match ak {
-                AggKind::Plain => EventsItem::Plain(PlainEvents::Wave(WavePlainEvents::Byte(k))),
-                AggKind::DimXBins1 => {
-                    let p = WaveXBinner::create(shape, ak.clone());
-                    let j = p.process(k);
-                    EventsItem::XBinnedEvents(XBinnedEvents::SingleBinWave(SingleBinWaveEvents::Byte(j)))
-                }
-                AggKind::DimXBinsN(_) => EventsItem::Plain(PlainEvents::Wave(err::todoval())),
-            },
-            _ => panic!(),
+            Byte(k) => wagg1!(k, ak, shape, Byte),
+            Short(k) => wagg1!(k, ak, shape, Short),
+            Int(k) => wagg1!(k, ak, shape, Int),
+            Float(k) => wagg1!(k, ak, shape, Float),
+            Double(k) => wagg1!(k, ak, shape, Double),
         }
     }
 }

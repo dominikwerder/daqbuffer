@@ -309,7 +309,7 @@ pub async fn make_single_event_pipe(
                         info!("file    {}   {}", ts1, ts1 + DAY * 27);
                         info!("range   {}   {}", evq.range.beg, evq.range.end);
                         if evq.range.beg < ts1 + DAY * 27 && evq.range.end > ts1 {
-                            info!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+                            info!("••••••••••••••••••••••••••  file matches requested range");
                             let f1 = File::open(de.path()).await?;
                             info!("opened {:?}", de.path());
                             let mut pbr = PbFileReader::new(f1).await;
