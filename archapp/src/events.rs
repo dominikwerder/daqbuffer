@@ -1,5 +1,7 @@
 use crate::parse::PbFileReader;
-use crate::{EventsItem, PlainEvents, ScalarPlainEvents, WavePlainEvents, XBinnedEvents};
+use crate::{
+    EventsItem, MultiBinWaveEvents, PlainEvents, ScalarPlainEvents, SingleBinWaveEvents, WavePlainEvents, XBinnedEvents,
+};
 use chrono::{TimeZone, Utc};
 use err::Error;
 use futures_core::Stream;
@@ -8,8 +10,9 @@ use items::eventvalues::EventValues;
 use items::waveevents::{WaveEvents, WaveXBinner};
 use items::xbinnedscalarevents::XBinnedScalarEvents;
 use items::xbinnedwaveevents::XBinnedWaveEvents;
-use items::RangeCompletableItem::RangeComplete;
-use items::{EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, SitemtyFrameType, StreamItem};
+use items::{
+    EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, SitemtyFrameType, StreamItem, WithLen, WithTimestamps,
+};
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
 use netpod::timeunits::{DAY, SEC};
@@ -172,14 +175,7 @@ impl FrameMaker {
     where
         T: SitemtyFrameType + Serialize + Send + 'static,
     {
-        match item {
-            Ok(_) => err::todoval(),
-            Err(e) => {
-                //let t = Ok(StreamItem::DataItem(RangeCompletableItem::Data()))
-                let t: Sitemty<T> = Err(e);
-                Box::new(t)
-            }
-        }
+        err::todoval()
     }
 }
 
@@ -220,18 +216,104 @@ macro_rules! events_item_to_sitemty {
     }};
 }
 
+macro_rules! arm2 {
+    ($item:expr, $t1:ident, $t2:ident, $t3:ident, $t4:ident, $t5:ident, $sty1:ident, $sty2:ident) => {{
+        type T1 = $t1<$sty1>;
+        let ret: Sitemty<T1> = match $item {
+            Ok(k) => match k {
+                StreamItem::DataItem(k) => match k {
+                    RangeCompletableItem::RangeComplete => {
+                        Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
+                    }
+                    RangeCompletableItem::Data(k) => match k {
+                        EventsItem::$t2(k) => match k {
+                            $t3::$t4(k) => match k {
+                                $t5::$sty2(k) => {
+                                    //
+                                    Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
+                                }
+                                _ => panic!(),
+                            },
+                            _ => panic!(),
+                        },
+                        _ => err::todoval(),
+                    },
+                },
+                StreamItem::Log(k) => Ok(StreamItem::Log(k)),
+                StreamItem::Stats(k) => Ok(StreamItem::Stats(k)),
+            },
+            Err(e) => Err(e),
+        };
+        Box::new(ret) as Box<dyn Framable>
+    }};
+}
+
 macro_rules! arm1 {
-    ($item:expr, $sty:ident, $shape:expr, $ak:expr) => {{
+    ($item:expr, $sty1:ident, $sty2:ident, $shape:expr, $ak:expr) => {{
         match $shape {
             Shape::Scalar => match $ak {
-                AggKind::Plain => Self::make_frame_gen::<EventValues<$sty>>($item),
-                AggKind::DimXBins1 => Self::make_frame_gen::<EventValues<$sty>>($item),
-                AggKind::DimXBinsN(_) => Self::make_frame_gen::<EventValues<$sty>>($item),
+                AggKind::Plain => arm2!(
+                    $item,
+                    EventValues,
+                    Plain,
+                    PlainEvents,
+                    Scalar,
+                    ScalarPlainEvents,
+                    $sty1,
+                    $sty2
+                ),
+                AggKind::DimXBins1 => arm2!(
+                    $item,
+                    EventValues,
+                    XBinnedEvents,
+                    XBinnedEvents,
+                    Scalar,
+                    ScalarPlainEvents,
+                    $sty1,
+                    $sty2
+                ),
+                AggKind::DimXBinsN(_) => arm2!(
+                    $item,
+                    EventValues,
+                    XBinnedEvents,
+                    XBinnedEvents,
+                    Scalar,
+                    ScalarPlainEvents,
+                    $sty1,
+                    $sty2
+                ),
             },
             Shape::Wave(_) => match $ak {
-                AggKind::Plain => Self::make_frame_gen::<WaveEvents<$sty>>($item),
-                AggKind::DimXBins1 => Self::make_frame_gen::<XBinnedScalarEvents<$sty>>($item),
-                AggKind::DimXBinsN(_) => Self::make_frame_gen::<XBinnedWaveEvents<$sty>>($item),
+                AggKind::Plain => arm2!(
+                    $item,
+                    WaveEvents,
+                    Plain,
+                    PlainEvents,
+                    Wave,
+                    WavePlainEvents,
+                    $sty1,
+                    $sty2
+                ),
+                AggKind::DimXBins1 => arm2!(
+                    $item,
+                    XBinnedScalarEvents,
+                    XBinnedEvents,
+                    XBinnedEvents,
+                    SingleBinWave,
+                    SingleBinWaveEvents,
+                    $sty1,
+                    $sty2
+                ),
+                AggKind::DimXBinsN(_) => arm2!(
+                    $item,
+                    XBinnedWaveEvents,
+                    XBinnedEvents,
+                    XBinnedEvents,
+                    MultiBinWave,
+                    MultiBinWaveEvents,
+                    $sty1,
+                    $sty2
+                ),
             },
         }
     }};
@@ -244,11 +326,11 @@ impl FrameMakerTrait for FrameMaker {
         // Therefore, I need to decide that based on given parameters.
         // see also channel_info in this mod.
         match self.scalar_type {
-            ScalarType::I8 => arm1!(item, i8, self.shape, self.agg_kind),
-            ScalarType::I16 => arm1!(item, i16, self.shape, self.agg_kind),
-            ScalarType::I32 => arm1!(item, i32, self.shape, self.agg_kind),
-            ScalarType::F32 => arm1!(item, f32, self.shape, self.agg_kind),
-            ScalarType::F64 => arm1!(item, f64, self.shape, self.agg_kind),
+            ScalarType::I8 => arm1!(item, i8, Byte, self.shape, self.agg_kind),
+            ScalarType::I16 => arm1!(item, i16, Short, self.shape, self.agg_kind),
+            ScalarType::I32 => arm1!(item, i32, Int, self.shape, self.agg_kind),
+            ScalarType::F32 => arm1!(item, f32, Float, self.shape, self.agg_kind),
+            ScalarType::F64 => arm1!(item, f64, Double, self.shape, self.agg_kind),
             _ => err::todoval(),
         }
     }
@@ -297,7 +379,16 @@ pub async fn make_single_event_pipe(
 
         // TODO first collect all matching filenames, then sort, then open files.
         // TODO if dir does not exist, should notify client but not log as error.
-        let mut rd = tokio::fs::read_dir(&dir).await?;
+        let mut rd = match tokio::fs::read_dir(&dir).await {
+            Ok(k) => k,
+            Err(e) => match e.kind() {
+                std::io::ErrorKind::NotFound => {
+                    warn!("does not exist: {:?}", dir);
+                    return Ok(());
+                }
+                _ => return Err(e)?,
+            },
+        };
         while let Some(de) = rd.next_entry().await? {
             let s = de.file_name().to_string_lossy().into_owned();
             if s.starts_with(&prefix) && s.ends_with(".pb") {
@@ -315,13 +406,24 @@ pub async fn make_single_event_pipe(
                             let mut pbr = PbFileReader::new(f1).await;
                             pbr.read_header().await?;
                             info!("✓ read header {:?}", pbr.payload_type());
-                            loop {
+                            let mut i1 = 0;
+                            'evread: loop {
                                 match pbr.read_msg().await {
                                     Ok(ei) => {
-                                        info!("read msg from file");
+                                        let tslast = if ei.len() > 0 { Some(ei.ts(ei.len() - 1)) } else { None };
+                                        i1 += 1;
+                                        if i1 % 1000 == 0 {
+                                            info!("read msg from file {}", i1);
+                                        }
                                         let ei2 = ei.x_aggregate(&evq.agg_kind);
                                         let g = Ok(StreamItem::DataItem(RangeCompletableItem::Data(ei2)));
                                         tx.send(g).await?;
+                                        if let Some(t) = tslast {
+                                            if t >= evq.range.end {
+                                                info!("after requested range, break");
+                                                break 'evread;
+                                            }
+                                        }
                                     }
                                     Err(e) => {
                                         error!("error while reading msg  {:?}", e);

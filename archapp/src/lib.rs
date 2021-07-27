@@ -12,6 +12,7 @@ use items::eventvalues::EventValues;
 use items::numops::NumOps;
 use items::waveevents::{WaveEvents, WaveXBinner};
 use items::xbinnedscalarevents::XBinnedScalarEvents;
+use items::xbinnedwaveevents::XBinnedWaveEvents;
 use items::{EventsNodeProcessor, Framable, SitemtyFrameType, WithLen, WithTimestamps};
 use netpod::{AggKind, HasScalarType, HasShape, ScalarType, Shape};
 #[cfg(not(feature = "devread"))]
@@ -22,8 +23,8 @@ pub mod events;
 #[cfg(test)]
 pub mod test;
 
-fn unescape_archapp_msg(inp: &[u8]) -> Result<Vec<u8>, Error> {
-    let mut ret = Vec::with_capacity(inp.len() * 5 / 4);
+fn unescape_archapp_msg(inp: &[u8], mut ret: Vec<u8>) -> Result<Vec<u8>, Error> {
+    ret.clear();
     let mut esc = false;
     for &k in inp.iter() {
         if k == 0x1b {
@@ -36,7 +37,7 @@ fn unescape_archapp_msg(inp: &[u8]) -> Result<Vec<u8>, Error> {
             } else if k == 0x3 {
                 ret.push(0xd);
             } else {
-                return Err(Error::with_msg("malformed escaped archapp message"));
+                return Err(Error::with_msg_no_trace("malformed escaped archapp message"));
             }
             esc = false;
         } else {
@@ -228,6 +229,92 @@ impl HasScalarType for WavePlainEvents {
 }
 
 #[derive(Debug)]
+pub enum MultiBinWaveEvents {
+    Byte(XBinnedWaveEvents<i8>),
+    Short(XBinnedWaveEvents<i16>),
+    Int(XBinnedWaveEvents<i32>),
+    Float(XBinnedWaveEvents<f32>),
+    Double(XBinnedWaveEvents<f64>),
+}
+
+impl MultiBinWaveEvents {
+    pub fn variant_name(&self) -> String {
+        use MultiBinWaveEvents::*;
+        match self {
+            Byte(h) => format!("Byte"),
+            Short(h) => format!("Short"),
+            Int(h) => format!("Int"),
+            Float(h) => format!("Float"),
+            Double(h) => format!("Double"),
+        }
+    }
+
+    fn x_aggregate(self, ak: &AggKind) -> EventsItem {
+        use MultiBinWaveEvents::*;
+        match self {
+            Byte(k) => match ak {
+                AggKind::Plain => EventsItem::XBinnedEvents(XBinnedEvents::MultiBinWave(MultiBinWaveEvents::Byte(k))),
+                AggKind::DimXBins1 => err::todoval(),
+                AggKind::DimXBinsN(_) => EventsItem::Plain(PlainEvents::Wave(err::todoval())),
+            },
+            _ => err::todoval(),
+        }
+    }
+}
+
+impl WithLen for MultiBinWaveEvents {
+    fn len(&self) -> usize {
+        use MultiBinWaveEvents::*;
+        match self {
+            Byte(j) => j.len(),
+            Short(j) => j.len(),
+            Int(j) => j.len(),
+            Float(j) => j.len(),
+            Double(j) => j.len(),
+        }
+    }
+}
+
+impl WithTimestamps for MultiBinWaveEvents {
+    fn ts(&self, ix: usize) -> u64 {
+        use MultiBinWaveEvents::*;
+        match self {
+            Byte(j) => j.ts(ix),
+            Short(j) => j.ts(ix),
+            Int(j) => j.ts(ix),
+            Float(j) => j.ts(ix),
+            Double(j) => j.ts(ix),
+        }
+    }
+}
+
+impl HasShape for MultiBinWaveEvents {
+    fn shape(&self) -> Shape {
+        use MultiBinWaveEvents::*;
+        match self {
+            Byte(h) => Shape::Scalar,
+            Short(h) => Shape::Scalar,
+            Int(h) => Shape::Scalar,
+            Float(h) => Shape::Scalar,
+            Double(h) => Shape::Scalar,
+        }
+    }
+}
+
+impl HasScalarType for MultiBinWaveEvents {
+    fn scalar_type(&self) -> ScalarType {
+        use MultiBinWaveEvents::*;
+        match self {
+            Byte(h) => ScalarType::I8,
+            Short(h) => ScalarType::I16,
+            Int(h) => ScalarType::I32,
+            Float(h) => ScalarType::F32,
+            Double(h) => ScalarType::F64,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum SingleBinWaveEvents {
     Byte(XBinnedScalarEvents<i8>),
     Short(XBinnedScalarEvents<i16>),
@@ -256,7 +343,7 @@ impl SingleBinWaveEvents {
                 AggKind::DimXBins1 => err::todoval(),
                 AggKind::DimXBinsN(_) => EventsItem::Plain(PlainEvents::Wave(err::todoval())),
             },
-            _ => panic!(),
+            _ => err::todoval(),
         }
     }
 }
@@ -317,7 +404,7 @@ impl HasScalarType for SingleBinWaveEvents {
 pub enum XBinnedEvents {
     Scalar(ScalarPlainEvents),
     SingleBinWave(SingleBinWaveEvents),
-    //MultiBinWave,
+    MultiBinWave(MultiBinWaveEvents),
 }
 
 impl XBinnedEvents {
@@ -326,6 +413,7 @@ impl XBinnedEvents {
         match self {
             Scalar(h) => format!("Scalar({})", h.variant_name()),
             SingleBinWave(h) => format!("SingleBinWave({})", h.variant_name()),
+            MultiBinWave(h) => format!("MultiBinWave({})", h.variant_name()),
         }
     }
 
@@ -334,6 +422,7 @@ impl XBinnedEvents {
         match self {
             Scalar(k) => EventsItem::Plain(PlainEvents::Scalar(k)),
             SingleBinWave(k) => k.x_aggregate(ak),
+            MultiBinWave(k) => k.x_aggregate(ak),
         }
     }
 }
@@ -344,6 +433,7 @@ impl WithLen for XBinnedEvents {
         match self {
             Scalar(j) => j.len(),
             SingleBinWave(j) => j.len(),
+            MultiBinWave(j) => j.len(),
         }
     }
 }
@@ -354,6 +444,7 @@ impl WithTimestamps for XBinnedEvents {
         match self {
             Scalar(j) => j.ts(ix),
             SingleBinWave(j) => j.ts(ix),
+            MultiBinWave(j) => j.ts(ix),
         }
     }
 }
@@ -364,6 +455,7 @@ impl HasShape for XBinnedEvents {
         match self {
             Scalar(h) => h.shape(),
             SingleBinWave(h) => h.shape(),
+            MultiBinWave(h) => h.shape(),
         }
     }
 }
@@ -374,6 +466,7 @@ impl HasScalarType for XBinnedEvents {
         match self {
             Scalar(h) => h.scalar_type(),
             SingleBinWave(h) => h.scalar_type(),
+            MultiBinWave(h) => h.scalar_type(),
         }
     }
 }

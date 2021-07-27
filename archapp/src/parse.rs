@@ -14,6 +14,7 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, VecDeque};
 use std::fs::FileType;
+use std::mem;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -23,6 +24,7 @@ use tokio::io::AsyncReadExt;
 pub struct PbFileReader {
     file: File,
     buf: Vec<u8>,
+    escbuf: Vec<u8>,
     wp: usize,
     rp: usize,
     channel_name: String,
@@ -81,13 +83,14 @@ macro_rules! wave_parse {
     }};
 }
 
-const MIN_BUF_FILL: usize = 1024 * 16;
+const MIN_BUF_FILL: usize = 1024 * 64;
 
 impl PbFileReader {
     pub async fn new(file: File) -> Self {
         Self {
             file,
             buf: vec![0; MIN_BUF_FILL * 4],
+            escbuf: vec![],
             wp: 0,
             rp: 0,
             channel_name: String::new(),
@@ -100,8 +103,9 @@ impl PbFileReader {
         self.fill_buf().await?;
         let k = self.find_next_nl()?;
         let buf = &mut self.buf;
-        let m = unescape_archapp_msg(&buf[self.rp..k])?;
-        let payload_info = crate::generated::EPICSEvent::PayloadInfo::parse_from_bytes(&m)
+        let m = unescape_archapp_msg(&buf[self.rp..k], mem::replace(&mut self.escbuf, vec![]))?;
+        self.escbuf = m;
+        let payload_info = crate::generated::EPICSEvent::PayloadInfo::parse_from_bytes(&self.escbuf)
             .map_err(|_| Error::with_msg("can not parse PayloadInfo"))?;
         self.channel_name = payload_info.get_pvname().into();
         self.payload_type = payload_info.get_field_type();
@@ -114,45 +118,51 @@ impl PbFileReader {
         self.fill_buf().await?;
         let k = self.find_next_nl()?;
         let buf = &mut self.buf;
-        let m = unescape_archapp_msg(&buf[self.rp..k])?;
+        let m = mem::replace(&mut self.escbuf, vec![]);
+        let m = unescape_archapp_msg(&buf[self.rp..k], m)?;
+        self.escbuf = m;
+        let m = &self.escbuf;
         use PayloadType::*;
         let ei = match self.payload_type {
-            SCALAR_BYTE => parse_scalar_byte(&m, self.year)?,
+            SCALAR_BYTE => parse_scalar_byte(m, self.year)?,
             SCALAR_ENUM => {
-                scalar_parse!(&m, self.year, ScalarEnum, Int, i32)
+                scalar_parse!(m, self.year, ScalarEnum, Int, i32)
             }
             SCALAR_SHORT => {
-                scalar_parse!(&m, self.year, ScalarShort, Short, i16)
+                scalar_parse!(m, self.year, ScalarShort, Short, i16)
             }
             SCALAR_INT => {
-                scalar_parse!(&m, self.year, ScalarInt, Int, i32)
+                scalar_parse!(m, self.year, ScalarInt, Int, i32)
             }
             SCALAR_FLOAT => {
-                scalar_parse!(&m, self.year, ScalarFloat, Float, f32)
+                scalar_parse!(m, self.year, ScalarFloat, Float, f32)
             }
             SCALAR_DOUBLE => {
-                scalar_parse!(&m, self.year, ScalarDouble, Double, f64)
+                scalar_parse!(m, self.year, ScalarDouble, Double, f64)
             }
             WAVEFORM_BYTE => {
-                wave_parse!(&m, self.year, VectorChar, Byte, i8)
+                wave_parse!(m, self.year, VectorChar, Byte, i8)
             }
             WAVEFORM_SHORT => {
-                wave_parse!(&m, self.year, VectorShort, Short, i16)
+                wave_parse!(m, self.year, VectorShort, Short, i16)
             }
             WAVEFORM_ENUM => {
-                wave_parse!(&m, self.year, VectorEnum, Int, i32)
+                wave_parse!(m, self.year, VectorEnum, Int, i32)
             }
             WAVEFORM_INT => {
-                wave_parse!(&m, self.year, VectorInt, Int, i32)
+                wave_parse!(m, self.year, VectorInt, Int, i32)
             }
             WAVEFORM_FLOAT => {
-                wave_parse!(&m, self.year, VectorFloat, Float, f32)
+                wave_parse!(m, self.year, VectorFloat, Float, f32)
             }
             WAVEFORM_DOUBLE => {
-                wave_parse!(&m, self.year, VectorDouble, Double, f64)
+                wave_parse!(m, self.year, VectorDouble, Double, f64)
             }
             SCALAR_STRING | WAVEFORM_STRING | V4_GENERIC_BYTES => {
-                return Err(Error::with_msg(format!("not supported: {:?}", self.payload_type)));
+                return Err(Error::with_msg_no_trace(format!(
+                    "not supported: {:?}",
+                    self.payload_type
+                )));
             }
         };
         self.rp = k + 1;
@@ -163,11 +173,12 @@ impl PbFileReader {
         if self.wp - self.rp >= MIN_BUF_FILL {
             return Ok(());
         }
-        if self.rp >= self.buf.len() - MIN_BUF_FILL {
+        if self.rp + MIN_BUF_FILL >= self.buf.len() {
             let n = self.wp - self.rp;
-            for i in 0..n {
-                self.buf[i] = self.buf[self.rp + i];
-            }
+            self.buf.copy_within(self.rp..self.rp + n, 0);
+            //for i in 0..n {
+            //    self.buf[i] = self.buf[self.rp + i];
+            //}
             self.rp = 0;
             self.wp = n;
         }
@@ -219,7 +230,7 @@ pub struct EpicsEventPayloadInfo {
 }
 
 // TODO remove in favor of PbFileRead
-async fn read_pb_file(mut f1: File) -> Result<(EpicsEventPayloadInfo, File), Error> {
+async fn _read_pb_file(mut f1: File) -> Result<(EpicsEventPayloadInfo, File), Error> {
     let mut buf = vec![0; 1024 * 4];
     {
         let mut i1 = 0;
@@ -254,7 +265,7 @@ async fn read_pb_file(mut f1: File) -> Result<(EpicsEventPayloadInfo, File), Err
         }
         if i2 != usize::MAX {
             //info!("got NL  {} .. {}", j1, i2);
-            let m = unescape_archapp_msg(&buf[j1..i2])?;
+            let m = unescape_archapp_msg(&buf[j1..i2], vec![])?;
             if j1 == 0 {
                 payload_info = crate::generated::EPICSEvent::PayloadInfo::parse_from_bytes(&m)
                     .map_err(|_| Error::with_msg("can not parse PayloadInfo"))?;

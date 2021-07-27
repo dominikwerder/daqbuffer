@@ -24,7 +24,7 @@ fn read_pb_00() -> Result<(), Error> {
             }
             if i2 != usize::MAX {
                 info!("got NL  {} .. {}", j1, i2);
-                let m = unescape_archapp_msg(&f1[j1..i2])?;
+                let m = unescape_archapp_msg(&f1[j1..i2], vec![])?;
                 if j1 == 0 {
                     let payload_info = crate::generated::EPICSEvent::PayloadInfo::parse_from_bytes(&m).unwrap();
                     info!("got payload_info: {:?}", payload_info);
