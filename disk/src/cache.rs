@@ -138,7 +138,7 @@ impl CacheFileDesc {
         let hc = self.hash_channel();
         node_config
             .node
-            .data_base_path
+            .cache_base_path
             .join("cache")
             .join(&hc[0..3])
             .join(&hc[3..6])

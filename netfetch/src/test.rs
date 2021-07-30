@@ -18,6 +18,7 @@ fn ca_connect_1() {
                 backend: "".into(),
                 split: 0,
                 data_base_path: "".into(),
+                cache_base_path: "".into(),
                 listen: "".into(),
                 ksprefix: "".into(),
                 archiver_appliance: None,

@@ -1,3 +1,5 @@
+use crate::generated::EPICSEvent::PayloadType;
+use crate::parse::multi::parse_all_ts;
 use crate::parse::PbFileReader;
 use crate::{
     EventsItem, MultiBinWaveEvents, PlainEvents, ScalarPlainEvents, SingleBinWaveEvents, WavePlainEvents, XBinnedEvents,
@@ -19,10 +21,12 @@ use netpod::timeunits::{DAY, SEC};
 use netpod::{AggKind, ArchiverAppliance, Channel, ChannelInfo, HasScalarType, HasShape, NanoRange, ScalarType, Shape};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+use std::io::SeekFrom;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::fs::{read_dir, File};
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 pub struct DataFilename {
     year: u32,
@@ -403,13 +407,31 @@ pub async fn make_single_event_pipe(
                             info!("••••••••••••••••••••••••••  file matches requested range");
                             let f1 = File::open(de.path()).await?;
                             info!("opened {:?}", de.path());
+
+                            let z = position_file_for_evq(f1, evq.clone(), df.year).await?;
+                            let mut f1 = if let PositionState::Positioned = z.state {
+                                z.file
+                            } else {
+                                continue;
+                            };
+
+                            // TODO could avoid some seeks if position_file_for_evq would return the position instead of
+                            // positioning the file.
+                            let pos1 = f1.stream_position().await?;
+                            f1.seek(SeekFrom::Start(0)).await?;
                             let mut pbr = PbFileReader::new(f1).await;
                             pbr.read_header().await?;
                             info!("✓ read header {:?}", pbr.payload_type());
+
+                            // TODO this is ugly:
+                            pbr.file().seek(SeekFrom::Start(pos1)).await?;
+                            pbr.reset_io(pos1);
+
                             let mut i1 = 0;
                             'evread: loop {
                                 match pbr.read_msg().await {
-                                    Ok(ei) => {
+                                    Ok(Some(ei)) => {
+                                        let ei = ei.item;
                                         let tslast = if ei.len() > 0 { Some(ei.ts(ei.len() - 1)) } else { None };
                                         i1 += 1;
                                         if i1 % 1000 == 0 {
@@ -424,6 +446,10 @@ pub async fn make_single_event_pipe(
                                                 break 'evread;
                                             }
                                         }
+                                    }
+                                    Ok(None) => {
+                                        info!("reached end of file");
+                                        break;
                                     }
                                     Err(e) => {
                                         error!("error while reading msg  {:?}", e);
@@ -453,6 +479,177 @@ pub async fn make_single_event_pipe(
     };
     tokio::task::spawn(block2);
     Ok(Box::pin(rx))
+}
+
+pub enum PositionState {
+    NothingFound,
+    Positioned,
+}
+
+pub struct PositionResult {
+    file: File,
+    state: PositionState,
+}
+
+async fn position_file_for_evq(mut file: File, evq: RawEventsQuery, year: u32) -> Result<PositionResult, Error> {
+    let flen = file.seek(SeekFrom::End(0)).await?;
+    file.seek(SeekFrom::Start(0)).await?;
+    if flen < 1024 * 512 {
+        position_file_for_evq_linear(file, evq, year).await
+    } else {
+        position_file_for_evq_binary(file, evq, year).await
+    }
+}
+
+async fn position_file_for_evq_linear(mut file: File, evq: RawEventsQuery, year: u32) -> Result<PositionResult, Error> {
+    let mut pbr = PbFileReader::new(file).await;
+    pbr.read_header().await?;
+    loop {
+        let res = pbr.read_msg().await?;
+        let res = if let Some(k) = res {
+            k
+        } else {
+            let ret = PositionResult {
+                file: pbr.into_file(),
+                state: PositionState::NothingFound,
+            };
+            return Ok(ret);
+        };
+        if res.item.len() < 1 {
+            return Err(Error::with_msg_no_trace("no event read from file"));
+        }
+        if res.item.ts(res.item.len() - 1) >= evq.range.beg {
+            let ret = PositionResult {
+                file: pbr.into_file(),
+                state: PositionState::Positioned,
+            };
+            return Ok(ret);
+        }
+    }
+}
+
+async fn position_file_for_evq_binary(mut file: File, evq: RawEventsQuery, year: u32) -> Result<PositionResult, Error> {
+    info!("position_file_for_evq_binary");
+    let flen = file.seek(SeekFrom::End(0)).await?;
+    file.seek(SeekFrom::Start(0)).await?;
+    let mut pbr = PbFileReader::new(file).await;
+    pbr.read_header().await?;
+    let payload_type = pbr.payload_type().clone();
+    let res = pbr.read_msg().await?;
+    let mut file = pbr.into_file();
+    let res = if let Some(res) = res {
+        res
+    } else {
+        return Err(Error::with_msg_no_trace("no event read from file"));
+    };
+    if res.item.len() < 1 {
+        return Err(Error::with_msg_no_trace("no event read from file"));
+    }
+    let events_begin_pos = res.pos;
+
+    // * the search invariant is that the ts1 < beg and ts2 >= end
+    // * read some data from the end.
+    // * read some data from the begin.
+    // * extract events from begin and end.
+    // * check if the binary search invariant is already violated, in that case return.
+    // * otherwise, choose some spot in the middle, read there the next chunk.
+    //   Then use the actual position of the found item!
+    let mut buf1 = vec![0; 1024 * 16];
+    let mut buf2 = vec![0; 1024 * 16];
+    let mut buf3 = vec![0; 1024 * 16];
+
+    let mut p1 = events_begin_pos;
+    let mut p2 = flen - buf2.len() as u64;
+
+    file.seek(SeekFrom::Start(p1 - 1)).await?;
+    file.read_exact(&mut buf1).await?;
+    file.seek(SeekFrom::Start(p2)).await?;
+    file.read_exact(&mut buf2).await?;
+
+    let evs1 = parse_all_ts(p1 - 1, &buf1, payload_type.clone(), year)?;
+    let evs2 = parse_all_ts(p2, &buf2, payload_type.clone(), year)?;
+
+    info!("...............................................................");
+    info!("evs1: {:?}", evs1);
+    info!("evs2: {:?}", evs2);
+    info!("p1: {}", p1);
+    info!("p2: {}", p2);
+
+    let tgt = evq.range.beg;
+
+    {
+        let ev = evs1.first().unwrap();
+        if ev.ts >= tgt {
+            file.seek(SeekFrom::Start(ev.pos)).await?;
+            let ret = PositionResult {
+                state: PositionState::Positioned,
+                file,
+            };
+            return Ok(ret);
+        }
+    }
+    {
+        let ev = evs2.last().unwrap();
+        if ev.ts < tgt {
+            file.seek(SeekFrom::Start(0)).await?;
+            let ret = PositionResult {
+                state: PositionState::NothingFound,
+                file,
+            };
+            return Ok(ret);
+        }
+    }
+
+    p2 = evs2.last().unwrap().pos;
+
+    // TODO make sure that NL-delimited chunks have a max size.
+    loop {
+        info!("bsearch loop  p1 {}  p2 {}", p1, p2);
+        if p2 - p1 < 1024 * 128 {
+            // TODO switch here to linear search...
+            info!("switch to linear search in pos {}..{}", p1, p2);
+            return linear_search_2(file, evq, year, p1, p2, payload_type).await;
+        }
+        let p3 = (p2 + p1) / 2;
+        file.seek(SeekFrom::Start(p3)).await?;
+        file.read_exact(&mut buf3).await?;
+        let evs3 = parse_all_ts(p3, &buf3, payload_type.clone(), year)?;
+        let ev = evs3.first().unwrap();
+        if ev.ts < tgt {
+            info!("p3 {}   ts: {}  pos: {}  branch A", p3, ev.ts, ev.pos);
+            p1 = ev.pos;
+        } else {
+            info!("p3 {}   ts: {}  pos: {}  branch B", p3, ev.ts, ev.pos);
+            p2 = ev.pos;
+        }
+    }
+}
+
+async fn linear_search_2(
+    mut file: File,
+    evq: RawEventsQuery,
+    year: u32,
+    p1: u64,
+    p2: u64,
+    payload_type: PayloadType,
+) -> Result<PositionResult, Error> {
+    eprintln!("linear_search_2");
+    file.seek(SeekFrom::Start(p1 - 1)).await?;
+    let mut buf = vec![0; (p2 - p1) as usize];
+    file.read_exact(&mut buf).await?;
+    let evs1 = parse_all_ts(p1 - 1, &buf, payload_type.clone(), year)?;
+    for ev in evs1 {
+        if ev.ts >= evq.range.beg {
+            info!("FOUND {:?}", ev);
+            file.seek(SeekFrom::Start(ev.pos)).await?;
+            let ret = PositionResult {
+                file,
+                state: PositionState::Positioned,
+            };
+            return Ok(ret);
+        }
+    }
+    Err(Error::with_msg_no_trace("linear_search_2 failed"))
 }
 
 #[allow(unused)]
@@ -527,15 +724,19 @@ pub async fn channel_info(channel: &Channel, aa: &ArchiverAppliance) -> Result<C
             msgs.push(format!("got header {}", pbr.channel_name()));
             let ev = pbr.read_msg().await;
             match ev {
-                Ok(item) => {
+                Ok(Some(item)) => {
+                    let item = item.item;
                     msgs.push(format!("got event {:?}", item));
                     shape = Some(item.shape());
                     // These type mappings are defined by the protobuffer schema.
                     scalar_type = Some(item.scalar_type());
                     break;
                 }
+                Ok(None) => {
+                    msgs.push(format!("can not read event"));
+                }
                 Err(e) => {
-                    msgs.push(format!("can not read event! {:?}", e));
+                    msgs.push(format!("can not read event {:?}", e));
                 }
             }
             msgs.push(format!("got header {}", pbr.channel_name()));

@@ -129,6 +129,7 @@ pub struct Node {
     pub port_raw: u16,
     pub split: u32,
     pub data_base_path: PathBuf,
+    pub cache_base_path: PathBuf,
     pub ksprefix: String,
     pub backend: String,
     #[serde(default)]

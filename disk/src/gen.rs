@@ -78,6 +78,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
             port_raw: 7780 + i1 as u16 + 100,
             split: i1,
             data_base_path: data_base_path.join(format!("node{:02}", i1)),
+            cache_base_path: data_base_path.join(format!("node{:02}", i1)),
             ksprefix: ksprefix.clone(),
             backend: "testbackend".into(),
             bin_grain_kind: 0,

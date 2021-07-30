@@ -40,6 +40,7 @@ fn test_cluster() -> Cluster {
             port: 8360 + id as u16,
             port_raw: 8360 + id as u16 + 100,
             data_base_path: format!("../tmpdata/node{:02}", id).into(),
+            cache_base_path: format!("../tmpdata/node{:02}", id).into(),
             ksprefix: "ks".into(),
             split: id,
             backend: "testbackend".into(),

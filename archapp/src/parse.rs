@@ -1,3 +1,5 @@
+pub mod multi;
+
 use crate::events::parse_data_filename;
 use crate::generated::EPICSEvent::PayloadType;
 use crate::{unescape_archapp_msg, EventsItem, PlainEvents, ScalarPlainEvents, WavePlainEvents};
@@ -27,6 +29,7 @@ pub struct PbFileReader {
     escbuf: Vec<u8>,
     wp: usize,
     rp: usize,
+    off: u64,
     channel_name: String,
     payload_type: PayloadType,
     year: u32,
@@ -85,6 +88,11 @@ macro_rules! wave_parse {
 
 const MIN_BUF_FILL: usize = 1024 * 64;
 
+pub struct ReadMessageResult {
+    pub pos: u64,
+    pub item: EventsItem,
+}
+
 impl PbFileReader {
     pub async fn new(file: File) -> Self {
         Self {
@@ -93,10 +101,25 @@ impl PbFileReader {
             escbuf: vec![],
             wp: 0,
             rp: 0,
+            off: 0,
             channel_name: String::new(),
             payload_type: PayloadType::V4_GENERIC_BYTES,
             year: 0,
         }
+    }
+
+    pub fn into_file(self) -> File {
+        self.file
+    }
+
+    pub fn file(&mut self) -> &mut File {
+        &mut self.file
+    }
+
+    pub fn reset_io(&mut self, off: u64) {
+        self.wp = 0;
+        self.rp = 0;
+        self.off = off;
     }
 
     pub async fn read_header(&mut self) -> Result<(), Error> {
@@ -110,62 +133,73 @@ impl PbFileReader {
         self.channel_name = payload_info.get_pvname().into();
         self.payload_type = payload_info.get_field_type();
         self.year = payload_info.get_year() as u32;
+        self.off += k as u64 + 1 - self.rp as u64;
         self.rp = k + 1;
         Ok(())
     }
 
-    pub async fn read_msg(&mut self) -> Result<EventsItem, Error> {
+    pub async fn read_msg(&mut self) -> Result<Option<ReadMessageResult>, Error> {
         self.fill_buf().await?;
-        let k = self.find_next_nl()?;
+        let k = if let Ok(k) = self.find_next_nl() {
+            k
+        } else {
+            return Ok(None);
+        };
         let buf = &mut self.buf;
         let m = mem::replace(&mut self.escbuf, vec![]);
         let m = unescape_archapp_msg(&buf[self.rp..k], m)?;
         self.escbuf = m;
-        let m = &self.escbuf;
+        let ei = Self::parse_buffer(&self.escbuf, self.payload_type.clone(), self.year)?;
+        let ret = ReadMessageResult {
+            pos: self.off,
+            item: ei,
+        };
+        self.off += k as u64 + 1 - self.rp as u64;
+        self.rp = k + 1;
+        Ok(Some(ret))
+    }
+
+    pub fn parse_buffer(m: &[u8], payload_type: PayloadType, year: u32) -> Result<EventsItem, Error> {
         use PayloadType::*;
-        let ei = match self.payload_type {
-            SCALAR_BYTE => parse_scalar_byte(m, self.year)?,
+        let ei = match payload_type {
+            SCALAR_BYTE => parse_scalar_byte(m, year)?,
             SCALAR_ENUM => {
-                scalar_parse!(m, self.year, ScalarEnum, Int, i32)
+                scalar_parse!(m, year, ScalarEnum, Int, i32)
             }
             SCALAR_SHORT => {
-                scalar_parse!(m, self.year, ScalarShort, Short, i16)
+                scalar_parse!(m, year, ScalarShort, Short, i16)
             }
             SCALAR_INT => {
-                scalar_parse!(m, self.year, ScalarInt, Int, i32)
+                scalar_parse!(m, year, ScalarInt, Int, i32)
             }
             SCALAR_FLOAT => {
-                scalar_parse!(m, self.year, ScalarFloat, Float, f32)
+                scalar_parse!(m, year, ScalarFloat, Float, f32)
             }
             SCALAR_DOUBLE => {
-                scalar_parse!(m, self.year, ScalarDouble, Double, f64)
+                scalar_parse!(m, year, ScalarDouble, Double, f64)
             }
             WAVEFORM_BYTE => {
-                wave_parse!(m, self.year, VectorChar, Byte, i8)
+                wave_parse!(m, year, VectorChar, Byte, i8)
             }
             WAVEFORM_SHORT => {
-                wave_parse!(m, self.year, VectorShort, Short, i16)
+                wave_parse!(m, year, VectorShort, Short, i16)
             }
             WAVEFORM_ENUM => {
-                wave_parse!(m, self.year, VectorEnum, Int, i32)
+                wave_parse!(m, year, VectorEnum, Int, i32)
             }
             WAVEFORM_INT => {
-                wave_parse!(m, self.year, VectorInt, Int, i32)
+                wave_parse!(m, year, VectorInt, Int, i32)
             }
             WAVEFORM_FLOAT => {
-                wave_parse!(m, self.year, VectorFloat, Float, f32)
+                wave_parse!(m, year, VectorFloat, Float, f32)
             }
             WAVEFORM_DOUBLE => {
-                wave_parse!(m, self.year, VectorDouble, Double, f64)
+                wave_parse!(m, year, VectorDouble, Double, f64)
             }
             SCALAR_STRING | WAVEFORM_STRING | V4_GENERIC_BYTES => {
-                return Err(Error::with_msg_no_trace(format!(
-                    "not supported: {:?}",
-                    self.payload_type
-                )));
+                return Err(Error::with_msg_no_trace(format!("not supported: {:?}", payload_type)));
             }
         };
-        self.rp = k + 1;
         Ok(ei)
     }
 
@@ -176,9 +210,6 @@ impl PbFileReader {
         if self.rp + MIN_BUF_FILL >= self.buf.len() {
             let n = self.wp - self.rp;
             self.buf.copy_within(self.rp..self.rp + n, 0);
-            //for i in 0..n {
-            //    self.buf[i] = self.buf[self.rp + i];
-            //}
             self.rp = 0;
             self.wp = n;
         }
@@ -205,6 +236,7 @@ impl PbFileReader {
             k += 1;
         }
         if k == self.wp {
+            // TODO test whether with_msg_no_trace makes difference.
             return Err(Error::with_msg("no nl in pb file"));
         }
         Ok(k)
@@ -442,7 +474,8 @@ pub async fn scan_files_inner(
                                 if false {
                                     dbconn::insert_channel(channel_path.into(), ndi.facility, &dbc).await?;
                                 }
-                                if let Ok(msg) = pbr.read_msg().await {
+                                if let Ok(Some(msg)) = pbr.read_msg().await {
+                                    let msg = msg.item;
                                     lru.insert(channel_path);
                                     {
                                         tx.send(Ok(Box::new(serde_json::to_value(format!(
@@ -451,10 +484,6 @@ pub async fn scan_files_inner(
                                             msg.variant_name()
                                         ))?) as ItemSerBox))
                                             .await?;
-                                        /*waves_found += 1;
-                                        if waves_found >= 20 {
-                                            break;
-                                        }*/
                                     }
                                 }
                             }
