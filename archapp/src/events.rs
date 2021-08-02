@@ -422,8 +422,6 @@ pub async fn make_single_event_pipe(
                             let mut pbr = PbFileReader::new(f1).await;
                             pbr.read_header().await?;
                             info!("✓ read header {:?}", pbr.payload_type());
-
-                            // TODO this is ugly:
                             pbr.file().seek(SeekFrom::Start(pos1)).await?;
                             pbr.reset_io(pos1);
 
