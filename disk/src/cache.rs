@@ -229,10 +229,11 @@ pub async fn clear_cache_all(node_config: &NodeConfigCached, dry: bool) -> Resul
     }
     let mut dirs = VecDeque::new();
     let mut stack = VecDeque::new();
-    stack.push_front(node_config.node.data_base_path.join("cache"));
+    stack.push_front(node_config.node.cache_base_path.join("cache"));
     loop {
         match stack.pop_front() {
             Some(path) => {
+                info!("clear_cache_all  try read dir {:?}", path);
                 let mut rd = tokio::fs::read_dir(path).await?;
                 while let Some(entry) = rd.next_entry().await? {
                     let path = entry.path();

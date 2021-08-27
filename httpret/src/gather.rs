@@ -170,7 +170,7 @@ pub struct SubRes<T> {
 pub async fn gather_get_json_generic<SM, NT, FT>(
     method: http::Method,
     urls: Vec<Url>,
-    bodies: Option<Vec<Body>>,
+    bodies: Vec<Option<Body>>,
     tags: Vec<String>,
     nt: NT,
     ft: FT,
@@ -181,11 +181,8 @@ where
     NT: Fn(Response<Body>) -> Pin<Box<dyn Future<Output = Result<SM, Error>> + Send>> + Send + Sync + Copy + 'static,
     FT: Fn(Vec<SubRes<SM>>) -> Result<Response<Body>, Error>,
 {
+    assert!(urls.len() == bodies.len());
     assert!(urls.len() == tags.len());
-    let bodies: Vec<_> = match bodies {
-        None => (0..urls.len()).into_iter().map(|_| Body::empty()).collect(),
-        Some(bodies) => bodies,
-    };
     let spawned: Vec<_> = urls
         .into_iter()
         .zip(bodies.into_iter())
@@ -193,9 +190,22 @@ where
         .map(move |((url, body), tag)| {
             let url_str = url.as_str();
             let is_tls = if url_str.starts_with("https://") { true } else { false };
-            let req = Request::builder().method(method.clone()).uri(url_str);
-            //let req = req.header("x-log-from-node-name", format!("{}", node_config.node_config.name));
+            let req = if body.is_some() {
+                Request::builder().method(Method::POST).uri(url_str)
+            } else {
+                Request::builder().method(Method::GET).uri(url_str)
+            };
             let req = req.header(http::header::ACCEPT, APP_JSON);
+            let req = if body.is_some() {
+                req.header(http::header::CONTENT_TYPE, APP_JSON)
+            } else {
+                req
+            };
+            //let req = req.header("x-log-from-node-name", format!("{}", node_config.node_config.name));
+            let body = match body {
+                None => Body::empty(),
+                Some(body) => body,
+            };
             let req = req.body(body);
             let task = tokio::spawn(async move {
                 select! {
@@ -248,7 +258,7 @@ mod test {
         let fut = gather_get_json_generic(
             hyper::Method::GET,
             vec![],
-            None,
+            vec![],
             vec![],
             |_res| {
                 let fut = async { Ok(()) };

@@ -94,6 +94,9 @@ async fn go() -> Result<(), Error> {
         SubCmd::GenerateTestData => {
             disk::gen::gen_test_data().await?;
         }
+        SubCmd::Zmtp(zmtp) => {
+            netfetch::zmtp::zmtp_client(&zmtp.addr).await?;
+        }
     }
     Ok(())
 }

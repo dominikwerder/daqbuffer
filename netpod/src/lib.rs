@@ -938,6 +938,8 @@ pub struct ChannelSearchSingleResult {
     pub shape: Vec<u32>,
     pub unit: String,
     pub description: String,
+    #[serde(rename = "isApi0", skip_serializing_if = "Option::is_none")]
+    pub is_api_0: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -957,6 +959,8 @@ pub struct ProxyConfig {
     pub port: u16,
     pub search_hosts: Vec<String>,
     pub backends: Vec<ProxyBackend>,
+    pub api_0_search_hosts: Option<Vec<String>>,
+    pub api_0_search_backends: Option<Vec<String>>,
 }
 
 pub trait HasBackend {

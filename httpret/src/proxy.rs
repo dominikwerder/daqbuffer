@@ -12,8 +12,8 @@ use hyper::{Body, Request, Response, Server};
 use itertools::Itertools;
 use netpod::log::*;
 use netpod::{
-    AppendToUrl, ChannelConfigQuery, ChannelSearchQuery, ChannelSearchResult, FromUrl, HasBackend, HasTimeout,
-    ProxyConfig, APP_JSON,
+    AppendToUrl, ChannelConfigQuery, ChannelSearchQuery, ChannelSearchResult, ChannelSearchSingleResult, FromUrl,
+    HasBackend, HasTimeout, ProxyConfig, APP_JSON,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -59,6 +59,7 @@ async fn proxy_http_service(req: Request<Body>, proxy_config: ProxyConfig) -> Re
 async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) -> Result<Response<Body>, Error> {
     let uri = req.uri().clone();
     let path = uri.path();
+    let distri_pre = "/distri/";
     if path == "/api/1/channels" {
         Ok(channel_search_list_v1(req, proxy_config).await?)
     } else if path == "/api/1/channels/config" {
@@ -93,10 +94,15 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path.starts_with("/distri/daqbuffer") {
+    } else if path.starts_with(distri_pre)
+        && path
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || ['/', '.', '-', '_'].contains(&c))
+        && !path.contains("..")
+    {
         if req.method() == Method::GET {
             let s = FileStream {
-                file: File::open("/opt/distri/daqbuffer").await?,
+                file: File::open(format!("/opt/distri/{}", &path[distri_pre.len()..])).await?,
             };
             Ok(response(StatusCode::OK).body(Body::wrap_stream(s))?)
         } else {
@@ -162,7 +168,8 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
             if v == APP_JSON {
                 let url = Url::parse(&format!("dummy:{}", head.uri))?;
                 let query = ChannelSearchQuery::from_url(&url)?;
-                let urls = proxy_config
+                let mut bodies = vec![];
+                let mut urls = proxy_config
                     .search_hosts
                     .iter()
                     .map(|sh| match Url::parse(&format!("{}/api/4/search/channel", sh)) {
@@ -174,16 +181,83 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                     })
                     .fold_ok(vec![], |mut a, x| {
                         a.push(x);
+                        bodies.push(None);
                         a
                     })?;
+                if let (Some(hosts), Some(backends)) =
+                    (&proxy_config.api_0_search_hosts, &proxy_config.api_0_search_backends)
+                {
+                    #[derive(Serialize)]
+                    struct QueryApi0 {
+                        backends: Vec<String>,
+                        regex: String,
+                        #[serde(rename = "sourceRegex")]
+                        source_regex: String,
+                        ordering: String,
+                        reload: bool,
+                    };
+                    hosts.iter().zip(backends.iter()).for_each(|(sh, back)| {
+                        let url = Url::parse(&format!("{}/channels/config", sh)).unwrap();
+                        urls.push(url);
+                        let q = QueryApi0 {
+                            backends: vec![back.into()],
+                            ordering: "asc".into(),
+                            reload: false,
+                            regex: query.name_regex.clone(),
+                            source_regex: query.source_regex.clone(),
+                        };
+                        let qs = serde_json::to_string(&q).unwrap();
+                        bodies.push(Some(Body::from(qs)));
+                    });
+                }
                 let tags = urls.iter().map(|k| k.to_string()).collect();
                 let nt = |res| {
                     let fut = async {
                         let body = hyper::body::to_bytes(res).await?;
-                        info!("got a result {:?}", body);
-                        let res: ChannelSearchResult = match serde_json::from_slice(&body) {
+                        //info!("got a result {:?}", body);
+                        let res: ChannelSearchResult = match serde_json::from_slice::<ChannelSearchResult>(&body) {
                             Ok(k) => k,
-                            Err(_) => ChannelSearchResult { channels: vec![] },
+                            Err(_) => {
+                                #[derive(Deserialize)]
+                                struct ResItemApi0 {
+                                    name: String,
+                                    source: String,
+                                    backend: String,
+                                    #[serde(rename = "type")]
+                                    ty: String,
+                                };
+                                #[derive(Deserialize)]
+                                struct ResContApi0 {
+                                    backend: String,
+                                    channels: Vec<ResItemApi0>,
+                                };
+                                match serde_json::from_slice::<Vec<ResContApi0>>(&body) {
+                                    Ok(k) => {
+                                        let mut a = vec![];
+                                        if let Some(g) = k.first() {
+                                            for c in &g.channels {
+                                                let mut z = ChannelSearchSingleResult {
+                                                    backend: c.backend.clone(),
+                                                    description: String::new(),
+                                                    name: c.name.clone(),
+                                                    shape: vec![],
+                                                    source: c.source.clone(),
+                                                    ty: c.ty.clone(),
+                                                    unit: String::new(),
+                                                    is_api_0: Some(true),
+                                                };
+                                                a.push(z);
+                                            }
+                                        }
+                                        let ret = ChannelSearchResult { channels: a };
+                                        ret
+                                    }
+                                    Err(_) => {
+                                        error!("Channel search response parse failed");
+                                        ChannelSearchResult { channels: vec![] }
+                                    }
+                                }
+                            }
                         };
                         Ok(res)
                     };
@@ -202,9 +276,16 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                         .body(Body::from(serde_json::to_string(&res)?))?;
                     Ok(res)
                 };
-                let ret =
-                    gather_get_json_generic(http::Method::GET, urls, None, tags, nt, ft, Duration::from_millis(3000))
-                        .await?;
+                let ret = gather_get_json_generic(
+                    http::Method::GET,
+                    urls,
+                    bodies,
+                    tags,
+                    nt,
+                    ft,
+                    Duration::from_millis(3000),
+                )
+                .await?;
                 Ok(ret)
             } else {
                 Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)
@@ -265,7 +346,9 @@ where
                         return Err(Error::with_msg("no response from upstream"));
                     }
                 };
-                let ret = gather_get_json_generic(http::Method::GET, urls, None, tags, nt, ft, query.timeout()).await?;
+                let bodies = (0..urls.len()).into_iter().map(|_| None).collect();
+                let ret =
+                    gather_get_json_generic(http::Method::GET, urls, bodies, tags, nt, ft, query.timeout()).await?;
                 Ok(ret)
             } else {
                 Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)

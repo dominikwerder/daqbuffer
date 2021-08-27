@@ -52,6 +52,7 @@ pub async fn search_channel(
             shape: shape,
             unit: row.get(5),
             description: row.get(6),
+            is_api_0: None,
         };
         res.push(k);
     }

@@ -150,9 +150,17 @@ pub async fn channel_search_list_v1(req: Request<Body>, proxy_config: &ProxyConf
                         .body(Body::from(serde_json::to_string(&res)?))?;
                     Ok(res)
                 };
-                let ret =
-                    gather_get_json_generic(http::Method::GET, urls, None, tags, nt, ft, Duration::from_millis(3000))
-                        .await?;
+                let bodies = (0..urls.len()).into_iter().map(|_| None).collect();
+                let ret = gather_get_json_generic(
+                    http::Method::GET,
+                    urls,
+                    bodies,
+                    tags,
+                    nt,
+                    ft,
+                    Duration::from_millis(3000),
+                )
+                .await?;
                 Ok(ret)
             } else {
                 Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)
@@ -252,9 +260,17 @@ pub async fn channel_search_configs_v1(
                         .body(Body::from(serde_json::to_string(&res)?))?;
                     Ok(res)
                 };
-                let ret =
-                    gather_get_json_generic(http::Method::GET, urls, None, tags, nt, ft, Duration::from_millis(3000))
-                        .await?;
+                let bodies = (0..urls.len()).into_iter().map(|_| None).collect();
+                let ret = gather_get_json_generic(
+                    http::Method::GET,
+                    urls,
+                    bodies,
+                    tags,
+                    nt,
+                    ft,
+                    Duration::from_millis(3000),
+                )
+                .await?;
                 Ok(ret)
             } else {
                 Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)

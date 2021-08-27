@@ -15,6 +15,7 @@ pub enum SubCmd {
     Proxy(Proxy),
     Client(Client),
     GenerateTestData,
+    Zmtp(Zmtp),
 }
 
 #[derive(Debug, Clap)]
@@ -69,4 +70,10 @@ pub struct BinnedClient {
     pub cache: String,
     #[clap(long, default_value = "1048576")]
     pub disk_stats_every_kb: u32,
+}
+
+#[derive(Debug, Clap)]
+pub struct Zmtp {
+    #[clap(long)]
+    pub addr: String,
 }

@@ -8,13 +8,14 @@
     <link rel="shortcut icon" href="about:blank"/>
     <link rel="stylesheet" href="style.css"/>
 </head>
-
 <body>
 
 <h1>Databuffer API 4 Documentation</h1>
 
-<p>Documented here are the endpoints for databuffer API 4. The endpoints of the "original" unversioned API is documented at
-    <a href="https://git.psi.ch/sf_daq/ch.psi.daq.databuffer/blob/master/ch.psi.daq.queryrest/Readme.md">this location</a>.</p>
+<p>Documented here is the databuffer http api 4. The "original" unversioned api is documented at
+<a href="https://git.psi.ch/sf_daq/ch.psi.daq.databuffer/blob/master/ch.psi.daq.queryrest/Readme.md">this location</a>.</p>
+<p>In order to keep the api surface as small as possible in comparison to api 0, we add functionality on demand,
+so please feel free to create some Jira ticket!</p>
 
 
 <h2>Timestamp format</h2>
@@ -72,13 +73,14 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/backends'
 <h2>Search channel</h2>
 <p><strong>Method:</strong> GET</p>
 <p><strong>URL:</strong> https://data-api.psi.ch/api/4/search/channel</p>
-<p><strong>Query parameters:</strong></p>
+<p><strong>Query parameters:</strong> (all optional)</p>
 <ul>
     <li>nameRegex (e.g. "LSCP.*6")</li>
     <li>sourceRegex  (e.g. "178:9999")</li>
     <li>descriptionRegex  (e.g. "celsius")</li>
 </ul>
 <p><strong>Request header:</strong> "Accept" must be "application/json"</p>
+<p>Full channel list is long, so it's encouraged to provide a search string of some minimal length.</p>
 
 <h4>CURL example:</h4>
 <pre>
@@ -86,6 +88,9 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/search/channel
 </pre>
 
 <h4>Example response:</h4>
+<p><strong>Keys always present: </strong>name, backend.</p>
+<p>Other keys are optional, it depends on the data found on disk: sometimes there is an empty string on disk, sometimes
+that key is missing.</p>
 <pre>{
   "channels": [
     {
@@ -102,6 +107,16 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/search/channel
       "backend": "sf-databuffer",
       "source": "tcp://S20-CVME-DBPM2371:9000",
       "type": "Float32",
+      "shape": [],
+      "unit": "",
+      "description": ""
+    },
+    {
+      "isApi0": true,
+      "name": "EXAMPLE-CHANNEL-FROM-API-0-BACKEND",
+      "backend": "twlha-databuffer",
+      "source": "tcp://.....",
+      "type": "int32",
       "shape": [],
       "unit": "",
       "description": ""
