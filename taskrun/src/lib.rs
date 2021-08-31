@@ -1,12 +1,9 @@
+use crate::log::*;
+use err::Error;
 use std::future::Future;
 use std::panic;
 use std::sync::Mutex;
-
 use tokio::task::JoinHandle;
-
-use err::Error;
-
-use crate::log::*;
 
 pub mod log {
     #[allow(unused_imports)]
@@ -83,4 +80,31 @@ where
     T::Output: Send + 'static,
 {
     tokio::spawn(task)
+}
+
+pub fn test_cluster() -> netpod::Cluster {
+    let nodes = (0..3)
+        .into_iter()
+        .map(|id| netpod::Node {
+            host: "localhost".into(),
+            listen: "0.0.0.0".into(),
+            port: 8360 + id as u16,
+            port_raw: 8360 + id as u16 + 100,
+            data_base_path: format!("../tmpdata/node{:02}", id).into(),
+            cache_base_path: format!("../tmpdata/node{:02}", id).into(),
+            ksprefix: "ks".into(),
+            split: id,
+            backend: "testbackend".into(),
+            archiver_appliance: None,
+        })
+        .collect();
+    netpod::Cluster {
+        nodes: nodes,
+        database: netpod::Database {
+            name: "daqbuffer".into(),
+            host: "localhost".into(),
+            user: "daqbuffer".into(),
+            pass: "daqbuffer".into(),
+        },
+    }
 }

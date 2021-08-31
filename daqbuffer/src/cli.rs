@@ -16,6 +16,7 @@ pub enum SubCmd {
     Client(Client),
     GenerateTestData,
     Zmtp(Zmtp),
+    Test,
 }
 
 #[derive(Debug, Clap)]

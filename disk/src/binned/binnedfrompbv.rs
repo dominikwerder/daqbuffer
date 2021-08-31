@@ -101,14 +101,12 @@ where
                                 self.res = Some(s2);
                                 continue 'outer;
                             } else {
-                                error!(
+                                let msg = format!(
                                     "PreBinnedValueFetchedStream  got non-OK result from sub request: {:?}",
                                     res
                                 );
-                                let e = Error::with_msg(format!(
-                                    "PreBinnedValueFetchedStream  got non-OK result from sub request: {:?}",
-                                    res
-                                ));
+                                error!("{}", msg);
+                                let e = Error::with_msg_no_trace(msg);
                                 self.errored = true;
                                 Ready(Some(Err(e)))
                             }

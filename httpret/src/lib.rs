@@ -12,6 +12,7 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
 use netpod::log::*;
+use netpod::timeunits::SEC;
 use netpod::{
     channel_from_pairs, get_url_query_pairs, AggKind, ChannelConfigQuery, FromUrl, NodeConfigCached, APP_JSON,
     APP_JSON_LINES, APP_OCTET,
@@ -398,7 +399,7 @@ async fn binned_json(query: BinnedQuery, node_config: &NodeConfigCached) -> Resu
 async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let query = PreBinnedQuery::from_request(&head)?;
-    let desc = format!("pre-b-{}", query.patch().bin_t_len() / 1000000000);
+    let desc = format!("pre-b-{}", query.patch().bin_t_len() / SEC);
     let span1 = span!(Level::INFO, "httpret::prebinned_DISABLED", desc = &desc.as_str());
     //span1.in_scope(|| {});
     let fut = pre_binned_bytes_for_http(node_config, &query).instrument(span1);
@@ -407,8 +408,8 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
             s,
             format!(
                 "pre-b-{}-p-{}",
-                query.patch().bin_t_len() / 1000000000,
-                query.patch().patch_beg() / 1000000000,
+                query.patch().bin_t_len() / SEC,
+                query.patch().patch_beg() / SEC,
             ),
         ))?,
         Err(e) => {

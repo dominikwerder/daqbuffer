@@ -3,6 +3,7 @@ use bytes::BytesMut;
 use err::Error;
 use futures_util::StreamExt;
 use netpod::log::*;
+use netpod::timeunits::DAY;
 use netpod::{ChannelConfig, NanoRange, Nanos, Node};
 use std::path::PathBuf;
 use std::time::Instant;
@@ -161,4 +162,61 @@ async fn open_files_inner(
     }
     // TODO keep track of number of running
     Ok(())
+}
+
+/**
+Try to find and position the file with the youngest event before the requested range.
+*/
+async fn single_file_before_range(
+    chtx: async_channel::Sender<Result<OpenedFile, Error>>,
+    range: NanoRange,
+    channel_config: ChannelConfig,
+    node: Node,
+) -> Result<(), Error> {
+    Ok(())
+}
+
+#[test]
+fn single_file() {
+    let range = netpod::NanoRange { beg: 0, end: 0 };
+    let chn = netpod::Channel {
+        backend: "testbackend".into(),
+        name: "scalar-i32-be".into(),
+    };
+    let cfg = ChannelConfig {
+        channel: chn,
+        keyspace: 2,
+        time_bin_size: Nanos { ns: DAY },
+        scalar_type: netpod::ScalarType::I32,
+        compression: false,
+        shape: netpod::Shape::Scalar,
+        array: false,
+        byte_order: netpod::ByteOrder::big_endian(),
+    };
+    let cluster = taskrun::test_cluster();
+    let task = async move {
+        let (tx, rx) = async_channel::bounded(2);
+        let jh = taskrun::spawn(single_file_before_range(tx, range, cfg, cluster.nodes[0].clone()));
+        loop {
+            match rx.recv().await {
+                Ok(k) => match k {
+                    Ok(k) => {
+                        info!("opened file: {:?}", k.path);
+                    }
+                    Err(e) => {
+                        error!("error while trying to open {:?}", e);
+                        break;
+                    }
+                },
+                Err(e) => {
+                    // channel closed.
+                    info!("channel closed");
+                    break;
+                }
+            }
+        }
+        jh.await??;
+        Ok(())
+    };
+    taskrun::run(task).unwrap();
 }

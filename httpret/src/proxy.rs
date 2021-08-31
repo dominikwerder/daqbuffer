@@ -68,6 +68,8 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
         Err(Error::with_msg("todo"))
     } else if path == "/api/1/stats/" {
         Err(Error::with_msg("todo"))
+    } else if path == "/api/1/query" {
+        Ok(proxy_api1_single_backend_query(req, proxy_config).await?)
     } else if path.starts_with("/api/1/gather/") {
         Ok(gather_json_2_v1(req, "/api/1/gather/", proxy_config).await?)
     } else if path == "/api/4/backends" {
@@ -225,12 +227,13 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                                     backend: String,
                                     #[serde(rename = "type")]
                                     ty: String,
-                                };
+                                }
                                 #[derive(Deserialize)]
                                 struct ResContApi0 {
+                                    #[allow(dead_code)]
                                     backend: String,
                                     channels: Vec<ResItemApi0>,
-                                };
+                                }
                                 match serde_json::from_slice::<Vec<ResContApi0>>(&body) {
                                     Ok(k) => {
                                         let mut a = vec![];
@@ -293,6 +296,13 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
         }
         None => Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?),
     }
+}
+
+pub async fn proxy_api1_single_backend_query(
+    req: Request<Body>,
+    proxy_config: &ProxyConfig,
+) -> Result<Response<Body>, Error> {
+    panic!()
 }
 
 pub async fn proxy_single_backend_query<QT>(

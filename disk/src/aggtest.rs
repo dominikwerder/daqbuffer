@@ -16,7 +16,6 @@ pub fn make_test_node(id: u32) -> Node {
         split: id,
         ksprefix: "ks".into(),
         backend: "testbackend".into(),
-        bin_grain_kind: 0,
         archiver_appliance: None,
     }
 }

@@ -308,7 +308,7 @@ pub struct FileChunkRead {
 }
 
 pub fn file_content_stream(
-    mut file: tokio::fs::File,
+    mut file: File,
     buffer_size: usize,
 ) -> impl Stream<Item = Result<FileChunkRead, Error>> + Send {
     async_stream::stream! {

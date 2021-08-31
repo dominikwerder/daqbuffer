@@ -12,7 +12,6 @@ fn ca_connect_1() {
         let node_config = NodeConfigCached {
             node: Node {
                 host: "".into(),
-                bin_grain_kind: 0,
                 port: 123,
                 port_raw: 123,
                 backend: "".into(),

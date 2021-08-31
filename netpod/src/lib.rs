@@ -1,3 +1,8 @@
+pub mod api1;
+pub mod query;
+pub mod status;
+pub mod streamext;
+
 use std::collections::BTreeMap;
 use std::fmt::{self, Debug, Display, Formatter};
 use std::iter::FromIterator;
@@ -17,10 +22,6 @@ use url::Url;
 
 use err::Error;
 use timeunits::*;
-
-pub mod query;
-pub mod status;
-pub mod streamext;
 
 pub const APP_JSON: &'static str = "application/json";
 pub const APP_JSON_LINES: &'static str = "application/jsonlines";
@@ -132,9 +133,24 @@ pub struct Node {
     pub cache_base_path: PathBuf,
     pub ksprefix: String,
     pub backend: String,
-    #[serde(default)]
-    pub bin_grain_kind: u32,
     pub archiver_appliance: Option<ArchiverAppliance>,
+}
+
+impl Node {
+    pub fn dummy() -> Self {
+        Self {
+            host: "dummy".into(),
+            listen: "dummy".into(),
+            port: 4444,
+            port_raw: 4444,
+            split: 0,
+            data_base_path: PathBuf::new(),
+            cache_base_path: PathBuf::new(),
+            ksprefix: "daqlocal".into(),
+            backend: "dummybackend".into(),
+            archiver_appliance: None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -351,8 +367,6 @@ pub mod timeunits {
 
 const BIN_T_LEN_OPTIONS_0: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
 
-const BIN_T_LEN_OPTIONS_1: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
-
 const PATCH_T_LEN_KEY: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
 
 const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 4] = [MIN * 60, HOUR * 4, DAY * 4, DAY * 32];
@@ -469,12 +483,8 @@ fn get_patch_t_len(bin_t_len: u64) -> u64 {
 
 impl PreBinnedPatchRange {
     /// Cover at least the given range with at least as many as the requested number of bins.
-    pub fn covering_range(range: NanoRange, min_bin_count: u32, bin_grain_kind: u32) -> Result<Option<Self>, Error> {
-        let bin_t_len_options = if bin_grain_kind == 1 {
-            &BIN_T_LEN_OPTIONS_1
-        } else {
-            &BIN_T_LEN_OPTIONS_0
-        };
+    pub fn covering_range(range: NanoRange, min_bin_count: u32) -> Result<Option<Self>, Error> {
+        let bin_t_len_options = &BIN_T_LEN_OPTIONS_0;
         if min_bin_count < 1 {
             Err(Error::with_msg("min_bin_count < 1"))?;
         }
@@ -646,7 +656,7 @@ pub struct BinnedRange {
 }
 
 impl BinnedRange {
-    pub fn covering_range(range: NanoRange, min_bin_count: u32, _bin_grain_kind: u32) -> Result<Option<Self>, Error> {
+    pub fn covering_range(range: NanoRange, min_bin_count: u32) -> Result<Option<Self>, Error> {
         let thresholds = &BIN_THRESHOLDS;
         if min_bin_count < 1 {
             Err(Error::with_msg("min_bin_count < 1"))?;
