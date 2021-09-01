@@ -30,6 +30,7 @@ pub struct EventChunker {
     parsed_bytes: u64,
     path: PathBuf,
     max_ts: Arc<AtomicU64>,
+    seen_before_range_count: usize,
 }
 
 enum DataFileState {
@@ -44,7 +45,7 @@ struct ParseResult {
 
 #[derive(Clone, Debug)]
 pub struct EventChunkerConf {
-    disk_stats_every: ByteSize,
+    pub disk_stats_every: ByteSize,
 }
 
 impl EventChunkerConf {
@@ -80,6 +81,7 @@ impl EventChunker {
             parsed_bytes: 0,
             path,
             max_ts,
+            seen_before_range_count: 0,
         }
     }
 
@@ -177,18 +179,22 @@ impl EventChunker {
                             break;
                         }
                         if ts < self.range.beg {
-                            Err(Error::with_msg(format!(
-                                "seen before range: event ts: {}.{}  range beg: {}.{}  range end: {}.{}  pulse {}  config {:?}  path {:?}",
-                                ts / SEC,
-                                ts % SEC,
-                                self.range.beg / SEC,
-                                self.range.beg % SEC,
-                                self.range.end / SEC,
-                                self.range.end % SEC,
-                                pulse,
-                                self.channel_config.shape,
-                                self.path
-                            )))?;
+                            self.seen_before_range_count += 1;
+                            if self.seen_before_range_count > 1 {
+                                let e = Error::with_msg(format!(
+                                    "seen before range: event ts: {}.{}  range beg: {}.{}  range end: {}.{}  pulse {}  config {:?}  path {:?}",
+                                    ts / SEC,
+                                    ts % SEC,
+                                    self.range.beg / SEC,
+                                    self.range.beg % SEC,
+                                    self.range.end / SEC,
+                                    self.range.end % SEC,
+                                    pulse,
+                                    self.channel_config.shape,
+                                    self.path
+                                ));
+                                Err(e)?;
+                            }
                         }
                         let _ioc_ts = sl.read_i64::<BE>().unwrap();
                         let status = sl.read_i8().unwrap();
@@ -315,8 +321,13 @@ impl EventChunker {
             parsed_bytes,
         })
     }
+
+    pub fn seen_before_range_count(&self) -> usize {
+        self.seen_before_range_count
+    }
 }
 
+#[derive(Debug)]
 pub struct EventFull {
     pub tss: Vec<u64>,
     pub pulses: Vec<u64>,

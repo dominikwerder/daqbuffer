@@ -1,4 +1,3 @@
-use crate::eventvalues::EventValues;
 use crate::frame::make_frame_2;
 use crate::numops::BoolNum;
 use bytes::BytesMut;
