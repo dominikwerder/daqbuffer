@@ -1,4 +1,3 @@
-use crate::eventvalues::EventValues;
 use crate::minmaxavgdim1bins::MinMaxAvgDim1Bins;
 use crate::numops::NumOps;
 use crate::xbinnedscalarevents::XBinnedScalarEvents;

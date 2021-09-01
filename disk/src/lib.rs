@@ -319,7 +319,7 @@ pub fn file_content_stream(
             let n1 = file.read_buf(&mut buf).await?;
             let ts2 = Instant::now();
             if n1 == 0 {
-                info!("file EOF");
+                trace!("file EOF");
                 break;
             }
             else {
