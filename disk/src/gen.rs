@@ -10,6 +10,12 @@ use tokio::io::AsyncWriteExt;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
+//#[test]
+pub fn gen_test_data_test() {
+    std::env::set_current_dir("..").unwrap();
+    taskrun::run(gen_test_data()).unwrap();
+}
+
 pub async fn gen_test_data() -> Result<(), Error> {
     let data_base_path = PathBuf::from("tmpdata");
     let ksprefix = String::from("ks");
@@ -26,13 +32,13 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 },
                 keyspace: 2,
                 time_bin_size: Nanos { ns: DAY },
-                array: false,
                 scalar_type: ScalarType::I32,
-                shape: Shape::Scalar,
                 byte_order: ByteOrder::big_endian(),
+                shape: Shape::Scalar,
+                array: false,
                 compression: false,
             },
-            time_spacing: MS * 100,
+            time_spacing: MS * 500,
         };
         ensemble.channels.push(chn);
         let chn = ChannelGenProps {
@@ -49,7 +55,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 byte_order: ByteOrder::big_endian(),
                 compression: true,
             },
-            time_spacing: MS * 1000,
+            time_spacing: MS * 4000,
         };
         ensemble.channels.push(chn);
         let chn = ChannelGenProps {
@@ -66,7 +72,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 byte_order: ByteOrder::little_endian(),
                 compression: true,
             },
-            time_spacing: MS * 100,
+            time_spacing: MS * 500,
         };
         ensemble.channels.push(chn);
     }
@@ -122,7 +128,7 @@ async fn gen_channel(chn: &ChannelGenProps, node: &Node, ensemble: &Ensemble) ->
     let mut evix = 0;
     let mut ts = Nanos { ns: 0 };
     let mut pulse = 0;
-    while ts.ns < DAY * 2 {
+    while ts.ns < DAY * 3 {
         let res = gen_timebin(
             evix,
             ts,
