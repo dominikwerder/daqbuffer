@@ -2,7 +2,8 @@ use crate::log::*;
 use err::Error;
 use std::future::Future;
 use std::panic;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use tokio::runtime::Runtime;
 use tokio::task::JoinHandle;
 
 pub mod log {
@@ -10,41 +11,58 @@ pub mod log {
     pub use tracing::{debug, error, info, trace, warn};
 }
 
+lazy_static::lazy_static! {
+    static ref RUNTIME: Mutex<Option<Arc<Runtime>>> = Mutex::new(None);
+}
+
+pub fn get_runtime() -> Arc<Runtime> {
+    let mut g = RUNTIME.lock().unwrap();
+    match g.as_ref() {
+        None => {
+            tracing_init();
+            let res = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(12)
+                .max_blocking_threads(256)
+                .enable_all()
+                .on_thread_start(|| {
+                    let _old = panic::take_hook();
+                    panic::set_hook(Box::new(move |info| {
+                        let payload = if let Some(k) = info.payload().downcast_ref::<Error>() {
+                            format!("{:?}", k)
+                        }
+                        else if let Some(k) = info.payload().downcast_ref::<String>() {
+                            k.into()
+                        }
+                        else if let Some(&k) = info.payload().downcast_ref::<&str>() {
+                            k.into()
+                        }
+                        else {
+                            format!("unknown payload type")
+                        };
+                        error!(
+                            "✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗     panicking\n{:?}\nLOCATION: {:?}\nPAYLOAD: {:?}\ninfo object: {:?}\nerr: {:?}",
+                            Error::with_msg("catched panic in taskrun::run"),
+                            info.location(),
+                            info.payload(),
+                            info,
+                            payload,
+                        );
+                        //old(info);
+                    }));
+                })
+                .build()
+                .unwrap();
+            let a = Arc::new(res);
+            *g = Some(a.clone());
+            a
+        }
+        Some(g) => g.clone(),
+    }
+}
+
 pub fn run<T, F: std::future::Future<Output = Result<T, Error>>>(f: F) -> Result<T, Error> {
-    tracing_init();
-    let res = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(12)
-        .max_blocking_threads(256)
-        .enable_all()
-        .on_thread_start(|| {
-            let _old = panic::take_hook();
-            panic::set_hook(Box::new(move |info| {
-                let payload = if let Some(k) = info.payload().downcast_ref::<Error>() {
-                    format!("{:?}", k)
-                }
-                else if let Some(k) = info.payload().downcast_ref::<String>() {
-                    k.into()
-                }
-                else if let Some(&k) = info.payload().downcast_ref::<&str>() {
-                    k.into()
-                }
-                else {
-                    format!("unknown payload type")
-                };
-                error!(
-                    "✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗     panicking\n{:?}\nLOCATION: {:?}\nPAYLOAD: {:?}\ninfo object: {:?}\nerr: {:?}",
-                    Error::with_msg("catched panic in taskrun::run"),
-                    info.location(),
-                    info.payload(),
-                    info,
-                    payload,
-                );
-                //old(info);
-            }));
-        })
-        .build()
-        .unwrap()
-        .block_on(async { f.await });
+    let runtime = get_runtime();
+    let res = runtime.block_on(async { f.await });
     match res {
         Ok(k) => Ok(k),
         Err(e) => {
@@ -70,6 +88,7 @@ pub fn tracing_init() {
                 "info,daqbuffer=trace,daqbuffer::test=trace,disk::raw::conn=info",
             ))
             .init();
+        warn!("tracing_init  done");
         *g = 1;
     }
 }
@@ -90,8 +109,8 @@ pub fn test_cluster() -> netpod::Cluster {
             listen: "0.0.0.0".into(),
             port: 8360 + id as u16,
             port_raw: 8360 + id as u16 + 100,
-            data_base_path: format!("tmpdata/node{:02}", id).into(),
-            cache_base_path: format!("tmpdata/node{:02}", id).into(),
+            data_base_path: format!("../tmpdata/node{:02}", id).into(),
+            cache_base_path: format!("../tmpdata/node{:02}", id).into(),
             ksprefix: "ks".into(),
             split: id,
             backend: "testbackend".into(),

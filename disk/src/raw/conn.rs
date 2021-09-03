@@ -179,6 +179,7 @@ pub async fn make_event_pipe(
         node_config.ix,
         evq.disk_io_buffer_size,
         event_chunker_conf,
+        true,
     );
     let shape = entry.to_shape()?;
     let pipe = pipe1!(

@@ -10,11 +10,86 @@ use std::time::Duration;
 use url::Url;
 
 #[test]
-fn time_weighted_json_0() {
-    super::run_test(time_weighted_json_0_inner());
+fn time_weighted_json_00() {
+    // Each test must make sure that the nodes are running.
+    // Can I use absolute paths in the Node Configs to make me independent of the CWD?
+    // run_test must assume that the CWD when it is started, is the crate directory.
+    super::run_test(time_weighted_json_00_inner());
 }
 
-async fn time_weighted_json_0_inner() -> Result<(), Error> {
+async fn time_weighted_json_00_inner() -> Result<(), Error> {
+    let rh = require_test_hosts_running()?;
+    let cluster = &rh.cluster;
+    let res = get_json_common(
+        "const-regular-scalar-i32-be",
+        "1970-01-01T00:20:10.000Z",
+        "1970-01-01T04:20:30.000Z",
+        20,
+        AggKind::DimXBins1,
+        cluster,
+        25,
+        true,
+    )
+    .await?;
+    let v = res.avgs[0];
+    assert!(v > 41.9999 && v < 42.0001);
+    Ok(())
+}
+
+#[test]
+fn time_weighted_json_01() {
+    super::run_test(time_weighted_json_01_inner());
+}
+
+async fn time_weighted_json_01_inner() -> Result<(), Error> {
+    let rh = require_test_hosts_running()?;
+    let cluster = &rh.cluster;
+    let res = get_json_common(
+        "const-regular-scalar-i32-be",
+        "1970-01-01T00:20:10.000Z",
+        "1970-01-01T10:20:30.000Z",
+        10,
+        AggKind::DimXBins1,
+        cluster,
+        11,
+        true,
+    )
+    .await?;
+    let v = res.avgs[0];
+    assert!(v > 41.9999 && v < 42.0001);
+    Ok(())
+}
+
+#[test]
+fn time_weighted_json_02() {
+    super::run_test(time_weighted_json_02_inner());
+}
+
+async fn time_weighted_json_02_inner() -> Result<(), Error> {
+    let rh = require_test_hosts_running()?;
+    let cluster = &rh.cluster;
+    let res = get_json_common(
+        "const-regular-scalar-i32-be",
+        "1970-01-01T00:20:10.000Z",
+        "1970-01-01T00:20:20.000Z",
+        20,
+        AggKind::TimeWeightedScalar,
+        cluster,
+        100,
+        true,
+    )
+    .await?;
+    let v = res.avgs[0];
+    assert!(v > 41.9999 && v < 42.0001);
+    Ok(())
+}
+
+#[test]
+fn time_weighted_json_10() {
+    super::run_test(time_weighted_json_10_inner());
+}
+
+async fn time_weighted_json_10_inner() -> Result<(), Error> {
     let rh = require_test_hosts_running()?;
     let cluster = &rh.cluster;
     get_json_common(
@@ -22,20 +97,21 @@ async fn time_weighted_json_0_inner() -> Result<(), Error> {
         "1970-01-01T00:20:10.000Z",
         "1970-01-01T01:20:30.000Z",
         10,
-        AggKind::TimeWeightedScalar,
+        AggKind::DimXBins1,
         cluster,
         13,
         true,
     )
-    .await
+    .await?;
+    Ok(())
 }
 
 #[test]
-fn time_weighted_json_1() {
-    super::run_test(time_weighted_json_1_inner());
+fn time_weighted_json_20() {
+    super::run_test(time_weighted_json_20_inner());
 }
 
-async fn time_weighted_json_1_inner() -> Result<(), Error> {
+async fn time_weighted_json_20_inner() -> Result<(), Error> {
     let rh = require_test_hosts_running()?;
     let cluster = &rh.cluster;
     get_json_common(
@@ -48,10 +124,15 @@ async fn time_weighted_json_1_inner() -> Result<(), Error> {
         13,
         true,
     )
-    .await
+    .await?;
+    Ok(())
 }
 
 // For waveform with N x-bins, see test::binnedjson
+
+struct DataResult {
+    avgs: Vec<f64>,
+}
 
 async fn get_json_common(
     channel_name: &str,
@@ -62,7 +143,7 @@ async fn get_json_common(
     cluster: &Cluster,
     expect_bin_count: u32,
     expect_finalised_range: bool,
-) -> Result<(), Error> {
+) -> Result<DataResult, Error> {
     let t1 = Utc::now();
     let node0 = &cluster.nodes[0];
     let beg_date: DateTime<Utc> = beg_date.parse()?;
@@ -74,7 +155,7 @@ async fn get_json_common(
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
     let mut query = BinnedQuery::new(channel, range, bin_count, agg_kind);
-    query.set_timeout(Duration::from_millis(10000));
+    query.set_timeout(Duration::from_millis(40000));
     query.set_cache_usage(CacheUsage::Ignore);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", node0.host, node0.port))?;
     query.append_to_url(&mut url);
@@ -116,17 +197,27 @@ async fn get_json_common(
             return Err(Error::with_msg("expect absent finalisedRange"));
         }
     }
-    if res.get("counts").unwrap().as_array().unwrap().len() != expect_bin_count as usize {
+    let counts = res.get("counts").unwrap().as_array().unwrap();
+    let mins = res.get("mins").unwrap().as_array().unwrap();
+    let maxs = res.get("maxs").unwrap().as_array().unwrap();
+    let avgs = res.get("avgs").unwrap().as_array().unwrap();
+    if counts.len() != expect_bin_count as usize {
+        return Err(Error::with_msg(format!(
+            "expect_bin_count {}  got {}",
+            expect_bin_count,
+            counts.len()
+        )));
+    }
+    if mins.len() != expect_bin_count as usize {
         return Err(Error::with_msg(format!("expect_bin_count {}", expect_bin_count)));
     }
-    if res.get("mins").unwrap().as_array().unwrap().len() != expect_bin_count as usize {
+    if maxs.len() != expect_bin_count as usize {
         return Err(Error::with_msg(format!("expect_bin_count {}", expect_bin_count)));
     }
-    if res.get("maxs").unwrap().as_array().unwrap().len() != expect_bin_count as usize {
+    let avgs: Vec<_> = avgs.into_iter().map(|k| k.as_f64().unwrap()).collect();
+    if avgs.len() != expect_bin_count as usize {
         return Err(Error::with_msg(format!("expect_bin_count {}", expect_bin_count)));
     }
-    if res.get("avgs").unwrap().as_array().unwrap().len() != expect_bin_count as usize {
-        return Err(Error::with_msg(format!("expect_bin_count {}", expect_bin_count)));
-    }
-    Ok(())
+    let ret = DataResult { avgs };
+    Ok(ret)
 }

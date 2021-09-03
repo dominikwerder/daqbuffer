@@ -9,10 +9,14 @@ use std::future::Future;
 
 fn run_test<F>(f: F)
 where
-    F: Future<Output = Result<(), Error>>,
+    F: Future<Output = Result<(), Error>> + Send,
 {
-    std::env::set_current_dir("..").unwrap();
-    taskrun::run(f).unwrap();
+    //taskrun::run(f).unwrap();
+    let runtime = taskrun::get_runtime();
+    let _g = runtime.enter();
+    runtime.block_on(f).unwrap();
+    //let jh = tokio::spawn(f);
+    //jh.await;
 }
 
 #[test]

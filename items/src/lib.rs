@@ -400,5 +400,5 @@ pub trait TimeBinnableTypeAggregator: Send {
     type Output: TimeBinnableType;
     fn range(&self) -> &NanoRange;
     fn ingest(&mut self, item: &Self::Input);
-    fn result(self) -> Self::Output;
+    fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output;
 }

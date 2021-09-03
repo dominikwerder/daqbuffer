@@ -41,7 +41,8 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
     use std::str::FromStr;
     let addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen, node_config.node.port))?;
     let make_service = make_service_fn({
-        move |_conn| {
+        move |conn| {
+            info!("»»»»»»»»»»»  new connection {:?}", conn);
             let node_config = node_config.clone();
             async move {
                 Ok::<_, Error>(service_fn({
@@ -54,6 +55,7 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
         }
     });
     Server::bind(&addr).serve(make_service).await?;
+    warn!("»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»  SERVICE DONE  ««««««««««««««««««««««««««««««««««««««««");
     rawjh.await??;
     Ok(())
 }
@@ -359,6 +361,11 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
     let (head, _body) = req.into_parts();
     let url = Url::parse(&format!("dummy:{}", head.uri))?;
     let query = BinnedQuery::from_url(&url)?;
+    let desc = format!("binned-BEG-{}-END-{}", query.range().beg / SEC, query.range().end / SEC);
+    let span1 = span!(Level::INFO, "httpret::binned", desc = &desc.as_str());
+    span1.in_scope(|| {
+        info!("binned STARTING");
+    });
     match head.headers.get(http::header::ACCEPT) {
         Some(v) if v == APP_OCTET => binned_binary(query, node_config).await,
         Some(v) if v == APP_JSON => binned_json(query, node_config).await,
@@ -399,19 +406,18 @@ async fn binned_json(query: BinnedQuery, node_config: &NodeConfigCached) -> Resu
 async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let query = PreBinnedQuery::from_request(&head)?;
-    let desc = format!("pre-b-{}", query.patch().bin_t_len() / SEC);
-    let span1 = span!(Level::INFO, "httpret::prebinned_DISABLED", desc = &desc.as_str());
-    //span1.in_scope(|| {});
+    let desc = format!(
+        "pre-W-{}-B-{}",
+        query.patch().bin_t_len() / SEC,
+        query.patch().patch_beg() / SEC
+    );
+    let span1 = span!(Level::INFO, "httpret::prebinned", desc = &desc.as_str());
+    span1.in_scope(|| {
+        info!("prebinned STARTING");
+    });
     let fut = pre_binned_bytes_for_http(node_config, &query).instrument(span1);
     let ret = match fut.await {
-        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(
-            s,
-            format!(
-                "pre-b-{}-p-{}",
-                query.patch().bin_t_len() / SEC,
-                query.patch().patch_beg() / SEC,
-            ),
-        ))?,
+        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, desc))?,
         Err(e) => {
             if query.report_error() {
                 response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?

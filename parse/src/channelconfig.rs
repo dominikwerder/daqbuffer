@@ -282,7 +282,7 @@ pub async fn read_local_config(channel: &Channel, node: &Node) -> Result<Config,
     let buf = match tokio::fs::read(&path).await {
         Ok(k) => k,
         Err(e) => match e.kind() {
-            ErrorKind::NotFound => return Err(Error::with_msg("ErrorKind::NotFound")),
+            ErrorKind::NotFound => return Err(Error::with_msg(format!("ErrorKind::NotFound for {:?}", path))),
             _ => return Err(e.into()),
         },
     };

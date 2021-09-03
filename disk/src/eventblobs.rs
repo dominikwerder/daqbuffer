@@ -27,6 +27,8 @@ pub struct EventChunkerMultifile {
     files_count: u32,
     node_ix: usize,
     seen_before_range_count: usize,
+    seen_after_range_count: usize,
+    expand: bool,
 }
 
 impl EventChunkerMultifile {
@@ -37,8 +39,9 @@ impl EventChunkerMultifile {
         node_ix: usize,
         buffer_size: usize,
         event_chunker_conf: EventChunkerConf,
+        expand: bool,
     ) -> Self {
-        let file_chan = if true {
+        let file_chan = if expand {
             open_expanded_files(&range, &channel_config, node)
         } else {
             open_files(&range, &channel_config, node)
@@ -57,6 +60,8 @@ impl EventChunkerMultifile {
             files_count: 0,
             node_ix,
             seen_before_range_count: 0,
+            seen_after_range_count: 0,
+            expand,
         }
     }
 
@@ -113,6 +118,7 @@ impl Stream for EventChunkerMultifile {
                                             self.event_chunker_conf.clone(),
                                             path,
                                             self.max_ts.clone(),
+                                            self.expand,
                                         );
                                         self.evs = Some(chunker);
                                     }
@@ -174,8 +180,15 @@ fn read_expanded_for_range(range: netpod::NanoRange) -> Result<(usize, usize), E
     };
     let task = async move {
         let mut event_count = 0;
-        let mut events =
-            EventChunkerMultifile::new(range, channel_config, node, node_ix, buffer_size, event_chunker_conf);
+        let mut events = EventChunkerMultifile::new(
+            range,
+            channel_config,
+            node,
+            node_ix,
+            buffer_size,
+            event_chunker_conf,
+            true,
+        );
         while let Some(item) = events.next().await {
             match item {
                 Ok(item) => match item {

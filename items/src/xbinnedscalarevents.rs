@@ -248,20 +248,27 @@ where
         }
     }
 
-    fn result(self) -> Self::Output {
+    fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output {
         let avg = if self.sumc == 0 {
             None
         } else {
             Some(self.sum / self.sumc as f32)
         };
-        Self::Output {
+        let ret = Self::Output {
             ts1s: vec![self.range.beg],
             ts2s: vec![self.range.end],
             counts: vec![self.count],
             mins: vec![self.min],
             maxs: vec![self.max],
             avgs: vec![avg],
-        }
+        };
+        self.range = range;
+        self.count = 0;
+        self.min = None;
+        self.max = None;
+        self.sum = 0f32;
+        self.sumc = 0;
+        ret
     }
 }
 

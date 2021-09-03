@@ -397,26 +397,35 @@ where
         }
     }
 
-    fn result(self) -> Self::Output {
+    fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output {
+        let ret;
         if self.sumc == 0 {
-            Self::Output {
+            ret = Self::Output {
                 ts1s: vec![self.range.beg],
                 ts2s: vec![self.range.end],
                 counts: vec![self.count],
                 mins: vec![None],
                 maxs: vec![None],
                 avgs: vec![None],
-            }
+            };
         } else {
             let avg = self.sum.iter().map(|j| *j / self.sumc as f32).collect();
-            Self::Output {
+            ret = Self::Output {
                 ts1s: vec![self.range.beg],
                 ts2s: vec![self.range.end],
                 counts: vec![self.count],
-                mins: vec![Some(self.min)],
-                maxs: vec![Some(self.max)],
+                // TODO replace with reset-value instead:
+                mins: vec![Some(self.min.clone())],
+                maxs: vec![Some(self.max.clone())],
                 avgs: vec![Some(avg)],
-            }
+            };
         }
+        self.range = range;
+        self.count = 0;
+        self.min = vec![NTY::max_or_nan(); self.min.len()];
+        self.max = vec![NTY::min_or_nan(); self.min.len()];
+        self.sum = vec![0f32; self.min.len()];
+        self.sumc = 0;
+        ret
     }
 }

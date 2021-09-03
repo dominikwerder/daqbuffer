@@ -9,6 +9,12 @@ pub struct RunningHosts {
     _jhs: Vec<JoinHandle<Result<(), Error>>>,
 }
 
+impl Drop for RunningHosts {
+    fn drop(&mut self) {
+        netpod::log::error!("\n\n+++++++++++++++++++  impl Drop for RunningHost\n\n");
+    }
+}
+
 lazy_static::lazy_static! {
     static ref HOSTS_RUNNING: Mutex<Option<Arc<RunningHosts>>> = Mutex::new(None);
 }
@@ -17,6 +23,7 @@ pub fn require_test_hosts_running() -> Result<Arc<RunningHosts>, Error> {
     let mut g = HOSTS_RUNNING.lock().unwrap();
     match g.as_ref() {
         None => {
+            netpod::log::error!("\n\n+++++++++++++++++++  MAKE NEW RunningHosts\n\n");
             let cluster = taskrun::test_cluster();
             let jhs = spawn_test_hosts(cluster.clone());
             let ret = RunningHosts {
@@ -27,6 +34,9 @@ pub fn require_test_hosts_running() -> Result<Arc<RunningHosts>, Error> {
             *g = Some(a.clone());
             Ok(a)
         }
-        Some(gg) => Ok(gg.clone()),
+        Some(gg) => {
+            netpod::log::error!("\n\n+++++++++++++++++++  REUSE RunningHost\n\n");
+            Ok(gg.clone())
+        }
     }
 }

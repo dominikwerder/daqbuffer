@@ -245,7 +245,7 @@ where
         }
     }
 
-    fn result(self) -> Self::Output {
+    fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output {
         let avg = if self.sumc == 0 {
             None
         } else {
@@ -258,14 +258,22 @@ where
                 .collect();
             Some(avg)
         };
-        Self::Output {
+        let ret = Self::Output {
             ts1s: vec![self.range.beg],
             ts2s: vec![self.range.end],
             counts: vec![self.count],
-            mins: vec![self.min],
-            maxs: vec![self.max],
+            // TODO replace with reset-value instead.
+            mins: vec![self.min.clone()],
+            maxs: vec![self.max.clone()],
             avgs: vec![avg],
-        }
+        };
+        self.range = range;
+        self.count = 0;
+        self.min = None;
+        self.max = None;
+        self.sum = None;
+        self.sumc = 0;
+        ret
     }
 }
 

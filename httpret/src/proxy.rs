@@ -239,7 +239,7 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                                         let mut a = vec![];
                                         if let Some(g) = k.first() {
                                             for c in &g.channels {
-                                                let mut z = ChannelSearchSingleResult {
+                                                let z = ChannelSearchSingleResult {
                                                     backend: c.backend.clone(),
                                                     description: String::new(),
                                                     name: c.name.clone(),

@@ -2,7 +2,7 @@ use crate::ChannelConfigExt;
 use bitshuffle::bitshuffle_compress;
 use bytes::{BufMut, BytesMut};
 use err::Error;
-use netpod::{timeunits::*, ByteOrder, Channel, ChannelConfig, Node, Shape};
+use netpod::{timeunits::*, ByteOrder, Channel, ChannelConfig, GenVar, Node, Shape};
 use netpod::{Nanos, ScalarType};
 use std::path::{Path, PathBuf};
 use tokio::fs::{File, OpenOptions};
@@ -10,9 +10,8 @@ use tokio::io::AsyncWriteExt;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 
-//#[test]
+#[test]
 pub fn gen_test_data_test() {
-    std::env::set_current_dir("..").unwrap();
     taskrun::run(gen_test_data()).unwrap();
 }
 
@@ -38,6 +37,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 array: false,
                 compression: false,
             },
+            gen_var: netpod::GenVar::Default,
             time_spacing: MS * 500,
         };
         ensemble.channels.push(chn);
@@ -55,6 +55,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 byte_order: ByteOrder::big_endian(),
                 compression: true,
             },
+            gen_var: netpod::GenVar::Default,
             time_spacing: MS * 4000,
         };
         ensemble.channels.push(chn);
@@ -66,12 +67,49 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 },
                 keyspace: 3,
                 time_bin_size: Nanos { ns: DAY },
-                array: true,
                 scalar_type: ScalarType::U16,
-                shape: Shape::Wave(77),
                 byte_order: ByteOrder::little_endian(),
+                shape: Shape::Wave(77),
+                array: true,
                 compression: true,
             },
+            gen_var: netpod::GenVar::Default,
+            time_spacing: MS * 500,
+        };
+        ensemble.channels.push(chn);
+        let chn = ChannelGenProps {
+            config: ChannelConfig {
+                channel: Channel {
+                    backend: "testbackend".into(),
+                    name: "tw-scalar-i32-be".into(),
+                },
+                keyspace: 2,
+                time_bin_size: Nanos { ns: DAY },
+                scalar_type: ScalarType::I32,
+                byte_order: ByteOrder::little_endian(),
+                shape: Shape::Scalar,
+                array: false,
+                compression: false,
+            },
+            gen_var: netpod::GenVar::TimeWeight,
+            time_spacing: MS * 500,
+        };
+        ensemble.channels.push(chn);
+        let chn = ChannelGenProps {
+            config: ChannelConfig {
+                channel: Channel {
+                    backend: "testbackend".into(),
+                    name: "const-regular-scalar-i32-be".into(),
+                },
+                keyspace: 2,
+                time_bin_size: Nanos { ns: DAY },
+                scalar_type: ScalarType::I32,
+                byte_order: ByteOrder::little_endian(),
+                shape: Shape::Scalar,
+                array: false,
+                compression: false,
+            },
+            gen_var: netpod::GenVar::ConstRegular,
             time_spacing: MS * 500,
         };
         ensemble.channels.push(chn);
@@ -105,6 +143,7 @@ struct Ensemble {
 pub struct ChannelGenProps {
     config: ChannelConfig,
     time_spacing: u64,
+    gen_var: GenVar,
 }
 
 async fn gen_node(node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
@@ -138,6 +177,7 @@ async fn gen_channel(chn: &ChannelGenProps, node: &Node, ensemble: &Ensemble) ->
             &chn.config,
             node,
             ensemble,
+            &chn.gen_var,
         )
         .await?;
         evix = res.evix;
@@ -279,6 +319,7 @@ async fn gen_timebin(
     config: &ChannelConfig,
     node: &Node,
     ensemble: &Ensemble,
+    gen_var: &GenVar,
 ) -> Result<GenTimebinRes, Error> {
     let tb = ts.ns / config.time_bin_size.ns;
     let path = channel_path
@@ -317,8 +358,25 @@ async fn gen_timebin(
         ns: (tb + 1) * config.time_bin_size.ns,
     };
     while ts.ns < tsmax.ns {
-        if evix % ensemble.nodes.len() as u64 == node.split as u64 {
-            gen_event(&mut file, index_file.as_mut(), evix, ts, pulse, config).await?;
+        match gen_var {
+            GenVar::Default => {
+                if evix % ensemble.nodes.len() as u64 == node.split as u64 {
+                    gen_event(&mut file, index_file.as_mut(), evix, ts, pulse, config, gen_var).await?;
+                }
+            }
+            GenVar::ConstRegular => {
+                if evix % ensemble.nodes.len() as u64 == node.split as u64 {
+                    gen_event(&mut file, index_file.as_mut(), evix, ts, pulse, config, gen_var).await?;
+                }
+            }
+            GenVar::TimeWeight => {
+                let m = evix % 20;
+                if m == 0 || m == 1 {
+                    if evix % ensemble.nodes.len() as u64 == node.split as u64 {
+                        gen_event(&mut file, index_file.as_mut(), evix, ts, pulse, config, gen_var).await?;
+                    }
+                }
+            }
         }
         evix += 1;
         ts.ns += ts_spacing;
@@ -347,6 +405,7 @@ async fn gen_event(
     ts: Nanos,
     pulse: u64,
     config: &ChannelConfig,
+    gen_var: &GenVar,
 ) -> Result<(), Error> {
     let ttl = 0xcafecafe;
     let ioc_ts = 0xcafecafe;
@@ -436,7 +495,20 @@ async fn gen_event(
                 buf.put_u8(config.scalar_type.index());
                 match &config.scalar_type {
                     ScalarType::I32 => {
-                        let v = evix as i32;
+                        let v = match gen_var {
+                            GenVar::Default => evix as i32,
+                            GenVar::ConstRegular => 42 as i32,
+                            GenVar::TimeWeight => {
+                                let m = evix % 20;
+                                if m == 0 {
+                                    200
+                                } else if m == 1 {
+                                    400
+                                } else {
+                                    0
+                                }
+                            }
+                        };
                         if config.byte_order.is_be() {
                             buf.put_i32(v);
                         } else {

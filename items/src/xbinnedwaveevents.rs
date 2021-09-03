@@ -178,7 +178,7 @@ impl<NTY> XBinnedWaveEventsAggregator<NTY>
 where
     NTY: NumOps,
 {
-    pub fn new(range: NanoRange, bin_count: usize, do_time_weight: bool) -> Self {
+    pub fn new(range: NanoRange, bin_count: usize, _do_time_weight: bool) -> Self {
         if bin_count == 0 {
             panic!("bin_count == 0");
         }
@@ -237,31 +237,38 @@ where
         }
     }
 
-    fn result(self) -> Self::Output {
+    fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output {
+        let ret;
         if self.sumc == 0 {
-            Self::Output {
+            ret = Self::Output {
                 ts1s: vec![self.range.beg],
                 ts2s: vec![self.range.end],
                 counts: vec![self.count],
                 mins: vec![None],
                 maxs: vec![None],
                 avgs: vec![None],
-            }
+            };
         } else {
             let avg = self.sum.iter().map(|k| *k / self.sumc as f32).collect();
-            let ret = Self::Output {
+            ret = Self::Output {
                 ts1s: vec![self.range.beg],
                 ts2s: vec![self.range.end],
                 counts: vec![self.count],
-                mins: vec![Some(self.min)],
-                maxs: vec![Some(self.max)],
+                // TODO replace with the reset-value instead.
+                mins: vec![Some(self.min.clone())],
+                maxs: vec![Some(self.max.clone())],
                 avgs: vec![Some(avg)],
             };
             if ret.ts1s[0] < 1300 {
                 info!("XBinnedWaveEventsAggregator  result  {:?}", ret);
             }
-            ret
         }
+        self.range = range;
+        self.count = 0;
+        self.min = vec![NTY::max_or_nan(); self.min.len()];
+        self.max = vec![NTY::min_or_nan(); self.min.len()];
+        self.sum = vec![0f32; self.min.len()];
+        ret
     }
 }
 

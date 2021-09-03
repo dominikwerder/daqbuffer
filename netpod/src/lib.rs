@@ -274,9 +274,11 @@ impl fmt::Debug for NanoRange {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(
             fmt,
-            "NanoRange {{ beg: {} s, end: {} s }}",
+            "NanoRange {{ beg: {}.{:03} s, end: {}.{:03} s }}",
             self.beg / SEC,
-            self.end / SEC
+            (self.beg % SEC) / MS,
+            self.end / SEC,
+            (self.end % SEC) / MS,
         )
     }
 }
@@ -332,6 +334,13 @@ impl ByteOrder {
             false
         }
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum GenVar {
+    Default,
+    TimeWeight,
+    ConstRegular,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

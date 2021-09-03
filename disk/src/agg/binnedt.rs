@@ -112,18 +112,13 @@ where
     }
 
     // TODO handle unwrap error, or use a mem replace type instead of option:
-    fn cycle_current_bin(&mut self) {
+    fn cycle_current_bin(&mut self, expand: bool) {
         self.curbin += 1;
-        let range = self.spec.get_range(self.curbin);
         let ret = self
             .aggtor
-            .replace(<TBT as TimeBinnableType>::aggregator(
-                range,
-                self.x_bin_count,
-                self.do_time_weight,
-            ))
+            .as_mut()
             .unwrap()
-            .result();
+            .result_reset(self.spec.get_range(self.curbin), expand);
         // TODO should we accumulate bins before emit? Maybe not, we want to stay responsive.
         // Only if the frequency would be high, that would require cpu time checks. Worth it? Measure..
         self.tmp_agg_results.push_back(ret);
@@ -159,7 +154,7 @@ where
                             } else if item.starts_after(ag.range().clone()) {
                                 self.left =
                                     Some(Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))))));
-                                self.cycle_current_bin();
+                                self.cycle_current_bin(true);
                                 // TODO cycle_current_bin enqueues the bin, can I return here instead?
                                 None
                             } else {
@@ -167,7 +162,7 @@ where
                                 if item.ends_after(ag.range().clone()) {
                                     self.left =
                                         Some(Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))))));
-                                    self.cycle_current_bin();
+                                    self.cycle_current_bin(true);
                                 }
                                 // TODO cycle_current_bin enqueues the bin, can I return here instead?
                                 None
@@ -185,7 +180,7 @@ where
                 if self.all_bins_emitted {
                     None
                 } else {
-                    self.cycle_current_bin();
+                    self.cycle_current_bin(false);
                     // TODO cycle_current_bin enqueues the bin, can I return here instead?
                     None
                 }

@@ -30,7 +30,9 @@ pub struct EventChunker {
     parsed_bytes: u64,
     path: PathBuf,
     max_ts: Arc<AtomicU64>,
+    expand: bool,
     seen_before_range_count: usize,
+    seen_after_range_count: usize,
 }
 
 enum DataFileState {
@@ -62,6 +64,7 @@ impl EventChunker {
         stats_conf: EventChunkerConf,
         path: PathBuf,
         max_ts: Arc<AtomicU64>,
+        expand: bool,
     ) -> Self {
         let mut inp = NeedMinBuffer::new(inp);
         inp.set_need_min(6);
@@ -81,7 +84,9 @@ impl EventChunker {
             parsed_bytes: 0,
             path,
             max_ts,
+            expand,
             seen_before_range_count: 0,
+            seen_after_range_count: 0,
         }
     }
 
@@ -92,8 +97,9 @@ impl EventChunker {
         stats_conf: EventChunkerConf,
         path: PathBuf,
         max_ts: Arc<AtomicU64>,
+        expand: bool,
     ) -> Self {
-        let mut ret = Self::from_start(inp, channel_config, range, stats_conf, path, max_ts);
+        let mut ret = Self::from_start(inp, channel_config, range, stats_conf, path, max_ts, expand);
         ret.state = DataFileState::Event;
         ret.need_min = 4;
         ret.inp.set_need_min(4);
@@ -174,9 +180,12 @@ impl EventChunker {
                         }
                         self.max_ts.store(ts, Ordering::SeqCst);
                         if ts >= self.range.end {
-                            self.seen_beyond_range = true;
-                            self.data_emit_complete = true;
-                            break;
+                            self.seen_after_range_count += 1;
+                            if !self.expand || self.seen_after_range_count >= 2 {
+                                self.seen_beyond_range = true;
+                                self.data_emit_complete = true;
+                                break;
+                            }
                         }
                         if ts < self.range.beg {
                             self.seen_before_range_count += 1;
@@ -276,18 +285,13 @@ impl EventChunker {
                             ) {
                                 Ok(c1) => {
                                     assert!(c1 as u32 == k1);
-                                    if ts < self.range.beg {
-                                    } else if ts >= self.range.end {
-                                        Err(Error::with_msg(format!("event after range  {}", ts / SEC)))?;
-                                    } else {
-                                        ret.add_event(
-                                            ts,
-                                            pulse,
-                                            Some(decomp),
-                                            ScalarType::from_dtype_index(type_index)?,
-                                            is_big_endian,
-                                        );
-                                    }
+                                    ret.add_event(
+                                        ts,
+                                        pulse,
+                                        Some(decomp),
+                                        ScalarType::from_dtype_index(type_index)?,
+                                        is_big_endian,
+                                    );
                                 }
                                 Err(e) => {
                                     Err(Error::with_msg(format!("decompression failed {:?}", e)))?;
