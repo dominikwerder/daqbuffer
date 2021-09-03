@@ -51,6 +51,7 @@ async fn events_conn_handler_inner(
     match events_conn_handler_inner_try(stream, addr, node_config).await {
         Ok(_) => (),
         Err(ce) => {
+            // TODO pass errors over network.
             error!("events_conn_handler_inner: {:?}", ce.err);
         }
     }

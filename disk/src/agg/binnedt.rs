@@ -3,13 +3,28 @@ use futures_util::StreamExt;
 use items::{RangeCompletableItem, Sitemty, StreamItem, TimeBinnableType, TimeBinnableTypeAggregator};
 use netpod::log::*;
 use netpod::BinnedRange;
+use netpod::NanoRange;
 use std::collections::VecDeque;
-use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
-pub struct DefaultBinsTimeBinner<NTY> {
-    _m1: PhantomData<NTY>,
+pub trait TimeBinningChoice {
+    type Output: TimeBinnableType;
+    type Aggregator: TimeBinnableTypeAggregator<Input = Self, Output = Self::Output> + Send + Unpin;
+    fn aggregator(range: NanoRange, bin_count: usize) -> Self::Aggregator;
+}
+
+pub struct TimeWeightedBinMethodMarker {}
+
+pub struct TBinnerStreamPlay<S, TBT>
+where
+    S: Stream<Item = Sitemty<TBT>>,
+    TBT: TimeBinnableType,
+{
+    inp: Pin<Box<S>>,
+    left: Option<Poll<Option<Sitemty<TBT>>>>,
+    //aggtor: Option<<TBT as TimeBinnableType>::Aggregator>,
+    a: Option<TBT>,
 }
 
 pub struct TBinnerStream<S, TBT>
@@ -30,6 +45,7 @@ where
     range_complete_emitted: bool,
     errored: bool,
     completed: bool,
+    do_time_weight: bool,
 }
 
 impl<S, TBT> TBinnerStream<S, TBT>
@@ -37,7 +53,7 @@ where
     S: Stream<Item = Sitemty<TBT>> + Send + Unpin + 'static,
     TBT: TimeBinnableType,
 {
-    pub fn new(inp: S, spec: BinnedRange, x_bin_count: usize) -> Self {
+    pub fn new(inp: S, spec: BinnedRange, x_bin_count: usize, do_time_weight: bool) -> Self {
         let range = spec.get_range(0);
         Self {
             inp: Box::pin(inp),
@@ -45,7 +61,11 @@ where
             x_bin_count,
             curbin: 0,
             left: None,
-            aggtor: Some(<TBT as TimeBinnableType>::aggregator(range, x_bin_count)),
+            aggtor: Some(<TBT as TimeBinnableType>::aggregator(
+                range,
+                x_bin_count,
+                do_time_weight,
+            )),
             tmp_agg_results: VecDeque::new(),
             inp_completed: false,
             all_bins_emitted: false,
@@ -53,6 +73,7 @@ where
             range_complete_emitted: false,
             errored: false,
             completed: false,
+            do_time_weight,
         }
     }
 
@@ -96,7 +117,11 @@ where
         let range = self.spec.get_range(self.curbin);
         let ret = self
             .aggtor
-            .replace(<TBT as TimeBinnableType>::aggregator(range, self.x_bin_count))
+            .replace(<TBT as TimeBinnableType>::aggregator(
+                range,
+                self.x_bin_count,
+                self.do_time_weight,
+            ))
             .unwrap()
             .result();
         // TODO should we accumulate bins before emit? Maybe not, we want to stay responsive.

@@ -1,6 +1,6 @@
 use crate::spawn_test_hosts;
 use err::Error;
-use netpod::{Cluster, Database, Node};
+use netpod::Cluster;
 use std::sync::{Arc, Mutex};
 use tokio::task::JoinHandle;
 

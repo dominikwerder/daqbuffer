@@ -181,7 +181,7 @@ where
     type Output = MinMaxAvgDim1Bins<NTY>;
     type Aggregator = MinMaxAvgDim1BinsAggregator<NTY>;
 
-    fn aggregator(range: NanoRange, x_bin_count: usize) -> Self::Aggregator {
+    fn aggregator(range: NanoRange, x_bin_count: usize, _do_time_weight: bool) -> Self::Aggregator {
         Self::Aggregator::new(range, x_bin_count)
     }
 }

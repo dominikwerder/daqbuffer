@@ -122,7 +122,12 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
                 };
                 let x_bin_count = x_bin_count(&shape, self.query.agg_kind());
                 let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster.clone());
-                let s = TBinnerStream::<_, <ENP as EventsNodeProcessor>::Output>::new(s, range, x_bin_count);
+                let s = TBinnerStream::<_, <ENP as EventsNodeProcessor>::Output>::new(
+                    s,
+                    range,
+                    x_bin_count,
+                    self.query.agg_kind().do_time_weighted(),
+                );
                 let s = s.map(|item| match item.make_frame() {
                     Ok(item) => Ok(item.freeze()),
                     Err(e) => Err(e),
@@ -361,7 +366,12 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
                 };
                 let x_bin_count = x_bin_count(&shape, self.query.agg_kind());
                 let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster.clone());
-                let s = TBinnerStream::<_, <ENP as EventsNodeProcessor>::Output>::new(s, range, x_bin_count);
+                let s = TBinnerStream::<_, <ENP as EventsNodeProcessor>::Output>::new(
+                    s,
+                    range,
+                    x_bin_count,
+                    self.query.agg_kind().do_time_weighted(),
+                );
                 let f = collect_plain_events_json(s, self.timeout, t_bin_count, self.query.do_log());
                 let s = futures_util::stream::once(f).map(|item| match item {
                     Ok(item) => Ok(Bytes::from(serde_json::to_vec(&item)?)),

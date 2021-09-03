@@ -197,7 +197,7 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                         source_regex: String,
                         ordering: String,
                         reload: bool,
-                    };
+                    }
                     hosts.iter().zip(backends.iter()).for_each(|(sh, back)| {
                         let url = Url::parse(&format!("{}/channels/config", sh)).unwrap();
                         urls.push(url);

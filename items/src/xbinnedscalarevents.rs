@@ -6,6 +6,8 @@ use crate::{
     ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
+use netpod::log::error;
+use netpod::timeunits::SEC;
 use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
 use tokio::fs::File;
@@ -154,8 +156,15 @@ where
     type Output = MinMaxAvgBins<NTY>;
     type Aggregator = XBinnedScalarEventsAggregator<NTY>;
 
-    fn aggregator(range: NanoRange, _x_bin_count: usize) -> Self::Aggregator {
-        Self::Aggregator::new(range)
+    fn aggregator(range: NanoRange, _x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+        // TODO remove output
+        if range.delta() > SEC * 0 {
+            netpod::log::info!(
+                "TimeBinnableType for XBinnedScalarEvents  aggregator()  range {:?}",
+                range
+            );
+        }
+        Self::Aggregator::new(range, do_time_weight)
     }
 }
 
@@ -175,7 +184,7 @@ impl<NTY> XBinnedScalarEventsAggregator<NTY>
 where
     NTY: NumOps,
 {
-    pub fn new(range: NanoRange) -> Self {
+    pub fn new(range: NanoRange, _do_time_weight: bool) -> Self {
         Self {
             range,
             count: 0,
@@ -199,6 +208,8 @@ where
     }
 
     fn ingest(&mut self, item: &Self::Input) {
+        error!("time-weighted binning not available here.");
+        err::todo();
         for i1 in 0..item.tss.len() {
             let ts = item.tss[i1];
             if ts < self.range.beg {

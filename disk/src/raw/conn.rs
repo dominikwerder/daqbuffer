@@ -49,11 +49,13 @@ where
 macro_rules! pipe4 {
     ($nty:ident, $end:ident, $shape:expr, $evs:ident, $evsv:expr, $agg_kind:expr, $event_blobs:expr) => {
         match $agg_kind {
-            AggKind::DimXBins1 => make_num_pipeline_stream_evs::<$nty, $end, $evs<$nty>, _>(
-                $evsv,
-                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToSingleBin::create($shape, $agg_kind),
-                $event_blobs,
-            ),
+            AggKind::TimeWeightedScalar | AggKind::DimXBins1 => {
+                make_num_pipeline_stream_evs::<$nty, $end, $evs<$nty>, _>(
+                    $evsv,
+                    <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToSingleBin::create($shape, $agg_kind),
+                    $event_blobs,
+                )
+            }
             AggKind::DimXBinsN(_) => make_num_pipeline_stream_evs::<$nty, $end, $evs<$nty>, _>(
                 $evsv,
                 <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToNBins::create($shape, $agg_kind),
@@ -128,9 +130,11 @@ pub async fn make_event_pipe(
     evq: &RawEventsQuery,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error> {
-    match dbconn::channel_exists(&evq.channel, &node_config).await {
-        Ok(_) => (),
-        Err(e) => return Err(e)?,
+    if false {
+        match dbconn::channel_exists(&evq.channel, &node_config).await {
+            Ok(_) => (),
+            Err(e) => return Err(e)?,
+        }
     }
     let range = &evq.range;
     let channel_config = match read_local_config(&evq.channel, &node_config.node).await {
@@ -176,7 +180,7 @@ pub async fn make_event_pipe(
         evq.disk_io_buffer_size,
         event_chunker_conf,
     );
-    let shape = entry.to_shape().unwrap();
+    let shape = entry.to_shape()?;
     let pipe = pipe1!(
         entry.scalar_type,
         entry.byte_order,

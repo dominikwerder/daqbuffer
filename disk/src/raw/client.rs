@@ -3,7 +3,7 @@ Delivers event data.
 
 Delivers event data (not yet time-binned) from local storage and provides client functions
 to request such data from nodes.
- */
+*/
 
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use crate::raw::eventsfromframes::EventsFromFrames;

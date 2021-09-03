@@ -276,6 +276,7 @@ macro_rules! arm1 {
                     $sty1,
                     $sty2
                 ),
+                AggKind::TimeWeightedScalar => panic!(),
                 AggKind::DimXBinsN(_) => arm2!(
                     $item,
                     EventValues,
@@ -298,6 +299,7 @@ macro_rules! arm1 {
                     $sty1,
                     $sty2
                 ),
+                AggKind::TimeWeightedScalar => panic!(),
                 AggKind::DimXBins1 => arm2!(
                     $item,
                     XBinnedScalarEvents,

@@ -179,7 +179,7 @@ where
     type Output = MinMaxAvgWaveBins<NTY>;
     type Aggregator = MinMaxAvgWaveBinsAggregator<NTY>;
 
-    fn aggregator(range: NanoRange, x_bin_count: usize) -> Self::Aggregator {
+    fn aggregator(range: NanoRange, x_bin_count: usize, _do_time_weight: bool) -> Self::Aggregator {
         Self::Aggregator::new(range, x_bin_count)
     }
 }

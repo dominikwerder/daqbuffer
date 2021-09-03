@@ -1,12 +1,11 @@
-use tokio::task::JoinHandle;
-
-use err::Error;
-use netpod::{Cluster, NodeConfig, NodeConfigCached, ProxyConfig};
-
 pub mod client;
 pub mod nodes;
 #[cfg(test)]
 pub mod test;
+
+use err::Error;
+use netpod::{Cluster, NodeConfig, NodeConfigCached, ProxyConfig};
+use tokio::task::JoinHandle;
 
 pub fn spawn_test_hosts(cluster: Cluster) -> Vec<JoinHandle<Result<(), Error>>> {
     let mut ret = vec![];

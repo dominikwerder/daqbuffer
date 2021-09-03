@@ -308,7 +308,7 @@ pub trait TimeBinnableType:
 {
     type Output: TimeBinnableType;
     type Aggregator: TimeBinnableTypeAggregator<Input = Self, Output = Self::Output> + Send + Unpin;
-    fn aggregator(range: NanoRange, bin_count: usize) -> Self::Aggregator;
+    fn aggregator(range: NanoRange, bin_count: usize, do_time_weight: bool) -> Self::Aggregator;
 }
 
 // TODO should get I/O and tokio dependence out of this crate

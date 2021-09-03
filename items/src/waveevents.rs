@@ -150,8 +150,8 @@ where
     type Output = MinMaxAvgDim1Bins<NTY>;
     type Aggregator = WaveEventsAggregator<NTY>;
 
-    fn aggregator(range: NanoRange, bin_count: usize) -> Self::Aggregator {
-        Self::Aggregator::new(range, bin_count)
+    fn aggregator(range: NanoRange, bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+        Self::Aggregator::new(range, bin_count, do_time_weight)
     }
 }
 
@@ -171,7 +171,7 @@ impl<NTY> WaveEventsAggregator<NTY>
 where
     NTY: NumOps,
 {
-    pub fn new(range: NanoRange, _x_bin_count: usize) -> Self {
+    pub fn new(range: NanoRange, _x_bin_count: usize, _do_time_weight: bool) -> Self {
         Self {
             range,
             count: 0,
@@ -196,6 +196,8 @@ where
     }
 
     fn ingest(&mut self, item: &Self::Input) {
+        error!("time-weighted binning not available");
+        err::todo();
         for i1 in 0..item.tss.len() {
             let ts = item.tss[i1];
             if ts < self.range.beg {

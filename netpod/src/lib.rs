@@ -4,7 +4,7 @@ pub mod status;
 pub mod streamext;
 
 use std::collections::BTreeMap;
-use std::fmt::{self, Debug, Display, Formatter};
+use std::fmt;
 use std::iter::FromIterator;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -270,8 +270,8 @@ pub struct NanoRange {
     pub end: u64,
 }
 
-impl std::fmt::Debug for NanoRange {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Debug for NanoRange {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(
             fmt,
             "NanoRange {{ beg: {} s, end: {} s }}",
@@ -714,10 +714,23 @@ pub enum AggKind {
     DimXBins1,
     DimXBinsN(u32),
     Plain,
+    TimeWeightedScalar,
+}
+
+impl AggKind {
+    pub fn do_time_weighted(&self) -> bool {
+        match self {
+            Self::TimeWeightedScalar => true,
+            Self::DimXBins1 => false,
+            Self::DimXBinsN(_) => false,
+            Self::Plain => false,
+        }
+    }
 }
 
 pub fn x_bin_count(shape: &Shape, agg_kind: &AggKind) -> usize {
     match agg_kind {
+        AggKind::TimeWeightedScalar => 0,
         AggKind::DimXBins1 => 0,
         AggKind::DimXBinsN(n) => {
             if *n == 0 {
@@ -736,8 +749,8 @@ pub fn x_bin_count(shape: &Shape, agg_kind: &AggKind) -> usize {
     }
 }
 
-impl Display for AggKind {
-    fn fmt(&self, fmt: &mut Formatter) -> std::fmt::Result {
+impl fmt::Display for AggKind {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::DimXBins1 => {
                 write!(fmt, "DimXBins1")
@@ -748,13 +761,16 @@ impl Display for AggKind {
             Self::Plain => {
                 write!(fmt, "Plain")
             }
+            Self::TimeWeightedScalar => {
+                write!(fmt, "TimeWeightedScalar")
+            }
         }
     }
 }
 
-impl Debug for AggKind {
-    fn fmt(&self, fmt: &mut Formatter) -> std::fmt::Result {
-        Display::fmt(self, fmt)
+impl fmt::Debug for AggKind {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> std::fmt::Result {
+        fmt::Display::fmt(self, fmt)
     }
 }
 
@@ -765,6 +781,8 @@ impl FromStr for AggKind {
         let nmark = "DimXBinsN";
         if s == "DimXBins1" {
             Ok(AggKind::DimXBins1)
+        } else if s == "TimeWeightedScalar" {
+            Ok(AggKind::TimeWeightedScalar)
         } else if s.starts_with(nmark) {
             let nbins: u32 = s[nmark.len()..].parse()?;
             Ok(AggKind::DimXBinsN(nbins))

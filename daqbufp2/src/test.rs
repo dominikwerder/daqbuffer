@@ -1,8 +1,19 @@
-use bytes::BytesMut;
-
 pub mod binnedbinary;
 pub mod binnedjson;
 pub mod events;
+pub mod timeweightedjson;
+
+use bytes::BytesMut;
+use err::Error;
+use std::future::Future;
+
+fn run_test<F>(f: F)
+where
+    F: Future<Output = Result<(), Error>>,
+{
+    std::env::set_current_dir("..").unwrap();
+    taskrun::run(f).unwrap();
+}
 
 #[test]
 fn bufs() {

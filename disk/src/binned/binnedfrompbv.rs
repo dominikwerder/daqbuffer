@@ -235,7 +235,7 @@ where
                     ready(g)
                 }
             });
-        let inp = TBinnerStream::<_, TBT>::new(inp, range, x_bin_count(&shape, &agg_kind));
+        let inp = TBinnerStream::<_, TBT>::new(inp, range, x_bin_count(&shape, &agg_kind), agg_kind.do_time_weighted());
         Ok(Self {
             inp: Box::pin(inp),
             _m1: PhantomData,

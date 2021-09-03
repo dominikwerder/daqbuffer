@@ -98,6 +98,11 @@ where
                     let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggPlain as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     channel_exec_nty_end_evs_enp(f, byte_order, shape, evs, events_node_proc)
                 }
+                AggKind::TimeWeightedScalar => {
+                    let evs = EventValuesDim0Case::new();
+                    let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggToSingleBin as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
+                    channel_exec_nty_end_evs_enp(f, byte_order, shape, evs, events_node_proc)
+                }
                 AggKind::DimXBins1 => {
                     let evs = EventValuesDim0Case::new();
                     let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggToSingleBin as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
@@ -116,6 +121,11 @@ where
                 AggKind::Plain => {
                     let evs = EventValuesDim1Case::new(n);
                     let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggPlain as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
+                    channel_exec_nty_end_evs_enp(f, byte_order, shape, evs, events_node_proc)
+                }
+                AggKind::TimeWeightedScalar => {
+                    let evs = EventValuesDim1Case::new(n);
+                    let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggToSingleBin as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     channel_exec_nty_end_evs_enp(f, byte_order, shape, evs, events_node_proc)
                 }
                 AggKind::DimXBins1 => {

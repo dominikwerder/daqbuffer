@@ -137,6 +137,7 @@ where
             s,
             range,
             x_bin_count(&self.shape, &self.agg_kind),
+            self.agg_kind.do_time_weighted(),
         );
         Ok(Box::pin(ret))
     }

@@ -197,9 +197,11 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/events?channel
     <li>binCount  (number of requested bins in time-dimension, e.g. "6")</li>
     <li>binningScheme (optional)</li>
     <ul>
-        <li>if not specified: waveform gets first binned to a scalar.</li>
-        <li>"binningScheme=binnedX&binnedXcount=13": waveform gets first binned to 13 bins in X-dimension (waveform-dimension).</li>
-        <li>"binningScheme=binnedX&binnedXcount=0": waveform is not binned in X-dimension but kept at full length.</li>
+      <li>if not specified: default is "binningScheme=timeWeightedScalar".</li>
+      <li>"binningScheme=timeWeightedScalar": time-weighted binning, waveform gets first averaged to a scalar.</li>
+      <li>"binningScheme=unweightedScalar": non-weighted binning, waveform gets first averaged to a scalar.</li>
+      <li>"binningScheme=binnedX&binnedXcount=13": waveform gets first binned to 13 bins in X-dimension (waveform-dimension).</li>
+      <li>"binningScheme=binnedX&binnedXcount=0": waveform is not binned in X-dimension but kept at full length.</li>
     </ul>
 </ul>
 <p><strong>Request header:</strong> "Accept" must be "application/json"</p>

@@ -69,7 +69,7 @@ impl PreBinnedQuery {
         let ret = Self {
             patch: PreBinnedPatchCoord::new(bin_t_len, patch_t_len, patch_ix),
             channel: channel_from_pairs(&pairs)?,
-            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::DimXBins1),
+            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::TimeWeightedScalar),
             cache_usage: CacheUsage::from_pairs(&pairs)?,
             disk_io_buffer_size: pairs
                 .get("diskIoBufferSize")
@@ -312,7 +312,7 @@ impl FromUrl for BinnedQuery {
                 .ok_or(Error::with_msg("missing binCount"))?
                 .parse()
                 .map_err(|e| Error::with_msg(format!("can not parse binCount {:?}", e)))?,
-            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::DimXBins1),
+            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::TimeWeightedScalar),
             cache_usage: CacheUsage::from_pairs(&pairs)?,
             disk_io_buffer_size: pairs
                 .get("diskIoBufferSize")
@@ -382,11 +382,14 @@ impl AppendToUrl for BinnedQuery {
 fn binning_scheme_append_to_url(agg_kind: &AggKind, url: &mut Url) {
     let mut g = url.query_pairs_mut();
     match agg_kind {
+        AggKind::TimeWeightedScalar => {
+            g.append_pair("binningScheme", "timeWeightedScalar");
+        }
         AggKind::Plain => {
             g.append_pair("binningScheme", "fullValue");
         }
         AggKind::DimXBins1 => {
-            g.append_pair("binningScheme", "toScalarX");
+            g.append_pair("binningScheme", "unweightedScalar");
         }
         AggKind::DimXBinsN(n) => {
             g.append_pair("binningScheme", "toScalarX");
@@ -402,7 +405,9 @@ fn agg_kind_from_binning_scheme(pairs: &BTreeMap<String, String>) -> Result<AggK
         .map_or(Err(Error::with_msg(format!("can not find {}", key))), |k| Ok(k))?;
     let ret = if s == "fullValue" {
         AggKind::Plain
-    } else if s == "toScalarX" {
+    } else if s == "timeWeightedScalar" {
+        AggKind::TimeWeightedScalar
+    } else if s == "unweightedScalar" {
         AggKind::DimXBins1
     } else if s == "binnedX" {
         let u = pairs.get("binnedXcount").map_or("1", |k| k).parse()?;

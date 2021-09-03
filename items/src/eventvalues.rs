@@ -7,6 +7,7 @@ use crate::{
     WithLen, WithTimestamps,
 };
 use err::Error;
+use netpod::timeunits::SEC;
 use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -166,8 +167,12 @@ where
     type Output = MinMaxAvgBins<NTY>;
     type Aggregator = EventValuesAggregator<NTY>;
 
-    fn aggregator(range: NanoRange, _bin_count: usize) -> Self::Aggregator {
-        Self::Aggregator::new(range)
+    fn aggregator(range: NanoRange, _bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+        // TODO remove output
+        if range.delta() > SEC * 5000 {
+            netpod::log::info!("TimeBinnableType for EventValues  aggregator()  range {:?}", range);
+        }
+        Self::Aggregator::new(range, do_time_weight)
     }
 }
 
@@ -259,10 +264,13 @@ pub struct EventValuesAggregator<NTY> {
     max: Option<NTY>,
     sumc: u64,
     sum: f32,
+    last_ts: u64,
+    last_val: Option<NTY>,
+    do_time_weight: bool,
 }
 
 impl<NTY> EventValuesAggregator<NTY> {
-    pub fn new(range: NanoRange) -> Self {
+    pub fn new(range: NanoRange, do_time_weight: bool) -> Self {
         Self {
             range,
             count: 0,
@@ -270,7 +278,52 @@ impl<NTY> EventValuesAggregator<NTY> {
             max: None,
             sum: 0f32,
             sumc: 0,
+            last_ts: 0,
+            last_val: None,
+            do_time_weight,
         }
+    }
+
+    fn apply_event(&mut self, ts: u64, val: Option<NTY>)
+    where
+        NTY: NumOps,
+    {
+        if let Some(v) = self.last_val {
+            self.min = match self.min {
+                None => Some(v),
+                Some(min) => {
+                    if v < min {
+                        Some(v)
+                    } else {
+                        Some(min)
+                    }
+                }
+            };
+            self.max = match self.max {
+                None => Some(v),
+                Some(max) => {
+                    if v > max {
+                        Some(v)
+                    } else {
+                        Some(max)
+                    }
+                }
+            };
+            let w = if self.do_time_weight {
+                (ts - self.last_ts) as f32 / 1000000000 as f32
+            } else {
+                1.
+            };
+            let vf = v.as_();
+            if vf.is_nan() {
+            } else {
+                self.sum += vf * w;
+                self.sumc += 1;
+            }
+            self.count += 1;
+        }
+        self.last_ts = ts;
+        self.last_val = val;
     }
 }
 
@@ -289,43 +342,17 @@ where
         for i1 in 0..item.tss.len() {
             let ts = item.tss[i1];
             if ts < self.range.beg {
-                continue;
+                self.last_ts = ts;
+                self.last_val = Some(item.values[i1]);
             } else if ts >= self.range.end {
-                continue;
             } else {
-                let v = item.values[i1];
-                self.min = match self.min {
-                    None => Some(v),
-                    Some(min) => {
-                        if v < min {
-                            Some(v)
-                        } else {
-                            Some(min)
-                        }
-                    }
-                };
-                self.max = match self.max {
-                    None => Some(v),
-                    Some(max) => {
-                        if v > max {
-                            Some(v)
-                        } else {
-                            Some(max)
-                        }
-                    }
-                };
-                let vf = v.as_();
-                if vf.is_nan() {
-                } else {
-                    self.sum += vf;
-                    self.sumc += 1;
-                }
-                self.count += 1;
+                self.apply_event(ts, Some(item.values[i1]));
             }
         }
     }
 
-    fn result(self) -> Self::Output {
+    fn result(mut self) -> Self::Output {
+        self.apply_event(self.range.end, None);
         let avg = if self.sumc == 0 {
             None
         } else {
