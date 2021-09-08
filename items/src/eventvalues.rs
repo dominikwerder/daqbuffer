@@ -7,7 +7,6 @@ use crate::{
     WithLen, WithTimestamps,
 };
 use err::Error;
-use netpod::log::*;
 use netpod::timeunits::*;
 use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
@@ -365,7 +364,6 @@ where
                 self.last_ts = ts;
                 self.last_val = Some(val);
             } else if ts >= self.range.end {
-                info!("event after  {}", ts / MS);
                 return;
             } else {
                 self.count += 1;

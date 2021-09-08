@@ -69,7 +69,7 @@ impl PreBinnedQuery {
         let ret = Self {
             patch: PreBinnedPatchCoord::new(bin_t_len, patch_t_len, patch_ix),
             channel: channel_from_pairs(&pairs)?,
-            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::TimeWeightedScalar),
+            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::DimXBins1),
             cache_usage: CacheUsage::from_pairs(&pairs)?,
             disk_io_buffer_size: pairs
                 .get("diskIoBufferSize")
@@ -312,7 +312,7 @@ impl FromUrl for BinnedQuery {
                 .ok_or(Error::with_msg("missing binCount"))?
                 .parse()
                 .map_err(|e| Error::with_msg(format!("can not parse binCount {:?}", e)))?,
-            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::TimeWeightedScalar),
+            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::DimXBins1),
             cache_usage: CacheUsage::from_pairs(&pairs)?,
             disk_io_buffer_size: pairs
                 .get("diskIoBufferSize")

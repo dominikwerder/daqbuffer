@@ -194,12 +194,12 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/events?channel
     <li>channelName  (e.g. "SLAAR-LSCP4-LAS6891:CH7:1")</li>
     <li>begDate  (e.g. "2021-05-26T07:10:00.000Z")</li>
     <li>endDate  (e.g. "2021-05-26T07:16:00.000Z")</li>
-    <li>binCount  (number of requested bins in time-dimension, e.g. "6")</li>
+    <li>binCount  (number of requested bins in time-dimension, e.g. "6". The actual number of returned bins depends on bin-cache-grid-resolution. The server tries to find the best match.)</li>
     <li>binningScheme (optional)</li>
     <ul>
-      <li>if not specified: default is "binningScheme=timeWeightedScalar".</li>
-      <li>"binningScheme=timeWeightedScalar": time-weighted binning, waveform gets first averaged to a scalar.</li>
+      <li>if not specified: default is "binningScheme=unweightedScalar".</li>
       <li>"binningScheme=unweightedScalar": non-weighted binning, waveform gets first averaged to a scalar.</li>
+      <li>"binningScheme=timeWeightedScalar": time-weighted binning, waveform gets first averaged to a scalar.</li>
       <li>"binningScheme=binnedX&binnedXcount=13": waveform gets first binned to 13 bins in X-dimension (waveform-dimension).</li>
       <li>"binningScheme=binnedX&binnedXcount=0": waveform is not binned in X-dimension but kept at full length.</li>
     </ul>

@@ -171,7 +171,10 @@ impl<NTY> WaveEventsAggregator<NTY>
 where
     NTY: NumOps,
 {
-    pub fn new(range: NanoRange, _x_bin_count: usize, _do_time_weight: bool) -> Self {
+    pub fn new(range: NanoRange, _x_bin_count: usize, do_time_weight: bool) -> Self {
+        if do_time_weight {
+            err::todo();
+        }
         Self {
             range,
             count: 0,

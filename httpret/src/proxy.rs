@@ -1,6 +1,6 @@
 use crate::api1::{channel_search_configs_v1, channel_search_list_v1, gather_json_2_v1, proxy_distribute_v1};
 use crate::gather::{gather_get_json_generic, SubRes};
-use crate::{api_4_docs, response, Cont};
+use crate::{api_1_docs, api_4_docs, response, Cont};
 use disk::binned::query::BinnedQuery;
 use disk::events::PlainEventsJsonQuery;
 use err::Error;
@@ -86,7 +86,7 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
         proxy_distribute_v1(req).await
     } else if path.starts_with("/api/1/documentation/") {
         if req.method() == Method::GET {
-            Ok(response(StatusCode::NOT_FOUND).body(Body::empty())?)
+            api_1_docs(path)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }

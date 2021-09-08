@@ -180,8 +180,8 @@ where
     type Output = MinMaxAvgBins<NTY>;
     type Aggregator = MinMaxAvgBinsAggregator<NTY>;
 
-    fn aggregator(range: NanoRange, _x_bin_count: usize, _do_time_weight: bool) -> Self::Aggregator {
-        Self::Aggregator::new(range)
+    fn aggregator(range: NanoRange, _x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+        Self::Aggregator::new(range, do_time_weight)
     }
 }
 
@@ -331,7 +331,7 @@ pub struct MinMaxAvgBinsAggregator<NTY> {
 }
 
 impl<NTY> MinMaxAvgBinsAggregator<NTY> {
-    pub fn new(range: NanoRange) -> Self {
+    pub fn new(range: NanoRange, _do_time_weight: bool) -> Self {
         Self {
             range,
             count: 0,
@@ -357,9 +357,7 @@ where
     fn ingest(&mut self, item: &Self::Input) {
         for i1 in 0..item.ts1s.len() {
             if item.ts2s[i1] <= self.range.beg {
-                continue;
             } else if item.ts1s[i1] >= self.range.end {
-                continue;
             } else {
                 self.min = match self.min {
                     None => item.mins[i1],

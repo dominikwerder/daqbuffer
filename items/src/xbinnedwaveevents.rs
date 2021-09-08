@@ -178,7 +178,10 @@ impl<NTY> XBinnedWaveEventsAggregator<NTY>
 where
     NTY: NumOps,
 {
-    pub fn new(range: NanoRange, bin_count: usize, _do_time_weight: bool) -> Self {
+    pub fn new(range: NanoRange, bin_count: usize, do_time_weight: bool) -> Self {
+        if do_time_weight {
+            err::todo();
+        }
         if bin_count == 0 {
             panic!("bin_count == 0");
         }

@@ -79,6 +79,29 @@ fn time_weighted_json_02() {
 }
 
 #[test]
+fn time_weighted_json_03() {
+    async fn inner() -> Result<(), Error> {
+        let rh = require_test_hosts_running()?;
+        let cluster = &rh.cluster;
+        let res = get_json_common(
+            "const-regular-scalar-i32-be",
+            "1970-01-01T00:20:11.000Z",
+            "1970-01-01T00:30:20.000Z",
+            10,
+            AggKind::TimeWeightedScalar,
+            cluster,
+            11,
+            true,
+        )
+        .await?;
+        let v = res.avgs[0];
+        assert!(v > 41.9999 && v < 42.0001);
+        Ok(())
+    }
+    super::run_test(inner());
+}
+
+#[test]
 fn time_weighted_json_10() {
     async fn inner() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
