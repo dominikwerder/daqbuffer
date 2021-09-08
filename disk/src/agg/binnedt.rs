@@ -21,9 +21,12 @@ where
     S: Stream<Item = Sitemty<TBT>>,
     TBT: TimeBinnableType,
 {
+    #[allow(unused)]
     inp: Pin<Box<S>>,
+    #[allow(unused)]
     left: Option<Poll<Option<Sitemty<TBT>>>>,
     //aggtor: Option<<TBT as TimeBinnableType>::Aggregator>,
+    #[allow(unused)]
     a: Option<TBT>,
 }
 
@@ -34,7 +37,6 @@ where
 {
     inp: Pin<Box<S>>,
     spec: BinnedRange,
-    x_bin_count: usize,
     curbin: u32,
     left: Option<Poll<Option<Sitemty<TBT>>>>,
     aggtor: Option<<TBT as TimeBinnableType>::Aggregator>,
@@ -45,7 +47,6 @@ where
     range_complete_emitted: bool,
     errored: bool,
     completed: bool,
-    do_time_weight: bool,
 }
 
 impl<S, TBT> TBinnerStream<S, TBT>
@@ -58,7 +59,6 @@ where
         Self {
             inp: Box::pin(inp),
             spec,
-            x_bin_count,
             curbin: 0,
             left: None,
             aggtor: Some(<TBT as TimeBinnableType>::aggregator(
@@ -73,7 +73,6 @@ where
             range_complete_emitted: false,
             errored: false,
             completed: false,
-            do_time_weight,
         }
     }
 

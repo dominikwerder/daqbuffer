@@ -237,7 +237,7 @@ where
         }
     }
 
-    fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output {
+    fn result_reset(&mut self, range: NanoRange, _expand: bool) -> Self::Output {
         let ret;
         if self.sumc == 0 {
             ret = Self::Output {

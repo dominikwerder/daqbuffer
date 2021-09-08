@@ -168,7 +168,7 @@ pub struct SubRes<T> {
 }
 
 pub async fn gather_get_json_generic<SM, NT, FT>(
-    method: http::Method,
+    _method: http::Method,
     urls: Vec<Url>,
     bodies: Vec<Option<Body>>,
     tags: Vec<String>,

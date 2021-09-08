@@ -245,7 +245,7 @@ where
         }
     }
 
-    fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output {
+    fn result_reset(&mut self, range: NanoRange, _expand: bool) -> Self::Output {
         let avg = if self.sumc == 0 {
             None
         } else {

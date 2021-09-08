@@ -13,7 +13,7 @@ use items::numops::NumOps;
 use items::waveevents::{WaveEvents, WaveXBinner};
 use items::xbinnedscalarevents::XBinnedScalarEvents;
 use items::xbinnedwaveevents::XBinnedWaveEvents;
-use items::{EventsNodeProcessor, Framable, SitemtyFrameType, WithLen, WithTimestamps};
+use items::{EventsNodeProcessor, SitemtyFrameType, WithLen, WithTimestamps};
 use netpod::{AggKind, HasScalarType, HasShape, ScalarType, Shape};
 #[cfg(not(feature = "devread"))]
 pub use parsestub as parse;
@@ -60,11 +60,11 @@ impl ScalarPlainEvents {
     pub fn variant_name(&self) -> String {
         use ScalarPlainEvents::*;
         match self {
-            Byte(h) => format!("Byte"),
-            Short(h) => format!("Short"),
-            Int(h) => format!("Int"),
-            Float(h) => format!("Float"),
-            Double(h) => format!("Double"),
+            Byte(_) => format!("Byte"),
+            Short(_) => format!("Short"),
+            Int(_) => format!("Int"),
+            Float(_) => format!("Float"),
+            Double(_) => format!("Double"),
         }
     }
 }
@@ -97,7 +97,6 @@ impl WithTimestamps for ScalarPlainEvents {
 
 impl HasShape for ScalarPlainEvents {
     fn shape(&self) -> Shape {
-        use ScalarPlainEvents::*;
         match self {
             _ => Shape::Scalar,
         }
@@ -108,11 +107,11 @@ impl HasScalarType for ScalarPlainEvents {
     fn scalar_type(&self) -> ScalarType {
         use ScalarPlainEvents::*;
         match self {
-            Byte(h) => ScalarType::I8,
-            Short(h) => ScalarType::I16,
-            Int(h) => ScalarType::I32,
-            Float(h) => ScalarType::F32,
-            Double(h) => ScalarType::F64,
+            Byte(_) => ScalarType::I8,
+            Short(_) => ScalarType::I16,
+            Int(_) => ScalarType::I32,
+            Float(_) => ScalarType::F32,
+            Double(_) => ScalarType::F64,
         }
     }
 }
@@ -126,13 +125,16 @@ pub enum WavePlainEvents {
     Double(WaveEvents<f64>),
 }
 
-fn tmp1() {
-    let ev = EventValues::<u8> {
+fn _tmp1() {
+    let _ev = EventValues::<u8> {
         tss: vec![],
         values: vec![],
     };
     <u8 as NumOps>::is_nan(err::todoval());
-    <EventValues<u8> as SitemtyFrameType>::FRAME_TYPE_ID;
+    if <EventValues<u8> as SitemtyFrameType>::FRAME_TYPE_ID == 0 {
+        // Just a dummy..
+        panic!();
+    }
     //<Vec<u8> as NumOps>::is_nan(err::todoval());
     //<EventValues<Vec<u8>> as SitemtyFrameType>::FRAME_TYPE_ID;
 }
@@ -224,11 +226,11 @@ impl HasScalarType for WavePlainEvents {
     fn scalar_type(&self) -> ScalarType {
         use WavePlainEvents::*;
         match self {
-            Byte(h) => ScalarType::I8,
-            Short(h) => ScalarType::I16,
-            Int(h) => ScalarType::I32,
-            Float(h) => ScalarType::F32,
-            Double(h) => ScalarType::F64,
+            Byte(_) => ScalarType::I8,
+            Short(_) => ScalarType::I16,
+            Int(_) => ScalarType::I32,
+            Float(_) => ScalarType::F32,
+            Double(_) => ScalarType::F64,
         }
     }
 }
@@ -246,11 +248,11 @@ impl MultiBinWaveEvents {
     pub fn variant_name(&self) -> String {
         use MultiBinWaveEvents::*;
         match self {
-            Byte(h) => format!("Byte"),
-            Short(h) => format!("Short"),
-            Int(h) => format!("Int"),
-            Float(h) => format!("Float"),
-            Double(h) => format!("Double"),
+            Byte(_) => format!("Byte"),
+            Short(_) => format!("Short"),
+            Int(_) => format!("Int"),
+            Float(_) => format!("Float"),
+            Double(_) => format!("Double"),
         }
     }
 
@@ -298,11 +300,11 @@ impl HasShape for MultiBinWaveEvents {
     fn shape(&self) -> Shape {
         use MultiBinWaveEvents::*;
         match self {
-            Byte(h) => Shape::Scalar,
-            Short(h) => Shape::Scalar,
-            Int(h) => Shape::Scalar,
-            Float(h) => Shape::Scalar,
-            Double(h) => Shape::Scalar,
+            Byte(_) => Shape::Scalar,
+            Short(_) => Shape::Scalar,
+            Int(_) => Shape::Scalar,
+            Float(_) => Shape::Scalar,
+            Double(_) => Shape::Scalar,
         }
     }
 }
@@ -311,11 +313,11 @@ impl HasScalarType for MultiBinWaveEvents {
     fn scalar_type(&self) -> ScalarType {
         use MultiBinWaveEvents::*;
         match self {
-            Byte(h) => ScalarType::I8,
-            Short(h) => ScalarType::I16,
-            Int(h) => ScalarType::I32,
-            Float(h) => ScalarType::F32,
-            Double(h) => ScalarType::F64,
+            Byte(_) => ScalarType::I8,
+            Short(_) => ScalarType::I16,
+            Int(_) => ScalarType::I32,
+            Float(_) => ScalarType::F32,
+            Double(_) => ScalarType::F64,
         }
     }
 }
@@ -333,11 +335,11 @@ impl SingleBinWaveEvents {
     pub fn variant_name(&self) -> String {
         use SingleBinWaveEvents::*;
         match self {
-            Byte(h) => format!("Byte"),
-            Short(h) => format!("Short"),
-            Int(h) => format!("Int"),
-            Float(h) => format!("Float"),
-            Double(h) => format!("Double"),
+            Byte(_) => format!("Byte"),
+            Short(_) => format!("Short"),
+            Int(_) => format!("Int"),
+            Float(_) => format!("Float"),
+            Double(_) => format!("Double"),
         }
     }
 
@@ -385,11 +387,11 @@ impl HasShape for SingleBinWaveEvents {
     fn shape(&self) -> Shape {
         use SingleBinWaveEvents::*;
         match self {
-            Byte(h) => Shape::Scalar,
-            Short(h) => Shape::Scalar,
-            Int(h) => Shape::Scalar,
-            Float(h) => Shape::Scalar,
-            Double(h) => Shape::Scalar,
+            Byte(_) => Shape::Scalar,
+            Short(_) => Shape::Scalar,
+            Int(_) => Shape::Scalar,
+            Float(_) => Shape::Scalar,
+            Double(_) => Shape::Scalar,
         }
     }
 }
@@ -398,11 +400,11 @@ impl HasScalarType for SingleBinWaveEvents {
     fn scalar_type(&self) -> ScalarType {
         use SingleBinWaveEvents::*;
         match self {
-            Byte(h) => ScalarType::I8,
-            Short(h) => ScalarType::I16,
-            Int(h) => ScalarType::I32,
-            Float(h) => ScalarType::F32,
-            Double(h) => ScalarType::F64,
+            Byte(_) => ScalarType::I8,
+            Short(_) => ScalarType::I16,
+            Int(_) => ScalarType::I32,
+            Float(_) => ScalarType::F32,
+            Double(_) => ScalarType::F64,
         }
     }
 }

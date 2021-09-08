@@ -6,7 +6,6 @@ use crate::{
     ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
-use netpod::log::error;
 use netpod::timeunits::SEC;
 use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
@@ -178,13 +177,20 @@ where
     max: Option<NTY>,
     sumc: u64,
     sum: f32,
+    int_ts: u64,
+    last_ts: u64,
+    last_avg: Option<f32>,
+    last_min: Option<NTY>,
+    last_max: Option<NTY>,
+    do_time_weight: bool,
 }
 
 impl<NTY> XBinnedScalarEventsAggregator<NTY>
 where
     NTY: NumOps,
 {
-    pub fn new(range: NanoRange, _do_time_weight: bool) -> Self {
+    pub fn new(range: NanoRange, do_time_weight: bool) -> Self {
+        let int_ts = range.beg;
         Self {
             range,
             count: 0,
@@ -192,7 +198,151 @@ where
             max: None,
             sumc: 0,
             sum: 0f32,
+            int_ts,
+            last_ts: 0,
+            last_avg: None,
+            last_min: None,
+            last_max: None,
+            do_time_weight,
         }
+    }
+
+    fn apply_min_max(&mut self, min: NTY, max: NTY) {
+        self.min = match self.min {
+            None => Some(min),
+            Some(cmin) => {
+                if min < cmin {
+                    Some(min)
+                } else {
+                    Some(cmin)
+                }
+            }
+        };
+        self.max = match self.max {
+            None => Some(max),
+            Some(cmax) => {
+                if max > cmax {
+                    Some(max)
+                } else {
+                    Some(cmax)
+                }
+            }
+        };
+    }
+
+    fn apply_event_unweight(&mut self, avg: f32, min: NTY, max: NTY) {
+        self.apply_min_max(min, max);
+        let vf = avg;
+        if vf.is_nan() {
+        } else {
+            self.sum += vf;
+            self.sumc += 1;
+        }
+    }
+
+    fn apply_event_time_weight(&mut self, ts: u64, avg: Option<f32>, min: Option<NTY>, max: Option<NTY>) {
+        if let Some(v) = self.last_avg {
+            self.apply_min_max(min.unwrap(), max.unwrap());
+            let w = if self.do_time_weight {
+                (ts - self.int_ts) as f32 * 1e-9
+            } else {
+                1.
+            };
+            let vf = v;
+            if vf.is_nan() {
+            } else {
+                self.sum += vf * w;
+                self.sumc += 1;
+            }
+            self.int_ts = ts;
+        }
+        self.last_ts = ts;
+        self.last_avg = avg;
+        self.last_min = min;
+        self.last_max = max;
+    }
+
+    fn ingest_unweight(&mut self, item: &XBinnedScalarEvents<NTY>) {
+        for i1 in 0..item.tss.len() {
+            let ts = item.tss[i1];
+            let avg = item.avgs[i1];
+            let min = item.mins[i1];
+            let max = item.maxs[i1];
+            if ts < self.range.beg {
+            } else if ts >= self.range.end {
+            } else {
+                self.count += 1;
+                self.apply_event_unweight(avg, min, max);
+            }
+        }
+    }
+
+    fn ingest_time_weight(&mut self, item: &XBinnedScalarEvents<NTY>) {
+        for i1 in 0..item.tss.len() {
+            let ts = item.tss[i1];
+            let avg = item.avgs[i1];
+            let min = item.mins[i1];
+            let max = item.maxs[i1];
+            if ts < self.int_ts {
+                self.last_ts = ts;
+                self.last_avg = Some(avg);
+                self.last_min = Some(min);
+                self.last_max = Some(max);
+            } else if ts >= self.range.end {
+                return;
+            } else {
+                self.count += 1;
+                self.apply_event_time_weight(ts, Some(avg), Some(min), Some(max));
+            }
+        }
+    }
+
+    fn result_reset_unweight(&mut self, range: NanoRange, _expand: bool) -> MinMaxAvgBins<NTY> {
+        let avg = if self.sumc == 0 {
+            None
+        } else {
+            Some(self.sum / self.sumc as f32)
+        };
+        let ret = MinMaxAvgBins {
+            ts1s: vec![self.range.beg],
+            ts2s: vec![self.range.end],
+            counts: vec![self.count],
+            mins: vec![self.min],
+            maxs: vec![self.max],
+            avgs: vec![avg],
+        };
+        self.range = range;
+        self.count = 0;
+        self.min = None;
+        self.max = None;
+        self.sum = 0f32;
+        self.sumc = 0;
+        ret
+    }
+
+    fn result_reset_time_weight(&mut self, range: NanoRange, expand: bool) -> MinMaxAvgBins<NTY> {
+        if expand {
+            self.apply_event_time_weight(self.range.end, self.last_avg, self.last_min, self.last_max);
+        }
+        let avg = {
+            let sc = self.range.delta() as f32 * 1e-9;
+            Some(self.sum / sc)
+        };
+        let ret = MinMaxAvgBins {
+            ts1s: vec![self.range.beg],
+            ts2s: vec![self.range.end],
+            counts: vec![self.count],
+            mins: vec![self.min],
+            maxs: vec![self.max],
+            avgs: vec![avg],
+        };
+        self.range = range;
+        self.count = 0;
+        self.min = None;
+        self.max = None;
+        self.sum = 0f32;
+        self.sumc = 0;
+        ret
     }
 }
 
@@ -208,67 +358,19 @@ where
     }
 
     fn ingest(&mut self, item: &Self::Input) {
-        error!("time-weighted binning not available here.");
-        err::todo();
-        for i1 in 0..item.tss.len() {
-            let ts = item.tss[i1];
-            if ts < self.range.beg {
-                continue;
-            } else if ts >= self.range.end {
-                continue;
-            } else {
-                self.min = match self.min {
-                    None => Some(item.mins[i1]),
-                    Some(min) => {
-                        if item.mins[i1] < min {
-                            Some(item.mins[i1])
-                        } else {
-                            Some(min)
-                        }
-                    }
-                };
-                self.max = match self.max {
-                    None => Some(item.maxs[i1]),
-                    Some(max) => {
-                        if item.maxs[i1] > max {
-                            Some(item.maxs[i1])
-                        } else {
-                            Some(max)
-                        }
-                    }
-                };
-                let x = item.avgs[i1];
-                if x.is_nan() {
-                } else {
-                    self.sum += x;
-                    self.sumc += 1;
-                }
-                self.count += 1;
-            }
+        if self.do_time_weight {
+            self.ingest_time_weight(item)
+        } else {
+            self.ingest_unweight(item)
         }
     }
 
     fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output {
-        let avg = if self.sumc == 0 {
-            None
+        if self.do_time_weight {
+            self.result_reset_time_weight(range, expand)
         } else {
-            Some(self.sum / self.sumc as f32)
-        };
-        let ret = Self::Output {
-            ts1s: vec![self.range.beg],
-            ts2s: vec![self.range.end],
-            counts: vec![self.count],
-            mins: vec![self.min],
-            maxs: vec![self.max],
-            avgs: vec![avg],
-        };
-        self.range = range;
-        self.count = 0;
-        self.min = None;
-        self.max = None;
-        self.sum = 0f32;
-        self.sumc = 0;
-        ret
+            self.result_reset_unweight(range, expand)
+        }
     }
 }
 

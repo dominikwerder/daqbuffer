@@ -9,12 +9,10 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::eventvalues::EventValues;
-use items::waveevents::{WaveEvents, WaveXBinner};
+use items::waveevents::WaveEvents;
 use items::xbinnedscalarevents::XBinnedScalarEvents;
 use items::xbinnedwaveevents::XBinnedWaveEvents;
-use items::{
-    EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, SitemtyFrameType, StreamItem, WithLen, WithTimestamps,
-};
+use items::{Framable, RangeCompletableItem, Sitemty, SitemtyFrameType, StreamItem, WithLen, WithTimestamps};
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
 use netpod::timeunits::{DAY, SEC};
@@ -106,6 +104,7 @@ impl StorageMerge {
         let mut i1 = self.inprng;
         let mut j1 = not_found;
         let mut tsmin = u64::MAX;
+        #[allow(unused)]
         use items::{WithLen, WithTimestamps};
         loop {
             if self.completed_inps[i1] {
@@ -175,7 +174,8 @@ struct FrameMaker {
 }
 
 impl FrameMaker {
-    fn make_frame_gen<T>(item: Sitemty<EventsItem>) -> Box<dyn Framable>
+    #[allow(dead_code)]
+    fn make_frame_gen<T>(_item: Sitemty<EventsItem>) -> Box<dyn Framable>
     where
         T: SitemtyFrameType + Serialize + Send + 'static,
     {
@@ -183,6 +183,7 @@ impl FrameMaker {
     }
 }
 
+#[allow(unused_macros)]
 macro_rules! events_item_to_sitemty {
     ($ei:expr, $t1:ident, $t2:ident, $t3:ident) => {{
         let ret = match $ei {
@@ -501,7 +502,7 @@ async fn position_file_for_evq(mut file: File, evq: RawEventsQuery, year: u32) -
     }
 }
 
-async fn position_file_for_evq_linear(mut file: File, evq: RawEventsQuery, year: u32) -> Result<PositionResult, Error> {
+async fn position_file_for_evq_linear(file: File, evq: RawEventsQuery, _year: u32) -> Result<PositionResult, Error> {
     let mut pbr = PbFileReader::new(file).await;
     pbr.read_header().await?;
     loop {

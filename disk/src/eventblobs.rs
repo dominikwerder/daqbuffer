@@ -5,8 +5,8 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::{LogItem, RangeCompletableItem, StreamItem};
+use netpod::log::*;
 use netpod::timeunits::SEC;
-use netpod::{log::*, ByteSize};
 use netpod::{ChannelConfig, NanoRange, Node};
 use std::pin::Pin;
 use std::sync::atomic::AtomicU64;
@@ -67,6 +67,10 @@ impl EventChunkerMultifile {
 
     pub fn seen_before_range_count(&self) -> usize {
         self.seen_before_range_count
+    }
+
+    pub fn seen_after_range_count(&self) -> usize {
+        self.seen_after_range_count
     }
 
     pub fn close(&mut self) {
@@ -153,9 +157,10 @@ impl Stream for EventChunkerMultifile {
     }
 }
 
+#[cfg(test)]
 fn read_expanded_for_range(range: netpod::NanoRange) -> Result<(usize, usize), Error> {
     use netpod::timeunits::*;
-    use netpod::Nanos;
+    use netpod::{ByteSize, Nanos};
     let chn = netpod::Channel {
         backend: "testbackend".into(),
         name: "scalar-i32-be".into(),

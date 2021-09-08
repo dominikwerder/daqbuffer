@@ -11,121 +11,113 @@ use url::Url;
 
 #[test]
 fn time_weighted_json_00() {
-    // Each test must make sure that the nodes are running.
-    // Can I use absolute paths in the Node Configs to make me independent of the CWD?
-    // run_test must assume that the CWD when it is started, is the crate directory.
-    super::run_test(time_weighted_json_00_inner());
-}
-
-async fn time_weighted_json_00_inner() -> Result<(), Error> {
-    let rh = require_test_hosts_running()?;
-    let cluster = &rh.cluster;
-    let res = get_json_common(
-        "const-regular-scalar-i32-be",
-        "1970-01-01T00:20:10.000Z",
-        "1970-01-01T04:20:30.000Z",
-        20,
-        AggKind::DimXBins1,
-        cluster,
-        25,
-        true,
-    )
-    .await?;
-    let v = res.avgs[0];
-    assert!(v > 41.9999 && v < 42.0001);
-    Ok(())
+    async fn inner() -> Result<(), Error> {
+        let rh = require_test_hosts_running()?;
+        let cluster = &rh.cluster;
+        let res = get_json_common(
+            "const-regular-scalar-i32-be",
+            "1970-01-01T00:20:10.000Z",
+            "1970-01-01T04:20:30.000Z",
+            20,
+            AggKind::DimXBins1,
+            cluster,
+            25,
+            true,
+        )
+        .await?;
+        let v = res.avgs[0];
+        assert!(v > 41.9999 && v < 42.0001);
+        Ok(())
+    }
+    super::run_test(inner());
 }
 
 #[test]
 fn time_weighted_json_01() {
-    super::run_test(time_weighted_json_01_inner());
-}
-
-async fn time_weighted_json_01_inner() -> Result<(), Error> {
-    let rh = require_test_hosts_running()?;
-    let cluster = &rh.cluster;
-    let res = get_json_common(
-        "const-regular-scalar-i32-be",
-        "1970-01-01T00:20:10.000Z",
-        "1970-01-01T10:20:30.000Z",
-        10,
-        AggKind::DimXBins1,
-        cluster,
-        11,
-        true,
-    )
-    .await?;
-    let v = res.avgs[0];
-    assert!(v > 41.9999 && v < 42.0001);
-    Ok(())
+    async fn inner() -> Result<(), Error> {
+        let rh = require_test_hosts_running()?;
+        let cluster = &rh.cluster;
+        let res = get_json_common(
+            "const-regular-scalar-i32-be",
+            "1970-01-01T00:20:10.000Z",
+            "1970-01-01T10:20:30.000Z",
+            10,
+            AggKind::DimXBins1,
+            cluster,
+            11,
+            true,
+        )
+        .await?;
+        let v = res.avgs[0];
+        assert!(v > 41.9999 && v < 42.0001);
+        Ok(())
+    }
+    super::run_test(inner());
 }
 
 #[test]
 fn time_weighted_json_02() {
-    super::run_test(time_weighted_json_02_inner());
-}
-
-async fn time_weighted_json_02_inner() -> Result<(), Error> {
-    let rh = require_test_hosts_running()?;
-    let cluster = &rh.cluster;
-    let res = get_json_common(
-        "const-regular-scalar-i32-be",
-        "1970-01-01T00:20:10.000Z",
-        "1970-01-01T00:20:20.000Z",
-        20,
-        AggKind::TimeWeightedScalar,
-        cluster,
-        100,
-        true,
-    )
-    .await?;
-    let v = res.avgs[0];
-    assert!(v > 41.9999 && v < 42.0001);
-    Ok(())
+    async fn inner() -> Result<(), Error> {
+        let rh = require_test_hosts_running()?;
+        let cluster = &rh.cluster;
+        let res = get_json_common(
+            "const-regular-scalar-i32-be",
+            "1970-01-01T00:20:10.000Z",
+            "1970-01-01T00:20:20.000Z",
+            20,
+            AggKind::TimeWeightedScalar,
+            cluster,
+            100,
+            true,
+        )
+        .await?;
+        let v = res.avgs[0];
+        assert!(v > 41.9999 && v < 42.0001);
+        Ok(())
+    }
+    super::run_test(inner());
 }
 
 #[test]
 fn time_weighted_json_10() {
-    super::run_test(time_weighted_json_10_inner());
-}
-
-async fn time_weighted_json_10_inner() -> Result<(), Error> {
-    let rh = require_test_hosts_running()?;
-    let cluster = &rh.cluster;
-    get_json_common(
-        "scalar-i32-be",
-        "1970-01-01T00:20:10.000Z",
-        "1970-01-01T01:20:30.000Z",
-        10,
-        AggKind::DimXBins1,
-        cluster,
-        13,
-        true,
-    )
-    .await?;
-    Ok(())
+    async fn inner() -> Result<(), Error> {
+        let rh = require_test_hosts_running()?;
+        let cluster = &rh.cluster;
+        get_json_common(
+            "scalar-i32-be",
+            "1970-01-01T00:20:10.000Z",
+            "1970-01-01T01:20:30.000Z",
+            10,
+            AggKind::DimXBins1,
+            cluster,
+            13,
+            true,
+        )
+        .await?;
+        Ok(())
+    }
+    super::run_test(inner());
 }
 
 #[test]
 fn time_weighted_json_20() {
-    super::run_test(time_weighted_json_20_inner());
-}
-
-async fn time_weighted_json_20_inner() -> Result<(), Error> {
-    let rh = require_test_hosts_running()?;
-    let cluster = &rh.cluster;
-    get_json_common(
-        "wave-f64-be-n21",
-        "1970-01-01T00:20:10.000Z",
-        "1970-01-01T01:20:45.000Z",
-        10,
-        AggKind::TimeWeightedScalar,
-        cluster,
-        13,
-        true,
-    )
-    .await?;
-    Ok(())
+    async fn inner() -> Result<(), Error> {
+        let rh = require_test_hosts_running()?;
+        let cluster = &rh.cluster;
+        get_json_common(
+            "wave-f64-be-n21",
+            "1970-01-01T00:20:10.000Z",
+            "1970-01-01T01:20:45.000Z",
+            10,
+            AggKind::TimeWeightedScalar,
+            cluster,
+            13,
+            true,
+        )
+        .await?;
+        Ok(())
+    }
+    super::run_test(inner());
 }
 
 // For waveform with N x-bins, see test::binnedjson

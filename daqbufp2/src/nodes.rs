@@ -11,7 +11,7 @@ pub struct RunningHosts {
 
 impl Drop for RunningHosts {
     fn drop(&mut self) {
-        netpod::log::error!("\n\n+++++++++++++++++++  impl Drop for RunningHost\n\n");
+        netpod::log::info!("\n\n+++++++++++++++++++  impl Drop for RunningHost\n\n");
     }
 }
 
@@ -23,7 +23,7 @@ pub fn require_test_hosts_running() -> Result<Arc<RunningHosts>, Error> {
     let mut g = HOSTS_RUNNING.lock().unwrap();
     match g.as_ref() {
         None => {
-            netpod::log::error!("\n\n+++++++++++++++++++  MAKE NEW RunningHosts\n\n");
+            netpod::log::info!("\n\n+++++++++++++++++++  MAKE NEW RunningHosts\n\n");
             let cluster = taskrun::test_cluster();
             let jhs = spawn_test_hosts(cluster.clone());
             let ret = RunningHosts {
@@ -35,7 +35,7 @@ pub fn require_test_hosts_running() -> Result<Arc<RunningHosts>, Error> {
             Ok(a)
         }
         Some(gg) => {
-            netpod::log::error!("\n\n+++++++++++++++++++  REUSE RunningHost\n\n");
+            netpod::log::debug!("\n\n+++++++++++++++++++  REUSE RunningHost\n\n");
             Ok(gg.clone())
         }
     }

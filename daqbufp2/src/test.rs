@@ -11,7 +11,6 @@ fn run_test<F>(f: F)
 where
     F: Future<Output = Result<(), Error>> + Send,
 {
-    //taskrun::run(f).unwrap();
     let runtime = taskrun::get_runtime();
     let _g = runtime.enter();
     runtime.block_on(f).unwrap();

@@ -299,8 +299,8 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
 }
 
 pub async fn proxy_api1_single_backend_query(
-    req: Request<Body>,
-    proxy_config: &ProxyConfig,
+    _req: Request<Body>,
+    _proxy_config: &ProxyConfig,
 ) -> Result<Response<Body>, Error> {
     panic!()
 }

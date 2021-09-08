@@ -387,7 +387,7 @@ impl LruCache {
             tss.sort_unstable();
             let thr = tss[1500];
             let m1 = std::mem::replace(&mut self.map, BTreeMap::new());
-            self.map = m1.into_iter().filter(|(j, k)| k > &thr).collect();
+            self.map = m1.into_iter().filter(|(_j, k)| k > &thr).collect();
         }
     }
 
@@ -421,7 +421,6 @@ pub async fn scan_files_inner(
         let proots = proot.to_str().unwrap().to_string();
         let meta = tokio::fs::metadata(&proot).await?;
         let mut paths = VecDeque::new();
-        let mut waves_found = 0;
         paths.push_back(PE {
             path: proot,
             fty: meta.file_type(),
@@ -451,7 +450,7 @@ pub async fn scan_files_inner(
                 } else if pe.fty.is_file() {
                     //tx.send(Ok(Box::new(path.clone()) as RT1)).await?;
                     let fns = pe.path.to_str().ok_or_else(|| Error::with_msg("invalid path string"))?;
-                    if let Ok(fnp) = parse_data_filename(&fns) {
+                    if let Ok(_fnp) = parse_data_filename(&fns) {
                         //tx.send(Ok(Box::new(serde_json::to_value(fns)?) as ItemSerBox)).await?;
                         let channel_path = &fns[proots.len() + 1..fns.len() - 11];
                         if !lru.query(channel_path) {

@@ -37,7 +37,7 @@ pub fn parse_all_ts(off: u64, buf: &[u8], payload_type: PayloadType, year: u32) 
                             ret.push(h);
                         }
                     }
-                    Err(e) => {
+                    Err(_e) => {
                         // TODO ignore except if it's the last chunk.
                     }
                 }

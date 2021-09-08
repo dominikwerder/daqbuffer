@@ -291,7 +291,7 @@ where
         }
     }
 
-    fn apply_event_unweight(&mut self, val: NTY) {
+    fn apply_min_max(&mut self, val: NTY) {
         self.min = match self.min {
             None => Some(val),
             Some(min) => {
@@ -312,6 +312,10 @@ where
                 }
             }
         };
+    }
+
+    fn apply_event_unweight(&mut self, val: NTY) {
+        self.apply_min_max(val);
         let vf = val.as_();
         if vf.is_nan() {
         } else {
@@ -322,26 +326,7 @@ where
 
     fn apply_event_time_weight(&mut self, ts: u64, val: Option<NTY>) {
         if let Some(v) = self.last_val {
-            self.min = match self.min {
-                None => Some(v),
-                Some(min) => {
-                    if v < min {
-                        Some(v)
-                    } else {
-                        Some(min)
-                    }
-                }
-            };
-            self.max = match self.max {
-                None => Some(v),
-                Some(max) => {
-                    if v > max {
-                        Some(v)
-                    } else {
-                        Some(max)
-                    }
-                }
-            };
+            self.apply_min_max(v);
             let w = if self.do_time_weight {
                 (ts - self.int_ts) as f32 * 1e-9
             } else {
@@ -389,7 +374,7 @@ where
         }
     }
 
-    fn result_reset_unweight(&mut self, range: NanoRange, expand: bool) -> MinMaxAvgBins<NTY> {
+    fn result_reset_unweight(&mut self, range: NanoRange, _expand: bool) -> MinMaxAvgBins<NTY> {
         let avg = if self.sumc == 0 {
             None
         } else {

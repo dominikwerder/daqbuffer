@@ -1,6 +1,5 @@
 use crate::gather::gather_get_json;
 use bytes::Bytes;
-use disk::binned::prebinned::pre_binned_bytes_for_http;
 use disk::binned::query::{BinnedQuery, PreBinnedQuery};
 use disk::events::{PlainEventsBinaryQuery, PlainEventsJsonQuery};
 use err::Error;
@@ -8,6 +7,7 @@ use future::Future;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use http::{HeaderMap, Method, StatusCode};
+use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
@@ -41,8 +41,8 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
     use std::str::FromStr;
     let addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen, node_config.node.port))?;
     let make_service = make_service_fn({
-        move |conn| {
-            info!("»»»»»»»»»»»  new connection {:?}", conn);
+        move |conn: &AddrStream| {
+            info!("new connection from {:?}", conn.remote_addr());
             let node_config = node_config.clone();
             async move {
                 Ok::<_, Error>(service_fn({
@@ -55,7 +55,6 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
         }
     });
     Server::bind(&addr).serve(make_service).await?;
-    warn!("»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»»  SERVICE DONE  ««««««««««««««««««««««««««««««««««««««««");
     rawjh.await??;
     Ok(())
 }
@@ -415,7 +414,7 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
     span1.in_scope(|| {
         info!("prebinned STARTING");
     });
-    let fut = pre_binned_bytes_for_http(node_config, &query).instrument(span1);
+    let fut = disk::binned::prebinned::pre_binned_bytes_for_http(node_config, &query).instrument(span1);
     let ret = match fut.await {
         Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, desc))?,
         Err(e) => {

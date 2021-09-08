@@ -12,30 +12,30 @@ impl From<io::Error> for Error {
     }
 }
 
-struct Out {
+pub struct Out {
     cur: io::Cursor<Vec<u8>>,
 }
 
 impl Out {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             cur: Cursor::new(vec![]),
         }
     }
 
-    fn write_u8(&mut self, k: u8) -> io::Result<usize> {
+    pub fn write_u8(&mut self, k: u8) -> io::Result<usize> {
         self.write(&k.to_le_bytes())
     }
 
-    fn write_u16(&mut self, k: u16) -> io::Result<usize> {
+    pub fn write_u16(&mut self, k: u16) -> io::Result<usize> {
         self.write(&k.to_le_bytes())
     }
 
-    fn write_u32(&mut self, k: u32) -> io::Result<usize> {
+    pub fn write_u32(&mut self, k: u32) -> io::Result<usize> {
         self.write(&k.to_le_bytes())
     }
 
-    fn write_u64(&mut self, k: u64) -> io::Result<usize> {
+    pub fn write_u64(&mut self, k: u64) -> io::Result<usize> {
         self.write(&k.to_le_bytes())
     }
 }
@@ -61,6 +61,7 @@ fn emit() {
     write_h5().unwrap();
 }
 
+#[allow(unused)]
 fn write_h5() -> Result<(), Error> {
     let mut out = Out::new();
     write_superblock(&mut out)?;
@@ -72,6 +73,7 @@ fn write_h5() -> Result<(), Error> {
     Ok(())
 }
 
+#[allow(unused)]
 fn write_file(out: &Out) -> Result<(), Error> {
     eprintln!("Write {} bytes", out.cur.get_ref().len());
     let mut f = OpenOptions::new()
@@ -83,6 +85,7 @@ fn write_file(out: &Out) -> Result<(), Error> {
     Ok(())
 }
 
+#[allow(unused)]
 fn write_padding(out: &mut Out) -> Result<(), Error> {
     let n = out.cur.get_ref().len();
     let m = n % 8;
@@ -94,6 +97,7 @@ fn write_padding(out: &mut Out) -> Result<(), Error> {
     Ok(())
 }
 
+#[allow(unused)]
 fn write_superblock(out: &mut Out) -> Result<(), Error> {
     let super_ver = 0;
     let free_ver = 0;
@@ -140,6 +144,7 @@ fn write_superblock(out: &mut Out) -> Result<(), Error> {
     Ok(())
 }
 
+#[allow(unused)]
 fn write_root_object_header(out: &mut Out) -> Result<(), Error> {
     write_padding(out)?;
     let pos0 = out.cur.get_ref().len() as u64;
@@ -169,6 +174,7 @@ fn write_root_object_header(out: &mut Out) -> Result<(), Error> {
     Ok(())
 }
 
+#[allow(unused)]
 fn write_local_heap(out: &mut Out) -> Result<(), Error> {
     write_padding(out)?;
     let pos0 = out.cur.get_ref().len() as u64;
