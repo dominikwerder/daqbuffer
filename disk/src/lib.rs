@@ -31,6 +31,7 @@ pub mod frame;
 pub mod gen;
 pub mod index;
 pub mod merge;
+pub mod mergeblobs;
 pub mod paths;
 pub mod raw;
 pub mod streamlog;
@@ -283,7 +284,10 @@ fn unused_raw_concat_channel_read_stream_file_pipe(
         let chrx = open_files(&range, &channel_config, node);
         while let Ok(file) = chrx.recv().await {
             let mut file = match file {
-                Ok(k) => k.file.unwrap(),
+                Ok(mut k) => {
+                    k.files.truncate(1);
+                    k.files.pop().unwrap().file.unwrap()
+                }
                 Err(_) => break
             };
             loop {
@@ -419,7 +423,8 @@ impl Stream for NeedMinBuffer {
     }
 }
 
-pub fn raw_concat_channel_read_stream(
+#[allow(dead_code)]
+fn raw_concat_channel_read_stream(
     query: &netpod::AggQuerySingleChannel,
     node: Node,
 ) -> impl Stream<Item = Result<Bytes, Error>> + Send {
@@ -443,7 +448,8 @@ pub fn raw_concat_channel_read_stream(
     }
 }
 
-pub fn raw_concat_channel_read_stream_timebin(
+#[allow(dead_code)]
+fn raw_concat_channel_read_stream_timebin(
     query: &netpod::AggQuerySingleChannel,
     node: Node,
 ) -> impl Stream<Item = Result<Bytes, Error>> {
@@ -506,4 +512,8 @@ impl ChannelConfigExt for ChannelConfig {
         }
         ret
     }
+}
+
+pub trait HasSeenBeforeRangeCount {
+    fn seen_before_range_count(&self) -> usize;
 }

@@ -240,6 +240,12 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if path == "/api/1/query" {
+        if req.method() == Method::POST {
+            Ok(api1::api1_binary_events(req, &node_config).await?)
+        } else {
+            Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)
+        }
     } else if path.starts_with("/api/1/documentation/") {
         if req.method() == Method::GET {
             api_1_docs(path)

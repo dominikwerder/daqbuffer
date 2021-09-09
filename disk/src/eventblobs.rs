@@ -1,10 +1,11 @@
-use crate::dataopen::{open_expanded_files, open_files, OpenedFile};
+use crate::dataopen::{open_expanded_files, open_files, OpenedFileSet};
 use crate::eventchunker::{EventChunker, EventChunkerConf, EventFull};
-use crate::file_content_stream;
+use crate::mergeblobs::MergedBlobsStream;
+use crate::{file_content_stream, HasSeenBeforeRangeCount};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use items::{LogItem, RangeCompletableItem, StreamItem};
+use items::{LogItem, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{ChannelConfig, NanoRange, Node};
@@ -13,10 +14,14 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
+pub trait InputTraits: Stream<Item = Sitemty<EventFull>> + HasSeenBeforeRangeCount {}
+
+impl<T> InputTraits for T where T: Stream<Item = Sitemty<EventFull>> + HasSeenBeforeRangeCount {}
+
 pub struct EventChunkerMultifile {
     channel_config: ChannelConfig,
-    file_chan: async_channel::Receiver<Result<OpenedFile, Error>>,
-    evs: Option<EventChunker>,
+    file_chan: async_channel::Receiver<Result<OpenedFileSet, Error>>,
+    evs: Option<Pin<Box<dyn InputTraits + Send>>>,
     buffer_size: usize,
     event_chunker_conf: EventChunkerConf,
     range: NanoRange,
@@ -108,27 +113,55 @@ impl Stream for EventChunkerMultifile {
                     },
                     None => match self.file_chan.poll_next_unpin(cx) {
                         Ready(Some(k)) => match k {
-                            Ok(file) => {
-                                self.files_count += 1;
-                                let path = file.path;
-                                let item = LogItem::quick(Level::INFO, format!("handle file {:?}", path));
-                                match file.file {
-                                    Some(file) => {
-                                        let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
-                                        let chunker = EventChunker::from_event_boundary(
-                                            inp,
-                                            self.channel_config.clone(),
-                                            self.range.clone(),
-                                            self.event_chunker_conf.clone(),
-                                            path,
-                                            self.max_ts.clone(),
-                                            self.expand,
-                                        );
-                                        self.evs = Some(chunker);
+                            Ok(ofs) => {
+                                self.files_count += ofs.files.len() as u32;
+                                if ofs.files.len() == 1 {
+                                    let mut ofs = ofs;
+                                    let file = ofs.files.pop().unwrap();
+                                    let path = file.path;
+                                    let item = LogItem::quick(Level::INFO, format!("handle OFS {:?}", ofs));
+                                    match file.file {
+                                        Some(file) => {
+                                            let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
+                                            let chunker = EventChunker::from_event_boundary(
+                                                inp,
+                                                self.channel_config.clone(),
+                                                self.range.clone(),
+                                                self.event_chunker_conf.clone(),
+                                                path,
+                                                self.max_ts.clone(),
+                                                self.expand,
+                                            );
+                                            self.evs = Some(Box::pin(chunker));
+                                        }
+                                        None => {}
                                     }
-                                    None => {}
+                                    Ready(Some(Ok(StreamItem::Log(item))))
+                                } else if ofs.files.len() > 1 {
+                                    let item = LogItem::quick(Level::INFO, format!("handle OFS MULTIPLE {:?}", ofs));
+                                    let mut chunkers = vec![];
+                                    for of in ofs.files {
+                                        if let Some(file) = of.file {
+                                            let inp = Box::pin(file_content_stream(file, self.buffer_size as usize));
+                                            let chunker = EventChunker::from_event_boundary(
+                                                inp,
+                                                self.channel_config.clone(),
+                                                self.range.clone(),
+                                                self.event_chunker_conf.clone(),
+                                                of.path,
+                                                self.max_ts.clone(),
+                                                self.expand,
+                                            );
+                                            chunkers.push(chunker);
+                                        }
+                                    }
+                                    let merged = MergedBlobsStream::new(chunkers);
+                                    self.evs = Some(Box::pin(merged));
+                                    Ready(Some(Ok(StreamItem::Log(item))))
+                                } else {
+                                    let item = LogItem::quick(Level::INFO, format!("handle OFS {:?}  NO FILES", ofs));
+                                    Ready(Some(Ok(StreamItem::Log(item))))
                                 }
-                                Ready(Some(Ok(StreamItem::Log(item))))
                             }
                             Err(e) => {
                                 self.errored = true;

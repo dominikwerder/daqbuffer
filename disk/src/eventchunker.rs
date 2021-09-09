@@ -1,10 +1,10 @@
-use crate::{FileChunkRead, NeedMinBuffer};
+use crate::{FileChunkRead, HasSeenBeforeRangeCount, NeedMinBuffer};
 use bitshuffle::bitshuffle_decompress;
 use bytes::{Buf, BytesMut};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use items::{RangeCompletableItem, StatsItem, StreamItem};
+use items::{Appendable, PushableIndex, RangeCompletableItem, StatsItem, StreamItem, WithLen, WithTimestamps};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{ByteSize, ChannelConfig, EventDataReadStats, NanoRange, ScalarType, Shape};
@@ -360,6 +360,44 @@ impl EventFull {
     }
 }
 
+impl WithLen for EventFull {
+    fn len(&self) -> usize {
+        self.tss.len()
+    }
+}
+
+impl Appendable for EventFull {
+    fn empty() -> Self {
+        Self::empty()
+    }
+
+    // TODO expensive, get rid of it.
+    fn append(&mut self, src: &Self) {
+        self.tss.extend_from_slice(&src.tss);
+        self.pulses.extend_from_slice(&src.pulses);
+        self.decomps.extend_from_slice(&src.decomps);
+        self.scalar_types.extend_from_slice(&src.scalar_types);
+        self.be.extend_from_slice(&src.be);
+    }
+}
+
+impl WithTimestamps for EventFull {
+    fn ts(&self, ix: usize) -> u64 {
+        self.tss[ix]
+    }
+}
+
+impl PushableIndex for EventFull {
+    // TODO check all use cases, can't we move?
+    fn push_index(&mut self, src: &Self, ix: usize) {
+        self.tss.push(src.tss[ix]);
+        self.pulses.push(src.pulses[ix]);
+        self.decomps.push(src.decomps[ix].clone());
+        self.scalar_types.push(src.scalar_types[ix].clone());
+        self.be.push(src.be[ix]);
+    }
+}
+
 impl Stream for EventChunker {
     type Item = Result<StreamItem<RangeCompletableItem<EventFull>>, Error>;
 
@@ -440,5 +478,11 @@ impl Stream for EventChunker {
                 }
             };
         }
+    }
+}
+
+impl HasSeenBeforeRangeCount for EventChunker {
+    fn seen_before_range_count(&self) -> usize {
+        self.seen_before_range_count()
     }
 }

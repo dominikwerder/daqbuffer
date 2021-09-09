@@ -4,6 +4,7 @@ use err::Error;
 use http::{Method, StatusCode};
 use hyper::{Body, Client, Request, Response};
 use itertools::Itertools;
+use netpod::{log::*, NodeConfigCached, APP_OCTET};
 use netpod::{ChannelSearchQuery, ChannelSearchResult, ProxyConfig, APP_JSON};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -460,4 +461,26 @@ pub async fn proxy_distribute_v1(req: Request<Body>) -> Result<Response<Body>, E
         Ok::<_, Error>(())
     });
     Ok(res)
+}
+
+pub async fn api1_binary_events(req: Request<Body>, _node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    info!("api1_binary_events  headers: {:?}", req.headers());
+    let accept_def = "";
+    let accept = req
+        .headers()
+        .get(http::header::ACCEPT)
+        .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
+    if accept == APP_OCTET {
+        // Ok(plain_events_binary(req, node_config).await.map_err(|e| {
+        //     error!("{:?}", e);
+        //     e
+        // })?)
+        let e = Error::with_msg(format!("unexpected Accept: {:?}", accept));
+        error!("{:?}", e);
+        Err(e)
+    } else {
+        let e = Error::with_msg(format!("unexpected Accept: {:?}", accept));
+        error!("{:?}", e);
+        Err(e)
+    }
 }
