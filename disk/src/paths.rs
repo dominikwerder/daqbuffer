@@ -62,7 +62,9 @@ pub async fn datapaths_for_timebin(
             .join(format!("{:019}_00000_Data", config.time_bin_size.ns / MS));
         ret.push(path);
     }
-    info!("\n\ndatapaths_for_timebin returns: {:?}\n", ret);
+    if false {
+        info!("datapaths_for_timebin returns: {:?}", ret)
+    }
     Ok(ret)
 }
 
