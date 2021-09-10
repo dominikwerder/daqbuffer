@@ -256,7 +256,7 @@ pub fn parse_config(inp: &[u8]) -> NRes<Config> {
 }
 
 pub async fn channel_config(q: &ChannelConfigQuery, node: &Node) -> Result<ChannelConfigResponse, Error> {
-    let conf = read_local_config(&q.channel, node).await?;
+    let conf = read_local_config(q.channel.clone(), node.clone()).await?;
     let entry_res = extract_matching_config_entry(&q.range, &conf)?;
     let entry = match entry_res {
         MatchingConfigEntry::None => return Err(Error::with_msg("no config entry found")),
@@ -272,7 +272,8 @@ pub async fn channel_config(q: &ChannelConfigQuery, node: &Node) -> Result<Chann
     Ok(ret)
 }
 
-pub async fn read_local_config(channel: &Channel, node: &Node) -> Result<Config, Error> {
+// TODO can I take parameters as ref, even when used in custom streams?
+pub async fn read_local_config(channel: Channel, node: Node) -> Result<Config, Error> {
     let path = node
         .data_base_path
         .join("config")

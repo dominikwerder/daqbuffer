@@ -138,7 +138,7 @@ pub async fn make_event_pipe(
         }
     }
     let range = &evq.range;
-    let channel_config = match read_local_config(&evq.channel, &node_config.node).await {
+    let channel_config = match read_local_config(evq.channel.clone(), node_config.node.clone()).await {
         Ok(k) => k,
         Err(e) => {
             if e.msg().contains("ErrorKind::NotFound") {
@@ -204,7 +204,7 @@ pub async fn make_event_blobs_pipe(
         }
     }
     let range = &evq.range;
-    let channel_config = match read_local_config(&evq.channel, &node_config.node).await {
+    let channel_config = match read_local_config(evq.channel.clone(), node_config.node.clone()).await {
         Ok(k) => k,
         Err(e) => {
             if e.msg().contains("ErrorKind::NotFound") {

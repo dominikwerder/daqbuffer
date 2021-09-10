@@ -20,6 +20,7 @@ use netpod::{
 use nodenet::conn::events_service;
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
+use pulsemap::MapPulseHttpFunction;
 use serde::{Deserialize, Serialize};
 use std::{future, net, panic, pin, task};
 use task::{Context, Poll};
@@ -30,6 +31,7 @@ use url::Url;
 pub mod api1;
 pub mod gather;
 pub mod proxy;
+pub mod pulsemap;
 pub mod search;
 
 fn proxy_mark() -> &'static str {
@@ -246,6 +248,8 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)
         }
+    } else if MapPulseHttpFunction::path_matches(path) {
+        MapPulseHttpFunction::handle(req, &node_config)
     } else if path.starts_with("/api/1/requestStatus/") {
         info!("{}", path);
         Ok(response(StatusCode::OK).body(Body::from("{}"))?)
