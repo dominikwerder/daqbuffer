@@ -248,8 +248,10 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)
         }
-    } else if MapPulseHttpFunction::path_matches(path) {
-        MapPulseHttpFunction::handle(req, &node_config)
+    } else if pulsemap::IndexFullHttpFunction::path_matches(path) {
+        pulsemap::IndexFullHttpFunction::handle(req, &node_config).await
+    } else if pulsemap::MapPulseHttpFunction::path_matches(path) {
+        pulsemap::MapPulseHttpFunction::handle(req, &node_config)
     } else if path.starts_with("/api/1/requestStatus/") {
         info!("{}", path);
         Ok(response(StatusCode::OK).body(Body::from("{}"))?)
