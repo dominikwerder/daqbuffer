@@ -93,6 +93,7 @@ where
         Shape::Scalar => {
             //
             match agg_kind {
+                AggKind::EventBlobs => panic!(),
                 AggKind::Plain => {
                     let evs = EventValuesDim0Case::new();
                     let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggPlain as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
@@ -118,6 +119,7 @@ where
         Shape::Wave(n) => {
             //
             match agg_kind {
+                AggKind::EventBlobs => panic!(),
                 AggKind::Plain => {
                     let evs = EventValuesDim1Case::new(n);
                     let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggPlain as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());

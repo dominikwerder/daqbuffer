@@ -24,7 +24,7 @@ where
     Err(nom::Err::Error(e))
 }
 
-#[derive(Debug, FromPrimitive, ToPrimitive, Serialize, Deserialize)]
+#[derive(Clone, Debug, FromPrimitive, ToPrimitive, Serialize, Deserialize)]
 pub enum CompressionMethod {
     BitshuffleLZ4 = 0,
 }
@@ -35,7 +35,7 @@ impl CompressionMethod {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConfigEntry {
     pub ts: u64,
     pub pulse: i64,
@@ -290,6 +290,7 @@ pub async fn read_local_config(channel: &Channel, node: &Node) -> Result<Config,
     Ok(config.1)
 }
 
+#[derive(Clone)]
 pub enum MatchingConfigEntry<'a> {
     None,
     Multiple,

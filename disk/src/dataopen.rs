@@ -113,20 +113,28 @@ async fn position_file(
             match OpenOptions::new().read(true).open(&index_path).await {
                 Ok(mut index_file) => {
                     let meta = index_file.metadata().await?;
-                    if meta.len() > 1024 * 1024 * 80 {
+                    if meta.len() > 1024 * 1024 * 120 {
                         let msg = format!(
                             "too large index file  {} bytes  for {}",
                             meta.len(),
                             channel_config.channel.name
                         );
+                        error!("{}", msg);
                         return Err(Error::with_msg(msg));
+                    } else if meta.len() > 1024 * 1024 * 80 {
+                        let msg = format!(
+                            "very large index file  {} bytes  for {}",
+                            meta.len(),
+                            channel_config.channel.name
+                        );
+                        warn!("{}", msg);
                     } else if meta.len() > 1024 * 1024 * 20 {
                         let msg = format!(
                             "large index file  {} bytes  for {}",
                             meta.len(),
                             channel_config.channel.name
                         );
-                        warn!("{}", msg);
+                        info!("{}", msg);
                     }
                     if meta.len() < 2 {
                         return Err(Error::with_msg(format!(

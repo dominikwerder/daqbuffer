@@ -4,10 +4,13 @@ use bytes::{Buf, BytesMut};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use items::{Appendable, PushableIndex, RangeCompletableItem, StatsItem, StreamItem, WithLen, WithTimestamps};
+use items::{
+    Appendable, PushableIndex, RangeCompletableItem, SitemtyFrameType, StatsItem, StreamItem, WithLen, WithTimestamps,
+};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{ByteSize, ChannelConfig, EventDataReadStats, NanoRange, ScalarType, Shape};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -33,6 +36,7 @@ pub struct EventChunker {
     expand: bool,
     seen_before_range_count: usize,
     seen_after_range_count: usize,
+    unordered_warn_count: usize,
 }
 
 enum DataFileState {
@@ -87,6 +91,7 @@ impl EventChunker {
             expand,
             seen_before_range_count: 0,
             seen_after_range_count: 0,
+            unordered_warn_count: 0,
         }
     }
 
@@ -168,15 +173,20 @@ impl EventChunker {
                         let pulse = sl.read_i64::<BE>().unwrap() as u64;
                         let max_ts = self.max_ts.load(Ordering::SeqCst);
                         if ts < max_ts {
-                            Err(Error::with_msg(format!(
-                                "unordered event ts: {}.{}  max_ts {}.{}  config {:?}  path {:?}",
-                                ts / SEC,
-                                ts % SEC,
-                                max_ts / SEC,
-                                max_ts % SEC,
-                                self.channel_config.shape,
-                                self.path
-                            )))?;
+                            if self.unordered_warn_count < 20 {
+                                let msg = format!(
+                                    "unordered event no {}  ts: {}.{}  max_ts {}.{}  config {:?}  path {:?}",
+                                    self.unordered_warn_count,
+                                    ts / SEC,
+                                    ts % SEC,
+                                    max_ts / SEC,
+                                    max_ts % SEC,
+                                    self.channel_config.shape,
+                                    self.path
+                                );
+                                warn!("{}", msg);
+                                self.unordered_warn_count += 1;
+                            }
                         }
                         self.max_ts.store(ts, Ordering::SeqCst);
                         if ts >= self.range.end {
@@ -242,6 +252,17 @@ impl EventChunker {
                         for i1 in 0..shape_dim {
                             shape_lens[i1 as usize] = sl.read_u32::<BE>().unwrap();
                         }
+                        let shape_this = {
+                            if is_shaped {
+                                if shape_dim == 1 {
+                                    Shape::Wave(shape_lens[0])
+                                } else {
+                                    err::todoval()
+                                }
+                            } else {
+                                Shape::Scalar
+                            }
+                        };
                         if is_compressed {
                             //debug!("event  ts {}  is_compressed {}", ts, is_compressed);
                             let value_bytes = sl.read_u64::<BE>().unwrap();
@@ -291,6 +312,7 @@ impl EventChunker {
                                         Some(decomp),
                                         ScalarType::from_dtype_index(type_index)?,
                                         is_big_endian,
+                                        shape_this,
                                     );
                                 }
                                 Err(e) => {
@@ -311,6 +333,7 @@ impl EventChunker {
                                 Some(decomp),
                                 ScalarType::from_dtype_index(type_index)?,
                                 is_big_endian,
+                                shape_this,
                             );
                         }
                         buf.advance(len as usize);
@@ -331,13 +354,48 @@ impl EventChunker {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct EventFull {
     pub tss: Vec<u64>,
     pub pulses: Vec<u64>,
+    #[serde(serialize_with = "decomps_ser", deserialize_with = "decomps_de")]
     pub decomps: Vec<Option<BytesMut>>,
     pub scalar_types: Vec<ScalarType>,
     pub be: Vec<bool>,
+    pub shapes: Vec<Shape>,
+}
+
+fn decomps_ser<S>(t: &Vec<Option<BytesMut>>, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let a: Vec<_> = t
+        .iter()
+        .map(|k| match k {
+            None => None,
+            Some(j) => Some(j[..].to_vec()),
+        })
+        .collect();
+    Serialize::serialize(&a, s)
+}
+
+fn decomps_de<'de, D>(d: D) -> Result<Vec<Option<BytesMut>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let a: Vec<Option<Vec<u8>>> = Deserialize::deserialize(d)?;
+    let a = a
+        .iter()
+        .map(|k| match k {
+            None => None,
+            Some(j) => {
+                let mut a = BytesMut::new();
+                a.extend_from_slice(&j);
+                Some(a)
+            }
+        })
+        .collect();
+    Ok(a)
 }
 
 impl EventFull {
@@ -348,16 +406,30 @@ impl EventFull {
             decomps: vec![],
             scalar_types: vec![],
             be: vec![],
+            shapes: vec![],
         }
     }
 
-    fn add_event(&mut self, ts: u64, pulse: u64, decomp: Option<BytesMut>, scalar_type: ScalarType, be: bool) {
+    fn add_event(
+        &mut self,
+        ts: u64,
+        pulse: u64,
+        decomp: Option<BytesMut>,
+        scalar_type: ScalarType,
+        be: bool,
+        shape: Shape,
+    ) {
         self.tss.push(ts);
         self.pulses.push(pulse);
         self.decomps.push(decomp);
         self.scalar_types.push(scalar_type);
         self.be.push(be);
+        self.shapes.push(shape);
     }
+}
+
+impl SitemtyFrameType for EventFull {
+    const FRAME_TYPE_ID: u32 = items::EVENT_FULL_FRAME_TYPE_ID;
 }
 
 impl WithLen for EventFull {
@@ -378,6 +450,7 @@ impl Appendable for EventFull {
         self.decomps.extend_from_slice(&src.decomps);
         self.scalar_types.extend_from_slice(&src.scalar_types);
         self.be.extend_from_slice(&src.be);
+        self.shapes.extend_from_slice(&src.shapes);
     }
 }
 
@@ -395,6 +468,7 @@ impl PushableIndex for EventFull {
         self.decomps.push(src.decomps[ix].clone());
         self.scalar_types.push(src.scalar_types[ix].clone());
         self.be.push(src.be[ix]);
+        self.shapes.push(src.shapes[ix].clone());
     }
 }
 

@@ -49,6 +49,7 @@ where
 macro_rules! pipe4 {
     ($nty:ident, $end:ident, $shape:expr, $evs:ident, $evsv:expr, $agg_kind:expr, $event_blobs:expr) => {
         match $agg_kind {
+            AggKind::EventBlobs => panic!(),
             AggKind::TimeWeightedScalar | AggKind::DimXBins1 => {
                 make_num_pipeline_stream_evs::<$nty, $end, $evs<$nty>, _>(
                     $evsv,
@@ -189,5 +190,66 @@ pub async fn make_event_pipe(
         evq.agg_kind.clone(),
         event_blobs
     );
+    Ok(pipe)
+}
+
+pub async fn make_event_blobs_pipe(
+    evq: &RawEventsQuery,
+    node_config: &NodeConfigCached,
+) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error> {
+    if false {
+        match dbconn::channel_exists(&evq.channel, &node_config).await {
+            Ok(_) => (),
+            Err(e) => return Err(e)?,
+        }
+    }
+    let range = &evq.range;
+    let channel_config = match read_local_config(&evq.channel, &node_config.node).await {
+        Ok(k) => k,
+        Err(e) => {
+            if e.msg().contains("ErrorKind::NotFound") {
+                let s = futures_util::stream::empty();
+                return Ok(Box::pin(s));
+            } else {
+                return Err(e)?;
+            }
+        }
+    };
+    let entry_res = match extract_matching_config_entry(range, &channel_config) {
+        Ok(k) => k,
+        Err(e) => return Err(e)?,
+    };
+    let entry = match entry_res {
+        MatchingConfigEntry::None => return Err(Error::with_msg("no config entry found"))?,
+        MatchingConfigEntry::Multiple => return Err(Error::with_msg("multiple config entries found"))?,
+        MatchingConfigEntry::Entry(entry) => entry,
+    };
+    let shape = match entry.to_shape() {
+        Ok(k) => k,
+        Err(e) => return Err(e)?,
+    };
+    let channel_config = netpod::ChannelConfig {
+        channel: evq.channel.clone(),
+        keyspace: entry.ks as u8,
+        time_bin_size: entry.bs,
+        shape: shape,
+        scalar_type: entry.scalar_type.clone(),
+        byte_order: entry.byte_order.clone(),
+        array: entry.is_array,
+        compression: entry.is_compressed,
+    };
+    let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
+    let event_blobs = EventChunkerMultifile::new(
+        range.clone(),
+        channel_config.clone(),
+        node_config.node.clone(),
+        node_config.ix,
+        evq.disk_io_buffer_size,
+        event_chunker_conf,
+        true,
+    );
+    let s = event_blobs.map(|item| Box::new(item) as Box<dyn Framable>);
+    let pipe: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>;
+    pipe = Box::pin(s);
     Ok(pipe)
 }

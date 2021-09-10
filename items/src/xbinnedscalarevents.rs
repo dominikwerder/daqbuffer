@@ -24,7 +24,7 @@ impl<NTY> SitemtyFrameType for XBinnedScalarEvents<NTY>
 where
     NTY: SubFrId,
 {
-    const FRAME_TYPE_ID: u32 = 0x600 + NTY::SUB;
+    const FRAME_TYPE_ID: u32 = crate::X_BINNED_SCALAR_EVENTS_FRAME_TYPE_ID + NTY::SUB;
 }
 
 impl<NTY> XBinnedScalarEvents<NTY> {

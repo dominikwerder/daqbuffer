@@ -27,6 +27,16 @@ pub mod waveevents;
 pub mod xbinnedscalarevents;
 pub mod xbinnedwaveevents;
 
+pub const EVENT_QUERY_JSON_STRING_FRAME: u32 = 0x100;
+pub const EVENT_VALUES_FRAME_TYPE_ID: u32 = 0x500;
+pub const MIN_MAX_AVG_BINS: u32 = 0x700;
+pub const WAVE_EVENTS_FRAME_TYPE_ID: u32 = 0x800;
+pub const X_BINNED_SCALAR_EVENTS_FRAME_TYPE_ID: u32 = 0x8800;
+pub const X_BINNED_WAVE_EVENTS_FRAME_TYPE_ID: u32 = 0x900;
+pub const MIN_MAX_AVG_WAVE_BINS: u32 = 0xa00;
+pub const MIN_MAX_AVG_DIM_1_BINS_FRAME_TYPE_ID: u32 = 0xb00;
+pub const EVENT_FULL_FRAME_TYPE_ID: u32 = 0x2200;
+
 pub fn bool_is_false(j: &bool) -> bool {
     *j == false
 }
@@ -193,7 +203,7 @@ pub trait FrameType {
 }
 
 impl FrameType for EventQueryJsonStringFrame {
-    const FRAME_TYPE_ID: u32 = 0x100;
+    const FRAME_TYPE_ID: u32 = EVENT_QUERY_JSON_STRING_FRAME;
 }
 
 impl<T> FrameType for Sitemty<T>

@@ -382,6 +382,7 @@ impl AppendToUrl for BinnedQuery {
 fn binning_scheme_append_to_url(agg_kind: &AggKind, url: &mut Url) {
     let mut g = url.query_pairs_mut();
     match agg_kind {
+        AggKind::EventBlobs => panic!(),
         AggKind::TimeWeightedScalar => {
             g.append_pair("binningScheme", "timeWeightedScalar");
         }
@@ -403,7 +404,9 @@ fn agg_kind_from_binning_scheme(pairs: &BTreeMap<String, String>) -> Result<AggK
     let s = pairs
         .get(key)
         .map_or(Err(Error::with_msg(format!("can not find {}", key))), |k| Ok(k))?;
-    let ret = if s == "fullValue" {
+    let ret = if s == "eventBlobs" {
+        AggKind::EventBlobs
+    } else if s == "fullValue" {
         AggKind::Plain
     } else if s == "timeWeightedScalar" {
         AggKind::TimeWeightedScalar

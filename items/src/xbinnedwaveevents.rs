@@ -25,7 +25,7 @@ impl<NTY> SitemtyFrameType for XBinnedWaveEvents<NTY>
 where
     NTY: SubFrId,
 {
-    const FRAME_TYPE_ID: u32 = 0x900 + NTY::SUB;
+    const FRAME_TYPE_ID: u32 = crate::X_BINNED_WAVE_EVENTS_FRAME_TYPE_ID + NTY::SUB;
 }
 
 impl<NTY> XBinnedWaveEvents<NTY> {

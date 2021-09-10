@@ -24,7 +24,7 @@ impl<NTY> SitemtyFrameType for WaveEvents<NTY>
 where
     NTY: SubFrId,
 {
-    const FRAME_TYPE_ID: u32 = 0x800 + NTY::SUB;
+    const FRAME_TYPE_ID: u32 = crate::WAVE_EVENTS_FRAME_TYPE_ID + NTY::SUB;
 }
 
 impl<NTY> WaveEvents<NTY> {

@@ -53,6 +53,7 @@ where
         Shape::Scalar => {
             let evs = EventValuesDim0Case::new();
             match agg_kind {
+                AggKind::EventBlobs => panic!(),
                 AggKind::TimeWeightedScalar | AggKind::DimXBins1 => {
                     let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggToSingleBin as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     make_num_pipeline_nty_end_evs_enp::<NTY, END, _, _>(
@@ -83,6 +84,7 @@ where
         Shape::Wave(n) => {
             let evs = EventValuesDim1Case::new(n);
             match agg_kind {
+                AggKind::EventBlobs => panic!(),
                 AggKind::TimeWeightedScalar | AggKind::DimXBins1 => {
                     let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggToSingleBin as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     make_num_pipeline_nty_end_evs_enp::<NTY, END, _, _>(

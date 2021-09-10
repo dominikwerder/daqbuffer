@@ -257,6 +257,7 @@ macro_rules! arm1 {
     ($item:expr, $sty1:ident, $sty2:ident, $shape:expr, $ak:expr) => {{
         match $shape {
             Shape::Scalar => match $ak {
+                AggKind::EventBlobs => panic!(),
                 AggKind::Plain => arm2!(
                     $item,
                     EventValues,
@@ -290,6 +291,7 @@ macro_rules! arm1 {
                 ),
             },
             Shape::Wave(_) => match $ak {
+                AggKind::EventBlobs => panic!(),
                 AggKind::Plain => arm2!(
                     $item,
                     WaveEvents,

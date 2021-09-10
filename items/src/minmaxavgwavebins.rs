@@ -29,7 +29,7 @@ impl<NTY> SitemtyFrameType for MinMaxAvgWaveBins<NTY>
 where
     NTY: SubFrId,
 {
-    const FRAME_TYPE_ID: u32 = 0xa00 + NTY::SUB;
+    const FRAME_TYPE_ID: u32 = crate::MIN_MAX_AVG_WAVE_BINS + NTY::SUB;
 }
 
 impl<NTY> fmt::Debug for MinMaxAvgWaveBins<NTY>

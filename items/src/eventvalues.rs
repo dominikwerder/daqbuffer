@@ -25,7 +25,7 @@ impl<NTY> SitemtyFrameType for EventValues<NTY>
 where
     NTY: NumOps,
 {
-    const FRAME_TYPE_ID: u32 = 0x500 + NTY::SUB;
+    const FRAME_TYPE_ID: u32 = crate::EVENT_VALUES_FRAME_TYPE_ID + NTY::SUB;
 }
 
 impl<VT> EventValues<VT> {

@@ -5,8 +5,8 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use items::frame::{decode_frame, make_term_frame};
 use items::{Framable, StreamItem};
-use netpod::log::*;
 use netpod::query::RawEventsQuery;
+use netpod::{log::*, AggKind};
 use netpod::{EventQueryJsonStringFrame, NodeConfigCached, PerfOpts};
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -114,7 +114,7 @@ async fn events_conn_handler_inner_try(
             return Err((Error::with_msg("json parse error"), netout))?;
         }
     };
-    info!("---------------------------------------------------\nevq {:?}", evq);
+    info!("---   nodenet::conn  got query   -------------------\nevq {:?}", evq);
 
     let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>> =
         if let Some(aa) = &node_config.node.archiver_appliance {
@@ -123,9 +123,15 @@ async fn events_conn_handler_inner_try(
                 Err(e) => return Err((e, netout))?,
             }
         } else {
-            match disk::raw::conn::make_event_pipe(&evq, node_config).await {
-                Ok(j) => j,
-                Err(e) => return Err((e, netout))?,
+            match evq.agg_kind {
+                AggKind::EventBlobs => match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
+                    Ok(j) => j,
+                    Err(e) => return Err((e, netout))?,
+                },
+                _ => match disk::raw::conn::make_event_pipe(&evq, node_config).await {
+                    Ok(j) => j,
+                    Err(e) => return Err((e, netout))?,
+                },
             }
         };
 

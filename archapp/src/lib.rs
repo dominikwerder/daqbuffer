@@ -142,6 +142,7 @@ fn _tmp1() {
 macro_rules! wagg1 {
     ($k:expr, $ak:expr, $shape:expr, $sty:ident) => {
         match $ak {
+            AggKind::EventBlobs => panic!(),
             AggKind::Plain => EventsItem::Plain(PlainEvents::Wave(WavePlainEvents::$sty($k))),
             AggKind::TimeWeightedScalar => {
                 let p = WaveXBinner::create($shape, $ak.clone());
@@ -260,6 +261,7 @@ impl MultiBinWaveEvents {
         use MultiBinWaveEvents::*;
         match self {
             Byte(k) => match ak {
+                AggKind::EventBlobs => panic!(),
                 AggKind::Plain => EventsItem::XBinnedEvents(XBinnedEvents::MultiBinWave(MultiBinWaveEvents::Byte(k))),
                 AggKind::TimeWeightedScalar => err::todoval(),
                 AggKind::DimXBins1 => err::todoval(),
@@ -347,6 +349,7 @@ impl SingleBinWaveEvents {
         use SingleBinWaveEvents::*;
         match self {
             Byte(k) => match ak {
+                AggKind::EventBlobs => panic!(),
                 AggKind::Plain => EventsItem::XBinnedEvents(XBinnedEvents::SingleBinWave(SingleBinWaveEvents::Byte(k))),
                 AggKind::TimeWeightedScalar => err::todoval(),
                 AggKind::DimXBins1 => err::todoval(),

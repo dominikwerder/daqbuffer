@@ -1,11 +1,15 @@
 use crate::gather::{gather_get_json_generic, SubRes};
-use crate::response;
+use crate::{response, BodyStream};
+use bytes::{BufMut, BytesMut};
 use err::Error;
 use http::{Method, StatusCode};
 use hyper::{Body, Client, Request, Response};
+use items::{RangeCompletableItem, StreamItem};
 use itertools::Itertools;
-use netpod::{log::*, NodeConfigCached, APP_OCTET};
+use netpod::query::RawEventsQuery;
+use netpod::{log::*, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, APP_OCTET};
 use netpod::{ChannelSearchQuery, ChannelSearchResult, ProxyConfig, APP_JSON};
+use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::future::Future;
@@ -463,24 +467,204 @@ pub async fn proxy_distribute_v1(req: Request<Body>) -> Result<Response<Body>, E
     Ok(res)
 }
 
-pub async fn api1_binary_events(req: Request<Body>, _node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Api1Range {
+    #[serde(rename = "startDate")]
+    start_date: String,
+    #[serde(rename = "endDate")]
+    end_date: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Api1Query {
+    channels: Vec<String>,
+    range: Api1Range,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Api1ChannelHeader {
+    name: String,
+    #[serde(rename = "type")]
+    ty: String,
+    #[serde(rename = "byteOrder")]
+    byte_order: String,
+    shape: Vec<u32>,
+    compression: Option<usize>,
+}
+
+pub async fn api1_binary_events(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     info!("api1_binary_events  headers: {:?}", req.headers());
     let accept_def = "";
     let accept = req
         .headers()
         .get(http::header::ACCEPT)
-        .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
-    if accept == APP_OCTET {
-        // Ok(plain_events_binary(req, node_config).await.map_err(|e| {
-        //     error!("{:?}", e);
-        //     e
-        // })?)
+        .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def))
+        .to_owned();
+    let (_head, body) = req.into_parts();
+    let body_data = hyper::body::to_bytes(body).await?;
+    let qu: Api1Query = serde_json::from_slice(&body_data)?;
+    info!("got Api1Query: {:?}", qu);
+    let beg_date = chrono::DateTime::parse_from_rfc3339(&qu.range.start_date);
+    let end_date = chrono::DateTime::parse_from_rfc3339(&qu.range.end_date);
+    let beg_date = beg_date?;
+    let end_date = end_date?;
+    info!("beg_date {:?}  end_date {:?}", beg_date, end_date);
+    //let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+    //let query = PlainEventsBinaryQuery::from_url(&url)?;
+    // TODO add stricter check for types, check with client.
+    if accept == APP_OCTET {}
+    if false {
         let e = Error::with_msg(format!("unexpected Accept: {:?}", accept));
         error!("{:?}", e);
-        Err(e)
-    } else {
-        let e = Error::with_msg(format!("unexpected Accept: {:?}", accept));
-        error!("{:?}", e);
-        Err(e)
+        return Err(e);
+    }
+    let beg_ns = beg_date.timestamp() as u64 * 1000000000 + beg_date.timestamp_subsec_nanos() as u64;
+    let end_ns = end_date.timestamp() as u64 * 1000000000 + end_date.timestamp_subsec_nanos() as u64;
+    let range = NanoRange {
+        beg: beg_ns,
+        end: end_ns,
+    };
+    // TODO to server multiple channels, I need to wrap the loop over channels in a Stream itself.
+    let channel = qu.channels[0].clone();
+    let channel = Channel {
+        backend: "sf-databuffer".into(),
+        name: channel,
+    };
+    let channel_config = {
+        let channel_config = match read_local_config(&channel, &node_config.node).await {
+            Ok(k) => k,
+            Err(e) => {
+                error!("api1_binary_events  error {:?}", e);
+                return Err(Error::with_msg_no_trace("can not parse channel config"));
+            }
+        };
+        let entry_res = match extract_matching_config_entry(&range, &channel_config) {
+            Ok(k) => k,
+            Err(e) => return Err(e)?,
+        };
+        let entry = match entry_res {
+            MatchingConfigEntry::None => return Err(Error::with_msg("no config entry found"))?,
+            MatchingConfigEntry::Multiple => return Err(Error::with_msg("multiple config entries found"))?,
+            MatchingConfigEntry::Entry(entry) => entry,
+        };
+        entry.clone()
+    };
+    warn!("found channel_config {:?}", channel_config);
+    let evq = RawEventsQuery {
+        channel: channel.clone(),
+        range,
+        agg_kind: netpod::AggKind::EventBlobs,
+        disk_io_buffer_size: 1024 * 4,
+    };
+    let perf_opts = PerfOpts { inmem_bufcap: 1024 * 4 };
+    let s = disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes::new(
+        evq,
+        perf_opts,
+        node_config.node_config.cluster.clone(),
+    );
+    use futures_util::StreamExt;
+    let s = s.map({
+        let mut header_out = false;
+        let mut count_events = 0;
+        move |b| {
+            let ret = match b {
+                Ok(b) => {
+                    let f = match b {
+                        StreamItem::DataItem(RangeCompletableItem::Data(b)) => {
+                            let mut d = BytesMut::new();
+                            for i1 in 0..b.tss.len() {
+                                if count_events < 6 {
+                                    info!(
+                                        "deco len {:?}  BE {}  scalar-type {:?}  shape {:?}",
+                                        b.decomps[i1].as_ref().map(|x| x.len()),
+                                        b.be[i1],
+                                        b.scalar_types[i1],
+                                        b.shapes[i1]
+                                    );
+                                }
+                                if !header_out {
+                                    let head = Api1ChannelHeader {
+                                        name: channel.name.clone(),
+                                        ty: scalar_type_to_api3proto(&b.scalar_types[i1]).into(),
+                                        byte_order: if b.be[i1] {
+                                            "BIG_ENDIAN".into()
+                                        } else {
+                                            "LITTLE_ENDIAN".into()
+                                        },
+                                        // The shape is inconsistent on the events.
+                                        // Seems like the config is to be trusted in this case.
+                                        shape: shape_to_api3proto(&channel_config.shape),
+                                        //shape: vec![2560],
+                                        compression: None,
+                                    };
+                                    let h = serde_json::to_string(&head)?;
+                                    info!("sending channel header {}", h);
+                                    let l1 = 1 + h.as_bytes().len() as u32;
+                                    d.put_u32(l1);
+                                    d.put_u8(0);
+                                    d.extend_from_slice(h.as_bytes());
+                                    d.put_u32(l1);
+                                    header_out = true;
+                                }
+                                {
+                                    if let Some(deco) = &b.decomps[i1] {
+                                        let l1 = 17 + deco.len() as u32;
+                                        d.put_u32(l1);
+                                        d.put_u8(1);
+                                        d.put_u64(b.tss[i1]);
+                                        d.put_u64(b.pulses[i1]);
+                                        d.put_slice(&deco);
+                                        d.put_u32(l1);
+                                    }
+                                }
+                                count_events += 1;
+                            }
+                            d
+                        }
+                        _ => {
+                            //
+                            BytesMut::new()
+                        }
+                    };
+                    Ok(f)
+                }
+                Err(e) => Err(e),
+            };
+            ret
+        }
+    });
+    let ret = response(StatusCode::OK).header("x-daqbuffer-request-id", "dummy");
+    let ret = ret.body(BodyStream::wrapped(s, format!("plain_events")))?;
+    Ok(ret)
+}
+
+fn scalar_type_to_api3proto(sty: &ScalarType) -> &'static str {
+    match sty {
+        ScalarType::U8 => "uint8",
+        ScalarType::U16 => "uint16",
+        ScalarType::U32 => "uint32",
+        ScalarType::U64 => "uint64",
+        ScalarType::I8 => "int8",
+        ScalarType::I16 => "int16",
+        ScalarType::I32 => "int32",
+        ScalarType::I64 => "int64",
+        ScalarType::F32 => "float32",
+        ScalarType::F64 => "float64",
+        ScalarType::BOOL => "bool",
+    }
+}
+
+fn shape_to_api3proto(sh: &Option<Vec<u32>>) -> Vec<u32> {
+    match sh {
+        None => vec![],
+        Some(g) => {
+            if g.len() == 1 {
+                vec![g[0]]
+            } else if g.len() == 2 {
+                vec![g[0], g[1]]
+            } else {
+                err::todoval()
+            }
+        }
     }
 }

@@ -246,6 +246,9 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)
         }
+    } else if path.starts_with("/api/1/requestStatus/") {
+        info!("{}", path);
+        Ok(response(StatusCode::OK).body(Body::from("{}"))?)
     } else if path.starts_with("/api/1/documentation/") {
         if req.method() == Method::GET {
             api_1_docs(path)

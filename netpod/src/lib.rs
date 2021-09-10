@@ -720,6 +720,7 @@ impl BinnedRange {
 
 #[derive(Clone, Serialize, Deserialize)]
 pub enum AggKind {
+    EventBlobs,
     DimXBins1,
     DimXBinsN(u32),
     Plain,
@@ -729,6 +730,7 @@ pub enum AggKind {
 impl AggKind {
     pub fn do_time_weighted(&self) -> bool {
         match self {
+            Self::EventBlobs => false,
             Self::TimeWeightedScalar => true,
             Self::DimXBins1 => false,
             Self::DimXBinsN(_) => false,
@@ -739,6 +741,7 @@ impl AggKind {
 
 pub fn x_bin_count(shape: &Shape, agg_kind: &AggKind) -> usize {
     match agg_kind {
+        AggKind::EventBlobs => 0,
         AggKind::TimeWeightedScalar => 0,
         AggKind::DimXBins1 => 0,
         AggKind::DimXBinsN(n) => {
@@ -761,6 +764,9 @@ pub fn x_bin_count(shape: &Shape, agg_kind: &AggKind) -> usize {
 impl fmt::Display for AggKind {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> std::fmt::Result {
         match self {
+            Self::EventBlobs => {
+                write!(fmt, "EventBlobs")
+            }
             Self::DimXBins1 => {
                 write!(fmt, "DimXBins1")
             }
@@ -788,7 +794,9 @@ impl FromStr for AggKind {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let nmark = "DimXBinsN";
-        if s == "DimXBins1" {
+        if s == "EventBlobs" {
+            Ok(AggKind::EventBlobs)
+        } else if s == "DimXBins1" {
             Ok(AggKind::DimXBins1)
         } else if s == "TimeWeightedScalar" {
             Ok(AggKind::TimeWeightedScalar)
