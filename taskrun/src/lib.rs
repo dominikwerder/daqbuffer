@@ -1,3 +1,5 @@
+pub mod append;
+
 use crate::log::*;
 use err::Error;
 use std::future::Future;
@@ -80,6 +82,9 @@ pub fn tracing_init() {
     let mut g = INITMX.lock().unwrap();
     if *g == 0 {
         tracing_subscriber::fmt()
+            .with_timer(tracing_subscriber::fmt::time::ChronoUtc::with_format(
+                "%Y-%m-%dT%H:%M:%S%.3fZ".into(),
+            ))
             //.with_timer(tracing_subscriber::fmt::time::uptime())
             .with_target(true)
             .with_thread_names(true)

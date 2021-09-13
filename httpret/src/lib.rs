@@ -1,4 +1,5 @@
 use crate::gather::gather_get_json;
+use crate::pulsemap::UpdateTask;
 use bytes::Bytes;
 use disk::binned::query::{BinnedQuery, PreBinnedQuery};
 use disk::events::{PlainEventsBinaryQuery, PlainEventsJsonQuery};
@@ -20,7 +21,6 @@ use netpod::{
 use nodenet::conn::events_service;
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
-use pulsemap::MapPulseHttpFunction;
 use serde::{Deserialize, Serialize};
 use std::{future, net, panic, pin, task};
 use task::{Context, Poll};
@@ -39,6 +39,7 @@ fn proxy_mark() -> &'static str {
 }
 
 pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
+    let _update_task = UpdateTask::new(node_config.clone());
     let rawjh = taskrun::spawn(events_service(node_config.clone()));
     use std::str::FromStr;
     let addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen, node_config.node.port))?;
@@ -250,8 +251,12 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         }
     } else if pulsemap::IndexFullHttpFunction::path_matches(path) {
         pulsemap::IndexFullHttpFunction::handle(req, &node_config).await
+    } else if pulsemap::MapPulseLocalHttpFunction::path_matches(path) {
+        pulsemap::MapPulseLocalHttpFunction::handle(req, &node_config).await
+    } else if pulsemap::MapPulseHistoHttpFunction::path_matches(path) {
+        pulsemap::MapPulseHistoHttpFunction::handle(req, &node_config).await
     } else if pulsemap::MapPulseHttpFunction::path_matches(path) {
-        pulsemap::MapPulseHttpFunction::handle(req, &node_config)
+        pulsemap::MapPulseHttpFunction::handle(req, &node_config).await
     } else if path.starts_with("/api/1/requestStatus/") {
         info!("{}", path);
         Ok(response(StatusCode::OK).body(Body::from("{}"))?)

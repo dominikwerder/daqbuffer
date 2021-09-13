@@ -103,7 +103,7 @@ const MAX_TOTAL_SIZE: usize = 1024 * 1024 * 20;
 
 fn next_file(dir: &Path, append: bool, truncate: bool) -> io::Result<BufWriter<fs::File>> {
     let ts = chrono::Utc::now();
-    let s = ts.format("%Y-%m-%d--%H-%M-%SZ").to_string();
+    let s = ts.format("%Y-%m-%d--%H-%M-%S").to_string();
     let ret = fs::OpenOptions::new()
         .write(true)
         .create(true)

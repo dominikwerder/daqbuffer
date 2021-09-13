@@ -95,3 +95,20 @@ pub fn index_path(ts: Nanos, channel_config: &ChannelConfig, node: &Node) -> Res
     let ret = data_dir_path(ts, channel_config, node)?.join(fname);
     Ok(ret)
 }
+
+pub fn data_dir_path_tb(ks: u32, channel_name: &str, tb: u32, split: u32, node: &Node) -> Result<PathBuf, Error> {
+    let ret = node
+        .data_base_path
+        .join(format!("{}_{}", node.ksprefix, ks))
+        .join("byTime")
+        .join(channel_name)
+        .join(format!("{:019}", tb))
+        .join(format!("{:010}", split));
+    Ok(ret)
+}
+
+pub fn data_path_tb(ks: u32, channel_name: &str, tb: u32, tbs: u32, split: u32, node: &Node) -> Result<PathBuf, Error> {
+    let fname = format!("{:019}_{:05}_Data", tbs, 0);
+    let ret = data_dir_path_tb(ks, channel_name, tb, split, node)?.join(fname);
+    Ok(ret)
+}

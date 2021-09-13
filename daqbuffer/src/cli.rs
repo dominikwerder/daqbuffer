@@ -16,6 +16,7 @@ pub enum SubCmd {
     Client(Client),
     GenerateTestData,
     Zmtp(Zmtp),
+    Logappend(Logappend),
     Test,
 }
 
@@ -77,4 +78,10 @@ pub struct BinnedClient {
 pub struct Zmtp {
     #[clap(long)]
     pub addr: String,
+}
+
+#[derive(Debug, Clap)]
+pub struct Logappend {
+    #[clap(long)]
+    pub dir: String,
 }

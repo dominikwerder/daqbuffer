@@ -97,6 +97,12 @@ async fn go() -> Result<(), Error> {
         SubCmd::Zmtp(zmtp) => {
             netfetch::zmtp::zmtp_client(&zmtp.addr).await?;
         }
+        SubCmd::Logappend(k) => {
+            let jh = tokio::task::spawn_blocking(move || {
+                taskrun::append::append(&k.dir, std::io::stdin(), std::io::stderr()).unwrap();
+            });
+            jh.await?;
+        }
         SubCmd::Test => (),
     }
     Ok(())
