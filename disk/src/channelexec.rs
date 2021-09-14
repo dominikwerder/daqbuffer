@@ -142,6 +142,10 @@ where
                 }
             }
         }
+        Shape::Image(..) => {
+            // TODO needed for binning or json event retrieval
+            err::todoval()
+        }
     }
 }
 

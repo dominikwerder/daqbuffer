@@ -112,6 +112,10 @@ where
                 }
             }
         }
+        Shape::Image(..) => {
+            // TODO image binning/aggregation
+            err::todoval()
+        }
     }
 }
 

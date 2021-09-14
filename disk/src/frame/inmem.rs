@@ -129,15 +129,12 @@ where
                 (Some(None), buf, wp)
             } else {
                 if len > 1024 * 1024 * 50 {
-                    error!("InMemoryFrameAsyncReadStream  too long len {}", len);
-                    return (
-                        Some(Some(Err(Error::with_msg(format!(
-                            "InMemoryFrameAsyncReadStream  tryparse  huge buffer  len {}  self.inp_bytes_consumed {}",
-                            len, self.inp_bytes_consumed
-                        ))))),
-                        buf,
-                        wp,
+                    let msg = format!(
+                        "InMemoryFrameAsyncReadStream  tryparse  huge buffer  len {}  self.inp_bytes_consumed {}",
+                        len, self.inp_bytes_consumed
                     );
+                    error!("{}", msg);
+                    return (Some(Some(Err(Error::with_msg(msg)))), buf, wp);
                 } else if len > 1024 * 1024 * 1 {
                     // TODO
                     //warn!("InMemoryFrameAsyncReadStream  big len received  {}", len);

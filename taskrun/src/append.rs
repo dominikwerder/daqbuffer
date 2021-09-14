@@ -1,7 +1,7 @@
 use err::Error;
 use std::borrow::Cow;
 use std::fs;
-use std::io::{self, BufWriter, Read, Stderr, Stdin, Write};
+use std::io::{BufWriter, Read, Seek, SeekFrom, Stderr, Stdin, Write};
 use std::path::{Path, PathBuf};
 
 pub struct Buffer {
@@ -98,18 +98,59 @@ fn parse_lines(buf: &[u8]) -> Result<(Vec<Cow<str>>, usize), Error> {
     Ok((ret, i2))
 }
 
-const MAX_PER_FILE: usize = 1024 * 1024 * 2;
-const MAX_TOTAL_SIZE: usize = 1024 * 1024 * 20;
+const MAX_PER_FILE: u64 = 1024 * 1024 * 2;
+const MAX_TOTAL_SIZE: u64 = 1024 * 1024 * 20;
 
-fn next_file(dir: &Path, append: bool, truncate: bool) -> io::Result<BufWriter<fs::File>> {
+struct Fileinfo {
+    path: PathBuf,
+    name: String,
+    len: u64,
+}
+
+fn file_list(dir: &Path) -> Result<Vec<Fileinfo>, Error> {
+    let mut ret = vec![];
+    let rd = fs::read_dir(&dir)?;
+    for e in rd {
+        let e = e?;
+        let fnos = e.file_name();
+        let fns = fnos.to_str().unwrap_or("");
+        if fns.starts_with("info-20") && fns.ends_with(".log") {
+            let meta = e.metadata()?;
+            let info = Fileinfo {
+                path: e.path(),
+                name: fns.into(),
+                len: meta.len(),
+            };
+            ret.push(info);
+        }
+    }
+    ret.sort_by(|a, b| std::cmp::Ord::cmp(&a.name, &b.name));
+    Ok(ret)
+}
+
+fn open_latest_or_new(dir: &Path) -> Result<BufWriter<fs::File>, Error> {
+    let list = file_list(dir)?;
+    if let Some(latest) = list.last() {
+        if latest.len < MAX_PER_FILE {
+            let ret = fs::OpenOptions::new().write(true).append(true).open(&latest.path)?;
+            let ret = BufWriter::new(ret);
+            return Ok(ret);
+        }
+    }
+    next_file(dir)
+}
+
+fn next_file(dir: &Path) -> Result<BufWriter<fs::File>, Error> {
     let ts = chrono::Utc::now();
     let s = ts.format("%Y-%m-%d--%H-%M-%S").to_string();
-    let ret = fs::OpenOptions::new()
+    let mut ret = fs::OpenOptions::new()
         .write(true)
         .create(true)
-        .append(append)
-        .truncate(truncate)
+        .append(true)
         .open(dir.join(format!("info-{}.log", s)))?;
+    if ret.seek(SeekFrom::Current(0))? != 0 {
+        return Err(Error::with_msg_no_trace("new file already exists"));
+    }
     let ret = BufWriter::new(ret);
     Ok(ret)
 }
@@ -117,7 +158,7 @@ fn next_file(dir: &Path, append: bool, truncate: bool) -> io::Result<BufWriter<f
 pub fn append_inner(dirname: &str, mut stdin: Stdin, _stderr: Stderr) -> Result<(), Error> {
     let mut bytes_written = 0;
     let dir = PathBuf::from(dirname);
-    let mut fout = next_file(&dir, true, false)?;
+    let mut fout = open_latest_or_new(&dir)?;
     let mut buf = Buffer::new();
     loop {
         // Get some more data.
@@ -144,7 +185,7 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin, _stderr: Stderr) -> Result<
                     let j = line.as_bytes();
                     fout.write_all(j)?;
                     fout.write_all(b"\n")?;
-                    bytes_written += j.len() + 1;
+                    bytes_written += j.len() as u64 + 1;
                 }
                 buf.advance(n2);
             }
@@ -154,38 +195,41 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin, _stderr: Stderr) -> Result<
             }
         }
         fout.flush()?;
-        if bytes_written >= MAX_PER_FILE {
+        if bytes_written >= (MAX_PER_FILE >> 3) {
             bytes_written = 0;
-            let rd = fs::read_dir(&dir)?;
-            let mut w = vec![];
-            for e in rd {
-                let e = e?;
-                let fnos = e.file_name();
-                let fns = fnos.to_str().unwrap();
-                if fns.starts_with("info-20") && fns.ends_with(".log") {
-                    let meta = e.metadata()?;
-                    w.push((e.path(), meta.len()));
+            let l1 = fout.seek(SeekFrom::End(0))?;
+            if l1 >= MAX_PER_FILE {
+                let rd = fs::read_dir(&dir)?;
+                let mut w = vec![];
+                for e in rd {
+                    let e = e?;
+                    let fnos = e.file_name();
+                    let fns = fnos.to_str().unwrap();
+                    if fns.starts_with("info-20") && fns.ends_with(".log") {
+                        let meta = e.metadata()?;
+                        w.push((e.path(), meta.len()));
+                    }
                 }
-            }
-            w.sort_by(|a, b| std::cmp::Ord::cmp(a, b));
-            for q in &w {
-                write!(&mut fout, "file:::: {}\n", q.0.to_string_lossy())?;
-            }
-            let mut lentot = w.iter().map(|g| g.1).fold(0, |a, x| a + x);
-            write!(&mut fout, "lentot: {}\n", lentot)?;
-            for q in w {
-                if lentot <= MAX_TOTAL_SIZE as u64 {
-                    break;
+                w.sort_by(|a, b| std::cmp::Ord::cmp(a, b));
+                for q in &w {
+                    write!(&mut fout, "file:::: {}\n", q.0.to_string_lossy())?;
                 }
-                write!(&mut fout, "REMOVE   {}  {}\n", q.1, q.0.to_string_lossy())?;
-                fs::remove_file(q.0)?;
-                if q.1 < lentot {
-                    lentot -= q.1;
-                } else {
-                    lentot = 0;
+                let mut lentot = w.iter().map(|g| g.1).fold(0, |a, x| a + x);
+                write!(&mut fout, "lentot: {}\n", lentot)?;
+                for q in w {
+                    if lentot <= MAX_TOTAL_SIZE as u64 {
+                        break;
+                    }
+                    write!(&mut fout, "REMOVE   {}  {}\n", q.1, q.0.to_string_lossy())?;
+                    fs::remove_file(q.0)?;
+                    if q.1 < lentot {
+                        lentot -= q.1;
+                    } else {
+                        lentot = 0;
+                    }
                 }
-            }
-            fout = next_file(&dir, true, false)?;
+                fout = next_file(&dir)?;
+            };
         }
     }
 }

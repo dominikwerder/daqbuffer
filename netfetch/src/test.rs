@@ -32,6 +32,8 @@ fn ca_connect_1() {
                         user: "".into(),
                         pass: "".into(),
                     },
+                    run_map_pulse_task: false,
+                    is_central_storage: false,
                 },
             },
             ix: 0,

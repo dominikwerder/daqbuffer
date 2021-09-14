@@ -3,15 +3,16 @@ use crate::decode::{
     EventsDecodedStream, LittleEndian, NumFromBytes,
 };
 use crate::eventblobs::EventChunkerMultifile;
-use crate::eventchunker::EventChunkerConf;
+use crate::eventchunker::{EventChunkerConf, EventFull};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::numops::{BoolNum, NumOps};
 use items::{EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::query::RawEventsQuery;
-use netpod::{AggKind, ByteOrder, ByteSize, NodeConfigCached, ScalarType, Shape};
-use parse::channelconfig::{extract_matching_config_entry, read_local_config, MatchingConfigEntry};
+use netpod::{AggKind, ByteOrder, ByteSize, Channel, NanoRange, NodeConfigCached, ScalarType, Shape};
+
+use parse::channelconfig::{extract_matching_config_entry, read_local_config, ConfigEntry, MatchingConfigEntry};
 use std::pin::Pin;
 
 fn make_num_pipeline_stream_evs<NTY, END, EVS, ENP>(
@@ -95,6 +96,10 @@ macro_rules! pipe3 {
                     $agg_kind,
                     $event_blobs
                 )
+            }
+            Shape::Image(_, _) => {
+                // TODO not needed for python data api v3 protocol, but later for api4.
+                err::todoval()
             }
         }
     };
@@ -193,6 +198,94 @@ pub async fn make_event_pipe(
     Ok(pipe)
 }
 
+pub async fn get_applicable_entry(
+    range: &NanoRange,
+    channel: Channel,
+    node_config: &NodeConfigCached,
+) -> Result<ConfigEntry, Error> {
+    let channel_config = read_local_config(channel, node_config.node.clone()).await?;
+    let entry_res = match extract_matching_config_entry(range, &channel_config) {
+        Ok(k) => k,
+        Err(e) => return Err(e)?,
+    };
+    let entry = match entry_res {
+        MatchingConfigEntry::None => return Err(Error::with_msg("no config entry found"))?,
+        MatchingConfigEntry::Multiple => return Err(Error::with_msg("multiple config entries found"))?,
+        MatchingConfigEntry::Entry(entry) => entry,
+    };
+    Ok(entry.clone())
+}
+
+pub fn make_local_event_blobs_stream(
+    range: NanoRange,
+    channel: Channel,
+    entry: &ConfigEntry,
+    expand: bool,
+    event_chunker_conf: EventChunkerConf,
+    disk_io_buffer_size: usize,
+    node_config: &NodeConfigCached,
+) -> Result<EventChunkerMultifile, Error> {
+    let shape = match entry.to_shape() {
+        Ok(k) => k,
+        Err(e) => return Err(e)?,
+    };
+    let channel_config = netpod::ChannelConfig {
+        channel,
+        keyspace: entry.ks as u8,
+        time_bin_size: entry.bs,
+        shape: shape,
+        scalar_type: entry.scalar_type.clone(),
+        byte_order: entry.byte_order.clone(),
+        array: entry.is_array,
+        compression: entry.is_compressed,
+    };
+    let event_blobs = EventChunkerMultifile::new(
+        range,
+        channel_config.clone(),
+        node_config.node.clone(),
+        node_config.ix,
+        disk_io_buffer_size,
+        event_chunker_conf,
+        expand,
+    );
+    Ok(event_blobs)
+}
+
+pub fn make_remote_event_blobs_stream(
+    range: NanoRange,
+    channel: Channel,
+    entry: &ConfigEntry,
+    expand: bool,
+    event_chunker_conf: EventChunkerConf,
+    disk_io_buffer_size: usize,
+    node_config: &NodeConfigCached,
+) -> Result<impl Stream<Item = Sitemty<EventFull>>, Error> {
+    let shape = match entry.to_shape() {
+        Ok(k) => k,
+        Err(e) => return Err(e)?,
+    };
+    let channel_config = netpod::ChannelConfig {
+        channel,
+        keyspace: entry.ks as u8,
+        time_bin_size: entry.bs,
+        shape: shape,
+        scalar_type: entry.scalar_type.clone(),
+        byte_order: entry.byte_order.clone(),
+        array: entry.is_array,
+        compression: entry.is_compressed,
+    };
+    let event_blobs = EventChunkerMultifile::new(
+        range,
+        channel_config.clone(),
+        node_config.node.clone(),
+        node_config.ix,
+        disk_io_buffer_size,
+        event_chunker_conf,
+        expand,
+    );
+    Ok(event_blobs)
+}
+
 pub async fn make_event_blobs_pipe(
     evq: &RawEventsQuery,
     node_config: &NodeConfigCached,
@@ -203,53 +296,40 @@ pub async fn make_event_blobs_pipe(
             Err(e) => return Err(e)?,
         }
     }
+    let expand = evq.agg_kind.need_expand();
     let range = &evq.range;
-    let channel_config = match read_local_config(evq.channel.clone(), node_config.node.clone()).await {
-        Ok(k) => k,
-        Err(e) => {
-            if e.msg().contains("ErrorKind::NotFound") {
-                let s = futures_util::stream::empty();
-                return Ok(Box::pin(s));
-            } else {
-                return Err(e)?;
-            }
-        }
-    };
-    let entry_res = match extract_matching_config_entry(range, &channel_config) {
-        Ok(k) => k,
-        Err(e) => return Err(e)?,
-    };
-    let entry = match entry_res {
-        MatchingConfigEntry::None => return Err(Error::with_msg("no config entry found"))?,
-        MatchingConfigEntry::Multiple => return Err(Error::with_msg("multiple config entries found"))?,
-        MatchingConfigEntry::Entry(entry) => entry,
-    };
-    let shape = match entry.to_shape() {
-        Ok(k) => k,
-        Err(e) => return Err(e)?,
-    };
-    let channel_config = netpod::ChannelConfig {
-        channel: evq.channel.clone(),
-        keyspace: entry.ks as u8,
-        time_bin_size: entry.bs,
-        shape: shape,
-        scalar_type: entry.scalar_type.clone(),
-        byte_order: entry.byte_order.clone(),
-        array: entry.is_array,
-        compression: entry.is_compressed,
-    };
+    let entry = get_applicable_entry(&evq.range, evq.channel.clone(), node_config).await?;
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
-    let event_blobs = EventChunkerMultifile::new(
-        range.clone(),
-        channel_config.clone(),
-        node_config.node.clone(),
-        node_config.ix,
-        evq.disk_io_buffer_size,
-        event_chunker_conf,
-        true,
-    );
-    let s = event_blobs.map(|item| Box::new(item) as Box<dyn Framable>);
-    let pipe: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>;
-    pipe = Box::pin(s);
+    let pipe = if true {
+        let event_blobs = make_remote_event_blobs_stream(
+            range.clone(),
+            evq.channel.clone(),
+            &entry,
+            expand,
+            event_chunker_conf,
+            evq.disk_io_buffer_size,
+            node_config,
+        )?;
+        let s = event_blobs.map(|item| Box::new(item) as Box<dyn Framable>);
+        //let s = tracing_futures::Instrumented::instrument(s, tracing::info_span!("make_event_blobs_pipe"));
+        let pipe: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>;
+        pipe = Box::pin(s);
+        pipe
+    } else {
+        let event_blobs = make_local_event_blobs_stream(
+            range.clone(),
+            evq.channel.clone(),
+            &entry,
+            expand,
+            event_chunker_conf,
+            evq.disk_io_buffer_size,
+            node_config,
+        )?;
+        let s = event_blobs.map(|item| Box::new(item) as Box<dyn Framable>);
+        //let s = tracing_futures::Instrumented::instrument(s, tracing::info_span!("make_event_blobs_pipe"));
+        let pipe: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>;
+        pipe = Box::pin(s);
+        pipe
+    };
     Ok(pipe)
 }

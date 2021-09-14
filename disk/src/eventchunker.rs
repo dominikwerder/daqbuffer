@@ -10,6 +10,7 @@ use items::{
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{ByteSize, ChannelConfig, EventDataReadStats, NanoRange, ScalarType, Shape};
+use parse::channelconfig::CompressionMethod;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -155,9 +156,10 @@ impl EventChunker {
                     }
                 }
                 DataFileState::Event => {
+                    let p0 = 0;
                     let mut sl = std::io::Cursor::new(buf.as_ref());
                     let len = sl.read_i32::<BE>().unwrap();
-                    if len < 20 || len > 1024 * 1024 * 10 {
+                    if len < 20 || len > 1024 * 1024 * 20 {
                         Err(Error::with_msg("unexpected large event chunk"))?;
                     }
                     let len = len as u32;
@@ -256,6 +258,8 @@ impl EventChunker {
                             if is_shaped {
                                 if shape_dim == 1 {
                                     Shape::Wave(shape_lens[0])
+                                } else if shape_dim == 2 {
+                                    Shape::Image(shape_lens[0], shape_lens[1])
                                 } else {
                                     err::todoval()
                                 }
@@ -263,31 +267,59 @@ impl EventChunker {
                                 Shape::Scalar
                             }
                         };
+                        let comp_this = if is_compressed {
+                            if compression_method == 0 {
+                                Some(CompressionMethod::BitshuffleLZ4)
+                            } else {
+                                err::todoval()
+                            }
+                        } else {
+                            None
+                        };
+                        let p1 = sl.position();
+                        let k1 = len as u64 - (p1 - p0) - 4;
                         if is_compressed {
                             //debug!("event  ts {}  is_compressed {}", ts, is_compressed);
                             let value_bytes = sl.read_u64::<BE>().unwrap();
                             let block_size = sl.read_u32::<BE>().unwrap();
-                            let p1 = sl.position() as u32;
-                            let k1 = len as u32 - p1 - 4;
                             //debug!("event  len {}  ts {}  is_compressed {}  shape_dim {}  len-dim-0 {}  value_bytes {}  block_size {}", len, ts, is_compressed, shape_dim, shape_lens[0], value_bytes, block_size);
-                            assert!(value_bytes < 1024 * 256);
-                            assert!(block_size < 1024 * 32);
+                            match self.channel_config.shape {
+                                Shape::Scalar => {
+                                    assert!(value_bytes < 1024 * 1);
+                                }
+                                Shape::Wave(_) => {
+                                    assert!(value_bytes < 1024 * 64);
+                                }
+                                Shape::Image(_, _) => {
+                                    assert!(value_bytes < 1024 * 1024 * 20);
+                                }
+                            }
+                            assert!(block_size <= 1024 * 32);
                             let type_size = scalar_type.bytes() as u32;
                             let ele_count = value_bytes / type_size as u64;
                             let ele_size = type_size;
                             match self.channel_config.shape {
-                                Shape::Wave(dim1count) => {
-                                    if dim1count != ele_count as u32 {
-                                        Err(Error::with_msg(format!(
-                                            "ChannelConfig expects {:?} but event has {:?}",
-                                            self.channel_config.shape, ele_count,
-                                        )))?;
-                                    }
-                                }
                                 Shape::Scalar => {
                                     if is_array {
                                         Err(Error::with_msg(format!(
                                             "ChannelConfig expects Scalar but we find event is_array"
+                                        )))?;
+                                    }
+                                }
+                                Shape::Wave(dim1count) => {
+                                    if dim1count != ele_count as u32 {
+                                        Err(Error::with_msg(format!(
+                                            "ChannelConfig expects {:?} but event has ele_count {}",
+                                            self.channel_config.shape, ele_count,
+                                        )))?;
+                                    }
+                                }
+                                Shape::Image(n1, n2) => {
+                                    let nt = n1 as usize * n2 as usize;
+                                    if nt != ele_count as usize {
+                                        Err(Error::with_msg(format!(
+                                            "ChannelConfig expects {:?} but event has ele_count {}",
+                                            self.channel_config.shape, ele_count,
                                         )))?;
                                     }
                                 }
@@ -297,22 +329,25 @@ impl EventChunker {
                             unsafe {
                                 decomp.set_len(decomp_bytes);
                             }
+                            // TODO limit the buf slice range
                             match bitshuffle_decompress(
-                                &buf.as_ref()[p1 as usize..],
+                                &buf.as_ref()[(p1 as usize + 12)..(p1 as usize + k1 as usize)],
                                 &mut decomp,
                                 ele_count as usize,
                                 ele_size as usize,
                                 0,
                             ) {
                                 Ok(c1) => {
-                                    assert!(c1 as u32 == k1);
+                                    assert!(c1 as u64 + 12 == k1);
                                     ret.add_event(
                                         ts,
                                         pulse,
+                                        buf.as_ref()[(p1 as usize)..(p1 as usize + k1 as usize)].to_vec(),
                                         Some(decomp),
                                         ScalarType::from_dtype_index(type_index)?,
                                         is_big_endian,
                                         shape_this,
+                                        comp_this,
                                     );
                                 }
                                 Err(e) => {
@@ -320,7 +355,6 @@ impl EventChunker {
                                 }
                             };
                         } else {
-                            let p1 = sl.position();
                             if len < p1 as u32 + 4 {
                                 let msg = format!("uncomp  len: {}  p1: {}", len, p1);
                                 Err(Error::with_msg(msg))?;
@@ -330,10 +364,12 @@ impl EventChunker {
                             ret.add_event(
                                 ts,
                                 pulse,
+                                buf.as_ref()[(p1 as usize)..(p1 as usize + k1 as usize)].to_vec(),
                                 Some(decomp),
                                 ScalarType::from_dtype_index(type_index)?,
                                 is_big_endian,
                                 shape_this,
+                                comp_this,
                             );
                         }
                         buf.advance(len as usize);
@@ -358,11 +394,13 @@ impl EventChunker {
 pub struct EventFull {
     pub tss: Vec<u64>,
     pub pulses: Vec<u64>,
+    pub blobs: Vec<Vec<u8>>,
     #[serde(serialize_with = "decomps_ser", deserialize_with = "decomps_de")]
     pub decomps: Vec<Option<BytesMut>>,
     pub scalar_types: Vec<ScalarType>,
     pub be: Vec<bool>,
     pub shapes: Vec<Shape>,
+    pub comps: Vec<Option<CompressionMethod>>,
 }
 
 fn decomps_ser<S>(t: &Vec<Option<BytesMut>>, s: S) -> Result<S::Ok, S::Error>
@@ -403,10 +441,12 @@ impl EventFull {
         Self {
             tss: vec![],
             pulses: vec![],
+            blobs: vec![],
             decomps: vec![],
             scalar_types: vec![],
             be: vec![],
             shapes: vec![],
+            comps: vec![],
         }
     }
 
@@ -414,17 +454,21 @@ impl EventFull {
         &mut self,
         ts: u64,
         pulse: u64,
+        blob: Vec<u8>,
         decomp: Option<BytesMut>,
         scalar_type: ScalarType,
         be: bool,
         shape: Shape,
+        comp: Option<CompressionMethod>,
     ) {
         self.tss.push(ts);
         self.pulses.push(pulse);
+        self.blobs.push(blob);
         self.decomps.push(decomp);
         self.scalar_types.push(scalar_type);
         self.be.push(be);
         self.shapes.push(shape);
+        self.comps.push(comp);
     }
 }
 
@@ -447,10 +491,12 @@ impl Appendable for EventFull {
     fn append(&mut self, src: &Self) {
         self.tss.extend_from_slice(&src.tss);
         self.pulses.extend_from_slice(&src.pulses);
+        self.blobs.extend_from_slice(&src.blobs);
         self.decomps.extend_from_slice(&src.decomps);
         self.scalar_types.extend_from_slice(&src.scalar_types);
         self.be.extend_from_slice(&src.be);
         self.shapes.extend_from_slice(&src.shapes);
+        self.comps.extend_from_slice(&src.comps);
     }
 }
 
@@ -465,10 +511,12 @@ impl PushableIndex for EventFull {
     fn push_index(&mut self, src: &Self, ix: usize) {
         self.tss.push(src.tss[ix]);
         self.pulses.push(src.pulses[ix]);
+        self.blobs.push(src.blobs[ix].clone());
         self.decomps.push(src.decomps[ix].clone());
         self.scalar_types.push(src.scalar_types[ix].clone());
         self.be.push(src.be[ix]);
         self.shapes.push(src.shapes[ix].clone());
+        self.comps.push(src.comps[ix].clone());
     }
 }
 
@@ -523,16 +571,43 @@ impl Stream for EventChunker {
                                     // TODO gather stats about this:
                                     self.inp.put_back(fcr);
                                 }
-                                if self.need_min > 1024 * 8 {
-                                    let msg = format!("spurious EventChunker asks for need_min {}", self.need_min);
-                                    self.errored = true;
-                                    Ready(Some(Err(Error::with_msg(msg))))
-                                } else {
-                                    let x = self.need_min;
-                                    self.inp.set_need_min(x);
-                                    let ret = StreamItem::DataItem(RangeCompletableItem::Data(res.events));
-                                    Ready(Some(Ok(ret)))
+                                match self.channel_config.shape {
+                                    Shape::Scalar => {
+                                        if self.need_min > 1024 * 8 {
+                                            let msg =
+                                                format!("spurious EventChunker asks for need_min {}", self.need_min);
+                                            self.errored = true;
+                                            return Ready(Some(Err(Error::with_msg(msg))));
+                                        }
+                                    }
+                                    Shape::Wave(_) => {
+                                        if self.need_min > 1024 * 32 {
+                                            let msg =
+                                                format!("spurious EventChunker asks for need_min {}", self.need_min);
+                                            self.errored = true;
+                                            return Ready(Some(Err(Error::with_msg(msg))));
+                                        }
+                                    }
+                                    Shape::Image(_, _) => {
+                                        if self.need_min > 1024 * 1024 * 20 {
+                                            let msg =
+                                                format!("spurious EventChunker asks for need_min {}", self.need_min);
+                                            self.errored = true;
+                                            return Ready(Some(Err(Error::with_msg(msg))));
+                                        }
+                                    }
                                 }
+                                let x = self.need_min;
+                                self.inp.set_need_min(x);
+                                {
+                                    info!(
+                                        "EventChunker  emits {} events  tss {:?}",
+                                        res.events.len(),
+                                        res.events.tss
+                                    );
+                                };
+                                let ret = StreamItem::DataItem(RangeCompletableItem::Data(res.events));
+                                Ready(Some(Ok(ret)))
                             }
                             Err(e) => {
                                 self.errored = true;

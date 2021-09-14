@@ -58,7 +58,7 @@ where
             range_complete_observed_all: false,
             range_complete_observed_all_emitted: false,
             data_emit_complete: false,
-            batch_size: 64,
+            batch_size: 1,
             logitems: VecDeque::new(),
             event_data_read_stats_items: VecDeque::new(),
         }
@@ -188,6 +188,13 @@ where
                                 let emp = I::empty();
                                 let ret = std::mem::replace(&mut self.batch, emp);
                                 self.data_emit_complete = true;
+                                {
+                                    let mut aa = vec![];
+                                    for ii in 0..ret.len() {
+                                        aa.push(ret.ts(ii));
+                                    }
+                                    info!("MergedBlobsStream  A emits {} events  tss {:?}", ret.len(), aa);
+                                };
                                 Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
                             } else {
                                 self.data_emit_complete = true;
@@ -220,6 +227,13 @@ where
                             if self.batch.len() >= self.batch_size {
                                 let emp = I::empty();
                                 let ret = std::mem::replace(&mut self.batch, emp);
+                                {
+                                    let mut aa = vec![];
+                                    for ii in 0..ret.len() {
+                                        aa.push(ret.ts(ii));
+                                    }
+                                    info!("MergedBlobsStream  B emits {} events  tss {:?}", ret.len(), aa);
+                                };
                                 Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
                             } else {
                                 continue 'outer;

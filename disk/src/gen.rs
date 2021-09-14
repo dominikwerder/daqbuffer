@@ -249,6 +249,10 @@ async fn gen_config(
                 buf.put_i8(1);
                 buf.put_i32(k as i32);
             }
+            Shape::Image(_, _) => {
+                // TODO test data
+                err::todoval()
+            }
         }
         let len = buf.len() - p3 - 4;
         buf.as_mut()[p3..].as_mut().put_i32(len as i32);

@@ -503,6 +503,9 @@ impl ChannelConfigExt for ChannelConfig {
             Shape::Wave(_) => {
                 ret |= SHAPE;
             }
+            Shape::Image(_, _) => {
+                ret |= SHAPE;
+            }
         }
         if self.byte_order.is_be() {
             ret |= BIG_ENDIAN;

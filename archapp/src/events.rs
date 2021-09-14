@@ -324,6 +324,10 @@ macro_rules! arm1 {
                     $sty2
                 ),
             },
+            Shape::Image(..) => {
+                // There should be no images on archiver.
+                err::todoval()
+            }
         }
     }};
 }

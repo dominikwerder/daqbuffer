@@ -30,7 +30,7 @@ pub async fn events_service(node_config: NodeConfigCached) -> Result<(), Error> 
 
 async fn events_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: NodeConfigCached) -> Result<(), Error> {
     //use tracing_futures::Instrument;
-    let span1 = span!(Level::INFO, "raw::raw_conn_handler");
+    let span1 = span!(Level::INFO, "events_conn_handler");
     let r = events_conn_handler_inner(stream, addr, &node_config)
         .instrument(span1)
         .await;
@@ -85,7 +85,7 @@ async fn events_conn_handler_inner_try(
     let mut frames = vec![];
     while let Some(k) = h
         .next()
-        .instrument(span!(Level::INFO, "raw_conn_handler  INPUT STREAM READ"))
+        .instrument(span!(Level::INFO, "events_conn_handler  INPUT STREAM READ"))
         .await
     {
         match k {
@@ -139,10 +139,13 @@ async fn events_conn_handler_inner_try(
         //info!("conn.rs  encode frame typeid {:x}", item.typeid());
         let item = item.make_frame();
         match item {
-            Ok(buf) => match netout.write_all(&buf).await {
-                Ok(_) => {}
-                Err(e) => return Err((e, netout))?,
-            },
+            Ok(buf) => {
+                info!("events_conn_handler  send {} bytes", buf.len());
+                match netout.write_all(&buf).await {
+                    Ok(_) => {}
+                    Err(e) => return Err((e, netout))?,
+                }
+            }
             Err(e) => {
                 return Err((e, netout))?;
             }

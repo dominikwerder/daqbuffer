@@ -39,7 +39,11 @@ fn proxy_mark() -> &'static str {
 }
 
 pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
-    let _update_task = UpdateTask::new(node_config.clone());
+    let _update_task = if node_config.node_config.cluster.run_map_pulse_task {
+        Some(UpdateTask::new(node_config.clone()))
+    } else {
+        None
+    };
     let rawjh = taskrun::spawn(events_service(node_config.clone()));
     use std::str::FromStr;
     let addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen, node_config.node.port))?;
@@ -485,7 +489,7 @@ async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached)
     );
     let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), AggKind::Plain, node_config).await?;
     let s = s.map(|item| item.make_frame());
-    let ret = response(StatusCode::OK).body(BodyStream::wrapped(s, format!("plain_events")))?;
+    let ret = response(StatusCode::OK).body(BodyStream::wrapped(s, format!("plain_events_binary")))?;
     Ok(ret)
 }
 
@@ -502,7 +506,7 @@ async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -
         query.do_log(),
     );
     let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), AggKind::Plain, node_config).await?;
-    let ret = response(StatusCode::OK).body(BodyStream::wrapped(s, format!("plain_events")))?;
+    let ret = response(StatusCode::OK).body(BodyStream::wrapped(s, format!("plain_events_json")))?;
     Ok(ret)
 }
 

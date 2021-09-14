@@ -73,7 +73,11 @@ impl ConfigEntry {
             Some(lens) => {
                 if lens.len() == 1 {
                     Shape::Wave(lens[0])
+                } else if lens.len() == 2 {
+                    Shape::Image(lens[0], lens[1])
                 } else {
+                    // TODO
+                    // Need a new Shape variant for images.
                     return Err(Error::with_msg(format!("Channel config unsupported shape {:?}", self)))?;
                 }
             }

@@ -161,10 +161,18 @@ pub struct Database {
     pub pass: String,
 }
 
+fn bool_false() -> bool {
+    false
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Cluster {
     pub nodes: Vec<Node>,
     pub database: Database,
+    #[serde(default = "bool_false")]
+    pub run_map_pulse_task: bool,
+    #[serde(default = "bool_false")]
+    pub is_central_storage: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -359,6 +367,7 @@ pub struct ChannelConfig {
 pub enum Shape {
     Scalar,
     Wave(u32),
+    Image(u32, u32),
 }
 
 pub trait HasShape {
@@ -479,7 +488,14 @@ fn get_patch_t_len(bin_t_len: u64) -> u64 {
                 }
             }
         }
-        Shape::Wave(_) => {
+        Shape::Wave(..) => {
+            for (i1, &j) in PATCH_T_LEN_KEY.iter().enumerate() {
+                if bin_t_len == j {
+                    return PATCH_T_LEN_OPTIONS_WAVE[i1];
+                }
+            }
+        }
+        Shape::Image(..) => {
             for (i1, &j) in PATCH_T_LEN_KEY.iter().enumerate() {
                 if bin_t_len == j {
                     return PATCH_T_LEN_OPTIONS_WAVE[i1];
@@ -737,6 +753,16 @@ impl AggKind {
             Self::Plain => false,
         }
     }
+
+    pub fn need_expand(&self) -> bool {
+        match self {
+            Self::EventBlobs => false,
+            Self::TimeWeightedScalar => true,
+            Self::DimXBins1 => false,
+            Self::DimXBinsN(_) => false,
+            Self::Plain => false,
+        }
+    }
 }
 
 pub fn x_bin_count(shape: &Shape, agg_kind: &AggKind) -> usize {
@@ -749,6 +775,7 @@ pub fn x_bin_count(shape: &Shape, agg_kind: &AggKind) -> usize {
                 match shape {
                     Shape::Scalar => 0,
                     Shape::Wave(n) => *n as usize,
+                    Shape::Image(j, k) => *j as usize * *k as usize,
                 }
             } else {
                 *n as usize
@@ -757,6 +784,7 @@ pub fn x_bin_count(shape: &Shape, agg_kind: &AggKind) -> usize {
         AggKind::Plain => match shape {
             Shape::Scalar => 0,
             Shape::Wave(n) => *n as usize,
+            Shape::Image(j, k) => *j as usize * *k as usize,
         },
     }
 }

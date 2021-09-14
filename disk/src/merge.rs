@@ -62,7 +62,7 @@ where
             range_complete_observed_all: false,
             range_complete_observed_all_emitted: false,
             data_emit_complete: false,
-            batch_size: 64,
+            batch_size: 1,
             logitems: VecDeque::new(),
             event_data_read_stats_items: VecDeque::new(),
         }

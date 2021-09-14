@@ -130,5 +130,7 @@ pub fn test_cluster() -> netpod::Cluster {
             user: "daqbuffer".into(),
             pass: "daqbuffer".into(),
         },
+        run_map_pulse_task: false,
+        is_central_storage: false,
     }
 }

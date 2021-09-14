@@ -1,15 +1,16 @@
 use crate::gather::{gather_get_json_generic, SubRes};
 use crate::{response, BodyStream};
 use bytes::{BufMut, BytesMut};
+use disk::eventchunker::{EventChunkerConf, EventFull};
 use err::Error;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use http::{Method, StatusCode};
 use hyper::{Body, Client, Request, Response};
-use items::{RangeCompletableItem, StreamItem};
+use items::{RangeCompletableItem, Sitemty, StreamItem};
 use itertools::Itertools;
 use netpod::query::RawEventsQuery;
-use netpod::{log::*, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, APP_OCTET};
+use netpod::{log::*, ByteSize, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape, APP_OCTET};
 use netpod::{ChannelSearchQuery, ChannelSearchResult, ProxyConfig, APP_JSON};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, Config, MatchingConfigEntry};
 use serde::{Deserialize, Serialize};
@@ -566,6 +567,8 @@ impl Stream for DataApiPython3DataStream {
                                 MatchingConfigEntry::Entry(entry) => entry.clone(),
                             };
                             warn!("found channel_config {:?}", entry);
+
+                            // TODO pull out the performance settings
                             let evq = RawEventsQuery {
                                 channel: self.channels[self.chan_ix - 1].clone(),
                                 range: self.range.clone(),
@@ -573,11 +576,30 @@ impl Stream for DataApiPython3DataStream {
                                 disk_io_buffer_size: 1024 * 4,
                             };
                             let perf_opts = PerfOpts { inmem_bufcap: 1024 * 4 };
-                            let s = disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes::new(
-                                evq,
-                                perf_opts,
-                                self.node_config.node_config.cluster.clone(),
-                            );
+                            // TODO is this a good to place decide this?
+                            let s = if self.node_config.node_config.cluster.is_central_storage {
+                                info!("Set up central storage stream");
+                                // TODO pull up this config
+                                let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
+                                let s = disk::raw::conn::make_local_event_blobs_stream(
+                                    evq.range.clone(),
+                                    evq.channel.clone(),
+                                    &entry,
+                                    evq.agg_kind.need_expand(),
+                                    event_chunker_conf,
+                                    evq.disk_io_buffer_size,
+                                    &self.node_config,
+                                )?;
+                                Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
+                            } else {
+                                info!("Set up merged remote stream");
+                                let s = disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes::new(
+                                    evq,
+                                    perf_opts,
+                                    self.node_config.node_config.cluster.clone(),
+                                );
+                                Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
+                            };
                             let s = s.map({
                                 let mut header_out = false;
                                 let mut count_events = 0;
@@ -591,13 +613,15 @@ impl Stream for DataApiPython3DataStream {
                                                     for i1 in 0..b.tss.len() {
                                                         if count_events < 6 {
                                                             info!(
-                                                                "deco len {:?}  BE {}  scalar-type {:?}  shape {:?}",
+                                                                "deco len {:?}  BE {}  scalar-type {:?}  shape {:?}  comps {:?}",
                                                                 b.decomps[i1].as_ref().map(|x| x.len()),
                                                                 b.be[i1],
                                                                 b.scalar_types[i1],
-                                                                b.shapes[i1]
+                                                                b.shapes[i1],
+                                                                b.comps[i1],
                                                             );
                                                         }
+                                                        let compression = if let (Shape::Image(..), Some(..)) = (&b.shapes[i1], &b.comps[i1]) { Some(1) } else { None };
                                                         if !header_out {
                                                             let head = Api1ChannelHeader {
                                                                 name: channel.name.clone(),
@@ -611,7 +635,7 @@ impl Stream for DataApiPython3DataStream {
                                                                 // The shape is inconsistent on the events.
                                                                 // Seems like the config is to be trusted in this case.
                                                                 shape: shape_to_api3proto(&entry.shape),
-                                                                compression: None,
+                                                                compression,
                                                             };
                                                             let h = serde_json::to_string(&head)?;
                                                             info!("sending channel header {}", h);
@@ -623,14 +647,27 @@ impl Stream for DataApiPython3DataStream {
                                                             header_out = true;
                                                         }
                                                         {
-                                                            if let Some(deco) = &b.decomps[i1] {
-                                                                let l1 = 17 + deco.len() as u32;
-                                                                d.put_u32(l1);
-                                                                d.put_u8(1);
-                                                                d.put_u64(b.tss[i1]);
-                                                                d.put_u64(b.pulses[i1]);
-                                                                d.put_slice(&deco);
-                                                                d.put_u32(l1);
+                                                            match &b.shapes[i1] {
+                                                                Shape::Image(_, _) => {
+                                                                    let l1 = 17 + b.blobs[i1].len() as u32;
+                                                                    d.put_u32(l1);
+                                                                    d.put_u8(1);
+                                                                    d.put_u64(b.tss[i1]);
+                                                                    d.put_u64(b.pulses[i1]);
+                                                                    d.put_slice(&b.blobs[i1]);
+                                                                    d.put_u32(l1);
+                                                                }
+                                                                _ => {
+                                                                    if let Some(deco) = &b.decomps[i1] {
+                                                                        let l1 = 17 + deco.len() as u32;
+                                                                        d.put_u32(l1);
+                                                                        d.put_u8(1);
+                                                                        d.put_u64(b.tss[i1]);
+                                                                        d.put_u64(b.pulses[i1]);
+                                                                        d.put_slice(&deco);
+                                                                        d.put_u32(l1);
+                                                                    }
+                                                                }
                                                             }
                                                         }
                                                         count_events += 1;
@@ -710,7 +747,8 @@ pub async fn api1_binary_events(req: Request<Body>, node_config: &NodeConfigCach
         beg: beg_ns,
         end: end_ns,
     };
-    let backend = "sf-databuffer";
+    // TODO use the proper backend name:
+    let backend = "DUMMY";
     let chans = qu
         .channels
         .iter()
@@ -719,120 +757,10 @@ pub async fn api1_binary_events(req: Request<Body>, node_config: &NodeConfigCach
             name: x.clone(),
         })
         .collect();
-    if true {
-        let s = DataApiPython3DataStream::new(range.clone(), chans, node_config.clone());
-        let ret = response(StatusCode::OK).header("x-daqbuffer-request-id", "dummy");
-        let ret = ret.body(BodyStream::wrapped(s, format!("plain_events")))?;
-        return Ok(ret);
-    }
-    // TODO to server multiple channels, I need to wrap the loop over channels in a Stream itself.
-    let channel = qu.channels[0].clone();
-    let channel = Channel {
-        backend: backend.into(),
-        name: channel,
-    };
-    let channel_config = {
-        let channel_config = match read_local_config(channel.clone(), node_config.node.clone()).await {
-            Ok(k) => k,
-            Err(e) => {
-                error!("api1_binary_events  error {:?}", e);
-                return Err(Error::with_msg_no_trace("can not parse channel config"));
-            }
-        };
-        let entry_res = match extract_matching_config_entry(&range, &channel_config) {
-            Ok(k) => k,
-            Err(e) => return Err(e)?,
-        };
-        let entry = match entry_res {
-            MatchingConfigEntry::None => return Err(Error::with_msg("no config entry found"))?,
-            MatchingConfigEntry::Multiple => return Err(Error::with_msg("multiple config entries found"))?,
-            MatchingConfigEntry::Entry(entry) => entry,
-        };
-        entry.clone()
-    };
-    warn!("found channel_config {:?}", channel_config);
-    let evq = RawEventsQuery {
-        channel: channel.clone(),
-        range,
-        agg_kind: netpod::AggKind::EventBlobs,
-        disk_io_buffer_size: 1024 * 4,
-    };
-    let perf_opts = PerfOpts { inmem_bufcap: 1024 * 4 };
-    let s = disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes::new(
-        evq,
-        perf_opts,
-        node_config.node_config.cluster.clone(),
-    );
-    let s = s.map({
-        let mut header_out = false;
-        let mut count_events = 0;
-        move |b| {
-            let ret = match b {
-                Ok(b) => {
-                    let f = match b {
-                        StreamItem::DataItem(RangeCompletableItem::Data(b)) => {
-                            let mut d = BytesMut::new();
-                            for i1 in 0..b.tss.len() {
-                                if count_events < 6 {
-                                    info!(
-                                        "deco len {:?}  BE {}  scalar-type {:?}  shape {:?}",
-                                        b.decomps[i1].as_ref().map(|x| x.len()),
-                                        b.be[i1],
-                                        b.scalar_types[i1],
-                                        b.shapes[i1]
-                                    );
-                                }
-                                if !header_out {
-                                    let head = Api1ChannelHeader {
-                                        name: channel.name.clone(),
-                                        ty: scalar_type_to_api3proto(&b.scalar_types[i1]).into(),
-                                        byte_order: if b.be[i1] {
-                                            "BIG_ENDIAN".into()
-                                        } else {
-                                            "LITTLE_ENDIAN".into()
-                                        },
-                                        // The shape is inconsistent on the events.
-                                        // Seems like the config is to be trusted in this case.
-                                        shape: shape_to_api3proto(&channel_config.shape),
-                                        //shape: vec![2560],
-                                        compression: None,
-                                    };
-                                    let h = serde_json::to_string(&head)?;
-                                    info!("sending channel header {}", h);
-                                    let l1 = 1 + h.as_bytes().len() as u32;
-                                    d.put_u32(l1);
-                                    d.put_u8(0);
-                                    d.extend_from_slice(h.as_bytes());
-                                    d.put_u32(l1);
-                                    header_out = true;
-                                }
-                                {
-                                    if let Some(deco) = &b.decomps[i1] {
-                                        let l1 = 17 + deco.len() as u32;
-                                        d.put_u32(l1);
-                                        d.put_u8(1);
-                                        d.put_u64(b.tss[i1]);
-                                        d.put_u64(b.pulses[i1]);
-                                        d.put_slice(&deco);
-                                        d.put_u32(l1);
-                                    }
-                                }
-                                count_events += 1;
-                            }
-                            d
-                        }
-                        _ => BytesMut::new(),
-                    };
-                    Ok(f)
-                }
-                Err(e) => Err(e),
-            };
-            ret
-        }
-    });
+    let s = DataApiPython3DataStream::new(range.clone(), chans, node_config.clone());
     let ret = response(StatusCode::OK).header("x-daqbuffer-request-id", "dummy");
-    let ret = ret.body(BodyStream::wrapped(s, format!("plain_events")))?;
-    Ok(ret)
+    let ret = ret.body(BodyStream::wrapped(s, format!("api1_binary_events")))?;
+    return Ok(ret);
 }
 
 fn scalar_type_to_api3proto(sty: &ScalarType) -> &'static str {
