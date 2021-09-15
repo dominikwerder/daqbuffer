@@ -10,7 +10,9 @@ use hyper::{Body, Client, Request, Response};
 use items::{RangeCompletableItem, Sitemty, StreamItem};
 use itertools::Itertools;
 use netpod::query::RawEventsQuery;
-use netpod::{log::*, ByteSize, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape, APP_OCTET};
+use netpod::{
+    log::*, ByteSize, Channel, FileIoBufferSize, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape, APP_OCTET,
+};
 use netpod::{ChannelSearchQuery, ChannelSearchResult, ProxyConfig, APP_JSON};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, Config, MatchingConfigEntry};
 use serde::{Deserialize, Serialize};
@@ -483,6 +485,9 @@ pub struct Api1Range {
 pub struct Api1Query {
     channels: Vec<String>,
     range: Api1Range,
+    // Unofficial and non-stable parameters:
+    #[serde(default = "Default::default")]
+    file_io_buffer_size: FileIoBufferSize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -503,12 +508,18 @@ pub struct DataApiPython3DataStream {
     chan_ix: usize,
     chan_stream: Option<Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>>,
     config_fut: Option<Pin<Box<dyn Future<Output = Result<Config, Error>> + Send>>>,
+    file_io_buffer_size: FileIoBufferSize,
     data_done: bool,
     completed: bool,
 }
 
 impl DataApiPython3DataStream {
-    pub fn new(range: NanoRange, channels: Vec<Channel>, node_config: NodeConfigCached) -> Self {
+    pub fn new(
+        range: NanoRange,
+        channels: Vec<Channel>,
+        file_io_buffer_size: FileIoBufferSize,
+        node_config: NodeConfigCached,
+    ) -> Self {
         Self {
             range,
             channels,
@@ -516,6 +527,7 @@ impl DataApiPython3DataStream {
             chan_ix: 0,
             chan_stream: None,
             config_fut: None,
+            file_io_buffer_size,
             data_done: false,
             completed: false,
         }
@@ -568,12 +580,11 @@ impl Stream for DataApiPython3DataStream {
                             };
                             warn!("found channel_config {:?}", entry);
 
-                            // TODO pull out the performance settings
                             let evq = RawEventsQuery {
                                 channel: self.channels[self.chan_ix - 1].clone(),
                                 range: self.range.clone(),
                                 agg_kind: netpod::AggKind::EventBlobs,
-                                disk_io_buffer_size: 1024 * 4,
+                                disk_io_buffer_size: self.file_io_buffer_size.0,
                             };
                             let perf_opts = PerfOpts { inmem_bufcap: 1024 * 4 };
                             // TODO is this a good to place decide this?
@@ -587,7 +598,7 @@ impl Stream for DataApiPython3DataStream {
                                     &entry,
                                     evq.agg_kind.need_expand(),
                                     event_chunker_conf,
-                                    evq.disk_io_buffer_size,
+                                    self.file_io_buffer_size.clone(),
                                     &self.node_config,
                                 )?;
                                 Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
@@ -757,7 +768,7 @@ pub async fn api1_binary_events(req: Request<Body>, node_config: &NodeConfigCach
             name: x.clone(),
         })
         .collect();
-    let s = DataApiPython3DataStream::new(range.clone(), chans, node_config.clone());
+    let s = DataApiPython3DataStream::new(range.clone(), chans, qu.file_io_buffer_size, node_config.clone());
     let ret = response(StatusCode::OK).header("x-daqbuffer-request-id", "dummy");
     let ret = ret.body(BodyStream::wrapped(s, format!("api1_binary_events")))?;
     return Ok(ret);

@@ -1,6 +1,6 @@
 use crate::eventblobs::EventChunkerMultifile;
 use crate::eventchunker::EventChunkerConf;
-use netpod::timeunits::*;
+use netpod::{timeunits::*, FileIoBufferSize};
 use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, NanoRange, Nanos, Node, ScalarType, Shape};
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
@@ -54,12 +54,13 @@ async fn agg_x_dim_0_inner() {
     let ts2 = ts1 + HOUR * 24;
     let range = NanoRange { beg: ts1, end: ts2 };
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
+    let file_io_buffer_size = FileIoBufferSize::new(query.buffer_size as usize);
     let fut1 = EventChunkerMultifile::new(
         range.clone(),
         query.channel_config.clone(),
         node.clone(),
         0,
-        query.buffer_size as usize,
+        file_io_buffer_size,
         event_chunker_conf,
         false,
     );
@@ -104,12 +105,13 @@ async fn agg_x_dim_1_inner() {
     let ts2 = ts1 + HOUR * 24;
     let range = NanoRange { beg: ts1, end: ts2 };
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
+    let file_io_buffer_size = FileIoBufferSize::new(query.buffer_size as usize);
     let fut1 = super::eventblobs::EventChunkerMultifile::new(
         range.clone(),
         query.channel_config.clone(),
         node.clone(),
         0,
-        query.buffer_size as usize,
+        file_io_buffer_size,
         event_chunker_conf,
         false,
     );

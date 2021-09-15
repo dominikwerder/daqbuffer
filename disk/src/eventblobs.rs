@@ -6,8 +6,8 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::{LogItem, RangeCompletableItem, Sitemty, StreamItem};
-use netpod::log::*;
 use netpod::timeunits::SEC;
+use netpod::{log::*, FileIoBufferSize};
 use netpod::{ChannelConfig, NanoRange, Node};
 use std::pin::Pin;
 use std::sync::atomic::AtomicU64;
@@ -22,7 +22,7 @@ pub struct EventChunkerMultifile {
     channel_config: ChannelConfig,
     file_chan: async_channel::Receiver<Result<OpenedFileSet, Error>>,
     evs: Option<Pin<Box<dyn InputTraits + Send>>>,
-    buffer_size: usize,
+    file_io_buffer_size: FileIoBufferSize,
     event_chunker_conf: EventChunkerConf,
     range: NanoRange,
     data_completed: bool,
@@ -42,7 +42,7 @@ impl EventChunkerMultifile {
         channel_config: ChannelConfig,
         node: Node,
         node_ix: usize,
-        buffer_size: usize,
+        file_io_buffer_size: FileIoBufferSize,
         event_chunker_conf: EventChunkerConf,
         expand: bool,
     ) -> Self {
@@ -54,7 +54,7 @@ impl EventChunkerMultifile {
         Self {
             file_chan,
             evs: None,
-            buffer_size,
+            file_io_buffer_size,
             event_chunker_conf,
             channel_config,
             range,
@@ -132,8 +132,10 @@ impl Stream for EventChunkerMultifile {
                                         let item = LogItem::quick(Level::INFO, msg);
                                         match file.file {
                                             Some(file) => {
-                                                let inp =
-                                                    Box::pin(file_content_stream(file, self.buffer_size as usize));
+                                                let inp = Box::pin(file_content_stream(
+                                                    file,
+                                                    self.file_io_buffer_size.clone(),
+                                                ));
                                                 let chunker = EventChunker::from_event_boundary(
                                                     inp,
                                                     self.channel_config.clone(),
@@ -155,8 +157,10 @@ impl Stream for EventChunkerMultifile {
                                         let mut chunkers = vec![];
                                         for of in ofs.files {
                                             if let Some(file) = of.file {
-                                                let inp =
-                                                    Box::pin(file_content_stream(file, self.buffer_size as usize));
+                                                let inp = Box::pin(file_content_stream(
+                                                    file,
+                                                    self.file_io_buffer_size.clone(),
+                                                ));
                                                 let chunker = EventChunker::from_event_boundary(
                                                     inp,
                                                     self.channel_config.clone(),
@@ -240,7 +244,7 @@ fn read_expanded_for_range(range: netpod::NanoRange) -> Result<(usize, usize), E
             channel_config,
             node,
             node_ix,
-            buffer_size,
+            FileIoBufferSize::new(buffer_size),
             event_chunker_conf,
             true,
         );

@@ -10,7 +10,7 @@ use futures_util::StreamExt;
 use items::numops::{BoolNum, NumOps};
 use items::{EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::query::RawEventsQuery;
-use netpod::{AggKind, ByteOrder, ByteSize, Channel, NanoRange, NodeConfigCached, ScalarType, Shape};
+use netpod::{AggKind, ByteOrder, ByteSize, Channel, FileIoBufferSize, NanoRange, NodeConfigCached, ScalarType, Shape};
 
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, ConfigEntry, MatchingConfigEntry};
 use std::pin::Pin;
@@ -183,7 +183,7 @@ pub async fn make_event_pipe(
         channel_config.clone(),
         node_config.node.clone(),
         node_config.ix,
-        evq.disk_io_buffer_size,
+        FileIoBufferSize::new(evq.disk_io_buffer_size),
         event_chunker_conf,
         true,
     );
@@ -222,7 +222,7 @@ pub fn make_local_event_blobs_stream(
     entry: &ConfigEntry,
     expand: bool,
     event_chunker_conf: EventChunkerConf,
-    disk_io_buffer_size: usize,
+    file_io_buffer_size: FileIoBufferSize,
     node_config: &NodeConfigCached,
 ) -> Result<EventChunkerMultifile, Error> {
     let shape = match entry.to_shape() {
@@ -244,7 +244,7 @@ pub fn make_local_event_blobs_stream(
         channel_config.clone(),
         node_config.node.clone(),
         node_config.ix,
-        disk_io_buffer_size,
+        file_io_buffer_size,
         event_chunker_conf,
         expand,
     );
@@ -257,7 +257,7 @@ pub fn make_remote_event_blobs_stream(
     entry: &ConfigEntry,
     expand: bool,
     event_chunker_conf: EventChunkerConf,
-    disk_io_buffer_size: usize,
+    file_io_buffer_size: FileIoBufferSize,
     node_config: &NodeConfigCached,
 ) -> Result<impl Stream<Item = Sitemty<EventFull>>, Error> {
     let shape = match entry.to_shape() {
@@ -279,7 +279,7 @@ pub fn make_remote_event_blobs_stream(
         channel_config.clone(),
         node_config.node.clone(),
         node_config.ix,
-        disk_io_buffer_size,
+        file_io_buffer_size,
         event_chunker_conf,
         expand,
     );
@@ -296,6 +296,7 @@ pub async fn make_event_blobs_pipe(
             Err(e) => return Err(e)?,
         }
     }
+    let file_io_buffer_size = FileIoBufferSize::new(evq.disk_io_buffer_size);
     let expand = evq.agg_kind.need_expand();
     let range = &evq.range;
     let entry = get_applicable_entry(&evq.range, evq.channel.clone(), node_config).await?;
@@ -307,7 +308,7 @@ pub async fn make_event_blobs_pipe(
             &entry,
             expand,
             event_chunker_conf,
-            evq.disk_io_buffer_size,
+            file_io_buffer_size,
             node_config,
         )?;
         let s = event_blobs.map(|item| Box::new(item) as Box<dyn Framable>);
@@ -322,7 +323,7 @@ pub async fn make_event_blobs_pipe(
             &entry,
             expand,
             event_chunker_conf,
-            evq.disk_io_buffer_size,
+            file_io_buffer_size,
             node_config,
         )?;
         let s = event_blobs.map(|item| Box::new(item) as Box<dyn Framable>);

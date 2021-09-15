@@ -945,6 +945,24 @@ impl ByteSize {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FileIoBufferSize(pub usize);
+
+impl FileIoBufferSize {
+    pub fn new(k: usize) -> Self {
+        Self(k)
+    }
+    pub fn bytes(&self) -> usize {
+        self.0
+    }
+}
+
+impl Default for FileIoBufferSize {
+    fn default() -> Self {
+        Self(1024 * 4)
+    }
+}
+
 pub fn channel_from_pairs(pairs: &BTreeMap<String, String>) -> Result<Channel, Error> {
     let ret = Channel {
         backend: pairs

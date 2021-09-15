@@ -5,7 +5,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::future::FusedFuture;
 use futures_util::{pin_mut, select, FutureExt, StreamExt};
-use netpod::log::*;
+use netpod::{log::*, FileIoBufferSize};
 use netpod::{ChannelConfig, NanoRange, Node, Shape};
 use std::future::Future;
 use std::path::PathBuf;
@@ -313,13 +313,13 @@ pub struct FileChunkRead {
 
 pub fn file_content_stream(
     mut file: File,
-    buffer_size: usize,
+    file_io_buffer_size: FileIoBufferSize,
 ) -> impl Stream<Item = Result<FileChunkRead, Error>> + Send {
     async_stream::stream! {
         use tokio::io::AsyncReadExt;
         loop {
             let ts1 = Instant::now();
-            let mut buf = BytesMut::with_capacity(buffer_size);
+            let mut buf = BytesMut::with_capacity(file_io_buffer_size.0);
             let n1 = file.read_buf(&mut buf).await?;
             let ts2 = Instant::now();
             if n1 == 0 {
@@ -341,6 +341,7 @@ pub struct NeedMinBuffer {
     inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>,
     need_min: u32,
     left: Option<FileChunkRead>,
+    buf_len_histo: [u32; 16],
     errored: bool,
     completed: bool,
 }
@@ -351,6 +352,7 @@ impl NeedMinBuffer {
             inp: inp,
             need_min: 1,
             left: None,
+            buf_len_histo: Default::default(),
             errored: false,
             completed: false,
         }
@@ -363,6 +365,13 @@ impl NeedMinBuffer {
 
     pub fn set_need_min(&mut self, need_min: u32) {
         self.need_min = need_min;
+    }
+}
+
+// TODO remove this again
+impl Drop for NeedMinBuffer {
+    fn drop(&mut self) {
+        info!("NeedMinBuffer  histo: {:?}", self.buf_len_histo);
     }
 }
 
@@ -382,7 +391,15 @@ impl Stream for NeedMinBuffer {
             let mut again = false;
             let z = match self.inp.poll_next_unpin(cx) {
                 Ready(Some(Ok(fcr))) => {
-                    //info!("NeedMin got buf  len {}", buf.len());
+                    let mut u = fcr.buf.len();
+                    let mut po = 0;
+                    while u != 0 && po < 15 {
+                        u /= 2;
+                        po += 1;
+                    }
+                    let po = if po > 8 { po - 8 } else { 0 };
+                    self.buf_len_histo[po] += 1;
+                    //info!("NeedMinBuffer got buf  len {}", fcr.buf.len());
                     match self.left.take() {
                         Some(mut lfcr) => {
                             // TODO measure:
@@ -413,7 +430,10 @@ impl Stream for NeedMinBuffer {
                     }
                 }
                 Ready(Some(Err(e))) => Ready(Some(Err(e.into()))),
-                Ready(None) => Ready(None),
+                Ready(None) => {
+                    info!("NeedMinBuffer  histo: {:?}", self.buf_len_histo);
+                    Ready(None)
+                }
                 Pending => Pending,
             };
             if !again {
