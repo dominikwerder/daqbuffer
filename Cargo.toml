@@ -8,3 +8,6 @@ opt-level = 1
 #debug-assertions = true
 lto = "off"
 codegen-units = 40
+
+[patch.crates-io]
+tokio = { git = "https://github.com/dominikwerder/tokio", branch = "maxbuf" }

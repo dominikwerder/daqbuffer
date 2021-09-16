@@ -238,7 +238,7 @@ where
 
 pub trait EventsNodeProcessor: Send + Unpin {
     type Input;
-    type Output: Send + Unpin + DeserializeOwned + WithTimestamps + TimeBinnableType;
+    type Output: Send + Unpin + DeserializeOwned + WithTimestamps + TimeBinnableType + ByteEstimate;
     fn create(shape: Shape, agg_kind: AggKind) -> Self;
     fn process(&self, inp: Self::Input) -> Self::Output;
 }
@@ -277,6 +277,10 @@ pub trait WithLen {
 
 pub trait WithTimestamps {
     fn ts(&self, ix: usize) -> u64;
+}
+
+pub trait ByteEstimate {
+    fn byte_estimate(&self) -> u64;
 }
 
 pub trait RangeOverlapInfo {

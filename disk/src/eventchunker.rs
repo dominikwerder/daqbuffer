@@ -5,8 +5,10 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::{
-    Appendable, PushableIndex, RangeCompletableItem, SitemtyFrameType, StatsItem, StreamItem, WithLen, WithTimestamps,
+    Appendable, ByteEstimate, PushableIndex, RangeCompletableItem, SitemtyFrameType, StatsItem, StreamItem, WithLen,
+    WithTimestamps,
 };
+use netpod::histo::HistoLog2;
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{ByteSize, ChannelConfig, EventDataReadStats, NanoRange, ScalarType, Shape};
@@ -17,6 +19,7 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::time::Instant;
 
 pub struct EventChunker {
     inp: NeedMinBuffer,
@@ -35,9 +38,22 @@ pub struct EventChunker {
     path: PathBuf,
     max_ts: Arc<AtomicU64>,
     expand: bool,
+    do_decompress: bool,
+    decomp_dt_histo: HistoLog2,
+    item_len_emit_histo: HistoLog2,
     seen_before_range_count: usize,
     seen_after_range_count: usize,
     unordered_warn_count: usize,
+}
+
+// TODO remove again, use it explicitly
+impl Drop for EventChunker {
+    fn drop(&mut self) {
+        info!(
+            "EventChunker  Drop Stats:\ndecomp_dt_histo: {:?}\nitem_len_emit_histo: {:?}",
+            self.decomp_dt_histo, self.item_len_emit_histo
+        );
+    }
 }
 
 enum DataFileState {
@@ -70,6 +86,7 @@ impl EventChunker {
         path: PathBuf,
         max_ts: Arc<AtomicU64>,
         expand: bool,
+        do_decompress: bool,
     ) -> Self {
         let mut inp = NeedMinBuffer::new(inp);
         inp.set_need_min(6);
@@ -90,6 +107,9 @@ impl EventChunker {
             path,
             max_ts,
             expand,
+            do_decompress,
+            decomp_dt_histo: HistoLog2::new(8),
+            item_len_emit_histo: HistoLog2::new(0),
             seen_before_range_count: 0,
             seen_after_range_count: 0,
             unordered_warn_count: 0,
@@ -104,8 +124,18 @@ impl EventChunker {
         path: PathBuf,
         max_ts: Arc<AtomicU64>,
         expand: bool,
+        do_decompress: bool,
     ) -> Self {
-        let mut ret = Self::from_start(inp, channel_config, range, stats_conf, path, max_ts, expand);
+        let mut ret = Self::from_start(
+            inp,
+            channel_config,
+            range,
+            stats_conf,
+            path,
+            max_ts,
+            expand,
+            do_decompress,
+        );
         ret.state = DataFileState::Event;
         ret.need_min = 4;
         ret.inp.set_need_min(4);
@@ -324,36 +354,47 @@ impl EventChunker {
                                     }
                                 }
                             }
-                            let decomp_bytes = (type_size * ele_count as u32) as usize;
-                            let mut decomp = BytesMut::with_capacity(decomp_bytes);
-                            unsafe {
-                                decomp.set_len(decomp_bytes);
-                            }
-                            // TODO limit the buf slice range
-                            match bitshuffle_decompress(
-                                &buf.as_ref()[(p1 as usize + 12)..(p1 as usize + k1 as usize)],
-                                &mut decomp,
-                                ele_count as usize,
-                                ele_size as usize,
-                                0,
-                            ) {
-                                Ok(c1) => {
-                                    assert!(c1 as u64 + 12 == k1);
-                                    ret.add_event(
-                                        ts,
-                                        pulse,
-                                        buf.as_ref()[(p1 as usize)..(p1 as usize + k1 as usize)].to_vec(),
-                                        Some(decomp),
-                                        ScalarType::from_dtype_index(type_index)?,
-                                        is_big_endian,
-                                        shape_this,
-                                        comp_this,
-                                    );
-                                }
-                                Err(e) => {
-                                    Err(Error::with_msg(format!("decompression failed {:?}", e)))?;
+                            let decomp = {
+                                if self.do_decompress {
+                                    let ts1 = Instant::now();
+                                    let decomp_bytes = (type_size * ele_count as u32) as usize;
+                                    let mut decomp = BytesMut::with_capacity(decomp_bytes);
+                                    unsafe {
+                                        decomp.set_len(decomp_bytes);
+                                    }
+                                    // TODO limit the buf slice range
+                                    match bitshuffle_decompress(
+                                        &buf.as_ref()[(p1 as usize + 12)..(p1 as usize + k1 as usize)],
+                                        &mut decomp,
+                                        ele_count as usize,
+                                        ele_size as usize,
+                                        0,
+                                    ) {
+                                        Ok(c1) => {
+                                            assert!(c1 as u64 + 12 == k1);
+                                            let ts2 = Instant::now();
+                                            let dt = ts2.duration_since(ts1);
+                                            self.decomp_dt_histo.ingest(dt.as_secs() as u32 + dt.subsec_micros());
+                                            decomp
+                                        }
+                                        Err(e) => {
+                                            return Err(Error::with_msg(format!("decompression failed {:?}", e)))?;
+                                        }
+                                    }
+                                } else {
+                                    BytesMut::new()
                                 }
                             };
+                            ret.add_event(
+                                ts,
+                                pulse,
+                                buf.as_ref()[(p1 as usize)..(p1 as usize + k1 as usize)].to_vec(),
+                                Some(decomp),
+                                ScalarType::from_dtype_index(type_index)?,
+                                is_big_endian,
+                                shape_this,
+                                comp_this,
+                            );
                         } else {
                             if len < p1 as u32 + 4 {
                                 let msg = format!("uncomp  len: {}  p1: {}", len, p1);
@@ -506,6 +547,19 @@ impl WithTimestamps for EventFull {
     }
 }
 
+impl ByteEstimate for EventFull {
+    fn byte_estimate(&self) -> u64 {
+        if self.tss.len() == 0 {
+            0
+        } else {
+            // TODO that is clumsy... it assumes homogenous types.
+            // TODO improve via a const fn on NTY
+            let decomp_len = self.decomps[0].as_ref().map_or(0, |h| h.len());
+            self.tss.len() as u64 * (40 + self.blobs[0].len() as u64 + decomp_len as u64)
+        }
+    }
+}
+
 impl PushableIndex for EventFull {
     // TODO check all use cases, can't we move?
     fn push_index(&mut self, src: &Self, ix: usize) {
@@ -599,13 +653,14 @@ impl Stream for EventChunker {
                                 }
                                 let x = self.need_min;
                                 self.inp.set_need_min(x);
-                                {
+                                if false {
                                     info!(
                                         "EventChunker  emits {} events  tss {:?}",
                                         res.events.len(),
                                         res.events.tss
                                     );
                                 };
+                                self.item_len_emit_histo.ingest(res.events.len() as u32);
                                 let ret = StreamItem::DataItem(RangeCompletableItem::Data(res.events));
                                 Ready(Some(Ok(ret)))
                             }

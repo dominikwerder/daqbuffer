@@ -117,6 +117,7 @@ where
             range: self.query.patch().patch_range(),
             agg_kind: self.query.agg_kind().clone(),
             disk_io_buffer_size: self.query.disk_io_buffer_size(),
+            do_decompress: true,
         };
         if self.query.patch().patch_t_len() % self.query.patch().bin_t_len() != 0 {
             let msg = format!(

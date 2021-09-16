@@ -34,6 +34,7 @@ pub struct EventChunkerMultifile {
     seen_before_range_count: usize,
     seen_after_range_count: usize,
     expand: bool,
+    do_decompress: bool,
 }
 
 impl EventChunkerMultifile {
@@ -45,6 +46,7 @@ impl EventChunkerMultifile {
         file_io_buffer_size: FileIoBufferSize,
         event_chunker_conf: EventChunkerConf,
         expand: bool,
+        do_decompress: bool,
     ) -> Self {
         let file_chan = if expand {
             open_expanded_files(&range, &channel_config, node)
@@ -67,6 +69,7 @@ impl EventChunkerMultifile {
             seen_before_range_count: 0,
             seen_after_range_count: 0,
             expand,
+            do_decompress,
         }
     }
 
@@ -108,7 +111,9 @@ impl Stream for EventChunkerMultifile {
                         Some(evs) => match evs.poll_next_unpin(cx) {
                             Ready(Some(k)) => {
                                 if let Ok(StreamItem::DataItem(RangeCompletableItem::Data(h))) = &k {
-                                    info!("EventChunkerMultifile  emit {} events", h.tss.len());
+                                    if false {
+                                        info!("EventChunkerMultifile  emit {} events", h.tss.len());
+                                    };
                                 }
                                 Ready(Some(k))
                             }
@@ -144,6 +149,7 @@ impl Stream for EventChunkerMultifile {
                                                     path,
                                                     self.max_ts.clone(),
                                                     self.expand,
+                                                    self.do_decompress,
                                                 );
                                                 self.evs = Some(Box::pin(chunker));
                                             }
@@ -169,6 +175,7 @@ impl Stream for EventChunkerMultifile {
                                                     of.path,
                                                     self.max_ts.clone(),
                                                     self.expand,
+                                                    self.do_decompress,
                                                 );
                                                 chunkers.push(chunker);
                                             }
@@ -246,6 +253,7 @@ fn read_expanded_for_range(range: netpod::NanoRange) -> Result<(usize, usize), E
             node_ix,
             FileIoBufferSize::new(buffer_size),
             event_chunker_conf,
+            true,
             true,
         );
         while let Some(item) = events.next().await {

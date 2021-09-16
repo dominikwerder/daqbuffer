@@ -2,8 +2,9 @@ use crate::minmaxavgbins::MinMaxAvgBins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
-    ts_offs_from_abs, Appendable, FilterFittingInside, Fits, FitsInside, PushableIndex, RangeOverlapInfo, ReadPbv,
-    ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    ts_offs_from_abs, Appendable, ByteEstimate, FilterFittingInside, Fits, FitsInside, PushableIndex, RangeOverlapInfo,
+    ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType, TimeBinnableTypeAggregator, WithLen,
+    WithTimestamps,
 };
 use err::Error;
 use netpod::timeunits::SEC;
@@ -47,6 +48,17 @@ impl<NTY> WithLen for XBinnedScalarEvents<NTY> {
 impl<NTY> WithTimestamps for XBinnedScalarEvents<NTY> {
     fn ts(&self, ix: usize) -> u64 {
         self.tss[ix]
+    }
+}
+
+impl<NTY> ByteEstimate for XBinnedScalarEvents<NTY> {
+    fn byte_estimate(&self) -> u64 {
+        if self.tss.len() == 0 {
+            0
+        } else {
+            // TODO improve via a const fn on NTY
+            self.tss.len() as u64 * 28
+        }
     }
 }
 

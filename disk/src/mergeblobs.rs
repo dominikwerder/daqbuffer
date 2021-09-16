@@ -2,14 +2,18 @@ use crate::HasSeenBeforeRangeCount;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use items::ByteEstimate;
 use items::{
     Appendable, LogItem, PushableIndex, RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithLen, WithTimestamps,
 };
-use netpod::log::*;
+use netpod::histo::HistoLog2;
 use netpod::EventDataReadStats;
+use netpod::{log::*, ByteSize};
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+
+const LOG_EMIT_ITEM: bool = false;
 
 enum MergedCurVal<T> {
     None,
@@ -20,7 +24,7 @@ enum MergedCurVal<T> {
 pub struct MergedBlobsStream<S, I>
 where
     S: Stream<Item = Sitemty<I>> + Unpin,
-    I: Unpin + Appendable + WithTimestamps + PushableIndex + WithLen,
+    I: Unpin + Appendable + WithTimestamps + PushableIndex + WithLen + ByteEstimate,
 {
     inps: Vec<S>,
     current: Vec<MergedCurVal<I>>,
@@ -33,15 +37,30 @@ where
     range_complete_observed_all: bool,
     range_complete_observed_all_emitted: bool,
     data_emit_complete: bool,
-    batch_size: usize,
+    batch_size: ByteSize,
+    batch_len_emit_histo: HistoLog2,
     logitems: VecDeque<LogItem>,
     event_data_read_stats_items: VecDeque<EventDataReadStats>,
+}
+
+// TODO get rid, log info explicitly.
+impl<S, I> Drop for MergedBlobsStream<S, I>
+where
+    S: Stream<Item = Sitemty<I>> + Unpin,
+    I: Unpin + Appendable + WithTimestamps + PushableIndex + WithLen + ByteEstimate,
+{
+    fn drop(&mut self) {
+        info!(
+            "MergedBlobsStream  Drop Stats:\nbatch_len_emit_histo: {:?}",
+            self.batch_len_emit_histo
+        );
+    }
 }
 
 impl<S, I> MergedBlobsStream<S, I>
 where
     S: Stream<Item = Sitemty<I>> + Unpin,
-    I: Unpin + Appendable + WithTimestamps + PushableIndex + WithLen,
+    I: Unpin + Appendable + WithTimestamps + PushableIndex + WithLen + ByteEstimate,
 {
     pub fn new(inps: Vec<S>) -> Self {
         let n = inps.len();
@@ -58,7 +77,8 @@ where
             range_complete_observed_all: false,
             range_complete_observed_all_emitted: false,
             data_emit_complete: false,
-            batch_size: 1,
+            batch_size: ByteSize::kb(128),
+            batch_len_emit_histo: HistoLog2::new(0),
             logitems: VecDeque::new(),
             event_data_read_stats_items: VecDeque::new(),
         }
@@ -132,7 +152,7 @@ where
 impl<S, I> Stream for MergedBlobsStream<S, I>
 where
     S: Stream<Item = Sitemty<I>> + Unpin,
-    I: Unpin + Appendable + WithTimestamps + PushableIndex + WithLen,
+    I: Unpin + Appendable + WithTimestamps + PushableIndex + WithLen + ByteEstimate,
 {
     type Item = Sitemty<I>;
 
@@ -187,8 +207,9 @@ where
                             if self.batch.len() != 0 {
                                 let emp = I::empty();
                                 let ret = std::mem::replace(&mut self.batch, emp);
+                                self.batch_len_emit_histo.ingest(ret.len() as u32);
                                 self.data_emit_complete = true;
-                                {
+                                if LOG_EMIT_ITEM {
                                     let mut aa = vec![];
                                     for ii in 0..ret.len() {
                                         aa.push(ret.ts(ii));
@@ -224,10 +245,12 @@ where
                                 self.ixs[lowest_ix] = 0;
                                 self.current[lowest_ix] = MergedCurVal::None;
                             }
-                            if self.batch.len() >= self.batch_size {
+                            if self.batch.byte_estimate() >= self.batch_size.bytes() as u64 {
+                                trace!("emit item because over threshold  len {}", self.batch.len());
                                 let emp = I::empty();
                                 let ret = std::mem::replace(&mut self.batch, emp);
-                                {
+                                self.batch_len_emit_histo.ingest(ret.len() as u32);
+                                if LOG_EMIT_ITEM {
                                     let mut aa = vec![];
                                     for ii in 0..ret.len() {
                                         aa.push(ret.ts(ii));
@@ -254,7 +277,7 @@ where
 impl<S, I> HasSeenBeforeRangeCount for MergedBlobsStream<S, I>
 where
     S: Stream<Item = Sitemty<I>> + Unpin,
-    I: Unpin + Appendable + WithTimestamps + PushableIndex + WithLen,
+    I: Unpin + Appendable + WithTimestamps + PushableIndex + WithLen + ByteEstimate,
 {
     fn seen_before_range_count(&self) -> usize {
         // TODO (only for debug)

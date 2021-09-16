@@ -263,6 +263,7 @@ impl ChannelExecFunction for PlainEvents {
             range: self.range,
             agg_kind: self.agg_kind,
             disk_io_buffer_size: self.disk_io_buffer_size,
+            do_decompress: true,
         };
         let s = MergedFromRemotes::<Identity<NTY>>::new(evq, perf_opts, self.node_config.node_config.cluster);
         let s = s.map(|item| Box::new(item) as Box<dyn Framable>);
@@ -417,6 +418,7 @@ impl ChannelExecFunction for PlainEventsJson {
             range: self.range,
             agg_kind: self.agg_kind,
             disk_io_buffer_size: self.disk_io_buffer_size,
+            do_decompress: true,
         };
         let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster);
         let f = collect_plain_events_json(s, self.timeout, 0, self.do_log);

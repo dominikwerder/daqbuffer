@@ -34,6 +34,7 @@ fn ca_connect_1() {
                     },
                     run_map_pulse_task: false,
                     is_central_storage: false,
+                    file_io_buffer_size: Default::default(),
                 },
             },
             ix: 0,

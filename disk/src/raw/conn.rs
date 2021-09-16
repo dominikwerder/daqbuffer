@@ -186,6 +186,7 @@ pub async fn make_event_pipe(
         FileIoBufferSize::new(evq.disk_io_buffer_size),
         event_chunker_conf,
         true,
+        true,
     );
     let shape = entry.to_shape()?;
     let pipe = pipe1!(
@@ -221,6 +222,7 @@ pub fn make_local_event_blobs_stream(
     channel: Channel,
     entry: &ConfigEntry,
     expand: bool,
+    do_decompress: bool,
     event_chunker_conf: EventChunkerConf,
     file_io_buffer_size: FileIoBufferSize,
     node_config: &NodeConfigCached,
@@ -247,6 +249,7 @@ pub fn make_local_event_blobs_stream(
         file_io_buffer_size,
         event_chunker_conf,
         expand,
+        do_decompress,
     );
     Ok(event_blobs)
 }
@@ -256,6 +259,7 @@ pub fn make_remote_event_blobs_stream(
     channel: Channel,
     entry: &ConfigEntry,
     expand: bool,
+    do_decompress: bool,
     event_chunker_conf: EventChunkerConf,
     file_io_buffer_size: FileIoBufferSize,
     node_config: &NodeConfigCached,
@@ -282,6 +286,7 @@ pub fn make_remote_event_blobs_stream(
         file_io_buffer_size,
         event_chunker_conf,
         expand,
+        do_decompress,
     );
     Ok(event_blobs)
 }
@@ -307,6 +312,7 @@ pub async fn make_event_blobs_pipe(
             evq.channel.clone(),
             &entry,
             expand,
+            evq.do_decompress,
             event_chunker_conf,
             file_io_buffer_size,
             node_config,
@@ -322,6 +328,7 @@ pub async fn make_event_blobs_pipe(
             evq.channel.clone(),
             &entry,
             expand,
+            evq.do_decompress,
             event_chunker_conf,
             file_io_buffer_size,
             node_config,

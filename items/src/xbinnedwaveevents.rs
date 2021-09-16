@@ -2,8 +2,8 @@ use crate::minmaxavgwavebins::MinMaxAvgWaveBins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
-    Appendable, FilterFittingInside, Fits, FitsInside, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile,
-    SitemtyFrameType, SubFrId, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    Appendable, ByteEstimate, FilterFittingInside, Fits, FitsInside, PushableIndex, RangeOverlapInfo, ReadPbv,
+    ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
@@ -48,6 +48,17 @@ impl<NTY> WithLen for XBinnedWaveEvents<NTY> {
 impl<NTY> WithTimestamps for XBinnedWaveEvents<NTY> {
     fn ts(&self, ix: usize) -> u64 {
         self.tss[ix]
+    }
+}
+
+impl<NTY> ByteEstimate for XBinnedWaveEvents<NTY> {
+    fn byte_estimate(&self) -> u64 {
+        if self.tss.len() == 0 {
+            0
+        } else {
+            // TODO improve via a const fn on NTY
+            self.tss.len() as u64 * 20 * self.avgs[0].len() as u64
+        }
     }
 }
 

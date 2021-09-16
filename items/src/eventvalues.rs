@@ -2,7 +2,7 @@ use crate::minmaxavgbins::MinMaxAvgBins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
-    ts_offs_from_abs, Appendable, EventAppendable, FilterFittingInside, Fits, FitsInside, PushableIndex,
+    ts_offs_from_abs, Appendable, ByteEstimate, EventAppendable, FilterFittingInside, Fits, FitsInside, PushableIndex,
     RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, TimeBinnableType, TimeBinnableTypeAggregator,
     WithLen, WithTimestamps,
 };
@@ -13,12 +13,12 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use tokio::fs::File;
 
-// TODO add pulse.
+// TODO add pulse. Is this even used??
 // TODO change name, it's not only about values, but more like batch of whole events.
 #[derive(Serialize, Deserialize)]
-pub struct EventValues<VT> {
+pub struct EventValues<NTY> {
     pub tss: Vec<u64>,
-    pub values: Vec<VT>,
+    pub values: Vec<NTY>,
 }
 
 impl<NTY> SitemtyFrameType for EventValues<NTY>
@@ -28,7 +28,7 @@ where
     const FRAME_TYPE_ID: u32 = crate::EVENT_VALUES_FRAME_TYPE_ID + NTY::SUB;
 }
 
-impl<VT> EventValues<VT> {
+impl<NTY> EventValues<NTY> {
     pub fn empty() -> Self {
         Self {
             tss: vec![],
@@ -37,11 +37,11 @@ impl<VT> EventValues<VT> {
     }
 }
 
-impl<VT> fmt::Debug for EventValues<VT>
+impl<NTY> fmt::Debug for EventValues<NTY>
 where
-    VT: fmt::Debug,
+    NTY: fmt::Debug,
 {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         write!(
             fmt,
             "count {}  ts {:?} .. {:?}  vals {:?} .. {:?}",
@@ -54,19 +54,39 @@ where
     }
 }
 
-impl<VT> WithLen for EventValues<VT> {
+impl<NTY> WithLen for EventValues<NTY>
+where
+    NTY: NumOps,
+{
     fn len(&self) -> usize {
         self.tss.len()
     }
 }
 
-impl<VT> WithTimestamps for EventValues<VT> {
+impl<NTY> WithTimestamps for EventValues<NTY>
+where
+    NTY: NumOps,
+{
     fn ts(&self, ix: usize) -> u64 {
         self.tss[ix]
     }
 }
 
-impl<VT> RangeOverlapInfo for EventValues<VT> {
+impl<NTY> ByteEstimate for EventValues<NTY>
+where
+    NTY: NumOps,
+{
+    fn byte_estimate(&self) -> u64 {
+        if self.tss.len() == 0 {
+            0
+        } else {
+            // TODO improve via a const fn on NTY
+            self.tss.len() as u64 * 16
+        }
+    }
+}
+
+impl<NTY> RangeOverlapInfo for EventValues<NTY> {
     fn ends_before(&self, range: NanoRange) -> bool {
         match self.tss.last() {
             Some(&ts) => ts < range.beg,
@@ -89,7 +109,7 @@ impl<VT> RangeOverlapInfo for EventValues<VT> {
     }
 }
 
-impl<VT> FitsInside for EventValues<VT> {
+impl<NTY> FitsInside for EventValues<NTY> {
     fn fits_inside(&self, range: NanoRange) -> Fits {
         if self.tss.is_empty() {
             Fits::Empty
@@ -113,7 +133,7 @@ impl<VT> FitsInside for EventValues<VT> {
     }
 }
 
-impl<VT> FilterFittingInside for EventValues<VT> {
+impl<NTY> FilterFittingInside for EventValues<NTY> {
     fn filter_fitting_inside(self, fit_range: NanoRange) -> Option<Self> {
         match self.fits_inside(fit_range) {
             Fits::Inside | Fits::PartlyGreater | Fits::PartlyLower | Fits::PartlyLowerAndGreater => Some(self),

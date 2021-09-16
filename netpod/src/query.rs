@@ -10,4 +10,5 @@ pub struct RawEventsQuery {
     pub range: NanoRange,
     pub agg_kind: AggKind,
     pub disk_io_buffer_size: usize,
+    pub do_decompress: bool,
 }

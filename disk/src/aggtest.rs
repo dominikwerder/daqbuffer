@@ -63,6 +63,7 @@ async fn agg_x_dim_0_inner() {
         file_io_buffer_size,
         event_chunker_conf,
         false,
+        true,
     );
     let _ = fut1;
     // TODO add the binning and expectation and await the result.
@@ -114,6 +115,7 @@ async fn agg_x_dim_1_inner() {
         file_io_buffer_size,
         event_chunker_conf,
         false,
+        true,
     );
     let _ = fut1;
     // TODO add the binning and expectation and await the result.

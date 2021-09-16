@@ -1,19 +1,19 @@
-use crate::dataopen::open_files;
 use crate::dtflags::{ARRAY, BIG_ENDIAN, COMPRESSION, SHAPE};
 use bytes::{Bytes, BytesMut};
 use err::Error;
 use futures_core::Stream;
 use futures_util::future::FusedFuture;
-use futures_util::{pin_mut, select, FutureExt, StreamExt};
+use futures_util::StreamExt;
 use netpod::{log::*, FileIoBufferSize};
-use netpod::{ChannelConfig, NanoRange, Node, Shape};
+use netpod::{ChannelConfig, Node, Shape};
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+use std::{fmt, mem};
 use tokio::fs::{File, OpenOptions};
-use tokio::io::AsyncRead;
+use tokio::io::{AsyncRead, ReadBuf};
 
 pub mod agg;
 #[cfg(test)]
@@ -91,7 +91,7 @@ impl Stream for FileReader {
     }
 }
 
-struct Fopen1 {
+pub struct Fopen1 {
     #[allow(dead_code)]
     opts: OpenOptions,
     fut: Pin<Box<dyn Future<Output = Result<File, std::io::Error>>>>,
@@ -142,199 +142,128 @@ impl FusedFuture for Fopen1 {
 
 unsafe impl Send for Fopen1 {}
 
-#[allow(dead_code)]
-fn unused_raw_concat_channel_read_stream_try_open_in_background(
-    query: &netpod::AggQuerySingleChannel,
-    node: Node,
-) -> impl Stream<Item = Result<Bytes, Error>> + Send {
-    let query = query.clone();
-    let node = node.clone();
-    async_stream::stream! {
-        use tokio::io::AsyncReadExt;
-        let mut fopen = None;
-        let mut fopen_avail = false;
-        let mut file_prep: Option<File> = None;
-        let mut file: Option<File> = None;
-        let mut reading = None;
-        let mut i1 = 0;
-        let mut i9 = 0;
-        loop {
-            let blen = query.buffer_size as usize;
-            {
-                if !fopen_avail && file_prep.is_none() && i1 < 16 {
-                    info!("Prepare open task for next file {}", query.timebin + i1);
-                    fopen.replace(Fopen1::new(paths::datapath(query.timebin as u64 + i1 as u64, &query.channel_config, &node)));
-                    fopen_avail = true;
-                    i1 += 1;
-                }
-            }
-            if !fopen_avail && file_prep.is_none() && file.is_none() && reading.is_none() {
-                info!("Nothing more to do");
-                break;
-            }
-            // TODO
-            // When the file is available, I can prepare the next reading.
-            // But next iteration, the file is not available, but reading is, so I should read!
-            // I can not simply drop the reading future, that would lose the request.
-
-            if let Some(read) = &mut reading {
-                let k: Result<(tokio::fs::File, BytesMut), Error> = read.await;
-                if k.is_err() {
-                    error!("LONELY READ ERROR");
-                }
-                let k = k.unwrap();
-                reading = None;
-                file = Some(k.0);
-                yield Ok(k.1.freeze());
-            }
-            else if fopen.is_some() {
-                if file.is_some() {
-                    if reading.is_none() {
-                        let mut buf = BytesMut::with_capacity(blen);
-                        let mut file2 = file.take().unwrap();
-                        let a = async move {
-                            file2.read_buf(&mut buf).await?;
-                            Ok::<_, Error>((file2, buf))
-                        };
-                        let a = Box::pin(a);
-                        reading = Some(a.fuse());
-                    }
-                    // TODO do I really have to take out the future while waiting on it?
-                    // I think the issue is now with the mutex guard, can I get rid of the mutex again?
-                    let mut fopen3 = fopen.take().unwrap();
-                    let bufres = select! {
-                        // TODO can I avoid the unwraps via matching already above?
-                        f = fopen3 => {
-                            fopen_avail = false;
-                            // TODO feed out the potential error:
-                            file_prep = Some(f.unwrap());
-                            None
-                        }
-                        k = reading.as_mut().unwrap() => {
-                            info!("COMBI  read chunk");
-                            reading = None;
-                            // TODO handle the error somehow here...
-                            if k.is_err() {
-                                error!("READ ERROR IN COMBI");
-                            }
-                            let k = k.unwrap();
-                            file = Some(k.0);
-                            Some(k.1)
-                        }
-                    };
-                    if fopen_avail {
-                        fopen.replace(fopen3);
-                    }
-                    if let Some(k) = bufres {
-                        yield Ok(k.freeze());
-                    }
-                }
-                else {
-                    info!("-----------------   no file open yet, await only opening of the file");
-                    // TODO try to avoid this duplicated code:
-                    if fopen.is_none() {
-                        error!("logic  BB");
-                    }
-                    let fopen3 = fopen.take().unwrap();
-                    let f = fopen3.await?;
-                    info!("opened next file SOLO");
-                    fopen_avail = false;
-                    file = Some(f);
-                }
-            }
-            else if file.is_some() {
-                loop {
-                    let mut buf = BytesMut::with_capacity(blen);
-                    let mut file2 = file.take().unwrap();
-                    let n1 = file2.read_buf(&mut buf).await?;
-                    if n1 == 0 {
-                        if file_prep.is_some() {
-                            file.replace(file_prep.take().unwrap());
-                        }
-                        else {
-                            info!("After read loop, next file not yet ready");
-                        }
-                        break;
-                    }
-                    else {
-                        file.replace(file2);
-                        yield Ok(buf.freeze());
-                    }
-                }
-            }
-            i9 += 1;
-            if i9 > 100 {
-                break;
-            }
-        }
-    }
-}
-
-#[allow(dead_code)]
-fn unused_raw_concat_channel_read_stream_file_pipe(
-    range: &NanoRange,
-    channel_config: &ChannelConfig,
-    node: Node,
-    buffer_size: usize,
-) -> impl Stream<Item = Result<BytesMut, Error>> + Send {
-    let range = range.clone();
-    let channel_config = channel_config.clone();
-    let node = node.clone();
-    async_stream::stream! {
-        let chrx = open_files(&range, &channel_config, node);
-        while let Ok(file) = chrx.recv().await {
-            let mut file = match file {
-                Ok(mut k) => {
-                    k.files.truncate(1);
-                    k.files.pop().unwrap().file.unwrap()
-                }
-                Err(_) => break
-            };
-            loop {
-                let mut buf = BytesMut::with_capacity(buffer_size);
-                use tokio::io::AsyncReadExt;
-                let n1 = file.read_buf(&mut buf).await?;
-                if n1 == 0 {
-                    info!("file EOF");
-                    break;
-                }
-                else {
-                    yield Ok(buf);
-                }
-            }
-        }
-    }
-}
-
 pub struct FileChunkRead {
     buf: BytesMut,
+    cap0: usize,
+    rem0: usize,
+    remmut0: usize,
     duration: Duration,
 }
 
-pub fn file_content_stream(
-    mut file: File,
+impl fmt::Debug for FileChunkRead {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("FileChunkRead")
+            .field("buf.len", &self.buf.len())
+            .field("buf.cap", &self.buf.capacity())
+            .field("cap0", &self.cap0)
+            .field("rem0", &self.rem0)
+            .field("remmut0", &self.remmut0)
+            .field("duration", &self.duration)
+            .finish()
+    }
+}
+
+pub struct FileContentStream {
+    file: File,
     file_io_buffer_size: FileIoBufferSize,
-) -> impl Stream<Item = Result<FileChunkRead, Error>> + Send {
-    async_stream::stream! {
-        use tokio::io::AsyncReadExt;
-        loop {
-            let ts1 = Instant::now();
-            let mut buf = BytesMut::with_capacity(file_io_buffer_size.0);
-            let n1 = file.read_buf(&mut buf).await?;
-            let ts2 = Instant::now();
-            if n1 == 0 {
-                trace!("file EOF");
-                break;
-            }
-            else {
-                let ret = FileChunkRead {
-                    buf,
-                    duration: ts2.duration_since(ts1),
-                };
-                yield Ok(ret);
-            }
+    read_going: bool,
+    buf: BytesMut,
+    ts1: Instant,
+    nlog: usize,
+    done: bool,
+    complete: bool,
+}
+
+impl FileContentStream {
+    pub fn new(file: File, file_io_buffer_size: FileIoBufferSize) -> Self {
+        Self {
+            file,
+            file_io_buffer_size,
+            read_going: false,
+            buf: BytesMut::new(),
+            ts1: Instant::now(),
+            nlog: 0,
+            done: false,
+            complete: false,
         }
     }
+}
+
+impl Stream for FileContentStream {
+    type Item = Result<FileChunkRead, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        loop {
+            break if self.complete {
+                panic!("poll_next on complete")
+            } else if self.done {
+                self.complete = true;
+                Ready(None)
+            } else {
+                let mut buf = if !self.read_going {
+                    self.ts1 = Instant::now();
+                    let mut buf = BytesMut::new();
+                    buf.resize(self.file_io_buffer_size.0, 0);
+                    buf
+                } else {
+                    mem::replace(&mut self.buf, BytesMut::new())
+                };
+                let mutsl = buf.as_mut();
+                let mut rb = ReadBuf::new(mutsl);
+                let f1 = &mut self.file;
+                let f2 = Pin::new(f1);
+                let pollres = AsyncRead::poll_read(f2, cx, &mut rb);
+                match pollres {
+                    Ready(Ok(_)) => {
+                        let nread = rb.filled().len();
+                        let cap0 = rb.capacity();
+                        let rem0 = rb.remaining();
+                        let remmut0 = nread;
+                        buf.truncate(nread);
+                        self.read_going = false;
+                        let ts2 = Instant::now();
+                        if nread == 0 {
+                            let ret = FileChunkRead {
+                                buf,
+                                cap0,
+                                rem0,
+                                remmut0,
+                                duration: ts2.duration_since(self.ts1),
+                            };
+                            self.done = true;
+                            Ready(Some(Ok(ret)))
+                        } else {
+                            let ret = FileChunkRead {
+                                buf,
+                                cap0,
+                                rem0,
+                                remmut0,
+                                duration: ts2.duration_since(self.ts1),
+                            };
+                            if false && self.nlog < 6 {
+                                self.nlog += 1;
+                                info!("{:?}  ret {:?}", self.file_io_buffer_size, ret);
+                            }
+                            Ready(Some(Ok(ret)))
+                        }
+                    }
+                    Ready(Err(e)) => {
+                        self.done = true;
+                        Ready(Some(Err(e.into())))
+                    }
+                    Pending => Pending,
+                }
+            };
+        }
+    }
+}
+
+pub fn file_content_stream(
+    file: File,
+    file_io_buffer_size: FileIoBufferSize,
+) -> impl Stream<Item = Result<FileChunkRead, Error>> + Send {
+    FileContentStream::new(file, file_io_buffer_size)
 }
 
 pub struct NeedMinBuffer {
@@ -391,13 +320,22 @@ impl Stream for NeedMinBuffer {
             let mut again = false;
             let z = match self.inp.poll_next_unpin(cx) {
                 Ready(Some(Ok(fcr))) => {
+                    const SUB: usize = 8;
                     let mut u = fcr.buf.len();
                     let mut po = 0;
                     while u != 0 && po < 15 {
-                        u /= 2;
+                        u = u >> 1;
                         po += 1;
                     }
-                    let po = if po > 8 { po - 8 } else { 0 };
+                    let po = if po >= self.buf_len_histo.len() + SUB {
+                        self.buf_len_histo.len() - 1
+                    } else {
+                        if po > SUB {
+                            po - SUB
+                        } else {
+                            0
+                        }
+                    };
                     self.buf_len_histo[po] += 1;
                     //info!("NeedMinBuffer got buf  len {}", fcr.buf.len());
                     match self.left.take() {
@@ -439,64 +377,6 @@ impl Stream for NeedMinBuffer {
             if !again {
                 break z;
             }
-        }
-    }
-}
-
-#[allow(dead_code)]
-fn raw_concat_channel_read_stream(
-    query: &netpod::AggQuerySingleChannel,
-    node: Node,
-) -> impl Stream<Item = Result<Bytes, Error>> + Send {
-    let mut query = query.clone();
-    let node = node.clone();
-    async_stream::stream! {
-        let mut i1 = 0;
-        loop {
-            let timebin = 18700 + i1;
-            query.timebin = timebin;
-            let s2 = raw_concat_channel_read_stream_timebin(&query, node.clone());
-            pin_mut!(s2);
-            while let Some(item) = s2.next().await {
-                yield item;
-            }
-            i1 += 1;
-            if i1 > 15 {
-                break;
-            }
-        }
-    }
-}
-
-#[allow(dead_code)]
-fn raw_concat_channel_read_stream_timebin(
-    query: &netpod::AggQuerySingleChannel,
-    node: Node,
-) -> impl Stream<Item = Result<Bytes, Error>> {
-    let query = query.clone();
-    let node = node.clone();
-    async_stream::stream! {
-        let path = paths::datapath(query.timebin as u64, &query.channel_config, &node);
-        debug!("try path: {:?}", path);
-        let mut fin = OpenOptions::new().read(true).open(path).await?;
-        let meta = fin.metadata().await?;
-        debug!("file meta {:?}", meta);
-        let blen = query.buffer_size as usize;
-        use tokio::io::AsyncReadExt;
-        loop {
-            let mut buf = BytesMut::with_capacity(blen);
-            assert!(buf.is_empty());
-            if false {
-                buf.resize(buf.capacity(), 0);
-                if buf.as_mut().len() != blen {
-                    panic!("logic");
-                }
-            }
-            let n1 = fin.read_buf(&mut buf).await?;
-            if n1 == 0 {
-                break;
-            }
-            yield Ok(buf.freeze());
         }
     }
 }

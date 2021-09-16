@@ -1,11 +1,14 @@
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use items::ByteEstimate;
 use items::{
     Appendable, EventsNodeProcessor, LogItem, PushableIndex, RangeCompletableItem, Sitemty, StatsItem, StreamItem,
     WithLen, WithTimestamps,
 };
+use netpod::histo::HistoLog2;
 use netpod::log::*;
+use netpod::ByteSize;
 use netpod::EventDataReadStats;
 use std::collections::VecDeque;
 use std::pin::Pin;
@@ -36,9 +39,24 @@ where
     range_complete_observed_all: bool,
     range_complete_observed_all_emitted: bool,
     data_emit_complete: bool,
-    batch_size: usize,
+    batch_size: ByteSize,
+    batch_len_emit_histo: HistoLog2,
     logitems: VecDeque<LogItem>,
     event_data_read_stats_items: VecDeque<EventDataReadStats>,
+}
+
+// TODO get rid, log info explicitly.
+impl<S, ENP> Drop for MergedStream<S, ENP>
+where
+    S: Stream<Item = Sitemty<<ENP as EventsNodeProcessor>::Output>>,
+    ENP: EventsNodeProcessor,
+{
+    fn drop(&mut self) {
+        info!(
+            "MergedStream  Drop Stats:\nbatch_len_emit_histo: {:?}",
+            self.batch_len_emit_histo
+        );
+    }
 }
 
 impl<S, ENP> MergedStream<S, ENP>
@@ -62,7 +80,8 @@ where
             range_complete_observed_all: false,
             range_complete_observed_all_emitted: false,
             data_emit_complete: false,
-            batch_size: 1,
+            batch_size: ByteSize::kb(128),
+            batch_len_emit_histo: HistoLog2::new(0),
             logitems: VecDeque::new(),
             event_data_read_stats_items: VecDeque::new(),
         }
@@ -137,7 +156,7 @@ impl<S, ENP> Stream for MergedStream<S, ENP>
 where
     S: Stream<Item = Sitemty<<ENP as EventsNodeProcessor>::Output>> + Unpin,
     ENP: EventsNodeProcessor,
-    <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable,
+    <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable + ByteEstimate,
 {
     type Item = Sitemty<<ENP as EventsNodeProcessor>::Output>;
 
@@ -192,6 +211,7 @@ where
                             if self.batch.len() != 0 {
                                 let emp = <<ENP as EventsNodeProcessor>::Output>::empty();
                                 let ret = std::mem::replace(&mut self.batch, emp);
+                                self.batch_len_emit_histo.ingest(ret.len() as u32);
                                 self.data_emit_complete = true;
                                 Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
                             } else {
@@ -222,9 +242,11 @@ where
                                 self.ixs[lowest_ix] = 0;
                                 self.current[lowest_ix] = MergedCurVal::None;
                             }
-                            if self.batch.len() >= self.batch_size {
+                            if self.batch.byte_estimate() >= self.batch_size.bytes() as u64 {
+                                trace!("emit item because over threshold  len {}", self.batch.len());
                                 let emp = <<ENP as EventsNodeProcessor>::Output>::empty();
                                 let ret = std::mem::replace(&mut self.batch, emp);
+                                self.batch_len_emit_histo.ingest(ret.len() as u32);
                                 Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
                             } else {
                                 continue 'outer;

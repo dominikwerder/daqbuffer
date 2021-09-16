@@ -485,9 +485,11 @@ pub struct Api1Range {
 pub struct Api1Query {
     channels: Vec<String>,
     range: Api1Range,
-    // Unofficial and non-stable parameters:
-    #[serde(default = "Default::default")]
-    file_io_buffer_size: FileIoBufferSize,
+    // The following are unofficial and not-to-be-used parameters:
+    #[serde(rename = "fileIoBufferSize", default)]
+    file_io_buffer_size: Option<FileIoBufferSize>,
+    #[serde(default)]
+    decompress: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -509,6 +511,7 @@ pub struct DataApiPython3DataStream {
     chan_stream: Option<Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>>,
     config_fut: Option<Pin<Box<dyn Future<Output = Result<Config, Error>> + Send>>>,
     file_io_buffer_size: FileIoBufferSize,
+    do_decompress: bool,
     data_done: bool,
     completed: bool,
 }
@@ -518,6 +521,7 @@ impl DataApiPython3DataStream {
         range: NanoRange,
         channels: Vec<Channel>,
         file_io_buffer_size: FileIoBufferSize,
+        do_decompress: bool,
         node_config: NodeConfigCached,
     ) -> Self {
         Self {
@@ -528,6 +532,7 @@ impl DataApiPython3DataStream {
             chan_stream: None,
             config_fut: None,
             file_io_buffer_size,
+            do_decompress,
             data_done: false,
             completed: false,
         }
@@ -579,12 +584,12 @@ impl Stream for DataApiPython3DataStream {
                                 MatchingConfigEntry::Entry(entry) => entry.clone(),
                             };
                             warn!("found channel_config {:?}", entry);
-
                             let evq = RawEventsQuery {
                                 channel: self.channels[self.chan_ix - 1].clone(),
                                 range: self.range.clone(),
                                 agg_kind: netpod::AggKind::EventBlobs,
                                 disk_io_buffer_size: self.file_io_buffer_size.0,
+                                do_decompress: self.do_decompress,
                             };
                             let perf_opts = PerfOpts { inmem_bufcap: 1024 * 4 };
                             // TODO is this a good to place decide this?
@@ -597,6 +602,7 @@ impl Stream for DataApiPython3DataStream {
                                     evq.channel.clone(),
                                     &entry,
                                     evq.agg_kind.need_expand(),
+                                    evq.do_decompress,
                                     event_chunker_conf,
                                     self.file_io_buffer_size.clone(),
                                     &self.node_config,
@@ -768,7 +774,18 @@ pub async fn api1_binary_events(req: Request<Body>, node_config: &NodeConfigCach
             name: x.clone(),
         })
         .collect();
-    let s = DataApiPython3DataStream::new(range.clone(), chans, qu.file_io_buffer_size, node_config.clone());
+    let file_io_buffer_size = if let Some(k) = qu.file_io_buffer_size {
+        k
+    } else {
+        node_config.node_config.cluster.file_io_buffer_size.clone()
+    };
+    let s = DataApiPython3DataStream::new(
+        range.clone(),
+        chans,
+        file_io_buffer_size,
+        qu.decompress,
+        node_config.clone(),
+    );
     let ret = response(StatusCode::OK).header("x-daqbuffer-request-id", "dummy");
     let ret = ret.body(BodyStream::wrapped(s, format!("api1_binary_events")))?;
     return Ok(ret);

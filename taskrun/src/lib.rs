@@ -93,8 +93,8 @@ pub fn tracing_init() {
                 "info,daqbuffer=trace,daqbuffer::test=trace,disk::raw::conn=info",
             ))
             .init();
-        warn!("tracing_init  done");
         *g = 1;
+        //warn!("tracing_init  done");
     }
 }
 
@@ -132,5 +132,6 @@ pub fn test_cluster() -> netpod::Cluster {
         },
         run_map_pulse_task: false,
         is_central_storage: false,
+        file_io_buffer_size: Default::default(),
     }
 }

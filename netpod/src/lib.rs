@@ -1,4 +1,5 @@
 pub mod api1;
+pub mod histo;
 pub mod query;
 pub mod status;
 pub mod streamext;
@@ -161,18 +162,16 @@ pub struct Database {
     pub pass: String,
 }
 
-fn bool_false() -> bool {
-    false
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Cluster {
     pub nodes: Vec<Node>,
     pub database: Database,
-    #[serde(default = "bool_false")]
+    #[serde(rename = "runMapPulse", default)]
     pub run_map_pulse_task: bool,
-    #[serde(default = "bool_false")]
+    #[serde(rename = "isCentralStorage", default)]
     pub is_central_storage: bool,
+    #[serde(rename = "fileIoBufferSize", default)]
+    pub file_io_buffer_size: FileIoBufferSize,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

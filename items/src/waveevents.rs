@@ -3,8 +3,8 @@ use crate::numops::NumOps;
 use crate::xbinnedscalarevents::XBinnedScalarEvents;
 use crate::xbinnedwaveevents::XBinnedWaveEvents;
 use crate::{
-    Appendable, EventAppendable, EventsNodeProcessor, FilterFittingInside, Fits, FitsInside, PushableIndex,
-    RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType,
+    Appendable, ByteEstimate, EventAppendable, EventsNodeProcessor, FilterFittingInside, Fits, FitsInside,
+    PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType,
     TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
@@ -45,6 +45,17 @@ impl<NTY> WithLen for WaveEvents<NTY> {
 impl<NTY> WithTimestamps for WaveEvents<NTY> {
     fn ts(&self, ix: usize) -> u64 {
         self.tss[ix]
+    }
+}
+
+impl<NTY> ByteEstimate for WaveEvents<NTY> {
+    fn byte_estimate(&self) -> u64 {
+        if self.tss.len() == 0 {
+            0
+        } else {
+            // TODO improve via a const fn on NTY
+            self.tss.len() as u64 * 8 * self.vals[0].len() as u64
+        }
     }
 }
 
