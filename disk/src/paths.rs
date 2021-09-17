@@ -5,14 +5,14 @@ use netpod::timeunits::MS;
 use netpod::{ChannelConfig, Nanos, Node};
 use std::path::PathBuf;
 
-// TODO remove this
-pub fn datapath(timebin: u64, config: &netpod::ChannelConfig, node: &Node) -> PathBuf {
+// TODO remove/replace this
+pub fn datapath(timebin: u64, config: &netpod::ChannelConfig, split: u32, node: &Node) -> PathBuf {
     node.data_base_path
         .join(format!("{}_{}", node.ksprefix, config.keyspace))
         .join("byTime")
         .join(config.channel.name.clone())
         .join(format!("{:019}", timebin))
-        .join(format!("{:010}", node.split))
+        .join(format!("{:010}", split))
         .join(format!("{:019}_00000_Data", config.time_bin_size.ns / MS))
 }
 
@@ -77,22 +77,22 @@ pub fn channel_timebins_dir_path(channel_config: &ChannelConfig, node: &Node) ->
     Ok(ret)
 }
 
-pub fn data_dir_path(ts: Nanos, channel_config: &ChannelConfig, node: &Node) -> Result<PathBuf, Error> {
+pub fn data_dir_path(ts: Nanos, channel_config: &ChannelConfig, split: u32, node: &Node) -> Result<PathBuf, Error> {
     let ret = channel_timebins_dir_path(channel_config, node)?
         .join(format!("{:019}", ts.ns / channel_config.time_bin_size.ns))
-        .join(format!("{:010}", node.split));
+        .join(format!("{:010}", split));
     Ok(ret)
 }
 
-pub fn data_path(ts: Nanos, channel_config: &ChannelConfig, node: &Node) -> Result<PathBuf, Error> {
+pub fn data_path(ts: Nanos, channel_config: &ChannelConfig, split: u32, node: &Node) -> Result<PathBuf, Error> {
     let fname = format!("{:019}_{:05}_Data", channel_config.time_bin_size.ns / MS, 0);
-    let ret = data_dir_path(ts, channel_config, node)?.join(fname);
+    let ret = data_dir_path(ts, channel_config, split, node)?.join(fname);
     Ok(ret)
 }
 
-pub fn index_path(ts: Nanos, channel_config: &ChannelConfig, node: &Node) -> Result<PathBuf, Error> {
+pub fn index_path(ts: Nanos, channel_config: &ChannelConfig, split: u32, node: &Node) -> Result<PathBuf, Error> {
     let fname = format!("{:019}_{:05}_Data_Index", channel_config.time_bin_size.ns / MS, 0);
-    let ret = data_dir_path(ts, channel_config, node)?.join(fname);
+    let ret = data_dir_path(ts, channel_config, split, node)?.join(fname);
     Ok(ret)
 }
 

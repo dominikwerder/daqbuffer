@@ -5,6 +5,7 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use items::frame::{decode_frame, make_term_frame};
 use items::{Framable, StreamItem};
+use netpod::histo::HistoLog2;
 use netpod::query::RawEventsQuery;
 use netpod::{log::*, AggKind};
 use netpod::{EventQueryJsonStringFrame, NodeConfigCached, PerfOpts};
@@ -134,13 +135,13 @@ async fn events_conn_handler_inner_try(
                 },
             }
         };
-
+    let mut buf_len_histo = HistoLog2::new(5);
     while let Some(item) = p1.next().await {
         //info!("conn.rs  encode frame typeid {:x}", item.typeid());
         let item = item.make_frame();
         match item {
             Ok(buf) => {
-                info!("events_conn_handler  send {} bytes", buf.len());
+                buf_len_histo.ingest(buf.len() as u32);
                 match netout.write_all(&buf).await {
                     Ok(_) => {}
                     Err(e) => return Err((e, netout))?,
@@ -160,5 +161,6 @@ async fn events_conn_handler_inner_try(
         Ok(_) => (),
         Err(e) => return Err((e, netout))?,
     }
+    info!("events_conn_handler_inner_try  buf_len_histo: {:?}", buf_len_histo);
     Ok(())
 }

@@ -375,21 +375,21 @@ impl EventChunker {
                                             let ts2 = Instant::now();
                                             let dt = ts2.duration_since(ts1);
                                             self.decomp_dt_histo.ingest(dt.as_secs() as u32 + dt.subsec_micros());
-                                            decomp
+                                            Some(decomp)
                                         }
                                         Err(e) => {
                                             return Err(Error::with_msg(format!("decompression failed {:?}", e)))?;
                                         }
                                     }
                                 } else {
-                                    BytesMut::new()
+                                    None
                                 }
                             };
                             ret.add_event(
                                 ts,
                                 pulse,
                                 buf.as_ref()[(p1 as usize)..(p1 as usize + k1 as usize)].to_vec(),
-                                Some(decomp),
+                                decomp,
                                 ScalarType::from_dtype_index(type_index)?,
                                 is_big_endian,
                                 shape_this,
@@ -401,6 +401,7 @@ impl EventChunker {
                                 Err(Error::with_msg(msg))?;
                             }
                             let vlen = len - p1 as u32 - 4;
+                            // TODO in this case, decomp and comp is the same and not needed.
                             let decomp = BytesMut::from(&buf[p1 as usize..(p1 as u32 + vlen) as usize]);
                             ret.add_event(
                                 ts,

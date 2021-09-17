@@ -36,6 +36,7 @@ const _MAP_INDEX_FAST_URL_PREFIX: &'static str = "/api/1/map/index/fast/";
 const MAP_PULSE_HISTO_URL_PREFIX: &'static str = "/api/1/map/pulse/histo/";
 const MAP_PULSE_URL_PREFIX: &'static str = "/api/1/map/pulse/";
 const MAP_PULSE_LOCAL_URL_PREFIX: &'static str = "/api/1/map/pulse/local/";
+const MAP_PULSE_MARK_CLOSED_URL_PREFIX: &'static str = "/api/1/map/pulse/mark/closed/";
 
 async fn make_tables(node_config: &NodeConfigCached) -> Result<(), Error> {
     let conn = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
@@ -217,53 +218,73 @@ impl IndexFullHttpFunction {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
-        Self::index(node_config).await
+        let ret = match Self::index(node_config).await {
+            Ok(msg) => response(StatusCode::OK).body(Body::from(msg))?,
+            Err(e) => response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?,
+        };
+        Ok(ret)
     }
 
-    pub async fn index(node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn index_channel(
+        channel_name: String,
+        conn: &dbconn::pg::Client,
+        node_config: &NodeConfigCached,
+    ) -> Result<String, Error> {
+        let mut msg = format!("Index channel {}", channel_name);
+        let files = datafiles_for_channel(channel_name.clone(), node_config).await?;
+        msg = format!("{}\n{:?}", msg, files);
+        for path in files {
+            let splitted: Vec<_> = path.to_str().unwrap().split("/").collect();
+            let timebin: u64 = splitted[splitted.len() - 3].parse()?;
+            let split: u64 = splitted[splitted.len() - 2].parse()?;
+            if false {
+                info!(
+                    "hostname {}  timebin {}  split {}",
+                    node_config.node.host, timebin, split
+                );
+            }
+            let file = tokio::fs::OpenOptions::new().read(true).open(path).await?;
+            let (r2, file) = read_first_chunk(file).await?;
+            msg = format!("{}\n{:?}", msg, r2);
+            let (r3, _file) = read_last_chunk(file, r2.pos, r2.len).await?;
+            msg = format!("{}\n{:?}", msg, r3);
+            // TODO remove update of static columns when older clients are removed.
+            let sql = "insert into map_pulse_files (channel, split, timebin, pulse_min, pulse_max, hostname) values ($1, $2, $3, $4, $5, $6) on conflict (channel, split, timebin) do update set pulse_min = $4, pulse_max = $5, upc1 = map_pulse_files.upc1 + 1, hostname = $6";
+            conn.execute(
+                sql,
+                &[
+                    &channel_name,
+                    &(split as i32),
+                    &(timebin as i32),
+                    &(r2.pulse as i64),
+                    &(r3.pulse as i64),
+                    &node_config.node.host,
+                ],
+            )
+            .await?;
+        }
+        Ok(msg)
+    }
+
+    pub async fn index(node_config: &NodeConfigCached) -> Result<String, Error> {
         // TODO avoid double-insert on central storage.
-        // TODO Mark files as "closed".
         let mut msg = format!("LOG");
         make_tables(node_config).await?;
         let conn = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
         let chs = timer_channel_names();
         for channel_name in &chs[..] {
-            info!("channel_name {}", channel_name);
-            let files = datafiles_for_channel(channel_name.clone(), node_config).await?;
-            msg = format!("\n{:?}", files);
-            for path in files {
-                let splitted: Vec<_> = path.to_str().unwrap().split("/").collect();
-                //info!("splitted: {:?}", splitted);
-                let timebin: u64 = splitted[splitted.len() - 3].parse()?;
-                let split: u64 = splitted[splitted.len() - 2].parse()?;
-                if false {
-                    info!(
-                        "hostname {}  timebin {}  split {}",
-                        node_config.node.host, timebin, split
-                    );
+            match Self::index_channel(channel_name.clone(), &conn, node_config).await {
+                Ok(m) => {
+                    msg.push_str("\n");
+                    msg.push_str(&m);
                 }
-                let file = tokio::fs::OpenOptions::new().read(true).open(path).await?;
-                let (r2, file) = read_first_chunk(file).await?;
-                msg = format!("{}\n{:?}", msg, r2);
-                let (r3, _file) = read_last_chunk(file, r2.pos, r2.len).await?;
-                msg = format!("{}\n{:?}", msg, r3);
-                // TODO remove update of static when older clients are removed.
-                let sql = "insert into map_pulse_files (channel, split, timebin, pulse_min, pulse_max, hostname) values ($1, $2, $3, $4, $5, $6) on conflict (channel, split, timebin) do update set pulse_min = $4, pulse_max = $5, upc1 = map_pulse_files.upc1 + 1, hostname = $6";
-                conn.execute(
-                    sql,
-                    &[
-                        &channel_name,
-                        &(split as i32),
-                        &(timebin as i32),
-                        &(r2.pulse as i64),
-                        &(r3.pulse as i64),
-                        &node_config.node.host,
-                    ],
-                )
-                .await?;
+                Err(e) => {
+                    error!("error while indexing {}  {:?}", channel_name, e);
+                    return Err(e);
+                }
             }
         }
-        Ok(response(StatusCode::OK).body(Body::from(msg))?)
+        Ok(msg)
     }
 }
 
@@ -526,6 +547,7 @@ impl MapPulseHttpFunction {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
+        info!("MapPulseHttpFunction  handle  uri: {:?}", req.uri());
         let urls = format!("{}", req.uri());
         let pulse: u64 = urls[MAP_PULSE_URL_PREFIX.len()..].parse()?;
         let histo = MapPulseHistoHttpFunction::histo(pulse, node_config).await?;
@@ -542,5 +564,56 @@ impl MapPulseHttpFunction {
         } else {
             Ok(response(StatusCode::NO_CONTENT).body(Body::empty())?)
         }
+    }
+}
+
+pub struct MarkClosedHttpFunction {}
+
+impl MarkClosedHttpFunction {
+    pub fn path_matches(path: &str) -> bool {
+        path.starts_with(MAP_PULSE_MARK_CLOSED_URL_PREFIX)
+    }
+
+    pub async fn handle(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+        if req.method() != Method::GET {
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+        }
+        info!("MarkClosedHttpFunction  handle  uri: {:?}", req.uri());
+        match MarkClosedHttpFunction::mark_closed(node_config).await {
+            Ok(_) => {
+                let ret = response(StatusCode::OK).body(Body::empty())?;
+                Ok(ret)
+            }
+            Err(e) => {
+                let msg = format!("{:?}", e);
+                let ret = response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(msg))?;
+                Ok(ret)
+            }
+        }
+    }
+
+    pub async fn mark_closed(node_config: &NodeConfigCached) -> Result<(), Error> {
+        let conn = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
+        let sql = "select distinct channel from map_pulse_files order by channel";
+        let rows = conn.query(sql, &[]).await?;
+        let chns: Vec<_> = rows.iter().map(|r| r.get::<_, String>(0)).collect();
+        for chn in &chns {
+            let sql = concat!(
+                "with q1 as (select channel, split, timebin from map_pulse_files",
+                " where channel = $1 and hostname = $2",
+                " order by timebin desc offset 2)",
+                " update map_pulse_files t2 set closed = 1 from q1",
+                " where t2.channel = q1.channel",
+                " and t2.closed = 0",
+                " and t2.split = q1.split",
+                " and t2.timebin = q1.timebin",
+            );
+            let nmod = conn.execute(sql, &[&chn, &node_config.node.host]).await?;
+            info!(
+                "mark files  mod {}  chn {:?}  host {:?}",
+                nmod, chn, node_config.node.host
+            );
+        }
+        Ok(())
     }
 }

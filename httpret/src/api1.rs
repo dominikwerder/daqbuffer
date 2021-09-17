@@ -14,7 +14,9 @@ use netpod::{
     log::*, ByteSize, Channel, FileIoBufferSize, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape, APP_OCTET,
 };
 use netpod::{ChannelSearchQuery, ChannelSearchResult, ProxyConfig, APP_JSON};
-use parse::channelconfig::{extract_matching_config_entry, read_local_config, Config, MatchingConfigEntry};
+use parse::channelconfig::{
+    extract_matching_config_entry, read_local_config, Config, ConfigEntry, MatchingConfigEntry,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::future::Future;
@@ -537,6 +539,93 @@ impl DataApiPython3DataStream {
             completed: false,
         }
     }
+
+    fn convert_item(
+        b: EventFull,
+        channel: &Channel,
+        entry: &ConfigEntry,
+        header_out: &mut bool,
+        count_events: &mut usize,
+    ) -> Result<BytesMut, Error> {
+        let mut d = BytesMut::new();
+        for i1 in 0..b.tss.len() {
+            if *count_events < 6 {
+                info!(
+                    "deco len {:?}  BE {}  scalar-type {:?}  shape {:?}  comps {:?}",
+                    b.decomps[i1].as_ref().map(|x| x.len()),
+                    b.be[i1],
+                    b.scalar_types[i1],
+                    b.shapes[i1],
+                    b.comps[i1],
+                );
+            }
+            // TODO emit warning when we use a different setting compared to channel config.
+            if false {
+                let _compression = if let (Shape::Image(..), Some(..)) = (&b.shapes[i1], &b.comps[i1]) {
+                    Some(1)
+                } else {
+                    None
+                };
+            };
+            let compression = if let Some(_) = &b.comps[i1] { Some(1) } else { None };
+            if !*header_out {
+                let head = Api1ChannelHeader {
+                    name: channel.name.clone(),
+                    ty: scalar_type_to_api3proto(&b.scalar_types[i1]).into(),
+                    byte_order: if b.be[i1] {
+                        "BIG_ENDIAN".into()
+                    } else {
+                        "LITTLE_ENDIAN".into()
+                    },
+                    // The shape is inconsistent on the events.
+                    // Seems like the config is to be trusted in this case.
+                    shape: shape_to_api3proto(&entry.shape),
+                    compression,
+                };
+                let h = serde_json::to_string(&head)?;
+                info!("sending channel header {}", h);
+                let l1 = 1 + h.as_bytes().len() as u32;
+                d.put_u32(l1);
+                d.put_u8(0);
+                d.extend_from_slice(h.as_bytes());
+                d.put_u32(l1);
+                *header_out = true;
+            }
+            {
+                match &b.shapes[i1] {
+                    Shape::Image(_, _) => {
+                        let l1 = 17 + b.blobs[i1].len() as u32;
+                        d.put_u32(l1);
+                        d.put_u8(1);
+                        d.put_u64(b.tss[i1]);
+                        d.put_u64(b.pulses[i1]);
+                        d.put_slice(&b.blobs[i1]);
+                        d.put_u32(l1);
+                    }
+                    Shape::Wave(_) => {
+                        let l1 = 17 + b.blobs[i1].len() as u32;
+                        d.put_u32(l1);
+                        d.put_u8(1);
+                        d.put_u64(b.tss[i1]);
+                        d.put_u64(b.pulses[i1]);
+                        d.put_slice(&b.blobs[i1]);
+                        d.put_u32(l1);
+                    }
+                    _ => {
+                        let l1 = 17 + b.blobs[i1].len() as u32;
+                        d.put_u32(l1);
+                        d.put_u8(1);
+                        d.put_u64(b.tss[i1]);
+                        d.put_u64(b.pulses[i1]);
+                        d.put_slice(&b.blobs[i1]);
+                        d.put_u32(l1);
+                    }
+                }
+            }
+            *count_events += 1;
+        }
+        Ok(d)
+    }
 }
 
 impl Stream for DataApiPython3DataStream {
@@ -583,9 +672,10 @@ impl Stream for DataApiPython3DataStream {
                                 }
                                 MatchingConfigEntry::Entry(entry) => entry.clone(),
                             };
-                            warn!("found channel_config {:?}", entry);
+                            let channel = self.channels[self.chan_ix - 1].clone();
+                            info!("found channel_config for {}: {:?}", channel.name, entry);
                             let evq = RawEventsQuery {
-                                channel: self.channels[self.chan_ix - 1].clone(),
+                                channel,
                                 range: self.range.clone(),
                                 agg_kind: netpod::AggKind::EventBlobs,
                                 disk_io_buffer_size: self.file_io_buffer_size.0,
@@ -626,70 +716,13 @@ impl Stream for DataApiPython3DataStream {
                                         Ok(b) => {
                                             let f = match b {
                                                 StreamItem::DataItem(RangeCompletableItem::Data(b)) => {
-                                                    let mut d = BytesMut::new();
-                                                    for i1 in 0..b.tss.len() {
-                                                        if count_events < 6 {
-                                                            info!(
-                                                                "deco len {:?}  BE {}  scalar-type {:?}  shape {:?}  comps {:?}",
-                                                                b.decomps[i1].as_ref().map(|x| x.len()),
-                                                                b.be[i1],
-                                                                b.scalar_types[i1],
-                                                                b.shapes[i1],
-                                                                b.comps[i1],
-                                                            );
-                                                        }
-                                                        let compression = if let (Shape::Image(..), Some(..)) = (&b.shapes[i1], &b.comps[i1]) { Some(1) } else { None };
-                                                        if !header_out {
-                                                            let head = Api1ChannelHeader {
-                                                                name: channel.name.clone(),
-                                                                ty: scalar_type_to_api3proto(&b.scalar_types[i1])
-                                                                    .into(),
-                                                                byte_order: if b.be[i1] {
-                                                                    "BIG_ENDIAN".into()
-                                                                } else {
-                                                                    "LITTLE_ENDIAN".into()
-                                                                },
-                                                                // The shape is inconsistent on the events.
-                                                                // Seems like the config is to be trusted in this case.
-                                                                shape: shape_to_api3proto(&entry.shape),
-                                                                compression,
-                                                            };
-                                                            let h = serde_json::to_string(&head)?;
-                                                            info!("sending channel header {}", h);
-                                                            let l1 = 1 + h.as_bytes().len() as u32;
-                                                            d.put_u32(l1);
-                                                            d.put_u8(0);
-                                                            d.extend_from_slice(h.as_bytes());
-                                                            d.put_u32(l1);
-                                                            header_out = true;
-                                                        }
-                                                        {
-                                                            match &b.shapes[i1] {
-                                                                Shape::Image(_, _) => {
-                                                                    let l1 = 17 + b.blobs[i1].len() as u32;
-                                                                    d.put_u32(l1);
-                                                                    d.put_u8(1);
-                                                                    d.put_u64(b.tss[i1]);
-                                                                    d.put_u64(b.pulses[i1]);
-                                                                    d.put_slice(&b.blobs[i1]);
-                                                                    d.put_u32(l1);
-                                                                }
-                                                                _ => {
-                                                                    if let Some(deco) = &b.decomps[i1] {
-                                                                        let l1 = 17 + deco.len() as u32;
-                                                                        d.put_u32(l1);
-                                                                        d.put_u8(1);
-                                                                        d.put_u64(b.tss[i1]);
-                                                                        d.put_u64(b.pulses[i1]);
-                                                                        d.put_slice(&deco);
-                                                                        d.put_u32(l1);
-                                                                    }
-                                                                }
-                                                            }
-                                                        }
-                                                        count_events += 1;
-                                                    }
-                                                    d
+                                                    Self::convert_item(
+                                                        b,
+                                                        &channel,
+                                                        &entry,
+                                                        &mut header_out,
+                                                        &mut count_events,
+                                                    )?
                                                 }
                                                 _ => BytesMut::new(),
                                             };
@@ -732,7 +765,7 @@ impl Stream for DataApiPython3DataStream {
 }
 
 pub async fn api1_binary_events(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("api1_binary_events  headers: {:?}", req.headers());
+    info!("api1_binary_events  uri: {:?}  headers: {:?}", req.uri(), req.headers());
     let accept_def = "";
     let accept = req
         .headers()
@@ -741,8 +774,12 @@ pub async fn api1_binary_events(req: Request<Body>, node_config: &NodeConfigCach
         .to_owned();
     let (_head, body) = req.into_parts();
     let body_data = hyper::body::to_bytes(body).await?;
-    info!("got body_data: {:?}", String::from_utf8(body_data[..].to_vec()));
-    let qu: Api1Query = serde_json::from_slice(&body_data)?;
+    let qu: Api1Query = if let Ok(qu) = serde_json::from_slice(&body_data) {
+        qu
+    } else {
+        error!("got body_data: {:?}", String::from_utf8(body_data[..].to_vec()));
+        return Err(Error::with_msg_no_trace("can not parse query"));
+    };
     info!("got Api1Query: {:?}", qu);
     let beg_date = chrono::DateTime::parse_from_rfc3339(&qu.range.start_date);
     let end_date = chrono::DateTime::parse_from_rfc3339(&qu.range.end_date);

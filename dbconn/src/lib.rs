@@ -7,6 +7,10 @@ use tokio_postgres::{Client, NoTls};
 pub mod scan;
 pub mod search;
 
+pub mod pg {
+    pub use tokio_postgres::Client;
+}
+
 pub async fn delay_us(mu: u64) {
     tokio::time::sleep(Duration::from_micros(mu)).await;
 }

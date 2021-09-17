@@ -120,7 +120,6 @@ pub async fn gen_test_data() -> Result<(), Error> {
             listen: "0.0.0.0".into(),
             port: 7780 + i1 as u16,
             port_raw: 7780 + i1 as u16 + 100,
-            split: i1,
             data_base_path: data_base_path.join(format!("node{:02}", i1)),
             cache_base_path: data_base_path.join(format!("node{:02}", i1)),
             ksprefix: ksprefix.clone(),
@@ -129,8 +128,8 @@ pub async fn gen_test_data() -> Result<(), Error> {
         };
         ensemble.nodes.push(node);
     }
-    for node in &ensemble.nodes {
-        gen_node(node, &ensemble).await?;
+    for (split, node) in ensemble.nodes.iter().enumerate() {
+        gen_node(split as u32, node, &ensemble).await?;
     }
     Ok(())
 }
@@ -146,14 +145,14 @@ pub struct ChannelGenProps {
     gen_var: GenVar,
 }
 
-async fn gen_node(node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
+async fn gen_node(split: u32, node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
     for chn in &ensemble.channels {
-        gen_channel(chn, node, ensemble).await?
+        gen_channel(chn, split, node, ensemble).await?
     }
     Ok(())
 }
 
-async fn gen_channel(chn: &ChannelGenProps, node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
+async fn gen_channel(chn: &ChannelGenProps, split: u32, node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
     let config_path = node.data_base_path.join("config").join(&chn.config.channel.name);
     let channel_path = node
         .data_base_path
@@ -175,6 +174,7 @@ async fn gen_channel(chn: &ChannelGenProps, node: &Node, ensemble: &Ensemble) ->
             chn.time_spacing,
             &channel_path,
             &chn.config,
+            split,
             node,
             ensemble,
             &chn.gen_var,
@@ -321,14 +321,13 @@ async fn gen_timebin(
     ts_spacing: u64,
     channel_path: &Path,
     config: &ChannelConfig,
+    split: u32,
     node: &Node,
     ensemble: &Ensemble,
     gen_var: &GenVar,
 ) -> Result<GenTimebinRes, Error> {
     let tb = ts.ns / config.time_bin_size.ns;
-    let path = channel_path
-        .join(format!("{:019}", tb))
-        .join(format!("{:010}", node.split));
+    let path = channel_path.join(format!("{:019}", tb)).join(format!("{:010}", split));
     tokio::fs::create_dir_all(&path).await?;
     let data_path = path.join(format!("{:019}_{:05}_Data", config.time_bin_size.ns / MS, 0));
     let index_path = path.join(format!("{:019}_{:05}_Data_Index", config.time_bin_size.ns / MS, 0));
@@ -363,20 +362,22 @@ async fn gen_timebin(
     };
     while ts.ns < tsmax.ns {
         match gen_var {
+            // TODO
+            // Splits and nodes are not in 1-to-1 correspondence.
             GenVar::Default => {
-                if evix % ensemble.nodes.len() as u64 == node.split as u64 {
+                if evix % ensemble.nodes.len() as u64 == split as u64 {
                     gen_event(&mut file, index_file.as_mut(), evix, ts, pulse, config, gen_var).await?;
                 }
             }
             GenVar::ConstRegular => {
-                if evix % ensemble.nodes.len() as u64 == node.split as u64 {
+                if evix % ensemble.nodes.len() as u64 == split as u64 {
                     gen_event(&mut file, index_file.as_mut(), evix, ts, pulse, config, gen_var).await?;
                 }
             }
             GenVar::TimeWeight => {
                 let m = evix % 20;
                 if m == 0 || m == 1 {
-                    if evix % ensemble.nodes.len() as u64 == node.split as u64 {
+                    if evix % ensemble.nodes.len() as u64 == split as u64 {
                         gen_event(&mut file, index_file.as_mut(), evix, ts, pulse, config, gen_var).await?;
                     }
                 }

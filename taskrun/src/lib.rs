@@ -117,7 +117,6 @@ pub fn test_cluster() -> netpod::Cluster {
             data_base_path: format!("../tmpdata/node{:02}", id).into(),
             cache_base_path: format!("../tmpdata/node{:02}", id).into(),
             ksprefix: "ks".into(),
-            split: id,
             backend: "testbackend".into(),
             archiver_appliance: None,
         })

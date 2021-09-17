@@ -4,6 +4,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::future::FusedFuture;
 use futures_util::StreamExt;
+use netpod::histo::HistoLog2;
 use netpod::{log::*, FileIoBufferSize};
 use netpod::{ChannelConfig, Node, Shape};
 use std::future::Future;
@@ -36,8 +37,9 @@ pub mod paths;
 pub mod raw;
 pub mod streamlog;
 
+// TODO transform this into a self-test or remove.
 pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: Node) -> Result<netpod::BodyStream, Error> {
-    let path = paths::datapath(query.timebin as u64, &query.channel_config, &node);
+    let path = paths::datapath(query.timebin as u64, &query.channel_config, 0, &node);
     debug!("try path: {:?}", path);
     let fin = OpenOptions::new().read(true).open(path).await?;
     let meta = fin.metadata().await;
@@ -270,7 +272,7 @@ pub struct NeedMinBuffer {
     inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>,
     need_min: u32,
     left: Option<FileChunkRead>,
-    buf_len_histo: [u32; 16],
+    buf_len_histo: HistoLog2,
     errored: bool,
     completed: bool,
 }
@@ -281,7 +283,7 @@ impl NeedMinBuffer {
             inp: inp,
             need_min: 1,
             left: None,
-            buf_len_histo: Default::default(),
+            buf_len_histo: HistoLog2::new(8),
             errored: false,
             completed: false,
         }
@@ -300,7 +302,7 @@ impl NeedMinBuffer {
 // TODO remove this again
 impl Drop for NeedMinBuffer {
     fn drop(&mut self) {
-        info!("NeedMinBuffer  histo: {:?}", self.buf_len_histo);
+        info!("NeedMinBuffer  Drop Stats:\nbuf_len_histo: {:?}", self.buf_len_histo);
     }
 }
 
@@ -320,23 +322,7 @@ impl Stream for NeedMinBuffer {
             let mut again = false;
             let z = match self.inp.poll_next_unpin(cx) {
                 Ready(Some(Ok(fcr))) => {
-                    const SUB: usize = 8;
-                    let mut u = fcr.buf.len();
-                    let mut po = 0;
-                    while u != 0 && po < 15 {
-                        u = u >> 1;
-                        po += 1;
-                    }
-                    let po = if po >= self.buf_len_histo.len() + SUB {
-                        self.buf_len_histo.len() - 1
-                    } else {
-                        if po > SUB {
-                            po - SUB
-                        } else {
-                            0
-                        }
-                    };
-                    self.buf_len_histo[po] += 1;
+                    self.buf_len_histo.ingest(fcr.buf.len() as u32);
                     //info!("NeedMinBuffer got buf  len {}", fcr.buf.len());
                     match self.left.take() {
                         Some(mut lfcr) => {

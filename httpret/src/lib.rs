@@ -149,6 +149,7 @@ macro_rules! static_http_api1 {
 }
 
 async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    info!("http_service_try  {:?}", req.uri());
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/4/node_status" {
@@ -251,10 +252,12 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         if req.method() == Method::POST {
             Ok(api1::api1_binary_events(req, &node_config).await?)
         } else {
-            Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else if pulsemap::IndexFullHttpFunction::path_matches(path) {
         pulsemap::IndexFullHttpFunction::handle(req, &node_config).await
+    } else if pulsemap::MarkClosedHttpFunction::path_matches(path) {
+        pulsemap::MarkClosedHttpFunction::handle(req, &node_config).await
     } else if pulsemap::MapPulseLocalHttpFunction::path_matches(path) {
         pulsemap::MapPulseLocalHttpFunction::handle(req, &node_config).await
     } else if pulsemap::MapPulseHistoHttpFunction::path_matches(path) {
@@ -387,7 +390,7 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
     let desc = format!("binned-BEG-{}-END-{}", query.range().beg / SEC, query.range().end / SEC);
     let span1 = span!(Level::INFO, "httpret::binned", desc = &desc.as_str());
     span1.in_scope(|| {
-        info!("binned STARTING");
+        info!("binned STARTING  {:?}", query);
     });
     match head.headers.get(http::header::ACCEPT) {
         Some(v) if v == APP_OCTET => binned_binary(query, node_config).await,

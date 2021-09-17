@@ -13,7 +13,6 @@ pub fn make_test_node(id: u32) -> Node {
         port_raw: 8800 + id as u16 + 100,
         data_base_path: format!("../tmpdata/node{:02}", id).into(),
         cache_base_path: format!("../tmpdata/node{:02}", id).into(),
-        split: id,
         ksprefix: "ks".into(),
         backend: "testbackend".into(),
         archiver_appliance: None,

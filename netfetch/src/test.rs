@@ -15,7 +15,6 @@ fn ca_connect_1() {
                 port: 123,
                 port_raw: 123,
                 backend: "".into(),
-                split: 0,
                 data_base_path: "".into(),
                 cache_base_path: "".into(),
                 listen: "".into(),

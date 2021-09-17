@@ -44,7 +44,7 @@ fn time_weighted_json_01() {
             10,
             AggKind::DimXBins1,
             cluster,
-            11,
+            9,
             true,
         )
         .await?;
