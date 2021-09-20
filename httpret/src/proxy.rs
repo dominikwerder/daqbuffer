@@ -9,6 +9,7 @@ use futures_util::pin_mut;
 use http::{Method, StatusCode};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
+use hyper_tls::HttpsConnector;
 use itertools::Itertools;
 use netpod::log::*;
 use netpod::{
@@ -70,6 +71,8 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
         Err(Error::with_msg("todo"))
     } else if path == "/api/1/query" {
         Ok(proxy_api1_single_backend_query(req, proxy_config).await?)
+    } else if path.starts_with("/api/1/map/pulse/") {
+        Ok(proxy_api1_map_pulse(req, proxy_config).await?)
     } else if path.starts_with("/api/1/gather/") {
         Ok(gather_json_2_v1(req, "/api/1/gather/", proxy_config).await?)
     } else if path == "/api/4/backends" {
@@ -112,7 +115,7 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
         }
     } else {
         Ok(response(StatusCode::NOT_FOUND).body(Body::from(format!(
-            "Sorry, not found: {:?}  {:?}  {:?}",
+            "Sorry, proxy can not find: {:?}  {:?}  {:?}",
             req.method(),
             req.uri().path(),
             req.uri().query(),
@@ -295,6 +298,69 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
             }
         }
         None => Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?),
+    }
+}
+
+pub async fn proxy_api1_map_pulse(req: Request<Body>, proxy_config: &ProxyConfig) -> Result<Response<Body>, Error> {
+    let s2 = format!("http://dummy/{}", req.uri());
+    info!("s2: {:?}", s2);
+    let url = Url::parse(&s2)?;
+    let mut backend = None;
+    for (k, v) in url.query_pairs() {
+        if k == "backend" {
+            backend = Some(v.to_string());
+        }
+    }
+    let backend = if let Some(backend) = backend {
+        backend
+    } else {
+        return Ok(super::response_err(
+            StatusCode::BAD_REQUEST,
+            "Required parameter `backend` not specified.",
+        )?);
+    };
+    let pulseid = if let Some(k) = url.path_segments() {
+        if let Some(k) = k.rev().next() {
+            if let Ok(k) = k.to_string().parse::<u64>() {
+                k
+            } else {
+                return Ok(super::response_err(
+                    StatusCode::BAD_REQUEST,
+                    "Can not parse parameter `pulseid`.",
+                )?);
+            }
+        } else {
+            return Ok(super::response_err(
+                StatusCode::BAD_REQUEST,
+                "Can not parse parameter `pulseid`.",
+            )?);
+        }
+    } else {
+        return Ok(super::response_err(
+            StatusCode::BAD_REQUEST,
+            "Required parameter `pulseid` not specified.",
+        )?);
+    };
+    if backend == "sf-databuffer" {
+        if proxy_config.search_hosts.len() == 1 {
+            let url = format!("http://sf-daqbuf-21:8380/api/1/map/pulse/{}", pulseid);
+            let req = Request::builder().method(Method::GET).uri(url).body(Body::empty())?;
+            let res = hyper::Client::new().request(req).await?;
+            let ret = response(StatusCode::OK).body(res.into_body())?;
+            Ok(ret)
+        } else {
+            let url = format!("https://sf-data-api.psi.ch/api/1/map/pulse/{}", pulseid);
+            let req = Request::builder().method(Method::GET).uri(url).body(Body::empty())?;
+            let https = HttpsConnector::new();
+            let res = hyper::Client::builder().build(https).request(req).await?;
+            let ret = response(StatusCode::OK).body(res.into_body())?;
+            Ok(ret)
+        }
+    } else {
+        return Ok(super::response_err(
+            StatusCode::BAD_REQUEST,
+            format!("backend \"{}\" not supported for this action", backend),
+        )?);
     }
 }
 

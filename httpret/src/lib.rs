@@ -106,6 +106,15 @@ where
 
 impl<F> UnwindSafe for Cont<F> {}
 
+pub fn response_err<T>(status: StatusCode, msg: T) -> Result<Response<Body>, Error>
+where
+    T: AsRef<str>,
+{
+    let msg = format!("Error:\n\n{}\n\nDocumentation:\nhttps://data-api.psi.ch/api/1/documentation/\nhttps://data-api.psi.ch/api/4/documentation/", msg.as_ref());
+    let ret = response(status).body(Body::from(msg))?;
+    Ok(ret)
+}
+
 macro_rules! static_http {
     ($path:expr, $tgt:expr, $tgtex:expr, $ctype:expr) => {
         if $path == concat!("/api/4/documentation/", $tgt) {

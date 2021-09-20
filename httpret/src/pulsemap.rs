@@ -18,6 +18,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
+use std::time::Instant;
 use std::{io::SeekFrom, path::PathBuf};
 use tokio::task::JoinHandle;
 use tokio::{
@@ -326,6 +327,7 @@ async fn update_task(do_abort: Arc<AtomicUsize>, node_config: NodeConfigCached) 
             break;
         }
         info!("Start update task");
+        let ts1 = Instant::now();
         match IndexFullHttpFunction::index(&node_config).await {
             Ok(_) => {}
             Err(e) => {
@@ -333,7 +335,9 @@ async fn update_task(do_abort: Arc<AtomicUsize>, node_config: NodeConfigCached) 
                 tokio::time::sleep(Duration::from_millis(5000)).await;
             }
         }
-        info!("Done update task");
+        let ts2 = Instant::now();
+        let dt = ts2.duration_since(ts1).as_secs_f64() * 1e3;
+        info!("Done update task  {:.0} ms", dt);
     }
     Ok(())
 }

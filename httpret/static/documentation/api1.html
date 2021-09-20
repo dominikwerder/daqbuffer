@@ -27,6 +27,7 @@ Currently available backends:
 <ul>
     <li><a href="#channel-search-names">Channel search, with return of channel names</a></li>
     <li><a href="#channel-search-configs">Channel search, with return of channel configurations</a></li>
+    <li><a href="#map-pulse">Map pulse-id to timestamp (for SwissFEL)</a></li>
 </ul>
 
 
@@ -147,6 +148,19 @@ curl -H 'Content-Type: application/json' -H 'Accept: application/json' -d "$QUER
 QUERY='{ "regex": "LSCP9:CH0", "backends": ["sf-databuffer"] }'
 curl -H 'Content-Type: application/json' -H 'Accept: application/json' -d "$QUERY" https://data-api.psi.ch/api/1/channels/config
 </pre>
+
+
+<a id="map-pulse"></a>
+<h2>Map pulse-id to timestamp (SwissFEL)</h2>
+<p><strong>Method:</strong> GET</p>
+<p><strong>URL:</strong> https://data-api.psi.ch/api/1/map/pulse/PULSEID</p>
+<p><strong>Result body example:</strong></p>
+<pre>1677392847564</pre>
+<h4>CURL example:</h4>
+<pre>
+curl -H 'Content-Type: application/json' -H 'Accept: application/json' https://data-api.psi.ch/api/1/map/pulse/7461843
+</pre>
+
 
 <h2>Feedback and comments</h2>
 <p>Feedback is very much appreciated:</p>

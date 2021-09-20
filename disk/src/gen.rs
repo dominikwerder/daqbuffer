@@ -322,7 +322,7 @@ async fn gen_timebin(
     channel_path: &Path,
     config: &ChannelConfig,
     split: u32,
-    node: &Node,
+    _node: &Node,
     ensemble: &Ensemble,
     gen_var: &GenVar,
 ) -> Result<GenTimebinRes, Error> {
