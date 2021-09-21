@@ -219,7 +219,7 @@ impl Stream for EventChunkerMultifile {
 }
 
 #[cfg(test)]
-fn read_expanded_for_range(range: netpod::NanoRange) -> Result<(usize, usize), Error> {
+fn read_expanded_for_range(range: netpod::NanoRange, nodeix: usize) -> Result<(usize, usize), Error> {
     use netpod::timeunits::*;
     use netpod::{ByteSize, Nanos};
     let chn = netpod::Channel {
@@ -238,8 +238,7 @@ fn read_expanded_for_range(range: netpod::NanoRange) -> Result<(usize, usize), E
         compression: false,
     };
     let cluster = taskrun::test_cluster();
-    let node_ix = 0;
-    let node = cluster.nodes[node_ix].clone();
+    let node = cluster.nodes[nodeix].clone();
     let buffer_size = 512;
     let event_chunker_conf = EventChunkerConf {
         disk_stats_every: ByteSize::kb(1024),
@@ -250,7 +249,7 @@ fn read_expanded_for_range(range: netpod::NanoRange) -> Result<(usize, usize), E
             range,
             channel_config,
             node,
-            node_ix,
+            nodeix,
             FileIoBufferSize::new(buffer_size),
             event_chunker_conf,
             true,
@@ -261,6 +260,7 @@ fn read_expanded_for_range(range: netpod::NanoRange) -> Result<(usize, usize), E
                 Ok(item) => match item {
                     StreamItem::DataItem(item) => match item {
                         RangeCompletableItem::Data(item) => {
+                            info!("item: {:?}", item.tss.iter().map(|x| x / 1000000).collect::<Vec<_>>());
                             event_count += item.tss.len();
                         }
                         _ => {}
@@ -287,9 +287,9 @@ fn read_expanded_0() -> Result<(), Error> {
     use netpod::timeunits::*;
     let range = netpod::NanoRange {
         beg: DAY + MS * 0,
-        end: DAY + MS * 0 + MS * 1500,
+        end: DAY + MS * 1500,
     };
-    let res = read_expanded_for_range(range)?;
+    let res = read_expanded_for_range(range, 0)?;
     if res.0 != 2 {
         Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
     }
@@ -301,9 +301,9 @@ fn read_expanded_1() -> Result<(), Error> {
     use netpod::timeunits::*;
     let range = netpod::NanoRange {
         beg: DAY + MS * 0,
-        end: DAY + MS * 0 + MS * 1501,
+        end: DAY + MS * 1501,
     };
-    let res = read_expanded_for_range(range)?;
+    let res = read_expanded_for_range(range, 0)?;
     if res.0 != 3 {
         Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
     }
@@ -315,9 +315,9 @@ fn read_expanded_2() -> Result<(), Error> {
     use netpod::timeunits::*;
     let range = netpod::NanoRange {
         beg: DAY - MS * 100,
-        end: DAY + MS * 0 + MS * 1501,
+        end: DAY + MS * 1501,
     };
-    let res = read_expanded_for_range(range)?;
+    let res = read_expanded_for_range(range, 0)?;
     if res.0 != 3 {
         Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
     }
@@ -329,9 +329,9 @@ fn read_expanded_3() -> Result<(), Error> {
     use netpod::timeunits::*;
     let range = netpod::NanoRange {
         beg: DAY - MS * 1500,
-        end: DAY + MS * 0 + MS * 1501,
+        end: DAY + MS * 1501,
     };
-    let res = read_expanded_for_range(range)?;
+    let res = read_expanded_for_range(range, 0)?;
     if res.0 != 4 {
         Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
     }

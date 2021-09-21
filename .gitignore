@@ -1,5 +1,7 @@
 /Cargo.lock
 /target
+/archapp/src/generated
 /.idea
+/.vscode
 /tmpdata
 /docs

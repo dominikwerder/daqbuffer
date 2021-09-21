@@ -1,6 +1,7 @@
 use arrayref::array_ref;
 use err::Error;
 use netpod::log::*;
+use netpod::NanoRange;
 use netpod::Nanos;
 use std::mem::size_of;
 use tokio::fs::File;
@@ -168,7 +169,7 @@ pub async fn read_event_at(pos: u64, file: &mut File) -> Result<(u32, Nanos), Er
     Ok(ev)
 }
 
-pub async fn position_static_len_datafile(mut file: File, beg: u64) -> Result<(File, bool, u32), Error> {
+pub async fn position_static_len_datafile(mut file: File, range: NanoRange) -> Result<(File, bool, u32, u64), Error> {
     let flen = file.seek(SeekFrom::End(0)).await?;
     file.seek(SeekFrom::Start(0)).await?;
     let mut buf = vec![0; 1024];
@@ -189,18 +190,30 @@ pub async fn position_static_len_datafile(mut file: File, beg: u64) -> Result<(F
     }
     let y = t.1.ns;
     let mut nreads = 2;
-    if x >= beg {
+    if x >= range.end {
         file.seek(SeekFrom::Start(j)).await?;
-        return Ok((file, true, nreads));
+        return Ok((file, false, nreads, j));
     }
-    if y < beg {
+    if y < range.beg {
         file.seek(SeekFrom::Start(j)).await?;
-        return Ok((file, false, nreads));
+        return Ok((file, false, nreads, j));
     }
+    if x >= range.beg && x < range.end {
+        file.seek(SeekFrom::Start(j)).await?;
+        return Ok((file, true, nreads, j));
+    }
+    let mut x = x;
+    let mut y = y;
     loop {
+        assert_eq!((k - j) % evlen, 0);
         if k - j < 2 * evlen {
-            file.seek(SeekFrom::Start(k)).await?;
-            return Ok((file, true, nreads));
+            if y < range.end {
+                file.seek(SeekFrom::Start(k)).await?;
+                return Ok((file, true, nreads, k));
+            } else {
+                file.seek(SeekFrom::Start(k)).await?;
+                return Ok((file, false, nreads, k));
+            }
         }
         let m = j + (k - j) / 2 / evlen * evlen;
         let t = read_event_at(m, &mut file).await?;
@@ -211,10 +224,12 @@ pub async fn position_static_len_datafile(mut file: File, beg: u64) -> Result<(F
             )))?;
         }
         nreads += 1;
-        let x = t.1.ns;
-        if x < beg {
+        let e = t.1.ns;
+        if e < range.beg {
+            x = e;
             j = m;
         } else {
+            y = e;
             k = m;
         }
     }
@@ -222,8 +237,8 @@ pub async fn position_static_len_datafile(mut file: File, beg: u64) -> Result<(F
 
 pub async fn position_static_len_datafile_at_largest_smaller_than(
     mut file: File,
-    beg: u64,
-) -> Result<(File, bool, u32), Error> {
+    range: NanoRange,
+) -> Result<(File, bool, u32, u64), Error> {
     let flen = file.seek(SeekFrom::End(0)).await?;
     file.seek(SeekFrom::Start(0)).await?;
     let mut buf = vec![0; 1024];
@@ -244,18 +259,18 @@ pub async fn position_static_len_datafile_at_largest_smaller_than(
     }
     let y = t.1.ns;
     let mut nreads = 2;
-    if x >= beg {
+    if x >= range.beg {
         file.seek(SeekFrom::Start(j)).await?;
-        return Ok((file, false, nreads));
+        return Ok((file, false, nreads, j));
     }
-    if y < beg {
+    if y < range.beg {
         file.seek(SeekFrom::Start(k)).await?;
-        return Ok((file, true, nreads));
+        return Ok((file, true, nreads, k));
     }
     loop {
         if k - j < 2 * evlen {
             file.seek(SeekFrom::Start(j)).await?;
-            return Ok((file, true, nreads));
+            return Ok((file, true, nreads, j));
         }
         let m = j + (k - j) / 2 / evlen * evlen;
         let t = read_event_at(m, &mut file).await?;
@@ -267,7 +282,7 @@ pub async fn position_static_len_datafile_at_largest_smaller_than(
         }
         nreads += 1;
         let x = t.1.ns;
-        if x < beg {
+        if x < range.beg {
             j = m;
         } else {
             k = m;

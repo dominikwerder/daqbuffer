@@ -2,12 +2,13 @@
 members = ["daqbuffer", "h5out", "archapp", "archapp_xc", "archapp_wrap", "items", "nodenet", "httpclient"]
 
 [profile.release]
-debug = 1
 opt-level = 1
+debug = 1
 #overflow-checks = true
 #debug-assertions = true
 lto = "off"
-codegen-units = 40
+codegen-units = 160
+incremental = true
 
 [patch.crates-io]
-tokio = { git = "https://github.com/dominikwerder/tokio", branch = "maxbuf" }
+tokio = { git = "https://github.com/dominikwerder/tokio", rev = "637a0c8a" }

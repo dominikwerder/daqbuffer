@@ -691,3 +691,37 @@ impl HasSeenBeforeRangeCount for EventChunker {
         self.seen_before_range_count()
     }
 }
+
+#[cfg(test)]
+mod test {
+    use err::Error;
+    use netpod::timeunits::*;
+    use netpod::{ByteSize, Nanos};
+
+    /*
+    #[test]
+    fn read_expanded_for_range(range: netpod::NanoRange, nodeix: usize) -> Result<(usize, usize), Error> {
+        let chn = netpod::Channel {
+            backend: "testbackend".into(),
+            name: "scalar-i32-be".into(),
+        };
+        // TODO read config from disk.
+        let channel_config = ChannelConfig {
+            channel: chn,
+            keyspace: 2,
+            time_bin_size: Nanos { ns: DAY },
+            scalar_type: netpod::ScalarType::I32,
+            byte_order: netpod::ByteOrder::big_endian(),
+            shape: netpod::Shape::Scalar,
+            array: false,
+            compression: false,
+        };
+        let cluster = taskrun::test_cluster();
+        let node = cluster.nodes[nodeix].clone();
+        let buffer_size = 512;
+        let event_chunker_conf = EventChunkerConf {
+            disk_stats_every: ByteSize::kb(1024),
+        };
+    }
+    */
+}

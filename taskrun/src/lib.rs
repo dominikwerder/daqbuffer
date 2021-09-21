@@ -122,7 +122,7 @@ pub fn test_cluster() -> netpod::Cluster {
         })
         .collect();
     netpod::Cluster {
-        nodes: nodes,
+        nodes,
         database: netpod::Database {
             name: "daqbuffer".into(),
             host: "localhost".into(),

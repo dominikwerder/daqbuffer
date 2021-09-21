@@ -16,6 +16,7 @@ pub struct OpenedFile {
     pub positioned: bool,
     pub index: bool,
     pub nreads: u32,
+    pub pos: u64,
 }
 
 #[derive(Debug)]
@@ -81,7 +82,7 @@ async fn open_files_inner(
         }
         let mut a = vec![];
         for path in paths::datapaths_for_timebin(tb, &channel_config, &node).await? {
-            let w = position_file(&path, range, &channel_config, false).await?;
+            let w = position_file(&path, range, false).await?;
             if w.found {
                 a.push(w.file);
             }
@@ -101,12 +102,7 @@ struct Positioned {
     found: bool,
 }
 
-async fn position_file(
-    path: &PathBuf,
-    range: &NanoRange,
-    channel_config: &ChannelConfig,
-    expand: bool,
-) -> Result<Positioned, Error> {
+async fn position_file(path: &PathBuf, range: &NanoRange, expand: bool) -> Result<Positioned, Error> {
     match OpenOptions::new().read(true).open(&path).await {
         Ok(file) => {
             let index_path = PathBuf::from(format!("{}_Index", path.to_str().unwrap()));
@@ -114,40 +110,28 @@ async fn position_file(
                 Ok(mut index_file) => {
                     let meta = index_file.metadata().await?;
                     if meta.len() > 1024 * 1024 * 120 {
-                        let msg = format!(
-                            "too large index file  {} bytes  for {}",
-                            meta.len(),
-                            channel_config.channel.name
-                        );
+                        let msg = format!("too large index file  {} bytes  for {:?}", meta.len(), index_path);
                         error!("{}", msg);
                         return Err(Error::with_msg(msg));
                     } else if meta.len() > 1024 * 1024 * 80 {
-                        let msg = format!(
-                            "very large index file  {} bytes  for {}",
-                            meta.len(),
-                            channel_config.channel.name
-                        );
+                        let msg = format!("very large index file  {} bytes  for {:?}", meta.len(), index_path);
                         warn!("{}", msg);
                     } else if meta.len() > 1024 * 1024 * 20 {
-                        let msg = format!(
-                            "large index file  {} bytes  for {}",
-                            meta.len(),
-                            channel_config.channel.name
-                        );
+                        let msg = format!("large index file  {} bytes  for {:?}", meta.len(), index_path);
                         info!("{}", msg);
                     }
                     if meta.len() < 2 {
                         return Err(Error::with_msg(format!(
-                            "bad meta len {}  for {}",
+                            "bad meta len {}  for {:?}",
                             meta.len(),
-                            channel_config.channel.name
+                            index_path
                         )));
                     }
                     if meta.len() % 16 != 2 {
                         return Err(Error::with_msg(format!(
-                            "bad meta len {}  for {}",
+                            "bad meta len {}  for {:?}",
                             meta.len(),
-                            channel_config.channel.name
+                            index_path
                         )));
                     }
                     let mut buf = BytesMut::with_capacity(meta.len() as usize);
@@ -169,6 +153,7 @@ async fn position_file(
                                 positioned: true,
                                 index: true,
                                 nreads: 0,
+                                pos: o.1,
                             };
                             return Ok(Positioned { file: g, found: true });
                         }
@@ -180,6 +165,7 @@ async fn position_file(
                                 positioned: false,
                                 index: true,
                                 nreads: 0,
+                                pos: 0,
                             };
                             return Ok(Positioned { file: g, found: false });
                         }
@@ -189,9 +175,10 @@ async fn position_file(
                     ErrorKind::NotFound => {
                         let ts1 = Instant::now();
                         let res = if expand {
-                            super::index::position_static_len_datafile_at_largest_smaller_than(file, range.beg).await?
+                            super::index::position_static_len_datafile_at_largest_smaller_than(file, range.clone())
+                                .await?
                         } else {
-                            super::index::position_static_len_datafile(file, range.beg).await?
+                            super::index::position_static_len_datafile(file, range.clone()).await?
                         };
                         let ts2 = Instant::now();
                         if false {
@@ -208,6 +195,7 @@ async fn position_file(
                                 positioned: true,
                                 index: false,
                                 nreads: res.2,
+                                pos: res.3,
                             };
                             return Ok(Positioned { file: g, found: true });
                         } else {
@@ -218,6 +206,7 @@ async fn position_file(
                                 positioned: false,
                                 index: false,
                                 nreads: res.2,
+                                pos: 0,
                             };
                             return Ok(Positioned { file: g, found: false });
                         }
@@ -234,6 +223,7 @@ async fn position_file(
                 positioned: false,
                 index: true,
                 nreads: 0,
+                pos: 0,
             };
             return Ok(Positioned { file: g, found: false });
         }
@@ -299,7 +289,7 @@ async fn get_timebins(channel_config: &ChannelConfig, node: Node) -> Result<Vec<
     }
 }
 
-async fn open_expanded_files_inner(
+pub async fn open_expanded_files_inner(
     chtx: &async_channel::Sender<Result<OpenedFileSet, Error>>,
     range: &NanoRange,
     channel_config: &ChannelConfig,
@@ -332,7 +322,7 @@ async fn open_expanded_files_inner(
         let tb = timebins[p1];
         let mut a = vec![];
         for path in paths::datapaths_for_timebin(tb, &channel_config, &node).await? {
-            let w = position_file(&path, range, &channel_config, true).await?;
+            let w = position_file(&path, range, true).await?;
             if w.found {
                 info!("----- open_expanded_files_inner  w.found for {:?}", path);
                 a.push(w.file);
@@ -360,7 +350,7 @@ async fn open_expanded_files_inner(
             let tb = timebins[p1];
             let mut a = vec![];
             for path in paths::datapaths_for_timebin(tb, &channel_config, &node).await? {
-                let w = position_file(&path, range, &channel_config, false).await?;
+                let w = position_file(&path, range, false).await?;
                 if w.found {
                     a.push(w.file);
                 }
@@ -421,4 +411,137 @@ fn expanded_file_list() {
         Ok(())
     };
     taskrun::run(task).unwrap();
+}
+
+#[cfg(test)]
+mod test {
+    use crate::dataopen::position_file;
+    use err::Error;
+    use netpod::timeunits::{DAY, HOUR, MS};
+    use netpod::NanoRange;
+
+    #[test]
+    fn position_basic_file_at_begin() -> Result<(), Error> {
+        let fut = async {
+            let path = "../tmpdata/node00/ks_2/byTime/scalar-i32-be/0000000000000000001/0000000000/0000000000086400000_00000_Data".into();
+            let range = NanoRange {
+                beg: DAY,
+                end: DAY + MS * 20000,
+            };
+            let expand = false;
+            let res = position_file(&path, &range, expand).await?;
+            assert_eq!(res.found, true);
+            assert_eq!(res.file.file.is_some(), true);
+            assert_eq!(res.file.index, false);
+            assert_eq!(res.file.positioned, true);
+            assert_eq!(res.file.pos, 23);
+            Ok(())
+        };
+        taskrun::run(fut)?;
+        Ok(())
+    }
+
+    #[test]
+    fn position_basic_file_for_empty_range() -> Result<(), Error> {
+        let fut = async {
+            let path = "../tmpdata/node00/ks_2/byTime/scalar-i32-be/0000000000000000001/0000000000/0000000000086400000_00000_Data".into();
+            let range = NanoRange {
+                beg: DAY + MS * 80000,
+                end: DAY + MS * 80000,
+            };
+            let expand = false;
+            let res = position_file(&path, &range, expand).await?;
+            assert_eq!(res.found, false);
+            assert_eq!(res.file.file.is_some(), false);
+            assert_eq!(res.file.index, false);
+            assert_eq!(res.file.positioned, false);
+            //assert_eq!(res.file.pos, 23);
+            Ok(())
+        };
+        taskrun::run(fut)?;
+        Ok(())
+    }
+
+    #[test]
+    fn position_basic_file_at_begin_for_small_range() -> Result<(), Error> {
+        let fut = async {
+            let path = "../tmpdata/node00/ks_2/byTime/scalar-i32-be/0000000000000000001/0000000000/0000000000086400000_00000_Data".into();
+            let range = NanoRange {
+                beg: DAY,
+                end: DAY + MS * 300000,
+            };
+            let expand = false;
+            let res = position_file(&path, &range, expand).await?;
+            assert_eq!(res.found, true);
+            assert_eq!(res.file.file.is_some(), true);
+            assert_eq!(res.file.index, false);
+            assert_eq!(res.file.positioned, true);
+            assert_eq!(res.file.pos, 23);
+            Ok(())
+        };
+        taskrun::run(fut)?;
+        Ok(())
+    }
+
+    #[test]
+    fn position_basic_file_at_inner() -> Result<(), Error> {
+        let fut = async {
+            let path = "../tmpdata/node00/ks_2/byTime/scalar-i32-be/0000000000000000001/0000000000/0000000000086400000_00000_Data".into();
+            let range = NanoRange {
+                beg: DAY + MS * 4000,
+                end: DAY + MS * 7000,
+            };
+            let expand = false;
+            let res = position_file(&path, &range, expand).await?;
+            assert_eq!(res.found, true);
+            assert_eq!(res.file.file.is_some(), true);
+            assert_eq!(res.file.index, false);
+            assert_eq!(res.file.positioned, true);
+            assert_eq!(res.file.pos, 179);
+            Ok(())
+        };
+        taskrun::run(fut)?;
+        Ok(())
+    }
+
+    #[test]
+    fn position_basic_file_at_inner_for_too_small_range() -> Result<(), Error> {
+        let fut = async {
+            let path = "../tmpdata/node00/ks_2/byTime/scalar-i32-be/0000000000000000001/0000000000/0000000000086400000_00000_Data".into();
+            let range = NanoRange {
+                beg: DAY + MS * 1501,
+                end: DAY + MS * 1502,
+            };
+            let expand = false;
+            let res = position_file(&path, &range, expand).await?;
+            assert_eq!(res.found, false);
+            assert_eq!(res.file.file.is_some(), false);
+            assert_eq!(res.file.index, false);
+            assert_eq!(res.file.positioned, false);
+            assert_eq!(res.file.pos, 0);
+            Ok(())
+        };
+        taskrun::run(fut)?;
+        Ok(())
+    }
+
+    #[test]
+    fn position_basic_file_starts_after_range() -> Result<(), Error> {
+        let fut = async {
+            let path = "../tmpdata/node00/ks_2/byTime/scalar-i32-be/0000000000000000001/0000000000/0000000000086400000_00000_Data".into();
+            let range = NanoRange {
+                beg: HOUR * 22,
+                end: HOUR * 23,
+            };
+            let expand = false;
+            let res = position_file(&path, &range, expand).await?;
+            assert_eq!(res.found, false);
+            assert_eq!(res.file.file.is_some(), false);
+            assert_eq!(res.file.index, false);
+            assert_eq!(res.file.positioned, false);
+            Ok(())
+        };
+        taskrun::run(fut)?;
+        Ok(())
+    }
 }

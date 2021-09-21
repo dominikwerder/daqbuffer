@@ -10,8 +10,17 @@ pub fn read_pb_dummy() -> Result<(), Error> {
 #[cfg(feature = "devread")]
 #[test]
 fn read_pb_00() -> Result<(), Error> {
+    use std::path::PathBuf;
+
     let block1 = async move {
-        let path = "../../../../archappdata/tmp/lts/ArchiverStore/SARUN16/MQUA080/X:2021_01.pb";
+        let homedir = std::env::var("HOME").unwrap();
+        let path = PathBuf::from(homedir)
+            .join("archappdata")
+            .join("lts")
+            .join("ArchiverStore")
+            .join("SARUN16")
+            .join("MQUA080")
+            .join("X:2021_01.pb");
         let f1 = tokio::fs::read(path).await?;
         let mut j1 = 0;
         loop {

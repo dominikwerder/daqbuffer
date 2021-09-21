@@ -22,7 +22,7 @@ byteorder = "1.4.3"
 futures-core = "0.3.14"
 futures-util = "0.3.14"
 async-stream = "0.3.0"
-tracing = { version = "0.1.25", features = [] }
+tracing = "0.1.25"
 tracing-futures = { version = "0.2.5", features = ["futures-01", "futures-03", "std-future"] }
 fs2 = "0.4.3"
 libc = "0.2.93"
