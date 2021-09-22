@@ -284,3 +284,161 @@ where
         0
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::dataopen::position_file_for_test;
+    use crate::eventchunker::{EventChunker, EventChunkerConf};
+    use crate::file_content_stream;
+    use err::Error;
+    use futures_util::StreamExt;
+    use items::{RangeCompletableItem, StreamItem};
+    use netpod::log::*;
+    use netpod::timeunits::{DAY, MS};
+    use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, FileIoBufferSize, NanoRange, Nanos, ScalarType, Shape};
+    use std::path::PathBuf;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+
+    const SCALAR_FILE: &str =
+        "../tmpdata/node00/ks_2/byTime/scalar-i32-be/0000000000000000001/0000000000/0000000000086400000_00000_Data";
+    const WAVE_FILE: &str =
+        "../tmpdata/node00/ks_3/byTime/wave-f64-be-n21/0000000000000000001/0000000000/0000000000086400000_00000_Data";
+
+    struct CollectedEvents {
+        tss: Vec<u64>,
+    }
+    // TODO generify the Mergers into one.
+
+    async fn collect_merged_events(paths: Vec<PathBuf>, range: NanoRange) -> Result<CollectedEvents, Error> {
+        let mut files = vec![];
+        for path in paths {
+            let p = position_file_for_test(&path, &range, false, false).await?;
+            if !p.found {
+                return Err(Error::with_msg_no_trace("can not position file??"));
+            }
+            files.push(
+                p.file
+                    .file
+                    .ok_or_else(|| Error::with_msg(format!("can not open file {:?}", path)))?,
+            );
+        }
+        //Merge
+        let file_io_buffer_size = FileIoBufferSize(1024 * 4);
+        let inp = file_content_stream(err::todoval(), file_io_buffer_size);
+        let inp = Box::pin(inp);
+        let channel_config = ChannelConfig {
+            channel: Channel {
+                backend: "testbackend".into(),
+                name: "scalar-i32-be".into(),
+            },
+            keyspace: 2,
+            time_bin_size: Nanos { ns: DAY },
+            scalar_type: ScalarType::I32,
+            byte_order: ByteOrder::BE,
+            array: false,
+            compression: false,
+            shape: Shape::Scalar,
+        };
+        let stats_conf = EventChunkerConf {
+            disk_stats_every: ByteSize::kb(1024),
+        };
+        let max_ts = Arc::new(AtomicU64::new(0));
+        let expand = false;
+        let do_decompress = false;
+        let dbg_path = err::todoval();
+
+        // TODO   `expand` flag usage
+
+        let mut chunker = EventChunker::from_event_boundary(
+            inp,
+            channel_config,
+            range,
+            stats_conf,
+            dbg_path,
+            max_ts,
+            expand,
+            do_decompress,
+        );
+
+        let mut i1 = 0;
+        while let Some(item) = chunker.next().await {
+            if let Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))) = item {
+                info!("item: {:?}", item);
+                i1 += 1;
+            }
+            if i1 >= 10 {
+                break;
+            }
+        }
+        info!("read {} data items", i1);
+        err::todoval()
+    }
+
+    #[test]
+    fn single_file_through_merger() -> Result<(), Error> {
+        let fut = async {
+            // TODO open a single file, model after the real opening procedure.
+            //let file = OpenOptions::new().read(true).open(SCALAR_FILE).await?;
+            let range = NanoRange {
+                beg: DAY + MS * 1501,
+                end: DAY + MS * 4000,
+            };
+            let path = PathBuf::from(SCALAR_FILE);
+            let p = position_file_for_test(&path, &range, false, false).await?;
+            if !p.found {
+                return Err(Error::with_msg_no_trace("can not position file??"));
+            }
+            let file_io_buffer_size = FileIoBufferSize(1024 * 4);
+            let inp = file_content_stream(p.file.file.unwrap(), file_io_buffer_size);
+            let inp = Box::pin(inp);
+            let channel_config = ChannelConfig {
+                channel: Channel {
+                    backend: "testbackend".into(),
+                    name: "scalar-i32-be".into(),
+                },
+                keyspace: 2,
+                time_bin_size: Nanos { ns: DAY },
+                scalar_type: ScalarType::I32,
+                byte_order: ByteOrder::BE,
+                array: false,
+                compression: false,
+                shape: Shape::Scalar,
+            };
+            let stats_conf = EventChunkerConf {
+                disk_stats_every: ByteSize::kb(1024),
+            };
+            let max_ts = Arc::new(AtomicU64::new(0));
+            let expand = false;
+            let do_decompress = false;
+
+            // TODO   `expand` flag usage
+
+            let mut chunker = EventChunker::from_event_boundary(
+                inp,
+                channel_config,
+                range,
+                stats_conf,
+                path,
+                max_ts,
+                expand,
+                do_decompress,
+            );
+
+            let mut i1 = 0;
+            while let Some(item) = chunker.next().await {
+                if let Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))) = item {
+                    info!("item: {:?}", item);
+                    i1 += 1;
+                }
+                if i1 >= 10 {
+                    break;
+                }
+            }
+            info!("read {} data items", i1);
+            Ok(())
+        };
+        // TODO in general, emit the error message in taskrun::run?
+        taskrun::run(fut)
+    }
+}

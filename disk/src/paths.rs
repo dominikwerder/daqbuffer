@@ -1,6 +1,5 @@
 use err::Error;
 use futures_util::StreamExt;
-use netpod::log::*;
 use netpod::timeunits::MS;
 use netpod::{ChannelConfig, Nanos, Node};
 use std::path::PathBuf;
@@ -41,9 +40,9 @@ pub async fn datapaths_for_timebin(
         let dn = e
             .file_name()
             .into_string()
-            .map_err(|s| Error::with_msg(format!("Bad OS path {:?}", s)))?;
+            .map_err(|s| Error::with_msg(format!("Bad OS path {:?}  path: {:?}", s, e.path())))?;
         if dn.len() != 10 {
-            return Err(Error::with_msg(format!("bad split dirname {:?}", e)));
+            return Err(Error::with_msg(format!("bad split dirname  path: {:?}", e.path())));
         }
         let vv = dn.chars().fold(0, |a, x| if x.is_digit(10) { a + 1 } else { a });
         if vv == 10 {
@@ -61,9 +60,6 @@ pub async fn datapaths_for_timebin(
             .join(format!("{:010}", split))
             .join(format!("{:019}_00000_Data", config.time_bin_size.ns / MS));
         ret.push(path);
-    }
-    if false {
-        info!("datapaths_for_timebin returns: {:?}", ret)
     }
     Ok(ret)
 }

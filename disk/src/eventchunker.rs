@@ -35,7 +35,7 @@ pub struct EventChunker {
     data_emit_complete: bool,
     final_stats_sent: bool,
     parsed_bytes: u64,
-    path: PathBuf,
+    dbg_path: PathBuf,
     max_ts: Arc<AtomicU64>,
     expand: bool,
     do_decompress: bool,
@@ -78,12 +78,13 @@ impl EventChunkerConf {
 }
 
 impl EventChunker {
+    // TODO   `expand` flag usage
     pub fn from_start(
         inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>,
         channel_config: ChannelConfig,
         range: NanoRange,
         stats_conf: EventChunkerConf,
-        path: PathBuf,
+        dbg_path: PathBuf,
         max_ts: Arc<AtomicU64>,
         expand: bool,
         do_decompress: bool,
@@ -104,7 +105,7 @@ impl EventChunker {
             data_emit_complete: false,
             final_stats_sent: false,
             parsed_bytes: 0,
-            path,
+            dbg_path,
             max_ts,
             expand,
             do_decompress,
@@ -116,12 +117,13 @@ impl EventChunker {
         }
     }
 
+    // TODO   `expand` flag usage
     pub fn from_event_boundary(
         inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>,
         channel_config: ChannelConfig,
         range: NanoRange,
         stats_conf: EventChunkerConf,
-        path: PathBuf,
+        dbg_path: PathBuf,
         max_ts: Arc<AtomicU64>,
         expand: bool,
         do_decompress: bool,
@@ -131,7 +133,7 @@ impl EventChunker {
             channel_config,
             range,
             stats_conf,
-            path,
+            dbg_path,
             max_ts,
             expand,
             do_decompress,
@@ -214,7 +216,7 @@ impl EventChunker {
                                     max_ts / SEC,
                                     max_ts % SEC,
                                     self.channel_config.shape,
-                                    self.path
+                                    self.dbg_path
                                 );
                                 warn!("{}", msg);
                                 self.unordered_warn_count += 1;
@@ -242,7 +244,7 @@ impl EventChunker {
                                     self.range.end % SEC,
                                     pulse,
                                     self.channel_config.shape,
-                                    self.path
+                                    self.dbg_path
                                 ));
                                 Err(e)?;
                             }

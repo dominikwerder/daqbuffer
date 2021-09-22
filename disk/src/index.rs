@@ -7,8 +7,10 @@ use std::mem::size_of;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
 
-pub fn find_ge(h: u64, buf: &[u8]) -> Result<Option<(u64, u64)>, Error> {
-    const N: usize = 2 * size_of::<u64>();
+pub fn find_ge(range: NanoRange, expand_right: bool, buf: &[u8]) -> Result<Option<(u64, u64)>, Error> {
+    type VT = u64;
+    const NT: usize = size_of::<VT>();
+    const N: usize = 2 * NT;
     let n1 = buf.len();
     if n1 % N != 0 {
         return Err(Error::with_msg(format!("find_ge  bad len {}", n1)));
@@ -19,38 +21,57 @@ pub fn find_ge(h: u64, buf: &[u8]) -> Result<Option<(u64, u64)>, Error> {
     }
     let n1 = n1 / N;
     let a = unsafe {
-        let ptr = &buf[0] as *const u8 as *const ([u8; 8], [u8; 8]);
+        let ptr = &buf[0] as *const u8 as *const ([u8; NT], [u8; NT]);
         std::slice::from_raw_parts(ptr, n1)
     };
     let mut j = 0;
     let mut k = n1 - 1;
-    let x = u64::from_be_bytes(a[j].0);
-    let y = u64::from_be_bytes(a[k].0);
+    let x = VT::from_be_bytes(a[j].0);
+    let y = VT::from_be_bytes(a[k].0);
     if x >= y {
         return Err(Error::with_msg(format!("search in unordered data")));
     }
-    if x >= h {
-        return Ok(Some((u64::from_be_bytes(a[j].0), u64::from_be_bytes(a[j].1))));
-    }
-    if y < h {
+    if y < range.beg {
         return Ok(None);
     }
+    if x >= range.beg {
+        if x < range.end || expand_right {
+            return Ok(Some((x, VT::from_be_bytes(a[j].1))));
+        } else {
+            return Ok(None);
+        }
+    }
+    let mut x = x;
+    let mut y = y;
     loop {
+        if x >= y {
+            return Err(Error::with_msg(format!("search in unordered data")));
+        }
         if k - j < 2 {
-            let ret = (u64::from_be_bytes(a[k].0), u64::from_be_bytes(a[k].1));
-            return Ok(Some(ret));
+            if y < range.end || expand_right {
+                let ret = (y, VT::from_be_bytes(a[k].1));
+                return Ok(Some(ret));
+            } else {
+                return Ok(None);
+            }
         }
         let m = (k + j) / 2;
-        let x = u64::from_be_bytes(a[m].0);
-        if x < h {
+        let e = VT::from_be_bytes(a[m].0);
+        if e < range.beg {
             j = m;
+            x = e;
         } else {
             k = m;
+            y = e;
         }
     }
 }
 
-pub fn find_largest_smaller_than(h: u64, buf: &[u8]) -> Result<Option<(u64, u64)>, Error> {
+pub fn find_largest_smaller_than(
+    range: NanoRange,
+    _expand_right: bool,
+    buf: &[u8],
+) -> Result<Option<(u64, u64)>, Error> {
     type NUM = u64;
     const ELESIZE: usize = size_of::<NUM>();
     const N: usize = 2 * ELESIZE;
@@ -74,24 +95,31 @@ pub fn find_largest_smaller_than(h: u64, buf: &[u8]) -> Result<Option<(u64, u64)
     if x >= y {
         return Err(Error::with_msg(format!("search in unordered data")));
     }
-    if x >= h {
+    if x >= range.beg {
         return Ok(None);
     }
-    if y < h {
-        let ret = (NUM::from_be_bytes(a[k].0), NUM::from_be_bytes(a[k].1));
+    if y < range.beg {
+        let ret = (y, NUM::from_be_bytes(a[k].1));
         return Ok(Some(ret));
     }
+    let mut x = x;
+    let mut y = y;
     loop {
+        if x >= y {
+            return Err(Error::with_msg(format!("search in unordered data")));
+        }
         if k - j < 2 {
-            let ret = (NUM::from_be_bytes(a[j].0), NUM::from_be_bytes(a[j].1));
+            let ret = (x, NUM::from_be_bytes(a[j].1));
             return Ok(Some(ret));
         }
         let m = (k + j) / 2;
-        let x = NUM::from_be_bytes(a[m].0);
-        if x < h {
+        let e = NUM::from_be_bytes(a[m].0);
+        if e < range.beg {
             j = m;
+            x = e;
         } else {
             k = m;
+            y = e;
         }
     }
 }
@@ -169,7 +197,11 @@ pub async fn read_event_at(pos: u64, file: &mut File) -> Result<(u32, Nanos), Er
     Ok(ev)
 }
 
-pub async fn position_static_len_datafile(mut file: File, range: NanoRange) -> Result<(File, bool, u32, u64), Error> {
+pub async fn position_static_len_datafile(
+    mut file: File,
+    range: NanoRange,
+    expand_right: bool,
+) -> Result<(File, bool, u32, u64), Error> {
     let flen = file.seek(SeekFrom::End(0)).await?;
     file.seek(SeekFrom::Start(0)).await?;
     let mut buf = vec![0; 1024];
@@ -191,28 +223,39 @@ pub async fn position_static_len_datafile(mut file: File, range: NanoRange) -> R
     let y = t.1.ns;
     let mut nreads = 2;
     if x >= range.end {
-        file.seek(SeekFrom::Start(j)).await?;
-        return Ok((file, false, nreads, j));
+        if expand_right {
+            file.seek(SeekFrom::Start(j)).await?;
+            return Ok((file, true, nreads, j));
+        } else {
+            file.seek(SeekFrom::Start(0)).await?;
+            return Ok((file, false, nreads, 0));
+        }
     }
     if y < range.beg {
         file.seek(SeekFrom::Start(j)).await?;
         return Ok((file, false, nreads, j));
     }
-    if x >= range.beg && x < range.end {
-        file.seek(SeekFrom::Start(j)).await?;
-        return Ok((file, true, nreads, j));
+    if x >= range.beg {
+        if x < range.end || expand_right {
+            file.seek(SeekFrom::Start(j)).await?;
+            return Ok((file, true, nreads, j));
+        } else {
+            file.seek(SeekFrom::Start(0)).await?;
+            return Ok((file, false, nreads, 0));
+        }
     }
     let mut x = x;
     let mut y = y;
     loop {
+        assert!(x < y);
         assert_eq!((k - j) % evlen, 0);
         if k - j < 2 * evlen {
-            if y < range.end {
+            if y < range.end || expand_right {
                 file.seek(SeekFrom::Start(k)).await?;
                 return Ok((file, true, nreads, k));
             } else {
-                file.seek(SeekFrom::Start(k)).await?;
-                return Ok((file, false, nreads, k));
+                file.seek(SeekFrom::Start(0)).await?;
+                return Ok((file, false, nreads, 0));
             }
         }
         let m = j + (k - j) / 2 / evlen * evlen;
@@ -238,6 +281,7 @@ pub async fn position_static_len_datafile(mut file: File, range: NanoRange) -> R
 pub async fn position_static_len_datafile_at_largest_smaller_than(
     mut file: File,
     range: NanoRange,
+    _expand_right: bool,
 ) -> Result<(File, bool, u32, u64), Error> {
     let flen = file.seek(SeekFrom::End(0)).await?;
     file.seek(SeekFrom::Start(0)).await?;
