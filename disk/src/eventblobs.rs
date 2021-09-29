@@ -81,6 +81,7 @@ impl EventChunkerMultifile {
         self.seen_after_range_count
     }
 
+    // TODO remove or use Drop impl?
     pub fn close(&mut self) {
         if let Some(evs) = &mut self.evs {
             self.seen_before_range_count += evs.seen_before_range_count();
@@ -220,6 +221,8 @@ impl Stream for EventChunkerMultifile {
 
 #[cfg(test)]
 mod test {
+    use crate::merge::MergedStream;
+    use crate::rangefilter::RangeFilter;
     use crate::{eventblobs::EventChunkerMultifile, eventchunker::EventChunkerConf};
     use err::Error;
     use futures_util::StreamExt;
@@ -252,8 +255,8 @@ mod test {
         };
         let task = async move {
             let mut event_count = 0;
-            let mut events = EventChunkerMultifile::new(
-                range,
+            let events = EventChunkerMultifile::new(
+                range.clone(),
                 channel_config,
                 node,
                 nodeix,
@@ -262,6 +265,8 @@ mod test {
                 true,
                 true,
             );
+            //let mut events = MergedStream::new(vec![events], range.clone(), true);
+            let mut events = RangeFilter::new(events, range.clone(), true);
             let mut tss = vec![];
             while let Some(item) = events.next().await {
                 match item {
@@ -281,7 +286,6 @@ mod test {
                     Err(e) => return Err(e.into()),
                 }
             }
-            events.close();
             Ok((event_count, tss))
         };
         Ok(taskrun::run(task).unwrap())
@@ -298,6 +302,7 @@ mod test {
         if res.0 != 3 {
             Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
         }
+        assert_eq!(res.1, vec![DAY - MS * 1500, DAY, DAY + MS * 1500]);
         Ok(())
     }
 
@@ -308,9 +313,10 @@ mod test {
             end: DAY + MS * 1501,
         };
         let res = read_expanded_for_range(range, 0)?;
-        if res.0 != 3 {
+        if res.0 != 4 {
             Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
         }
+        assert_eq!(res.1, vec![DAY - MS * 1500, DAY, DAY + MS * 1500, DAY + MS * 3000]);
         Ok(())
     }
 
@@ -321,9 +327,7 @@ mod test {
             end: DAY + MS * 1501,
         };
         let res = read_expanded_for_range(range, 0)?;
-        if res.0 != 3 {
-            Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
-        }
+        assert_eq!(res.1, vec![DAY - MS * 1500, DAY, DAY + MS * 1500, DAY + MS * 3000]);
         Ok(())
     }
 
@@ -335,9 +339,10 @@ mod test {
             end: DAY + MS * 1501,
         };
         let res = read_expanded_for_range(range, 0)?;
-        if res.0 != 4 {
-            Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
-        }
+        assert_eq!(
+            res.1,
+            vec![DAY - MS * 3000, DAY - MS * 1500, DAY, DAY + MS * 1500, DAY + MS * 3000]
+        );
         Ok(())
     }
 }

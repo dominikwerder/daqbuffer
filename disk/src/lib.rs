@@ -34,6 +34,7 @@ pub mod index;
 pub mod merge;
 pub mod mergeblobs;
 pub mod paths;
+pub mod rangefilter;
 pub mod raw;
 pub mod streamlog;
 

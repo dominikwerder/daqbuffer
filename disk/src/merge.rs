@@ -30,8 +30,6 @@ pub struct MergedStream<S, ITY> {
     errored: bool,
     completed: bool,
     batch: ITY,
-    range: NanoRange,
-    expand: bool,
     ts_last_emit: u64,
     range_complete_observed: Vec<bool>,
     range_complete_observed_all: bool,
@@ -39,8 +37,6 @@ pub struct MergedStream<S, ITY> {
     data_emit_complete: bool,
     batch_size: ByteSize,
     batch_len_emit_histo: HistoLog2,
-    emitted_after_range: usize,
-    pre_range_buf: ITY,
     logitems: VecDeque<LogItem>,
     event_data_read_stats_items: VecDeque<EventDataReadStats>,
 }
@@ -70,8 +66,6 @@ where
             errored: false,
             completed: false,
             batch: <ITY as Appendable>::empty(),
-            range,
-            expand,
             ts_last_emit: 0,
             range_complete_observed: vec![false; n],
             range_complete_observed_all: false,
@@ -79,8 +73,6 @@ where
             data_emit_complete: false,
             batch_size: ByteSize::kb(128),
             batch_len_emit_histo: HistoLog2::new(0),
-            emitted_after_range: 0,
-            pre_range_buf: ITY::empty(),
             logitems: VecDeque::new(),
             event_data_read_stats_items: VecDeque::new(),
         }
@@ -154,7 +146,7 @@ where
 impl<S, ITY> Stream for MergedStream<S, ITY>
 where
     S: Stream<Item = Sitemty<ITY>> + Unpin,
-    ITY: PushableIndex + Appendable + Clearable + ByteEstimate + WithTimestamps + Unpin,
+    ITY: PushableIndex + Appendable + ByteEstimate + WithTimestamps + Unpin,
 {
     type Item = Sitemty<ITY>;
 
@@ -205,21 +197,8 @@ where
                             }
                         }
                         if lowest_ix == usize::MAX {
-                            if self.pre_range_buf.len() == 1 {
-                                let mut ldst = std::mem::replace(&mut self.batch, ITY::empty());
-                                let ts4 = self.pre_range_buf.ts(0);
-                                info!("\n\nMERGER  enqueue after exhausted from stash {}", ts4);
-                                ldst.push_index(&self.pre_range_buf, 0);
-                                self.pre_range_buf.clear();
-                                self.ts_last_emit = ts4;
-                                self.batch = ldst;
-                            } else if self.pre_range_buf.len() > 1 {
-                                panic!();
-                            } else {
-                            };
                             if self.batch.len() != 0 {
-                                let emp = ITY::empty();
-                                let ret = std::mem::replace(&mut self.batch, emp);
+                                let ret = std::mem::replace(&mut self.batch, ITY::empty());
                                 self.batch_len_emit_histo.ingest(ret.len() as u32);
                                 self.data_emit_complete = true;
                                 if LOG_EMIT_ITEM {
@@ -236,58 +215,8 @@ where
                             }
                         } else {
                             assert!(lowest_ts >= self.ts_last_emit);
-                            let do_emit_event;
-                            let emit_packet_now_2;
-                            if lowest_ts < self.range.beg {
-                                do_emit_event = false;
-                                emit_packet_now_2 = false;
-                                if self.expand {
-                                    info!("\n\nMERGER  stash {}", lowest_ts);
-                                    let mut ldst = std::mem::replace(&mut self.pre_range_buf, ITY::empty());
-                                    ldst.clear();
-                                    let rix = self.ixs[lowest_ix];
-                                    match &self.current[lowest_ix] {
-                                        MergedCurVal::Val(val) => ldst.push_index(val, rix),
-                                        MergedCurVal::None => panic!(),
-                                        MergedCurVal::Finish => panic!(),
-                                    }
-                                    self.pre_range_buf = ldst;
-                                } else {
-                                };
-                            } else if lowest_ts >= self.range.end {
-                                if self.expand {
-                                    if self.emitted_after_range == 0 {
-                                        do_emit_event = true;
-                                        emit_packet_now_2 = true;
-                                        self.emitted_after_range += 1;
-                                        self.range_complete_observed_all = true;
-                                        self.data_emit_complete = true;
-                                    } else {
-                                        do_emit_event = false;
-                                        emit_packet_now_2 = false;
-                                    };
-                                } else {
-                                    do_emit_event = false;
-                                    emit_packet_now_2 = false;
-                                    self.data_emit_complete = true;
-                                };
-                            } else {
-                                do_emit_event = true;
-                                emit_packet_now_2 = false;
-                            };
-                            if do_emit_event {
+                            {
                                 let mut ldst = std::mem::replace(&mut self.batch, ITY::empty());
-                                if self.pre_range_buf.len() == 1 {
-                                    let ts4 = self.pre_range_buf.ts(0);
-                                    info!("\n\nMERGER  enqueue from stash {}", ts4);
-                                    ldst.push_index(&self.pre_range_buf, 0);
-                                    self.pre_range_buf.clear();
-                                } else if self.pre_range_buf.len() > 1 {
-                                    panic!();
-                                } else {
-                                    info!("\n\nMERGER  nothing in stash");
-                                };
-                                info!("\n\nMERGER  enqueue {}", lowest_ts);
                                 self.ts_last_emit = lowest_ts;
                                 let rix = self.ixs[lowest_ix];
                                 match &self.current[lowest_ix] {
@@ -309,11 +238,10 @@ where
                                 self.ixs[lowest_ix] = 0;
                                 self.current[lowest_ix] = MergedCurVal::None;
                             }
-                            let emit_packet_now;
-                            if emit_packet_now_2 || self.batch.byte_estimate() >= self.batch_size.bytes() as u64 {
-                                emit_packet_now = true;
+                            let emit_packet_now = if self.batch.byte_estimate() >= self.batch_size.bytes() as u64 {
+                                true
                             } else {
-                                emit_packet_now = false;
+                                false
                             };
                             if emit_packet_now {
                                 trace!("emit item because over threshold  len {}", self.batch.len());
