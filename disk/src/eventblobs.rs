@@ -1,6 +1,6 @@
 use crate::dataopen::{open_expanded_files, open_files, OpenedFileSet};
 use crate::eventchunker::{EventChunker, EventChunkerConf, EventFull};
-use crate::mergeblobs::MergedBlobsStream;
+use crate::merge::MergedStream;
 use crate::{file_content_stream, HasSeenBeforeRangeCount};
 use err::Error;
 use futures_core::Stream;
@@ -128,7 +128,7 @@ impl Stream for EventChunkerMultifile {
                             Ready(Some(k)) => match k {
                                 Ok(ofs) => {
                                     self.files_count += ofs.files.len() as u32;
-                                    if ofs.files.len() == 1 {
+                                    if false && ofs.files.len() == 1 {
                                         let mut ofs = ofs;
                                         let file = ofs.files.pop().unwrap();
                                         let path = file.path;
@@ -156,8 +156,13 @@ impl Stream for EventChunkerMultifile {
                                             None => {}
                                         }
                                         Ready(Some(Ok(StreamItem::Log(item))))
-                                    } else if ofs.files.len() > 1 {
-                                        let msg = format!("handle OFS MULTIPLE {:?}", ofs);
+                                    } else if ofs.files.len() == 0 {
+                                        let msg = format!("handle OFS {:?}  NO FILES", ofs);
+                                        info!("{}", msg);
+                                        let item = LogItem::quick(Level::INFO, msg);
+                                        Ready(Some(Ok(StreamItem::Log(item))))
+                                    } else {
+                                        let msg = format!("handle OFS MERGED {:?}", ofs);
                                         warn!("{}", msg);
                                         let item = LogItem::quick(Level::INFO, msg);
                                         let mut chunkers = vec![];
@@ -180,13 +185,8 @@ impl Stream for EventChunkerMultifile {
                                                 chunkers.push(chunker);
                                             }
                                         }
-                                        let merged = MergedBlobsStream::new(chunkers);
+                                        let merged = MergedStream::new(chunkers, self.range.clone(), self.expand);
                                         self.evs = Some(Box::pin(merged));
-                                        Ready(Some(Ok(StreamItem::Log(item))))
-                                    } else {
-                                        let msg = format!("handle OFS {:?}  NO FILES", ofs);
-                                        info!("{}", msg);
-                                        let item = LogItem::quick(Level::INFO, msg);
                                         Ready(Some(Ok(StreamItem::Log(item))))
                                     }
                                 }
@@ -219,121 +219,125 @@ impl Stream for EventChunkerMultifile {
 }
 
 #[cfg(test)]
-fn read_expanded_for_range(range: netpod::NanoRange, nodeix: usize) -> Result<(usize, usize), Error> {
-    use netpod::timeunits::*;
-    use netpod::{ByteSize, Nanos};
-    let chn = netpod::Channel {
-        backend: "testbackend".into(),
-        name: "scalar-i32-be".into(),
-    };
-    // TODO read config from disk.
-    let channel_config = ChannelConfig {
-        channel: chn,
-        keyspace: 2,
-        time_bin_size: Nanos { ns: DAY },
-        scalar_type: netpod::ScalarType::I32,
-        byte_order: netpod::ByteOrder::big_endian(),
-        shape: netpod::Shape::Scalar,
-        array: false,
-        compression: false,
-    };
-    let cluster = taskrun::test_cluster();
-    let node = cluster.nodes[nodeix].clone();
-    let buffer_size = 512;
-    let event_chunker_conf = EventChunkerConf {
-        disk_stats_every: ByteSize::kb(1024),
-    };
-    let task = async move {
-        let mut event_count = 0;
-        let mut events = EventChunkerMultifile::new(
-            range,
-            channel_config,
-            node,
-            nodeix,
-            FileIoBufferSize::new(buffer_size),
-            event_chunker_conf,
-            true,
-            true,
-        );
-        while let Some(item) = events.next().await {
-            match item {
-                Ok(item) => match item {
-                    StreamItem::DataItem(item) => match item {
-                        RangeCompletableItem::Data(item) => {
-                            info!("item: {:?}", item.tss.iter().map(|x| x / 1000000).collect::<Vec<_>>());
-                            event_count += item.tss.len();
-                        }
+mod test {
+    use crate::{eventblobs::EventChunkerMultifile, eventchunker::EventChunkerConf};
+    use err::Error;
+    use futures_util::StreamExt;
+    use items::{RangeCompletableItem, StreamItem};
+    use netpod::log::*;
+    use netpod::timeunits::{DAY, MS};
+    use netpod::{ByteSize, ChannelConfig, FileIoBufferSize, Nanos};
+
+    fn read_expanded_for_range(range: netpod::NanoRange, nodeix: usize) -> Result<(usize, Vec<u64>), Error> {
+        let chn = netpod::Channel {
+            backend: "testbackend".into(),
+            name: "scalar-i32-be".into(),
+        };
+        // TODO read config from disk.
+        let channel_config = ChannelConfig {
+            channel: chn,
+            keyspace: 2,
+            time_bin_size: Nanos { ns: DAY },
+            scalar_type: netpod::ScalarType::I32,
+            byte_order: netpod::ByteOrder::big_endian(),
+            shape: netpod::Shape::Scalar,
+            array: false,
+            compression: false,
+        };
+        let cluster = taskrun::test_cluster();
+        let node = cluster.nodes[nodeix].clone();
+        let buffer_size = 512;
+        let event_chunker_conf = EventChunkerConf {
+            disk_stats_every: ByteSize::kb(1024),
+        };
+        let task = async move {
+            let mut event_count = 0;
+            let mut events = EventChunkerMultifile::new(
+                range,
+                channel_config,
+                node,
+                nodeix,
+                FileIoBufferSize::new(buffer_size),
+                event_chunker_conf,
+                true,
+                true,
+            );
+            let mut tss = vec![];
+            while let Some(item) = events.next().await {
+                match item {
+                    Ok(item) => match item {
+                        StreamItem::DataItem(item) => match item {
+                            RangeCompletableItem::Data(item) => {
+                                info!("item: {:?}", item.tss.iter().map(|x| x / MS).collect::<Vec<_>>());
+                                event_count += item.tss.len();
+                                for ts in item.tss {
+                                    tss.push(ts);
+                                }
+                            }
+                            _ => {}
+                        },
                         _ => {}
                     },
-                    _ => {}
-                },
-                Err(e) => return Err(e.into()),
+                    Err(e) => return Err(e.into()),
+                }
             }
+            events.close();
+            Ok((event_count, tss))
+        };
+        Ok(taskrun::run(task).unwrap())
+    }
+
+    #[test]
+    fn read_expanded_0() -> Result<(), Error> {
+        let range = netpod::NanoRange {
+            beg: DAY + MS * 0,
+            end: DAY + MS * 100,
+        };
+        let res = read_expanded_for_range(range, 0)?;
+        info!("got {:?}", res.1);
+        if res.0 != 3 {
+            Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
         }
-        events.close();
-        if events.seen_before_range_count() != 1 {
-            return Err(Error::with_msg(format!(
-                "seen_before_range_count error: {}",
-                events.seen_before_range_count(),
-            )));
+        Ok(())
+    }
+
+    #[test]
+    fn read_expanded_1() -> Result<(), Error> {
+        let range = netpod::NanoRange {
+            beg: DAY + MS * 0,
+            end: DAY + MS * 1501,
+        };
+        let res = read_expanded_for_range(range, 0)?;
+        if res.0 != 3 {
+            Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
         }
-        Ok((event_count, events.seen_before_range_count()))
-    };
-    Ok(taskrun::run(task).unwrap())
-}
-
-#[test]
-fn read_expanded_0() -> Result<(), Error> {
-    use netpod::timeunits::*;
-    let range = netpod::NanoRange {
-        beg: DAY + MS * 0,
-        end: DAY + MS * 1500,
-    };
-    let res = read_expanded_for_range(range, 0)?;
-    if res.0 != 2 {
-        Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
+        Ok(())
     }
-    Ok(())
-}
 
-#[test]
-fn read_expanded_1() -> Result<(), Error> {
-    use netpod::timeunits::*;
-    let range = netpod::NanoRange {
-        beg: DAY + MS * 0,
-        end: DAY + MS * 1501,
-    };
-    let res = read_expanded_for_range(range, 0)?;
-    if res.0 != 3 {
-        Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
+    #[test]
+    fn read_expanded_2() -> Result<(), Error> {
+        let range = netpod::NanoRange {
+            beg: DAY - MS * 100,
+            end: DAY + MS * 1501,
+        };
+        let res = read_expanded_for_range(range, 0)?;
+        if res.0 != 3 {
+            Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
+        }
+        Ok(())
     }
-    Ok(())
-}
 
-#[test]
-fn read_expanded_2() -> Result<(), Error> {
-    use netpod::timeunits::*;
-    let range = netpod::NanoRange {
-        beg: DAY - MS * 100,
-        end: DAY + MS * 1501,
-    };
-    let res = read_expanded_for_range(range, 0)?;
-    if res.0 != 3 {
-        Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
+    #[test]
+    fn read_expanded_3() -> Result<(), Error> {
+        use netpod::timeunits::*;
+        let range = netpod::NanoRange {
+            beg: DAY - MS * 1500,
+            end: DAY + MS * 1501,
+        };
+        let res = read_expanded_for_range(range, 0)?;
+        if res.0 != 4 {
+            Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
+        }
+        Ok(())
     }
-    Ok(())
-}
-
-#[test]
-fn read_expanded_3() -> Result<(), Error> {
-    use netpod::timeunits::*;
-    let range = netpod::NanoRange {
-        beg: DAY - MS * 1500,
-        end: DAY + MS * 1501,
-    };
-    let res = read_expanded_for_range(range, 0)?;
-    if res.0 != 4 {
-        Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
-    }
-    Ok(())
 }

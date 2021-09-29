@@ -5,8 +5,8 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::{
-    Appendable, ByteEstimate, PushableIndex, RangeCompletableItem, SitemtyFrameType, StatsItem, StreamItem, WithLen,
-    WithTimestamps,
+    Appendable, ByteEstimate, Clearable, PushableIndex, RangeCompletableItem, SitemtyFrameType, StatsItem, StreamItem,
+    WithLen, WithTimestamps,
 };
 use netpod::histo::HistoLog2;
 use netpod::log::*;
@@ -544,6 +544,19 @@ impl Appendable for EventFull {
     }
 }
 
+impl Clearable for EventFull {
+    fn clear(&mut self) {
+        self.tss.clear();
+        self.pulses.clear();
+        self.blobs.clear();
+        self.decomps.clear();
+        self.scalar_types.clear();
+        self.be.clear();
+        self.shapes.clear();
+        self.comps.clear();
+    }
+}
+
 impl WithTimestamps for EventFull {
     fn ts(&self, ix: usize) -> u64 {
         self.tss[ix]
@@ -696,9 +709,9 @@ impl HasSeenBeforeRangeCount for EventChunker {
 
 #[cfg(test)]
 mod test {
-    use err::Error;
-    use netpod::timeunits::*;
-    use netpod::{ByteSize, Nanos};
+    //use err::Error;
+    //use netpod::timeunits::*;
+    //use netpod::{ByteSize, Nanos};
 
     /*
     #[test]

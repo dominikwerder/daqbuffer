@@ -307,6 +307,10 @@ pub trait Appendable: WithLen {
     fn append(&mut self, src: &Self);
 }
 
+pub trait Clearable {
+    fn clear(&mut self);
+}
+
 pub trait EventAppendable {
     type Value;
     fn append_event(&mut self, ts: u64, value: Self::Value);

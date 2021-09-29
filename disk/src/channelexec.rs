@@ -13,7 +13,7 @@ use items::eventvalues::EventValues;
 use items::numops::{BoolNum, NumOps};
 use items::streams::{Collectable, Collector};
 use items::{
-    EventsNodeProcessor, Framable, FrameType, PushableIndex, RangeCompletableItem, Sitemty, StreamItem,
+    Clearable, EventsNodeProcessor, Framable, FrameType, PushableIndex, RangeCompletableItem, Sitemty, StreamItem,
     TimeBinnableType,
 };
 use netpod::log::*;
@@ -44,7 +44,7 @@ pub trait ChannelExecFunction {
         EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
         ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
         // TODO require these things in general?
-        <ENP as EventsNodeProcessor>::Output: Debug + Collectable + PushableIndex,
+        <ENP as EventsNodeProcessor>::Output: Debug + Collectable + PushableIndex + Clearable,
         <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: Debug
             + TimeBinnableType<Output = <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>
             + Collectable
@@ -70,7 +70,7 @@ where
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
     // TODO require these things in general?
-    <ENP as EventsNodeProcessor>::Output: Debug + Collectable + PushableIndex,
+    <ENP as EventsNodeProcessor>::Output: Debug + Collectable + PushableIndex + Clearable,
     <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: Debug
         + TimeBinnableType<Output = <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>
         + Collectable
@@ -401,7 +401,7 @@ impl ChannelExecFunction for PlainEventsJson {
         EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
         ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
         // TODO require these things in general?
-        <ENP as EventsNodeProcessor>::Output: Debug + Collectable + PushableIndex,
+        <ENP as EventsNodeProcessor>::Output: Debug + Collectable + PushableIndex + Clearable,
         <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: Debug
             + TimeBinnableType<Output = <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>
             + Collectable

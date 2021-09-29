@@ -3,7 +3,7 @@ use crate::numops::NumOps;
 use crate::xbinnedscalarevents::XBinnedScalarEvents;
 use crate::xbinnedwaveevents::XBinnedWaveEvents;
 use crate::{
-    Appendable, ByteEstimate, EventAppendable, EventsNodeProcessor, FilterFittingInside, Fits, FitsInside,
+    Appendable, ByteEstimate, Clearable, EventAppendable, EventsNodeProcessor, FilterFittingInside, Fits, FitsInside,
     PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType,
     TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
@@ -137,6 +137,13 @@ where
     fn append(&mut self, src: &Self) {
         self.tss.extend_from_slice(&src.tss);
         self.vals.extend_from_slice(&src.vals);
+    }
+}
+
+impl<NTY> Clearable for WaveEvents<NTY> {
+    fn clear(&mut self) {
+        self.tss.clear();
+        self.vals.clear();
     }
 }
 

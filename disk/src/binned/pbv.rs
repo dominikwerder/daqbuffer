@@ -11,8 +11,8 @@ use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use items::numops::NumOps;
 use items::{
-    Appendable, EventsNodeProcessor, FrameType, PushableIndex, RangeCompletableItem, ReadableFromFile, Sitemty,
-    StreamItem, TimeBinnableType,
+    Appendable, Clearable, EventsNodeProcessor, FrameType, PushableIndex, RangeCompletableItem, ReadableFromFile,
+    Sitemty, StreamItem, TimeBinnableType,
 };
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
@@ -73,7 +73,7 @@ where
     END: Endianness + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
-    <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable,
+    <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable + Clearable,
     // TODO is this needed:
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType,
     // TODO who exactly needs this DeserializeOwned?
@@ -230,7 +230,7 @@ where
     END: Endianness + Unpin + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + Unpin + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + Unpin + 'static,
-    <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable,
+    <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable + Clearable,
     // TODO needed?
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType,
     Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>: FrameType + DeserializeOwned,

@@ -14,8 +14,8 @@ use items::frame::MakeBytesFrame;
 use items::numops::NumOps;
 use items::streams::{Collectable, Collector};
 use items::{
-    EventsNodeProcessor, FilterFittingInside, Framable, FrameType, PushableIndex, RangeCompletableItem, Sitemty,
-    StreamItem, TimeBinnableType, WithLen, WithTimestamps,
+    Clearable, EventsNodeProcessor, FilterFittingInside, Framable, FrameType, PushableIndex, RangeCompletableItem,
+    Sitemty, StreamItem, TimeBinnableType, WithLen, WithTimestamps,
 };
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
@@ -66,7 +66,7 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
         EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
         ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
         // TODO require these things in general?
-        <ENP as EventsNodeProcessor>::Output: Collectable + PushableIndex,
+        <ENP as EventsNodeProcessor>::Output: Collectable + PushableIndex + Clearable,
         <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: Debug
             + TimeBinnableType<Output = <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>
             + Collectable
@@ -309,7 +309,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
         EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
         ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
         // TODO require these things in general?
-        <ENP as EventsNodeProcessor>::Output: Collectable + PushableIndex,
+        <ENP as EventsNodeProcessor>::Output: Collectable + PushableIndex + Clearable,
         <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: Debug
             + TimeBinnableType<Output = <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>
             + Collectable

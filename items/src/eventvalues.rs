@@ -2,9 +2,9 @@ use crate::minmaxavgbins::MinMaxAvgBins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
-    ts_offs_from_abs, Appendable, ByteEstimate, EventAppendable, FilterFittingInside, Fits, FitsInside, PushableIndex,
-    RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, TimeBinnableType, TimeBinnableTypeAggregator,
-    WithLen, WithTimestamps,
+    ts_offs_from_abs, Appendable, ByteEstimate, Clearable, EventAppendable, FilterFittingInside, Fits, FitsInside,
+    PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, TimeBinnableType,
+    TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::timeunits::*;
@@ -163,6 +163,13 @@ where
     fn append(&mut self, src: &Self) {
         self.tss.extend_from_slice(&src.tss);
         self.values.extend_from_slice(&src.values);
+    }
+}
+
+impl<NTY> Clearable for EventValues<NTY> {
+    fn clear(&mut self) {
+        self.tss.clear();
+        self.values.clear();
     }
 }
 

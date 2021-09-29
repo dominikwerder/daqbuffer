@@ -1,15 +1,13 @@
+use crate::HasSeenBeforeRangeCount;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use items::ByteEstimate;
-use items::{
-    Appendable, EventsNodeProcessor, LogItem, PushableIndex, RangeCompletableItem, Sitemty, StatsItem, StreamItem,
-    WithLen, WithTimestamps,
-};
+use items::{Appendable, LogItem, PushableIndex, RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithTimestamps};
+use items::{ByteEstimate, Clearable};
 use netpod::histo::HistoLog2;
-use netpod::log::*;
 use netpod::ByteSize;
 use netpod::EventDataReadStats;
+use netpod::{log::*, NanoRange};
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -17,23 +15,23 @@ use std::task::{Context, Poll};
 pub mod mergedblobsfromremotes;
 pub mod mergedfromremotes;
 
+const LOG_EMIT_ITEM: bool = false;
+
 enum MergedCurVal<T> {
     None,
     Finish,
     Val(T),
 }
 
-pub struct MergedStream<S, ENP>
-where
-    S: Stream<Item = Sitemty<<ENP as EventsNodeProcessor>::Output>>,
-    ENP: EventsNodeProcessor,
-{
+pub struct MergedStream<S, ITY> {
     inps: Vec<S>,
-    current: Vec<MergedCurVal<<ENP as EventsNodeProcessor>::Output>>,
+    current: Vec<MergedCurVal<ITY>>,
     ixs: Vec<usize>,
     errored: bool,
     completed: bool,
-    batch: <ENP as EventsNodeProcessor>::Output,
+    batch: ITY,
+    range: NanoRange,
+    expand: bool,
     ts_last_emit: u64,
     range_complete_observed: Vec<bool>,
     range_complete_observed_all: bool,
@@ -41,16 +39,14 @@ where
     data_emit_complete: bool,
     batch_size: ByteSize,
     batch_len_emit_histo: HistoLog2,
+    emitted_after_range: usize,
+    pre_range_buf: ITY,
     logitems: VecDeque<LogItem>,
     event_data_read_stats_items: VecDeque<EventDataReadStats>,
 }
 
 // TODO get rid, log info explicitly.
-impl<S, ENP> Drop for MergedStream<S, ENP>
-where
-    S: Stream<Item = Sitemty<<ENP as EventsNodeProcessor>::Output>>,
-    ENP: EventsNodeProcessor,
-{
+impl<S, ITY> Drop for MergedStream<S, ITY> {
     fn drop(&mut self) {
         info!(
             "MergedStream  Drop Stats:\nbatch_len_emit_histo: {:?}",
@@ -59,13 +55,12 @@ where
     }
 }
 
-impl<S, ENP> MergedStream<S, ENP>
+impl<S, ITY> MergedStream<S, ITY>
 where
-    S: Stream<Item = Sitemty<<ENP as EventsNodeProcessor>::Output>> + Unpin,
-    ENP: EventsNodeProcessor,
-    <ENP as EventsNodeProcessor>::Output: Appendable,
+    S: Stream<Item = Sitemty<ITY>> + Unpin,
+    ITY: Appendable + Unpin,
 {
-    pub fn new(inps: Vec<S>) -> Self {
+    pub fn new(inps: Vec<S>, range: NanoRange, expand: bool) -> Self {
         let n = inps.len();
         let current = (0..n).into_iter().map(|_| MergedCurVal::None).collect();
         Self {
@@ -74,7 +69,9 @@ where
             ixs: vec![0; n],
             errored: false,
             completed: false,
-            batch: <<ENP as EventsNodeProcessor>::Output as Appendable>::empty(),
+            batch: <ITY as Appendable>::empty(),
+            range,
+            expand,
             ts_last_emit: 0,
             range_complete_observed: vec![false; n],
             range_complete_observed_all: false,
@@ -82,6 +79,8 @@ where
             data_emit_complete: false,
             batch_size: ByteSize::kb(128),
             batch_len_emit_histo: HistoLog2::new(0),
+            emitted_after_range: 0,
+            pre_range_buf: ITY::empty(),
             logitems: VecDeque::new(),
             event_data_read_stats_items: VecDeque::new(),
         }
@@ -152,13 +151,12 @@ where
     }
 }
 
-impl<S, ENP> Stream for MergedStream<S, ENP>
+impl<S, ITY> Stream for MergedStream<S, ITY>
 where
-    S: Stream<Item = Sitemty<<ENP as EventsNodeProcessor>::Output>> + Unpin,
-    ENP: EventsNodeProcessor,
-    <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable + ByteEstimate,
+    S: Stream<Item = Sitemty<ITY>> + Unpin,
+    ITY: PushableIndex + Appendable + Clearable + ByteEstimate + WithTimestamps + Unpin,
 {
-    type Item = Sitemty<<ENP as EventsNodeProcessor>::Output>;
+    type Item = Sitemty<ITY>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -186,7 +184,6 @@ where
                     Ready(None)
                 }
             } else {
-                // Can only run logic if all streams are either finished, errored or have some current value.
                 match self.replenish(cx) {
                     Ready(Ok(_)) => {
                         let mut lowest_ix = usize::MAX;
@@ -208,11 +205,30 @@ where
                             }
                         }
                         if lowest_ix == usize::MAX {
+                            if self.pre_range_buf.len() == 1 {
+                                let mut ldst = std::mem::replace(&mut self.batch, ITY::empty());
+                                let ts4 = self.pre_range_buf.ts(0);
+                                info!("\n\nMERGER  enqueue after exhausted from stash {}", ts4);
+                                ldst.push_index(&self.pre_range_buf, 0);
+                                self.pre_range_buf.clear();
+                                self.ts_last_emit = ts4;
+                                self.batch = ldst;
+                            } else if self.pre_range_buf.len() > 1 {
+                                panic!();
+                            } else {
+                            };
                             if self.batch.len() != 0 {
-                                let emp = <<ENP as EventsNodeProcessor>::Output>::empty();
+                                let emp = ITY::empty();
                                 let ret = std::mem::replace(&mut self.batch, emp);
                                 self.batch_len_emit_histo.ingest(ret.len() as u32);
                                 self.data_emit_complete = true;
+                                if LOG_EMIT_ITEM {
+                                    let mut aa = vec![];
+                                    for ii in 0..ret.len() {
+                                        aa.push(ret.ts(ii));
+                                    }
+                                    info!("MergedBlobsStream  A emits {} events  tss {:?}", ret.len(), aa);
+                                };
                                 Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
                             } else {
                                 self.data_emit_complete = true;
@@ -220,18 +236,69 @@ where
                             }
                         } else {
                             assert!(lowest_ts >= self.ts_last_emit);
-                            let emp = <<ENP as EventsNodeProcessor>::Output>::empty();
-                            let mut local_batch = std::mem::replace(&mut self.batch, emp);
-                            self.ts_last_emit = lowest_ts;
-                            let rix = self.ixs[lowest_ix];
-                            match &self.current[lowest_ix] {
-                                MergedCurVal::Val(val) => {
-                                    local_batch.push_index(val, rix);
+                            let do_emit_event;
+                            let emit_packet_now_2;
+                            if lowest_ts < self.range.beg {
+                                do_emit_event = false;
+                                emit_packet_now_2 = false;
+                                if self.expand {
+                                    info!("\n\nMERGER  stash {}", lowest_ts);
+                                    let mut ldst = std::mem::replace(&mut self.pre_range_buf, ITY::empty());
+                                    ldst.clear();
+                                    let rix = self.ixs[lowest_ix];
+                                    match &self.current[lowest_ix] {
+                                        MergedCurVal::Val(val) => ldst.push_index(val, rix),
+                                        MergedCurVal::None => panic!(),
+                                        MergedCurVal::Finish => panic!(),
+                                    }
+                                    self.pre_range_buf = ldst;
+                                } else {
+                                };
+                            } else if lowest_ts >= self.range.end {
+                                if self.expand {
+                                    if self.emitted_after_range == 0 {
+                                        do_emit_event = true;
+                                        emit_packet_now_2 = true;
+                                        self.emitted_after_range += 1;
+                                        self.range_complete_observed_all = true;
+                                        self.data_emit_complete = true;
+                                    } else {
+                                        do_emit_event = false;
+                                        emit_packet_now_2 = false;
+                                    };
+                                } else {
+                                    do_emit_event = false;
+                                    emit_packet_now_2 = false;
+                                    self.data_emit_complete = true;
+                                };
+                            } else {
+                                do_emit_event = true;
+                                emit_packet_now_2 = false;
+                            };
+                            if do_emit_event {
+                                let mut ldst = std::mem::replace(&mut self.batch, ITY::empty());
+                                if self.pre_range_buf.len() == 1 {
+                                    let ts4 = self.pre_range_buf.ts(0);
+                                    info!("\n\nMERGER  enqueue from stash {}", ts4);
+                                    ldst.push_index(&self.pre_range_buf, 0);
+                                    self.pre_range_buf.clear();
+                                } else if self.pre_range_buf.len() > 1 {
+                                    panic!();
+                                } else {
+                                    info!("\n\nMERGER  nothing in stash");
+                                };
+                                info!("\n\nMERGER  enqueue {}", lowest_ts);
+                                self.ts_last_emit = lowest_ts;
+                                let rix = self.ixs[lowest_ix];
+                                match &self.current[lowest_ix] {
+                                    MergedCurVal::Val(val) => {
+                                        ldst.push_index(val, rix);
+                                    }
+                                    MergedCurVal::None => panic!(),
+                                    MergedCurVal::Finish => panic!(),
                                 }
-                                MergedCurVal::None => panic!(),
-                                MergedCurVal::Finish => panic!(),
+                                self.batch = ldst;
                             }
-                            self.batch = local_batch;
                             self.ixs[lowest_ix] += 1;
                             let curlen = match &self.current[lowest_ix] {
                                 MergedCurVal::Val(val) => val.len(),
@@ -242,11 +309,24 @@ where
                                 self.ixs[lowest_ix] = 0;
                                 self.current[lowest_ix] = MergedCurVal::None;
                             }
-                            if self.batch.byte_estimate() >= self.batch_size.bytes() as u64 {
+                            let emit_packet_now;
+                            if emit_packet_now_2 || self.batch.byte_estimate() >= self.batch_size.bytes() as u64 {
+                                emit_packet_now = true;
+                            } else {
+                                emit_packet_now = false;
+                            };
+                            if emit_packet_now {
                                 trace!("emit item because over threshold  len {}", self.batch.len());
-                                let emp = <<ENP as EventsNodeProcessor>::Output>::empty();
+                                let emp = ITY::empty();
                                 let ret = std::mem::replace(&mut self.batch, emp);
                                 self.batch_len_emit_histo.ingest(ret.len() as u32);
+                                if LOG_EMIT_ITEM {
+                                    let mut aa = vec![];
+                                    for ii in 0..ret.len() {
+                                        aa.push(ret.ts(ii));
+                                    }
+                                    info!("MergedBlobsStream  B emits {} events  tss {:?}", ret.len(), aa);
+                                };
                                 Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
                             } else {
                                 continue 'outer;
@@ -261,5 +341,127 @@ where
                 }
             };
         }
+    }
+}
+
+impl<S, ITY> HasSeenBeforeRangeCount for MergedStream<S, ITY>
+where
+    S: Stream<Item = Sitemty<ITY>> + Unpin,
+    ITY: Unpin,
+{
+    fn seen_before_range_count(&self) -> usize {
+        // TODO (only for debug)
+        0
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::dataopen::position_file_for_test;
+    use crate::eventchunker::{EventChunker, EventChunkerConf};
+    use crate::file_content_stream;
+    use err::Error;
+    use futures_util::StreamExt;
+    use items::{RangeCompletableItem, StreamItem};
+    use netpod::log::*;
+    use netpod::timeunits::{DAY, MS};
+    use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, FileIoBufferSize, NanoRange, Nanos, ScalarType, Shape};
+    use std::path::PathBuf;
+    use std::sync::atomic::AtomicU64;
+    use std::sync::Arc;
+
+    const SCALAR_FILE: &str =
+        "../tmpdata/node00/ks_2/byTime/scalar-i32-be/0000000000000000001/0000000000/0000000000086400000_00000_Data";
+    const WAVE_FILE: &str =
+        "../tmpdata/node00/ks_3/byTime/wave-f64-be-n21/0000000000000000001/0000000000/0000000000086400000_00000_Data";
+
+    #[derive(Debug)]
+    struct CollectedEvents {
+        tss: Vec<u64>,
+    }
+
+    async fn collect_merged_events(paths: Vec<PathBuf>, range: NanoRange) -> Result<CollectedEvents, Error> {
+        let mut files = vec![];
+        for path in paths {
+            let p = position_file_for_test(&path, &range, false, false).await?;
+            if !p.found {
+                return Err(Error::with_msg_no_trace("can not position file??"));
+            }
+            files.push(
+                p.file
+                    .file
+                    .ok_or_else(|| Error::with_msg(format!("can not open file {:?}", path)))?,
+            );
+        }
+        //Merge
+        let file_io_buffer_size = FileIoBufferSize(1024 * 4);
+        let inp = file_content_stream(err::todoval(), file_io_buffer_size);
+        let inp = Box::pin(inp);
+        let channel_config = ChannelConfig {
+            channel: Channel {
+                backend: "testbackend".into(),
+                name: "scalar-i32-be".into(),
+            },
+            keyspace: 2,
+            time_bin_size: Nanos { ns: DAY },
+            scalar_type: ScalarType::I32,
+            byte_order: ByteOrder::BE,
+            array: false,
+            compression: false,
+            shape: Shape::Scalar,
+        };
+        let stats_conf = EventChunkerConf {
+            disk_stats_every: ByteSize::kb(1024),
+        };
+        let max_ts = Arc::new(AtomicU64::new(0));
+        let expand = false;
+        let do_decompress = false;
+        let dbg_path = err::todoval();
+
+        // TODO   `expand` flag usage
+
+        let mut chunker = EventChunker::from_event_boundary(
+            inp,
+            channel_config,
+            range,
+            stats_conf,
+            dbg_path,
+            max_ts,
+            expand,
+            do_decompress,
+        );
+
+        let mut cevs = CollectedEvents { tss: vec![] };
+
+        let mut i1 = 0;
+        while let Some(item) = chunker.next().await {
+            if let Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))) = item {
+                info!("item: {:?}", item);
+                for ts in item.tss {
+                    cevs.tss.push(ts);
+                }
+                i1 += 1;
+            }
+            if i1 >= 10 {
+                break;
+            }
+        }
+        info!("read {} data items", i1);
+        info!("cevs: {:?}", cevs);
+        err::todoval()
+    }
+
+    #[test]
+    fn single_file_through_merger() -> Result<(), Error> {
+        let fut = async {
+            let range = NanoRange {
+                beg: DAY + MS * 1501,
+                end: DAY + MS * 4000,
+            };
+            let path = PathBuf::from(SCALAR_FILE);
+            collect_merged_events(vec![path], range).await?;
+            Ok(())
+        };
+        taskrun::run(fut)
     }
 }

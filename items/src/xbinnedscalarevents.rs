@@ -2,9 +2,9 @@ use crate::minmaxavgbins::MinMaxAvgBins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
-    ts_offs_from_abs, Appendable, ByteEstimate, FilterFittingInside, Fits, FitsInside, PushableIndex, RangeOverlapInfo,
-    ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType, TimeBinnableTypeAggregator, WithLen,
-    WithTimestamps,
+    ts_offs_from_abs, Appendable, ByteEstimate, Clearable, FilterFittingInside, Fits, FitsInside, PushableIndex,
+    RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType,
+    TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::timeunits::SEC;
@@ -143,6 +143,15 @@ where
         self.mins.extend_from_slice(&src.mins);
         self.maxs.extend_from_slice(&src.maxs);
         self.avgs.extend_from_slice(&src.avgs);
+    }
+}
+
+impl<NTY> Clearable for XBinnedScalarEvents<NTY> {
+    fn clear(&mut self) {
+        self.tss.clear();
+        self.avgs.clear();
+        self.mins.clear();
+        self.maxs.clear();
     }
 }
 

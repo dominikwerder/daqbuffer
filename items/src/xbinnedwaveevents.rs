@@ -2,8 +2,9 @@ use crate::minmaxavgwavebins::MinMaxAvgWaveBins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
-    Appendable, ByteEstimate, FilterFittingInside, Fits, FitsInside, PushableIndex, RangeOverlapInfo, ReadPbv,
-    ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    Appendable, ByteEstimate, Clearable, FilterFittingInside, Fits, FitsInside, PushableIndex, RangeOverlapInfo,
+    ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType, TimeBinnableTypeAggregator, WithLen,
+    WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
@@ -144,6 +145,15 @@ where
         self.mins.extend_from_slice(&src.mins);
         self.maxs.extend_from_slice(&src.maxs);
         self.avgs.extend_from_slice(&src.avgs);
+    }
+}
+
+impl<NTY> Clearable for XBinnedWaveEvents<NTY> {
+    fn clear(&mut self) {
+        self.tss.clear();
+        self.mins.clear();
+        self.maxs.clear();
+        self.avgs.clear();
     }
 }
 

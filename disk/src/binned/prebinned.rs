@@ -10,7 +10,9 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::numops::{BoolNum, NumOps};
-use items::{Appendable, EventsNodeProcessor, Framable, FrameType, PushableIndex, Sitemty, TimeBinnableType};
+use items::{
+    Appendable, Clearable, EventsNodeProcessor, Framable, FrameType, PushableIndex, Sitemty, TimeBinnableType,
+};
 use netpod::{AggKind, ByteOrder, ChannelConfigQuery, NodeConfigCached, ScalarType, Shape};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -29,7 +31,7 @@ where
     END: Endianness + 'static,
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
-    <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable + 'static,
+    <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable + Clearable + 'static,
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
     Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
         Framable + FrameType + DeserializeOwned,
