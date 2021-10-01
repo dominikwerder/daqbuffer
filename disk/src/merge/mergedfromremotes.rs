@@ -4,8 +4,8 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
 use items::{Appendable, Clearable, EventsNodeProcessor, FrameType, PushableIndex, Sitemty};
+use netpod::log::*;
 use netpod::query::RawEventsQuery;
-use netpod::{log::*, NanoRange};
 use netpod::{Cluster, PerfOpts};
 use std::future::Future;
 use std::pin::Pin;
@@ -23,8 +23,6 @@ where
     merged: Option<T001<<ENP as EventsNodeProcessor>::Output>>,
     completed: bool,
     errored: bool,
-    range: NanoRange,
-    expand: bool,
 }
 
 impl<ENP> MergedFromRemotes<ENP>
@@ -48,8 +46,6 @@ where
             merged: None,
             completed: false,
             errored: false,
-            range: evq.range.clone(),
-            expand: evq.agg_kind.need_expand(),
         }
     }
 }
@@ -110,11 +106,7 @@ where
                 } else {
                     if c1 == self.tcp_establish_futs.len() {
                         let inps: Vec<_> = self.nodein.iter_mut().map(|k| k.take().unwrap()).collect();
-                        let s1 = MergedStream::<_, <ENP as EventsNodeProcessor>::Output>::new(
-                            inps,
-                            self.range.clone(),
-                            self.expand,
-                        );
+                        let s1 = MergedStream::<_, <ENP as EventsNodeProcessor>::Output>::new(inps);
                         self.merged = Some(Box::pin(s1));
                     }
                     continue 'outer;

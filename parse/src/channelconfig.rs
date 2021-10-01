@@ -335,7 +335,10 @@ mod test {
 
     fn read_data() -> Vec<u8> {
         use std::io::Read;
-        let path = "ks/config/S10CB01-RLOD100-PUP10:SIG-AMPLT/latest/00000_Config";
+        //let path = "ks/config/S10CB01-RLOD100-PUP10:SIG-AMPLT/latest/00000_Config";
+        let cwd = std::env::current_dir();
+        netpod::log::info!("CWD: {:?}", cwd);
+        let path = "../resources/sf-daqbuf-33-S10CB01-RLOD100-PUP10:SIG-AMPLT-latest-00000_Config";
         let mut f1 = std::fs::File::open(path).unwrap();
         let mut buf = vec![];
         f1.read_to_end(&mut buf).unwrap();

@@ -2,12 +2,12 @@ use crate::HasSeenBeforeRangeCount;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use items::ByteEstimate;
 use items::{Appendable, LogItem, PushableIndex, RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithTimestamps};
-use items::{ByteEstimate, Clearable};
 use netpod::histo::HistoLog2;
+use netpod::log::*;
 use netpod::ByteSize;
 use netpod::EventDataReadStats;
-use netpod::{log::*, NanoRange};
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -56,7 +56,7 @@ where
     S: Stream<Item = Sitemty<ITY>> + Unpin,
     ITY: Appendable + Unpin,
 {
-    pub fn new(inps: Vec<S>, range: NanoRange, expand: bool) -> Self {
+    pub fn new(inps: Vec<S>) -> Self {
         let n = inps.len();
         let current = (0..n).into_iter().map(|_| MergedCurVal::None).collect();
         Self {
@@ -288,6 +288,7 @@ mod test {
     use crate::dataopen::position_file_for_test;
     use crate::eventchunker::{EventChunker, EventChunkerConf};
     use crate::file_content_stream;
+    use crate::merge::MergedStream;
     use err::Error;
     use futures_util::StreamExt;
     use items::{RangeCompletableItem, StreamItem};
@@ -300,7 +301,7 @@ mod test {
 
     const SCALAR_FILE: &str =
         "../tmpdata/node00/ks_2/byTime/scalar-i32-be/0000000000000000001/0000000000/0000000000086400000_00000_Data";
-    const WAVE_FILE: &str =
+    const _WAVE_FILE: &str =
         "../tmpdata/node00/ks_3/byTime/wave-f64-be-n21/0000000000000000001/0000000000/0000000000086400000_00000_Data";
 
     #[derive(Debug)]
@@ -321,48 +322,55 @@ mod test {
                     .ok_or_else(|| Error::with_msg(format!("can not open file {:?}", path)))?,
             );
         }
-        //Merge
-        let file_io_buffer_size = FileIoBufferSize(1024 * 4);
-        let inp = file_content_stream(err::todoval(), file_io_buffer_size);
-        let inp = Box::pin(inp);
-        let channel_config = ChannelConfig {
-            channel: Channel {
-                backend: "testbackend".into(),
-                name: "scalar-i32-be".into(),
-            },
-            keyspace: 2,
-            time_bin_size: Nanos { ns: DAY },
-            scalar_type: ScalarType::I32,
-            byte_order: ByteOrder::BE,
-            array: false,
-            compression: false,
-            shape: Shape::Scalar,
-        };
-        let stats_conf = EventChunkerConf {
-            disk_stats_every: ByteSize::kb(1024),
-        };
-        let max_ts = Arc::new(AtomicU64::new(0));
-        let expand = false;
-        let do_decompress = false;
-        let dbg_path = err::todoval();
+        let inps = files
+            .into_iter()
+            .map(|file| {
+                let file_io_buffer_size = FileIoBufferSize(1024 * 4);
+                let inp = file_content_stream(file, file_io_buffer_size);
+                inp
+            })
+            .map(|inp| {
+                let channel_config = ChannelConfig {
+                    channel: Channel {
+                        backend: "testbackend".into(),
+                        name: "scalar-i32-be".into(),
+                    },
+                    keyspace: 2,
+                    time_bin_size: Nanos { ns: DAY },
+                    scalar_type: ScalarType::I32,
+                    byte_order: ByteOrder::BE,
+                    array: false,
+                    compression: false,
+                    shape: Shape::Scalar,
+                };
+                let stats_conf = EventChunkerConf {
+                    disk_stats_every: ByteSize::kb(1024),
+                };
+                let max_ts = Arc::new(AtomicU64::new(0));
+                let expand = false;
+                let do_decompress = false;
+                let dbg_path = PathBuf::from("/dbg/dummy");
 
-        // TODO   `expand` flag usage
+                // TODO   `expand` flag usage
+                // Does Chunker need to know about `expand` and why?
 
-        let mut chunker = EventChunker::from_event_boundary(
-            inp,
-            channel_config,
-            range,
-            stats_conf,
-            dbg_path,
-            max_ts,
-            expand,
-            do_decompress,
-        );
-
+                let chunker = EventChunker::from_event_boundary(
+                    Box::pin(inp),
+                    channel_config,
+                    range.clone(),
+                    stats_conf,
+                    dbg_path,
+                    max_ts,
+                    expand,
+                    do_decompress,
+                );
+                chunker
+            })
+            .collect();
+        let mut merged = MergedStream::new(inps);
         let mut cevs = CollectedEvents { tss: vec![] };
-
         let mut i1 = 0;
-        while let Some(item) = chunker.next().await {
+        while let Some(item) = merged.next().await {
             if let Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))) = item {
                 info!("item: {:?}", item);
                 for ts in item.tss {
@@ -376,7 +384,7 @@ mod test {
         }
         info!("read {} data items", i1);
         info!("cevs: {:?}", cevs);
-        err::todoval()
+        Ok(cevs)
     }
 
     #[test]
@@ -388,6 +396,11 @@ mod test {
             };
             let path = PathBuf::from(SCALAR_FILE);
             collect_merged_events(vec![path], range).await?;
+
+            // TODO
+            // assert things
+            // remove zmtp test from default test suite, move to cli instead
+
             Ok(())
         };
         taskrun::run(fut)

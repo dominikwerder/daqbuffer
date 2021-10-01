@@ -186,7 +186,7 @@ impl Stream for EventChunkerMultifile {
                                                 chunkers.push(chunker);
                                             }
                                         }
-                                        let merged = MergedStream::new(chunkers, self.range.clone(), self.expand);
+                                        let merged = MergedStream::new(chunkers);
                                         self.evs = Some(Box::pin(merged));
                                         Ready(Some(Ok(StreamItem::Log(item))))
                                     }
@@ -221,7 +221,6 @@ impl Stream for EventChunkerMultifile {
 
 #[cfg(test)]
 mod test {
-    use crate::merge::MergedStream;
     use crate::rangefilter::RangeFilter;
     use crate::{eventblobs::EventChunkerMultifile, eventchunker::EventChunkerConf};
     use err::Error;

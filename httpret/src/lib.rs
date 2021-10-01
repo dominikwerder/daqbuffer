@@ -681,7 +681,7 @@ pub async fn channel_config(req: Request<Body>, node_config: &NodeConfigCached) 
 pub async fn ca_connect_1(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let url = Url::parse(&format!("dummy:{}", req.uri()))?;
     let pairs = get_url_query_pairs(&url);
-    let res = netfetch::ca_connect_1(pairs, node_config).await?;
+    let res = netfetch::ca::ca_connect_1(pairs, node_config).await?;
     let ret = response(StatusCode::OK)
         .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
         .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {

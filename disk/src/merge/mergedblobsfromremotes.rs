@@ -5,8 +5,8 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
 use items::Sitemty;
+use netpod::log::*;
 use netpod::query::RawEventsQuery;
-use netpod::{log::*, NanoRange};
 use netpod::{Cluster, PerfOpts};
 use std::future::Future;
 use std::pin::Pin;
@@ -21,8 +21,6 @@ pub struct MergedBlobsFromRemotes {
     merged: Option<T001<EventFull>>,
     completed: bool,
     errored: bool,
-    range: NanoRange,
-    expand: bool,
 }
 
 impl MergedBlobsFromRemotes {
@@ -41,8 +39,6 @@ impl MergedBlobsFromRemotes {
             merged: None,
             completed: false,
             errored: false,
-            range: evq.range.clone(),
-            expand: evq.agg_kind.need_expand(),
         }
     }
 }
@@ -99,7 +95,7 @@ impl Stream for MergedBlobsFromRemotes {
                 } else {
                     if c1 == self.tcp_establish_futs.len() {
                         let inps: Vec<_> = self.nodein.iter_mut().map(|k| k.take().unwrap()).collect();
-                        let s1 = MergedStream::new(inps, self.range.clone(), self.expand);
+                        let s1 = MergedStream::new(inps);
                         self.merged = Some(Box::pin(s1));
                     }
                     continue 'outer;

@@ -11,11 +11,7 @@ use tokio::net::TcpStream;
 
 pub async fn zmtp_00() -> Result<(), Error> {
     let addr = "S10-CPPM-MOT0991:9999";
-    let conn = tokio::net::TcpStream::connect(addr).await?;
-    let mut zmtp = Zmtp::new(conn);
-    while let Some(ev) = zmtp.next().await {
-        info!("got zmtp event: {:?}", ev);
-    }
+    zmtp_client(addr).await?;
     Ok(())
 }
 

@@ -38,21 +38,10 @@ fn ca_connect_1() {
             },
             ix: 0,
         };
-        let mut rx = super::ca_connect_1(pairs, &node_config).await?;
+        let mut rx = super::ca::ca_connect_1(pairs, &node_config).await?;
         while let Some(item) = rx.next().await {
             info!("got next: {:?}", item);
         }
-        Ok(())
-    })
-    .unwrap();
-}
-
-#[test]
-fn zmtp_00() {
-    taskrun::run(async {
-        let it = vec![(String::new(), String::new())].into_iter();
-        let _pairs = BTreeMap::from_iter(it);
-        crate::zmtp::zmtp_00().await?;
         Ok(())
     })
     .unwrap();
