@@ -1,4 +1,3 @@
-use crate::HasSeenBeforeRangeCount;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -269,17 +268,6 @@ where
                 }
             };
         }
-    }
-}
-
-impl<S, ITY> HasSeenBeforeRangeCount for MergedStream<S, ITY>
-where
-    S: Stream<Item = Sitemty<ITY>> + Unpin,
-    ITY: Unpin,
-{
-    fn seen_before_range_count(&self) -> usize {
-        // TODO (only for debug)
-        0
     }
 }
 

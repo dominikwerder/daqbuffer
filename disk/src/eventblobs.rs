@@ -1,7 +1,7 @@
 use crate::dataopen::{open_expanded_files, open_files, OpenedFileSet};
 use crate::eventchunker::{EventChunker, EventChunkerConf, EventFull};
+use crate::file_content_stream;
 use crate::merge::MergedStream;
-use crate::{file_content_stream, HasSeenBeforeRangeCount};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -14,9 +14,9 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-pub trait InputTraits: Stream<Item = Sitemty<EventFull>> + HasSeenBeforeRangeCount {}
+pub trait InputTraits: Stream<Item = Sitemty<EventFull>> {}
 
-impl<T> InputTraits for T where T: Stream<Item = Sitemty<EventFull>> + HasSeenBeforeRangeCount {}
+impl<T> InputTraits for T where T: Stream<Item = Sitemty<EventFull>> {}
 
 pub struct EventChunkerMultifile {
     channel_config: ChannelConfig,
@@ -31,8 +31,6 @@ pub struct EventChunkerMultifile {
     max_ts: Arc<AtomicU64>,
     files_count: u32,
     node_ix: usize,
-    seen_before_range_count: usize,
-    seen_after_range_count: usize,
     expand: bool,
     do_decompress: bool,
 }
@@ -66,26 +64,8 @@ impl EventChunkerMultifile {
             max_ts: Arc::new(AtomicU64::new(0)),
             files_count: 0,
             node_ix,
-            seen_before_range_count: 0,
-            seen_after_range_count: 0,
             expand,
             do_decompress,
-        }
-    }
-
-    pub fn seen_before_range_count(&self) -> usize {
-        self.seen_before_range_count
-    }
-
-    pub fn seen_after_range_count(&self) -> usize {
-        self.seen_after_range_count
-    }
-
-    // TODO remove or use Drop impl?
-    pub fn close(&mut self) {
-        if let Some(evs) = &mut self.evs {
-            self.seen_before_range_count += evs.seen_before_range_count();
-            self.evs = None;
         }
     }
 }
@@ -119,7 +99,6 @@ impl Stream for EventChunkerMultifile {
                                 Ready(Some(k))
                             }
                             Ready(None) => {
-                                self.seen_before_range_count += evs.seen_before_range_count();
                                 self.evs = None;
                                 continue 'outer;
                             }

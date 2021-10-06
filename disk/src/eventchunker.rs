@@ -1,4 +1,4 @@
-use crate::{FileChunkRead, HasSeenBeforeRangeCount, NeedMinBuffer};
+use crate::{FileChunkRead, NeedMinBuffer};
 use bitshuffle::bitshuffle_decompress;
 use bytes::{Buf, BytesMut};
 use err::Error;
@@ -428,10 +428,6 @@ impl EventChunker {
             parsed_bytes,
         })
     }
-
-    pub fn seen_before_range_count(&self) -> usize {
-        self.seen_before_range_count
-    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -698,12 +694,6 @@ impl Stream for EventChunker {
                 }
             };
         }
-    }
-}
-
-impl HasSeenBeforeRangeCount for EventChunker {
-    fn seen_before_range_count(&self) -> usize {
-        self.seen_before_range_count()
     }
 }
 

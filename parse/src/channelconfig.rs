@@ -339,6 +339,7 @@ mod test {
         let cwd = std::env::current_dir();
         netpod::log::info!("CWD: {:?}", cwd);
         let path = "../resources/sf-daqbuf-33-S10CB01-RLOD100-PUP10:SIG-AMPLT-latest-00000_Config";
+        //let path = "../resources/sf-daqbuf-21-S10CB01-RLOD100-PUP10:SIG-AMPLT-latest-00000_Config";
         let mut f1 = std::fs::File::open(path).unwrap();
         let mut buf = vec![];
         f1.read_to_end(&mut buf).unwrap();
@@ -355,11 +356,11 @@ mod test {
     #[test]
     fn open_file() {
         let config = parse_config(&read_data()).unwrap().1;
-        assert_eq!(0, config.format_version);
-        assert_eq!(9, config.entries.len());
+        assert_eq!(config.format_version, 0);
+        assert_eq!(config.entries.len(), 18);
         for e in &config.entries {
             assert!(e.ts >= 631152000000000000);
-            assert!(e.ts <= 1591106812800073974);
+            assert!(e.ts <= 1613640673424172164);
             assert!(e.shape.is_some());
         }
     }

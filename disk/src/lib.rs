@@ -403,7 +403,3 @@ impl ChannelConfigExt for ChannelConfig {
         ret
     }
 }
-
-pub trait HasSeenBeforeRangeCount {
-    fn seen_before_range_count(&self) -> usize;
-}
