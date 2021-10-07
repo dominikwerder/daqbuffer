@@ -124,6 +124,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
             cache_base_path: data_base_path.join(format!("node{:02}", i1)),
             ksprefix: ksprefix.clone(),
             backend: "testbackend".into(),
+            splits: None,
             archiver_appliance: None,
         };
         ensemble.nodes.push(node);

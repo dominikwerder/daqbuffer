@@ -15,6 +15,7 @@ pub fn make_test_node(id: u32) -> Node {
         cache_base_path: format!("../tmpdata/node{:02}", id).into(),
         ksprefix: "ks".into(),
         backend: "testbackend".into(),
+        splits: None,
         archiver_appliance: None,
     }
 }

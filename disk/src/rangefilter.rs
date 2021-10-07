@@ -1,10 +1,10 @@
-use std::pin::Pin;
-use std::task::{Context, Poll};
-
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::{Appendable, Clearable, PushableIndex, RangeCompletableItem, Sitemty, StreamItem, WithTimestamps};
+use netpod::log::*;
 use netpod::NanoRange;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
 pub struct RangeFilter<S, ITY> {
     inp: S,
@@ -94,6 +94,10 @@ where
                             };
                         }
                         Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
+                    }
+                    Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)) => {
+                        warn!("\n\nRangeFilter  got RangeComplete\n");
+                        Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
                     }
                     k => Ready(Some(k)),
                 },

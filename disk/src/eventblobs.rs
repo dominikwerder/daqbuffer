@@ -2,6 +2,7 @@ use crate::dataopen::{open_expanded_files, open_files, OpenedFileSet};
 use crate::eventchunker::{EventChunker, EventChunkerConf, EventFull};
 use crate::file_content_stream;
 use crate::merge::MergedStream;
+use crate::rangefilter::RangeFilter;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -108,7 +109,7 @@ impl Stream for EventChunkerMultifile {
                             Ready(Some(k)) => match k {
                                 Ok(ofs) => {
                                     self.files_count += ofs.files.len() as u32;
-                                    if false && ofs.files.len() == 1 {
+                                    if ofs.files.len() == 1 {
                                         let mut ofs = ofs;
                                         let file = ofs.files.pop().unwrap();
                                         let path = file.path;
@@ -131,7 +132,9 @@ impl Stream for EventChunkerMultifile {
                                                     self.expand,
                                                     self.do_decompress,
                                                 );
-                                                self.evs = Some(Box::pin(chunker));
+                                                let filtered =
+                                                    RangeFilter::new(chunker, self.range.clone(), self.expand);
+                                                self.evs = Some(Box::pin(filtered));
                                             }
                                             None => {}
                                         }
@@ -166,7 +169,8 @@ impl Stream for EventChunkerMultifile {
                                             }
                                         }
                                         let merged = MergedStream::new(chunkers);
-                                        self.evs = Some(Box::pin(merged));
+                                        let filtered = RangeFilter::new(merged, self.range.clone(), self.expand);
+                                        self.evs = Some(Box::pin(filtered));
                                         Ready(Some(Ok(StreamItem::Log(item))))
                                     }
                                 }

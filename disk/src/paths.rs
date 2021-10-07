@@ -46,7 +46,17 @@ pub async fn datapaths_for_timebin(
         }
         let vv = dn.chars().fold(0, |a, x| if x.is_digit(10) { a + 1 } else { a });
         if vv == 10 {
-            splits.push(dn.parse::<u64>()?);
+            let split: u64 = dn.parse()?;
+            match &node.splits {
+                Some(sps) => {
+                    if sps.contains(&split) {
+                        splits.push(split);
+                    }
+                }
+                None => {
+                    splits.push(split);
+                }
+            }
         }
     }
     let mut ret = vec![];

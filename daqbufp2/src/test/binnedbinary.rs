@@ -38,6 +38,9 @@ async fn get_binned_binary_inner() -> Result<(), Error> {
         .await?;
     }
     if true {
+        return Ok(());
+    };
+    if true {
         get_binned_channel::<f64>(
             "wave-f64-be-n21",
             "1970-01-01T00:20:10.000Z",

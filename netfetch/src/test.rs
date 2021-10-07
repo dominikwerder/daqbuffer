@@ -19,6 +19,7 @@ fn ca_connect_1() {
                 cache_base_path: "".into(),
                 listen: "".into(),
                 ksprefix: "".into(),
+                splits: None,
                 archiver_appliance: None,
             },
             node_config: NodeConfig {

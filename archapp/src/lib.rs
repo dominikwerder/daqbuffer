@@ -1,13 +1,14 @@
-use err::Error;
-
 #[cfg(feature = "devread")]
 pub mod generated;
 #[cfg(not(feature = "devread"))]
 pub mod generated {}
+pub mod archeng;
 #[cfg(feature = "devread")]
 pub mod parse;
 #[cfg(not(feature = "devread"))]
 pub mod parsestub;
+
+use err::Error;
 use items::eventvalues::EventValues;
 use items::numops::NumOps;
 use items::waveevents::{WaveEvents, WaveXBinner};

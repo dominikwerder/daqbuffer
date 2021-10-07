@@ -133,6 +133,7 @@ pub struct Node {
     pub cache_base_path: PathBuf,
     pub ksprefix: String,
     pub backend: String,
+    pub splits: Option<Vec<u64>>,
     pub archiver_appliance: Option<ArchiverAppliance>,
 }
 
@@ -147,6 +148,7 @@ impl Node {
             cache_base_path: PathBuf::new(),
             ksprefix: "daqlocal".into(),
             backend: "dummybackend".into(),
+            splits: None,
             archiver_appliance: None,
         }
     }
