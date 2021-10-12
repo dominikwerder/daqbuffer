@@ -259,6 +259,17 @@ impl Channel {
     }
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct FilePos {
+    pub pos: u64,
+}
+
+impl From<FilePos> for u64 {
+    fn from(k: FilePos) -> Self {
+        k.pos
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum TimeRange {
     Time { beg: DateTime<Utc>, end: DateTime<Utc> },
