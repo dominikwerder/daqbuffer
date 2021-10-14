@@ -56,6 +56,7 @@ where
     ITY: Appendable + Unpin,
 {
     pub fn new(inps: Vec<S>) -> Self {
+        trace!("MergedStream::new");
         let n = inps.len();
         let current = (0..n).into_iter().map(|_| MergedCurVal::None).collect();
         Self {

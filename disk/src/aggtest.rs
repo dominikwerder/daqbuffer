@@ -17,6 +17,7 @@ pub fn make_test_node(id: u32) -> Node {
         backend: "testbackend".into(),
         splits: None,
         archiver_appliance: None,
+        channel_archiver: None,
     }
 }
 

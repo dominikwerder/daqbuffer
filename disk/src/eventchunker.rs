@@ -89,6 +89,7 @@ impl EventChunker {
         expand: bool,
         do_decompress: bool,
     ) -> Self {
+        trace!("EventChunker::from_start");
         let mut inp = NeedMinBuffer::new(inp);
         inp.set_need_min(6);
         Self {
@@ -609,9 +610,12 @@ impl Stream for EventChunker {
                 Ready(None)
             } else if self.final_stats_sent {
                 self.sent_beyond_range = true;
+                trace!("sent_beyond_range");
                 if self.seen_beyond_range {
+                    trace!("sent_beyond_range  RangeComplete");
                     Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
                 } else {
+                    trace!("sent_beyond_range  non-complete");
                     continue 'outer;
                 }
             } else if self.data_emit_complete {

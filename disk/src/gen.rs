@@ -12,7 +12,9 @@ use tracing::{debug, error, info, trace, warn};
 
 #[test]
 pub fn gen_test_data_test() {
-    taskrun::run(gen_test_data()).unwrap();
+    if false {
+        taskrun::run(gen_test_data()).unwrap();
+    }
 }
 
 pub async fn gen_test_data() -> Result<(), Error> {
@@ -126,6 +128,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
             backend: "testbackend".into(),
             splits: None,
             archiver_appliance: None,
+            channel_archiver: None,
         };
         ensemble.nodes.push(node);
     }

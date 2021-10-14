@@ -124,6 +124,11 @@ pub struct ArchiverAppliance {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ChannelArchiver {
+    pub data_base_paths: Vec<PathBuf>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Node {
     pub host: String,
     pub listen: String,
@@ -135,6 +140,7 @@ pub struct Node {
     pub backend: String,
     pub splits: Option<Vec<u64>>,
     pub archiver_appliance: Option<ArchiverAppliance>,
+    pub channel_archiver: Option<ChannelArchiver>,
 }
 
 impl Node {
@@ -150,6 +156,7 @@ impl Node {
             backend: "dummybackend".into(),
             splits: None,
             archiver_appliance: None,
+            channel_archiver: None,
         }
     }
 }

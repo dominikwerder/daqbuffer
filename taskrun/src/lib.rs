@@ -90,7 +90,7 @@ pub fn tracing_init() {
             .with_thread_names(true)
             //.with_max_level(tracing::Level::INFO)
             .with_env_filter(tracing_subscriber::EnvFilter::new(
-                "info,daqbuffer=trace,daqbuffer::test=trace,disk::raw::conn=info",
+                ["info", "daqbuffer::test=trace"].join(","),
             ))
             .init();
         *g = 1;
@@ -120,6 +120,7 @@ pub fn test_cluster() -> netpod::Cluster {
             backend: "testbackend".into(),
             splits: None,
             archiver_appliance: None,
+            channel_archiver: None,
         })
         .collect();
     netpod::Cluster {

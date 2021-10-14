@@ -30,9 +30,12 @@ async fn position_file(
     expand_left: bool,
     expand_right: bool,
 ) -> Result<Positioned, Error> {
-    info!(
+    trace!(
         "position_file  called  {}  {}   {:?}  {:?}",
-        expand_left, expand_right, range, path
+        expand_left,
+        expand_right,
+        range,
+        path
     );
     assert_eq!(expand_left && expand_right, false);
     match OpenOptions::new().read(true).open(&path).await {

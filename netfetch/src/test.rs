@@ -21,6 +21,7 @@ fn ca_connect_1() {
                 ksprefix: "".into(),
                 splits: None,
                 archiver_appliance: None,
+                channel_archiver: None,
             },
             node_config: NodeConfig {
                 name: "".into(),

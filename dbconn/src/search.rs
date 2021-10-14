@@ -44,8 +44,7 @@ pub async fn search_channel(
             None => vec![],
         };
         let k = ChannelSearchSingleResult {
-            backend: node_config.node.backend.clone(),
-            //backend: row.get(7),
+            backend: row.get(7),
             name: row.get(1),
             source: row.get(2),
             ty: row.get(3),

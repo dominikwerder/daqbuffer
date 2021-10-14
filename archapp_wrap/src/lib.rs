@@ -9,6 +9,8 @@ use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
 
+pub use archapp;
+
 pub fn scan_files(
     pairs: BTreeMap<String, String>,
     node_config: NodeConfigCached,

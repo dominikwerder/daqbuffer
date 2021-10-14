@@ -65,6 +65,8 @@ impl Stream for FileReader {
     type Item = Result<Bytes, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        err::todo();
+        // TODO remove if no longer used?
         let blen = self.buffer_size as usize;
         let mut buf2 = BytesMut::with_capacity(blen);
         buf2.resize(buf2.capacity(), 0);
@@ -312,58 +314,55 @@ impl Stream for NeedMinBuffer {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        if self.completed {
-            panic!("NeedMinBuffer  poll_next on completed");
-        }
-        if self.errored {
-            self.completed = true;
-            return Ready(None);
-        }
         loop {
-            let mut again = false;
-            let z = match self.inp.poll_next_unpin(cx) {
-                Ready(Some(Ok(fcr))) => {
-                    self.buf_len_histo.ingest(fcr.buf.len() as u32);
-                    //info!("NeedMinBuffer got buf  len {}", fcr.buf.len());
-                    match self.left.take() {
-                        Some(mut lfcr) => {
-                            // TODO measure:
-                            lfcr.buf.unsplit(fcr.buf);
-                            lfcr.duration += fcr.duration;
-                            let fcr = lfcr;
-                            if fcr.buf.len() as u32 >= self.need_min {
-                                //info!("with left ready  len {}  need_min {}", buf.len(), self.need_min);
-                                Ready(Some(Ok(fcr)))
-                            } else {
-                                //info!("with left not enough  len {}  need_min {}", buf.len(), self.need_min);
-                                self.left.replace(fcr);
-                                again = true;
-                                Pending
+            break if self.completed {
+                panic!("NeedMinBuffer  poll_next on completed");
+            } else if self.errored {
+                self.completed = true;
+                return Ready(None);
+            } else {
+                match self.inp.poll_next_unpin(cx) {
+                    Ready(Some(Ok(fcr))) => {
+                        self.buf_len_histo.ingest(fcr.buf.len() as u32);
+                        //info!("NeedMinBuffer got buf  len {}", fcr.buf.len());
+                        match self.left.take() {
+                            Some(mut lfcr) => {
+                                // TODO measure:
+                                lfcr.buf.unsplit(fcr.buf);
+                                lfcr.duration += fcr.duration;
+                                let fcr = lfcr;
+                                if fcr.buf.len() as u32 >= self.need_min {
+                                    //info!("with left ready  len {}  need_min {}", buf.len(), self.need_min);
+                                    Ready(Some(Ok(fcr)))
+                                } else {
+                                    //info!("with left not enough  len {}  need_min {}", buf.len(), self.need_min);
+                                    self.left.replace(fcr);
+                                    continue;
+                                }
                             }
-                        }
-                        None => {
-                            if fcr.buf.len() as u32 >= self.need_min {
-                                //info!("simply ready  len {}  need_min {}", buf.len(), self.need_min);
-                                Ready(Some(Ok(fcr)))
-                            } else {
-                                //info!("no previous leftover, need more  len {}  need_min {}", buf.len(), self.need_min);
-                                self.left.replace(fcr);
-                                again = true;
-                                Pending
+                            None => {
+                                if fcr.buf.len() as u32 >= self.need_min {
+                                    //info!("simply ready  len {}  need_min {}", buf.len(), self.need_min);
+                                    Ready(Some(Ok(fcr)))
+                                } else {
+                                    //info!("no previous leftover, need more  len {}  need_min {}", buf.len(), self.need_min);
+                                    self.left.replace(fcr);
+                                    continue;
+                                }
                             }
                         }
                     }
+                    Ready(Some(Err(e))) => {
+                        self.errored = true;
+                        Ready(Some(Err(e.into())))
+                    }
+                    Ready(None) => {
+                        info!("NeedMinBuffer  histo: {:?}", self.buf_len_histo);
+                        Ready(None)
+                    }
+                    Pending => Pending,
                 }
-                Ready(Some(Err(e))) => Ready(Some(Err(e.into()))),
-                Ready(None) => {
-                    info!("NeedMinBuffer  histo: {:?}", self.buf_len_histo);
-                    Ready(None)
-                }
-                Pending => Pending,
             };
-            if !again {
-                break z;
-            }
         }
     }
 }
