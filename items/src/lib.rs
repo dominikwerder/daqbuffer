@@ -4,6 +4,7 @@ use bytes::BytesMut;
 use chrono::{TimeZone, Utc};
 use err::Error;
 use netpod::timeunits::{MS, SEC};
+use netpod::RangeFilterStats;
 use netpod::{log::Level, AggKind, EventDataReadStats, EventQueryJsonStringFrame, NanoRange, Shape};
 use serde::de::{self, DeserializeOwned, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
@@ -50,6 +51,7 @@ pub enum RangeCompletableItem<T> {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum StatsItem {
     EventDataReadStats(EventDataReadStats),
+    RangeFilterStats(RangeFilterStats),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -243,6 +245,18 @@ pub trait EventsNodeProcessor: Send + Unpin {
     fn process(&self, inp: Self::Input) -> Self::Output;
 }
 
+pub trait EventsTypeAliases {
+    type TimeBinOutput;
+}
+
+impl<ENP> EventsTypeAliases for ENP
+where
+    ENP: EventsNodeProcessor,
+    <ENP as EventsNodeProcessor>::Output: TimeBinnableType,
+{
+    type TimeBinOutput = <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output;
+}
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct IsoDateTime(chrono::DateTime<Utc>);
 
@@ -303,7 +317,7 @@ pub trait PushableIndex {
 }
 
 pub trait Appendable: WithLen {
-    fn empty() -> Self;
+    fn empty_like_self(&self) -> Self;
     fn append(&mut self, src: &Self);
 }
 
@@ -311,9 +325,12 @@ pub trait Clearable {
     fn clear(&mut self);
 }
 
-pub trait EventAppendable {
+pub trait EventAppendable
+where
+    Self: Sized,
+{
     type Value;
-    fn append_event(&mut self, ts: u64, value: Self::Value);
+    fn append_event(ret: Option<Self>, ts: u64, value: Self::Value) -> Self;
 }
 
 pub trait TimeBins: Send + Unpin + WithLen + Appendable + FilterFittingInside {

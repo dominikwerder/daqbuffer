@@ -8,7 +8,6 @@ use std::time::Duration;
 
 pub mod binnedt;
 pub mod enp;
-pub mod eventbatch;
 pub mod scalarbinbatch;
 pub mod streams;
 

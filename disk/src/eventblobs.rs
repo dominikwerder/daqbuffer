@@ -2,7 +2,6 @@ use crate::dataopen::{open_expanded_files, open_files, OpenedFileSet};
 use crate::eventchunker::{EventChunker, EventChunkerConf, EventFull};
 use crate::file_content_stream;
 use crate::merge::MergedStream;
-use crate::rangefilter::RangeFilter;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -14,6 +13,7 @@ use std::pin::Pin;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use streams::rangefilter::RangeFilter;
 
 pub trait InputTraits: Stream<Item = Sitemty<EventFull>> {}
 
@@ -204,7 +204,6 @@ impl Stream for EventChunkerMultifile {
 
 #[cfg(test)]
 mod test {
-    use crate::rangefilter::RangeFilter;
     use crate::{eventblobs::EventChunkerMultifile, eventchunker::EventChunkerConf};
     use err::Error;
     use futures_util::StreamExt;
@@ -212,6 +211,7 @@ mod test {
     use netpod::log::*;
     use netpod::timeunits::{DAY, MS};
     use netpod::{ByteSize, ChannelConfig, FileIoBufferSize, Nanos};
+    use streams::rangefilter::RangeFilter;
 
     fn read_expanded_for_range(range: netpod::NanoRange, nodeix: usize) -> Result<(usize, Vec<u64>), Error> {
         let chn = netpod::Channel {

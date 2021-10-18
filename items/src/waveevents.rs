@@ -130,7 +130,7 @@ impl<NTY> Appendable for WaveEvents<NTY>
 where
     NTY: NumOps,
 {
-    fn empty() -> Self {
+    fn empty_like_self(&self) -> Self {
         Self::empty()
     }
 
@@ -304,9 +304,11 @@ where
 {
     type Value = Vec<NTY>;
 
-    fn append_event(&mut self, ts: u64, value: Self::Value) {
-        self.tss.push(ts);
-        self.vals.push(value);
+    fn append_event(ret: Option<Self>, ts: u64, value: Self::Value) -> Self {
+        let mut ret = if let Some(ret) = ret { ret } else { Self::empty() };
+        ret.tss.push(ts);
+        ret.vals.push(value);
+        ret
     }
 }
 

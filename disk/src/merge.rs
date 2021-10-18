@@ -6,7 +6,6 @@ use items::{Appendable, LogItem, PushableIndex, RangeCompletableItem, Sitemty, S
 use netpod::histo::HistoLog2;
 use netpod::log::*;
 use netpod::ByteSize;
-use netpod::EventDataReadStats;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -28,7 +27,7 @@ pub struct MergedStream<S, ITY> {
     ixs: Vec<usize>,
     errored: bool,
     completed: bool,
-    batch: ITY,
+    batch: Option<ITY>,
     ts_last_emit: u64,
     range_complete_observed: Vec<bool>,
     range_complete_observed_all: bool,
@@ -37,7 +36,7 @@ pub struct MergedStream<S, ITY> {
     batch_size: ByteSize,
     batch_len_emit_histo: HistoLog2,
     logitems: VecDeque<LogItem>,
-    event_data_read_stats_items: VecDeque<EventDataReadStats>,
+    stats_items: VecDeque<StatsItem>,
 }
 
 // TODO get rid, log info explicitly.
@@ -65,7 +64,7 @@ where
             ixs: vec![0; n],
             errored: false,
             completed: false,
-            batch: <ITY as Appendable>::empty(),
+            batch: None,
             ts_last_emit: 0,
             range_complete_observed: vec![false; n],
             range_complete_observed_all: false,
@@ -74,7 +73,7 @@ where
             batch_size: ByteSize::kb(128),
             batch_len_emit_histo: HistoLog2::new(0),
             logitems: VecDeque::new(),
-            event_data_read_stats_items: VecDeque::new(),
+            stats_items: VecDeque::new(),
         }
     }
 
@@ -92,11 +91,7 @@ where
                                     continue 'l1;
                                 }
                                 StreamItem::Stats(item) => {
-                                    match item {
-                                        StatsItem::EventDataReadStats(item) => {
-                                            self.event_data_read_stats_items.push_back(item);
-                                        }
-                                    }
+                                    self.stats_items.push_back(item);
                                     continue 'l1;
                                 }
                                 StreamItem::DataItem(item) => match item {
@@ -160,8 +155,8 @@ where
                 Ready(None)
             } else if let Some(item) = self.logitems.pop_front() {
                 Ready(Some(Ok(StreamItem::Log(item))))
-            } else if let Some(item) = self.event_data_read_stats_items.pop_front() {
-                Ready(Some(Ok(StreamItem::Stats(StatsItem::EventDataReadStats(item)))))
+            } else if let Some(item) = self.stats_items.pop_front() {
+                Ready(Some(Ok(StreamItem::Stats(item))))
             } else if self.data_emit_complete {
                 if self.range_complete_observed_all {
                     if self.range_complete_observed_all_emitted {
@@ -197,18 +192,22 @@ where
                             }
                         }
                         if lowest_ix == usize::MAX {
-                            if self.batch.len() != 0 {
-                                let ret = std::mem::replace(&mut self.batch, ITY::empty());
-                                self.batch_len_emit_histo.ingest(ret.len() as u32);
-                                self.data_emit_complete = true;
-                                if LOG_EMIT_ITEM {
-                                    let mut aa = vec![];
-                                    for ii in 0..ret.len() {
-                                        aa.push(ret.ts(ii));
-                                    }
-                                    info!("MergedBlobsStream  A emits {} events  tss {:?}", ret.len(), aa);
-                                };
-                                Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
+                            if let Some(batch) = self.batch.take() {
+                                if batch.len() != 0 {
+                                    self.batch_len_emit_histo.ingest(batch.len() as u32);
+                                    self.data_emit_complete = true;
+                                    if LOG_EMIT_ITEM {
+                                        let mut aa = vec![];
+                                        for ii in 0..batch.len() {
+                                            aa.push(batch.ts(ii));
+                                        }
+                                        info!("MergedBlobsStream  A emits {} events  tss {:?}", batch.len(), aa);
+                                    };
+                                    Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(batch)))))
+                                } else {
+                                    self.data_emit_complete = true;
+                                    continue 'outer;
+                                }
                             } else {
                                 self.data_emit_complete = true;
                                 continue 'outer;
@@ -216,17 +215,18 @@ where
                         } else {
                             assert!(lowest_ts >= self.ts_last_emit);
                             {
-                                let mut ldst = std::mem::replace(&mut self.batch, ITY::empty());
+                                let batch = self.batch.take();
                                 self.ts_last_emit = lowest_ts;
                                 let rix = self.ixs[lowest_ix];
                                 match &self.current[lowest_ix] {
                                     MergedCurVal::Val(val) => {
+                                        let mut ldst = batch.unwrap_or_else(|| val.empty_like_self());
                                         ldst.push_index(val, rix);
+                                        self.batch = Some(ldst);
                                     }
                                     MergedCurVal::None => panic!(),
                                     MergedCurVal::Finish => panic!(),
                                 }
-                                self.batch = ldst;
                             }
                             self.ixs[lowest_ix] += 1;
                             let curlen = match &self.current[lowest_ix] {
@@ -238,24 +238,30 @@ where
                                 self.ixs[lowest_ix] = 0;
                                 self.current[lowest_ix] = MergedCurVal::None;
                             }
-                            let emit_packet_now = if self.batch.byte_estimate() >= self.batch_size.bytes() as u64 {
-                                true
+                            let emit_packet_now = if let Some(batch) = &self.batch {
+                                if batch.byte_estimate() >= self.batch_size.bytes() as u64 {
+                                    true
+                                } else {
+                                    false
+                                }
                             } else {
                                 false
                             };
                             if emit_packet_now {
-                                trace!("emit item because over threshold  len {}", self.batch.len());
-                                let emp = ITY::empty();
-                                let ret = std::mem::replace(&mut self.batch, emp);
-                                self.batch_len_emit_histo.ingest(ret.len() as u32);
-                                if LOG_EMIT_ITEM {
-                                    let mut aa = vec![];
-                                    for ii in 0..ret.len() {
-                                        aa.push(ret.ts(ii));
-                                    }
-                                    info!("MergedBlobsStream  B emits {} events  tss {:?}", ret.len(), aa);
-                                };
-                                Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
+                                if let Some(batch) = self.batch.take() {
+                                    trace!("emit item because over threshold  len {}", batch.len());
+                                    self.batch_len_emit_histo.ingest(batch.len() as u32);
+                                    if LOG_EMIT_ITEM {
+                                        let mut aa = vec![];
+                                        for ii in 0..batch.len() {
+                                            aa.push(batch.ts(ii));
+                                        }
+                                        info!("MergedBlobsStream  B emits {} events  tss {:?}", batch.len(), aa);
+                                    };
+                                    Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(batch)))))
+                                } else {
+                                    continue 'outer;
+                                }
                             } else {
                                 continue 'outer;
                             }

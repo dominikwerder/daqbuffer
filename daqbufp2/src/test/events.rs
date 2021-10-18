@@ -187,6 +187,7 @@ where
                         a.bytes_read += item.parsed_bytes;
                         a
                     }
+                    _ => a,
                 },
                 Ok(StreamItem::DataItem(item)) => match item {
                     RangeCompletableItem::RangeComplete => {

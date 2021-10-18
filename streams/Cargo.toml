@@ -1,0 +1,19 @@
+[package]
+name = "streams"
+version = "0.0.1-a.dev.4"
+authors = ["Dominik Werder <dominik.werder@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+tracing = "0.1.26"
+futures-core = "0.3.15"
+futures-util = "0.3.15"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_cbor = "0.11.1"
+bincode = "1.3.3"
+bytes = "1.0.1"
+chrono = { version = "0.4.19", features = ["serde"] }
+err = { path = "../err" }
+netpod = { path = "../netpod" }
+items = { path = "../items" }

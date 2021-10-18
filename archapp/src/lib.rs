@@ -14,7 +14,7 @@ use items::numops::NumOps;
 use items::waveevents::{WaveEvents, WaveXBinner};
 use items::xbinnedscalarevents::XBinnedScalarEvents;
 use items::xbinnedwaveevents::XBinnedWaveEvents;
-use items::{EventsNodeProcessor, SitemtyFrameType, WithLen, WithTimestamps};
+use items::{Appendable, Clearable, EventsNodeProcessor, PushableIndex, SitemtyFrameType, WithLen, WithTimestamps};
 use netpod::{AggKind, HasScalarType, HasShape, ScalarType, Shape};
 #[cfg(not(feature = "devread"))]
 pub use parsestub as parse;
@@ -66,6 +66,82 @@ impl ScalarPlainEvents {
             Int(_) => format!("Int"),
             Float(_) => format!("Float"),
             Double(_) => format!("Double"),
+        }
+    }
+}
+
+impl Clearable for ScalarPlainEvents {
+    fn clear(&mut self) {
+        match self {
+            ScalarPlainEvents::Byte(k) => k.clear(),
+            ScalarPlainEvents::Short(k) => k.clear(),
+            ScalarPlainEvents::Int(k) => k.clear(),
+            ScalarPlainEvents::Float(k) => k.clear(),
+            ScalarPlainEvents::Double(k) => k.clear(),
+        }
+    }
+}
+
+impl Appendable for ScalarPlainEvents {
+    fn empty_like_self(&self) -> Self {
+        match self {
+            Self::Byte(k) => Self::Byte(k.empty_like_self()),
+            Self::Short(k) => Self::Short(k.empty_like_self()),
+            Self::Int(k) => Self::Int(k.empty_like_self()),
+            Self::Float(k) => Self::Float(k.empty_like_self()),
+            Self::Double(k) => Self::Double(k.empty_like_self()),
+        }
+    }
+
+    fn append(&mut self, src: &Self) {
+        match self {
+            Self::Byte(k) => match src {
+                Self::Byte(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Short(k) => match src {
+                Self::Short(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Int(k) => match src {
+                Self::Int(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Float(k) => match src {
+                Self::Float(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Double(k) => match src {
+                Self::Double(j) => k.append(j),
+                _ => panic!(),
+            },
+        }
+    }
+}
+
+impl PushableIndex for ScalarPlainEvents {
+    fn push_index(&mut self, src: &Self, ix: usize) {
+        match self {
+            Self::Byte(k) => match src {
+                Self::Byte(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Short(k) => match src {
+                Self::Short(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Int(k) => match src {
+                Self::Int(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Float(k) => match src {
+                Self::Float(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Double(k) => match src {
+                Self::Double(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
         }
     }
 }
@@ -185,6 +261,82 @@ impl WavePlainEvents {
     }
 }
 
+impl Clearable for WavePlainEvents {
+    fn clear(&mut self) {
+        match self {
+            WavePlainEvents::Byte(k) => k.clear(),
+            WavePlainEvents::Short(k) => k.clear(),
+            WavePlainEvents::Int(k) => k.clear(),
+            WavePlainEvents::Float(k) => k.clear(),
+            WavePlainEvents::Double(k) => k.clear(),
+        }
+    }
+}
+
+impl Appendable for WavePlainEvents {
+    fn empty_like_self(&self) -> Self {
+        match self {
+            Self::Byte(k) => Self::Byte(k.empty_like_self()),
+            Self::Short(k) => Self::Short(k.empty_like_self()),
+            Self::Int(k) => Self::Int(k.empty_like_self()),
+            Self::Float(k) => Self::Float(k.empty_like_self()),
+            Self::Double(k) => Self::Double(k.empty_like_self()),
+        }
+    }
+
+    fn append(&mut self, src: &Self) {
+        match self {
+            Self::Byte(k) => match src {
+                Self::Byte(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Short(k) => match src {
+                Self::Short(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Int(k) => match src {
+                Self::Int(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Float(k) => match src {
+                Self::Float(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Double(k) => match src {
+                Self::Double(j) => k.append(j),
+                _ => panic!(),
+            },
+        }
+    }
+}
+
+impl PushableIndex for WavePlainEvents {
+    fn push_index(&mut self, src: &Self, ix: usize) {
+        match self {
+            Self::Byte(k) => match src {
+                Self::Byte(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Short(k) => match src {
+                Self::Short(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Int(k) => match src {
+                Self::Int(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Float(k) => match src {
+                Self::Float(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Double(k) => match src {
+                Self::Double(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+        }
+    }
+}
+
 impl WithLen for WavePlainEvents {
     fn len(&self) -> usize {
         use WavePlainEvents::*;
@@ -269,6 +421,82 @@ impl MultiBinWaveEvents {
                 AggKind::DimXBinsN(_) => EventsItem::Plain(PlainEvents::Wave(err::todoval())),
             },
             _ => err::todoval(),
+        }
+    }
+}
+
+impl Clearable for MultiBinWaveEvents {
+    fn clear(&mut self) {
+        match self {
+            MultiBinWaveEvents::Byte(k) => k.clear(),
+            MultiBinWaveEvents::Short(k) => k.clear(),
+            MultiBinWaveEvents::Int(k) => k.clear(),
+            MultiBinWaveEvents::Float(k) => k.clear(),
+            MultiBinWaveEvents::Double(k) => k.clear(),
+        }
+    }
+}
+
+impl Appendable for MultiBinWaveEvents {
+    fn empty_like_self(&self) -> Self {
+        match self {
+            Self::Byte(k) => Self::Byte(k.empty_like_self()),
+            Self::Short(k) => Self::Short(k.empty_like_self()),
+            Self::Int(k) => Self::Int(k.empty_like_self()),
+            Self::Float(k) => Self::Float(k.empty_like_self()),
+            Self::Double(k) => Self::Double(k.empty_like_self()),
+        }
+    }
+
+    fn append(&mut self, src: &Self) {
+        match self {
+            Self::Byte(k) => match src {
+                Self::Byte(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Short(k) => match src {
+                Self::Short(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Int(k) => match src {
+                Self::Int(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Float(k) => match src {
+                Self::Float(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Double(k) => match src {
+                Self::Double(j) => k.append(j),
+                _ => panic!(),
+            },
+        }
+    }
+}
+
+impl PushableIndex for MultiBinWaveEvents {
+    fn push_index(&mut self, src: &Self, ix: usize) {
+        match self {
+            Self::Byte(k) => match src {
+                Self::Byte(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Short(k) => match src {
+                Self::Short(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Int(k) => match src {
+                Self::Int(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Float(k) => match src {
+                Self::Float(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Double(k) => match src {
+                Self::Double(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
         }
     }
 }
@@ -361,6 +589,82 @@ impl SingleBinWaveEvents {
     }
 }
 
+impl Clearable for SingleBinWaveEvents {
+    fn clear(&mut self) {
+        match self {
+            SingleBinWaveEvents::Byte(k) => k.clear(),
+            SingleBinWaveEvents::Short(k) => k.clear(),
+            SingleBinWaveEvents::Int(k) => k.clear(),
+            SingleBinWaveEvents::Float(k) => k.clear(),
+            SingleBinWaveEvents::Double(k) => k.clear(),
+        }
+    }
+}
+
+impl Appendable for SingleBinWaveEvents {
+    fn empty_like_self(&self) -> Self {
+        match self {
+            Self::Byte(k) => Self::Byte(k.empty_like_self()),
+            Self::Short(k) => Self::Short(k.empty_like_self()),
+            Self::Int(k) => Self::Int(k.empty_like_self()),
+            Self::Float(k) => Self::Float(k.empty_like_self()),
+            Self::Double(k) => Self::Double(k.empty_like_self()),
+        }
+    }
+
+    fn append(&mut self, src: &Self) {
+        match self {
+            Self::Byte(k) => match src {
+                Self::Byte(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Short(k) => match src {
+                Self::Short(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Int(k) => match src {
+                Self::Int(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Float(k) => match src {
+                Self::Float(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::Double(k) => match src {
+                Self::Double(j) => k.append(j),
+                _ => panic!(),
+            },
+        }
+    }
+}
+
+impl PushableIndex for SingleBinWaveEvents {
+    fn push_index(&mut self, src: &Self, ix: usize) {
+        match self {
+            Self::Byte(k) => match src {
+                Self::Byte(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Short(k) => match src {
+                Self::Short(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Int(k) => match src {
+                Self::Int(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Float(k) => match src {
+                Self::Float(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Double(k) => match src {
+                Self::Double(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+        }
+    }
+}
+
 impl WithLen for SingleBinWaveEvents {
     fn len(&self) -> usize {
         use SingleBinWaveEvents::*;
@@ -436,6 +740,62 @@ impl XBinnedEvents {
             Scalar(k) => EventsItem::Plain(PlainEvents::Scalar(k)),
             SingleBinWave(k) => k.x_aggregate(ak),
             MultiBinWave(k) => k.x_aggregate(ak),
+        }
+    }
+}
+
+impl Clearable for XBinnedEvents {
+    fn clear(&mut self) {
+        match self {
+            XBinnedEvents::Scalar(k) => k.clear(),
+            XBinnedEvents::SingleBinWave(k) => k.clear(),
+            XBinnedEvents::MultiBinWave(k) => k.clear(),
+        }
+    }
+}
+
+impl Appendable for XBinnedEvents {
+    fn empty_like_self(&self) -> Self {
+        match self {
+            Self::Scalar(k) => Self::Scalar(k.empty_like_self()),
+            Self::SingleBinWave(k) => Self::SingleBinWave(k.empty_like_self()),
+            Self::MultiBinWave(k) => Self::MultiBinWave(k.empty_like_self()),
+        }
+    }
+
+    fn append(&mut self, src: &Self) {
+        match self {
+            Self::Scalar(k) => match src {
+                Self::Scalar(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::SingleBinWave(k) => match src {
+                Self::SingleBinWave(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::MultiBinWave(k) => match src {
+                Self::MultiBinWave(j) => k.append(j),
+                _ => panic!(),
+            },
+        }
+    }
+}
+
+impl PushableIndex for XBinnedEvents {
+    fn push_index(&mut self, src: &Self, ix: usize) {
+        match self {
+            Self::Scalar(k) => match src {
+                Self::Scalar(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::SingleBinWave(k) => match src {
+                Self::SingleBinWave(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::MultiBinWave(k) => match src {
+                Self::MultiBinWave(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
         }
     }
 }
@@ -516,6 +876,52 @@ impl PlainEvents {
     }
 }
 
+impl Clearable for PlainEvents {
+    fn clear(&mut self) {
+        match self {
+            PlainEvents::Scalar(k) => k.clear(),
+            PlainEvents::Wave(k) => k.clear(),
+        }
+    }
+}
+
+impl Appendable for PlainEvents {
+    fn empty_like_self(&self) -> Self {
+        match self {
+            Self::Scalar(k) => Self::Scalar(k.empty_like_self()),
+            Self::Wave(k) => Self::Wave(k.empty_like_self()),
+        }
+    }
+
+    fn append(&mut self, src: &Self) {
+        match self {
+            PlainEvents::Scalar(k) => match src {
+                Self::Scalar(j) => k.append(j),
+                _ => panic!(),
+            },
+            PlainEvents::Wave(k) => match src {
+                Self::Wave(j) => k.append(j),
+                _ => panic!(),
+            },
+        }
+    }
+}
+
+impl PushableIndex for PlainEvents {
+    fn push_index(&mut self, src: &Self, ix: usize) {
+        match self {
+            Self::Scalar(k) => match src {
+                Self::Scalar(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::Wave(k) => match src {
+                Self::Wave(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+        }
+    }
+}
+
 impl WithLen for PlainEvents {
     fn len(&self) -> usize {
         use PlainEvents::*;
@@ -585,7 +991,7 @@ impl EventsItem {
         }
     }
 
-    pub fn x_aggregate(self, ak: &AggKind) -> EventsItem {
+    pub fn x_aggregate(self, ak: &AggKind) -> Self {
         use EventsItem::*;
         match self {
             Plain(k) => k.x_aggregate(ak),
@@ -610,6 +1016,52 @@ impl WithTimestamps for EventsItem {
         match self {
             Plain(j) => j.ts(ix),
             XBinnedEvents(j) => j.ts(ix),
+        }
+    }
+}
+
+impl Appendable for EventsItem {
+    fn empty_like_self(&self) -> Self {
+        match self {
+            EventsItem::Plain(k) => EventsItem::Plain(k.empty_like_self()),
+            EventsItem::XBinnedEvents(k) => EventsItem::XBinnedEvents(k.empty_like_self()),
+        }
+    }
+
+    fn append(&mut self, src: &Self) {
+        match self {
+            Self::Plain(k) => match src {
+                Self::Plain(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::XBinnedEvents(k) => match src {
+                Self::XBinnedEvents(j) => k.append(j),
+                _ => panic!(),
+            },
+        }
+    }
+}
+
+impl PushableIndex for EventsItem {
+    fn push_index(&mut self, src: &Self, ix: usize) {
+        match self {
+            Self::Plain(k) => match src {
+                Self::Plain(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::XBinnedEvents(k) => match src {
+                Self::XBinnedEvents(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+        }
+    }
+}
+
+impl Clearable for EventsItem {
+    fn clear(&mut self) {
+        match self {
+            EventsItem::Plain(k) => k.clear(),
+            EventsItem::XBinnedEvents(k) => k.clear(),
         }
     }
 }

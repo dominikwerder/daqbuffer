@@ -1,3 +1,6 @@
+pub mod datablockstream;
+pub mod datastream;
+
 use crate::{EventsItem, PlainEvents, ScalarPlainEvents};
 use async_channel::{Receiver, Sender};
 use err::Error;
@@ -5,7 +8,7 @@ use futures_core::Future;
 use futures_util::StreamExt;
 use items::eventvalues::EventValues;
 use netpod::timeunits::SEC;
-use netpod::{log::*, ChannelArchiver, FilePos, Nanos};
+use netpod::{log::*, ChannelArchiver, DataHeaderPos, FilePos, Nanos};
 use std::convert::TryInto;
 use std::io::{self, SeekFrom};
 use std::path::PathBuf;
@@ -224,6 +227,21 @@ fn readf64(buf: &[u8], pos: usize) -> f64 {
     f64::from_be_bytes(buf.as_ref()[pos..pos + 8].try_into().unwrap())
 }
 
+fn read_string(buf: &[u8]) -> Result<String, Error> {
+    let imax = buf
+        .iter()
+        .map(|k| *k)
+        .enumerate()
+        .take_while(|&(i, k)| k != 0)
+        .last()
+        .map(|(i, _)| i);
+    let ret = match imax {
+        Some(imax) => String::from_utf8(buf[..imax + 1].to_vec())?,
+        None => String::new(),
+    };
+    Ok(ret)
+}
+
 pub async fn read_file_basics(file: &mut File) -> Result<IndexFileBasics, Error> {
     let mut buf = vec![0; 128];
     read_exact(file, &mut buf[0..4]).await?;
@@ -331,8 +349,8 @@ pub async fn read_file_basics(file: &mut File) -> Result<IndexFileBasics, Error>
 
 #[derive(Debug)]
 pub struct RTreeNodeRecord {
-    ts1: u64,
-    ts2: u64,
+    ts1: Nanos,
+    ts2: Nanos,
     // TODO should probably be better name `child or offset` and be made enum.
     child_or_id: Offset,
 }
@@ -349,6 +367,12 @@ pub struct RTreeNode {
 pub struct RTreeNodeAtRecord {
     node: RTreeNode,
     rix: usize,
+}
+
+impl RTreeNodeAtRecord {
+    pub fn rec(&self) -> &RTreeNodeRecord {
+        &self.node.records[self.rix]
+    }
 }
 
 // TODO refactor as struct, rtree_m is a property of the tree.
@@ -388,7 +412,11 @@ pub async fn read_rtree_node(file: &mut File, pos: FilePos, rtree_m: usize) -> R
             let child_or_id = readu64(b, off2 + 16);
             //info!("NODE   {} {}   {} {}   {}", ts1a, ts1b, ts2a, ts2b, child_or_id);
             if child_or_id != 0 {
-                let rec = RTreeNodeRecord { ts1, ts2, child_or_id };
+                let rec = RTreeNodeRecord {
+                    ts1: Nanos { ns: ts1 },
+                    ts2: Nanos { ns: ts2 },
+                    child_or_id,
+                };
                 Some(rec)
             } else {
                 None
@@ -451,7 +479,7 @@ pub async fn search_record(
         let nr = node.records.len();
         for (i, rec) in node.records.iter().enumerate() {
             //info!("looking at record  i {}", i);
-            if rec.ts2 > beg.ns {
+            if rec.ts2.ns > beg.ns {
                 if node.is_leaf {
                     info!("found leaf match at {} / {}", i, nr);
                     let ret = RTreeNodeAtRecord { node, rix: i };
@@ -676,12 +704,22 @@ pub fn datarange_stream(channel_name: &str) -> Result<Receiver<Datarange>, Error
 #[derive(Debug)]
 pub struct Datablock {
     next: Offset,
-    data: Offset,
+    data_header_pos: Offset,
     fname: String,
 }
 
+impl Datablock {
+    fn file_name(&self) -> &str {
+        &self.fname
+    }
+
+    fn data_header_pos(&self) -> DataHeaderPos {
+        DataHeaderPos(self.data_header_pos)
+    }
+}
+
 async fn read_index_datablockref(file: &mut File, pos: FilePos) -> Result<Datablock, Error> {
-    seek(file, SeekFrom::Start(pos.into())).await?;
+    seek(file, SeekFrom::Start(pos.pos)).await?;
     let mut rb = RingBuf::new();
     rb.fill_min(file, 18).await?;
     let buf = rb.data();
@@ -691,7 +729,11 @@ async fn read_index_datablockref(file: &mut File, pos: FilePos) -> Result<Databl
     rb.fill_min(file, 18 + len).await?;
     let buf = rb.data();
     let fname = String::from_utf8(buf[18..18 + len].to_vec())?;
-    let ret = Datablock { next, data, fname };
+    let ret = Datablock {
+        next,
+        data_header_pos: data,
+        fname,
+    };
     Ok(ret)
 }
 
@@ -732,7 +774,11 @@ impl DbrType {
 
 #[derive(Debug)]
 pub struct DatafileHeader {
+    pos: DataHeaderPos,
     dir_offset: u32,
+    // Should be absolute file position of the next data header
+    // together with `fname_next`.
+    // But unfortunately not always set?
     next_offset: u32,
     prev_offset: u32,
     curr_offset: u32,
@@ -743,17 +789,19 @@ pub struct DatafileHeader {
     dbr_type: DbrType,
     dbr_count: usize,
     period: f64,
-    ts1: u64,
-    ts2: u64,
-    ts3: u64,
+    ts_beg: Nanos,
+    ts_end: Nanos,
+    ts_next_file: Nanos,
+    fname_next: String,
+    fname_prev: String,
 }
 
 const DATA_HEADER_LEN_ON_DISK: usize = 72 + 40 + 40;
 
-async fn read_datafile_header(file: &mut File, pos: FilePos) -> Result<DatafileHeader, Error> {
-    seek(file, SeekFrom::Start(pos.into())).await?;
+async fn read_datafile_header(file: &mut File, pos: DataHeaderPos) -> Result<DatafileHeader, Error> {
+    seek(file, SeekFrom::Start(pos.0)).await?;
     let mut rb = RingBuf::new();
-    rb.fill_min(file, 88).await?;
+    rb.fill_min(file, DATA_HEADER_LEN_ON_DISK).await?;
     let buf = rb.data();
     let dir_offset = readu32(buf, 0);
     let next_offset = readu32(buf, 4);
@@ -765,7 +813,7 @@ async fn read_datafile_header(file: &mut File, pos: FilePos) -> Result<DatafileH
     let buf_free = readu32(buf, 28);
     let dbr_type = DbrType::from_u16(readu16(buf, 32))?;
     let dbr_count = readu16(buf, 34);
-    let _unused = readu32(buf, 36);
+    // 4 bytes padding.
     let period = readf64(buf, 40);
     let ts1a = readu32(buf, 48);
     let ts1b = readu32(buf, 52);
@@ -773,12 +821,25 @@ async fn read_datafile_header(file: &mut File, pos: FilePos) -> Result<DatafileH
     let ts2b = readu32(buf, 60);
     let ts3a = readu32(buf, 64);
     let ts3b = readu32(buf, 68);
-    let ts1 = ts1a as u64 * SEC + ts1b as u64 + EPICS_EPOCH_OFFSET;
-    let ts2 = ts2a as u64 * SEC + ts2b as u64 + EPICS_EPOCH_OFFSET;
-    let ts3 = ts3a as u64 * SEC + ts3b as u64 + EPICS_EPOCH_OFFSET;
-    // 40 bytes prev-filename.
-    // 40 bytes next-filename.
+    let ts_beg = if ts1a != 0 || ts1b != 0 {
+        ts1a as u64 * SEC + ts1b as u64 + EPICS_EPOCH_OFFSET
+    } else {
+        0
+    };
+    let ts_end = if ts3a != 0 || ts3b != 0 {
+        ts3a as u64 * SEC + ts3b as u64 + EPICS_EPOCH_OFFSET
+    } else {
+        0
+    };
+    let ts_next_file = if ts2a != 0 || ts2b != 0 {
+        ts2a as u64 * SEC + ts2b as u64 + EPICS_EPOCH_OFFSET
+    } else {
+        0
+    };
+    let fname_prev = read_string(&buf[72..112])?;
+    let fname_next = read_string(&buf[112..152])?;
     let ret = DatafileHeader {
+        pos,
         dir_offset,
         next_offset,
         prev_offset,
@@ -790,17 +851,18 @@ async fn read_datafile_header(file: &mut File, pos: FilePos) -> Result<DatafileH
         dbr_type,
         dbr_count: dbr_count as usize,
         period,
-        ts1,
-        ts2,
-        ts3,
+        ts_beg: Nanos { ns: ts_beg },
+        ts_end: Nanos { ns: ts_end },
+        ts_next_file: Nanos { ns: ts_next_file },
+        fname_next,
+        fname_prev,
     };
     Ok(ret)
 }
 
-async fn read_data_1(file: &mut File, pos: FilePos) -> Result<EventsItem, Error> {
-    let datafile_header = read_datafile_header(file, pos).await?;
-    //info!("datafile_header {:?}", datafile_header);
-    seek(file, SeekFrom::Start(u64::from(pos) + DATA_HEADER_LEN_ON_DISK as u64)).await?;
+async fn read_data_1(file: &mut File, datafile_header: &DatafileHeader) -> Result<EventsItem, Error> {
+    let dhpos = datafile_header.pos.0 + DATA_HEADER_LEN_ON_DISK as u64;
+    seek(file, SeekFrom::Start(dhpos)).await?;
     let res = match &datafile_header.dbr_type {
         DbrType::DbrTimeDouble => {
             if datafile_header.dbr_count == 1 {
@@ -946,8 +1008,8 @@ mod test {
     //use disk::{eventblobs::EventChunkerMultifile, eventchunker::EventChunkerConf};
 
     use super::search_record;
-    use crate::archeng::EPICS_EPOCH_OFFSET;
     use crate::archeng::{open_read, read_channel, read_data_1, read_file_basics, read_index_datablockref};
+    use crate::archeng::{read_datafile_header, EPICS_EPOCH_OFFSET};
     use err::Error;
     use netpod::log::*;
     use netpod::timeunits::*;
@@ -1019,12 +1081,12 @@ mod test {
             assert_eq!(res.node.pos.pos, 8216);
             assert_eq!(res.rix, 17);
             let rec = &res.node.records[res.rix];
-            assert_eq!(rec.ts1, 970351499684884156 + EPICS_EPOCH_OFFSET);
-            assert_eq!(rec.ts2, 970417919634086480 + EPICS_EPOCH_OFFSET);
+            assert_eq!(rec.ts1.ns, 970351499684884156 + EPICS_EPOCH_OFFSET);
+            assert_eq!(rec.ts2.ns, 970417919634086480 + EPICS_EPOCH_OFFSET);
             assert_eq!(rec.child_or_id, 185074);
             let pos = FilePos { pos: rec.child_or_id };
             let datablock = read_index_datablockref(&mut index_file, pos).await?;
-            assert_eq!(datablock.data, 52787);
+            assert_eq!(datablock.data_header_pos, 52787);
             assert_eq!(datablock.fname, "20201001/20201001");
             // The actual datafile for that time was not retained any longer.
             // But the index still points to that.
@@ -1050,17 +1112,17 @@ mod test {
             assert_eq!(res.node.pos.pos, 1861178);
             assert_eq!(res.rix, 41);
             let rec = &res.node.records[res.rix];
-            assert_eq!(rec.ts1, 1001993759871202919 + EPICS_EPOCH_OFFSET);
-            assert_eq!(rec.ts2, 1002009299596362122 + EPICS_EPOCH_OFFSET);
+            assert_eq!(rec.ts1.ns, 1001993759871202919 + EPICS_EPOCH_OFFSET);
+            assert_eq!(rec.ts2.ns, 1002009299596362122 + EPICS_EPOCH_OFFSET);
             assert_eq!(rec.child_or_id, 2501903);
             let pos = FilePos { pos: rec.child_or_id };
             let datablock = read_index_datablockref(&mut index_file, pos).await?;
-            assert_eq!(datablock.data, 9311367);
-            assert_eq!(datablock.fname, "20211001/20211001");
-            let data_path = index_path.parent().unwrap().join(datablock.fname);
+            assert_eq!(datablock.data_header_pos().0, 9311367);
+            assert_eq!(datablock.file_name(), "20211001/20211001");
+            let data_path = index_path.parent().unwrap().join(datablock.file_name());
             let mut data_file = open_read(data_path).await?;
-            let data_pos = FilePos { pos: datablock.data };
-            let events = read_data_1(&mut data_file, data_pos).await?;
+            let datafile_header = read_datafile_header(&mut data_file, datablock.data_header_pos()).await?;
+            let events = read_data_1(&mut data_file, &datafile_header).await?;
             info!("read events: {:?}", events);
             Ok(())
         };

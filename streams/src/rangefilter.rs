@@ -1,8 +1,9 @@
 use futures_core::Stream;
 use futures_util::StreamExt;
+use items::StatsItem;
 use items::{Appendable, Clearable, PushableIndex, RangeCompletableItem, Sitemty, StreamItem, WithTimestamps};
-use netpod::log::*;
 use netpod::NanoRange;
+use netpod::{log::*, RangeFilterStats};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -11,11 +12,13 @@ pub struct RangeFilter<S, ITY> {
     range: NanoRange,
     range_str: String,
     expand: bool,
-    prerange: ITY,
+    stats: RangeFilterStats,
+    prerange: Option<ITY>,
     have_pre: bool,
     have_range_complete: bool,
     emitted_post: bool,
     data_done: bool,
+    raco_done: bool,
     done: bool,
     complete: bool,
 }
@@ -31,11 +34,13 @@ where
             range_str: format!("{:?}", range),
             range,
             expand,
-            prerange: ITY::empty(),
+            stats: RangeFilterStats::new(),
+            prerange: None,
             have_pre: false,
             have_range_complete: false,
             emitted_post: false,
             data_done: false,
+            raco_done: false,
             done: false,
             complete: false,
         }
@@ -55,8 +60,13 @@ where
             } else if self.done {
                 self.complete = true;
                 Ready(None)
-            } else if self.data_done {
+            } else if self.raco_done {
                 self.done = true;
+                let k = std::mem::replace(&mut self.stats, RangeFilterStats::new());
+                let k = StatsItem::RangeFilterStats(k);
+                Ready(Some(Ok(StreamItem::Stats(k))))
+            } else if self.data_done {
+                self.raco_done = true;
                 if self.have_range_complete {
                     Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
                 } else {
@@ -66,21 +76,32 @@ where
                 match self.inp.poll_next_unpin(cx) {
                     Ready(Some(item)) => match item {
                         Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))) => {
-                            let mut ret = ITY::empty();
+                            let mut ret = item.empty_like_self();
                             for i1 in 0..item.len() {
                                 let ts = item.ts(i1);
                                 if ts < self.range.beg {
                                     if self.expand {
-                                        self.prerange.clear();
-                                        self.prerange.push_index(&item, i1);
+                                        let mut prerange = if let Some(prerange) = self.prerange.take() {
+                                            prerange
+                                        } else {
+                                            item.empty_like_self()
+                                        };
+                                        prerange.clear();
+                                        prerange.push_index(&item, i1);
+                                        self.prerange = Some(prerange);
                                         self.have_pre = true;
                                     }
                                 } else if ts >= self.range.end {
                                     self.have_range_complete = true;
                                     if self.expand {
                                         if self.have_pre {
-                                            ret.push_index(&self.prerange, 0);
-                                            self.prerange.clear();
+                                            let prerange = if let Some(prerange) = &mut self.prerange {
+                                                prerange
+                                            } else {
+                                                panic!()
+                                            };
+                                            ret.push_index(prerange, 0);
+                                            prerange.clear();
                                             self.have_pre = false;
                                         }
                                         if !self.emitted_post {
@@ -94,8 +115,13 @@ where
                                 } else {
                                     if self.expand {
                                         if self.have_pre {
-                                            ret.push_index(&self.prerange, 0);
-                                            self.prerange.clear();
+                                            let prerange = if let Some(prerange) = &mut self.prerange {
+                                                prerange
+                                            } else {
+                                                panic!()
+                                            };
+                                            ret.push_index(prerange, 0);
+                                            prerange.clear();
                                             self.have_pre = false;
                                         }
                                     }
@@ -113,8 +139,14 @@ where
                     Ready(None) => {
                         self.data_done = true;
                         if self.have_pre {
-                            let mut ret = ITY::empty();
-                            ret.push_index(&self.prerange, 0);
+                            let prerange = if let Some(prerange) = &mut self.prerange {
+                                prerange
+                            } else {
+                                panic!()
+                            };
+                            let mut ret = prerange.empty_like_self();
+                            ret.push_index(&prerange, 0);
+                            prerange.clear();
                             self.have_pre = false;
                             Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))))
                         } else {

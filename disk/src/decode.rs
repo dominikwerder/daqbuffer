@@ -212,8 +212,10 @@ where
         }
     }
 
-    fn decode(&mut self, ev: &EventFull) -> Result<<EVS as EventValueFromBytes<NTY, END>>::Batch, Error> {
-        let mut ret = <<EVS as EventValueFromBytes<NTY, END>>::Batch as Appendable>::empty();
+    fn decode(&mut self, ev: &EventFull) -> Result<Option<<EVS as EventValueFromBytes<NTY, END>>::Batch>, Error> {
+        //let mut ret = <<EVS as EventValueFromBytes<NTY, END>>::Batch as Appendable>::empty();
+        //let mut ret = EventValues::<<EVS as EventValueFromBytes<NTY, END>>::Output>::empty();
+        let mut ret = None;
         //ret.tss.reserve(ev.tss.len());
         //ret.values.reserve(ev.tss.len());
         for i1 in 0..ev.tss.len() {
@@ -231,9 +233,9 @@ where
             }
             let decomp = ev.decomps[i1].as_ref().unwrap().as_ref();
             let val = self.evs.convert(decomp, be)?;
-            <<EVS as EventValueFromBytes<NTY, END>>::Batch as EventAppendable>::append_event(&mut ret, ev.tss[i1], val);
-            //ret.tss.push(ev.tss[i1]);
-            //ret.values.push(val);
+            let k =
+                <<EVS as EventValueFromBytes<NTY, END>>::Batch as EventAppendable>::append_event(ret, ev.tss[i1], val);
+            ret = Some(k);
         }
         Ok(ret)
     }
@@ -265,9 +267,14 @@ where
                                         Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
                                     }
                                     RangeCompletableItem::Data(item) => match self.decode(&item) {
-                                        Ok(res) => {
-                                            Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(res)))))
-                                        }
+                                        Ok(res) => match res {
+                                            Some(res) => {
+                                                Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(res)))))
+                                            }
+                                            None => {
+                                                continue;
+                                            }
+                                        },
                                         Err(e) => {
                                             self.errored = true;
                                             Ready(Some(Err(e)))

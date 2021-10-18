@@ -1,5 +1,4 @@
 use crate::agg::binnedt::TBinnerStream;
-use crate::agg::eventbatch::MinMaxAvgScalarEventBatch;
 use crate::binned::binnedfrompbv::BinnedFromPreBinned;
 use crate::binned::query::BinnedQuery;
 use crate::binnedstream::BoxedStream;
@@ -404,27 +403,6 @@ pub async fn binned_json(
     )
     .await?;
     Ok(Box::pin(ret))
-}
-
-impl WithLen for MinMaxAvgScalarEventBatch {
-    fn len(&self) -> usize {
-        self.tss.len()
-    }
-}
-
-impl WithTimestamps for MinMaxAvgScalarEventBatch {
-    fn ts(&self, ix: usize) -> u64 {
-        self.tss[ix]
-    }
-}
-
-impl PushableIndex for MinMaxAvgScalarEventBatch {
-    fn push_index(&mut self, src: &Self, ix: usize) {
-        self.tss.push(src.tss[ix]);
-        self.mins.push(src.mins[ix]);
-        self.maxs.push(src.maxs[ix]);
-        self.avgs.push(src.avgs[ix]);
-    }
 }
 
 pub trait EventsDecoder {

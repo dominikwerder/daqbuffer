@@ -11,8 +11,8 @@ use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use items::numops::NumOps;
 use items::{
-    Appendable, Clearable, EventsNodeProcessor, FrameType, PushableIndex, RangeCompletableItem, ReadableFromFile,
-    Sitemty, StreamItem, TimeBinnableType,
+    Appendable, Clearable, EventsNodeProcessor, EventsTypeAliases, FrameType, PushableIndex, RangeCompletableItem,
+    ReadableFromFile, Sitemty, StreamItem, TimeBinnableType,
 };
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
@@ -41,9 +41,7 @@ where
     agg_kind: AggKind,
     node_config: NodeConfigCached,
     open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<File, io::Error>> + Send>>>,
-    fut2: Option<
-        Pin<Box<dyn Stream<Item = Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>> + Send>>,
-    >,
+    fut2: Option<Pin<Box<dyn Stream<Item = Sitemty<<ENP as EventsTypeAliases>::TimeBinOutput>> + Send>>>,
     read_from_cache: bool,
     cache_written: bool,
     data_complete: bool,
@@ -52,15 +50,9 @@ where
     errored: bool,
     completed: bool,
     streamlog: Streamlog,
-    values: <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output,
+    values: Option<<ENP as EventsTypeAliases>::TimeBinOutput>,
     write_fut: Option<Pin<Box<dyn Future<Output = Result<WrittenPbCache, Error>> + Send>>>,
-    read_cache_fut: Option<
-        Pin<
-            Box<
-                dyn Future<Output = Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>> + Send,
-            >,
-        >,
-    >,
+    read_cache_fut: Option<Pin<Box<dyn Future<Output = Sitemty<<ENP as EventsTypeAliases>::TimeBinOutput>> + Send>>>,
     _m1: PhantomData<NTY>,
     _m2: PhantomData<END>,
     _m3: PhantomData<EVS>,
@@ -96,7 +88,8 @@ where
             completed: false,
             streamlog: Streamlog::new(node_config.ix as u32),
             // TODO use alias via some trait associated type:
-            values: <<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output as Appendable>::empty(),
+            //values: <<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output as Appendable>::empty(),
+            values: None,
             write_fut: None,
             read_cache_fut: None,
             _m1: PhantomData,
@@ -309,24 +302,26 @@ where
                 } else {
                     match self.query.cache_usage() {
                         CacheUsage::Use | CacheUsage::Recreate => {
-                            let msg = format!(
-                                "write cache file  query: {:?}  bin count: {}",
-                                self.query.patch(),
-                                self.values.len(),
-                            );
-                            self.streamlog.append(Level::INFO, msg);
-                            // TODO use alias vias trait:
-                            let emp = <<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output as Appendable>::empty();
-                            let values = std::mem::replace(&mut self.values, emp);
-                            let fut = write_pb_cache_min_max_avg_scalar(
-                                values,
-                                self.query.patch().clone(),
-                                self.query.agg_kind().clone(),
-                                self.query.channel().clone(),
-                                self.node_config.clone(),
-                            );
-                            self.write_fut = Some(Box::pin(fut));
-                            continue 'outer;
+                            if let Some(values) = self.values.take() {
+                                let msg = format!(
+                                    "write cache file  query: {:?}  bin count: {}",
+                                    self.query.patch(),
+                                    values.len(),
+                                );
+                                self.streamlog.append(Level::INFO, msg);
+                                let fut = write_pb_cache_min_max_avg_scalar(
+                                    values,
+                                    self.query.patch().clone(),
+                                    self.query.agg_kind().clone(),
+                                    self.query.channel().clone(),
+                                    self.node_config.clone(),
+                                );
+                                self.write_fut = Some(Box::pin(fut));
+                                continue 'outer;
+                            } else {
+                                warn!("no values to write to cache");
+                                continue 'outer;
+                            }
                         }
                         _ => {
                             self.cache_written = true;
@@ -346,7 +341,13 @@ where
                                     continue 'outer;
                                 }
                                 RangeCompletableItem::Data(item) => {
-                                    self.values.append(&item);
+                                    if let Some(values) = &mut self.values {
+                                        values.append(&item);
+                                    } else {
+                                        let mut values = item.empty_like_self();
+                                        values.append(&item);
+                                        self.values = Some(values);
+                                    }
                                     Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))))
                                 }
                             },

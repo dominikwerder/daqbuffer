@@ -277,6 +277,15 @@ impl From<FilePos> for u64 {
     }
 }
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct DataHeaderPos(pub u64);
+
+impl PartialEq for DataHeaderPos {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum TimeRange {
     Time { beg: DateTime<Utc>, end: DateTime<Utc> },
@@ -284,9 +293,16 @@ pub enum TimeRange {
     Nano { beg: u64, end: u64 },
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Nanos {
     pub ns: u64,
+}
+
+impl fmt::Debug for Nanos {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let ts = chrono::Utc.timestamp((self.ns / SEC) as i64, (self.ns % SEC) as u32);
+        f.debug_struct("Nanos").field("ns", &ts).finish()
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -296,15 +312,13 @@ pub struct NanoRange {
 }
 
 impl fmt::Debug for NanoRange {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            fmt,
-            "NanoRange {{ beg: {}.{:03} s, end: {}.{:03} s }}",
-            self.beg / SEC,
-            (self.beg % SEC) / MS,
-            self.end / SEC,
-            (self.end % SEC) / MS,
-        )
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let beg = chrono::Utc.timestamp((self.beg / SEC) as i64, (self.beg % SEC) as u32);
+        let end = chrono::Utc.timestamp((self.end / SEC) as i64, (self.end % SEC) as u32);
+        f.debug_struct("NanoRange")
+            .field("beg", &beg)
+            .field("end", &end)
+            .finish()
     }
 }
 
@@ -936,6 +950,23 @@ impl EventDataReadStats {
     pub fn trans(&mut self, k: &mut Self) {
         self.parsed_bytes += k.parsed_bytes;
         k.parsed_bytes = 0;
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RangeFilterStats {
+    pub events_pre: u64,
+    pub events_post: u64,
+    pub events_unordered: u64,
+}
+
+impl RangeFilterStats {
+    pub fn new() -> Self {
+        Self {
+            events_pre: 0,
+            events_post: 0,
+            events_unordered: 0,
+        }
     }
 }
 

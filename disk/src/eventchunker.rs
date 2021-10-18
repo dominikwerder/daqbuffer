@@ -524,7 +524,7 @@ impl WithLen for EventFull {
 }
 
 impl Appendable for EventFull {
-    fn empty() -> Self {
+    fn empty_like_self(&self) -> Self {
         Self::empty()
     }
 

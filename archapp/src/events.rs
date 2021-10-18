@@ -239,6 +239,7 @@ macro_rules! arm2 {
                                 }
                                 _ => panic!(),
                             },
+
                             _ => panic!(),
                         },
                         _ => err::todoval(),
