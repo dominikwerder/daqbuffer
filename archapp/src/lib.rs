@@ -15,7 +15,7 @@ use items::waveevents::{WaveEvents, WaveXBinner};
 use items::xbinnedscalarevents::XBinnedScalarEvents;
 use items::xbinnedwaveevents::XBinnedWaveEvents;
 use items::{Appendable, Clearable, EventsNodeProcessor, PushableIndex, SitemtyFrameType, WithLen, WithTimestamps};
-use netpod::{AggKind, HasScalarType, HasShape, ScalarType, Shape};
+use netpod::{AggKind, ByteOrder, HasScalarType, HasShape, ScalarType, Shape};
 #[cfg(not(feature = "devread"))]
 pub use parsestub as parse;
 
@@ -202,6 +202,18 @@ pub enum WavePlainEvents {
     Double(WaveEvents<f64>),
 }
 
+impl WavePlainEvents {
+    pub fn shape(&self) -> Result<Shape, Error> {
+        match self {
+            WavePlainEvents::Byte(k) => k.shape(),
+            WavePlainEvents::Short(k) => k.shape(),
+            WavePlainEvents::Int(k) => k.shape(),
+            WavePlainEvents::Float(k) => k.shape(),
+            WavePlainEvents::Double(k) => k.shape(),
+        }
+    }
+}
+
 fn _tmp1() {
     let _ev = EventValues::<u8> {
         tss: vec![],
@@ -250,7 +262,7 @@ impl WavePlainEvents {
 
     fn x_aggregate(self, ak: &AggKind) -> EventsItem {
         use WavePlainEvents::*;
-        let shape = self.shape();
+        let shape = self.shape().unwrap();
         match self {
             Byte(k) => wagg1!(k, ak, shape, Byte),
             Short(k) => wagg1!(k, ak, shape, Short),
@@ -365,14 +377,15 @@ impl WithTimestamps for WavePlainEvents {
 
 impl HasShape for WavePlainEvents {
     fn shape(&self) -> Shape {
-        use WavePlainEvents::*;
+        /*use WavePlainEvents::*;
         match self {
             Byte(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
             Short(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
             Int(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
             Float(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
             Double(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
-        }
+        }*/
+        self.shape().unwrap()
     }
 }
 
@@ -946,8 +959,8 @@ impl HasShape for PlainEvents {
     fn shape(&self) -> Shape {
         use PlainEvents::*;
         match self {
-            Scalar(h) => h.shape(),
-            Wave(h) => h.shape(),
+            Scalar(h) => HasShape::shape(h),
+            Wave(h) => HasShape::shape(h),
         }
     }
 }
@@ -996,6 +1009,31 @@ impl EventsItem {
         match self {
             Plain(k) => k.x_aggregate(ak),
             XBinnedEvents(k) => k.x_aggregate(ak),
+        }
+    }
+
+    pub fn type_info(&self) -> (ScalarType, Shape) {
+        match self {
+            EventsItem::Plain(k) => match k {
+                PlainEvents::Scalar(k) => match k {
+                    ScalarPlainEvents::Byte(_) => (ScalarType::I8, Shape::Scalar),
+                    ScalarPlainEvents::Short(_) => (ScalarType::I16, Shape::Scalar),
+                    ScalarPlainEvents::Int(_) => (ScalarType::I32, Shape::Scalar),
+                    ScalarPlainEvents::Float(_) => (ScalarType::F32, Shape::Scalar),
+                    ScalarPlainEvents::Double(_) => (ScalarType::F64, Shape::Scalar),
+                },
+                PlainEvents::Wave(k) => match k {
+                    // TODO
+                    // Inherent issue for the non-static-type backends:
+                    // there is a chance that we can't determine the shape here.
+                    WavePlainEvents::Byte(k) => (ScalarType::I8, k.shape().unwrap()),
+                    WavePlainEvents::Short(k) => (ScalarType::I16, k.shape().unwrap()),
+                    WavePlainEvents::Int(k) => (ScalarType::I32, k.shape().unwrap()),
+                    WavePlainEvents::Float(k) => (ScalarType::F32, k.shape().unwrap()),
+                    WavePlainEvents::Double(k) => (ScalarType::F64, k.shape().unwrap()),
+                },
+            },
+            EventsItem::XBinnedEvents(k) => panic!(),
         }
     }
 }

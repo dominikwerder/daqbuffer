@@ -90,7 +90,7 @@ pub fn tracing_init() {
             .with_thread_names(true)
             //.with_max_level(tracing::Level::INFO)
             .with_env_filter(tracing_subscriber::EnvFilter::new(
-                ["info", "archapp::archeng=trace", "daqbuffer::test=trace"].join(","),
+                ["info", "archapp::archeng=info", "daqbuffer::test=trace"].join(","),
             ))
             .init();
         *g = 1;

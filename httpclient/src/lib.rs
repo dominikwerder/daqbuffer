@@ -9,7 +9,7 @@ pub async fn get_channel_config(
 ) -> Result<ChannelConfigResponse, Error> {
     let mut url = Url::parse(&format!(
         "http://{}:{}/api/4/channel/config",
-        "localhost", node_config.node.port
+        node_config.node.host, node_config.node.port
     ))?;
     q.append_to_url(&mut url);
     let req = hyper::Request::builder()

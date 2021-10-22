@@ -164,14 +164,14 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin, _stderr: Stderr) -> Result<
         // Get some more data.
         let b = buf.writable();
         if false {
-            write!(&mut fout, "{} writable bytes\n", b.len())?;
+            write!(&mut fout, "[APPEND-WRITABLE]  {} writable bytes\n", b.len())?;
         }
         let n1 = stdin.read(b)?;
         buf.inc_wp(n1);
         if false {
             write!(
                 &mut fout,
-                "{} bytes read from stdin, total readable {} bytes\n",
+                "[APPEND-INFO]  {} bytes read from stdin, total readable {} bytes\n",
                 n1,
                 buf.readable().len()
             )?;
@@ -179,7 +179,7 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin, _stderr: Stderr) -> Result<
         match parse_lines(buf.readable()) {
             Ok((lines, n2)) => {
                 if false {
-                    write!(&mut fout, "parsed {} lines\n", lines.len())?;
+                    write!(&mut fout, "[APPEND-PARSED-LINES]: {}\n", lines.len())?;
                 }
                 for line in lines {
                     let j = line.as_bytes();
@@ -190,7 +190,7 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin, _stderr: Stderr) -> Result<
                 buf.advance(n2);
             }
             Err(e) => {
-                write!(&mut fout, "parse error: {:?}\n", e)?;
+                write!(&mut fout, "[APPEND-PARSE-ERROR]: {:?}\n", e)?;
                 return Ok(());
             }
         }
@@ -212,15 +212,15 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin, _stderr: Stderr) -> Result<
                 }
                 w.sort_by(|a, b| std::cmp::Ord::cmp(a, b));
                 for q in &w {
-                    write!(&mut fout, "file:::: {}\n", q.0.to_string_lossy())?;
+                    write!(&mut fout, "[APPEND-SEES-FILE] {}\n", q.0.to_string_lossy())?;
                 }
                 let mut lentot = w.iter().map(|g| g.1).fold(0, |a, x| a + x);
-                write!(&mut fout, "lentot: {}\n", lentot)?;
+                write!(&mut fout, "[APPEND-LENTOT] {}\n", lentot)?;
                 for q in w {
                     if lentot <= MAX_TOTAL_SIZE as u64 {
                         break;
                     }
-                    write!(&mut fout, "REMOVE   {}  {}\n", q.1, q.0.to_string_lossy())?;
+                    write!(&mut fout, "[APPEND-REMOVE]   {}  {}\n", q.1, q.0.to_string_lossy())?;
                     fs::remove_file(q.0)?;
                     if q.1 < lentot {
                         lentot -= q.1;

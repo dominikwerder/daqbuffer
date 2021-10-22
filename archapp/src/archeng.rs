@@ -1,5 +1,6 @@
 pub mod datablockstream;
 pub mod datastream;
+pub mod pipe;
 
 use crate::{EventsItem, PlainEvents, ScalarPlainEvents};
 use async_channel::{Receiver, Sender};
@@ -7,8 +8,9 @@ use err::Error;
 use futures_core::Future;
 use futures_util::StreamExt;
 use items::eventvalues::EventValues;
+use items::{RangeCompletableItem, StreamItem};
 use netpod::timeunits::SEC;
-use netpod::{log::*, ChannelArchiver, DataHeaderPos, FilePos, Nanos};
+use netpod::{log::*, ChannelArchiver, ChannelConfigQuery, ChannelConfigResponse, DataHeaderPos, FilePos, Nanos};
 use std::convert::TryInto;
 use std::io::{self, SeekFrom};
 use std::path::PathBuf;
@@ -48,7 +50,9 @@ pub async fn open_read(path: PathBuf) -> io::Result<File> {
     let res = OpenOptions::new().read(true).open(path).await;
     let ts2 = Instant::now();
     let dt = ts2.duration_since(ts1).as_secs_f64() * 1e3;
-    //info!("timed open_read  dt: {:.3} ms", dt);
+    if false {
+        info!("timed open_read  dt: {:.3} ms", dt);
+    }
     res
 }
 
@@ -57,7 +61,9 @@ async fn seek(file: &mut File, pos: SeekFrom) -> io::Result<u64> {
     let res = file.seek(pos).await;
     let ts2 = Instant::now();
     let dt = ts2.duration_since(ts1).as_secs_f64() * 1e3;
-    //info!("timed seek  dt: {:.3} ms", dt);
+    if false {
+        info!("timed seek  dt: {:.3} ms", dt);
+    }
     res
 }
 
@@ -66,7 +72,9 @@ async fn read(file: &mut File, buf: &mut [u8]) -> io::Result<usize> {
     let res = file.read(buf).await;
     let ts2 = Instant::now();
     let dt = ts2.duration_since(ts1).as_secs_f64() * 1e3;
-    //info!("timed read  dt: {:.3} ms  res: {:?}", dt, res);
+    if false {
+        info!("timed read  dt: {:.3} ms  res: {:?}", dt, res);
+    }
     res
 }
 
@@ -75,7 +83,9 @@ async fn read_exact(file: &mut File, buf: &mut [u8]) -> io::Result<usize> {
     let res = file.read_exact(buf).await;
     let ts2 = Instant::now();
     let dt = ts2.duration_since(ts1).as_secs_f64() * 1e3;
-    //info!("timed read_exact  dt: {:.3} ms  res: {:?}", dt, res);
+    if false {
+        info!("timed read_exact  dt: {:.3} ms  res: {:?}", dt, res);
+    }
     res
 }
 
@@ -232,7 +242,7 @@ fn read_string(buf: &[u8]) -> Result<String, Error> {
         .iter()
         .map(|k| *k)
         .enumerate()
-        .take_while(|&(i, k)| k != 0)
+        .take_while(|&(_, k)| k != 0)
         .last()
         .map(|(i, _)| i);
     let ret = match imax {
@@ -481,12 +491,12 @@ pub async fn search_record(
             //info!("looking at record  i {}", i);
             if rec.ts2.ns > beg.ns {
                 if node.is_leaf {
-                    info!("found leaf match at {} / {}", i, nr);
+                    trace!("found leaf match at {} / {}", i, nr);
                     let ret = RTreeNodeAtRecord { node, rix: i };
                     let stats = TreeSearchStats::new(ts1, node_reads);
                     return Ok((Some(ret), stats));
                 } else {
-                    info!("found non-leaf match at {} / {}", i, nr);
+                    trace!("found non-leaf match at {} / {}", i, nr);
                     let pos = FilePos { pos: rec.child_or_id };
                     node = read_rtree_node(file, pos, rtree_m).await?;
                     node_reads += 1;
@@ -668,9 +678,12 @@ pub async fn channel_list(index_path: PathBuf) -> Result<Vec<String>, Error> {
     } else if basics.version == 3 {
         &hver3
     } else {
-        panic!();
+        return Err(Error::with_msg_no_trace(format!(
+            "unexpected version {}",
+            basics.version
+        )));
     };
-    for (i, name_hash_entry) in basics.name_hash_entries.iter().enumerate() {
+    for (_i, name_hash_entry) in basics.name_hash_entries.iter().enumerate() {
         if name_hash_entry.named_hash_channel_entry_pos != 0 {
             let pos = FilePos {
                 pos: name_hash_entry.named_hash_channel_entry_pos,
@@ -684,7 +697,8 @@ pub async fn channel_list(index_path: PathBuf) -> Result<Vec<String>, Error> {
     Ok(ret)
 }
 
-async fn datarange_stream_fill(channel_name: &str, tx: Sender<Datarange>) {
+#[allow(dead_code)]
+async fn datarange_stream_fill(_channel_name: &str, _tx: Sender<Datarange>) {
     // Search the first relevant leaf node.
     // Pipe all ranges from there, and continue with nodes.
     // Issue: can not stop because I don't look into the files.
@@ -694,8 +708,8 @@ async fn datarange_stream_fill(channel_name: &str, tx: Sender<Datarange>) {
 // Should contain enough information to allow one to open and position a relevant datafile.
 pub struct Datarange {}
 
-pub fn datarange_stream(channel_name: &str) -> Result<Receiver<Datarange>, Error> {
-    let (tx, rx) = async_channel::bounded(4);
+pub fn datarange_stream(_channel_name: &str) -> Result<Receiver<Datarange>, Error> {
+    let (_tx, rx) = async_channel::bounded(4);
     let task = async {};
     taskrun::spawn(task);
     Ok(rx)
@@ -761,6 +775,7 @@ impl DbrType {
         Ok(res)
     }
 
+    #[allow(dead_code)]
     fn byte_len(&self) -> usize {
         use DbrType::*;
         match self {
@@ -997,6 +1012,73 @@ pub fn list_all_channels(node: &ChannelArchiver) -> Receiver<Result<String, Erro
     };
     wrap_task(task, tx2);
     rx
+}
+
+pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> Result<ChannelConfigResponse, Error> {
+    let mut type_info = None;
+    let mut stream = datablockstream::DatablockStream::for_channel_range(
+        q.range.clone(),
+        q.channel.clone(),
+        conf.data_base_paths.clone().into(),
+        true,
+    );
+    while let Some(item) = stream.next().await {
+        match item {
+            Ok(k) => match k {
+                StreamItem::DataItem(k) => match k {
+                    RangeCompletableItem::RangeComplete => (),
+                    RangeCompletableItem::Data(k) => {
+                        type_info = Some(k.type_info());
+                        break;
+                    }
+                },
+                StreamItem::Log(_) => (),
+                StreamItem::Stats(_) => (),
+            },
+            Err(e) => {
+                error!("{}", e);
+                ()
+            }
+        }
+    }
+    if type_info.is_none() {
+        let mut stream = datablockstream::DatablockStream::for_channel_range(
+            q.range.clone(),
+            q.channel.clone(),
+            conf.data_base_paths.clone().into(),
+            false,
+        );
+        while let Some(item) = stream.next().await {
+            match item {
+                Ok(k) => match k {
+                    StreamItem::DataItem(k) => match k {
+                        RangeCompletableItem::RangeComplete => (),
+                        RangeCompletableItem::Data(k) => {
+                            type_info = Some(k.type_info());
+                            break;
+                        }
+                    },
+                    StreamItem::Log(_) => (),
+                    StreamItem::Stats(_) => (),
+                },
+                Err(e) => {
+                    error!("{}", e);
+                    ()
+                }
+            }
+        }
+    }
+    if let Some(type_info) = type_info {
+        let ret = ChannelConfigResponse {
+            channel: q.channel.clone(),
+            scalar_type: type_info.0,
+            byte_order: None,
+            shape: type_info.1,
+        };
+        Ok(ret)
+    } else {
+        Err(Error::with_msg_no_trace("can not get channel type info"))
+    }
 }
 
 #[cfg(test)]

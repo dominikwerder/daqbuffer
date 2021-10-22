@@ -111,7 +111,15 @@ pub fn response_err<T>(status: StatusCode, msg: T) -> Result<Response<Body>, Err
 where
     T: AsRef<str>,
 {
-    let msg = format!("Error:\n\n{}\n\nDocumentation:\nhttps://data-api.psi.ch/api/1/documentation/\nhttps://data-api.psi.ch/api/4/documentation/", msg.as_ref());
+    let msg = format!(
+        concat!(
+            "Error:\n{}\n",
+            "\nDocumentation pages API 1 and 4:",
+            "\nhttps://data-api.psi.ch/api/1/documentation/",
+            "\nhttps://data-api.psi.ch/api/4/documentation/",
+        ),
+        msg.as_ref()
+    );
     let ret = response(status).body(Body::from(msg))?;
     Ok(ret)
 }
@@ -478,19 +486,26 @@ async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Res
         .get(http::header::ACCEPT)
         .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
     if accept == APP_JSON {
-        Ok(plain_events_json(req, node_config).await.map_err(|e| {
-            error!("{:?}", e);
-            e
-        })?)
+        let ret = match plain_events_json(req, node_config).await {
+            Ok(ret) => ret,
+            Err(e) => {
+                error!("{}", e);
+                response_err(StatusCode::BAD_REQUEST, e.msg())?
+            }
+        };
+        Ok(ret)
     } else if accept == APP_OCTET {
-        Ok(plain_events_binary(req, node_config).await.map_err(|e| {
-            error!("{:?}", e);
-            e
-        })?)
+        let ret = match plain_events_binary(req, node_config).await {
+            Ok(ret) => ret,
+            Err(e) => {
+                error!("{}", e);
+                response_err(StatusCode::BAD_REQUEST, e.msg())?
+            }
+        };
+        Ok(ret)
     } else {
-        let e = Error::with_msg(format!("unexpected Accept: {:?}", accept));
-        error!("{:?}", e);
-        Err(e)
+        let ret = response_err(StatusCode::NOT_ACCEPTABLE, format!("unsupported Accept: {:?}", accept))?;
+        Ok(ret)
     }
 }
 
@@ -672,8 +687,10 @@ pub async fn channel_config(req: Request<Body>, node_config: &NodeConfigCached) 
     //let pairs = get_url_query_pairs(&url);
     let q = ChannelConfigQuery::from_url(&url)?;
     info!("ChannelConfigQuery {:?}", q);
-    let conf = if let Some(aa) = &node_config.node.archiver_appliance {
-        archapp_wrap::channel_config(&q, aa).await?
+    let conf = if let Some(conf) = &node_config.node.channel_archiver {
+        archapp_wrap::archapp::archeng::channel_config(&q, conf).await?
+    } else if let Some(conf) = &node_config.node.archiver_appliance {
+        archapp_wrap::channel_config(&q, conf).await?
     } else {
         parse::channelconfig::channel_config(&q, &node_config.node).await?
     };

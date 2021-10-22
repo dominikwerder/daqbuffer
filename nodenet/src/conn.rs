@@ -118,7 +118,12 @@ async fn events_conn_handler_inner_try(
     info!("---   nodenet::conn  got query   -------------------\nevq {:?}", evq);
 
     let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>> =
-        if let Some(aa) = &node_config.node.archiver_appliance {
+        if let Some(aa) = &node_config.node.channel_archiver {
+            match archapp_wrap::archapp::archeng::pipe::make_event_pipe(&evq, aa).await {
+                Ok(j) => j,
+                Err(e) => return Err((e, netout))?,
+            }
+        } else if let Some(aa) = &node_config.node.archiver_appliance {
             match archapp_wrap::make_event_pipe(&evq, aa).await {
                 Ok(j) => j,
                 Err(e) => return Err((e, netout))?,

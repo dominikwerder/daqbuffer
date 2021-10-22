@@ -1184,6 +1184,7 @@ pub struct ChannelConfigResponse {
     pub channel: Channel,
     #[serde(rename = "scalarType")]
     pub scalar_type: ScalarType,
+    #[serde(rename = "byteOrder")]
     pub byte_order: Option<ByteOrder>,
     pub shape: Shape,
 }

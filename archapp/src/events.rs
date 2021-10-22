@@ -163,13 +163,13 @@ impl Stream for StorageMerge {
     }
 }
 
-trait FrameMakerTrait: Send {
-    fn make_frame(&self, ei: Sitemty<EventsItem>) -> Box<dyn Framable>;
+pub trait FrameMakerTrait: Send {
+    fn make_frame(&mut self, ei: Sitemty<EventsItem>) -> Box<dyn Framable>;
 }
 
-struct FrameMaker {
-    scalar_type: ScalarType,
-    shape: Shape,
+pub struct FrameMaker {
+    scalar_type: Option<ScalarType>,
+    shape: Option<Shape>,
     agg_kind: AggKind,
 }
 
@@ -180,6 +180,22 @@ impl FrameMaker {
         T: SitemtyFrameType + Serialize + Send + 'static,
     {
         err::todoval()
+    }
+
+    pub fn with_item_type(scalar_type: ScalarType, shape: Shape, agg_kind: AggKind) -> Self {
+        Self {
+            scalar_type: Some(scalar_type),
+            shape: Some(shape),
+            agg_kind: agg_kind,
+        }
+    }
+
+    pub fn untyped(agg_kind: AggKind) -> Self {
+        Self {
+            scalar_type: None,
+            shape: None,
+            agg_kind,
+        }
     }
 }
 
@@ -334,18 +350,83 @@ macro_rules! arm1 {
 }
 
 impl FrameMakerTrait for FrameMaker {
-    fn make_frame(&self, item: Sitemty<EventsItem>) -> Box<dyn Framable> {
+    fn make_frame(&mut self, item: Sitemty<EventsItem>) -> Box<dyn Framable> {
         // Take from `self` the expected inner type.
         // If `ei` is not some data, then I can't dynamically determine the expected T of Sitemty.
         // Therefore, I need to decide that based on given parameters.
         // see also channel_info in this mod.
-        match self.scalar_type {
-            ScalarType::I8 => arm1!(item, i8, Byte, self.shape, self.agg_kind),
-            ScalarType::I16 => arm1!(item, i16, Short, self.shape, self.agg_kind),
-            ScalarType::I32 => arm1!(item, i32, Int, self.shape, self.agg_kind),
-            ScalarType::F32 => arm1!(item, f32, Float, self.shape, self.agg_kind),
-            ScalarType::F64 => arm1!(item, f64, Double, self.shape, self.agg_kind),
-            _ => err::todoval(),
+        if self.scalar_type.is_none() || self.shape.is_none() {
+            //let scalar_type = &ScalarType::I8;
+            //let shape = &Shape::Scalar;
+            //let agg_kind = &self.agg_kind;
+            let (scalar_type, shape) = match &item {
+                Ok(k) => match k {
+                    StreamItem::DataItem(k) => match k {
+                        RangeCompletableItem::RangeComplete => (ScalarType::I8, Shape::Scalar),
+                        RangeCompletableItem::Data(k) => match k {
+                            EventsItem::Plain(k) => match k {
+                                PlainEvents::Scalar(k) => match k {
+                                    ScalarPlainEvents::Byte(_) => (ScalarType::I8, Shape::Scalar),
+                                    ScalarPlainEvents::Short(_) => (ScalarType::I16, Shape::Scalar),
+                                    ScalarPlainEvents::Int(_) => (ScalarType::I32, Shape::Scalar),
+                                    ScalarPlainEvents::Float(_) => (ScalarType::F32, Shape::Scalar),
+                                    ScalarPlainEvents::Double(_) => (ScalarType::F64, Shape::Scalar),
+                                },
+                                PlainEvents::Wave(k) => match k {
+                                    WavePlainEvents::Byte(k) => (ScalarType::I8, Shape::Wave(k.vals[0].len() as u32)),
+                                    WavePlainEvents::Short(k) => (ScalarType::I16, Shape::Wave(k.vals[0].len() as u32)),
+                                    WavePlainEvents::Int(k) => (ScalarType::I32, Shape::Wave(k.vals[0].len() as u32)),
+                                    WavePlainEvents::Float(k) => (ScalarType::F32, Shape::Wave(k.vals[0].len() as u32)),
+                                    WavePlainEvents::Double(k) => {
+                                        (ScalarType::F64, Shape::Wave(k.vals[0].len() as u32))
+                                    }
+                                },
+                            },
+                            EventsItem::XBinnedEvents(k) => match k {
+                                XBinnedEvents::Scalar(k) => match k {
+                                    ScalarPlainEvents::Byte(_) => (ScalarType::I8, Shape::Scalar),
+                                    ScalarPlainEvents::Short(_) => (ScalarType::I16, Shape::Scalar),
+                                    ScalarPlainEvents::Int(_) => (ScalarType::I32, Shape::Scalar),
+                                    ScalarPlainEvents::Float(_) => (ScalarType::F32, Shape::Scalar),
+                                    ScalarPlainEvents::Double(_) => (ScalarType::F64, Shape::Scalar),
+                                },
+                                XBinnedEvents::SingleBinWave(k) => match k {
+                                    SingleBinWaveEvents::Byte(_) => todo!(),
+                                    SingleBinWaveEvents::Short(_) => todo!(),
+                                    SingleBinWaveEvents::Int(_) => todo!(),
+                                    SingleBinWaveEvents::Float(_) => todo!(),
+                                    SingleBinWaveEvents::Double(_) => todo!(),
+                                },
+                                XBinnedEvents::MultiBinWave(k) => match k {
+                                    MultiBinWaveEvents::Byte(_) => todo!(),
+                                    MultiBinWaveEvents::Short(_) => todo!(),
+                                    MultiBinWaveEvents::Int(_) => todo!(),
+                                    MultiBinWaveEvents::Float(_) => todo!(),
+                                    MultiBinWaveEvents::Double(_) => todo!(),
+                                },
+                            },
+                        },
+                    },
+                    StreamItem::Log(_) => (ScalarType::I8, Shape::Scalar),
+                    StreamItem::Stats(_) => (ScalarType::I8, Shape::Scalar),
+                },
+                Err(_) => (ScalarType::I8, Shape::Scalar),
+            };
+            self.scalar_type = Some(scalar_type);
+            self.shape = Some(shape);
+        }
+        {
+            let scalar_type = self.scalar_type.as_ref().unwrap();
+            let shape = self.shape.as_ref().unwrap();
+            let agg_kind = &self.agg_kind;
+            match scalar_type {
+                ScalarType::I8 => arm1!(item, i8, Byte, shape, agg_kind),
+                ScalarType::I16 => arm1!(item, i16, Short, shape, agg_kind),
+                ScalarType::I32 => arm1!(item, i32, Int, shape, agg_kind),
+                ScalarType::F32 => arm1!(item, f32, Float, shape, agg_kind),
+                ScalarType::F64 => arm1!(item, f64, Double, shape, agg_kind),
+                _ => err::todoval(),
+            }
         }
     }
 }
@@ -367,11 +448,11 @@ pub async fn make_event_pipe(
         completed_inps: vec![false; inps.len()],
         inps,
     };
-    let frame_maker = Box::new(FrameMaker {
-        scalar_type: ci.scalar_type.clone(),
-        shape: ci.shape.clone(),
-        agg_kind: evq.agg_kind.clone(),
-    }) as Box<dyn FrameMakerTrait>;
+    let mut frame_maker = Box::new(FrameMaker::with_item_type(
+        ci.scalar_type.clone(),
+        ci.shape.clone(),
+        evq.agg_kind.clone(),
+    )) as Box<dyn FrameMakerTrait>;
     let ret = sm.map(move |j| frame_maker.make_frame(j));
     Ok(Box::pin(ret))
 }

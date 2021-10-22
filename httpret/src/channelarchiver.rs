@@ -104,7 +104,6 @@ impl ListChannelsHttpFunction {
                         Some((Ok::<_, Error>(x), st))
                     }
                     Err(e) => {
-                        //Some((Err(e), st))
                         error!("{:?}", e);
                         None
                     }

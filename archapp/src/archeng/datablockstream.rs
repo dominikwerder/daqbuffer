@@ -70,36 +70,40 @@ async fn datablock_stream_inner(
                         search_record(&mut index_file, basics.rtree_m, basics.rtree_start_pos, search_ts).await?;
                     if let Some(nrec) = res {
                         let rec = nrec.rec();
-                        info!("found record: {:?}", rec);
+                        trace!("found record: {:?}", rec);
                         let pos = FilePos { pos: rec.child_or_id };
                         // TODO rename Datablock?  → IndexNodeDatablock
-                        info!("\n\nREAD Datablock FROM {:?}\n", pos);
+                        trace!("READ Datablock FROM {:?}\n", pos);
                         let datablock = read_index_datablockref(&mut index_file, pos).await?;
-                        info!("\nDatablock: {:?}\n", datablock);
+                        trace!("Datablock: {:?}\n", datablock);
                         let data_path = index_path.parent().unwrap().join(datablock.file_name());
                         if data_path == last_data_file_path && datablock.data_header_pos() == last_data_file_pos {
-                            warn!("SKIP BECAUSE ITS THE SAME BLOCK");
+                            debug!("skipping because it is the same block");
                         } else {
-                            info!("try to open data_path: {:?}", data_path);
-                            let mut data_file = open_read(data_path.clone()).await?;
-                            let datafile_header =
-                                read_datafile_header(&mut data_file, datablock.data_header_pos()).await?;
-                            info!("datafile_header --------------  HEADER\n{:?}", datafile_header);
-                            let events = read_data_1(&mut data_file, &datafile_header).await?;
-                            info!("Was able to read data: {} events", events.len());
-                            let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(events)));
-                            tx.send(item).await?;
+                            trace!("try to open data_path: {:?}", data_path);
+                            match open_read(data_path.clone()).await {
+                                Ok(mut data_file) => {
+                                    let datafile_header =
+                                        read_datafile_header(&mut data_file, datablock.data_header_pos()).await?;
+                                    trace!("datafile_header --------------  HEADER\n{:?}", datafile_header);
+                                    let events = read_data_1(&mut data_file, &datafile_header).await?;
+                                    trace!("Was able to read data: {} events", events.len());
+                                    let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(events)));
+                                    tx.send(item).await?;
+                                }
+                                Err(e) => {
+                                    // That's fine. The index mentions lots of datafiles which got purged already.
+                                    trace!("can not find file mentioned in index: {:?}  {}", data_path, e);
+                                }
+                            };
                         }
                         if datablock.next != 0 {
-                            error!("datablock.next != 0:  {:?}", datablock);
+                            warn!("MAYBE TODO? datablock.next != 0:  {:?}", datablock);
                         }
                         last_data_file_path = data_path;
                         last_data_file_pos = datablock.data_header_pos();
-                        if expand {
-                            err::todo()
-                        } else {
-                            search_ts.ns = rec.ts2.ns;
-                        };
+                        // TODO anything special to do in expand mode?
+                        search_ts.ns = rec.ts2.ns;
                     } else {
                         warn!("nothing found, break");
                         break;
@@ -107,7 +111,7 @@ async fn datablock_stream_inner(
                 }
             }
         } else {
-            info!("can not find index file at {:?}", index_path);
+            warn!("can not find index file at {:?}", index_path);
         }
     }
     Ok(())
@@ -118,7 +122,7 @@ pub struct DatablockStream {
     channel: Channel,
     base_dirs: VecDeque<PathBuf>,
     expand: bool,
-    fut: Pin<Box<dyn Future<Output = FR>>>,
+    fut: Pin<Box<dyn Future<Output = FR> + Send>>,
     rx: Receiver<Sitemty<EventsItem>>,
     done: bool,
     complete: bool,

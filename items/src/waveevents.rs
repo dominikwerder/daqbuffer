@@ -20,6 +20,17 @@ pub struct WaveEvents<NTY> {
     pub vals: Vec<Vec<NTY>>,
 }
 
+impl<NTY> WaveEvents<NTY> {
+    pub fn shape(&self) -> Result<Shape, Error> {
+        if let Some(k) = self.vals.first() {
+            let ret = Shape::Wave(k.len() as u32);
+            Ok(ret)
+        } else {
+            Err(Error::with_msg_no_trace("WaveEvents is empty, can not determine Shape"))
+        }
+    }
+}
+
 impl<NTY> SitemtyFrameType for WaveEvents<NTY>
 where
     NTY: SubFrId,

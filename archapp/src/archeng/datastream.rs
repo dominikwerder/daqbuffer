@@ -9,7 +9,9 @@ pub struct DataStream {}
 impl Stream for DataStream {
     type Item = Sitemty<EventsItem>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        let _ = self;
+        let _ = cx;
         todo!()
     }
 }
