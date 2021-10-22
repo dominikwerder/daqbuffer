@@ -32,7 +32,9 @@ async fn datablock_stream(
         Err(e) => match tx.send(Err(e)).await {
             Ok(_) => {}
             Err(e) => {
-                error!("can not forward error: {:?}", e);
+                if false {
+                    error!("can not send. error: {}", e);
+                }
             }
         },
     }
@@ -55,6 +57,7 @@ async fn datablock_stream_inner(
             "search for {:?} with basename: {}  in path {:?}",
             channel, basename, base
         );
+        // TODO need to try both:
         let index_path = base.join(format!("archive_{}_SH", basename)).join("index");
         let res = open_read(index_path.clone()).await;
         debug!("tried to open index file: {:?}", res);

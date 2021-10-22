@@ -682,11 +682,9 @@ pub async fn update_search_cache(req: Request<Body>, node_config: &NodeConfigCac
 }
 
 pub async fn channel_config(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("channel_config");
     let url = Url::parse(&format!("dummy:{}", req.uri()))?;
     //let pairs = get_url_query_pairs(&url);
     let q = ChannelConfigQuery::from_url(&url)?;
-    info!("ChannelConfigQuery {:?}", q);
     let conf = if let Some(conf) = &node_config.node.channel_archiver {
         archapp_wrap::archapp::archeng::channel_config(&q, conf).await?
     } else if let Some(conf) = &node_config.node.archiver_appliance {
