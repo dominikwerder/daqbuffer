@@ -126,6 +126,7 @@ pub struct ArchiverAppliance {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChannelArchiver {
     pub data_base_paths: Vec<PathBuf>,
+    pub database: Database,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -296,6 +297,12 @@ pub enum TimeRange {
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct Nanos {
     pub ns: u64,
+}
+
+impl Nanos {
+    pub fn from_ns(ns: u64) -> Self {
+        Self { ns }
+    }
 }
 
 impl fmt::Debug for Nanos {
@@ -967,6 +974,58 @@ impl RangeFilterStats {
             events_post: 0,
             events_unordered: 0,
         }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum DiskStats {
+    OpenStats(OpenStats),
+    SeekStats(SeekStats),
+    ReadStats(ReadStats),
+    ReadExactStats(ReadExactStats),
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OpenStats {
+    pub duration: Duration,
+}
+
+impl OpenStats {
+    pub fn new(duration: Duration) -> Self {
+        Self { duration }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SeekStats {
+    pub duration: Duration,
+}
+
+impl SeekStats {
+    pub fn new(duration: Duration) -> Self {
+        Self { duration }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReadStats {
+    pub duration: Duration,
+}
+
+impl ReadStats {
+    pub fn new(duration: Duration) -> Self {
+        Self { duration }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ReadExactStats {
+    pub duration: Duration,
+}
+
+impl ReadExactStats {
+    pub fn new(duration: Duration) -> Self {
+        Self { duration }
     }
 }
 

@@ -1,9 +1,10 @@
+use crate::binnedevents::{MultiBinWaveEvents, SingleBinWaveEvents, XBinnedEvents};
+use crate::eventsitem::EventsItem;
 use crate::generated::EPICSEvent::PayloadType;
 use crate::parse::multi::parse_all_ts;
 use crate::parse::PbFileReader;
-use crate::{
-    EventsItem, MultiBinWaveEvents, PlainEvents, ScalarPlainEvents, SingleBinWaveEvents, WavePlainEvents, XBinnedEvents,
-};
+use crate::plainevents::{PlainEvents, ScalarPlainEvents, WavePlainEvents};
+use crate::storagemerge::StorageMerge;
 use chrono::{TimeZone, Utc};
 use err::Error;
 use futures_core::Stream;
@@ -22,7 +23,6 @@ use serde_json::Value as JsonValue;
 use std::io::SeekFrom;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::task::{Context, Poll};
 use tokio::fs::{read_dir, File};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
@@ -51,125 +51,13 @@ pub fn parse_data_filename(s: &str) -> Result<DataFilename, Error> {
     Ok(ret)
 }
 
-struct StorageMerge {
-    inps: Vec<Pin<Box<dyn Stream<Item = Sitemty<EventsItem>> + Send>>>,
-    completed_inps: Vec<bool>,
-    current_inp_item: Vec<Option<EventsItem>>,
-    inprng: usize,
-}
-
-impl StorageMerge {
-    fn refill_if_needed(mut self: Pin<&mut Self>, cx: &mut Context) -> Result<(Pin<&mut Self>, bool), Error> {
-        use Poll::*;
-        let mut is_pending = false;
-        for i in 0..self.inps.len() {
-            if self.current_inp_item[i].is_none() && self.completed_inps[i] == false {
-                match self.inps[i].poll_next_unpin(cx) {
-                    Ready(j) => {
-                        //
-                        match j {
-                            Some(j) => match j {
-                                Ok(j) => match j {
-                                    StreamItem::DataItem(j) => match j {
-                                        RangeCompletableItem::Data(j) => {
-                                            self.current_inp_item[i] = Some(j);
-                                        }
-                                        RangeCompletableItem::RangeComplete => {}
-                                    },
-                                    StreamItem::Log(_) => {}
-                                    StreamItem::Stats(_) => {}
-                                },
-                                Err(e) => {
-                                    self.completed_inps[i] = true;
-                                    error!("inp err {:?}", e);
-                                }
-                            },
-                            None => {
-                                //
-                                self.completed_inps[i] = true;
-                            }
-                        }
-                    }
-                    Pending => {
-                        is_pending = true;
-                    }
-                }
-            }
-        }
-        Ok((self, is_pending))
-    }
-
-    fn decide_next_item(&mut self) -> Result<Option<Sitemty<EventsItem>>, Error> {
-        let not_found = 999;
-        let mut i1 = self.inprng;
-        let mut j1 = not_found;
-        let mut tsmin = u64::MAX;
-        #[allow(unused)]
-        use items::{WithLen, WithTimestamps};
-        loop {
-            if self.completed_inps[i1] {
-            } else {
-                match self.current_inp_item[i1].as_ref() {
-                    None => panic!(),
-                    Some(j) => {
-                        if j.len() == 0 {
-                            j1 = i1;
-                            break;
-                        } else {
-                            let ts = j.ts(0);
-                            if ts < tsmin {
-                                tsmin = ts;
-                                j1 = i1;
-                                self.inprng = i1;
-                            } else {
-                            }
-                        }
-                    }
-                }
-            }
-            i1 -= 1;
-            if i1 == 0 {
-                break;
-            }
-        }
-        if j1 >= not_found {
-            Ok(None)
-        } else {
-            let j = self.current_inp_item[j1]
-                .take()
-                .map(|j| Ok(StreamItem::DataItem(RangeCompletableItem::Data(j))));
-            Ok(j)
-        }
-    }
-}
-
-impl Stream for StorageMerge {
-    type Item = Sitemty<EventsItem>;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        use Poll::*;
-        let (mut self2, is_pending) = self.refill_if_needed(cx).unwrap();
-        if is_pending {
-            Pending
-        } else {
-            match self2.decide_next_item() {
-                Ok(j) => Ready(j),
-                Err(e) => {
-                    error!("impl Stream for StorageMerge  {:?}", e);
-                    panic!()
-                }
-            }
-        }
-    }
-}
-
 pub trait FrameMakerTrait: Send {
     fn make_frame(&mut self, ei: Sitemty<EventsItem>) -> Box<dyn Framable>;
 }
 
 pub struct FrameMaker {
-    scalar_type: Option<ScalarType>,
-    shape: Option<Shape>,
+    scalar_type: ScalarType,
+    shape: Shape,
     agg_kind: AggKind,
 }
 
@@ -184,17 +72,9 @@ impl FrameMaker {
 
     pub fn with_item_type(scalar_type: ScalarType, shape: Shape, agg_kind: AggKind) -> Self {
         Self {
-            scalar_type: Some(scalar_type),
-            shape: Some(shape),
+            scalar_type: scalar_type,
+            shape: shape,
             agg_kind: agg_kind,
-        }
-    }
-
-    pub fn untyped(agg_kind: AggKind) -> Self {
-        Self {
-            scalar_type: None,
-            shape: None,
-            agg_kind,
         }
     }
 }
@@ -351,82 +231,16 @@ macro_rules! arm1 {
 
 impl FrameMakerTrait for FrameMaker {
     fn make_frame(&mut self, item: Sitemty<EventsItem>) -> Box<dyn Framable> {
-        // Take from `self` the expected inner type.
-        // If `ei` is not some data, then I can't dynamically determine the expected T of Sitemty.
-        // Therefore, I need to decide that based on given parameters.
-        // see also channel_info in this mod.
-        if self.scalar_type.is_none() || self.shape.is_none() {
-            //let scalar_type = &ScalarType::I8;
-            //let shape = &Shape::Scalar;
-            //let agg_kind = &self.agg_kind;
-            let (scalar_type, shape) = match &item {
-                Ok(k) => match k {
-                    StreamItem::DataItem(k) => match k {
-                        RangeCompletableItem::RangeComplete => (ScalarType::I8, Shape::Scalar),
-                        RangeCompletableItem::Data(k) => match k {
-                            EventsItem::Plain(k) => match k {
-                                PlainEvents::Scalar(k) => match k {
-                                    ScalarPlainEvents::Byte(_) => (ScalarType::I8, Shape::Scalar),
-                                    ScalarPlainEvents::Short(_) => (ScalarType::I16, Shape::Scalar),
-                                    ScalarPlainEvents::Int(_) => (ScalarType::I32, Shape::Scalar),
-                                    ScalarPlainEvents::Float(_) => (ScalarType::F32, Shape::Scalar),
-                                    ScalarPlainEvents::Double(_) => (ScalarType::F64, Shape::Scalar),
-                                },
-                                PlainEvents::Wave(k) => match k {
-                                    WavePlainEvents::Byte(k) => (ScalarType::I8, Shape::Wave(k.vals[0].len() as u32)),
-                                    WavePlainEvents::Short(k) => (ScalarType::I16, Shape::Wave(k.vals[0].len() as u32)),
-                                    WavePlainEvents::Int(k) => (ScalarType::I32, Shape::Wave(k.vals[0].len() as u32)),
-                                    WavePlainEvents::Float(k) => (ScalarType::F32, Shape::Wave(k.vals[0].len() as u32)),
-                                    WavePlainEvents::Double(k) => {
-                                        (ScalarType::F64, Shape::Wave(k.vals[0].len() as u32))
-                                    }
-                                },
-                            },
-                            EventsItem::XBinnedEvents(k) => match k {
-                                XBinnedEvents::Scalar(k) => match k {
-                                    ScalarPlainEvents::Byte(_) => (ScalarType::I8, Shape::Scalar),
-                                    ScalarPlainEvents::Short(_) => (ScalarType::I16, Shape::Scalar),
-                                    ScalarPlainEvents::Int(_) => (ScalarType::I32, Shape::Scalar),
-                                    ScalarPlainEvents::Float(_) => (ScalarType::F32, Shape::Scalar),
-                                    ScalarPlainEvents::Double(_) => (ScalarType::F64, Shape::Scalar),
-                                },
-                                XBinnedEvents::SingleBinWave(k) => match k {
-                                    SingleBinWaveEvents::Byte(_) => todo!(),
-                                    SingleBinWaveEvents::Short(_) => todo!(),
-                                    SingleBinWaveEvents::Int(_) => todo!(),
-                                    SingleBinWaveEvents::Float(_) => todo!(),
-                                    SingleBinWaveEvents::Double(_) => todo!(),
-                                },
-                                XBinnedEvents::MultiBinWave(k) => match k {
-                                    MultiBinWaveEvents::Byte(_) => todo!(),
-                                    MultiBinWaveEvents::Short(_) => todo!(),
-                                    MultiBinWaveEvents::Int(_) => todo!(),
-                                    MultiBinWaveEvents::Float(_) => todo!(),
-                                    MultiBinWaveEvents::Double(_) => todo!(),
-                                },
-                            },
-                        },
-                    },
-                    StreamItem::Log(_) => (ScalarType::I8, Shape::Scalar),
-                    StreamItem::Stats(_) => (ScalarType::I8, Shape::Scalar),
-                },
-                Err(_) => (ScalarType::I8, Shape::Scalar),
-            };
-            self.scalar_type = Some(scalar_type);
-            self.shape = Some(shape);
-        }
-        {
-            let scalar_type = self.scalar_type.as_ref().unwrap();
-            let shape = self.shape.as_ref().unwrap();
-            let agg_kind = &self.agg_kind;
-            match scalar_type {
-                ScalarType::I8 => arm1!(item, i8, Byte, shape, agg_kind),
-                ScalarType::I16 => arm1!(item, i16, Short, shape, agg_kind),
-                ScalarType::I32 => arm1!(item, i32, Int, shape, agg_kind),
-                ScalarType::F32 => arm1!(item, f32, Float, shape, agg_kind),
-                ScalarType::F64 => arm1!(item, f64, Double, shape, agg_kind),
-                _ => err::todoval(),
-            }
+        let scalar_type = &self.scalar_type;
+        let shape = &self.shape;
+        let agg_kind = &self.agg_kind;
+        match scalar_type {
+            ScalarType::I8 => arm1!(item, i8, Byte, shape, agg_kind),
+            ScalarType::I16 => arm1!(item, i16, Short, shape, agg_kind),
+            ScalarType::I32 => arm1!(item, i32, Int, shape, agg_kind),
+            ScalarType::F32 => arm1!(item, f32, Float, shape, agg_kind),
+            ScalarType::F64 => arm1!(item, f64, Double, shape, agg_kind),
+            _ => err::todoval(),
         }
     }
 }
@@ -437,17 +251,14 @@ pub async fn make_event_pipe(
 ) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error> {
     let ci = channel_info(&evq.channel, aa).await?;
     let mut inps = vec![];
+    let mut names = vec![];
     for p1 in &aa.data_base_paths {
         let p2 = p1.clone();
         let p3 = make_single_event_pipe(evq, p2).await?;
         inps.push(p3);
+        names.push(p1.to_str().unwrap().into());
     }
-    let sm = StorageMerge {
-        inprng: inps.len() - 1,
-        current_inp_item: (0..inps.len()).into_iter().map(|_| None).collect(),
-        completed_inps: vec![false; inps.len()],
-        inps,
-    };
+    let sm = StorageMerge::new(inps, names, evq.range.clone());
     let mut frame_maker = Box::new(FrameMaker::with_item_type(
         ci.scalar_type.clone(),
         ci.shape.clone(),
@@ -462,7 +273,6 @@ pub async fn make_single_event_pipe(
     base_path: PathBuf,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventsItem>> + Send>>, Error> {
     // TODO must apply the proper x-binning depending on the requested AggKind.
-
     info!("make_event_pipe  {:?}", evq);
     let evq = evq.clone();
     let DirAndPrefix { dir, prefix } = directory_for_channel_files(&evq.channel, base_path)?;

@@ -1,23 +1,33 @@
 pub mod datablockstream;
-pub mod datastream;
+pub mod indexfiles;
 pub mod pipe;
 
-use crate::{EventsItem, PlainEvents, ScalarPlainEvents};
+use self::indexfiles::list_index_files;
+use crate::eventsitem::EventsItem;
+use crate::plainevents::{PlainEvents, ScalarPlainEvents};
+use crate::timed::Timed;
+use crate::wrap_task;
 use async_channel::{Receiver, Sender};
 use err::Error;
-use futures_core::Future;
 use futures_util::StreamExt;
 use items::eventvalues::EventValues;
-use items::{RangeCompletableItem, StreamItem};
+use items::{RangeCompletableItem, Sitemty, StatsItem, StreamItem};
 use netpod::timeunits::SEC;
-use netpod::{log::*, ChannelArchiver, ChannelConfigQuery, ChannelConfigResponse, DataHeaderPos, FilePos, Nanos};
+use netpod::{
+    log::*, Channel, ChannelArchiver, ChannelConfigQuery, ChannelConfigResponse, DataHeaderPos, DiskStats, FilePos,
+    NanoRange, Nanos, OpenStats, ReadExactStats, ReadStats, SeekStats,
+};
+use regex::Regex;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::io::{self, SeekFrom};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
-use tokio::fs::{read_dir, File, OpenOptions};
+use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::sync::Mutex;
 
 /*
 struct ReadExactWrap<'a> {
@@ -45,47 +55,130 @@ type Offset = u64;
 
 const OFFSET_SIZE: usize = std::mem::size_of::<Offset>();
 const EPICS_EPOCH_OFFSET: u64 = 631152000 * SEC;
+const LOG_IO: bool = true;
+const STATS_IO: bool = true;
+static CHANNEL_SEND_ERROR: AtomicUsize = AtomicUsize::new(0);
 
-pub async fn open_read(path: PathBuf) -> io::Result<File> {
+fn channel_send_error() {
+    let c = CHANNEL_SEND_ERROR.fetch_add(1, Ordering::AcqRel);
+    if c < 10 {
+        error!("CHANNEL_SEND_ERROR {}", c);
+    }
+}
+
+pub struct StatsChannel {
+    chn: Sender<Sitemty<EventsItem>>,
+}
+
+impl StatsChannel {
+    pub fn new(chn: Sender<Sitemty<EventsItem>>) -> Self {
+        Self { chn }
+    }
+
+    pub fn dummy() -> Self {
+        let (tx, rx) = async_channel::bounded(2);
+        taskrun::spawn(async move {
+            let mut rx = rx;
+            while let Some(_) = rx.next().await {}
+        });
+        Self::new(tx)
+    }
+
+    pub async fn send(&self, item: StatsItem) -> Result<(), Error> {
+        Ok(self.chn.send(Ok(StreamItem::Stats(item))).await?)
+    }
+}
+
+impl Clone for StatsChannel {
+    fn clone(&self) -> Self {
+        Self { chn: self.chn.clone() }
+    }
+}
+
+pub async fn open_read(path: PathBuf, stats: &StatsChannel) -> io::Result<File> {
     let ts1 = Instant::now();
     let res = OpenOptions::new().read(true).open(path).await;
     let ts2 = Instant::now();
-    let dt = ts2.duration_since(ts1).as_secs_f64() * 1e3;
-    if false {
-        info!("timed open_read  dt: {:.3} ms", dt);
+    let dt = ts2.duration_since(ts1);
+    if LOG_IO {
+        let dt = dt.as_secs_f64() * 1e3;
+        debug!("timed open_read  dt: {:.3} ms", dt);
+    }
+    if STATS_IO {
+        if let Err(_) = stats
+            .send(StatsItem::DiskStats(DiskStats::OpenStats(OpenStats::new(
+                ts2.duration_since(ts1),
+            ))))
+            .await
+        {
+            channel_send_error();
+        }
     }
     res
 }
 
-async fn seek(file: &mut File, pos: SeekFrom) -> io::Result<u64> {
+async fn seek(file: &mut File, pos: SeekFrom, stats: &StatsChannel) -> io::Result<u64> {
     let ts1 = Instant::now();
     let res = file.seek(pos).await;
     let ts2 = Instant::now();
-    let dt = ts2.duration_since(ts1).as_secs_f64() * 1e3;
-    if false {
-        info!("timed seek  dt: {:.3} ms", dt);
+    let dt = ts2.duration_since(ts1);
+    if LOG_IO {
+        let dt = dt.as_secs_f64() * 1e3;
+        debug!("timed seek  dt: {:.3} ms", dt);
+    }
+    if STATS_IO {
+        if let Err(_) = stats
+            .send(StatsItem::DiskStats(DiskStats::SeekStats(SeekStats::new(
+                ts2.duration_since(ts1),
+            ))))
+            .await
+        {
+            channel_send_error();
+        }
     }
     res
 }
 
-async fn read(file: &mut File, buf: &mut [u8]) -> io::Result<usize> {
+async fn read(file: &mut File, buf: &mut [u8], stats: &StatsChannel) -> io::Result<usize> {
     let ts1 = Instant::now();
     let res = file.read(buf).await;
     let ts2 = Instant::now();
-    let dt = ts2.duration_since(ts1).as_secs_f64() * 1e3;
-    if false {
-        info!("timed read  dt: {:.3} ms  res: {:?}", dt, res);
+    let dt = ts2.duration_since(ts1);
+    if LOG_IO {
+        let dt = dt.as_secs_f64() * 1e3;
+        debug!("timed read  dt: {:.3} ms  res: {:?}", dt, res);
+    }
+    if STATS_IO {
+        if let Err(_) = stats
+            .send(StatsItem::DiskStats(DiskStats::ReadStats(ReadStats::new(
+                ts2.duration_since(ts1),
+            ))))
+            .await
+        {
+            channel_send_error();
+        }
     }
     res
 }
 
-async fn read_exact(file: &mut File, buf: &mut [u8]) -> io::Result<usize> {
+async fn read_exact(file: &mut File, buf: &mut [u8], stats: &StatsChannel) -> io::Result<usize> {
     let ts1 = Instant::now();
     let res = file.read_exact(buf).await;
     let ts2 = Instant::now();
-    let dt = ts2.duration_since(ts1).as_secs_f64() * 1e3;
-    if false {
-        info!("timed read_exact  dt: {:.3} ms  res: {:?}", dt, res);
+    let dt = ts2.duration_since(ts1);
+    if LOG_IO {
+        let dt = dt.as_secs_f64() * 1e3;
+        debug!("timed read_exact  dt: {:.3} ms  res: {:?}", dt, res);
+    }
+    if STATS_IO {
+        if let Err(_) = stats
+            .send(StatsItem::DiskStats(DiskStats::ReadExactStats(ReadExactStats::new(
+                ts2.duration_since(ts1),
+            ))))
+            .await
+        {
+            channel_send_error();
+        };
     }
     res
 }
@@ -160,7 +253,7 @@ impl RingBuf {
         &self.buf[self.rp..self.wp]
     }
 
-    pub async fn fill(&mut self, file: &mut File) -> Result<usize, Error> {
+    pub async fn fill(&mut self, file: &mut File, stats: &StatsChannel) -> Result<usize, Error> {
         if self.rp == self.wp {
             if self.rp != 0 {
                 self.wp = 0;
@@ -173,16 +266,16 @@ impl RingBuf {
                 self.rp = 0;
             }
         }
-        let n = read(file, &mut self.buf[self.wp..]).await?;
+        let n = read(file, &mut self.buf[self.wp..], stats).await?;
         self.wp += n;
         return Ok(n);
     }
 
-    pub async fn fill_if_low(&mut self, file: &mut File) -> Result<usize, Error> {
+    pub async fn fill_if_low(&mut self, file: &mut File, stats: &StatsChannel) -> Result<usize, Error> {
         let len = self.len();
         let cap = self.buf.len();
         while self.len() < cap / 6 {
-            let n = self.fill(file).await?;
+            let n = self.fill(file, stats).await?;
             if n == 0 {
                 break;
             }
@@ -190,10 +283,10 @@ impl RingBuf {
         return Ok(self.len() - len);
     }
 
-    pub async fn fill_min(&mut self, file: &mut File, min: usize) -> Result<usize, Error> {
+    pub async fn fill_min(&mut self, file: &mut File, min: usize, stats: &StatsChannel) -> Result<usize, Error> {
         let len = self.len();
         while self.len() < min {
-            let n = self.fill(file).await?;
+            let n = self.fill(file, stats).await?;
             if n == 0 {
                 break;
             }
@@ -253,14 +346,14 @@ fn read_string(buf: &[u8]) -> Result<String, Error> {
     Ok(ret)
 }
 
-pub async fn read_file_basics(file: &mut File) -> Result<IndexFileBasics, Error> {
+pub async fn read_file_basics(file: &mut File, stats: &StatsChannel) -> Result<IndexFileBasics, Error> {
     let mut buf = vec![0; 128];
-    read_exact(file, &mut buf[0..4]).await?;
+    read_exact(file, &mut buf[0..4], stats).await?;
     let version = String::from_utf8(buf[3..4].to_vec())?.parse()?;
     if version == 3 {
-        read_exact(file, &mut buf[4..88]).await?;
+        read_exact(file, &mut buf[4..88], stats).await?;
     } else if version == 2 {
-        read_exact(file, &mut buf[4..48]).await?;
+        read_exact(file, &mut buf[4..48], stats).await?;
     } else {
         panic!();
     }
@@ -339,7 +432,7 @@ pub async fn read_file_basics(file: &mut File) -> Result<IndexFileBasics, Error>
             panic!()
         };
         buf.resize(u as usize, 0);
-        read_exact(file, &mut buf).await?;
+        read_exact(file, &mut buf, stats).await?;
         let b = &buf;
         for i1 in 0..ret.name_hash_anchor_len {
             let pos = if version == 3 {
@@ -387,14 +480,19 @@ impl RTreeNodeAtRecord {
 }
 
 // TODO refactor as struct, rtree_m is a property of the tree.
-pub async fn read_rtree_node(file: &mut File, pos: FilePos, rtree_m: usize) -> Result<RTreeNode, Error> {
+pub async fn read_rtree_node(
+    file: &mut File,
+    pos: FilePos,
+    rtree_m: usize,
+    stats: &StatsChannel,
+) -> Result<RTreeNode, Error> {
     const OFF1: usize = 9;
     const RLEN: usize = 24;
     const NANO_MAX: u32 = 999999999;
-    seek(file, SeekFrom::Start(pos.into())).await?;
+    seek(file, SeekFrom::Start(pos.into()), stats).await?;
     let mut rb = RingBuf::new();
     // TODO must know how much data I need at least...
-    rb.fill_min(file, OFF1 + rtree_m * RLEN).await?;
+    rb.fill_min(file, OFF1 + rtree_m * RLEN, stats).await?;
     if false {
         let s = format_hex_block(rb.data(), 128);
         info!("RTREE NODE:\n{}", s);
@@ -422,7 +520,7 @@ pub async fn read_rtree_node(file: &mut File, pos: FilePos, rtree_m: usize) -> R
             let ts2 = ts2a as u64 * SEC + ts2b as u64 + EPICS_EPOCH_OFFSET;
             let child_or_id = readu64(b, off2 + 16);
             //info!("NODE   {} {}   {} {}   {}", ts1a, ts1b, ts2a, ts2b, child_or_id);
-            if child_or_id != 0 {
+            if child_or_id != 0 && ts2 != 0 {
                 let rec = RTreeNodeRecord {
                     ts1: Nanos { ns: ts1 },
                     ts2: Nanos { ns: ts2 },
@@ -443,12 +541,17 @@ pub async fn read_rtree_node(file: &mut File, pos: FilePos, rtree_m: usize) -> R
     Ok(node)
 }
 
-pub async fn read_rtree_entrypoint(file: &mut File, pos: u64, _basics: &IndexFileBasics) -> Result<RTreeNode, Error> {
-    seek(file, SeekFrom::Start(pos)).await?;
+pub async fn read_rtree_entrypoint(
+    file: &mut File,
+    pos: u64,
+    _basics: &IndexFileBasics,
+    stats: &StatsChannel,
+) -> Result<RTreeNode, Error> {
+    seek(file, SeekFrom::Start(pos), stats).await?;
     let mut rb = RingBuf::new();
     // TODO should be able to indicate:
     // • how much I need at most before I know that I will e.g. seek or abort.
-    rb.fill_min(file, OFFSET_SIZE + 4).await?;
+    rb.fill_min(file, OFFSET_SIZE + 4, stats).await?;
     if rb.len() < OFFSET_SIZE + 4 {
         return Err(Error::with_msg_no_trace("could not read enough"));
     }
@@ -457,7 +560,7 @@ pub async fn read_rtree_entrypoint(file: &mut File, pos: u64, _basics: &IndexFil
     let rtree_m = readu32(b, OFFSET_SIZE);
     //info!("node_offset: {}  rtree_m: {}", node_offset, rtree_m);
     let pos = FilePos { pos: node_offset };
-    let node = read_rtree_node(file, pos, rtree_m as usize).await?;
+    let node = read_rtree_node(file, pos, rtree_m as usize, stats).await?;
     //info!("read_rtree_entrypoint   READ ROOT NODE: {:?}", node);
     Ok(node)
 }
@@ -482,14 +585,14 @@ pub async fn search_record(
     rtree_m: usize,
     start_node_pos: FilePos,
     beg: Nanos,
+    stats: &StatsChannel,
 ) -> Result<(Option<RTreeNodeAtRecord>, TreeSearchStats), Error> {
     let ts1 = Instant::now();
-    let mut node = read_rtree_node(file, start_node_pos, rtree_m).await?;
+    let mut node = read_rtree_node(file, start_node_pos, rtree_m, stats).await?;
     let mut node_reads = 1;
     'outer: loop {
         let nr = node.records.len();
         for (i, rec) in node.records.iter().enumerate() {
-            //info!("looking at record  i {}", i);
             if rec.ts2.ns > beg.ns {
                 if node.is_leaf {
                     trace!("found leaf match at {} / {}", i, nr);
@@ -499,7 +602,7 @@ pub async fn search_record(
                 } else {
                     trace!("found non-leaf match at {} / {}", i, nr);
                     let pos = FilePos { pos: rec.child_or_id };
-                    node = read_rtree_node(file, pos, rtree_m).await?;
+                    node = read_rtree_node(file, pos, rtree_m, stats).await?;
                     node_reads += 1;
                     continue 'outer;
                 }
@@ -512,6 +615,68 @@ pub async fn search_record(
     }
 }
 
+pub async fn search_record_expand_try(
+    file: &mut File,
+    rtree_m: usize,
+    start_node_pos: FilePos,
+    beg: Nanos,
+    stats: &StatsChannel,
+) -> Result<(Option<RTreeNodeAtRecord>, TreeSearchStats), Error> {
+    let ts1 = Instant::now();
+    let mut node = read_rtree_node(file, start_node_pos, rtree_m, stats).await?;
+    let mut node_reads = 1;
+    'outer: loop {
+        let nr = node.records.len();
+        for (i, rec) in node.records.iter().enumerate().rev() {
+            if rec.ts1.ns <= beg.ns {
+                if node.is_leaf {
+                    trace!("found leaf match at {} / {}", i, nr);
+                    let ret = RTreeNodeAtRecord { node, rix: i };
+                    let stats = TreeSearchStats::new(ts1, node_reads);
+                    return Ok((Some(ret), stats));
+                } else {
+                    // TODO
+                    // We rely on channel archiver engine that there is at least one event
+                    // in the referenced range. It should according to docs, but who knows.
+                    trace!("found non-leaf match at {} / {}", i, nr);
+                    let pos = FilePos { pos: rec.child_or_id };
+                    node = read_rtree_node(file, pos, rtree_m, stats).await?;
+                    node_reads += 1;
+                    continue 'outer;
+                }
+            }
+        }
+        {
+            let stats = TreeSearchStats::new(ts1, node_reads);
+            return Ok((None, stats));
+        }
+    }
+}
+
+pub async fn search_record_expand(
+    file: &mut File,
+    rtree_m: usize,
+    start_node_pos: FilePos,
+    beg: Nanos,
+    stats: &StatsChannel,
+) -> Result<(Option<RTreeNodeAtRecord>, TreeSearchStats), Error> {
+    let ts1 = Instant::now();
+    let res = search_record_expand_try(file, rtree_m, start_node_pos, beg, stats).await?;
+    match res {
+        (Some(res), stats) => {
+            let ts2 = Instant::now();
+            info!("search_record_expand  took {:?}", ts2.duration_since(ts1));
+            Ok((Some(res), stats))
+        }
+        _ => {
+            let res = search_record(file, rtree_m, start_node_pos, beg, stats).await;
+            let ts2 = Instant::now();
+            info!("search_record_expand  took {:?}", ts2.duration_since(ts1));
+            res
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ChannelInfoBasics {
     channel_name: String,
@@ -519,8 +684,12 @@ pub struct ChannelInfoBasics {
     rtree_start_pos: FilePos,
 }
 
-pub async fn read_channel(index_file: &mut File, channel_name: &str) -> Result<Option<ChannelInfoBasics>, Error> {
-    let basics = read_file_basics(index_file).await?;
+pub async fn read_channel(
+    index_file: &mut File,
+    channel_name: &str,
+    stats: &StatsChannel,
+) -> Result<Option<ChannelInfoBasics>, Error> {
+    let basics = read_file_basics(index_file, stats).await?;
     let hver2 = HeaderVersion2;
     let hver3 = HeaderVersion3;
     let hver: &dyn HeaderVersion = if basics.version == 3 {
@@ -537,9 +706,9 @@ pub async fn read_channel(index_file: &mut File, channel_name: &str) -> Result<O
     let mut pos = epos.named_hash_channel_entry_pos;
     loop {
         rb.reset();
-        seek(index_file, SeekFrom::Start(pos)).await?;
+        seek(index_file, SeekFrom::Start(pos), stats).await?;
         let fill_min = if hver.offset_size() == 8 { 20 } else { 12 };
-        rb.fill_min(index_file, fill_min).await?;
+        rb.fill_min(index_file, fill_min, stats).await?;
         if rb.len() < fill_min {
             warn!("not enough data to continue reading channel list from name hash list");
             break;
@@ -556,7 +725,7 @@ pub async fn read_channel(index_file: &mut File, channel_name: &str) -> Result<O
     }
     for e in &entries {
         if e.channel_name == channel_name {
-            let ep = read_rtree_entrypoint(index_file, e.id_rtree_pos, &basics).await?;
+            let ep = read_rtree_entrypoint(index_file, e.id_rtree_pos, &basics, stats).await?;
             let ret = ChannelInfoBasics {
                 channel_name: channel_name.into(),
                 rtree_m: ep.rtree_m,
@@ -643,15 +812,16 @@ async fn channel_list_from_index_name_hash_list(
     file: &mut File,
     pos: FilePos,
     hver: &dyn HeaderVersion,
+    stats: &StatsChannel,
 ) -> Result<Vec<NamedHashChannelEntry>, Error> {
     let mut pos = pos;
     let mut ret = vec![];
     let mut rb = RingBuf::new();
     loop {
         rb.reset();
-        seek(file, SeekFrom::Start(pos.pos)).await?;
+        seek(file, SeekFrom::Start(pos.pos), stats).await?;
         let fill_min = if hver.offset_size() == 8 { 20 } else { 12 };
-        rb.fill_min(file, fill_min).await?;
+        rb.fill_min(file, fill_min, stats).await?;
         if rb.len() < fill_min {
             warn!("not enough data to continue reading channel list from name hash list");
             break;
@@ -668,10 +838,10 @@ async fn channel_list_from_index_name_hash_list(
     Ok(ret)
 }
 
-pub async fn channel_list(index_path: PathBuf) -> Result<Vec<String>, Error> {
+pub async fn channel_list(index_path: PathBuf, stats: &StatsChannel) -> Result<Vec<String>, Error> {
     let mut ret = vec![];
-    let file = &mut open_read(index_path.clone()).await?;
-    let basics = read_file_basics(file).await?;
+    let file = &mut open_read(index_path.clone(), stats).await?;
+    let basics = read_file_basics(file, stats).await?;
     let hver2 = HeaderVersion2;
     let hver3 = HeaderVersion3;
     let hver: &dyn HeaderVersion = if basics.version == 2 {
@@ -689,7 +859,7 @@ pub async fn channel_list(index_path: PathBuf) -> Result<Vec<String>, Error> {
             let pos = FilePos {
                 pos: name_hash_entry.named_hash_channel_entry_pos,
             };
-            let list = channel_list_from_index_name_hash_list(file, pos, hver).await?;
+            let list = channel_list_from_index_name_hash_list(file, pos, hver, stats).await?;
             for e in list {
                 ret.push(e.channel_name);
             }
@@ -733,15 +903,15 @@ impl Datablock {
     }
 }
 
-async fn read_index_datablockref(file: &mut File, pos: FilePos) -> Result<Datablock, Error> {
-    seek(file, SeekFrom::Start(pos.pos)).await?;
+async fn read_index_datablockref(file: &mut File, pos: FilePos, stats: &StatsChannel) -> Result<Datablock, Error> {
+    seek(file, SeekFrom::Start(pos.pos), stats).await?;
     let mut rb = RingBuf::new();
-    rb.fill_min(file, 18).await?;
+    rb.fill_min(file, 18, stats).await?;
     let buf = rb.data();
     let next = readoffset(buf, 0);
     let data = readoffset(buf, 8);
     let len = readu16(buf, 16) as usize;
-    rb.fill_min(file, 18 + len).await?;
+    rb.fill_min(file, 18 + len, stats).await?;
     let buf = rb.data();
     let fname = String::from_utf8(buf[18..18 + len].to_vec())?;
     let ret = Datablock {
@@ -814,10 +984,14 @@ pub struct DatafileHeader {
 
 const DATA_HEADER_LEN_ON_DISK: usize = 72 + 40 + 40;
 
-async fn read_datafile_header(file: &mut File, pos: DataHeaderPos) -> Result<DatafileHeader, Error> {
-    seek(file, SeekFrom::Start(pos.0)).await?;
+async fn read_datafile_header(
+    file: &mut File,
+    pos: DataHeaderPos,
+    stats: &StatsChannel,
+) -> Result<DatafileHeader, Error> {
+    seek(file, SeekFrom::Start(pos.0), stats).await?;
     let mut rb = RingBuf::new();
-    rb.fill_min(file, DATA_HEADER_LEN_ON_DISK).await?;
+    rb.fill_min(file, DATA_HEADER_LEN_ON_DISK, stats).await?;
     let buf = rb.data();
     let dir_offset = readu32(buf, 0);
     let next_offset = readu32(buf, 4);
@@ -876,9 +1050,16 @@ async fn read_datafile_header(file: &mut File, pos: DataHeaderPos) -> Result<Dat
     Ok(ret)
 }
 
-async fn read_data_1(file: &mut File, datafile_header: &DatafileHeader) -> Result<EventsItem, Error> {
+async fn read_data_1(
+    file: &mut File,
+    datafile_header: &DatafileHeader,
+    range: NanoRange,
+    _expand: bool,
+    stats: &StatsChannel,
+) -> Result<EventsItem, Error> {
+    // TODO handle expand mode
     let dhpos = datafile_header.pos.0 + DATA_HEADER_LEN_ON_DISK as u64;
-    seek(file, SeekFrom::Start(dhpos)).await?;
+    seek(file, SeekFrom::Start(dhpos), stats).await?;
     let res = match &datafile_header.dbr_type {
         DbrType::DbrTimeDouble => {
             if datafile_header.dbr_count == 1 {
@@ -892,8 +1073,9 @@ async fn read_data_1(file: &mut File, datafile_header: &DatafileHeader) -> Resul
                 let n2 = 2 + 2 + 4 + 4 + (4) + 8;
                 let n3 = n1 * n2;
                 let mut buf = vec![0; n3];
-                read_exact(file, &mut buf).await?;
+                read_exact(file, &mut buf, stats).await?;
                 let mut p1 = 0;
+                let mut ntot = 0;
                 while p1 < n3 - n2 {
                     let _status = u16::from_be_bytes(buf[p1..p1 + 2].try_into().unwrap());
                     p1 += 2;
@@ -907,10 +1089,13 @@ async fn read_data_1(file: &mut File, datafile_header: &DatafileHeader) -> Resul
                     p1 += 4;
                     let value = f64::from_be_bytes(buf[p1..p1 + 8].try_into().unwrap());
                     p1 += 8;
-                    //info!("read event  {}  {}  {}  {}  {}", status, severity, ts1a, ts1b, value);
-                    evs.tss.push(ts1);
-                    evs.values.push(value);
+                    ntot += 1;
+                    if ts1 >= range.beg && ts1 < range.end {
+                        evs.tss.push(ts1);
+                        evs.values.push(value);
+                    }
                 }
+                info!("parsed block with {} / {} events", ntot, evs.tss.len());
                 let evs = ScalarPlainEvents::Double(evs);
                 let plain = PlainEvents::Scalar(evs);
                 let item = EventsItem::Plain(plain);
@@ -930,72 +1115,6 @@ async fn read_data_1(file: &mut File, datafile_header: &DatafileHeader) -> Resul
     Ok(res)
 }
 
-pub fn list_index_files(node: &ChannelArchiver) -> Receiver<Result<PathBuf, Error>> {
-    let node = node.clone();
-    let (tx, rx) = async_channel::bounded(4);
-    let tx2 = tx.clone();
-    let task = async move {
-        for bp in &node.data_base_paths {
-            let mut rd = read_dir(bp).await?;
-            while let Some(e) = rd.next_entry().await? {
-                let ft = e.file_type().await?;
-                if ft.is_dir() {
-                    let mut rd = read_dir(e.path()).await?;
-                    while let Some(e) = rd.next_entry().await? {
-                        let ft = e.file_type().await?;
-                        if false && ft.is_dir() {
-                            let mut rd = read_dir(e.path()).await?;
-                            while let Some(e) = rd.next_entry().await? {
-                                let ft = e.file_type().await?;
-                                if ft.is_file() {
-                                    if e.file_name().to_string_lossy() == "index" {
-                                        tx.send(Ok(e.path())).await?;
-                                    }
-                                }
-                            }
-                        } else if ft.is_file() {
-                            if e.file_name().to_string_lossy() == "index" {
-                                tx.send(Ok(e.path())).await?;
-                            }
-                        }
-                    }
-                } else if ft.is_file() {
-                    if e.file_name().to_string_lossy() == "index" {
-                        tx.send(Ok(e.path())).await?;
-                    }
-                }
-            }
-        }
-        Ok::<_, Error>(())
-    };
-    wrap_task(task, tx2);
-    rx
-}
-
-fn wrap_task<T, O1, O2>(task: T, tx: Sender<Result<O2, Error>>)
-where
-    T: Future<Output = Result<O1, Error>> + Send + 'static,
-    O1: Send + 'static,
-    O2: Send + 'static,
-{
-    let task = async move {
-        match task.await {
-            Ok(_) => {}
-            Err(e) => {
-                match tx.send(Err(e)).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        if false {
-                            error!("wrap_task can not forward error: {:?}", e);
-                        }
-                    }
-                };
-            }
-        }
-    };
-    taskrun::spawn(task);
-}
-
 #[derive(Debug, Serialize)]
 pub struct ListChannelItem {
     name: String,
@@ -1007,12 +1126,27 @@ pub fn list_all_channels(node: &ChannelArchiver) -> Receiver<Result<ListChannelI
     let node = node.clone();
     let (tx, rx) = async_channel::bounded(4);
     let tx2 = tx.clone();
+    let stats = {
+        let (tx, rx) = async_channel::bounded(16);
+        taskrun::spawn(async move {
+            let mut rx = rx;
+            while let Some(item) = rx.next().await {
+                match item {
+                    Ok(StreamItem::Stats(item)) => {
+                        info!("stats: {:?}", item);
+                    }
+                    _ => {}
+                }
+            }
+        });
+        StatsChannel::new(tx.clone())
+    };
     let task = async move {
         let mut ixf = list_index_files(&node);
         while let Some(f) = ixf.next().await {
             let index_path = f?;
             //info!("try to read for {:?}", index_path);
-            let channels = channel_list(index_path.clone()).await?;
+            let channels = channel_list(index_path.clone(), &stats).await?;
             //info!("list_all_channels  emit {} channels", channels.len());
             for ch in channels {
                 let mm = match ch.split("-").next() {
@@ -1043,13 +1177,16 @@ pub fn list_all_channels(node: &ChannelArchiver) -> Receiver<Result<ListChannelI
 }
 
 pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> Result<ChannelConfigResponse, Error> {
+    let _timed = Timed::new("channel_config");
     let mut type_info = None;
     let mut stream = datablockstream::DatablockStream::for_channel_range(
         q.range.clone(),
         q.channel.clone(),
         conf.data_base_paths.clone().into(),
         true,
+        1,
     );
+    let timed_expand = Timed::new("channel_config EXPAND");
     while let Some(item) = stream.next().await {
         match item {
             Ok(k) => match k {
@@ -1069,12 +1206,16 @@ pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> R
             }
         }
     }
+    drop(timed_expand);
     if type_info.is_none() {
+        let timed_normal = Timed::new("channel_config NORMAL");
+        warn!("channel_config expand mode returned none");
         let mut stream = datablockstream::DatablockStream::for_channel_range(
             q.range.clone(),
             q.channel.clone(),
             conf.data_base_paths.clone().into(),
             false,
+            u64::MAX,
         );
         while let Some(item) = stream.next().await {
             match item {
@@ -1095,6 +1236,7 @@ pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> R
                 }
             }
         }
+        drop(timed_normal);
     }
     if let Some(type_info) = type_info {
         let ret = ChannelConfigResponse {
@@ -1109,6 +1251,189 @@ pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> R
     }
 }
 
+#[derive(Debug)]
+enum RetClass {
+    Long,
+    Medium,
+    Short,
+    #[allow(unused)]
+    PostMortem,
+}
+
+#[derive(Debug)]
+enum IndexCat {
+    Machine { rc: RetClass },
+    Beamline { rc: RetClass, name: String },
+}
+
+#[derive(Debug)]
+struct IndexFile {
+    path: PathBuf,
+    cat: IndexCat,
+}
+
+// Try to make sense of historical conventions how the epics channel archiver engines are configured.
+fn categorize_index_files(list: &Vec<String>) -> Result<Vec<IndexFile>, Error> {
+    let re_m = Regex::new(r"/archive_(ST|MT|LT)/index").unwrap();
+    let re_b = Regex::new(r"/archive_(X([0-9]+)[^_]*)_(SH|LO)/index").unwrap();
+    let mut ret = vec![];
+    for p in list {
+        match re_m.captures(p) {
+            Some(cap) => {
+                let rc = cap.get(1).unwrap().as_str();
+                let rc = match rc {
+                    "ST" => Some(RetClass::Short),
+                    "MT" => Some(RetClass::Medium),
+                    "LT" => Some(RetClass::Long),
+                    _ => {
+                        warn!("categorize_index_files  no idea about RC for {}", p);
+                        None
+                    }
+                };
+                if let Some(rc) = rc {
+                    let f = IndexFile {
+                        path: p.into(),
+                        cat: IndexCat::Machine { rc },
+                    };
+                    ret.push(f);
+                }
+            }
+            None => match re_b.captures(p) {
+                Some(cap) => {
+                    let name = cap.get(1).unwrap().as_str();
+                    let rc = cap.get(3).unwrap().as_str();
+                    let rc = match rc {
+                        "SH" => Some(RetClass::Short),
+                        "LO" => Some(RetClass::Long),
+                        _ => {
+                            warn!("categorize_index_files  no idea about RC for {}", p);
+                            None
+                        }
+                    };
+                    if let Some(rc) = rc {
+                        let f = IndexFile {
+                            path: p.into(),
+                            cat: IndexCat::Beamline { name: name.into(), rc },
+                        };
+                        ret.push(f);
+                    }
+                }
+                None => {
+                    warn!("categorize_index_files  no idea at all about {}", p);
+                }
+            },
+        }
+    }
+    let is_machine = {
+        let mut k = false;
+        for x in &ret {
+            if let IndexCat::Machine { .. } = &x.cat {
+                k = true;
+                break;
+            }
+        }
+        k
+    };
+    // TODO by default, filter post-mortem.
+    let is_beamline = !is_machine;
+    if is_beamline {
+        let mut ret: Vec<_> = ret
+            .into_iter()
+            .filter_map(|k| {
+                if let IndexCat::Machine { rc, .. } = &k.cat {
+                    let prio = match rc {
+                        &RetClass::Short => 4,
+                        &RetClass::Medium => 6,
+                        &RetClass::Long => 8,
+                        &RetClass::PostMortem => 0,
+                    };
+                    Some((k, prio))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        ret.sort_by_key(|x| x.1);
+        let ret = ret.into_iter().map(|k| k.0).collect();
+        Ok(ret)
+    } else if is_machine {
+        let mut ret: Vec<_> = ret
+            .into_iter()
+            .filter_map(|k| {
+                if let IndexCat::Machine { rc, .. } = &k.cat {
+                    let prio = match rc {
+                        &RetClass::Short => 4,
+                        &RetClass::Medium => 6,
+                        &RetClass::Long => 8,
+                        &RetClass::PostMortem => 0,
+                    };
+                    Some((k, prio))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        ret.sort_by_key(|x| x.1);
+        let ret = ret.into_iter().map(|k| k.0).collect();
+        Ok(ret)
+    } else {
+        err::todoval()
+    }
+}
+
+static INDEX_JSON: Mutex<Option<BTreeMap<String, Vec<String>>>> = Mutex::const_new(None);
+
+pub async fn index_files_index_ref<P: Into<PathBuf> + Send>(
+    key: &str,
+    index_files_index_path: P,
+    stats: &StatsChannel,
+) -> Result<Option<Vec<String>>, Error> {
+    let mut g = INDEX_JSON.lock().await;
+    match &*g {
+        Some(j) => Ok(j.get(key).map(|x| x.clone())),
+        None => {
+            let timed1 = Timed::new("slurp_index_json");
+            let index_files_index_path = index_files_index_path.into();
+            let index_files_index = {
+                let timed1 = Timed::new("slurp_index_bytes");
+                let mut index_files_index = open_read(index_files_index_path, stats).await?;
+                let mut buf = vec![0; 1024 * 1024 * 50];
+                let mut ntot = 0;
+                loop {
+                    let n = read(&mut index_files_index, &mut buf[ntot..], stats).await?;
+                    if n == 0 {
+                        break;
+                    }
+                    ntot += n;
+                }
+                buf.truncate(ntot);
+                drop(timed1);
+                serde_json::from_slice::<BTreeMap<String, Vec<String>>>(&buf)?
+            };
+            drop(timed1);
+            let ret = index_files_index.get(key).map(|x| x.clone());
+            *g = Some(index_files_index);
+            Ok(ret)
+        }
+    }
+}
+
+pub async fn index_file_path_list(
+    channel: Channel,
+    index_files_index_path: PathBuf,
+    stats: &StatsChannel,
+) -> Result<Vec<PathBuf>, Error> {
+    let timed1 = Timed::new("categorize index files");
+    let index_paths = index_files_index_ref(channel.name(), &index_files_index_path, stats)
+        .await?
+        .ok_or(Error::with_msg_no_trace("can not find channel"))?;
+    let list = categorize_index_files(&index_paths)?;
+    info!("GOT CATEGORIZED:\n{:?}", list);
+    let ret = list.into_iter().map(|k| k.path).collect();
+    drop(timed1);
+    Ok(ret)
+}
+
 #[cfg(test)]
 mod test {
     // TODO move RangeFilter to a different crate (items?)
@@ -1118,13 +1443,15 @@ mod test {
     //use disk::{eventblobs::EventChunkerMultifile, eventchunker::EventChunkerConf};
 
     use super::search_record;
-    use crate::archeng::{open_read, read_channel, read_data_1, read_file_basics, read_index_datablockref};
-    use crate::archeng::{read_datafile_header, EPICS_EPOCH_OFFSET};
+    use crate::archeng::{
+        open_read, read_channel, read_data_1, read_datafile_header, read_file_basics, read_index_datablockref,
+        StatsChannel, EPICS_EPOCH_OFFSET,
+    };
     use err::Error;
-    use netpod::log::*;
     use netpod::timeunits::*;
     use netpod::FilePos;
     use netpod::Nanos;
+    use netpod::{log::*, NanoRange};
     use std::path::PathBuf;
 
     /*
@@ -1135,8 +1462,9 @@ mod test {
     #[test]
     fn read_file_basic_info() -> Result<(), Error> {
         let fut = async {
-            let mut f1 = open_read(CHN_0_MASTER_INDEX.into()).await?;
-            let res = read_file_basics(&mut f1).await?;
+            let stats = &StatsChannel::dummy();
+            let mut f1 = open_read(CHN_0_MASTER_INDEX.into(), stats).await?;
+            let res = read_file_basics(&mut f1, stats).await?;
             assert_eq!(res.version, 3);
             assert_eq!(res.name_hash_anchor_beg, 88);
             assert_eq!(res.name_hash_anchor_len, 1009);
@@ -1155,9 +1483,10 @@ mod test {
     #[test]
     fn read_for_channel() -> Result<(), Error> {
         let fut = async {
-            let mut index_file = open_read(CHN_0_MASTER_INDEX.into()).await?;
+            let stats = &StatsChannel::dummy();
+            let mut index_file = open_read(CHN_0_MASTER_INDEX.into(), stats).await?;
             let channel_name = "X05DA-FE-WI1:TC1";
-            let res = read_channel(&mut index_file, channel_name).await?;
+            let res = read_channel(&mut index_file, channel_name, stats).await?;
             assert_eq!(res.is_some(), true);
             let res = res.unwrap();
             assert_eq!(res.channel_name, channel_name);
@@ -1177,14 +1506,15 @@ mod test {
         RTreeNodeRecord { ts1: 970417979635219603, ts2: 970429859806669835, child_or_id: 185015 },
         */
         let fut = async {
+            let stats = &StatsChannel::dummy();
             let index_path: PathBuf = CHN_0_MASTER_INDEX.into();
-            let mut index_file = open_read(index_path.clone()).await?;
+            let mut index_file = open_read(index_path.clone(), stats).await?;
             let channel_name = "X05DA-FE-WI1:TC1";
             const T0: u64 = 970351442331056677 + 1 + EPICS_EPOCH_OFFSET;
             let beg = Nanos { ns: T0 };
-            let res = read_channel(&mut index_file, channel_name).await?;
+            let res = read_channel(&mut index_file, channel_name, stats).await?;
             let cib = res.unwrap();
-            let (res, _stats) = search_record(&mut index_file, cib.rtree_m, cib.rtree_start_pos, beg).await?;
+            let (res, _stats) = search_record(&mut index_file, cib.rtree_m, cib.rtree_start_pos, beg, stats).await?;
             assert_eq!(res.is_some(), true);
             let res = res.unwrap();
             assert_eq!(res.node.is_leaf, true);
@@ -1195,7 +1525,7 @@ mod test {
             assert_eq!(rec.ts2.ns, 970417919634086480 + EPICS_EPOCH_OFFSET);
             assert_eq!(rec.child_or_id, 185074);
             let pos = FilePos { pos: rec.child_or_id };
-            let datablock = read_index_datablockref(&mut index_file, pos).await?;
+            let datablock = read_index_datablockref(&mut index_file, pos, stats).await?;
             assert_eq!(datablock.data_header_pos, 52787);
             assert_eq!(datablock.fname, "20201001/20201001");
             // The actual datafile for that time was not retained any longer.
@@ -1208,14 +1538,19 @@ mod test {
     #[test]
     fn search_record_data() -> Result<(), Error> {
         let fut = async {
+            let stats = &StatsChannel::dummy();
             let index_path: PathBuf = CHN_0_MASTER_INDEX.into();
-            let mut index_file = open_read(index_path.clone()).await?;
+            let mut index_file = open_read(index_path.clone(), stats).await?;
             let channel_name = "X05DA-FE-WI1:TC1";
             const T0: u64 = 1002000000 * SEC + EPICS_EPOCH_OFFSET;
             let beg = Nanos { ns: T0 };
-            let res = read_channel(&mut index_file, channel_name).await?;
+            let range = NanoRange {
+                beg: beg.ns,
+                end: beg.ns + 20 * SEC,
+            };
+            let res = read_channel(&mut index_file, channel_name, stats).await?;
             let cib = res.unwrap();
-            let (res, _stats) = search_record(&mut index_file, cib.rtree_m, cib.rtree_start_pos, beg).await?;
+            let (res, _stats) = search_record(&mut index_file, cib.rtree_m, cib.rtree_start_pos, beg, stats).await?;
             assert_eq!(res.is_some(), true);
             let res = res.unwrap();
             assert_eq!(res.node.is_leaf, true);
@@ -1226,13 +1561,13 @@ mod test {
             assert_eq!(rec.ts2.ns, 1002009299596362122 + EPICS_EPOCH_OFFSET);
             assert_eq!(rec.child_or_id, 2501903);
             let pos = FilePos { pos: rec.child_or_id };
-            let datablock = read_index_datablockref(&mut index_file, pos).await?;
+            let datablock = read_index_datablockref(&mut index_file, pos, stats).await?;
             assert_eq!(datablock.data_header_pos().0, 9311367);
             assert_eq!(datablock.file_name(), "20211001/20211001");
             let data_path = index_path.parent().unwrap().join(datablock.file_name());
-            let mut data_file = open_read(data_path).await?;
-            let datafile_header = read_datafile_header(&mut data_file, datablock.data_header_pos()).await?;
-            let events = read_data_1(&mut data_file, &datafile_header).await?;
+            let mut data_file = open_read(data_path, stats).await?;
+            let datafile_header = read_datafile_header(&mut data_file, datablock.data_header_pos(), stats).await?;
+            let events = read_data_1(&mut data_file, &datafile_header, range.clone(), false, stats).await?;
             info!("read events: {:?}", events);
             Ok(())
         };
@@ -1243,13 +1578,14 @@ mod test {
     #[test]
     fn search_record_at_beg() -> Result<(), Error> {
         let fut = async {
-            let mut index_file = open_read(CHN_0_MASTER_INDEX.into()).await?;
+            let stats = &StatsChannel::dummy();
+            let mut index_file = open_read(CHN_0_MASTER_INDEX.into(), stats).await?;
             let channel_name = "X05DA-FE-WI1:TC1";
             const T0: u64 = 965081099942616289 + EPICS_EPOCH_OFFSET;
             let beg = Nanos { ns: T0 };
-            let res = read_channel(&mut index_file, channel_name).await?;
+            let res = read_channel(&mut index_file, channel_name, stats).await?;
             let cib = res.unwrap();
-            let (res, _stats) = search_record(&mut index_file, cib.rtree_m, cib.rtree_start_pos, beg).await?;
+            let (res, _stats) = search_record(&mut index_file, cib.rtree_m, cib.rtree_start_pos, beg, stats).await?;
             assert_eq!(res.is_some(), true);
             let res = res.unwrap();
             assert_eq!(res.node.is_leaf, true);
@@ -1264,13 +1600,14 @@ mod test {
     #[test]
     fn search_record_at_end() -> Result<(), Error> {
         let fut = async {
-            let mut index_file = open_read(CHN_0_MASTER_INDEX.into()).await?;
+            let stats = &StatsChannel::dummy();
+            let mut index_file = open_read(CHN_0_MASTER_INDEX.into(), stats).await?;
             let channel_name = "X05DA-FE-WI1:TC1";
             const T0: u64 = 1002441959876114632 - 1 + EPICS_EPOCH_OFFSET;
             let beg = Nanos { ns: T0 };
-            let res = read_channel(&mut index_file, channel_name).await?;
+            let res = read_channel(&mut index_file, channel_name, stats).await?;
             let cib = res.unwrap();
-            let (res, _stats) = search_record(&mut index_file, cib.rtree_m, cib.rtree_start_pos, beg).await?;
+            let (res, _stats) = search_record(&mut index_file, cib.rtree_m, cib.rtree_start_pos, beg, stats).await?;
             assert_eq!(res.is_some(), true);
             let res = res.unwrap();
             assert_eq!(res.node.pos.pos, 1861178);
@@ -1284,13 +1621,14 @@ mod test {
     #[test]
     fn search_record_beyond_end() -> Result<(), Error> {
         let fut = async {
-            let mut index_file = open_read(CHN_0_MASTER_INDEX.into()).await?;
+            let stats = &StatsChannel::dummy();
+            let mut index_file = open_read(CHN_0_MASTER_INDEX.into(), stats).await?;
             let channel_name = "X05DA-FE-WI1:TC1";
             const T0: u64 = 1002441959876114632 - 0 + EPICS_EPOCH_OFFSET;
             let beg = Nanos { ns: T0 };
-            let res = read_channel(&mut index_file, channel_name).await?;
+            let res = read_channel(&mut index_file, channel_name, stats).await?;
             let cib = res.unwrap();
-            let (res, _stats) = search_record(&mut index_file, cib.rtree_m, cib.rtree_start_pos, beg).await?;
+            let (res, _stats) = search_record(&mut index_file, cib.rtree_m, cib.rtree_start_pos, beg, stats).await?;
             assert_eq!(res.is_none(), true);
             Ok(())
         };

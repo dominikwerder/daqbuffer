@@ -231,6 +231,9 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin, _stderr: Stderr) -> Result<
                 fout = next_file(&dir)?;
             };
         }
+        if n1 == 0 {
+            break Ok(());
+        }
     }
 }
 

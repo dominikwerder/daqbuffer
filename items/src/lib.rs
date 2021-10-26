@@ -4,8 +4,8 @@ use bytes::BytesMut;
 use chrono::{TimeZone, Utc};
 use err::Error;
 use netpod::timeunits::{MS, SEC};
-use netpod::RangeFilterStats;
 use netpod::{log::Level, AggKind, EventDataReadStats, EventQueryJsonStringFrame, NanoRange, Shape};
+use netpod::{DiskStats, RangeFilterStats};
 use serde::de::{self, DeserializeOwned, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
 use std::fmt;
@@ -52,6 +52,7 @@ pub enum RangeCompletableItem<T> {
 pub enum StatsItem {
     EventDataReadStats(EventDataReadStats),
     RangeFilterStats(RangeFilterStats),
+    DiskStats(DiskStats),
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -436,4 +437,24 @@ pub trait TimeBinnableTypeAggregator: Send {
     fn range(&self) -> &NanoRange;
     fn ingest(&mut self, item: &Self::Input);
     fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output;
+}
+
+pub trait TimestampInspectable: WithTimestamps + WithLen {}
+
+impl<T> TimestampInspectable for T where T: WithTimestamps + WithLen {}
+
+pub fn inspect_timestamps(events: &dyn TimestampInspectable, range: NanoRange) -> String {
+    use fmt::Write;
+    let rd = range.delta();
+    let mut buf = String::new();
+    let n = events.len();
+    for i in 0..n {
+        if i < 3 || i > (n - 4) {
+            let ts = events.ts(i);
+            let z = ts - range.beg;
+            let z = z as f64 / rd as f64 * 2.0 - 1.0;
+            write!(&mut buf, "i  {:3}  tt {:6.3}\n", i, z).unwrap();
+        }
+    }
+    buf
 }

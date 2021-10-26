@@ -1,17 +1,21 @@
 use crate::archeng::{
-    open_read, read_channel, read_data_1, read_datafile_header, read_index_datablockref, search_record,
+    index_file_path_list, open_read, read_channel, read_data_1, read_datafile_header, read_index_datablockref,
+    search_record, search_record_expand, StatsChannel,
 };
-use crate::EventsItem;
+use crate::eventsitem::EventsItem;
+use crate::storagemerge::StorageMerge;
+use crate::timed::Timed;
 use async_channel::{Receiver, Sender};
 use err::Error;
 use futures_core::{Future, Stream};
 use futures_util::{FutureExt, StreamExt};
-use items::{RangeCompletableItem, Sitemty, StreamItem, WithLen};
+use items::{inspect_timestamps, RangeCompletableItem, Sitemty, StreamItem, WithLen};
 use netpod::{log::*, DataHeaderPos, FilePos, Nanos};
 use netpod::{Channel, NanoRange};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::task::{Context, Poll};
 
 type FR = (Option<Sitemty<EventsItem>>, Box<dyn FretCb>);
@@ -20,77 +24,133 @@ trait FretCb {
     fn call(&mut self, stream: &mut Pin<&mut DatablockStream>);
 }
 
-async fn datablock_stream(
-    range: NanoRange,
-    channel: Channel,
-    base_dirs: VecDeque<PathBuf>,
-    expand: bool,
-    tx: Sender<Sitemty<EventsItem>>,
-) {
-    match datablock_stream_inner(range, channel, base_dirs, expand, tx.clone()).await {
-        Ok(_) => {}
-        Err(e) => match tx.send(Err(e)).await {
-            Ok(_) => {}
-            Err(e) => {
-                if false {
-                    error!("can not send. error: {}", e);
-                }
-            }
-        },
+static CHANNEL_SEND_ERROR: AtomicUsize = AtomicUsize::new(0);
+
+fn channel_send_error() {
+    let c = CHANNEL_SEND_ERROR.fetch_add(1, Ordering::AcqRel);
+    if c < 10 {
+        error!("CHANNEL_SEND_ERROR {}", c);
     }
 }
 
-async fn datablock_stream_inner(
+async fn datablock_stream(
     range: NanoRange,
     channel: Channel,
-    base_dirs: VecDeque<PathBuf>,
+    index_files_index_path: PathBuf,
+    _base_dirs: VecDeque<PathBuf>,
     expand: bool,
     tx: Sender<Sitemty<EventsItem>>,
+    max_events: u64,
+) {
+    match datablock_stream_inner(range, channel, expand, index_files_index_path, tx.clone(), max_events).await {
+        Ok(_) => {}
+        Err(e) => {
+            if let Err(_) = tx.send(Err(e)).await {
+                channel_send_error();
+            }
+        }
+    }
+}
+
+async fn datablock_stream_inner_single_index(
+    range: NanoRange,
+    channel: Channel,
+    index_path: PathBuf,
+    expand: bool,
+    tx: Sender<Sitemty<EventsItem>>,
+    max_events: u64,
 ) -> Result<(), Error> {
-    let basename = channel
-        .name()
-        .split("-")
-        .next()
-        .ok_or(Error::with_msg_no_trace("can not find base for channel"))?;
-    for base in base_dirs {
-        debug!(
-            "search for {:?} with basename: {}  in path {:?}",
-            channel, basename, base
-        );
-        // TODO need to try both:
-        let index_path = base.join(format!("archive_{}_SH", basename)).join("index");
-        let res = open_read(index_path.clone()).await;
-        debug!("tried to open index file: {:?}", res);
-        if let Ok(mut index_file) = res {
-            if let Some(basics) = read_channel(&mut index_file, channel.name()).await? {
+    let mut events_tot = 0;
+    let stats = &StatsChannel::new(tx.clone());
+    debug!("try to open index file: {:?}", index_path);
+    let res = open_read(index_path.clone(), stats).await;
+    debug!("opened index file: {:?}  {:?}", index_path, res);
+    match res {
+        Ok(mut index_file) => {
+            if let Some(basics) = read_channel(&mut index_file, channel.name(), stats).await? {
                 let beg = Nanos { ns: range.beg };
+                let mut expand_beg = expand;
+                let mut index_ts_max = 0;
                 let mut search_ts = beg.clone();
                 let mut last_data_file_path = PathBuf::new();
                 let mut last_data_file_pos = DataHeaderPos(0);
                 loop {
-                    // TODO for expand mode, this needs another search function.
-                    let (res, _stats) =
-                        search_record(&mut index_file, basics.rtree_m, basics.rtree_start_pos, search_ts).await?;
+                    let timed_search = Timed::new("search next record");
+                    let (res, _stats) = if expand_beg {
+                        // TODO even though this is an entry in the index, it may reference
+                        // non-existent blocks.
+                        // Therefore, lower expand_beg flag at some later stage only if we've really
+                        // found at least one event in the block.
+                        expand_beg = false;
+                        search_record_expand(
+                            &mut index_file,
+                            basics.rtree_m,
+                            basics.rtree_start_pos,
+                            search_ts,
+                            stats,
+                        )
+                        .await?
+                    } else {
+                        search_record(
+                            &mut index_file,
+                            basics.rtree_m,
+                            basics.rtree_start_pos,
+                            search_ts,
+                            stats,
+                        )
+                        .await?
+                    };
+                    drop(timed_search);
                     if let Some(nrec) = res {
                         let rec = nrec.rec();
                         trace!("found record: {:?}", rec);
                         let pos = FilePos { pos: rec.child_or_id };
                         // TODO rename Datablock?  → IndexNodeDatablock
                         trace!("READ Datablock FROM {:?}\n", pos);
-                        let datablock = read_index_datablockref(&mut index_file, pos).await?;
+                        let datablock = read_index_datablockref(&mut index_file, pos, stats).await?;
                         trace!("Datablock: {:?}\n", datablock);
                         let data_path = index_path.parent().unwrap().join(datablock.file_name());
                         if data_path == last_data_file_path && datablock.data_header_pos() == last_data_file_pos {
                             debug!("skipping because it is the same block");
                         } else {
                             trace!("try to open data_path: {:?}", data_path);
-                            match open_read(data_path.clone()).await {
+                            match open_read(data_path.clone(), stats).await {
                                 Ok(mut data_file) => {
                                     let datafile_header =
-                                        read_datafile_header(&mut data_file, datablock.data_header_pos()).await?;
+                                        read_datafile_header(&mut data_file, datablock.data_header_pos(), stats)
+                                            .await?;
                                     trace!("datafile_header --------------  HEADER\n{:?}", datafile_header);
-                                    let events = read_data_1(&mut data_file, &datafile_header).await?;
+                                    let events =
+                                        read_data_1(&mut data_file, &datafile_header, range.clone(), expand_beg, stats)
+                                            .await?;
+                                    if false {
+                                        let msg = inspect_timestamps(&events, range.clone());
+                                        trace!("datablock_stream_inner_single_index  read_data_1\n{}", msg);
+                                    }
+                                    {
+                                        let mut ts_max = 0;
+                                        use items::WithTimestamps;
+                                        for i in 0..events.len() {
+                                            let ts = events.ts(i);
+                                            if ts < ts_max {
+                                                error!("unordered event within block at ts {}", ts);
+                                                break;
+                                            } else {
+                                                ts_max = ts;
+                                            }
+                                            if ts < index_ts_max {
+                                                error!(
+                                                    "unordered event in index branch  ts {}  index_ts_max {}",
+                                                    ts, index_ts_max
+                                                );
+                                                break;
+                                            } else {
+                                                index_ts_max = ts;
+                                            }
+                                        }
+                                    }
                                     trace!("Was able to read data: {} events", events.len());
+                                    events_tot += events.len() as u64;
                                     let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(events)));
                                     tx.send(item).await?;
                                 }
@@ -111,12 +171,59 @@ async fn datablock_stream_inner(
                         warn!("nothing found, break");
                         break;
                     }
+                    if events_tot >= max_events {
+                        warn!("reached events_tot {}  max_events {}", events_tot, max_events);
+                        break;
+                    }
                 }
+            } else {
+                warn!("can not read channel basics from {:?}", index_path);
             }
-        } else {
+            Ok(())
+        }
+        Err(e) => {
             warn!("can not find index file at {:?}", index_path);
+            Err(Error::with_msg_no_trace(format!("can not open index file: {}", e)))
         }
     }
+}
+
+async fn datablock_stream_inner(
+    range: NanoRange,
+    channel: Channel,
+    expand: bool,
+    index_files_index_path: PathBuf,
+    tx: Sender<Sitemty<EventsItem>>,
+    max_events: u64,
+) -> Result<(), Error> {
+    let stats = &StatsChannel::new(tx.clone());
+    let index_file_path_list = index_file_path_list(channel.clone(), index_files_index_path, stats).await?;
+    let mut inner_rxs = vec![];
+    let mut names = vec![];
+    for index_path in index_file_path_list {
+        let (tx, rx) = async_channel::bounded(2);
+        let task = datablock_stream_inner_single_index(
+            range.clone(),
+            channel.clone(),
+            (&index_path).into(),
+            expand,
+            tx,
+            max_events,
+        );
+        taskrun::spawn(task);
+        inner_rxs.push(Box::pin(rx) as Pin<Box<dyn Stream<Item = Sitemty<EventsItem>> + Send>>);
+        names.push(index_path.to_str().unwrap().into());
+    }
+    let task = async move {
+        let mut inp = StorageMerge::new(inner_rxs, names, range.clone());
+        while let Some(k) = inp.next().await {
+            if let Err(_) = tx.send(k).await {
+                channel_send_error();
+                break;
+            }
+        }
+    };
+    taskrun::spawn(task);
     Ok(())
 }
 
@@ -132,14 +239,22 @@ pub struct DatablockStream {
 }
 
 impl DatablockStream {
-    pub fn for_channel_range(range: NanoRange, channel: Channel, base_dirs: VecDeque<PathBuf>, expand: bool) -> Self {
+    pub fn for_channel_range(
+        range: NanoRange,
+        channel: Channel,
+        base_dirs: VecDeque<PathBuf>,
+        expand: bool,
+        max_events: u64,
+    ) -> Self {
         let (tx, rx) = async_channel::bounded(1);
         taskrun::spawn(datablock_stream(
             range.clone(),
             channel.clone(),
+            "/index/c5mapped".into(),
             base_dirs.clone(),
             expand.clone(),
             tx,
+            max_events,
         ));
         let ret = Self {
             range,
@@ -151,6 +266,10 @@ impl DatablockStream {
             done: false,
             complete: false,
         };
+        // TODO keeping for compatibility at the moment:
+        let _ = &ret.range;
+        let _ = &ret.channel;
+        let _ = &ret.expand;
         ret
     }
 
@@ -169,7 +288,7 @@ impl DatablockStream {
         (None, Box::new(Cb {}))
     }
 
-    async fn start_with_base_dir(path: PathBuf) -> FR {
+    async fn start_with_base_dir(_path: PathBuf) -> FR {
         warn!("start_with_base_dir");
         struct Cb {}
         impl FretCb for Cb {
@@ -199,9 +318,7 @@ impl Stream for DatablockStream {
             } else if self.done {
                 self.complete = true;
                 Ready(None)
-            } else if true {
-                self.rx.poll_next_unpin(cx)
-            } else {
+            } else if false {
                 match self.fut.poll_unpin(cx) {
                     Ready((k, mut fr)) => {
                         fr.call(&mut self);
@@ -212,6 +329,8 @@ impl Stream for DatablockStream {
                     }
                     Pending => Pending,
                 }
+            } else {
+                self.rx.poll_next_unpin(cx)
             };
         }
     }
@@ -219,9 +338,8 @@ impl Stream for DatablockStream {
 
 #[cfg(test)]
 mod test {
-    use crate::EventsItem;
-
     use super::DatablockStream;
+    use crate::eventsitem::EventsItem;
     use chrono::{DateTime, Utc};
     use err::Error;
     use futures_util::StreamExt;
@@ -258,7 +376,7 @@ mod test {
                 .map(PathBuf::from)
                 .collect();
             let expand = false;
-            let datablocks = DatablockStream::for_channel_range(range.clone(), channel, base_dirs, expand);
+            let datablocks = DatablockStream::for_channel_range(range.clone(), channel, base_dirs, expand, u64::MAX);
             let filtered = RangeFilter::<_, EventsItem>::new(datablocks, range, expand);
             let mut stream = filtered;
             while let Some(block) = stream.next().await {

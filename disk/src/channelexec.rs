@@ -332,6 +332,7 @@ where
     let mut collector = <T as Collectable>::new_collector(bin_count_exp);
     let mut i1 = 0;
     let mut stream = stream;
+    let mut total_duration = Duration::ZERO;
     loop {
         let item = if i1 == 0 {
             stream.next().await
@@ -357,11 +358,24 @@ where
                                 info!("collect_plain_events_json log {:?}", item);
                             }
                         }
-                        StreamItem::Stats(item) => {
-                            if do_log {
-                                info!("collect_plain_events_json stats {:?}", item);
-                            }
-                        }
+                        StreamItem::Stats(item) => match item {
+                            items::StatsItem::EventDataReadStats(_) => {}
+                            items::StatsItem::RangeFilterStats(_) => {}
+                            items::StatsItem::DiskStats(item) => match item {
+                                netpod::DiskStats::OpenStats(k) => {
+                                    total_duration += k.duration;
+                                }
+                                netpod::DiskStats::SeekStats(k) => {
+                                    total_duration += k.duration;
+                                }
+                                netpod::DiskStats::ReadStats(k) => {
+                                    total_duration += k.duration;
+                                }
+                                netpod::DiskStats::ReadExactStats(k) => {
+                                    total_duration += k.duration;
+                                }
+                            },
+                        },
                         StreamItem::DataItem(item) => match item {
                             RangeCompletableItem::RangeComplete => {
                                 collector.set_range_complete();
@@ -382,6 +396,7 @@ where
         }
     }
     let ret = serde_json::to_value(collector.result()?)?;
+    info!("Total duration: {:?}", total_duration);
     Ok(ret)
 }
 

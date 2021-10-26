@@ -335,8 +335,6 @@ pub async fn update_db_with_channel_names(
     let tx2 = tx.clone();
     let db_config = db_config.clone();
     let block1 = async move {
-        //return Err(Error::with_msg("some test error1"));
-        //tx.send(Err(Error::with_msg("some test error2"))).await?;
         let dbc = crate::create_connection(&db_config).await?;
         let node_disk_ident = get_node_disk_ident(&node_config, &dbc).await?;
         let c1 = Arc::new(RwLock::new(0u32));

@@ -157,6 +157,9 @@ where
                 Ready(Some(Ok(StreamItem::Log(item))))
             } else if let Some(item) = self.stats_items.pop_front() {
                 Ready(Some(Ok(StreamItem::Stats(item))))
+            } else if self.range_complete_observed_all_emitted {
+                self.completed = true;
+                Ready(None)
             } else if self.data_emit_complete {
                 if self.range_complete_observed_all {
                     if self.range_complete_observed_all_emitted {
@@ -213,10 +216,16 @@ where
                                 continue 'outer;
                             }
                         } else {
-                            assert!(lowest_ts >= self.ts_last_emit);
+                            // TODO unordered cases
+                            if lowest_ts < self.ts_last_emit {
+                                self.errored = true;
+                                let msg = format!("unordered event at  lowest_ts {}", lowest_ts);
+                                return Ready(Some(Err(Error::with_msg(msg))));
+                            } else {
+                                self.ts_last_emit = self.ts_last_emit.max(lowest_ts);
+                            }
                             {
                                 let batch = self.batch.take();
-                                self.ts_last_emit = lowest_ts;
                                 let rix = self.ixs[lowest_ix];
                                 match &self.current[lowest_ix] {
                                     MergedCurVal::Val(val) => {

@@ -286,6 +286,10 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         h.handle(req, &node_config).await
     } else if let Some(h) = channelarchiver::ListChannelsHttpFunction::should_handle(path) {
         h.handle(req, &node_config).await
+    } else if let Some(h) = channelarchiver::ScanIndexFiles::should_handle(path) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = channelarchiver::ScanChannels::should_handle(path) {
+        h.handle(req, &node_config).await
     } else if path.starts_with("/api/1/requestStatus/") {
         info!("{}", path);
         Ok(response(StatusCode::OK).body(Body::from("{}"))?)

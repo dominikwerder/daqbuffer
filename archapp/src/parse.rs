@@ -1,8 +1,10 @@
 pub mod multi;
 
 use crate::events::parse_data_filename;
+use crate::eventsitem::EventsItem;
 use crate::generated::EPICSEvent::PayloadType;
-use crate::{unescape_archapp_msg, EventsItem, PlainEvents, ScalarPlainEvents, WavePlainEvents};
+use crate::plainevents::{PlainEvents, ScalarPlainEvents, WavePlainEvents};
+use crate::unescape_archapp_msg;
 use archapp_xc::*;
 use async_channel::{bounded, Receiver};
 use chrono::{TimeZone, Utc};

@@ -1,9 +1,10 @@
+use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::StatsItem;
 use items::{Appendable, Clearable, PushableIndex, RangeCompletableItem, Sitemty, StreamItem, WithTimestamps};
-use netpod::NanoRange;
 use netpod::{log::*, RangeFilterStats};
+use netpod::{NanoRange, Nanos};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -12,6 +13,7 @@ pub struct RangeFilter<S, ITY> {
     range: NanoRange,
     range_str: String,
     expand: bool,
+    ts_max: u64,
     stats: RangeFilterStats,
     prerange: Option<ITY>,
     have_pre: bool,
@@ -34,6 +36,7 @@ where
             range_str: format!("{:?}", range),
             range,
             expand,
+            ts_max: 0,
             stats: RangeFilterStats::new(),
             prerange: None,
             have_pre: false,
@@ -79,6 +82,19 @@ where
                             let mut ret = item.empty_like_self();
                             for i1 in 0..item.len() {
                                 let ts = item.ts(i1);
+                                if ts < self.ts_max {
+                                    self.done = true;
+                                    let msg = format!(
+                                        "unordered event  i1 {} / {}  ts {:?}  ts_max {:?}",
+                                        i1,
+                                        item.len(),
+                                        Nanos::from_ns(ts),
+                                        Nanos::from_ns(self.ts_max)
+                                    );
+                                    error!("{}", msg);
+                                    return Ready(Some(Err(Error::with_msg(msg))));
+                                }
+                                self.ts_max = ts;
                                 if ts < self.range.beg {
                                     if self.expand {
                                         let mut prerange = if let Some(prerange) = self.prerange.take() {
