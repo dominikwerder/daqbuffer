@@ -1,17 +1,19 @@
+use crate::archeng::{open_read, read, StatsChannel};
+use crate::timed::Timed;
 use crate::wrap_task;
 use async_channel::Receiver;
 use err::Error;
-use futures_core::Future;
-use futures_core::Stream;
+use futures_core::{Future, Stream};
 use futures_util::stream::unfold;
-use futures_util::FutureExt;
 use netpod::log::*;
-use netpod::ChannelArchiver;
-use netpod::Database;
+use netpod::{Channel, ChannelArchiver, Database};
+use regex::Regex;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::fs::read_dir;
+use tokio::sync::Mutex;
 use tokio_postgres::Client as PgClient;
 
 pub fn list_index_files(node: &ChannelArchiver) -> Receiver<Result<PathBuf, Error>> {
@@ -174,8 +176,36 @@ impl ScanIndexFiles {
                 info!("collected {} level 1 paths", paths.len());
                 let dbc = database_connect(&self.conf.database).await?;
                 for p in paths {
-                    let sql = "insert into indexfiles (path) values ($1) on conflict do nothing";
-                    dbc.query(sql, &[&p.to_string_lossy()]).await?;
+                    let ps = p.to_string_lossy();
+                    let rows = dbc
+                        .query("select rowid from indexfiles where path = $1", &[&ps])
+                        .await?;
+                    let rid: i64 = if rows.len() == 0 {
+                        let rows = dbc
+                            .query(
+                                "insert into indexfiles (path) values ($1) on conflict do nothing returning rowid",
+                                &[&ps],
+                            )
+                            .await?;
+                        if rows.len() == 0 {
+                            error!("insert failed, maybe concurrent insert?");
+                            // TODO try this channel again? or the other process handled it?
+                            err::todoval()
+                        } else if rows.len() == 1 {
+                            let rid = rows[0].try_get(0)?;
+                            info!("insert done: {}", rid);
+                            rid
+                        } else {
+                            return Err(Error::with_msg("not unique"));
+                        }
+                    } else if rows.len() == 1 {
+                        let rid = rows[0].try_get(0)?;
+                        info!("select done: {}", rid);
+                        rid
+                    } else {
+                        return Err(Error::with_msg("not unique"));
+                    };
+                    let _ = rid;
                 }
                 self.steps = ScanIndexFilesSteps::Done;
                 let item = format!("level 1 done");
@@ -256,6 +286,7 @@ pub fn unfold2(_conf: ChannelArchiver) -> () {
 enum ScanChannelsSteps {
     Start,
     SelectIndexFile,
+    ReadChannels(Vec<String>),
     Done,
 }
 
@@ -288,8 +319,66 @@ impl ScanChannels {
                 for row in rows {
                     paths.push(row.get::<_, String>(0));
                 }
+                let item = format!("SelectIndexFile {:?}", paths);
+                self.steps = ReadChannels(paths);
+                Ok(Some((item, self)))
+            }
+            ReadChannels(mut paths) => {
+                // TODO stats
+                let stats = &StatsChannel::dummy();
+                let dbc = database_connect(&self.conf.database).await?;
+                if let Some(path) = paths.pop() {
+                    let rows = dbc
+                        .query("select rowid from indexfiles where path = $1", &[&path])
+                        .await?;
+                    if rows.len() == 1 {
+                        let indexfile_rid: i64 = rows[0].try_get(0)?;
+                        let mut basics = super::indextree::IndexFileBasics::from_path(path, stats).await?;
+                        let entries = basics.all_channel_entries(stats).await?;
+                        for entry in entries {
+                            let rows = dbc
+                                .query("select rowid from channels where name = $1", &[&entry.channel_name()])
+                                .await?;
+                            let rid: i64 = if rows.len() == 0 {
+                                let rows = dbc
+                                .query(
+                                    "insert into channels (name) values ($1) on conflict do nothing returning rowid",
+                                    &[&entry.channel_name()],
+                                )
+                                .await?;
+                                if rows.len() == 0 {
+                                    error!("insert failed, maybe concurrent insert?");
+                                    // TODO try this channel again? or the other process handled it?
+                                    err::todoval()
+                                } else if rows.len() == 1 {
+                                    let rid = rows[0].try_get(0)?;
+                                    info!("insert done: {}", rid);
+                                    rid
+                                } else {
+                                    return Err(Error::with_msg("not unique"));
+                                }
+                            } else if rows.len() == 1 {
+                                let rid = rows[0].try_get(0)?;
+                                info!("select done: {}", rid);
+                                rid
+                            } else {
+                                return Err(Error::with_msg("not unique"));
+                            };
+                            dbc.query(
+                                "insert into channel_index_map (channel, index) values ($1, $2) on conflict do nothing",
+                                &[&rid, &indexfile_rid],
+                            )
+                            .await?;
+                        }
+                        dbc.query(
+                            "update indexfiles set ts_last_channel_search = now() where rowid = $1",
+                            &[&indexfile_rid],
+                        )
+                        .await?;
+                    }
+                }
                 self.steps = Done;
-                Ok(Some((format!("SelectIndexFile {:?}", paths), self)))
+                Ok(Some((format!("ReadChannels"), self)))
             }
             Done => Ok(None),
         }
@@ -309,4 +398,187 @@ impl UnfoldExec for ScanChannels {
 
 pub fn scan_channels(conf: ChannelArchiver) -> impl Stream<Item = Result<String, Error>> {
     unfold_stream(ScanChannels::new(conf.clone()))
+}
+
+#[derive(Debug)]
+enum RetClass {
+    Long,
+    Medium,
+    Short,
+    #[allow(unused)]
+    PostMortem,
+}
+
+#[derive(Debug)]
+enum IndexCat {
+    Machine { rc: RetClass },
+    Beamline { rc: RetClass, name: String },
+}
+
+#[derive(Debug)]
+struct IndexFile {
+    path: PathBuf,
+    cat: IndexCat,
+}
+
+// Try to make sense of historical conventions how the epics channel archiver engines are configured.
+fn categorize_index_files(list: &Vec<String>) -> Result<Vec<IndexFile>, Error> {
+    let re_m = Regex::new(r"/archive_(ST|MT|LT)/index").unwrap();
+    let re_b = Regex::new(r"/archive_(X([0-9]+)[^_]*)_(SH|LO)/index").unwrap();
+    let mut ret = vec![];
+    for p in list {
+        match re_m.captures(p) {
+            Some(cap) => {
+                let rc = cap.get(1).unwrap().as_str();
+                let rc = match rc {
+                    "ST" => Some(RetClass::Short),
+                    "MT" => Some(RetClass::Medium),
+                    "LT" => Some(RetClass::Long),
+                    _ => {
+                        warn!("categorize_index_files  no idea about RC for {}", p);
+                        None
+                    }
+                };
+                if let Some(rc) = rc {
+                    let f = IndexFile {
+                        path: p.into(),
+                        cat: IndexCat::Machine { rc },
+                    };
+                    ret.push(f);
+                }
+            }
+            None => match re_b.captures(p) {
+                Some(cap) => {
+                    let name = cap.get(1).unwrap().as_str();
+                    let rc = cap.get(3).unwrap().as_str();
+                    let rc = match rc {
+                        "SH" => Some(RetClass::Short),
+                        "LO" => Some(RetClass::Long),
+                        _ => {
+                            warn!("categorize_index_files  no idea about RC for {}", p);
+                            None
+                        }
+                    };
+                    if let Some(rc) = rc {
+                        let f = IndexFile {
+                            path: p.into(),
+                            cat: IndexCat::Beamline { name: name.into(), rc },
+                        };
+                        ret.push(f);
+                    }
+                }
+                None => {
+                    warn!("categorize_index_files  no idea at all about {}", p);
+                }
+            },
+        }
+    }
+    let is_machine = {
+        let mut k = false;
+        for x in &ret {
+            if let IndexCat::Machine { .. } = &x.cat {
+                k = true;
+                break;
+            }
+        }
+        k
+    };
+    // TODO by default, filter post-mortem.
+    let is_beamline = !is_machine;
+    if is_beamline {
+        let mut ret: Vec<_> = ret
+            .into_iter()
+            .filter_map(|k| {
+                if let IndexCat::Machine { rc, .. } = &k.cat {
+                    let prio = match rc {
+                        &RetClass::Short => 4,
+                        &RetClass::Medium => 6,
+                        &RetClass::Long => 8,
+                        &RetClass::PostMortem => 0,
+                    };
+                    Some((k, prio))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        ret.sort_by_key(|x| x.1);
+        let ret = ret.into_iter().map(|k| k.0).collect();
+        Ok(ret)
+    } else if is_machine {
+        let mut ret: Vec<_> = ret
+            .into_iter()
+            .filter_map(|k| {
+                if let IndexCat::Machine { rc, .. } = &k.cat {
+                    let prio = match rc {
+                        &RetClass::Short => 4,
+                        &RetClass::Medium => 6,
+                        &RetClass::Long => 8,
+                        &RetClass::PostMortem => 0,
+                    };
+                    Some((k, prio))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        ret.sort_by_key(|x| x.1);
+        let ret = ret.into_iter().map(|k| k.0).collect();
+        Ok(ret)
+    } else {
+        err::todoval()
+    }
+}
+
+static INDEX_JSON: Mutex<Option<BTreeMap<String, Vec<String>>>> = Mutex::const_new(None);
+
+pub async fn index_files_index_ref<P: Into<PathBuf> + Send>(
+    key: &str,
+    index_files_index_path: P,
+    stats: &StatsChannel,
+) -> Result<Option<Vec<String>>, Error> {
+    let mut g = INDEX_JSON.lock().await;
+    match &*g {
+        Some(j) => Ok(j.get(key).map(|x| x.clone())),
+        None => {
+            let timed1 = Timed::new("slurp_index_json");
+            let index_files_index_path = index_files_index_path.into();
+            let index_files_index = {
+                let timed1 = Timed::new("slurp_index_bytes");
+                let mut index_files_index = open_read(index_files_index_path, stats).await?;
+                let mut buf = vec![0; 1024 * 1024 * 50];
+                let mut ntot = 0;
+                loop {
+                    let n = read(&mut index_files_index, &mut buf[ntot..], stats).await?;
+                    if n == 0 {
+                        break;
+                    }
+                    ntot += n;
+                }
+                buf.truncate(ntot);
+                drop(timed1);
+                serde_json::from_slice::<BTreeMap<String, Vec<String>>>(&buf)?
+            };
+            drop(timed1);
+            let ret = index_files_index.get(key).map(|x| x.clone());
+            *g = Some(index_files_index);
+            Ok(ret)
+        }
+    }
+}
+
+pub async fn index_file_path_list(
+    channel: Channel,
+    index_files_index_path: PathBuf,
+    stats: &StatsChannel,
+) -> Result<Vec<PathBuf>, Error> {
+    let timed1 = Timed::new("categorize index files");
+    let index_paths = index_files_index_ref(channel.name(), &index_files_index_path, stats)
+        .await?
+        .ok_or(Error::with_msg_no_trace("can not find channel"))?;
+    let list = categorize_index_files(&index_paths)?;
+    info!("GOT CATEGORIZED:\n{:?}", list);
+    let ret = list.into_iter().map(|k| k.path).collect();
+    drop(timed1);
+    Ok(ret)
 }

@@ -278,15 +278,6 @@ impl From<FilePos> for u64 {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct DataHeaderPos(pub u64);
-
-impl PartialEq for DataHeaderPos {
-    fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum TimeRange {
     Time { beg: DateTime<Utc>, end: DateTime<Utc> },
@@ -294,7 +285,7 @@ pub enum TimeRange {
     Nano { beg: u64, end: u64 },
 }
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct Nanos {
     pub ns: u64,
 }

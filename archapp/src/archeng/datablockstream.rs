@@ -1,7 +1,7 @@
-use crate::archeng::{
-    index_file_path_list, open_read, read_channel, read_data_1, read_datafile_header, read_index_datablockref,
-    search_record, search_record_expand, StatsChannel,
-};
+use crate::archeng::datablock::{read_data_1, read_datafile_header};
+use crate::archeng::indexfiles::index_file_path_list;
+use crate::archeng::indextree::{read_channel, read_datablockref, search_record, search_record_expand, DataheaderPos};
+use crate::archeng::{open_read, StatsChannel};
 use crate::eventsitem::EventsItem;
 use crate::storagemerge::StorageMerge;
 use crate::timed::Timed;
@@ -10,8 +10,9 @@ use err::Error;
 use futures_core::{Future, Stream};
 use futures_util::{FutureExt, StreamExt};
 use items::{inspect_timestamps, RangeCompletableItem, Sitemty, StreamItem, WithLen};
-use netpod::{log::*, DataHeaderPos, FilePos, Nanos};
+use netpod::log::*;
 use netpod::{Channel, NanoRange};
+use netpod::{FilePos, Nanos};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -63,129 +64,106 @@ async fn datablock_stream_inner_single_index(
     let mut events_tot = 0;
     let stats = &StatsChannel::new(tx.clone());
     debug!("try to open index file: {:?}", index_path);
-    let res = open_read(index_path.clone(), stats).await;
-    debug!("opened index file: {:?}  {:?}", index_path, res);
-    match res {
-        Ok(mut index_file) => {
-            if let Some(basics) = read_channel(&mut index_file, channel.name(), stats).await? {
-                let beg = Nanos { ns: range.beg };
-                let mut expand_beg = expand;
-                let mut index_ts_max = 0;
-                let mut search_ts = beg.clone();
-                let mut last_data_file_path = PathBuf::new();
-                let mut last_data_file_pos = DataHeaderPos(0);
-                loop {
-                    let timed_search = Timed::new("search next record");
-                    let (res, _stats) = if expand_beg {
-                        // TODO even though this is an entry in the index, it may reference
-                        // non-existent blocks.
-                        // Therefore, lower expand_beg flag at some later stage only if we've really
-                        // found at least one event in the block.
-                        expand_beg = false;
-                        search_record_expand(
-                            &mut index_file,
-                            basics.rtree_m,
-                            basics.rtree_start_pos,
-                            search_ts,
-                            stats,
-                        )
-                        .await?
-                    } else {
-                        search_record(
-                            &mut index_file,
-                            basics.rtree_m,
-                            basics.rtree_start_pos,
-                            search_ts,
-                            stats,
-                        )
-                        .await?
-                    };
-                    drop(timed_search);
-                    if let Some(nrec) = res {
-                        let rec = nrec.rec();
-                        trace!("found record: {:?}", rec);
-                        let pos = FilePos { pos: rec.child_or_id };
-                        // TODO rename Datablock?  → IndexNodeDatablock
-                        trace!("READ Datablock FROM {:?}\n", pos);
-                        let datablock = read_index_datablockref(&mut index_file, pos, stats).await?;
-                        trace!("Datablock: {:?}\n", datablock);
-                        let data_path = index_path.parent().unwrap().join(datablock.file_name());
-                        if data_path == last_data_file_path && datablock.data_header_pos() == last_data_file_pos {
-                            debug!("skipping because it is the same block");
-                        } else {
-                            trace!("try to open data_path: {:?}", data_path);
-                            match open_read(data_path.clone(), stats).await {
-                                Ok(mut data_file) => {
-                                    let datafile_header =
-                                        read_datafile_header(&mut data_file, datablock.data_header_pos(), stats)
-                                            .await?;
-                                    trace!("datafile_header --------------  HEADER\n{:?}", datafile_header);
-                                    let events =
-                                        read_data_1(&mut data_file, &datafile_header, range.clone(), expand_beg, stats)
-                                            .await?;
-                                    if false {
-                                        let msg = inspect_timestamps(&events, range.clone());
-                                        trace!("datablock_stream_inner_single_index  read_data_1\n{}", msg);
-                                    }
-                                    {
-                                        let mut ts_max = 0;
-                                        use items::WithTimestamps;
-                                        for i in 0..events.len() {
-                                            let ts = events.ts(i);
-                                            if ts < ts_max {
-                                                error!("unordered event within block at ts {}", ts);
-                                                break;
-                                            } else {
-                                                ts_max = ts;
-                                            }
-                                            if ts < index_ts_max {
-                                                error!(
-                                                    "unordered event in index branch  ts {}  index_ts_max {}",
-                                                    ts, index_ts_max
-                                                );
-                                                break;
-                                            } else {
-                                                index_ts_max = ts;
-                                            }
-                                        }
-                                    }
-                                    trace!("Was able to read data: {} events", events.len());
-                                    events_tot += events.len() as u64;
-                                    let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(events)));
-                                    tx.send(item).await?;
-                                }
-                                Err(e) => {
-                                    // That's fine. The index mentions lots of datafiles which got purged already.
-                                    trace!("can not find file mentioned in index: {:?}  {}", data_path, e);
-                                }
-                            };
-                        }
-                        if datablock.next != 0 {
-                            warn!("MAYBE TODO? datablock.next != 0:  {:?}", datablock);
-                        }
-                        last_data_file_path = data_path;
-                        last_data_file_pos = datablock.data_header_pos();
-                        // TODO anything special to do in expand mode?
-                        search_ts.ns = rec.ts2.ns;
-                    } else {
-                        warn!("nothing found, break");
-                        break;
-                    }
-                    if events_tot >= max_events {
-                        warn!("reached events_tot {}  max_events {}", events_tot, max_events);
-                        break;
-                    }
-                }
+    let index_file = open_read(index_path.clone(), stats).await?;
+    let mut file2 = open_read(index_path.clone(), stats).await?;
+    debug!("opened index file: {:?}  {:?}", index_path, index_file);
+    if let Some(basics) = read_channel(index_path.clone(), index_file, channel.name(), stats).await? {
+        let beg = Nanos { ns: range.beg };
+        let mut expand_beg = expand;
+        let mut index_ts_max = 0;
+        let mut search_ts = beg.clone();
+        let mut last_data_file_path = PathBuf::new();
+        let mut last_data_file_pos = DataheaderPos(0);
+        loop {
+            let timed_search = Timed::new("search next record");
+            let (res, _stats) = if expand_beg {
+                // TODO even though this is an entry in the index, it may reference
+                // non-existent blocks.
+                // Therefore, lower expand_beg flag at some later stage only if we've really
+                // found at least one event in the block.
+                expand_beg = false;
+                search_record_expand(&mut file2, basics.rtree_m, basics.rtree_start_pos, search_ts, stats).await?
             } else {
-                warn!("can not read channel basics from {:?}", index_path);
+                search_record(&mut file2, basics.rtree_m, basics.rtree_start_pos, search_ts, stats).await?
+            };
+            drop(timed_search);
+            if let Some(nrec) = res {
+                let rec = nrec.rec();
+                trace!("found record: {:?}", rec);
+                let pos = FilePos { pos: rec.child_or_id };
+                // TODO rename Datablock?  → IndexNodeDatablock
+                trace!("READ Datablock FROM {:?}\n", pos);
+                let datablock = read_datablockref(&mut file2, pos, basics.hver(), stats).await?;
+                trace!("Datablock: {:?}\n", datablock);
+                let data_path = index_path.parent().unwrap().join(datablock.file_name());
+                if data_path == last_data_file_path && datablock.data_header_pos() == last_data_file_pos {
+                    debug!("skipping because it is the same block");
+                } else {
+                    trace!("try to open data_path: {:?}", data_path);
+                    match open_read(data_path.clone(), stats).await {
+                        Ok(mut data_file) => {
+                            let datafile_header =
+                                read_datafile_header(&mut data_file, datablock.data_header_pos(), stats).await?;
+                            trace!("datafile_header --------------  HEADER\n{:?}", datafile_header);
+                            let events =
+                                read_data_1(&mut data_file, &datafile_header, range.clone(), expand_beg, stats).await?;
+                            if false {
+                                let msg = inspect_timestamps(&events, range.clone());
+                                trace!("datablock_stream_inner_single_index  read_data_1\n{}", msg);
+                            }
+                            {
+                                let mut ts_max = 0;
+                                use items::WithTimestamps;
+                                for i in 0..events.len() {
+                                    let ts = events.ts(i);
+                                    if ts < ts_max {
+                                        error!("unordered event within block at ts {}", ts);
+                                        break;
+                                    } else {
+                                        ts_max = ts;
+                                    }
+                                    if ts < index_ts_max {
+                                        error!(
+                                            "unordered event in index branch  ts {}  index_ts_max {}",
+                                            ts, index_ts_max
+                                        );
+                                        break;
+                                    } else {
+                                        index_ts_max = ts;
+                                    }
+                                }
+                            }
+                            trace!("Was able to read data: {} events", events.len());
+                            events_tot += events.len() as u64;
+                            let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(events)));
+                            tx.send(item).await?;
+                        }
+                        Err(e) => {
+                            // That's fine. The index mentions lots of datafiles which got purged already.
+                            trace!("can not find file mentioned in index: {:?}  {}", data_path, e);
+                        }
+                    };
+                }
+                if datablock.next().0 != 0 {
+                    warn!("MAYBE TODO? datablock.next != 0:  {:?}", datablock);
+                }
+                last_data_file_path = data_path;
+                last_data_file_pos = datablock.data_header_pos();
+                // TODO anything special to do in expand mode?
+                search_ts.ns = rec.ts2.ns;
+            } else {
+                warn!("nothing found, break");
+                break;
             }
-            Ok(())
+            if events_tot >= max_events {
+                warn!("reached events_tot {}  max_events {}", events_tot, max_events);
+                break;
+            }
         }
-        Err(e) => {
-            warn!("can not find index file at {:?}", index_path);
-            Err(Error::with_msg_no_trace(format!("can not open index file: {}", e)))
-        }
+    } else {
+        warn!("can not read channel basics from {:?}", index_path);
     }
+    Ok(())
 }
 
 async fn datablock_stream_inner(

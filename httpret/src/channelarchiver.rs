@@ -55,7 +55,6 @@ impl ListIndexFilesHttpFunction {
             ))?;
         let s = archapp_wrap::archapp::archeng::indexfiles::list_index_files(conf);
         let s = futures_util::stream::unfold(s, |mut st| async move {
-            use futures_util::StreamExt;
             let x = st.next().await;
             match x {
                 Some(x) => match x {
@@ -190,7 +189,6 @@ impl ListChannelsHttpFunction {
 
         let s = archapp_wrap::archapp::archeng::list_all_channels(conf);
         let s = futures_util::stream::unfold(s, |mut st| async move {
-            use futures_util::StreamExt;
             let x = st.next().await;
             match x {
                 Some(x) => match x {
