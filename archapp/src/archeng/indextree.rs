@@ -105,6 +105,10 @@ impl IndexFileBasics {
         let file = open_read(path.clone(), stats).await?;
         read_file_basics(path, file, stats).await
     }
+
+    pub fn hver(&self) -> &Box<dyn HeaderVersion> {
+        &self.hver
+    }
 }
 
 pub async fn read_file_basics(path: PathBuf, file: File, stats: &StatsChannel) -> Result<IndexFileBasics, Error> {
@@ -634,7 +638,7 @@ impl RecordIter {
                                             self.stack.push_back(nr3);
                                         }
                                         RecordTarget::Dataref(_) => {
-                                            info!("loop B is-leaf");
+                                            trace!("loop B is-leaf");
                                             // done, we've positioned the next result.
                                             break;
                                         }
@@ -901,9 +905,9 @@ fn parse_name_hash_channel_entry(buf: &[u8], hver: &dyn HeaderVersion) -> Result
 
 #[derive(Debug)]
 pub struct Dataref {
-    next: DatarefPos,
-    data_header_pos: DataheaderPos,
-    fname: String,
+    pub next: DatarefPos,
+    pub data_header_pos: DataheaderPos,
+    pub fname: String,
 }
 
 impl Dataref {

@@ -1,3 +1,4 @@
+pub mod blockstream;
 pub mod datablock;
 pub mod datablockstream;
 pub mod diskio;

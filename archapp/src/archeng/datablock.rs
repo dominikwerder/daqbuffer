@@ -60,7 +60,7 @@ pub struct DatafileHeader {
     next_offset: u32,
     prev_offset: u32,
     curr_offset: u32,
-    num_samples: u32,
+    pub num_samples: u32,
     ctrl_info_offset: u32,
     buf_size: u32,
     buf_free: u32,

@@ -4,7 +4,7 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use http::{header, Method, Request, Response, StatusCode};
 use hyper::Body;
-use netpod::log::*;
+use netpod::{log::*, Channel, NanoRange};
 use netpod::{NodeConfigCached, APP_JSON_LINES};
 use serde::Serialize;
 
@@ -149,6 +149,57 @@ impl ScanChannels {
             ))?;
         let s = archapp_wrap::archapp::archeng::indexfiles::scan_channels(conf.clone());
         let s = json_lines_stream(s);
+        Ok(response(StatusCode::OK)
+            .header(header::CONTENT_TYPE, APP_JSON_LINES)
+            .body(Body::wrap_stream(s))?)
+    }
+}
+
+pub struct BlockStream {}
+
+impl BlockStream {
+    pub fn prefix() -> &'static str {
+        "/api/4/channelarchiver/blockstream"
+    }
+
+    pub fn name() -> &'static str {
+        "BlockStream"
+    }
+
+    pub fn should_handle(path: &str) -> Option<Self> {
+        if path.starts_with(Self::prefix()) {
+            Some(Self {})
+        } else {
+            None
+        }
+    }
+
+    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+        if req.method() != Method::GET {
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+        }
+        info!("{}  handle  uri: {:?}", Self::name(), req.uri());
+        let conf = node_config
+            .node
+            .channel_archiver
+            .as_ref()
+            .ok_or(Error::with_msg_no_trace(
+                "this node is not configured as channel archiver",
+            ))?;
+        let range = NanoRange { beg: 0, end: u64::MAX };
+        let channel = Channel {
+            backend: "".into(),
+            name: "ARIDI-PCT:CURRENT".into(),
+        };
+        let s = archapp_wrap::archapp::archeng::blockstream::blockstream(channel, range, conf.clone());
+        let s = json_lines_stream(s);
+        let s = s.map(|item| match item {
+            Ok(k) => Ok(k),
+            Err(e) => {
+                error!("observe error: {}", e);
+                Err(e)
+            }
+        });
         Ok(response(StatusCode::OK)
             .header(header::CONTENT_TYPE, APP_JSON_LINES)
             .body(Body::wrap_stream(s))?)
