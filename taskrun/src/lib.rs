@@ -96,6 +96,8 @@ pub fn tracing_init() {
                     "archapp::archeng::datablockstream=info",
                     "archapp::archeng::indextree=info",
                     "archapp::archeng::blockstream=trace",
+                    "archapp::archeng::ringbuf=trace",
+                    "archapp::archeng::backreadbuf=trace",
                     "archapp::storagemerge=info",
                     "daqbuffer::test=trace",
                 ]

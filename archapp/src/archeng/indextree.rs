@@ -1,5 +1,6 @@
+use crate::archeng::ringbuf::RingBuf;
 use crate::archeng::{
-    format_hex_block, name_hash, open_read, readu16, readu32, readu64, seek, RingBuf, StatsChannel, EPICS_EPOCH_OFFSET,
+    format_hex_block, name_hash, open_read, readu16, readu32, readu64, seek, StatsChannel, EPICS_EPOCH_OFFSET,
 };
 use err::Error;
 use netpod::{log::*, NanoRange};
@@ -10,6 +11,8 @@ use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tokio::fs::File;
+
+use super::backreadbuf::BackReadBuf;
 
 pub trait HeaderVersion: Send + Sync + fmt::Debug {
     fn version(&self) -> u8;
@@ -81,7 +84,6 @@ impl NamedHashChannelEntry {
 
 #[derive(Debug)]
 pub struct IndexFileBasics {
-    file: File,
     path: PathBuf,
     version: u8,
     name_hash_anchor_beg: u64,
@@ -100,21 +102,78 @@ pub struct IndexFileBasics {
 }
 
 impl IndexFileBasics {
-    pub async fn from_path(path: impl Into<PathBuf>, stats: &StatsChannel) -> Result<Self, Error> {
+    pub async fn from_file(path: impl Into<PathBuf>, file: &mut File, stats: &StatsChannel) -> Result<Self, Error> {
         let path = path.into();
-        let file = open_read(path.clone(), stats).await?;
         read_file_basics(path, file, stats).await
     }
 
     pub fn hver(&self) -> &Box<dyn HeaderVersion> {
         &self.hver
     }
+
+    pub async fn all_channel_entries(
+        &mut self,
+        file: &mut File,
+        stats: &StatsChannel,
+    ) -> Result<Vec<NamedHashChannelEntry>, Error> {
+        let mut entries = vec![];
+        let mut rb = RingBuf::new(file, 0, stats.clone()).await?;
+        for epos in &self.name_hash_entries {
+            if epos.named_hash_channel_entry_pos != 0 {
+                let mut pos = epos.named_hash_channel_entry_pos;
+                while pos != 0 {
+                    rb.seek(pos).await?;
+                    let min0 = 4 + 2 * self.hver.offset_size();
+                    rb.fill_min(min0).await?;
+                    let buf = rb.data();
+                    let entry = parse_name_hash_channel_entry(buf, self.hver.as_ref())?;
+                    info!("parsed entry {:?}", entry);
+                    pos = entry.next;
+                    entries.push(entry);
+                }
+            }
+        }
+        Ok(entries)
+    }
+
+    pub async fn rtree_for_channel(&self, channel_name: &str, stats: &StatsChannel) -> Result<Option<Rtree>, Error> {
+        // TODO in the common case, the caller has already a opened file and could reuse that here.
+        let mut index_file = open_read(self.path.clone(), stats).await?;
+        let chn_hash = name_hash(channel_name, self.name_hash_anchor_len as u32);
+        let epos = &self.name_hash_entries[chn_hash as usize];
+        let mut pos = epos.named_hash_channel_entry_pos;
+        if pos == 0 {
+            warn!("no hash entry for channel {}", channel_name);
+        }
+        let mut entries = vec![];
+        let mut rb = RingBuf::new(&mut index_file, pos, stats.clone()).await?;
+        while pos != 0 {
+            rb.seek(pos).await?;
+            let min0 = 4 + 2 * self.hver.offset_size();
+            rb.fill_min(min0).await?;
+            let buf = rb.data();
+            let e = parse_name_hash_channel_entry(buf, self.hver.as_ref())?;
+            let next = e.next;
+            entries.push(e);
+            pos = next;
+        }
+        drop(rb);
+        for e in &entries {
+            if e.channel_name == channel_name {
+                let hver = self.hver.duplicate();
+                let pos = RtreePos(e.id_rtree_pos);
+                // TODO Rtree could reuse the File here:
+                let tree = Rtree::new(self.path.clone(), index_file, pos, hver, stats).await?;
+                return Ok(Some(tree));
+            }
+        }
+        Ok(None)
+    }
 }
 
-pub async fn read_file_basics(path: PathBuf, file: File, stats: &StatsChannel) -> Result<IndexFileBasics, Error> {
-    let mut file = file;
-    let mut rb = RingBuf::new();
-    rb.fill_min(&mut file, 4, stats).await?;
+pub async fn read_file_basics(path: PathBuf, file: &mut File, stats: &StatsChannel) -> Result<IndexFileBasics, Error> {
+    let mut rb = RingBuf::new(file, 0, stats.clone()).await?;
+    rb.fill_min(4).await?;
     let buf = rb.data();
     let version = String::from_utf8(buf[3..4].to_vec())?.parse()?;
     let min0;
@@ -125,11 +184,10 @@ pub async fn read_file_basics(path: PathBuf, file: File, stats: &StatsChannel) -
     } else {
         panic!();
     }
-    rb.fill_min(&mut file, min0, stats).await?;
+    rb.fill_min(min0).await?;
     let buf = rb.data();
     let mut ret = if version == 3 {
         IndexFileBasics {
-            file,
             path,
             version,
             name_hash_anchor_beg: readu64(buf, 4),
@@ -148,7 +206,6 @@ pub async fn read_file_basics(path: PathBuf, file: File, stats: &StatsChannel) -
         }
     } else if version == 2 {
         IndexFileBasics {
-            file,
             path,
             version,
             name_hash_anchor_beg: readu32(buf, 4) as u64,
@@ -178,7 +235,7 @@ pub async fn read_file_basics(path: PathBuf, file: File, stats: &StatsChannel) -
     {
         let hver = &ret.hver;
         for _ in 0..ret.name_hash_anchor_len {
-            rb.fill_min(&mut ret.file, hver.offset_size(), stats).await?;
+            rb.fill_min(hver.offset_size()).await?;
             let buf = rb.data();
             let pos = hver.read_offset(buf, 0);
             rb.adv(hver.offset_size());
@@ -189,63 +246,6 @@ pub async fn read_file_basics(path: PathBuf, file: File, stats: &StatsChannel) -
         }
     }
     Ok(ret)
-}
-
-impl IndexFileBasics {
-    pub async fn all_channel_entries(&mut self, stats: &StatsChannel) -> Result<Vec<NamedHashChannelEntry>, Error> {
-        let mut entries = vec![];
-        let mut rb = RingBuf::new();
-        for epos in &self.name_hash_entries {
-            if epos.named_hash_channel_entry_pos != 0 {
-                let mut pos = epos.named_hash_channel_entry_pos;
-                while pos != 0 {
-                    rb.reset();
-                    seek(&mut self.file, SeekFrom::Start(pos), stats).await?;
-                    let min0 = 4 + 2 * self.hver.offset_size();
-                    rb.fill_min(&mut self.file, min0, stats).await?;
-                    let buf = rb.data();
-                    let entry = parse_name_hash_channel_entry(buf, self.hver.as_ref())?;
-                    info!("parsed entry {:?}", entry);
-                    pos = entry.next;
-                    entries.push(entry);
-                }
-            }
-        }
-        Ok(entries)
-    }
-
-    pub async fn rtree_for_channel(&self, channel_name: &str, stats: &StatsChannel) -> Result<Option<Rtree>, Error> {
-        let mut index_file = open_read(self.path.clone(), stats).await?;
-        let chn_hash = name_hash(channel_name, self.name_hash_anchor_len as u32);
-        let epos = &self.name_hash_entries[chn_hash as usize];
-        let mut pos = epos.named_hash_channel_entry_pos;
-        if pos == 0 {
-            warn!("no hash entry for channel {}", channel_name);
-        }
-        let mut entries = vec![];
-        let mut rb = RingBuf::new();
-        while pos != 0 {
-            rb.reset();
-            seek(&mut index_file, SeekFrom::Start(pos), stats).await?;
-            let min0 = 4 + 2 * self.hver.offset_size();
-            rb.fill_min(&mut index_file, min0, stats).await?;
-            let buf = rb.data();
-            let e = parse_name_hash_channel_entry(buf, self.hver.as_ref())?;
-            let next = e.next;
-            entries.push(e);
-            pos = next;
-        }
-        for e in &entries {
-            if e.channel_name == channel_name {
-                let hver = self.hver.duplicate();
-                let pos = RtreePos(e.id_rtree_pos);
-                // TODO Rtree could reuse the File here:
-                let tree = Rtree::new(self.path.clone(), index_file, pos, hver, stats).await?;
-                return Ok(Some(tree));
-            }
-        }
-        Ok(None)
-    }
 }
 
 #[derive(Debug)]
@@ -286,10 +286,10 @@ pub async fn read_rtree_node(
     const OFF1: usize = 9;
     const RLEN: usize = 24;
     const NANO_MAX: u32 = 999999999;
-    seek(file, SeekFrom::Start(pos.into()), stats).await?;
-    let mut rb = RingBuf::new();
+    // TODO should not be used.
+    let mut rb = RingBuf::new(file, pos.pos, stats.clone()).await?;
     // TODO must know how much data I need at least...
-    rb.fill_min(file, OFF1 + rtree_m * RLEN, stats).await?;
+    rb.fill_min(OFF1 + rtree_m * RLEN).await?;
     if false {
         let s = format_hex_block(rb.data(), 128);
         info!("RTREE NODE:\n{}", s);
@@ -423,7 +423,7 @@ impl RtreeNodeAtRecord {
 #[derive(Debug)]
 pub struct Rtree {
     path: PathBuf,
-    file: File,
+    rb: RingBuf<File>,
     m: usize,
     root: NodePos,
     hver: Box<dyn HeaderVersion>,
@@ -438,10 +438,10 @@ impl Rtree {
         stats: &StatsChannel,
     ) -> Result<Self, Error> {
         let mut file = file;
-        let (m, root) = Self::read_entry(&mut file, pos, hver.as_ref(), stats).await?;
+        let (m, root) = Self::read_entry(&mut file, pos.clone(), hver.as_ref(), stats).await?;
         let ret = Self {
             path: path.as_ref().into(),
-            file,
+            rb: RingBuf::new(file, pos.0, stats.clone()).await?,
             m,
             root,
             hver,
@@ -455,11 +455,10 @@ impl Rtree {
         hver: &dyn HeaderVersion,
         stats: &StatsChannel,
     ) -> Result<(usize, NodePos), Error> {
-        seek(file, SeekFrom::Start(pos.0), stats).await?;
-        let mut rb = RingBuf::new();
+        let mut rb = RingBuf::new(file, pos.0, stats.clone()).await?;
         // TODO should be able to indicate how much I need at most before I know that I will e.g. seek or abort.
         let min0 = hver.offset_size() + 4;
-        rb.fill_min(file, min0, stats).await?;
+        rb.fill_min(min0).await?;
         if rb.len() < min0 {
             return Err(Error::with_msg_no_trace("could not read enough"));
         }
@@ -475,14 +474,13 @@ impl Rtree {
         Ok(ret)
     }
 
-    pub async fn read_node_at(&mut self, pos: NodePos, stats: &StatsChannel) -> Result<RtreeNode, Error> {
-        let file = &mut self.file;
-        seek(file, SeekFrom::Start(pos.0), stats).await?;
-        let mut rb = RingBuf::new();
+    pub async fn read_node_at(&mut self, pos: NodePos, _stats: &StatsChannel) -> Result<RtreeNode, Error> {
+        let rb = &mut self.rb;
+        rb.seek(pos.0).await?;
         let off1 = 1 + self.hver.offset_size();
         let rlen = 4 * 4 + self.hver.offset_size();
         let min0 = off1 + self.m * rlen;
-        rb.fill_min(file, min0, stats).await?;
+        rb.fill_min(min0).await?;
         if false {
             let s = format_hex_block(rb.data(), min0);
             trace!("RTREE NODE:\n{}", s);
@@ -498,9 +496,10 @@ impl Rtree {
         if false {
             trace!("is_leaf: {}  parent: {:?}", is_leaf, parent);
         }
+        let hver = self.hver.duplicate();
         let recs = (0..self.m)
             .into_iter()
-            .filter_map(|i| {
+            .filter_map(move |i| {
                 const NANO_MAX: u32 = 999999999;
                 let off2 = off1 + i * rlen;
                 let ts1a = readu32(buf, off2 + 0);
@@ -511,7 +510,7 @@ impl Rtree {
                 let ts2b = ts2b.min(NANO_MAX);
                 let ts1 = ts1a as u64 * SEC + ts1b as u64 + EPICS_EPOCH_OFFSET;
                 let ts2 = ts2a as u64 * SEC + ts2b as u64 + EPICS_EPOCH_OFFSET;
-                let target = self.hver.read_offset(buf, off2 + 16);
+                let target = hver.read_offset(buf, off2 + 16);
                 //trace!("NODE   {} {}   {} {}   {}", ts1a, ts1b, ts2a, ts2b, child_or_id);
                 if target != 0 && ts2 != 0 {
                     let target = if is_leaf {
@@ -586,7 +585,7 @@ impl Rtree {
         let file = open_read(self.path.clone(), stats).await?;
         let ret = Self {
             path: self.path.clone(),
-            file: file,
+            rb: RingBuf::new(file, 0, stats.clone()).await?,
             m: self.m,
             root: self.root.clone(),
             hver: self.hver.duplicate(),
@@ -669,10 +668,9 @@ pub async fn read_rtree_entrypoint(
     _basics: &IndexFileBasics,
     stats: &StatsChannel,
 ) -> Result<RTreeNode, Error> {
-    seek(file, SeekFrom::Start(pos), stats).await?;
-    let mut rb = RingBuf::new();
+    let mut rb = RingBuf::new(file, pos, stats.clone()).await?;
     // TODO remove, this is anyway still using a hardcoded offset size.
-    rb.fill_min(file, 8 + 4, stats).await?;
+    rb.fill_min(8 + 4).await?;
     if rb.len() < 8 + 4 {
         return Err(Error::with_msg_no_trace("could not read enough"));
     }
@@ -681,7 +679,8 @@ pub async fn read_rtree_entrypoint(
     let rtree_m = readu32(b, 8);
     //info!("node_offset: {}  rtree_m: {}", node_offset, rtree_m);
     let pos = FilePos { pos: node_offset };
-    let node = read_rtree_node(file, pos, rtree_m as usize, stats).await?;
+    let mut file = rb.into_file();
+    let node = read_rtree_node(&mut file, pos, rtree_m as usize, stats).await?;
     //info!("read_rtree_entrypoint   READ ROOT NODE: {:?}", node);
     Ok(node)
 }
@@ -829,17 +828,17 @@ pub async fn read_channel(
     stats: &StatsChannel,
 ) -> Result<Option<ChannelInfoBasics>, Error> {
     let path = path.into();
-    let mut basics = read_file_basics(path.clone(), index_file, stats).await?;
+    let mut index_file = index_file;
+    let basics = read_file_basics(path.clone(), &mut index_file, stats).await?;
     let chn_hash = name_hash(channel_name, basics.name_hash_anchor_len as u32);
     let epos = &basics.name_hash_entries[chn_hash as usize];
     let mut entries = vec![];
-    let mut rb = RingBuf::new();
     let mut pos = epos.named_hash_channel_entry_pos;
+    let mut rb = RingBuf::new(index_file, pos, stats.clone()).await?;
     loop {
-        rb.reset();
-        seek(&mut basics.file, SeekFrom::Start(pos), stats).await?;
+        rb.seek(pos).await?;
         let fill_min = if basics.hver.offset_size() == 8 { 20 } else { 12 };
-        rb.fill_min(&mut basics.file, fill_min, stats).await?;
+        rb.fill_min(fill_min).await?;
         if rb.len() < fill_min {
             warn!("not enough data to continue reading channel list from name hash list");
             break;
@@ -930,10 +929,9 @@ pub async fn read_datablockref(
     hver: &dyn HeaderVersion,
     stats: &StatsChannel,
 ) -> Result<Dataref, Error> {
-    seek(file, SeekFrom::Start(pos.pos), stats).await?;
-    let mut rb = RingBuf::new();
+    let mut rb = RingBuf::new(file, pos.pos, stats.clone()).await?;
     let min0 = hver.offset_size() * 2 + 2;
-    rb.fill_min(file, min0, stats).await?;
+    rb.fill_min(min0).await?;
     let buf = rb.data();
     let mut p = 0;
     let next = hver.read_offset(buf, p);
@@ -943,7 +941,37 @@ pub async fn read_datablockref(
     let len = readu16(buf, p) as usize;
     p += 2;
     let _ = p;
-    rb.fill_min(file, min0 + len, stats).await?;
+    rb.fill_min(min0 + len).await?;
+    let buf = rb.data();
+    let fname = String::from_utf8(buf[min0..min0 + len].to_vec())?;
+    let next = DatarefPos(next);
+    let data_header_pos = DataheaderPos(data);
+    let ret = Dataref {
+        next,
+        data_header_pos,
+        fname,
+    };
+    Ok(ret)
+}
+
+pub async fn read_datablockref2(
+    rb: &mut BackReadBuf<File>,
+    pos: DatarefPos,
+    hver: &dyn HeaderVersion,
+) -> Result<Dataref, Error> {
+    rb.seek(pos.0).await?;
+    let min0 = hver.offset_size() * 2 + 2;
+    rb.fill_min(min0).await?;
+    let buf = rb.data();
+    let mut p = 0;
+    let next = hver.read_offset(buf, p);
+    p += hver.offset_size();
+    let data = hver.read_offset(buf, p);
+    p += hver.offset_size();
+    let len = readu16(buf, p) as usize;
+    p += 2;
+    let _ = p;
+    rb.fill_min(min0 + len).await?;
     let buf = rb.data();
     let fname = String::from_utf8(buf[min0..min0 + len].to_vec())?;
     let next = DatarefPos(next);
@@ -964,12 +992,11 @@ async fn channel_list_from_index_name_hash_list(
 ) -> Result<Vec<NamedHashChannelEntry>, Error> {
     let mut pos = pos;
     let mut ret = vec![];
-    let mut rb = RingBuf::new();
+    let mut rb = RingBuf::new(file, pos.pos, stats.clone()).await?;
     loop {
-        rb.reset();
-        seek(file, SeekFrom::Start(pos.pos), stats).await?;
+        rb.seek(pos.pos).await?;
         let fill_min = if hver.offset_size() == 8 { 20 } else { 12 };
-        rb.fill_min(file, fill_min, stats).await?;
+        rb.fill_min(fill_min).await?;
         if rb.len() < fill_min {
             warn!("not enough data to continue reading channel list from name hash list");
             break;
@@ -989,8 +1016,8 @@ async fn channel_list_from_index_name_hash_list(
 // TODO retire this function
 pub async fn channel_list(index_path: PathBuf, stats: &StatsChannel) -> Result<Vec<String>, Error> {
     let mut ret = vec![];
-    let file = open_read(index_path.clone(), stats).await?;
-    let mut basics = read_file_basics(index_path.clone(), file, stats).await?;
+    let mut file = open_read(index_path.clone(), stats).await?;
+    let basics = read_file_basics(index_path.clone(), &mut file, stats).await?;
     let hver2 = HeaderVersion2;
     let hver3 = HeaderVersion3;
     let hver: &dyn HeaderVersion = if basics.version == 2 {
@@ -1008,7 +1035,7 @@ pub async fn channel_list(index_path: PathBuf, stats: &StatsChannel) -> Result<V
             let pos = FilePos {
                 pos: name_hash_entry.named_hash_channel_entry_pos,
             };
-            let list = channel_list_from_index_name_hash_list(&mut basics.file, pos, hver, stats).await?;
+            let list = channel_list_from_index_name_hash_list(&mut file, pos, hver, stats).await?;
             for e in list {
                 ret.push(e.channel_name);
             }
@@ -1040,8 +1067,8 @@ mod test {
     fn read_file_basic_info() -> Result<(), Error> {
         let fut = async {
             let stats = &StatsChannel::dummy();
-            let file = open_read(CHN_0_MASTER_INDEX.into(), stats).await?;
-            let res = read_file_basics(CHN_0_MASTER_INDEX.into(), file, stats).await?;
+            let mut file = open_read(CHN_0_MASTER_INDEX.into(), stats).await?;
+            let res = read_file_basics(CHN_0_MASTER_INDEX.into(), &mut file, stats).await?;
             assert_eq!(res.version, 3);
             assert_eq!(res.name_hash_anchor_beg, 88);
             assert_eq!(res.name_hash_anchor_len, 1009);
@@ -1062,7 +1089,8 @@ mod test {
         let fut = async {
             let stats = &StatsChannel::dummy();
             let channel_name = "X05DA-FE-WI1:TC1";
-            let basics = IndexFileBasics::from_path(CHN_0_MASTER_INDEX, stats).await?;
+            let mut file = open_read(CHN_0_MASTER_INDEX.into(), stats).await?;
+            let basics = IndexFileBasics::from_file(CHN_0_MASTER_INDEX, &mut file, stats).await?;
             let tree = basics.rtree_for_channel(channel_name, stats).await?;
             let tree = tree.ok_or_else(|| Error::with_msg("no tree found for channel"))?;
             assert_eq!(tree.m, 50);
@@ -1078,7 +1106,8 @@ mod test {
             let stats = &StatsChannel::dummy();
             let channel_name = "X05DA-FE-WI1:TC1";
             let range = NanoRange { beg: 0, end: u64::MAX };
-            let basics = IndexFileBasics::from_path(CHN_0_MASTER_INDEX, stats).await?;
+            let mut file = open_read(CHN_0_MASTER_INDEX.into(), stats).await?;
+            let basics = IndexFileBasics::from_file(CHN_0_MASTER_INDEX, &mut file, stats).await?;
             let mut tree = basics
                 .rtree_for_channel(channel_name, stats)
                 .await?
@@ -1114,7 +1143,8 @@ mod test {
                 beg: 1601503499684884156,
                 end: 1601569919634086480,
             };
-            let basics = IndexFileBasics::from_path(CHN_0_MASTER_INDEX, stats).await?;
+            let mut file = open_read(CHN_0_MASTER_INDEX.into(), stats).await?;
+            let basics = IndexFileBasics::from_file(CHN_0_MASTER_INDEX, &mut file, stats).await?;
             let mut tree = basics
                 .rtree_for_channel(channel_name, stats)
                 .await?

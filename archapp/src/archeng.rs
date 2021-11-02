@@ -1,10 +1,13 @@
+pub mod backreadbuf;
 pub mod blockstream;
+pub mod bufminread;
 pub mod datablock;
 pub mod datablockstream;
 pub mod diskio;
 pub mod indexfiles;
 pub mod indextree;
 pub mod pipe;
+pub mod ringbuf;
 
 use self::indexfiles::list_index_files;
 use self::indextree::channel_list;
@@ -194,80 +197,6 @@ pub fn name_hash(s: &str, ht_len: u32) -> u32 {
         h = (128 * h + *ch as u32) % ht_len;
     }
     h
-}
-
-pub struct RingBuf {
-    buf: Vec<u8>,
-    wp: usize,
-    rp: usize,
-}
-
-impl RingBuf {
-    pub fn new() -> Self {
-        Self {
-            buf: vec![0; 1024 * 8],
-            wp: 0,
-            rp: 0,
-        }
-    }
-
-    pub fn reset(&mut self) {
-        self.rp = 0;
-        self.wp = 0;
-    }
-
-    pub fn len(&self) -> usize {
-        self.wp - self.rp
-    }
-
-    pub fn adv(&mut self, n: usize) {
-        self.rp += n;
-    }
-
-    pub fn data(&self) -> &[u8] {
-        &self.buf[self.rp..self.wp]
-    }
-
-    pub async fn fill(&mut self, file: &mut File, stats: &StatsChannel) -> Result<usize, Error> {
-        if self.rp == self.wp {
-            if self.rp != 0 {
-                self.wp = 0;
-                self.rp = 0;
-            }
-        } else {
-            unsafe {
-                std::ptr::copy::<u8>(&self.buf[self.rp], &mut self.buf[0], self.len());
-                self.wp -= self.rp;
-                self.rp = 0;
-            }
-        }
-        let n = read(file, &mut self.buf[self.wp..], stats).await?;
-        self.wp += n;
-        return Ok(n);
-    }
-
-    pub async fn fill_if_low(&mut self, file: &mut File, stats: &StatsChannel) -> Result<usize, Error> {
-        let len = self.len();
-        let cap = self.buf.len();
-        while self.len() < cap / 6 {
-            let n = self.fill(file, stats).await?;
-            if n == 0 {
-                break;
-            }
-        }
-        return Ok(self.len() - len);
-    }
-
-    pub async fn fill_min(&mut self, file: &mut File, min: usize, stats: &StatsChannel) -> Result<usize, Error> {
-        let len = self.len();
-        while self.len() < min {
-            let n = self.fill(file, stats).await?;
-            if n == 0 {
-                return Err(Error::with_msg_no_trace(format!("fill_min can not read min {}", min)));
-            }
-        }
-        return Ok(self.len() - len);
-    }
 }
 
 fn format_hex_block(buf: &[u8], max: usize) -> String {

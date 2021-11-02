@@ -1,9 +1,14 @@
-use crate::archeng::datablock::{read_data_1, read_datafile_header};
+use crate::archeng::backreadbuf::BackReadBuf;
+use crate::archeng::datablock::{read_data2, read_data_1, read_datafile_header, read_datafile_header2};
 use crate::archeng::indexfiles::{database_connect, unfold_stream, UnfoldExec};
-use crate::archeng::indextree::{read_datablockref, IndexFileBasics, RecordIter, RecordTarget};
+use crate::archeng::indextree::{
+    read_datablockref, read_datablockref2, DataheaderPos, HeaderVersion, IndexFileBasics, RecordIter, RecordTarget,
+};
+use crate::archeng::ringbuf::RingBuf;
 use crate::archeng::{open_read, seek, StatsChannel};
 use err::Error;
 use futures_core::{Future, Stream};
+use items::WithLen;
 #[allow(unused)]
 use netpod::log::*;
 use netpod::{Channel, ChannelArchiver, FilePos, NanoRange};
@@ -13,8 +18,6 @@ use std::io::SeekFrom;
 use std::path::PathBuf;
 use std::pin::Pin;
 use tokio::fs::File;
-
-use super::indextree::HeaderVersion;
 
 enum Steps {
     Start,
@@ -30,12 +33,15 @@ struct DataBlocks {
     range: NanoRange,
     steps: Steps,
     paths: VecDeque<String>,
-    file1: Option<File>,
-    file2: Option<File>,
+    file1: Option<BackReadBuf<File>>,
+    file2: Option<RingBuf<File>>,
     last_dp: u64,
     last_dp2: u64,
     last_f2: String,
+    last_dfhpos: DataheaderPos,
     dfnotfound: BTreeMap<String, bool>,
+    data_bytes_read: u64,
+    same_dfh_count: u64,
 }
 
 impl DataBlocks {
@@ -51,7 +57,10 @@ impl DataBlocks {
             last_dp: 0,
             last_dp2: 0,
             last_f2: String::new(),
+            last_dfhpos: DataheaderPos(u64::MAX),
             dfnotfound: BTreeMap::new(),
+            data_bytes_read: 0,
+            same_dfh_count: 0,
         }
     }
 
@@ -77,14 +86,16 @@ impl DataBlocks {
                 // For simplicity, simply read all storage classes linearly.
                 if let Some(path) = self.paths.pop_front() {
                     // TODO
-                    let basics = IndexFileBasics::from_path(&path, stats).await?;
+                    let mut file = open_read(path.clone().into(), stats).await?;
+                    let basics = IndexFileBasics::from_file(&path, &mut file, stats).await?;
                     let mut tree = basics
                         .rtree_for_channel(self.channel.name(), stats)
                         .await?
                         .ok_or_else(|| Error::with_msg_no_trace("channel not in index files"))?;
                     if let Some(iter) = tree.iter_range(self.range.clone(), stats).await? {
+                        debug!("SetupNextPath {:?}", path);
                         self.steps = ReadBlocks(iter, basics.hver().duplicate(), path.clone().into());
-                        self.file1 = Some(open_read(path.into(), stats).await?);
+                        self.file1 = Some(BackReadBuf::new(file, 0, stats.clone()).await?);
                     } else {
                         self.steps = SetupNextPath;
                     };
@@ -101,43 +112,68 @@ impl DataBlocks {
                     // TODO the iterator should actually return Dataref. We never expect child nodes here.
                     if let RecordTarget::Dataref(dp) = rec.target {
                         let f1 = self.file1.as_mut().unwrap();
-                        //seek(f1, SeekFrom::Start(dp.0), stats).await?;
-                        // Read the dataheader...
-                        // TODO the function should take a DatarefPos or?
-                        // TODO the seek is hidden in the function which makes possible optimization not accessible.
-                        let dref = read_datablockref(f1, FilePos { pos: dp.0 }, hver.as_ref(), stats).await?;
+                        let dref = read_datablockref2(f1, dp.clone(), hver.as_ref()).await?;
                         // TODO Remember the index path, need it here for relative path.
                         // TODO open datafile, relative path to index path.
                         // TODO keep open when path does not change.
                         let acc;
                         let num_samples;
-                        if let Some(_) = self.dfnotfound.get(dref.file_name()) {
-                            num_samples = 0;
-                            acc = 1;
-                        } else {
-                            if dref.file_name() == self.last_f2 {
-                                acc = 2;
-                            } else {
-                                let dpath = indexpath.parent().unwrap().join(dref.file_name());
-                                match open_read(dpath, stats).await {
-                                    Ok(f2) => {
-                                        acc = 4;
-                                        self.file2 = Some(f2);
-                                        self.last_f2 = dref.file_name().into();
-                                    }
-                                    Err(_) => {
-                                        acc = 3;
-                                        self.file2 = None;
-                                    }
-                                }
-                            };
-                            if let Some(f2) = self.file2.as_mut() {
-                                let dfheader = read_datafile_header(f2, dref.data_header_pos(), stats).await?;
-                                num_samples = dfheader.num_samples;
-                            } else {
-                                self.dfnotfound.insert(dref.file_name().into(), true);
+                        if true {
+                            if let Some(_) = self.dfnotfound.get(dref.file_name()) {
                                 num_samples = 0;
-                            };
+                                acc = 1;
+                            } else {
+                                if dref.file_name() == self.last_f2 {
+                                    acc = 2;
+                                } else {
+                                    let dpath = indexpath.parent().unwrap().join(dref.file_name());
+                                    match open_read(dpath, stats).await {
+                                        Ok(f2) => {
+                                            acc = 4;
+                                            self.file2 = Some(
+                                                RingBuf::new(f2, dref.data_header_pos().0, StatsChannel::dummy())
+                                                    .await?,
+                                            );
+                                            self.last_f2 = dref.file_name().into();
+                                        }
+                                        Err(_) => {
+                                            acc = 3;
+                                            self.file2 = None;
+                                        }
+                                    }
+                                };
+                                if let Some(f2) = self.file2.as_mut() {
+                                    if dref.file_name() == self.last_f2 && dref.data_header_pos() == self.last_dfhpos {
+                                        num_samples = 0;
+                                    } else {
+                                        self.last_dfhpos = dref.data_header_pos();
+                                        let rp1 = f2.rp_abs();
+                                        let dfheader = read_datafile_header2(f2, dref.data_header_pos()).await?;
+                                        let data = read_data2(f2, &dfheader, self.range.clone(), false).await?;
+                                        let rp2 = f2.rp_abs();
+                                        self.data_bytes_read += rp2 - rp1;
+                                        num_samples = dfheader.num_samples;
+                                        if data.len() != num_samples as usize {
+                                            if (data.len() as i64 - num_samples as i64).abs() < 4 {
+                                                // TODO get always one event less than num_samples tells us.
+                                                //warn!("small deviation  {} vs {}", data.len(), num_samples);
+                                            } else {
+                                                return Err(Error::with_msg_no_trace(format!(
+                                                    "event count mismatch  {} vs {}",
+                                                    data.len(),
+                                                    num_samples
+                                                )));
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    self.dfnotfound.insert(dref.file_name().into(), true);
+                                    num_samples = 0;
+                                };
+                            }
+                        } else {
+                            acc = 6;
+                            num_samples = 0;
                         }
                         let item = serde_json::to_value((
                             dp.0,
@@ -156,6 +192,10 @@ impl DataBlocks {
                         panic!();
                     }
                 } else {
+                    info!(
+                        "data_bytes_read: {}  same_dfh_count: {}",
+                        self.data_bytes_read, self.same_dfh_count
+                    );
                     self.steps = SetupNextPath;
                     JsVal::String(format!("NOMORE"))
                 };

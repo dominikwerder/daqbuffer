@@ -333,8 +333,9 @@ impl ScanChannels {
                         .await?;
                     if rows.len() == 1 {
                         let indexfile_rid: i64 = rows[0].try_get(0)?;
-                        let mut basics = super::indextree::IndexFileBasics::from_path(path, stats).await?;
-                        let entries = basics.all_channel_entries(stats).await?;
+                        let mut file = open_read(path.clone().into(), stats).await?;
+                        let mut basics = super::indextree::IndexFileBasics::from_file(path, &mut file, stats).await?;
+                        let entries = basics.all_channel_entries(&mut file, stats).await?;
                         for entry in entries {
                             let rows = dbc
                                 .query("select rowid from channels where name = $1", &[&entry.channel_name()])
