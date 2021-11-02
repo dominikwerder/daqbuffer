@@ -1,7 +1,9 @@
 use crate::archeng::{read, seek, StatsChannel};
 use err::Error;
 use netpod::log::*;
-use std::{borrow::BorrowMut, io::SeekFrom};
+use std::borrow::BorrowMut;
+use std::fmt;
+use std::io::SeekFrom;
 use tokio::fs::File;
 
 pub struct BackReadBuf<F> {
@@ -106,13 +108,21 @@ where
     }
 }
 
+impl<F> fmt::Debug for BackReadBuf<F> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("BackReadBuf")
+            .field("abs", &self.abs)
+            .field("wp", &self.wp)
+            .field("rp", &self.rp)
+            .field("seek_request", &self.seek_request)
+            .field("seek_done", &self.seek_done)
+            .field("read_done", &self.read_done)
+            .finish()
+    }
+}
+
 impl<F> Drop for BackReadBuf<F> {
     fn drop(&mut self) {
-        info!(
-            "BackReadBuf  Drop  {}  {}%  {}",
-            self.seek_request,
-            self.seek_done * 100 / self.seek_request,
-            self.read_done
-        );
+        info!("Drop {:?}", self);
     }
 }

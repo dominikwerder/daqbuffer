@@ -1,4 +1,5 @@
 pub mod backreadbuf;
+pub mod blockrefstream;
 pub mod blockstream;
 pub mod bufminread;
 pub mod datablock;

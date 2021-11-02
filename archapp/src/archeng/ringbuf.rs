@@ -16,6 +16,9 @@ pub struct RingBuf<F> {
     seek_request: u64,
     seek_done: u64,
     read_done: u64,
+    small_pos: u64,
+    small_neg: u64,
+    bytes_read: u64,
 }
 
 impl<F> RingBuf<F>
@@ -33,6 +36,9 @@ where
             seek_request: 0,
             seek_done: 0,
             read_done: 0,
+            small_pos: 0,
+            small_neg: 0,
+            bytes_read: 0,
         };
         ret.seek(pos).await?;
         Ok(ret)
@@ -67,14 +73,16 @@ where
                 self.rp = 0;
             }
         }
+        let max = (self.buf.len() - self.wp).min(1024 * 8) + self.wp;
         let n = read(
             self.file.as_mut().unwrap().borrow_mut(),
-            &mut self.buf[self.wp..],
+            &mut self.buf[self.wp..max],
             &self.stats,
         )
         .await?;
         self.wp += n;
         self.read_done += 1;
+        self.bytes_read += n as u64;
         Ok(n)
     }
 
@@ -90,11 +98,13 @@ where
     }
 
     pub async fn seek(&mut self, pos: u64) -> Result<u64, Error> {
-        let dp = pos as i64 - self.abs as i64 - self.rp as i64;
+        let dp = pos as i64 - self.rp_abs() as i64;
         if dp < 0 && dp > -2048 {
             debug!("small NEG seek {}", dp);
         } else if dp == 0 {
-            debug!("zero seek");
+            // TODO check callsites, some cases could be eliminated.
+            //debug!("zero seek");
+            return Ok(pos);
         } else if dp > 0 && dp < 2048 {
             debug!("small POS seek {}", dp);
         }
@@ -116,6 +126,10 @@ where
     pub fn rp_abs(&self) -> u64 {
         self.abs as u64 + self.rp as u64
     }
+
+    pub fn bytes_read(&self) -> u64 {
+        self.bytes_read
+    }
 }
 
 impl<F> fmt::Debug for RingBuf<F> {
@@ -124,12 +138,18 @@ impl<F> fmt::Debug for RingBuf<F> {
             .field("abs", &self.abs)
             .field("wp", &self.wp)
             .field("rp", &self.rp)
+            .field("seek_request", &self.seek_request)
+            .field("seek_done", &self.seek_done)
+            .field("read_done", &self.read_done)
+            .field("small_pos", &self.small_pos)
+            .field("small_neg", &self.small_neg)
+            .field("bytes_read", &self.bytes_read)
             .finish()
     }
 }
 
 impl<F> Drop for RingBuf<F> {
     fn drop(&mut self) {
-        info!("RingBuf  Drop  {}  {}", self.seek_request, self.read_done);
+        info!("Drop {:?}", self);
     }
 }

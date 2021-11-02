@@ -251,7 +251,7 @@ pub async fn read_data2(
                     }
                 }
                 rb.adv(n3);
-                info!("parsed block with {} / {} events", ntot, evs.tss.len());
+                //info!("parsed block with {} / {} events", ntot, evs.tss.len());
                 let evs = ScalarPlainEvents::Double(evs);
                 let plain = PlainEvents::Scalar(evs);
                 let item = EventsItem::Plain(plain);
