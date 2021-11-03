@@ -1077,6 +1077,7 @@ pub fn channel_from_pairs(pairs: &BTreeMap<String, String>) -> Result<Channel, E
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelSearchQuery {
+    pub backend: Option<String>,
     pub name_regex: String,
     pub source_regex: String,
     pub description_regex: String,
@@ -1086,6 +1087,7 @@ impl ChannelSearchQuery {
     pub fn from_url(url: &Url) -> Result<Self, Error> {
         let pairs = get_url_query_pairs(url);
         let ret = Self {
+            backend: pairs.get("backend").map(Into::into),
             name_regex: pairs.get("nameRegex").map_or(String::new(), |k| k.clone()),
             source_regex: pairs.get("sourceRegex").map_or(String::new(), |k| k.clone()),
             description_regex: pairs.get("descriptionRegex").map_or(String::new(), |k| k.clone()),
@@ -1094,10 +1096,13 @@ impl ChannelSearchQuery {
     }
 
     pub fn append_to_url(&self, url: &mut Url) {
-        url.query_pairs_mut().append_pair("nameRegex", &self.name_regex);
-        url.query_pairs_mut().append_pair("sourceRegex", &self.source_regex);
-        url.query_pairs_mut()
-            .append_pair("descriptionRegex", &self.description_regex);
+        let mut qp = url.query_pairs_mut();
+        if let Some(v) = &self.backend {
+            qp.append_pair("backend", v);
+        }
+        qp.append_pair("nameRegex", &self.name_regex);
+        qp.append_pair("sourceRegex", &self.source_regex);
+        qp.append_pair("descriptionRegex", &self.description_regex);
     }
 }
 
@@ -1144,6 +1149,7 @@ pub struct ProxyBackend {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProxyConfig {
+    pub name: String,
     pub listen: String,
     pub port: u16,
     pub search_hosts: Vec<String>,

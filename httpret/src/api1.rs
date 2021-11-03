@@ -99,10 +99,12 @@ pub async fn channel_search_list_v1(req: Request<Body>, proxy_config: &ProxyConf
     let (head, reqbody) = req.into_parts();
     let bodybytes = hyper::body::to_bytes(reqbody).await?;
     let query: ChannelSearchQueryV1 = serde_json::from_slice(&bodybytes)?;
-    match head.headers.get("accept") {
+    match head.headers.get(http::header::ACCEPT) {
         Some(v) => {
             if v == APP_JSON {
                 let query = ChannelSearchQuery {
+                    // TODO
+                    backend: None,
                     name_regex: query.regex.map_or(String::new(), |k| k),
                     source_regex: query.source_regex.map_or(String::new(), |k| k),
                     description_regex: query.description_regex.map_or(String::new(), |k| k),
@@ -190,11 +192,13 @@ pub async fn channel_search_configs_v1(
     let (head, reqbody) = req.into_parts();
     let bodybytes = hyper::body::to_bytes(reqbody).await?;
     let query: ChannelSearchQueryV1 = serde_json::from_slice(&bodybytes)?;
-    match head.headers.get("accept") {
+    match head.headers.get(http::header::ACCEPT) {
         Some(v) => {
             if v == APP_JSON {
                 // Transform the ChannelSearchQueryV1 to ChannelSearchQuery
                 let query = ChannelSearchQuery {
+                    // TODO
+                    backend: None,
                     name_regex: query.regex.map_or(String::new(), |k| k),
                     source_regex: query.source_regex.map_or(String::new(), |k| k),
                     description_regex: query.description_regex.map_or(String::new(), |k| k),

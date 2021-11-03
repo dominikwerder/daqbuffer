@@ -1,3 +1,5 @@
+pub mod api4;
+
 use crate::api1::{channel_search_configs_v1, channel_search_list_v1, gather_json_2_v1, proxy_distribute_v1};
 use crate::gather::{gather_get_json_generic, SubRes};
 use crate::{api_1_docs, api_4_docs, response, Cont};
@@ -78,7 +80,8 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
     } else if path == "/api/4/backends" {
         Ok(backends(req, proxy_config).await?)
     } else if path == "/api/4/search/channel" {
-        Ok(channel_search(req, proxy_config).await?)
+        //Ok(channel_search(req, proxy_config).await?)
+        Ok(api4::channel_search(req, proxy_config).await?)
     } else if path == "/api/4/events" {
         Ok(proxy_single_backend_query::<PlainEventsJsonQuery>(req, proxy_config).await?)
     } else if path == "/api/4/binned" {

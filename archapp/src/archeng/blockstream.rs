@@ -58,6 +58,7 @@ struct Reader {
 impl Reader {}
 
 struct FutAItem {
+    #[allow(unused)]
     fname: String,
     path: PathBuf,
     dfnotfound: bool,
@@ -67,6 +68,7 @@ struct FutAItem {
     events: Option<EventsItem>,
 }
 
+#[allow(unused)]
 pub struct FutA {
     fname: String,
     pos: DataheaderPos,
@@ -76,13 +78,17 @@ pub struct FutA {
 impl Future for FutA {
     type Output = Result<JsVal, Error>;
 
+    #[allow(unused)]
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         use Poll::*;
         err::todoval()
     }
 }
 
-pub enum BlockItem {}
+pub enum BlockItem {
+    EventsItem(EventsItem),
+    JsVal(JsVal),
+}
 
 pub struct BlockStream<S> {
     inp: S,
@@ -115,7 +121,7 @@ impl<S> BlockStream<S> {
             range,
             dfnotfound: BTreeMap::new(),
             block_reads: FuturesOrdered::new(),
-            max_reads,
+            max_reads: max_reads.max(1),
             readers: VecDeque::new(),
             last_dfname: String::new(),
             last_dfhpos: DataheaderPos(u64::MAX),
@@ -143,7 +149,7 @@ impl<S> Stream for BlockStream<S>
 where
     S: Stream<Item = Result<BlockrefItem, Error>> + Unpin,
 {
-    type Item = Result<JsVal, Error>;
+    type Item = Result<BlockItem, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -195,7 +201,7 @@ where
                                                             Some(reader)
                                                         } else {
                                                             let stats = StatsChannel::dummy();
-                                                            info!("open new reader file {:?}", dpath);
+                                                            debug!("open new reader file {:?}", dpath);
                                                             match open_read(dpath.clone(), &stats).await {
                                                                 Ok(file) => {
                                                                     //
@@ -212,9 +218,17 @@ where
                                                             let rp1 = reader.rb.bytes_read();
                                                             let dfheader =
                                                                 read_datafile_header2(&mut reader.rb, pos).await?;
+                                                            // TODO handle expand
+                                                            let expand = false;
                                                             let data =
-                                                                read_data2(&mut reader.rb, &dfheader, range, false)
-                                                                    .await?;
+                                                                read_data2(&mut reader.rb, &dfheader, range, expand)
+                                                                    .await
+                                                                    .map_err(|e| {
+                                                                        Error::with_msg_no_trace(format!(
+                                                                            "dpath {:?}  error {}",
+                                                                            dpath, e
+                                                                        ))
+                                                                    })?;
                                                             let rp2 = reader.rb.bytes_read();
                                                             let bytes_read = rp2 - rp1;
                                                             let ret = FutAItem {
@@ -248,7 +262,7 @@ where
                                         }
                                         Int::Empty
                                     }
-                                    BlockrefItem::JsVal(_jsval) => Int::Empty,
+                                    BlockrefItem::JsVal(jsval) => Int::Item(Ok(BlockItem::JsVal(jsval))),
                                 },
                                 Err(e) => {
                                     self.done = true;
@@ -271,7 +285,6 @@ where
                     } else {
                         match self.block_reads.poll_next_unpin(cx) {
                             Ready(Some(Ok(item))) => {
-                                //
                                 if item.dfnotfound {
                                     self.dfnotfound.insert(item.path, true);
                                 }
@@ -297,23 +310,35 @@ where
                                         item.events.is_some(),
                                         item.events_read
                                     ));
+                                    let _ = item;
                                 }
-                                if self.acc.older(Duration::from_millis(1000)) {
-                                    let ret = std::mem::replace(&mut self.acc, StatsAcc::new());
-                                    match serde_json::to_value((ret, self.block_reads.len(), self.readers.len())) {
-                                        Ok(item) => Int::Item(Ok(item)),
-                                        Err(e) => {
-                                            self.done = true;
-                                            return Ready(Some(Err(e.into())));
+                                if false {
+                                    // TODO emit proper variant for optional performance measurement.
+                                    if self.acc.older(Duration::from_millis(1000)) {
+                                        let ret = std::mem::replace(&mut self.acc, StatsAcc::new());
+                                        match serde_json::to_value((ret, self.block_reads.len(), self.readers.len())) {
+                                            Ok(item) => Int::Item(Ok::<_, Error>(item)),
+                                            Err(e) => {
+                                                self.done = true;
+                                                return Ready(Some(Err(e.into())));
+                                            }
                                         }
-                                    }
+                                    } else {
+                                        //Int::Item(Ok(item))
+                                        Int::Empty
+                                    };
+                                    err::todoval()
                                 } else {
-                                    //Int::Item(Ok(item))
-                                    Int::Empty
+                                    if let Some(events) = item.events {
+                                        Int::Item(Ok(BlockItem::EventsItem(events)))
+                                    } else {
+                                        Int::Empty
+                                    }
                                 }
                             }
                             Ready(Some(Err(e))) => {
                                 self.done = true;
+                                error!("{}", e);
                                 Int::Item(Err(e))
                             }
                             Ready(None) => {
@@ -364,6 +389,6 @@ impl<S> fmt::Debug for BlockStream<S> {
 
 impl<S> Drop for BlockStream<S> {
     fn drop(&mut self) {
-        info!("Drop {:?}", self);
+        trace!("Drop {:?}", self);
     }
 }

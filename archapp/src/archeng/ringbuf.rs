@@ -150,6 +150,6 @@ impl<F> fmt::Debug for RingBuf<F> {
 
 impl<F> Drop for RingBuf<F> {
     fn drop(&mut self) {
-        info!("Drop {:?}", self);
+        trace!("Drop {:?}", self);
     }
 }

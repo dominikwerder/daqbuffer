@@ -123,6 +123,6 @@ impl<F> fmt::Debug for BackReadBuf<F> {
 
 impl<F> Drop for BackReadBuf<F> {
     fn drop(&mut self) {
-        info!("Drop {:?}", self);
+        trace!("Drop {:?}", self);
     }
 }

@@ -1,8 +1,9 @@
 use crate::create_connection;
 use err::Error;
-use netpod::{ChannelSearchQuery, ChannelSearchResult, ChannelSearchSingleResult, NodeConfigCached};
+use netpod::{ChannelArchiver, ChannelSearchQuery, ChannelSearchResult, ChannelSearchSingleResult, NodeConfigCached};
+use serde_json::Value as JsVal;
 
-pub async fn search_channel(
+pub async fn search_channel_databuffer(
     query: ChannelSearchQuery,
     node_config: &NodeConfigCached,
 ) -> Result<ChannelSearchResult, Error> {
@@ -43,11 +44,12 @@ pub async fn search_channel(
             },
             None => vec![],
         };
+        let ty: String = row.get(3);
         let k = ChannelSearchSingleResult {
             backend: row.get(7),
             name: row.get(1),
             source: row.get(2),
-            ty: row.get(3),
+            ty,
             shape: shape,
             unit: row.get(5),
             description: row.get(6),
@@ -57,4 +59,99 @@ pub async fn search_channel(
     }
     let ret = ChannelSearchResult { channels: res };
     Ok(ret)
+}
+
+pub async fn search_channel_archeng(
+    query: ChannelSearchQuery,
+    backend: String,
+    conf: &ChannelArchiver,
+) -> Result<ChannelSearchResult, Error> {
+    let sql = format!(concat!(
+        "select c.name, c.config",
+        " from channels c",
+        " where c.name ~* $1",
+        " order by c.name",
+        " limit 100"
+    ));
+    let cl = create_connection(&conf.database).await?;
+    let rows = cl.query(sql.as_str(), &[&query.name_regex]).await?;
+    let mut res = vec![];
+    for row in rows {
+        let name: String = row.get(0);
+        let config: JsVal = row.get(1);
+        let st = match config.get("scalarType") {
+            Some(k) => match k {
+                JsVal::String(k) => match k.as_str() {
+                    "U8" => "Uint8",
+                    "U16" => "Uint16",
+                    "U32" => "Uint32",
+                    "U64" => "Uint64",
+                    "I8" => "Int8",
+                    "I16" => "Int16",
+                    "I32" => "Int32",
+                    "I64" => "Int64",
+                    "F32" => "Float32",
+                    "F64" => "Float64",
+                    _ => k,
+                }
+                .into(),
+                _ => "",
+            },
+            None => "",
+        };
+        let shape = match config.get("shape") {
+            Some(k) => match k {
+                JsVal::String(k) => {
+                    if k == "Scalar" {
+                        vec![]
+                    } else {
+                        return Err(Error::with_msg_no_trace(format!("can not understand {:?}", config)));
+                    }
+                }
+                JsVal::Object(k) => match k.get("Wave") {
+                    Some(k) => match k {
+                        JsVal::Number(k) => {
+                            vec![k.as_i64().unwrap_or(u32::MAX as i64) as u32]
+                        }
+                        _ => {
+                            return Err(Error::with_msg_no_trace(format!("can not understand {:?}", config)));
+                        }
+                    },
+                    None => {
+                        return Err(Error::with_msg_no_trace(format!("can not understand {:?}", config)));
+                    }
+                },
+                _ => {
+                    return Err(Error::with_msg_no_trace(format!("can not understand {:?}", config)));
+                }
+            },
+            None => vec![],
+        };
+        let k = ChannelSearchSingleResult {
+            backend: backend.clone(),
+            name,
+            source: String::new(),
+            ty: st.into(),
+            shape,
+            unit: String::new(),
+            description: String::new(),
+            is_api_0: None,
+        };
+        res.push(k);
+    }
+    let ret = ChannelSearchResult { channels: res };
+    Ok(ret)
+}
+
+pub async fn search_channel(
+    query: ChannelSearchQuery,
+    node_config: &NodeConfigCached,
+) -> Result<ChannelSearchResult, Error> {
+    if let Some(conf) = node_config.node.channel_archiver.as_ref() {
+        search_channel_archeng(query, node_config.node.backend.clone(), conf).await
+    } else if let Some(_conf) = node_config.node.archiver_appliance.as_ref() {
+        err::todoval()
+    } else {
+        search_channel_databuffer(query, node_config).await
+    }
 }

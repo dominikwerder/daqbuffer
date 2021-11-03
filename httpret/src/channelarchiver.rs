@@ -9,6 +9,7 @@ use netpod::query::RawEventsQuery;
 use netpod::{get_url_query_pairs, log::*, Channel, NanoRange};
 use netpod::{NodeConfigCached, APP_JSON_LINES};
 use serde::Serialize;
+use serde_json::Value as JsVal;
 use url::Url;
 
 fn json_lines_stream<S, I>(stream: S) -> impl Stream<Item = Result<Vec<u8>, Error>>
@@ -158,6 +159,87 @@ impl ScanChannels {
     }
 }
 
+pub struct ChannelNames {}
+
+impl ChannelNames {
+    pub fn prefix() -> &'static str {
+        "/api/4/channelarchiver/channel/names"
+    }
+
+    pub fn name() -> &'static str {
+        "ChannelNames"
+    }
+
+    pub fn should_handle(path: &str) -> Option<Self> {
+        if path.starts_with(Self::prefix()) {
+            Some(Self {})
+        } else {
+            None
+        }
+    }
+
+    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+        if req.method() != Method::GET {
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+        }
+        info!("{}  handle  uri: {:?}", Self::name(), req.uri());
+        let conf = node_config
+            .node
+            .channel_archiver
+            .as_ref()
+            .ok_or(Error::with_msg_no_trace(
+                "this node is not configured as channel archiver",
+            ))?;
+        use archapp_wrap::archapp::archeng;
+        let stream = archeng::configs::ChannelNameStream::new(conf.database.clone());
+        let stream = json_lines_stream(stream);
+        Ok(response(StatusCode::OK)
+            .header(header::CONTENT_TYPE, APP_JSON_LINES)
+            .body(Body::wrap_stream(stream))?)
+    }
+}
+
+pub struct ScanConfigs {}
+
+impl ScanConfigs {
+    pub fn prefix() -> &'static str {
+        "/api/4/channelarchiver/scan/configs"
+    }
+
+    pub fn name() -> &'static str {
+        "ScanConfigs"
+    }
+
+    pub fn should_handle(path: &str) -> Option<Self> {
+        if path.starts_with(Self::prefix()) {
+            Some(Self {})
+        } else {
+            None
+        }
+    }
+
+    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+        if req.method() != Method::GET {
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+        }
+        info!("{}  handle  uri: {:?}", Self::name(), req.uri());
+        let conf = node_config
+            .node
+            .channel_archiver
+            .as_ref()
+            .ok_or(Error::with_msg_no_trace(
+                "this node is not configured as channel archiver",
+            ))?;
+        use archapp_wrap::archapp::archeng;
+        let stream = archeng::configs::ChannelNameStream::new(conf.database.clone());
+        let stream = archeng::configs::ConfigStream::new(stream, conf.clone());
+        let stream = json_lines_stream(stream);
+        Ok(response(StatusCode::OK)
+            .header(header::CONTENT_TYPE, APP_JSON_LINES)
+            .body(Body::wrap_stream(stream))?)
+    }
+}
+
 pub struct BlockRefStream {}
 
 impl BlockRefStream {
@@ -190,9 +272,13 @@ impl BlockRefStream {
                 "this node is not configured as channel archiver",
             ))?;
         let range = NanoRange { beg: 0, end: u64::MAX };
+        let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+        let pairs = get_url_query_pairs(&url);
+        let channel_name = pairs.get("channelName").map(String::from).unwrap_or("NONE".into());
         let channel = Channel {
             backend: "".into(),
-            name: "ARIDI-PCT:CURRENT".into(),
+            name: channel_name,
+            //name: "ARIDI-PCT:CURRENT".into(),
         };
         let s = archapp_wrap::archapp::archeng::blockrefstream::blockref_stream(channel, range, conf.clone());
         let s = s.map(|item| match item {
@@ -251,20 +337,26 @@ impl BlockStream {
                 "this node is not configured as channel archiver",
             ))?;
         let range = NanoRange { beg: 0, end: u64::MAX };
-        let channel = Channel {
-            backend: "".into(),
-            name: "ARIDI-PCT:CURRENT".into(),
-        };
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let pairs = get_url_query_pairs(&url);
         let read_queue = pairs.get("readQueue").unwrap_or(&"1".to_string()).parse()?;
-        let s = archapp_wrap::archapp::archeng::blockrefstream::blockref_stream(channel, range.clone(), conf.clone());
+        let channel_name = pairs.get("channelName").map(String::from).unwrap_or("NONE".into());
+        let channel = Channel {
+            backend: "".into(),
+            name: channel_name,
+            //name: "ARIDI-PCT:CURRENT".into(),
+        };
+        use archapp_wrap::archapp::archeng;
+        let s = archeng::blockrefstream::blockref_stream(channel, range.clone(), conf.clone());
         let s = Box::pin(s);
-        let s = archapp_wrap::archapp::archeng::blockstream::BlockStream::new(s, range.clone(), read_queue);
+        let s = archeng::blockstream::BlockStream::new(s, range.clone(), read_queue);
         let s = s.map(|item| match item {
             Ok(item) => {
-                //use archapp_wrap::archapp::archeng::blockstream::BlockItem::*;
-                Ok(item)
+                use archeng::blockstream::BlockItem;
+                match item {
+                    BlockItem::EventsItem(item) => Ok(JsVal::String("EventsItem".into())),
+                    BlockItem::JsVal(jsval) => Ok(jsval),
+                }
             }
             Err(e) => Err(e),
         });

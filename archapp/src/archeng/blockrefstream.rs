@@ -1,22 +1,21 @@
 use crate::archeng::backreadbuf::BackReadBuf;
-use crate::archeng::datablock::{read_data2, read_data_1, read_datafile_header, read_datafile_header2};
+use crate::archeng::datablock::{read_data2, read_datafile_header2};
 use crate::archeng::indexfiles::{database_connect, unfold_stream, UnfoldExec};
 use crate::archeng::indextree::{
-    read_datablockref, read_datablockref2, DataheaderPos, Dataref, HeaderVersion, IndexFileBasics, RecordIter,
-    RecordTarget,
+    read_datablockref2, DataheaderPos, Dataref, HeaderVersion, IndexFileBasics, RecordIter, RecordTarget,
 };
 use crate::archeng::ringbuf::RingBuf;
-use crate::archeng::{open_read, seek, StatsChannel};
+use crate::archeng::{open_read, StatsChannel};
 use err::Error;
 use futures_core::{Future, Stream};
 use items::WithLen;
 #[allow(unused)]
 use netpod::log::*;
-use netpod::{Channel, ChannelArchiver, FilePos, NanoRange};
+use netpod::{Channel, ChannelArchiver, NanoRange};
+#[allow(unused)]
 use serde::Serialize;
 use serde_json::Value as JsVal;
 use std::collections::{BTreeMap, VecDeque};
-use std::io::SeekFrom;
 use std::path::PathBuf;
 use std::pin::Pin;
 use tokio::fs::File;
@@ -83,7 +82,7 @@ impl BlockrefStream {
         match self.steps {
             Start => {
                 self.steps = SelectIndexFile;
-                Ok(Some((BlockrefItem::JsVal(JsVal::Null), self)))
+                Ok(Some((BlockrefItem::JsVal(JsVal::String(format!("START"))), self)))
             }
             SelectIndexFile => {
                 let dbc = database_connect(&self.conf.database).await?;
@@ -93,7 +92,7 @@ impl BlockrefStream {
                     self.paths.push_back(row.try_get(0)?);
                 }
                 self.steps = SetupNextPath;
-                Ok(Some((BlockrefItem::JsVal(JsVal::String(format!("INIT"))), self)))
+                Ok(Some((BlockrefItem::JsVal(JsVal::String(format!("DBQUERY"))), self)))
             }
             SetupNextPath => {
                 let stats = &StatsChannel::dummy();
@@ -115,8 +114,11 @@ impl BlockrefStream {
                     };
                     Ok(Some((BlockrefItem::JsVal(JsVal::String(format!("NEXTPATH"))), self)))
                 } else {
-                    self.steps = Done;
-                    Ok(Some((BlockrefItem::JsVal(JsVal::String(format!("DONE"))), self)))
+                    self.steps = SelectIndexFile;
+                    Ok(Some((
+                        BlockrefItem::JsVal(JsVal::String(format!("PATHQUEUEEMPTY"))),
+                        self,
+                    )))
                 }
             }
             ReadBlocks(ref mut iter, ref hver, ref indexpath) => {
@@ -208,7 +210,7 @@ impl BlockrefStream {
                         panic!();
                     }
                 } else {
-                    info!(
+                    debug!(
                         "data_bytes_read: {}  same_dfh_count: {}",
                         self.data_bytes_read, self.same_dfh_count
                     );

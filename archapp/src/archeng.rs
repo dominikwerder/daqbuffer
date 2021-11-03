@@ -2,6 +2,7 @@ pub mod backreadbuf;
 pub mod blockrefstream;
 pub mod blockstream;
 pub mod bufminread;
+pub mod configs;
 pub mod datablock;
 pub mod datablockstream;
 pub mod diskio;
@@ -18,7 +19,7 @@ use crate::wrap_task;
 use async_channel::{Receiver, Sender};
 use err::Error;
 use futures_util::StreamExt;
-use items::{RangeCompletableItem, Sitemty, StatsItem, StreamItem};
+use items::{RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithLen};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{
@@ -329,26 +330,26 @@ pub fn list_all_channels(node: &ChannelArchiver) -> Receiver<Result<ListChannelI
 pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> Result<ChannelConfigResponse, Error> {
     let _timed = Timed::new("channel_config");
     let mut type_info = None;
-    let mut stream = datablockstream::DatablockStream::for_channel_range(
-        q.range.clone(),
-        q.channel.clone(),
-        conf.data_base_paths.clone().into(),
-        true,
-        1,
-    );
+    let stream = blockrefstream::blockref_stream(q.channel.clone(), q.range.clone().clone(), conf.clone());
+    let stream = Box::pin(stream);
+    let stream = blockstream::BlockStream::new(stream, q.range.clone(), 1);
+    let mut stream = stream;
     let timed_expand = Timed::new("channel_config EXPAND");
     while let Some(item) = stream.next().await {
+        use blockstream::BlockItem::*;
         match item {
             Ok(k) => match k {
-                StreamItem::DataItem(k) => match k {
-                    RangeCompletableItem::RangeComplete => (),
-                    RangeCompletableItem::Data(k) => {
-                        type_info = Some(k.type_info());
+                EventsItem(item) => {
+                    if item.len() > 0 {
+                        type_info = Some(item.type_info());
                         break;
                     }
-                },
-                StreamItem::Log(_) => (),
-                StreamItem::Stats(_) => (),
+                }
+                JsVal(jsval) => {
+                    if false {
+                        info!("jsval: {}", serde_json::to_string(&jsval)?);
+                    }
+                }
             },
             Err(e) => {
                 error!("{}", e);
@@ -360,25 +361,25 @@ pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> R
     if type_info.is_none() {
         let timed_normal = Timed::new("channel_config NORMAL");
         warn!("channel_config expand mode returned none");
-        let mut stream = datablockstream::DatablockStream::for_channel_range(
-            q.range.clone(),
-            q.channel.clone(),
-            conf.data_base_paths.clone().into(),
-            false,
-            u64::MAX,
-        );
+        let stream = blockrefstream::blockref_stream(q.channel.clone(), q.range.clone().clone(), conf.clone());
+        let stream = Box::pin(stream);
+        let stream = blockstream::BlockStream::new(stream, q.range.clone(), 1);
+        let mut stream = stream;
         while let Some(item) = stream.next().await {
+            use blockstream::BlockItem::*;
             match item {
                 Ok(k) => match k {
-                    StreamItem::DataItem(k) => match k {
-                        RangeCompletableItem::RangeComplete => (),
-                        RangeCompletableItem::Data(k) => {
-                            type_info = Some(k.type_info());
+                    EventsItem(item) => {
+                        if item.len() > 0 {
+                            type_info = Some(item.type_info());
                             break;
                         }
-                    },
-                    StreamItem::Log(_) => (),
-                    StreamItem::Stats(_) => (),
+                    }
+                    JsVal(jsval) => {
+                        if false {
+                            info!("jsval: {}", serde_json::to_string(&jsval)?);
+                        }
+                    }
                 },
                 Err(e) => {
                     error!("{}", e);

@@ -200,7 +200,6 @@ impl ScanIndexFiles {
                         }
                     } else if rows.len() == 1 {
                         let rid = rows[0].try_get(0)?;
-                        info!("select done: {}", rid);
                         rid
                     } else {
                         return Err(Error::with_msg("not unique"));
@@ -360,7 +359,6 @@ impl ScanChannels {
                                 }
                             } else if rows.len() == 1 {
                                 let rid = rows[0].try_get(0)?;
-                                info!("select done: {}", rid);
                                 rid
                             } else {
                                 return Err(Error::with_msg("not unique"));
