@@ -1,6 +1,7 @@
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
+use items::eventsitem::EventsItem;
 use items::{
     inspect_timestamps, Appendable, LogItem, PushableIndex, RangeCompletableItem, Sitemty, StatsItem, StreamItem,
 };
@@ -10,8 +11,6 @@ use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-use crate::eventsitem::EventsItem;
 
 /**
 Priority-Merge events from different candidate sources.

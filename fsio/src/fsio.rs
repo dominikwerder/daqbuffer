@@ -1,5 +1,7 @@
 use err::Error;
+use items::plainevents::PlainEvents;
 use netpod::log::*;
+use netpod::Channel;
 #[allow(unused)]
 use std::os::unix::prelude::OpenOptionsExt;
 use std::os::unix::prelude::{AsRawFd, OsStrExt};
@@ -171,5 +173,13 @@ mod test {
     #[test]
     fn t1() -> Result<(), Error> {
         Ok(taskrun::run(write_1()).unwrap())
+    }
+}
+
+pub struct EventSink {}
+
+impl EventSink {
+    pub fn sink(&self, _channel: &Channel, _events: PlainEvents) -> Result<(), Error> {
+        Ok(())
     }
 }

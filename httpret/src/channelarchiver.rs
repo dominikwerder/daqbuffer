@@ -279,10 +279,11 @@ impl BlockRefStream {
             name: channel_name,
             //name: "ARIDI-PCT:CURRENT".into(),
         };
-        let s = archapp_wrap::archapp::archeng::blockrefstream::blockref_stream(channel, range, conf.clone());
+        use archapp_wrap::archapp::archeng;
+        let s = archeng::blockrefstream::blockref_stream(channel, range, conf.clone());
         let s = s.map(|item| match item {
             Ok(item) => {
-                use archapp_wrap::archapp::archeng::blockrefstream::BlockrefItem::*;
+                use archeng::blockrefstream::BlockrefItem::*;
                 match item {
                     Blockref(_k, jsval) => Ok(jsval),
                     JsVal(jsval) => Ok(jsval),

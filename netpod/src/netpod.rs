@@ -4,6 +4,12 @@ pub mod query;
 pub mod status;
 pub mod streamext;
 
+use chrono::{DateTime, TimeZone, Utc};
+use err::Error;
+use futures_core::Stream;
+use futures_util::StreamExt;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsVal;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::iter::FromIterator;
@@ -12,21 +18,15 @@ use std::pin::Pin;
 use std::str::FromStr;
 use std::task::{Context, Poll};
 use std::time::Duration;
-
-use chrono::{DateTime, TimeZone, Utc};
-use futures_core::Stream;
-use futures_util::StreamExt;
-use serde::{Deserialize, Serialize};
+use timeunits::*;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 use url::Url;
 
-use err::Error;
-use timeunits::*;
-
 pub const APP_JSON: &'static str = "application/json";
 pub const APP_JSON_LINES: &'static str = "application/jsonlines";
 pub const APP_OCTET: &'static str = "application/octet-stream";
+pub const ACCEPT_ALL: &'static str = "*/*";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AggQuerySingleChannel {
@@ -81,6 +81,24 @@ impl ScalarType {
             _ => return Err(Error::with_msg(format!("unknown dtype code: {}", ix))),
         };
         Ok(g)
+    }
+
+    pub fn from_bsread_str(s: &str) -> Result<Self, Error> {
+        use ScalarType::*;
+        let ret = match s {
+            "uint8" => U8,
+            "uint16" => U16,
+            "uint32" => U32,
+            "uint64" => U64,
+            "int8" => I8,
+            "int16" => I16,
+            "int32" => I32,
+            "int64" => I64,
+            "float" => F32,
+            "double" => F64,
+            _ => return Err(Error::with_msg_no_trace(format!("can not understand bsread {}", s))),
+        };
+        Ok(ret)
     }
 
     pub fn bytes(&self) -> u8 {
@@ -356,6 +374,14 @@ impl ByteOrder {
         }
     }
 
+    pub fn from_bsread_str(s: &str) -> Result<ByteOrder, Error> {
+        match s {
+            "little" => Ok(ByteOrder::LE),
+            "big" => Ok(ByteOrder::BE),
+            _ => Err(Error::with_msg_no_trace(format!("can not understand {}", s))),
+        }
+    }
+
     pub fn is_le(&self) -> bool {
         if let Self::LE = self {
             true
@@ -397,6 +423,26 @@ pub enum Shape {
     Scalar,
     Wave(u32),
     Image(u32, u32),
+}
+
+impl Shape {
+    pub fn from_bsread_jsval(v: &JsVal) -> Result<Shape, Error> {
+        match v {
+            JsVal::Array(v) => match v.len() {
+                0 => Ok(Shape::Scalar),
+                1 => match &v[0] {
+                    JsVal::Number(v) => match v.as_u64() {
+                        Some(0) | Some(1) => Ok(Shape::Scalar),
+                        Some(v) => Ok(Shape::Wave(v as u32)),
+                        None => Err(Error::with_msg_no_trace(format!("can not understand {:?}", v))),
+                    },
+                    _ => Err(Error::with_msg_no_trace(format!("can not understand {:?}", v))),
+                },
+                _ => Err(Error::with_msg_no_trace(format!("can not understand {:?}", v))),
+            },
+            _ => Err(Error::with_msg_no_trace(format!("can not understand {:?}", v))),
+        }
+    }
 }
 
 pub trait HasShape {

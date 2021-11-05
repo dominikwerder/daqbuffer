@@ -1,3 +1,18 @@
+pub mod binnedevents;
+pub mod eventsitem;
+pub mod eventvalues;
+pub mod frame;
+pub mod inmem;
+pub mod minmaxavgbins;
+pub mod minmaxavgdim1bins;
+pub mod minmaxavgwavebins;
+pub mod numops;
+pub mod plainevents;
+pub mod streams;
+pub mod waveevents;
+pub mod xbinnedscalarevents;
+pub mod xbinnedwaveevents;
+
 use crate::frame::make_frame_2;
 use crate::numops::BoolNum;
 use bytes::BytesMut;
@@ -15,18 +30,6 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::fs::File;
 use tokio::io::{AsyncRead, ReadBuf};
-
-pub mod eventvalues;
-pub mod frame;
-pub mod inmem;
-pub mod minmaxavgbins;
-pub mod minmaxavgdim1bins;
-pub mod minmaxavgwavebins;
-pub mod numops;
-pub mod streams;
-pub mod waveevents;
-pub mod xbinnedscalarevents;
-pub mod xbinnedwaveevents;
 
 pub const EVENT_QUERY_JSON_STRING_FRAME: u32 = 0x100;
 pub const EVENT_VALUES_FRAME_TYPE_ID: u32 = 0x500;

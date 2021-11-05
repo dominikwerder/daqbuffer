@@ -9,189 +9,23 @@ pub mod diskio;
 pub mod indexfiles;
 pub mod indextree;
 pub mod pipe;
-pub mod ringbuf;
 
 use self::indexfiles::list_index_files;
 use self::indextree::channel_list;
-use crate::eventsitem::EventsItem;
 use crate::timed::Timed;
 use crate::wrap_task;
 use async_channel::{Receiver, Sender};
+use commonio::StatsChannel;
 use err::Error;
 use futures_util::StreamExt;
-use items::{Sitemty, StatsItem, StreamItem, WithLen};
+use items::{StreamItem, WithLen};
 use netpod::log::*;
 use netpod::timeunits::SEC;
-use netpod::{
-    ChannelArchiver, ChannelConfigQuery, ChannelConfigResponse, DiskStats, OpenStats, ReadExactStats, ReadStats,
-    SeekStats,
-};
+use netpod::{ChannelArchiver, ChannelConfigQuery, ChannelConfigResponse};
 use serde::Serialize;
 use std::convert::TryInto;
-use std::fmt;
-use std::io::{self, SeekFrom};
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Instant;
-use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
-
-/*
-struct ReadExactWrap<'a> {
-    fut: &'a mut dyn Future<Output = io::Result<usize>>,
-}
-
-trait TimedIo {
-    fn read_exact<'a, F>(&'a mut self, buf: &'a mut [u8]) -> ReadExactWrap
-    where
-        Self: Unpin;
-}
-
-impl TimedIo for File {
-    fn read_exact<'a, F>(&'a mut self, buf: &'a mut [u8]) -> ReadExactWrap
-    where
-        Self: Unpin,
-    {
-        let fut = tokio::io::AsyncReadExt::read_exact(self, buf);
-        ReadExactWrap { fut: Box::pin(fut) }
-    }
-}
-*/
 
 const EPICS_EPOCH_OFFSET: u64 = 631152000 * SEC;
-const LOG_IO: bool = true;
-const STATS_IO: bool = true;
-static CHANNEL_SEND_ERROR: AtomicUsize = AtomicUsize::new(0);
-
-fn channel_send_error() {
-    let c = CHANNEL_SEND_ERROR.fetch_add(1, Ordering::AcqRel);
-    if c < 10 {
-        error!("CHANNEL_SEND_ERROR {}", c);
-    }
-}
-
-pub struct StatsChannel {
-    chn: Sender<Sitemty<EventsItem>>,
-}
-
-impl fmt::Debug for StatsChannel {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("StatsChannel").finish()
-    }
-}
-
-impl StatsChannel {
-    pub fn new(chn: Sender<Sitemty<EventsItem>>) -> Self {
-        Self { chn }
-    }
-
-    pub fn dummy() -> Self {
-        let (tx, rx) = async_channel::bounded(2);
-        taskrun::spawn(async move {
-            let mut rx = rx;
-            while let Some(_) = rx.next().await {}
-        });
-        Self::new(tx)
-    }
-
-    pub async fn send(&self, item: StatsItem) -> Result<(), Error> {
-        Ok(self.chn.send(Ok(StreamItem::Stats(item))).await?)
-    }
-}
-
-impl Clone for StatsChannel {
-    fn clone(&self) -> Self {
-        Self { chn: self.chn.clone() }
-    }
-}
-
-pub async fn open_read(path: PathBuf, stats: &StatsChannel) -> io::Result<File> {
-    let ts1 = Instant::now();
-    let res = OpenOptions::new().read(true).open(path).await;
-    let ts2 = Instant::now();
-    let dt = ts2.duration_since(ts1);
-    if LOG_IO {
-        let dt = dt.as_secs_f64() * 1e3;
-        debug!("timed open_read  dt: {:.3} ms", dt);
-    }
-    if STATS_IO {
-        if let Err(_) = stats
-            .send(StatsItem::DiskStats(DiskStats::OpenStats(OpenStats::new(
-                ts2.duration_since(ts1),
-            ))))
-            .await
-        {
-            channel_send_error();
-        }
-    }
-    res
-}
-
-async fn seek(file: &mut File, pos: SeekFrom, stats: &StatsChannel) -> io::Result<u64> {
-    let ts1 = Instant::now();
-    let res = file.seek(pos).await;
-    let ts2 = Instant::now();
-    let dt = ts2.duration_since(ts1);
-    if LOG_IO {
-        let dt = dt.as_secs_f64() * 1e3;
-        debug!("timed seek  dt: {:.3} ms", dt);
-    }
-    if STATS_IO {
-        if let Err(_) = stats
-            .send(StatsItem::DiskStats(DiskStats::SeekStats(SeekStats::new(
-                ts2.duration_since(ts1),
-            ))))
-            .await
-        {
-            channel_send_error();
-        }
-    }
-    res
-}
-
-async fn read(file: &mut File, buf: &mut [u8], stats: &StatsChannel) -> io::Result<usize> {
-    let ts1 = Instant::now();
-    let res = file.read(buf).await;
-    let ts2 = Instant::now();
-    let dt = ts2.duration_since(ts1);
-    if LOG_IO {
-        let dt = dt.as_secs_f64() * 1e3;
-        debug!("timed read  dt: {:.3} ms  res: {:?}", dt, res);
-    }
-    if STATS_IO {
-        if let Err(_) = stats
-            .send(StatsItem::DiskStats(DiskStats::ReadStats(ReadStats::new(
-                ts2.duration_since(ts1),
-            ))))
-            .await
-        {
-            channel_send_error();
-        }
-    }
-    res
-}
-
-async fn read_exact(file: &mut File, buf: &mut [u8], stats: &StatsChannel) -> io::Result<usize> {
-    let ts1 = Instant::now();
-    let res = file.read_exact(buf).await;
-    let ts2 = Instant::now();
-    let dt = ts2.duration_since(ts1);
-    if LOG_IO {
-        let dt = dt.as_secs_f64() * 1e3;
-        debug!("timed read_exact  dt: {:.3} ms  res: {:?}", dt, res);
-    }
-    if STATS_IO {
-        if let Err(_) = stats
-            .send(StatsItem::DiskStats(DiskStats::ReadExactStats(ReadExactStats::new(
-                ts2.duration_since(ts1),
-            ))))
-            .await
-        {
-            channel_send_error();
-        };
-    }
-    res
-}
 
 pub fn name_hash(s: &str, ht_len: u32) -> u32 {
     let mut h = 0;
@@ -334,7 +168,6 @@ pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> R
     let stream = Box::pin(stream);
     let stream = blockstream::BlockStream::new(stream, q.range.clone(), 1);
     let mut stream = stream;
-    let timed_expand = Timed::new("channel_config EXPAND");
     while let Some(item) = stream.next().await {
         use blockstream::BlockItem::*;
         match item {
@@ -346,7 +179,7 @@ pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> R
                     }
                 }
                 JsVal(jsval) => {
-                    if false {
+                    if true {
                         info!("jsval: {}", serde_json::to_string(&jsval)?);
                     }
                 }
@@ -357,7 +190,6 @@ pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> R
             }
         }
     }
-    drop(timed_expand);
     if type_info.is_none() {
         let timed_normal = Timed::new("channel_config NORMAL");
         warn!("channel_config expand mode returned none");
@@ -376,7 +208,7 @@ pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> R
                         }
                     }
                     JsVal(jsval) => {
-                        if false {
+                        if true {
                             info!("jsval: {}", serde_json::to_string(&jsval)?);
                         }
                     }
@@ -406,7 +238,8 @@ pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> R
 mod test {
     use crate::archeng::datablock::{read_data_1, read_datafile_header};
     use crate::archeng::indextree::{read_channel, read_datablockref, search_record};
-    use crate::archeng::{open_read, StatsChannel, EPICS_EPOCH_OFFSET};
+    use crate::archeng::{StatsChannel, EPICS_EPOCH_OFFSET};
+    use commonio::open_read;
     use err::Error;
     use netpod::log::*;
     use netpod::timeunits::*;

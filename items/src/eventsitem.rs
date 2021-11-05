@@ -1,10 +1,7 @@
-use items::{Appendable, Clearable, PushableIndex, WithLen, WithTimestamps};
+use crate::binnedevents::XBinnedEvents;
+use crate::plainevents::{PlainEvents, ScalarPlainEvents, WavePlainEvents};
+use crate::{Appendable, Clearable, PushableIndex, WithLen, WithTimestamps};
 use netpod::{AggKind, HasScalarType, HasShape, ScalarType, Shape};
-
-use crate::{
-    binnedevents::XBinnedEvents,
-    plainevents::{PlainEvents, ScalarPlainEvents, WavePlainEvents},
-};
 
 #[derive(Debug)]
 pub enum EventsItem {

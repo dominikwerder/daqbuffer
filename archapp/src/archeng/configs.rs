@@ -76,10 +76,11 @@ impl Stream for ChannelNameStream {
                     Ready(Ok(dbc)) => {
                         self.connect_fut = None;
                         let off = self.off as i64;
+                        info!("select channels  off {}", off);
                         let fut = async move {
                             let rows = dbc
                                 .query(
-                                    "select rowid, name from channels where config = '{}'::jsonb order by name offset $1 limit 1000",
+                                    "select rowid, name from channels where config = '{}'::jsonb order by name offset $1 limit 64",
                                     &[&off],
                                 )
                                 .await?;
@@ -235,7 +236,10 @@ impl Stream for ConfigStream {
                                 match fut.await {
                                     Ok(Ok(k)) => Ok(Res::Response(k)),
                                     Ok(Err(e)) => Err(e),
-                                    Err(_) => Ok(Res::TimedOut(q.channel.name)),
+                                    Err(_) => {
+                                        warn!("timeout");
+                                        Ok(Res::TimedOut(q.channel.name))
+                                    }
                                 }
                             };
                             self.get_fut = Some(Box::pin(fut));

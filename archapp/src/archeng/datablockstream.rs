@@ -1,14 +1,14 @@
 use crate::archeng::datablock::{read_data_1, read_datafile_header};
 use crate::archeng::indexfiles::index_file_path_list;
 use crate::archeng::indextree::{read_channel, read_datablockref, search_record, search_record_expand, DataheaderPos};
-use crate::archeng::{open_read, StatsChannel};
-use crate::eventsitem::EventsItem;
 use crate::storagemerge::StorageMerge;
 use crate::timed::Timed;
 use async_channel::{Receiver, Sender};
+use commonio::{open_read, StatsChannel};
 use err::Error;
 use futures_core::{Future, Stream};
 use futures_util::{FutureExt, StreamExt};
+use items::eventsitem::EventsItem;
 use items::{inspect_timestamps, RangeCompletableItem, Sitemty, StreamItem, WithLen};
 use netpod::log::*;
 use netpod::{Channel, NanoRange};
@@ -317,10 +317,10 @@ impl Stream for DatablockStream {
 #[cfg(test)]
 mod test {
     use super::DatablockStream;
-    use crate::eventsitem::EventsItem;
     use chrono::{DateTime, Utc};
     use err::Error;
     use futures_util::StreamExt;
+    use items::eventsitem::EventsItem;
     use items::{LogItem, Sitemty, StatsItem, StreamItem};
     use netpod::timeunits::SEC;
     use netpod::{log::*, RangeFilterStats};

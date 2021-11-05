@@ -9,6 +9,18 @@ use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
 
+use crate::bsread::parse_zmtp_message;
+
+#[test]
+fn test_listen() -> Result<(), Error> {
+    use std::time::Duration;
+    let fut = async move {
+        let _ = tokio::time::timeout(Duration::from_millis(16000), zmtp_client("camtest:9999")).await;
+        Ok::<_, Error>(())
+    };
+    taskrun::run(fut)
+}
+
 pub async fn zmtp_00() -> Result<(), Error> {
     let addr = "S10-CPPM-MOT0991:9999";
     zmtp_client(addr).await?;
@@ -18,8 +30,32 @@ pub async fn zmtp_00() -> Result<(), Error> {
 pub async fn zmtp_client(addr: &str) -> Result<(), Error> {
     let conn = tokio::net::TcpStream::connect(addr).await?;
     let mut zmtp = Zmtp::new(conn);
-    while let Some(ev) = zmtp.next().await {
-        info!("got zmtp event: {:?}", ev);
+    let mut i1 = 0;
+    while let Some(item) = zmtp.next().await {
+        match item {
+            Ok(ev) => match ev {
+                ZmtpEvent::ZmtpMessage(msg) => {
+                    info!("Message frames: {}", msg.frames.len());
+                    match parse_zmtp_message(&msg) {
+                        Ok(msg) => info!("{:?}", msg),
+                        Err(e) => {
+                            error!("{}", e);
+                            for frame in &msg.frames {
+                                info!("Frame: {:?}", frame);
+                            }
+                        }
+                    }
+                }
+            },
+            Err(e) => {
+                error!("{}", e);
+                return Err(e);
+            }
+        }
+        i1 += 1;
+        if i1 > 100 {
+            break;
+        }
     }
     Ok(())
 }
@@ -36,6 +72,7 @@ enum ConnState {
 
 struct Zmtp {
     done: bool,
+    complete: bool,
     conn: TcpStream,
     conn_state: ConnState,
     buf: NetBuf,
@@ -55,6 +92,7 @@ impl Zmtp {
         //info!("recv_buffer_size  {:8}", conn.recv_buffer_size()?);
         Self {
             done: false,
+            complete: false,
             conn,
             conn_state: ConnState::InitSend,
             buf: NetBuf::new(),
@@ -238,30 +276,46 @@ impl NetBuf {
 }
 
 #[derive(Debug)]
-struct ZmtpMessage {
+pub struct ZmtpMessage {
     frames: Vec<ZmtpFrame>,
 }
 
-struct ZmtpFrame {
+impl ZmtpMessage {
+    pub fn frames(&self) -> &Vec<ZmtpFrame> {
+        &self.frames
+    }
+}
+
+pub struct ZmtpFrame {
     msglen: usize,
     has_more: bool,
     is_command: bool,
     data: Vec<u8>,
 }
 
+impl ZmtpFrame {
+    pub fn data(&self) -> &[u8] {
+        &self.data
+    }
+}
+
 impl fmt::Debug for ZmtpFrame {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s = String::from_utf8(self.data.clone()).unwrap_or_else(|_| String::new());
-        let s = if s.is_ascii() && !s.contains("\x00") {
-            s
-        } else {
-            "...".into()
+        let data = match String::from_utf8(self.data.clone()) {
+            Ok(s) => s
+                .chars()
+                .filter(|x| {
+                    //
+                    x.is_ascii_alphanumeric() || x.is_ascii_punctuation() || x.is_ascii_whitespace()
+                })
+                .collect::<String>(),
+            Err(_) => format!("Binary {{ len: {} }}", self.data.len()),
         };
         f.debug_struct("ZmtpFrame")
             .field("msglen", &self.msglen)
             .field("has_more", &self.has_more)
             .field("is_command", &self.is_command)
-            .field("data", &s)
+            .field("data", &data)
             .finish()
     }
 }
@@ -276,7 +330,10 @@ impl Stream for Zmtp {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        if self.done {
+        if self.complete {
+            panic!("poll_next on complete")
+        } else if self.done {
+            self.complete = true;
             return Ready(None);
         }
         'outer: loop {

@@ -3,14 +3,11 @@ pub mod generated;
 #[cfg(not(feature = "devread"))]
 pub mod generated {}
 pub mod archeng;
-pub mod binnedevents;
 pub mod events;
-pub mod eventsitem;
 #[cfg(feature = "devread")]
 pub mod parse;
 #[cfg(not(feature = "devread"))]
 pub mod parsestub;
-pub mod plainevents;
 pub mod storagemerge;
 #[cfg(feature = "devread")]
 #[cfg(test)]

@@ -1,7 +1,6 @@
-use crate::archeng::ringbuf::RingBuf;
-use crate::archeng::{
-    format_hex_block, name_hash, open_read, readu16, readu32, readu64, StatsChannel, EPICS_EPOCH_OFFSET,
-};
+use crate::archeng::{format_hex_block, name_hash, readu16, readu32, readu64, StatsChannel, EPICS_EPOCH_OFFSET};
+use commonio::open_read;
+use commonio::ringbuf::RingBuf;
 use err::Error;
 use netpod::{log::*, NanoRange};
 use netpod::{timeunits::SEC, FilePos, Nanos};
@@ -1048,7 +1047,8 @@ mod test {
     use crate::archeng::indextree::{
         read_channel, read_datablockref, read_file_basics, search_record, IndexFileBasics,
     };
-    use crate::archeng::{open_read, StatsChannel, EPICS_EPOCH_OFFSET};
+    use crate::archeng::EPICS_EPOCH_OFFSET;
+    use commonio::{open_read, StatsChannel};
     use err::Error;
     #[allow(unused)]
     use netpod::log::*;

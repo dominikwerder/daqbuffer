@@ -4,8 +4,8 @@ use crate::archeng::indexfiles::{database_connect, unfold_stream, UnfoldExec};
 use crate::archeng::indextree::{
     read_datablockref2, DataheaderPos, Dataref, HeaderVersion, IndexFileBasics, RecordIter, RecordTarget,
 };
-use crate::archeng::ringbuf::RingBuf;
-use crate::archeng::{open_read, StatsChannel};
+use commonio::ringbuf::RingBuf;
+use commonio::{open_read, StatsChannel};
 use err::Error;
 use futures_core::{Future, Stream};
 use items::WithLen;
@@ -82,7 +82,10 @@ impl BlockrefStream {
         match self.steps {
             Start => {
                 self.steps = SelectIndexFile;
-                Ok(Some((BlockrefItem::JsVal(JsVal::String(format!("START"))), self)))
+                Ok(Some((
+                    BlockrefItem::JsVal(JsVal::String(format!("{}  START", module_path!()))),
+                    self,
+                )))
             }
             SelectIndexFile => {
                 let dbc = database_connect(&self.conf.database).await?;

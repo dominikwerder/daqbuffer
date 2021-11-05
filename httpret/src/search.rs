@@ -2,15 +2,15 @@ use crate::response;
 use err::Error;
 use http::header;
 use hyper::{Body, Request, Response, StatusCode};
-use netpod::{log::*, APP_JSON};
-use netpod::{ChannelSearchQuery, NodeConfigCached};
+use netpod::log::*;
+use netpod::{ChannelSearchQuery, NodeConfigCached, ACCEPT_ALL, APP_JSON};
 use url::Url;
 
 pub async fn channel_search(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let vdef = header::HeaderValue::from_static(APP_JSON);
     let v = head.headers.get(header::ACCEPT).unwrap_or(&vdef);
-    if v == APP_JSON || v == "*/*" {
+    if v == APP_JSON || v == ACCEPT_ALL {
         let s1 = format!("dummy:{}", head.uri);
         info!("try to parse {:?}", s1);
         let url = Url::parse(&s1)?;

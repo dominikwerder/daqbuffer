@@ -1,7 +1,7 @@
-use crate::archeng::{open_read, read, StatsChannel};
 use crate::timed::Timed;
 use crate::wrap_task;
 use async_channel::Receiver;
+use commonio::{open_read, read, StatsChannel};
 use err::Error;
 use futures_core::{Future, Stream};
 use futures_util::stream::unfold;

@@ -6,6 +6,7 @@ use http::header::InvalidHeaderValue;
 use http::uri::InvalidUri;
 use nom::error::ErrorKind;
 use serde::{Deserialize, Serialize};
+use std::array::TryFromSliceError;
 use std::fmt::Debug;
 use std::net::AddrParseError;
 use std::num::{ParseFloatError, ParseIntError};
@@ -264,6 +265,12 @@ impl From<Elapsed> for Error {
 
 impl From<url::ParseError> for Error {
     fn from(k: url::ParseError) -> Self {
+        Self::with_msg(format!("{:?}", k))
+    }
+}
+
+impl From<TryFromSliceError> for Error {
+    fn from(k: TryFromSliceError) -> Self {
         Self::with_msg(format!("{:?}", k))
     }
 }
