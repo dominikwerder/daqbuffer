@@ -91,8 +91,13 @@ impl BlockrefStream {
                 for row in rows {
                     self.paths.push_back(row.try_get(0)?);
                 }
-                self.steps = SetupNextPath;
-                Ok(Some((BlockrefItem::JsVal(JsVal::String(format!("DBQUERY"))), self)))
+                if self.paths.len() == 0 {
+                    self.steps = Done;
+                    Ok(Some((BlockrefItem::JsVal(JsVal::String(format!("NOMOREPATHS"))), self)))
+                } else {
+                    self.steps = SetupNextPath;
+                    Ok(Some((BlockrefItem::JsVal(JsVal::String(format!("DBQUERY"))), self)))
+                }
             }
             SetupNextPath => {
                 let stats = &StatsChannel::dummy();

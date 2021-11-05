@@ -83,7 +83,6 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
         .await?;
         Ok(ret)
     } else {
-        info!("bad accept: {:?}", head.headers.get(header::ACCEPT));
         Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::from(format!("{:?}", proxy_config.name)))?)
     }
 }

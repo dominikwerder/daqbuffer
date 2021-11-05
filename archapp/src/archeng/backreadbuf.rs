@@ -16,6 +16,7 @@ pub struct BackReadBuf<F> {
     seek_request: u64,
     seek_done: u64,
     read_done: u64,
+    bytes_read: u64,
 }
 
 impl<F> BackReadBuf<F>
@@ -33,6 +34,7 @@ where
             seek_request: 0,
             seek_done: 0,
             read_done: 0,
+            bytes_read: 0,
         };
         ret.seek(pos).await?;
         Ok(ret)
@@ -70,6 +72,7 @@ where
         //debug!("I/O fill  n {}", n);
         self.wp += n;
         self.read_done += 1;
+        self.bytes_read += n as u64;
         Ok(n)
     }
 
@@ -85,7 +88,6 @@ where
     }
 
     pub async fn seek(&mut self, pos: u64) -> Result<u64, Error> {
-        let dp = pos as i64 - self.abs as i64 - self.rp as i64;
         if pos >= self.abs && pos < self.abs + self.buf.len() as u64 - 64 {
             self.rp = (pos - self.abs) as usize;
             self.seek_request += 1;
@@ -106,6 +108,14 @@ where
             Ok(ret)
         }
     }
+
+    pub fn rp_abs(&self) -> u64 {
+        self.abs as u64 + self.rp as u64
+    }
+
+    pub fn bytes_read(&self) -> u64 {
+        self.bytes_read
+    }
 }
 
 impl<F> fmt::Debug for BackReadBuf<F> {
@@ -117,6 +127,7 @@ impl<F> fmt::Debug for BackReadBuf<F> {
             .field("seek_request", &self.seek_request)
             .field("seek_done", &self.seek_done)
             .field("read_done", &self.read_done)
+            .field("bytes_read", &self.bytes_read)
             .finish()
     }
 }

@@ -2,7 +2,6 @@ use crate::archeng::{read, seek, StatsChannel};
 use err::Error;
 use netpod::log::*;
 use std::fmt;
-use std::mem::ManuallyDrop;
 use std::{borrow::BorrowMut, io::SeekFrom};
 use tokio::fs::File;
 

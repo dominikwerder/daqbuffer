@@ -1,13 +1,12 @@
 use crate::archeng::ringbuf::RingBuf;
 use crate::archeng::{
-    format_hex_block, name_hash, open_read, readu16, readu32, readu64, seek, StatsChannel, EPICS_EPOCH_OFFSET,
+    format_hex_block, name_hash, open_read, readu16, readu32, readu64, StatsChannel, EPICS_EPOCH_OFFSET,
 };
 use err::Error;
 use netpod::{log::*, NanoRange};
 use netpod::{timeunits::SEC, FilePos, Nanos};
 use std::collections::VecDeque;
 use std::fmt;
-use std::io::SeekFrom;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tokio::fs::File;

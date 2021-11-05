@@ -19,7 +19,7 @@ use crate::wrap_task;
 use async_channel::{Receiver, Sender};
 use err::Error;
 use futures_util::StreamExt;
-use items::{RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithLen};
+use items::{Sitemty, StatsItem, StreamItem, WithLen};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{

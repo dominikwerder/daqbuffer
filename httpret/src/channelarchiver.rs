@@ -1,12 +1,11 @@
 use crate::response;
-use disk::events::PlainEventsJsonQuery;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use http::{header, Method, Request, Response, StatusCode};
 use hyper::Body;
-use netpod::query::RawEventsQuery;
-use netpod::{get_url_query_pairs, log::*, Channel, NanoRange};
+use netpod::log::*;
+use netpod::{get_url_query_pairs, Channel, NanoRange};
 use netpod::{NodeConfigCached, APP_JSON_LINES};
 use serde::Serialize;
 use serde_json::Value as JsVal;
@@ -342,9 +341,8 @@ impl BlockStream {
         let read_queue = pairs.get("readQueue").unwrap_or(&"1".to_string()).parse()?;
         let channel_name = pairs.get("channelName").map(String::from).unwrap_or("NONE".into());
         let channel = Channel {
-            backend: "".into(),
+            backend: node_config.node.backend.clone(),
             name: channel_name,
-            //name: "ARIDI-PCT:CURRENT".into(),
         };
         use archapp_wrap::archapp::archeng;
         let s = archeng::blockrefstream::blockref_stream(channel, range.clone(), conf.clone());
@@ -354,7 +352,7 @@ impl BlockStream {
             Ok(item) => {
                 use archeng::blockstream::BlockItem;
                 match item {
-                    BlockItem::EventsItem(item) => Ok(JsVal::String("EventsItem".into())),
+                    BlockItem::EventsItem(_item) => Ok(JsVal::String("EventsItem".into())),
                     BlockItem::JsVal(jsval) => Ok(jsval),
                 }
             }

@@ -406,9 +406,10 @@ fn _format_debug_2(evs: WaveEvents<i32>) -> Result<(), Error> {
 pub async fn read_data2(
     rb: &mut RingBuf<File>,
     datafile_header: &DatafileHeader,
-    range: NanoRange,
+    _range: NanoRange,
     _expand: bool,
 ) -> Result<EventsItem, Error> {
+    // TODO handle range
     // TODO handle expand mode
     {
         let dpos = datafile_header.pos.0 + DATA_HEADER_LEN_ON_DISK as u64;
