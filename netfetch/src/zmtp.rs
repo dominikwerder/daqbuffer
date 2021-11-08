@@ -1,15 +1,24 @@
+use crate::bsread::parse_zmtp_message;
+use crate::bsread::ChannelDesc;
+use crate::bsread::GlobalTimestamp;
+use crate::bsread::HeadA;
+use crate::bsread::HeadB;
+use crate::netbuf::NetBuf;
+use crate::netbuf::RP_REW_PT;
+use async_channel::Receiver;
+use async_channel::Sender;
 use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
 use netpod::log::*;
+use serde_json::Value as JsVal;
 use std::fmt;
 use std::mem;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
-
-use crate::bsread::parse_zmtp_message;
 
 #[test]
 fn test_listen() -> Result<(), Error> {
@@ -17,6 +26,29 @@ fn test_listen() -> Result<(), Error> {
     let fut = async move {
         let _ = tokio::time::timeout(Duration::from_millis(16000), zmtp_client("camtest:9999")).await;
         Ok::<_, Error>(())
+    };
+    taskrun::run(fut)
+}
+
+#[test]
+fn test_service() -> Result<(), Error> {
+    //use std::time::Duration;
+    let fut = async move {
+        let sock = tokio::net::TcpListener::bind("0.0.0.0:9999").await?;
+        loop {
+            info!("accepting...");
+            let (conn, remote) = sock.accept().await?;
+            info!("new connection from {:?}", remote);
+            let mut zmtp = Zmtp::new(conn);
+            let fut = async move {
+                while let Some(item) = zmtp.next().await {
+                    info!("item from {:?}  {:?}", remote, item);
+                }
+                Ok::<_, Error>(())
+            };
+            taskrun::spawn(fut);
+        }
+        //Ok::<_, Error>(())
     };
     taskrun::run(fut)
 }
@@ -67,8 +99,25 @@ enum ConnState {
     ReadFrameFlags,
     ReadFrameShort,
     ReadFrameLong,
-    ReadFrameBody,
+    ReadFrameBody(usize),
 }
+
+impl ConnState {
+    fn need_min(&self) -> usize {
+        use ConnState::*;
+        match self {
+            InitSend => 0,
+            InitRecv1 => 11,
+            InitRecv2 => 53,
+            ReadFrameFlags => 1,
+            ReadFrameShort => 1,
+            ReadFrameLong => 8,
+            ReadFrameBody(msglen) => *msglen,
+        }
+    }
+}
+
+struct DummyData {}
 
 struct Zmtp {
     done: bool,
@@ -77,11 +126,14 @@ struct Zmtp {
     conn_state: ConnState,
     buf: NetBuf,
     outbuf: NetBuf,
-    need_min: usize,
+    out_enable: bool,
     msglen: usize,
     has_more: bool,
     is_command: bool,
     frames: Vec<ZmtpFrame>,
+    inp_eof: bool,
+    data_tx: Sender<DummyData>,
+    data_rx: Receiver<DummyData>,
 }
 
 impl Zmtp {
@@ -90,6 +142,7 @@ impl Zmtp {
         //conn.set_recv_buffer_size(1024 * 1024 * 4)?;
         //info!("send_buffer_size  {:8}", conn.send_buffer_size()?);
         //info!("recv_buffer_size  {:8}", conn.recv_buffer_size()?);
+        let (tx, rx) = async_channel::bounded(1);
         Self {
             done: false,
             complete: false,
@@ -97,66 +150,72 @@ impl Zmtp {
             conn_state: ConnState::InitSend,
             buf: NetBuf::new(),
             outbuf: NetBuf::new(),
-            need_min: 0,
+            out_enable: false,
             msglen: 0,
             has_more: false,
             is_command: false,
             frames: vec![],
+            inp_eof: false,
+            data_tx: tx,
+            data_rx: rx,
         }
     }
 
-    fn buf_conn(&mut self) -> (&mut TcpStream, ReadBuf) {
+    fn inpbuf_conn(&mut self) -> (&mut TcpStream, ReadBuf) {
         (&mut self.conn, self.buf.read_buf_for_fill())
     }
 
     fn outbuf_conn(&mut self) -> (&[u8], &mut TcpStream) {
-        let b = &self.outbuf.buf[self.outbuf.rp..self.outbuf.wp];
-        let w = &mut self.conn;
-        (b, w)
+        (self.outbuf.data(), &mut self.conn)
     }
 
     fn parse_item(&mut self) -> Result<Option<ZmtpEvent>, Error> {
         match self.conn_state {
             ConnState::InitSend => {
                 info!("parse_item  InitSend");
-                // TODO allow to specify a minimum amount of needed space.
-                // TODO factor writing into the buffer in some way...
-                let mut b = self.outbuf.read_buf_for_fill();
-                b.put_slice(&[0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0x7f, 3]);
-                self.outbuf.wp += b.filled().len();
+                self.outbuf.put_slice(&[0xff, 0, 0, 0, 0, 0, 0, 0, 0, 0x7f, 3])?;
                 self.conn_state = ConnState::InitRecv1;
-                self.need_min = 11;
                 Ok(None)
             }
             ConnState::InitRecv1 => {
-                let ver = self.buf.buf[self.buf.rp + 10];
-                self.buf.rp += self.need_min;
+                self.buf.adv(10)?;
+                let ver = self.buf.read_u8()?;
                 info!("parse_item  InitRecv1  major version {}", ver);
                 if ver != 3 {
                     return Err(Error::with_msg_no_trace(format!("bad version {}", ver)));
                 }
-                let mut b = self.outbuf.read_buf_for_fill();
-                b.put_slice(&[0, 0x4e, 0x55, 0x4c, 0x4c]);
+                self.outbuf.put_slice(&[0, 0x4e, 0x55, 0x4c, 0x4c])?;
                 let a = vec![0; 48];
-                b.put_slice(&a);
-                self.outbuf.wp += b.filled().len();
+                self.outbuf.put_slice(&a)?;
                 self.conn_state = ConnState::InitRecv2;
-                self.need_min = 53;
                 Ok(None)
             }
             ConnState::InitRecv2 => {
                 info!("parse_item  InitRecv2");
-                self.buf.rp += self.need_min;
-                let mut b = self.outbuf.read_buf_for_fill();
-                b.put_slice(&b"\x04\x1a\x05READY\x0bSocket-Type\x00\x00\x00\x04PULL"[..]);
-                self.outbuf.wp += b.filled().len();
+                // TODO parse greeting remainder.. sec-scheme.
+                self.buf.adv(self.conn_state.need_min())?;
+                self.outbuf
+                    .put_slice(&b"\x04\x1a\x05READY\x0bSocket-Type\x00\x00\x00\x04PULL"[..])?;
+                self.out_enable = true;
                 self.conn_state = ConnState::ReadFrameFlags;
-                self.need_min = 1;
+                let tx = self.data_tx.clone();
+                let fut1 = async move {
+                    loop {
+                        tokio::time::sleep(Duration::from_millis(1000)).await;
+                        let dd = DummyData {};
+                        match tx.send(dd).await {
+                            Ok(()) => {
+                                info!("item send to channel");
+                            }
+                            Err(_) => break,
+                        }
+                    }
+                };
+                taskrun::spawn(fut1);
                 Ok(None)
             }
             ConnState::ReadFrameFlags => {
-                let flags = self.buf.buf[self.buf.rp + 0];
-                self.buf.rp += self.need_min;
+                let flags = self.buf.read_u8()?;
                 let has_more = flags & 0x01 != 0;
                 let long_size = flags & 0x02 != 0;
                 let is_command = flags & 0x04 != 0;
@@ -168,54 +227,52 @@ impl Zmtp {
                     long_size,
                     is_command
                 );
+                if is_command {
+                    warn!("Got zmtp command frame");
+                }
                 if false && is_command {
                     return Err(Error::with_msg_no_trace("got zmtp command frame"));
                 }
                 if long_size {
                     self.conn_state = ConnState::ReadFrameLong;
-                    self.need_min = 8;
                 } else {
                     self.conn_state = ConnState::ReadFrameShort;
-                    self.need_min = 1;
                 }
                 Ok(None)
             }
             ConnState::ReadFrameShort => {
-                let len = self.buf.buf[self.buf.rp + 0];
-                self.buf.rp += self.need_min;
-                self.msglen = len as usize;
-                trace!("parse_item  ReadFrameShort  self.msglen {}", self.msglen);
-                self.conn_state = ConnState::ReadFrameBody;
-                self.need_min = self.msglen;
+                self.msglen = self.buf.read_u8()? as usize;
+                trace!("parse_item  ReadFrameShort  msglen {}", self.msglen);
+                self.conn_state = ConnState::ReadFrameBody(self.msglen);
+                if self.msglen > 1024 * 64 {
+                    return Err(Error::with_msg_no_trace(format!(
+                        "larger msglen not yet supported  {}",
+                        self.msglen,
+                    )));
+                }
                 Ok(None)
             }
             ConnState::ReadFrameLong => {
-                let mut a = [0; 8];
-                for i1 in 0..8 {
-                    a[i1] = self.buf.buf[self.buf.rp + i1];
+                self.msglen = self.buf.read_u64()? as usize;
+                trace!("parse_item  ReadFrameShort  msglen {}", self.msglen);
+                self.conn_state = ConnState::ReadFrameBody(self.msglen);
+                if self.msglen > 1024 * 64 {
+                    return Err(Error::with_msg_no_trace(format!(
+                        "larger msglen not yet supported  {}",
+                        self.msglen,
+                    )));
                 }
-                self.buf.rp += self.need_min;
-                self.msglen = usize::from_be_bytes(a);
-                trace!("parse_item  ReadFrameLong  self.msglen {}", self.msglen);
-                self.conn_state = ConnState::ReadFrameBody;
-                self.need_min = self.msglen;
                 Ok(None)
             }
-            ConnState::ReadFrameBody => {
-                let n1 = self.buf.len();
-                let n1 = if n1 < 256 { n1 } else { 256 };
-                let data = self.buf.buf[self.buf.rp..(self.buf.rp + self.msglen)].to_vec();
+            ConnState::ReadFrameBody(msglen) => {
+                let data = self.buf.read_bytes(msglen)?.to_vec();
+                self.msglen = 0;
                 if false {
-                    let s = String::from_utf8_lossy(&self.buf.buf[self.buf.rp..(self.buf.rp + n1)]);
-                    trace!(
-                        "parse_item  ReadFrameBody  self.need_min {}  string {}",
-                        self.need_min,
-                        s
-                    );
+                    let n1 = data.len().min(256);
+                    let s = String::from_utf8_lossy(&data[..n1]);
+                    trace!("parse_item  ReadFrameBody  msglen {}  string {}", msglen, s);
                 }
-                self.buf.rp += self.need_min;
                 self.conn_state = ConnState::ReadFrameFlags;
-                self.need_min = 1;
                 if !self.is_command {
                     let g = ZmtpFrame {
                         msglen: self.msglen,
@@ -234,43 +291,6 @@ impl Zmtp {
                     Ok(Some(ZmtpEvent::ZmtpMessage(g)))
                 }
             }
-        }
-    }
-}
-
-struct NetBuf {
-    buf: Vec<u8>,
-    wp: usize,
-    rp: usize,
-}
-
-impl NetBuf {
-    fn new() -> Self {
-        Self {
-            buf: vec![0; 1024 * 128],
-            wp: 0,
-            rp: 0,
-        }
-    }
-
-    fn len(&self) -> usize {
-        self.wp - self.rp
-    }
-
-    fn read_buf_for_fill(&mut self) -> ReadBuf {
-        self.rewind_if_needed();
-        let read_buf = ReadBuf::new(&mut self.buf[self.wp..]);
-        read_buf
-    }
-
-    fn rewind_if_needed(&mut self) {
-        if self.rp != 0 && self.rp == self.wp {
-            self.rp = 0;
-            self.wp = 0;
-        } else {
-            self.buf.copy_within(self.rp..self.wp, 0);
-            self.wp -= self.rp;
-            self.rp = 0;
         }
     }
 }
@@ -320,6 +340,24 @@ impl fmt::Debug for ZmtpFrame {
     }
 }
 
+enum Int<T> {
+    NoWork,
+    Pending,
+    Empty,
+    Item(T),
+    Done,
+}
+
+impl<T> Int<T> {
+    fn is_item(&self) -> bool {
+        if let Int::Item(_) = self {
+            true
+        } else {
+            false
+        }
+    }
+}
+
 #[derive(Debug)]
 enum ZmtpEvent {
     ZmtpMessage(ZmtpMessage),
@@ -336,75 +374,163 @@ impl Stream for Zmtp {
             self.complete = true;
             return Ready(None);
         }
-        'outer: loop {
-            let write_pending = loop {
-                if self.outbuf.len() > 0 {
-                    let (b, w) = self.outbuf_conn();
-                    pin_mut!(w);
-                    match w.poll_write(cx, b) {
-                        Ready(k) => match k {
-                            Ok(k) => {
-                                self.outbuf.rp += k;
+        loop {
+            let have_item = false;
+            let serialized: Int<()> = if self.out_enable && self.outbuf.wrcap() >= RP_REW_PT {
+                match self.data_rx.poll_next_unpin(cx) {
+                    Ready(Some(k)) => {
+                        info!("item from channel, put to output buffer");
+                        let head_a = HeadA {
+                            htype: "bsr_m-1.1".into(),
+                            // TODO hash definition?
+                            hash: "b9e0916effc5a8a2f1977a9eb8beea63".into(),
+                            pulse_id: serde_json::Number::from(42424242),
+                            global_timestamp: GlobalTimestamp {
+                                sec: 1636401670,
+                                ns: 12920856,
+                            },
+                        };
+                        let head_b = HeadB {
+                            htype: "bsr_d-1.1".into(),
+                            channels: vec![ChannelDesc {
+                                name: "TESTCHAN".into(),
+                                ty: "int64".into(),
+                                shape: JsVal::Array(vec![JsVal::Number(serde_json::Number::from(1))]),
+                                encoding: "little".into(),
+                            }],
+                        };
+                        let ha = serde_json::to_vec(&head_a).unwrap();
+                        let hb = serde_json::to_vec(&head_b).unwrap();
+                        let hf = 23478236u64.to_le_bytes();
+                        let hp = 13131313u64.to_le_bytes();
+                        self.outbuf.put_slice(&ha).unwrap();
+                        self.outbuf.put_slice(&hb).unwrap();
+                        self.outbuf.put_slice(&hf).unwrap();
+                        self.outbuf.put_slice(&hp).unwrap();
+                        Int::Empty
+                    }
+                    Ready(None) => Int::Done,
+                    Pending => Int::Pending,
+                }
+            } else {
+                Int::NoWork
+            };
+            let have_item = have_item | serialized.is_item();
+            let write = if self.outbuf.len() > 0 {
+                let (b, w) = self.outbuf_conn();
+                pin_mut!(w);
+                match w.poll_write(cx, b) {
+                    Ready(k) => match k {
+                        Ok(k) => match self.outbuf.adv(k) {
+                            Ok(()) => {
                                 info!("sent {} bytes", k);
+                                self.outbuf.rewind_if_needed();
+                                Int::Empty
                             }
-                            Err(e) => {
-                                self.done = true;
-                                break 'outer Ready(Some(Err(e.into())));
-                            }
+                            Err(e) => Int::Item(Err::<(), _>(e)),
                         },
-                        Pending => break true,
-                    }
-                } else {
-                    break false;
+                        Err(e) => Int::Item(Err(e.into())),
+                    },
+                    Pending => Int::Pending,
                 }
+            } else {
+                Int::NoWork
             };
-            let read_pending = loop {
-                if self.buf.len() < self.need_min {
-                    let nf1 = self.buf.buf.len() - self.buf.rp;
-                    let nf2 = self.need_min;
-                    let (w, mut rbuf) = self.buf_conn();
-                    if nf1 < nf2 {
-                        break 'outer Ready(Some(Err(Error::with_msg_no_trace("buffer too small for need_min"))));
-                    }
+            let have_item = have_item | write.is_item();
+            let read: Int<Result<(), _>> = if have_item || self.inp_eof {
+                Int::NoWork
+            } else {
+                if self.buf.cap() < self.conn_state.need_min() {
+                    self.done = true;
+                    let e = Error::with_msg_no_trace(format!(
+                        "buffer too small for need_min  {}  {}",
+                        self.buf.cap(),
+                        self.conn_state.need_min()
+                    ));
+                    Int::Item(Err(e))
+                } else if self.buf.len() < self.conn_state.need_min() {
+                    let (w, mut rbuf) = self.inpbuf_conn();
                     pin_mut!(w);
-                    let r = w.poll_read(cx, &mut rbuf);
-                    match r {
+                    match w.poll_read(cx, &mut rbuf) {
                         Ready(k) => match k {
-                            Ok(_) => {
-                                info!("received {} bytes", rbuf.filled().len());
-                                if false {
-                                    let t = rbuf.filled().len();
-                                    let t = if t < 32 { t } else { 32 };
-                                    info!("got data  {:?}", &rbuf.filled()[0..t]);
+                            Ok(()) => {
+                                let nf = rbuf.filled().len();
+                                if nf == 0 {
+                                    info!("EOF");
+                                    self.inp_eof = true;
+                                    Int::Done
+                                } else {
+                                    info!("received {} bytes", rbuf.filled().len());
+                                    if false {
+                                        let t = rbuf.filled().len();
+                                        let t = if t < 32 { t } else { 32 };
+                                        info!("got data  {:?}", &rbuf.filled()[0..t]);
+                                    }
+                                    match self.buf.wpadv(nf) {
+                                        Ok(()) => Int::Empty,
+                                        Err(e) => Int::Item(Err(e)),
+                                    }
                                 }
-                                self.buf.wp += rbuf.filled().len();
                             }
-                            Err(e) => {
-                                self.done = true;
-                                break 'outer Ready(Some(Err(e.into())));
-                            }
+                            Err(e) => Int::Item(Err(e.into())),
                         },
-                        Pending => break true,
+                        Pending => Int::Pending,
                     }
                 } else {
-                    break false;
+                    Int::NoWork
                 }
             };
-            if self.buf.len() >= self.need_min {
+            let have_item = have_item | read.is_item();
+            let parsed = if have_item || self.buf.len() < self.conn_state.need_min() {
+                Int::NoWork
+            } else {
                 match self.parse_item() {
                     Ok(k) => match k {
-                        Some(k) => break 'outer Ready(Some(Ok(k))),
-                        None => (),
+                        Some(k) => Int::Item(Ok(k)),
+                        None => Int::Empty,
                     },
-                    Err(e) => {
-                        self.done = true;
-                        break 'outer Ready(Some(Err(e.into())));
-                    }
+                    Err(e) => Int::Item(Err(e)),
                 }
-            }
-            if write_pending || read_pending {
-                break 'outer Pending;
-            }
+            };
+            let _have_item = have_item | parsed.is_item();
+            {
+                use Int::*;
+                match (write, read, parsed) {
+                    (Item(_), Item(_), _) => panic!(),
+                    (Item(_), _, Item(_)) => panic!(),
+                    (_, Item(_), Item(_)) => panic!(),
+                    (NoWork | Done, NoWork | Done, NoWork | Done) => {
+                        warn!("all NoWork or Done");
+                        break Poll::Pending;
+                    }
+                    (_, Item(Err(e)), _) => {
+                        self.done = true;
+                        break Poll::Ready(Some(Err(e)));
+                    }
+                    (_, _, Item(Err(e))) => {
+                        self.done = true;
+                        break Poll::Ready(Some(Err(e)));
+                    }
+                    (Item(_), _, _) => {
+                        continue;
+                    }
+                    (_, Item(Ok(_)), _) => {
+                        continue;
+                    }
+                    (_, _, Item(Ok(item))) => {
+                        break Poll::Ready(Some(Ok(item)));
+                    }
+                    (Empty, _, _) => continue,
+                    (_, Empty, _) => continue,
+                    (_, _, Empty) => continue,
+                    #[allow(unreachable_patterns)]
+                    (Pending, Pending | NoWork | Done, Pending | NoWork | Done) => break Poll::Pending,
+                    #[allow(unreachable_patterns)]
+                    (Pending | NoWork | Done, Pending, Pending | NoWork | Done) => break Poll::Pending,
+                    #[allow(unreachable_patterns)]
+                    (Pending | NoWork | Done, Pending | NoWork | Done, Pending) => break Poll::Pending,
+                }
+            };
         }
     }
 }

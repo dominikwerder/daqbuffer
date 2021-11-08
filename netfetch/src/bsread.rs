@@ -5,7 +5,7 @@ use netpod::log::*;
 use netpod::ByteOrder;
 use netpod::ScalarType;
 use netpod::Shape;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsVal;
 use std::fmt;
 
@@ -15,40 +15,40 @@ pub struct ParseError {
     pub msg: ZmtpMessage,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GlobalTimestamp {
-    sec: u64,
-    ns: u64,
+    pub sec: u64,
+    pub ns: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelDesc {
-    name: String,
+    pub name: String,
     #[serde(rename = "type")]
-    ty: String,
-    shape: JsVal,
-    encoding: String,
+    pub ty: String,
+    pub shape: JsVal,
+    pub encoding: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HeadA {
-    htype: String,
-    hash: String,
-    pulse_id: serde_json::Number,
-    global_timestamp: GlobalTimestamp,
+    pub htype: String,
+    pub hash: String,
+    pub pulse_id: serde_json::Number,
+    pub global_timestamp: GlobalTimestamp,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HeadB {
-    htype: String,
-    channels: Vec<ChannelDesc>,
+    pub htype: String,
+    pub channels: Vec<ChannelDesc>,
 }
 
 #[derive(Debug)]
 pub struct BsreadMessage {
-    head_a: HeadA,
-    head_b: HeadB,
-    values: Vec<Box<dyn fmt::Debug>>,
+    pub head_a: HeadA,
+    pub head_b: HeadB,
+    pub values: Vec<Box<dyn fmt::Debug>>,
 }
 
 pub fn parse_zmtp_message(msg: &ZmtpMessage) -> Result<BsreadMessage, Error> {

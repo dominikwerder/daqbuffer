@@ -14,7 +14,7 @@ use tokio_postgres::{Client, Row};
 
 pub struct ChannelNameStream {
     db_config: Database,
-    off: u64,
+    max_name: String,
     db_done: bool,
     batch: VecDeque<String>,
     connect_fut: Option<Pin<Box<dyn Future<Output = Result<Client, Error>> + Send>>>,
@@ -27,7 +27,7 @@ impl ChannelNameStream {
     pub fn new(db_config: Database) -> Self {
         Self {
             db_config,
-            off: 0,
+            max_name: String::new(),
             db_done: false,
             batch: VecDeque::new(),
             connect_fut: None,
@@ -55,9 +55,11 @@ impl Stream for ChannelNameStream {
                 match fut.poll_unpin(cx) {
                     Ready(Ok(rows)) => {
                         self.select_fut = None;
-                        self.off += rows.len() as u64;
                         if rows.len() == 0 {
                             self.db_done = true;
+                        }
+                        if let Some(last) = rows.last().as_ref() {
+                            self.max_name = last.get(1);
                         }
                         for row in rows {
                             self.batch.push_back(row.get(1));
@@ -75,13 +77,13 @@ impl Stream for ChannelNameStream {
                 match fut.poll_unpin(cx) {
                     Ready(Ok(dbc)) => {
                         self.connect_fut = None;
-                        let off = self.off as i64;
-                        info!("select channels  off {}", off);
+                        let max_name = self.max_name.clone();
+                        info!("select channels  max_name {}", max_name);
                         let fut = async move {
                             let rows = dbc
                                 .query(
-                                    "select rowid, name from channels where config = '{}'::jsonb order by name offset $1 limit 64",
-                                    &[&off],
+                                    "select rowid, name from channels where config = '{}'::jsonb and name > $1 order by name limit 64",
+                                    &[&max_name],
                                 )
                                 .await?;
                             Ok::<_, Error>(rows)
