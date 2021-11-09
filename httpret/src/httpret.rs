@@ -50,7 +50,8 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
     let addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen, node_config.node.port))?;
     let make_service = make_service_fn({
         move |conn: &AddrStream| {
-            info!("new connection from {:?}", conn.remote_addr());
+            // TODO send to logstash
+            debug!("new connection from {:?}", conn.remote_addr());
             let node_config = node_config.clone();
             async move {
                 Ok::<_, Error>(service_fn({
@@ -167,7 +168,8 @@ macro_rules! static_http_api1 {
 }
 
 async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("http_service_try  {:?}", req.uri());
+    // TODO send to logstash
+    debug!("http_service_try  {:?}", req.uri());
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/4/node_status" {
@@ -299,7 +301,6 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
     } else if let Some(h) = channelarchiver::BlockStream::should_handle(path) {
         h.handle(req, &node_config).await
     } else if path.starts_with("/api/1/requestStatus/") {
-        info!("{}", path);
         Ok(response(StatusCode::OK).body(Body::from("{}"))?)
     } else if path.starts_with("/api/1/documentation/") {
         if req.method() == Method::GET {
@@ -424,7 +425,7 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
     let desc = format!("binned-BEG-{}-END-{}", query.range().beg / SEC, query.range().end / SEC);
     let span1 = span!(Level::INFO, "httpret::binned", desc = &desc.as_str());
     span1.in_scope(|| {
-        info!("binned STARTING  {:?}", query);
+        debug!("binned STARTING  {:?}", query);
     });
     match head.headers.get(http::header::ACCEPT) {
         Some(v) if v == APP_OCTET => binned_binary(query, node_config).await,
@@ -473,7 +474,7 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
     );
     let span1 = span!(Level::INFO, "httpret::prebinned", desc = &desc.as_str());
     span1.in_scope(|| {
-        info!("prebinned STARTING");
+        debug!("prebinned STARTING");
     });
     let fut = disk::binned::prebinned::pre_binned_bytes_for_http(node_config, &query).instrument(span1);
     let ret = match fut.await {
@@ -491,7 +492,7 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
 }
 
 async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("httpret  plain_events  headers: {:?}", req.headers());
+    debug!("httpret  plain_events  headers: {:?}", req.headers());
     let accept_def = "";
     let accept = req
         .headers()
@@ -522,7 +523,7 @@ async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Res
 }
 
 async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("httpret  plain_events_binary  req: {:?}", req);
+    debug!("httpret  plain_events_binary  req: {:?}", req);
     let url = Url::parse(&format!("dummy:{}", req.uri()))?;
     let query = PlainEventsBinaryQuery::from_url(&url)?;
     let op = disk::channelexec::PlainEvents::new(
@@ -538,7 +539,7 @@ async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached)
 }
 
 async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("httpret  plain_events_json  req: {:?}", req);
+    debug!("httpret  plain_events_json  req: {:?}", req);
     let (head, _body) = req.into_parts();
     let query = PlainEventsJsonQuery::from_request_head(&head)?;
     let op = disk::channelexec::PlainEventsJson::new(

@@ -82,7 +82,7 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
         let souter = match PreBinnedPatchRange::covering_range(self.query.range().clone(), self.query.bin_count()) {
             Ok(Some(pre_range)) => {
-                info!("BinnedBinaryChannelExec  found pre_range: {:?}", pre_range);
+                debug!("BinnedBinaryChannelExec  found pre_range: {:?}", pre_range);
                 if range.grid_spec.bin_t_len() < pre_range.grid_spec.bin_t_len() {
                     let msg = format!(
                         "BinnedBinaryChannelExec  incompatible ranges:\npre_range: {:?}\nrange: {:?}",
@@ -109,7 +109,7 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
                 Ok(Box::pin(s) as Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>)
             }
             Ok(None) => {
-                info!(
+                debug!(
                     "BinnedBinaryChannelExec  no covering range for prebinned, merge from remotes instead {:?}",
                     range
                 );
@@ -326,7 +326,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
         let souter = match PreBinnedPatchRange::covering_range(self.query.range().clone(), self.query.bin_count()) {
             Ok(Some(pre_range)) => {
-                info!("BinnedJsonChannelExec  found pre_range: {:?}", pre_range);
+                debug!("BinnedJsonChannelExec  found pre_range: {:?}", pre_range);
                 if range.grid_spec.bin_t_len() < pre_range.grid_spec.bin_t_len() {
                     let msg = format!(
                         "BinnedJsonChannelExec  incompatible ranges:\npre_range: {:?}\nrange: {:?}",
@@ -354,7 +354,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
                 Ok(Box::pin(s) as Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>)
             }
             Ok(None) => {
-                info!(
+                debug!(
                     "BinnedJsonChannelExec  no covering range for prebinned, merge from remotes instead {:?}",
                     range
                 );

@@ -355,7 +355,7 @@ where
                     Ok(item) => match item {
                         StreamItem::Log(item) => {
                             if do_log {
-                                info!("collect_plain_events_json log {:?}", item);
+                                debug!("collect_plain_events_json log {:?}", item);
                             }
                         }
                         StreamItem::Stats(item) => match item {
@@ -396,7 +396,7 @@ where
         }
     }
     let ret = serde_json::to_value(collector.result()?)?;
-    info!("Total duration: {:?}", total_duration);
+    debug!("Total duration: {:?}", total_duration);
     Ok(ret)
 }
 

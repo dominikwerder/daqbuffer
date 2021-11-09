@@ -179,7 +179,7 @@ where
     fn aggregator(range: NanoRange, _x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
         // TODO remove output
         if range.delta() > SEC * 0 {
-            netpod::log::info!(
+            netpod::log::debug!(
                 "TimeBinnableType for XBinnedScalarEvents  aggregator()  range {:?}",
                 range
             );

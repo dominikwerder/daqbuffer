@@ -247,7 +247,7 @@ async fn open_files_inner(
             }
         }
         let h = OpenedFileSet { timebin: tb, files: a };
-        info!(
+        debug!(
             "----- open_files_inner  giving OpenedFileSet with {} files",
             h.files.len()
         );
@@ -351,13 +351,13 @@ async fn open_expanded_files_inner(
         for path in paths::datapaths_for_timebin(tb, &channel_config, &node).await? {
             let w = position_file(&path, range, true, false).await?;
             if w.found {
-                info!("----- open_expanded_files_inner  w.found for {:?}", path);
+                debug!("----- open_expanded_files_inner  w.found for {:?}", path);
                 a.push(w.file);
                 found_pre = true;
             }
         }
         let h = OpenedFileSet { timebin: tb, files: a };
-        info!(
+        debug!(
             "----- open_expanded_files_inner  giving OpenedFileSet with {} files",
             h.files.len()
         );
@@ -387,7 +387,8 @@ async fn open_expanded_files_inner(
             p1 += 1;
         }
     } else {
-        info!("Could not find some event before the requested range, fall back to standard file list.");
+        // TODO emit statsfor this or log somewhere?
+        debug!("Could not find some event before the requested range, fall back to standard file list.");
         // Try to locate files according to non-expand-algorithm.
         open_files_inner(chtx, range, &channel_config, node).await?;
     }
@@ -423,7 +424,7 @@ fn expanded_file_list() {
         while let Some(file) = files.next().await {
             match file {
                 Ok(k) => {
-                    info!("opened file: {:?}", k);
+                    debug!("opened file: {:?}", k);
                     paths.push(k.files);
                 }
                 Err(e) => {

@@ -175,7 +175,7 @@ async fn get_json_common(
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", node0.host, node0.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    info!("get_json_common  get {}", url);
+    debug!("get_json_common  get {}", url);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(url.to_string())
@@ -189,11 +189,12 @@ async fn get_json_common(
     let res = hyper::body::to_bytes(res.into_body()).await?;
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
-    info!("get_json_common  DONE  time {} ms", ms);
+    // TODO add timeout
+    debug!("get_json_common  DONE  time {} ms", ms);
     let res = String::from_utf8_lossy(&res).to_string();
-    //info!("get_json_common res: {}", res);
     let res: serde_json::Value = serde_json::from_str(res.as_str())?;
-    info!(
+    // TODO assert these:
+    debug!(
         "result from endpoint: --------------\n{}\n--------------",
         serde_json::to_string_pretty(&res)?
     );

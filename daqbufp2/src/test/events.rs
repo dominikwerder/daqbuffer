@@ -67,7 +67,7 @@ where
     let mut url = Url::parse(&format!("http://{}:{}", hp.host, hp.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    info!("get_plain_events  get {}", url);
+    debug!("get_plain_events  get {}", url);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(url.to_string())
@@ -83,7 +83,8 @@ where
     let res = consume_plain_events_binary::<NTY, _>(s2).await?;
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
-    info!("time {} ms", ms);
+    // TODO add timeout
+    debug!("time {} ms", ms);
     if !res.is_valid() {
         Ok(res)
     } else {
@@ -139,7 +140,7 @@ where
                         None
                     }
                     StreamItem::Stats(item) => {
-                        info!("Stats: {:?}", item);
+                        debug!("Stats: {:?}", item);
                         None
                     }
                     StreamItem::DataItem(frame) => {
@@ -154,10 +155,7 @@ where
                                             Streamlog::emit(&item);
                                             Some(Ok(StreamItem::Log(item)))
                                         }
-                                        item => {
-                                            info!("TEST GOT ITEM {:?}", item);
-                                            Some(Ok(item))
-                                        }
+                                        item => Some(Ok(item)),
                                     },
                                     Err(e) => {
                                         error!("TEST GOT ERROR FRAME: {:?}", e);
@@ -208,7 +206,7 @@ where
             ready(g)
         });
     let ret = s1.await;
-    info!("result: {:?}", ret);
+    debug!("result: {:?}", ret);
     Ok(ret)
 }
 
@@ -275,7 +273,7 @@ async fn get_plain_events_json(
     let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    info!("get_plain_events  get {}", url);
+    debug!("get_plain_events  get {}", url);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(url.to_string())
@@ -288,10 +286,11 @@ async fn get_plain_events_json(
     }
     let buf = hyper::body::to_bytes(res.into_body()).await?;
     let s = String::from_utf8_lossy(&buf);
-    let res: JsonValue = serde_json::from_str(&s)?;
-    info!("GOT: {}", serde_json::to_string_pretty(&res)?);
+    let _res: JsonValue = serde_json::from_str(&s)?;
+    // TODO assert more
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
-    info!("time {} ms", ms);
+    // TODO add timeout
+    debug!("time {} ms", ms);
     Ok(())
 }

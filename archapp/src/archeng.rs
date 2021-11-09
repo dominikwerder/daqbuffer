@@ -118,7 +118,7 @@ pub fn list_all_channels(node: &ChannelArchiver) -> Receiver<Result<ListChannelI
             while let Some(item) = rx.next().await {
                 match item {
                     Ok(StreamItem::Stats(item)) => {
-                        info!("stats: {:?}", item);
+                        debug!("stats: {:?}", item);
                     }
                     _ => {}
                 }
@@ -179,9 +179,7 @@ pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> R
                     }
                 }
                 JsVal(jsval) => {
-                    if true {
-                        info!("jsval: {}", serde_json::to_string(&jsval)?);
-                    }
+                    debug!("jsval: {}", serde_json::to_string(&jsval)?);
                 }
             },
             Err(e) => {
@@ -208,9 +206,7 @@ pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> R
                         }
                     }
                     JsVal(jsval) => {
-                        if true {
-                            info!("jsval: {}", serde_json::to_string(&jsval)?);
-                        }
+                        debug!("jsval: {}", serde_json::to_string(&jsval)?);
                     }
                 },
                 Err(e) => {
@@ -285,7 +281,8 @@ mod test {
             let mut data_file = open_read(data_path, stats).await?;
             let datafile_header = read_datafile_header(&mut data_file, datablock.data_header_pos(), stats).await?;
             let events = read_data_1(&mut data_file, &datafile_header, range.clone(), false, stats).await?;
-            info!("read events: {:?}", events);
+            debug!("read events: {:?}", events);
+            // TODO assert more
             Ok(())
         };
         Ok(taskrun::run(fut).unwrap())

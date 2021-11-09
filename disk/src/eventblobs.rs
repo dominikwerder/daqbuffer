@@ -114,7 +114,7 @@ impl Stream for EventChunkerMultifile {
                                         let file = ofs.files.pop().unwrap();
                                         let path = file.path;
                                         let msg = format!("handle OFS {:?}", ofs);
-                                        info!("{}", msg);
+                                        debug!("{}", msg);
                                         let item = LogItem::quick(Level::INFO, msg);
                                         match file.file {
                                             Some(file) => {
@@ -141,12 +141,12 @@ impl Stream for EventChunkerMultifile {
                                         Ready(Some(Ok(StreamItem::Log(item))))
                                     } else if ofs.files.len() == 0 {
                                         let msg = format!("handle OFS {:?}  NO FILES", ofs);
-                                        info!("{}", msg);
+                                        debug!("{}", msg);
                                         let item = LogItem::quick(Level::INFO, msg);
                                         Ready(Some(Ok(StreamItem::Log(item))))
                                     } else {
                                         let msg = format!("handle OFS MERGED {:?}", ofs);
-                                        warn!("{}", msg);
+                                        debug!("{}", msg);
                                         let item = LogItem::quick(Level::INFO, msg);
                                         let mut chunkers = vec![];
                                         for of in ofs.files {
@@ -255,7 +255,8 @@ mod test {
                     Ok(item) => match item {
                         StreamItem::DataItem(item) => match item {
                             RangeCompletableItem::Data(item) => {
-                                info!("item: {:?}", item.tss.iter().map(|x| x / MS).collect::<Vec<_>>());
+                                // TODO assert more
+                                debug!("item: {:?}", item.tss.iter().map(|x| x / MS).collect::<Vec<_>>());
                                 event_count += item.tss.len();
                                 for ts in item.tss {
                                     tss.push(ts);
@@ -280,7 +281,8 @@ mod test {
             end: DAY + MS * 100,
         };
         let res = read_expanded_for_range(range, 0)?;
-        info!("got {:?}", res.1);
+        // TODO assert more
+        debug!("got {:?}", res.1);
         if res.0 != 3 {
             Err(Error::with_msg(format!("unexpected number of events: {}", res.0)))?;
         }

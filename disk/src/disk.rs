@@ -300,10 +300,10 @@ impl NeedMinBuffer {
     }
 }
 
-// TODO remove this again
+// TODO collect somewhere else
 impl Drop for NeedMinBuffer {
     fn drop(&mut self) {
-        info!("NeedMinBuffer  Drop Stats:\nbuf_len_histo: {:?}", self.buf_len_histo);
+        debug!("NeedMinBuffer  Drop Stats:\nbuf_len_histo: {:?}", self.buf_len_histo);
     }
 }
 
@@ -355,7 +355,8 @@ impl Stream for NeedMinBuffer {
                         Ready(Some(Err(e.into())))
                     }
                     Ready(None) => {
-                        info!("NeedMinBuffer  histo: {:?}", self.buf_len_histo);
+                        // TODO collect somewhere
+                        debug!("NeedMinBuffer  histo: {:?}", self.buf_len_histo);
                         Ready(None)
                     }
                     Pending => Pending,

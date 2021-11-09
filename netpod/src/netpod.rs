@@ -134,6 +134,22 @@ impl ScalarType {
             BOOL => 0,
         }
     }
+
+    pub fn to_api3proto(&self) -> &'static str {
+        match self {
+            ScalarType::U8 => "uint8",
+            ScalarType::U16 => "uint16",
+            ScalarType::U32 => "uint32",
+            ScalarType::U64 => "uint64",
+            ScalarType::I8 => "int8",
+            ScalarType::I16 => "int16",
+            ScalarType::I32 => "int32",
+            ScalarType::I64 => "int64",
+            ScalarType::F32 => "float32",
+            ScalarType::F64 => "float64",
+            ScalarType::BOOL => "bool",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

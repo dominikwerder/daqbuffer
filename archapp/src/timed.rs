@@ -23,6 +23,6 @@ impl Drop for Timed {
     fn drop(&mut self) {
         let ts2 = Instant::now();
         let dt = ts2.duration_since(self.ts1);
-        info!("Timed {} {:?}", self.name, dt);
+        debug!("Timed {} {:?}", self.name, dt);
     }
 }

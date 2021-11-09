@@ -7,10 +7,13 @@ use crate::netbuf::NetBuf;
 use crate::netbuf::RP_REW_PT;
 use async_channel::Receiver;
 use async_channel::Sender;
+#[allow(unused)]
+use bytes::BufMut;
 use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
 use netpod::log::*;
+use netpod::timeunits::SEC;
 use serde_json::Value as JsVal;
 use std::fmt;
 use std::mem;
@@ -20,7 +23,8 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::TcpStream;
 
-#[test]
+//#[test]
+#[allow(unused)]
 fn test_listen() -> Result<(), Error> {
     use std::time::Duration;
     let fut = async move {
@@ -30,7 +34,8 @@ fn test_listen() -> Result<(), Error> {
     taskrun::run(fut)
 }
 
-#[test]
+//#[test]
+#[allow(unused)]
 fn test_service() -> Result<(), Error> {
     //use std::time::Duration;
     let fut = async move {
@@ -39,7 +44,7 @@ fn test_service() -> Result<(), Error> {
             info!("accepting...");
             let (conn, remote) = sock.accept().await?;
             info!("new connection from {:?}", remote);
-            let mut zmtp = Zmtp::new(conn);
+            let mut zmtp = Zmtp::new(conn, SocketType::PUSH);
             let fut = async move {
                 while let Some(item) = zmtp.next().await {
                     info!("item from {:?}  {:?}", remote, item);
@@ -61,7 +66,7 @@ pub async fn zmtp_00() -> Result<(), Error> {
 
 pub async fn zmtp_client(addr: &str) -> Result<(), Error> {
     let conn = tokio::net::TcpStream::connect(addr).await?;
-    let mut zmtp = Zmtp::new(conn);
+    let mut zmtp = Zmtp::new(conn, SocketType::PULL);
     let mut i1 = 0;
     while let Some(item) = zmtp.next().await {
         match item {
@@ -117,11 +122,87 @@ impl ConnState {
     }
 }
 
-struct DummyData {}
+pub enum SocketType {
+    PUSH,
+    PULL,
+}
+
+struct DummyData {
+    ts: u64,
+    pulse: u64,
+    value: i64,
+}
+
+impl DummyData {
+    fn make_zmtp_msg(&self) -> Result<ZmtpMessage, Error> {
+        let head_b = HeadB {
+            htype: "bsr_d-1.1".into(),
+            channels: vec![ChannelDesc {
+                name: "TESTCHAN".into(),
+                ty: "int64".into(),
+                shape: JsVal::Array(vec![JsVal::Number(serde_json::Number::from(1))]),
+                encoding: "little".into(),
+            }],
+        };
+        let hb = serde_json::to_vec(&head_b).unwrap();
+        use md5::Digest;
+        let mut h = md5::Md5::new();
+        h.update(&hb);
+        let mut md5hex = String::with_capacity(32);
+        for c in h.finalize() {
+            use fmt::Write;
+            write!(&mut md5hex, "{:02x}", c).unwrap();
+        }
+        let head_a = HeadA {
+            htype: "bsr_m-1.1".into(),
+            hash: md5hex,
+            pulse_id: serde_json::Number::from(self.pulse),
+            global_timestamp: GlobalTimestamp {
+                sec: self.ts / SEC,
+                ns: self.ts % SEC,
+            },
+        };
+        // TODO write directly to output buffer.
+        let ha = serde_json::to_vec(&head_a).unwrap();
+        let hf = self.value.to_le_bytes().to_vec();
+        let hp = [(self.ts / SEC).to_be_bytes(), (self.ts % SEC).to_be_bytes()].concat();
+        let mut msg = ZmtpMessage { frames: vec![] };
+        let fr = ZmtpFrame {
+            msglen: 0,
+            has_more: false,
+            is_command: false,
+            data: ha,
+        };
+        msg.frames.push(fr);
+        let fr = ZmtpFrame {
+            msglen: 0,
+            has_more: false,
+            is_command: false,
+            data: hb,
+        };
+        msg.frames.push(fr);
+        let fr = ZmtpFrame {
+            msglen: 0,
+            has_more: false,
+            is_command: false,
+            data: hf,
+        };
+        msg.frames.push(fr);
+        let fr = ZmtpFrame {
+            msglen: 0,
+            has_more: false,
+            is_command: false,
+            data: hp,
+        };
+        msg.frames.push(fr);
+        Ok(msg)
+    }
+}
 
 struct Zmtp {
     done: bool,
     complete: bool,
+    socket_type: SocketType,
     conn: TcpStream,
     conn_state: ConnState,
     buf: NetBuf,
@@ -137,7 +218,7 @@ struct Zmtp {
 }
 
 impl Zmtp {
-    fn new(conn: TcpStream) -> Self {
+    fn new(conn: TcpStream, socket_type: SocketType) -> Self {
         //conn.set_send_buffer_size(1024 * 64)?;
         //conn.set_recv_buffer_size(1024 * 1024 * 4)?;
         //info!("send_buffer_size  {:8}", conn.send_buffer_size()?);
@@ -146,6 +227,7 @@ impl Zmtp {
         Self {
             done: false,
             complete: false,
+            socket_type,
             conn,
             conn_state: ConnState::InitSend,
             buf: NetBuf::new(),
@@ -192,17 +274,33 @@ impl Zmtp {
             }
             ConnState::InitRecv2 => {
                 info!("parse_item  InitRecv2");
+                let msgrem = self.conn_state.need_min();
+                let ver_min = self.buf.read_u8()?;
+                let msgrem = msgrem - 1;
+                info!("Peer minor version {}", ver_min);
                 // TODO parse greeting remainder.. sec-scheme.
-                self.buf.adv(self.conn_state.need_min())?;
-                self.outbuf
-                    .put_slice(&b"\x04\x1a\x05READY\x0bSocket-Type\x00\x00\x00\x04PULL"[..])?;
+                self.buf.adv(msgrem)?;
+                match self.socket_type {
+                    SocketType::PUSH => {
+                        self.outbuf
+                            .put_slice(&b"\x04\x1a\x05READY\x0bSocket-Type\x00\x00\x00\x04PUSH"[..])?;
+                    }
+                    SocketType::PULL => {
+                        self.outbuf
+                            .put_slice(&b"\x04\x1a\x05READY\x0bSocket-Type\x00\x00\x00\x04PULL"[..])?;
+                    }
+                }
                 self.out_enable = true;
                 self.conn_state = ConnState::ReadFrameFlags;
                 let tx = self.data_tx.clone();
                 let fut1 = async move {
                     loop {
                         tokio::time::sleep(Duration::from_millis(1000)).await;
-                        let dd = DummyData {};
+                        let dd = DummyData {
+                            ts: 420032002200887766,
+                            pulse: 123123123123,
+                            value: -777,
+                        };
                         match tx.send(dd).await {
                             Ok(()) => {
                                 info!("item send to channel");
@@ -304,6 +402,20 @@ impl ZmtpMessage {
     pub fn frames(&self) -> &Vec<ZmtpFrame> {
         &self.frames
     }
+
+    pub fn emit_to_buffer(&self, out: &mut NetBuf) -> Result<(), Error> {
+        let n = self.frames.len();
+        for (i, fr) in self.frames.iter().enumerate() {
+            let mut flags: u8 = 2;
+            if i < n - 1 {
+                flags |= 1;
+            }
+            out.put_u8(flags)?;
+            out.put_u64(fr.data().len() as u64)?;
+            out.put_slice(fr.data())?;
+        }
+        Ok(())
+    }
 }
 
 pub struct ZmtpFrame {
@@ -349,11 +461,23 @@ enum Int<T> {
 }
 
 impl<T> Int<T> {
-    fn is_item(&self) -> bool {
+    fn item_count(&self) -> u32 {
         if let Int::Item(_) = self {
-            true
+            1
         } else {
-            false
+            0
+        }
+    }
+}
+
+impl<T> fmt::Debug for Int<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::NoWork => write!(f, "NoWork"),
+            Self::Pending => write!(f, "Pending"),
+            Self::Empty => write!(f, "Empty"),
+            Self::Item(_) => write!(f, "Item"),
+            Self::Done => write!(f, "Done"),
         }
     }
 }
@@ -375,39 +499,33 @@ impl Stream for Zmtp {
             return Ready(None);
         }
         loop {
-            let have_item = false;
-            let serialized: Int<()> = if self.out_enable && self.outbuf.wrcap() >= RP_REW_PT {
+            let mut item_count = 0;
+            let serialized: Int<Result<(), Error>> = if self.out_enable && self.outbuf.wrcap() >= RP_REW_PT {
                 match self.data_rx.poll_next_unpin(cx) {
-                    Ready(Some(k)) => {
-                        info!("item from channel, put to output buffer");
-                        let head_a = HeadA {
-                            htype: "bsr_m-1.1".into(),
-                            // TODO hash definition?
-                            hash: "b9e0916effc5a8a2f1977a9eb8beea63".into(),
-                            pulse_id: serde_json::Number::from(42424242),
-                            global_timestamp: GlobalTimestamp {
-                                sec: 1636401670,
-                                ns: 12920856,
-                            },
-                        };
-                        let head_b = HeadB {
-                            htype: "bsr_d-1.1".into(),
-                            channels: vec![ChannelDesc {
-                                name: "TESTCHAN".into(),
-                                ty: "int64".into(),
-                                shape: JsVal::Array(vec![JsVal::Number(serde_json::Number::from(1))]),
-                                encoding: "little".into(),
-                            }],
-                        };
-                        let ha = serde_json::to_vec(&head_a).unwrap();
-                        let hb = serde_json::to_vec(&head_b).unwrap();
-                        let hf = 23478236u64.to_le_bytes();
-                        let hp = 13131313u64.to_le_bytes();
-                        self.outbuf.put_slice(&ha).unwrap();
-                        self.outbuf.put_slice(&hb).unwrap();
-                        self.outbuf.put_slice(&hf).unwrap();
-                        self.outbuf.put_slice(&hp).unwrap();
-                        Int::Empty
+                    Ready(Some(item)) => {
+                        let msg = item.make_zmtp_msg().unwrap();
+                        match msg.emit_to_buffer(&mut self.outbuf) {
+                            Ok(_) => Int::Empty,
+                            Err(e) => {
+                                self.done = true;
+                                Int::Item(Err(e))
+                            }
+                        }
+                        /*let mut msgs = Vec::with_capacity(1024 * 8);
+                        msgs.put_u8(1 | 2);
+                        msgs.put_u64(ha.len() as u64);
+                        msgs.put_slice(&ha);
+                        msgs.put_u8(1 | 2);
+                        msgs.put_u64(hb.len() as u64);
+                        msgs.put_slice(&hb);
+                        msgs.put_u8(1 | 2);
+                        msgs.put_u64(hf.len() as u64);
+                        msgs.put_slice(&hf);
+                        msgs.put_u8(2);
+                        msgs.put_u64(hp.len() as u64);
+                        msgs.put_slice(&hp);
+                        self.outbuf.put_slice(&msgs).unwrap();
+                        Int::Empty*/
                     }
                     Ready(None) => Int::Done,
                     Pending => Int::Pending,
@@ -415,8 +533,10 @@ impl Stream for Zmtp {
             } else {
                 Int::NoWork
             };
-            let have_item = have_item | serialized.is_item();
-            let write = if self.outbuf.len() > 0 {
+            item_count += serialized.item_count();
+            let write: Int<Result<(), _>> = if item_count > 0 {
+                Int::NoWork
+            } else if self.outbuf.len() > 0 {
                 let (b, w) = self.outbuf_conn();
                 pin_mut!(w);
                 match w.poll_write(cx, b) {
@@ -427,17 +547,24 @@ impl Stream for Zmtp {
                                 self.outbuf.rewind_if_needed();
                                 Int::Empty
                             }
-                            Err(e) => Int::Item(Err::<(), _>(e)),
+                            Err(e) => {
+                                error!("advance error {:?}", e);
+                                Int::Item(Err(e))
+                            }
                         },
-                        Err(e) => Int::Item(Err(e.into())),
+                        Err(e) => {
+                            error!("output write error {:?}", e);
+                            Int::Item(Err(e.into()))
+                        }
                     },
                     Pending => Int::Pending,
                 }
             } else {
                 Int::NoWork
             };
-            let have_item = have_item | write.is_item();
-            let read: Int<Result<(), _>> = if have_item || self.inp_eof {
+            info!("write result: {:?}  {}", write, self.outbuf.len());
+            item_count += write.item_count();
+            let read: Int<Result<(), _>> = if item_count > 0 || self.inp_eof {
                 Int::NoWork
             } else {
                 if self.buf.cap() < self.conn_state.need_min() {
@@ -480,8 +607,8 @@ impl Stream for Zmtp {
                     Int::NoWork
                 }
             };
-            let have_item = have_item | read.is_item();
-            let parsed = if have_item || self.buf.len() < self.conn_state.need_min() {
+            item_count += read.item_count();
+            let parsed = if item_count > 0 || self.buf.len() < self.conn_state.need_min() {
                 Int::NoWork
             } else {
                 match self.parse_item() {
@@ -492,43 +619,63 @@ impl Stream for Zmtp {
                     Err(e) => Int::Item(Err(e)),
                 }
             };
-            let _have_item = have_item | parsed.is_item();
+            item_count += parsed.item_count();
+            let _ = item_count;
             {
                 use Int::*;
-                match (write, read, parsed) {
-                    (Item(_), Item(_), _) => panic!(),
-                    (Item(_), _, Item(_)) => panic!(),
-                    (_, Item(_), Item(_)) => panic!(),
-                    (NoWork | Done, NoWork | Done, NoWork | Done) => {
+                match (serialized, write, read, parsed) {
+                    (NoWork | Done, NoWork | Done, NoWork | Done, NoWork | Done) => {
                         warn!("all NoWork or Done");
                         break Poll::Pending;
                     }
-                    (_, Item(Err(e)), _) => {
+                    (Item(Err(e)), _, _, _) => {
                         self.done = true;
                         break Poll::Ready(Some(Err(e)));
                     }
-                    (_, _, Item(Err(e))) => {
+                    (_, Item(Err(e)), _, _) => {
                         self.done = true;
                         break Poll::Ready(Some(Err(e)));
                     }
-                    (Item(_), _, _) => {
+                    (_, _, Item(Err(e)), _) => {
+                        self.done = true;
+                        break Poll::Ready(Some(Err(e)));
+                    }
+                    (_, _, _, Item(Err(e))) => {
+                        self.done = true;
+                        break Poll::Ready(Some(Err(e)));
+                    }
+                    (Item(_), _, _, _) => {
                         continue;
                     }
-                    (_, Item(Ok(_)), _) => {
+                    (_, Item(_), _, _) => {
                         continue;
                     }
-                    (_, _, Item(Ok(item))) => {
+                    (_, _, Item(_), _) => {
+                        continue;
+                    }
+                    (_, _, _, Item(Ok(item))) => {
                         break Poll::Ready(Some(Ok(item)));
                     }
-                    (Empty, _, _) => continue,
-                    (_, Empty, _) => continue,
-                    (_, _, Empty) => continue,
+                    (Empty, _, _, _) => continue,
+                    (_, Empty, _, _) => continue,
+                    (_, _, Empty, _) => continue,
+                    (_, _, _, Empty) => continue,
                     #[allow(unreachable_patterns)]
-                    (Pending, Pending | NoWork | Done, Pending | NoWork | Done) => break Poll::Pending,
+                    (Pending, Pending | NoWork | Done, Pending | NoWork | Done, Pending | NoWork | Done) => {
+                        break Poll::Pending
+                    }
                     #[allow(unreachable_patterns)]
-                    (Pending | NoWork | Done, Pending, Pending | NoWork | Done) => break Poll::Pending,
+                    (Pending | NoWork | Done, Pending, Pending | NoWork | Done, Pending | NoWork | Done) => {
+                        break Poll::Pending
+                    }
                     #[allow(unreachable_patterns)]
-                    (Pending | NoWork | Done, Pending | NoWork | Done, Pending) => break Poll::Pending,
+                    (Pending | NoWork | Done, Pending | NoWork | Done, Pending, Pending | NoWork | Done) => {
+                        break Poll::Pending
+                    }
+                    #[allow(unreachable_patterns)]
+                    (Pending | NoWork | Done, Pending | NoWork | Done, Pending | NoWork | Done, Pending) => {
+                        break Poll::Pending
+                    }
                 }
             };
         }

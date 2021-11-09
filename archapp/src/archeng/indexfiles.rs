@@ -544,7 +544,13 @@ pub async fn index_files_index_ref<P: Into<PathBuf> + Send>(
             let index_files_index_path = index_files_index_path.into();
             let index_files_index = {
                 let timed1 = Timed::new("slurp_index_bytes");
-                let mut index_files_index = open_read(index_files_index_path, stats).await?;
+                let mut index_files_index = match open_read(index_files_index_path.clone(), stats).await {
+                    Ok(k) => Ok(k),
+                    Err(e) => {
+                        warn!("can not open indexfile {:?}", index_files_index_path);
+                        Err(e)
+                    }
+                }?;
                 let mut buf = vec![0; 1024 * 1024 * 50];
                 let mut ntot = 0;
                 loop {

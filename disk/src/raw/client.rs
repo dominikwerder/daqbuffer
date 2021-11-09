@@ -28,7 +28,7 @@ where
     <ENP as EventsNodeProcessor>::Output: Unpin + 'static,
     Result<StreamItem<RangeCompletableItem<<ENP as EventsNodeProcessor>::Output>>, err::Error>: FrameType,
 {
-    netpod::log::info!("x_processed_stream_from_node  to: {}:{}", node.host, node.port_raw);
+    netpod::log::debug!("x_processed_stream_from_node  to: {}:{}", node.host, node.port_raw);
     let net = TcpStream::connect(format!("{}:{}", node.host, node.port_raw)).await?;
     let qjs = serde_json::to_string(&query)?;
     let (netin, mut netout) = net.into_split();
@@ -48,7 +48,7 @@ pub async fn x_processed_event_blobs_stream_from_node(
     perf_opts: PerfOpts,
     node: Node,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
-    netpod::log::info!(
+    netpod::log::debug!(
         "x_processed_event_blobs_stream_from_node  to: {}:{}",
         node.host,
         node.port_raw

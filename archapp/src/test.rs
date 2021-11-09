@@ -23,6 +23,7 @@ fn read_pb_00() -> Result<(), Error> {
             .join("X:2021_01.pb");
         let f1 = tokio::fs::read(path).await?;
         let mut j1 = 0;
+        // TODO assert more
         loop {
             let mut i2 = usize::MAX;
             for (i1, &k) in f1[j1..].iter().enumerate() {
@@ -32,17 +33,17 @@ fn read_pb_00() -> Result<(), Error> {
                 }
             }
             if i2 != usize::MAX {
-                info!("got NL  {} .. {}", j1, i2);
+                debug!("got NL  {} .. {}", j1, i2);
                 let m = unescape_archapp_msg(&f1[j1..i2], vec![])?;
                 if j1 == 0 {
                     let payload_info = crate::generated::EPICSEvent::PayloadInfo::parse_from_bytes(&m).unwrap();
-                    info!("got payload_info: {:?}", payload_info);
+                    debug!("got payload_info: {:?}", payload_info);
                 } else {
                     let scalar_double = crate::generated::EPICSEvent::ScalarDouble::parse_from_bytes(&m).unwrap();
-                    info!("got scalar_double: {:?}", scalar_double);
+                    debug!("got scalar_double: {:?}", scalar_double);
                 }
             } else {
-                info!("no more packets");
+                debug!("no more packets");
                 break;
             }
             j1 = i2 + 1;

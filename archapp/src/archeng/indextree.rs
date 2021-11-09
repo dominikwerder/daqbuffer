@@ -125,7 +125,6 @@ impl IndexFileBasics {
                     rb.fill_min(min0).await?;
                     let buf = rb.data();
                     let entry = parse_name_hash_channel_entry(buf, self.hver.as_ref())?;
-                    info!("parsed entry {:?}", entry);
                     pos = entry.next;
                     entries.push(entry);
                 }
@@ -1155,7 +1154,8 @@ mod test {
             let mut i1 = 0;
             let mut ts_max = Nanos::from_ns(0);
             while let Some(rec) = iter.next().await? {
-                info!("GOT RECORD: {:?}  {:?}", rec.beg, rec.target);
+                // TODO assert
+                debug!("GOT RECORD: {:?}  {:?}", rec.beg, rec.target);
                 if rec.beg <= ts_max {
                     return Err(Error::with_msg_no_trace("BAD ORDER"));
                 }

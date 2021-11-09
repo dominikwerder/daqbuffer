@@ -342,7 +342,7 @@ impl FromUrl for BinnedQuery {
                 .parse()
                 .map_err(|e| Error::with_msg(format!("can not parse doLog {:?}", e)))?,
         };
-        info!("BinnedQuery::from_url  {:?}", ret);
+        debug!("BinnedQuery::from_url  {:?}", ret);
         Ok(ret)
     }
 }

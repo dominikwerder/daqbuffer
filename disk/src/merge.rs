@@ -39,10 +39,10 @@ pub struct MergedStream<S, ITY> {
     stats_items: VecDeque<StatsItem>,
 }
 
-// TODO get rid, log info explicitly.
 impl<S, ITY> Drop for MergedStream<S, ITY> {
     fn drop(&mut self) {
-        info!(
+        // TODO collect somewhere
+        debug!(
             "MergedStream  Drop Stats:\nbatch_len_emit_histo: {:?}",
             self.batch_len_emit_histo
         );
@@ -204,7 +204,7 @@ where
                                         for ii in 0..batch.len() {
                                             aa.push(batch.ts(ii));
                                         }
-                                        info!("MergedBlobsStream  A emits {} events  tss {:?}", batch.len(), aa);
+                                        debug!("MergedBlobsStream  A emits {} events  tss {:?}", batch.len(), aa);
                                     };
                                     Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(batch)))))
                                 } else {
@@ -265,7 +265,7 @@ where
                                         for ii in 0..batch.len() {
                                             aa.push(batch.ts(ii));
                                         }
-                                        info!("MergedBlobsStream  B emits {} events  tss {:?}", batch.len(), aa);
+                                        debug!("MergedBlobsStream  B emits {} events  tss {:?}", batch.len(), aa);
                                     };
                                     Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(batch)))))
                                 } else {
@@ -374,9 +374,10 @@ mod test {
         let mut merged = MergedStream::new(inps);
         let mut cevs = CollectedEvents { tss: vec![] };
         let mut i1 = 0;
+        // TODO assert more
         while let Some(item) = merged.next().await {
             if let Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))) = item {
-                info!("item: {:?}", item);
+                debug!("item: {:?}", item);
                 for ts in item.tss {
                     cevs.tss.push(ts);
                 }
@@ -386,8 +387,8 @@ mod test {
                 break;
             }
         }
-        info!("read {} data items", i1);
-        info!("cevs: {:?}", cevs);
+        debug!("read {} data items", i1);
+        debug!("cevs: {:?}", cevs);
         Ok(cevs)
     }
 

@@ -2,7 +2,10 @@
 name = "disk"
 version = "0.0.1-a.1"
 authors = ["Dominik Werder <dominik.werder@gmail.com>"]
-edition = "2018"
+edition = "2021"
+
+[lib]
+path = "src/disk.rs"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }

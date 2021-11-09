@@ -46,10 +46,10 @@ pub struct EventChunker {
     unordered_warn_count: usize,
 }
 
-// TODO remove again, use it explicitly
 impl Drop for EventChunker {
     fn drop(&mut self) {
-        info!(
+        // TODO collect somewhere
+        debug!(
             "EventChunker  Drop Stats:\ndecomp_dt_histo: {:?}\nitem_len_emit_histo: {:?}",
             self.decomp_dt_histo, self.item_len_emit_histo
         );

@@ -167,10 +167,11 @@ async fn write_1() -> Result<(), Error> {
 }
 
 #[cfg(test)]
+#[allow(unused)]
 mod test {
     use super::*;
 
-    #[test]
+    //#[test]
     fn t1() -> Result<(), Error> {
         Ok(taskrun::run(write_1()).unwrap())
     }

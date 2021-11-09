@@ -115,7 +115,7 @@ async fn events_conn_handler_inner_try(
             return Err((Error::with_msg("json parse error"), netout))?;
         }
     };
-    info!("---   nodenet::conn  got query   -------------------\nevq {:?}", evq);
+    debug!("---   nodenet::conn  got query   -------------------\nevq {:?}", evq);
 
     let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>> =
         if let Some(aa) = &node_config.node.channel_archiver {
@@ -142,7 +142,6 @@ async fn events_conn_handler_inner_try(
         };
     let mut buf_len_histo = HistoLog2::new(5);
     while let Some(item) = p1.next().await {
-        //info!("conn.rs  encode frame typeid {:x}", item.typeid());
         let item = item.make_frame();
         match item {
             Ok(buf) => {
@@ -166,6 +165,6 @@ async fn events_conn_handler_inner_try(
         Ok(_) => (),
         Err(e) => return Err((e, netout))?,
     }
-    info!("events_conn_handler_inner_try  buf_len_histo: {:?}", buf_len_histo);
+    debug!("events_conn_handler_inner_try  buf_len_histo: {:?}", buf_len_histo);
     Ok(())
 }

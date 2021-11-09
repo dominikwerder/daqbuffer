@@ -32,7 +32,7 @@ where
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType,
 {
     pub fn new(evq: RawEventsQuery, perf_opts: PerfOpts, cluster: Cluster) -> Self {
-        info!("MergedFromRemotes  evq {:?}", evq);
+        debug!("MergedFromRemotes  evq {:?}", evq);
         let mut tcp_establish_futs = vec![];
         for node in &cluster.nodes {
             let f = x_processed_stream_from_node::<ENP>(evq.clone(), perf_opts.clone(), node.clone());

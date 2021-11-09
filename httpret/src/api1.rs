@@ -10,9 +10,7 @@ use hyper::{Body, Client, Request, Response};
 use items::{RangeCompletableItem, Sitemty, StreamItem};
 use itertools::Itertools;
 use netpod::query::RawEventsQuery;
-use netpod::{
-    log::*, ByteSize, Channel, FileIoBufferSize, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape, APP_OCTET,
-};
+use netpod::{log::*, ByteSize, Channel, FileIoBufferSize, NanoRange, NodeConfigCached, PerfOpts, Shape, APP_OCTET};
 use netpod::{ChannelSearchQuery, ChannelSearchResult, ProxyConfig, APP_JSON};
 use parse::channelconfig::{
     extract_matching_config_entry, read_local_config, Config, ConfigEntry, MatchingConfigEntry,
@@ -575,7 +573,7 @@ impl DataApiPython3DataStream {
             if !*header_out {
                 let head = Api1ChannelHeader {
                     name: channel.name.clone(),
-                    ty: scalar_type_to_api3proto(&b.scalar_types[i1]).into(),
+                    ty: b.scalar_types[i1].to_api3proto().into(),
                     byte_order: if b.be[i1] {
                         "BIG_ENDIAN".into()
                     } else {
@@ -688,7 +686,7 @@ impl Stream for DataApiPython3DataStream {
                             let perf_opts = PerfOpts { inmem_bufcap: 1024 * 4 };
                             // TODO is this a good to place decide this?
                             let s = if self.node_config.node_config.cluster.is_central_storage {
-                                info!("Set up central storage stream");
+                                debug!("Set up central storage stream");
                                 // TODO pull up this config
                                 let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
                                 let s = disk::raw::conn::make_local_event_blobs_stream(
@@ -703,7 +701,7 @@ impl Stream for DataApiPython3DataStream {
                                 )?;
                                 Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
                             } else {
-                                info!("Set up merged remote stream");
+                                debug!("Set up merged remote stream");
                                 let s = disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes::new(
                                     evq,
                                     perf_opts,
@@ -769,7 +767,7 @@ impl Stream for DataApiPython3DataStream {
 }
 
 pub async fn api1_binary_events(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("api1_binary_events  uri: {:?}  headers: {:?}", req.uri(), req.headers());
+    debug!("api1_binary_events  uri: {:?}  headers: {:?}", req.uri(), req.headers());
     let accept_def = "";
     let accept = req
         .headers()
@@ -784,12 +782,12 @@ pub async fn api1_binary_events(req: Request<Body>, node_config: &NodeConfigCach
         error!("got body_data: {:?}", String::from_utf8(body_data[..].to_vec()));
         return Err(Error::with_msg_no_trace("can not parse query"));
     };
-    info!("got Api1Query: {:?}", qu);
+    debug!("got Api1Query: {:?}", qu);
     let beg_date = chrono::DateTime::parse_from_rfc3339(&qu.range.start_date);
     let end_date = chrono::DateTime::parse_from_rfc3339(&qu.range.end_date);
     let beg_date = beg_date?;
     let end_date = end_date?;
-    info!("beg_date {:?}  end_date {:?}", beg_date, end_date);
+    debug!("beg_date {:?}  end_date {:?}", beg_date, end_date);
     //let url = Url::parse(&format!("dummy:{}", req.uri()))?;
     //let query = PlainEventsBinaryQuery::from_url(&url)?;
     // TODO add stricter check for types, check with client.
@@ -830,22 +828,6 @@ pub async fn api1_binary_events(req: Request<Body>, node_config: &NodeConfigCach
     let ret = response(StatusCode::OK).header("x-daqbuffer-request-id", "dummy");
     let ret = ret.body(BodyStream::wrapped(s, format!("api1_binary_events")))?;
     return Ok(ret);
-}
-
-fn scalar_type_to_api3proto(sty: &ScalarType) -> &'static str {
-    match sty {
-        ScalarType::U8 => "uint8",
-        ScalarType::U16 => "uint16",
-        ScalarType::U32 => "uint32",
-        ScalarType::U64 => "uint64",
-        ScalarType::I8 => "int8",
-        ScalarType::I16 => "int16",
-        ScalarType::I32 => "int32",
-        ScalarType::I64 => "int64",
-        ScalarType::F32 => "float32",
-        ScalarType::F64 => "float64",
-        ScalarType::BOOL => "bool",
-    }
 }
 
 fn shape_to_api3proto(sh: &Option<Vec<u32>>) -> Vec<u32> {

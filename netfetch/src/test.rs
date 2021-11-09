@@ -1,12 +1,14 @@
+use err::Error;
 use futures_util::StreamExt;
 use netpod::log::*;
 use netpod::{Cluster, Database, Node, NodeConfig, NodeConfigCached};
 use std::collections::BTreeMap;
 use std::iter::FromIterator;
+use std::time::Duration;
 
 #[test]
 fn ca_connect_1() {
-    taskrun::run(async {
+    let fut = async {
         let it = vec![(String::new(), String::new())].into_iter();
         let pairs = BTreeMap::from_iter(it);
         let node_config = NodeConfigCached {
@@ -42,9 +44,13 @@ fn ca_connect_1() {
         };
         let mut rx = super::ca::ca_connect_1(pairs, &node_config).await?;
         while let Some(item) = rx.next().await {
-            info!("got next: {:?}", item);
+            debug!("got next: {:?}", item);
         }
-        Ok(())
-    })
-    .unwrap();
+        Ok::<_, Error>(())
+    };
+    let fut = async move {
+        let ret = tokio::time::timeout(Duration::from_millis(4000), fut).await??;
+        Ok(ret)
+    };
+    taskrun::run(fut).unwrap();
 }

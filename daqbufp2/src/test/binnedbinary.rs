@@ -110,7 +110,7 @@ where
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", hp.host, hp.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    info!("get_binned_channel  get {}", url);
+    debug!("get_binned_channel  get {}", url);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(url.to_string())
@@ -126,7 +126,7 @@ where
     let res = consume_binned_response::<NTY, _>(s2).await?;
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
-    info!("get_cached_0  DONE  bin_count {}  time {} ms", res.bin_count, ms);
+    debug!("get_cached_0  DONE  bin_count {}  time {} ms", res.bin_count, ms);
     if !res.is_valid() {
         Err(Error::with_msg(format!("invalid response: {:?}", res)))
     } else if res.range_complete_count == 0 && expect_range_complete {
@@ -186,7 +186,8 @@ where
                         None
                     }
                     StreamItem::Stats(item) => {
-                        info!("Stats: {:?}", item);
+                        // TODO collect somewhere
+                        debug!("Stats: {:?}", item);
                         None
                     }
                     StreamItem::DataItem(frame) => {
@@ -200,10 +201,7 @@ where
                                         Streamlog::emit(&item);
                                         Some(Ok(StreamItem::Log(item)))
                                     }
-                                    item => {
-                                        info!("TEST GOT ITEM {:?}", item);
-                                        Some(Ok(item))
-                                    }
+                                    item => Some(Ok(item)),
                                 },
                                 Err(e) => {
                                     error!("TEST GOT ERROR FRAME: {:?}", e);
@@ -253,6 +251,6 @@ where
             ready(g)
         });
     let ret = s1.await;
-    info!("BinnedResponse: {:?}", ret);
+    debug!("BinnedResponse: {:?}", ret);
     Ok(ret)
 }

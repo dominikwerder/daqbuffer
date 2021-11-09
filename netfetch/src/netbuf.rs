@@ -114,4 +114,30 @@ impl NetBuf {
             Ok(())
         }
     }
+
+    pub fn put_u8(&mut self, v: u8) -> Result<(), Error> {
+        type T = u8;
+        const TS: usize = std::mem::size_of::<T>();
+        self.rewind_if_needed();
+        if self.wrcap() < TS {
+            return Err(Error::with_msg_no_trace("not enough space"));
+        } else {
+            self.buf[self.wp..self.wp + TS].copy_from_slice(&v.to_be_bytes());
+            self.wp += TS;
+            Ok(())
+        }
+    }
+
+    pub fn put_u64(&mut self, v: u64) -> Result<(), Error> {
+        type T = u64;
+        const TS: usize = std::mem::size_of::<T>();
+        self.rewind_if_needed();
+        if self.wrcap() < TS {
+            return Err(Error::with_msg_no_trace("not enough space"));
+        } else {
+            self.buf[self.wp..self.wp + TS].copy_from_slice(&v.to_be_bytes());
+            self.wp += TS;
+            Ok(())
+        }
+    }
 }

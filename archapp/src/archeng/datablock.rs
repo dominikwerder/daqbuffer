@@ -513,7 +513,7 @@ pub async fn read_data_1(
                         evs.values.push(value);
                     }
                 }
-                info!("parsed block with {} / {} events", ntot, evs.tss.len());
+                debug!("parsed block with {} / {} events", ntot, evs.tss.len());
                 let evs = ScalarPlainEvents::Double(evs);
                 let plain = PlainEvents::Scalar(evs);
                 let item = EventsItem::Plain(plain);

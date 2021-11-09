@@ -322,9 +322,9 @@ mod test {
     use futures_util::StreamExt;
     use items::eventsitem::EventsItem;
     use items::{LogItem, Sitemty, StatsItem, StreamItem};
+    use netpod::log::*;
     use netpod::timeunits::SEC;
-    use netpod::{log::*, RangeFilterStats};
-    use netpod::{Channel, NanoRange};
+    use netpod::{Channel, NanoRange, RangeFilterStats};
     use serde::Serialize;
     use std::collections::VecDeque;
     use std::path::PathBuf;
@@ -358,7 +358,12 @@ mod test {
             let filtered = RangeFilter::<_, EventsItem>::new(datablocks, range, expand);
             let mut stream = filtered;
             while let Some(block) = stream.next().await {
-                info!("DatablockStream yields: {:?}", block);
+                match block {
+                    Ok(_) => {
+                        //TODO assert more
+                    }
+                    Err(e) => return Err(e),
+                }
             }
             Ok(())
         };
