@@ -96,7 +96,31 @@ impl ScalarType {
             "int64" => I64,
             "float" => F32,
             "double" => F64,
-            _ => return Err(Error::with_msg_no_trace(format!("can not understand bsread {}", s))),
+            _ => {
+                return Err(Error::with_msg_no_trace(format!(
+                    "from_bsread_str can not understand bsread {}",
+                    s
+                )))
+            }
+        };
+        Ok(ret)
+    }
+
+    pub fn from_archeng_db_str(s: &str) -> Result<Self, Error> {
+        use ScalarType::*;
+        let ret = match s {
+            "I8" => I8,
+            "I16" => I16,
+            "I32" => I32,
+            "I64" => I64,
+            "F32" => F32,
+            "F64" => F64,
+            _ => {
+                return Err(Error::with_msg_no_trace(format!(
+                    "from_archeng_db_str can not understand {}",
+                    s
+                )))
+            }
         };
         Ok(ret)
     }
@@ -394,7 +418,10 @@ impl ByteOrder {
         match s {
             "little" => Ok(ByteOrder::LE),
             "big" => Ok(ByteOrder::BE),
-            _ => Err(Error::with_msg_no_trace(format!("can not understand {}", s))),
+            _ => Err(Error::with_msg_no_trace(format!(
+                "ByteOrder::from_bsread_str can not understand {}",
+                s
+            ))),
         }
     }
 
@@ -450,13 +477,44 @@ impl Shape {
                     JsVal::Number(v) => match v.as_u64() {
                         Some(0) | Some(1) => Ok(Shape::Scalar),
                         Some(v) => Ok(Shape::Wave(v as u32)),
-                        None => Err(Error::with_msg_no_trace(format!("can not understand {:?}", v))),
+                        None => Err(Error::with_msg_no_trace(format!(
+                            "Shape from_bsread_jsval can not understand {:?}",
+                            v
+                        ))),
                     },
-                    _ => Err(Error::with_msg_no_trace(format!("can not understand {:?}", v))),
+                    _ => Err(Error::with_msg_no_trace(format!(
+                        "Shape from_bsread_jsval can not understand {:?}",
+                        v
+                    ))),
                 },
-                _ => Err(Error::with_msg_no_trace(format!("can not understand {:?}", v))),
+                _ => Err(Error::with_msg_no_trace(format!(
+                    "Shape from_bsread_jsval can not understand {:?}",
+                    v
+                ))),
             },
-            _ => Err(Error::with_msg_no_trace(format!("can not understand {:?}", v))),
+            _ => Err(Error::with_msg_no_trace(format!(
+                "Shape from_bsread_jsval can not understand {:?}",
+                v
+            ))),
+        }
+    }
+
+    pub fn from_db_jsval(v: &JsVal) -> Result<Shape, Error> {
+        match v {
+            JsVal::String(s) => {
+                if s == "Scalar" {
+                    Ok(Shape::Scalar)
+                } else {
+                    Err(Error::with_msg_no_trace(format!(
+                        "Shape from_db_jsval can not understand {:?}",
+                        v
+                    )))
+                }
+            }
+            _ => Err(Error::with_msg_no_trace(format!(
+                "Shape from_db_jsval can not understand {:?}",
+                v
+            ))),
         }
     }
 }
@@ -474,15 +532,45 @@ pub mod timeunits {
     pub const DAY: u64 = HOUR * 24;
 }
 
-const BIN_T_LEN_OPTIONS_0: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
+//const BIN_T_LEN_OPTIONS_0: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
 
-const PATCH_T_LEN_KEY: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
+//const PATCH_T_LEN_KEY: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
 
-const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 4] = [MIN * 60, HOUR * 4, DAY * 4, DAY * 32];
+//const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 4] = [MIN * 60, HOUR * 4, DAY * 4, DAY * 32];
 // Maybe alternative for GLS:
 //const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 4] = [HOUR * 4, DAY * 4, DAY * 16, DAY * 32];
 
-const PATCH_T_LEN_OPTIONS_WAVE: [u64; 4] = [MIN * 10, HOUR * 2, DAY * 4, DAY * 32];
+//const PATCH_T_LEN_OPTIONS_WAVE: [u64; 4] = [MIN * 10, HOUR * 2, DAY * 4, DAY * 32];
+
+const BIN_T_LEN_OPTIONS_0: [u64; 2] = [
+    //
+    //SEC,
+    //MIN * 10,
+    HOUR * 2,
+    DAY,
+];
+
+const PATCH_T_LEN_KEY: [u64; 2] = [
+    //
+    //SEC,
+    //MIN * 10,
+    HOUR * 2,
+    DAY,
+];
+const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 2] = [
+    //
+    //MIN * 60,
+    //HOUR * 4,
+    DAY * 8,
+    DAY * 32,
+];
+const PATCH_T_LEN_OPTIONS_WAVE: [u64; 2] = [
+    //
+    //MIN * 10,
+    //HOUR * 2,
+    DAY * 8,
+    DAY * 32,
+];
 
 const BIN_THRESHOLDS: [u64; 31] = [
     2,
@@ -622,6 +710,9 @@ impl PreBinnedPatchRange {
                 if t <= bs {
                     let bin_t_len = t;
                     let patch_t_len = get_patch_t_len(bin_t_len);
+                    if !PreBinnedPatchGridSpec::is_valid_bin_t_len(bin_t_len) {
+                        return Err(Error::with_msg_no_trace(format!("not a valid bin_t_len {}", bin_t_len)));
+                    }
                     let grid_spec = PreBinnedPatchGridSpec { bin_t_len, patch_t_len };
                     let pl = patch_t_len;
                     let ts1 = range.beg / pl * pl;

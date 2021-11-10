@@ -64,10 +64,7 @@ where
                                 }
                             },
                             Err(e) => {
-                                error!(
-                                    "EventsFromFrames  ~~~~~~~~   ERROR on frame payload {}",
-                                    frame.buf().len(),
-                                );
+                                error!("frame payload  len {}  tyid {}  {}", frame.buf().len(), frame.tyid(), e);
                                 self.errored = true;
                                 Ready(Some(Err(e)))
                             }

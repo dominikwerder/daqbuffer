@@ -95,10 +95,12 @@ pub fn tracing_init() {
                     "archapp::archeng=info",
                     "archapp::archeng::datablockstream=info",
                     "archapp::archeng::indextree=info",
-                    "archapp::archeng::blockstream=info",
+                    "archapp::archeng::blockstream=debug",
                     "archapp::archeng::ringbuf=info",
                     "archapp::archeng::backreadbuf=info",
+                    "archapp::archeng::pipe=trace",
                     "archapp::storagemerge=info",
+                    "streams::rangefilter=debug",
                     "daqbuffer::test=trace",
                 ]
                 .join(","),
@@ -137,10 +139,10 @@ pub fn test_cluster() -> netpod::Cluster {
     netpod::Cluster {
         nodes,
         database: netpod::Database {
-            name: "daqbuffer".into(),
             host: "localhost".into(),
-            user: "daqbuffer".into(),
-            pass: "daqbuffer".into(),
+            name: "testingdaq".into(),
+            user: "testingdaq".into(),
+            pass: "testingdaq".into(),
         },
         run_map_pulse_task: false,
         is_central_storage: false,

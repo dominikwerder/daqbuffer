@@ -178,6 +178,16 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if path == "/api/4/version" {
+        if req.method() == Method::GET {
+            let ret = serde_json::json!({
+                //"data_api_version": "4.0.0-beta",
+                "data_api_version_major": 4,
+            });
+            Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
     } else if path == "/api/4/search/channel" {
         if req.method() == Method::GET {
             Ok(search::channel_search(req, &node_config).await?)
@@ -419,6 +429,13 @@ where
 }
 
 async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    match binned_inner(req, node_config).await {
+        Ok(ret) => Ok(ret),
+        Err(e) => Ok(response(StatusCode::BAD_REQUEST).body(Body::from(e.msg().to_string()))?),
+    }
+}
+
+async fn binned_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let url = Url::parse(&format!("dummy:{}", head.uri))?;
     let query = BinnedQuery::from_url(&url)?;
@@ -465,6 +482,13 @@ async fn binned_json(query: BinnedQuery, node_config: &NodeConfigCached) -> Resu
 }
 
 async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    match prebinned_inner(req, node_config).await {
+        Ok(ret) => Ok(ret),
+        Err(e) => Ok(response(StatusCode::BAD_REQUEST).body(Body::from(e.msg().to_string()))?),
+    }
+}
+
+async fn prebinned_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let query = PreBinnedQuery::from_request(&head)?;
     let desc = format!(
@@ -492,30 +516,23 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
 }
 
 async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    debug!("httpret  plain_events  headers: {:?}", req.headers());
+    match plain_events_inner(req, node_config).await {
+        Ok(ret) => Ok(ret),
+        Err(e) => Ok(response(StatusCode::BAD_REQUEST).body(Body::from(e.msg().to_string()))?),
+    }
+}
+
+async fn plain_events_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    debug!("httpret  plain_events_inner  headers: {:?}", req.headers());
     let accept_def = "";
     let accept = req
         .headers()
         .get(http::header::ACCEPT)
         .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
     if accept == APP_JSON {
-        let ret = match plain_events_json(req, node_config).await {
-            Ok(ret) => ret,
-            Err(e) => {
-                error!("{}", e);
-                response_err(StatusCode::BAD_REQUEST, e.msg())?
-            }
-        };
-        Ok(ret)
+        Ok(plain_events_json(req, node_config).await?)
     } else if accept == APP_OCTET {
-        let ret = match plain_events_binary(req, node_config).await {
-            Ok(ret) => ret,
-            Err(e) => {
-                error!("{}", e);
-                response_err(StatusCode::BAD_REQUEST, e.msg())?
-            }
-        };
-        Ok(ret)
+        Ok(plain_events_binary(req, node_config).await?)
     } else {
         let ret = response_err(StatusCode::NOT_ACCEPTABLE, format!("unsupported Accept: {:?}", accept))?;
         Ok(ret)
@@ -699,7 +716,7 @@ pub async fn channel_config(req: Request<Body>, node_config: &NodeConfigCached) 
     //let pairs = get_url_query_pairs(&url);
     let q = ChannelConfigQuery::from_url(&url)?;
     let conf = if let Some(conf) = &node_config.node.channel_archiver {
-        archapp_wrap::archapp::archeng::channel_config(&q, conf).await?
+        archapp_wrap::archapp::archeng::channel_config_from_db(&q, conf).await?
     } else if let Some(conf) = &node_config.node.archiver_appliance {
         archapp_wrap::channel_config(&q, conf).await?
     } else {

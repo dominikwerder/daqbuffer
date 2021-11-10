@@ -9,7 +9,7 @@ use futures_util::stream::FuturesOrdered;
 use futures_util::StreamExt;
 use items::eventsitem::EventsItem;
 use items::{WithLen, WithTimestamps};
-use netpod::{log::*, NanoRange};
+use netpod::{log::*, NanoRange, Nanos};
 use serde::Serialize;
 use serde_json::Value as JsVal;
 use std::collections::{BTreeMap, VecDeque};
@@ -58,9 +58,9 @@ struct Reader {
 impl Reader {}
 
 struct FutAItem {
-    #[allow(unused)]
     fname: String,
     path: PathBuf,
+    dpos: DataheaderPos,
     dfnotfound: bool,
     reader: Option<Reader>,
     bytes_read: u64,
@@ -101,6 +101,8 @@ pub struct BlockStream<S> {
     last_dfname: String,
     last_dfhpos: DataheaderPos,
     ts_max: u64,
+    data_done: bool,
+    raco: bool,
     done: bool,
     complete: bool,
     acc: StatsAcc,
@@ -115,6 +117,7 @@ impl<S> BlockStream<S> {
     where
         S: Stream<Item = Result<BlockrefItem, Error>> + Unpin,
     {
+        debug!("new BlockStream");
         Self {
             inp,
             inp_done: false,
@@ -126,6 +129,8 @@ impl<S> BlockStream<S> {
             last_dfname: String::new(),
             last_dfhpos: DataheaderPos(u64::MAX),
             ts_max: 0,
+            data_done: false,
+            raco: false,
             done: false,
             complete: false,
             acc: StatsAcc::new(),
@@ -159,6 +164,14 @@ where
             } else if self.done {
                 self.complete = true;
                 Ready(None)
+            } else if self.data_done {
+                self.done = true;
+                if self.raco {
+                    // currently handled downstream
+                    continue;
+                } else {
+                    continue;
+                }
             } else {
                 let item1 = if self.inp_done {
                     Int::Done
@@ -201,7 +214,7 @@ where
                                                             Some(reader)
                                                         } else {
                                                             let stats = StatsChannel::dummy();
-                                                            debug!("open new reader file {:?}", dpath);
+                                                            trace!("open new reader file {:?}", dpath);
                                                             match open_read(dpath.clone(), &stats).await {
                                                                 Ok(file) => {
                                                                     //
@@ -217,7 +230,8 @@ where
                                                         if let Some(mut reader) = reader {
                                                             let rp1 = reader.rb.bytes_read();
                                                             let dfheader =
-                                                                read_datafile_header2(&mut reader.rb, pos).await?;
+                                                                read_datafile_header2(&mut reader.rb, pos.clone())
+                                                                    .await?;
                                                             // TODO handle expand
                                                             let expand = false;
                                                             let data =
@@ -234,6 +248,7 @@ where
                                                             let ret = FutAItem {
                                                                 fname,
                                                                 path: dpath,
+                                                                dpos: pos,
                                                                 dfnotfound: false,
                                                                 reader: Some(reader),
                                                                 bytes_read,
@@ -245,6 +260,7 @@ where
                                                             let ret = FutAItem {
                                                                 fname,
                                                                 path: dpath,
+                                                                dpos: pos,
                                                                 dfnotfound: true,
                                                                 reader: None,
                                                                 bytes_read: 0,
@@ -285,22 +301,61 @@ where
                     } else {
                         match self.block_reads.poll_next_unpin(cx) {
                             Ready(Some(Ok(item))) => {
+                                let mut item = item;
+                                item.events = if let Some(ev) = item.events {
+                                    if ev.len() > 0 {
+                                        if ev.ts(ev.len() - 1) > self.range.end {
+                                            debug!(". . . . =====  DATA DONE ----------------------");
+                                            self.raco = true;
+                                            self.data_done = true;
+                                        }
+                                    }
+                                    if ev.len() == 1 {
+                                        debug!("From  {}  {:?}  {}", item.fname, item.path, item.dpos.0);
+                                        debug!("See 1 event {:?}", Nanos::from_ns(ev.ts(0)));
+                                    } else if ev.len() > 1 {
+                                        debug!("From  {}  {:?}  {}", item.fname, item.path, item.dpos.0);
+                                        debug!(
+                                            "See {} events  {:?} to {:?}",
+                                            ev.len(),
+                                            Nanos::from_ns(ev.ts(0)),
+                                            Nanos::from_ns(ev.ts(ev.len() - 1))
+                                        );
+                                    }
+                                    let mut contains_unordered = false;
+                                    for i in 0..ev.len() {
+                                        let ts = ev.ts(i);
+                                        debug!("\nSEE EVENT  {:?}", Nanos::from_ns(ts));
+                                        if ts < self.ts_max {
+                                            contains_unordered = true;
+                                            if true {
+                                                let msg = format!(
+                                                    "unordered event in item at {}  ts {:?}  ts_max {:?}",
+                                                    i,
+                                                    Nanos::from_ns(ts),
+                                                    Nanos::from_ns(self.ts_max)
+                                                );
+                                                error!("{}", msg);
+                                                self.done = true;
+                                                return Ready(Some(Err(Error::with_msg_no_trace(msg))));
+                                            }
+                                        }
+                                        self.ts_max = ts;
+                                    }
+                                    if contains_unordered {
+                                        Some(ev)
+                                    } else {
+                                        Some(ev)
+                                    }
+                                } else {
+                                    None
+                                };
+                                let item = item;
                                 if item.dfnotfound {
-                                    self.dfnotfound.insert(item.path, true);
+                                    self.dfnotfound.insert(item.path.clone(), true);
                                 }
                                 if let Some(reader) = item.reader {
                                     self.readers.push_back(reader);
-                                }
-                                if let Some(ev) = &item.events {
-                                    for i in 0..ev.len() {
-                                        let ts = ev.ts(i);
-                                        if ts < self.ts_max {
-                                            let msg = format!("unordered event:  {}  {}", ts, self.ts_max);
-                                            error!("{}", msg);
-                                            self.done = true;
-                                            return Ready(Some(Err(Error::with_msg_no_trace(msg))));
-                                        }
-                                    }
                                 }
                                 self.acc.add(item.events_read, item.bytes_read);
                                 if false {

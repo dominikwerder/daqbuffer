@@ -1,12 +1,17 @@
 use crate::binnedevents::XBinnedEvents;
 use crate::plainevents::{PlainEvents, ScalarPlainEvents, WavePlainEvents};
-use crate::{Appendable, Clearable, PushableIndex, WithLen, WithTimestamps};
+use crate::{Appendable, Clearable, PushableIndex, SitemtyFrameType, WithLen, WithTimestamps};
 use netpod::{AggKind, HasScalarType, HasShape, ScalarType, Shape};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum EventsItem {
     Plain(PlainEvents),
     XBinnedEvents(XBinnedEvents),
+}
+
+impl SitemtyFrameType for EventsItem {
+    const FRAME_TYPE_ID: u32 = crate::EVENTS_ITEM_FRAME_TYPE_ID;
 }
 
 impl EventsItem {

@@ -105,7 +105,7 @@ pub async fn search_channel_archeng(
                     if k == "Scalar" {
                         vec![]
                     } else {
-                        return Err(Error::with_msg_no_trace(format!("can not understand {:?}", config)));
+                        return Err(Error::with_msg_no_trace(format!("search_channel_archeng can not understand {:?}", config)));
                     }
                 }
                 JsVal::Object(k) => match k.get("Wave") {
@@ -114,15 +114,15 @@ pub async fn search_channel_archeng(
                             vec![k.as_i64().unwrap_or(u32::MAX as i64) as u32]
                         }
                         _ => {
-                            return Err(Error::with_msg_no_trace(format!("can not understand {:?}", config)));
+                            return Err(Error::with_msg_no_trace(format!("search_channel_archeng can not understand {:?}", config)));
                         }
                     },
                     None => {
-                        return Err(Error::with_msg_no_trace(format!("can not understand {:?}", config)));
+                        return Err(Error::with_msg_no_trace(format!("search_channel_archeng can not understand {:?}", config)));
                     }
                 },
                 _ => {
-                    return Err(Error::with_msg_no_trace(format!("can not understand {:?}", config)));
+                    return Err(Error::with_msg_no_trace(format!("search_channel_archeng can not understand {:?}", config)));
                 }
             },
             None => vec![],

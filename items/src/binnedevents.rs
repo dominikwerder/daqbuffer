@@ -2,13 +2,14 @@ use crate::xbinnedscalarevents::XBinnedScalarEvents;
 use crate::xbinnedwaveevents::XBinnedWaveEvents;
 use crate::{Appendable, Clearable, PushableIndex, WithLen, WithTimestamps};
 use netpod::{AggKind, HasScalarType, HasShape, ScalarType, Shape};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     eventsitem::EventsItem,
     plainevents::{PlainEvents, ScalarPlainEvents},
 };
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum SingleBinWaveEvents {
     Byte(XBinnedScalarEvents<i8>),
     Short(XBinnedScalarEvents<i16>),
@@ -172,7 +173,7 @@ impl HasScalarType for SingleBinWaveEvents {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum MultiBinWaveEvents {
     Byte(XBinnedWaveEvents<i8>),
     Short(XBinnedWaveEvents<i16>),
@@ -336,7 +337,7 @@ impl HasScalarType for MultiBinWaveEvents {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum XBinnedEvents {
     Scalar(ScalarPlainEvents),
     SingleBinWave(SingleBinWaveEvents),

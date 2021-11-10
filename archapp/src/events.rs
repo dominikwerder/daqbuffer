@@ -138,7 +138,10 @@ macro_rules! arm2 {
 
                             _ => panic!(),
                         },
-                        _ => err::todoval(),
+                        _ => {
+                            error!("unexpected arm2 case");
+                            err::todoval()
+                        }
                     },
                 },
                 StreamItem::Log(k) => Ok(StreamItem::Log(k)),
@@ -223,6 +226,7 @@ macro_rules! arm1 {
             },
             Shape::Image(..) => {
                 // There should be no images on archiver.
+                warn!("TODO for {:?}", $shape);
                 err::todoval()
             }
         }
@@ -240,7 +244,10 @@ impl FrameMakerTrait for FrameMaker {
             ScalarType::I32 => arm1!(item, i32, Int, shape, agg_kind),
             ScalarType::F32 => arm1!(item, f32, Float, shape, agg_kind),
             ScalarType::F64 => arm1!(item, f64, Double, shape, agg_kind),
-            _ => err::todoval(),
+            _ => {
+                warn!("TODO for scalar_type {:?}", scalar_type);
+                err::todoval()
+            }
         }
     }
 }
@@ -273,14 +280,13 @@ pub async fn make_single_event_pipe(
     base_path: PathBuf,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventsItem>> + Send>>, Error> {
     // TODO must apply the proper x-binning depending on the requested AggKind.
-    info!("make_event_pipe  {:?}", evq);
+    debug!("make_single_event_pipe  {:?}", evq);
     let evq = evq.clone();
     let DirAndPrefix { dir, prefix } = directory_for_channel_files(&evq.channel, base_path)?;
     //let dtbeg = Utc.timestamp((evq.range.beg / 1000000000) as i64, (evq.range.beg % 1000000000) as u32);
     let (tx, rx) = async_channel::bounded(16);
     let block1 = async move {
-        trace!("++++++++++++++++++++++++++++");
-        info!("start read of {:?}", dir);
+        debug!("start read of {:?}", dir);
 
         // TODO first collect all matching filenames, then sort, then open files.
         // TODO if dir does not exist, should notify client but not log as error.
@@ -299,13 +305,13 @@ pub async fn make_single_event_pipe(
             if s.starts_with(&prefix) && s.ends_with(".pb") {
                 match parse_data_filename(&s) {
                     Ok(df) => {
-                        info!("parse went ok: {} {}", df.year, df.month);
+                        debug!("parse went ok: {} {}", df.year, df.month);
                         let ts0 = Utc.ymd(df.year as i32, df.month, 1).and_hms(0, 0, 0);
                         let ts1 = ts0.timestamp() as u64 * SEC + ts0.timestamp_subsec_nanos() as u64;
-                        info!("file    {}   {}", ts1, ts1 + DAY * 27);
-                        info!("range   {}   {}", evq.range.beg, evq.range.end);
+                        debug!("file    {}   {}", ts1, ts1 + DAY * 27);
+                        debug!("range   {}   {}", evq.range.beg, evq.range.end);
                         if evq.range.beg < ts1 + DAY * 27 && evq.range.end > ts1 {
-                            info!("••••••••••••••••••••••••••  file matches requested range");
+                            debug!("••••••••••••••••••••••••••  file matches requested range");
                             let f1 = File::open(de.path()).await?;
                             info!("opened {:?}", de.path());
 
@@ -322,7 +328,7 @@ pub async fn make_single_event_pipe(
                             f1.seek(SeekFrom::Start(0)).await?;
                             let mut pbr = PbFileReader::new(f1).await;
                             pbr.read_header().await?;
-                            info!("✓ read header {:?}", pbr.payload_type());
+                            debug!("✓ read header {:?}", pbr.payload_type());
                             pbr.file().seek(SeekFrom::Start(pos1)).await?;
                             pbr.reset_io(pos1);
 
@@ -347,7 +353,7 @@ pub async fn make_single_event_pipe(
                                         }
                                     }
                                     Ok(None) => {
-                                        info!("reached end of file");
+                                        debug!("reached end of file");
                                         break;
                                     }
                                     Err(e) => {
@@ -363,7 +369,7 @@ pub async fn make_single_event_pipe(
                     }
                 }
             } else {
-                info!("prefix {}  s {}", prefix, s);
+                debug!("prefix {}  s {}", prefix, s);
             }
         }
         Ok::<_, Error>(())

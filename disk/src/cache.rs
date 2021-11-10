@@ -176,7 +176,10 @@ where
     let path = cfd.path(&node_config);
     let enc = serde_cbor::to_vec(&values)?;
     let ts1 = Instant::now();
-    tokio::fs::create_dir_all(path.parent().unwrap()).await?;
+    tokio::fs::create_dir_all(path.parent().unwrap()).await.map_err(|e| {
+        error!("can not create cache directory {:?}", path.parent());
+        e
+    })?;
     let now = Utc::now();
     let mut h = crc32fast::Hasher::new();
     h.update(&now.timestamp_nanos().to_le_bytes());

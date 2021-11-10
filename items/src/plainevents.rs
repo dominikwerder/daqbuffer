@@ -5,8 +5,9 @@ use crate::waveevents::{WaveEvents, WaveXBinner};
 use crate::{Appendable, Clearable, EventsNodeProcessor, PushableIndex, WithLen, WithTimestamps};
 use err::Error;
 use netpod::{AggKind, HasScalarType, HasShape, ScalarType, Shape};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum ScalarPlainEvents {
     Byte(EventValues<i8>),
     Short(EventValues<i16>),
@@ -151,7 +152,7 @@ impl HasScalarType for ScalarPlainEvents {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum WavePlainEvents {
     Byte(WaveEvents<i8>),
     Short(WaveEvents<i16>),
@@ -346,7 +347,7 @@ impl HasScalarType for WavePlainEvents {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum PlainEvents {
     Scalar(ScalarPlainEvents),
     Wave(WavePlainEvents),

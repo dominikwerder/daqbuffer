@@ -10,7 +10,7 @@ pub mod indexfiles;
 pub mod indextree;
 pub mod pipe;
 
-use self::indexfiles::list_index_files;
+use self::indexfiles::{database_connect, list_index_files};
 use self::indextree::channel_list;
 use crate::timed::Timed;
 use crate::wrap_task;
@@ -22,7 +22,9 @@ use items::{StreamItem, WithLen};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{ChannelArchiver, ChannelConfigQuery, ChannelConfigResponse};
+use netpod::{ScalarType, Shape};
 use serde::Serialize;
+use serde_json::Value as JsVal;
 use std::convert::TryInto;
 
 const EPICS_EPOCH_OFFSET: u64 = 631152000 * SEC;
@@ -159,6 +161,47 @@ pub fn list_all_channels(node: &ChannelArchiver) -> Receiver<Result<ListChannelI
     };
     wrap_task(task, tx2);
     rx
+}
+
+pub async fn channel_config_from_db(
+    q: &ChannelConfigQuery,
+    conf: &ChannelArchiver,
+) -> Result<ChannelConfigResponse, Error> {
+    let dbc = database_connect(&conf.database).await?;
+    let sql = "select config from channels where name = $1";
+    let rows = dbc.query(sql, &[&q.channel.name()]).await?;
+    if let Some(row) = rows.first() {
+        let cfg: JsVal = row.try_get(0)?;
+        let val = cfg
+            .get("shape")
+            .ok_or_else(|| Error::with_msg_no_trace("shape not found on config"))?;
+        let shape = Shape::from_db_jsval(val)?;
+        let val = cfg
+            .get("scalarType")
+            .ok_or_else(|| Error::with_msg_no_trace("no scalarType in db"))?;
+        let s = if let JsVal::String(s) = val {
+            s
+        } else {
+            return Err(Error::with_msg_no_trace(format!(
+                "channel_config_from_db bad scalar type {:?}",
+                cfg
+            )));
+        };
+        let scalar_type = ScalarType::from_archeng_db_str(s)?;
+        let ret = ChannelConfigResponse {
+            channel: q.channel.clone(),
+            scalar_type,
+            // TODO.. only binary endpoint would care.
+            byte_order: None,
+            shape,
+        };
+        Ok(ret)
+    } else {
+        Err(Error::with_msg_no_trace(format!(
+            "can not find config for {}",
+            q.channel.name()
+        )))
+    }
 }
 
 pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> Result<ChannelConfigResponse, Error> {

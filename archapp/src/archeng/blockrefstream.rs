@@ -89,14 +89,20 @@ impl BlockrefStream {
             }
             SelectIndexFile => {
                 let dbc = database_connect(&self.conf.database).await?;
-                let sql = "select path from indexfiles i, channels c, channel_index_map m where c.name = $1 and m.channel = c.rowid and i.rowid = m.index";
+                let sql = "select i.path from indexfiles i, channels c, channel_index_map m where c.name = $1 and m.channel = c.rowid and i.rowid = m.index";
                 let rows = dbc.query(sql, &[&self.channel.name()]).await?;
                 for row in rows {
-                    self.paths.push_back(row.try_get(0)?);
+                    let p: String = row.try_get(0)?;
+                    if self.paths.is_empty() && (p.contains("_ST/") || p.contains("_SH/")) {
+                        self.paths.push_back(p);
+                    }
                 }
                 if self.paths.len() == 0 {
                     self.steps = Done;
-                    Ok(Some((BlockrefItem::JsVal(JsVal::String(format!("NOMOREPATHS"))), self)))
+                    Ok(Some((
+                        BlockrefItem::JsVal(JsVal::String(format!("NOPATHSFROMDB"))),
+                        self,
+                    )))
                 } else {
                     self.steps = SetupNextPath;
                     Ok(Some((BlockrefItem::JsVal(JsVal::String(format!("DBQUERY"))), self)))
@@ -122,7 +128,7 @@ impl BlockrefStream {
                     };
                     Ok(Some((BlockrefItem::JsVal(JsVal::String(format!("NEXTPATH"))), self)))
                 } else {
-                    self.steps = SelectIndexFile;
+                    self.steps = Done;
                     Ok(Some((
                         BlockrefItem::JsVal(JsVal::String(format!("PATHQUEUEEMPTY"))),
                         self,
