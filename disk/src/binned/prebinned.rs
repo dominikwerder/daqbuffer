@@ -176,10 +176,10 @@ pub async fn pre_binned_bytes_for_http(
         ));
         return Err(err);
     }
-
     let q = ChannelConfigQuery {
         channel: query.channel().clone(),
         range: query.patch().patch_range(),
+        expand: query.agg_kind().need_expand(),
     };
     let conf = httpclient::get_channel_config(&q, node_config).await?;
     let ret = make_num_pipeline(

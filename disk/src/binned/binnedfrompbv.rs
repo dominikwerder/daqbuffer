@@ -1,5 +1,5 @@
 use crate::agg::binnedt::TBinnerStream;
-use crate::binned::query::{CacheUsage, PreBinnedQuery};
+use crate::binned::query::PreBinnedQuery;
 use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead};
 use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
@@ -9,6 +9,7 @@ use http::{StatusCode, Uri};
 use items::frame::decode_frame;
 use items::{FrameType, RangeCompletableItem, Sitemty, StreamItem, TimeBinnableType};
 use netpod::log::*;
+use netpod::query::CacheUsage;
 use netpod::{
     x_bin_count, AggKind, AppendToUrl, BinnedRange, ByteSize, Channel, NodeConfigCached, PerfOpts,
     PreBinnedPatchIterator, Shape,

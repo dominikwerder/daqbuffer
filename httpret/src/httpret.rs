@@ -1,7 +1,14 @@
+pub mod api1;
+pub mod channelarchiver;
+pub mod gather;
+pub mod proxy;
+pub mod pulsemap;
+pub mod search;
+
 use crate::gather::gather_get_json;
 use crate::pulsemap::UpdateTask;
 use bytes::Bytes;
-use disk::binned::query::{BinnedQuery, PreBinnedQuery};
+use disk::binned::query::PreBinnedQuery;
 use disk::events::{PlainEventsBinaryQuery, PlainEventsJsonQuery};
 use err::Error;
 use future::Future;
@@ -13,11 +20,10 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
 use netpod::log::*;
+use netpod::query::BinnedQuery;
 use netpod::timeunits::SEC;
-use netpod::{
-    channel_from_pairs, get_url_query_pairs, AggKind, ChannelConfigQuery, FromUrl, NodeConfigCached, APP_JSON,
-    APP_JSON_LINES, APP_OCTET,
-};
+use netpod::{channel_from_pairs, get_url_query_pairs, AggKind, ChannelConfigQuery, FromUrl, NodeConfigCached};
+use netpod::{APP_JSON, APP_JSON_LINES, APP_OCTET};
 use nodenet::conn::events_service;
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
@@ -27,13 +33,6 @@ use task::{Context, Poll};
 use tracing::field::Empty;
 use tracing::Instrument;
 use url::Url;
-
-pub mod api1;
-pub mod channelarchiver;
-pub mod gather;
-pub mod proxy;
-pub mod pulsemap;
-pub mod search;
 
 fn proxy_mark() -> &'static str {
     "7c5e408a"
@@ -53,9 +52,11 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
             // TODO send to logstash
             debug!("new connection from {:?}", conn.remote_addr());
             let node_config = node_config.clone();
+            let addr = conn.remote_addr();
             async move {
                 Ok::<_, Error>(service_fn({
                     move |req| {
+                        info!("REQUEST  {:?}  {:?}", addr, req.uri());
                         let f = http_service(req, node_config.clone());
                         Cont { f: Box::pin(f) }
                     }

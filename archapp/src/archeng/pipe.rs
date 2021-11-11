@@ -23,12 +23,18 @@ pub async fn make_event_pipe(
         let q = ChannelConfigQuery {
             channel: evq.channel.clone(),
             range: evq.range.clone(),
+            expand: evq.agg_kind.need_expand(),
         };
         crate::archeng::channel_config_from_db(&q, &conf).await?
     };
     debug!("Channel config: {:?}", channel_config);
     use crate::archeng::blockstream::BlockItem;
-    let refs = blockref_stream(evq.channel.clone(), evq.range.clone(), conf.clone());
+    let refs = blockref_stream(
+        evq.channel.clone(),
+        evq.range.clone(),
+        evq.agg_kind.need_expand(),
+        conf.database.clone(),
+    );
     let blocks = BlockStream::new(Box::pin(refs), evq.range.clone(), 1);
     let blocks = blocks.map(|k| match k {
         Ok(item) => match item {
@@ -84,10 +90,13 @@ pub async fn make_event_pipe(
     Ok(Box::pin(ret))
 }
 
-pub async fn make_event_pipe1(
+pub async fn _make_event_pipe1(
     evq: &RawEventsQuery,
     conf: ChannelArchiver,
 ) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error> {
+    // TODO unused
+    err::todo();
+
     let range = evq.range.clone();
     let channel = evq.channel.clone();
     let expand = evq.agg_kind.need_expand();
@@ -99,11 +108,12 @@ pub async fn make_event_pipe1(
         let q = ChannelConfigQuery {
             channel: channel.clone(),
             range: range.clone(),
+            expand: false,
         };
         crate::archeng::channel_config_from_db(&q, &conf).await?
     };
 
-    let data = DatablockStream::for_channel_range(
+    let data = DatablockStream::_for_channel_range(
         range.clone(),
         channel,
         conf.data_base_paths.clone().into(),

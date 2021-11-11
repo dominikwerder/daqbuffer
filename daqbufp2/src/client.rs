@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use disk::binned::query::{BinnedQuery, CacheUsage};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::streamlog::Streamlog;
 use err::Error;
@@ -8,8 +7,9 @@ use http::StatusCode;
 use hyper::Body;
 use items::xbinnedwaveevents::XBinnedWaveEvents;
 use items::{FrameType, Sitemty, StreamItem};
-use netpod::log::*;
-use netpod::{AggKind, AppendToUrl, ByteSize, Channel, HostPort, NanoRange, PerfOpts, APP_OCTET};
+use netpod::query::{BinnedQuery, CacheUsage};
+use netpod::{log::*, AppendToUrl};
+use netpod::{AggKind, ByteSize, Channel, HostPort, NanoRange, PerfOpts, APP_OCTET};
 use url::Url;
 
 pub async fn status(host: String, port: u16) -> Result<(), Error> {

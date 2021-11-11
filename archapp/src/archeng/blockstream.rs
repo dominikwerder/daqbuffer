@@ -85,6 +85,7 @@ impl Future for FutA {
     }
 }
 
+#[derive(Debug)]
 pub enum BlockItem {
     EventsItem(EventsItem),
     JsVal(JsVal),
@@ -117,7 +118,7 @@ impl<S> BlockStream<S> {
     where
         S: Stream<Item = Result<BlockrefItem, Error>> + Unpin,
     {
-        debug!("new BlockStream");
+        debug!("new BlockStream  max_reads {}  {:?}", max_reads, range);
         Self {
             inp,
             inp_done: false,
@@ -311,11 +312,11 @@ where
                                         }
                                     }
                                     if ev.len() == 1 {
-                                        debug!("From  {}  {:?}  {}", item.fname, item.path, item.dpos.0);
-                                        debug!("See 1 event {:?}", Nanos::from_ns(ev.ts(0)));
+                                        trace!("From  {}  {:?}  {}", item.fname, item.path, item.dpos.0);
+                                        trace!("See 1 event {:?}", Nanos::from_ns(ev.ts(0)));
                                     } else if ev.len() > 1 {
-                                        debug!("From  {}  {:?}  {}", item.fname, item.path, item.dpos.0);
-                                        debug!(
+                                        trace!("From  {}  {:?}  {}", item.fname, item.path, item.dpos.0);
+                                        trace!(
                                             "See {} events  {:?} to {:?}",
                                             ev.len(),
                                             Nanos::from_ns(ev.ts(0)),
@@ -324,8 +325,8 @@ where
                                     }
                                     let mut contains_unordered = false;
                                     for i in 0..ev.len() {
+                                        // TODO factor for performance.
                                         let ts = ev.ts(i);
-                                        debug!("\nSEE EVENT  {:?}", Nanos::from_ns(ts));
                                         if ts < self.ts_max {
                                             contains_unordered = true;
                                             if true {
@@ -445,5 +446,337 @@ impl<S> fmt::Debug for BlockStream<S> {
 impl<S> Drop for BlockStream<S> {
     fn drop(&mut self) {
         trace!("Drop {:?}", self);
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::archeng::blockrefstream::blockref_stream;
+    use futures_util::StreamExt;
+    use items::{LogItem, RangeCompletableItem, StreamItem};
+    use netpod::{timeunits::SEC, Channel, Database};
+    use streams::rangefilter::RangeFilter;
+
+    struct EventCount {
+        pre: usize,
+        inside: usize,
+        post: usize,
+        raco: usize,
+        tss: Vec<u64>,
+    }
+
+    impl EventCount {
+        fn new() -> Self {
+            Self {
+                pre: 0,
+                inside: 0,
+                post: 0,
+                raco: 0,
+                tss: vec![],
+            }
+        }
+    }
+
+    async fn count_events(range: NanoRange, expand: bool, collect_ts: bool) -> Result<EventCount, Error> {
+        let channel = Channel {
+            backend: "sls-archive".into(),
+            name: "X05DA-FE-WI1:TC1".into(),
+        };
+        let dbconf = Database {
+            host: "localhost".into(),
+            name: "testingdaq".into(),
+            user: "testingdaq".into(),
+            pass: "testingdaq".into(),
+        };
+        let refs = Box::pin(blockref_stream(channel, range.clone(), expand, dbconf));
+        let blocks = BlockStream::new(refs, range.clone(), 1);
+        let events = blocks.map(|item| match item {
+            Ok(k) => match k {
+                BlockItem::EventsItem(k) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(k))),
+                BlockItem::JsVal(k) => Ok(StreamItem::Log(LogItem::quick(Level::TRACE, format!("{:?}", k)))),
+            },
+            Err(e) => Err(e),
+        });
+        let mut filtered = RangeFilter::new(events, range.clone(), expand);
+        let mut ret = EventCount::new();
+        while let Some(item) = filtered.next().await {
+            //info!("Got block  {:?}", item);
+            match item {
+                Ok(item) => match item {
+                    StreamItem::DataItem(item) => match item {
+                        RangeCompletableItem::RangeComplete => {
+                            ret.raco += 1;
+                        }
+                        RangeCompletableItem::Data(item) => {
+                            let n = item.len();
+                            for i in 0..n {
+                                let ts = item.ts(i);
+                                if ts < range.beg {
+                                    ret.pre += 1;
+                                } else if ts < range.end {
+                                    ret.inside += 1;
+                                } else {
+                                    ret.post += 1;
+                                }
+                                if collect_ts {
+                                    ret.tss.push(ts);
+                                }
+                            }
+                        }
+                    },
+                    StreamItem::Log(_) => {}
+                    StreamItem::Stats(_) => {}
+                },
+                Err(e) => {
+                    return Err(e);
+                }
+            }
+        }
+        Ok(ret)
+    }
+
+    #[test]
+    fn read_blocks_one_event() -> Result<(), Error> {
+        let _ev1 = "2021-10-03T09:57:59.939651334Z";
+        let _ev2 = "2021-10-03T09:58:59.940910313Z";
+        let _ev3 = "2021-10-03T09:59:59.940112431Z";
+        let ev1ts = 1633255079939651334;
+        let ev2ts = 1633255139940910313;
+        // [ev1..ev2]
+        let range = NanoRange { beg: ev1ts, end: ev2ts };
+        let res = taskrun::run(count_events(range, false, true))?;
+        assert_eq!(res.pre, 0);
+        assert_eq!(res.inside, 1);
+        assert_eq!(res.post, 0);
+        assert_eq!(res.tss[0], ev1ts);
+        assert_eq!(res.raco, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn read_blocks_one_event_expand() -> Result<(), Error> {
+        let ev1ts = 1633255079939651334;
+        let ev2ts = 1633255139940910313;
+        let range = NanoRange { beg: ev1ts, end: ev2ts };
+        let res = taskrun::run(count_events(range, true, true))?;
+        assert_eq!(res.pre, 1);
+        assert_eq!(res.inside, 1);
+        assert_eq!(res.post, 1);
+        assert_eq!(res.tss[1], ev1ts);
+        assert_eq!(res.raco, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn read_blocks_two_events() -> Result<(), Error> {
+        let ev1ts = 1633255079939651334;
+        let ev2ts = 1633255139940910313;
+        let range = NanoRange {
+            beg: ev1ts,
+            end: ev2ts + 1,
+        };
+        let res = taskrun::run(count_events(range, false, true))?;
+        assert_eq!(res.pre, 0);
+        assert_eq!(res.inside, 2);
+        assert_eq!(res.post, 0);
+        assert_eq!(res.tss[0], ev1ts);
+        assert_eq!(res.tss[1], ev2ts);
+        assert_eq!(res.raco, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn read_blocks_two_events_expand() -> Result<(), Error> {
+        let ev1ts = 1633255079939651334;
+        let ev2ts = 1633255139940910313;
+        let range = NanoRange {
+            beg: ev1ts,
+            end: ev2ts + 1,
+        };
+        let res = taskrun::run(count_events(range, true, true))?;
+        assert_eq!(res.pre, 1);
+        assert_eq!(res.inside, 2);
+        assert_eq!(res.post, 1);
+        assert_eq!(res.tss[1], ev1ts);
+        assert_eq!(res.tss[2], ev2ts);
+        assert_eq!(res.raco, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn read_blocks_many_1() -> Result<(), Error> {
+        use chrono::{DateTime, Utc};
+        let _early = "2021-10-06T00:00:00Z";
+        let _late = "2021-10-07T00:00:00Z";
+        let dtbeg: DateTime<Utc> = _early.parse()?;
+        let dtend: DateTime<Utc> = _late.parse()?;
+        fn tons(dt: &DateTime<Utc>) -> u64 {
+            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
+        }
+        let range = NanoRange {
+            beg: tons(&dtbeg),
+            end: tons(&dtend),
+        };
+        let res = taskrun::run(count_events(range, false, false))?;
+        assert_eq!(res.pre, 0);
+        assert_eq!(res.inside, 77);
+        assert_eq!(res.post, 0);
+        assert_eq!(res.raco, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn read_blocks_many_2() -> Result<(), Error> {
+        use chrono::{DateTime, Utc};
+        let _early = "2021-09-01T00:00:00Z";
+        let _late = "2021-10-07T00:00:00Z";
+        let dtbeg: DateTime<Utc> = _early.parse()?;
+        let dtend: DateTime<Utc> = _late.parse()?;
+        fn tons(dt: &DateTime<Utc>) -> u64 {
+            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
+        }
+        let range = NanoRange {
+            beg: tons(&dtbeg),
+            end: tons(&dtend),
+        };
+        let res = taskrun::run(count_events(range, false, false))?;
+        assert_eq!(res.pre, 0);
+        assert_eq!(res.inside, 20328);
+        assert_eq!(res.post, 0);
+        assert_eq!(res.raco, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn read_blocks_many_3() -> Result<(), Error> {
+        use chrono::{DateTime, Utc};
+        let _early = "2021-08-01T00:00:00Z";
+        let _late = "2021-10-07T00:00:00Z";
+        let dtbeg: DateTime<Utc> = _early.parse()?;
+        let dtend: DateTime<Utc> = _late.parse()?;
+        fn tons(dt: &DateTime<Utc>) -> u64 {
+            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
+        }
+        let range = NanoRange {
+            beg: tons(&dtbeg),
+            end: tons(&dtend),
+        };
+        let res = taskrun::run(count_events(range, false, false))?;
+        assert_eq!(res.pre, 0);
+        assert_eq!(res.inside, 35438);
+        assert_eq!(res.post, 0);
+        assert_eq!(res.raco, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn read_blocks_many_3_expand() -> Result<(), Error> {
+        use chrono::{DateTime, Utc};
+        let _early = "2021-08-01T00:00:00Z";
+        let _late = "2021-10-07T00:00:00Z";
+        let dtbeg: DateTime<Utc> = _early.parse()?;
+        let dtend: DateTime<Utc> = _late.parse()?;
+        fn tons(dt: &DateTime<Utc>) -> u64 {
+            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
+        }
+        let range = NanoRange {
+            beg: tons(&dtbeg),
+            end: tons(&dtend),
+        };
+        let res = taskrun::run(count_events(range, true, false))?;
+        assert_eq!(res.pre, 1);
+        assert_eq!(res.inside, 35438);
+        assert_eq!(res.post, 1);
+        assert_eq!(res.raco, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn read_blocks_many_4() -> Result<(), Error> {
+        use chrono::{DateTime, Utc};
+        let _early = "2020-01-01T00:00:00Z";
+        let _late = "2021-10-07T00:00:00Z";
+        let dtbeg: DateTime<Utc> = _early.parse()?;
+        let dtend: DateTime<Utc> = _late.parse()?;
+        fn tons(dt: &DateTime<Utc>) -> u64 {
+            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
+        }
+        let range = NanoRange {
+            beg: tons(&dtbeg),
+            end: tons(&dtend),
+        };
+        let res = taskrun::run(count_events(range, false, false))?;
+        assert_eq!(res.pre, 0);
+        assert_eq!(res.inside, 71146);
+        assert_eq!(res.post, 0);
+        assert_eq!(res.raco, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn read_blocks_many_4_expand() -> Result<(), Error> {
+        use chrono::{DateTime, Utc};
+        let _early = "2020-01-01T00:00:00Z";
+        let _late = "2021-10-07T00:00:00Z";
+        let dtbeg: DateTime<Utc> = _early.parse()?;
+        let dtend: DateTime<Utc> = _late.parse()?;
+        fn tons(dt: &DateTime<Utc>) -> u64 {
+            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
+        }
+        let range = NanoRange {
+            beg: tons(&dtbeg),
+            end: tons(&dtend),
+        };
+        let res = taskrun::run(count_events(range, true, false))?;
+        assert_eq!(res.pre, 0);
+        assert_eq!(res.inside, 71146);
+        assert_eq!(res.post, 1);
+        assert_eq!(res.raco, 1);
+        Ok(())
+    }
+
+    #[test]
+    fn read_blocks_late() -> Result<(), Error> {
+        use chrono::{DateTime, Utc};
+        let _early = "2021-10-01T00:00:00Z";
+        let _late = "2021-12-01T00:00:00Z";
+        let dtbeg: DateTime<Utc> = _early.parse()?;
+        let dtend: DateTime<Utc> = _late.parse()?;
+        fn tons(dt: &DateTime<Utc>) -> u64 {
+            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
+        }
+        let range = NanoRange {
+            beg: tons(&dtbeg),
+            end: tons(&dtend),
+        };
+        let res = taskrun::run(count_events(range, false, false))?;
+        assert_eq!(res.pre, 0);
+        assert_eq!(res.inside, 3000);
+        assert_eq!(res.post, 0);
+        assert_eq!(res.raco, 0);
+        Ok(())
+    }
+
+    #[test]
+    fn read_blocks_late_expand() -> Result<(), Error> {
+        use chrono::{DateTime, Utc};
+        let _early = "2021-10-01T00:00:00Z";
+        let _late = "2021-12-01T00:00:00Z";
+        let dtbeg: DateTime<Utc> = _early.parse()?;
+        let dtend: DateTime<Utc> = _late.parse()?;
+        fn tons(dt: &DateTime<Utc>) -> u64 {
+            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
+        }
+        let range = NanoRange {
+            beg: tons(&dtbeg),
+            end: tons(&dtend),
+        };
+        let res = taskrun::run(count_events(range, true, false))?;
+        assert_eq!(res.pre, 1);
+        assert_eq!(res.inside, 3000);
+        assert_eq!(res.post, 0);
+        assert_eq!(res.raco, 0);
+        Ok(())
     }
 }

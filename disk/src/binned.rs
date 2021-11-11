@@ -1,6 +1,11 @@
+pub mod binnedfrompbv;
+pub mod dim1;
+pub mod pbv;
+pub mod prebinned;
+pub mod query;
+
 use crate::agg::binnedt::TBinnerStream;
 use crate::binned::binnedfrompbv::BinnedFromPreBinned;
-use crate::binned::query::BinnedQuery;
 use crate::binnedstream::BoxedStream;
 use crate::channelexec::{channel_exec, collect_plain_events_json, ChannelExecFunction};
 use crate::decode::{Endianness, EventValueFromBytes, EventValueShape, NumFromBytes};
@@ -17,7 +22,7 @@ use items::{
     Sitemty, StreamItem, TimeBinnableType, WithLen,
 };
 use netpod::log::*;
-use netpod::query::RawEventsQuery;
+use netpod::query::{BinnedQuery, RawEventsQuery};
 use netpod::{
     x_bin_count, BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange, Shape,
 };
@@ -26,12 +31,6 @@ use std::fmt::Debug;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-
-pub mod binnedfrompbv;
-pub mod dim1;
-pub mod pbv;
-pub mod prebinned;
-pub mod query;
 
 pub struct BinnedStreamRes<I> {
     pub binned_stream: BoxedStream<Result<StreamItem<RangeCompletableItem<I>>, Error>>,

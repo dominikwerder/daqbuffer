@@ -536,45 +536,115 @@ impl Rtree {
         Ok(node)
     }
 
-    pub async fn iter_range(&mut self, range: NanoRange, stats: &StatsChannel) -> Result<Option<RecordIter>, Error> {
+    pub async fn iter_range(
+        &mut self,
+        range: NanoRange,
+        expand: bool,
+        stats: &StatsChannel,
+    ) -> Result<Option<RecordIter>, Error> {
+        debug!("iter_range search for {:?}", range);
         // TODO RecordIter needs to know when to stop after range.
         let ts1 = Instant::now();
         let mut stack = VecDeque::new();
         let mut node = self.read_node_at(self.root.clone(), stats).await?;
+        debug!("have root node {:?}", node);
         let mut node_reads = 1;
-        'outer: loop {
-            let nr = node.records.len();
-            for (i, rec) in node.records.iter().enumerate() {
-                if rec.beg.ns > range.beg {
-                    match &rec.target {
-                        RecordTarget::Child(child) => {
-                            trace!("found non-leaf match at {} / {}", i, nr);
-                            let child = child.clone();
-                            let nr = RtreeNodeAtRecord { node, rix: i };
-                            node = self.read_node_at(child, stats).await?;
-                            node_reads += 1;
-                            stack.push_back(nr);
-                            continue 'outer;
-                        }
-                        RecordTarget::Dataref(_dataref) => {
-                            trace!("found leaf match at {} / {}", i, nr);
-                            let nr = RtreeNodeAtRecord { node, rix: i };
-                            stack.push_back(nr);
-                            let ret = RecordIter {
-                                tree: self.reopen(stats).await?,
-                                stack,
-                                stats: stats.clone(),
-                            };
-                            let stats = TreeSearchStats::new(ts1, node_reads);
-                            trace!("iter_range done  stats: {:?}", stats);
-                            return Ok(Some(ret));
+        if let Some(rec0) = node.records.first() {
+            if rec0.beg.ns > range.beg || (expand && rec0.beg.ns == range.beg) {
+                debug!("Start at begin of tree");
+                'outer: loop {
+                    let nrlen = node.records.len();
+                    for (i, rec) in node.records.iter().enumerate() {
+                        if true {
+                            match &rec.target {
+                                RecordTarget::Child(child) => {
+                                    trace!("found non-leaf match at {} / {}", i, nrlen);
+                                    let child = child.clone();
+                                    let nr = RtreeNodeAtRecord { node, rix: i };
+                                    node = self.read_node_at(child, stats).await?;
+                                    node_reads += 1;
+                                    stack.push_back(nr);
+                                    continue 'outer;
+                                }
+                                RecordTarget::Dataref(_dataref) => {
+                                    trace!("found leaf match at {} / {}", i, nrlen);
+                                    let nr = RtreeNodeAtRecord { node, rix: i };
+                                    stack.push_back(nr);
+                                    let ret = RecordIter {
+                                        tree: self.reopen(stats).await?,
+                                        stack,
+                                        range: range.clone(),
+                                        expand,
+                                        had_post: false,
+                                        done: false,
+                                        stats: stats.clone(),
+                                    };
+                                    let stats = TreeSearchStats::new(ts1, node_reads);
+                                    trace!("iter_range done  stats: {:?}", stats);
+                                    return Ok(Some(ret));
+                                }
+                            }
                         }
                     }
+                    //let stats = TreeSearchStats::new(ts1, node_reads);
+                    //trace!("loop did not find something, iter_range done  stats: {:?}", stats);
+                    //return Ok(None);
+                    return Err(Error::with_msg_no_trace("can not find the first leaf"));
+                }
+            } else {
+                debug!("Search within the tree");
+                'outer2: loop {
+                    let nr = node.records.len();
+                    for (i, rec) in node.records.iter().enumerate().rev() {
+                        if rec.beg.ns < range.beg || (!expand && rec.beg.ns == range.beg) {
+                            match &rec.target {
+                                RecordTarget::Child(child) => {
+                                    trace!("found non-leaf match at {} / {}", i, nr);
+                                    let child = child.clone();
+                                    let nr = RtreeNodeAtRecord { node, rix: i };
+                                    node = self.read_node_at(child, stats).await?;
+                                    node_reads += 1;
+                                    stack.push_back(nr);
+                                    continue 'outer2;
+                                }
+                                RecordTarget::Dataref(_dataref) => {
+                                    trace!("found leaf match at {} / {}", i, nr);
+                                    let nr = RtreeNodeAtRecord { node, rix: i };
+                                    stack.push_back(nr);
+                                    let ret = RecordIter {
+                                        tree: self.reopen(stats).await?,
+                                        stack,
+                                        range: range.clone(),
+                                        expand,
+                                        had_post: false,
+                                        done: false,
+                                        stats: stats.clone(),
+                                    };
+                                    let stats = TreeSearchStats::new(ts1, node_reads);
+                                    trace!("iter_range done  stats: {:?}", stats);
+                                    return Ok(Some(ret));
+                                }
+                            }
+                        }
+                    }
+                    //let stats = TreeSearchStats::new(ts1, node_reads);
+                    //trace!("loop did not find something, iter_range done  stats: {:?}", stats);
+                    //return Ok(None);
+                    return Err(Error::with_msg_no_trace("expected to find a leaf"));
                 }
             }
-            let stats = TreeSearchStats::new(ts1, node_reads);
-            trace!("iter_range done  stats: {:?}", stats);
-            return Ok(None);
+        } else {
+            debug!("no records at all");
+            let ret = RecordIter {
+                tree: self.reopen(stats).await?,
+                stack,
+                range: range.clone(),
+                expand,
+                had_post: false,
+                done: false,
+                stats: stats.clone(),
+            };
+            return Ok(Some(ret));
         }
     }
 
@@ -595,11 +665,21 @@ impl Rtree {
 pub struct RecordIter {
     tree: Rtree,
     stack: VecDeque<RtreeNodeAtRecord>,
+    range: NanoRange,
+    expand: bool,
+    had_post: bool,
+    done: bool,
     stats: StatsChannel,
 }
 
 impl RecordIter {
     pub async fn next(&mut self) -> Result<Option<RtreeRecord>, Error> {
+        if self.done {
+            return Ok(None);
+        }
+        if self.had_post {
+            self.done = true;
+        }
         match self.stack.back_mut() {
             Some(nr) => {
                 assert_eq!(nr.node.is_leaf, true);
@@ -607,6 +687,13 @@ impl RecordIter {
                     let ret = ret.clone();
                     if nr.advance()? {
                         //trace!("still more records here  {} / {}", nr.rix, nr.node.records.len());
+                        let beg2 = nr.rec().unwrap().beg.ns;
+                        if beg2 >= self.range.end {
+                            self.had_post = true;
+                            if !self.expand {
+                                self.done = true;
+                            }
+                        }
                     } else {
                         loop {
                             if self.stack.pop_back().is_none() {
@@ -636,6 +723,13 @@ impl RecordIter {
                                         RecordTarget::Dataref(_) => {
                                             trace!("loop B is-leaf");
                                             // done, we've positioned the next result.
+                                            let beg2 = n2.rec().unwrap().beg.ns;
+                                            if beg2 >= self.range.end {
+                                                self.had_post = true;
+                                                if !self.expand {
+                                                    self.done = true;
+                                                }
+                                            }
                                             break;
                                         }
                                     }
@@ -697,6 +791,7 @@ impl TreeSearchStats {
     }
 }
 
+// TODO get rid of this in favor of RecordIter.
 pub async fn search_record(
     file: &mut File,
     rtree_m: usize,
@@ -732,6 +827,7 @@ pub async fn search_record(
     }
 }
 
+// TODO get rid of this in favor of RecordIter.
 pub async fn search_record_expand_try(
     file: &mut File,
     rtree_m: usize,
@@ -770,6 +866,7 @@ pub async fn search_record_expand_try(
     }
 }
 
+// TODO get rid of this in favor of RecordIter.
 pub async fn search_record_expand(
     file: &mut File,
     rtree_m: usize,
@@ -1111,7 +1208,7 @@ mod test {
                 .await?
                 .ok_or_else(|| Error::with_msg("no tree found for channel"))?;
             let mut iter = tree
-                .iter_range(range, stats)
+                .iter_range(range, false, stats)
                 .await?
                 .ok_or_else(|| Error::with_msg("could not position iterator"))?;
             let mut i1 = 0;
@@ -1148,7 +1245,7 @@ mod test {
                 .await?
                 .ok_or_else(|| Error::with_msg("no tree found for channel"))?;
             let mut iter = tree
-                .iter_range(range, stats)
+                .iter_range(range, false, stats)
                 .await?
                 .ok_or_else(|| Error::with_msg("could not position iterator"))?;
             let mut i1 = 0;

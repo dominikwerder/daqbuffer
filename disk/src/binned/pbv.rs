@@ -1,6 +1,6 @@
 use crate::agg::binnedt::TBinnerStream;
 use crate::binned::binnedfrompbv::FetchedPreBinned;
-use crate::binned::query::{CacheUsage, PreBinnedQuery};
+use crate::binned::query::PreBinnedQuery;
 use crate::binned::WithLen;
 use crate::cache::{write_pb_cache_min_max_avg_scalar, CacheFileDesc, WrittenPbCache};
 use crate::decode::{Endianness, EventValueFromBytes, EventValueShape, NumFromBytes};
@@ -15,7 +15,7 @@ use items::{
     ReadableFromFile, Sitemty, StreamItem, TimeBinnableType,
 };
 use netpod::log::*;
-use netpod::query::RawEventsQuery;
+use netpod::query::{CacheUsage, RawEventsQuery};
 use netpod::{
     x_bin_count, AggKind, BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange, Shape,
 };
@@ -129,8 +129,10 @@ where
         let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster.clone()).map(|k| {
             info!(
                 "setup_merged_from_remotes, MergedFromRemotes  yields {:?}",
-                show_event_basic_info(&k)
+                //show_event_basic_info(&k)
+                "TODO show_event_basic_info"
             );
+            k
         });
         let ret = TBinnerStream::<_, <ENP as EventsNodeProcessor>::Output>::new(
             s,
@@ -208,6 +210,7 @@ where
     }
 
     fn try_setup_fetch_prebinned_higher_res(&mut self) -> Result<(), Error> {
+        info!("try_setup_fetch_prebinned_higher_res");
         let range = self.query.patch().patch_range();
         match PreBinnedPatchRange::covering_range(range, self.query.patch().bin_count() + 1) {
             Ok(Some(range)) => {

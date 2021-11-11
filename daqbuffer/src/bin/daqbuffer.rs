@@ -1,9 +1,9 @@
 use chrono::{DateTime, Duration, Utc};
 use clap::Clap;
 use daqbuffer::cli::{ClientType, Opts, SubCmd};
-use disk::binned::query::CacheUsage;
 use err::Error;
 use netpod::log::*;
+use netpod::query::CacheUsage;
 use netpod::{NodeConfig, NodeConfigCached, ProxyConfig};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;

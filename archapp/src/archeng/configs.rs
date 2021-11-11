@@ -232,6 +232,7 @@ impl Stream for ConfigStream {
                                 let q = ChannelConfigQuery {
                                     channel,
                                     range: NanoRange { beg, end },
+                                    expand: true,
                                 };
                                 let fut = super::channel_config(&q, &conf);
                                 let fut = tokio::time::timeout(Duration::from_millis(2000), fut);

@@ -82,6 +82,7 @@ impl FrameMaker {
 #[allow(unused_macros)]
 macro_rules! events_item_to_sitemty {
     ($ei:expr, $t1:ident, $t2:ident, $t3:ident) => {{
+        let combo = format!("t1 {}  t2 {}  t3 {}", stringify!($t1), stringify!($t2), stringify!($t3));
         let ret = match $ei {
             Ok(k) => match k {
                 StreamItem::DataItem(k) => match k {
@@ -95,13 +96,22 @@ macro_rules! events_item_to_sitemty {
                                         //
                                         match h {
                                             $t2::$t3(h) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(h))),
-                                            _ => panic!(),
+                                            _ => {
+                                                warn!("case AA {}", combo);
+                                                panic!()
+                                            }
                                         }
                                     }
-                                    _ => panic!(),
+                                    _ => {
+                                        warn!("case BB {}", combo);
+                                        panic!()
+                                    }
                                 }
                             }
-                            _ => panic!(),
+                            _ => {
+                                warn!("case CC {}", combo);
+                                panic!()
+                            }
                         }
                     }
                     RangeCompletableItem::RangeComplete => {
@@ -120,6 +130,16 @@ macro_rules! events_item_to_sitemty {
 macro_rules! arm2 {
     ($item:expr, $t1:ident, $t2:ident, $t3:ident, $t4:ident, $t5:ident, $sty1:ident, $sty2:ident) => {{
         type T1 = $t1<$sty1>;
+        let combo = format!(
+            "t1 {}  t2 {}  t3 {}  t4 {}  t5 {}  sty1 {}  sty2 {}",
+            stringify!($t1),
+            stringify!($t2),
+            stringify!($t3),
+            stringify!($t4),
+            stringify!($t5),
+            stringify!($sty1),
+            stringify!($sty2)
+        );
         let ret: Sitemty<T1> = match $item {
             Ok(k) => match k {
                 StreamItem::DataItem(k) => match k {
@@ -133,13 +153,18 @@ macro_rules! arm2 {
                                     //
                                     Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
                                 }
-                                _ => panic!(),
+                                _ => {
+                                    warn!("unclear what to do A {}", combo);
+                                    err::todoval()
+                                }
                             },
-
-                            _ => panic!(),
+                            _ => {
+                                warn!("unclear what to do B {}", combo);
+                                err::todoval()
+                            }
                         },
                         _ => {
-                            error!("unexpected arm2 case");
+                            error!("unexpected arm2 case {}", combo);
                             err::todoval()
                         }
                     },
@@ -157,12 +182,25 @@ macro_rules! arm1 {
     ($item:expr, $sty1:ident, $sty2:ident, $shape:expr, $ak:expr) => {{
         match $shape {
             Shape::Scalar => match $ak {
-                AggKind::EventBlobs => panic!(),
+                AggKind::EventBlobs => {
+                    warn!("arm1 unhandled EventBlobs");
+                    panic!()
+                }
                 AggKind::Plain => arm2!(
                     $item,
                     EventValues,
                     Plain,
                     PlainEvents,
+                    Scalar,
+                    ScalarPlainEvents,
+                    $sty1,
+                    $sty2
+                ),
+                AggKind::TimeWeightedScalar => arm2!(
+                    $item,
+                    EventValues,
+                    XBinnedEvents,
+                    XBinnedEvents,
                     Scalar,
                     ScalarPlainEvents,
                     $sty1,
@@ -178,7 +216,6 @@ macro_rules! arm1 {
                     $sty1,
                     $sty2
                 ),
-                AggKind::TimeWeightedScalar => panic!(),
                 AggKind::DimXBinsN(_) => arm2!(
                     $item,
                     EventValues,
@@ -191,7 +228,10 @@ macro_rules! arm1 {
                 ),
             },
             Shape::Wave(_) => match $ak {
-                AggKind::EventBlobs => panic!(),
+                AggKind::EventBlobs => {
+                    warn!("arm1 unhandled EventBlobs");
+                    panic!()
+                }
                 AggKind::Plain => arm2!(
                     $item,
                     WaveEvents,
@@ -202,7 +242,16 @@ macro_rules! arm1 {
                     $sty1,
                     $sty2
                 ),
-                AggKind::TimeWeightedScalar => panic!(),
+                AggKind::TimeWeightedScalar => arm2!(
+                    $item,
+                    XBinnedScalarEvents,
+                    XBinnedEvents,
+                    XBinnedEvents,
+                    SingleBinWave,
+                    SingleBinWaveEvents,
+                    $sty1,
+                    $sty2
+                ),
                 AggKind::DimXBins1 => arm2!(
                     $item,
                     XBinnedScalarEvents,

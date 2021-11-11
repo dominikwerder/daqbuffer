@@ -207,7 +207,7 @@ pub async fn channel_config_from_db(
 pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> Result<ChannelConfigResponse, Error> {
     let _timed = Timed::new("channel_config");
     let mut type_info = None;
-    let stream = blockrefstream::blockref_stream(q.channel.clone(), q.range.clone().clone(), conf.clone());
+    let stream = blockrefstream::blockref_stream(q.channel.clone(), q.range.clone(), q.expand, conf.database.clone());
     let stream = Box::pin(stream);
     let stream = blockstream::BlockStream::new(stream, q.range.clone(), 1);
     let mut stream = stream;
@@ -234,7 +234,8 @@ pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> R
     if type_info.is_none() {
         let timed_normal = Timed::new("channel_config NORMAL");
         warn!("channel_config expand mode returned none");
-        let stream = blockrefstream::blockref_stream(q.channel.clone(), q.range.clone().clone(), conf.clone());
+        let stream =
+            blockrefstream::blockref_stream(q.channel.clone(), q.range.clone(), q.expand, conf.database.clone());
         let stream = Box::pin(stream);
         let stream = blockstream::BlockStream::new(stream, q.range.clone(), 1);
         let mut stream = stream;

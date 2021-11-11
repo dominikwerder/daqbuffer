@@ -994,7 +994,7 @@ impl fmt::Display for AggKind {
 }
 
 impl fmt::Debug for AggKind {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(self, fmt)
     }
 }
@@ -1341,6 +1341,7 @@ The presence of a configuration in some range does not imply that there is any d
 pub struct ChannelConfigQuery {
     pub channel: Channel,
     pub range: NanoRange,
+    pub expand: bool,
 }
 
 impl HasBackend for ChannelConfigQuery {
@@ -1360,12 +1361,14 @@ impl FromUrl for ChannelConfigQuery {
         let pairs = get_url_query_pairs(url);
         let beg_date = pairs.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
         let end_date = pairs.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
+        let expand = pairs.get("expand").map(|s| s == "true").unwrap_or(false);
         let ret = Self {
             channel: channel_from_pairs(&pairs)?,
             range: NanoRange {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
             },
+            expand,
         };
         Ok(ret)
     }
@@ -1385,6 +1388,9 @@ impl AppendToUrl for ChannelConfigQuery {
             "endDate",
             &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
         );
+        if self.expand {
+            g.append_pair("expand", "true");
+        }
     }
 }
 

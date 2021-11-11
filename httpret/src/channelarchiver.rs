@@ -280,7 +280,7 @@ impl BlockRefStream {
             //name: "ARIDI-PCT:CURRENT".into(),
         };
         use archapp_wrap::archapp::archeng;
-        let s = archeng::blockrefstream::blockref_stream(channel, range, conf.clone());
+        let s = archeng::blockrefstream::blockref_stream(channel, range, true, conf.database.clone());
         let s = s.map(|item| match item {
             Ok(item) => {
                 use archeng::blockrefstream::BlockrefItem::*;
@@ -346,7 +346,7 @@ impl BlockStream {
             name: channel_name,
         };
         use archapp_wrap::archapp::archeng;
-        let s = archeng::blockrefstream::blockref_stream(channel, range.clone(), conf.clone());
+        let s = archeng::blockrefstream::blockref_stream(channel, range.clone(), true, conf.database.clone());
         let s = Box::pin(s);
         let s = archeng::blockstream::BlockStream::new(s, range.clone(), read_queue);
         let s = s.map(|item| match item {

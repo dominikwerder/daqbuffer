@@ -1,11 +1,11 @@
 use crate::nodes::require_test_hosts_running;
 use chrono::{DateTime, Utc};
-use disk::binned::query::{BinnedQuery, CacheUsage};
 use err::Error;
 use http::StatusCode;
 use hyper::Body;
-use netpod::log::*;
-use netpod::{AggKind, AppendToUrl, Channel, Cluster, NanoRange, APP_JSON};
+use netpod::query::{BinnedQuery, CacheUsage};
+use netpod::{log::*, AppendToUrl};
+use netpod::{AggKind, Channel, Cluster, NanoRange, APP_JSON};
 use std::time::Duration;
 use url::Url;
 

@@ -197,6 +197,7 @@ where
     let q = ChannelConfigQuery {
         channel: channel.clone(),
         range: range.clone(),
+        expand: agg_kind.need_expand(),
     };
     let conf = httpclient::get_channel_config(&q, node_config).await?;
     let ret = channel_exec_config(

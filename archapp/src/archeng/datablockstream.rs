@@ -217,7 +217,7 @@ pub struct DatablockStream {
 }
 
 impl DatablockStream {
-    pub fn for_channel_range(
+    pub fn _for_channel_range(
         range: NanoRange,
         channel: Channel,
         base_dirs: VecDeque<PathBuf>,
@@ -332,6 +332,10 @@ mod test {
 
     #[test]
     fn read_file_basic_info() -> Result<(), Error> {
+        // TODO redo test
+        if true {
+            panic!();
+        }
         let fut = async {
             // file begin archive_X05DA_SH/20211001/20211001: 1633039259
             // 1633145759
@@ -354,7 +358,7 @@ mod test {
                 .map(PathBuf::from)
                 .collect();
             let expand = false;
-            let datablocks = DatablockStream::for_channel_range(range.clone(), channel, base_dirs, expand, u64::MAX);
+            let datablocks = DatablockStream::_for_channel_range(range.clone(), channel, base_dirs, expand, u64::MAX);
             let filtered = RangeFilter::<_, EventsItem>::new(datablocks, range, expand);
             let mut stream = filtered;
             while let Some(block) = stream.next().await {

@@ -1,6 +1,5 @@
 use crate::nodes::require_test_hosts_running;
 use chrono::{DateTime, Utc};
-use disk::binned::query::{BinnedQuery, CacheUsage};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::streamlog::Streamlog;
 use err::Error;
@@ -9,8 +8,9 @@ use http::StatusCode;
 use hyper::Body;
 use items::minmaxavgbins::MinMaxAvgBins;
 use items::{FrameType, RangeCompletableItem, Sitemty, StatsItem, StreamItem, SubFrId, WithLen};
-use netpod::log::*;
-use netpod::{AggKind, AppendToUrl, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_OCTET};
+use netpod::query::{BinnedQuery, CacheUsage};
+use netpod::{log::*, AppendToUrl};
+use netpod::{AggKind, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_OCTET};
 use serde::de::DeserializeOwned;
 use std::fmt;
 use std::future::ready;
