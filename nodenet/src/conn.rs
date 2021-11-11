@@ -115,7 +115,7 @@ async fn events_conn_handler_inner_try(
             return Err((Error::with_msg("json parse error"), netout))?;
         }
     };
-    debug!("---   nodenet::conn  got query   -------------------\nevq {:?}", evq);
+    debug!("---  got query   evq {:?}", evq);
 
     let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>> =
         if let Some(aa) = &node_config.node.channel_archiver {

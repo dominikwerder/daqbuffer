@@ -178,8 +178,12 @@ where
     type Output = MinMaxAvgWaveBins<NTY>;
     type Aggregator = XBinnedWaveEventsAggregator<NTY>;
 
-    fn aggregator(range: NanoRange, bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
-        Self::Aggregator::new(range, bin_count, do_time_weight)
+    fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+        debug!(
+            "TimeBinnableType for XBinnedWaveEvents  aggregator()  range {:?}  x_bin_count {}  do_time_weight {}",
+            range, x_bin_count, do_time_weight
+        );
+        Self::Aggregator::new(range, x_bin_count, do_time_weight)
     }
 }
 

@@ -7,6 +7,7 @@ use crate::{
 };
 use chrono::{TimeZone, Utc};
 use err::Error;
+use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::NanoRange;
 use num_traits::Zero;
@@ -180,7 +181,11 @@ where
     type Output = MinMaxAvgBins<NTY>;
     type Aggregator = MinMaxAvgBinsAggregator<NTY>;
 
-    fn aggregator(range: NanoRange, _x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+    fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+        debug!(
+            "TimeBinnableType for XBinnedScalarEvents  aggregator()  range {:?}  x_bin_count {}  do_time_weight {}",
+            range, x_bin_count, do_time_weight
+        );
         Self::Aggregator::new(range, do_time_weight)
     }
 }

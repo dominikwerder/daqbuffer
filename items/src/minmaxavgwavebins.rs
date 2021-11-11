@@ -7,6 +7,7 @@ use crate::{
 };
 use chrono::{TimeZone, Utc};
 use err::Error;
+use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::NanoRange;
 use num_traits::Zero;
@@ -180,6 +181,10 @@ where
     type Aggregator = MinMaxAvgWaveBinsAggregator<NTY>;
 
     fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+        debug!(
+            "TimeBinnableType for MinMaxAvgWaveBins  aggregator()  range {:?}  x_bin_count {}  do_time_weight {}",
+            range, x_bin_count, do_time_weight
+        );
         Self::Aggregator::new(range, x_bin_count, do_time_weight)
     }
 }

@@ -7,7 +7,7 @@ use crate::{
     TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
-use netpod::timeunits::*;
+use netpod::log::*;
 use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -194,11 +194,11 @@ where
     type Output = MinMaxAvgBins<NTY>;
     type Aggregator = EventValuesAggregator<NTY>;
 
-    fn aggregator(range: NanoRange, _bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
-        // TODO remove output
-        if range.delta() > SEC * 5000 {
-            netpod::log::info!("TimeBinnableType for EventValues  aggregator()  range {:?}", range);
-        }
+    fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+        debug!(
+            "TimeBinnableType for EventValues  aggregator()  range {:?}  x_bin_count {}  do_time_weight {}",
+            range, x_bin_count, do_time_weight
+        );
         Self::Aggregator::new(range, do_time_weight)
     }
 }
@@ -248,6 +248,8 @@ where
     type Output = EventValuesCollectorOutput<NTY>;
 
     fn ingest(&mut self, src: &Self::Input) {
+        // TODO should be able to remove this
+        err::todo();
         self.vals.append(src);
     }
 
@@ -260,6 +262,8 @@ where
     }
 
     fn result(self) -> Result<Self::Output, Error> {
+        // TODO should be able to remove this
+        err::todo();
         let tst = ts_offs_from_abs(&self.vals.tss);
         let ret = Self::Output {
             ts_anchor_sec: tst.0,
@@ -350,8 +354,9 @@ where
         }
     }
 
-    fn apply_event_time_weight(&mut self, ts: u64, val: Option<NTY>) {
+    fn apply_event_time_weight(&mut self, ts: u64) {
         if let Some(v) = self.last_val {
+            debug!("apply_event_time_weight");
             self.apply_min_max(v);
             let w = if self.do_time_weight {
                 (ts - self.int_ts) as f32 * 1e-9
@@ -365,9 +370,12 @@ where
                 self.sumc += 1;
             }
             self.int_ts = ts;
+        } else {
+            debug!(
+                "apply_event_time_weight NO VALUE  {}",
+                ts as i64 - self.range.beg as i64
+            );
         }
-        self.last_ts = ts;
-        self.last_val = val;
     }
 
     fn ingest_unweight(&mut self, item: &<Self as TimeBinnableTypeAggregator>::Input) {
@@ -377,8 +385,8 @@ where
             if ts < self.range.beg {
             } else if ts >= self.range.end {
             } else {
-                self.count += 1;
                 self.apply_event_unweight(val);
+                self.count += 1;
             }
         }
     }
@@ -388,13 +396,18 @@ where
             let ts = item.tss[i1];
             let val = item.values[i1];
             if ts < self.int_ts {
+                debug!("just set int_ts");
                 self.last_ts = ts;
                 self.last_val = Some(val);
             } else if ts >= self.range.end {
+                debug!("after range");
                 return;
             } else {
+                debug!("regular");
+                self.apply_event_time_weight(ts);
                 self.count += 1;
-                self.apply_event_time_weight(ts, Some(val));
+                self.last_ts = ts;
+                self.last_val = Some(val);
             }
         }
     }
@@ -413,6 +426,7 @@ where
             maxs: vec![self.max],
             avgs: vec![avg],
         };
+        self.int_ts = range.beg;
         self.range = range;
         self.count = 0;
         self.min = None;
@@ -423,8 +437,12 @@ where
     }
 
     fn result_reset_time_weight(&mut self, range: NanoRange, expand: bool) -> MinMaxAvgBins<NTY> {
-        if expand {
-            self.apply_event_time_weight(self.range.end, self.last_val);
+        // TODO check callsite for correct expand status.
+        if true || expand {
+            debug!("result_reset_time_weight calls apply_event_time_weight");
+            self.apply_event_time_weight(self.range.end);
+        } else {
+            debug!("result_reset_time_weight NO EXPAND");
         }
         let avg = {
             let sc = self.range.delta() as f32 * 1e-9;
@@ -438,6 +456,7 @@ where
             maxs: vec![self.max],
             avgs: vec![avg],
         };
+        self.int_ts = range.beg;
         self.range = range;
         self.count = 0;
         self.min = None;
@@ -460,6 +479,7 @@ where
     }
 
     fn ingest(&mut self, item: &Self::Input) {
+        debug!("ingest  len {}", item.len());
         if self.do_time_weight {
             self.ingest_time_weight(item)
         } else {
@@ -468,6 +488,7 @@ where
     }
 
     fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output {
+        debug!("Produce for {:?}   next {:?}", self.range, range);
         if self.do_time_weight {
             self.result_reset_time_weight(range, expand)
         } else {

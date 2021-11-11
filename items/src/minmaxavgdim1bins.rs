@@ -182,6 +182,10 @@ where
     type Aggregator = MinMaxAvgDim1BinsAggregator<NTY>;
 
     fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+        debug!(
+            "TimeBinnableType for MinMaxAvgDim1Bins  aggregator()  range {:?}  x_bin_count {}  do_time_weight {}",
+            range, x_bin_count, do_time_weight
+        );
         Self::Aggregator::new(range, x_bin_count, do_time_weight)
     }
 }

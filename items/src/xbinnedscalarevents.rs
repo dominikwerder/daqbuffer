@@ -7,7 +7,7 @@ use crate::{
     TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
-use netpod::timeunits::SEC;
+use netpod::log::*;
 use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
 use tokio::fs::File;
@@ -176,14 +176,11 @@ where
     type Output = MinMaxAvgBins<NTY>;
     type Aggregator = XBinnedScalarEventsAggregator<NTY>;
 
-    fn aggregator(range: NanoRange, _x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
-        // TODO remove output
-        if range.delta() > SEC * 0 {
-            netpod::log::debug!(
-                "TimeBinnableType for XBinnedScalarEvents  aggregator()  range {:?}",
-                range
-            );
-        }
+    fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+        debug!(
+            "TimeBinnableType for XBinnedScalarEvents  aggregator()  range {:?}  x_bin_count {}  do_time_weight {}",
+            range, x_bin_count, do_time_weight
+        );
         Self::Aggregator::new(range, do_time_weight)
     }
 }
@@ -252,6 +249,7 @@ where
     }
 
     fn apply_event_unweight(&mut self, avg: f32, min: NTY, max: NTY) {
+        debug!("apply_event_unweight");
         self.apply_min_max(min, max);
         let vf = avg;
         if vf.is_nan() {
@@ -261,9 +259,10 @@ where
         }
     }
 
-    fn apply_event_time_weight(&mut self, ts: u64, avg: Option<f32>, min: Option<NTY>, max: Option<NTY>) {
-        if let Some(v) = self.last_avg {
-            self.apply_min_max(min.unwrap(), max.unwrap());
+    fn apply_event_time_weight(&mut self, ts: u64) {
+        debug!("apply_event_time_weight");
+        if let (Some(v), Some(min), Some(max)) = (self.last_avg, self.last_min, self.last_max) {
+            self.apply_min_max(min, max);
             let w = if self.do_time_weight {
                 (ts - self.int_ts) as f32 * 1e-9
             } else {
@@ -277,10 +276,6 @@ where
             }
             self.int_ts = ts;
         }
-        self.last_ts = ts;
-        self.last_avg = avg;
-        self.last_min = min;
-        self.last_max = max;
     }
 
     fn ingest_unweight(&mut self, item: &XBinnedScalarEvents<NTY>) {
@@ -292,8 +287,8 @@ where
             if ts < self.range.beg {
             } else if ts >= self.range.end {
             } else {
-                self.count += 1;
                 self.apply_event_unweight(avg, min, max);
+                self.count += 1;
             }
         }
     }
@@ -312,8 +307,12 @@ where
             } else if ts >= self.range.end {
                 return;
             } else {
+                self.apply_event_time_weight(ts);
                 self.count += 1;
-                self.apply_event_time_weight(ts, Some(avg), Some(min), Some(max));
+                self.last_ts = ts;
+                self.last_avg = Some(avg);
+                self.last_min = Some(min);
+                self.last_max = Some(max);
             }
         }
     }
@@ -332,6 +331,7 @@ where
             maxs: vec![self.max],
             avgs: vec![avg],
         };
+        self.int_ts = range.beg;
         self.range = range;
         self.count = 0;
         self.min = None;
@@ -342,8 +342,9 @@ where
     }
 
     fn result_reset_time_weight(&mut self, range: NanoRange, expand: bool) -> MinMaxAvgBins<NTY> {
-        if expand {
-            self.apply_event_time_weight(self.range.end, self.last_avg, self.last_min, self.last_max);
+        // TODO check callsite for correct expand status.
+        if true || expand {
+            self.apply_event_time_weight(self.range.end);
         }
         let avg = {
             let sc = self.range.delta() as f32 * 1e-9;
@@ -357,6 +358,7 @@ where
             maxs: vec![self.max],
             avgs: vec![avg],
         };
+        self.int_ts = range.beg;
         self.range = range;
         self.count = 0;
         self.min = None;
@@ -379,6 +381,7 @@ where
     }
 
     fn ingest(&mut self, item: &Self::Input) {
+        debug!("ingest");
         if self.do_time_weight {
             self.ingest_time_weight(item)
         } else {
