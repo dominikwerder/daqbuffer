@@ -1,5 +1,5 @@
 use crate::archeng::backreadbuf::BackReadBuf;
-use crate::archeng::indexfiles::{database_connect, unfold_stream, UnfoldExec};
+use crate::archeng::indexfiles::{unfold_stream, UnfoldExec};
 use crate::archeng::indextree::{
     read_datablockref2, Dataref, HeaderVersion, IndexFileBasics, RecordIter, RecordTarget,
 };
@@ -8,7 +8,7 @@ use err::Error;
 use futures_core::{Future, Stream};
 #[allow(unused)]
 use netpod::log::*;
-use netpod::{Channel, Database, NanoRange};
+use netpod::{Channel, NanoRange};
 #[allow(unused)]
 use serde::Serialize;
 use serde_json::Value as JsVal;
@@ -38,12 +38,11 @@ enum Steps {
 }
 
 struct BlockrefStream {
-    dbconf: Database,
     channel: Channel,
     range: NanoRange,
     expand: bool,
     steps: Steps,
-    paths: VecDeque<String>,
+    paths: VecDeque<PathBuf>,
     file1: Option<BackReadBuf<File>>,
     last_dp: u64,
     last_dp2: u64,
@@ -52,15 +51,14 @@ struct BlockrefStream {
 }
 
 impl BlockrefStream {
-    fn new(channel: Channel, range: NanoRange, expand: bool, dbconf: Database) -> Self {
-        debug!("new BlockrefStream  {:?}", range);
+    fn new(channel: Channel, range: NanoRange, expand: bool, path: PathBuf) -> Self {
+        debug!("new BlockrefStream  {:?}  {:?}", range, path);
         Self {
-            dbconf,
             channel,
             range,
             expand,
             steps: Steps::Start,
-            paths: VecDeque::new(),
+            paths: VecDeque::from([path]),
             file1: None,
             last_dp: 0,
             last_dp2: 0,
@@ -80,19 +78,10 @@ impl BlockrefStream {
                 )))
             }
             SelectIndexFile => {
-                let dbc = database_connect(&self.dbconf).await?;
-                let sql = "select i.path from indexfiles i, channels c, channel_index_map m where c.name = $1 and m.channel = c.rowid and i.rowid = m.index";
-                let rows = dbc.query(sql, &[&self.channel.name()]).await?;
-                for row in rows {
-                    let p: String = row.try_get(0)?;
-                    if self.paths.is_empty() && (p.contains("_ST/") || p.contains("_SH/")) {
-                        self.paths.push_back(p);
-                    }
-                }
                 if self.paths.len() == 0 {
                     self.steps = Done;
                     Ok(Some((
-                        BlockrefItem::JsVal(JsVal::String(format!("NOPATHSFROMDB"))),
+                        BlockrefItem::JsVal(JsVal::String(format!("NOPATHANYMORE"))),
                         self,
                     )))
                 } else {
@@ -104,8 +93,9 @@ impl BlockrefStream {
                 let stats = &StatsChannel::dummy();
                 // For simplicity, simply read all storage classes linearly.
                 if let Some(path) = self.paths.pop_front() {
+                    debug!("SetupNextPath {:?}", path);
                     // TODO
-                    let mut file = open_read(path.clone().into(), stats).await.map_err(|e| {
+                    let mut file = open_read(path.clone(), stats).await.map_err(|e| {
                         error!("can not open {:?}", path);
                         e
                     })?;
@@ -189,16 +179,18 @@ pub fn blockref_stream(
     channel: Channel,
     range: NanoRange,
     expand: bool,
-    dbconf: Database,
+    ixpath: PathBuf,
 ) -> impl Stream<Item = Result<BlockrefItem, Error>> {
-    unfold_stream(BlockrefStream::new(channel, range, expand, dbconf))
+    unfold_stream(BlockrefStream::new(channel, range, expand, ixpath))
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::archeng::indexfiles::index_file_path_list;
     use futures_util::StreamExt;
     use netpod::timeunits::SEC;
+    use netpod::Database;
 
     #[test]
     fn find_ref_1() -> Result<(), Error> {
@@ -223,7 +215,10 @@ mod test {
                 user: "testingdaq".into(),
                 pass: "testingdaq".into(),
             };
-            let mut refs = Box::pin(blockref_stream(channel, range, false, dbconf));
+            let ixpaths = index_file_path_list(channel.clone(), dbconf).await?;
+            info!("got categorized ixpaths: {:?}", ixpaths);
+            let ixpath = ixpaths.first().unwrap().clone();
+            let mut refs = Box::pin(blockref_stream(channel, range, false, ixpath));
             while let Some(item) = refs.next().await {
                 info!("Got ref  {:?}", item);
             }

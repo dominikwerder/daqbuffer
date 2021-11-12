@@ -90,7 +90,7 @@ where
         while self.len() < min {
             let n = self.fill().await?;
             if n == 0 {
-                return Err(Error::with_msg_no_trace(format!("fill_min can not read min {}", min)));
+                return Err(Error::with_msg(format!("fill_min can not read min {}", min)));
             }
         }
         Ok(self.len() - len)

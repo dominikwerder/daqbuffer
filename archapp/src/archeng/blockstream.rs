@@ -453,6 +453,7 @@ impl<S> Drop for BlockStream<S> {
 mod test {
     use super::*;
     use crate::archeng::blockrefstream::blockref_stream;
+    use crate::archeng::indexfiles::index_file_path_list;
     use futures_util::StreamExt;
     use items::{LogItem, RangeCompletableItem, StreamItem};
     use netpod::{timeunits::SEC, Channel, Database};
@@ -489,7 +490,10 @@ mod test {
             user: "testingdaq".into(),
             pass: "testingdaq".into(),
         };
-        let refs = Box::pin(blockref_stream(channel, range.clone(), expand, dbconf));
+        let ixpaths = index_file_path_list(channel.clone(), dbconf).await?;
+        info!("got categorized ixpaths: {:?}", ixpaths);
+        let ixpath = ixpaths.first().unwrap().clone();
+        let refs = Box::pin(blockref_stream(channel, range.clone(), expand, ixpath));
         let blocks = BlockStream::new(refs, range.clone(), 1);
         let events = blocks.map(|item| match item {
             Ok(k) => match k {

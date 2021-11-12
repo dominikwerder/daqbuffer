@@ -1,6 +1,5 @@
 use crate::archeng::blockrefstream::blockref_stream;
 use crate::archeng::blockstream::BlockStream;
-use crate::archeng::datablockstream::DatablockStream;
 use crate::events::{FrameMaker, FrameMakerTrait};
 use err::Error;
 use futures_util::{Stream, StreamExt};
@@ -28,12 +27,15 @@ pub async fn make_event_pipe(
         crate::archeng::channel_config_from_db(&q, &conf).await?
     };
     debug!("Channel config: {:?}", channel_config);
+    let ixpaths = crate::archeng::indexfiles::index_file_path_list(evq.channel.clone(), conf.database.clone()).await?;
+    info!("got categorized ixpaths: {:?}", ixpaths);
+    let ixpath = ixpaths.first().unwrap().clone();
     use crate::archeng::blockstream::BlockItem;
     let refs = blockref_stream(
         evq.channel.clone(),
         evq.range.clone(),
         evq.agg_kind.need_expand(),
-        conf.database.clone(),
+        ixpath.clone(),
     );
     let blocks = BlockStream::new(Box::pin(refs), evq.range.clone(), 1);
     let blocks = blocks.map(|k| match k {
@@ -87,46 +89,5 @@ pub async fn make_event_pipe(
         evq.agg_kind.clone(),
     )) as Box<dyn FrameMakerTrait>;
     let ret = xtrans.map(move |j| frame_maker.make_frame(j));
-    Ok(Box::pin(ret))
-}
-
-pub async fn _make_event_pipe1(
-    evq: &RawEventsQuery,
-    conf: ChannelArchiver,
-) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error> {
-    // TODO unused
-    err::todo();
-
-    let range = evq.range.clone();
-    let channel = evq.channel.clone();
-    let expand = evq.agg_kind.need_expand();
-
-    // TODO I need the numeric type here which I expect for that channel in order to construct FrameMaker.
-    // TODO Need to pass that requirement down to disk reader: error if type changes.
-
-    let channel_config = {
-        let q = ChannelConfigQuery {
-            channel: channel.clone(),
-            range: range.clone(),
-            expand: false,
-        };
-        crate::archeng::channel_config_from_db(&q, &conf).await?
-    };
-
-    let data = DatablockStream::_for_channel_range(
-        range.clone(),
-        channel,
-        conf.data_base_paths.clone().into(),
-        expand,
-        u64::MAX,
-    );
-    let filtered = RangeFilter::new(data, range, expand);
-    let stream = filtered;
-    let mut frame_maker = Box::new(FrameMaker::with_item_type(
-        channel_config.scalar_type.clone(),
-        channel_config.shape.clone(),
-        evq.agg_kind.clone(),
-    )) as Box<dyn FrameMakerTrait>;
-    let ret = stream.map(move |j| frame_maker.make_frame(j));
     Ok(Box::pin(ret))
 }

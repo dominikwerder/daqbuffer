@@ -572,7 +572,21 @@ pub async fn index_files_index_ref<P: Into<PathBuf> + Send>(
     }
 }
 
-pub async fn index_file_path_list(
+pub async fn index_file_path_list(channel: Channel, dbconf: Database) -> Result<Vec<PathBuf>, Error> {
+    let dbc = database_connect(&dbconf).await?;
+    let sql = "select i.path from indexfiles i, channels c, channel_index_map m where c.name = $1 and m.channel = c.rowid and i.rowid = m.index";
+    let rows = dbc.query(sql, &[&channel.name()]).await?;
+    let mut index_paths = vec![];
+    for row in rows {
+        index_paths.push(row.try_get(0)?);
+    }
+    let list = categorize_index_files(&index_paths)?;
+    let ret = list.into_iter().map(|k| k.path).collect();
+    Ok(ret)
+}
+
+// TODO using the json index is currently no longer needed, but maybe as alternative for tests.
+async fn _index_file_path_list_old(
     channel: Channel,
     index_files_index_path: PathBuf,
     stats: &StatsChannel,
@@ -582,7 +596,7 @@ pub async fn index_file_path_list(
         .await?
         .ok_or(Error::with_msg_no_trace("can not find channel"))?;
     let list = categorize_index_files(&index_paths)?;
-    info!("GOT CATEGORIZED:\n{:?}", list);
+    info!("categorized:\n{:?}", list);
     let ret = list.into_iter().map(|k| k.path).collect();
     drop(timed1);
     Ok(ret)

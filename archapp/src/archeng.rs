@@ -4,7 +4,6 @@ pub mod blockstream;
 pub mod bufminread;
 pub mod configs;
 pub mod datablock;
-pub mod datablockstream;
 pub mod diskio;
 pub mod indexfiles;
 pub mod indextree;
@@ -207,7 +206,10 @@ pub async fn channel_config_from_db(
 pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> Result<ChannelConfigResponse, Error> {
     let _timed = Timed::new("channel_config");
     let mut type_info = None;
-    let stream = blockrefstream::blockref_stream(q.channel.clone(), q.range.clone(), q.expand, conf.database.clone());
+    let ixpaths = indexfiles::index_file_path_list(q.channel.clone(), conf.database.clone()).await?;
+    info!("got categorized ixpaths: {:?}", ixpaths);
+    let ixpath = ixpaths.first().unwrap().clone();
+    let stream = blockrefstream::blockref_stream(q.channel.clone(), q.range.clone(), q.expand, ixpath.clone());
     let stream = Box::pin(stream);
     let stream = blockstream::BlockStream::new(stream, q.range.clone(), 1);
     let mut stream = stream;
@@ -234,8 +236,7 @@ pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> R
     if type_info.is_none() {
         let timed_normal = Timed::new("channel_config NORMAL");
         warn!("channel_config expand mode returned none");
-        let stream =
-            blockrefstream::blockref_stream(q.channel.clone(), q.range.clone(), q.expand, conf.database.clone());
+        let stream = blockrefstream::blockref_stream(q.channel.clone(), q.range.clone(), q.expand, ixpath.clone());
         let stream = Box::pin(stream);
         let stream = blockstream::BlockStream::new(stream, q.range.clone(), 1);
         let mut stream = stream;
@@ -281,9 +282,11 @@ mod test {
     use crate::archeng::{StatsChannel, EPICS_EPOCH_OFFSET};
     use commonio::open_read;
     use err::Error;
-    use netpod::log::*;
+    use items::{LogItem, Sitemty, StatsItem, StreamItem};
     use netpod::timeunits::*;
+    use netpod::{log::*, RangeFilterStats};
     use netpod::{FilePos, NanoRange, Nanos};
+    use serde::Serialize;
     use std::path::PathBuf;
 
     /*
@@ -330,5 +333,51 @@ mod test {
             Ok(())
         };
         Ok(taskrun::run(fut).unwrap())
+    }
+
+    #[test]
+    fn test_bincode_rep_stats() {
+        fn make_stats<T>() -> Vec<u8>
+        where
+            T: Serialize,
+        {
+            let stats = RangeFilterStats {
+                events_pre: 626262,
+                events_post: 929292,
+                events_unordered: 131313,
+            };
+            let item = StreamItem::Stats(StatsItem::RangeFilterStats(stats));
+            let item: Sitemty<T> = Ok(item);
+            bincode::serialize(&item).unwrap()
+        }
+        let v1 = make_stats::<u8>();
+        let v2 = make_stats::<f32>();
+        let v3 = make_stats::<Vec<u32>>();
+        let v4 = make_stats::<Vec<f64>>();
+        assert_eq!(v1, v2);
+        assert_eq!(v1, v3);
+        assert_eq!(v1, v4);
+    }
+
+    #[test]
+    fn test_bincode_rep_log() {
+        fn make_log<T>() -> Vec<u8>
+        where
+            T: Serialize,
+        {
+            let item = StreamItem::Log(LogItem::quick(
+                Level::DEBUG,
+                format!("Some easy log message for testing purpose here."),
+            ));
+            let item: Sitemty<T> = Ok(item);
+            bincode::serialize(&item).unwrap()
+        }
+        let v1 = make_log::<u8>();
+        let v2 = make_log::<f32>();
+        let v3 = make_log::<Vec<u32>>();
+        let v4 = make_log::<Vec<f64>>();
+        assert_eq!(v1, v2);
+        assert_eq!(v1, v3);
+        assert_eq!(v1, v4);
     }
 }

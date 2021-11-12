@@ -280,7 +280,10 @@ impl BlockRefStream {
             //name: "ARIDI-PCT:CURRENT".into(),
         };
         use archapp_wrap::archapp::archeng;
-        let s = archeng::blockrefstream::blockref_stream(channel, range, true, conf.database.clone());
+        let ixpaths = archeng::indexfiles::index_file_path_list(channel.clone(), conf.database.clone()).await?;
+        info!("got categorized ixpaths: {:?}", ixpaths);
+        let ixpath = ixpaths.first().unwrap().clone();
+        let s = archeng::blockrefstream::blockref_stream(channel, range, true, ixpath);
         let s = s.map(|item| match item {
             Ok(item) => {
                 use archeng::blockrefstream::BlockrefItem::*;
@@ -346,7 +349,10 @@ impl BlockStream {
             name: channel_name,
         };
         use archapp_wrap::archapp::archeng;
-        let s = archeng::blockrefstream::blockref_stream(channel, range.clone(), true, conf.database.clone());
+        let ixpaths = archeng::indexfiles::index_file_path_list(channel.clone(), conf.database.clone()).await?;
+        info!("got categorized ixpaths: {:?}", ixpaths);
+        let ixpath = ixpaths.first().unwrap().clone();
+        let s = archeng::blockrefstream::blockref_stream(channel, range.clone(), true, ixpath);
         let s = Box::pin(s);
         let s = archeng::blockstream::BlockStream::new(s, range.clone(), read_queue);
         let s = s.map(|item| match item {
