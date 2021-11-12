@@ -454,6 +454,7 @@ mod test {
     use super::*;
     use crate::archeng::blockrefstream::blockref_stream;
     use crate::archeng::indexfiles::index_file_path_list;
+    use chrono::{DateTime, Utc};
     use futures_util::StreamExt;
     use items::{LogItem, RangeCompletableItem, StreamItem};
     use netpod::{timeunits::SEC, Channel, Database};
@@ -482,7 +483,8 @@ mod test {
     async fn count_events(range: NanoRange, expand: bool, collect_ts: bool) -> Result<EventCount, Error> {
         let channel = Channel {
             backend: "sls-archive".into(),
-            name: "X05DA-FE-WI1:TC1".into(),
+            //name: "X05DA-FE-WI1:TC1".into(),
+            name: "ARIDI-PCT:CURRENT".into(),
         };
         let dbconf = Database {
             host: "localhost".into(),
@@ -516,6 +518,7 @@ mod test {
                             let n = item.len();
                             for i in 0..n {
                                 let ts = item.ts(i);
+                                //info!("See event {}", ts);
                                 if ts < range.beg {
                                     ret.pre += 1;
                                 } else if ts < range.end {
@@ -540,135 +543,149 @@ mod test {
         Ok(ret)
     }
 
+    fn tons(dt: &DateTime<Utc>) -> u64 {
+        dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
+    }
+
+    /*
+    See event 1636498894380250805
+    See event 1636499776028981476
+
+    See event 1636413555754299959
+    See event 1636413555908344145
+    See event 1636498896546533901
+    See event 1636498896546540966
+    See event 1636499855546054375
+    See event 1636499914581647548
+    See event 1636537592102377806
+    See event 1636545517217768432
+    See event 1636560318439777562
+    See event 1636585292173222036
+    See event 1636585292173229436
+    */
+
     #[test]
-    fn read_blocks_one_event() -> Result<(), Error> {
+    fn read_blocks_one_event_basic() -> Result<(), Error> {
+        //let ta = "2021-11-09T10:00:00Z";
+        //let tb = "2021-11-09T11:00:00Z";
         let _ev1 = "2021-10-03T09:57:59.939651334Z";
         let _ev2 = "2021-10-03T09:58:59.940910313Z";
         let _ev3 = "2021-10-03T09:59:59.940112431Z";
-        let ev1ts = 1633255079939651334;
-        let ev2ts = 1633255139940910313;
+        // This is from bl SH index:
+        //let ev1ts = 1633255079939651334;
+        //let ev2ts = 1633255139940910313;
         // [ev1..ev2]
-        let range = NanoRange { beg: ev1ts, end: ev2ts };
+        //let beg = tons(&ta.parse()?);
+        //let end = tons(&tb.parse()?);
+        //let ev1ts = 1636498896546533901;
+        //let ev2ts = 1636498896546540966;
+
+        let beg = 1636455492985809049;
+        let end = 1636455493306756248;
+        let range = NanoRange { beg, end };
         let res = taskrun::run(count_events(range, false, true))?;
         assert_eq!(res.pre, 0);
         assert_eq!(res.inside, 1);
         assert_eq!(res.post, 0);
-        assert_eq!(res.tss[0], ev1ts);
+        assert_eq!(res.tss[0], beg);
         assert_eq!(res.raco, 1);
         Ok(())
     }
 
     #[test]
     fn read_blocks_one_event_expand() -> Result<(), Error> {
-        let ev1ts = 1633255079939651334;
-        let ev2ts = 1633255139940910313;
-        let range = NanoRange { beg: ev1ts, end: ev2ts };
+        // This is from bl SH index:
+        //let ev1ts = 1633255079939651334;
+        //let ev2ts = 1633255139940910313;
+        let beg = 1636455492985809049;
+        let end = 1636455493306756248;
+        let range = NanoRange { beg, end };
         let res = taskrun::run(count_events(range, true, true))?;
         assert_eq!(res.pre, 1);
         assert_eq!(res.inside, 1);
         assert_eq!(res.post, 1);
-        assert_eq!(res.tss[1], ev1ts);
+        assert_eq!(res.tss[1], beg);
         assert_eq!(res.raco, 1);
         Ok(())
     }
 
     #[test]
-    fn read_blocks_two_events() -> Result<(), Error> {
-        let ev1ts = 1633255079939651334;
-        let ev2ts = 1633255139940910313;
-        let range = NanoRange {
-            beg: ev1ts,
-            end: ev2ts + 1,
-        };
+    fn read_blocks_two_events_basic() -> Result<(), Error> {
+        let beg = 1636455492985809049;
+        let end = 1636455493306756248;
+        let range = NanoRange { beg: beg, end: end + 1 };
         let res = taskrun::run(count_events(range, false, true))?;
         assert_eq!(res.pre, 0);
         assert_eq!(res.inside, 2);
         assert_eq!(res.post, 0);
-        assert_eq!(res.tss[0], ev1ts);
-        assert_eq!(res.tss[1], ev2ts);
+        assert_eq!(res.tss[0], beg);
+        assert_eq!(res.tss[1], end);
         assert_eq!(res.raco, 1);
         Ok(())
     }
 
     #[test]
     fn read_blocks_two_events_expand() -> Result<(), Error> {
-        let ev1ts = 1633255079939651334;
-        let ev2ts = 1633255139940910313;
-        let range = NanoRange {
-            beg: ev1ts,
-            end: ev2ts + 1,
-        };
+        let beg = 1636455492985809049;
+        let end = 1636455493306756248;
+        let range = NanoRange { beg: beg, end: end + 1 };
         let res = taskrun::run(count_events(range, true, true))?;
         assert_eq!(res.pre, 1);
         assert_eq!(res.inside, 2);
         assert_eq!(res.post, 1);
-        assert_eq!(res.tss[1], ev1ts);
-        assert_eq!(res.tss[2], ev2ts);
+        assert_eq!(res.tss[1], beg);
+        assert_eq!(res.tss[2], end);
         assert_eq!(res.raco, 1);
         Ok(())
     }
 
     #[test]
-    fn read_blocks_many_1() -> Result<(), Error> {
-        use chrono::{DateTime, Utc};
-        let _early = "2021-10-06T00:00:00Z";
-        let _late = "2021-10-07T00:00:00Z";
-        let dtbeg: DateTime<Utc> = _early.parse()?;
-        let dtend: DateTime<Utc> = _late.parse()?;
-        fn tons(dt: &DateTime<Utc>) -> u64 {
-            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
-        }
+    fn read_blocks_many_1_basic() -> Result<(), Error> {
+        let dtbeg = "2021-11-09T10:00:00Z";
+        let dtend = "2021-11-09T11:00:00Z";
+        let dtbeg: DateTime<Utc> = dtbeg.parse()?;
+        let dtend: DateTime<Utc> = dtend.parse()?;
         let range = NanoRange {
             beg: tons(&dtbeg),
             end: tons(&dtend),
         };
         let res = taskrun::run(count_events(range, false, false))?;
         assert_eq!(res.pre, 0);
-        assert_eq!(res.inside, 77);
+        assert_eq!(res.inside, 726);
         assert_eq!(res.post, 0);
         assert_eq!(res.raco, 1);
         Ok(())
     }
 
     #[test]
-    fn read_blocks_many_2() -> Result<(), Error> {
-        use chrono::{DateTime, Utc};
-        let _early = "2021-09-01T00:00:00Z";
-        let _late = "2021-10-07T00:00:00Z";
-        let dtbeg: DateTime<Utc> = _early.parse()?;
-        let dtend: DateTime<Utc> = _late.parse()?;
-        fn tons(dt: &DateTime<Utc>) -> u64 {
-            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
-        }
+    fn read_blocks_many_1_expand() -> Result<(), Error> {
+        let dtbeg = "2021-11-09T10:00:00Z";
+        let dtend = "2021-11-09T11:00:00Z";
+        let dtbeg: DateTime<Utc> = dtbeg.parse()?;
+        let dtend: DateTime<Utc> = dtend.parse()?;
         let range = NanoRange {
             beg: tons(&dtbeg),
             end: tons(&dtend),
         };
-        let res = taskrun::run(count_events(range, false, false))?;
-        assert_eq!(res.pre, 0);
-        assert_eq!(res.inside, 20328);
-        assert_eq!(res.post, 0);
+        let res = taskrun::run(count_events(range, true, false))?;
+        assert_eq!(res.pre, 1);
+        assert_eq!(res.inside, 726);
+        assert_eq!(res.post, 1);
         assert_eq!(res.raco, 1);
         Ok(())
     }
 
     #[test]
-    fn read_blocks_many_3() -> Result<(), Error> {
-        use chrono::{DateTime, Utc};
-        let _early = "2021-08-01T00:00:00Z";
-        let _late = "2021-10-07T00:00:00Z";
-        let dtbeg: DateTime<Utc> = _early.parse()?;
-        let dtend: DateTime<Utc> = _late.parse()?;
-        fn tons(dt: &DateTime<Utc>) -> u64 {
-            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
-        }
+    fn read_blocks_many_3_basic() -> Result<(), Error> {
+        let dtbeg = "2021-11-09T10:00:00Z";
+        let dtend = "2021-11-09T13:00:00Z";
         let range = NanoRange {
-            beg: tons(&dtbeg),
-            end: tons(&dtend),
+            beg: tons(&dtbeg.parse()?),
+            end: tons(&dtend.parse()?),
         };
         let res = taskrun::run(count_events(range, false, false))?;
         assert_eq!(res.pre, 0);
-        assert_eq!(res.inside, 35438);
+        assert_eq!(res.inside, 2089);
         assert_eq!(res.post, 0);
         assert_eq!(res.raco, 1);
         Ok(())
@@ -676,43 +693,31 @@ mod test {
 
     #[test]
     fn read_blocks_many_3_expand() -> Result<(), Error> {
-        use chrono::{DateTime, Utc};
-        let _early = "2021-08-01T00:00:00Z";
-        let _late = "2021-10-07T00:00:00Z";
-        let dtbeg: DateTime<Utc> = _early.parse()?;
-        let dtend: DateTime<Utc> = _late.parse()?;
-        fn tons(dt: &DateTime<Utc>) -> u64 {
-            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
-        }
+        let dtbeg = "2021-11-09T10:00:00Z";
+        let dtend = "2021-11-09T13:00:00Z";
         let range = NanoRange {
-            beg: tons(&dtbeg),
-            end: tons(&dtend),
+            beg: tons(&dtbeg.parse()?),
+            end: tons(&dtend.parse()?),
         };
         let res = taskrun::run(count_events(range, true, false))?;
         assert_eq!(res.pre, 1);
-        assert_eq!(res.inside, 35438);
+        assert_eq!(res.inside, 2089);
         assert_eq!(res.post, 1);
         assert_eq!(res.raco, 1);
         Ok(())
     }
 
     #[test]
-    fn read_blocks_many_4() -> Result<(), Error> {
-        use chrono::{DateTime, Utc};
-        let _early = "2020-01-01T00:00:00Z";
-        let _late = "2021-10-07T00:00:00Z";
-        let dtbeg: DateTime<Utc> = _early.parse()?;
-        let dtend: DateTime<Utc> = _late.parse()?;
-        fn tons(dt: &DateTime<Utc>) -> u64 {
-            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
-        }
+    fn read_blocks_many_4_basic() -> Result<(), Error> {
+        let dtbeg = "2020-11-09T10:00:00Z";
+        let dtend = "2021-11-09T13:00:00Z";
         let range = NanoRange {
-            beg: tons(&dtbeg),
-            end: tons(&dtend),
+            beg: tons(&dtbeg.parse()?),
+            end: tons(&dtend.parse()?),
         };
         let res = taskrun::run(count_events(range, false, false))?;
         assert_eq!(res.pre, 0);
-        assert_eq!(res.inside, 71146);
+        assert_eq!(res.inside, 9518);
         assert_eq!(res.post, 0);
         assert_eq!(res.raco, 1);
         Ok(())
@@ -720,43 +725,31 @@ mod test {
 
     #[test]
     fn read_blocks_many_4_expand() -> Result<(), Error> {
-        use chrono::{DateTime, Utc};
-        let _early = "2020-01-01T00:00:00Z";
-        let _late = "2021-10-07T00:00:00Z";
-        let dtbeg: DateTime<Utc> = _early.parse()?;
-        let dtend: DateTime<Utc> = _late.parse()?;
-        fn tons(dt: &DateTime<Utc>) -> u64 {
-            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
-        }
+        let dtbeg = "2020-11-09T10:00:00Z";
+        let dtend = "2021-11-09T13:00:00Z";
         let range = NanoRange {
-            beg: tons(&dtbeg),
-            end: tons(&dtend),
+            beg: tons(&dtbeg.parse()?),
+            end: tons(&dtend.parse()?),
         };
         let res = taskrun::run(count_events(range, true, false))?;
         assert_eq!(res.pre, 0);
-        assert_eq!(res.inside, 71146);
+        assert_eq!(res.inside, 9518);
         assert_eq!(res.post, 1);
         assert_eq!(res.raco, 1);
         Ok(())
     }
 
     #[test]
-    fn read_blocks_late() -> Result<(), Error> {
-        use chrono::{DateTime, Utc};
-        let _early = "2021-10-01T00:00:00Z";
-        let _late = "2021-12-01T00:00:00Z";
-        let dtbeg: DateTime<Utc> = _early.parse()?;
-        let dtend: DateTime<Utc> = _late.parse()?;
-        fn tons(dt: &DateTime<Utc>) -> u64 {
-            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
-        }
+    fn read_blocks_late_basic() -> Result<(), Error> {
+        let dtbeg = "2021-11-09T10:00:00Z";
+        let dtend = "2022-11-09T13:00:00Z";
         let range = NanoRange {
-            beg: tons(&dtbeg),
-            end: tons(&dtend),
+            beg: tons(&dtbeg.parse()?),
+            end: tons(&dtend.parse()?),
         };
         let res = taskrun::run(count_events(range, false, false))?;
         assert_eq!(res.pre, 0);
-        assert_eq!(res.inside, 3000);
+        assert_eq!(res.inside, 12689);
         assert_eq!(res.post, 0);
         assert_eq!(res.raco, 0);
         Ok(())
@@ -764,21 +757,15 @@ mod test {
 
     #[test]
     fn read_blocks_late_expand() -> Result<(), Error> {
-        use chrono::{DateTime, Utc};
-        let _early = "2021-10-01T00:00:00Z";
-        let _late = "2021-12-01T00:00:00Z";
-        let dtbeg: DateTime<Utc> = _early.parse()?;
-        let dtend: DateTime<Utc> = _late.parse()?;
-        fn tons(dt: &DateTime<Utc>) -> u64 {
-            dt.timestamp() as u64 * SEC + dt.timestamp_subsec_nanos() as u64
-        }
+        let dtbeg = "2021-11-09T10:00:00Z";
+        let dtend = "2022-11-09T13:00:00Z";
         let range = NanoRange {
-            beg: tons(&dtbeg),
-            end: tons(&dtend),
+            beg: tons(&dtbeg.parse()?),
+            end: tons(&dtend.parse()?),
         };
         let res = taskrun::run(count_events(range, true, false))?;
         assert_eq!(res.pre, 1);
-        assert_eq!(res.inside, 3000);
+        assert_eq!(res.inside, 12689);
         assert_eq!(res.post, 0);
         assert_eq!(res.raco, 0);
         Ok(())
