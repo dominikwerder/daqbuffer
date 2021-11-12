@@ -396,11 +396,9 @@ where
     type Output = XBinnedWaveEvents<NTY>;
 
     fn create(shape: Shape, agg_kind: AggKind) -> Self {
-        info!("WaveNBinner::create");
         // TODO get rid of panic potential
         let shape_bin_count = if let Shape::Wave(n) = shape { n } else { panic!() } as usize;
         let x_bin_count = x_bin_count(&shape, &agg_kind);
-        info!("shape_bin_count {}  x_bin_count {}", shape_bin_count, x_bin_count);
         Self {
             shape_bin_count,
             x_bin_count,

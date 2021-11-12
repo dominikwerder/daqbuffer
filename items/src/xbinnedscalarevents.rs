@@ -208,15 +208,14 @@ where
     NTY: NumOps,
 {
     pub fn new(range: NanoRange, do_time_weight: bool) -> Self {
-        let int_ts = range.beg;
         Self {
+            int_ts: range.beg,
             range,
             count: 0,
             min: None,
             max: None,
             sumc: 0,
             sum: 0f32,
-            int_ts,
             last_ts: 0,
             last_avg: None,
             last_min: None,
@@ -261,19 +260,14 @@ where
 
     fn apply_event_time_weight(&mut self, ts: u64) {
         //debug!("apply_event_time_weight");
-        if let (Some(v), Some(min), Some(max)) = (self.last_avg, self.last_min, self.last_max) {
+        if let (Some(avg), Some(min), Some(max)) = (self.last_avg, self.last_min, self.last_max) {
             self.apply_min_max(min, max);
-            let w = if self.do_time_weight {
-                (ts - self.int_ts) as f32 * 1e-9
+            let w = (ts - self.int_ts) as f32 / self.range.delta() as f32;
+            if avg.is_nan() {
             } else {
-                1.
-            };
-            let vf = v;
-            if vf.is_nan() {
-            } else {
-                self.sum += vf * w;
-                self.sumc += 1;
+                self.sum += avg * w;
             }
+            self.sumc += 1;
             self.int_ts = ts;
         }
     }

@@ -215,7 +215,7 @@ impl FromUrl for BinnedQuery {
                 .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,
             timeout: pairs
                 .get("timeout")
-                .map_or("2000", |k| k)
+                .map_or("6000", |k| k)
                 .parse::<u64>()
                 .map(|k| Duration::from_millis(k))
                 .map_err(|e| Error::with_msg(format!("can not parse timeout {:?}", e)))?,
@@ -281,7 +281,7 @@ pub fn binning_scheme_append_to_url(agg_kind: &AggKind, url: &mut Url) {
             g.append_pair("binningScheme", "unweightedScalar");
         }
         AggKind::DimXBinsN(n) => {
-            g.append_pair("binningScheme", "toScalarX");
+            g.append_pair("binningScheme", "binnedX");
             g.append_pair("binnedXcount", &format!("{}", n));
         }
     }

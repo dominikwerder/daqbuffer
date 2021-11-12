@@ -1,3 +1,5 @@
+use std::mem;
+
 use crate::minmaxavgwavebins::MinMaxAvgWaveBins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
@@ -193,31 +195,189 @@ where
 {
     range: NanoRange,
     count: u64,
-    min: Vec<NTY>,
-    max: Vec<NTY>,
-    sum: Vec<f32>,
+    min: Option<Vec<NTY>>,
+    max: Option<Vec<NTY>>,
     sumc: u64,
+    sum: Vec<f32>,
+    int_ts: u64,
+    last_ts: u64,
+    last_avg: Option<Vec<f32>>,
+    last_min: Option<Vec<NTY>>,
+    last_max: Option<Vec<NTY>>,
+    do_time_weight: bool,
 }
 
 impl<NTY> XBinnedWaveEventsAggregator<NTY>
 where
     NTY: NumOps,
 {
-    pub fn new(range: NanoRange, bin_count: usize, do_time_weight: bool) -> Self {
-        if do_time_weight {
-            err::todo();
-        }
-        if bin_count == 0 {
-            panic!("bin_count == 0");
-        }
+    pub fn new(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self {
         Self {
+            int_ts: range.beg,
             range,
             count: 0,
-            min: vec![NTY::max_or_nan(); bin_count],
-            max: vec![NTY::min_or_nan(); bin_count],
-            sum: vec![0f32; bin_count],
+            min: None,
+            max: None,
             sumc: 0,
+            sum: vec![0f32; x_bin_count],
+            last_ts: 0,
+            last_avg: None,
+            last_min: None,
+            last_max: None,
+            do_time_weight,
         }
+    }
+
+    fn apply_min_max(&mut self, min: &Vec<NTY>, max: &Vec<NTY>) {
+        self.min = match self.min.take() {
+            None => Some(min.clone()),
+            Some(cmin) => {
+                let a = cmin
+                    .into_iter()
+                    .zip(min)
+                    .map(|(a, b)| if a < *b { a } else { *b })
+                    .collect();
+                Some(a)
+            }
+        };
+        self.max = match self.max.take() {
+            None => Some(max.clone()),
+            Some(cmax) => {
+                let a = cmax
+                    .into_iter()
+                    .zip(min)
+                    .map(|(a, b)| if a > *b { a } else { *b })
+                    .collect();
+                Some(a)
+            }
+        };
+    }
+
+    fn apply_event_unweight(&mut self, avg: &Vec<f32>, min: &Vec<NTY>, max: &Vec<NTY>) {
+        //debug!("apply_event_unweight");
+        self.apply_min_max(&min, &max);
+        let sum = mem::replace(&mut self.sum, vec![]);
+        self.sum = sum
+            .into_iter()
+            .zip(avg)
+            .map(|(a, &b)| if b.is_nan() { a } else { a + b })
+            .collect();
+        self.sumc += 1;
+    }
+
+    fn apply_event_time_weight(&mut self, ts: u64) {
+        //debug!("apply_event_time_weight");
+        if let (Some(avg), Some(min), Some(max)) = (self.last_avg.take(), self.last_min.take(), self.last_max.take()) {
+            self.apply_min_max(&min, &max);
+            let w = (ts - self.int_ts) as f32 / self.range.delta() as f32;
+            let sum = mem::replace(&mut self.sum, vec![]);
+            self.sum = sum
+                .into_iter()
+                .zip(&avg)
+                .map(|(a, &b)| if b.is_nan() { a } else { a + b * w })
+                .collect();
+            self.sumc += 1;
+            self.int_ts = ts;
+            self.last_avg = Some(avg);
+            self.last_min = Some(min);
+            self.last_max = Some(max);
+        }
+    }
+
+    fn ingest_unweight(&mut self, item: &XBinnedWaveEvents<NTY>) {
+        for i1 in 0..item.tss.len() {
+            let ts = item.tss[i1];
+            let avg = &item.avgs[i1];
+            let min = &item.mins[i1];
+            let max = &item.maxs[i1];
+            if ts < self.range.beg {
+            } else if ts >= self.range.end {
+            } else {
+                self.apply_event_unweight(avg, min, max);
+                self.count += 1;
+            }
+        }
+    }
+
+    fn ingest_time_weight(&mut self, item: &XBinnedWaveEvents<NTY>) {
+        for i1 in 0..item.tss.len() {
+            let ts = item.tss[i1];
+            let avg = &item.avgs[i1];
+            let min = &item.mins[i1];
+            let max = &item.maxs[i1];
+            if ts < self.int_ts {
+                self.last_ts = ts;
+                self.last_avg = Some(avg.clone());
+                self.last_min = Some(min.clone());
+                self.last_max = Some(max.clone());
+            } else if ts >= self.range.end {
+                return;
+            } else {
+                self.apply_event_time_weight(ts);
+                self.count += 1;
+                self.last_ts = ts;
+                self.last_avg = Some(avg.clone());
+                self.last_min = Some(min.clone());
+                self.last_max = Some(max.clone());
+            }
+        }
+    }
+
+    fn result_reset_unweight(&mut self, range: NanoRange, _expand: bool) -> MinMaxAvgWaveBins<NTY> {
+        let avg = if self.sumc == 0 {
+            None
+        } else {
+            Some(self.sum.iter().map(|k| *k / self.sumc as f32).collect())
+        };
+        let min = mem::replace(&mut self.min, None);
+        let max = mem::replace(&mut self.max, None);
+        let ret = MinMaxAvgWaveBins {
+            ts1s: vec![self.range.beg],
+            ts2s: vec![self.range.end],
+            counts: vec![self.count],
+            mins: vec![min],
+            maxs: vec![max],
+            avgs: vec![avg],
+        };
+        self.int_ts = range.beg;
+        self.range = range;
+        self.count = 0;
+        self.min = None;
+        self.max = None;
+        self.sumc = 0;
+        self.sum = vec![0f32; ret.avgs.len()];
+        ret
+    }
+
+    fn result_reset_time_weight(&mut self, range: NanoRange, expand: bool) -> MinMaxAvgWaveBins<NTY> {
+        // TODO check callsite for correct expand status.
+        if true || expand {
+            self.apply_event_time_weight(self.range.end);
+        }
+        let avg = if self.sumc == 0 {
+            None
+        } else {
+            let n = self.sum.len();
+            Some(mem::replace(&mut self.sum, vec![0f32; n]))
+        };
+        let min = mem::replace(&mut self.min, None);
+        let max = mem::replace(&mut self.max, None);
+        let ret = MinMaxAvgWaveBins {
+            ts1s: vec![self.range.beg],
+            ts2s: vec![self.range.end],
+            counts: vec![self.count],
+            mins: vec![min],
+            maxs: vec![max],
+            avgs: vec![avg],
+        };
+        self.int_ts = range.beg;
+        self.range = range;
+        self.count = 0;
+        //self.min = None;
+        //self.max = None;
+        //self.sum = vec![0f32; ret.avgs.len()];
+        self.sumc = 0;
+        ret
     }
 }
 
@@ -233,70 +393,19 @@ where
     }
 
     fn ingest(&mut self, item: &Self::Input) {
-        error!("time-weighted binning not available");
-        err::todo();
-        //info!("XBinnedWaveEventsAggregator  ingest  item {:?}", item);
-        for i1 in 0..item.tss.len() {
-            let ts = item.tss[i1];
-            if ts < self.range.beg {
-                continue;
-            } else if ts >= self.range.end {
-                continue;
-            } else {
-                for (i2, &v) in item.mins[i1].iter().enumerate() {
-                    if v < self.min[i2] || self.min[i2].is_nan() {
-                        self.min[i2] = v;
-                    }
-                }
-                for (i2, &v) in item.maxs[i1].iter().enumerate() {
-                    if v > self.max[i2] || self.max[i2].is_nan() {
-                        self.max[i2] = v;
-                    }
-                }
-                for (i2, &v) in item.avgs[i1].iter().enumerate() {
-                    if v.is_nan() {
-                    } else {
-                        self.sum[i2] += v;
-                    }
-                }
-                self.sumc += 1;
-                self.count += 1;
-            }
+        if self.do_time_weight {
+            self.ingest_time_weight(item)
+        } else {
+            self.ingest_unweight(item)
         }
     }
 
-    fn result_reset(&mut self, range: NanoRange, _expand: bool) -> Self::Output {
-        let ret;
-        if self.sumc == 0 {
-            ret = Self::Output {
-                ts1s: vec![self.range.beg],
-                ts2s: vec![self.range.end],
-                counts: vec![self.count],
-                mins: vec![None],
-                maxs: vec![None],
-                avgs: vec![None],
-            };
+    fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output {
+        if self.do_time_weight {
+            self.result_reset_time_weight(range, expand)
         } else {
-            let avg = self.sum.iter().map(|k| *k / self.sumc as f32).collect();
-            ret = Self::Output {
-                ts1s: vec![self.range.beg],
-                ts2s: vec![self.range.end],
-                counts: vec![self.count],
-                // TODO replace with the reset-value instead.
-                mins: vec![Some(self.min.clone())],
-                maxs: vec![Some(self.max.clone())],
-                avgs: vec![Some(avg)],
-            };
-            if ret.ts1s[0] < 1300 {
-                info!("XBinnedWaveEventsAggregator  result  {:?}", ret);
-            }
+            self.result_reset_unweight(range, expand)
         }
-        self.range = range;
-        self.count = 0;
-        self.min = vec![NTY::max_or_nan(); self.min.len()];
-        self.max = vec![NTY::min_or_nan(); self.min.len()];
-        self.sum = vec![0f32; self.min.len()];
-        ret
     }
 }
 
