@@ -248,8 +248,6 @@ where
     type Output = EventValuesCollectorOutput<NTY>;
 
     fn ingest(&mut self, src: &Self::Input) {
-        // TODO should be able to remove this
-        err::todo();
         self.vals.append(src);
     }
 
@@ -262,8 +260,6 @@ where
     }
 
     fn result(self) -> Result<Self::Output, Error> {
-        // TODO should be able to remove this
-        err::todo();
         let tst = ts_offs_from_abs(&self.vals.tss);
         let ret = Self::Output {
             ts_anchor_sec: tst.0,

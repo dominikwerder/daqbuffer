@@ -7,13 +7,20 @@ use http::uri::InvalidUri;
 use nom::error::ErrorKind;
 use serde::{Deserialize, Serialize};
 use std::array::TryFromSliceError;
-use std::fmt::Debug;
+use std::fmt;
 use std::net::AddrParseError;
 use std::num::{ParseFloatError, ParseIntError};
 use std::string::FromUtf8Error;
 use std::sync::PoisonError;
 use tokio::task::JoinError;
 use tokio::time::error::Elapsed;
+
+#[derive(Clone, Serialize, Deserialize)]
+pub enum Reason {
+    InternalError,
+    BadRequest,
+    IoError,
+}
 
 /**
 The common error type for this application.
@@ -24,6 +31,8 @@ pub struct Error {
     #[serde(skip)]
     trace: Option<backtrace::Backtrace>,
     trace_str: Option<String>,
+    public_msg: Option<Vec<String>>,
+    reason: Option<Reason>,
 }
 
 impl Error {
@@ -32,6 +41,8 @@ impl Error {
             msg: s.into(),
             trace: None,
             trace_str: Some(fmt_backtrace(&backtrace::Backtrace::new())),
+            public_msg: None,
+            reason: None,
         }
     }
 
@@ -40,11 +51,34 @@ impl Error {
             msg: s.into(),
             trace: None,
             trace_str: None,
+            public_msg: None,
+            reason: None,
         }
+    }
+
+    pub fn mark_bad_request(mut self) -> Self {
+        self.reason = Some(Reason::BadRequest);
+        self
+    }
+
+    pub fn add_public_msg(mut self, msg: impl Into<String>) -> Self {
+        if self.public_msg.is_none() {
+            self.public_msg = Some(vec![]);
+        }
+        self.public_msg.as_mut().unwrap().push(msg.into());
+        self
     }
 
     pub fn msg(&self) -> &str {
         &self.msg
+    }
+
+    pub fn public_msg(&self) -> Option<&Vec<String>> {
+        self.public_msg.as_ref()
+    }
+
+    pub fn reason(&self) -> Option<Reason> {
+        self.reason.clone()
     }
 }
 
@@ -88,8 +122,8 @@ fn fmt_backtrace(trace: &backtrace::Backtrace) -> String {
     String::from_utf8(buf).unwrap()
 }
 
-impl std::fmt::Debug for Error {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl fmt::Debug for Error {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let trace_str = if let Some(trace) = &self.trace {
             fmt_backtrace(trace)
         } else if let Some(s) = &self.trace_str {
@@ -101,9 +135,9 @@ impl std::fmt::Debug for Error {
     }
 }
 
-impl std::fmt::Display for Error {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        std::fmt::Debug::fmt(self, fmt)
+impl fmt::Display for Error {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(self, fmt)
     }
 }
 
@@ -181,7 +215,7 @@ impl From<FromUtf8Error> for Error {
     }
 }
 
-impl<T: Debug> From<nom::Err<T>> for Error {
+impl<T: fmt::Debug> From<nom::Err<T>> for Error {
     fn from(k: nom::Err<T>) -> Self {
         Self::with_msg(format!("nom::Err<T> {:?}", k))
     }

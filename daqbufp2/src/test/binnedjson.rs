@@ -3,8 +3,9 @@ use chrono::{DateTime, Utc};
 use err::Error;
 use http::StatusCode;
 use hyper::Body;
+use netpod::log::*;
 use netpod::query::{BinnedQuery, CacheUsage};
-use netpod::{log::*, AppendToUrl};
+use netpod::{f64_close, AppendToUrl};
 use netpod::{AggKind, Channel, Cluster, NanoRange, APP_JSON};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -85,11 +86,89 @@ fn get_sls_archive_1() -> Result<(), Error> {
         let begstr = "2021-11-10T01:00:00Z";
         let endstr = "2021-11-10T01:01:00Z";
         let res = get_binned_json_common_res(channel, begstr, endstr, 10, AggKind::TimeWeightedScalar, cluster).await?;
-        assert_eq!(res.finalised_range, true);
-        assert_eq!(res.ts_anchor, 1636506000);
-        //assert!((res.avgs[3].unwrap() - 1.01470947265625).abs() < 1e-4);
-        //assert!((res.avgs[4].unwrap() - 24.06792449951172).abs() < 1e-4);
-        //assert!((res.avgs[11].unwrap() - 0.00274658203125).abs() < 1e-4);
+        let exp = r##"{"avgs":[24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875],"counts":[0,0,0,0,0,0,0,0,0,0,0,0],"finalisedRange":true,"maxs":[24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875],"mins":[24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875,24.37225341796875],"tsAnchor":1636506000,"tsMs":[0,5000,10000,15000,20000,25000,30000,35000,40000,45000,50000,55000,60000],"tsNs":[0,0,0,0,0,0,0,0,0,0,0,0,0]}"##;
+        let exp: BinnedResponse = serde_json::from_str(exp).unwrap();
+        res.is_close(&exp)?;
+        Ok(())
+    };
+    taskrun::run(fut)
+}
+
+#[test]
+fn get_sls_archive_2() -> Result<(), Error> {
+    let fut = async move {
+        let rh = require_sls_test_host_running()?;
+        let cluster = &rh.cluster;
+        let channel = Channel {
+            backend: "sls-archive".into(),
+            name: "ARIDI-PCT:CURRENT".into(),
+        };
+        let begstr = "2021-11-10T00:00:00Z";
+        let endstr = "2021-11-10T00:10:00Z";
+        let res = get_binned_json_common_res(channel, begstr, endstr, 10, AggKind::TimeWeightedScalar, cluster).await?;
+        let exp = r##"{"avgs":[401.1745910644531,401.5135498046875,400.8823547363281,400.66156005859375,401.8301086425781,401.19305419921875,400.5584411621094,401.4371337890625,401.4137268066406,400.77880859375],"counts":[19,6,6,19,6,6,6,19,6,6],"finalisedRange":true,"maxs":[402.04977411361034,401.8439029736943,401.22628955394583,402.1298351124666,402.1298351124666,401.5084092642013,400.8869834159359,402.05358654212733,401.74477983225313,401.1271664125047],"mins":[400.08256099885625,401.22628955394583,400.60867613419754,400.0939982844072,401.5084092642013,400.8869834159359,400.2693699961876,400.05968642775446,401.1271664125047,400.50574056423943],"tsAnchor":1636502400,"tsMs":[0,60000,120000,180000,240000,300000,360000,420000,480000,540000,600000],"tsNs":[0,0,0,0,0,0,0,0,0,0,0]}"##;
+        let exp: BinnedResponse = serde_json::from_str(exp).unwrap();
+        res.is_close(&exp)?;
+        Ok(())
+    };
+    taskrun::run(fut)
+}
+
+#[test]
+fn get_sls_archive_3() -> Result<(), Error> {
+    let fut = async move {
+        let rh = require_sls_test_host_running()?;
+        let cluster = &rh.cluster;
+        let channel = Channel {
+            backend: "sls-archive".into(),
+            name: "ARIDI-PCT:CURRENT".into(),
+        };
+        let begstr = "2021-11-09T00:00:00Z";
+        let endstr = "2021-11-11T00:10:00Z";
+        let res = get_binned_json_common_res(channel, begstr, endstr, 10, AggKind::TimeWeightedScalar, cluster).await?;
+        let exp = r##"{"avgs":[401.1354675292969,401.1296081542969,401.1314392089844,401.134765625,401.1371154785156,376.5816345214844,401.13775634765625,209.2684783935547,-0.06278431415557861,-0.06278431415557861,-0.06278431415557861,-0.047479934990406036,0.0],"counts":[2772,2731,2811,2689,2803,2203,2355,1232,0,0,0,2,0],"maxs":[402.1717718261533,402.18702154022117,402.1908339687381,402.198458825772,402.17939668318724,402.194646397255,402.1908339687381,402.1908339687381,-0.06278431346925281,-0.06278431346925281,-0.06278431346925281,0.0,0.0],"mins":[400.0291869996188,400.02537457110185,400.0291869996188,400.0329994281358,400.0291869996188,0.0,400.0444367136866,-0.06278431346925281,-0.06278431346925281,-0.06278431346925281,-0.06278431346925281,-0.06278431346925281,0.0],"tsAnchor":1636416000,"tsMs":[0,14400000,28800000,43200000,57600000,72000000,86400000,100800000,115200000,129600000,144000000,158400000,172800000,187200000],"tsNs":[0,0,0,0,0,0,0,0,0,0,0,0,0,0]}"##;
+        let exp: BinnedResponse = serde_json::from_str(exp).unwrap();
+        res.is_close(&exp)?;
+        Ok(())
+    };
+    taskrun::run(fut)
+}
+
+#[test]
+fn get_sls_archive_wave_1() -> Result<(), Error> {
+    let fut = async move {
+        let rh = require_sls_test_host_running()?;
+        let cluster = &rh.cluster;
+        let channel = Channel {
+            backend: "sls-archive".into(),
+            name: "ARIDI-MBF-X:CBM-IN".into(),
+        };
+        let begstr = "2021-11-09T00:00:00Z";
+        let endstr = "2021-11-11T00:10:00Z";
+        let res = get_binned_json_common_res(channel, begstr, endstr, 10, AggKind::TimeWeightedScalar, cluster).await?;
+        let exp = r##"{"avgs":[401.1354675292969,401.1296081542969,401.1314392089844,401.134765625,401.1371154785156,376.5816345214844,401.13775634765625,209.2684783935547,-0.06278431415557861,-0.06278431415557861,-0.06278431415557861,-0.047479934990406036,0.0],"counts":[2772,2731,2811,2689,2803,2203,2355,1232,0,0,0,2,0],"maxs":[402.1717718261533,402.18702154022117,402.1908339687381,402.198458825772,402.17939668318724,402.194646397255,402.1908339687381,402.1908339687381,-0.06278431346925281,-0.06278431346925281,-0.06278431346925281,0.0,0.0],"mins":[400.0291869996188,400.02537457110185,400.0291869996188,400.0329994281358,400.0291869996188,0.0,400.0444367136866,-0.06278431346925281,-0.06278431346925281,-0.06278431346925281,-0.06278431346925281,-0.06278431346925281,0.0],"tsAnchor":1636416000,"tsMs":[0,14400000,28800000,43200000,57600000,72000000,86400000,100800000,115200000,129600000,144000000,158400000,172800000,187200000],"tsNs":[0,0,0,0,0,0,0,0,0,0,0,0,0,0]}"##;
+        let exp: BinnedResponse = serde_json::from_str(exp).unwrap();
+        res.is_close(&exp)?;
+        Ok(())
+    };
+    taskrun::run(fut)
+}
+
+#[test]
+fn get_sls_archive_wave_2() -> Result<(), Error> {
+    let fut = async move {
+        let rh = require_sls_test_host_running()?;
+        let cluster = &rh.cluster;
+        let channel = Channel {
+            backend: "sls-archive".into(),
+            name: "ARIDI-MBF-X:CBM-IN".into(),
+        };
+        let begstr = "2021-11-09T10:00:00Z";
+        let endstr = "2021-11-10T06:00:00Z";
+        let res = get_binned_json_common_res(channel, begstr, endstr, 10, AggKind::TimeWeightedScalar, cluster).await?;
+        let exp = r##"{"avgs":[0.00014690558600705117,0.00014207433559931815,0.0001436264137737453,0.00014572929649148136,0.00015340493700932711,0.00014388437557499856,0.00012792187044396996,0.00014416234625969082,0.0001486341789131984,0.000145719779538922],"counts":[209,214,210,219,209,192,171,307,285,232],"maxs":[0.001784245832823217,0.0016909628175199032,0.0017036109929904342,0.0016926786629483104,0.001760474289767444,0.0018568832892924547,0.001740367733873427,0.0017931810580193996,0.0017676990246400237,0.002342566382139921],"mins":[0.000040829672798281536,0.00004028259718324989,0.000037641591916326433,0.000039788486901670694,0.00004028418697998859,0.00003767738598980941,0.0,0.00004095739495824091,0.00004668773908633739,0.00003859612115775235],"tsAnchor":1636452000,"tsMs":[0,7200000,14400000,21600000,28800000,36000000,43200000,50400000,57600000,64800000,72000000],"tsNs":[0,0,0,0,0,0,0,0,0,0,0]}"##;
+        let exp: BinnedResponse = serde_json::from_str(exp).unwrap();
+        res.is_close(&exp)?;
         Ok(())
     };
     taskrun::run(fut)
@@ -187,6 +266,44 @@ struct BinnedResponse {
     counts: Vec<u64>,
     #[serde(rename = "finalisedRange", default = "bool_false")]
     finalised_range: bool,
+}
+
+impl BinnedResponse {
+    pub fn is_close(&self, other: &Self) -> Result<bool, Error> {
+        let reterr = || -> Result<bool, Error> {
+            Err(Error::with_msg_no_trace(format!(
+                "Mismatch\n{:?}\nVS\n{:?}",
+                self, other
+            )))
+        };
+        if self.ts_anchor != other.ts_anchor {
+            return reterr();
+        }
+        if self.finalised_range != other.finalised_range {
+            return reterr();
+        }
+        if self.counts != other.counts {
+            return reterr();
+        }
+        let pairs = [
+            (&self.mins, &other.mins),
+            (&self.maxs, &other.maxs),
+            (&self.avgs, &other.avgs),
+        ];
+        for (t, u) in pairs {
+            for (&a, &b) in t.iter().zip(u) {
+                if let (Some(a), Some(b)) = (a, b) {
+                    if !f64_close(a, b) {
+                        return reterr();
+                    }
+                } else if let (None, None) = (a, b) {
+                } else {
+                    return reterr();
+                }
+            }
+        }
+        Ok(true)
+    }
 }
 
 fn bool_false() -> bool {

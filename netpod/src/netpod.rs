@@ -511,6 +511,15 @@ impl Shape {
                     )))
                 }
             }
+            JsVal::Object(j) => match j.get("Wave") {
+                Some(JsVal::Number(j)) => Ok(Shape::Wave(j.as_u64().ok_or_else(|| {
+                    Error::with_msg_no_trace(format!("Shape from_db_jsval can not understand {:?}", v))
+                })? as u32)),
+                _ => Err(Error::with_msg_no_trace(format!(
+                    "Shape from_db_jsval can not understand {:?}",
+                    v
+                ))),
+            },
             _ => Err(Error::with_msg_no_trace(format!(
                 "Shape from_db_jsval can not understand {:?}",
                 v
@@ -1416,4 +1425,24 @@ pub struct ChannelInfo {
     pub byte_order: Option<ByteOrder>,
     pub shape: Shape,
     pub msg: serde_json::Value,
+}
+
+pub fn f32_close(a: f32, b: f32) -> bool {
+    if (a - b).abs() < 1e-5 {
+        true
+    } else if a / b > 0.9999 && a / b < 1.0001 {
+        true
+    } else {
+        false
+    }
+}
+
+pub fn f64_close(a: f64, b: f64) -> bool {
+    if (a - b).abs() < 1e-5 {
+        true
+    } else if a / b > 0.9999 && a / b < 1.0001 {
+        true
+    } else {
+        false
+    }
 }

@@ -183,7 +183,10 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         if req.method() == Method::GET {
             let ret = serde_json::json!({
                 //"data_api_version": "4.0.0-beta",
-                "data_api_version_major": 4,
+                "data_api_version": {
+                    "major": 4,
+                    "minor": 0,
+                },
             });
             Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
         } else {
@@ -429,10 +432,29 @@ where
     }
 }
 
+trait ToPublicResponse {
+    fn to_public_response(&self) -> Response<Body>;
+}
+
+impl ToPublicResponse for Error {
+    fn to_public_response(&self) -> Response<Body> {
+        let status = match self.reason() {
+            Some(err::Reason::BadRequest) => StatusCode::BAD_REQUEST,
+            Some(err::Reason::InternalError) => StatusCode::INTERNAL_SERVER_ERROR,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        let msg = match self.public_msg() {
+            Some(v) => v.join("\n"),
+            _ => String::new(),
+        };
+        response(status).body(Body::from(msg)).unwrap()
+    }
+}
+
 async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     match binned_inner(req, node_config).await {
         Ok(ret) => Ok(ret),
-        Err(e) => Ok(response(StatusCode::BAD_REQUEST).body(Body::from(e.msg().to_string()))?),
+        Err(e) => Ok(e.to_public_response()),
     }
 }
 
@@ -519,13 +541,13 @@ async fn prebinned_inner(req: Request<Body>, node_config: &NodeConfigCached) -> 
 async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     match plain_events_inner(req, node_config).await {
         Ok(ret) => Ok(ret),
-        Err(e) => Ok(response(StatusCode::BAD_REQUEST).body(Body::from(e.msg().to_string()))?),
+        Err(e) => Ok(e.to_public_response()),
     }
 }
 
 async fn plain_events_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     debug!("httpret  plain_events_inner  headers: {:?}", req.headers());
-    let accept_def = "";
+    let accept_def = APP_JSON;
     let accept = req
         .headers()
         .get(http::header::ACCEPT)

@@ -21,9 +21,17 @@ p {
     margin-bottom: 0.4em;
 }
 
+ul {
+    margin-bottom: 2.0em;
+}
+
+li {
+    margin-top: 0.3em;
+}
+
 body {
     font-family: monospace;
-    font-size: 100%;
+    font-size: 140%;
     line-height: 1.4;
     color: #000;
 }

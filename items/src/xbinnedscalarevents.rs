@@ -249,7 +249,7 @@ where
     }
 
     fn apply_event_unweight(&mut self, avg: f32, min: NTY, max: NTY) {
-        debug!("apply_event_unweight");
+        //debug!("apply_event_unweight");
         self.apply_min_max(min, max);
         let vf = avg;
         if vf.is_nan() {
@@ -260,7 +260,7 @@ where
     }
 
     fn apply_event_time_weight(&mut self, ts: u64) {
-        debug!("apply_event_time_weight");
+        //debug!("apply_event_time_weight");
         if let (Some(v), Some(min), Some(max)) = (self.last_avg, self.last_min, self.last_max) {
             self.apply_min_max(min, max);
             let w = if self.do_time_weight {

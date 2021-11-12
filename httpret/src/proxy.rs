@@ -77,6 +77,19 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
         Ok(proxy_api1_map_pulse(req, proxy_config).await?)
     } else if path.starts_with("/api/1/gather/") {
         Ok(gather_json_2_v1(req, "/api/1/gather/", proxy_config).await?)
+    } else if path == "/api/4/version" {
+        if req.method() == Method::GET {
+            let ret = serde_json::json!({
+                //"data_api_version": "4.0.0-beta",
+                "data_api_version": {
+                    "major": 4,
+                    "minor": 0,
+                },
+            });
+            Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
     } else if path == "/api/4/backends" {
         Ok(backends(req, proxy_config).await?)
     } else if path == "/api/4/search/channel" {
