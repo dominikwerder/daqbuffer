@@ -1,3 +1,4 @@
+use crate::err::ErrConv;
 use crate::nodes::{require_sls_test_host_running, require_test_hosts_running};
 use chrono::{DateTime, Utc};
 use err::Error;
@@ -224,13 +225,14 @@ async fn get_binned_json_common(
         .method(http::Method::GET)
         .uri(url.to_string())
         .header(http::header::ACCEPT, APP_JSON)
-        .body(Body::empty())?;
+        .body(Body::empty())
+        .ec()?;
     let client = hyper::Client::new();
-    let res = client.request(req).await?;
+    let res = client.request(req).await.ec()?;
     if res.status() != StatusCode::OK {
         error!("get_binned_json_common client response {:?}", res);
     }
-    let res = hyper::body::to_bytes(res.into_body()).await?;
+    let res = hyper::body::to_bytes(res.into_body()).await.ec()?;
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     debug!("get_binned_json_common  DONE  time {} ms", ms);
@@ -353,13 +355,14 @@ async fn get_binned_json_common_res(
         .method(http::Method::GET)
         .uri(url.to_string())
         .header(http::header::ACCEPT, APP_JSON)
-        .body(Body::empty())?;
+        .body(Body::empty())
+        .ec()?;
     let client = hyper::Client::new();
-    let res = client.request(req).await?;
+    let res = client.request(req).await.ec()?;
     if res.status() != StatusCode::OK {
         error!("get_binned_json_common client response {:?}", res);
     }
-    let res = hyper::body::to_bytes(res.into_body()).await?;
+    let res = hyper::body::to_bytes(res.into_body()).await.ec()?;
     let t2 = chrono::Utc::now();
     let _ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     let res = String::from_utf8_lossy(&res).to_string();

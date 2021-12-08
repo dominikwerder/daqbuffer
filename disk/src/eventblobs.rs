@@ -229,7 +229,7 @@ mod test {
             array: false,
             compression: false,
         };
-        let cluster = taskrun::test_cluster();
+        let cluster = netpod::test_cluster();
         let node = cluster.nodes[nodeix].clone();
         let buffer_size = 512;
         let event_chunker_conf = EventChunkerConf {

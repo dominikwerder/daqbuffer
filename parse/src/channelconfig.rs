@@ -12,15 +12,49 @@ use nom::Needed;
 use num_derive::{FromPrimitive, ToPrimitive};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use tokio::io::ErrorKind;
 
-type NRes<'a, O> = nom::IResult<&'a [u8], O, err::Error>;
+#[derive(Debug)]
+pub struct NErr {
+    msg: String,
+}
+
+impl<T: fmt::Debug> From<nom::Err<T>> for NErr {
+    fn from(k: nom::Err<T>) -> Self {
+        Self {
+            msg: format!("nom::Err<T> {:?}", k),
+        }
+    }
+}
+
+impl<I> nom::error::ParseError<I> for NErr {
+    fn from_error_kind(_input: I, kind: nom::error::ErrorKind) -> Self {
+        Self {
+            msg: format!("ParseError  {:?}", kind),
+        }
+    }
+
+    fn append(_input: I, kind: nom::error::ErrorKind, other: Self) -> Self {
+        Self {
+            msg: format!("ParseError  kind {:?}  other {:?}", kind, other),
+        }
+    }
+}
+
+impl From<NErr> for Error {
+    fn from(x: NErr) -> Self {
+        Self::with_msg_no_trace(x.msg)
+    }
+}
+
+type NRes<'a, O> = nom::IResult<&'a [u8], O, NErr>;
 
 fn mkerr<'a, S, O>(msg: S) -> NRes<'a, O>
 where
     S: Into<String>,
 {
-    let e = Error::with_msg(msg);
+    let e = NErr { msg: msg.into() };
     Err(nom::Err::Error(e))
 }
 
@@ -291,7 +325,7 @@ pub async fn read_local_config(channel: Channel, node: Node) -> Result<Config, E
             _ => return Err(e.into()),
         },
     };
-    let config = parse_config(&buf)?;
+    let config = parse_config(&buf).map_err(NErr::from)?;
     Ok(config.1)
 }
 

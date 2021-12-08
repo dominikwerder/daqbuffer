@@ -1,6 +1,6 @@
-use clap::{crate_version, Clap};
+use clap::{crate_version, Parser};
 
-#[derive(Debug, Clap)]
+#[derive(Debug, Parser)]
 #[clap(name="daqbuffer", author="Dominik Werder <dominik.werder@gmail.com>", version=crate_version!())]
 pub struct Opts {
     #[clap(short, long, parse(from_occurrences))]
@@ -9,7 +9,7 @@ pub struct Opts {
     pub subcmd: SubCmd,
 }
 
-#[derive(Debug, Clap)]
+#[derive(Debug, Parser)]
 pub enum SubCmd {
     Retrieval(Retrieval),
     Proxy(Proxy),
@@ -20,31 +20,31 @@ pub enum SubCmd {
     Test,
 }
 
-#[derive(Debug, Clap)]
+#[derive(Debug, Parser)]
 pub struct Retrieval {
     #[clap(long)]
     pub config: String,
 }
 
-#[derive(Debug, Clap)]
+#[derive(Debug, Parser)]
 pub struct Proxy {
     #[clap(long)]
     pub config: String,
 }
 
-#[derive(Debug, Clap)]
+#[derive(Debug, Parser)]
 pub struct Client {
     #[clap(subcommand)]
     pub client_type: ClientType,
 }
 
-#[derive(Debug, Clap)]
+#[derive(Debug, Parser)]
 pub enum ClientType {
     Binned(BinnedClient),
     Status(StatusClient),
 }
 
-#[derive(Debug, Clap)]
+#[derive(Debug, Parser)]
 pub struct StatusClient {
     #[clap(long)]
     pub host: String,
@@ -52,7 +52,7 @@ pub struct StatusClient {
     pub port: u16,
 }
 
-#[derive(Debug, Clap)]
+#[derive(Debug, Parser)]
 pub struct BinnedClient {
     #[clap(long)]
     pub host: String,
@@ -74,13 +74,13 @@ pub struct BinnedClient {
     pub disk_stats_every_kb: u32,
 }
 
-#[derive(Debug, Clap)]
+#[derive(Debug, Parser)]
 pub struct Zmtp {
     #[clap(long)]
     pub addr: String,
 }
 
-#[derive(Debug, Clap)]
+#[derive(Debug, Parser)]
 pub struct Logappend {
     #[clap(long)]
     pub dir: String,

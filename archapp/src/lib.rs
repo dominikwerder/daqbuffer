@@ -3,6 +3,7 @@ pub mod generated;
 #[cfg(not(feature = "devread"))]
 pub mod generated {}
 pub mod archeng;
+pub mod err;
 pub mod events;
 #[cfg(feature = "devread")]
 pub mod parse;
@@ -14,14 +15,13 @@ pub mod storagemerge;
 pub mod test;
 pub mod timed;
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-
+use ::err::Error;
 use async_channel::Sender;
-use err::Error;
 use futures_core::Future;
 use netpod::log::*;
 #[cfg(not(feature = "devread"))]
 pub use parsestub as parse;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn unescape_archapp_msg(inp: &[u8], mut ret: Vec<u8>) -> Result<Vec<u8>, Error> {
     ret.clear();

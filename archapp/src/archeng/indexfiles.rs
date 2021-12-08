@@ -2,7 +2,7 @@ use crate::timed::Timed;
 use crate::wrap_task;
 use async_channel::Receiver;
 use commonio::{open_read, read, StatsChannel};
-use err::Error;
+use err::{ErrStr, Error};
 use futures_core::{Future, Stream};
 use futures_util::stream::unfold;
 use netpod::log::*;
@@ -35,19 +35,19 @@ pub fn list_index_files(node: &ChannelArchiver) -> Receiver<Result<PathBuf, Erro
                                 let ft = e.file_type().await?;
                                 if ft.is_file() {
                                     if e.file_name().to_string_lossy() == "index" {
-                                        tx.send(Ok(e.path())).await?;
+                                        tx.send(Ok(e.path())).await.errstr()?;
                                     }
                                 }
                             }
                         } else if ft.is_file() {
                             if e.file_name().to_string_lossy() == "index" {
-                                tx.send(Ok(e.path())).await?;
+                                tx.send(Ok(e.path())).await.errstr()?;
                             }
                         }
                     }
                 } else if ft.is_file() {
                     if e.file_name().to_string_lossy() == "index" {
-                        tx.send(Ok(e.path())).await?;
+                        tx.send(Ok(e.path())).await.errstr()?;
                     }
                 }
             }
@@ -105,7 +105,7 @@ pub async fn get_level_1(lev0: Vec<PathBuf>) -> Result<Vec<PathBuf>, Error> {
 pub async fn database_connect(db_config: &Database) -> Result<PgClient, Error> {
     let d = db_config;
     let uri = format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, 5432, d.name);
-    let (cl, conn) = tokio_postgres::connect(&uri, tokio_postgres::NoTls).await?;
+    let (cl, conn) = tokio_postgres::connect(&uri, tokio_postgres::NoTls).await.errstr()?;
     // TODO monitor connection drop.
     let _cjh = tokio::spawn(async move {
         if let Err(e) = conn.await {
@@ -179,27 +179,29 @@ impl ScanIndexFiles {
                     let ps = p.to_string_lossy();
                     let rows = dbc
                         .query("select rowid from indexfiles where path = $1", &[&ps])
-                        .await?;
+                        .await
+                        .errstr()?;
                     let rid: i64 = if rows.len() == 0 {
                         let rows = dbc
                             .query(
                                 "insert into indexfiles (path) values ($1) on conflict do nothing returning rowid",
                                 &[&ps],
                             )
-                            .await?;
+                            .await
+                            .errstr()?;
                         if rows.len() == 0 {
                             error!("insert failed, maybe concurrent insert?");
                             // TODO try this channel again? or the other process handled it?
                             err::todoval()
                         } else if rows.len() == 1 {
-                            let rid = rows[0].try_get(0)?;
+                            let rid = rows[0].try_get(0).errstr()?;
                             info!("insert done: {}", rid);
                             rid
                         } else {
                             return Err(Error::with_msg("not unique"));
                         }
                     } else if rows.len() == 1 {
-                        let rid = rows[0].try_get(0)?;
+                        let rid = rows[0].try_get(0).errstr()?;
                         rid
                     } else {
                         return Err(Error::with_msg("not unique"));
@@ -313,7 +315,7 @@ impl ScanChannels {
                 let dbc = database_connect(&self.conf.database).await?;
                 let sql =
                     "select path from indexfiles where ts_last_channel_search < now() - interval '1 hour' limit 1";
-                let rows = dbc.query(sql, &[]).await?;
+                let rows = dbc.query(sql, &[]).await.errstr()?;
                 let mut paths = vec![];
                 for row in rows {
                     paths.push(row.get::<_, String>(0));
@@ -329,36 +331,38 @@ impl ScanChannels {
                 if let Some(path) = paths.pop() {
                     let rows = dbc
                         .query("select rowid from indexfiles where path = $1", &[&path])
-                        .await?;
+                        .await
+                        .errstr()?;
                     if rows.len() == 1 {
-                        let indexfile_rid: i64 = rows[0].try_get(0)?;
+                        let indexfile_rid: i64 = rows[0].try_get(0).errstr()?;
                         let mut file = open_read(path.clone().into(), stats).await?;
                         let mut basics = super::indextree::IndexFileBasics::from_file(path, &mut file, stats).await?;
                         let entries = basics.all_channel_entries(&mut file, stats).await?;
                         for entry in entries {
                             let rows = dbc
                                 .query("select rowid from channels where name = $1", &[&entry.channel_name()])
-                                .await?;
+                                .await
+                                .errstr()?;
                             let rid: i64 = if rows.len() == 0 {
                                 let rows = dbc
                                 .query(
                                     "insert into channels (name) values ($1) on conflict do nothing returning rowid",
                                     &[&entry.channel_name()],
                                 )
-                                .await?;
+                                .await.errstr()?;
                                 if rows.len() == 0 {
                                     error!("insert failed, maybe concurrent insert?");
                                     // TODO try this channel again? or the other process handled it?
                                     err::todoval()
                                 } else if rows.len() == 1 {
-                                    let rid = rows[0].try_get(0)?;
+                                    let rid = rows[0].try_get(0).errstr()?;
                                     info!("insert done: {}", rid);
                                     rid
                                 } else {
                                     return Err(Error::with_msg("not unique"));
                                 }
                             } else if rows.len() == 1 {
-                                let rid = rows[0].try_get(0)?;
+                                let rid = rows[0].try_get(0).errstr()?;
                                 rid
                             } else {
                                 return Err(Error::with_msg("not unique"));
@@ -367,13 +371,15 @@ impl ScanChannels {
                                 "insert into channel_index_map (channel, index) values ($1, $2) on conflict do nothing",
                                 &[&rid, &indexfile_rid],
                             )
-                            .await?;
+                            .await
+                            .errstr()?;
                         }
                         dbc.query(
                             "update indexfiles set ts_last_channel_search = now() where rowid = $1",
                             &[&indexfile_rid],
                         )
-                        .await?;
+                        .await
+                        .errstr()?;
                     }
                 }
                 self.steps = Done;
@@ -410,8 +416,14 @@ enum RetClass {
 
 #[derive(Debug)]
 enum IndexCat {
-    Machine { rc: RetClass },
-    Beamline { rc: RetClass, name: String },
+    Machine {
+        rc: RetClass,
+    },
+    #[allow(unused)]
+    Beamline {
+        rc: RetClass,
+        name: String,
+    },
 }
 
 #[derive(Debug)]
@@ -532,10 +544,10 @@ fn categorize_index_files(list: &Vec<String>) -> Result<Vec<IndexFile>, Error> {
 pub async fn index_file_path_list(channel: Channel, dbconf: Database) -> Result<Vec<PathBuf>, Error> {
     let dbc = database_connect(&dbconf).await?;
     let sql = "select i.path from indexfiles i, channels c, channel_index_map m where c.name = $1 and m.channel = c.rowid and i.rowid = m.index";
-    let rows = dbc.query(sql, &[&channel.name()]).await?;
+    let rows = dbc.query(sql, &[&channel.name()]).await.errstr()?;
     let mut index_paths = vec![];
     for row in rows {
-        index_paths.push(row.try_get(0)?);
+        index_paths.push(row.try_get(0).errstr()?);
     }
     let list = categorize_index_files(&index_paths)?;
     let ret = list.into_iter().map(|k| k.path).collect();

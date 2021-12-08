@@ -1,6 +1,6 @@
 use async_channel::{bounded, Receiver};
 use bytes::{BufMut, BytesMut};
-use err::Error;
+use err::{ErrStr, Error};
 use futures_util::FutureExt;
 use netpod::NodeConfigCached;
 use serde::{Deserialize, Serialize};
@@ -31,7 +31,7 @@ pub async fn ca_connect_1(
         async move {
             let mut conn = tokio::net::TcpStream::connect("S30CB06-CVME-LLRF2.psi.ch:5064").await?;
             let (mut inp, mut out) = conn.split();
-            tx.send(Ok(FetchItem::Log(format!("connected")))).await?;
+            tx.send(Ok(FetchItem::Log(format!("connected")))).await.errstr()?;
             let mut buf = [0; 64];
 
             let mut b2 = BytesMut::with_capacity(128);
@@ -42,10 +42,11 @@ pub async fn ca_connect_1(
             b2.put_u32(0);
             b2.put_u32(0);
             out.write_all(&b2).await?;
-            tx.send(Ok(FetchItem::Log(format!("written")))).await?;
+            tx.send(Ok(FetchItem::Log(format!("written")))).await.errstr()?;
             let n1 = inp.read(&mut buf).await?;
             tx.send(Ok(FetchItem::Log(format!("received: {} {:?}", n1, buf))))
-                .await?;
+                .await
+                .errstr()?;
 
             // Search to get cid:
             let chn = b"SATCB01-DBPM220:Y2";
@@ -58,10 +59,11 @@ pub async fn ca_connect_1(
             b2.put_u32(0x71803472);
             b2.put_slice(chn);
             out.write_all(&b2).await?;
-            tx.send(Ok(FetchItem::Log(format!("written")))).await?;
+            tx.send(Ok(FetchItem::Log(format!("written")))).await.errstr()?;
             let n1 = inp.read(&mut buf).await?;
             tx.send(Ok(FetchItem::Log(format!("received: {} {:?}", n1, buf))))
-                .await?;
+                .await
+                .errstr()?;
 
             Ok::<_, Error>(())
         }
@@ -70,7 +72,9 @@ pub async fn ca_connect_1(
                 match item {
                     Ok(_) => {}
                     Err(e) => {
-                        tx2.send(Ok(FetchItem::Log(format!("Seeing error: {:?}", e)))).await?;
+                        tx2.send(Ok(FetchItem::Log(format!("Seeing error: {:?}", e))))
+                            .await
+                            .errstr()?;
                     }
                 }
                 Ok::<_, Error>(())

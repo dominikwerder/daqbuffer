@@ -1,14 +1,36 @@
+pub mod scan;
+pub mod search;
+
+pub mod pg {
+    pub use tokio_postgres::{Client, Error};
+}
+
 use err::Error;
 use netpod::log::*;
 use netpod::{Channel, Database, NodeConfigCached};
 use std::time::Duration;
 use tokio_postgres::{Client, NoTls};
 
-pub mod scan;
-pub mod search;
+trait ErrConv<T> {
+    fn errconv(self) -> Result<T, Error>;
+}
 
-pub mod pg {
-    pub use tokio_postgres::Client;
+impl<T> ErrConv<T> for Result<T, tokio_postgres::Error> {
+    fn errconv(self) -> Result<T, Error> {
+        match self {
+            Ok(k) => Ok(k),
+            Err(e) => Err(Error::with_msg(e.to_string())),
+        }
+    }
+}
+
+impl<T, A> ErrConv<T> for Result<T, async_channel::SendError<A>> {
+    fn errconv(self) -> Result<T, Error> {
+        match self {
+            Ok(k) => Ok(k),
+            Err(e) => Err(Error::with_msg(e.to_string())),
+        }
+    }
 }
 
 pub async fn delay_us(mu: u64) {
@@ -26,7 +48,7 @@ pub async fn delay_io_medium() {
 pub async fn create_connection(db_config: &Database) -> Result<Client, Error> {
     let d = db_config;
     let uri = format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, 5432, d.name);
-    let (cl, conn) = tokio_postgres::connect(&uri, NoTls).await?;
+    let (cl, conn) = tokio_postgres::connect(&uri, NoTls).await.errconv()?;
     // TODO monitor connection drop.
     let _cjh = tokio::spawn(async move {
         if let Err(e) = conn.await {
@@ -41,7 +63,8 @@ pub async fn channel_exists(channel: &Channel, node_config: &NodeConfigCached) -
     let cl = create_connection(&node_config.node_config.cluster.database).await?;
     let rows = cl
         .query("select rowid from channels where name = $1::text", &[&channel.name])
-        .await?;
+        .await
+        .errconv()?;
     debug!("channel_exists  {} rows", rows.len());
     for row in rows {
         debug!(
@@ -61,7 +84,8 @@ pub async fn database_size(node_config: &NodeConfigCached) -> Result<u64, Error>
             "select pg_database_size($1::text)",
             &[&node_config.node_config.cluster.database.name],
         )
-        .await?;
+        .await
+        .errconv()?;
     if rows.len() == 0 {
         Err(Error::with_msg("could not get database size"))?;
     }
@@ -87,7 +111,7 @@ pub async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, E
     );
     let sql = sql.as_str();
     let cl = create_connection(&node_config.node_config.cluster.database).await?;
-    let rows = cl.query(sql, &[]).await?;
+    let rows = cl.query(sql, &[]).await.errconv()?;
     let mut sizes = TableSizes { sizes: vec![] };
     sizes.sizes.push((format!("table"), format!("size")));
     for row in rows {
@@ -99,7 +123,7 @@ pub async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, E
 pub async fn random_channel(node_config: &NodeConfigCached) -> Result<String, Error> {
     let sql = "select name from channels order by rowid limit 1 offset (random() * (select count(rowid) from channels))::bigint";
     let cl = create_connection(&node_config.node_config.cluster.database).await?;
-    let rows = cl.query(sql, &[]).await?;
+    let rows = cl.query(sql, &[]).await.errconv()?;
     if rows.len() == 0 {
         Err(Error::with_msg("can not get random channel"))?;
     }
@@ -112,11 +136,12 @@ pub async fn insert_channel(name: String, facility: i64, dbc: &Client) -> Result
             "select count(rowid) from channels where facility = $1 and name = $2",
             &[&facility, &name],
         )
-        .await?;
+        .await
+        .errconv()?;
     if rows[0].get::<_, i64>(0) == 0 {
         let sql =
             concat!("insert into channels (facility, name) values ($1, $2) on conflict (facility, name) do nothing");
-        dbc.query(sql, &[&facility, &name]).await?;
+        dbc.query(sql, &[&facility, &name]).await.errconv()?;
     }
     Ok(())
 }

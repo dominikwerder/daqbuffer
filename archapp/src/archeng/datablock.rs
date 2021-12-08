@@ -109,24 +109,36 @@ impl DbrType {
 #[derive(Debug)]
 pub struct DatafileHeader {
     pos: DataheaderPos,
+    #[allow(unused)]
     dir_offset: u32,
     // Should be absolute file position of the next data header
     // together with `fname_next`.
     // But unfortunately not always set?
+    #[allow(unused)]
     next_offset: u32,
+    #[allow(unused)]
     prev_offset: u32,
+    #[allow(unused)]
     curr_offset: u32,
     pub num_samples: u32,
+    #[allow(unused)]
     ctrl_info_offset: u32,
     buf_size: u32,
+    #[allow(unused)]
     buf_free: u32,
     dbr_type: DbrType,
     dbr_count: usize,
+    #[allow(unused)]
     period: f64,
+    #[allow(unused)]
     ts_beg: Nanos,
+    #[allow(unused)]
     ts_end: Nanos,
+    #[allow(unused)]
     ts_next_file: Nanos,
+    #[allow(unused)]
     fname_next: String,
+    #[allow(unused)]
     fname_prev: String,
 }
 

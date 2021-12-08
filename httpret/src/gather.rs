@@ -1,5 +1,5 @@
+use crate::err::Error;
 use crate::response;
-use err::Error;
 use futures_util::{select, FutureExt};
 use http::{Method, StatusCode};
 use hyper::{Body, Client, Request, Response};

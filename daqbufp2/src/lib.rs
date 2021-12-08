@@ -1,9 +1,11 @@
 pub mod client;
+pub mod err;
 pub mod nodes;
 #[cfg(test)]
 pub mod test;
 
-use err::Error;
+use ::err::Error;
+use futures_util::TryFutureExt;
 use netpod::{Cluster, NodeConfig, NodeConfigCached, ProxyConfig};
 use tokio::task::JoinHandle;
 
@@ -16,7 +18,7 @@ pub fn spawn_test_hosts(cluster: Cluster) -> Vec<JoinHandle<Result<(), Error>>> 
         };
         let node_config: Result<NodeConfigCached, Error> = node_config.into();
         let node_config = node_config.unwrap();
-        let h = tokio::spawn(httpret::host(node_config));
+        let h = tokio::spawn(httpret::host(node_config).map_err(Error::from));
         ret.push(h);
     }
     ret

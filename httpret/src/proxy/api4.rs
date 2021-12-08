@@ -1,6 +1,6 @@
+use crate::err::Error;
 use crate::gather::{gather_get_json_generic, SubRes};
 use crate::response;
-use err::Error;
 use futures_core::Future;
 use http::{header, Request, Response, StatusCode};
 use hyper::Body;
@@ -68,7 +68,8 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
             let res = ChannelSearchResult { channels: res };
             let res = response(StatusCode::OK)
                 .header(http::header::CONTENT_TYPE, APP_JSON)
-                .body(Body::from(serde_json::to_string(&res)?))?;
+                .body(Body::from(serde_json::to_string(&res)?))
+                .map_err(Error::from)?;
             Ok(res)
         };
         let ret = gather_get_json_generic(
@@ -83,6 +84,8 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
         .await?;
         Ok(ret)
     } else {
-        Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::from(format!("{:?}", proxy_config.name)))?)
+        Ok(response(StatusCode::NOT_ACCEPTABLE)
+            .body(Body::from(format!("{:?}", proxy_config.name)))
+            .map_err(Error::from)?)
     }
 }

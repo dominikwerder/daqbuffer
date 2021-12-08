@@ -99,7 +99,8 @@ async fn lock_1() -> Result<(), Error> {
         t2.join().map_err(|_| Error::with_msg_no_trace("join error"))?;
         Ok::<_, Error>(())
     })
-    .await??;
+    .await
+    .map_err(Error::from_string)??;
     Ok(())
 }
 

@@ -1,5 +1,5 @@
 use chrono::{DateTime, Duration, Utc};
-use clap::Clap;
+use clap::Parser;
 use daqbuffer::cli::{ClientType, Opts, SubCmd};
 use err::Error;
 use netpod::log::*;
@@ -101,7 +101,7 @@ async fn go() -> Result<(), Error> {
             let jh = tokio::task::spawn_blocking(move || {
                 taskrun::append::append(&k.dir, std::io::stdin(), std::io::stderr()).unwrap();
             });
-            jh.await?;
+            jh.await.map_err(Error::from_string)?;
         }
         SubCmd::Test => (),
     }
@@ -110,6 +110,7 @@ async fn go() -> Result<(), Error> {
 
 #[test]
 fn simple_fetch() {
+    use daqbuffer::err::ErrConv;
     use netpod::Nanos;
     use netpod::{timeunits::*, ByteOrder, Channel, ChannelConfig, ScalarType, Shape};
     taskrun::run(async {
@@ -137,9 +138,10 @@ fn simple_fetch() {
         let req = hyper::Request::builder()
             .method(http::Method::POST)
             .uri("http://localhost:8360/api/4/parsed_raw")
-            .body(query_string.into())?;
+            .body(query_string.into())
+            .ec()?;
         let client = hyper::Client::new();
-        let res = client.request(req).await?;
+        let res = client.request(req).await.ec()?;
         info!("client response {:?}", res);
         let mut res_body = res.into_body();
         use hyper::body::HttpBody;

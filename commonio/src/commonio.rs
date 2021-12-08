@@ -1,7 +1,7 @@
 pub mod ringbuf;
 
 use async_channel::Sender;
-use err::Error;
+use err::{ErrStr, Error};
 use futures_util::StreamExt;
 use items::eventsitem::EventsItem;
 use items::{Sitemty, StatsItem, StreamItem};
@@ -43,7 +43,7 @@ impl StatsChannel {
     }
 
     pub async fn send(&self, item: StatsItem) -> Result<(), Error> {
-        Ok(self.chn.send(Ok(StreamItem::Stats(item))).await?)
+        Ok(self.chn.send(Ok(StreamItem::Stats(item))).await.errstr()?)
     }
 }
 

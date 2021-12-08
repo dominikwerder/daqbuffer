@@ -1,7 +1,7 @@
+use crate::err::Error;
 use crate::response;
-use err::Error;
 use futures_core::Stream;
-use futures_util::StreamExt;
+use futures_util::{StreamExt, TryStreamExt};
 use http::{header, Method, Request, Response, StatusCode};
 use hyper::Body;
 use netpod::log::*;
@@ -112,6 +112,7 @@ impl ScanIndexFiles {
                 "this node is not configured as channel archiver",
             ))?;
         let s = archapp_wrap::archapp::archeng::indexfiles::scan_index_files(conf.clone());
+        let s = s.map_err(Error::from);
         let s = json_lines_stream(s);
         Ok(response(StatusCode::OK)
             .header(header::CONTENT_TYPE, APP_JSON_LINES)
@@ -151,6 +152,7 @@ impl ScanChannels {
                 "this node is not configured as channel archiver",
             ))?;
         let s = archapp_wrap::archapp::archeng::indexfiles::scan_channels(conf.clone());
+        let s = s.map_err(Error::from);
         let s = json_lines_stream(s);
         Ok(response(StatusCode::OK)
             .header(header::CONTENT_TYPE, APP_JSON_LINES)
@@ -191,6 +193,7 @@ impl ChannelNames {
             ))?;
         use archapp_wrap::archapp::archeng;
         let stream = archeng::configs::ChannelNameStream::new(conf.database.clone());
+        let stream = stream.map_err(Error::from);
         let stream = json_lines_stream(stream);
         Ok(response(StatusCode::OK)
             .header(header::CONTENT_TYPE, APP_JSON_LINES)
@@ -232,6 +235,7 @@ impl ScanConfigs {
         use archapp_wrap::archapp::archeng;
         let stream = archeng::configs::ChannelNameStream::new(conf.database.clone());
         let stream = archeng::configs::ConfigStream::new(stream, conf.clone());
+        let stream = stream.map_err(Error::from);
         let stream = json_lines_stream(stream);
         Ok(response(StatusCode::OK)
             .header(header::CONTENT_TYPE, APP_JSON_LINES)
@@ -294,6 +298,7 @@ impl BlockRefStream {
             }
             Err(e) => Err(e),
         });
+        let s = s.map_err(Error::from);
         let s = json_lines_stream(s);
         let s = s.map(|item| match item {
             Ok(k) => Ok(k),
@@ -365,6 +370,7 @@ impl BlockStream {
             }
             Err(e) => Err(e),
         });
+        let s = s.map_err(Error::from);
         let s = json_lines_stream(s);
         let s = s.map(|item| match item {
             Ok(k) => Ok(k),

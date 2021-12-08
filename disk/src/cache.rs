@@ -209,7 +209,8 @@ where
             Ok::<_, Error>(enc.len())
         }
     })
-    .await??;
+    .await
+    .map_err(Error::from_string)??;
     tokio::fs::rename(&tmp_path, &path).await?;
     let ts2 = Instant::now();
     let ret = WrittenPbCache {

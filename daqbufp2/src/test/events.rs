@@ -1,3 +1,4 @@
+use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
 use chrono::{DateTime, Utc};
 use disk::events::{PlainEventsBinaryQuery, PlainEventsJsonQuery};
@@ -72,9 +73,10 @@ where
         .method(http::Method::GET)
         .uri(url.to_string())
         .header(http::header::ACCEPT, APP_OCTET)
-        .body(Body::empty())?;
+        .body(Body::empty())
+        .ec()?;
     let client = hyper::Client::new();
-    let res = client.request(req).await?;
+    let res = client.request(req).await.ec()?;
     if res.status() != StatusCode::OK {
         error!("client response {:?}", res);
     }
@@ -100,6 +102,7 @@ pub struct EventsResponse {
     bytes_read: u64,
     range_complete_count: u64,
     log_item_count: u64,
+    #[allow(unused)]
     stats_item_count: u64,
 }
 
@@ -278,13 +281,14 @@ async fn get_plain_events_json(
         .method(http::Method::GET)
         .uri(url.to_string())
         .header(http::header::ACCEPT, APP_JSON)
-        .body(Body::empty())?;
+        .body(Body::empty())
+        .ec()?;
     let client = hyper::Client::new();
-    let res = client.request(req).await?;
+    let res = client.request(req).await.ec()?;
     if res.status() != StatusCode::OK {
         error!("client response {:?}", res);
     }
-    let buf = hyper::body::to_bytes(res.into_body()).await?;
+    let buf = hyper::body::to_bytes(res.into_body()).await.ec()?;
     let s = String::from_utf8_lossy(&buf);
     let _res: JsonValue = serde_json::from_str(&s)?;
     // TODO assert more

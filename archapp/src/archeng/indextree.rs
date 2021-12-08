@@ -1,16 +1,16 @@
+use crate::archeng::backreadbuf::BackReadBuf;
 use crate::archeng::{format_hex_block, name_hash, readu16, readu32, readu64, StatsChannel, EPICS_EPOCH_OFFSET};
 use commonio::open_read;
 use commonio::ringbuf::RingBuf;
 use err::Error;
-use netpod::{log::*, NanoRange};
-use netpod::{timeunits::SEC, FilePos, Nanos};
+use netpod::log::*;
+use netpod::timeunits::SEC;
+use netpod::{FilePos, NanoRange, Nanos};
 use std::collections::VecDeque;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use tokio::fs::File;
-
-use super::backreadbuf::BackReadBuf;
 
 pub trait HeaderVersion: Send + Sync + fmt::Debug {
     fn version(&self) -> u8;
@@ -71,6 +71,7 @@ pub struct NamedHashChannelEntry {
     next: u64,
     id_rtree_pos: u64,
     channel_name: String,
+    #[allow(dead_code)]
     id_txt: String,
 }
 
@@ -80,6 +81,7 @@ impl NamedHashChannelEntry {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug)]
 pub struct IndexFileBasics {
     path: PathBuf,
@@ -778,7 +780,9 @@ pub async fn read_rtree_entrypoint(
 
 #[derive(Debug)]
 pub struct TreeSearchStats {
+    #[allow(dead_code)]
     duration: Duration,
+    #[allow(dead_code)]
     node_reads: usize,
 }
 

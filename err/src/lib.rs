@@ -2,9 +2,6 @@
 Error handling and reporting.
 */
 
-use http::header::InvalidHeaderValue;
-use http::uri::InvalidUri;
-use nom::error::ErrorKind;
 use serde::{Deserialize, Serialize};
 use std::array::TryFromSliceError;
 use std::fmt;
@@ -12,8 +9,6 @@ use std::net::AddrParseError;
 use std::num::{ParseFloatError, ParseIntError};
 use std::string::FromUtf8Error;
 use std::sync::PoisonError;
-use tokio::task::JoinError;
-use tokio::time::error::Elapsed;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub enum Reason {
@@ -54,6 +49,13 @@ impl Error {
             public_msg: None,
             reason: None,
         }
+    }
+
+    pub fn from_string<E>(e: E) -> Self
+    where
+        E: ToString,
+    {
+        Self::with_msg(e.to_string())
     }
 
     pub fn mark_bad_request(mut self) -> Self {
@@ -143,6 +145,38 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+pub trait ErrConv<T> {
+    fn err_conv(self) -> Result<T, Error>;
+}
+
+impl<T, E> ErrConv<T> for Result<T, E>
+where
+    E: Into<Error>,
+{
+    fn err_conv(self) -> Result<T, Error> {
+        match self {
+            Ok(k) => Ok(k),
+            Err(e) => Err(e.into()),
+        }
+    }
+}
+
+pub trait ErrStr<T> {
+    fn errstr(self) -> Result<T, Error>;
+}
+
+impl<T, E> ErrStr<T> for Result<T, E>
+where
+    E: ToString,
+{
+    fn errstr(self) -> Result<T, Error> {
+        match self {
+            Ok(k) => Ok(k),
+            Err(e) => Err(Error::with_msg_no_trace(e.to_string())),
+        }
+    }
+}
+
 impl From<String> for Error {
     fn from(k: String) -> Self {
         Self::with_msg(k)
@@ -163,18 +197,6 @@ impl From<std::io::Error> for Error {
 
 impl From<AddrParseError> for Error {
     fn from(k: AddrParseError) -> Self {
-        Self::with_msg(k.to_string())
-    }
-}
-
-impl From<http::Error> for Error {
-    fn from(k: http::Error) -> Self {
-        Self::with_msg(k.to_string())
-    }
-}
-
-impl From<hyper::Error> for Error {
-    fn from(k: hyper::Error) -> Self {
         Self::with_msg(k.to_string())
     }
 }
@@ -215,6 +237,7 @@ impl From<FromUtf8Error> for Error {
     }
 }
 
+/*
 impl<T: fmt::Debug> From<nom::Err<T>> for Error {
     fn from(k: nom::Err<T>) -> Self {
         Self::with_msg(format!("nom::Err<T> {:?}", k))
@@ -222,42 +245,27 @@ impl<T: fmt::Debug> From<nom::Err<T>> for Error {
 }
 
 impl<I> nom::error::ParseError<I> for Error {
-    fn from_error_kind(_input: I, kind: ErrorKind) -> Self {
+    fn from_error_kind(_input: I, kind: nom::error::ErrorKind) -> Self {
         Self::with_msg(format!("ParseError  {:?}", kind))
     }
 
-    fn append(_input: I, kind: ErrorKind, other: Self) -> Self {
+    fn append(_input: I, kind: nom::error::ErrorKind, other: Self) -> Self {
         Self::with_msg(format!("ParseError  kind {:?}  other {:?}", kind, other))
     }
 }
+*/
 
+/*
 impl From<JoinError> for Error {
     fn from(k: JoinError) -> Self {
         Self::with_msg(format!("JoinError {:?}", k))
     }
 }
+*/
 
 impl From<Box<bincode::ErrorKind>> for Error {
     fn from(k: Box<bincode::ErrorKind>) -> Self {
         Self::with_msg(format!("bincode::ErrorKind {:?}", k))
-    }
-}
-
-impl From<tokio_postgres::Error> for Error {
-    fn from(k: tokio_postgres::Error) -> Self {
-        Self::with_msg(k.to_string())
-    }
-}
-
-impl<T> From<async_channel::SendError<T>> for Error {
-    fn from(k: async_channel::SendError<T>) -> Self {
-        Self::with_msg(k.to_string())
-    }
-}
-
-impl From<InvalidUri> for Error {
-    fn from(k: InvalidUri) -> Self {
-        Self::with_msg(k.to_string())
     }
 }
 
@@ -282,18 +290,6 @@ impl From<regex::Error> for Error {
 impl<T> From<PoisonError<T>> for Error {
     fn from(_: PoisonError<T>) -> Self {
         Self::with_msg("PoisonError")
-    }
-}
-
-impl From<InvalidHeaderValue> for Error {
-    fn from(k: InvalidHeaderValue) -> Self {
-        Self::with_msg(format!("{:?}", k))
-    }
-}
-
-impl From<Elapsed> for Error {
-    fn from(k: Elapsed) -> Self {
-        Self::with_msg(format!("{:?}", k))
     }
 }
 

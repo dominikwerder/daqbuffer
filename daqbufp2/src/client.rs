@@ -1,3 +1,4 @@
+use crate::err::ErrConv;
 use chrono::{DateTime, Utc};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::streamlog::Streamlog;
@@ -18,14 +19,15 @@ pub async fn status(host: String, port: u16) -> Result<(), Error> {
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(uri)
-        .body(Body::empty())?;
+        .body(Body::empty())
+        .ec()?;
     let client = hyper::Client::new();
-    let res = client.request(req).await?;
+    let res = client.request(req).await.ec()?;
     if res.status() != StatusCode::OK {
         error!("Server error  {:?}", res);
         return Err(Error::with_msg(format!("Server error  {:?}", res)));
     }
-    let body = hyper::body::to_bytes(res.into_body()).await?;
+    let body = hyper::body::to_bytes(res.into_body()).await.ec()?;
     let res = String::from_utf8(body.to_vec())?;
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
@@ -68,13 +70,14 @@ pub async fn get_binned(
         .method(http::Method::GET)
         .uri(url.to_string())
         .header(http::header::ACCEPT, APP_OCTET)
-        .body(Body::empty())?;
+        .body(Body::empty())
+        .ec()?;
     let client = hyper::Client::new();
-    let res = client.request(req).await?;
+    let res = client.request(req).await.ec()?;
     if res.status() != StatusCode::OK {
         error!("Server error  {:?}", res);
         let (head, body) = res.into_parts();
-        let buf = hyper::body::to_bytes(body).await?;
+        let buf = hyper::body::to_bytes(body).await.ec()?;
         let s = String::from_utf8_lossy(&buf);
         return Err(Error::with_msg(format!(
             concat!(

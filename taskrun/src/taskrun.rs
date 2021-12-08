@@ -2,10 +2,8 @@ pub mod append;
 
 use crate::log::*;
 use err::Error;
-use netpod::ChannelArchiver;
 use std::future::Future;
 use std::panic;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tokio::runtime::Runtime;
 use tokio::task::JoinHandle;
@@ -124,74 +122,4 @@ where
     T::Output: Send + 'static,
 {
     tokio::spawn(task)
-}
-
-pub fn test_cluster() -> netpod::Cluster {
-    let nodes = (0..3)
-        .into_iter()
-        .map(|id| netpod::Node {
-            host: "localhost".into(),
-            listen: "0.0.0.0".into(),
-            port: 6170 + id as u16,
-            port_raw: 6170 + id as u16 + 100,
-            data_base_path: format!("../tmpdata/node{:02}", id).into(),
-            cache_base_path: format!("../tmpdata/node{:02}", id).into(),
-            ksprefix: "ks".into(),
-            backend: "testbackend".into(),
-            splits: None,
-            archiver_appliance: None,
-            channel_archiver: None,
-        })
-        .collect();
-    netpod::Cluster {
-        nodes,
-        database: netpod::Database {
-            host: "localhost".into(),
-            name: "testingdaq".into(),
-            user: "testingdaq".into(),
-            pass: "testingdaq".into(),
-        },
-        run_map_pulse_task: false,
-        is_central_storage: false,
-        file_io_buffer_size: Default::default(),
-    }
-}
-
-pub fn sls_test_cluster() -> netpod::Cluster {
-    let nodes = (0..1)
-        .into_iter()
-        .map(|id| netpod::Node {
-            host: "localhost".into(),
-            listen: "0.0.0.0".into(),
-            port: 6190 + id as u16,
-            port_raw: 6190 + id as u16 + 100,
-            data_base_path: format!("NOdatapath{}", id).into(),
-            cache_base_path: format!("../tmpdata/node{:02}", id).into(),
-            ksprefix: "NOKS".into(),
-            backend: "sls-archive".into(),
-            splits: None,
-            archiver_appliance: None,
-            channel_archiver: Some(ChannelArchiver {
-                data_base_paths: vec![PathBuf::from("/data/daqbuffer-testdata/sls/gfa03")],
-                database: netpod::Database {
-                    host: "localhost".into(),
-                    name: "testingdaq".into(),
-                    user: "testingdaq".into(),
-                    pass: "testingdaq".into(),
-                },
-            }),
-        })
-        .collect();
-    netpod::Cluster {
-        nodes,
-        database: netpod::Database {
-            host: "localhost".into(),
-            name: "testingdaq".into(),
-            user: "testingdaq".into(),
-            pass: "testingdaq".into(),
-        },
-        run_map_pulse_task: false,
-        is_central_storage: false,
-        file_io_buffer_size: Default::default(),
-    }
 }

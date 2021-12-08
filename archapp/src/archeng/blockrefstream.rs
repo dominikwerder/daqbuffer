@@ -193,7 +193,7 @@ mod test {
     use netpod::Database;
 
     #[test]
-    fn find_ref_1() -> Result<(), Error> {
+    fn find_ref_1() -> Result<(), err::Error> {
         let fut = async move {
             let channel = Channel {
                 backend: "sls-archive".into(),

@@ -15,13 +15,16 @@ pub async fn get_channel_config(
     let req = hyper::Request::builder()
         .method(Method::GET)
         .uri(url.as_str())
-        .body(Body::empty())?;
+        .body(Body::empty())
+        .map_err(Error::from_string)?;
     let client = hyper::Client::new();
-    let res = client.request(req).await?;
+    let res = client.request(req).await.map_err(Error::from_string)?;
     if !res.status().is_success() {
         return Err(Error::with_msg("http client error"));
     }
-    let buf = hyper::body::to_bytes(res.into_body()).await?;
+    let buf = hyper::body::to_bytes(res.into_body())
+        .await
+        .map_err(Error::from_string)?;
     let ret: ChannelConfigResponse = serde_json::from_slice(&buf)?;
     Ok(ret)
 }

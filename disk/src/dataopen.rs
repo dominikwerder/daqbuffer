@@ -1,6 +1,6 @@
 use super::paths;
 use bytes::BytesMut;
-use err::Error;
+use err::{ErrStr, Error};
 use futures_util::StreamExt;
 use netpod::log::*;
 use netpod::{ChannelConfig, NanoRange, Nanos, Node};
@@ -251,7 +251,7 @@ async fn open_files_inner(
             "----- open_files_inner  giving OpenedFileSet with {} files",
             h.files.len()
         );
-        chtx.send(Ok(h)).await?;
+        chtx.send(Ok(h)).await.errstr()?;
     }
     Ok(())
 }
@@ -361,7 +361,7 @@ async fn open_expanded_files_inner(
             "----- open_expanded_files_inner  giving OpenedFileSet with {} files",
             h.files.len()
         );
-        chtx.send(Ok(h)).await?;
+        chtx.send(Ok(h)).await.errstr()?;
         if found_pre {
             p1 += 1;
             break;
@@ -383,7 +383,7 @@ async fn open_expanded_files_inner(
                 }
             }
             let h = OpenedFileSet { timebin: tb, files: a };
-            chtx.send(Ok(h)).await?;
+            chtx.send(Ok(h)).await.errstr()?;
             p1 += 1;
         }
     } else {
@@ -417,7 +417,7 @@ fn expanded_file_list() {
         array: false,
         compression: false,
     };
-    let cluster = taskrun::test_cluster();
+    let cluster = netpod::test_cluster();
     let task = async move {
         let mut paths = vec![];
         let mut files = open_expanded_files(&range, &channel_config, cluster.nodes[0].clone());

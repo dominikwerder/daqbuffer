@@ -1,5 +1,5 @@
 use crate::archeng::indexfiles::database_connect;
-use err::Error;
+use err::{ErrStr, Error};
 use futures_core::{Future, Stream};
 use futures_util::{FutureExt, StreamExt};
 use netpod::log::*;
@@ -85,7 +85,7 @@ impl Stream for ChannelNameStream {
                                     "select rowid, name from channels where config = '{}'::jsonb and name > $1 order by name limit 64",
                                     &[&max_name],
                                 )
-                                .await?;
+                                .await.errstr()?;
                             Ok::<_, Error>(rows)
                         };
                         self.select_fut = Some(Box::pin(fut));
@@ -183,7 +183,8 @@ impl Stream for ConfigStream {
                         let fut = async move {
                             let dbc = database_connect(&dbconf).await?;
                             dbc.query("update channels set config = $2 where name = $1", &[&name, &config])
-                                .await?;
+                                .await
+                                .errstr()?;
                             Ok(())
                         };
                         self.update_fut = Some(Box::pin(fut));
@@ -197,7 +198,8 @@ impl Stream for ConfigStream {
                         let fut = async move {
                             let dbc = database_connect(&dbconf).await?;
                             dbc.query("update channels set config = $2 where name = $1", &[&name, &config])
-                                .await?;
+                                .await
+                                .errstr()?;
                             Ok(())
                         };
                         self.update_fut = Some(Box::pin(fut));

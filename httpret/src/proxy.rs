@@ -1,10 +1,10 @@
 pub mod api4;
 
 use crate::api1::{channel_search_configs_v1, channel_search_list_v1, gather_json_2_v1, proxy_distribute_v1};
+use crate::err::Error;
 use crate::gather::{gather_get_json_generic, SubRes};
 use crate::{api_1_docs, api_4_docs, response, Cont};
 use disk::events::PlainEventsJsonQuery;
-use err::Error;
 use futures_core::Stream;
 use futures_util::pin_mut;
 use http::{Method, StatusCode};

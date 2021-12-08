@@ -1,10 +1,10 @@
+use crate::err::Error;
 use crate::gather::{gather_get_json_generic, SubRes};
 use crate::{response, BodyStream};
 use bytes::{BufMut, BytesMut};
 use disk::eventchunker::{EventChunkerConf, EventFull};
-use err::Error;
 use futures_core::Stream;
-use futures_util::{FutureExt, StreamExt};
+use futures_util::{FutureExt, StreamExt, TryFutureExt, TryStreamExt};
 use http::{Method, StatusCode};
 use hyper::{Body, Client, Request, Response};
 use items::{RangeCompletableItem, Sitemty, StreamItem};
@@ -736,7 +736,7 @@ impl Stream for DataApiPython3DataStream {
                                 }
                             });
                             //let _ = Box::new(s) as Box<dyn Stream<Item = Result<BytesMut, Error>> + Unpin>;
-                            self.chan_stream = Some(Box::pin(s));
+                            self.chan_stream = Some(Box::pin(s.map_err(Error::from)));
                             continue;
                         }
                         Ready(Err(e)) => {
@@ -754,10 +754,9 @@ impl Stream for DataApiPython3DataStream {
                     } else {
                         let channel = self.channels[self.chan_ix].clone();
                         self.chan_ix += 1;
-                        self.config_fut = Some(Box::pin(read_local_config(
-                            channel.clone(),
-                            self.node_config.node.clone(),
-                        )));
+                        self.config_fut = Some(Box::pin(
+                            read_local_config(channel.clone(), self.node_config.node.clone()).map_err(Error::from),
+                        ));
                         continue;
                     }
                 }

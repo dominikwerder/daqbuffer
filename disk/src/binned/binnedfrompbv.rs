@@ -38,7 +38,7 @@ impl<TBT> FetchedPreBinned<TBT> {
         let mut url = Url::parse(&format!("http://{}:{}/api/4/prebinned", node.host, node.port))?;
         query.append_to_url(&mut url);
         let ret = Self {
-            uri: Uri::from_str(&url.to_string())?,
+            uri: Uri::from_str(&url.to_string()).map_err(Error::from_string)?,
             resfut: None,
             res: None,
             errored: false,
@@ -115,7 +115,7 @@ where
                         Err(e) => {
                             error!("PreBinnedValueStream  error in stream {:?}", e);
                             self.errored = true;
-                            Ready(Some(Err(e.into())))
+                            Ready(Some(Err(Error::from_string(e))))
                         }
                     },
                     Pending => Pending,
@@ -133,7 +133,7 @@ where
                     }
                     Err(e) => {
                         self.errored = true;
-                        Ready(Some(Err(e.into())))
+                        Ready(Some(Err(Error::from_string(e))))
                     }
                 }
             };

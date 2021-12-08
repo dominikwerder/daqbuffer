@@ -8,11 +8,11 @@ edition = "2021"
 path = "src/taskrun.rs"
 
 [dependencies]
-tokio = { version = "1.7.1", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
+tokio = { version = "1.14.77", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
 tracing = "0.1.25"
 tracing-subscriber = { version = "0.2.17", features= ["chrono"] }
 backtrace = "0.3.56"
 lazy_static = "1.4.0"
 chrono = "0.4"
 err = { path = "../err" }
-netpod = { path = "../netpod" }
+#netpod = { path = "../netpod" }

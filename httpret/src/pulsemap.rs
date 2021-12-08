@@ -1,11 +1,9 @@
+use crate::err::Error;
 use crate::response;
-use bytes::Buf;
-use bytes::BytesMut;
-use err::Error;
+use bytes::{Buf, BytesMut};
 use futures_util::stream::FuturesOrdered;
 use futures_util::FutureExt;
-use http::Uri;
-use http::{Method, StatusCode};
+use http::{Method, StatusCode, Uri};
 use hyper::{Body, Request, Response};
 use netpod::log::*;
 use netpod::NodeConfigCached;
@@ -17,14 +15,11 @@ use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use std::time::Duration;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::{io::SeekFrom, path::PathBuf};
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::task::JoinHandle;
-use tokio::{
-    fs::File,
-    io::{AsyncReadExt, AsyncSeekExt},
-};
 
 pub struct MapPulseHisto {
     _pulse: u64,

@@ -15,7 +15,7 @@ use crate::timed::Timed;
 use crate::wrap_task;
 use async_channel::{Receiver, Sender};
 use commonio::StatsChannel;
-use err::Error;
+use err::{ErrStr, Error};
 use futures_util::StreamExt;
 use items::{StreamItem, WithLen};
 use netpod::log::*;
@@ -151,7 +151,7 @@ pub fn list_all_channels(node: &ChannelArchiver) -> Receiver<Result<ListChannelI
                     index_path: index_path.to_str().unwrap().into(),
                     matches: mm,
                 };
-                tx.send(Ok(item)).await?;
+                tx.send(Ok(item)).await.errstr()?;
                 //info!("{:?}  parent {:?}  channel {}", index_path, index_path.parent(), ch);
                 //break;
             }
@@ -162,15 +162,29 @@ pub fn list_all_channels(node: &ChannelArchiver) -> Receiver<Result<ListChannelI
     rx
 }
 
+struct ErrWrap(tokio_postgres::Error);
+
+impl From<tokio_postgres::Error> for ErrWrap {
+    fn from(x: tokio_postgres::Error) -> Self {
+        Self(x)
+    }
+}
+
+impl From<ErrWrap> for Error {
+    fn from(_: ErrWrap) -> Self {
+        todo!()
+    }
+}
+
 pub async fn channel_config_from_db(
     q: &ChannelConfigQuery,
     conf: &ChannelArchiver,
 ) -> Result<ChannelConfigResponse, Error> {
     let dbc = database_connect(&conf.database).await?;
     let sql = "select config from channels where name = $1";
-    let rows = dbc.query(sql, &[&q.channel.name()]).await?;
+    let rows = dbc.query(sql, &[&q.channel.name()]).await.errstr()?;
     if let Some(row) = rows.first() {
-        let cfg: JsVal = row.try_get(0)?;
+        let cfg: JsVal = row.try_get(0).errstr()?;
         let val = cfg
             .get("shape")
             .ok_or_else(|| Error::with_msg_no_trace("shape not found on config"))?;

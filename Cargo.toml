@@ -1,14 +1,14 @@
 [workspace]
-members = ["daqbuffer", "h5out", "archapp", "archapp_xc", "archapp_wrap", "items", "nodenet", "httpclient", "fsio"]
+members = ["daqbuffer", "h5out", "archapp", "archapp_xc", "archapp_wrap", "items", "nodenet", "httpclient", "fsio", "dq"]
 
 [profile.release]
 opt-level = 1
-debug = 1
-#overflow-checks = true
-#debug-assertions = true
+debug = 0
+overflow-checks = false
+debug-assertions = false
 lto = "off"
-codegen-units = 160
+codegen-units = 32
 incremental = true
 
 [patch.crates-io]
-tokio = { git = "https://github.com/dominikwerder/tokio", rev = "637a0c8a" }
+tokio = { git = "https://github.com/dominikwerder/tokio", rev = "f069c87f" }

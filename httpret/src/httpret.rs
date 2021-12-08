@@ -1,19 +1,20 @@
 pub mod api1;
 pub mod channelarchiver;
+pub mod err;
 pub mod gather;
 pub mod proxy;
 pub mod pulsemap;
 pub mod search;
 
+use crate::err::Error;
 use crate::gather::gather_get_json;
 use crate::pulsemap::UpdateTask;
 use bytes::Bytes;
 use disk::binned::query::PreBinnedQuery;
 use disk::events::{PlainEventsBinaryQuery, PlainEventsJsonQuery};
-use err::Error;
 use future::Future;
 use futures_core::Stream;
-use futures_util::{FutureExt, StreamExt};
+use futures_util::{FutureExt, StreamExt, TryStreamExt};
 use http::{HeaderMap, Method, StatusCode};
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
@@ -89,7 +90,7 @@ where
 {
     type Output = <F as Future>::Output;
 
-    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let h = std::panic::catch_unwind(AssertUnwindSafe(|| self.f.poll_unpin(cx)));
         match h {
             Ok(k) => k,
@@ -101,7 +102,7 @@ where
                     }
                     None => {}
                 }
-                Poll::Ready(Err(Error::from(format!("{:?}", e))))
+                Poll::Ready(Err(Error::with_msg(format!("{:?}", e))))
             }
         }
     }
@@ -369,7 +370,7 @@ struct BodyStreamWrap(netpod::BodyStream);
 
 impl hyper::body::HttpBody for BodyStreamWrap {
     type Data = bytes::Bytes;
-    type Error = Error;
+    type Error = ::err::Error;
 
     fn poll_data(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Result<Self::Data, Self::Error>>> {
         self.0.inner.poll_next_unpin(cx)
@@ -417,7 +418,7 @@ where
                     Ready(Some(Ok(k))) => Ready(Some(Ok(k))),
                     Ready(Some(Err(e))) => {
                         error!("body stream error: {:?}", e);
-                        Ready(Some(Err(e.into())))
+                        Ready(Some(Err(Error::from(e))))
                     }
                     Ready(None) => Ready(None),
                     Pending => Pending,
@@ -439,8 +440,23 @@ trait ToPublicResponse {
 impl ToPublicResponse for Error {
     fn to_public_response(&self) -> Response<Body> {
         let status = match self.reason() {
-            Some(err::Reason::BadRequest) => StatusCode::BAD_REQUEST,
-            Some(err::Reason::InternalError) => StatusCode::INTERNAL_SERVER_ERROR,
+            Some(::err::Reason::BadRequest) => StatusCode::BAD_REQUEST,
+            Some(::err::Reason::InternalError) => StatusCode::INTERNAL_SERVER_ERROR,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        let msg = match self.public_msg() {
+            Some(v) => v.join("\n"),
+            _ => String::new(),
+        };
+        response(status).body(Body::from(msg)).unwrap()
+    }
+}
+
+impl ToPublicResponse for ::err::Error {
+    fn to_public_response(&self) -> Response<Body> {
+        let status = match self.reason() {
+            Some(::err::Reason::BadRequest) => StatusCode::BAD_REQUEST,
+            Some(::err::Reason::InternalError) => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
         let msg = match self.public_msg() {
@@ -476,7 +492,9 @@ async fn binned_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Res
 
 async fn binned_binary(query: BinnedQuery, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let ret = match disk::binned::binned_bytes_for_http(&query, node_config).await {
-        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, format!("binned_binary")))?,
+        Ok(s) => {
+            response(StatusCode::OK).body(BodyStream::wrapped(s.map_err(Error::from), format!("binned_binary")))?
+        }
         Err(e) => {
             if query.report_error() {
                 response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?
@@ -491,7 +509,7 @@ async fn binned_binary(query: BinnedQuery, node_config: &NodeConfigCached) -> Re
 
 async fn binned_json(query: BinnedQuery, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let ret = match disk::binned::binned_json(&query, node_config).await {
-        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, format!("binned_json")))?,
+        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s.map_err(Error::from), format!("binned_json")))?,
         Err(e) => {
             if query.report_error() {
                 response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?
@@ -525,7 +543,7 @@ async fn prebinned_inner(req: Request<Body>, node_config: &NodeConfigCached) -> 
     });
     let fut = disk::binned::prebinned::pre_binned_bytes_for_http(node_config, &query).instrument(span1);
     let ret = match fut.await {
-        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s, desc))?,
+        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s.map_err(Error::from), desc))?,
         Err(e) => {
             if query.report_error() {
                 response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?
@@ -574,7 +592,10 @@ async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached)
     );
     let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), AggKind::Plain, node_config).await?;
     let s = s.map(|item| item.make_frame());
-    let ret = response(StatusCode::OK).body(BodyStream::wrapped(s, format!("plain_events_binary")))?;
+    let ret = response(StatusCode::OK).body(BodyStream::wrapped(
+        s.map_err(Error::from),
+        format!("plain_events_binary"),
+    ))?;
     Ok(ret)
 }
 
@@ -591,7 +612,10 @@ async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -
         query.do_log(),
     );
     let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), AggKind::Plain, node_config).await?;
-    let ret = response(StatusCode::OK).body(BodyStream::wrapped(s, format!("plain_events_json")))?;
+    let ret = response(StatusCode::OK).body(BodyStream::wrapped(
+        s.map_err(Error::from),
+        format!("plain_events_json"),
+    ))?;
     Ok(ret)
 }
 

@@ -36,7 +36,7 @@ pub fn require_test_hosts_running() -> Result<Arc<RunningHosts>, Error> {
     match g.as_ref() {
         None => {
             netpod::log::info!("\n\n+++++++++++++++++++  MAKE NEW RunningHosts\n\n");
-            let cluster = taskrun::test_cluster();
+            let cluster = netpod::test_cluster();
             let jhs = spawn_test_hosts(cluster.clone());
             let ret = RunningHosts {
                 cluster: cluster.clone(),
@@ -58,7 +58,7 @@ pub fn require_sls_test_host_running() -> Result<Arc<RunningSlsHost>, Error> {
     match g.as_ref() {
         None => {
             netpod::log::info!("\n\n+++++++++++++++++++  MAKE NEW RunningSlsHost\n\n");
-            let cluster = taskrun::sls_test_cluster();
+            let cluster = netpod::sls_test_cluster();
             let jhs = spawn_test_hosts(cluster.clone());
             let ret = RunningSlsHost {
                 cluster: cluster.clone(),

@@ -1,3 +1,4 @@
+use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
 use chrono::{DateTime, Utc};
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
@@ -115,9 +116,10 @@ where
         .method(http::Method::GET)
         .uri(url.to_string())
         .header(http::header::ACCEPT, APP_OCTET)
-        .body(Body::empty())?;
+        .body(Body::empty())
+        .ec()?;
     let client = hyper::Client::new();
-    let res = client.request(req).await?;
+    let res = client.request(req).await.ec()?;
     if res.status() != StatusCode::OK {
         error!("client response {:?}", res);
     }
@@ -146,6 +148,7 @@ pub struct BinnedResponse {
     bytes_read: u64,
     range_complete_count: u64,
     log_item_count: u64,
+    #[allow(unused)]
     stats_item_count: u64,
 }
 

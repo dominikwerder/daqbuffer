@@ -1,6 +1,5 @@
-use std::time::Instant;
-
 use netpod::log::*;
+use std::time::Instant;
 
 pub struct Timed {
     name: String,

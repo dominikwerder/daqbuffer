@@ -3,7 +3,7 @@ use crate::parse::multi::parse_all_ts;
 use crate::parse::PbFileReader;
 use crate::storagemerge::StorageMerge;
 use chrono::{TimeZone, Utc};
-use err::Error;
+use err::{ErrStr, Error};
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::binnedevents::{MultiBinWaveEvents, SingleBinWaveEvents, XBinnedEvents};
@@ -393,7 +393,7 @@ pub async fn make_single_event_pipe(
                                         }
                                         let ei2 = ei.x_aggregate(&evq.agg_kind);
                                         let g = Ok(StreamItem::DataItem(RangeCompletableItem::Data(ei2)));
-                                        tx.send(g).await?;
+                                        tx.send(g).await.errstr()?;
                                         if let Some(t) = tslast {
                                             if t >= evq.range.end {
                                                 info!("after requested range, break");

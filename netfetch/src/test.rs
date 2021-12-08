@@ -49,7 +49,9 @@ fn ca_connect_1() {
         Ok::<_, Error>(())
     };
     let fut = async move {
-        let ret = tokio::time::timeout(Duration::from_millis(4000), fut).await??;
+        let ret = tokio::time::timeout(Duration::from_millis(4000), fut)
+            .await
+            .map_err(Error::from_string)??;
         Ok(ret)
     };
     taskrun::run(fut).unwrap();

@@ -6,7 +6,7 @@ use crate::unescape_archapp_msg;
 use archapp_xc::*;
 use async_channel::{bounded, Receiver};
 use chrono::{TimeZone, Utc};
-use err::Error;
+use err::{ErrStr, Error};
 use items::eventsitem::EventsItem;
 use items::eventvalues::EventValues;
 use items::plainevents::{PlainEvents, ScalarPlainEvents, WavePlainEvents};
@@ -445,7 +445,7 @@ pub async fn scan_files_inner(
                                 }
                             },
                             Err(e) => {
-                                tx.send(Err(e.into())).await?;
+                                tx.send(Err(e.into())).await.errstr()?;
                             }
                         }
                     }
@@ -465,12 +465,15 @@ pub async fn scan_files_inner(
                             if channel_path != normalized_channel_name {
                                 {
                                     let s = format!("{} - {}", channel_path, normalized_channel_name);
-                                    tx.send(Ok(Box::new(serde_json::to_value(&s)?) as ItemSerBox)).await?;
+                                    tx.send(Ok(Box::new(serde_json::to_value(&s)?) as ItemSerBox))
+                                        .await
+                                        .errstr()?;
                                 }
                                 tx.send(Ok(
                                     Box::new(JsonValue::String(format!("MISMATCH --------------------"))) as ItemSerBox,
                                 ))
-                                .await?;
+                                .await
+                                .errstr()?;
                             } else {
                                 if false {
                                     dbconn::insert_channel(channel_path.into(), ndi.facility, &dbc).await?;
@@ -484,7 +487,8 @@ pub async fn scan_files_inner(
                                             pbr.channel_name(),
                                             msg.variant_name()
                                         ))?) as ItemSerBox))
-                                            .await?;
+                                            .await
+                                            .errstr()?;
                                     }
                                 }
                             }
