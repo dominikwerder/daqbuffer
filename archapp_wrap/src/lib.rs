@@ -15,7 +15,10 @@ pub fn scan_files(
     pairs: BTreeMap<String, String>,
     node_config: NodeConfigCached,
 ) -> Pin<Box<dyn Future<Output = Result<Receiver<Result<ItemSerBox, Error>>, Error>> + Send>> {
-    Box::pin(archapp::parse::scan_files_inner(pairs, node_config))
+    Box::pin(archapp::parse::scan_files_inner(
+        pairs,
+        node_config.node.archiver_appliance.unwrap().data_base_paths,
+    ))
 }
 
 pub async fn make_event_pipe(

@@ -1,3 +1,4 @@
+use crate::err::ArchError;
 use crate::generated::EPICSEvent::PayloadType;
 use crate::parse::multi::parse_all_ts;
 use crate::parse::PbFileReader;
@@ -26,9 +27,10 @@ use std::pin::Pin;
 use tokio::fs::{read_dir, File};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
+#[derive(Debug)]
 pub struct DataFilename {
-    year: u32,
-    month: u32,
+    pub year: u32,
+    pub month: u32,
 }
 
 pub fn parse_data_filename(s: &str) -> Result<DataFilename, Error> {
@@ -331,7 +333,7 @@ pub async fn make_single_event_pipe(
     // TODO must apply the proper x-binning depending on the requested AggKind.
     debug!("make_single_event_pipe  {:?}", evq);
     let evq = evq.clone();
-    let DirAndPrefix { dir, prefix } = directory_for_channel_files(&evq.channel, base_path)?;
+    let DirAndPrefix { dir, prefix } = directory_for_channel_files(&evq.channel, &base_path)?;
     //let dtbeg = Utc.timestamp((evq.range.beg / 1000000000) as i64, (evq.range.beg % 1000000000) as u32);
     let (tx, rx) = async_channel::bounded(16);
     let block1 = async move {
@@ -365,7 +367,7 @@ pub async fn make_single_event_pipe(
                             info!("opened {:?}", de.path());
 
                             let z = position_file_for_evq(f1, evq.clone(), df.year).await?;
-                            let mut f1 = if let PositionState::Positioned = z.state {
+                            let mut f1 = if let PositionState::Positioned(_pos) = z.state {
                                 z.file
                             } else {
                                 continue;
@@ -437,18 +439,19 @@ pub async fn make_single_event_pipe(
 
 pub enum PositionState {
     NothingFound,
-    Positioned,
+    Positioned(u64),
 }
 
 pub struct PositionResult {
-    file: File,
-    state: PositionState,
+    pub file: File,
+    pub state: PositionState,
 }
 
-async fn position_file_for_evq(mut file: File, evq: RawEventsQuery, year: u32) -> Result<PositionResult, Error> {
+pub async fn position_file_for_evq(mut file: File, evq: RawEventsQuery, year: u32) -> Result<PositionResult, Error> {
+    info!("--------------  position_file_for_evq");
     let flen = file.seek(SeekFrom::End(0)).await?;
     file.seek(SeekFrom::Start(0)).await?;
-    if flen < 1024 * 512 {
+    if true || flen < 1024 * 512 {
         position_file_for_evq_linear(file, evq, year).await
     } else {
         position_file_for_evq_binary(file, evq, year).await
@@ -457,27 +460,47 @@ async fn position_file_for_evq(mut file: File, evq: RawEventsQuery, year: u32) -
 
 async fn position_file_for_evq_linear(file: File, evq: RawEventsQuery, _year: u32) -> Result<PositionResult, Error> {
     let mut pbr = PbFileReader::new(file).await;
+    let mut curpos;
     pbr.read_header().await?;
     loop {
+        // TODO
+        // Issue is that I always read more than the actual packet.
+        // Is protobuf length-framed?
+        // Otherwise: read_header must return the number of bytes that were read.
+        curpos = pbr.abspos();
+        info!("position_file_for_evq_linear  save curpos {}", curpos);
         let res = pbr.read_msg().await?;
-        let res = if let Some(k) = res {
-            k
-        } else {
-            let ret = PositionResult {
-                file: pbr.into_file(),
-                state: PositionState::NothingFound,
-            };
-            return Ok(ret);
-        };
-        if res.item.len() < 1 {
-            return Err(Error::with_msg_no_trace("no event read from file"));
-        }
-        if res.item.ts(res.item.len() - 1) >= evq.range.beg {
-            let ret = PositionResult {
-                file: pbr.into_file(),
-                state: PositionState::Positioned,
-            };
-            return Ok(ret);
+        match res {
+            Some(res) => {
+                info!(
+                    "position_file_for_evq_linear  read_msg  pos {}  len {}",
+                    res.pos,
+                    res.item.len()
+                );
+                if res.item.len() < 1 {
+                    return Err(Error::with_msg_no_trace("no event read from file"));
+                }
+                let tslast = res.item.ts(res.item.len() - 1);
+                let diff = tslast as i64 - evq.range.beg as i64;
+                info!("position_file_for_evq_linear  tslast {}   diff {}", tslast, diff);
+                if tslast >= evq.range.beg {
+                    info!("FOUND  curpos {}", curpos);
+                    pbr.file().seek(SeekFrom::Start(curpos)).await?;
+                    let ret = PositionResult {
+                        file: pbr.into_file(),
+                        state: PositionState::Positioned(curpos),
+                    };
+                    return Ok(ret);
+                }
+            }
+            None => {
+                info!("position_file_for_evq_linear  NothingFound");
+                let ret = PositionResult {
+                    file: pbr.into_file(),
+                    state: PositionState::NothingFound,
+                };
+                return Ok(ret);
+            }
         }
     }
 }
@@ -524,8 +547,8 @@ async fn position_file_for_evq_binary(mut file: File, evq: RawEventsQuery, year:
     let evs2 = parse_all_ts(p2, &buf2, payload_type.clone(), year)?;
 
     info!("...............................................................");
-    info!("evs1: {:?}", evs1);
-    info!("evs2: {:?}", evs2);
+    info!("evs1.len() {:?}", evs1.len());
+    info!("evs2.len() {:?}", evs2.len());
     info!("p1: {}", p1);
     info!("p2: {}", p2);
 
@@ -536,7 +559,7 @@ async fn position_file_for_evq_binary(mut file: File, evq: RawEventsQuery, year:
         if ev.ts >= tgt {
             file.seek(SeekFrom::Start(ev.pos)).await?;
             let ret = PositionResult {
-                state: PositionState::Positioned,
+                state: PositionState::Positioned(ev.pos),
                 file,
             };
             return Ok(ret);
@@ -598,7 +621,7 @@ async fn linear_search_2(
             file.seek(SeekFrom::Start(ev.pos)).await?;
             let ret = PositionResult {
                 file,
-                state: PositionState::Positioned,
+                state: PositionState::Positioned(ev.pos),
             };
             return Ok(ret);
         }
@@ -639,30 +662,45 @@ fn events_item_to_framable(ei: EventsItem) -> Result<Box<dyn Framable + Send>, E
     }
 }
 
-struct DirAndPrefix {
+#[derive(Debug)]
+pub struct DirAndPrefix {
     dir: PathBuf,
     prefix: String,
 }
 
-fn directory_for_channel_files(channel: &Channel, base_path: PathBuf) -> Result<DirAndPrefix, Error> {
+pub fn directory_for_channel_files(channel: &Channel, base_path: &PathBuf) -> Result<DirAndPrefix, ArchError> {
     // SARUN11/CVME/DBLM546/IOC_CPU_LOAD
     // SARUN11-CVME-DBLM546:IOC_CPU_LOAD
     let a: Vec<_> = channel.name.split("-").map(|s| s.split(":")).flatten().collect();
     let path = base_path;
-    let path = a.iter().take(a.len() - 1).fold(path, |a, &x| a.join(x));
+    let path = a.iter().take(a.len() - 1).fold(path.clone(), |a, &x| a.join(x));
     let ret = DirAndPrefix {
         dir: path,
         prefix: a
             .last()
-            .ok_or_else(|| Error::with_msg_no_trace("no prefix in file"))?
+            .ok_or_else(|| ArchError::with_msg_no_trace("no prefix in file"))?
             .to_string(),
     };
     Ok(ret)
 }
 
+// The same channel-name in different data directories like "lts", "mts", .. are considered different channels.
+pub async fn find_files_for_channel(base_path: &PathBuf, channel: &Channel) -> Result<Vec<PathBuf>, ArchError> {
+    let mut ret = vec![];
+    let chandir = directory_for_channel_files(channel, base_path)?;
+    let mut rd = read_dir(&chandir.dir).await?;
+    while let Some(en) = rd.next_entry().await? {
+        let fns = en.file_name().to_string_lossy().into_owned();
+        if fns.starts_with(&format!("{}:20", chandir.prefix)) && fns.ends_with(".pb") {
+            ret.push(en.path());
+        }
+    }
+    ret.sort_unstable();
+    Ok(ret)
+}
+
 pub async fn channel_info(channel: &Channel, aa: &ArchiverAppliance) -> Result<ChannelInfo, Error> {
-    let DirAndPrefix { dir, prefix } =
-        directory_for_channel_files(channel, aa.data_base_paths.last().unwrap().clone())?;
+    let DirAndPrefix { dir, prefix } = directory_for_channel_files(channel, aa.data_base_paths.last().unwrap())?;
     let mut msgs = vec![];
     msgs.push(format!("path: {}", dir.to_string_lossy()));
     let mut scalar_type = None;

@@ -2,6 +2,7 @@ use crate::generated::EPICSEvent::PayloadType;
 use crate::parse::PbFileReader;
 use err::Error;
 use items::{WithLen, WithTimestamps};
+use netpod::log::*;
 
 #[derive(Debug)]
 pub struct PosTs {
@@ -22,6 +23,7 @@ pub fn parse_all_ts(off: u64, buf: &[u8], payload_type: PayloadType, year: u32) 
                 i2 = i1;
             } else {
                 // Have a chunk from i2..i1
+                info!("call parse_buffer  i2 {}  i1 {}", i2, i1);
                 match PbFileReader::parse_buffer(&buf[i2 + 1..i1], payload_type.clone(), year) {
                     Ok(k) => {
                         if k.len() != 1 {
@@ -37,8 +39,9 @@ pub fn parse_all_ts(off: u64, buf: &[u8], payload_type: PayloadType, year: u32) 
                             ret.push(h);
                         }
                     }
-                    Err(_e) => {
-                        // TODO ignore except if it's the last chunk.
+                    Err(e) => {
+                        error!("parse_all_ts: {:?}", e);
+                        return Err(e);
                     }
                 }
                 i2 = i1;

@@ -12,7 +12,7 @@ use items::eventvalues::EventValues;
 use items::plainevents::{PlainEvents, ScalarPlainEvents, WavePlainEvents};
 use items::waveevents::WaveEvents;
 use netpod::log::*;
-use netpod::{ArchiverAppliance, ChannelConfigQuery, ChannelConfigResponse, NodeConfigCached};
+use netpod::{ArchiverAppliance, ChannelConfigQuery, ChannelConfigResponse};
 use protobuf::Message;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -55,7 +55,7 @@ fn parse_scalar_byte(m: &[u8], year: u32) -> Result<EventsItem, Error> {
 macro_rules! scalar_parse {
     ($m:expr, $year:expr, $pbt:ident, $eit:ident, $evty:ident) => {{
         let msg = crate::generated::EPICSEvent::$pbt::parse_from_bytes($m)
-            .map_err(|_| Error::with_msg(format!("can not parse pb-type {}", stringify!($pbt))))?;
+            .map_err(|e| Error::with_msg(format!("can not parse pb-type {}  {:?}", stringify!($pbt), e)))?;
         let mut t = EventValues::<$evty> {
             tss: vec![],
             values: vec![],
@@ -103,6 +103,9 @@ impl PbFileReader {
             escbuf: vec![],
             wp: 0,
             rp: 0,
+            // TODO check usage of `off`.
+            // It should represent the absolute position where the 1st byte of `buf` is located
+            // in the file, independent of `wp` or `rp`.
             off: 0,
             channel_name: String::new(),
             payload_type: PayloadType::V4_GENERIC_BYTES,
@@ -119,6 +122,9 @@ impl PbFileReader {
     }
 
     pub fn reset_io(&mut self, off: u64) {
+        // TODO
+        // Should do the seek in here, or?
+        // Why do I need this anyway?
         self.wp = 0;
         self.rp = 0;
         self.off = off;
@@ -127,6 +133,7 @@ impl PbFileReader {
     pub async fn read_header(&mut self) -> Result<(), Error> {
         self.fill_buf().await?;
         let k = self.find_next_nl()?;
+        info!("read_header  abspos {}  packet len {}", self.abspos(), k + 1 - self.rp);
         let buf = &mut self.buf;
         let m = unescape_archapp_msg(&buf[self.rp..k], mem::replace(&mut self.escbuf, vec![]))?;
         self.escbuf = m;
@@ -135,7 +142,6 @@ impl PbFileReader {
         self.channel_name = payload_info.get_pvname().into();
         self.payload_type = payload_info.get_field_type();
         self.year = payload_info.get_year() as u32;
-        self.off += k as u64 + 1 - self.rp as u64;
         self.rp = k + 1;
         Ok(())
     }
@@ -145,18 +151,19 @@ impl PbFileReader {
         let k = if let Ok(k) = self.find_next_nl() {
             k
         } else {
+            warn!("Can not find a next NL");
             return Ok(None);
         };
+        //info!("read_msg  abspos {}  packet len {}", self.abspos(), k + 1 - self.rp);
         let buf = &mut self.buf;
         let m = mem::replace(&mut self.escbuf, vec![]);
         let m = unescape_archapp_msg(&buf[self.rp..k], m)?;
         self.escbuf = m;
         let ei = Self::parse_buffer(&self.escbuf, self.payload_type.clone(), self.year)?;
         let ret = ReadMessageResult {
-            pos: self.off,
+            pos: self.off + self.rp as u64,
             item: ei,
         };
-        self.off += k as u64 + 1 - self.rp as u64;
         self.rp = k + 1;
         Ok(Some(ret))
     }
@@ -205,6 +212,10 @@ impl PbFileReader {
         Ok(ei)
     }
 
+    pub fn abspos(&self) -> u64 {
+        self.off + self.rp as u64
+    }
+
     async fn fill_buf(&mut self) -> Result<(), Error> {
         if self.wp - self.rp >= MIN_BUF_FILL {
             return Ok(());
@@ -212,6 +223,7 @@ impl PbFileReader {
         if self.rp + MIN_BUF_FILL >= self.buf.len() {
             let n = self.wp - self.rp;
             self.buf.copy_within(self.rp..self.rp + n, 0);
+            self.off += self.rp as u64;
             self.rp = 0;
             self.wp = n;
         }
@@ -400,7 +412,7 @@ impl LruCache {
 
 pub async fn scan_files_inner(
     pairs: BTreeMap<String, String>,
-    node_config: NodeConfigCached,
+    data_base_paths: Vec<PathBuf>,
 ) -> Result<Receiver<Result<ItemSerBox, Error>>, Error> {
     let _ = pairs;
     let (tx, rx) = bounded(16);
@@ -408,18 +420,14 @@ pub async fn scan_files_inner(
     let tx2 = tx.clone();
     let block1 = async move {
         let mut lru = LruCache::new();
-        let aa = if let Some(aa) = &node_config.node.archiver_appliance {
-            aa.clone()
-        } else {
-            return Err(Error::with_msg("no archiver appliance config"));
-        };
-        let dbc = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
-        let ndi = dbconn::scan::get_node_disk_ident(&node_config, &dbc).await?;
+        // TODO insert channels as a consumer of this stream:
+        //let dbc = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
+        //let ndi = dbconn::scan::get_node_disk_ident(&node_config, &dbc).await?;
         struct PE {
             path: PathBuf,
             fty: FileType,
         }
-        let proot = aa.data_base_paths.last().unwrap().clone();
+        let proot = data_base_paths.last().unwrap().clone();
         let proots = proot.to_str().unwrap().to_string();
         let meta = tokio::fs::metadata(&proot).await?;
         let mut paths = VecDeque::new();
@@ -475,9 +483,9 @@ pub async fn scan_files_inner(
                                 .await
                                 .errstr()?;
                             } else {
-                                if false {
-                                    dbconn::insert_channel(channel_path.into(), ndi.facility, &dbc).await?;
-                                }
+                                // TODO as a consumer of this stream:
+                                //dbconn::insert_channel(channel_path.into(), ndi.facility, &dbc).await?;
+
                                 if let Ok(Some(msg)) = pbr.read_msg().await {
                                     let msg = msg.item;
                                     lru.insert(channel_path);
