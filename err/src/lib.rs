@@ -131,9 +131,13 @@ impl fmt::Debug for Error {
         } else if let Some(s) = &self.trace_str {
             s.into()
         } else {
-            "NOTRACE".into()
+            String::new()
         };
-        write!(fmt, "Error {}\nTrace:\n{}", self.msg, trace_str)
+        write!(fmt, "{}", self.msg)?;
+        if !trace_str.is_empty() {
+            write!(fmt, "\nTrace:\n{}", trace_str)?;
+        }
+        Ok(())
     }
 }
 

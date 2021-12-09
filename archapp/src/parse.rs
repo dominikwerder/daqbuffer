@@ -18,12 +18,13 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, VecDeque};
 use std::fs::FileType;
+use std::io::SeekFrom;
 use std::mem;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::fs::File;
-use tokio::io::AsyncReadExt;
+use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 pub struct PbFileReader {
     file: File,
@@ -96,8 +97,8 @@ pub struct ReadMessageResult {
 }
 
 impl PbFileReader {
-    pub async fn new(file: File) -> Self {
-        Self {
+    pub async fn new(file: File) -> Result<Self, Error> {
+        let mut ret = Self {
             file,
             buf: vec![0; MIN_BUF_FILL * 4],
             escbuf: vec![],
@@ -110,7 +111,9 @@ impl PbFileReader {
             channel_name: String::new(),
             payload_type: PayloadType::V4_GENERIC_BYTES,
             year: 0,
-        }
+        };
+        ret.read_header().await?;
+        Ok(ret)
     }
 
     pub fn into_file(self) -> File {
@@ -121,19 +124,18 @@ impl PbFileReader {
         &mut self.file
     }
 
-    pub fn reset_io(&mut self, off: u64) {
-        // TODO
-        // Should do the seek in here, or?
-        // Why do I need this anyway?
+    pub async fn reset_io(&mut self, off: u64) -> Result<(), Error> {
+        self.file().seek(SeekFrom::Start(off)).await?;
         self.wp = 0;
         self.rp = 0;
         self.off = off;
+        Ok(())
     }
 
     pub async fn read_header(&mut self) -> Result<(), Error> {
         self.fill_buf().await?;
         let k = self.find_next_nl()?;
-        info!("read_header  abspos {}  packet len {}", self.abspos(), k + 1 - self.rp);
+        trace!("read_header  abspos {}  packet len {}", self.abspos(), k + 1 - self.rp);
         let buf = &mut self.buf;
         let m = unescape_archapp_msg(&buf[self.rp..k], mem::replace(&mut self.escbuf, vec![]))?;
         self.escbuf = m;
@@ -151,7 +153,7 @@ impl PbFileReader {
         let k = if let Ok(k) = self.find_next_nl() {
             k
         } else {
-            warn!("Can not find a next NL");
+            debug!("Can not find a next NL");
             return Ok(None);
         };
         //info!("read_msg  abspos {}  packet len {}", self.abspos(), k + 1 - self.rp);
@@ -464,8 +466,7 @@ pub async fn scan_files_inner(
                         //tx.send(Ok(Box::new(serde_json::to_value(fns)?) as ItemSerBox)).await?;
                         let channel_path = &fns[proots.len() + 1..fns.len() - 11];
                         if !lru.query(channel_path) {
-                            let mut pbr = PbFileReader::new(tokio::fs::File::open(&pe.path).await?).await;
-                            pbr.read_header().await?;
+                            let mut pbr = PbFileReader::new(tokio::fs::File::open(&pe.path).await?).await?;
                             let normalized_channel_name = {
                                 let pvn = pbr.channel_name().replace("-", "/");
                                 pvn.replace(":", "/")

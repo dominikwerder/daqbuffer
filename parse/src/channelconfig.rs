@@ -95,10 +95,10 @@ pub struct ConfigEntry {
     pub compression_method: Option<CompressionMethod>,
     pub shape: Option<Vec<u32>>,
     pub source_name: Option<String>,
-    unit: Option<String>,
-    description: Option<String>,
-    optional_fields: Option<String>,
-    value_converter: Option<String>,
+    pub unit: Option<String>,
+    pub description: Option<String>,
+    pub optional_fields: Option<String>,
+    pub value_converter: Option<String>,
 }
 
 impl ConfigEntry {
@@ -255,8 +255,8 @@ pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
     ))
 }
 
-/*
-Parse the full configuration file.
+/**
+Parse a complete configuration file from given in-memory input buffer.
 */
 pub fn parse_config(inp: &[u8]) -> NRes<Config> {
     let (inp, ver) = be_i16(inp)?;

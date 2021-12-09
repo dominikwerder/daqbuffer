@@ -11,10 +11,14 @@ path = "src/dq.rs"
 #serde = { version = "1.0", features = ["derive"] }
 #serde_json = "1.0"
 tokio = { version = "1.14.77", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
+futures-util = "0.3.14"
 clap = "3.0.0-beta.5"
 chrono = "0.4.19"
+bytes = "1.0.1"
 err = { path = "../err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }
 items = { path = "../items" }
+parse = { path = "../parse" }
+disk = { path = "../disk" }
 archapp = { path = "../archapp" }

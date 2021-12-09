@@ -2,8 +2,7 @@ use crate::{FileChunkRead, NeedMinBuffer};
 use bitshuffle::bitshuffle_decompress;
 use bytes::{Buf, BytesMut};
 use err::Error;
-use futures_core::Stream;
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
 use items::{
     Appendable, ByteEstimate, Clearable, PushableIndex, RangeCompletableItem, SitemtyFrameType, StatsItem, StreamItem,
     WithLen, WithTimestamps,

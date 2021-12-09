@@ -365,24 +365,13 @@ pub async fn make_single_event_pipe(
                             debug!("••••••••••••••••••••••••••  file matches requested range");
                             let f1 = File::open(de.path()).await?;
                             info!("opened {:?}", de.path());
-
-                            let z = position_file_for_evq(f1, evq.clone(), df.year).await?;
-                            let mut f1 = if let PositionState::Positioned(_pos) = z.state {
-                                z.file
+                            let mut z = position_file_for_evq(f1, evq.clone(), df.year).await?;
+                            let mut pbr = if let PositionState::Positioned(pos) = z.state {
+                                z.pbr.reset_io(pos).await?;
+                                z.pbr
                             } else {
                                 continue;
                             };
-
-                            // TODO could avoid some seeks if position_file_for_evq would return the position instead of
-                            // positioning the file.
-                            let pos1 = f1.stream_position().await?;
-                            f1.seek(SeekFrom::Start(0)).await?;
-                            let mut pbr = PbFileReader::new(f1).await;
-                            pbr.read_header().await?;
-                            debug!("✓ read header {:?}", pbr.payload_type());
-                            pbr.file().seek(SeekFrom::Start(pos1)).await?;
-                            pbr.reset_io(pos1);
-
                             let mut i1 = 0;
                             'evread: loop {
                                 match pbr.read_msg().await {
@@ -443,12 +432,12 @@ pub enum PositionState {
 }
 
 pub struct PositionResult {
-    pub file: File,
+    pub pbr: PbFileReader,
     pub state: PositionState,
 }
 
 pub async fn position_file_for_evq(mut file: File, evq: RawEventsQuery, year: u32) -> Result<PositionResult, Error> {
-    info!("--------------  position_file_for_evq");
+    trace!("--------------  position_file_for_evq");
     let flen = file.seek(SeekFrom::End(0)).await?;
     file.seek(SeekFrom::Start(0)).await?;
     if true || flen < 1024 * 512 {
@@ -459,20 +448,20 @@ pub async fn position_file_for_evq(mut file: File, evq: RawEventsQuery, year: u3
 }
 
 async fn position_file_for_evq_linear(file: File, evq: RawEventsQuery, _year: u32) -> Result<PositionResult, Error> {
-    let mut pbr = PbFileReader::new(file).await;
+    // TODO make read of header part of init:
+    let mut pbr = PbFileReader::new(file).await?;
     let mut curpos;
-    pbr.read_header().await?;
     loop {
         // TODO
         // Issue is that I always read more than the actual packet.
         // Is protobuf length-framed?
         // Otherwise: read_header must return the number of bytes that were read.
         curpos = pbr.abspos();
-        info!("position_file_for_evq_linear  save curpos {}", curpos);
+        trace!("position_file_for_evq_linear  save curpos {}", curpos);
         let res = pbr.read_msg().await?;
         match res {
             Some(res) => {
-                info!(
+                trace!(
                     "position_file_for_evq_linear  read_msg  pos {}  len {}",
                     res.pos,
                     res.item.len()
@@ -482,22 +471,23 @@ async fn position_file_for_evq_linear(file: File, evq: RawEventsQuery, _year: u3
                 }
                 let tslast = res.item.ts(res.item.len() - 1);
                 let diff = tslast as i64 - evq.range.beg as i64;
-                info!("position_file_for_evq_linear  tslast {}   diff {}", tslast, diff);
+                trace!("position_file_for_evq_linear  tslast {}   diff {}", tslast, diff);
                 if tslast >= evq.range.beg {
-                    info!("FOUND  curpos {}", curpos);
-                    pbr.file().seek(SeekFrom::Start(curpos)).await?;
+                    debug!("position_file_for_evq_linear  Positioned  curpos {}", curpos);
+                    pbr.reset_io(curpos).await?;
                     let ret = PositionResult {
-                        file: pbr.into_file(),
                         state: PositionState::Positioned(curpos),
+                        pbr,
                     };
                     return Ok(ret);
                 }
             }
             None => {
-                info!("position_file_for_evq_linear  NothingFound");
+                debug!("position_file_for_evq_linear  NothingFound");
+                pbr.reset_io(0).await?;
                 let ret = PositionResult {
-                    file: pbr.into_file(),
                     state: PositionState::NothingFound,
+                    pbr,
                 };
                 return Ok(ret);
             }
@@ -506,14 +496,15 @@ async fn position_file_for_evq_linear(file: File, evq: RawEventsQuery, _year: u3
 }
 
 async fn position_file_for_evq_binary(mut file: File, evq: RawEventsQuery, year: u32) -> Result<PositionResult, Error> {
-    info!("position_file_for_evq_binary");
+    debug!("position_file_for_evq_binary");
     let flen = file.seek(SeekFrom::End(0)).await?;
     file.seek(SeekFrom::Start(0)).await?;
-    let mut pbr = PbFileReader::new(file).await;
-    pbr.read_header().await?;
+    // TODO make read of header part of init:
+    let mut pbr = PbFileReader::new(file).await?;
     let payload_type = pbr.payload_type().clone();
     let res = pbr.read_msg().await?;
-    let mut file = pbr.into_file();
+    //let mut file = pbr.into_file();
+    let file = pbr.file();
     let res = if let Some(res) = res {
         res
     } else {
@@ -546,21 +537,21 @@ async fn position_file_for_evq_binary(mut file: File, evq: RawEventsQuery, year:
     let evs1 = parse_all_ts(p1 - 1, &buf1, payload_type.clone(), year)?;
     let evs2 = parse_all_ts(p2, &buf2, payload_type.clone(), year)?;
 
-    info!("...............................................................");
-    info!("evs1.len() {:?}", evs1.len());
-    info!("evs2.len() {:?}", evs2.len());
-    info!("p1: {}", p1);
-    info!("p2: {}", p2);
+    debug!("...............................................................");
+    debug!("evs1.len() {:?}", evs1.len());
+    debug!("evs2.len() {:?}", evs2.len());
+    debug!("p1: {}", p1);
+    debug!("p2: {}", p2);
 
     let tgt = evq.range.beg;
 
     {
         let ev = evs1.first().unwrap();
         if ev.ts >= tgt {
-            file.seek(SeekFrom::Start(ev.pos)).await?;
+            pbr.reset_io(ev.pos).await?;
             let ret = PositionResult {
                 state: PositionState::Positioned(ev.pos),
-                file,
+                pbr,
             };
             return Ok(ret);
         }
@@ -568,10 +559,10 @@ async fn position_file_for_evq_binary(mut file: File, evq: RawEventsQuery, year:
     {
         let ev = evs2.last().unwrap();
         if ev.ts < tgt {
-            file.seek(SeekFrom::Start(0)).await?;
+            pbr.reset_io(0).await?;
             let ret = PositionResult {
                 state: PositionState::NothingFound,
-                file,
+                pbr,
             };
             return Ok(ret);
         }
@@ -585,7 +576,7 @@ async fn position_file_for_evq_binary(mut file: File, evq: RawEventsQuery, year:
         if p2 - p1 < 1024 * 128 {
             // TODO switch here to linear search...
             info!("switch to linear search in pos {}..{}", p1, p2);
-            return linear_search_2(file, evq, year, p1, p2, payload_type).await;
+            return linear_search_2(pbr, evq, year, p1, p2, payload_type).await;
         }
         let p3 = (p2 + p1) / 2;
         file.seek(SeekFrom::Start(p3)).await?;
@@ -603,25 +594,27 @@ async fn position_file_for_evq_binary(mut file: File, evq: RawEventsQuery, year:
 }
 
 async fn linear_search_2(
-    mut file: File,
+    mut pbr: PbFileReader,
     evq: RawEventsQuery,
     year: u32,
     p1: u64,
     p2: u64,
     payload_type: PayloadType,
 ) -> Result<PositionResult, Error> {
-    eprintln!("linear_search_2");
+    debug!("linear_search_2  begin");
+    // TODO improve.. either use additional file handle, or keep pbr in consistent state.
+    let file = pbr.file();
     file.seek(SeekFrom::Start(p1 - 1)).await?;
     let mut buf = vec![0; (p2 - p1) as usize];
     file.read_exact(&mut buf).await?;
     let evs1 = parse_all_ts(p1 - 1, &buf, payload_type.clone(), year)?;
     for ev in evs1 {
         if ev.ts >= evq.range.beg {
-            info!("FOUND {:?}", ev);
-            file.seek(SeekFrom::Start(ev.pos)).await?;
+            debug!("linear_search_2  Positioned {:?}", ev);
+            pbr.reset_io(ev.pos).await?;
             let ret = PositionResult {
-                file,
                 state: PositionState::Positioned(ev.pos),
+                pbr,
             };
             return Ok(ret);
         }
@@ -711,8 +704,7 @@ pub async fn channel_info(channel: &Channel, aa: &ArchiverAppliance) -> Result<C
         if s.starts_with(&prefix) && s.ends_with(".pb") {
             msgs.push(s);
             let f1 = File::open(de.path()).await?;
-            let mut pbr = PbFileReader::new(f1).await;
-            pbr.read_header().await?;
+            let mut pbr = PbFileReader::new(f1).await?;
             msgs.push(format!("got header {}", pbr.channel_name()));
             let ev = pbr.read_msg().await;
             match ev {

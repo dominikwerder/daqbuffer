@@ -68,7 +68,7 @@ pub fn run<T, F: std::future::Future<Output = Result<T, Error>>>(f: F) -> Result
     match res {
         Ok(k) => Ok(k),
         Err(e) => {
-            error!("{:?}", e);
+            error!("Catched: {:?}", e);
             Err(e)
         }
     }
@@ -107,6 +107,7 @@ pub fn tracing_init() {
                     "disk::binned=info",
                     "nodenet::conn=info",
                     "daqbuffer::test=info",
+                    "dq=info",
                 ]
                 .join(","),
             ))

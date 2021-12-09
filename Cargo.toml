@@ -2,6 +2,16 @@
 members = ["daqbuffer", "h5out", "archapp", "archapp_xc", "archapp_wrap", "items", "nodenet", "httpclient", "fsio", "dq"]
 
 [profile.release]
+opt-level = 3
+debug = 0
+overflow-checks = false
+debug-assertions = false
+lto = "thin"
+codegen-units = 4
+incremental = false
+
+[profile.rel2]
+inherits = "release"
 opt-level = 1
 debug = 0
 overflow-checks = false

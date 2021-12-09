@@ -41,7 +41,7 @@ pub struct BodyStream {
     pub inner: Box<dyn futures_core::Stream<Item = Result<bytes::Bytes, Error>> + Send + Unpin>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum ScalarType {
     U8,
     U16,
@@ -461,7 +461,7 @@ pub struct ChannelConfig {
     pub byte_order: ByteOrder,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub enum Shape {
     Scalar,
     Wave(u32),
