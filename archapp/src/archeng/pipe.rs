@@ -105,47 +105,47 @@ pub async fn make_event_pipe(
                                     PlainEvents::Wave(j) => {
                                         trace!("EventsItem::Plain Wave for {:?}  {:?}", cfgshape, q_agg_kind);
                                         match j {
-                                            WavePlainEvents::Byte(j) => {
+                                            WavePlainEvents::I8(j) => {
                                                 let binner =
                                                     WaveXBinner::<i8>::create(cfgshape.clone(), q_agg_kind.clone());
                                                 let out = binner.process(j);
-                                                let item = SingleBinWaveEvents::Byte(out);
+                                                let item = SingleBinWaveEvents::I8(out);
                                                 let item = XBinnedEvents::SingleBinWave(item);
                                                 let item = EventsItem::XBinnedEvents(item);
                                                 Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                                             }
-                                            WavePlainEvents::Short(j) => {
+                                            WavePlainEvents::I16(j) => {
                                                 let binner =
                                                     WaveXBinner::<i16>::create(cfgshape.clone(), q_agg_kind.clone());
                                                 let out = binner.process(j);
-                                                let item = SingleBinWaveEvents::Short(out);
+                                                let item = SingleBinWaveEvents::I16(out);
                                                 let item = XBinnedEvents::SingleBinWave(item);
                                                 let item = EventsItem::XBinnedEvents(item);
                                                 Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                                             }
-                                            WavePlainEvents::Int(j) => {
+                                            WavePlainEvents::I32(j) => {
                                                 let binner =
                                                     WaveXBinner::<i32>::create(cfgshape.clone(), q_agg_kind.clone());
                                                 let out = binner.process(j);
-                                                let item = SingleBinWaveEvents::Int(out);
+                                                let item = SingleBinWaveEvents::I32(out);
                                                 let item = XBinnedEvents::SingleBinWave(item);
                                                 let item = EventsItem::XBinnedEvents(item);
                                                 Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                                             }
-                                            WavePlainEvents::Float(j) => {
+                                            WavePlainEvents::F32(j) => {
                                                 let binner =
                                                     WaveXBinner::<f32>::create(cfgshape.clone(), q_agg_kind.clone());
                                                 let out = binner.process(j);
-                                                let item = SingleBinWaveEvents::Float(out);
+                                                let item = SingleBinWaveEvents::F32(out);
                                                 let item = XBinnedEvents::SingleBinWave(item);
                                                 let item = EventsItem::XBinnedEvents(item);
                                                 Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                                             }
-                                            WavePlainEvents::Double(j) => {
+                                            WavePlainEvents::F64(j) => {
                                                 let binner =
                                                     WaveXBinner::<f64>::create(cfgshape.clone(), q_agg_kind.clone());
                                                 let out = binner.process(j);
-                                                let item = SingleBinWaveEvents::Double(out);
+                                                let item = SingleBinWaveEvents::F64(out);
                                                 let item = XBinnedEvents::SingleBinWave(item);
                                                 let item = EventsItem::XBinnedEvents(item);
                                                 Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
@@ -193,47 +193,47 @@ pub async fn make_event_pipe(
                                     PlainEvents::Wave(j) => {
                                         trace!("EventsItem::Plain Wave for {:?}  {:?}", cfgshape, q_agg_kind);
                                         match j {
-                                            WavePlainEvents::Byte(j) => {
+                                            WavePlainEvents::I8(j) => {
                                                 let binner =
                                                     WaveNBinner::<i8>::create(cfgshape.clone(), q_agg_kind.clone());
                                                 let out = binner.process(j);
-                                                let item = MultiBinWaveEvents::Byte(out);
+                                                let item = MultiBinWaveEvents::I8(out);
                                                 let item = XBinnedEvents::MultiBinWave(item);
                                                 let item = EventsItem::XBinnedEvents(item);
                                                 Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                                             }
-                                            WavePlainEvents::Short(j) => {
+                                            WavePlainEvents::I16(j) => {
                                                 let binner =
                                                     WaveNBinner::<i16>::create(cfgshape.clone(), q_agg_kind.clone());
                                                 let out = binner.process(j);
-                                                let item = MultiBinWaveEvents::Short(out);
+                                                let item = MultiBinWaveEvents::I16(out);
                                                 let item = XBinnedEvents::MultiBinWave(item);
                                                 let item = EventsItem::XBinnedEvents(item);
                                                 Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                                             }
-                                            WavePlainEvents::Int(j) => {
+                                            WavePlainEvents::I32(j) => {
                                                 let binner =
                                                     WaveNBinner::<i32>::create(cfgshape.clone(), q_agg_kind.clone());
                                                 let out = binner.process(j);
-                                                let item = MultiBinWaveEvents::Int(out);
+                                                let item = MultiBinWaveEvents::I32(out);
                                                 let item = XBinnedEvents::MultiBinWave(item);
                                                 let item = EventsItem::XBinnedEvents(item);
                                                 Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                                             }
-                                            WavePlainEvents::Float(j) => {
+                                            WavePlainEvents::F32(j) => {
                                                 let binner =
                                                     WaveNBinner::<f32>::create(cfgshape.clone(), q_agg_kind.clone());
                                                 let out = binner.process(j);
-                                                let item = MultiBinWaveEvents::Float(out);
+                                                let item = MultiBinWaveEvents::F32(out);
                                                 let item = XBinnedEvents::MultiBinWave(item);
                                                 let item = EventsItem::XBinnedEvents(item);
                                                 Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                                             }
-                                            WavePlainEvents::Double(j) => {
+                                            WavePlainEvents::F64(j) => {
                                                 let binner =
                                                     WaveNBinner::<f64>::create(cfgshape.clone(), q_agg_kind.clone());
                                                 let out = binner.process(j);
-                                                let item = MultiBinWaveEvents::Double(out);
+                                                let item = MultiBinWaveEvents::F64(out);
                                                 let item = XBinnedEvents::MultiBinWave(item);
                                                 let item = EventsItem::XBinnedEvents(item);
                                                 Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))

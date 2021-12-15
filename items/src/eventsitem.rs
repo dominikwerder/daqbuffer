@@ -49,21 +49,22 @@ impl EventsItem {
         match self {
             EventsItem::Plain(k) => match k {
                 PlainEvents::Scalar(k) => match k {
-                    ScalarPlainEvents::Byte(_) => (ScalarType::I8, Shape::Scalar),
-                    ScalarPlainEvents::Short(_) => (ScalarType::I16, Shape::Scalar),
-                    ScalarPlainEvents::Int(_) => (ScalarType::I32, Shape::Scalar),
-                    ScalarPlainEvents::Float(_) => (ScalarType::F32, Shape::Scalar),
-                    ScalarPlainEvents::Double(_) => (ScalarType::F64, Shape::Scalar),
+                    ScalarPlainEvents::U32(_) => (ScalarType::U32, Shape::Scalar),
+                    ScalarPlainEvents::I8(_) => (ScalarType::I8, Shape::Scalar),
+                    ScalarPlainEvents::I16(_) => (ScalarType::I16, Shape::Scalar),
+                    ScalarPlainEvents::I32(_) => (ScalarType::I32, Shape::Scalar),
+                    ScalarPlainEvents::F32(_) => (ScalarType::F32, Shape::Scalar),
+                    ScalarPlainEvents::F64(_) => (ScalarType::F64, Shape::Scalar),
                 },
                 PlainEvents::Wave(k) => match k {
                     // TODO
                     // Inherent issue for the non-static-type backends:
                     // there is a chance that we can't determine the shape here.
-                    WavePlainEvents::Byte(k) => (ScalarType::I8, k.shape().unwrap()),
-                    WavePlainEvents::Short(k) => (ScalarType::I16, k.shape().unwrap()),
-                    WavePlainEvents::Int(k) => (ScalarType::I32, k.shape().unwrap()),
-                    WavePlainEvents::Float(k) => (ScalarType::F32, k.shape().unwrap()),
-                    WavePlainEvents::Double(k) => (ScalarType::F64, k.shape().unwrap()),
+                    WavePlainEvents::I8(k) => (ScalarType::I8, k.shape().unwrap()),
+                    WavePlainEvents::I16(k) => (ScalarType::I16, k.shape().unwrap()),
+                    WavePlainEvents::I32(k) => (ScalarType::I32, k.shape().unwrap()),
+                    WavePlainEvents::F32(k) => (ScalarType::F32, k.shape().unwrap()),
+                    WavePlainEvents::F64(k) => (ScalarType::F64, k.shape().unwrap()),
                 },
             },
             EventsItem::XBinnedEvents(_k) => panic!(),

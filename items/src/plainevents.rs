@@ -9,22 +9,24 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ScalarPlainEvents {
-    Byte(EventValues<i8>),
-    Short(EventValues<i16>),
-    Int(EventValues<i32>),
-    Float(EventValues<f32>),
-    Double(EventValues<f64>),
+    U32(EventValues<u32>),
+    I8(EventValues<i8>),
+    I16(EventValues<i16>),
+    I32(EventValues<i32>),
+    F32(EventValues<f32>),
+    F64(EventValues<f64>),
 }
 
 impl ScalarPlainEvents {
     pub fn variant_name(&self) -> String {
         use ScalarPlainEvents::*;
         match self {
-            Byte(_) => format!("Byte"),
-            Short(_) => format!("Short"),
-            Int(_) => format!("Int"),
-            Float(_) => format!("Float"),
-            Double(_) => format!("Double"),
+            U32(_) => format!("U32"),
+            I8(_) => format!("I8"),
+            I16(_) => format!("I16"),
+            I32(_) => format!("I32"),
+            F32(_) => format!("F32"),
+            F64(_) => format!("F64"),
         }
     }
 }
@@ -32,11 +34,12 @@ impl ScalarPlainEvents {
 impl Clearable for ScalarPlainEvents {
     fn clear(&mut self) {
         match self {
-            ScalarPlainEvents::Byte(k) => k.clear(),
-            ScalarPlainEvents::Short(k) => k.clear(),
-            ScalarPlainEvents::Int(k) => k.clear(),
-            ScalarPlainEvents::Float(k) => k.clear(),
-            ScalarPlainEvents::Double(k) => k.clear(),
+            ScalarPlainEvents::U32(k) => k.clear(),
+            ScalarPlainEvents::I8(k) => k.clear(),
+            ScalarPlainEvents::I16(k) => k.clear(),
+            ScalarPlainEvents::I32(k) => k.clear(),
+            ScalarPlainEvents::F32(k) => k.clear(),
+            ScalarPlainEvents::F64(k) => k.clear(),
         }
     }
 }
@@ -44,34 +47,39 @@ impl Clearable for ScalarPlainEvents {
 impl Appendable for ScalarPlainEvents {
     fn empty_like_self(&self) -> Self {
         match self {
-            Self::Byte(k) => Self::Byte(k.empty_like_self()),
-            Self::Short(k) => Self::Short(k.empty_like_self()),
-            Self::Int(k) => Self::Int(k.empty_like_self()),
-            Self::Float(k) => Self::Float(k.empty_like_self()),
-            Self::Double(k) => Self::Double(k.empty_like_self()),
+            Self::U32(k) => Self::U32(k.empty_like_self()),
+            Self::I8(k) => Self::I8(k.empty_like_self()),
+            Self::I16(k) => Self::I16(k.empty_like_self()),
+            Self::I32(k) => Self::I32(k.empty_like_self()),
+            Self::F32(k) => Self::F32(k.empty_like_self()),
+            Self::F64(k) => Self::F64(k.empty_like_self()),
         }
     }
 
     fn append(&mut self, src: &Self) {
         match self {
-            Self::Byte(k) => match src {
-                Self::Byte(j) => k.append(j),
+            Self::U32(k) => match src {
+                Self::U32(j) => k.append(j),
                 _ => panic!(),
             },
-            Self::Short(k) => match src {
-                Self::Short(j) => k.append(j),
+            Self::I8(k) => match src {
+                Self::I8(j) => k.append(j),
                 _ => panic!(),
             },
-            Self::Int(k) => match src {
-                Self::Int(j) => k.append(j),
+            Self::I16(k) => match src {
+                Self::I16(j) => k.append(j),
                 _ => panic!(),
             },
-            Self::Float(k) => match src {
-                Self::Float(j) => k.append(j),
+            Self::I32(k) => match src {
+                Self::I32(j) => k.append(j),
                 _ => panic!(),
             },
-            Self::Double(k) => match src {
-                Self::Double(j) => k.append(j),
+            Self::F32(k) => match src {
+                Self::F32(j) => k.append(j),
+                _ => panic!(),
+            },
+            Self::F64(k) => match src {
+                Self::F64(j) => k.append(j),
                 _ => panic!(),
             },
         }
@@ -81,24 +89,28 @@ impl Appendable for ScalarPlainEvents {
 impl PushableIndex for ScalarPlainEvents {
     fn push_index(&mut self, src: &Self, ix: usize) {
         match self {
-            Self::Byte(k) => match src {
-                Self::Byte(j) => k.push_index(j, ix),
+            Self::U32(k) => match src {
+                Self::U32(j) => k.push_index(j, ix),
                 _ => panic!(),
             },
-            Self::Short(k) => match src {
-                Self::Short(j) => k.push_index(j, ix),
+            Self::I8(k) => match src {
+                Self::I8(j) => k.push_index(j, ix),
                 _ => panic!(),
             },
-            Self::Int(k) => match src {
-                Self::Int(j) => k.push_index(j, ix),
+            Self::I16(k) => match src {
+                Self::I16(j) => k.push_index(j, ix),
                 _ => panic!(),
             },
-            Self::Float(k) => match src {
-                Self::Float(j) => k.push_index(j, ix),
+            Self::I32(k) => match src {
+                Self::I32(j) => k.push_index(j, ix),
                 _ => panic!(),
             },
-            Self::Double(k) => match src {
-                Self::Double(j) => k.push_index(j, ix),
+            Self::F32(k) => match src {
+                Self::F32(j) => k.push_index(j, ix),
+                _ => panic!(),
+            },
+            Self::F64(k) => match src {
+                Self::F64(j) => k.push_index(j, ix),
                 _ => panic!(),
             },
         }
@@ -109,11 +121,12 @@ impl WithLen for ScalarPlainEvents {
     fn len(&self) -> usize {
         use ScalarPlainEvents::*;
         match self {
-            Byte(j) => j.len(),
-            Short(j) => j.len(),
-            Int(j) => j.len(),
-            Float(j) => j.len(),
-            Double(j) => j.len(),
+            U32(j) => j.len(),
+            I8(j) => j.len(),
+            I16(j) => j.len(),
+            I32(j) => j.len(),
+            F32(j) => j.len(),
+            F64(j) => j.len(),
         }
     }
 }
@@ -122,11 +135,12 @@ impl WithTimestamps for ScalarPlainEvents {
     fn ts(&self, ix: usize) -> u64 {
         use ScalarPlainEvents::*;
         match self {
-            Byte(j) => j.ts(ix),
-            Short(j) => j.ts(ix),
-            Int(j) => j.ts(ix),
-            Float(j) => j.ts(ix),
-            Double(j) => j.ts(ix),
+            U32(j) => j.ts(ix),
+            I8(j) => j.ts(ix),
+            I16(j) => j.ts(ix),
+            I32(j) => j.ts(ix),
+            F32(j) => j.ts(ix),
+            F64(j) => j.ts(ix),
         }
     }
 }
@@ -143,32 +157,33 @@ impl HasScalarType for ScalarPlainEvents {
     fn scalar_type(&self) -> ScalarType {
         use ScalarPlainEvents::*;
         match self {
-            Byte(_) => ScalarType::I8,
-            Short(_) => ScalarType::I16,
-            Int(_) => ScalarType::I32,
-            Float(_) => ScalarType::F32,
-            Double(_) => ScalarType::F64,
+            U32(_) => ScalarType::U32,
+            I8(_) => ScalarType::I8,
+            I16(_) => ScalarType::I16,
+            I32(_) => ScalarType::I32,
+            F32(_) => ScalarType::F32,
+            F64(_) => ScalarType::F64,
         }
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum WavePlainEvents {
-    Byte(WaveEvents<i8>),
-    Short(WaveEvents<i16>),
-    Int(WaveEvents<i32>),
-    Float(WaveEvents<f32>),
-    Double(WaveEvents<f64>),
+    I8(WaveEvents<i8>),
+    I16(WaveEvents<i16>),
+    I32(WaveEvents<i32>),
+    F32(WaveEvents<f32>),
+    F64(WaveEvents<f64>),
 }
 
 impl WavePlainEvents {
     pub fn shape(&self) -> Result<Shape, Error> {
         match self {
-            WavePlainEvents::Byte(k) => k.shape(),
-            WavePlainEvents::Short(k) => k.shape(),
-            WavePlainEvents::Int(k) => k.shape(),
-            WavePlainEvents::Float(k) => k.shape(),
-            WavePlainEvents::Double(k) => k.shape(),
+            WavePlainEvents::I8(k) => k.shape(),
+            WavePlainEvents::I16(k) => k.shape(),
+            WavePlainEvents::I32(k) => k.shape(),
+            WavePlainEvents::F32(k) => k.shape(),
+            WavePlainEvents::F64(k) => k.shape(),
         }
     }
 }
@@ -197,11 +212,11 @@ impl WavePlainEvents {
     pub fn variant_name(&self) -> String {
         use WavePlainEvents::*;
         match self {
-            Byte(h) => format!("Byte({})", h.vals.first().map_or(0, |j| j.len())),
-            Short(h) => format!("Short({})", h.vals.first().map_or(0, |j| j.len())),
-            Int(h) => format!("Int({})", h.vals.first().map_or(0, |j| j.len())),
-            Float(h) => format!("Float({})", h.vals.first().map_or(0, |j| j.len())),
-            Double(h) => format!("Double({})", h.vals.first().map_or(0, |j| j.len())),
+            I8(h) => format!("I8({})", h.vals.first().map_or(0, |j| j.len())),
+            I16(h) => format!("I16({})", h.vals.first().map_or(0, |j| j.len())),
+            I32(h) => format!("I32({})", h.vals.first().map_or(0, |j| j.len())),
+            F32(h) => format!("F32({})", h.vals.first().map_or(0, |j| j.len())),
+            F64(h) => format!("F64({})", h.vals.first().map_or(0, |j| j.len())),
         }
     }
 
@@ -209,11 +224,11 @@ impl WavePlainEvents {
         use WavePlainEvents::*;
         let shape = self.shape().unwrap();
         match self {
-            Byte(k) => wagg1!(k, ak, shape, Byte),
-            Short(k) => wagg1!(k, ak, shape, Short),
-            Int(k) => wagg1!(k, ak, shape, Int),
-            Float(k) => wagg1!(k, ak, shape, Float),
-            Double(k) => wagg1!(k, ak, shape, Double),
+            I8(k) => wagg1!(k, ak, shape, I8),
+            I16(k) => wagg1!(k, ak, shape, I16),
+            I32(k) => wagg1!(k, ak, shape, I32),
+            F32(k) => wagg1!(k, ak, shape, F32),
+            F64(k) => wagg1!(k, ak, shape, F64),
         }
     }
 }
@@ -221,11 +236,11 @@ impl WavePlainEvents {
 impl Clearable for WavePlainEvents {
     fn clear(&mut self) {
         match self {
-            WavePlainEvents::Byte(k) => k.clear(),
-            WavePlainEvents::Short(k) => k.clear(),
-            WavePlainEvents::Int(k) => k.clear(),
-            WavePlainEvents::Float(k) => k.clear(),
-            WavePlainEvents::Double(k) => k.clear(),
+            WavePlainEvents::I8(k) => k.clear(),
+            WavePlainEvents::I16(k) => k.clear(),
+            WavePlainEvents::I32(k) => k.clear(),
+            WavePlainEvents::F32(k) => k.clear(),
+            WavePlainEvents::F64(k) => k.clear(),
         }
     }
 }
@@ -233,34 +248,34 @@ impl Clearable for WavePlainEvents {
 impl Appendable for WavePlainEvents {
     fn empty_like_self(&self) -> Self {
         match self {
-            Self::Byte(k) => Self::Byte(k.empty_like_self()),
-            Self::Short(k) => Self::Short(k.empty_like_self()),
-            Self::Int(k) => Self::Int(k.empty_like_self()),
-            Self::Float(k) => Self::Float(k.empty_like_self()),
-            Self::Double(k) => Self::Double(k.empty_like_self()),
+            Self::I8(k) => Self::I8(k.empty_like_self()),
+            Self::I16(k) => Self::I16(k.empty_like_self()),
+            Self::I32(k) => Self::I32(k.empty_like_self()),
+            Self::F32(k) => Self::F32(k.empty_like_self()),
+            Self::F64(k) => Self::F64(k.empty_like_self()),
         }
     }
 
     fn append(&mut self, src: &Self) {
         match self {
-            Self::Byte(k) => match src {
-                Self::Byte(j) => k.append(j),
+            Self::I8(k) => match src {
+                Self::I8(j) => k.append(j),
                 _ => panic!(),
             },
-            Self::Short(k) => match src {
-                Self::Short(j) => k.append(j),
+            Self::I16(k) => match src {
+                Self::I16(j) => k.append(j),
                 _ => panic!(),
             },
-            Self::Int(k) => match src {
-                Self::Int(j) => k.append(j),
+            Self::I32(k) => match src {
+                Self::I32(j) => k.append(j),
                 _ => panic!(),
             },
-            Self::Float(k) => match src {
-                Self::Float(j) => k.append(j),
+            Self::F32(k) => match src {
+                Self::F32(j) => k.append(j),
                 _ => panic!(),
             },
-            Self::Double(k) => match src {
-                Self::Double(j) => k.append(j),
+            Self::F64(k) => match src {
+                Self::F64(j) => k.append(j),
                 _ => panic!(),
             },
         }
@@ -270,24 +285,24 @@ impl Appendable for WavePlainEvents {
 impl PushableIndex for WavePlainEvents {
     fn push_index(&mut self, src: &Self, ix: usize) {
         match self {
-            Self::Byte(k) => match src {
-                Self::Byte(j) => k.push_index(j, ix),
+            Self::I8(k) => match src {
+                Self::I8(j) => k.push_index(j, ix),
                 _ => panic!(),
             },
-            Self::Short(k) => match src {
-                Self::Short(j) => k.push_index(j, ix),
+            Self::I16(k) => match src {
+                Self::I16(j) => k.push_index(j, ix),
                 _ => panic!(),
             },
-            Self::Int(k) => match src {
-                Self::Int(j) => k.push_index(j, ix),
+            Self::I32(k) => match src {
+                Self::I32(j) => k.push_index(j, ix),
                 _ => panic!(),
             },
-            Self::Float(k) => match src {
-                Self::Float(j) => k.push_index(j, ix),
+            Self::F32(k) => match src {
+                Self::F32(j) => k.push_index(j, ix),
                 _ => panic!(),
             },
-            Self::Double(k) => match src {
-                Self::Double(j) => k.push_index(j, ix),
+            Self::F64(k) => match src {
+                Self::F64(j) => k.push_index(j, ix),
                 _ => panic!(),
             },
         }
@@ -298,11 +313,11 @@ impl WithLen for WavePlainEvents {
     fn len(&self) -> usize {
         use WavePlainEvents::*;
         match self {
-            Byte(j) => j.len(),
-            Short(j) => j.len(),
-            Int(j) => j.len(),
-            Float(j) => j.len(),
-            Double(j) => j.len(),
+            I8(j) => j.len(),
+            I16(j) => j.len(),
+            I32(j) => j.len(),
+            F32(j) => j.len(),
+            F64(j) => j.len(),
         }
     }
 }
@@ -311,11 +326,11 @@ impl WithTimestamps for WavePlainEvents {
     fn ts(&self, ix: usize) -> u64 {
         use WavePlainEvents::*;
         match self {
-            Byte(j) => j.ts(ix),
-            Short(j) => j.ts(ix),
-            Int(j) => j.ts(ix),
-            Float(j) => j.ts(ix),
-            Double(j) => j.ts(ix),
+            I8(j) => j.ts(ix),
+            I16(j) => j.ts(ix),
+            I32(j) => j.ts(ix),
+            F32(j) => j.ts(ix),
+            F64(j) => j.ts(ix),
         }
     }
 }
@@ -325,8 +340,8 @@ impl HasShape for WavePlainEvents {
         /*use WavePlainEvents::*;
         match self {
             Byte(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
-            Short(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
-            Int(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
+            I16(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
+            I32(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
             Float(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
             Double(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
         }*/
@@ -338,11 +353,11 @@ impl HasScalarType for WavePlainEvents {
     fn scalar_type(&self) -> ScalarType {
         use WavePlainEvents::*;
         match self {
-            Byte(_) => ScalarType::I8,
-            Short(_) => ScalarType::I16,
-            Int(_) => ScalarType::I32,
-            Float(_) => ScalarType::F32,
-            Double(_) => ScalarType::F64,
+            I8(_) => ScalarType::I8,
+            I16(_) => ScalarType::I16,
+            I32(_) => ScalarType::I32,
+            F32(_) => ScalarType::F32,
+            F64(_) => ScalarType::F64,
         }
     }
 }

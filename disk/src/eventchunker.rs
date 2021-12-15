@@ -436,6 +436,7 @@ pub struct EventFull {
     pub pulses: Vec<u64>,
     pub blobs: Vec<Vec<u8>>,
     #[serde(serialize_with = "decomps_ser", deserialize_with = "decomps_de")]
+    // TODO allow access to `decomps` via method which checks first if `blobs` is already the decomp.
     pub decomps: Vec<Option<BytesMut>>,
     pub scalar_types: Vec<ScalarType>,
     pub be: Vec<bool>,
@@ -509,6 +510,13 @@ impl EventFull {
         self.be.push(be);
         self.shapes.push(shape);
         self.comps.push(comp);
+    }
+
+    pub fn decomp(&self, i: usize) -> &[u8] {
+        match &self.decomps[i] {
+            Some(decomp) => &decomp,
+            None => &self.blobs[i],
+        }
     }
 }
 

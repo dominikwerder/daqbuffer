@@ -50,7 +50,7 @@ fn parse_scalar_byte(m: &[u8], year: u32) -> Result<EventsItem, Error> {
     let v = msg.get_val().first().map_or(0, |k| *k as i8);
     t.tss.push(ts);
     t.values.push(v);
-    Ok(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::Byte(t))))
+    Ok(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::I8(t))))
 }
 
 macro_rules! scalar_parse {
@@ -65,6 +65,7 @@ macro_rules! scalar_parse {
         let ts =
             yd.timestamp() as u64 * 1000000000 + msg.get_secondsintoyear() as u64 * 1000000000 + msg.get_nano() as u64;
         let v = msg.get_val();
+        //eprintln!("ts {}   val {}", ts, v);
         t.tss.push(ts);
         t.values.push(v as $evty);
         EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::$eit(t)))
@@ -175,37 +176,37 @@ impl PbFileReader {
         let ei = match payload_type {
             SCALAR_BYTE => parse_scalar_byte(m, year)?,
             SCALAR_ENUM => {
-                scalar_parse!(m, year, ScalarEnum, Int, i32)
+                scalar_parse!(m, year, ScalarEnum, I32, i32)
             }
             SCALAR_SHORT => {
-                scalar_parse!(m, year, ScalarShort, Short, i16)
+                scalar_parse!(m, year, ScalarShort, I16, i16)
             }
             SCALAR_INT => {
-                scalar_parse!(m, year, ScalarInt, Int, i32)
+                scalar_parse!(m, year, ScalarInt, I32, i32)
             }
             SCALAR_FLOAT => {
-                scalar_parse!(m, year, ScalarFloat, Float, f32)
+                scalar_parse!(m, year, ScalarFloat, F32, f32)
             }
             SCALAR_DOUBLE => {
-                scalar_parse!(m, year, ScalarDouble, Double, f64)
+                scalar_parse!(m, year, ScalarDouble, F64, f64)
             }
             WAVEFORM_BYTE => {
-                wave_parse!(m, year, VectorChar, Byte, i8)
+                wave_parse!(m, year, VectorChar, I8, i8)
             }
             WAVEFORM_SHORT => {
-                wave_parse!(m, year, VectorShort, Short, i16)
+                wave_parse!(m, year, VectorShort, I16, i16)
             }
             WAVEFORM_ENUM => {
-                wave_parse!(m, year, VectorEnum, Int, i32)
+                wave_parse!(m, year, VectorEnum, I32, i32)
             }
             WAVEFORM_INT => {
-                wave_parse!(m, year, VectorInt, Int, i32)
+                wave_parse!(m, year, VectorInt, I32, i32)
             }
             WAVEFORM_FLOAT => {
-                wave_parse!(m, year, VectorFloat, Float, f32)
+                wave_parse!(m, year, VectorFloat, F32, f32)
             }
             WAVEFORM_DOUBLE => {
-                wave_parse!(m, year, VectorDouble, Double, f64)
+                wave_parse!(m, year, VectorDouble, F64, f64)
             }
             SCALAR_STRING | WAVEFORM_STRING | V4_GENERIC_BYTES => {
                 return Err(Error::with_msg_no_trace(format!("not supported: {:?}", payload_type)));

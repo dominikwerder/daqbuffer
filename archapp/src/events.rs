@@ -290,11 +290,11 @@ impl FrameMakerTrait for FrameMaker {
         let shape = &self.shape;
         let agg_kind = &self.agg_kind;
         match scalar_type {
-            ScalarType::I8 => arm1!(item, i8, Byte, shape, agg_kind),
-            ScalarType::I16 => arm1!(item, i16, Short, shape, agg_kind),
-            ScalarType::I32 => arm1!(item, i32, Int, shape, agg_kind),
-            ScalarType::F32 => arm1!(item, f32, Float, shape, agg_kind),
-            ScalarType::F64 => arm1!(item, f64, Double, shape, agg_kind),
+            ScalarType::I8 => arm1!(item, i8, I8, shape, agg_kind),
+            ScalarType::I16 => arm1!(item, i16, I16, shape, agg_kind),
+            ScalarType::I32 => arm1!(item, i32, I32, shape, agg_kind),
+            ScalarType::F32 => arm1!(item, f32, F32, shape, agg_kind),
+            ScalarType::F64 => arm1!(item, f64, F64, shape, agg_kind),
             _ => {
                 warn!("TODO for scalar_type {:?}", scalar_type);
                 err::todoval()
@@ -625,7 +625,7 @@ async fn linear_search_2(
 #[allow(unused)]
 fn events_item_to_framable(ei: EventsItem) -> Result<Box<dyn Framable + Send>, Error> {
     match ei {
-        EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::Int(h))) => {
+        EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::I32(h))) => {
             let range: NanoRange = err::todoval();
             let (x, y) = h
                 .tss

@@ -451,21 +451,21 @@ pub async fn read_data2(
         return Err(Error::with_msg_no_trace(format!("unexpected dbrcount {}", dbrcount)));
     }
     let res = match &dbrt {
-        DbrType::DbrTimeChar => read_msg!(i8, ex_s_i8, ex_v_i8, Byte, rb, msg_len, numsamples, dbrt, dbrcount),
-        DbrType::DbrTimeShort => read_msg!(i16, ex_s_i16, ex_v_i16, Short, rb, msg_len, numsamples, dbrt, dbrcount),
-        DbrType::DbrTimeLong => read_msg!(i32, ex_s_i32, ex_v_i32, Int, rb, msg_len, numsamples, dbrt, dbrcount),
-        DbrType::DbrTimeFloat => read_msg!(f32, ex_s_f32, ex_v_f32, Float, rb, msg_len, numsamples, dbrt, dbrcount),
-        DbrType::DbrTimeDouble => read_msg!(f64, ex_s_f64, ex_v_f64, Double, rb, msg_len, numsamples, dbrt, dbrcount),
+        DbrType::DbrTimeChar => read_msg!(i8, ex_s_i8, ex_v_i8, I8, rb, msg_len, numsamples, dbrt, dbrcount),
+        DbrType::DbrTimeShort => read_msg!(i16, ex_s_i16, ex_v_i16, I16, rb, msg_len, numsamples, dbrt, dbrcount),
+        DbrType::DbrTimeLong => read_msg!(i32, ex_s_i32, ex_v_i32, I32, rb, msg_len, numsamples, dbrt, dbrcount),
+        DbrType::DbrTimeFloat => read_msg!(f32, ex_s_f32, ex_v_f32, F32, rb, msg_len, numsamples, dbrt, dbrcount),
+        DbrType::DbrTimeDouble => read_msg!(f64, ex_s_f64, ex_v_f64, F64, rb, msg_len, numsamples, dbrt, dbrcount),
         DbrType::DbrTimeString => {
             if dbrcount == 1 {
                 // TODO
-                let evs = ScalarPlainEvents::Byte(EventValues::empty());
+                let evs = ScalarPlainEvents::I8(EventValues::empty());
                 let plain = PlainEvents::Scalar(evs);
                 let item = EventsItem::Plain(plain);
                 item
             } else {
                 // TODO
-                let evs = WavePlainEvents::Double(WaveEvents::empty());
+                let evs = WavePlainEvents::F64(WaveEvents::empty());
                 let plain = PlainEvents::Wave(evs);
                 let item = EventsItem::Plain(plain);
                 item
@@ -526,7 +526,7 @@ pub async fn read_data_1(
                     }
                 }
                 debug!("parsed block with {} / {} events", ntot, evs.tss.len());
-                let evs = ScalarPlainEvents::Double(evs);
+                let evs = ScalarPlainEvents::F64(evs);
                 let plain = PlainEvents::Scalar(evs);
                 let item = EventsItem::Plain(plain);
                 item
