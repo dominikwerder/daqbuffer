@@ -27,6 +27,7 @@ taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }
 dbconn = { path = "../dbconn" }
 items = { path = "../items" }
+items_proc = { path = "../items_proc" }
 streams = { path = "../streams" }
 commonio = { path = "../commonio" }
 

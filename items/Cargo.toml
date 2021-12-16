@@ -15,4 +15,5 @@ tokio = { version = "1.7.1", features = ["fs"] }
 chrono = { version = "0.4.19", features = ["serde"] }
 crc32fast = "1.2.1"
 err = { path = "../err" }
+items_proc = { path = "../items_proc" }
 netpod = { path = "../netpod" }

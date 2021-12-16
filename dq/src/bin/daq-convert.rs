@@ -1,6 +1,7 @@
 use clap::{crate_version, Parser};
 use err::Error;
-use std::path::PathBuf;
+use netpod::{timeunits::*, Nanos};
+use std::{path::PathBuf, str::FromStr};
 
 #[derive(Debug, Parser)]
 #[clap(name="DAQ buffer tools", version=crate_version!())]
@@ -21,22 +22,52 @@ pub enum SubCmd {
 pub struct ConvertArchiverApplianceChannel {
     #[clap(
         long,
-        about = "Prefix for keyspaces, e.g. specify `daq` to get scalar keyspace directory `daq_2`"
+        about = "Prefix for keyspaces, e.g. specify `daq` to get scalar keyspace directory `daq_2`."
     )]
     keyspace_prefix: String,
-    #[clap(long, about = "Name of the channel to convert")]
+    #[clap(long, about = "Name of the channel to convert.")]
     channel_name: String,
-    #[clap(long, about = "Look for archiver appliance data at given path")]
+    #[clap(long, about = "Look for archiver appliance data at given path.")]
     input_dir: PathBuf,
-    #[clap(long, about = "Generate Databuffer format at given path")]
+    #[clap(long, about = "Generate Databuffer format at given path.")]
     output_dir: PathBuf,
+    #[clap(
+        default_value = "1d",
+        long,
+        about = "Size of the time-bins in the generated Databuffer format.\nUnit-suffixes: `h` (hours), `d` (days)"
+    )]
+    time_bin_size: TimeBinSize,
+}
+
+#[derive(Clone, Debug)]
+pub struct TimeBinSize {
+    nanos: u64,
+}
+
+impl FromStr for TimeBinSize {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            return Err(Error::with_msg_no_trace("Malformed time-bin size"));
+        }
+        let suff = s.chars().last().unwrap();
+        if suff.is_numeric() {
+            Err(Error::with_msg_no_trace("Malformed time-bin size"))
+        } else if suff == 'h' {
+            let bs: u64 = s[..s.len() - 1].parse()?;
+            Ok(Self { nanos: bs * HOUR })
+        } else if suff == 'd' {
+            let bs: u64 = s[..s.len() - 1].parse()?;
+            Ok(Self { nanos: bs * DAY })
+        } else {
+            Err(Error::with_msg_no_trace("Malformed time-bin size"))
+        }
+    }
 }
 
 pub fn main() -> Result<(), Error> {
     taskrun::run(async {
-        if false {
-            return Err(Error::with_msg_no_trace(format!("unknown command")));
-        }
         let opts = Opts::parse();
         match opts.subcmd {
             SubCmd::ConvertArchiverApplianceChannel(sub) => {
@@ -45,6 +76,7 @@ pub fn main() -> Result<(), Error> {
                     channel_name: sub.channel_name,
                     input_dir: sub.input_dir,
                     output_dir: sub.output_dir,
+                    time_bin_size: Nanos::from_ns(sub.time_bin_size.nanos),
                 };
                 dq::convert(params).await
             }

@@ -24,25 +24,8 @@ pub struct Opts {
 
 #[derive(Debug, Parser)]
 pub enum SubCmd {
-    #[clap(about = "Convert a channel from the Archiver Appliance into Databuffer format.")]
-    ConvertArchiverApplianceChannel(ConvertArchiverApplianceChannel),
     ReadDatabufferConfigfile(ReadDatabufferConfigfile),
     ReadDatabufferDatafile(ReadDatabufferDatafile),
-}
-
-#[derive(Debug, Parser)]
-pub struct ConvertArchiverApplianceChannel {
-    #[clap(
-        long,
-        about = "Prefix for keyspaces, e.g. specify `daq` to get scalar keyspace directory `daq_2`"
-    )]
-    keyspace_prefix: String,
-    #[clap(long, about = "Name of the channel to convert")]
-    channel_name: String,
-    #[clap(long, about = "Look for archiver appliance data at given path")]
-    input_dir: PathBuf,
-    #[clap(long, about = "Generate Databuffer format at given path")]
-    output_dir: PathBuf,
 }
 
 #[derive(Debug, Parser)]
@@ -66,15 +49,6 @@ pub fn main() -> Result<(), Error> {
         }
         let opts = Opts::parse();
         match opts.subcmd {
-            SubCmd::ConvertArchiverApplianceChannel(sub) => {
-                let params = dq::ConvertParams {
-                    keyspace_prefix: sub.keyspace_prefix,
-                    channel_name: sub.channel_name,
-                    input_dir: sub.input_dir,
-                    output_dir: sub.output_dir,
-                };
-                dq::convert(params).await
-            }
             SubCmd::ReadDatabufferConfigfile(sub) => {
                 let mut file = File::open(&sub.configfile).await?;
                 let meta = file.metadata().await?;

@@ -1,8 +1,8 @@
 [workspace]
-members = ["daqbuffer", "h5out", "archapp", "archapp_xc", "archapp_wrap", "items", "nodenet", "httpclient", "fsio", "dq"]
+members = ["daqbuffer", "h5out", "archapp", "archapp_xc", "archapp_wrap", "items", "items_proc", "nodenet", "httpclient", "fsio", "dq"]
 
 [profile.release]
-opt-level = 3
+opt-level = 2
 debug = 0
 overflow-checks = false
 debug-assertions = false

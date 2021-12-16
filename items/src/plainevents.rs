@@ -2,363 +2,190 @@ use crate::binnedevents::{SingleBinWaveEvents, XBinnedEvents};
 use crate::eventsitem::EventsItem;
 use crate::eventvalues::EventValues;
 use crate::waveevents::{WaveEvents, WaveXBinner};
+use crate::xbinnedscalarevents::XBinnedScalarEvents;
 use crate::{Appendable, Clearable, EventsNodeProcessor, PushableIndex, WithLen, WithTimestamps};
 use err::Error;
 use netpod::{AggKind, HasScalarType, HasShape, ScalarType, Shape};
 use serde::{Deserialize, Serialize};
 
+//items_proc::enumvars!(ScalarPlainEvents, EventValues);
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ScalarPlainEvents {
+    U8(EventValues<u8>),
+    U16(EventValues<u16>),
     U32(EventValues<u32>),
+    U64(EventValues<u64>),
     I8(EventValues<i8>),
     I16(EventValues<i16>),
     I32(EventValues<i32>),
+    I64(EventValues<i64>),
     F32(EventValues<f32>),
     F64(EventValues<f64>),
 }
 
 impl ScalarPlainEvents {
     pub fn variant_name(&self) -> String {
-        use ScalarPlainEvents::*;
-        match self {
-            U32(_) => format!("U32"),
-            I8(_) => format!("I8"),
-            I16(_) => format!("I16"),
-            I32(_) => format!("I32"),
-            F32(_) => format!("F32"),
-            F64(_) => format!("F64"),
-        }
+        items_proc::tycases1!(self, Self, (k), { "$id".into() })
     }
 }
 
 impl Clearable for ScalarPlainEvents {
     fn clear(&mut self) {
-        match self {
-            ScalarPlainEvents::U32(k) => k.clear(),
-            ScalarPlainEvents::I8(k) => k.clear(),
-            ScalarPlainEvents::I16(k) => k.clear(),
-            ScalarPlainEvents::I32(k) => k.clear(),
-            ScalarPlainEvents::F32(k) => k.clear(),
-            ScalarPlainEvents::F64(k) => k.clear(),
-        }
+        items_proc::tycases1!(self, Self, (k), { k.clear() })
     }
 }
 
 impl Appendable for ScalarPlainEvents {
     fn empty_like_self(&self) -> Self {
-        match self {
-            Self::U32(k) => Self::U32(k.empty_like_self()),
-            Self::I8(k) => Self::I8(k.empty_like_self()),
-            Self::I16(k) => Self::I16(k.empty_like_self()),
-            Self::I32(k) => Self::I32(k.empty_like_self()),
-            Self::F32(k) => Self::F32(k.empty_like_self()),
-            Self::F64(k) => Self::F64(k.empty_like_self()),
-        }
+        items_proc::tycases1!(self, Self, (k), { Self::$id(k.empty_like_self()) })
     }
 
     fn append(&mut self, src: &Self) {
-        match self {
-            Self::U32(k) => match src {
-                Self::U32(j) => k.append(j),
+        items_proc::tycases1!(self, Self, (k), {
+            match src {
+                Self::$id(j) => k.append(j),
                 _ => panic!(),
-            },
-            Self::I8(k) => match src {
-                Self::I8(j) => k.append(j),
-                _ => panic!(),
-            },
-            Self::I16(k) => match src {
-                Self::I16(j) => k.append(j),
-                _ => panic!(),
-            },
-            Self::I32(k) => match src {
-                Self::I32(j) => k.append(j),
-                _ => panic!(),
-            },
-            Self::F32(k) => match src {
-                Self::F32(j) => k.append(j),
-                _ => panic!(),
-            },
-            Self::F64(k) => match src {
-                Self::F64(j) => k.append(j),
-                _ => panic!(),
-            },
-        }
+            }
+        })
     }
 }
 
 impl PushableIndex for ScalarPlainEvents {
     fn push_index(&mut self, src: &Self, ix: usize) {
-        match self {
-            Self::U32(k) => match src {
-                Self::U32(j) => k.push_index(j, ix),
+        items_proc::tycases1!(self, Self, (k), {
+            match src {
+                Self::$id(j) => k.push_index(j, ix),
                 _ => panic!(),
-            },
-            Self::I8(k) => match src {
-                Self::I8(j) => k.push_index(j, ix),
-                _ => panic!(),
-            },
-            Self::I16(k) => match src {
-                Self::I16(j) => k.push_index(j, ix),
-                _ => panic!(),
-            },
-            Self::I32(k) => match src {
-                Self::I32(j) => k.push_index(j, ix),
-                _ => panic!(),
-            },
-            Self::F32(k) => match src {
-                Self::F32(j) => k.push_index(j, ix),
-                _ => panic!(),
-            },
-            Self::F64(k) => match src {
-                Self::F64(j) => k.push_index(j, ix),
-                _ => panic!(),
-            },
-        }
+            }
+        })
     }
 }
 
 impl WithLen for ScalarPlainEvents {
     fn len(&self) -> usize {
-        use ScalarPlainEvents::*;
-        match self {
-            U32(j) => j.len(),
-            I8(j) => j.len(),
-            I16(j) => j.len(),
-            I32(j) => j.len(),
-            F32(j) => j.len(),
-            F64(j) => j.len(),
-        }
+        items_proc::tycases1!(self, Self, (k), { k.len() })
     }
 }
 
 impl WithTimestamps for ScalarPlainEvents {
     fn ts(&self, ix: usize) -> u64 {
-        use ScalarPlainEvents::*;
-        match self {
-            U32(j) => j.ts(ix),
-            I8(j) => j.ts(ix),
-            I16(j) => j.ts(ix),
-            I32(j) => j.ts(ix),
-            F32(j) => j.ts(ix),
-            F64(j) => j.ts(ix),
-        }
+        items_proc::tycases1!(self, Self, (k), { k.ts(ix) })
     }
 }
 
 impl HasShape for ScalarPlainEvents {
     fn shape(&self) -> Shape {
-        match self {
-            _ => Shape::Scalar,
-        }
+        Shape::Scalar
     }
 }
 
 impl HasScalarType for ScalarPlainEvents {
     fn scalar_type(&self) -> ScalarType {
-        use ScalarPlainEvents::*;
-        match self {
-            U32(_) => ScalarType::U32,
-            I8(_) => ScalarType::I8,
-            I16(_) => ScalarType::I16,
-            I32(_) => ScalarType::I32,
-            F32(_) => ScalarType::F32,
-            F64(_) => ScalarType::F64,
-        }
+        items_proc::tycases1!(self, Self, (k), { ScalarType::$id })
     }
 }
 
+//items_proc::enumvars!(WavePlainEvents, WaveEvents);
+
 #[derive(Debug, Serialize, Deserialize)]
 pub enum WavePlainEvents {
+    U8(WaveEvents<u8>),
+    U16(WaveEvents<u16>),
+    U32(WaveEvents<u32>),
+    U64(WaveEvents<u64>),
     I8(WaveEvents<i8>),
     I16(WaveEvents<i16>),
     I32(WaveEvents<i32>),
+    I64(WaveEvents<i64>),
     F32(WaveEvents<f32>),
     F64(WaveEvents<f64>),
 }
 
 impl WavePlainEvents {
     pub fn shape(&self) -> Result<Shape, Error> {
-        match self {
-            WavePlainEvents::I8(k) => k.shape(),
-            WavePlainEvents::I16(k) => k.shape(),
-            WavePlainEvents::I32(k) => k.shape(),
-            WavePlainEvents::F32(k) => k.shape(),
-            WavePlainEvents::F64(k) => k.shape(),
-        }
+        items_proc::tycases1!(self, Self, (k), { k.shape() })
     }
-}
-
-macro_rules! wagg1 {
-    ($k:expr, $ak:expr, $shape:expr, $sty:ident) => {
-        match $ak {
-            AggKind::EventBlobs => panic!(),
-            AggKind::Plain => EventsItem::Plain(PlainEvents::Wave(WavePlainEvents::$sty($k))),
-            AggKind::TimeWeightedScalar => {
-                let p = WaveXBinner::create($shape, $ak.clone());
-                let j = p.process($k);
-                EventsItem::XBinnedEvents(XBinnedEvents::SingleBinWave(SingleBinWaveEvents::$sty(j)))
-            }
-            AggKind::DimXBins1 => {
-                let p = WaveXBinner::create($shape, $ak.clone());
-                let j = p.process($k);
-                EventsItem::XBinnedEvents(XBinnedEvents::SingleBinWave(SingleBinWaveEvents::$sty(j)))
-            }
-            AggKind::DimXBinsN(_) => EventsItem::Plain(PlainEvents::Wave(err::todoval())),
-        }
-    };
 }
 
 impl WavePlainEvents {
     pub fn variant_name(&self) -> String {
-        use WavePlainEvents::*;
-        match self {
-            I8(h) => format!("I8({})", h.vals.first().map_or(0, |j| j.len())),
-            I16(h) => format!("I16({})", h.vals.first().map_or(0, |j| j.len())),
-            I32(h) => format!("I32({})", h.vals.first().map_or(0, |j| j.len())),
-            F32(h) => format!("F32({})", h.vals.first().map_or(0, |j| j.len())),
-            F64(h) => format!("F64({})", h.vals.first().map_or(0, |j| j.len())),
-        }
+        items_proc::tycases1!(self, Self, (k), {
+            format!("$id({})", k.vals.first().map_or(0, |j| j.len()))
+        })
     }
 
     fn x_aggregate(self, ak: &AggKind) -> EventsItem {
-        use WavePlainEvents::*;
         let shape = self.shape().unwrap();
-        match self {
-            I8(k) => wagg1!(k, ak, shape, I8),
-            I16(k) => wagg1!(k, ak, shape, I16),
-            I32(k) => wagg1!(k, ak, shape, I32),
-            F32(k) => wagg1!(k, ak, shape, F32),
-            F64(k) => wagg1!(k, ak, shape, F64),
-        }
+        items_proc::tycases1!(self, Self, (k), {
+            match ak {
+                AggKind::EventBlobs => panic!(),
+                AggKind::Plain => EventsItem::Plain(PlainEvents::Wave(WavePlainEvents::$id(k))),
+                AggKind::TimeWeightedScalar => {
+                    let p = WaveXBinner::<$ty>::create(shape, ak.clone());
+                    let j: XBinnedScalarEvents<$ty> = p.process(k);
+                    EventsItem::XBinnedEvents(XBinnedEvents::SingleBinWave(SingleBinWaveEvents::$id(j)))
+                }
+                AggKind::DimXBins1 => {
+                    let p = WaveXBinner::<$ty>::create(shape, ak.clone());
+                    let j: XBinnedScalarEvents<$ty> = p.process(k);
+                    EventsItem::XBinnedEvents(XBinnedEvents::SingleBinWave(SingleBinWaveEvents::$id(j)))
+                }
+                AggKind::DimXBinsN(_) => EventsItem::Plain(PlainEvents::Wave(err::todoval())),
+            }
+        })
     }
 }
 
 impl Clearable for WavePlainEvents {
     fn clear(&mut self) {
-        match self {
-            WavePlainEvents::I8(k) => k.clear(),
-            WavePlainEvents::I16(k) => k.clear(),
-            WavePlainEvents::I32(k) => k.clear(),
-            WavePlainEvents::F32(k) => k.clear(),
-            WavePlainEvents::F64(k) => k.clear(),
-        }
+        items_proc::tycases1!(self, Self, (k), { k.clear() })
     }
 }
 
 impl Appendable for WavePlainEvents {
     fn empty_like_self(&self) -> Self {
-        match self {
-            Self::I8(k) => Self::I8(k.empty_like_self()),
-            Self::I16(k) => Self::I16(k.empty_like_self()),
-            Self::I32(k) => Self::I32(k.empty_like_self()),
-            Self::F32(k) => Self::F32(k.empty_like_self()),
-            Self::F64(k) => Self::F64(k.empty_like_self()),
-        }
+        items_proc::tycases1!(self, Self, (k), { Self::$id(k.empty_like_self()) })
     }
 
     fn append(&mut self, src: &Self) {
-        match self {
-            Self::I8(k) => match src {
-                Self::I8(j) => k.append(j),
-                _ => panic!(),
-            },
-            Self::I16(k) => match src {
-                Self::I16(j) => k.append(j),
-                _ => panic!(),
-            },
-            Self::I32(k) => match src {
-                Self::I32(j) => k.append(j),
-                _ => panic!(),
-            },
-            Self::F32(k) => match src {
-                Self::F32(j) => k.append(j),
-                _ => panic!(),
-            },
-            Self::F64(k) => match src {
-                Self::F64(j) => k.append(j),
-                _ => panic!(),
-            },
-        }
+        items_proc::tycases1!(self, Self, (k), { match src {
+            Self::$id(j) => k.append(j),
+            _ => panic!(),
+        } })
     }
 }
 
 impl PushableIndex for WavePlainEvents {
     fn push_index(&mut self, src: &Self, ix: usize) {
-        match self {
-            Self::I8(k) => match src {
-                Self::I8(j) => k.push_index(j, ix),
-                _ => panic!(),
-            },
-            Self::I16(k) => match src {
-                Self::I16(j) => k.push_index(j, ix),
-                _ => panic!(),
-            },
-            Self::I32(k) => match src {
-                Self::I32(j) => k.push_index(j, ix),
-                _ => panic!(),
-            },
-            Self::F32(k) => match src {
-                Self::F32(j) => k.push_index(j, ix),
-                _ => panic!(),
-            },
-            Self::F64(k) => match src {
-                Self::F64(j) => k.push_index(j, ix),
-                _ => panic!(),
-            },
-        }
+        items_proc::tycases1!(self, Self, (k), { match src {
+            Self::$id(j) => k.push_index(j, ix),
+            _ => panic!(),
+        } })
     }
 }
 
 impl WithLen for WavePlainEvents {
     fn len(&self) -> usize {
-        use WavePlainEvents::*;
-        match self {
-            I8(j) => j.len(),
-            I16(j) => j.len(),
-            I32(j) => j.len(),
-            F32(j) => j.len(),
-            F64(j) => j.len(),
-        }
+        items_proc::tycases1!(self, Self, (k), { k.len() })
     }
 }
 
 impl WithTimestamps for WavePlainEvents {
     fn ts(&self, ix: usize) -> u64 {
-        use WavePlainEvents::*;
-        match self {
-            I8(j) => j.ts(ix),
-            I16(j) => j.ts(ix),
-            I32(j) => j.ts(ix),
-            F32(j) => j.ts(ix),
-            F64(j) => j.ts(ix),
-        }
+        items_proc::tycases1!(self, Self, (k), { k.ts(ix) })
     }
 }
 
 impl HasShape for WavePlainEvents {
     fn shape(&self) -> Shape {
-        /*use WavePlainEvents::*;
-        match self {
-            Byte(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
-            I16(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
-            I32(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
-            Float(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
-            Double(h) => Shape::Wave(h.vals.first().map_or(0, |x| x.len() as u32)),
-        }*/
         self.shape().unwrap()
     }
 }
 
 impl HasScalarType for WavePlainEvents {
     fn scalar_type(&self) -> ScalarType {
-        use WavePlainEvents::*;
-        match self {
-            I8(_) => ScalarType::I8,
-            I16(_) => ScalarType::I16,
-            I32(_) => ScalarType::I32,
-            F32(_) => ScalarType::F32,
-            F64(_) => ScalarType::F64,
-        }
+        items_proc::tycases1!(self, Self, (k), { ScalarType::$id })
     }
 }
 

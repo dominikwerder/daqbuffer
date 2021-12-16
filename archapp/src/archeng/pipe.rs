@@ -104,7 +104,16 @@ pub async fn make_event_pipe(
                                     }
                                     PlainEvents::Wave(j) => {
                                         trace!("EventsItem::Plain Wave for {:?}  {:?}", cfgshape, q_agg_kind);
-                                        match j {
+                                        items_proc::tycases1!(j, WavePlainEvents, (j), {
+                                            let binner =
+                                                WaveXBinner::<$ty>::create(cfgshape.clone(), q_agg_kind.clone());
+                                            let out = binner.process(j);
+                                            let item = SingleBinWaveEvents::$id(out);
+                                            let item = XBinnedEvents::SingleBinWave(item);
+                                            let item = EventsItem::XBinnedEvents(item);
+                                            Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
+                                        })
+                                        /*match j {
                                             WavePlainEvents::I8(j) => {
                                                 let binner =
                                                     WaveXBinner::<i8>::create(cfgshape.clone(), q_agg_kind.clone());
@@ -150,7 +159,7 @@ pub async fn make_event_pipe(
                                                 let item = EventsItem::XBinnedEvents(item);
                                                 Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                                             }
-                                        }
+                                        }*/
                                     }
                                 },
                                 EventsItem::XBinnedEvents(j) => match j {
@@ -192,7 +201,16 @@ pub async fn make_event_pipe(
                                     }
                                     PlainEvents::Wave(j) => {
                                         trace!("EventsItem::Plain Wave for {:?}  {:?}", cfgshape, q_agg_kind);
-                                        match j {
+                                        items_proc::tycases1!(j, WavePlainEvents, (j), {
+                                            let binner =
+                                                    WaveNBinner::<$ty>::create(cfgshape.clone(), q_agg_kind.clone());
+                                                let out = binner.process(j);
+                                                let item = MultiBinWaveEvents::$id(out);
+                                                let item = XBinnedEvents::MultiBinWave(item);
+                                                let item = EventsItem::XBinnedEvents(item);
+                                                Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
+                                        })
+                                        /*match j {
                                             WavePlainEvents::I8(j) => {
                                                 let binner =
                                                     WaveNBinner::<i8>::create(cfgshape.clone(), q_agg_kind.clone());
@@ -238,7 +256,7 @@ pub async fn make_event_pipe(
                                                 let item = EventsItem::XBinnedEvents(item);
                                                 Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                                             }
-                                        }
+                                        }*/
                                     }
                                 },
                                 EventsItem::XBinnedEvents(j) => match j {

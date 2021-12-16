@@ -111,6 +111,7 @@ impl DataWriter {
                     self.write_events(2, ScalarType::F64, &events.tss, &events.values)
                         .await?;
                 }
+                _ => todo!(),
             },
             PlainEvents::Wave(item) => match item {
                 WavePlainEvents::F64(_events) => {
@@ -319,6 +320,7 @@ pub struct ConvertParams {
     pub channel_name: String,
     pub input_dir: PathBuf,
     pub output_dir: PathBuf,
+    pub time_bin_size: Nanos,
 }
 
 pub async fn convert(convert_params: ConvertParams) -> Result<(), Error> {
@@ -330,7 +332,7 @@ pub async fn convert(convert_params: ConvertParams) -> Result<(), Error> {
             convert_params.output_dir
         )));
     }
-    let bs = Nanos::from_ns(DAY);
+    let bs = convert_params.time_bin_size.clone();
     let mut channel_config: Option<Config> = None;
     let channel = Channel {
         backend: String::new(),
@@ -424,30 +426,6 @@ pub async fn convert(convert_params: ConvertParams) -> Result<(), Error> {
                             }
                             if channel_config.is_none() {
                                 let ks = if ei.is_wave() { 3 } else { 2 };
-                                let scalar_type_2 = match &ei {
-                                    items::eventsitem::EventsItem::Plain(k) => match k {
-                                        PlainEvents::Scalar(k) => match k {
-                                            ScalarPlainEvents::U32(_) => ScalarType::U32,
-                                            ScalarPlainEvents::I8(_) => ScalarType::I8,
-                                            ScalarPlainEvents::I16(_) => ScalarType::I16,
-                                            ScalarPlainEvents::I32(_) => ScalarType::I32,
-                                            ScalarPlainEvents::F32(_) => ScalarType::F32,
-                                            ScalarPlainEvents::F64(_) => ScalarType::F64,
-                                        },
-                                        PlainEvents::Wave(k) => match k {
-                                            WavePlainEvents::I8(_) => ScalarType::I8,
-                                            WavePlainEvents::I16(_) => ScalarType::I16,
-                                            WavePlainEvents::I32(_) => ScalarType::I32,
-                                            WavePlainEvents::F32(_) => ScalarType::F32,
-                                            WavePlainEvents::F64(_) => ScalarType::F64,
-                                        },
-                                    },
-                                    items::eventsitem::EventsItem::XBinnedEvents(_) => panic!(),
-                                };
-                                if scalar_type_2 != scalar_type {
-                                    let msg = format!("unexpected type: {:?} vs {:?}", scalar_type_2, scalar_type);
-                                    return Err(Error::with_msg_no_trace(msg));
-                                }
                                 let e = parse::channelconfig::ConfigEntry {
                                     ts: 0,
                                     pulse: 0,
