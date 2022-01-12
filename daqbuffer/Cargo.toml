@@ -5,7 +5,7 @@ authors = ["Dominik Werder <dominik.werder@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-tokio = { version = "1.7.1", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
+tokio = { version = "=1.14.77", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
 hyper = "0.14"
 http = "0.2"
 tracing = "0.1.25"
@@ -22,7 +22,7 @@ serde_derive = "1.0"
 serde_json = "1.0"
 chrono = "0.4"
 url = "2.2.2"
-clap = "3.0.0-beta.5"
+clap = { version = "3.0.6", features = ["derive", "cargo"] }
 lazy_static = "1.4.0"
 err = { path = "../err" }
 taskrun = { path = "../taskrun" }

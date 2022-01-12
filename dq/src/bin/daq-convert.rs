@@ -1,10 +1,10 @@
-use clap::{crate_version, Parser};
+use clap::Parser;
 use err::Error;
 use netpod::{timeunits::*, Nanos};
 use std::{path::PathBuf, str::FromStr};
 
 #[derive(Debug, Parser)]
-#[clap(name="DAQ buffer tools", version=crate_version!())]
+#[clap(name = "DAQ buffer tools", version)]
 pub struct Opts {
     #[clap(short, long, parse(from_occurrences))]
     pub verbose: u32,
@@ -14,28 +14,26 @@ pub struct Opts {
 
 #[derive(Debug, Parser)]
 pub enum SubCmd {
-    #[clap(about = "Convert a channel from the Archiver Appliance into Databuffer format.")]
+    /// Convert a channel from the Archiver Appliance into Databuffer format.
     ConvertArchiverApplianceChannel(ConvertArchiverApplianceChannel),
 }
 
 #[derive(Debug, Parser)]
 pub struct ConvertArchiverApplianceChannel {
-    #[clap(
-        long,
-        about = "Prefix for keyspaces, e.g. specify `daq` to get scalar keyspace directory `daq_2`."
-    )]
+    /// Prefix for keyspaces, e.g. specify `daq` to get scalar keyspace directory `daq_2`.
+    #[clap(long)]
     keyspace_prefix: String,
-    #[clap(long, about = "Name of the channel to convert.")]
+    /// Name of the channel to convert.
+    #[clap(long)]
     channel_name: String,
-    #[clap(long, about = "Look for archiver appliance data at given path.")]
+    /// Look for archiver appliance data at given path.
+    #[clap(long)]
     input_dir: PathBuf,
-    #[clap(long, about = "Generate Databuffer format at given path.")]
+    /// Generate Databuffer format at given path.
+    #[clap(long)]
     output_dir: PathBuf,
-    #[clap(
-        default_value = "1d",
-        long,
-        about = "Size of the time-bins in the generated Databuffer format.\nUnit-suffixes: `h` (hours), `d` (days)"
-    )]
+    /// Size of the time-bins in the generated Databuffer format.\nUnit-suffixes: `h` (hours), `d` (days)
+    #[clap(default_value = "1d", long)]
     time_bin_size: TimeBinSize,
 }
 

@@ -1,4 +1,4 @@
-use clap::{crate_version, Parser};
+use clap::Parser;
 //use disk::decode::EventValueShape;
 //use disk::decode::EventValuesDim0Case;
 use disk::eventchunker::EventChunkerConf;
@@ -14,7 +14,7 @@ use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
 #[derive(Debug, Parser)]
-#[clap(name="DAQ buffer tools", version=crate_version!())]
+#[clap(name = "DAQ buffer tools", version)]
 pub struct Opts {
     #[clap(short, long, parse(from_occurrences))]
     pub verbose: u32,

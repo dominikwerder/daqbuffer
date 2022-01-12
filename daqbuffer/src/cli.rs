@@ -1,7 +1,7 @@
-use clap::{crate_authors, crate_version, Parser};
+use clap::Parser;
 
 #[derive(Debug, Parser)]
-#[clap(name="daqbuffer", author=crate_authors!(), version=crate_version!())]
+#[clap(name = "daqbuffer", author, version)]
 pub struct Opts {
     #[clap(short, long, parse(from_occurrences))]
     pub verbose: i32,
