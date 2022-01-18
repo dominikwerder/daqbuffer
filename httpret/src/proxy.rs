@@ -3,6 +3,7 @@ pub mod api4;
 use crate::api1::{channel_search_configs_v1, channel_search_list_v1, gather_json_2_v1, proxy_distribute_v1};
 use crate::err::Error;
 use crate::gather::{gather_get_json_generic, SubRes};
+use crate::pulsemap::MapPulseQuery;
 use crate::{api_1_docs, api_4_docs, response, Cont};
 use disk::events::PlainEventsJsonQuery;
 use futures_core::Stream;
@@ -93,10 +94,11 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
     } else if path == "/api/4/backends" {
         Ok(backends(req, proxy_config).await?)
     } else if path == "/api/4/search/channel" {
-        //Ok(channel_search(req, proxy_config).await?)
         Ok(api4::channel_search(req, proxy_config).await?)
     } else if path == "/api/4/events" {
         Ok(proxy_single_backend_query::<PlainEventsJsonQuery>(req, proxy_config).await?)
+    } else if path.starts_with("/api/4/map/pulse/") {
+        Ok(proxy_single_backend_query::<MapPulseQuery>(req, proxy_config).await?)
     } else if path == "/api/4/binned" {
         Ok(proxy_single_backend_query::<BinnedQuery>(req, proxy_config).await?)
     } else if path == "/api/4/channel/config" {
@@ -392,7 +394,7 @@ pub async fn proxy_single_backend_query<QT>(
     proxy_config: &ProxyConfig,
 ) -> Result<Response<Body>, Error>
 where
-    QT: FromUrl + HasBackend + AppendToUrl + HasTimeout,
+    QT: FromUrl + AppendToUrl + HasBackend + HasTimeout,
 {
     let (head, _body) = req.into_parts();
     match head.headers.get(http::header::ACCEPT) {
@@ -400,7 +402,11 @@ where
             if v == APP_JSON {
                 let url = Url::parse(&format!("dummy:{}", head.uri))?;
                 let query = QT::from_url(&url)?;
-                let sh = get_query_host_for_backend(&query.backend(), proxy_config)?;
+                let sh = if url.as_str().contains("/map/pulse/") {
+                    get_query_host_for_backend_2(&query.backend(), proxy_config)?
+                } else {
+                    get_query_host_for_backend(&query.backend(), proxy_config)?
+                };
                 let urls = [sh]
                     .iter()
                     .map(|sh| match Url::parse(&format!("{}{}", sh, head.uri.path())) {
@@ -455,6 +461,13 @@ fn get_query_host_for_backend(backend: &str, proxy_config: &ProxyConfig) -> Resu
         if back.name == backend {
             return Ok(back.url.clone());
         }
+    }
+    return Err(Error::with_msg(format!("host not found for backend {:?}", backend)));
+}
+
+fn get_query_host_for_backend_2(backend: &str, _proxy_config: &ProxyConfig) -> Result<String, Error> {
+    if backend == "sf-databuffer" {
+        return Ok("https://sf-data-api.psi.ch".into());
     }
     return Err(Error::with_msg(format!("host not found for backend {:?}", backend)));
 }

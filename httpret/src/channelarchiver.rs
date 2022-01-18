@@ -36,7 +36,7 @@ impl ListIndexFilesHttpFunction {
         "ListIndexFilesHttpFunction"
     }
 
-    pub fn should_handle(path: &str) -> Option<Self> {
+    pub fn handler(path: &str) -> Option<Self> {
         if path.starts_with(Self::prefix()) {
             Some(Self {})
         } else {
@@ -91,7 +91,7 @@ impl ScanIndexFiles {
         "ScanIndexFiles"
     }
 
-    pub fn should_handle(path: &str) -> Option<Self> {
+    pub fn handler(path: &str) -> Option<Self> {
         if path.starts_with(Self::prefix()) {
             Some(Self {})
         } else {
@@ -131,7 +131,7 @@ impl ScanChannels {
         "ScanChannels"
     }
 
-    pub fn should_handle(path: &str) -> Option<Self> {
+    pub fn handler(path: &str) -> Option<Self> {
         if path.starts_with(Self::prefix()) {
             Some(Self {})
         } else {
@@ -171,7 +171,7 @@ impl ChannelNames {
         "ChannelNames"
     }
 
-    pub fn should_handle(path: &str) -> Option<Self> {
+    pub fn handler(path: &str) -> Option<Self> {
         if path.starts_with(Self::prefix()) {
             Some(Self {})
         } else {
@@ -212,7 +212,7 @@ impl ScanConfigs {
         "ScanConfigs"
     }
 
-    pub fn should_handle(path: &str) -> Option<Self> {
+    pub fn handler(path: &str) -> Option<Self> {
         if path.starts_with(Self::prefix()) {
             Some(Self {})
         } else {
@@ -254,7 +254,7 @@ impl BlockRefStream {
         "BlockRefStream"
     }
 
-    pub fn should_handle(path: &str) -> Option<Self> {
+    pub fn handler(path: &str) -> Option<Self> {
         if path.starts_with(Self::prefix()) {
             Some(Self {})
         } else {
@@ -324,7 +324,7 @@ impl BlockStream {
         "BlockStream"
     }
 
-    pub fn should_handle(path: &str) -> Option<Self> {
+    pub fn handler(path: &str) -> Option<Self> {
         if path.starts_with(Self::prefix()) {
             Some(Self {})
         } else {
@@ -396,7 +396,7 @@ impl ListChannelsHttpFunction {
         "ListChannelsHttpFunction"
     }
 
-    pub fn should_handle(path: &str) -> Option<Self> {
+    pub fn handler(path: &str) -> Option<Self> {
         if path.starts_with(Self::prefix()) {
             Some(Self {})
         } else {

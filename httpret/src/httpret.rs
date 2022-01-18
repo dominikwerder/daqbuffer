@@ -289,31 +289,33 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if pulsemap::IndexFullHttpFunction::path_matches(path) {
-        pulsemap::IndexFullHttpFunction::handle(req, &node_config).await
-    } else if pulsemap::MarkClosedHttpFunction::path_matches(path) {
-        pulsemap::MarkClosedHttpFunction::handle(req, &node_config).await
-    } else if pulsemap::MapPulseLocalHttpFunction::path_matches(path) {
-        pulsemap::MapPulseLocalHttpFunction::handle(req, &node_config).await
-    } else if pulsemap::MapPulseHistoHttpFunction::path_matches(path) {
-        pulsemap::MapPulseHistoHttpFunction::handle(req, &node_config).await
-    } else if pulsemap::MapPulseHttpFunction::path_matches(path) {
-        pulsemap::MapPulseHttpFunction::handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::ListIndexFilesHttpFunction::should_handle(path) {
+    } else if let Some(h) = pulsemap::IndexFullHttpFunction::handler(&req) {
         h.handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::ListChannelsHttpFunction::should_handle(path) {
+    } else if let Some(h) = pulsemap::MarkClosedHttpFunction::handler(&req) {
         h.handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::ScanIndexFiles::should_handle(path) {
+    } else if let Some(h) = pulsemap::MapPulseLocalHttpFunction::handler(&req) {
         h.handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::ScanChannels::should_handle(path) {
+    } else if let Some(h) = pulsemap::MapPulseHistoHttpFunction::handler(&req) {
         h.handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::ScanConfigs::should_handle(path) {
+    } else if let Some(h) = pulsemap::MapPulseHttpFunction::handler(&req) {
         h.handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::ChannelNames::should_handle(path) {
+    } else if let Some(h) = pulsemap::Api4MapPulseHttpFunction::handler(&req) {
         h.handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::BlockRefStream::should_handle(path) {
+    } else if let Some(h) = channelarchiver::ListIndexFilesHttpFunction::handler(path) {
         h.handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::BlockStream::should_handle(path) {
+    } else if let Some(h) = channelarchiver::ListChannelsHttpFunction::handler(path) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = channelarchiver::ScanIndexFiles::handler(path) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = channelarchiver::ScanChannels::handler(path) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = channelarchiver::ScanConfigs::handler(path) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = channelarchiver::ChannelNames::handler(path) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = channelarchiver::BlockRefStream::handler(path) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = channelarchiver::BlockStream::handler(path) {
         h.handle(req, &node_config).await
     } else if path.starts_with("/api/1/requestStatus/") {
         Ok(response(StatusCode::OK).body(Body::from("{}"))?)

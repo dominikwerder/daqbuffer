@@ -6,6 +6,10 @@ use futures_util::FutureExt;
 use http::{Method, StatusCode, Uri};
 use hyper::{Body, Request, Response};
 use netpod::log::*;
+use netpod::AppendToUrl;
+use netpod::FromUrl;
+use netpod::HasBackend;
+use netpod::HasTimeout;
 use netpod::NodeConfigCached;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -20,6 +24,7 @@ use std::{io::SeekFrom, path::PathBuf};
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio::task::JoinHandle;
+use url::Url;
 
 pub struct MapPulseHisto {
     _pulse: u64,
@@ -33,6 +38,7 @@ const MAP_PULSE_HISTO_URL_PREFIX: &'static str = "/api/1/map/pulse/histo/";
 const MAP_PULSE_URL_PREFIX: &'static str = "/api/1/map/pulse/";
 const MAP_PULSE_LOCAL_URL_PREFIX: &'static str = "/api/1/map/pulse/local/";
 const MAP_PULSE_MARK_CLOSED_URL_PREFIX: &'static str = "/api/1/map/pulse/mark/closed/";
+const API_4_MAP_PULSE_URL_PREFIX: &'static str = "/api/4/map/pulse/";
 
 async fn make_tables(node_config: &NodeConfigCached) -> Result<(), Error> {
     let conn = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
@@ -206,11 +212,15 @@ async fn read_chunk_at(mut file: File, pos: u64, chunk_len: u64) -> Result<(Chun
 pub struct IndexFullHttpFunction {}
 
 impl IndexFullHttpFunction {
-    pub fn path_matches(path: &str) -> bool {
-        path.starts_with(MAP_INDEX_FULL_URL_PREFIX)
+    pub fn handler(req: &Request<Body>) -> Option<Self> {
+        if req.uri().path().starts_with(MAP_INDEX_FULL_URL_PREFIX) {
+            Some(Self {})
+        } else {
+            None
+        }
     }
 
-    pub async fn handle(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
@@ -424,6 +434,46 @@ async fn search_pulse(pulse: u64, path: &Path) -> Result<Option<u64>, Error> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MapPulseQuery {
+    backend: String,
+    pulse: u64,
+}
+
+impl HasBackend for MapPulseQuery {
+    fn backend(&self) -> &str {
+        &self.backend
+    }
+}
+
+impl HasTimeout for MapPulseQuery {
+    fn timeout(&self) -> Duration {
+        Duration::from_millis(2000)
+    }
+}
+
+impl FromUrl for MapPulseQuery {
+    fn from_url(url: &url::Url) -> Result<Self, err::Error> {
+        let mut pit = url
+            .path_segments()
+            .ok_or(Error::with_msg_no_trace("no path in url"))?
+            .rev();
+        let pulsestr = pit.next().ok_or(Error::with_msg_no_trace("no pulse in url path"))?;
+        let backend = pit
+            .next()
+            .ok_or(Error::with_msg_no_trace("no backend in url path"))?
+            .into();
+        let pulse: u64 = pulsestr.parse()?;
+        let ret = Self { backend, pulse };
+        info!("GOT {:?}", ret);
+        Ok(ret)
+    }
+}
+
+impl AppendToUrl for MapPulseQuery {
+    fn append_to_url(&self, _url: &mut Url) {}
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct LocalMap {
     pulse: u64,
     tss: Vec<u64>,
@@ -433,11 +483,15 @@ struct LocalMap {
 pub struct MapPulseLocalHttpFunction {}
 
 impl MapPulseLocalHttpFunction {
-    pub fn path_matches(path: &str) -> bool {
-        path.starts_with(MAP_PULSE_LOCAL_URL_PREFIX)
+    pub fn handler(req: &Request<Body>) -> Option<Self> {
+        if req.uri().path().starts_with(MAP_PULSE_LOCAL_URL_PREFIX) {
+            Some(Self {})
+        } else {
+            None
+        }
     }
 
-    pub async fn handle(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
@@ -487,11 +541,15 @@ pub struct TsHisto {
 pub struct MapPulseHistoHttpFunction {}
 
 impl MapPulseHistoHttpFunction {
-    pub fn path_matches(path: &str) -> bool {
-        path.starts_with(MAP_PULSE_HISTO_URL_PREFIX)
+    pub fn handler(req: &Request<Body>) -> Option<Self> {
+        if req.uri().path().starts_with(MAP_PULSE_HISTO_URL_PREFIX) {
+            Some(Self {})
+        } else {
+            None
+        }
     }
 
-    pub async fn handle(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
@@ -538,11 +596,15 @@ impl MapPulseHistoHttpFunction {
 pub struct MapPulseHttpFunction {}
 
 impl MapPulseHttpFunction {
-    pub fn path_matches(path: &str) -> bool {
-        path.starts_with(MAP_PULSE_URL_PREFIX)
+    pub fn handler(req: &Request<Body>) -> Option<Self> {
+        if req.uri().path().starts_with(MAP_PULSE_URL_PREFIX) {
+            Some(Self {})
+        } else {
+            None
+        }
     }
 
-    pub async fn handle(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
@@ -566,14 +628,57 @@ impl MapPulseHttpFunction {
     }
 }
 
+pub struct Api4MapPulseHttpFunction {}
+
+impl Api4MapPulseHttpFunction {
+    pub fn handler(req: &Request<Body>) -> Option<Self> {
+        if req.uri().path().starts_with(API_4_MAP_PULSE_URL_PREFIX) {
+            Some(Self {})
+        } else {
+            None
+        }
+    }
+
+    pub fn path_matches(path: &str) -> bool {
+        path.starts_with(API_4_MAP_PULSE_URL_PREFIX)
+    }
+
+    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+        if req.method() != Method::GET {
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+        }
+        info!("Api4MapPulseHttpFunction  handle  uri: {:?}", req.uri());
+        let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+        let q = MapPulseQuery::from_url(&url)?;
+        let histo = MapPulseHistoHttpFunction::histo(q.pulse, node_config).await?;
+        let mut i1 = 0;
+        let mut max = 0;
+        for i2 in 0..histo.tss.len() {
+            if histo.counts[i2] > max {
+                max = histo.counts[i2];
+                i1 = i2;
+            }
+        }
+        if max > 0 {
+            Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&histo.tss[i1])?))?)
+        } else {
+            Ok(response(StatusCode::NO_CONTENT).body(Body::empty())?)
+        }
+    }
+}
+
 pub struct MarkClosedHttpFunction {}
 
 impl MarkClosedHttpFunction {
-    pub fn path_matches(path: &str) -> bool {
-        path.starts_with(MAP_PULSE_MARK_CLOSED_URL_PREFIX)
+    pub fn handler(req: &Request<Body>) -> Option<Self> {
+        if req.uri().path().starts_with(MAP_PULSE_MARK_CLOSED_URL_PREFIX) {
+            Some(Self {})
+        } else {
+            None
+        }
     }
 
-    pub async fn handle(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }

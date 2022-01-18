@@ -32,6 +32,7 @@
     <li><a href="#list-backends">List available backends.</a></li>
     <li><a href="#api-version">More version information about the running service.</a></li>
     <li><a href="#search-channel">Search channel.</a></li>
+    <li><a href="#map-pulse">Map pulse.</a></li>
     <li><a href="#query-events">Query unbinned event data.</a></li>
     <li><a href="#query-binned">Query binned data.</a></li>
   </ul>
@@ -100,7 +101,6 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/version'
   <h2>Search channel</h2>
   <p><strong>Method:</strong> GET</p>
   <p><strong>URL:</strong> https://data-api.psi.ch/api/4/search/channel</p>
-  <p><strong>Request header:</strong> "Accept" should be "application/json" for forward compatibility.</p>
   <p><strong>Query parameters:</strong> (all optional)</p>
   <ul>
     <li>backend (e.g. "sf-databuffer", "sls-archive", ... any from list-backends API)</li>
@@ -156,6 +156,19 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/search/channel
 }</pre>
   <p>The search constraints are AND'd.</p>
 
+
+
+  <a id="map-pulse"></a>
+  <h2>Map pulse</h2>
+  <p><strong>Method:</strong> GET</p>
+  <p><strong>URL:</strong> https://data-api.psi.ch/api/4/map/pulse/BACKEND/PULSE</p>
+  <p><strong>Request header:</strong> "Accept" should be "application/json" for forward-compatibility but can be
+    omitted for e.g. a quick manual search using CURL.</p>
+
+  <h4>CURL example:</h4>
+  <pre>
+curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/map/pulse/sf-databuffer/424242'
+</pre>
 
 
 
