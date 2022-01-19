@@ -82,11 +82,10 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
         let souter = match PreBinnedPatchRange::covering_range(self.query.range().clone(), self.query.bin_count()) {
             Ok(Some(pre_range)) => {
-                debug!("BinnedBinaryChannelExec  found pre_range: {:?}", pre_range);
+                debug!("BinnedBinaryChannelExec  found pre_range: {pre_range:?}");
                 if range.grid_spec.bin_t_len() < pre_range.grid_spec.bin_t_len() {
                     let msg = format!(
-                        "BinnedBinaryChannelExec  incompatible ranges:\npre_range: {:?}\nrange: {:?}",
-                        pre_range, range
+                        "BinnedBinaryChannelExec  incompatible ranges:\npre_range: {pre_range:?}\nrange: {range:?}"
                     );
                     return Err(Error::with_msg(msg));
                 }
@@ -110,8 +109,7 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
             }
             Ok(None) => {
                 debug!(
-                    "BinnedBinaryChannelExec  no covering range for prebinned, merge from remotes instead {:?}",
-                    range
+                    "BinnedBinaryChannelExec  no covering range for prebinned, merge from remotes instead {range:?}"
                 );
                 let evq = RawEventsQuery {
                     channel: self.query.channel().clone(),
@@ -226,7 +224,7 @@ where
     S: Stream<Item = Sitemty<T>> + Unpin,
     T: Collectable,
 {
-    info!("\n\nConstruct deadline with timeout {:?}\n\n", timeout);
+    info!("\n\nConstruct deadline with timeout {timeout:?}\n\n");
     let deadline = tokio::time::Instant::now() + timeout;
     let mut collector = <T as Collectable>::new_collector(bin_count_exp);
     let mut i1 = 0;
@@ -327,11 +325,10 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
         let souter = match PreBinnedPatchRange::covering_range(self.query.range().clone(), self.query.bin_count()) {
             Ok(Some(pre_range)) => {
-                debug!("BinnedJsonChannelExec  found pre_range: {:?}", pre_range);
+                debug!("BinnedJsonChannelExec  found pre_range: {pre_range:?}");
                 if range.grid_spec.bin_t_len() < pre_range.grid_spec.bin_t_len() {
                     let msg = format!(
-                        "BinnedJsonChannelExec  incompatible ranges:\npre_range: {:?}\nrange: {:?}",
-                        pre_range, range
+                        "BinnedJsonChannelExec  incompatible ranges:\npre_range: {pre_range:?}\nrange: {range:?}"
                     );
                     return Err(Error::with_msg(msg));
                 }
@@ -355,10 +352,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
                 Ok(Box::pin(s) as Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>)
             }
             Ok(None) => {
-                debug!(
-                    "BinnedJsonChannelExec  no covering range for prebinned, merge from remotes instead {:?}",
-                    range
-                );
+                debug!("BinnedJsonChannelExec  no covering range for prebinned, merge from remotes instead {range:?}");
                 let evq = RawEventsQuery {
                     channel: self.query.channel().clone(),
                     range: self.query.range().clone(),

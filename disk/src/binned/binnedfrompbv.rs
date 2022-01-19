@@ -35,7 +35,11 @@ impl<TBT> FetchedPreBinned<TBT> {
     pub fn new(query: &PreBinnedQuery, node_config: &NodeConfigCached) -> Result<Self, Error> {
         let nodeix = node_ix_for_patch(&query.patch(), &query.channel(), &node_config.node_config.cluster);
         let node = &node_config.node_config.cluster.nodes[nodeix as usize];
-        let mut url = Url::parse(&format!("http://{}:{}/api/4/prebinned", node.host, node.port))?;
+        let mut url = {
+            let host = &node.host;
+            let port = node.port;
+            Url::parse(&format!("http://{host}:{port}/api/4/prebinned"))?
+        };
         query.append_to_url(&mut url);
         let ret = Self {
             uri: Uri::from_str(&url.to_string()).map_err(Error::from_string)?,
@@ -102,18 +106,16 @@ where
                                 self.res = Some(s2);
                                 continue 'outer;
                             } else {
-                                let msg = format!(
-                                    "PreBinnedValueFetchedStream  got non-OK result from sub request: {:?}",
-                                    res
-                                );
-                                error!("{}", msg);
+                                let msg =
+                                    format!("PreBinnedValueFetchedStream  got non-OK result from sub request: {res:?}");
+                                error!("{msg}");
                                 let e = Error::with_msg_no_trace(msg);
                                 self.errored = true;
                                 Ready(Some(Err(e)))
                             }
                         }
                         Err(e) => {
-                            error!("PreBinnedValueStream  error in stream {:?}", e);
+                            error!("PreBinnedValueStream  error in stream {e:?}");
                             self.errored = true;
                             Ready(Some(Err(Error::from_string(e))))
                         }
@@ -176,9 +178,9 @@ where
             // Convert this to a StreamLog message:
             for (i, p) in patches.iter().enumerate() {
                 use std::fmt::Write;
-                write!(sp, "  • patch {:2}  {:?}\n", i, p)?;
+                write!(sp, "  • patch {i:2}  {p:?}\n")?;
             }
-            info!("Using these pre-binned patches:\n{}", sp);
+            info!("Using these pre-binned patches:\n{sp}");
         }
         let pmax = patches.len();
         let inp = futures_util::stream::iter(patches.into_iter().enumerate())
@@ -199,7 +201,7 @@ where
                         match FetchedPreBinned::<TBT>::new(&query, &node_config) {
                             Ok(stream) => Box::pin(stream.map(move |q| (pix, q))),
                             Err(e) => {
-                                error!("error from PreBinnedValueFetchedStream::new {:?}", e);
+                                error!("error from PreBinnedValueFetchedStream::new {e:?}");
                                 Box::pin(futures_util::stream::iter(vec![(pix, Err(e))]))
                             }
                         };
