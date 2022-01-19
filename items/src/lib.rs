@@ -1,6 +1,5 @@
 pub mod binnedevents;
 pub mod eventsitem;
-pub mod eventvalues;
 pub mod frame;
 pub mod inmem;
 pub mod minmaxavgbins;
@@ -8,6 +7,7 @@ pub mod minmaxavgdim1bins;
 pub mod minmaxavgwavebins;
 pub mod numops;
 pub mod plainevents;
+pub mod scalarevents;
 pub mod streams;
 pub mod waveevents;
 pub mod xbinnedscalarevents;

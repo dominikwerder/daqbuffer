@@ -9,8 +9,8 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use items::binnedevents::{MultiBinWaveEvents, SingleBinWaveEvents, XBinnedEvents};
 use items::eventsitem::EventsItem;
-use items::eventvalues::EventValues;
 use items::plainevents::{PlainEvents, ScalarPlainEvents, WavePlainEvents};
+use items::scalarevents::ScalarEvents;
 use items::waveevents::WaveEvents;
 use items::xbinnedscalarevents::XBinnedScalarEvents;
 use items::xbinnedwaveevents::XBinnedWaveEvents;
@@ -190,7 +190,7 @@ macro_rules! arm1 {
                 }
                 AggKind::Plain => arm2!(
                     $item,
-                    EventValues,
+                    ScalarEvents,
                     Plain,
                     PlainEvents,
                     Scalar,
@@ -200,7 +200,7 @@ macro_rules! arm1 {
                 ),
                 AggKind::TimeWeightedScalar => arm2!(
                     $item,
-                    EventValues,
+                    ScalarEvents,
                     XBinnedEvents,
                     XBinnedEvents,
                     Scalar,
@@ -210,7 +210,7 @@ macro_rules! arm1 {
                 ),
                 AggKind::DimXBins1 => arm2!(
                     $item,
-                    EventValues,
+                    ScalarEvents,
                     XBinnedEvents,
                     XBinnedEvents,
                     Scalar,
@@ -220,7 +220,7 @@ macro_rules! arm1 {
                 ),
                 AggKind::DimXBinsN(_) => arm2!(
                     $item,
-                    EventValues,
+                    ScalarEvents,
                     XBinnedEvents,
                     XBinnedEvents,
                     Scalar,
@@ -643,7 +643,7 @@ fn events_item_to_framable(ei: EventsItem) -> Result<Box<dyn Framable + Send>, E
                     b.push(k);
                     (a, b)
                 });
-            let b = EventValues { tss: x, values: y };
+            let b = ScalarEvents { tss: x, values: y };
             let b = Ok(StreamItem::DataItem(RangeCompletableItem::Data(b)));
             let ret = Box::new(b);
             Ok(ret)

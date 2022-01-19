@@ -1,6 +1,6 @@
 use crate::binnedevents::{SingleBinWaveEvents, XBinnedEvents};
 use crate::eventsitem::EventsItem;
-use crate::eventvalues::EventValues;
+use crate::scalarevents::ScalarEvents;
 use crate::waveevents::{WaveEvents, WaveXBinner};
 use crate::xbinnedscalarevents::XBinnedScalarEvents;
 use crate::{Appendable, Clearable, EventsNodeProcessor, PushableIndex, WithLen, WithTimestamps};
@@ -12,16 +12,16 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ScalarPlainEvents {
-    U8(EventValues<u8>),
-    U16(EventValues<u16>),
-    U32(EventValues<u32>),
-    U64(EventValues<u64>),
-    I8(EventValues<i8>),
-    I16(EventValues<i16>),
-    I32(EventValues<i32>),
-    I64(EventValues<i64>),
-    F32(EventValues<f32>),
-    F64(EventValues<f64>),
+    U8(ScalarEvents<u8>),
+    U16(ScalarEvents<u16>),
+    U32(ScalarEvents<u32>),
+    U64(ScalarEvents<u64>),
+    I8(ScalarEvents<i8>),
+    I16(ScalarEvents<i16>),
+    I32(ScalarEvents<i32>),
+    I64(ScalarEvents<i64>),
+    F32(ScalarEvents<f32>),
+    F64(ScalarEvents<f64>),
 }
 
 impl ScalarPlainEvents {

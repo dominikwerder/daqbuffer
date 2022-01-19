@@ -8,8 +8,8 @@ use async_channel::{bounded, Receiver};
 use chrono::{TimeZone, Utc};
 use err::{ErrStr, Error};
 use items::eventsitem::EventsItem;
-use items::eventvalues::EventValues;
 use items::plainevents::{PlainEvents, ScalarPlainEvents, WavePlainEvents};
+use items::scalarevents::ScalarEvents;
 use items::waveevents::WaveEvents;
 use netpod::log::*;
 use netpod::{ArchiverAppliance, ChannelConfigQuery, ChannelConfigResponse};
@@ -41,7 +41,7 @@ pub struct PbFileReader {
 fn parse_scalar_byte(m: &[u8], year: u32) -> Result<EventsItem, Error> {
     let msg = crate::generated::EPICSEvent::ScalarByte::parse_from_bytes(m)
         .map_err(|_| Error::with_msg(format!("can not parse pb-type {}", "ScalarByte")))?;
-    let mut t = EventValues::<i8> {
+    let mut t = ScalarEvents::<i8> {
         tss: vec![],
         values: vec![],
     };
@@ -57,7 +57,7 @@ macro_rules! scalar_parse {
     ($m:expr, $year:expr, $pbt:ident, $eit:ident, $evty:ident) => {{
         let msg = crate::generated::EPICSEvent::$pbt::parse_from_bytes($m)
             .map_err(|e| Error::with_msg(format!("can not parse pb-type {}  {:?}", stringify!($pbt), e)))?;
-        let mut t = EventValues::<$evty> {
+        let mut t = ScalarEvents::<$evty> {
             tss: vec![],
             values: vec![],
         };

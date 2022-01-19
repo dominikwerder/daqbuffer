@@ -1,5 +1,5 @@
-use items::eventvalues::EventValues;
 use items::numops::NumOps;
+use items::scalarevents::ScalarEvents;
 use items::EventsNodeProcessor;
 use netpod::{AggKind, Shape};
 use std::marker::PhantomData;
@@ -12,8 +12,8 @@ impl<NTY> EventsNodeProcessor for Identity<NTY>
 where
     NTY: NumOps,
 {
-    type Input = EventValues<NTY>;
-    type Output = EventValues<NTY>;
+    type Input = ScalarEvents<NTY>;
+    type Output = ScalarEvents<NTY>;
 
     fn create(_shape: Shape, _agg_kind: AggKind) -> Self {
         Self { _m1: PhantomData }

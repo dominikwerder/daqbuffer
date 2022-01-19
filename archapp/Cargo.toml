@@ -2,7 +2,7 @@
 name = "archapp"
 version = "0.0.1-a.dev.4"
 authors = ["Dominik Werder <dominik.werder@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [dependencies]
 tokio = { version = "1.7.1", features = ["io-util", "net", "time", "sync", "fs", "parking_lot"] }

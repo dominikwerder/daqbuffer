@@ -16,19 +16,19 @@ use tokio::fs::File;
 // TODO add pulse. Is this even used??
 // TODO change name, it's not only about values, but more like batch of whole events.
 #[derive(Serialize, Deserialize)]
-pub struct EventValues<NTY> {
+pub struct ScalarEvents<NTY> {
     pub tss: Vec<u64>,
     pub values: Vec<NTY>,
 }
 
-impl<NTY> SitemtyFrameType for EventValues<NTY>
+impl<NTY> SitemtyFrameType for ScalarEvents<NTY>
 where
     NTY: NumOps,
 {
     const FRAME_TYPE_ID: u32 = crate::EVENT_VALUES_FRAME_TYPE_ID + NTY::SUB;
 }
 
-impl<NTY> EventValues<NTY> {
+impl<NTY> ScalarEvents<NTY> {
     pub fn empty() -> Self {
         Self {
             tss: vec![],
@@ -37,7 +37,7 @@ impl<NTY> EventValues<NTY> {
     }
 }
 
-impl<NTY> fmt::Debug for EventValues<NTY>
+impl<NTY> fmt::Debug for ScalarEvents<NTY>
 where
     NTY: fmt::Debug,
 {
@@ -54,7 +54,7 @@ where
     }
 }
 
-impl<NTY> WithLen for EventValues<NTY>
+impl<NTY> WithLen for ScalarEvents<NTY>
 where
     NTY: NumOps,
 {
@@ -63,7 +63,7 @@ where
     }
 }
 
-impl<NTY> WithTimestamps for EventValues<NTY>
+impl<NTY> WithTimestamps for ScalarEvents<NTY>
 where
     NTY: NumOps,
 {
@@ -72,7 +72,7 @@ where
     }
 }
 
-impl<NTY> ByteEstimate for EventValues<NTY>
+impl<NTY> ByteEstimate for ScalarEvents<NTY>
 where
     NTY: NumOps,
 {
@@ -86,7 +86,7 @@ where
     }
 }
 
-impl<NTY> RangeOverlapInfo for EventValues<NTY> {
+impl<NTY> RangeOverlapInfo for ScalarEvents<NTY> {
     fn ends_before(&self, range: NanoRange) -> bool {
         match self.tss.last() {
             Some(&ts) => ts < range.beg,
@@ -109,7 +109,7 @@ impl<NTY> RangeOverlapInfo for EventValues<NTY> {
     }
 }
 
-impl<NTY> FitsInside for EventValues<NTY> {
+impl<NTY> FitsInside for ScalarEvents<NTY> {
     fn fits_inside(&self, range: NanoRange) -> Fits {
         if self.tss.is_empty() {
             Fits::Empty
@@ -133,7 +133,7 @@ impl<NTY> FitsInside for EventValues<NTY> {
     }
 }
 
-impl<NTY> FilterFittingInside for EventValues<NTY> {
+impl<NTY> FilterFittingInside for ScalarEvents<NTY> {
     fn filter_fitting_inside(self, fit_range: NanoRange) -> Option<Self> {
         match self.fits_inside(fit_range) {
             Fits::Inside | Fits::PartlyGreater | Fits::PartlyLower | Fits::PartlyLowerAndGreater => Some(self),
@@ -142,7 +142,7 @@ impl<NTY> FilterFittingInside for EventValues<NTY> {
     }
 }
 
-impl<NTY> PushableIndex for EventValues<NTY>
+impl<NTY> PushableIndex for ScalarEvents<NTY>
 where
     NTY: NumOps,
 {
@@ -152,7 +152,7 @@ where
     }
 }
 
-impl<NTY> Appendable for EventValues<NTY>
+impl<NTY> Appendable for ScalarEvents<NTY>
 where
     NTY: NumOps,
 {
@@ -166,14 +166,14 @@ where
     }
 }
 
-impl<NTY> Clearable for EventValues<NTY> {
+impl<NTY> Clearable for ScalarEvents<NTY> {
     fn clear(&mut self) {
         self.tss.clear();
         self.values.clear();
     }
 }
 
-impl<NTY> ReadableFromFile for EventValues<NTY>
+impl<NTY> ReadableFromFile for ScalarEvents<NTY>
 where
     NTY: NumOps,
 {
@@ -187,7 +187,7 @@ where
     }
 }
 
-impl<NTY> TimeBinnableType for EventValues<NTY>
+impl<NTY> TimeBinnableType for ScalarEvents<NTY>
 where
     NTY: NumOps,
 {
@@ -204,7 +204,7 @@ where
 }
 
 pub struct EventValuesCollector<NTY> {
-    vals: EventValues<NTY>,
+    vals: ScalarEvents<NTY>,
     range_complete: bool,
     timed_out: bool,
 }
@@ -212,7 +212,7 @@ pub struct EventValuesCollector<NTY> {
 impl<NTY> EventValuesCollector<NTY> {
     pub fn new() -> Self {
         Self {
-            vals: EventValues::empty(),
+            vals: ScalarEvents::empty(),
             range_complete: false,
             timed_out: false,
         }
@@ -244,7 +244,7 @@ impl<NTY> Collector for EventValuesCollector<NTY>
 where
     NTY: NumOps,
 {
-    type Input = EventValues<NTY>;
+    type Input = ScalarEvents<NTY>;
     type Output = EventValuesCollectorOutput<NTY>;
 
     fn ingest(&mut self, src: &Self::Input) {
@@ -273,7 +273,7 @@ where
     }
 }
 
-impl<NTY> Collectable for EventValues<NTY>
+impl<NTY> Collectable for ScalarEvents<NTY>
 where
     NTY: NumOps,
 {
@@ -467,7 +467,7 @@ impl<NTY> TimeBinnableTypeAggregator for EventValuesAggregator<NTY>
 where
     NTY: NumOps,
 {
-    type Input = EventValues<NTY>;
+    type Input = ScalarEvents<NTY>;
     type Output = MinMaxAvgBins<NTY>;
 
     fn range(&self) -> &NanoRange {
@@ -493,7 +493,7 @@ where
     }
 }
 
-impl<NTY> EventAppendable for EventValues<NTY>
+impl<NTY> EventAppendable for ScalarEvents<NTY>
 where
     NTY: NumOps,
 {

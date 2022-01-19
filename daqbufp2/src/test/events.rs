@@ -8,7 +8,7 @@ use err::Error;
 use futures_util::{StreamExt, TryStreamExt};
 use http::StatusCode;
 use hyper::Body;
-use items::eventvalues::EventValues;
+use items::scalarevents::ScalarEvents;
 use items::numops::NumOps;
 use items::{FrameType, RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithLen};
 use netpod::log::*;
@@ -147,11 +147,11 @@ where
                         None
                     }
                     StreamItem::DataItem(frame) => {
-                        if frame.tyid() != <Sitemty<EventValues<NTY>> as FrameType>::FRAME_TYPE_ID {
+                        if frame.tyid() != <Sitemty<ScalarEvents<NTY>> as FrameType>::FRAME_TYPE_ID {
                             error!("test receives unexpected tyid {:x}", frame.tyid());
                             None
                         } else {
-                            match bincode::deserialize::<Sitemty<EventValues<NTY>>>(frame.buf()) {
+                            match bincode::deserialize::<Sitemty<ScalarEvents<NTY>>>(frame.buf()) {
                                 Ok(item) => match item {
                                     Ok(item) => match item {
                                         StreamItem::Log(item) => {

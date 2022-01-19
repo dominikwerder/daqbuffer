@@ -21,8 +21,8 @@ use items::{
     Clearable, EventsNodeProcessor, FilterFittingInside, Framable, FrameType, PushableIndex, RangeCompletableItem,
     Sitemty, StreamItem, TimeBinnableType, WithLen,
 };
-use netpod::log::*;
 use netpod::query::{BinnedQuery, RawEventsQuery};
+use netpod::{log::*, ScalarType};
 use netpod::{
     x_bin_count, BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange, Shape,
 };
@@ -54,6 +54,7 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
     fn exec<NTY, END, EVS, ENP>(
         self,
         _byte_order: END,
+        _scalar_type: ScalarType,
         shape: Shape,
         event_value_shape: EVS,
         _events_node_proc: ENP,
@@ -297,6 +298,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
     fn exec<NTY, END, EVS, ENP>(
         self,
         _byte_order: END,
+        _scalar_type: ScalarType,
         shape: Shape,
         event_value_shape: EVS,
         _events_node_proc: ENP,

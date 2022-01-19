@@ -5,7 +5,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::eventsitem::EventsItem;
-use items::eventvalues::EventValues;
+use items::scalarevents::ScalarEvents;
 use items::numops::{BoolNum, NumOps};
 use items::plainevents::{PlainEvents, ScalarPlainEvents};
 use items::waveevents::{WaveEvents, WaveNBinner, WavePlainProc, WaveXBinner};
@@ -100,7 +100,7 @@ where
     NTY: NumOps + NumFromBytes<NTY, END>,
 {
     type Output = NTY;
-    type Batch = EventValues<NTY>;
+    type Batch = ScalarEvents<NTY>;
 
     fn convert(&self, buf: &[u8], big_endian: bool) -> Result<Self::Output, Error> {
         Ok(NTY::convert(buf, big_endian))
@@ -351,52 +351,52 @@ impl EventsItemStream {
                         Shape::Scalar => match &tyi.as_ref().unwrap().0 {
                             ScalarType::U8 => {
                                 // TODO
-                                let cont = EventValues::<i8>::empty();
+                                let cont = ScalarEvents::<i8>::empty();
                                 ret = Some(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::I8(cont))));
                             }
                             ScalarType::U16 => {
                                 // TODO
-                                let cont = EventValues::<i16>::empty();
+                                let cont = ScalarEvents::<i16>::empty();
                                 ret = Some(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::I16(cont))));
                             }
                             ScalarType::U32 => {
                                 // TODO
-                                let cont = EventValues::<i32>::empty();
+                                let cont = ScalarEvents::<i32>::empty();
                                 ret = Some(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::I32(cont))));
                             }
                             ScalarType::U64 => {
                                 // TODO
-                                let cont = EventValues::<i32>::empty();
+                                let cont = ScalarEvents::<i32>::empty();
                                 ret = Some(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::I32(cont))));
                             }
                             ScalarType::I8 => {
-                                let cont = EventValues::<i8>::empty();
+                                let cont = ScalarEvents::<i8>::empty();
                                 ret = Some(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::I8(cont))));
                             }
                             ScalarType::I16 => {
-                                let cont = EventValues::<i16>::empty();
+                                let cont = ScalarEvents::<i16>::empty();
                                 ret = Some(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::I16(cont))));
                             }
                             ScalarType::I32 => {
-                                let cont = EventValues::<i32>::empty();
+                                let cont = ScalarEvents::<i32>::empty();
                                 ret = Some(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::I32(cont))));
                             }
                             ScalarType::I64 => {
                                 // TODO
-                                let cont = EventValues::<i32>::empty();
+                                let cont = ScalarEvents::<i32>::empty();
                                 ret = Some(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::I32(cont))));
                             }
                             ScalarType::F32 => {
-                                let cont = EventValues::<f32>::empty();
+                                let cont = ScalarEvents::<f32>::empty();
                                 ret = Some(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::F32(cont))));
                             }
                             ScalarType::F64 => {
-                                let cont = EventValues::<f64>::empty();
+                                let cont = ScalarEvents::<f64>::empty();
                                 ret = Some(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::F64(cont))));
                             }
                             ScalarType::BOOL => {
                                 // TODO
-                                let cont = EventValues::<i8>::empty();
+                                let cont = ScalarEvents::<i8>::empty();
                                 ret = Some(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::I8(cont))));
                             }
                         },

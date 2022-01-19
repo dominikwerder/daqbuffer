@@ -4,8 +4,8 @@ use commonio::ringbuf::RingBuf;
 use commonio::{read_exact, seek};
 use err::Error;
 use items::eventsitem::EventsItem;
-use items::eventvalues::EventValues;
 use items::plainevents::{PlainEvents, ScalarPlainEvents, WavePlainEvents};
+use items::scalarevents::ScalarEvents;
 use items::waveevents::WaveEvents;
 use netpod::log::*;
 use netpod::timeunits::SEC;
@@ -353,7 +353,7 @@ ex_v!(f64, ex_v_f64);
 macro_rules! read_msg {
     ($sty:ident, $exfs:ident, $exfv:ident, $evvar:ident, $rb:expr, $msglen:expr, $numsamples:expr, $dbrt:expr, $dbrcount:ident) => {
         if $dbrcount == 1 {
-            let mut evs = EventValues::empty();
+            let mut evs = ScalarEvents::empty();
             for _ in 0..$numsamples {
                 $rb.fill_min($msglen).await?;
                 let buf = $rb.data();
@@ -459,7 +459,7 @@ pub async fn read_data2(
         DbrType::DbrTimeString => {
             if dbrcount == 1 {
                 // TODO
-                let evs = ScalarPlainEvents::I8(EventValues::empty());
+                let evs = ScalarPlainEvents::I8(ScalarEvents::empty());
                 let plain = PlainEvents::Scalar(evs);
                 let item = EventsItem::Plain(plain);
                 item
@@ -494,7 +494,7 @@ pub async fn read_data_1(
         DbrType::DbrTimeDouble => {
             if datafile_header.dbr_count == 1 {
                 trace!("~~~~~~~~~~~~~~~~~~~~~   read  scalar  DbrTimeDouble");
-                let mut evs = EventValues {
+                let mut evs = ScalarEvents {
                     tss: vec![],
                     values: vec![],
                 };
