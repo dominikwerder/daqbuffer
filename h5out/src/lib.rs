@@ -81,7 +81,7 @@ fn write_file(out: &Out) -> Result<(), Error> {
         .truncate(true)
         .create(true)
         .open("f.h5")?;
-    f.write(out.cur.get_ref())?;
+    f.write_all(out.cur.get_ref())?;
     Ok(())
 }
 
@@ -109,7 +109,7 @@ fn write_superblock(out: &mut Out) -> Result<(), Error> {
     let free_index_addr = u64::MAX;
     let eof = 4242;
     write_padding(out)?;
-    out.write(b"\x89HDF\r\n\x1a\n")?;
+    out.write_all(b"\x89HDF\r\n\x1a\n")?;
     out.write_u8(super_ver)?;
     out.write_u8(free_ver)?;
     out.write_u8(root_group_ver)?;
@@ -183,7 +183,7 @@ fn write_local_heap(out: &mut Out) -> Result<(), Error> {
     let seg_size = 1024;
     let free_list_off = u64::MAX;
     let seg_addr = pos0 + 32;
-    out.write(b"HEAP")?;
+    out.write_all(b"HEAP")?;
     out.write_u8(ver)?;
     out.write_u8(0)?;
     out.write_u8(0)?;
@@ -191,11 +191,11 @@ fn write_local_heap(out: &mut Out) -> Result<(), Error> {
     out.write_u64(seg_size)?;
     out.write_u64(free_list_off)?;
     out.write_u64(seg_addr)?;
-    out.write(&[0; 1024])?;
+    out.write_all(&[0; 1024])?;
     {
         let h = out.cur.position();
         out.cur.set_position(h - 1024);
-        out.write(b"somename")?;
+        out.write_all(b"somename")?;
         out.cur.set_position(h);
     }
     Ok(())
