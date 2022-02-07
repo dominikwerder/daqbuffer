@@ -25,6 +25,7 @@ impl SingleBinWaveEvents {
         items_proc::tycases1!(self, Self, (k), { "$id".into() })
     }
 
+    // TODO possible to remove?
     fn x_aggregate(self, ak: &AggKind) -> EventsItem {
         items_proc::tycases1!(self, Self, (k), {
             match ak {
@@ -33,6 +34,7 @@ impl SingleBinWaveEvents {
                 AggKind::TimeWeightedScalar => err::todoval(),
                 AggKind::DimXBins1 => err::todoval(),
                 AggKind::DimXBinsN(_) => EventsItem::Plain(PlainEvents::Wave(err::todoval())),
+                AggKind::Stats1 => err::todoval(),
             }
         })
     }
@@ -121,6 +123,7 @@ impl MultiBinWaveEvents {
                 AggKind::TimeWeightedScalar => err::todoval(),
                 AggKind::DimXBins1 => err::todoval(),
                 AggKind::DimXBinsN(_) => EventsItem::Plain(PlainEvents::Wave(err::todoval())),
+                AggKind::Stats1 => err::todoval(),
             }
         })
     }

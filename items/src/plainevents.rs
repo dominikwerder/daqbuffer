@@ -132,6 +132,7 @@ impl WavePlainEvents {
                     EventsItem::XBinnedEvents(XBinnedEvents::SingleBinWave(SingleBinWaveEvents::$id(j)))
                 }
                 AggKind::DimXBinsN(_) => EventsItem::Plain(PlainEvents::Wave(err::todoval())),
+                AggKind::Stats1 => err::todoval(),
             }
         })
     }

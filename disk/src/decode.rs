@@ -5,9 +5,9 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::eventsitem::EventsItem;
-use items::scalarevents::ScalarEvents;
 use items::numops::{BoolNum, NumOps};
 use items::plainevents::{PlainEvents, ScalarPlainEvents};
+use items::scalarevents::ScalarEvents;
 use items::waveevents::{WaveEvents, WaveNBinner, WavePlainProc, WaveXBinner};
 use items::{Appendable, EventAppendable, EventsNodeProcessor, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::{ScalarType, Shape};
@@ -140,6 +140,7 @@ where
     type NumXAggToSingleBin: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Batch>;
     type NumXAggToNBins: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Batch>;
     type NumXAggPlain: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Batch>;
+    type NumXAggToStats1: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Batch>;
 }
 
 pub struct EventValuesDim0Case<NTY> {
@@ -160,6 +161,7 @@ where
     // TODO is this sufficient?
     type NumXAggToNBins = Identity<NTY>;
     type NumXAggPlain = Identity<NTY>;
+    type NumXAggToStats1 = Identity<NTY>;
 }
 
 pub struct EventValuesDim1Case<NTY> {
@@ -180,6 +182,7 @@ where
     type NumXAggToSingleBin = WaveXBinner<NTY>;
     type NumXAggToNBins = WaveNBinner<NTY>;
     type NumXAggPlain = WavePlainProc<NTY>;
+    type NumXAggToStats1 = crate::agg::enp::Stats1Wave<NTY>;
 }
 
 pub struct EventsDecodedStream<NTY, END, EVS>

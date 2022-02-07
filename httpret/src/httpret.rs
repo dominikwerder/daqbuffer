@@ -1,6 +1,7 @@
 pub mod api1;
 pub mod channelarchiver;
 pub mod err;
+pub mod evinfo;
 pub mod gather;
 pub mod proxy;
 pub mod pulsemap;
@@ -50,14 +51,20 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
     let addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen, node_config.node.port))?;
     let make_service = make_service_fn({
         move |conn: &AddrStream| {
-            // TODO send to logstash
             debug!("new connection from {:?}", conn.remote_addr());
             let node_config = node_config.clone();
             let addr = conn.remote_addr();
             async move {
                 Ok::<_, Error>(service_fn({
                     move |req| {
-                        info!("REQUEST  {:?}  {:?}", addr, req.uri());
+                        // TODO send to logstash
+                        info!(
+                            "REQUEST  {:?} - {:?} - {:?} - {:?}",
+                            addr,
+                            req.method(),
+                            req.uri(),
+                            req.headers()
+                        );
                         let f = http_service(req, node_config.clone());
                         Cont { f: Box::pin(f) }
                     }
@@ -170,8 +177,6 @@ macro_rules! static_http_api1 {
 }
 
 async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    // TODO send to logstash
-    debug!("http_service_try  {:?}", req.uri());
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/4/node_status" {
@@ -289,6 +294,8 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if let Some(h) = evinfo::EventInfoScan::handler(&req) {
+        h.handle(req, &node_config).await
     } else if let Some(h) = pulsemap::IndexFullHttpFunction::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = pulsemap::MarkClosedHttpFunction::handler(&req) {

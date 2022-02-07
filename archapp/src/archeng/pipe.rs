@@ -86,6 +86,7 @@ pub async fn make_event_pipe(
             }
             AggKind::DimXBinsN(_) => err::todoval(),
             AggKind::EventBlobs => err::todoval(),
+            AggKind::Stats1 => err::todoval(),
         },
         Shape::Wave(_n1) => match evq.agg_kind {
             AggKind::Plain => Box::pin(filtered) as Pin<Box<dyn Stream<Item = _> + Send>>,
@@ -286,6 +287,7 @@ pub async fn make_event_pipe(
                 Box::pin(tr) as _
             }
             AggKind::EventBlobs => err::todoval(),
+            AggKind::Stats1 => err::todoval(),
         },
         _ => {
             error!("TODO shape {:?}", channel_config.shape);

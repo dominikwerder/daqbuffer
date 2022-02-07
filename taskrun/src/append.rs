@@ -1,7 +1,7 @@
 use err::Error;
 use std::borrow::Cow;
 use std::fs;
-use std::io::{BufWriter, Read, Seek, SeekFrom, Stderr, Stdin, Write};
+use std::io::{BufWriter, Read, Seek, SeekFrom, Stdin, Write};
 use std::path::{Path, PathBuf};
 
 pub struct Buffer {
@@ -155,7 +155,7 @@ fn next_file(dir: &Path) -> Result<BufWriter<fs::File>, Error> {
     Ok(ret)
 }
 
-pub fn append_inner(dirname: &str, mut stdin: Stdin, _stderr: Stderr) -> Result<(), Error> {
+pub fn append_inner(dirname: &str, mut stdin: Stdin) -> Result<(), Error> {
     let mut bytes_written = 0;
     let dir = PathBuf::from(dirname);
     let mut fout = open_latest_or_new(&dir)?;
@@ -237,11 +237,13 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin, _stderr: Stderr) -> Result<
     }
 }
 
-pub fn append(dirname: &str, stdin: Stdin, _stderr: Stderr) -> Result<(), Error> {
-    match append_inner(dirname, stdin, _stderr) {
+pub fn append(dirname: &str, stdin: Stdin) -> Result<(), Error> {
+    match append_inner(dirname, stdin) {
         Ok(k) => Ok(k),
         Err(e) => {
-            eprintln!("got error {:?}", e);
+            let dir = PathBuf::from(dirname);
+            let mut fout = open_latest_or_new(&dir)?;
+            let _ = write!(fout, "ERROR in append_inner: {:?}", e);
             Err(e)
         }
     }

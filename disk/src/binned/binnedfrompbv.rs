@@ -107,7 +107,7 @@ where
                                 continue 'outer;
                             } else {
                                 let msg =
-                                    format!("PreBinnedValueFetchedStream  got non-OK result from sub request: {res:?}");
+                                    format!("PreBinnedValueFetchedStream  non-OK result from sub request: {res:?}");
                                 error!("{msg}");
                                 let e = Error::with_msg_no_trace(msg);
                                 self.errored = true;

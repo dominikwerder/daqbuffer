@@ -11,6 +11,7 @@ pub fn make_test_node(id: u32) -> Node {
         listen: "0.0.0.0".into(),
         port: 8800 + id as u16,
         port_raw: 8800 + id as u16 + 100,
+        // TODO use a common function to supply the tmp path.
         data_base_path: format!("../tmpdata/node{:02}", id).into(),
         cache_base_path: format!("../tmpdata/node{:02}", id).into(),
         ksprefix: "ks".into(),

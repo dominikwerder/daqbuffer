@@ -18,7 +18,8 @@ pub fn gen_test_data_test() {
 }
 
 pub async fn gen_test_data() -> Result<(), Error> {
-    let data_base_path = PathBuf::from("tmpdata");
+    let homedir = std::env::var("HOME").unwrap();
+    let data_base_path = PathBuf::from(homedir).join("daqbuffer-testdata").join("databuffer");
     let ksprefix = String::from("ks");
     let mut ensemble = Ensemble {
         nodes: vec![],

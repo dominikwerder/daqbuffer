@@ -122,14 +122,19 @@ pub async fn channel_search_list_v1(req: Request<Body>, proxy_config: &ProxyConf
                         a
                     })?;
                 let tags: Vec<_> = urls.iter().map(|k| k.to_string()).collect();
-                let nt = |res| {
+                let nt = |tag, res| {
                     let fut = async {
                         let body = hyper::body::to_bytes(res).await?;
                         let res: ChannelSearchResult = match serde_json::from_slice(&body) {
                             Ok(k) => k,
                             Err(_) => ChannelSearchResult { channels: vec![] },
                         };
-                        Ok(res)
+                        let ret = SubRes {
+                            tag,
+                            status: StatusCode::OK,
+                            val: res,
+                        };
+                        Ok(ret)
                     };
                     Box::pin(fut) as Pin<Box<dyn Future<Output = _> + Send>>
                 };
@@ -216,14 +221,19 @@ pub async fn channel_search_configs_v1(
                         a
                     })?;
                 let tags: Vec<_> = urls.iter().map(|k| k.to_string()).collect();
-                let nt = |res| {
+                let nt = |tag, res| {
                     let fut = async {
                         let body = hyper::body::to_bytes(res).await?;
                         let res: ChannelSearchResult = match serde_json::from_slice(&body) {
                             Ok(k) => k,
                             Err(_) => ChannelSearchResult { channels: vec![] },
                         };
-                        Ok(res)
+                        let ret = SubRes {
+                            tag,
+                            status: StatusCode::OK,
+                            val: res,
+                        };
+                        Ok(ret)
                     };
                     Box::pin(fut) as Pin<Box<dyn Future<Output = _> + Send>>
                 };

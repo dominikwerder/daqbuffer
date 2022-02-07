@@ -99,7 +99,7 @@ async fn go() -> Result<(), Error> {
         }
         SubCmd::Logappend(k) => {
             let jh = tokio::task::spawn_blocking(move || {
-                taskrun::append::append(&k.dir, std::io::stdin(), std::io::stderr()).unwrap();
+                taskrun::append::append(&k.dir, std::io::stdin()).unwrap();
             });
             jh.await.map_err(Error::from_string)?;
         }

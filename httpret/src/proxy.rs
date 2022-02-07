@@ -41,6 +41,14 @@ pub async fn proxy(proxy_config: ProxyConfig) -> Result<(), Error> {
             async move {
                 Ok::<_, Error>(service_fn({
                     move |req| {
+                        // TODO send to logstash
+                        info!(
+                            "REQUEST  {:?} - {:?} - {:?} - {:?}",
+                            addr,
+                            req.method(),
+                            req.uri(),
+                            req.headers()
+                        );
                         let f = proxy_http_service(req, proxy_config.clone());
                         Cont { f: Box::pin(f) }
                     }
@@ -119,6 +127,26 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if path.starts_with("/api/4/test/http/204") {
+        Ok(response(StatusCode::NO_CONTENT).body(Body::from("No Content"))?)
+    } else if path.starts_with("/api/4/test/http/400") {
+        Ok(response(StatusCode::BAD_REQUEST).body(Body::from("Bad Request"))?)
+    } else if path.starts_with("/api/4/test/http/405") {
+        Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::from("Method Not Allowed"))?)
+    } else if path.starts_with("/api/4/test/http/406") {
+        Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::from("Not Acceptable"))?)
+    } else if path.starts_with("/api/4/test/log/error") {
+        error!("{path}");
+        Ok(response(StatusCode::OK).body(Body::empty())?)
+    } else if path.starts_with("/api/4/test/log/warn") {
+        warn!("{path}");
+        Ok(response(StatusCode::OK).body(Body::empty())?)
+    } else if path.starts_with("/api/4/test/log/info") {
+        info!("{path}");
+        Ok(response(StatusCode::OK).body(Body::empty())?)
+    } else if path.starts_with("/api/4/test/log/debug") {
+        debug!("{path}");
+        Ok(response(StatusCode::OK).body(Body::empty())?)
     } else if path.starts_with(DISTRI_PRE) {
         proxy_distribute_v2(req).await
     } else {
@@ -241,55 +269,74 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                     });
                 }
                 let tags = urls.iter().map(|k| k.to_string()).collect();
-                let nt = |res| {
+                let nt = |tag, res| {
                     let fut = async {
                         let body = hyper::body::to_bytes(res).await?;
                         //info!("got a result {:?}", body);
-                        let res: ChannelSearchResult = match serde_json::from_slice::<ChannelSearchResult>(&body) {
-                            Ok(k) => k,
-                            Err(_) => {
-                                #[derive(Deserialize)]
-                                struct ResItemApi0 {
-                                    name: String,
-                                    source: String,
-                                    backend: String,
-                                    #[serde(rename = "type")]
-                                    ty: String,
+                        let res: SubRes<ChannelSearchResult> =
+                            match serde_json::from_slice::<ChannelSearchResult>(&body) {
+                                Ok(val) => {
+                                    let ret = SubRes {
+                                        tag,
+                                        status: StatusCode::OK,
+                                        val,
+                                    };
+                                    ret
                                 }
-                                #[derive(Deserialize)]
-                                struct ResContApi0 {
-                                    #[allow(dead_code)]
-                                    backend: String,
-                                    channels: Vec<ResItemApi0>,
-                                }
-                                match serde_json::from_slice::<Vec<ResContApi0>>(&body) {
-                                    Ok(k) => {
-                                        let mut a = vec![];
-                                        if let Some(g) = k.first() {
-                                            for c in &g.channels {
-                                                let z = ChannelSearchSingleResult {
-                                                    backend: c.backend.clone(),
-                                                    description: String::new(),
-                                                    name: c.name.clone(),
-                                                    shape: vec![],
-                                                    source: c.source.clone(),
-                                                    ty: c.ty.clone(),
-                                                    unit: String::new(),
-                                                    is_api_0: Some(true),
-                                                };
-                                                a.push(z);
+                                Err(_) => {
+                                    #[derive(Deserialize)]
+                                    struct ResItemApi0 {
+                                        name: String,
+                                        source: String,
+                                        backend: String,
+                                        #[serde(rename = "type")]
+                                        ty: String,
+                                    }
+                                    #[derive(Deserialize)]
+                                    struct ResContApi0 {
+                                        #[allow(dead_code)]
+                                        backend: String,
+                                        channels: Vec<ResItemApi0>,
+                                    }
+                                    match serde_json::from_slice::<Vec<ResContApi0>>(&body) {
+                                        Ok(k) => {
+                                            let mut a = vec![];
+                                            if let Some(g) = k.first() {
+                                                for c in &g.channels {
+                                                    let z = ChannelSearchSingleResult {
+                                                        backend: c.backend.clone(),
+                                                        description: String::new(),
+                                                        name: c.name.clone(),
+                                                        shape: vec![],
+                                                        source: c.source.clone(),
+                                                        ty: c.ty.clone(),
+                                                        unit: String::new(),
+                                                        is_api_0: Some(true),
+                                                    };
+                                                    a.push(z);
+                                                }
                                             }
+                                            let ret = ChannelSearchResult { channels: a };
+                                            let ret = SubRes {
+                                                tag,
+                                                status: StatusCode::OK,
+                                                val: ret,
+                                            };
+                                            ret
                                         }
-                                        let ret = ChannelSearchResult { channels: a };
-                                        ret
-                                    }
-                                    Err(_) => {
-                                        error!("Channel search response parse failed");
-                                        ChannelSearchResult { channels: vec![] }
+                                        Err(_) => {
+                                            error!("Channel search response parse failed");
+                                            let ret = ChannelSearchResult { channels: vec![] };
+                                            let ret = SubRes {
+                                                tag,
+                                                status: StatusCode::OK,
+                                                val: ret,
+                                            };
+                                            ret
+                                        }
                                     }
                                 }
-                            }
-                        };
+                            };
                         Ok(res)
                     };
                     Box::pin(fut) as Pin<Box<dyn Future<Output = _> + Send>>
@@ -428,22 +475,46 @@ where
                         a
                     })?;
                 let tags: Vec<_> = urls.iter().map(|k| k.to_string()).collect();
-                let nt = |res| {
+                let nt = |tag: String, res: Response<Body>| {
                     let fut = async {
-                        let body = hyper::body::to_bytes(res).await?;
-                        match serde_json::from_slice::<JsonValue>(&body) {
-                            Ok(k) => Ok(k),
-                            Err(e) => Err(e.into()),
+                        let (head, body) = res.into_parts();
+                        if head.status == StatusCode::OK {
+                            let body = hyper::body::to_bytes(body).await?;
+                            match serde_json::from_slice::<JsonValue>(&body) {
+                                Ok(val) => {
+                                    let ret = SubRes {
+                                        tag,
+                                        status: head.status,
+                                        val,
+                                    };
+                                    Ok(ret)
+                                }
+                                Err(e) => {
+                                    warn!("can not parse response: {e:?}");
+                                    Err(e.into())
+                                }
+                            }
+                        } else {
+                            let body = hyper::body::to_bytes(body).await?;
+                            let b = String::from_utf8_lossy(&body);
+                            let ret = SubRes {
+                                tag,
+                                status: head.status,
+                                // TODO would like to pass arbitrary type of body in these cases:
+                                val: serde_json::Value::String(format!("{}", b)),
+                            };
+                            Ok(ret)
                         }
                     };
-                    Box::pin(fut) as Pin<Box<dyn Future<Output = _> + Send>>
+                    Box::pin(fut) as Pin<Box<dyn Future<Output = Result<SubRes<serde_json::Value>, Error>> + Send>>
                 };
                 let ft = |mut all: Vec<SubRes<JsonValue>>| {
                     if all.len() > 0 {
                         all.truncate(1);
                         let z = all.pop().unwrap();
                         let res = z.val;
-                        let res = response(StatusCode::OK)
+                        // TODO want to pass arbitrary body type:
+                        let res = response(z.status)
                             .header(http::header::CONTENT_TYPE, APP_JSON)
                             .body(Body::from(serde_json::to_string(&res)?))?;
                         return Ok(res);
@@ -472,9 +543,11 @@ fn get_query_host_for_backend(backend: &str, proxy_config: &ProxyConfig) -> Resu
     return Err(Error::with_msg(format!("host not found for backend {:?}", backend)));
 }
 
-fn get_query_host_for_backend_2(backend: &str, _proxy_config: &ProxyConfig) -> Result<String, Error> {
-    if backend == "sf-databuffer" {
-        return Ok("https://sf-data-api.psi.ch".into());
+fn get_query_host_for_backend_2(backend: &str, proxy_config: &ProxyConfig) -> Result<String, Error> {
+    for back in &proxy_config.backends2 {
+        if back.name == backend {
+            return Ok(back.url.clone());
+        }
     }
     return Err(Error::with_msg(format!("host not found for backend {:?}", backend)));
 }

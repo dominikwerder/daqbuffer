@@ -326,7 +326,7 @@ async fn update_task(do_abort: Arc<AtomicUsize>, node_config: NodeConfigCached) 
             info!("update_task  break A");
             break;
         }
-        tokio::time::sleep(Duration::from_millis(10000)).await;
+        tokio::time::sleep(Duration::from_millis(60000)).await;
         if do_abort.load(Ordering::SeqCst) != 0 {
             info!("update_task  break B");
             break;
@@ -464,7 +464,6 @@ impl FromUrl for MapPulseQuery {
             .into();
         let pulse: u64 = pulsestr.parse()?;
         let ret = Self { backend, pulse };
-        info!("GOT {:?}", ret);
         Ok(ret)
     }
 }
@@ -647,7 +646,7 @@ impl Api4MapPulseHttpFunction {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
-        info!("Api4MapPulseHttpFunction  handle  uri: {:?}", req.uri());
+        //info!("Api4MapPulseHttpFunction  handle  uri: {:?}", req.uri());
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let q = MapPulseQuery::from_url(&url)?;
         let histo = MapPulseHistoHttpFunction::histo(q.pulse, node_config).await?;

@@ -48,7 +48,11 @@ pub async fn delay_io_medium() {
 pub async fn create_connection(db_config: &Database) -> Result<Client, Error> {
     let d = db_config;
     let uri = format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, 5432, d.name);
-    let (cl, conn) = tokio_postgres::connect(&uri, NoTls).await.errconv()?;
+    let (cl, conn) = tokio_postgres::connect(&uri, NoTls)
+        .await
+        .map_err(|e| format!("Can not connect to database: {e:?}"))
+        //.errconv()
+        ?;
     // TODO monitor connection drop.
     let _cjh = tokio::spawn(async move {
         if let Err(e) = conn.await {

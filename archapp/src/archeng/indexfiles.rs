@@ -104,8 +104,18 @@ pub async fn get_level_1(lev0: Vec<PathBuf>) -> Result<Vec<PathBuf>, Error> {
 
 pub async fn database_connect(db_config: &Database) -> Result<PgClient, Error> {
     let d = db_config;
-    let uri = format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, 5432, d.name);
-    let (cl, conn) = tokio_postgres::connect(&uri, tokio_postgres::NoTls).await.errstr()?;
+    let dbport = 5432;
+    let uri = format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, dbport, d.name);
+    let (cl, conn) = tokio_postgres::connect(&uri, tokio_postgres::NoTls)
+        .await
+        .map_err(|e| {
+            error!(
+                "Can not connect to database postgresql://{}:...@{}:{}/{}",
+                d.user, d.host, dbport, d.name
+            );
+            e
+        })
+        .errstr()?;
     // TODO monitor connection drop.
     let _cjh = tokio::spawn(async move {
         if let Err(e) = conn.await {
@@ -542,7 +552,10 @@ fn categorize_index_files(list: &Vec<String>) -> Result<Vec<IndexFile>, Error> {
 }
 
 pub async fn index_file_path_list(channel: Channel, dbconf: Database) -> Result<Vec<PathBuf>, Error> {
-    let dbc = database_connect(&dbconf).await?;
+    let dbc = database_connect(&dbconf).await.map_err(|e| {
+        error!("CAN NOT CONNECT TO DATABASE [{e:?}]");
+        e
+    })?;
     let sql = "select i.path from indexfiles i, channels c, channel_index_map m where c.name = $1 and m.channel = c.rowid and i.rowid = m.index";
     let rows = dbc.query(sql, &[&channel.name()]).await.errstr()?;
     let mut index_paths = vec![];

@@ -4,6 +4,7 @@ use futures_util::{select, FutureExt};
 use http::{Method, StatusCode};
 use hyper::{Body, Client, Request, Response};
 use hyper_tls::HttpsConnector;
+use netpod::log::*;
 use netpod::{Node, NodeConfigCached, APP_JSON};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -164,6 +165,7 @@ pub async fn gather_get_json(req: Request<Body>, node_config: &NodeConfigCached)
 
 pub struct SubRes<T> {
     pub tag: String,
+    pub status: StatusCode,
     pub val: T,
 }
 
@@ -178,7 +180,11 @@ pub async fn gather_get_json_generic<SM, NT, FT>(
 ) -> Result<Response<Body>, Error>
 where
     SM: Send + 'static,
-    NT: Fn(Response<Body>) -> Pin<Box<dyn Future<Output = Result<SM, Error>> + Send>> + Send + Sync + Copy + 'static,
+    NT: Fn(String, Response<Body>) -> Pin<Box<dyn Future<Output = Result<SubRes<SM>, Error>> + Send>>
+        + Send
+        + Sync
+        + Copy
+        + 'static,
     FT: Fn(Vec<SubRes<SM>>) -> Result<Response<Body>, Error>,
 {
     assert!(urls.len() == bodies.len());
@@ -223,10 +229,7 @@ where
                             client.request(req?).fuse()
                         }
                     } => {
-                        let ret = SubRes {
-                            tag: tag,
-                            val:nt(res?).await?,
-                        };
+                        let ret = nt(tag, res?).await?;
                         Ok(ret)
                     }
                 }
@@ -234,18 +237,23 @@ where
             (url, task)
         })
         .collect();
-    let mut a = vec![];
+    let mut a: Vec<SubRes<SM>> = vec![];
     for (_schemehostport, jh) in spawned {
-        let res = match jh.await {
+        let res: SubRes<SM> = match jh.await {
             Ok(k) => match k {
                 Ok(k) => k,
-                Err(e) => return Err(e),
+                Err(e) => {
+                    warn!("{e:?}");
+                    return Err(e);
+                }
             },
-            Err(e) => return Err(e.into()),
+            Err(e) => {
+                warn!("{e:?}");
+                return Err(e.into());
+            }
         };
         a.push(res);
     }
-    let a = a;
     ft(a)
 }
 
@@ -260,8 +268,15 @@ mod test {
             vec![],
             vec![],
             vec![],
-            |_res| {
-                let fut = async { Ok(()) };
+            |tag, _res| {
+                let fut = async {
+                    let ret = SubRes {
+                        tag,
+                        status: StatusCode::OK,
+                        val: (),
+                    };
+                    Ok(ret)
+                };
                 Box::pin(fut)
             },
             |_all| {

@@ -8,6 +8,7 @@ pub mod minmaxavgwavebins;
 pub mod numops;
 pub mod plainevents;
 pub mod scalarevents;
+pub mod statsevents;
 pub mod streams;
 pub mod waveevents;
 pub mod xbinnedscalarevents;
@@ -41,6 +42,7 @@ pub const MIN_MAX_AVG_WAVE_BINS: u32 = 0xa00;
 pub const MIN_MAX_AVG_DIM_1_BINS_FRAME_TYPE_ID: u32 = 0xb00;
 pub const EVENT_FULL_FRAME_TYPE_ID: u32 = 0x2200;
 pub const EVENTS_ITEM_FRAME_TYPE_ID: u32 = 0x2300;
+pub const STATS_EVENTS_FRAME_TYPE_ID: u32 = 0x2400;
 
 pub fn bool_is_false(j: &bool) -> bool {
     *j == false

@@ -9,8 +9,8 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::StreamExt;
-use items::scalarevents::ScalarEvents;
 use items::numops::{BoolNum, NumOps};
+use items::scalarevents::ScalarEvents;
 use items::streams::{Collectable, Collector};
 use items::{
     Clearable, EventsNodeProcessor, Framable, FrameType, PushableIndex, RangeCompletableItem, Sitemty, StreamItem,
@@ -99,53 +99,53 @@ where
 {
     match shape {
         Shape::Scalar => {
-            //
+            let evs = EventValuesDim0Case::new();
             match agg_kind {
                 AggKind::EventBlobs => panic!(),
                 AggKind::Plain => {
-                    let evs = EventValuesDim0Case::new();
                     let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggPlain as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     channel_exec_nty_end_evs_enp(f, byte_order, scalar_type, shape, evs, events_node_proc)
                 }
                 AggKind::TimeWeightedScalar => {
-                    let evs = EventValuesDim0Case::new();
                     let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggToSingleBin as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     channel_exec_nty_end_evs_enp(f, byte_order, scalar_type, shape, evs, events_node_proc)
                 }
                 AggKind::DimXBins1 => {
-                    let evs = EventValuesDim0Case::new();
                     let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggToSingleBin as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     channel_exec_nty_end_evs_enp(f, byte_order, scalar_type, shape, evs, events_node_proc)
                 }
                 AggKind::DimXBinsN(_) => {
-                    let evs = EventValuesDim0Case::new();
                     let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggToNBins as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
+                    channel_exec_nty_end_evs_enp(f, byte_order, scalar_type, shape, evs, events_node_proc)
+                }
+                AggKind::Stats1 => {
+                    let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggToStats1 as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     channel_exec_nty_end_evs_enp(f, byte_order, scalar_type, shape, evs, events_node_proc)
                 }
             }
         }
         Shape::Wave(n) => {
-            //
+            let evs = EventValuesDim1Case::new(n);
             match agg_kind {
                 AggKind::EventBlobs => panic!(),
                 AggKind::Plain => {
-                    let evs = EventValuesDim1Case::new(n);
                     let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggPlain as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     channel_exec_nty_end_evs_enp(f, byte_order, scalar_type, shape, evs, events_node_proc)
                 }
                 AggKind::TimeWeightedScalar => {
-                    let evs = EventValuesDim1Case::new(n);
                     let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggToSingleBin as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     channel_exec_nty_end_evs_enp(f, byte_order, scalar_type, shape, evs, events_node_proc)
                 }
                 AggKind::DimXBins1 => {
-                    let evs = EventValuesDim1Case::new(n);
                     let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggToSingleBin as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     channel_exec_nty_end_evs_enp(f, byte_order, scalar_type, shape, evs, events_node_proc)
                 }
                 AggKind::DimXBinsN(_) => {
-                    let evs = EventValuesDim1Case::new(n);
                     let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggToNBins as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
+                    channel_exec_nty_end_evs_enp(f, byte_order, scalar_type, shape, evs, events_node_proc)
+                }
+                AggKind::Stats1 => {
+                    let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggToStats1 as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     channel_exec_nty_end_evs_enp(f, byte_order, scalar_type, shape, evs, events_node_proc)
                 }
             }

@@ -284,6 +284,9 @@ pub fn binning_scheme_append_to_url(agg_kind: &AggKind, url: &mut Url) {
             g.append_pair("binningScheme", "binnedX");
             g.append_pair("binnedXcount", &format!("{}", n));
         }
+        AggKind::Stats1 => {
+            g.append_pair("binningScheme", "stats1");
+        }
     }
 }
 
@@ -303,6 +306,8 @@ pub fn agg_kind_from_binning_scheme(pairs: &BTreeMap<String, String>) -> Result<
     } else if s == "binnedX" {
         let u = pairs.get("binnedXcount").map_or("1", |k| k).parse()?;
         AggKind::DimXBinsN(u)
+    } else if s == "stats1" {
+        AggKind::Stats1
     } else {
         return Err(Error::with_msg("can not extract binningScheme"));
     };

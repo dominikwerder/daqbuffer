@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "1.14.77", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
+tokio = { version = "=1.16.1", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
 chrono = { version = "0.4.19", features = ["serde"] }
 bytes = "1.0.1"
 byteorder = "1.4.3"

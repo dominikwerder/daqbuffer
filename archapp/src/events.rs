@@ -182,10 +182,23 @@ macro_rules! arm2 {
 
 macro_rules! arm1 {
     ($item:expr, $sty1:ident, $sty2:ident, $shape:expr, $ak:expr) => {{
+        if let AggKind::Stats1 = $ak {
+            err::todo();
+            return arm2!(
+                $item,
+                ScalarEvents,
+                Plain,
+                PlainEvents,
+                Scalar,
+                ScalarPlainEvents,
+                $sty1,
+                $sty2
+            );
+        }
         match $shape {
             Shape::Scalar => match $ak {
                 AggKind::EventBlobs => {
-                    warn!("arm1 unhandled EventBlobs");
+                    warn!("arm1 unhandled AggKind::EventBlobs");
                     panic!()
                 }
                 AggKind::Plain => arm2!(
@@ -228,6 +241,8 @@ macro_rules! arm1 {
                     $sty1,
                     $sty2
                 ),
+                // Handled above..
+                AggKind::Stats1 => panic!(),
             },
             Shape::Wave(_) => match $ak {
                 AggKind::EventBlobs => {
@@ -274,6 +289,8 @@ macro_rules! arm1 {
                     $sty1,
                     $sty2
                 ),
+                // Handled above..
+                AggKind::Stats1 => panic!(),
             },
             Shape::Image(..) => {
                 // There should be no images on archiver.

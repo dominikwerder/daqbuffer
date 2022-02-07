@@ -15,6 +15,7 @@ fn read_pb_00() -> Result<(), Error> {
     let block1 = async move {
         let homedir = std::env::var("HOME").unwrap();
         let path = PathBuf::from(homedir)
+            .join("daqbuffer-testdata")
             .join("archappdata")
             .join("lts")
             .join("ArchiverStore")

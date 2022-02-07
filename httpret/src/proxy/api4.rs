@@ -42,7 +42,7 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                 a
             })?;
         let tags = urls.iter().map(|k| k.to_string()).collect();
-        let nt = |res| {
+        let nt = |tag, res| {
             let fut = async {
                 let body = hyper::body::to_bytes(res).await?;
                 //info!("got a result {:?}", body);
@@ -54,7 +54,12 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                         return Err(Error::with_msg_no_trace(msg));
                     }
                 };
-                Ok(res)
+                let ret = SubRes {
+                    tag,
+                    status: StatusCode::OK,
+                    val: res,
+                };
+                Ok(ret)
             };
             Box::pin(fut) as Pin<Box<dyn Future<Output = _> + Send>>
         };

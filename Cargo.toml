@@ -2,18 +2,18 @@
 members = ["daqbuffer", "h5out", "archapp", "archapp_xc", "archapp_wrap", "items", "items_proc", "nodenet", "httpclient", "fsio", "dq"]
 
 [profile.release]
-opt-level = 2
-debug = 0
+opt-level = 1
+debug = 1
 overflow-checks = false
 debug-assertions = false
-lto = "thin"
-codegen-units = 4
-incremental = false
+lto = "off"
+codegen-units = 64
+incremental = true
 
-[profile.rel2]
+[profile.release2]
 inherits = "release"
 opt-level = 1
-debug = 0
+debug = 2
 overflow-checks = false
 debug-assertions = false
 lto = "off"
@@ -21,4 +21,4 @@ codegen-units = 32
 incremental = true
 
 [patch.crates-io]
-tokio = { git = "https://github.com/dominikwerder/tokio", rev = "f069c87f" }
+tokio = { git = "https://github.com/dominikwerder/tokio", rev = "995221d8" }

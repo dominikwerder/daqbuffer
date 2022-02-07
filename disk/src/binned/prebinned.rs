@@ -81,6 +81,10 @@ where
                 AggKind::Plain => {
                     panic!();
                 }
+                AggKind::Stats1 => {
+                    // Currently not meant to be binned.
+                    panic!();
+                }
             }
         }
         Shape::Wave(n) => {
@@ -110,6 +114,10 @@ where
                     )
                 }
                 AggKind::Plain => {
+                    panic!();
+                }
+                AggKind::Stats1 => {
+                    // Currently not meant to be binned.
                     panic!();
                 }
             }

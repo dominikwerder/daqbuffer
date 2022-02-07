@@ -68,6 +68,11 @@ macro_rules! pipe4 {
                 <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggPlain::create($shape, $agg_kind),
                 $event_blobs,
             ),
+            AggKind::Stats1 => make_num_pipeline_stream_evs::<$nty, $end, $evs<$nty>, _>(
+                $evsv,
+                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToStats1::create($shape, $agg_kind),
+                $event_blobs,
+            ),
         }
     };
 }
