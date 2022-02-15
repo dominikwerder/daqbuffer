@@ -297,8 +297,8 @@ pub async fn channel_config(q: &ChannelConfigQuery, node: &Node) -> Result<Chann
     let conf = read_local_config(q.channel.clone(), node.clone()).await?;
     let entry_res = extract_matching_config_entry(&q.range, &conf)?;
     let entry = match entry_res {
-        MatchingConfigEntry::None => return Err(Error::with_msg("no config entry found")),
-        MatchingConfigEntry::Multiple => return Err(Error::with_msg("multiple config entries found")),
+        MatchingConfigEntry::None => return Err(Error::with_public_msg("no config entry found")),
+        MatchingConfigEntry::Multiple => return Err(Error::with_public_msg("multiple config entries found")),
         MatchingConfigEntry::Entry(entry) => entry,
     };
     let ret = ChannelConfigResponse {

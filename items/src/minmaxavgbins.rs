@@ -364,28 +364,28 @@ where
             if item.ts2s[i1] <= self.range.beg {
             } else if item.ts1s[i1] >= self.range.end {
             } else {
-                self.min = match self.min {
-                    None => item.mins[i1],
-                    Some(min) => match item.mins[i1] {
-                        None => Some(min),
+                self.min = match &self.min {
+                    None => item.mins[i1].clone(),
+                    Some(min) => match &item.mins[i1] {
+                        None => Some(min.clone()),
                         Some(v) => {
-                            if v < min {
-                                Some(v)
+                            if v < &min {
+                                Some(v.clone())
                             } else {
-                                Some(min)
+                                Some(min.clone())
                             }
                         }
                     },
                 };
-                self.max = match self.max {
-                    None => item.maxs[i1],
-                    Some(max) => match item.maxs[i1] {
-                        None => Some(max),
+                self.max = match &self.max {
+                    None => item.maxs[i1].clone(),
+                    Some(max) => match &item.maxs[i1] {
+                        None => Some(max.clone()),
                         Some(v) => {
-                            if v > max {
-                                Some(v)
+                            if v > &max {
+                                Some(v.clone())
                             } else {
-                                Some(max)
+                                Some(max.clone())
                             }
                         }
                     },
@@ -415,8 +415,8 @@ where
             ts1s: vec![self.range.beg],
             ts2s: vec![self.range.end],
             counts: vec![self.count],
-            mins: vec![self.min],
-            maxs: vec![self.max],
+            mins: vec![self.min.clone()],
+            maxs: vec![self.max.clone()],
             avgs: vec![avg],
         };
         self.count = 0;

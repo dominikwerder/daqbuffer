@@ -51,6 +51,20 @@ impl Error {
         }
     }
 
+    pub fn with_public_msg<S: Into<String>>(s: S) -> Self {
+        let s = s.into();
+        let ret = Self::with_msg(&s);
+        let ret = ret.add_public_msg(s);
+        ret
+    }
+
+    pub fn with_public_msg_no_trace<S: Into<String>>(s: S) -> Self {
+        let s = s.into();
+        let ret = Self::with_msg_no_trace(&s);
+        let ret = ret.add_public_msg(s);
+        ret
+    }
+
     pub fn from_string<E>(e: E) -> Self
     where
         E: ToString,
@@ -94,7 +108,7 @@ fn fmt_backtrace(trace: &backtrace::Backtrace) -> String {
                 None => false,
                 Some(s) => {
                     let s = s.to_str().unwrap();
-                    s.contains("/dev/daqbuffer/") || s.contains("/data_meta/build/")
+                    true || s.contains("/dev/daqbuffer/") || s.contains("/data_meta/build/")
                 }
             };
             let name = match sy.name() {
@@ -113,7 +127,7 @@ fn fmt_backtrace(trace: &backtrace::Backtrace) -> String {
                 _ => 0,
             };
             if is_ours {
-                write!(&mut buf, "\n    {}\n      {}  {}", name, filename, lineno).unwrap();
+                write!(&mut buf, "\n    {name}\n      {filename}  {lineno}").unwrap();
                 c1 += 1;
                 if c1 >= 10 {
                     break 'outer;

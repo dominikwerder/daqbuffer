@@ -228,6 +228,7 @@ where
         }
     }
 
+    // TODO get rid of clones.
     fn apply_min_max(&mut self, min: &Vec<NTY>, max: &Vec<NTY>) {
         self.min = match self.min.take() {
             None => Some(min.clone()),
@@ -235,7 +236,7 @@ where
                 let a = cmin
                     .into_iter()
                     .zip(min)
-                    .map(|(a, b)| if a < *b { a } else { *b })
+                    .map(|(a, b)| if a < *b { a } else { b.clone() })
                     .collect();
                 Some(a)
             }
@@ -246,7 +247,7 @@ where
                 let a = cmax
                     .into_iter()
                     .zip(min)
-                    .map(|(a, b)| if a > *b { a } else { *b })
+                    .map(|(a, b)| if a > *b { a } else { b.clone() })
                     .collect();
                 Some(a)
             }

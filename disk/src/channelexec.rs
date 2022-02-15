@@ -9,7 +9,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::future::FutureExt;
 use futures_util::StreamExt;
-use items::numops::{BoolNum, NumOps};
+use items::numops::{BoolNum, NumOps, StringNum};
 use items::scalarevents::ScalarEvents;
 use items::streams::{Collectable, Collector};
 use items::{
@@ -189,6 +189,7 @@ where
         ScalarType::F32 => match_end!(f, f32, byte_order, scalar_type, shape, agg_kind, node_config),
         ScalarType::F64 => match_end!(f, f64, byte_order, scalar_type, shape, agg_kind, node_config),
         ScalarType::BOOL => match_end!(f, BoolNum, byte_order, scalar_type, shape, agg_kind, node_config),
+        ScalarType::STRING => match_end!(f, StringNum, byte_order, scalar_type, shape, agg_kind, node_config),
     }
 }
 

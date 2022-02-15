@@ -18,6 +18,7 @@ pub enum SingleBinWaveEvents {
     I64(XBinnedScalarEvents<i64>),
     F32(XBinnedScalarEvents<f32>),
     F64(XBinnedScalarEvents<f64>),
+    String(XBinnedScalarEvents<String>),
 }
 
 impl SingleBinWaveEvents {
@@ -108,6 +109,7 @@ pub enum MultiBinWaveEvents {
     I64(XBinnedWaveEvents<i64>),
     F32(XBinnedWaveEvents<f32>),
     F64(XBinnedWaveEvents<f64>),
+    String(XBinnedWaveEvents<String>),
 }
 
 impl MultiBinWaveEvents {

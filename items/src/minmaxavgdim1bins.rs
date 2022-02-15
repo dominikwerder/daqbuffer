@@ -369,8 +369,8 @@ where
                         None => {}
                         Some(v) => {
                             for (a, b) in min.iter_mut().zip(v.iter()) {
-                                if *b < *a {
-                                    *a = *b;
+                                if b < a {
+                                    *a = b.clone();
                                 }
                             }
                         }
@@ -382,8 +382,8 @@ where
                         None => {}
                         Some(v) => {
                             for (a, b) in max.iter_mut().zip(v.iter()) {
-                                if *b > *a {
-                                    *a = *b;
+                                if b > a {
+                                    *a = b.clone();
                                 }
                             }
                         }

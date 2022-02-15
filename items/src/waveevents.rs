@@ -246,7 +246,7 @@ where
                     Some(min) => {
                         for (a, b) in min.iter_mut().zip(item.vals[i1].iter()) {
                             if b < a {
-                                *a = *b;
+                                *a = b.clone();
                             }
                         }
                     }
@@ -256,18 +256,18 @@ where
                     Some(max) => {
                         for (a, b) in max.iter_mut().zip(item.vals[i1].iter()) {
                             if b < a {
-                                *a = *b;
+                                *a = b.clone();
                             }
                         }
                     }
                 };
                 match self.sum.as_mut() {
                     None => {
-                        self.sum = Some(item.vals[i1].iter().map(|k| k.as_()).collect());
+                        self.sum = Some(item.vals[i1].iter().map(|k| k.as_prim_f32()).collect());
                     }
                     Some(sum) => {
                         for (a, b) in sum.iter_mut().zip(item.vals[i1].iter()) {
-                            let vf = b.as_();
+                            let vf = b.as_prim_f32();
                             if vf.is_nan() {
                             } else {
                                 *a += vf;
@@ -356,14 +356,14 @@ where
             let mut sum = 0f32;
             let mut sumc = 0;
             let vals = &inp.vals[i1];
-            for &v in vals {
-                if v < min || min.is_nan() {
-                    min = v;
+            for v in vals.iter() {
+                if v < &min || min.is_nan() {
+                    min = v.clone();
                 }
-                if v > max || max.is_nan() {
-                    max = v;
+                if v > &max || max.is_nan() {
+                    max = v.clone();
                 }
-                let vf = v.as_();
+                let vf = v.as_prim_f32();
                 if vf.is_nan() {
                 } else {
                     sum += vf;
@@ -420,17 +420,17 @@ where
             let mut max = vec![NTY::min_or_nan(); self.x_bin_count];
             let mut sum = vec![0f32; self.x_bin_count];
             let mut sumc = vec![0u64; self.x_bin_count];
-            for (i2, &v) in inp.vals[i1].iter().enumerate() {
+            for (i2, v) in inp.vals[i1].iter().enumerate() {
                 let i3 = i2 * self.x_bin_count / self.shape_bin_count;
-                if v < min[i3] || min[i3].is_nan() {
-                    min[i3] = v;
+                if v < &min[i3] || min[i3].is_nan() {
+                    min[i3] = v.clone();
                 }
-                if v > max[i3] || max[i3].is_nan() {
-                    max[i3] = v;
+                if v > &max[i3] || max[i3].is_nan() {
+                    max[i3] = v.clone();
                 }
                 if v.is_nan() {
                 } else {
-                    sum[i3] += v.as_();
+                    sum[i3] += v.as_prim_f32();
                     sumc[i3] += 1;
                 }
             }

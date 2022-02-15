@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use tokio::fs::File;
 
+// TODO in this module reduce clones.
+
 // TODO add pulse.
 #[derive(Serialize, Deserialize)]
 pub struct ScalarEvents<NTY> {
@@ -147,7 +149,7 @@ where
 {
     fn push_index(&mut self, src: &Self, ix: usize) {
         self.tss.push(src.tss[ix]);
-        self.values.push(src.values[ix]);
+        self.values.push(src.values[ix].clone());
     }
 }
 
@@ -316,32 +318,33 @@ where
         }
     }
 
+    // TODO reduce clone.. optimize via more traits to factor the trade-offs?
     fn apply_min_max(&mut self, val: NTY) {
-        self.min = match self.min {
-            None => Some(val),
+        self.min = match &self.min {
+            None => Some(val.clone()),
             Some(min) => {
-                if val < min {
-                    Some(val)
+                if &val < min {
+                    Some(val.clone())
                 } else {
-                    Some(min)
+                    Some(min.clone())
                 }
             }
         };
-        self.max = match self.max {
+        self.max = match &self.max {
             None => Some(val),
             Some(max) => {
-                if val > max {
+                if &val > max {
                     Some(val)
                 } else {
-                    Some(max)
+                    Some(max.clone())
                 }
             }
         };
     }
 
     fn apply_event_unweight(&mut self, val: NTY) {
+        let vf = val.as_prim_f32();
         self.apply_min_max(val);
-        let vf = val.as_();
         if vf.is_nan() {
         } else {
             self.sum += vf;
@@ -350,15 +353,15 @@ where
     }
 
     fn apply_event_time_weight(&mut self, ts: u64) {
-        if let Some(v) = self.last_val {
-            debug!("apply_event_time_weight");
-            self.apply_min_max(v);
+        if let Some(v) = &self.last_val {
+            let vf = v.as_prim_f32();
+            let v2 = v.clone();
+            self.apply_min_max(v2);
             let w = if self.do_time_weight {
                 (ts - self.int_ts) as f32 * 1e-9
             } else {
                 1.
             };
-            let vf = v.as_();
             if vf.is_nan() {
             } else {
                 self.sum += vf * w;
@@ -376,7 +379,7 @@ where
     fn ingest_unweight(&mut self, item: &<Self as TimeBinnableTypeAggregator>::Input) {
         for i1 in 0..item.tss.len() {
             let ts = item.tss[i1];
-            let val = item.values[i1];
+            let val = item.values[i1].clone();
             if ts < self.range.beg {
             } else if ts >= self.range.end {
             } else {
@@ -389,7 +392,7 @@ where
     fn ingest_time_weight(&mut self, item: &<Self as TimeBinnableTypeAggregator>::Input) {
         for i1 in 0..item.tss.len() {
             let ts = item.tss[i1];
-            let val = item.values[i1];
+            let val = item.values[i1].clone();
             if ts < self.int_ts {
                 debug!("just set int_ts");
                 self.last_ts = ts;
@@ -417,8 +420,8 @@ where
             ts1s: vec![self.range.beg],
             ts2s: vec![self.range.end],
             counts: vec![self.count],
-            mins: vec![self.min],
-            maxs: vec![self.max],
+            mins: vec![self.min.clone()],
+            maxs: vec![self.max.clone()],
             avgs: vec![avg],
         };
         self.int_ts = range.beg;
@@ -447,8 +450,8 @@ where
             ts1s: vec![self.range.beg],
             ts2s: vec![self.range.end],
             counts: vec![self.count],
-            mins: vec![self.min],
-            maxs: vec![self.max],
+            mins: vec![self.min.clone()],
+            maxs: vec![self.max.clone()],
             avgs: vec![avg],
         };
         self.int_ts = range.beg;

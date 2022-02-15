@@ -12,6 +12,14 @@ impl Error {
         Self(::err::Error::with_msg_no_trace(s))
     }
 
+    pub fn with_public_msg<S: Into<String>>(s: S) -> Self {
+        Self(::err::Error::with_public_msg(s))
+    }
+
+    pub fn with_public_msg_no_trace<S: Into<String>>(s: S) -> Self {
+        Self(::err::Error::with_public_msg_no_trace(s))
+    }
+
     pub fn msg(&self) -> &str {
         self.0.msg()
     }
@@ -27,7 +35,7 @@ impl Error {
 
 impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt::Debug::fmt(self, fmt)
+        fmt::Display::fmt(&self.0, fmt)
     }
 }
 

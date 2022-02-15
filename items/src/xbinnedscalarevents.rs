@@ -12,6 +12,8 @@ use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
 use tokio::fs::File;
 
+// TODO in this module reduce clones
+
 // TODO rename Scalar -> Dim0
 #[derive(Debug, Serialize, Deserialize)]
 pub struct XBinnedScalarEvents<NTY> {
@@ -124,8 +126,8 @@ where
 {
     fn push_index(&mut self, src: &Self, ix: usize) {
         self.tss.push(src.tss[ix]);
-        self.mins.push(src.mins[ix]);
-        self.maxs.push(src.maxs[ix]);
+        self.mins.push(src.mins[ix].clone());
+        self.maxs.push(src.maxs[ix].clone());
         self.avgs.push(src.avgs[ix]);
     }
 }
@@ -225,23 +227,23 @@ where
     }
 
     fn apply_min_max(&mut self, min: NTY, max: NTY) {
-        self.min = match self.min {
+        self.min = match &self.min {
             None => Some(min),
             Some(cmin) => {
-                if min < cmin {
+                if &min < cmin {
                     Some(min)
                 } else {
-                    Some(cmin)
+                    Some(cmin.clone())
                 }
             }
         };
-        self.max = match self.max {
+        self.max = match &self.max {
             None => Some(max),
             Some(cmax) => {
-                if max > cmax {
+                if &max > cmax {
                     Some(max)
                 } else {
-                    Some(cmax)
+                    Some(cmax.clone())
                 }
             }
         };
@@ -260,8 +262,10 @@ where
 
     fn apply_event_time_weight(&mut self, ts: u64) {
         //debug!("apply_event_time_weight");
-        if let (Some(avg), Some(min), Some(max)) = (self.last_avg, self.last_min, self.last_max) {
-            self.apply_min_max(min, max);
+        if let (Some(avg), Some(min), Some(max)) = (self.last_avg, &self.last_min, &self.last_max) {
+            let min2 = min.clone();
+            let max2 = max.clone();
+            self.apply_min_max(min2, max2);
             let w = (ts - self.int_ts) as f32 / self.range.delta() as f32;
             if avg.is_nan() {
             } else {
@@ -276,8 +280,8 @@ where
         for i1 in 0..item.tss.len() {
             let ts = item.tss[i1];
             let avg = item.avgs[i1];
-            let min = item.mins[i1];
-            let max = item.maxs[i1];
+            let min = item.mins[i1].clone();
+            let max = item.maxs[i1].clone();
             if ts < self.range.beg {
             } else if ts >= self.range.end {
             } else {
@@ -291,8 +295,8 @@ where
         for i1 in 0..item.tss.len() {
             let ts = item.tss[i1];
             let avg = item.avgs[i1];
-            let min = item.mins[i1];
-            let max = item.maxs[i1];
+            let min = item.mins[i1].clone();
+            let max = item.maxs[i1].clone();
             if ts < self.int_ts {
                 self.last_ts = ts;
                 self.last_avg = Some(avg);
@@ -321,8 +325,8 @@ where
             ts1s: vec![self.range.beg],
             ts2s: vec![self.range.end],
             counts: vec![self.count],
-            mins: vec![self.min],
-            maxs: vec![self.max],
+            mins: vec![self.min.clone()],
+            maxs: vec![self.max.clone()],
             avgs: vec![avg],
         };
         self.int_ts = range.beg;
@@ -348,8 +352,8 @@ where
             ts1s: vec![self.range.beg],
             ts2s: vec![self.range.end],
             counts: vec![self.count],
-            mins: vec![self.min],
-            maxs: vec![self.max],
+            mins: vec![self.min.clone()],
+            maxs: vec![self.max.clone()],
             avgs: vec![avg],
         };
         self.int_ts = range.beg;

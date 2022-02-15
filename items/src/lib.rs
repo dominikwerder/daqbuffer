@@ -22,6 +22,7 @@ use err::Error;
 use netpod::timeunits::{MS, SEC};
 use netpod::{log::Level, AggKind, EventDataReadStats, EventQueryJsonStringFrame, NanoRange, Shape};
 use netpod::{DiskStats, RangeFilterStats};
+use numops::StringNum;
 use serde::de::{self, DeserializeOwned, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
 use std::fmt;
@@ -199,8 +200,12 @@ impl SubFrId for f64 {
     const SUB: u32 = 12;
 }
 
-impl SubFrId for BoolNum {
+impl SubFrId for StringNum {
     const SUB: u32 = 13;
+}
+
+impl SubFrId for BoolNum {
+    const SUB: u32 = 14;
 }
 
 pub trait SitemtyFrameType {

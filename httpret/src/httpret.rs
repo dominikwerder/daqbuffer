@@ -21,10 +21,10 @@ use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
-use netpod::log::*;
 use netpod::query::BinnedQuery;
 use netpod::timeunits::SEC;
 use netpod::{channel_from_pairs, get_url_query_pairs, AggKind, ChannelConfigQuery, FromUrl, NodeConfigCached};
+use netpod::{log::*, ACCEPT_ALL};
 use netpod::{APP_JSON, APP_JSON_LINES, APP_OCTET};
 use nodenet::conn::events_service;
 use panic::{AssertUnwindSafe, UnwindSafe};
@@ -81,7 +81,7 @@ async fn http_service(req: Request<Body>, node_config: NodeConfigCached) -> Resu
     match http_service_try(req, &node_config).await {
         Ok(k) => Ok(k),
         Err(e) => {
-            error!("daqbuffer node http_service sees error: {:?}", e);
+            error!("daqbuffer node http_service sees error: {}", e);
             Err(e)
         }
     }
@@ -448,30 +448,34 @@ trait ToPublicResponse {
 
 impl ToPublicResponse for Error {
     fn to_public_response(&self) -> Response<Body> {
+        use std::fmt::Write;
         let status = match self.reason() {
             Some(::err::Reason::BadRequest) => StatusCode::BAD_REQUEST,
             Some(::err::Reason::InternalError) => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
-        let msg = match self.public_msg() {
+        let mut msg = match self.public_msg() {
             Some(v) => v.join("\n"),
             _ => String::new(),
         };
+        write!(msg, "\n\nhttps://data-api.psi.ch/api/4/documentation\n").unwrap();
         response(status).body(Body::from(msg)).unwrap()
     }
 }
 
 impl ToPublicResponse for ::err::Error {
     fn to_public_response(&self) -> Response<Body> {
+        use std::fmt::Write;
         let status = match self.reason() {
             Some(::err::Reason::BadRequest) => StatusCode::BAD_REQUEST,
             Some(::err::Reason::InternalError) => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         };
-        let msg = match self.public_msg() {
+        let mut msg = match self.public_msg() {
             Some(v) => v.join("\n"),
             _ => String::new(),
         };
+        write!(msg, "\n\nhttps://data-api.psi.ch/api/4/documentation\n").unwrap();
         response(status).body(Body::from(msg)).unwrap()
     }
 }
@@ -494,7 +498,7 @@ async fn binned_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Res
     });
     match head.headers.get(http::header::ACCEPT) {
         Some(v) if v == APP_OCTET => binned_binary(query, node_config).await,
-        Some(v) if v == APP_JSON => binned_json(query, node_config).await,
+        Some(v) if v == APP_JSON || v == ACCEPT_ALL => binned_json(query, node_config).await,
         _ => Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?),
     }
 }
@@ -573,13 +577,13 @@ async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Res
 }
 
 async fn plain_events_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    debug!("httpret  plain_events_inner  headers: {:?}", req.headers());
+    info!("httpret  plain_events_inner  req: {:?}", req);
     let accept_def = APP_JSON;
     let accept = req
         .headers()
         .get(http::header::ACCEPT)
         .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
-    if accept == APP_JSON {
+    if accept == APP_JSON || accept == ACCEPT_ALL {
         Ok(plain_events_json(req, node_config).await?)
     } else if accept == APP_OCTET {
         Ok(plain_events_binary(req, node_config).await?)

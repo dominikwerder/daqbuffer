@@ -376,7 +376,7 @@ where
                     Some(inp) => {
                         for (a, b) in self.min.iter_mut().zip(inp.iter()) {
                             if *b < *a || a.is_nan() {
-                                *a = *b;
+                                *a = b.clone();
                             }
                         }
                     }
@@ -386,7 +386,7 @@ where
                     Some(inp) => {
                         for (a, b) in self.max.iter_mut().zip(inp.iter()) {
                             if *b > *a || a.is_nan() {
-                                *a = *b;
+                                *a = b.clone();
                             }
                         }
                     }

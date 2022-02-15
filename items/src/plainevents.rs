@@ -22,6 +22,7 @@ pub enum ScalarPlainEvents {
     I64(ScalarEvents<i64>),
     F32(ScalarEvents<f32>),
     F64(ScalarEvents<f64>),
+    String(ScalarEvents<String>),
 }
 
 impl ScalarPlainEvents {
@@ -100,6 +101,7 @@ pub enum WavePlainEvents {
     I64(WaveEvents<i64>),
     F32(WaveEvents<f32>),
     F64(WaveEvents<f64>),
+    String(WaveEvents<String>),
 }
 
 impl WavePlainEvents {

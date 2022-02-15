@@ -9,7 +9,7 @@ use bytes::Bytes;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use items::numops::{BoolNum, NumOps};
+use items::numops::{BoolNum, NumOps, StringNum};
 use items::{
     Appendable, Clearable, EventsNodeProcessor, Framable, FrameType, PushableIndex, Sitemty, TimeBinnableType,
 };
@@ -161,6 +161,7 @@ fn make_num_pipeline(
         ScalarType::F32 => match_end!(f32, byte_order, shape, agg_kind, query, node_config),
         ScalarType::F64 => match_end!(f64, byte_order, shape, agg_kind, query, node_config),
         ScalarType::BOOL => match_end!(BoolNum, byte_order, shape, agg_kind, query, node_config),
+        ScalarType::STRING => match_end!(StringNum, byte_order, shape, agg_kind, query, node_config),
     }
 }
 

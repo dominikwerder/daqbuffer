@@ -7,7 +7,7 @@ use crate::eventchunker::{EventChunkerConf, EventFull};
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use items::numops::{BoolNum, NumOps};
+use items::numops::{BoolNum, NumOps, StringNum};
 use items::{EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::query::RawEventsQuery;
 use netpod::{AggKind, ByteOrder, ByteSize, Channel, FileIoBufferSize, NanoRange, NodeConfigCached, ScalarType, Shape};
@@ -133,6 +133,7 @@ macro_rules! pipe1 {
             ScalarType::F32 => pipe2!(f32, $end, $shape, $agg_kind, $event_blobs),
             ScalarType::F64 => pipe2!(f64, $end, $shape, $agg_kind, $event_blobs),
             ScalarType::BOOL => pipe2!(BoolNum, $end, $shape, $agg_kind, $event_blobs),
+            ScalarType::STRING => pipe2!(StringNum, $end, $shape, $agg_kind, $event_blobs),
         }
     };
 }
@@ -164,8 +165,8 @@ pub async fn make_event_pipe(
         Err(e) => return Err(e)?,
     };
     let entry = match entry_res {
-        MatchingConfigEntry::None => return Err(Error::with_msg("no config entry found"))?,
-        MatchingConfigEntry::Multiple => return Err(Error::with_msg("multiple config entries found"))?,
+        MatchingConfigEntry::None => return Err(Error::with_public_msg("no config entry found"))?,
+        MatchingConfigEntry::Multiple => return Err(Error::with_public_msg("multiple config entries found"))?,
         MatchingConfigEntry::Entry(entry) => entry,
     };
     let shape = match entry.to_shape() {
@@ -215,8 +216,8 @@ pub async fn get_applicable_entry(
         Err(e) => return Err(e)?,
     };
     let entry = match entry_res {
-        MatchingConfigEntry::None => return Err(Error::with_msg("no config entry found"))?,
-        MatchingConfigEntry::Multiple => return Err(Error::with_msg("multiple config entries found"))?,
+        MatchingConfigEntry::None => return Err(Error::with_public_msg("no config entry found"))?,
+        MatchingConfigEntry::Multiple => return Err(Error::with_public_msg("multiple config entries found"))?,
         MatchingConfigEntry::Entry(entry) => entry,
     };
     Ok(entry.clone())

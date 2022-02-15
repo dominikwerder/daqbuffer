@@ -48,6 +48,7 @@ pub fn tycases1(ts: TokenStream) -> TokenStream {
         let s = format!("{}::{}{} => {},", enum_1_pre, id, enum_1_suff, rhs);
         arms.push(s);
     }
+    arms.push(format!("{}::{}{} => {}", enum_1_pre, "String", enum_1_suff, "todo!()"));
     let gen = format!("match {} {{\n{}\n}}", match_val, arms.join("\n"));
     //panic!("GENERATED: {}", gen);
     gen.parse().unwrap()

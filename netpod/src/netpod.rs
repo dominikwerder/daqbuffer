@@ -54,6 +54,7 @@ pub enum ScalarType {
     F32,
     F64,
     BOOL,
+    STRING,
 }
 
 pub trait HasScalarType {
@@ -76,8 +77,9 @@ impl ScalarType {
             9 => I64,
             11 => F32,
             12 => F64,
+            13 => STRING,
+            //13 => return Err(Error::with_msg(format!("STRING not supported"))),
             6 => return Err(Error::with_msg(format!("CHARACTER not supported"))),
-            13 => return Err(Error::with_msg(format!("STRING not supported"))),
             _ => return Err(Error::with_msg(format!("unknown dtype code: {}", ix))),
         };
         Ok(g)
@@ -139,6 +141,7 @@ impl ScalarType {
             F32 => 4,
             F64 => 8,
             BOOL => 1,
+            STRING => 0,
         }
     }
 
@@ -156,6 +159,7 @@ impl ScalarType {
             F32 => 11,
             F64 => 12,
             BOOL => 0,
+            STRING => 13,
         }
     }
 
@@ -172,6 +176,7 @@ impl ScalarType {
             ScalarType::F32 => "float32",
             ScalarType::F64 => "float64",
             ScalarType::BOOL => "bool",
+            ScalarType::STRING => "string",
         }
     }
 }
@@ -1236,11 +1241,11 @@ pub fn channel_from_pairs(pairs: &BTreeMap<String, String>) -> Result<Channel, E
     let ret = Channel {
         backend: pairs
             .get("channelBackend")
-            .ok_or(Error::with_msg("missing channelBackend"))?
+            .ok_or(Error::with_public_msg("missing channelBackend"))?
             .into(),
         name: pairs
             .get("channelName")
-            .ok_or(Error::with_msg("missing channelName"))?
+            .ok_or(Error::with_public_msg("missing channelName"))?
             .into(),
     };
     Ok(ret)
@@ -1378,8 +1383,8 @@ impl HasTimeout for ChannelConfigQuery {
 impl FromUrl for ChannelConfigQuery {
     fn from_url(url: &Url) -> Result<Self, Error> {
         let pairs = get_url_query_pairs(url);
-        let beg_date = pairs.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
-        let end_date = pairs.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
+        let beg_date = pairs.get("begDate").ok_or(Error::with_public_msg("missing begDate"))?;
+        let end_date = pairs.get("endDate").ok_or(Error::with_public_msg("missing endDate"))?;
         let expand = pairs.get("expand").map(|s| s == "true").unwrap_or(false);
         let ret = Self {
             channel: channel_from_pairs(&pairs)?,

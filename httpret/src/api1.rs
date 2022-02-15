@@ -678,9 +678,11 @@ impl Stream for DataApiPython3DataStream {
                                 Err(e) => return Err(e)?,
                             };
                             let entry = match entry_res {
-                                MatchingConfigEntry::None => return Err(Error::with_msg("no config entry found"))?,
+                                MatchingConfigEntry::None => {
+                                    return Err(Error::with_public_msg("no config entry found"))?
+                                }
                                 MatchingConfigEntry::Multiple => {
-                                    return Err(Error::with_msg("multiple config entries found"))?
+                                    return Err(Error::with_public_msg("multiple config entries found"))?
                                 }
                                 MatchingConfigEntry::Entry(entry) => entry.clone(),
                             };

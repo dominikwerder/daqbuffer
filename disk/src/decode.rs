@@ -5,7 +5,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::eventsitem::EventsItem;
-use items::numops::{BoolNum, NumOps};
+use items::numops::{BoolNum, NumOps, StringNum};
 use items::plainevents::{PlainEvents, ScalarPlainEvents};
 use items::scalarevents::ScalarEvents;
 use items::waveevents::{WaveEvents, WaveNBinner, WavePlainProc, WaveXBinner};
@@ -45,6 +45,20 @@ impl NumFromBytes<BoolNum, LittleEndian> for BoolNum {
 impl NumFromBytes<BoolNum, BigEndian> for BoolNum {
     fn convert(buf: &[u8], _big_endian: bool) -> BoolNum {
         BoolNum(buf[0])
+    }
+}
+
+impl NumFromBytes<StringNum, LittleEndian> for StringNum {
+    fn convert(_buf: &[u8], _big_endian: bool) -> StringNum {
+        netpod::log::error!("TODO NumFromBytes for StringNum");
+        todo!()
+    }
+}
+
+impl NumFromBytes<StringNum, BigEndian> for StringNum {
+    fn convert(_buf: &[u8], _big_endian: bool) -> StringNum {
+        netpod::log::error!("TODO NumFromBytes for StringNum");
+        todo!()
     }
 }
 
@@ -402,6 +416,11 @@ impl EventsItemStream {
                                 let cont = ScalarEvents::<i8>::empty();
                                 ret = Some(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::I8(cont))));
                             }
+                            ScalarType::STRING => {
+                                // TODO
+                                let cont = ScalarEvents::<String>::empty();
+                                ret = Some(EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::String(cont))));
+                            }
                         },
                         Shape::Wave(_) => todo!(),
                         Shape::Image(..) => todo!(),
@@ -444,6 +463,7 @@ impl EventsItemStream {
                         }
                     }
                     ScalarType::BOOL => todo!(),
+                    ScalarType::STRING => todo!(),
                 },
                 Shape::Wave(_) => todo!(),
                 Shape::Image(_, _) => todo!(),

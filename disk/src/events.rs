@@ -126,8 +126,8 @@ impl PlainEventsJsonQuery {
 
     pub fn from_url(url: &Url) -> Result<Self, Error> {
         let pairs = get_url_query_pairs(url);
-        let beg_date = pairs.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
-        let end_date = pairs.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
+        let beg_date = pairs.get("begDate").ok_or(Error::with_public_msg("missing begDate"))?;
+        let end_date = pairs.get("endDate").ok_or(Error::with_public_msg("missing endDate"))?;
         let ret = Self {
             range: NanoRange {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
@@ -138,23 +138,23 @@ impl PlainEventsJsonQuery {
                 .get("diskIoBufferSize")
                 .map_or("4096", |k| k)
                 .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse diskIoBufferSize {:?}", e)))?,
+                .map_err(|e| Error::with_public_msg(format!("can not parse diskIoBufferSize {:?}", e)))?,
             report_error: pairs
                 .get("reportError")
                 .map_or("false", |k| k)
                 .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,
+                .map_err(|e| Error::with_public_msg(format!("can not parse reportError {:?}", e)))?,
             timeout: pairs
                 .get("timeout")
                 .map_or("10000", |k| k)
                 .parse::<u64>()
                 .map(|k| Duration::from_millis(k))
-                .map_err(|e| Error::with_msg(format!("can not parse timeout {:?}", e)))?,
+                .map_err(|e| Error::with_public_msg(format!("can not parse timeout {:?}", e)))?,
             do_log: pairs
                 .get("doLog")
                 .map_or("false", |k| k)
                 .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse doLog {:?}", e)))?,
+                .map_err(|e| Error::with_public_msg(format!("can not parse doLog {:?}", e)))?,
         };
         Ok(ret)
     }
