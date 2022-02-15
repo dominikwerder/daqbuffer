@@ -49,16 +49,32 @@ impl NumFromBytes<BoolNum, BigEndian> for BoolNum {
 }
 
 impl NumFromBytes<StringNum, LittleEndian> for StringNum {
-    fn convert(_buf: &[u8], _big_endian: bool) -> StringNum {
-        netpod::log::error!("TODO NumFromBytes for StringNum");
-        todo!()
+    fn convert(buf: &[u8], _big_endian: bool) -> StringNum {
+        if false {
+            // TODO remove
+            netpod::log::error!("TODO NumFromBytes for StringNum  buf len {}", buf.len());
+        }
+        let s = if buf.len() >= 250 {
+            String::from_utf8_lossy(&buf[..250])
+        } else {
+            String::from_utf8_lossy(buf)
+        };
+        Self(s.into())
     }
 }
 
 impl NumFromBytes<StringNum, BigEndian> for StringNum {
-    fn convert(_buf: &[u8], _big_endian: bool) -> StringNum {
-        netpod::log::error!("TODO NumFromBytes for StringNum");
-        todo!()
+    fn convert(buf: &[u8], _big_endian: bool) -> StringNum {
+        if false {
+            // TODO remove
+            netpod::log::error!("TODO NumFromBytes for StringNum  buf len {}", buf.len());
+        }
+        let s = if buf.len() >= 250 {
+            String::from_utf8_lossy(&buf[..250])
+        } else {
+            String::from_utf8_lossy(buf)
+        };
+        Self(s.into())
     }
 }
 
