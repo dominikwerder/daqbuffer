@@ -30,13 +30,7 @@ async fn position_file(
     expand_left: bool,
     expand_right: bool,
 ) -> Result<Positioned, Error> {
-    trace!(
-        "position_file  called  {}  {}   {:?}  {:?}",
-        expand_left,
-        expand_right,
-        range,
-        path
-    );
+    trace!("position_file  called  expand_left {expand_left}  expand_right {expand_right}  {range:?}  {path:?}");
     assert_eq!(expand_left && expand_right, false);
     match OpenOptions::new().read(true).open(&path).await {
         Ok(file) => {
@@ -73,9 +67,16 @@ async fn position_file(
                     buf.resize(buf.capacity(), 0);
                     index_file.read_exact(&mut buf).await?;
                     let gg = if expand_left {
-                        super::index::find_largest_smaller_than(range.clone(), expand_right, &buf[2..])?
+                        super::index::find_largest_smaller_than(range.clone(), expand_right, &buf[2..])
                     } else {
-                        super::index::find_ge(range.clone(), expand_right, &buf[2..])?
+                        super::index::find_ge(range.clone(), expand_right, &buf[2..])
+                    };
+                    let gg = match gg {
+                        Ok(x) => x,
+                        Err(e) => {
+                            error!("can not position file for  range {range:?}  expand_right {expand_right:?}  buflen {buflen}", buflen = buf.len());
+                            return Err(e);
+                        }
                     };
                     match gg {
                         Some(o) => {
@@ -207,12 +208,17 @@ pub fn open_files(
     tokio::spawn(async move {
         match open_files_inner(&chtx, &range, &channel_config, node).await {
             Ok(_) => {}
-            Err(e) => match chtx.send(Err(e.into())).await {
-                Ok(_) => {}
-                Err(e) => {
-                    error!("open_files  channel send error {:?}", e);
+            Err(e) => {
+                let e = e.add_public_msg(format!(
+                    "Can not open file for channel: {channel_config:?}  range: {range:?}"
+                ));
+                match chtx.send(Err(e.into())).await {
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("open_files  channel send error {:?}", e);
+                    }
                 }
-            },
+            }
         }
     });
     chrx

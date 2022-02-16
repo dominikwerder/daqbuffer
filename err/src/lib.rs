@@ -108,7 +108,7 @@ fn fmt_backtrace(trace: &backtrace::Backtrace) -> String {
                 None => false,
                 Some(s) => {
                     let s = s.to_str().unwrap();
-                    true || s.contains("/dev/daqbuffer/") || s.contains("/data_meta/build/")
+                    true || s.contains("/dev/daqbuffer/") || s.contains("/build/daqbuffer/")
                 }
             };
             let name = match sy.name() {

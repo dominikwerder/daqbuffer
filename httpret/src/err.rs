@@ -1,6 +1,5 @@
 use std::fmt;
 
-#[derive(Debug)]
 pub struct Error(::err::Error);
 
 impl Error {
@@ -30,6 +29,12 @@ impl Error {
 
     pub fn public_msg(&self) -> Option<&Vec<String>> {
         self.0.public_msg()
+    }
+}
+
+impl fmt::Debug for Error {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(&self.0, fmt)
     }
 }
 

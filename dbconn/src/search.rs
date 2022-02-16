@@ -7,6 +7,19 @@ pub async fn search_channel_databuffer(
     query: ChannelSearchQuery,
     node_config: &NodeConfigCached,
 ) -> Result<ChannelSearchResult, Error> {
+    let do_search = if !query.name_regex.is_empty() {
+        true
+    } else if !query.source_regex.is_empty() {
+        true
+    } else if query.description_regex.is_empty() {
+        true
+    } else {
+        false
+    };
+    if !do_search {
+        let ret = ChannelSearchResult { channels: vec![] };
+        return Ok(ret);
+    }
     let sql = format!(concat!(
         "select ",
         "channel_id, channel_name, source_name, dtype, shape, unit, description, channel_backend",
@@ -67,6 +80,21 @@ pub async fn search_channel_archeng(
     backend: String,
     conf: &ChannelArchiver,
 ) -> Result<ChannelSearchResult, Error> {
+    // Channel archiver provides only channel name. Also, search criteria are currently ANDed.
+    // Therefore search only if user only provides a name criterion.
+    let empty = if !query.source_regex.is_empty() {
+        true
+    } else if !query.description_regex.is_empty() {
+        true
+    } else if query.name_regex.is_empty() {
+        true
+    } else {
+        false
+    };
+    if empty {
+        let ret = ChannelSearchResult { channels: vec![] };
+        return Ok(ret);
+    }
     let sql = format!(concat!(
         "select c.name, c.config",
         " from channels c",

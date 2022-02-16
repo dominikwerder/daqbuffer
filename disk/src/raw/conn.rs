@@ -9,6 +9,7 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use items::numops::{BoolNum, NumOps, StringNum};
 use items::{EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, StreamItem};
+use netpod::log::*;
 use netpod::query::RawEventsQuery;
 use netpod::{AggKind, ByteOrder, ByteSize, Channel, FileIoBufferSize, NanoRange, NodeConfigCached, ScalarType, Shape};
 
@@ -183,6 +184,10 @@ pub async fn make_event_pipe(
         array: entry.is_array,
         compression: entry.is_compressed,
     };
+    trace!(
+        "make_event_pipe  need_expand {need_expand}  {evq:?}",
+        need_expand = evq.agg_kind.need_expand()
+    );
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     let event_blobs = EventChunkerMultifile::new(
         range.clone(),
@@ -191,7 +196,7 @@ pub async fn make_event_pipe(
         node_config.ix,
         FileIoBufferSize::new(evq.disk_io_buffer_size),
         event_chunker_conf,
-        true,
+        evq.agg_kind.need_expand(),
         true,
     );
     let shape = entry.to_shape()?;

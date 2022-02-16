@@ -426,15 +426,15 @@ where
                 Ok(r) => match r {
                     Ready(Some(Ok(k))) => Ready(Some(Ok(k))),
                     Ready(Some(Err(e))) => {
-                        error!("body stream error: {:?}", e);
+                        error!("body stream error: {e:?}");
                         Ready(Some(Err(Error::from(e))))
                     }
                     Ready(None) => Ready(None),
                     Pending => Pending,
                 },
                 Err(e) => {
-                    error!("panic caught in httpret::BodyStream: {:?}", e);
-                    let e = Error::with_msg(format!("panic caught in httpret::BodyStream: {:?}", e));
+                    error!("panic caught in httpret::BodyStream: {e:?}");
+                    let e = Error::with_msg(format!("panic caught in httpret::BodyStream: {e:?}"));
                     Ready(Some(Err(e)))
                 }
             }

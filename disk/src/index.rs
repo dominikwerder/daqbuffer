@@ -28,9 +28,6 @@ pub fn find_ge(range: NanoRange, expand_right: bool, buf: &[u8]) -> Result<Optio
     let mut k = n1 - 1;
     let x = VT::from_be_bytes(a[j].0);
     let y = VT::from_be_bytes(a[k].0);
-    if x >= y {
-        return Err(Error::with_msg(format!("search in unordered data")));
-    }
     if y < range.beg {
         return Ok(None);
     }
@@ -41,11 +38,18 @@ pub fn find_ge(range: NanoRange, expand_right: bool, buf: &[u8]) -> Result<Optio
             return Ok(None);
         }
     }
+    if x >= y {
+        return Err(Error::with_public_msg(format!(
+            "search in unordered data  ts1 {x}  ts2 {y}"
+        )));
+    }
     let mut x = x;
     let mut y = y;
     loop {
         if x >= y {
-            return Err(Error::with_msg(format!("search in unordered data")));
+            return Err(Error::with_public_msg(format!(
+                "search (loop) in unordered data  ts1 {x}  ts2 {y}"
+            )));
         }
         if k - j < 2 {
             if y < range.end || expand_right {
@@ -92,9 +96,6 @@ pub fn find_largest_smaller_than(
     let mut k = n1 - 1;
     let x = NUM::from_be_bytes(a[j].0);
     let y = NUM::from_be_bytes(a[k].0);
-    if x >= y {
-        return Err(Error::with_msg(format!("search in unordered data")));
-    }
     if x >= range.beg {
         return Ok(None);
     }
@@ -102,11 +103,18 @@ pub fn find_largest_smaller_than(
         let ret = (y, NUM::from_be_bytes(a[k].1));
         return Ok(Some(ret));
     }
+    if x >= y {
+        return Err(Error::with_public_msg(format!(
+            "search in unordered data  ts1 {x}  ts2 {y}"
+        )));
+    }
     let mut x = x;
     let mut y = y;
     loop {
         if x >= y {
-            return Err(Error::with_msg(format!("search in unordered data")));
+            return Err(Error::with_public_msg(format!(
+                "search (loop) in unordered data  ts1 {x}  ts2 {y}"
+            )));
         }
         if k - j < 2 {
             let ret = (x, NUM::from_be_bytes(a[j].1));
