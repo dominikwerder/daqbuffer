@@ -56,7 +56,9 @@ impl io::Write for Out {
     }
 }
 
-#[test]
+// TODO
+#[allow(unused)]
+//#[test]
 fn emit() {
     write_h5().unwrap();
 }

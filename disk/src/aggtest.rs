@@ -1,6 +1,7 @@
 use crate::eventblobs::EventChunkerMultifile;
 use crate::eventchunker::EventChunkerConf;
-use netpod::{timeunits::*, FileIoBufferSize};
+use netpod::timeunits::*;
+use netpod::{test_data_base_path_databuffer, FileIoBufferSize};
 use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, NanoRange, Nanos, Node, ScalarType, Shape};
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
@@ -12,8 +13,8 @@ pub fn make_test_node(id: u32) -> Node {
         port: 8800 + id as u16,
         port_raw: 8800 + id as u16 + 100,
         // TODO use a common function to supply the tmp path.
-        data_base_path: format!("../tmpdata/node{:02}", id).into(),
-        cache_base_path: format!("../tmpdata/node{:02}", id).into(),
+        data_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
+        cache_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
         ksprefix: "ks".into(),
         backend: "testbackend".into(),
         splits: None,

@@ -296,17 +296,25 @@ mod test {
     use err::Error;
     use futures_util::StreamExt;
     use items::{RangeCompletableItem, StreamItem};
-    use netpod::log::*;
     use netpod::timeunits::{DAY, MS};
+    use netpod::{log::*, test_data_base_path_databuffer};
     use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, FileIoBufferSize, NanoRange, Nanos, ScalarType, Shape};
     use std::path::PathBuf;
     use std::sync::atomic::AtomicU64;
     use std::sync::Arc;
 
-    const SCALAR_FILE: &str =
-        "../tmpdata/node00/ks_2/byTime/scalar-i32-be/0000000000000000001/0000000000/0000000000086400000_00000_Data";
-    const _WAVE_FILE: &str =
-        "../tmpdata/node00/ks_3/byTime/wave-f64-be-n21/0000000000000000001/0000000000/0000000000086400000_00000_Data";
+    fn scalar_file_path() -> PathBuf {
+        test_data_base_path_databuffer()
+            .join("node00/ks_2/byTime/scalar-i32-be")
+            .join("0000000000000000001/0000000000/0000000000086400000_00000_Data")
+    }
+
+    #[allow(unused)]
+    fn wave_file_path() -> PathBuf {
+        test_data_base_path_databuffer()
+            .join("node00/ks_3/byTime/wave-f64-be-n21")
+            .join("0000000000000000001/0000000000/0000000000086400000_00000_Data")
+    }
 
     #[derive(Debug)]
     struct CollectedEvents {
@@ -399,7 +407,7 @@ mod test {
                 beg: DAY + MS * 1501,
                 end: DAY + MS * 4000,
             };
-            let path = PathBuf::from(SCALAR_FILE);
+            let path = scalar_file_path();
             collect_merged_events(vec![path], range).await?;
 
             // TODO

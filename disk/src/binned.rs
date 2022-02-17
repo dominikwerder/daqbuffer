@@ -14,17 +14,17 @@ use bytes::Bytes;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
-use items::frame::MakeBytesFrame;
 use items::numops::NumOps;
 use items::streams::{Collectable, Collector};
 use items::{
     Clearable, EventsNodeProcessor, FilterFittingInside, Framable, FrameType, PushableIndex, RangeCompletableItem,
     Sitemty, StreamItem, TimeBinnableType, WithLen,
 };
+use netpod::log::*;
 use netpod::query::{BinnedQuery, RawEventsQuery};
-use netpod::{log::*, ScalarType};
 use netpod::{
-    x_bin_count, BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange, Shape,
+    x_bin_count, BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange, ScalarType,
+    Shape,
 };
 use serde::de::DeserializeOwned;
 use std::fmt::Debug;
@@ -170,6 +170,13 @@ impl<S> BinnedBytesForHttpStream<S> {
             errored: false,
             completed: false,
         }
+    }
+}
+
+pub trait MakeBytesFrame {
+    fn make_bytes_frame(&self) -> Result<Bytes, Error> {
+        // TODO only implemented for one type, remove
+        err::todoval()
     }
 }
 

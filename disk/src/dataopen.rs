@@ -401,69 +401,31 @@ async fn open_expanded_files_inner(
     Ok(())
 }
 
-#[test]
-fn expanded_file_list() {
-    use netpod::timeunits::*;
-    let range = netpod::NanoRange {
-        beg: DAY + HOUR * 5,
-        end: DAY + HOUR * 8,
-    };
-    let chn = netpod::Channel {
-        backend: "testbackend".into(),
-        name: "scalar-i32-be".into(),
-    };
-    // TODO read config from disk.
-    let channel_config = ChannelConfig {
-        channel: chn,
-        keyspace: 2,
-        time_bin_size: Nanos { ns: DAY },
-        scalar_type: netpod::ScalarType::I32,
-        byte_order: netpod::ByteOrder::big_endian(),
-        shape: netpod::Shape::Scalar,
-        array: false,
-        compression: false,
-    };
-    let cluster = netpod::test_cluster();
-    let task = async move {
-        let mut paths = vec![];
-        let mut files = open_expanded_files(&range, &channel_config, cluster.nodes[0].clone());
-        while let Some(file) = files.next().await {
-            match file {
-                Ok(k) => {
-                    debug!("opened file: {:?}", k);
-                    paths.push(k.files);
-                }
-                Err(e) => {
-                    error!("error while trying to open {:?}", e);
-                    break;
-                }
-            }
-        }
-        if paths.len() != 2 {
-            return Err(Error::with_msg_no_trace("expected 2 files"));
-        }
-        Ok(())
-    };
-    taskrun::run(task).unwrap();
-}
-
 #[cfg(test)]
 mod test {
-    use crate::dataopen::position_file;
+    use super::*;
     use err::Error;
-    use netpod::timeunits::{DAY, HOUR, MS};
-    use netpod::NanoRange;
+    use netpod::timeunits::*;
+    use netpod::{test_data_base_path_databuffer, ChannelConfig, NanoRange, Nanos};
+    use std::path::PathBuf;
     use tokio::fs::OpenOptions;
 
-    const WAVE_FILE: &str =
-        "../tmpdata/node00/ks_3/byTime/wave-f64-be-n21/0000000000000000001/0000000000/0000000000086400000_00000_Data";
-    const SCALAR_FILE: &str =
-        "../tmpdata/node00/ks_2/byTime/scalar-i32-be/0000000000000000001/0000000000/0000000000086400000_00000_Data";
+    fn scalar_file_path() -> PathBuf {
+        test_data_base_path_databuffer()
+            .join("node00/ks_2/byTime/scalar-i32-be")
+            .join("0000000000000000001/0000000000/0000000000086400000_00000_Data")
+    }
+
+    fn wave_file_path() -> PathBuf {
+        test_data_base_path_databuffer()
+            .join("node00/ks_3/byTime/wave-f64-be-n21")
+            .join("0000000000000000001/0000000000/0000000000086400000_00000_Data")
+    }
 
     #[test]
     fn position_basic_file_at_begin() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE.into();
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: DAY,
                 end: DAY + MS * 20000,
@@ -482,7 +444,7 @@ mod test {
     #[test]
     fn position_basic_file_for_empty_range() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE.into();
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: DAY + MS * 80000,
                 end: DAY + MS * 80000,
@@ -500,7 +462,7 @@ mod test {
     #[test]
     fn position_basic_file_at_begin_for_range() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE.into();
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: DAY,
                 end: DAY + MS * 300000,
@@ -519,7 +481,7 @@ mod test {
     #[test]
     fn position_basic_file_at_inner() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE.into();
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: DAY + MS * 4000,
                 end: DAY + MS * 7000,
@@ -539,7 +501,7 @@ mod test {
     #[test]
     fn position_basic_file_at_inner_for_too_small_range() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE.into();
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: DAY + MS * 1501,
                 end: DAY + MS * 1502,
@@ -558,7 +520,7 @@ mod test {
     #[test]
     fn position_basic_file_starts_after_range() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE.into();
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: HOUR * 22,
                 end: HOUR * 23,
@@ -576,7 +538,7 @@ mod test {
     #[test]
     fn position_basic_file_ends_before_range() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE.into();
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: DAY * 2,
                 end: DAY * 2 + HOUR,
@@ -594,7 +556,7 @@ mod test {
     #[test]
     fn position_basic_index() -> Result<(), Error> {
         let fut = async {
-            let path = WAVE_FILE.into();
+            let path = wave_file_path();
             let range = NanoRange {
                 beg: DAY + MS * 4000,
                 end: DAY + MS * 90000,
@@ -613,7 +575,7 @@ mod test {
     #[test]
     fn position_basic_index_too_small_range() -> Result<(), Error> {
         let fut = async {
-            let path = WAVE_FILE.into();
+            let path = wave_file_path();
             let range = NanoRange {
                 beg: DAY + MS * 3100,
                 end: DAY + MS * 3200,
@@ -631,7 +593,7 @@ mod test {
     #[test]
     fn position_basic_index_starts_after_range() -> Result<(), Error> {
         let fut = async {
-            let path = WAVE_FILE.into();
+            let path = wave_file_path();
             let range = NanoRange {
                 beg: HOUR * 10,
                 end: HOUR * 12,
@@ -649,7 +611,7 @@ mod test {
     #[test]
     fn position_basic_index_ends_before_range() -> Result<(), Error> {
         let fut = async {
-            let path = WAVE_FILE.into();
+            let path = wave_file_path();
             let range = NanoRange {
                 beg: DAY * 2,
                 end: DAY * 2 + MS * 40000,
@@ -672,7 +634,7 @@ mod test {
     #[test]
     fn position_expand_file_at_begin_no_fallback() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE;
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: DAY + MS * 3000,
                 end: DAY + MS * 40000,
@@ -692,7 +654,7 @@ mod test {
     #[test]
     fn position_expand_left_file_at_evts_file_begin() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE.into();
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: DAY,
                 end: DAY + MS * 40000,
@@ -710,7 +672,7 @@ mod test {
     #[test]
     fn position_expand_right_file_at_evts_file_begin() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE.into();
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: DAY,
                 end: DAY + MS * 40000,
@@ -729,7 +691,7 @@ mod test {
     #[test]
     fn position_expand_left_file_at_evts_file_within() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE.into();
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: DAY + MS * 3000,
                 end: DAY + MS * 40000,
@@ -749,7 +711,7 @@ mod test {
     #[test]
     fn position_expand_left_file_ends_before_range() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE.into();
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: DAY * 2,
                 end: DAY * 2 + MS * 40000,
@@ -769,7 +731,7 @@ mod test {
     #[test]
     fn position_expand_left_file_begins_exactly_after_range() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE.into();
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: HOUR * 23,
                 end: DAY,
@@ -788,7 +750,7 @@ mod test {
     #[test]
     fn position_expand_right_file_begins_exactly_after_range() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE.into();
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: HOUR * 23,
                 end: DAY,
@@ -808,7 +770,7 @@ mod test {
     #[test]
     fn position_expand_left_basic_file_at_inner_for_too_small_range() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE.into();
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: DAY + MS * 1501,
                 end: DAY + MS * 1502,
@@ -828,7 +790,7 @@ mod test {
     #[test]
     fn position_expand_right_basic_file_at_inner_for_too_small_range() -> Result<(), Error> {
         let fut = async {
-            let path = SCALAR_FILE.into();
+            let path = scalar_file_path();
             let range = NanoRange {
                 beg: DAY + MS * 1501,
                 end: DAY + MS * 1502,
@@ -842,5 +804,53 @@ mod test {
         };
         taskrun::run(fut)?;
         Ok(())
+    }
+
+    #[test]
+    fn expanded_file_list() {
+        let range = netpod::NanoRange {
+            beg: DAY + HOUR * 5,
+            end: DAY + HOUR * 8,
+        };
+        let chn = netpod::Channel {
+            backend: "testbackend".into(),
+            name: "scalar-i32-be".into(),
+        };
+        // TODO read config from disk? Or expose the config from data generator?
+        let channel_config = ChannelConfig {
+            channel: chn,
+            keyspace: 2,
+            time_bin_size: Nanos { ns: DAY },
+            scalar_type: netpod::ScalarType::I32,
+            byte_order: netpod::ByteOrder::big_endian(),
+            shape: netpod::Shape::Scalar,
+            array: false,
+            compression: false,
+        };
+        let cluster = netpod::test_cluster();
+        let task = async move {
+            let mut paths = vec![];
+            let mut files = open_expanded_files(&range, &channel_config, cluster.nodes[0].clone());
+            while let Some(file) = files.next().await {
+                match file {
+                    Ok(k) => {
+                        debug!("opened file: {:?}", k);
+                        paths.push(k.files);
+                    }
+                    Err(e) => {
+                        error!("error while trying to open {:?}", e);
+                        break;
+                    }
+                }
+            }
+            if paths.len() != 2 {
+                return Err(Error::with_msg_no_trace(format!(
+                    "expected 2 files got {n}",
+                    n = paths.len()
+                )));
+            }
+            Ok(())
+        };
+        taskrun::run(task).unwrap();
     }
 }

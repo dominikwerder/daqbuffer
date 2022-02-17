@@ -1470,8 +1470,8 @@ pub fn test_cluster() -> Cluster {
             listen: "0.0.0.0".into(),
             port: 6170 + id as u16,
             port_raw: 6170 + id as u16 + 100,
-            data_base_path: format!("../tmpdata/node{:02}", id).into(),
-            cache_base_path: format!("../tmpdata/node{:02}", id).into(),
+            data_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
+            cache_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
             ksprefix: "ks".into(),
             backend: "testbackend".into(),
             splits: None,
@@ -1502,13 +1502,13 @@ pub fn sls_test_cluster() -> Cluster {
             port: 6190 + id as u16,
             port_raw: 6190 + id as u16 + 100,
             data_base_path: format!("NOdatapath{}", id).into(),
-            cache_base_path: format!("../tmpdata/node{:02}", id).into(),
+            cache_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
             ksprefix: "NOKS".into(),
             backend: "sls-archive".into(),
             splits: None,
             archiver_appliance: None,
             channel_archiver: Some(ChannelArchiver {
-                data_base_paths: vec![PathBuf::from("/data/daqbuffer-testdata/sls/gfa03")],
+                data_base_paths: vec![test_data_base_path_channel_archiver_sls()],
                 database: Database {
                     host: "localhost".into(),
                     name: "testingdaq".into(),
@@ -1530,4 +1530,19 @@ pub fn sls_test_cluster() -> Cluster {
         is_central_storage: false,
         file_io_buffer_size: Default::default(),
     }
+}
+
+pub fn test_data_base_path_databuffer() -> PathBuf {
+    let homedir = std::env::var("HOME").unwrap();
+    let data_base_path = PathBuf::from(homedir).join("daqbuffer-testdata").join("databuffer");
+    data_base_path
+}
+
+pub fn test_data_base_path_channel_archiver_sls() -> PathBuf {
+    let homedir = std::env::var("HOME").unwrap();
+    let data_base_path = PathBuf::from(homedir)
+        .join("daqbuffer-testdata")
+        .join("sls")
+        .join("gfa03");
+    data_base_path
 }

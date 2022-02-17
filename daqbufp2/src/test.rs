@@ -7,13 +7,13 @@ use bytes::BytesMut;
 use err::Error;
 use std::future::Future;
 
-fn run_test<F>(f: F)
+fn run_test<F>(f: F) -> Result<(), Error>
 where
     F: Future<Output = Result<(), Error>> + Send,
 {
     let runtime = taskrun::get_runtime();
     let _g = runtime.enter();
-    runtime.block_on(f).unwrap();
+    runtime.block_on(f)
     //let jh = tokio::spawn(f);
     //jh.await;
 }

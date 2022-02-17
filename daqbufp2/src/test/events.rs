@@ -8,8 +8,8 @@ use err::Error;
 use futures_util::{StreamExt, TryStreamExt};
 use http::StatusCode;
 use hyper::Body;
-use items::scalarevents::ScalarEvents;
 use items::numops::NumOps;
+use items::scalarevents::ScalarEvents;
 use items::{FrameType, RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithLen};
 use netpod::log::*;
 use netpod::{AppendToUrl, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_JSON, APP_OCTET};
@@ -24,6 +24,7 @@ fn get_plain_events_binary_0() {
     taskrun::run(get_plain_events_binary_0_inner()).unwrap();
 }
 
+// TODO OFFENDING TEST add actual checks on result
 async fn get_plain_events_binary_0_inner() -> Result<(), Error> {
     let rh = require_test_hosts_running()?;
     let cluster = &rh.cluster;
@@ -65,10 +66,10 @@ where
     let range = NanoRange::from_date_time(beg_date, end_date);
     let query = PlainEventsBinaryQuery::new(channel, range, 1024 * 4);
     let hp = HostPort::from_node(node0);
-    let mut url = Url::parse(&format!("http://{}:{}", hp.host, hp.port))?;
+    let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    debug!("get_plain_events  get {}", url);
+    debug!("get_plain_events_binary  get {}", url);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(url.to_string())
@@ -78,7 +79,8 @@ where
     let client = hyper::Client::new();
     let res = client.request(req).await.ec()?;
     if res.status() != StatusCode::OK {
-        error!("client response {:?}", res);
+        error!("client response {res:?}");
+        return Err(format!("get_plain_events_binary  client response {res:?}").into());
     }
     let s1 = disk::cache::HttpBodyAsAsyncRead::new(res);
     let s2 = InMemoryFrameAsyncReadStream::new(s1, perf_opts.inmem_bufcap);
@@ -86,7 +88,7 @@ where
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     // TODO add timeout
-    debug!("time {} ms", ms);
+    debug!("get_plain_events_binary  time {} ms", ms);
     if !res.is_valid() {
         Ok(res)
     } else {

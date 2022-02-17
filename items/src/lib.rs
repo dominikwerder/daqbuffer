@@ -19,6 +19,7 @@ use crate::numops::BoolNum;
 use bytes::BytesMut;
 use chrono::{TimeZone, Utc};
 use err::Error;
+use frame::make_error_frame;
 use netpod::timeunits::{MS, SEC};
 use netpod::{log::Level, AggKind, EventDataReadStats, EventQueryJsonStringFrame, NanoRange, Shape};
 use netpod::{DiskStats, RangeFilterStats};
@@ -33,6 +34,8 @@ use std::task::{Context, Poll};
 use tokio::fs::File;
 use tokio::io::{AsyncRead, ReadBuf};
 
+pub const TERM_FRAME_TYPE_ID: u32 = 0x01;
+pub const ERROR_FRAME_TYPE_ID: u32 = 0x02;
 pub const EVENT_QUERY_JSON_STRING_FRAME: u32 = 0x100;
 pub const EVENT_VALUES_FRAME_TYPE_ID: u32 = 0x500;
 pub const MIN_MAX_AVG_BINS: u32 = 0x700;
@@ -214,10 +217,25 @@ pub trait SitemtyFrameType {
 
 pub trait FrameType {
     const FRAME_TYPE_ID: u32;
+    fn is_err(&self) -> bool;
+    fn err(&self) -> Option<&::err::Error>;
+    fn from_error(x: ::err::Error) -> Self;
 }
 
 impl FrameType for EventQueryJsonStringFrame {
     const FRAME_TYPE_ID: u32 = EVENT_QUERY_JSON_STRING_FRAME;
+
+    fn is_err(&self) -> bool {
+        false
+    }
+
+    fn err(&self) -> Option<&::err::Error> {
+        None
+    }
+
+    fn from_error(_x: ::err::Error) -> Self {
+        panic!()
+    }
 }
 
 impl<T> FrameType for Sitemty<T>
@@ -225,6 +243,24 @@ where
     T: SitemtyFrameType,
 {
     const FRAME_TYPE_ID: u32 = T::FRAME_TYPE_ID;
+
+    fn is_err(&self) -> bool {
+        match self {
+            Ok(_) => false,
+            Err(_) => true,
+        }
+    }
+
+    fn err(&self) -> Option<&::err::Error> {
+        match self {
+            Ok(_) => None,
+            Err(e) => Some(e),
+        }
+    }
+
+    fn from_error(x: ::err::Error) -> Self {
+        Err(x)
+    }
 }
 
 pub trait ProvidesFrameType {
@@ -246,7 +282,10 @@ where
     }
 
     fn make_frame(&self) -> Result<BytesMut, Error> {
-        make_frame_2(self, T::FRAME_TYPE_ID)
+        match self {
+            Ok(_) => make_frame_2(self, T::FRAME_TYPE_ID),
+            Err(e) => make_error_frame(e),
+        }
     }
 }
 
