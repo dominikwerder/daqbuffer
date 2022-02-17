@@ -715,7 +715,9 @@ pub async fn channel_info(channel: &Channel, aa: &ArchiverAppliance) -> Result<C
     msgs.push(format!("path: {}", dir.to_string_lossy()));
     let mut scalar_type = None;
     let mut shape = None;
-    let mut rd = read_dir(&dir).await?;
+    let mut rd = read_dir(&dir)
+        .await
+        .map_err(|e| Error::with_msg(format!("Can not open directory {dir:?}  {e:?}")))?;
     while let Some(de) = rd.next_entry().await? {
         let s = de.file_name().to_string_lossy().into_owned();
         if s.starts_with(&prefix) && s.ends_with(".pb") {

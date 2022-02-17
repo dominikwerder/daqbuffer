@@ -1,3 +1,4 @@
+pub mod archapp;
 pub mod binnedbinary;
 pub mod binnedjson;
 pub mod events;

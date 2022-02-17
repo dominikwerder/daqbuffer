@@ -184,6 +184,7 @@ impl ScalarType {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ArchiverAppliance {
     pub data_base_paths: Vec<PathBuf>,
+    pub database: Database,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1501,14 +1502,53 @@ pub fn sls_test_cluster() -> Cluster {
             listen: "0.0.0.0".into(),
             port: 6190 + id as u16,
             port_raw: 6190 + id as u16 + 100,
-            data_base_path: format!("NOdatapath{}", id).into(),
+            data_base_path: "UNUSED".into(),
             cache_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
-            ksprefix: "NOKS".into(),
+            ksprefix: "UNUSED".into(),
             backend: "sls-archive".into(),
             splits: None,
             archiver_appliance: None,
             channel_archiver: Some(ChannelArchiver {
                 data_base_paths: vec![test_data_base_path_channel_archiver_sls()],
+                database: Database {
+                    host: "localhost".into(),
+                    name: "testingdaq".into(),
+                    user: "testingdaq".into(),
+                    pass: "testingdaq".into(),
+                },
+            }),
+        })
+        .collect();
+    Cluster {
+        nodes,
+        database: Database {
+            host: "localhost".into(),
+            name: "testingdaq".into(),
+            user: "testingdaq".into(),
+            pass: "testingdaq".into(),
+        },
+        run_map_pulse_task: false,
+        is_central_storage: false,
+        file_io_buffer_size: Default::default(),
+    }
+}
+
+pub fn archapp_test_cluster() -> Cluster {
+    let nodes = (0..1)
+        .into_iter()
+        .map(|id| Node {
+            host: "localhost".into(),
+            listen: "0.0.0.0".into(),
+            port: 6200 + id as u16,
+            port_raw: 6200 + id as u16 + 100,
+            data_base_path: "UNUSED".into(),
+            cache_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
+            ksprefix: "UNUSED".into(),
+            backend: "sf-archive".into(),
+            splits: None,
+            channel_archiver: None,
+            archiver_appliance: Some(ArchiverAppliance {
+                data_base_paths: vec![test_data_base_path_archiver_appliance()],
                 database: Database {
                     host: "localhost".into(),
                     name: "testingdaq".into(),
@@ -1544,5 +1584,15 @@ pub fn test_data_base_path_channel_archiver_sls() -> PathBuf {
         .join("daqbuffer-testdata")
         .join("sls")
         .join("gfa03");
+    data_base_path
+}
+
+pub fn test_data_base_path_archiver_appliance() -> PathBuf {
+    let homedir = std::env::var("HOME").unwrap();
+    let data_base_path = PathBuf::from(homedir)
+        .join("daqbuffer-testdata")
+        .join("archappdata")
+        .join("lts")
+        .join("ArchiverStore");
     data_base_path
 }

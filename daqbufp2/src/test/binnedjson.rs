@@ -253,21 +253,22 @@ async fn get_binned_json_common(
     Ok(())
 }
 
+// TODO reuse the types from server.
 #[derive(Debug, Serialize, Deserialize)]
-struct ScalarEventsResponse {
+pub struct ScalarEventsResponse {
     #[serde(rename = "tsAnchor")]
-    ts_anchor: u64,
+    pub ts_anchor: u64,
     #[serde(rename = "tsMs")]
-    ts_ms: Vec<u64>,
+    pub ts_ms: Vec<u64>,
     #[serde(rename = "tsNs")]
-    ts_ns: Vec<u64>,
-    values: Vec<f64>,
+    pub ts_ns: Vec<u64>,
+    pub values: Vec<f64>,
     #[serde(rename = "finalisedRange", default = "bool_false")]
-    finalised_range: bool,
+    pub finalised_range: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct WaveEventsResponse {
+pub struct WaveEventsResponse {
     #[serde(rename = "tsAnchor")]
     ts_anchor: u64,
     #[serde(rename = "tsMs")]

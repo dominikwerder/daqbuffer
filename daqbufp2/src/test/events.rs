@@ -255,14 +255,15 @@ async fn get_plain_events_json_1_inner() -> Result<(), Error> {
     Ok(())
 }
 
-async fn get_plain_events_json(
+// TODO improve by a more information-rich return type.
+pub async fn get_plain_events_json(
     channel_name: &str,
     beg_date: &str,
     end_date: &str,
     cluster: &Cluster,
     _expect_range_complete: bool,
     _expect_event_count: u64,
-) -> Result<(), Error> {
+) -> Result<JsonValue, Error> {
     let t1 = Utc::now();
     let node0 = &cluster.nodes[0];
     let beg_date: DateTime<Utc> = beg_date.parse()?;
@@ -292,11 +293,11 @@ async fn get_plain_events_json(
     }
     let buf = hyper::body::to_bytes(res.into_body()).await.ec()?;
     let s = String::from_utf8_lossy(&buf);
-    let _res: JsonValue = serde_json::from_str(&s)?;
+    let res: JsonValue = serde_json::from_str(&s)?;
     // TODO assert more
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     // TODO add timeout
     debug!("time {} ms", ms);
-    Ok(())
+    Ok(res)
 }

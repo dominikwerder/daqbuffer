@@ -36,6 +36,7 @@ fn get_scalar_2_events() -> Result<(), Error> {
         assert_eq!(res.ts_anchor, 1636502401);
         assert_eq!(&res.ts_ms, &ts_ms);
         assert_eq!(&res.ts_ns, &ts_ns);
+        assert_eq!(res.finalised_range, true);
         Ok(())
     };
     taskrun::run(fut)
@@ -87,6 +88,7 @@ fn get_wave_1_events() -> Result<(), Error> {
         assert_eq!(res.ts_anchor, 1636416014);
         assert_eq!(&res.ts_ms, &ts_ms);
         assert_eq!(&res.ts_ns, &ts_ns);
+        assert_eq!(res.finalised_range, true);
         assert_eq!(res.values.len(), 24);
         assert_eq!(res.values[0].len(), 480);
         assert_eq!(res.values[1].len(), 480);
