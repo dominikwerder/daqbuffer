@@ -7,16 +7,16 @@ pub async fn search_channel_databuffer(
     query: ChannelSearchQuery,
     node_config: &NodeConfigCached,
 ) -> Result<ChannelSearchResult, Error> {
-    let do_search = if !query.name_regex.is_empty() {
-        true
-    } else if !query.source_regex.is_empty() {
-        true
-    } else if query.description_regex.is_empty() {
-        true
-    } else {
+    let empty = if !query.name_regex.is_empty() {
         false
+    } else if !query.source_regex.is_empty() {
+        false
+    } else if !query.description_regex.is_empty() {
+        false
+    } else {
+        true
     };
-    if !do_search {
+    if empty {
         let ret = ChannelSearchResult { channels: vec![] };
         return Ok(ret);
     }
@@ -191,6 +191,7 @@ pub async fn search_channel(
     if let Some(conf) = node_config.node.channel_archiver.as_ref() {
         search_channel_archeng(query, node_config.node.backend.clone(), conf).await
     } else if let Some(_conf) = node_config.node.archiver_appliance.as_ref() {
+        // TODO
         err::todoval()
     } else {
         search_channel_databuffer(query, node_config).await

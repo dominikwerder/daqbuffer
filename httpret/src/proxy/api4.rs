@@ -6,6 +6,7 @@ use http::{header, Request, Response, StatusCode};
 use hyper::Body;
 use itertools::Itertools;
 use netpod::log::*;
+use netpod::ACCEPT_ALL;
 use netpod::{ChannelSearchQuery, ChannelSearchResult, ProxyConfig, APP_JSON};
 use std::pin::Pin;
 use std::time::Duration;
@@ -15,12 +16,12 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
     let (head, _body) = req.into_parts();
     let vdef = header::HeaderValue::from_static(APP_JSON);
     let v = head.headers.get(header::ACCEPT).unwrap_or(&vdef);
-    if v == APP_JSON || v == "*/*" {
+    if v == APP_JSON || v == ACCEPT_ALL {
         let inpurl = Url::parse(&format!("dummy:{}", head.uri))?;
         let query = ChannelSearchQuery::from_url(&inpurl)?;
         let mut bodies = vec![];
         let urls = proxy_config
-            .backends
+            .backends_search
             .iter()
             .filter(|k| {
                 if let Some(back) = &query.backend {

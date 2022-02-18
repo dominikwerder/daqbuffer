@@ -1351,6 +1351,7 @@ pub struct ProxyConfig {
     pub search_hosts: Vec<String>,
     pub backends: Vec<ProxyBackend>,
     pub backends2: Vec<ProxyBackend>,
+    pub backends_search: Vec<ProxyBackend>,
     pub api_0_search_hosts: Option<Vec<String>>,
     pub api_0_search_backends: Option<Vec<String>>,
 }
