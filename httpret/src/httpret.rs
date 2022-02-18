@@ -270,9 +270,15 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/4/archapp/files/scan" {
+    } else if path == "/api/4/archapp/files/scan/msgs" {
         if req.method() == Method::GET {
             Ok(archapp_scan_files(req, &node_config).await?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    } else if path == "/api/4/archapp/files/scan/insert" {
+        if req.method() == Method::GET {
+            Ok(archapp_scan_files_insert(req, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -808,6 +814,34 @@ pub async fn archapp_scan_files(req: Request<Body>, node_config: &NodeConfigCach
     let url = Url::parse(&format!("dummy:{}", req.uri()))?;
     let pairs = get_url_query_pairs(&url);
     let res = archapp_wrap::scan_files(pairs, node_config.clone()).await?;
+    let ret = response(StatusCode::OK)
+        .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
+        .body(Body::wrap_stream(res.map(|k| match k {
+            Ok(k) => match k.serialize() {
+                Ok(mut item) => {
+                    item.push(0xa);
+                    Ok(item)
+                }
+                Err(e) => Err(e),
+            },
+            Err(e) => match serde_json::to_vec(&e) {
+                Ok(mut item) => {
+                    item.push(0xa);
+                    Ok(item)
+                }
+                Err(e) => Err(e.into()),
+            },
+        })))?;
+    Ok(ret)
+}
+
+pub async fn archapp_scan_files_insert(
+    req: Request<Body>,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
+    let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+    let pairs = get_url_query_pairs(&url);
+    let res = archapp_wrap::scan_files_insert(pairs, node_config.clone()).await?;
     let ret = response(StatusCode::OK)
         .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
         .body(Body::wrap_stream(res.map(|k| match k {

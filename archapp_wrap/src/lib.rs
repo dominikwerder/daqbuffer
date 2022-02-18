@@ -15,9 +15,21 @@ pub fn scan_files(
     pairs: BTreeMap<String, String>,
     node_config: NodeConfigCached,
 ) -> Pin<Box<dyn Future<Output = Result<Receiver<Result<ItemSerBox, Error>>, Error>> + Send>> {
-    Box::pin(archapp::parse::scan_files_inner(
+    Box::pin(archapp::parse::scan_files_msgs(
         pairs,
         node_config.node.archiver_appliance.unwrap().data_base_paths,
+    ))
+}
+
+pub fn scan_files_insert(
+    pairs: BTreeMap<String, String>,
+    node_config: NodeConfigCached,
+) -> Pin<Box<dyn Future<Output = Result<Receiver<Result<ItemSerBox, Error>>, Error>> + Send>> {
+    let aa = node_config.node.archiver_appliance.as_ref().unwrap();
+    Box::pin(archapp::parse::scan_files_to_database(
+        pairs,
+        aa.data_base_paths.clone(),
+        aa.database.clone(),
     ))
 }
 

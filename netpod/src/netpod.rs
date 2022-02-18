@@ -85,6 +85,24 @@ impl ScalarType {
         Ok(g)
     }
 
+    pub fn to_bsread_str(&self) -> &'static str {
+        use ScalarType::*;
+        match self {
+            U8 => "uint8",
+            U16 => "uint16",
+            U32 => "uint32",
+            U64 => "uint64",
+            I8 => "int8",
+            I16 => "int16",
+            I32 => "int32",
+            I64 => "int64",
+            F32 => "float",
+            F64 => "double",
+            BOOL => "bool",
+            STRING => "string",
+        }
+    }
+
     pub fn from_bsread_str(s: &str) -> Result<Self, Error> {
         use ScalarType::*;
         let ret = match s {
@@ -98,6 +116,7 @@ impl ScalarType {
             "int64" => I64,
             "float" => F32,
             "double" => F64,
+            "string" => STRING,
             _ => {
                 return Err(Error::with_msg_no_trace(format!(
                     "from_bsread_str can not understand bsread {}",

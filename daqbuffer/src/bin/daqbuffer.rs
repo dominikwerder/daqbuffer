@@ -50,8 +50,6 @@ async fn go() -> Result<(), Error> {
     let opts = Opts::parse();
     match opts.subcmd {
         SubCmd::Retrieval(subcmd) => {
-            trace!("test trace");
-            error!("test error");
             info!("daqbuffer {}", clap::crate_version!());
             let mut config_file = File::open(subcmd.config).await?;
             let mut buf = vec![];

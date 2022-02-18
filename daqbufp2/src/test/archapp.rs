@@ -2,7 +2,8 @@ use super::binnedjson::ScalarEventsResponse;
 use super::events::get_plain_events_json;
 use crate::nodes::require_archapp_test_host_running;
 use err::Error;
-use netpod::{f64_close, log::*};
+use netpod::f64_close;
+use netpod::log::*;
 
 #[test]
 fn get_events_1() -> Result<(), Error> {

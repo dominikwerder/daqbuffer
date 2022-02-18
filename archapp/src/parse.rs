@@ -7,15 +7,16 @@ use archapp_xc::*;
 use async_channel::{bounded, Receiver};
 use chrono::{TimeZone, Utc};
 use err::{ErrStr, Error};
+use futures_util::StreamExt;
 use items::eventsitem::EventsItem;
 use items::plainevents::{PlainEvents, ScalarPlainEvents, WavePlainEvents};
 use items::scalarevents::ScalarEvents;
 use items::waveevents::WaveEvents;
 use netpod::log::*;
 use netpod::{ArchiverAppliance, ChannelConfigQuery, ChannelConfigResponse};
+use netpod::{Database, ScalarType, Shape};
 use protobuf::Message;
 use serde::Serialize;
-use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, VecDeque};
 use std::fs::FileType;
 use std::io::SeekFrom;
@@ -413,26 +414,36 @@ impl LruCache {
     }
 }
 
+#[derive(Debug)]
+#[allow(unused)]
+pub struct DiscoveredDatafile {
+    path: PathBuf,
+    channel_name: String,
+    variant_name: String,
+    scalar_type: ScalarType,
+    shape: Shape,
+}
+
 pub async fn scan_files_inner(
     pairs: BTreeMap<String, String>,
     data_base_paths: Vec<PathBuf>,
-) -> Result<Receiver<Result<ItemSerBox, Error>>, Error> {
+) -> Result<Receiver<Result<DiscoveredDatafile, Error>>, Error> {
     let _ = pairs;
     let (tx, rx) = bounded(16);
     let tx = Arc::new(tx);
     let tx2 = tx.clone();
     let block1 = async move {
         let mut lru = LruCache::new();
-        // TODO insert channels as a consumer of this stream:
-        //let dbc = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
-        //let ndi = dbconn::scan::get_node_disk_ident(&node_config, &dbc).await?;
         struct PE {
             path: PathBuf,
             fty: FileType,
         }
         let proot = data_base_paths.last().unwrap().clone();
         let proots = proot.to_str().unwrap().to_string();
-        let meta = tokio::fs::metadata(&proot).await?;
+        // TODO factor out to automatically add path to error.
+        let meta = tokio::fs::metadata(&proot)
+            .await
+            .map_err(|e| Error::with_msg(format!("can not open {proot:?}  {e:?}")))?;
         let mut paths = VecDeque::new();
         paths.push_back(PE {
             path: proot,
@@ -441,7 +452,10 @@ pub async fn scan_files_inner(
         loop {
             if let Some(pe) = paths.pop_back() {
                 if pe.fty.is_dir() {
-                    let mut rd = tokio::fs::read_dir(&pe.path).await?;
+                    // TODO factor out to automatically add path to error.
+                    let mut rd = tokio::fs::read_dir(&pe.path)
+                        .await
+                        .map_err(|e| Error::with_msg(format!("can not open {:?}  {e:?}", pe.path)))?;
                     loop {
                         match rd.next_entry().await {
                             Ok(item) => match item {
@@ -467,39 +481,31 @@ pub async fn scan_files_inner(
                         //tx.send(Ok(Box::new(serde_json::to_value(fns)?) as ItemSerBox)).await?;
                         let channel_path = &fns[proots.len() + 1..fns.len() - 11];
                         if !lru.query(channel_path) {
-                            let mut pbr = PbFileReader::new(tokio::fs::File::open(&pe.path).await?).await?;
+                            let f3 = tokio::fs::File::open(&pe.path)
+                                .await
+                                .map_err(|e| Error::with_msg(format!("can not open {:?}  {e:?}", pe.path)))?;
+                            let mut pbr = PbFileReader::new(f3).await?;
                             let normalized_channel_name = {
                                 let pvn = pbr.channel_name().replace("-", "/");
                                 pvn.replace(":", "/")
                             };
                             if channel_path != normalized_channel_name {
-                                {
-                                    let s = format!("{} - {}", channel_path, normalized_channel_name);
-                                    tx.send(Ok(Box::new(serde_json::to_value(&s)?) as ItemSerBox))
-                                        .await
-                                        .errstr()?;
-                                }
-                                tx.send(Ok(
-                                    Box::new(JsonValue::String(format!("MISMATCH --------------------"))) as ItemSerBox,
-                                ))
-                                .await
-                                .errstr()?;
+                                let msg = format!("{} - {}", channel_path, normalized_channel_name);
+                                warn!("{}", msg);
+                                tx.send(Err(Error::with_msg(format!("MISMATCH --------------------"))))
+                                    .await
+                                    .errstr()?;
                             } else {
-                                // TODO as a consumer of this stream:
-                                //dbconn::insert_channel(channel_path.into(), ndi.facility, &dbc).await?;
-
                                 if let Ok(Some(msg)) = pbr.read_msg().await {
-                                    let msg = msg.item;
                                     lru.insert(channel_path);
-                                    {
-                                        tx.send(Ok(Box::new(serde_json::to_value(format!(
-                                            "channel  {}  type {}",
-                                            pbr.channel_name(),
-                                            msg.variant_name()
-                                        ))?) as ItemSerBox))
-                                            .await
-                                            .errstr()?;
-                                    }
+                                    let item = DiscoveredDatafile {
+                                        path: pe.path,
+                                        channel_name: pbr.channel_name().into(),
+                                        variant_name: msg.item.variant_name(),
+                                        scalar_type: msg.item.type_info().0,
+                                        shape: msg.item.type_info().1,
+                                    };
+                                    tx.send(Ok(item)).await.errstr()?;
                                 }
                             }
                         }
@@ -510,6 +516,88 @@ pub async fn scan_files_inner(
             }
         }
         Ok::<_, Error>(())
+    };
+    let block2 = async move {
+        match block1.await {
+            Ok(_) => {}
+            Err(e) => match tx2.send(Err(e)).await {
+                Ok(_) => {}
+                Err(e) => {
+                    error!("can not deliver error through channel: {:?}", e);
+                }
+            },
+        }
+    };
+    tokio::spawn(block2);
+    Ok(rx)
+}
+
+pub async fn scan_files_msgs(
+    pairs: BTreeMap<String, String>,
+    data_base_paths: Vec<PathBuf>,
+) -> Result<Receiver<Result<ItemSerBox, Error>>, Error> {
+    let (tx, rx) = bounded(16);
+    let tx = Arc::new(tx);
+    let tx2 = tx.clone();
+    let block1 = async move {
+        let mut inp = scan_files_inner(pairs, data_base_paths).await?;
+        while let Some(item) = inp.next().await {
+            let item = item?;
+            let msg = format!("{item:?}");
+            tx.send(Ok(Box::new(serde_json::to_value(msg)?) as ItemSerBox))
+                .await
+                .errstr()?;
+        }
+        Ok(())
+    };
+    let block2 = async move {
+        match block1.await {
+            Ok(_) => {}
+            Err(e) => match tx2.send(Err(e)).await {
+                Ok(_) => {}
+                Err(e) => {
+                    error!("can not deliver error through channel: {:?}", e);
+                }
+            },
+        }
+    };
+    tokio::spawn(block2);
+    Ok(rx)
+}
+
+pub async fn scan_files_to_database(
+    pairs: BTreeMap<String, String>,
+    data_base_paths: Vec<PathBuf>,
+    database: Database,
+) -> Result<Receiver<Result<ItemSerBox, Error>>, Error> {
+    let (tx, rx) = bounded(16);
+    let tx = Arc::new(tx);
+    let tx2 = tx.clone();
+    let block1 = async move {
+        let dbc = dbconn::create_connection(&database).await?;
+        let mut inp = scan_files_inner(pairs, data_base_paths).await?;
+        while let Some(item) = inp.next().await {
+            let item = item?;
+            let sql = "select rowid from channels where name = $1";
+            let rows = dbc.query(sql, &[&item.channel_name]).await.errstr()?;
+            if rows.len() == 0 {
+                let sql = "insert into channels (name, config) values ($1, $2) on conflict do nothing returning rowid";
+                let cfg = serde_json::json!({
+                    "scalarType":item.scalar_type.to_bsread_str(),
+                    "shape":item.shape,
+                });
+                let rows = dbc.query(sql, &[&item.channel_name, &cfg]).await.errstr()?;
+                if let Some(row) = rows.last() {
+                    let rowid: i64 = row.get(0);
+                    let msg = format!("insert done  rowid {rowid}  {item:?}");
+                    let msg = Box::new(serde_json::to_value(msg)?) as ItemSerBox;
+                    tx.send(Ok(msg)).await.errstr()?;
+                }
+            } else {
+                // TODO update channel config if needed
+            }
+        }
+        Ok(())
     };
     let block2 = async move {
         match block1.await {
