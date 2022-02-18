@@ -2,7 +2,7 @@ use crate::ChannelConfigExt;
 use bitshuffle::bitshuffle_compress;
 use bytes::{BufMut, BytesMut};
 use err::Error;
-use netpod::{timeunits::*, ByteOrder, Channel, ChannelConfig, GenVar, Node, Shape};
+use netpod::{timeunits::*, ByteOrder, Channel, ChannelConfig, GenVar, Node, SfDatabuffer, Shape};
 use netpod::{Nanos, ScalarType};
 use std::path::{Path, PathBuf};
 use tokio::fs::{File, OpenOptions};
@@ -123,11 +123,13 @@ pub async fn gen_test_data() -> Result<(), Error> {
             listen: "0.0.0.0".into(),
             port: 7780 + i1 as u16,
             port_raw: 7780 + i1 as u16 + 100,
-            data_base_path: data_base_path.join(format!("node{:02}", i1)),
             cache_base_path: data_base_path.join(format!("node{:02}", i1)),
-            ksprefix: ksprefix.clone(),
             backend: "testbackend".into(),
-            splits: None,
+            sf_databuffer: Some(SfDatabuffer {
+                data_base_path: data_base_path.join(format!("node{:02}", i1)),
+                ksprefix: ksprefix.clone(),
+                splits: None,
+            }),
             archiver_appliance: None,
             channel_archiver: None,
         };
@@ -158,10 +160,11 @@ async fn gen_node(split: u32, node: &Node, ensemble: &Ensemble) -> Result<(), Er
 }
 
 async fn gen_channel(chn: &ChannelGenProps, split: u32, node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
-    let config_path = node.data_base_path.join("config").join(&chn.config.channel.name);
-    let channel_path = node
+    let sfc = node.sf_databuffer.as_ref().unwrap();
+    let config_path = sfc.data_base_path.join("config").join(&chn.config.channel.name);
+    let channel_path = sfc
         .data_base_path
-        .join(format!("{}_{}", node.ksprefix, chn.config.keyspace))
+        .join(format!("{}_{}", sfc.ksprefix, chn.config.keyspace))
         .join("byTime")
         .join(&chn.config.channel.name);
     tokio::fs::create_dir_all(&channel_path).await?;

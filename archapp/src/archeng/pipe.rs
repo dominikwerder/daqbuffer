@@ -8,14 +8,16 @@ use items::eventsitem::EventsItem;
 use items::plainevents::{PlainEvents, WavePlainEvents};
 use items::waveevents::{WaveNBinner, WaveXBinner};
 use items::{EventsNodeProcessor, Framable, LogItem, RangeCompletableItem, StreamItem};
+use netpod::log::*;
 use netpod::query::RawEventsQuery;
-use netpod::{log::*, AggKind, Shape};
+use netpod::{AggKind, NodeConfigCached, Shape};
 use netpod::{ChannelArchiver, ChannelConfigQuery};
 use std::pin::Pin;
 use streams::rangefilter::RangeFilter;
 
 pub async fn make_event_pipe(
     evq: &RawEventsQuery,
+    node: NodeConfigCached,
     conf: ChannelArchiver,
 ) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error> {
     debug!("make_event_pipe  {:?}", evq);
@@ -25,10 +27,14 @@ pub async fn make_event_pipe(
             range: evq.range.clone(),
             expand: evq.agg_kind.need_expand(),
         };
-        crate::archeng::channel_config_from_db(&q, &conf).await?
+        crate::archeng::channel_config_from_db(&q, &conf, &node.node_config.cluster.database).await?
     };
     debug!("Channel config: {:?}", channel_config);
-    let ixpaths = crate::archeng::indexfiles::index_file_path_list(evq.channel.clone(), conf.database.clone()).await?;
+    let ixpaths = crate::archeng::indexfiles::index_file_path_list(
+        evq.channel.clone(),
+        node.node_config.cluster.database.clone(),
+    )
+    .await?;
     debug!("got categorized ixpaths: {:?}", ixpaths);
     let ixpath = if let Some(x) = ixpaths.first() {
         x.clone()

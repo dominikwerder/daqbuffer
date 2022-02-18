@@ -269,7 +269,14 @@ impl Stream for UpdatedDbWithChannelNamesStream {
                             msg: format!("Got ident {:?}", pself.ident),
                             count: 43,
                         };
-                        let s = FindChannelNamesFromConfigReadDir::new(&pself.node_config.node.data_base_path);
+                        let base_path = &pself
+                            .node_config
+                            .node
+                            .sf_databuffer
+                            .as_ref()
+                            .ok_or_else(|| Error::with_msg(format!("missing sf databuffer config in node")))?
+                            .data_base_path;
+                        let s = FindChannelNamesFromConfigReadDir::new(base_path);
                         *pself.find = Some(s);
                         Ready(Some(Ok(ret)))
                     }
@@ -347,7 +354,13 @@ pub async fn update_db_with_channel_names(
         dbc.query("begin", &[]).await.errconv()?;
         let dbc = Arc::new(dbc);
         let tx = Arc::new(tx);
-        find_channel_names_from_config(&node_config.node.data_base_path, |ch| {
+        let base_path = &node_config
+            .node
+            .sf_databuffer
+            .as_ref()
+            .ok_or_else(|| Error::with_msg(format!("missing sf databuffer config in node")))?
+            .data_base_path;
+        find_channel_names_from_config(base_path, |ch| {
             let ch = ch.to_owned();
             let dbc = dbc.clone();
             let c1 = c1.clone();
@@ -407,7 +420,14 @@ pub async fn update_db_with_channel_names(
 pub fn update_db_with_channel_names_3<'a>(
     node_config: &'a NodeConfigCached,
 ) -> impl Stream<Item = Result<UpdatedDbWithChannelNames, Error>> + 'static {
-    futures_util::future::ready(node_config.node.data_base_path.clone())
+    let base_path = &node_config
+        .node
+        .sf_databuffer
+        .as_ref()
+        .ok_or_else(|| Error::with_msg(format!("missing sf databuffer config in node")))
+        .unwrap()
+        .data_base_path;
+    futures_util::future::ready(base_path.clone())
         .then(|path| tokio::fs::read_dir(path))
         .map(Result::unwrap)
         .map(|rd| {
@@ -552,9 +572,13 @@ pub async fn update_db_with_channel_config(
     count_inserted: &mut usize,
     count_updated: &mut usize,
 ) -> Result<UpdateChannelConfigResult, Error> {
-    let path = node_config
+    let base_path = &node_config
         .node
-        .data_base_path
+        .sf_databuffer
+        .as_ref()
+        .ok_or_else(|| Error::with_msg(format!("missing sf databuffer config in node")))?
+        .data_base_path;
+    let path = base_path
         .join("config")
         .join(channel)
         .join("latest")
@@ -806,6 +830,12 @@ pub async fn update_db_with_channel_datafiles(
     channel: &str,
     dbc: Arc<Client>,
 ) -> Result<(), Error> {
+    let base_path = &node_config
+        .node
+        .sf_databuffer
+        .as_ref()
+        .ok_or_else(|| Error::with_msg(format!("missing sf databuffer config in node")))?
+        .data_base_path;
     let writer = DatafileDbWriter {
         node_id: node_disk_ident.rowid(),
         channel_id: channel_id,
@@ -814,7 +844,7 @@ pub async fn update_db_with_channel_datafiles(
     };
     let mut n_nothing = 0;
     for ks in &[2, 3, 4] {
-        match find_channel_datafiles_in_ks(&node_config.node.data_base_path, ks_prefix, *ks, channel, &writer).await {
+        match find_channel_datafiles_in_ks(base_path, ks_prefix, *ks, channel, &writer).await {
             /*Err(Error::ChannelDatadirNotFound { .. }) => {
                 n_nothing += 1;
             }*/

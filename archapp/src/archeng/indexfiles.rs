@@ -6,6 +6,7 @@ use err::{ErrStr, Error};
 use futures_core::{Future, Stream};
 use futures_util::stream::unfold;
 use netpod::log::*;
+use netpod::NodeConfigCached;
 use netpod::{Channel, ChannelArchiver, Database};
 use regex::Regex;
 use std::collections::BTreeMap;
@@ -161,13 +162,15 @@ enum ScanIndexFilesSteps {
 }
 
 struct ScanIndexFiles {
+    node: NodeConfigCached,
     conf: ChannelArchiver,
     steps: ScanIndexFilesSteps,
 }
 
 impl ScanIndexFiles {
-    fn new(conf: ChannelArchiver) -> Self {
+    fn new(conf: ChannelArchiver, node: NodeConfigCached) -> Self {
         Self {
+            node,
             conf,
             steps: ScanIndexFilesSteps::Level0,
         }
@@ -184,7 +187,7 @@ impl ScanIndexFiles {
             ScanIndexFilesSteps::Level1(paths) => {
                 let paths = get_level_1(paths).await?;
                 info!("collected {} level 1 paths", paths.len());
-                let dbc = database_connect(&self.conf.database).await?;
+                let dbc = database_connect(&self.node.node_config.cluster.database).await?;
                 for p in paths {
                     let ps = p.to_string_lossy();
                     let rows = dbc
@@ -238,8 +241,8 @@ impl UnfoldExec for ScanIndexFiles {
     }
 }
 
-pub fn scan_index_files(conf: ChannelArchiver) -> impl Stream<Item = Result<String, Error>> {
-    unfold_stream(ScanIndexFiles::new(conf.clone()))
+pub fn scan_index_files(conf: ChannelArchiver, node: NodeConfigCached) -> impl Stream<Item = Result<String, Error>> {
+    unfold_stream(ScanIndexFiles::new(conf.clone(), node))
     /*
     enum UnfoldState {
         Running(ScanIndexFiles),
@@ -302,13 +305,16 @@ enum ScanChannelsSteps {
 }
 
 struct ScanChannels {
+    node: NodeConfigCached,
+    #[allow(unused)]
     conf: ChannelArchiver,
     steps: ScanChannelsSteps,
 }
 
 impl ScanChannels {
-    fn new(conf: ChannelArchiver) -> Self {
+    fn new(node: NodeConfigCached, conf: ChannelArchiver) -> Self {
         Self {
+            node,
             conf,
             steps: ScanChannelsSteps::Start,
         }
@@ -322,7 +328,7 @@ impl ScanChannels {
                 Ok(Some((format!("Start"), self)))
             }
             SelectIndexFile => {
-                let dbc = database_connect(&self.conf.database).await?;
+                let dbc = database_connect(&self.node.node_config.cluster.database).await?;
                 let sql =
                     "select path from indexfiles where ts_last_channel_search < now() - interval '1 hour' limit 1";
                 let rows = dbc.query(sql, &[]).await.errstr()?;
@@ -337,7 +343,7 @@ impl ScanChannels {
             ReadChannels(mut paths) => {
                 // TODO stats
                 let stats = &StatsChannel::dummy();
-                let dbc = database_connect(&self.conf.database).await?;
+                let dbc = database_connect(&self.node.node_config.cluster.database).await?;
                 if let Some(path) = paths.pop() {
                     let rows = dbc
                         .query("select rowid from indexfiles where path = $1", &[&path])
@@ -411,8 +417,8 @@ impl UnfoldExec for ScanChannels {
     }
 }
 
-pub fn scan_channels(conf: ChannelArchiver) -> impl Stream<Item = Result<String, Error>> {
-    unfold_stream(ScanChannels::new(conf.clone()))
+pub fn scan_channels(node: NodeConfigCached, conf: ChannelArchiver) -> impl Stream<Item = Result<String, Error>> {
+    unfold_stream(ScanChannels::new(node, conf.clone()))
 }
 
 #[derive(Debug)]

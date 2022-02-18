@@ -6,8 +6,15 @@ use std::path::PathBuf;
 
 // TODO remove/replace this
 pub fn datapath(timebin: u64, config: &netpod::ChannelConfig, split: u32, node: &Node) -> PathBuf {
-    node.data_base_path
-        .join(format!("{}_{}", node.ksprefix, config.keyspace))
+    node.sf_databuffer
+        .as_ref()
+        .unwrap()
+        .data_base_path
+        .join(format!(
+            "{}_{}",
+            node.sf_databuffer.as_ref().unwrap().ksprefix,
+            config.keyspace
+        ))
         .join("byTime")
         .join(config.channel.name.clone())
         .join(format!("{:019}", timebin))
@@ -26,9 +33,10 @@ pub async fn datapaths_for_timebin(
     config: &netpod::ChannelConfig,
     node: &Node,
 ) -> Result<Vec<PathBuf>, Error> {
-    let timebin_path = node
+    let sfc = node.sf_databuffer.as_ref().unwrap();
+    let timebin_path = sfc
         .data_base_path
-        .join(format!("{}_{}", node.ksprefix, config.keyspace))
+        .join(format!("{}_{}", sfc.ksprefix, config.keyspace))
         .join("byTime")
         .join(config.channel.name.clone())
         .join(format!("{:019}", timebin));
@@ -47,7 +55,7 @@ pub async fn datapaths_for_timebin(
         let vv = dn.chars().fold(0, |a, x| if x.is_digit(10) { a + 1 } else { a });
         if vv == 10 {
             let split: u64 = dn.parse()?;
-            match &node.splits {
+            match &sfc.splits {
                 Some(sps) => {
                     if sps.contains(&split) {
                         splits.push(split);
@@ -61,9 +69,9 @@ pub async fn datapaths_for_timebin(
     }
     let mut ret = vec![];
     for split in splits {
-        let path = node
+        let path = sfc
             .data_base_path
-            .join(format!("{}_{}", node.ksprefix, config.keyspace))
+            .join(format!("{}_{}", sfc.ksprefix, config.keyspace))
             .join("byTime")
             .join(config.channel.name.clone())
             .join(format!("{:019}", timebin))
@@ -75,9 +83,10 @@ pub async fn datapaths_for_timebin(
 }
 
 pub fn channel_timebins_dir_path(channel_config: &ChannelConfig, node: &Node) -> Result<PathBuf, Error> {
-    let ret = node
+    let sfc = node.sf_databuffer.as_ref().unwrap();
+    let ret = sfc
         .data_base_path
-        .join(format!("{}_{}", node.ksprefix, channel_config.keyspace))
+        .join(format!("{}_{}", sfc.ksprefix, channel_config.keyspace))
         .join("byTime")
         .join(&channel_config.channel.name);
     Ok(ret)
@@ -103,9 +112,10 @@ pub fn index_path(ts: Nanos, channel_config: &ChannelConfig, split: u32, node: &
 }
 
 pub fn data_dir_path_tb(ks: u32, channel_name: &str, tb: u32, split: u32, node: &Node) -> Result<PathBuf, Error> {
-    let ret = node
+    let sfc = node.sf_databuffer.as_ref().unwrap();
+    let ret = sfc
         .data_base_path
-        .join(format!("{}_{}", node.ksprefix, ks))
+        .join(format!("{}_{}", sfc.ksprefix, ks))
         .join("byTime")
         .join(channel_name)
         .join(format!("{:019}", tb))

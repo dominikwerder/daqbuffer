@@ -2,7 +2,7 @@ use crate::archeng::indexfiles::database_connect;
 use err::{ErrStr, Error};
 use futures_core::{Future, Stream};
 use futures_util::{FutureExt, StreamExt};
-use netpod::log::*;
+use netpod::{log::*, NodeConfigCached};
 use netpod::{Channel, ChannelArchiver, ChannelConfigQuery, ChannelConfigResponse, Database, NanoRange};
 use serde::Serialize;
 use serde_json::Value as JsVal;
@@ -126,6 +126,7 @@ pub enum ConfigItem {
 }
 
 pub struct ConfigStream {
+    node: NodeConfigCached,
     conf: ChannelArchiver,
     inp: ChannelNameStream,
     inp_done: bool,
@@ -136,8 +137,9 @@ pub struct ConfigStream {
 }
 
 impl ConfigStream {
-    pub fn new(inp: ChannelNameStream, conf: ChannelArchiver) -> Self {
+    pub fn new(inp: ChannelNameStream, node: NodeConfigCached, conf: ChannelArchiver) -> Self {
         Self {
+            node,
             conf,
             inp,
             inp_done: false,
@@ -178,7 +180,7 @@ impl Stream for ConfigStream {
                     Ready(Ok(Res::Response(item))) => {
                         self.get_fut = None;
                         let name = item.channel.name.clone();
-                        let dbconf = self.conf.database.clone();
+                        let dbconf = self.node.node_config.cluster.database.clone();
                         let config = serde_json::to_value(&item)?;
                         let fut = async move {
                             let dbc = database_connect(&dbconf).await?;
@@ -193,7 +195,7 @@ impl Stream for ConfigStream {
                     }
                     Ready(Ok(Res::TimedOut(name))) => {
                         self.get_fut = None;
-                        let dbconf = self.conf.database.clone();
+                        let dbconf = self.node.node_config.cluster.database.clone();
                         let config = serde_json::to_value(&"TimedOut")?;
                         let fut = async move {
                             let dbc = database_connect(&dbconf).await?;
@@ -220,6 +222,7 @@ impl Stream for ConfigStream {
                     match self.inp.poll_next_unpin(cx) {
                         Ready(Some(Ok(item))) => {
                             let conf = self.conf.clone();
+                            let database = self.node.node_config.cluster.database.clone();
                             let fut = async move {
                                 let channel = Channel {
                                     name: item,
@@ -236,7 +239,7 @@ impl Stream for ConfigStream {
                                     range: NanoRange { beg, end },
                                     expand: true,
                                 };
-                                let fut = super::channel_config(&q, &conf);
+                                let fut = super::channel_config(&q, &conf, &database);
                                 let fut = tokio::time::timeout(Duration::from_millis(2000), fut);
                                 match fut.await {
                                     Ok(Ok(k)) => Ok(Res::Response(k)),

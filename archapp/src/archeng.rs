@@ -18,8 +18,8 @@ use commonio::StatsChannel;
 use err::{ErrStr, Error};
 use futures_util::StreamExt;
 use items::{StreamItem, WithLen};
-use netpod::log::*;
 use netpod::timeunits::SEC;
+use netpod::{log::*, Database};
 use netpod::{ChannelArchiver, ChannelConfigQuery, ChannelConfigResponse};
 use netpod::{ScalarType, Shape};
 use serde::Serialize;
@@ -178,9 +178,10 @@ impl From<ErrWrap> for Error {
 
 pub async fn channel_config_from_db(
     q: &ChannelConfigQuery,
-    conf: &ChannelArchiver,
+    _conf: &ChannelArchiver,
+    database: &Database,
 ) -> Result<ChannelConfigResponse, Error> {
-    let dbc = database_connect(&conf.database).await?;
+    let dbc = database_connect(database).await?;
     let sql = "select config from channels where name = $1";
     let rows = dbc.query(sql, &[&q.channel.name()]).await.errstr()?;
     if let Some(row) = rows.first() {
@@ -217,10 +218,14 @@ pub async fn channel_config_from_db(
     }
 }
 
-pub async fn channel_config(q: &ChannelConfigQuery, conf: &ChannelArchiver) -> Result<ChannelConfigResponse, Error> {
+pub async fn channel_config(
+    q: &ChannelConfigQuery,
+    _conf: &ChannelArchiver,
+    database: &Database,
+) -> Result<ChannelConfigResponse, Error> {
     let _timed = Timed::new("channel_config");
     let mut type_info = None;
-    let ixpaths = indexfiles::index_file_path_list(q.channel.clone(), conf.database.clone()).await?;
+    let ixpaths = indexfiles::index_file_path_list(q.channel.clone(), database.clone()).await?;
     info!("got categorized ixpaths: {:?}", ixpaths);
     let ixpath = ixpaths.first().unwrap().clone();
     let stream = blockrefstream::blockref_stream(q.channel.clone(), q.range.clone(), q.expand, ixpath.clone());

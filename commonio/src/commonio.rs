@@ -9,7 +9,7 @@ use netpod::log::*;
 use netpod::{DiskStats, OpenStats, ReadExactStats, ReadStats, SeekStats};
 use std::fmt;
 use std::io::{self, SeekFrom};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
 use tokio::fs::{File, OpenOptions};
@@ -17,6 +17,13 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 const LOG_IO: bool = true;
 const STATS_IO: bool = true;
+
+pub async fn tokio_read(path: impl AsRef<Path>) -> Result<Vec<u8>, Error> {
+    let path = path.as_ref();
+    tokio::fs::read(path)
+        .await
+        .map_err(|e| Error::with_msg_no_trace(format!("Can not open {path:?} {e:?}")))
+}
 
 pub struct StatsChannel {
     chn: Sender<Sitemty<EventsItem>>,

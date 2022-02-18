@@ -78,10 +78,10 @@ fn timer_channel_names() -> Vec<String> {
 
 async fn datafiles_for_channel(name: String, node_config: &NodeConfigCached) -> Result<Vec<PathBuf>, Error> {
     let mut a = vec![];
-    let n = &node_config.node;
-    let channel_path = n
+    let sfc = node_config.node.sf_databuffer.as_ref().unwrap();
+    let channel_path = sfc
         .data_base_path
-        .join(format!("{}_2", n.ksprefix))
+        .join(format!("{}_2", sfc.ksprefix))
         .join("byTime")
         .join(&name);
     let mut rd = tokio::fs::read_dir(&channel_path).await?;

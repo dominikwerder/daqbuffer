@@ -1,6 +1,6 @@
 use err::Error;
 use futures_util::StreamExt;
-use netpod::log::*;
+use netpod::{log::*, SfDatabuffer};
 use netpod::{Cluster, Database, Node, NodeConfig, NodeConfigCached};
 use std::collections::BTreeMap;
 use std::iter::FromIterator;
@@ -17,11 +17,13 @@ fn ca_connect_1() {
                 port: 123,
                 port_raw: 123,
                 backend: "".into(),
-                data_base_path: "".into(),
                 cache_base_path: "".into(),
                 listen: "".into(),
-                ksprefix: "".into(),
-                splits: None,
+                sf_databuffer: Some(SfDatabuffer {
+                    data_base_path: "".into(),
+                    ksprefix: "".into(),
+                    splits: None,
+                }),
                 archiver_appliance: None,
                 channel_archiver: None,
             },

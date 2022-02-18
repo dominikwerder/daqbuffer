@@ -1,6 +1,8 @@
 use crate::{create_connection, ErrConv};
 use err::Error;
-use netpod::{ChannelArchiver, ChannelSearchQuery, ChannelSearchResult, ChannelSearchSingleResult, NodeConfigCached};
+use netpod::{
+    ChannelArchiver, ChannelSearchQuery, ChannelSearchResult, ChannelSearchSingleResult, Database, NodeConfigCached,
+};
 use serde_json::Value as JsVal;
 
 pub async fn search_channel_databuffer(
@@ -78,7 +80,8 @@ pub async fn search_channel_databuffer(
 pub async fn search_channel_archeng(
     query: ChannelSearchQuery,
     backend: String,
-    conf: &ChannelArchiver,
+    _conf: &ChannelArchiver,
+    database: &Database,
 ) -> Result<ChannelSearchResult, Error> {
     // Channel archiver provides only channel name. Also, search criteria are currently ANDed.
     // Therefore search only if user only provides a name criterion.
@@ -102,7 +105,7 @@ pub async fn search_channel_archeng(
         " order by c.name",
         " limit 100"
     ));
-    let cl = create_connection(&conf.database).await?;
+    let cl = create_connection(database).await?;
     let rows = cl.query(sql.as_str(), &[&query.name_regex]).await.errconv()?;
     let mut res = vec![];
     for row in rows {
@@ -188,8 +191,9 @@ pub async fn search_channel(
     query: ChannelSearchQuery,
     node_config: &NodeConfigCached,
 ) -> Result<ChannelSearchResult, Error> {
+    let database = &node_config.node_config.cluster.database;
     if let Some(conf) = node_config.node.channel_archiver.as_ref() {
-        search_channel_archeng(query, node_config.node.backend.clone(), conf).await
+        search_channel_archeng(query, node_config.node.backend.clone(), conf, database).await
     } else if let Some(_conf) = node_config.node.archiver_appliance.as_ref() {
         // TODO
         err::todoval()

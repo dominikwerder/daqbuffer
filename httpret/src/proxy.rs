@@ -544,7 +544,7 @@ fn get_query_host_for_backend(backend: &str, proxy_config: &ProxyConfig) -> Resu
 }
 
 fn get_query_host_for_backend_2(backend: &str, proxy_config: &ProxyConfig) -> Result<String, Error> {
-    for back in &proxy_config.backends2 {
+    for back in &proxy_config.backends_pulse_map {
         if back.name == backend {
             return Ok(back.url.clone());
         }

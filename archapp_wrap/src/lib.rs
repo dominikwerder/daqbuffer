@@ -29,7 +29,7 @@ pub fn scan_files_insert(
     Box::pin(archapp::parse::scan_files_to_database(
         pairs,
         aa.data_base_paths.clone(),
-        aa.database.clone(),
+        node_config.node_config.cluster.database.clone(),
     ))
 }
 

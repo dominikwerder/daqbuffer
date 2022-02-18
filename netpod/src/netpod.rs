@@ -201,15 +201,20 @@ impl ScalarType {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SfDatabuffer {
+    pub data_base_path: PathBuf,
+    pub ksprefix: String,
+    pub splits: Option<Vec<u64>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ArchiverAppliance {
     pub data_base_paths: Vec<PathBuf>,
-    pub database: Database,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChannelArchiver {
     pub data_base_paths: Vec<PathBuf>,
-    pub database: Database,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -218,27 +223,28 @@ pub struct Node {
     pub listen: String,
     pub port: u16,
     pub port_raw: u16,
-    pub data_base_path: PathBuf,
     pub cache_base_path: PathBuf,
-    pub ksprefix: String,
     pub backend: String,
-    pub splits: Option<Vec<u64>>,
+    pub sf_databuffer: Option<SfDatabuffer>,
     pub archiver_appliance: Option<ArchiverAppliance>,
     pub channel_archiver: Option<ChannelArchiver>,
 }
 
 impl Node {
+    // TODO needed? Could `sf_databuffer` be None?
     pub fn dummy() -> Self {
         Self {
             host: "dummy".into(),
             listen: "dummy".into(),
             port: 4444,
             port_raw: 4444,
-            data_base_path: PathBuf::new(),
             cache_base_path: PathBuf::new(),
-            ksprefix: "daqlocal".into(),
             backend: "dummybackend".into(),
-            splits: None,
+            sf_databuffer: Some(SfDatabuffer {
+                data_base_path: PathBuf::new(),
+                ksprefix: "daqlocal".into(),
+                splits: None,
+            }),
             archiver_appliance: None,
             channel_archiver: None,
         }
@@ -1350,7 +1356,7 @@ pub struct ProxyConfig {
     pub port: u16,
     pub search_hosts: Vec<String>,
     pub backends: Vec<ProxyBackend>,
-    pub backends2: Vec<ProxyBackend>,
+    pub backends_pulse_map: Vec<ProxyBackend>,
     pub backends_search: Vec<ProxyBackend>,
     pub api_0_search_hosts: Option<Vec<String>>,
     pub api_0_search_backends: Option<Vec<String>>,
@@ -1491,11 +1497,13 @@ pub fn test_cluster() -> Cluster {
             listen: "0.0.0.0".into(),
             port: 6170 + id as u16,
             port_raw: 6170 + id as u16 + 100,
-            data_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
             cache_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
-            ksprefix: "ks".into(),
             backend: "testbackend".into(),
-            splits: None,
+            sf_databuffer: Some(SfDatabuffer {
+                data_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
+                ksprefix: "ks".into(),
+                splits: None,
+            }),
             archiver_appliance: None,
             channel_archiver: None,
         })
@@ -1503,7 +1511,7 @@ pub fn test_cluster() -> Cluster {
     Cluster {
         nodes,
         database: Database {
-            host: "localhost".into(),
+            host: "127.0.0.1".into(),
             name: "testingdaq".into(),
             user: "testingdaq".into(),
             pass: "testingdaq".into(),
@@ -1522,27 +1530,19 @@ pub fn sls_test_cluster() -> Cluster {
             listen: "0.0.0.0".into(),
             port: 6190 + id as u16,
             port_raw: 6190 + id as u16 + 100,
-            data_base_path: "UNUSED".into(),
             cache_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
-            ksprefix: "UNUSED".into(),
             backend: "sls-archive".into(),
-            splits: None,
+            sf_databuffer: None,
             archiver_appliance: None,
             channel_archiver: Some(ChannelArchiver {
                 data_base_paths: vec![test_data_base_path_channel_archiver_sls()],
-                database: Database {
-                    host: "localhost".into(),
-                    name: "testingdaq".into(),
-                    user: "testingdaq".into(),
-                    pass: "testingdaq".into(),
-                },
             }),
         })
         .collect();
     Cluster {
         nodes,
         database: Database {
-            host: "localhost".into(),
+            host: "127.0.0.1".into(),
             name: "testingdaq".into(),
             user: "testingdaq".into(),
             pass: "testingdaq".into(),
@@ -1561,27 +1561,19 @@ pub fn archapp_test_cluster() -> Cluster {
             listen: "0.0.0.0".into(),
             port: 6200 + id as u16,
             port_raw: 6200 + id as u16 + 100,
-            data_base_path: "UNUSED".into(),
             cache_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
-            ksprefix: "UNUSED".into(),
             backend: "sf-archive".into(),
-            splits: None,
+            sf_databuffer: None,
             channel_archiver: None,
             archiver_appliance: Some(ArchiverAppliance {
                 data_base_paths: vec![test_data_base_path_archiver_appliance()],
-                database: Database {
-                    host: "localhost".into(),
-                    name: "testingdaq".into(),
-                    user: "testingdaq".into(),
-                    pass: "testingdaq".into(),
-                },
             }),
         })
         .collect();
     Cluster {
         nodes,
         database: Database {
-            host: "localhost".into(),
+            host: "127.0.0.1".into(),
             name: "testingdaq".into(),
             user: "testingdaq".into(),
             pass: "testingdaq".into(),

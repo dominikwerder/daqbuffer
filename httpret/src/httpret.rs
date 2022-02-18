@@ -782,7 +782,8 @@ pub async fn channel_config(req: Request<Body>, node_config: &NodeConfigCached) 
     //let pairs = get_url_query_pairs(&url);
     let q = ChannelConfigQuery::from_url(&url)?;
     let conf = if let Some(conf) = &node_config.node.channel_archiver {
-        archapp_wrap::archapp::archeng::channel_config_from_db(&q, conf).await?
+        archapp_wrap::archapp::archeng::channel_config_from_db(&q, conf, &node_config.node_config.cluster.database)
+            .await?
     } else if let Some(conf) = &node_config.node.archiver_appliance {
         archapp_wrap::channel_config(&q, conf).await?
     } else {

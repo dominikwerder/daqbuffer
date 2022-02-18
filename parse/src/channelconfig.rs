@@ -313,6 +313,9 @@ pub async fn channel_config(q: &ChannelConfigQuery, node: &Node) -> Result<Chann
 // TODO can I take parameters as ref, even when used in custom streams?
 pub async fn read_local_config(channel: Channel, node: Node) -> Result<Config, Error> {
     let path = node
+        .sf_databuffer
+        .as_ref()
+        .ok_or_else(|| Error::with_msg(format!("missing sf databuffer config in node")))?
         .data_base_path
         .join("config")
         .join(&channel.name)

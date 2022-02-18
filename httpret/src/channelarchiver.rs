@@ -111,7 +111,7 @@ impl ScanIndexFiles {
             .ok_or(Error::with_msg_no_trace(
                 "this node is not configured as channel archiver",
             ))?;
-        let s = archapp_wrap::archapp::archeng::indexfiles::scan_index_files(conf.clone());
+        let s = archapp_wrap::archapp::archeng::indexfiles::scan_index_files(conf.clone(), node_config.clone());
         let s = s.map_err(Error::from);
         let s = json_lines_stream(s);
         Ok(response(StatusCode::OK)
@@ -151,7 +151,7 @@ impl ScanChannels {
             .ok_or(Error::with_msg_no_trace(
                 "this node is not configured as channel archiver",
             ))?;
-        let s = archapp_wrap::archapp::archeng::indexfiles::scan_channels(conf.clone());
+        let s = archapp_wrap::archapp::archeng::indexfiles::scan_channels(node_config.clone(), conf.clone());
         let s = s.map_err(Error::from);
         let s = json_lines_stream(s);
         Ok(response(StatusCode::OK)
@@ -184,15 +184,9 @@ impl ChannelNames {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
         info!("{}  handle  uri: {:?}", Self::name(), req.uri());
-        let conf = node_config
-            .node
-            .channel_archiver
-            .as_ref()
-            .ok_or(Error::with_msg_no_trace(
-                "this node is not configured as channel archiver",
-            ))?;
+        let database = &node_config.node_config.cluster.database;
         use archapp_wrap::archapp::archeng;
-        let stream = archeng::configs::ChannelNameStream::new(conf.database.clone());
+        let stream = archeng::configs::ChannelNameStream::new(database.clone());
         let stream = stream.map_err(Error::from);
         let stream = json_lines_stream(stream);
         Ok(response(StatusCode::OK)
@@ -225,6 +219,7 @@ impl ScanConfigs {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
         info!("{}  handle  uri: {:?}", Self::name(), req.uri());
+        let database = &node_config.node_config.cluster.database;
         let conf = node_config
             .node
             .channel_archiver
@@ -233,8 +228,8 @@ impl ScanConfigs {
                 "this node is not configured as channel archiver",
             ))?;
         use archapp_wrap::archapp::archeng;
-        let stream = archeng::configs::ChannelNameStream::new(conf.database.clone());
-        let stream = archeng::configs::ConfigStream::new(stream, conf.clone());
+        let stream = archeng::configs::ChannelNameStream::new(database.clone());
+        let stream = archeng::configs::ConfigStream::new(stream, node_config.clone(), conf.clone());
         let stream = stream.map_err(Error::from);
         let stream = json_lines_stream(stream);
         Ok(response(StatusCode::OK)
@@ -267,13 +262,7 @@ impl BlockRefStream {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
         info!("{}  handle  uri: {:?}", Self::name(), req.uri());
-        let conf = node_config
-            .node
-            .channel_archiver
-            .as_ref()
-            .ok_or(Error::with_msg_no_trace(
-                "this node is not configured as channel archiver",
-            ))?;
+        let database = &node_config.node_config.cluster.database;
         let range = NanoRange { beg: 0, end: u64::MAX };
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let pairs = get_url_query_pairs(&url);
@@ -284,7 +273,7 @@ impl BlockRefStream {
             //name: "ARIDI-PCT:CURRENT".into(),
         };
         use archapp_wrap::archapp::archeng;
-        let ixpaths = archeng::indexfiles::index_file_path_list(channel.clone(), conf.database.clone()).await?;
+        let ixpaths = archeng::indexfiles::index_file_path_list(channel.clone(), database.clone()).await?;
         info!("got categorized ixpaths: {:?}", ixpaths);
         let ixpath = ixpaths.first().unwrap().clone();
         let s = archeng::blockrefstream::blockref_stream(channel, range, true, ixpath);
@@ -337,13 +326,7 @@ impl BlockStream {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
         info!("{}  handle  uri: {:?}", Self::name(), req.uri());
-        let conf = node_config
-            .node
-            .channel_archiver
-            .as_ref()
-            .ok_or(Error::with_msg_no_trace(
-                "this node is not configured as channel archiver",
-            ))?;
+        let database = &node_config.node_config.cluster.database;
         let range = NanoRange { beg: 0, end: u64::MAX };
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let pairs = get_url_query_pairs(&url);
@@ -354,7 +337,7 @@ impl BlockStream {
             name: channel_name,
         };
         use archapp_wrap::archapp::archeng;
-        let ixpaths = archeng::indexfiles::index_file_path_list(channel.clone(), conf.database.clone()).await?;
+        let ixpaths = archeng::indexfiles::index_file_path_list(channel.clone(), database.clone()).await?;
         info!("got categorized ixpaths: {:?}", ixpaths);
         let ixpath = ixpaths.first().unwrap().clone();
         let s = archeng::blockrefstream::blockref_stream(channel, range.clone(), true, ixpath);
