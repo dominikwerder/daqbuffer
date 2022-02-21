@@ -101,6 +101,8 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if path == "/api/4/node_status" {
+        Ok(api4::node_status(req, proxy_config).await?)
     } else if path == "/api/4/backends" {
         Ok(backends(req, proxy_config).await?)
     } else if path == "/api/4/search/channel" {
@@ -226,11 +228,12 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
             if v == APP_JSON {
                 let url = Url::parse(&format!("dummy:{}", head.uri))?;
                 let query = ChannelSearchQuery::from_url(&url)?;
+                let mut methods = vec![];
                 let mut bodies = vec![];
                 let mut urls = proxy_config
-                    .search_hosts
+                    .backends_search
                     .iter()
-                    .map(|sh| match Url::parse(&format!("{}/api/4/search/channel", sh)) {
+                    .map(|sh| match Url::parse(&format!("{}/api/4/search/channel", sh.url)) {
                         Ok(mut url) => {
                             query.append_to_url(&mut url);
                             Ok(url)
@@ -239,6 +242,7 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                     })
                     .fold_ok(vec![], |mut a, x| {
                         a.push(x);
+                        methods.push(http::Method::GET);
                         bodies.push(None);
                         a
                     })?;
@@ -265,6 +269,7 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                             source_regex: query.source_regex.clone(),
                         };
                         let qs = serde_json::to_string(&q).unwrap();
+                        methods.push(http::Method::POST);
                         bodies.push(Some(Body::from(qs)));
                     });
                 }
@@ -354,6 +359,10 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                         .body(Body::from(serde_json::to_string(&res)?))?;
                     Ok(res)
                 };
+                // TODO gather_get_json_generic must for this case accept a Method for each Request.
+                // Currently it is inferred via presence of the body.
+                // On the other hand, I want to gather over rather homogeneous requests.
+                // So: better enforce same method.
                 let ret = gather_get_json_generic(
                     http::Method::GET,
                     urls,
@@ -413,26 +422,33 @@ pub async fn proxy_api1_map_pulse(req: Request<Body>, proxy_config: &ProxyConfig
             "Required parameter `pulseid` not specified.",
         )?);
     };
-    if backend == "sf-databuffer" {
-        if proxy_config.search_hosts.len() == 1 {
-            let url = format!("http://sf-daqbuf-21:8380/api/1/map/pulse/{}", pulseid);
+    match proxy_config
+        .backends_pulse_map
+        .iter()
+        .filter(|x| x.name == backend)
+        .next()
+    {
+        Some(g) => {
+            let sh = &g.url;
+            let url = format!("{}/api/1/map/pulse/{}", sh, pulseid);
             let req = Request::builder().method(Method::GET).uri(url).body(Body::empty())?;
-            let res = hyper::Client::new().request(req).await?;
-            let ret = response(StatusCode::OK).body(res.into_body())?;
-            Ok(ret)
-        } else {
-            let url = format!("https://sf-data-api.psi.ch/api/1/map/pulse/{}", pulseid);
-            let req = Request::builder().method(Method::GET).uri(url).body(Body::empty())?;
-            let https = HttpsConnector::new();
-            let res = hyper::Client::builder().build(https).request(req).await?;
+            let res = if sh.starts_with("https") {
+                let https = HttpsConnector::new();
+                let c = hyper::Client::builder().build(https);
+                c.request(req).await?
+            } else {
+                let c = hyper::Client::new();
+                c.request(req).await?
+            };
             let ret = response(StatusCode::OK).body(res.into_body())?;
             Ok(ret)
         }
-    } else {
-        return Ok(super::response_err(
-            StatusCode::BAD_REQUEST,
-            format!("backend \"{}\" not supported for this action", backend),
-        )?);
+        None => {
+            return Ok(super::response_err(
+                StatusCode::BAD_REQUEST,
+                format!("can not find backend for api1 pulse map"),
+            )?);
+        }
     }
 }
 

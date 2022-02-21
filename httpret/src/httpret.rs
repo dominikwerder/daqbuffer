@@ -23,13 +23,15 @@ use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
 use netpod::query::BinnedQuery;
 use netpod::timeunits::SEC;
-use netpod::{channel_from_pairs, get_url_query_pairs, AggKind, ChannelConfigQuery, FromUrl, NodeConfigCached};
+use netpod::{
+    channel_from_pairs, get_url_query_pairs, AggKind, ChannelConfigQuery, FromUrl, NodeConfigCached, NodeStatus,
+    NodeStatusArchiverAppliance,
+};
 use netpod::{log::*, ACCEPT_ALL};
 use netpod::{APP_JSON, APP_JSON_LINES, APP_OCTET};
 use nodenet::conn::events_service;
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
-use serde::{Deserialize, Serialize};
 use std::{future, net, panic, pin, task};
 use task::{Context, Poll};
 use tracing::field::Empty;
@@ -638,15 +640,39 @@ async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -
     Ok(ret)
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct NodeStatus {
-    database_size: u64,
-}
-
 async fn node_status(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (_head, _body) = req.into_parts();
+    let archiver_appliance_status = match node_config.node.archiver_appliance.as_ref() {
+        Some(k) => {
+            let mut st = vec![];
+            for p in &k.data_base_paths {
+                let _m = match tokio::fs::metadata(p).await {
+                    Ok(m) => m,
+                    Err(_e) => {
+                        st.push((p.into(), false));
+                        continue;
+                    }
+                };
+                let _ = match tokio::fs::read_dir(p).await {
+                    Ok(rd) => rd,
+                    Err(_e) => {
+                        st.push((p.into(), false));
+                        continue;
+                    }
+                };
+                st.push((p.into(), true));
+            }
+            Some(NodeStatusArchiverAppliance { readable: st })
+        }
+        None => None,
+    };
+    let database_size = dbconn::database_size(node_config).await.map_err(|e| format!("{e:?}"));
     let ret = NodeStatus {
-        database_size: dbconn::database_size(node_config).await?,
+        is_sf_databuffer: node_config.node.sf_databuffer.is_some(),
+        is_archiver_engine: node_config.node.channel_archiver.is_some(),
+        is_archiver_appliance: node_config.node.archiver_appliance.is_some(),
+        database_size,
+        archiver_appliance_status,
     };
     let ret = serde_json::to_vec(&ret)?;
     let ret = response(StatusCode::OK).body(Body::from(ret))?;

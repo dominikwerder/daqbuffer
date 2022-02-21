@@ -158,7 +158,7 @@ pub async fn gather_get_json(req: Request<Body>, node_config: &NodeConfigCached)
     }
     let a = a;
     let res = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, "application/json")
+        .header(http::header::CONTENT_TYPE, APP_JSON)
         .body(serde_json::to_string(&Jres { hosts: a })?.into())?;
     Ok(res)
 }
@@ -213,7 +213,7 @@ where
                 Some(body) => body,
             };
             let req = req.body(body);
-            let task = tokio::spawn(async move {
+            let jh = tokio::spawn(async move {
                 select! {
                     _ = sleep(timeout).fuse() => {
                         Err(Error::with_msg("timeout"))
@@ -234,11 +234,11 @@ where
                     }
                 }
             });
-            (url, task)
+            (url, jh)
         })
         .collect();
     let mut a: Vec<SubRes<SM>> = vec![];
-    for (_schemehostport, jh) in spawned {
+    for (_url, jh) in spawned {
         let res: SubRes<SM> = match jh.await {
             Ok(k) => match k {
                 Ok(k) => k,

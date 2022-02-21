@@ -9,8 +9,9 @@ use http::{Method, StatusCode};
 use hyper::{Body, Client, Request, Response};
 use items::{RangeCompletableItem, Sitemty, StreamItem};
 use itertools::Itertools;
+use netpod::log::*;
 use netpod::query::RawEventsQuery;
-use netpod::{log::*, ByteSize, Channel, FileIoBufferSize, NanoRange, NodeConfigCached, PerfOpts, Shape, APP_OCTET};
+use netpod::{ByteSize, Channel, FileIoBufferSize, NanoRange, NodeConfigCached, PerfOpts, Shape, APP_OCTET};
 use netpod::{ChannelSearchQuery, ChannelSearchResult, ProxyConfig, APP_JSON};
 use parse::channelconfig::{
     extract_matching_config_entry, read_local_config, Config, ConfigEntry, MatchingConfigEntry,
@@ -108,9 +109,9 @@ pub async fn channel_search_list_v1(req: Request<Body>, proxy_config: &ProxyConf
                     description_regex: query.description_regex.map_or(String::new(), |k| k),
                 };
                 let urls = proxy_config
-                    .search_hosts
+                    .backends_search
                     .iter()
-                    .map(|sh| match Url::parse(&format!("{}/api/4/search/channel", sh)) {
+                    .map(|sh| match Url::parse(&format!("{}/api/4/search/channel", sh.url)) {
                         Ok(mut url) => {
                             query.append_to_url(&mut url);
                             Ok(url)
@@ -207,9 +208,9 @@ pub async fn channel_search_configs_v1(
                     description_regex: query.description_regex.map_or(String::new(), |k| k),
                 };
                 let urls = proxy_config
-                    .search_hosts
+                    .backends_search
                     .iter()
-                    .map(|sh| match Url::parse(&format!("{}/api/4/search/channel", sh)) {
+                    .map(|sh| match Url::parse(&format!("{}/api/4/search/channel", sh.url)) {
                         Ok(mut url) => {
                             query.append_to_url(&mut url);
                             Ok(url)

@@ -323,6 +323,21 @@ impl From<NodeConfig> for Result<NodeConfigCached, Error> {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NodeStatusArchiverAppliance {
+    pub readable: Vec<(PathBuf, bool)>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct NodeStatus {
+    //pub node: NodeConfig,
+    pub is_sf_databuffer: bool,
+    pub is_archiver_engine: bool,
+    pub is_archiver_appliance: bool,
+    pub database_size: Result<u64, String>,
+    pub archiver_appliance_status: Option<NodeStatusArchiverAppliance>,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Channel {
     pub backend: String,
@@ -1354,7 +1369,7 @@ pub struct ProxyConfig {
     pub name: String,
     pub listen: String,
     pub port: u16,
-    pub search_hosts: Vec<String>,
+    pub backends_status: Vec<ProxyBackend>,
     pub backends: Vec<ProxyBackend>,
     pub backends_pulse_map: Vec<ProxyBackend>,
     pub backends_search: Vec<ProxyBackend>,
