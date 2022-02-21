@@ -16,7 +16,6 @@ fn ca_connect_1() {
                 host: "".into(),
                 port: 123,
                 port_raw: 123,
-                backend: "".into(),
                 cache_base_path: "".into(),
                 listen: "".into(),
                 sf_databuffer: Some(SfDatabuffer {
@@ -30,6 +29,7 @@ fn ca_connect_1() {
             node_config: NodeConfig {
                 name: "".into(),
                 cluster: Cluster {
+                    backend: "".into(),
                     nodes: vec![],
                     database: Database {
                         host: "".into(),

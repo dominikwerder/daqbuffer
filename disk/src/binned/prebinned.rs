@@ -169,10 +169,10 @@ pub async fn pre_binned_bytes_for_http(
     node_config: &NodeConfigCached,
     query: &PreBinnedQuery,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>, Error> {
-    if query.channel().backend != node_config.node.backend {
+    if query.channel().backend != node_config.node_config.cluster.backend {
         let err = Error::with_msg(format!(
             "backend mismatch  node: {}  requested: {}",
-            node_config.node.backend,
+            node_config.node_config.cluster.backend,
             query.channel().backend
         ));
         return Err(err);

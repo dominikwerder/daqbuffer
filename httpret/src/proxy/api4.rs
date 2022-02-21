@@ -103,23 +103,12 @@ pub async fn node_status(req: Request<Body>, proxy_config: &ProxyConfig) -> Resu
     let v = head.headers.get(header::ACCEPT).unwrap_or(&vdef);
     if v == APP_JSON || v == ACCEPT_ALL {
         let inpurl = Url::parse(&format!("dummy:{}", head.uri))?;
-        let query = ChannelSearchQuery::from_url(&inpurl)?;
         let mut bodies = vec![];
         let urls = proxy_config
             .backends_status
             .iter()
-            .filter(|k| {
-                if let Some(back) = &query.backend {
-                    back == &k.name
-                } else {
-                    true
-                }
-            })
             .map(|pb| match Url::parse(&format!("{}/api/4/node_status", pb.url)) {
-                Ok(mut url) => {
-                    query.append_to_url(&mut url);
-                    Ok(url)
-                }
+                Ok(url) => Ok(url),
                 Err(_) => Err(Error::with_msg(format!("parse error for: {:?}", pb))),
             })
             .fold_ok(vec![], |mut a, x| {

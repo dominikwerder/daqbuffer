@@ -47,13 +47,13 @@ fn _get_hostname() -> Result<String, Error> {
 pub async fn get_node_disk_ident(node_config: &NodeConfigCached, dbc: &Client) -> Result<NodeDiskIdent, Error> {
     let sql = "select nodes.rowid, facility, split, hostname from nodes, facilities where facilities.name = $1 and facility = facilities.rowid and hostname = $2";
     let rows = dbc
-        .query(sql, &[&node_config.node.backend, &node_config.node.host])
+        .query(sql, &[&node_config.node_config.cluster.backend, &node_config.node.host])
         .await
         .errconv()?;
     if rows.len() != 1 {
         return Err(Error::with_msg(format!(
             "get_node can't find unique entry for {} {}",
-            node_config.node.host, node_config.node.backend
+            node_config.node.host, node_config.node_config.cluster.backend
         )));
     }
     let row = &rows[0];
@@ -71,13 +71,13 @@ pub async fn get_node_disk_ident_2(
 ) -> Result<NodeDiskIdent, Error> {
     let sql = "select nodes.rowid, facility, split, hostname from nodes, facilities where facilities.name = $1 and facility = facilities.rowid and hostname = $2";
     let rows = dbc
-        .query(sql, &[&node_config.node.backend, &node_config.node.host])
+        .query(sql, &[&node_config.node_config.cluster.backend, &node_config.node.host])
         .await
         .errconv()?;
     if rows.len() != 1 {
         return Err(Error::with_msg(format!(
             "get_node can't find unique entry for {} {}",
-            node_config.node.host, node_config.node.backend
+            node_config.node.host, node_config.node_config.cluster.backend
         )));
     }
     let row = &rows[0];

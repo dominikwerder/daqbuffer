@@ -333,7 +333,7 @@ impl BlockStream {
         let read_queue = pairs.get("readQueue").unwrap_or(&"1".to_string()).parse()?;
         let channel_name = pairs.get("channelName").map(String::from).unwrap_or("NONE".into());
         let channel = Channel {
-            backend: node_config.node.backend.clone(),
+            backend: node_config.node_config.cluster.backend.clone(),
             name: channel_name,
         };
         use archapp_wrap::archapp::archeng;

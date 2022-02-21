@@ -14,7 +14,6 @@ pub fn make_test_node(id: u32) -> Node {
         port_raw: 8800 + id as u16 + 100,
         // TODO use a common function to supply the tmp path.
         cache_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
-        backend: "testbackend".into(),
         sf_databuffer: Some(SfDatabuffer {
             data_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
             ksprefix: "ks".into(),
