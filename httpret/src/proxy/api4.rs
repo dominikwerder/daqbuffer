@@ -102,7 +102,6 @@ pub async fn node_status(req: Request<Body>, proxy_config: &ProxyConfig) -> Resu
     let vdef = header::HeaderValue::from_static(APP_JSON);
     let v = head.headers.get(header::ACCEPT).unwrap_or(&vdef);
     if v == APP_JSON || v == ACCEPT_ALL {
-        let inpurl = Url::parse(&format!("dummy:{}", head.uri))?;
         let mut bodies = vec![];
         let urls = proxy_config
             .backends_status
@@ -138,13 +137,17 @@ pub async fn node_status(req: Request<Body>, proxy_config: &ProxyConfig) -> Resu
             Box::pin(fut) as Pin<Box<dyn Future<Output = _> + Send>>
         };
         let ft = |all: Vec<SubRes<JsVal>>| {
-            let mut res = vec![];
+            let mut sres = vec![];
             for j in all {
                 let val = serde_json::json!({
                     j.tag: j.val,
                 });
-                res.push(val);
+                sres.push(val);
             }
+            let res = serde_json::json!({
+                "THIS_PROXY": "status here...",
+                "subnodes": sres,
+            });
             let res = response(StatusCode::OK)
                 .header(http::header::CONTENT_TYPE, APP_JSON)
                 .body(Body::from(serde_json::to_string(&res)?))

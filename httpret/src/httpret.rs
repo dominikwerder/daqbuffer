@@ -1,6 +1,7 @@
 pub mod api1;
 pub mod channelarchiver;
 pub mod err;
+pub mod events;
 pub mod evinfo;
 pub mod gather;
 pub mod proxy;
@@ -12,7 +13,6 @@ use crate::gather::gather_get_json;
 use crate::pulsemap::UpdateTask;
 use bytes::Bytes;
 use disk::binned::query::PreBinnedQuery;
-use disk::events::{PlainEventsBinaryQuery, PlainEventsJsonQuery};
 use future::Future;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt, TryStreamExt};
@@ -24,7 +24,7 @@ use net::SocketAddr;
 use netpod::query::BinnedQuery;
 use netpod::timeunits::SEC;
 use netpod::{
-    channel_from_pairs, get_url_query_pairs, AggKind, ChannelConfigQuery, FromUrl, NodeConfigCached, NodeStatus,
+    channel_from_pairs, get_url_query_pairs, ChannelConfigQuery, FromUrl, NodeConfigCached, NodeStatus,
     NodeStatusArchiverAppliance,
 };
 use netpod::{log::*, ACCEPT_ALL};
@@ -190,7 +190,6 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
     } else if path == "/api/4/version" {
         if req.method() == Method::GET {
             let ret = serde_json::json!({
-                //"data_api_version": "4.0.0-beta",
                 "data_api_version": {
                     "major": 4,
                     "minor": 0,
@@ -206,12 +205,8 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/4/events" {
-        if req.method() == Method::GET {
-            Ok(plain_events(req, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
-        }
+    } else if let Some(h) = events::EventsHandler::handler(&req) {
+        h.handle(req, &node_config).await
     } else if path == "/api/4/binned" {
         if req.method() == Method::GET {
             Ok(binned(req, node_config).await?)
@@ -574,69 +569,6 @@ async fn prebinned_inner(req: Request<Body>, node_config: &NodeConfigCached) -> 
             }
         }
     };
-    Ok(ret)
-}
-
-async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    match plain_events_inner(req, node_config).await {
-        Ok(ret) => Ok(ret),
-        Err(e) => Ok(e.to_public_response()),
-    }
-}
-
-async fn plain_events_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("httpret  plain_events_inner  req: {:?}", req);
-    let accept_def = APP_JSON;
-    let accept = req
-        .headers()
-        .get(http::header::ACCEPT)
-        .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
-    if accept == APP_JSON || accept == ACCEPT_ALL {
-        Ok(plain_events_json(req, node_config).await?)
-    } else if accept == APP_OCTET {
-        Ok(plain_events_binary(req, node_config).await?)
-    } else {
-        let ret = response_err(StatusCode::NOT_ACCEPTABLE, format!("unsupported Accept: {:?}", accept))?;
-        Ok(ret)
-    }
-}
-
-async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    debug!("httpret  plain_events_binary  req: {:?}", req);
-    let url = Url::parse(&format!("dummy:{}", req.uri()))?;
-    let query = PlainEventsBinaryQuery::from_url(&url)?;
-    let op = disk::channelexec::PlainEvents::new(
-        query.channel().clone(),
-        query.range().clone(),
-        query.disk_io_buffer_size(),
-        node_config.clone(),
-    );
-    let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), AggKind::Plain, node_config).await?;
-    let s = s.map(|item| item.make_frame());
-    let ret = response(StatusCode::OK).body(BodyStream::wrapped(
-        s.map_err(Error::from),
-        format!("plain_events_binary"),
-    ))?;
-    Ok(ret)
-}
-
-async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    debug!("httpret  plain_events_json  req: {:?}", req);
-    let (head, _body) = req.into_parts();
-    let query = PlainEventsJsonQuery::from_request_head(&head)?;
-    let op = disk::channelexec::PlainEventsJson::new(
-        query.channel().clone(),
-        query.range().clone(),
-        query.disk_io_buffer_size(),
-        query.timeout(),
-        node_config.clone(),
-        query.do_log(),
-    );
-    let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), AggKind::Plain, node_config).await?;
-    let ret = response(StatusCode::OK).body(BodyStream::wrapped(
-        s.map_err(Error::from),
-        format!("plain_events_json"),
-    ))?;
     Ok(ret)
 }
 
