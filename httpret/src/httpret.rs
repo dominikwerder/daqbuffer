@@ -225,7 +225,7 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/4/random_channel" {
+    } else if path == "/api/4/random/channel" {
         if req.method() == Method::GET {
             Ok(random_channel(req, &node_config).await?)
         } else {
@@ -287,7 +287,10 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         }
     } else if path == "/api/4/channel/config" {
         if req.method() == Method::GET {
-            Ok(channel_config(req, &node_config).await?)
+            match channel_config(req, &node_config).await {
+                Ok(k) => Ok(k),
+                Err(e) => Ok(e.to_public_response()),
+            }
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -451,6 +454,7 @@ trait ToPublicResponse {
 
 impl ToPublicResponse for Error {
     fn to_public_response(&self) -> Response<Body> {
+        error!("ToPublicResponse converts: {self:?}");
         use std::fmt::Write;
         let status = match self.reason() {
             Some(::err::Reason::BadRequest) => StatusCode::BAD_REQUEST,

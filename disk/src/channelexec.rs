@@ -208,7 +208,9 @@ where
         range: range.clone(),
         expand: agg_kind.need_expand(),
     };
-    let conf = httpclient::get_channel_config(&q, node_config).await?;
+    let conf = httpclient::get_channel_config(&q, node_config)
+        .await
+        .map_err(|e| e.add_public_msg(format!("Can not find channel config for {}", q.channel.name())))?;
     let ret = channel_exec_config(
         f,
         conf.scalar_type.clone(),
@@ -293,6 +295,7 @@ pub struct PlainEventsJson {
     disk_io_buffer_size: usize,
     timeout: Duration,
     node_config: NodeConfigCached,
+    events_max: u64,
     do_log: bool,
 }
 
@@ -303,6 +306,7 @@ impl PlainEventsJson {
         disk_io_buffer_size: usize,
         timeout: Duration,
         node_config: NodeConfigCached,
+        events_max: u64,
         do_log: bool,
     ) -> Self {
         Self {
@@ -312,6 +316,7 @@ impl PlainEventsJson {
             disk_io_buffer_size,
             timeout,
             node_config,
+            events_max,
             do_log,
         }
     }
@@ -330,6 +335,7 @@ pub async fn collect_plain_events_json<T, S>(
     stream: S,
     timeout: Duration,
     bin_count_exp: u32,
+    events_max: u64,
     do_log: bool,
 ) -> Result<JsonValue, Error>
 where
@@ -394,6 +400,9 @@ where
                             RangeCompletableItem::Data(item) => {
                                 collector.ingest(&item);
                                 i1 += 1;
+                                if i1 >= events_max {
+                                    break;
+                                }
                             }
                         },
                     },
@@ -448,7 +457,7 @@ impl ChannelExecFunction for PlainEventsJson {
             do_decompress: true,
         };
         let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster);
-        let f = collect_plain_events_json(s, self.timeout, 0, self.do_log);
+        let f = collect_plain_events_json(s, self.timeout, 0, self.events_max, self.do_log);
         let f = FutureExt::map(f, |item| match item {
             Ok(item) => {
                 // TODO add channel entry info here?
@@ -465,15 +474,4 @@ impl ChannelExecFunction for PlainEventsJson {
     fn empty() -> Self::Output {
         Box::pin(futures_util::stream::empty())
     }
-}
-
-// TODO remove when done.
-pub fn dummy_impl() {
-    let channel: Channel = err::todoval();
-    let range: NanoRange = err::todoval();
-    let agg_kind: AggKind = err::todoval();
-    let node_config: NodeConfigCached = err::todoval();
-    let timeout: Duration = err::todoval();
-    let f = PlainEventsJson::new(channel.clone(), range.clone(), 0, timeout, node_config.clone(), false);
-    let _ = channel_exec(f, &channel, &range, agg_kind, &node_config);
 }

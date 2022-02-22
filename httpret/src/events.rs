@@ -24,23 +24,15 @@ impl EventsHandler {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
-        let ret = match plain_events(req, node_config).await {
-            Ok(res) => res,
-            Err(e) => response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?,
-        };
-        Ok(ret)
+        match plain_events(req, node_config).await {
+            Ok(ret) => Ok(ret),
+            Err(e) => Ok(e.to_public_response()),
+        }
     }
 }
 
 async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    match plain_events_inner(req, node_config).await {
-        Ok(ret) => Ok(ret),
-        Err(e) => Ok(e.to_public_response()),
-    }
-}
-
-async fn plain_events_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("httpret  plain_events_inner  req: {:?}", req);
+    info!("httpret  plain_events  req: {:?}", req);
     let accept_def = APP_JSON;
     let accept = req
         .headers()
@@ -85,6 +77,7 @@ async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -
         query.disk_io_buffer_size(),
         query.timeout(),
         node_config.clone(),
+        query.events_max().unwrap_or(u64::MAX),
         query.do_log(),
     );
     let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), AggKind::Plain, node_config).await?;

@@ -4,7 +4,7 @@ use crate::api1::{channel_search_configs_v1, channel_search_list_v1, gather_json
 use crate::err::Error;
 use crate::gather::{gather_get_json_generic, SubRes};
 use crate::pulsemap::MapPulseQuery;
-use crate::{api_1_docs, api_4_docs, response, Cont};
+use crate::{api_1_docs, api_4_docs, response, response_err, Cont};
 use disk::events::PlainEventsJsonQuery;
 use futures_core::Stream;
 use futures_util::pin_mut;
@@ -471,7 +471,14 @@ where
         Some(v) => {
             if v == APP_JSON || v == ACCEPT_ALL {
                 let url = Url::parse(&format!("dummy:{}", head.uri))?;
-                let query = QT::from_url(&url)?;
+                let query = match QT::from_url(&url) {
+                    Ok(k) => k,
+                    Err(_) => {
+                        let msg = format!("Malformed request or missing parameters");
+                        return Ok(response_err(StatusCode::BAD_REQUEST, msg)?);
+                    }
+                };
+                // TODO is this special case used any more?
                 let sh = if url.as_str().contains("/map/pulse/") {
                     get_query_host_for_backend_2(&query.backend(), proxy_config)?
                 } else {

@@ -109,17 +109,25 @@ pub struct PlainEventsJsonQuery {
     disk_io_buffer_size: usize,
     report_error: bool,
     timeout: Duration,
+    events_max: Option<u64>,
     do_log: bool,
 }
 
 impl PlainEventsJsonQuery {
-    pub fn new(channel: Channel, range: NanoRange, disk_io_buffer_size: usize, do_log: bool) -> Self {
+    pub fn new(
+        channel: Channel,
+        range: NanoRange,
+        disk_io_buffer_size: usize,
+        events_max: Option<u64>,
+        do_log: bool,
+    ) -> Self {
         Self {
             channel,
             range,
             disk_io_buffer_size,
             report_error: false,
             timeout: Duration::from_millis(10000),
+            events_max,
             do_log,
         }
     }
@@ -150,6 +158,9 @@ impl PlainEventsJsonQuery {
                 .parse::<u64>()
                 .map(|k| Duration::from_millis(k))
                 .map_err(|e| Error::with_public_msg(format!("can not parse timeout {:?}", e)))?,
+            events_max: pairs
+                .get("eventsMax")
+                .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
             do_log: pairs
                 .get("doLog")
                 .map_or("false", |k| k)
@@ -185,6 +196,10 @@ impl PlainEventsJsonQuery {
         self.timeout
     }
 
+    pub fn events_max(&self) -> Option<u64> {
+        self.events_max
+    }
+
     pub fn do_log(&self) -> bool {
         self.do_log
     }
@@ -208,6 +223,9 @@ impl PlainEventsJsonQuery {
         );
         g.append_pair("diskIoBufferSize", &format!("{}", self.disk_io_buffer_size));
         g.append_pair("timeout", &format!("{}", self.timeout.as_millis()));
+        if let Some(x) = self.events_max.as_ref() {
+            g.append_pair("eventsMax", &format!("{}", x));
+        }
         g.append_pair("doLog", &format!("{}", self.do_log));
     }
 }

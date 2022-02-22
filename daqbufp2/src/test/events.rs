@@ -274,7 +274,7 @@ pub async fn get_plain_events_json(
         name: channel_name.into(),
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let query = PlainEventsJsonQuery::new(channel, range, 1024 * 4, false);
+    let query = PlainEventsJsonQuery::new(channel, range, 1024 * 4, None, false);
     let hp = HostPort::from_node(node0);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
     query.append_to_url(&mut url);

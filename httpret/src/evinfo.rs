@@ -74,7 +74,12 @@ impl EventInfoScan {
         node_config: &NodeConfigCached,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>, Error> {
         let ret = channel_exec(
-            EvInfoFunc::new(query.clone(), query.timeout(), node_config.clone()),
+            EvInfoFunc::new(
+                query.clone(),
+                query.timeout(),
+                query.events_max().unwrap_or(u64::MAX),
+                node_config.clone(),
+            ),
             query.channel(),
             query.range(),
             AggKind::Stats1,
@@ -89,13 +94,15 @@ pub struct EvInfoFunc {
     query: PlainEventsJsonQuery,
     timeout: Duration,
     node_config: NodeConfigCached,
+    events_max: u64,
 }
 
 impl EvInfoFunc {
-    pub fn new(query: PlainEventsJsonQuery, timeout: Duration, node_config: NodeConfigCached) -> Self {
+    pub fn new(query: PlainEventsJsonQuery, timeout: Duration, events_max: u64, node_config: NodeConfigCached) -> Self {
         Self {
             query,
             timeout,
+            events_max,
             node_config,
         }
     }
@@ -151,7 +158,7 @@ impl ChannelExecFunction for EvInfoFunc {
         // TODO Must issue multiple reads to GPFS, keep futures in a ordered queue.
 
         let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster);
-        let f = collect_plain_events_json(s, self.timeout, 0, self.query.do_log());
+        let f = collect_plain_events_json(s, self.timeout, 0, self.events_max, self.query.do_log());
         let f = FutureExt::map(f, |item| match item {
             Ok(item) => {
                 // TODO add channel entry info here?

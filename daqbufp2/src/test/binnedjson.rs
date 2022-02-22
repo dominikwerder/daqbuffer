@@ -418,7 +418,7 @@ async fn get_events_json_common_res(
     let beg_date: DateTime<Utc> = beg_date.parse()?;
     let end_date: DateTime<Utc> = end_date.parse()?;
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let mut query = PlainEventsJsonQuery::new(channel, range, 4096, false);
+    let mut query = PlainEventsJsonQuery::new(channel, range, 4096, None, false);
     query.set_timeout(Duration::from_millis(15000));
     let mut url = Url::parse(&format!("http://{}:{}/api/4/events", node0.host, node0.port))?;
     query.append_to_url(&mut url);
