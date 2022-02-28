@@ -21,7 +21,7 @@ jobs:
       - run: source /root/.cargo/env
       - run: echo "${PATH}"
       - run: "/bin/bash -c 'echo $PATH && source /root/.cargo/env && echo $PATH && ls -la /root/.cargo/bin'"
-      - run: "/bin/bash -c 'export CARGO_HOME=/root/.cargo && export PATH=\"/root/.cargo/bin:$PATH\" && echo $PATH && cargo --version'"
+      - run: "/bin/bash -c 'export RUSTUP_HOME=/root/.rustup && export CARGO_HOME=/root/.cargo && export PATH=\"/root/.cargo/bin:$PATH\" && echo $PATH && cargo --version'"
       - run: "echo $PATH"
       - run: "echo $CARGO_HOME"
       - run: "/bin/bash -c 'echo $PATH'"
