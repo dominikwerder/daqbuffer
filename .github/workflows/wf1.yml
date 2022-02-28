@@ -23,3 +23,7 @@ jobs:
       #- run: echo "${PATH}"
       #- run: "/bin/bash -c 'echo $PATH && source /root/.cargo/env && echo $PATH && ls -la /root/.cargo/bin'"
       - run: "/bin/bash -c 'export RUSTUP_HOME=/root/.rustup && export CARGO_HOME=/root/.cargo && export PATH=\"/root/.cargo/bin:$PATH\" && echo $PATH && cargo build --release'"
+      - uses: actions/upload-artifact@v2
+        with:
+          name: daqbufferbin
+          path: target/release/daqbuffer
