@@ -16,4 +16,8 @@ jobs:
       - run: ls -la /github/home
       - run: ls -la /github/workflow
       - run: ls -la /root
-      - run: bash -c 'source /root/.cargo/env && cargo build --release'
+      - run: echo "${HOME}"
+      - run: echo "${PATH}"
+      - run: source /root/.cargo/env
+      - run: echo "${PATH}"
+      - run: /root/.cargo/bin/cargo build --release
