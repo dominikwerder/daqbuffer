@@ -20,4 +20,4 @@ jobs:
       - run: echo "${PATH}"
       - run: source /root/.cargo/env
       - run: echo "${PATH}"
-      - run: /root/.cargo/bin/cargo build --release
+      - run: "/bin/bash -c 'echo $PATH && source /root/.cargo/env && echo $PATH'"
