@@ -14,4 +14,9 @@ jobs:
       - run: ls -la /
       - run: ls -la /github
       - run: ls -la /github/home
+      - run: ls -la /github/workflow
+      - run: ls -la /root
+      - run: which cargo
+      - run: source /root/.cargo/env
+      - run: which cargo
       - run: cargo build --release
