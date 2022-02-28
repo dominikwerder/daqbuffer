@@ -3,14 +3,13 @@ on:
   - push
 jobs:
   build-daqbuffer-job:
-    #runs-on: "docker.io/ugnvc/psi:daqbufferbuild-0.0.6"
-    #runs-on: ubuntu-latest
+    runs-on: ubuntu-latest
     container:
-      image: "docker.io/ugnvc/psi:daqbufferbuild-0.0.6"
+      image: "ugnvc/psi:daqbufferbuild-0.0.6"
       volumes:
         - ".:/m1"
     steps:
-      - uses: actions/checkout@v2
+      #- uses: actions/checkout@v2
       - run: echo GITHUB DEFAULT PATH
       - run: pwd
       - run: ls -ltra
