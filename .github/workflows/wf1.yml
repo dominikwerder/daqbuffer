@@ -20,4 +20,6 @@ jobs:
       - run: echo "${PATH}"
       - run: source /root/.cargo/env
       - run: echo "${PATH}"
-      - run: "/bin/bash -c 'echo $PATH && source /root/.cargo/env && echo $PATH'"
+      - run: "/bin/bash -c 'echo $PATH && source /root/.cargo/env && echo $PATH && ls -la /github/home/.cargo/bin'"
+      - run: "/bin/bash -c 'source /root/.cargo/env && echo $PATH && cargo --version'"
+      - run: "/bin/bash -c 'echo $PATH && cargo --version'"
