@@ -7,8 +7,9 @@ use items::eventsitem::EventsItem;
 use items::{Sitemty, StatsItem, StreamItem};
 use netpod::log::*;
 use netpod::{DiskStats, OpenStats, ReadExactStats, ReadStats, SeekStats};
+use serde::{Deserialize, Serialize};
 use std::fmt;
-use std::io::{self, SeekFrom};
+use std::io::{self, ErrorKind, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
@@ -18,11 +19,47 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt};
 const LOG_IO: bool = true;
 const STATS_IO: bool = true;
 
-pub async fn tokio_read(path: impl AsRef<Path>) -> Result<Vec<u8>, Error> {
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CIOError {
+    kind: ErrorKindSimple,
+    path: Option<PathBuf>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum ErrorKindSimple {
+    NotFound,
+    PermissionDenied,
+    AlreadyExists,
+    Other(String),
+}
+
+impl From<ErrorKind> for ErrorKindSimple {
+    fn from(k: ErrorKind) -> Self {
+        match k {
+            ErrorKind::NotFound => ErrorKindSimple::NotFound,
+            ErrorKind::PermissionDenied => ErrorKindSimple::PermissionDenied,
+            ErrorKind::AlreadyExists => ErrorKindSimple::AlreadyExists,
+            a => ErrorKindSimple::Other(format!("{a:?}")),
+        }
+    }
+}
+
+pub async fn tokio_read(path: impl AsRef<Path>) -> Result<Vec<u8>, CIOError> {
     let path = path.as_ref();
-    tokio::fs::read(path)
-        .await
-        .map_err(|e| Error::with_msg_no_trace(format!("Can not open {path:?} {e:?}")))
+    tokio::fs::read(path).await.map_err(|e| CIOError {
+        kind: e.kind().into(),
+        path: Some(path.into()),
+    })
+}
+
+pub async fn tokio_rand() -> Result<u64, Error> {
+    type T = u64;
+    let mut f = tokio::fs::File::open("/dev/urandom").await?;
+    let mut buf = [0u8; std::mem::size_of::<T>()];
+    f.read_exact(&mut buf[..]).await?;
+    let y = buf.try_into().map_err(|e| Error::with_msg(format!("{e:?}")))?;
+    let x = u64::from_le_bytes(y);
+    Ok(x)
 }
 
 pub struct StatsChannel {

@@ -31,4 +31,5 @@ parse = { path = "../parse" }
 netfetch = { path = "../netfetch" }
 archapp_wrap = { path = "../archapp_wrap" }
 nodenet = { path = "../nodenet" }
+commonio = { path = "../commonio" }
 taskrun = { path = "../taskrun" }

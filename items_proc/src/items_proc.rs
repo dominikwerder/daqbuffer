@@ -80,3 +80,19 @@ pub fn enumvars(ts: TokenStream) -> TokenStream {
     //panic!("GENERATED: {}", gen);
     gen.parse().unwrap()
 }
+
+#[proc_macro]
+pub fn enumvariants(ts: TokenStream) -> TokenStream {
+    //panic!("yoooo");
+    //syn::parse_macro_input!(ts as syn::DeriveInput);
+    //let tokens: Vec<_> = ts.into_iter().collect();
+    //let parsed: syn::DeriveInput = syn::parse_macro_input!(ts as syn::DeriveInput);
+    //let s = ts.to_string();
+    let parsed = syn::parse::<syn::Item>(ts);
+    //panic!("{:?}", parsed);
+    match parsed {
+        Ok(_ast) => {}
+        Err(e) => panic!("Parse error {e:?}"),
+    }
+    TokenStream::new()
+}

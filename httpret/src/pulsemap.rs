@@ -326,12 +326,11 @@ async fn update_task(do_abort: Arc<AtomicUsize>, node_config: NodeConfigCached) 
             info!("update_task  break A");
             break;
         }
-        tokio::time::sleep(Duration::from_millis(60000)).await;
+        tokio::time::sleep(Duration::from_millis(165000 + 0x7fff * commonio::tokio_rand().await?)).await;
         if do_abort.load(Ordering::SeqCst) != 0 {
             info!("update_task  break B");
             break;
         }
-        info!("Start update task");
         let ts1 = Instant::now();
         match IndexFullHttpFunction::index(&node_config).await {
             Ok(_) => {}

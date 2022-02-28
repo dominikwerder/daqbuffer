@@ -1,4 +1,4 @@
-use err::Error;
+use err::{Error, PublicError};
 use hyper::{Body, Method};
 use netpod::{AppendToUrl, ChannelConfigQuery, ChannelConfigResponse, NodeConfigCached};
 use url::Url;
@@ -18,13 +18,27 @@ pub async fn get_channel_config(
         .body(Body::empty())
         .map_err(Error::from_string)?;
     let client = hyper::Client::new();
-    let res = client.request(req).await.map_err(Error::from_string)?;
-    if !res.status().is_success() {
-        return Err(Error::with_msg("http client error"));
-    }
-    let buf = hyper::body::to_bytes(res.into_body())
+    let res = client
+        .request(req)
         .await
-        .map_err(Error::from_string)?;
-    let ret: ChannelConfigResponse = serde_json::from_slice(&buf)?;
-    Ok(ret)
+        .map_err(|e| Error::with_msg(format!("get_channel_config request error: {e:?}")))?;
+    if res.status().is_success() {
+        let buf = hyper::body::to_bytes(res.into_body())
+            .await
+            .map_err(|e| Error::with_msg(format!("can not read response: {e:?}")))?;
+        let ret: ChannelConfigResponse = serde_json::from_slice(&buf)
+            .map_err(|e| Error::with_msg(format!("can not parse the channel config response json: {e:?}")))?;
+        Ok(ret)
+    } else {
+        let buf = hyper::body::to_bytes(res.into_body())
+            .await
+            .map_err(|e| Error::with_msg(format!("can not read response: {e:?}")))?;
+        match serde_json::from_slice::<PublicError>(&buf) {
+            Ok(e) => Err(e.into()),
+            Err(_) => Err(Error::with_msg(format!(
+                "can not parse the http error body: {:?}",
+                String::from_utf8_lossy(&buf)
+            ))),
+        }
+    }
 }

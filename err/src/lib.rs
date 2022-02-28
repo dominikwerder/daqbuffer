@@ -10,7 +10,7 @@ use std::num::{ParseFloatError, ParseIntError};
 use std::string::FromUtf8Error;
 use std::sync::PoisonError;
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Reason {
     InternalError,
     BadRequest,
@@ -77,6 +77,11 @@ impl Error {
         self
     }
 
+    pub fn mark_io_error(mut self) -> Self {
+        self.reason = Some(Reason::IoError);
+        self
+    }
+
     pub fn add_public_msg(mut self, msg: impl Into<String>) -> Self {
         if self.public_msg.is_none() {
             self.public_msg = Some(vec![]);
@@ -95,6 +100,16 @@ impl Error {
 
     pub fn reason(&self) -> Option<Reason> {
         self.reason.clone()
+    }
+
+    pub fn to_public_error(&self) -> PublicError {
+        PublicError {
+            reason: self.reason(),
+            msg: self
+                .public_msg()
+                .map(|k| k.join("\n"))
+                .unwrap_or("No error message".into()),
+        }
     }
 }
 
@@ -191,6 +206,18 @@ where
         match self {
             Ok(k) => Ok(k),
             Err(e) => Err(Error::with_msg_no_trace(e.to_string())),
+        }
+    }
+}
+
+impl From<PublicError> for Error {
+    fn from(k: PublicError) -> Self {
+        Self {
+            msg: String::new(),
+            trace: None,
+            trace_str: None,
+            public_msg: Some(vec![k.msg().into()]),
+            reason: k.reason(),
         }
     }
 }
@@ -320,6 +347,22 @@ impl From<url::ParseError> for Error {
 impl From<TryFromSliceError> for Error {
     fn from(k: TryFromSliceError) -> Self {
         Self::with_msg(format!("{:?}", k))
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PublicError {
+    reason: Option<Reason>,
+    msg: String,
+}
+
+impl PublicError {
+    pub fn reason(&self) -> Option<Reason> {
+        self.reason.clone()
+    }
+
+    pub fn msg(&self) -> &str {
+        &self.msg
     }
 }
 

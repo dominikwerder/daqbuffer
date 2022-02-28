@@ -321,10 +321,20 @@ pub async fn read_local_config(channel: Channel, node: Node) -> Result<Config, E
         .join(&channel.name)
         .join("latest")
         .join("00000_Config");
+    // TODO use commonio here to wrap the error conversion
     let buf = match tokio::fs::read(&path).await {
         Ok(k) => k,
         Err(e) => match e.kind() {
-            ErrorKind::NotFound => return Err(Error::with_msg(format!("ErrorKind::NotFound for {:?}", path))),
+            ErrorKind::NotFound => {
+                return Err(Error::with_public_msg(format!(
+                    "databuffer channel config file not found for channel {channel:?} at {path:?}"
+                )))
+            }
+            ErrorKind::PermissionDenied => {
+                return Err(Error::with_public_msg(format!(
+                    "databuffer channel config file permission denied for channel {channel:?} at {path:?}"
+                )))
+            }
             _ => return Err(e.into()),
         },
     };

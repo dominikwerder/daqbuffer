@@ -7,3 +7,6 @@ edition = "2021"
 [lib]
 path = "src/items_proc.rs"
 proc-macro = true
+
+[dependencies]
+syn = "1"

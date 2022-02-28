@@ -208,9 +208,12 @@ where
         range: range.clone(),
         expand: agg_kind.need_expand(),
     };
-    let conf = httpclient::get_channel_config(&q, node_config)
-        .await
-        .map_err(|e| e.add_public_msg(format!("Can not find channel config for {}", q.channel.name())))?;
+    let conf = httpclient::get_channel_config(&q, node_config).await.map_err(|e| {
+        e.add_public_msg(format!(
+            "Can not find channel config for channel: {:?}",
+            q.channel.name()
+        ))
+    })?;
     let ret = channel_exec_config(
         f,
         conf.scalar_type.clone(),

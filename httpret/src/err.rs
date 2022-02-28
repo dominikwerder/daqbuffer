@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
-pub struct Error(::err::Error);
+#[derive(Serialize, Deserialize)]
+pub struct Error(pub ::err::Error);
 
 impl Error {
     pub fn with_msg<S: Into<String>>(s: S) -> Self {

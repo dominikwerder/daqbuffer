@@ -25,3 +25,4 @@ err = { path = "../err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }
 items = { path = "../items" }
+items_proc = { path = "../items_proc" }
