@@ -4,13 +4,23 @@ on:
 jobs:
   build-daqbuffer-job:
     #runs-on: "docker.io/ugnvc/psi:daqbufferbuild-0.0.6"
-    runs-on: ubuntu-latest
+    #runs-on: ubuntu-latest
     container:
       image: "docker.io/ugnvc/psi:daqbufferbuild-0.0.6"
       volumes:
         - ".:/m1"
     steps:
       - uses: actions/checkout@v2
+      - run: echo GITHUB DEFAULT PATH
+      - run: pwd
       - run: ls -ltra
-      - run: which docker
+      - run: echo GITHUB HOME
+      - run: ls -la /github/home
+      - run: echo GITHUB WORKSPACE
+      - run: ls -la /github/workspace
+      - run: echo GITHUB WORKFLOW
+      - run: ls -la /github/workflow
+      - run: echo LS ROOT
+      - run: ls -la /
+      - run: echo LS M1
       - run: ls -la /m1
