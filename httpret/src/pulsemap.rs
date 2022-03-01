@@ -199,7 +199,7 @@ async fn read_chunk_at(mut file: File, pos: u64, chunk_len: u64) -> Result<(Chun
     let _ttl = buf.get_u64();
     let ts = buf.get_u64();
     let pulse = buf.get_u64();
-    info!("data chunk len {}  ts {}  pulse {}", clen, ts, pulse);
+    //info!("data chunk len {}  ts {}  pulse {}", clen, ts, pulse);
     let ret = ChunkInfo {
         pos,
         len: clen,
@@ -326,7 +326,7 @@ async fn update_task(do_abort: Arc<AtomicUsize>, node_config: NodeConfigCached) 
             info!("update_task  break A");
             break;
         }
-        tokio::time::sleep(Duration::from_millis(165000 + 0x7fff * commonio::tokio_rand().await?)).await;
+        tokio::time::sleep(Duration::from_millis(40000 + (0x3fff & commonio::tokio_rand().await?))).await;
         if do_abort.load(Ordering::SeqCst) != 0 {
             info!("update_task  break B");
             break;
@@ -494,7 +494,9 @@ impl MapPulseLocalHttpFunction {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
         let urls = format!("{}", req.uri());
-        let pulse: u64 = urls[MAP_PULSE_LOCAL_URL_PREFIX.len()..].parse()?;
+        let pulse: u64 = urls[MAP_PULSE_LOCAL_URL_PREFIX.len()..]
+            .parse()
+            .map_err(|_| Error::with_public_msg_no_trace(format!("can not understand pulse map url: {}", req.uri())))?;
         let conn = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
         let sql = "select channel, hostname, timebin, split from map_pulse_files where hostname = $1 and pulse_min <= $2 and (pulse_max >= $2 or closed = 0)";
         let rows = conn.query(sql, &[&node_config.node.host, &(pulse as i64)]).await?;
@@ -645,7 +647,7 @@ impl Api4MapPulseHttpFunction {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
-        //info!("Api4MapPulseHttpFunction  handle  uri: {:?}", req.uri());
+        info!("Api4MapPulseHttpFunction  handle  uri: {:?}", req.uri());
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let q = MapPulseQuery::from_url(&url)?;
         let histo = MapPulseHistoHttpFunction::histo(q.pulse, node_config).await?;

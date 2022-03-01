@@ -1,6 +1,8 @@
 name: build-daqbuffer-wf
 on:
-  - push
+  repository_dispatch:
+    types:
+      - trigger_build
 jobs:
   build-daqbuffer-job:
     runs-on: ubuntu-latest
