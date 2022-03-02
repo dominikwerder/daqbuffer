@@ -31,6 +31,11 @@ use netpod::{ACCEPT_ALL, APP_JSON, APP_JSON_LINES, APP_OCTET};
 use nodenet::conn::events_service;
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
+use serde::Serialize;
+use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::{Once, RwLock, RwLockWriteGuard};
+use std::time::SystemTime;
 use std::{future, net, panic, pin, task};
 use task::{Context, Poll};
 use tracing::field::Empty;
@@ -42,6 +47,13 @@ fn proxy_mark() -> &'static str {
 }
 
 pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
+    static STATUS_BOARD_INIT: Once = Once::new();
+    STATUS_BOARD_INIT.call_once(|| {
+        let b = StatusBoard::new();
+        let a = RwLock::new(b);
+        let x = Box::new(a);
+        STATUS_BOARD.store(Box::into_raw(x), Ordering::SeqCst);
+    });
     let _update_task = if node_config.node_config.cluster.run_map_pulse_task {
         Some(UpdateTask::new(node_config.clone()))
     } else {
@@ -287,12 +299,8 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/1/query" {
-        if req.method() == Method::POST {
-            Ok(api1::api1_binary_events(req, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
-        }
+    } else if let Some(h) = api1::Api1EventsBinaryHandler::handler(&req) {
+        h.handle(req, &node_config).await
     } else if let Some(h) = evinfo::EventInfoScan::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = pulsemap::IndexFullHttpFunction::handler(&req) {
@@ -476,6 +484,26 @@ impl ToPublicResponse for ::err::Error {
                 res
             }
         }
+    }
+}
+
+pub struct StatusBoardAllHandler {}
+
+impl StatusBoardAllHandler {
+    pub fn handler(req: &Request<Body>) -> Option<Self> {
+        if req.uri().path() == "/api/4/status/board/all" {
+            Some(Self {})
+        } else {
+            None
+        }
+    }
+
+    pub async fn handle(&self, _req: Request<Body>, _node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+        use std::ops::Deref;
+        let sb = status_board().unwrap();
+        let buf = serde_json::to_vec(sb.deref()).unwrap();
+        let res = response(StatusCode::OK).body(Body::from(buf))?;
+        Ok(res)
     }
 }
 
@@ -729,6 +757,127 @@ pub async fn update_search_cache(req: Request<Body>, node_config: &NodeConfigCac
         .header(http::header::CONTENT_TYPE, APP_JSON)
         .body(Body::from(serde_json::to_string(&res)?))?;
     Ok(ret)
+}
+
+#[derive(Serialize)]
+pub struct StatusBoardEntry {
+    #[allow(unused)]
+    #[serde(serialize_with = "instant_serde::ser")]
+    ts_created: SystemTime,
+    #[serde(serialize_with = "instant_serde::ser")]
+    ts_updated: SystemTime,
+    is_error: bool,
+    is_ok: bool,
+    errors: Vec<Error>,
+}
+
+mod instant_serde {
+    use super::*;
+    use serde::Serializer;
+    pub fn ser<S: Serializer>(x: &SystemTime, ser: S) -> Result<S::Ok, S::Error> {
+        let dur = x.duration_since(std::time::UNIX_EPOCH).unwrap();
+        let dt = chrono::TimeZone::timestamp(&chrono::Utc, dur.as_secs() as i64, dur.subsec_nanos());
+        let s = dt.format("%Y-%m-%d %H:%M:%S").to_string();
+        ser.serialize_str(&s)
+    }
+}
+
+impl StatusBoardEntry {
+    pub fn new() -> Self {
+        Self {
+            ts_created: SystemTime::now(),
+            ts_updated: SystemTime::now(),
+            is_error: false,
+            is_ok: false,
+            errors: vec![],
+        }
+    }
+}
+
+#[derive(Serialize)]
+pub struct StatusBoard {
+    entries: BTreeMap<String, StatusBoardEntry>,
+}
+
+impl StatusBoard {
+    pub fn new() -> Self {
+        Self {
+            entries: BTreeMap::new(),
+        }
+    }
+
+    pub fn new_status_id(&mut self) -> String {
+        use std::fs::File;
+        use std::io::Read;
+        self.clean();
+        let mut f = File::open("/dev/urandom").unwrap();
+        let mut buf = [0; 8];
+        f.read_exact(&mut buf).unwrap();
+        let n = u64::from_le_bytes(buf);
+        let s = format!("{:016x}", n);
+        self.entries.insert(s.clone(), StatusBoardEntry::new());
+        s
+    }
+
+    pub fn clean(&mut self) {
+        if self.entries.len() > 15000 {
+            let mut tss: Vec<_> = self.entries.values().map(|e| e.ts_updated).collect();
+            tss.sort_unstable();
+            let tss = tss;
+            let tsm = tss[tss.len() / 3];
+            let a = std::mem::replace(&mut self.entries, BTreeMap::new());
+            self.entries = a.into_iter().filter(|(_k, v)| v.ts_updated >= tsm).collect();
+        }
+    }
+
+    pub fn mark_alive(&mut self, status_id: &str) {
+        match self.entries.get_mut(status_id) {
+            Some(e) => {
+                e.ts_updated = SystemTime::now();
+            }
+            None => {
+                error!("can not find status id {}", status_id);
+            }
+        }
+    }
+
+    pub fn mark_ok(&mut self, status_id: &str) {
+        match self.entries.get_mut(status_id) {
+            Some(e) => {
+                e.ts_updated = SystemTime::now();
+                if !e.is_error {
+                    e.is_ok = true;
+                }
+            }
+            None => {
+                error!("can not find status id {}", status_id);
+            }
+        }
+    }
+
+    pub fn add_error(&mut self, status_id: &str, error: Error) {
+        match self.entries.get_mut(status_id) {
+            Some(e) => {
+                e.ts_updated = SystemTime::now();
+                e.is_error = true;
+                e.is_ok = false;
+                e.errors.push(error);
+            }
+            None => {
+                error!("can not find status id {}", status_id);
+            }
+        }
+    }
+}
+
+static STATUS_BOARD: AtomicPtr<RwLock<StatusBoard>> = AtomicPtr::new(std::ptr::null_mut());
+
+pub fn status_board() -> Result<RwLockWriteGuard<'static, StatusBoard>, Error> {
+    let x = unsafe { &*STATUS_BOARD.load(Ordering::SeqCst) }.write();
+    match x {
+        Ok(x) => Ok(x),
+        Err(e) => Err(Error::with_msg(format!("{e:?}"))),
+    }
 }
 
 pub async fn ca_connect_1(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {

@@ -220,7 +220,7 @@ where
                             if lowest_ts < self.ts_last_emit {
                                 self.errored = true;
                                 let msg = format!("unordered event at  lowest_ts {}", lowest_ts);
-                                return Ready(Some(Err(Error::with_msg(msg))));
+                                return Ready(Some(Err(Error::with_public_msg(msg))));
                             } else {
                                 self.ts_last_emit = self.ts_last_emit.max(lowest_ts);
                             }
@@ -296,12 +296,11 @@ mod test {
     use err::Error;
     use futures_util::StreamExt;
     use items::{RangeCompletableItem, StreamItem};
+    use netpod::log::*;
+    use netpod::test_data_base_path_databuffer;
     use netpod::timeunits::{DAY, MS};
-    use netpod::{log::*, test_data_base_path_databuffer};
     use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, FileIoBufferSize, NanoRange, Nanos, ScalarType, Shape};
     use std::path::PathBuf;
-    use std::sync::atomic::AtomicU64;
-    use std::sync::Arc;
 
     fn scalar_file_path() -> PathBuf {
         test_data_base_path_databuffer()
@@ -358,7 +357,6 @@ mod test {
                 let stats_conf = EventChunkerConf {
                     disk_stats_every: ByteSize::kb(1024),
                 };
-                let max_ts = Arc::new(AtomicU64::new(0));
                 let expand = false;
                 let do_decompress = false;
                 let dbg_path = PathBuf::from("/dbg/dummy");
@@ -372,7 +370,6 @@ mod test {
                     range.clone(),
                     stats_conf,
                     dbg_path,
-                    max_ts,
                     expand,
                     do_decompress,
                 );

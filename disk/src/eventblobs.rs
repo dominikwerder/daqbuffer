@@ -10,8 +10,6 @@ use netpod::timeunits::SEC;
 use netpod::{log::*, FileIoBufferSize};
 use netpod::{ChannelConfig, NanoRange, Node};
 use std::pin::Pin;
-use std::sync::atomic::AtomicU64;
-use std::sync::Arc;
 use std::task::{Context, Poll};
 use streams::rangefilter::RangeFilter;
 
@@ -29,11 +27,11 @@ pub struct EventChunkerMultifile {
     data_completed: bool,
     errored: bool,
     completed: bool,
-    max_ts: Arc<AtomicU64>,
     files_count: u32,
     node_ix: usize,
     expand: bool,
     do_decompress: bool,
+    max_ts: u64,
 }
 
 impl EventChunkerMultifile {
@@ -62,11 +60,11 @@ impl EventChunkerMultifile {
             data_completed: false,
             errored: false,
             completed: false,
-            max_ts: Arc::new(AtomicU64::new(0)),
             files_count: 0,
             node_ix,
             expand,
             do_decompress,
+            max_ts: 0,
         }
     }
 }
@@ -81,7 +79,7 @@ impl Stream for EventChunkerMultifile {
             use Poll::*;
             'outer: loop {
                 break if self.completed {
-                    panic!("EventBlobsComplete  poll_next on completed");
+                    panic!("EventChunkerMultifile  poll_next on completed");
                 } else if self.errored {
                     self.completed = true;
                     return Ready(None);
@@ -93,11 +91,35 @@ impl Stream for EventChunkerMultifile {
                         Some(evs) => match evs.poll_next_unpin(cx) {
                             Ready(Some(k)) => {
                                 if let Ok(StreamItem::DataItem(RangeCompletableItem::Data(h))) = &k {
-                                    if false {
-                                        info!("EventChunkerMultifile  emit {} events", h.tss.len());
-                                    };
+                                    if let Some(&g) = h.tss.last() {
+                                        if g == self.max_ts {
+                                            let msg = format!("EventChunkerMultifile  repeated ts {}", g);
+                                            error!("{}", msg);
+                                            let e = Error::with_msg(msg);
+                                            self.errored = true;
+                                            Ready(Some(Err(e)))
+                                        } else if g < self.max_ts {
+                                            let msg = format!("EventChunkerMultifile  unordered ts {}", g);
+                                            error!("{}", msg);
+                                            let e = Error::with_msg(msg);
+                                            self.errored = true;
+                                            Ready(Some(Err(e)))
+                                        } else {
+                                            self.max_ts = g;
+                                            if true {
+                                                info!("EventChunkerMultifile  emit {} events", h.tss.len());
+                                            }
+                                            Ready(Some(k))
+                                        }
+                                    } else {
+                                        Ready(Some(k))
+                                    }
+                                } else if let Err(_) = &k {
+                                    self.errored = true;
+                                    Ready(Some(k))
+                                } else {
+                                    Ready(Some(k))
                                 }
-                                Ready(Some(k))
                             }
                             Ready(None) => {
                                 self.evs = None;
@@ -128,7 +150,6 @@ impl Stream for EventChunkerMultifile {
                                                     self.range.clone(),
                                                     self.event_chunker_conf.clone(),
                                                     path,
-                                                    self.max_ts.clone(),
                                                     self.expand,
                                                     self.do_decompress,
                                                 );
@@ -161,7 +182,6 @@ impl Stream for EventChunkerMultifile {
                                                     self.range.clone(),
                                                     self.event_chunker_conf.clone(),
                                                     of.path,
-                                                    self.max_ts.clone(),
                                                     self.expand,
                                                     self.do_decompress,
                                                 );
@@ -184,7 +204,7 @@ impl Stream for EventChunkerMultifile {
                                 let item = LogItem::quick(
                                     Level::INFO,
                                     format!(
-                                        "EventBlobsComplete used {} datafiles  beg {}  end {}  node_ix {}",
+                                        "EventChunkerMultifile used {} datafiles  beg {}  end {}  node_ix {}",
                                         self.files_count,
                                         self.range.beg / SEC,
                                         self.range.end / SEC,

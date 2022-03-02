@@ -8,8 +8,6 @@ use netpod::log::*;
 use netpod::timeunits::*;
 use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, NanoRange, Shape};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicU64;
-use std::sync::Arc;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -99,14 +97,12 @@ pub fn main() -> Result<(), Error> {
                 let stats_conf = EventChunkerConf {
                     disk_stats_every: ByteSize::mb(2),
                 };
-                let max_ts = Arc::new(AtomicU64::new(0));
                 let chunks = disk::eventchunker::EventChunker::from_start(
                     inp,
                     channel_config.clone(),
                     range,
                     stats_conf,
                     sub.datafile.clone(),
-                    max_ts.clone(),
                     false,
                     true,
                 );

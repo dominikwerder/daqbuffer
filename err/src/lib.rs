@@ -23,39 +23,25 @@ The common error type for this application.
 #[derive(Serialize, Deserialize)]
 pub struct Error {
     msg: String,
-    #[serde(skip)]
-    trace: Option<backtrace::Backtrace>,
     trace_str: Option<String>,
     public_msg: Option<Vec<String>>,
     reason: Option<Reason>,
+    parent: Option<Box<Error>>,
 }
 
 impl Error {
-    pub fn with_msg<S: Into<String>>(s: S) -> Self {
-        Self {
-            msg: s.into(),
-            trace: None,
-            trace_str: Some(fmt_backtrace(&backtrace::Backtrace::new())),
-            public_msg: None,
-            reason: None,
-        }
-    }
-
     pub fn with_msg_no_trace<S: Into<String>>(s: S) -> Self {
         Self {
             msg: s.into(),
-            trace: None,
             trace_str: None,
             public_msg: None,
             reason: None,
+            parent: None,
         }
     }
 
-    pub fn with_public_msg<S: Into<String>>(s: S) -> Self {
-        let s = s.into();
-        let ret = Self::with_msg(&s);
-        let ret = ret.add_public_msg(s);
-        ret
+    pub fn with_msg<S: Into<String>>(s: S) -> Self {
+        Self::with_msg_no_trace(s).add_backtrace()
     }
 
     pub fn with_public_msg_no_trace<S: Into<String>>(s: S) -> Self {
@@ -65,11 +51,25 @@ impl Error {
         ret
     }
 
+    pub fn with_public_msg<S: Into<String>>(s: S) -> Self {
+        let s = s.into();
+        let ret = Self::with_msg_no_trace(String::new());
+        let ret = ret.add_backtrace();
+        let ret = ret.add_public_msg(s);
+        ret
+    }
+
     pub fn from_string<E>(e: E) -> Self
     where
         E: ToString,
     {
         Self::with_msg(e.to_string())
+    }
+
+    pub fn add_backtrace(self) -> Self {
+        let mut ret = self;
+        ret.trace_str = Some(fmt_backtrace(&backtrace::Backtrace::new()));
+        ret
     }
 
     pub fn mark_bad_request(mut self) -> Self {
@@ -155,9 +155,7 @@ fn fmt_backtrace(trace: &backtrace::Backtrace) -> String {
 
 impl fmt::Debug for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        let trace_str = if let Some(trace) = &self.trace {
-            fmt_backtrace(trace)
-        } else if let Some(s) = &self.trace_str {
+        let trace_str = if let Some(s) = &self.trace_str {
             s.into()
         } else {
             String::new()
@@ -214,10 +212,10 @@ impl From<PublicError> for Error {
     fn from(k: PublicError) -> Self {
         Self {
             msg: String::new(),
-            trace: None,
             trace_str: None,
             public_msg: Some(vec![k.msg().into()]),
             reason: k.reason(),
+            parent: None,
         }
     }
 }

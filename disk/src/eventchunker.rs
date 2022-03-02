@@ -15,8 +15,6 @@ use parse::channelconfig::CompressionMethod;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Instant;
 
@@ -35,7 +33,7 @@ pub struct EventChunker {
     final_stats_sent: bool,
     parsed_bytes: u64,
     dbg_path: PathBuf,
-    max_ts: Arc<AtomicU64>,
+    max_ts: u64,
     expand: bool,
     do_decompress: bool,
     decomp_dt_histo: HistoLog2,
@@ -43,6 +41,7 @@ pub struct EventChunker {
     seen_before_range_count: usize,
     seen_after_range_count: usize,
     unordered_warn_count: usize,
+    repeated_ts_warn_count: usize,
 }
 
 impl Drop for EventChunker {
@@ -84,7 +83,6 @@ impl EventChunker {
         range: NanoRange,
         stats_conf: EventChunkerConf,
         dbg_path: PathBuf,
-        max_ts: Arc<AtomicU64>,
         expand: bool,
         do_decompress: bool,
     ) -> Self {
@@ -106,7 +104,7 @@ impl EventChunker {
             final_stats_sent: false,
             parsed_bytes: 0,
             dbg_path,
-            max_ts,
+            max_ts: 0,
             expand,
             do_decompress,
             decomp_dt_histo: HistoLog2::new(8),
@@ -114,6 +112,7 @@ impl EventChunker {
             seen_before_range_count: 0,
             seen_after_range_count: 0,
             unordered_warn_count: 0,
+            repeated_ts_warn_count: 0,
         }
     }
 
@@ -124,20 +123,10 @@ impl EventChunker {
         range: NanoRange,
         stats_conf: EventChunkerConf,
         dbg_path: PathBuf,
-        max_ts: Arc<AtomicU64>,
         expand: bool,
         do_decompress: bool,
     ) -> Self {
-        let mut ret = Self::from_start(
-            inp,
-            channel_config,
-            range,
-            stats_conf,
-            dbg_path,
-            max_ts,
-            expand,
-            do_decompress,
-        );
+        let mut ret = Self::from_start(inp, channel_config, range, stats_conf, dbg_path, expand, do_decompress);
         ret.state = DataFileState::Event;
         ret.need_min = 4;
         ret.inp.set_need_min(4);
@@ -205,24 +194,41 @@ impl EventChunker {
                         let _ttl = sl.read_i64::<BE>().unwrap();
                         let ts = sl.read_i64::<BE>().unwrap() as u64;
                         let pulse = sl.read_i64::<BE>().unwrap() as u64;
-                        let max_ts = self.max_ts.load(Ordering::SeqCst);
-                        if ts < max_ts {
+                        if ts == self.max_ts {
+                            if self.repeated_ts_warn_count < 20 {
+                                let msg = format!(
+                                    "EventChunker  repeated event ts ix {}  ts {}.{}  max_ts {}.{}  config {:?}  path {:?}",
+                                    self.repeated_ts_warn_count,
+                                    ts / SEC,
+                                    ts % SEC,
+                                    self.max_ts / SEC,
+                                    self.max_ts % SEC,
+                                    self.channel_config.shape,
+                                    self.dbg_path
+                                );
+                                warn!("{}", msg);
+                                self.repeated_ts_warn_count += 1;
+                            }
+                        }
+                        if ts < self.max_ts {
                             if self.unordered_warn_count < 20 {
                                 let msg = format!(
-                                    "unordered event no {}  ts: {}.{}  max_ts {}.{}  config {:?}  path {:?}",
+                                    "EventChunker  unordered event ix {}  ts {}.{}  max_ts {}.{}  config {:?}  path {:?}",
                                     self.unordered_warn_count,
                                     ts / SEC,
                                     ts % SEC,
-                                    max_ts / SEC,
-                                    max_ts % SEC,
+                                    self.max_ts / SEC,
+                                    self.max_ts % SEC,
                                     self.channel_config.shape,
                                     self.dbg_path
                                 );
                                 warn!("{}", msg);
                                 self.unordered_warn_count += 1;
+                                let e = Error::with_public_msg_no_trace(msg);
+                                return Err(e);
                             }
                         }
-                        self.max_ts.store(ts, Ordering::SeqCst);
+                        self.max_ts = ts;
                         if ts >= self.range.end {
                             self.seen_after_range_count += 1;
                             if !self.expand || self.seen_after_range_count >= 2 {
@@ -234,8 +240,8 @@ impl EventChunker {
                         if ts < self.range.beg {
                             self.seen_before_range_count += 1;
                             if self.seen_before_range_count > 1 {
-                                let e = Error::with_msg(format!(
-                                    "seen before range: event ts: {}.{}  range beg: {}.{}  range end: {}.{}  pulse {}  config {:?}  path {:?}",
+                                let msg = format!(
+                                    "seen before range: event ts {}.{}  range beg {}.{}  range end {}.{}  pulse {}  config {:?}  path {:?}",
                                     ts / SEC,
                                     ts % SEC,
                                     self.range.beg / SEC,
@@ -245,7 +251,9 @@ impl EventChunker {
                                     pulse,
                                     self.channel_config.shape,
                                     self.dbg_path
-                                ));
+                                );
+                                warn!("{}", msg);
+                                let e = Error::with_public_msg(msg);
                                 Err(e)?;
                             }
                         }
