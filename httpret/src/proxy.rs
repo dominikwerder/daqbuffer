@@ -1,6 +1,6 @@
 pub mod api4;
 
-use crate::api1::{channel_search_configs_v1, channel_search_list_v1, gather_json_2_v1, proxy_distribute_v1};
+use crate::api1::{channel_search_configs_v1, channel_search_list_v1, gather_json_2_v1};
 use crate::err::Error;
 use crate::gather::{gather_get_json_generic, SubRes};
 use crate::pulsemap::MapPulseQuery;
@@ -13,11 +13,11 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
 use hyper_tls::HttpsConnector;
 use itertools::Itertools;
+use netpod::log::*;
 use netpod::query::BinnedQuery;
-use netpod::{log::*, ACCEPT_ALL};
 use netpod::{
     AppendToUrl, ChannelConfigQuery, ChannelSearchQuery, ChannelSearchResult, ChannelSearchSingleResult, FromUrl,
-    HasBackend, HasTimeout, ProxyConfig, APP_JSON,
+    HasBackend, HasTimeout, ProxyConfig, ACCEPT_ALL, APP_JSON,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -115,8 +115,6 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
         Ok(proxy_single_backend_query::<BinnedQuery>(req, proxy_config).await?)
     } else if path == "/api/4/channel/config" {
         Ok(proxy_single_backend_query::<ChannelConfigQuery>(req, proxy_config).await?)
-    } else if path.starts_with("/distribute") {
-        proxy_distribute_v1(req).await
     } else if path.starts_with("/api/1/documentation/") {
         if req.method() == Method::GET {
             api_1_docs(path)

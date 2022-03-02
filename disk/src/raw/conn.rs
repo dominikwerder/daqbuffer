@@ -238,6 +238,10 @@ pub fn make_local_event_blobs_stream(
     file_io_buffer_size: FileIoBufferSize,
     node_config: &NodeConfigCached,
 ) -> Result<EventChunkerMultifile, Error> {
+    info!("make_local_event_blobs_stream  do_decompress {do_decompress}  file_io_buffer_size {file_io_buffer_size:?}");
+    if do_decompress {
+        warn!("Possible issue: decompress central storage event blob stream");
+    }
     let shape = match entry.to_shape() {
         Ok(k) => k,
         Err(e) => return Err(e)?,

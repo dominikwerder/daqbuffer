@@ -32,6 +32,7 @@ pub struct EventChunkerMultifile {
     expand: bool,
     do_decompress: bool,
     max_ts: u64,
+    emit_count: usize,
 }
 
 impl EventChunkerMultifile {
@@ -65,6 +66,7 @@ impl EventChunkerMultifile {
             expand,
             do_decompress,
             max_ts: 0,
+            emit_count: 0,
         }
     }
 }
@@ -106,10 +108,25 @@ impl Stream for EventChunkerMultifile {
                                             Ready(Some(Err(e)))
                                         } else {
                                             self.max_ts = g;
-                                            if true {
-                                                info!("EventChunkerMultifile  emit {} events", h.tss.len());
+                                            const EMIT_COUNT_MAX: usize = 10;
+                                            if self.emit_count < EMIT_COUNT_MAX {
+                                                info!(
+                                                    "EventChunkerMultifile  emit {}/{}  events {}",
+                                                    self.emit_count,
+                                                    EMIT_COUNT_MAX,
+                                                    h.tss.len()
+                                                );
+                                                self.emit_count += 1;
+                                                Ready(Some(k))
+                                            } else if (self.range.beg % 1000000) / 1000 == 666 {
+                                                // TODO move this test feature into some other query parameter.
+                                                warn!("GENERATE ERROR FOR TESTING PURPOSE");
+                                                let e = Error::with_msg(format!("Private-error-message"));
+                                                let e = e.add_public_msg(format!("Public-error-message"));
+                                                Ready(Some(Err(e)))
+                                            } else {
+                                                Ready(Some(k))
                                             }
-                                            Ready(Some(k))
                                         }
                                     } else {
                                         Ready(Some(k))

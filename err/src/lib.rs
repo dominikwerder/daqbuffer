@@ -364,6 +364,25 @@ impl PublicError {
     }
 }
 
+// TODO make this more useful
+impl From<Error> for PublicError {
+    fn from(k: Error) -> Self {
+        Self {
+            reason: k.reason(),
+            msg: k.msg().into(),
+        }
+    }
+}
+
+impl From<&Error> for PublicError {
+    fn from(k: &Error) -> Self {
+        Self {
+            reason: k.reason(),
+            msg: k.msg().into(),
+        }
+    }
+}
+
 pub fn todo() {
     todo!("TODO");
 }

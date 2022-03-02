@@ -464,31 +464,6 @@ async fn process_answer(res: Response<Body>) -> Result<JsonValue, Error> {
     }
 }
 
-pub async fn proxy_distribute_v1(req: Request<Body>) -> Result<Response<Body>, Error> {
-    let (mut sink, body) = Body::channel();
-    let uri = format!("http://sf-daqbuf-33:8371{}", req.uri().path());
-    let res = Response::builder().status(StatusCode::OK).body(body)?;
-    tokio::spawn(async move {
-        let req = Request::builder().method(Method::GET).uri(uri).body(Body::empty())?;
-        let res = Client::new().request(req).await?;
-        if res.status() == StatusCode::OK {
-            let (_heads, mut body) = res.into_parts();
-            loop {
-                use hyper::body::HttpBody;
-                let chunk = body.data().await;
-                if let Some(k) = chunk {
-                    let k = k?;
-                    sink.send_data(k).await?;
-                } else {
-                    break;
-                }
-            }
-        }
-        Ok::<_, Error>(())
-    });
-    Ok(res)
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Api1Range {
     #[serde(rename = "startDate")]
@@ -696,12 +671,15 @@ impl Stream for DataApiPython3DataStream {
                                     self.data_done = true;
                                     let mut sb = crate::status_board().unwrap();
                                     sb.add_error(&self.status_id, e);
-                                    // TODO format as python data api error frame:
-                                    //let mut buf = BytesMut::with_capacity(1024);
-                                    //buf.put_slice("".as_bytes());
-                                    //Ready(Some(Ok(buf)))
-                                    self.data_done = true;
-                                    Ready(None)
+                                    if false {
+                                        // TODO format as python data api error frame:
+                                        let mut buf = BytesMut::with_capacity(1024);
+                                        buf.put_slice("".as_bytes());
+                                        Ready(Some(Ok(buf)))
+                                    } else {
+                                        self.data_done = true;
+                                        Ready(None)
+                                    }
                                 }
                             },
                             None => {
@@ -740,7 +718,7 @@ impl Stream for DataApiPython3DataStream {
                             let perf_opts = PerfOpts { inmem_bufcap: 1024 * 4 };
                             // TODO is this a good to place decide this?
                             let s = if self.node_config.node_config.cluster.is_central_storage {
-                                debug!("Set up central storage stream");
+                                info!("Set up central storage stream");
                                 // TODO pull up this config
                                 let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
                                 let s = disk::raw::conn::make_local_event_blobs_stream(
@@ -755,6 +733,11 @@ impl Stream for DataApiPython3DataStream {
                                 )?;
                                 Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
                             } else {
+                                if let Some(sh) = &entry.shape {
+                                    if sh.len() > 1 {
+                                        warn!("Remote stream fetch for shape {sh:?}");
+                                    }
+                                }
                                 debug!("Set up merged remote stream");
                                 let s = disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes::new(
                                     evq,
@@ -859,13 +842,13 @@ impl Api1EventsBinaryHandler {
         if req.method() != Method::POST {
             return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?);
         }
-        let accept = req
-            .headers()
+        let (head, body) = req.into_parts();
+        let accept = head
+            .headers
             .get(http::header::ACCEPT)
             .map_or(Ok(ACCEPT_ALL), |k| k.to_str())
             .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?
             .to_owned();
-        let (_head, body) = req.into_parts();
         let body_data = hyper::body::to_bytes(body).await?;
         let qu: Api1Query = if let Ok(qu) = serde_json::from_slice(&body_data) {
             qu
@@ -923,6 +906,47 @@ impl Api1EventsBinaryHandler {
         );
         let ret = response(StatusCode::OK).header("x-daqbuffer-request-id", status_id);
         let ret = ret.body(BodyStream::wrapped(s, format!("Api1EventsBinaryHandler")))?;
+        Ok(ret)
+    }
+}
+
+pub struct RequestStatusHandler {}
+
+impl RequestStatusHandler {
+    pub fn path_prefix() -> &'static str {
+        "/api/1/requestStatus/"
+    }
+
+    pub fn handler(req: &Request<Body>) -> Option<Self> {
+        if req.uri().path().starts_with(Self::path_prefix()) {
+            Some(Self {})
+        } else {
+            None
+        }
+    }
+
+    pub async fn handle(&self, req: Request<Body>, _node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+        let (head, body) = req.into_parts();
+        if head.method != Method::GET {
+            return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?);
+        }
+        let accept = head
+            .headers
+            .get(http::header::ACCEPT)
+            .map_or(Ok(ACCEPT_ALL), |k| k.to_str())
+            .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?
+            .to_owned();
+        if accept != APP_JSON && accept != ACCEPT_ALL {
+            // TODO set the public error code and message and return Err(e).
+            let e = Error::with_public_msg(format!("Unsupported Accept: {:?}", accept));
+            error!("{e:?}");
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+        }
+        let _body_data = hyper::body::to_bytes(body).await?;
+        let status_id = &head.uri.path()[Self::path_prefix().len()..];
+        info!("RequestStatusHandler  status_id {:?}", status_id);
+        let s = crate::status_board()?.status_as_json(status_id);
+        let ret = response(StatusCode::OK).body(Body::from(s))?;
         Ok(ret)
     }
 }

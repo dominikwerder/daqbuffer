@@ -211,6 +211,8 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if let Some(h) = StatusBoardAllHandler::handler(&req) {
+        h.handle(req, &node_config).await
     } else if path == "/api/4/search/channel" {
         if req.method() == Method::GET {
             Ok(search::channel_search(req, &node_config).await?)
@@ -331,8 +333,8 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         h.handle(req, &node_config).await
     } else if let Some(h) = channelarchiver::BlockStream::handler(path) {
         h.handle(req, &node_config).await
-    } else if path.starts_with("/api/1/requestStatus/") {
-        Ok(response(StatusCode::OK).body(Body::from("{}"))?)
+    } else if let Some(h) = api1::RequestStatusHandler::handler(&req) {
+        h.handle(req, &node_config).await
     } else if path.starts_with("/api/1/documentation/") {
         if req.method() == Method::GET {
             api_1_docs(path)
@@ -766,8 +768,11 @@ pub struct StatusBoardEntry {
     ts_created: SystemTime,
     #[serde(serialize_with = "instant_serde::ser")]
     ts_updated: SystemTime,
+    #[serde(skip_serializing_if = "items::bool_is_false")]
     is_error: bool,
+    #[serde(skip_serializing_if = "items::bool_is_false")]
     is_ok: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     errors: Vec<Error>,
 }
 
@@ -777,7 +782,7 @@ mod instant_serde {
     pub fn ser<S: Serializer>(x: &SystemTime, ser: S) -> Result<S::Ok, S::Error> {
         let dur = x.duration_since(std::time::UNIX_EPOCH).unwrap();
         let dt = chrono::TimeZone::timestamp(&chrono::Utc, dur.as_secs() as i64, dur.subsec_nanos());
-        let s = dt.format("%Y-%m-%d %H:%M:%S").to_string();
+        let s = dt.format("%Y-%m-%dT%H:%M:%S%.3f").to_string();
         ser.serialize_str(&s)
     }
 }
@@ -815,6 +820,7 @@ impl StatusBoard {
         f.read_exact(&mut buf).unwrap();
         let n = u64::from_le_bytes(buf);
         let s = format!("{:016x}", n);
+        info!("new_status_id {s}");
         self.entries.insert(s.clone(), StatusBoardEntry::new());
         s
     }
@@ -865,6 +871,36 @@ impl StatusBoard {
             }
             None => {
                 error!("can not find status id {}", status_id);
+            }
+        }
+    }
+
+    pub fn status_as_json(&self, status_id: &str) -> String {
+        #[derive(Serialize)]
+        struct StatJs {
+            #[serde(skip_serializing_if = "Vec::is_empty")]
+            errors: Vec<::err::PublicError>,
+        }
+        match self.entries.get(status_id) {
+            Some(e) => {
+                if e.is_ok {
+                    let js = StatJs { errors: vec![] };
+                    return serde_json::to_string(&js).unwrap();
+                } else if e.is_error {
+                    let errors = e.errors.iter().map(|e| (&e.0).into()).collect();
+                    let js = StatJs { errors };
+                    return serde_json::to_string(&js).unwrap();
+                } else {
+                    warn!("requestStatus for unfinished {status_id}");
+                    let js = StatJs { errors: vec![] };
+                    return serde_json::to_string(&js).unwrap();
+                }
+            }
+            None => {
+                error!("can not find status id {}", status_id);
+                let e = ::err::Error::with_public_msg_no_trace(format!("Request status ID unknown {status_id}"));
+                let js = StatJs { errors: vec![e.into()] };
+                return serde_json::to_string(&js).unwrap();
             }
         }
     }

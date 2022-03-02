@@ -3,18 +3,22 @@ use bytes::{Bytes, BytesMut};
 use err::Error;
 use futures_core::Stream;
 use futures_util::future::FusedFuture;
-use futures_util::StreamExt;
+use futures_util::{FutureExt, StreamExt, TryFutureExt};
 use netpod::histo::HistoLog2;
 use netpod::{log::*, FileIoBufferSize};
 use netpod::{ChannelConfig, Node, Shape};
+use readat::ReadResult;
+use std::collections::VecDeque;
 use std::future::Future;
+use std::io::SeekFrom;
+use std::os::unix::prelude::AsRawFd;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use std::{fmt, mem};
 use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncRead, ReadBuf};
+use tokio::io::{AsyncRead, AsyncSeekExt, ReadBuf};
 
 pub mod agg;
 #[cfg(test)]
@@ -34,6 +38,7 @@ pub mod index;
 pub mod merge;
 pub mod paths;
 pub mod raw;
+pub mod readat;
 pub mod streamlog;
 
 // TODO transform this into a self-test or remove.
@@ -267,6 +272,127 @@ pub fn file_content_stream(
     file_io_buffer_size: FileIoBufferSize,
 ) -> impl Stream<Item = Result<FileChunkRead, Error>> + Send {
     FileContentStream::new(file, file_io_buffer_size)
+}
+
+enum FCS2 {
+    GetPosition,
+    Reading,
+}
+
+enum ReadStep {
+    Fut(Pin<Box<dyn Future<Output = Result<ReadResult, Error>> + Send>>),
+    Res(Result<ReadResult, Error>),
+}
+
+pub struct FileContentStream2 {
+    fcs2: FCS2,
+    file: Pin<Box<File>>,
+    file_pos: u64,
+    file_io_buffer_size: FileIoBufferSize,
+    get_position_fut: Pin<Box<dyn Future<Output = Result<u64, Error>> + Send>>,
+    reads: VecDeque<ReadStep>,
+    nlog: usize,
+    done: bool,
+    complete: bool,
+}
+
+impl FileContentStream2 {
+    pub fn new(file: File, file_io_buffer_size: FileIoBufferSize) -> Self {
+        let mut file = Box::pin(file);
+        let ffr = unsafe {
+            let ffr = Pin::get_unchecked_mut(file.as_mut());
+            std::mem::transmute::<&mut File, &'static mut File>(ffr)
+        };
+        let ff = ffr
+            .seek(SeekFrom::Current(0))
+            .map_err(|e| Error::with_msg_no_trace(format!("Seek error")));
+        Self {
+            fcs2: FCS2::GetPosition,
+            file,
+            file_pos: 0,
+            file_io_buffer_size,
+            get_position_fut: Box::pin(ff),
+            reads: VecDeque::new(),
+            nlog: 0,
+            done: false,
+            complete: false,
+        }
+    }
+}
+
+impl Stream for FileContentStream2 {
+    type Item = Result<FileChunkRead, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        loop {
+            break if self.complete {
+                panic!("poll_next on complete")
+            } else if self.done {
+                self.complete = true;
+                Ready(None)
+            } else {
+                match self.fcs2 {
+                    FCS2::GetPosition => match self.get_position_fut.poll_unpin(cx) {
+                        Ready(Ok(k)) => {
+                            self.file_pos = k;
+                            continue;
+                        }
+                        Ready(Err(e)) => {
+                            self.done = true;
+                            Ready(Some(Err(e)))
+                        }
+                        Pending => Pending,
+                    },
+                    FCS2::Reading => {
+                        // TODO Keep the read queue full.
+                        // TODO Do not add more reads when EOF is encountered.
+                        while self.reads.len() < 4 {
+                            let count = self.file_io_buffer_size.bytes() as u64;
+                            let r3 = readat::Read3::get();
+                            let x = r3.read(self.file.as_raw_fd(), self.file_pos, count);
+                            self.reads.push_back(ReadStep::Fut(Box::pin(x)));
+                            self.file_pos += count;
+                        }
+                        // TODO must poll all futures to make progress... but if they resolve, must poll no more!
+                        //   therefore, need some enum type for the pending futures list to also store the resolved ones.
+                        for e in &mut self.reads {
+                            match e {
+                                ReadStep::Fut(k) => match k.poll_unpin(cx) {
+                                    Ready(k) => {
+                                        *e = ReadStep::Res(k);
+                                    }
+                                    Pending => {}
+                                },
+                                ReadStep::Res(_k) => {}
+                            }
+                        }
+                        // TODO Check the front if something is ready.
+                        if let Some(ReadStep::Res(_)) = self.reads.front() {
+                            if let Some(ReadStep::Res(res)) = self.reads.pop_front() {
+                                // TODO check for error or return the read data.
+                                // TODO if read data contains EOF flag, raise EOF flag also in self,
+                                // and abort.
+                                // TODO make sure that everything runs stable even if this Stream is simply dropped
+                                // or read results are not waited for and channels or oneshots get dropped.
+                            } else {
+                                // TODO return error, this should never happen because we check before.
+                            }
+                        }
+                        // TODO handle case that self.reads is empty.
+                        todo!()
+                    }
+                }
+            };
+        }
+    }
+}
+
+pub fn file_content_stream_2(
+    file: File,
+    file_io_buffer_size: FileIoBufferSize,
+) -> impl Stream<Item = Result<FileChunkRead, Error>> + Send {
+    FileContentStream2::new(file, file_io_buffer_size)
 }
 
 pub struct NeedMinBuffer {
