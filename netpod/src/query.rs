@@ -1,8 +1,8 @@
-use crate::log::*;
 use crate::{
     channel_from_pairs, get_url_query_pairs, AggKind, AppendToUrl, ByteSize, Channel, FromUrl, HasBackend, HasTimeout,
     NanoRange, ToNanos,
 };
+use crate::{log::*, DiskIoTune};
 use chrono::{DateTime, TimeZone, Utc};
 use err::Error;
 use serde::{Deserialize, Serialize};
@@ -71,7 +71,7 @@ pub struct RawEventsQuery {
     pub channel: Channel,
     pub range: NanoRange,
     pub agg_kind: AggKind,
-    pub disk_io_buffer_size: usize,
+    pub disk_io_tune: DiskIoTune,
     pub do_decompress: bool,
 }
 

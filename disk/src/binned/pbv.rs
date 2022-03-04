@@ -105,11 +105,14 @@ where
         Pin<Box<dyn Stream<Item = Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>> + Send>>,
         Error,
     > {
+        // TODO let PreBinnedQuery provide the tune:
+        let mut disk_io_tune = netpod::DiskIoTune::default();
+        disk_io_tune.read_buffer_len = self.query.disk_io_buffer_size();
         let evq = RawEventsQuery {
             channel: self.query.channel().clone(),
             range: self.query.patch().patch_range(),
             agg_kind: self.query.agg_kind().clone(),
-            disk_io_buffer_size: self.query.disk_io_buffer_size(),
+            disk_io_tune,
             do_decompress: true,
         };
         if self.query.patch().patch_t_len() % self.query.patch().bin_t_len() != 0 {

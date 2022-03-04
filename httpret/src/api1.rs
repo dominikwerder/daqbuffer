@@ -11,7 +11,7 @@ use items::{RangeCompletableItem, Sitemty, StreamItem};
 use itertools::Itertools;
 use netpod::query::RawEventsQuery;
 use netpod::timeunits::SEC;
-use netpod::{log::*, ACCEPT_ALL};
+use netpod::{log::*, DiskIoTune, ACCEPT_ALL};
 use netpod::{ByteSize, Channel, FileIoBufferSize, NanoRange, NodeConfigCached, PerfOpts, Shape, APP_OCTET};
 use netpod::{ChannelSearchQuery, ChannelSearchResult, ProxyConfig, APP_JSON};
 use parse::channelconfig::{
@@ -477,12 +477,27 @@ pub struct Api1Query {
     channels: Vec<String>,
     range: Api1Range,
     // All following parameters are private and not to be used
-    #[serde(rename = "fileIoBufferSize", default)]
+    #[serde(default)]
     file_io_buffer_size: Option<FileIoBufferSize>,
     #[serde(default)]
     decompress: bool,
-    #[serde(rename = "eventsMax", default = "u64_max", skip_serializing_if = "is_u64_max")]
+    #[serde(default = "u64_max", skip_serializing_if = "is_u64_max")]
     events_max: u64,
+    #[serde(default)]
+    io_queue_len: u64,
+}
+
+impl Api1Query {
+    pub fn disk_io_tune(&self) -> DiskIoTune {
+        let mut k = DiskIoTune::default();
+        if let Some(x) = &self.file_io_buffer_size {
+            k.read_buffer_len = x.0;
+        }
+        if self.io_queue_len != 0 {
+            k.read_queue_len = self.io_queue_len as usize;
+        }
+        k
+    }
 }
 
 fn u64_max() -> u64 {
@@ -511,7 +526,7 @@ pub struct DataApiPython3DataStream {
     chan_ix: usize,
     chan_stream: Option<Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>>,
     config_fut: Option<Pin<Box<dyn Future<Output = Result<Config, Error>> + Send>>>,
-    file_io_buffer_size: FileIoBufferSize,
+    disk_io_tune: DiskIoTune,
     do_decompress: bool,
     #[allow(unused)]
     event_count: u64,
@@ -526,7 +541,7 @@ impl DataApiPython3DataStream {
     pub fn new(
         range: NanoRange,
         channels: Vec<Channel>,
-        file_io_buffer_size: FileIoBufferSize,
+        disk_io_tune: DiskIoTune,
         do_decompress: bool,
         events_max: u64,
         status_id: String,
@@ -539,7 +554,7 @@ impl DataApiPython3DataStream {
             chan_ix: 0,
             chan_stream: None,
             config_fut: None,
-            file_io_buffer_size,
+            disk_io_tune,
             do_decompress,
             event_count: 0,
             events_max,
@@ -712,7 +727,7 @@ impl Stream for DataApiPython3DataStream {
                                 channel,
                                 range: self.range.clone(),
                                 agg_kind: netpod::AggKind::EventBlobs,
-                                disk_io_buffer_size: self.file_io_buffer_size.0,
+                                disk_io_tune: self.disk_io_tune.clone(),
                                 do_decompress: self.do_decompress,
                             };
                             let perf_opts = PerfOpts { inmem_bufcap: 1024 * 4 };
@@ -728,7 +743,7 @@ impl Stream for DataApiPython3DataStream {
                                     evq.agg_kind.need_expand(),
                                     evq.do_decompress,
                                     event_chunker_conf,
-                                    self.file_io_buffer_size.clone(),
+                                    self.disk_io_tune.clone(),
                                     &self.node_config,
                                 )?;
                                 Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
@@ -792,6 +807,13 @@ impl Stream for DataApiPython3DataStream {
                 } else {
                     if self.chan_ix >= self.channels.len() {
                         self.data_done = true;
+                        {
+                            let n = Instant::now();
+                            let mut sb = crate::status_board().unwrap();
+                            sb.mark_alive(&self.status_id);
+                            self.ping_last = n;
+                            sb.mark_ok(&self.status_id);
+                        }
                         continue;
                     } else {
                         let channel = self.channels[self.chan_ix].clone();
@@ -850,6 +872,10 @@ impl Api1EventsBinaryHandler {
             .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?
             .to_owned();
         let body_data = hyper::body::to_bytes(body).await?;
+        info!(
+            "Api1EventsBinaryHandler  query json: {}",
+            String::from_utf8_lossy(&body_data)
+        );
         let qu: Api1Query = if let Ok(qu) = serde_json::from_slice(&body_data) {
             qu
         } else {
@@ -888,17 +914,12 @@ impl Api1EventsBinaryHandler {
                 name: x.clone(),
             })
             .collect();
-        let file_io_buffer_size = if let Some(k) = qu.file_io_buffer_size {
-            k
-        } else {
-            node_config.node_config.cluster.file_io_buffer_size.clone()
-        };
         // TODO use a better stream protocol with built-in error delivery.
         let status_id = super::status_board()?.new_status_id();
         let s = DataApiPython3DataStream::new(
             range.clone(),
             chans,
-            file_io_buffer_size,
+            qu.disk_io_tune().clone(),
             qu.decompress,
             qu.events_max,
             status_id.clone(),
@@ -939,7 +960,7 @@ impl RequestStatusHandler {
         if accept != APP_JSON && accept != ACCEPT_ALL {
             // TODO set the public error code and message and return Err(e).
             let e = Error::with_public_msg(format!("Unsupported Accept: {:?}", accept));
-            error!("{e:?}");
+            error!("{e}");
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
         let _body_data = hyper::body::to_bytes(body).await?;

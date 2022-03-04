@@ -1332,6 +1332,54 @@ impl Default for FileIoBufferSize {
     }
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum ReadSys {
+    TokioAsyncRead,
+    Read3,
+}
+
+impl ReadSys {
+    pub fn default() -> Self {
+        Self::TokioAsyncRead
+    }
+}
+
+impl From<&str> for ReadSys {
+    fn from(k: &str) -> Self {
+        if k == "TokioAsyncRead" {
+            Self::TokioAsyncRead
+        } else if k == "Read3" {
+            Self::Read3
+        } else {
+            Self::default()
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DiskIoTune {
+    pub read_sys: ReadSys,
+    pub read_buffer_len: usize,
+    pub read_queue_len: usize,
+}
+
+impl DiskIoTune {
+    pub fn default_for_testing() -> Self {
+        Self {
+            read_sys: ReadSys::default(),
+            read_buffer_len: 1024 * 4,
+            read_queue_len: 4,
+        }
+    }
+    pub fn default() -> Self {
+        Self {
+            read_sys: ReadSys::default(),
+            read_buffer_len: 1024 * 4,
+            read_queue_len: 4,
+        }
+    }
+}
+
 pub fn channel_from_pairs(pairs: &BTreeMap<String, String>) -> Result<Channel, Error> {
     let ret = Channel {
         backend: pairs

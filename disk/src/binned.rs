@@ -111,11 +111,14 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
                 debug!(
                     "BinnedBinaryChannelExec  no covering range for prebinned, merge from remotes instead {range:?}"
                 );
+                // TODO let BinnedQuery provide the DiskIoTune.
+                let mut disk_io_tune = netpod::DiskIoTune::default();
+                disk_io_tune.read_buffer_len = self.query.disk_io_buffer_size() as usize;
                 let evq = RawEventsQuery {
                     channel: self.query.channel().clone(),
                     range: self.query.range().clone(),
                     agg_kind: self.query.agg_kind().clone(),
-                    disk_io_buffer_size: self.query.disk_io_buffer_size(),
+                    disk_io_tune,
                     do_decompress: true,
                 };
                 let x_bin_count = x_bin_count(&shape, self.query.agg_kind());
@@ -360,11 +363,14 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
             }
             Ok(None) => {
                 debug!("BinnedJsonChannelExec  no covering range for prebinned, merge from remotes instead {range:?}");
+                // TODO let BinnedQuery provide the DiskIoTune.
+                let mut disk_io_tune = netpod::DiskIoTune::default();
+                disk_io_tune.read_buffer_len = self.query.disk_io_buffer_size() as usize;
                 let evq = RawEventsQuery {
                     channel: self.query.channel().clone(),
                     range: self.query.range().clone(),
                     agg_kind: self.query.agg_kind().clone(),
-                    disk_io_buffer_size: self.query.disk_io_buffer_size(),
+                    disk_io_tune,
                     do_decompress: true,
                 };
                 let x_bin_count = x_bin_count(&shape, self.query.agg_kind());

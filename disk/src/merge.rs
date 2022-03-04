@@ -299,7 +299,7 @@ mod test {
     use netpod::log::*;
     use netpod::test_data_base_path_databuffer;
     use netpod::timeunits::{DAY, MS};
-    use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, FileIoBufferSize, NanoRange, Nanos, ScalarType, Shape};
+    use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, NanoRange, Nanos, ScalarType, Shape};
     use std::path::PathBuf;
 
     fn scalar_file_path() -> PathBuf {
@@ -336,8 +336,8 @@ mod test {
         let inps = files
             .into_iter()
             .map(|file| {
-                let file_io_buffer_size = FileIoBufferSize(1024 * 4);
-                let inp = file_content_stream(file, file_io_buffer_size);
+                let disk_io_tune = netpod::DiskIoTune::default();
+                let inp = file_content_stream(file, disk_io_tune);
                 inp
             })
             .map(|inp| {

@@ -72,10 +72,8 @@ pub fn main() -> Result<(), Error> {
                 };
                 eprintln!("Read config: {:?}", config);
                 let file = File::open(&sub.datafile).await?;
-                let inp = Box::pin(disk::file_content_stream(
-                    file,
-                    netpod::FileIoBufferSize::new(1024 * 16),
-                ));
+                let disk_io_tune = netpod::DiskIoTune::default();
+                let inp = Box::pin(disk::file_content_stream(file, disk_io_tune));
                 let ce = &config.entries[0];
                 let channel_config = ChannelConfig {
                     channel: Channel {

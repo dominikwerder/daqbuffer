@@ -1,6 +1,7 @@
 pub mod api1;
 pub mod channelarchiver;
 pub mod channelconfig;
+pub mod download;
 pub mod err;
 pub mod events;
 pub mod evinfo;
@@ -8,6 +9,7 @@ pub mod gather;
 pub mod proxy;
 pub mod pulsemap;
 pub mod search;
+pub mod settings;
 
 use crate::err::Error;
 use crate::gather::gather_get_json;
@@ -301,6 +303,10 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if let Some(h) = download::DownloadHandler::handler(&req) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = settings::SettingsThreadsMaxHandler::handler(&req) {
+        h.handle(req, &node_config).await
     } else if let Some(h) = api1::Api1EventsBinaryHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = evinfo::EventInfoScan::handler(&req) {

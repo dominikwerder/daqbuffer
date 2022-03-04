@@ -25,37 +25,68 @@ impl Buffer {
         self.wp - self.rp
     }
 
+    pub fn check_invariant(&self) {
+        if self.wp > self.buf.len() {
+            eprintln!("ERROR  wp {}  rp {}", self.wp, self.rp);
+        }
+        if self.rp > self.wp {
+            eprintln!("ERROR  wp {}  rp {}", self.wp, self.rp);
+        }
+        assert!(self.wp <= self.buf.len());
+        assert!(self.rp <= self.wp);
+    }
+
     pub fn writable(&mut self) -> &mut [u8] {
+        self.check_invariant();
         self.wrap_if_needed();
         &mut self.buf[self.wp..]
     }
 
     pub fn readable(&self) -> &[u8] {
+        self.check_invariant();
         &self.buf[self.rp..self.wp]
     }
 
     pub fn advance(&mut self, c: usize) {
+        self.check_invariant();
+        if c > self.len() {
+            eprintln!("ERROR advance  wp {}  rp {}  c {}", self.wp, self.rp, c);
+        }
         assert!(c <= self.len());
         self.rp += c;
     }
 
     pub fn inc_wp(&mut self, c: usize) {
+        self.check_invariant();
+        if c > self.buf.len() - self.wp {
+            eprintln!("ERROR inc_wp  wp {}  rp {}  c {}", self.wp, self.rp, c);
+        }
         assert!(c <= self.buf.len() - self.wp);
         self.wp += c;
     }
 
     fn wrap_if_needed(&mut self) {
-        if self.rp == self.wp && self.rp != 0 {
+        self.check_invariant();
+        //eprintln!("wrap_if_needed  wp {}  rp {}", self.wp, self.rp);
+        if self.wp == 0 {
+        } else if self.rp == self.wp {
             self.rp = 0;
             self.wp = 0;
-        } else if self.rp > BUFFER_CAP / 4 * 3 {
-            assert!(self.wp < BUFFER_CAP);
-            assert!(self.rp <= self.wp);
+        } else if self.rp > self.buf.len() / 4 * 3 {
+            if self.rp >= self.wp {
+                eprintln!("ERROR wrap_if_needed  wp {}  rp {}", self.wp, self.rp);
+            }
+            assert!(self.rp < self.wp);
+            let ll = self.len();
             unsafe {
                 let src = &self.buf[self.rp..][0] as *const u8;
                 let dst = &mut self.buf[..][0] as *mut u8;
-                std::ptr::copy(src, dst, self.len());
+                std::ptr::copy(src, dst, ll);
             }
+            self.rp = 0;
+            self.wp = ll;
+        } else if self.wp == self.buf.len() {
+            eprintln!("ERROR no more space in buffer");
         }
     }
 }
@@ -166,8 +197,18 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin) -> Result<(), Error> {
         if false {
             write!(&mut fout, "[APPEND-WRITABLE]  {} writable bytes\n", b.len())?;
         }
+        if b.len() < 1 {
+            eprintln!("ERROR attempt to read with zero length buffer");
+        }
         let n1 = stdin.read(b)?;
         buf.inc_wp(n1);
+        if false {
+            eprintln!(
+                "{} bytes read from stdin, total readable {} bytes",
+                n1,
+                buf.readable().len()
+            );
+        }
         if false {
             write!(
                 &mut fout,
@@ -178,6 +219,9 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin) -> Result<(), Error> {
         }
         match parse_lines(buf.readable()) {
             Ok((lines, n2)) => {
+                if false {
+                    eprintln!("parse_lines  Ok  n2 {n2}  lines len {}", lines.len());
+                }
                 if false {
                     write!(&mut fout, "[APPEND-PARSED-LINES]: {}\n", lines.len())?;
                 }
@@ -190,7 +234,8 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin) -> Result<(), Error> {
                 buf.advance(n2);
             }
             Err(e) => {
-                write!(&mut fout, "[APPEND-PARSE-ERROR]: {:?}\n", e)?;
+                eprintln!("ERROR parse fail: {e}");
+                write!(&mut fout, "[APPEND-PARSE-ERROR]: {e}\n")?;
                 return Ok(());
             }
         }
@@ -232,6 +277,7 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin) -> Result<(), Error> {
             };
         }
         if n1 == 0 {
+            eprintln!("break because n1 == 0");
             break Ok(());
         }
     }
@@ -239,12 +285,25 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin) -> Result<(), Error> {
 
 pub fn append(dirname: &str, stdin: Stdin) -> Result<(), Error> {
     match append_inner(dirname, stdin) {
-        Ok(k) => Ok(k),
+        Ok(k) => {
+            eprintln!("append_inner has returned");
+            Ok(k)
+        }
         Err(e) => {
+            eprintln!("ERROR append {e:?}");
             let dir = PathBuf::from(dirname);
             let mut fout = open_latest_or_new(&dir)?;
-            let _ = write!(fout, "ERROR in append_inner: {:?}", e);
+            let _ = write!(fout, "ERROR in append_inner: {e:?}");
             Err(e)
         }
     }
+}
+
+#[test]
+fn test_vec_index() {
+    let mut buf = vec![0u8; BUFFER_CAP];
+    let a = &mut buf[BUFFER_CAP - 1..BUFFER_CAP];
+    a[0] = 123;
+    let a = &mut buf[BUFFER_CAP..];
+    assert_eq!(a.len(), 0);
 }

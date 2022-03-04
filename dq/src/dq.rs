@@ -381,7 +381,7 @@ pub async fn convert(convert_params: ConvertParams) -> Result<(), Error> {
                 end: u64::MAX,
             },
             agg_kind: AggKind::Plain,
-            disk_io_buffer_size: 1024 * 4,
+            disk_io_tune: netpod::DiskIoTune::default(),
             do_decompress: true,
         };
         let f1 = pbr.into_file();

@@ -145,11 +145,14 @@ impl ChannelExecFunction for EvInfoFunc {
         let _ = byte_order;
         let _ = event_value_shape;
         let perf_opts = PerfOpts { inmem_bufcap: 4096 };
+        // TODO let PlainEventsJsonQuery provide the tune
+        let mut disk_io_tune = netpod::DiskIoTune::default();
+        disk_io_tune.read_buffer_len = self.query.disk_io_buffer_size();
         let evq = RawEventsQuery {
             channel: self.query.channel().clone(),
             range: self.query.range().clone(),
             agg_kind: AggKind::Plain,
-            disk_io_buffer_size: self.query.disk_io_buffer_size(),
+            disk_io_tune,
             do_decompress: true,
         };
 

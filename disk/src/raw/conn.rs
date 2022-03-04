@@ -11,7 +11,7 @@ use items::numops::{BoolNum, NumOps, StringNum};
 use items::{EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
-use netpod::{AggKind, ByteOrder, ByteSize, Channel, FileIoBufferSize, NanoRange, NodeConfigCached, ScalarType, Shape};
+use netpod::{AggKind, ByteOrder, ByteSize, Channel, DiskIoTune, NanoRange, NodeConfigCached, ScalarType, Shape};
 
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, ConfigEntry, MatchingConfigEntry};
 use std::pin::Pin;
@@ -194,7 +194,7 @@ pub async fn make_event_pipe(
         channel_config.clone(),
         node_config.node.clone(),
         node_config.ix,
-        FileIoBufferSize::new(evq.disk_io_buffer_size),
+        evq.disk_io_tune.clone(),
         event_chunker_conf,
         evq.agg_kind.need_expand(),
         true,
@@ -235,10 +235,10 @@ pub fn make_local_event_blobs_stream(
     expand: bool,
     do_decompress: bool,
     event_chunker_conf: EventChunkerConf,
-    file_io_buffer_size: FileIoBufferSize,
+    disk_io_tune: DiskIoTune,
     node_config: &NodeConfigCached,
 ) -> Result<EventChunkerMultifile, Error> {
-    info!("make_local_event_blobs_stream  do_decompress {do_decompress}  file_io_buffer_size {file_io_buffer_size:?}");
+    info!("make_local_event_blobs_stream  do_decompress {do_decompress}  disk_io_tune {disk_io_tune:?}");
     if do_decompress {
         warn!("Possible issue: decompress central storage event blob stream");
     }
@@ -261,7 +261,7 @@ pub fn make_local_event_blobs_stream(
         channel_config.clone(),
         node_config.node.clone(),
         node_config.ix,
-        file_io_buffer_size,
+        disk_io_tune,
         event_chunker_conf,
         expand,
         do_decompress,
@@ -276,7 +276,7 @@ pub fn make_remote_event_blobs_stream(
     expand: bool,
     do_decompress: bool,
     event_chunker_conf: EventChunkerConf,
-    file_io_buffer_size: FileIoBufferSize,
+    disk_io_tune: DiskIoTune,
     node_config: &NodeConfigCached,
 ) -> Result<impl Stream<Item = Sitemty<EventFull>>, Error> {
     let shape = match entry.to_shape() {
@@ -298,7 +298,7 @@ pub fn make_remote_event_blobs_stream(
         channel_config.clone(),
         node_config.node.clone(),
         node_config.ix,
-        file_io_buffer_size,
+        disk_io_tune,
         event_chunker_conf,
         expand,
         do_decompress,
@@ -316,7 +316,6 @@ pub async fn make_event_blobs_pipe(
             Err(e) => return Err(e)?,
         }
     }
-    let file_io_buffer_size = FileIoBufferSize::new(evq.disk_io_buffer_size);
     let expand = evq.agg_kind.need_expand();
     let range = &evq.range;
     let entry = get_applicable_entry(&evq.range, evq.channel.clone(), node_config).await?;
@@ -329,7 +328,7 @@ pub async fn make_event_blobs_pipe(
             expand,
             evq.do_decompress,
             event_chunker_conf,
-            file_io_buffer_size,
+            evq.disk_io_tune.clone(),
             node_config,
         )?;
         let s = event_blobs.map(|item| Box::new(item) as Box<dyn Framable>);
@@ -345,7 +344,7 @@ pub async fn make_event_blobs_pipe(
             expand,
             evq.do_decompress,
             event_chunker_conf,
-            file_io_buffer_size,
+            evq.disk_io_tune.clone(),
             node_config,
         )?;
         let s = event_blobs.map(|item| Box::new(item) as Box<dyn Framable>);

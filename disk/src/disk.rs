@@ -1,25 +1,3 @@
-use crate::dtflags::{ARRAY, BIG_ENDIAN, COMPRESSION, SHAPE};
-use bytes::{Bytes, BytesMut};
-use err::Error;
-use futures_core::Stream;
-use futures_util::future::FusedFuture;
-use futures_util::{FutureExt, StreamExt, TryFutureExt};
-use netpod::histo::HistoLog2;
-use netpod::{log::*, FileIoBufferSize};
-use netpod::{ChannelConfig, Node, Shape};
-use readat::ReadResult;
-use std::collections::VecDeque;
-use std::future::Future;
-use std::io::SeekFrom;
-use std::os::unix::prelude::AsRawFd;
-use std::path::PathBuf;
-use std::pin::Pin;
-use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
-use std::{fmt, mem};
-use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncRead, AsyncSeekExt, ReadBuf};
-
 pub mod agg;
 #[cfg(test)]
 pub mod aggtest;
@@ -38,8 +16,30 @@ pub mod index;
 pub mod merge;
 pub mod paths;
 pub mod raw;
-pub mod readat;
+pub mod read3;
 pub mod streamlog;
+
+use crate::dtflags::{ARRAY, BIG_ENDIAN, COMPRESSION, SHAPE};
+use bytes::{Bytes, BytesMut};
+use err::Error;
+use futures_core::Stream;
+use futures_util::future::FusedFuture;
+use futures_util::{FutureExt, StreamExt, TryFutureExt};
+use netpod::histo::HistoLog2;
+use netpod::log::*;
+use netpod::{ChannelConfig, DiskIoTune, Node, Shape};
+use read3::ReadResult;
+use std::collections::VecDeque;
+use std::future::Future;
+use std::io::SeekFrom;
+use std::os::unix::prelude::AsRawFd;
+use std::path::PathBuf;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
+use std::{fmt, mem};
+use tokio::fs::{File, OpenOptions};
+use tokio::io::{AsyncRead, AsyncSeekExt, ReadBuf};
 
 // TODO transform this into a self-test or remove.
 pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: Node) -> Result<netpod::BodyStream, Error> {
@@ -152,10 +152,13 @@ unsafe impl Send for Fopen1 {}
 
 pub struct FileChunkRead {
     buf: BytesMut,
-    cap0: usize,
-    rem0: usize,
-    remmut0: usize,
     duration: Duration,
+}
+
+impl FileChunkRead {
+    pub fn into_buf(self) -> BytesMut {
+        self.buf
+    }
 }
 
 impl fmt::Debug for FileChunkRead {
@@ -163,9 +166,6 @@ impl fmt::Debug for FileChunkRead {
         f.debug_struct("FileChunkRead")
             .field("buf.len", &self.buf.len())
             .field("buf.cap", &self.buf.capacity())
-            .field("cap0", &self.cap0)
-            .field("rem0", &self.rem0)
-            .field("remmut0", &self.remmut0)
             .field("duration", &self.duration)
             .finish()
     }
@@ -173,7 +173,7 @@ impl fmt::Debug for FileChunkRead {
 
 pub struct FileContentStream {
     file: File,
-    file_io_buffer_size: FileIoBufferSize,
+    disk_io_tune: DiskIoTune,
     read_going: bool,
     buf: BytesMut,
     ts1: Instant,
@@ -183,10 +183,10 @@ pub struct FileContentStream {
 }
 
 impl FileContentStream {
-    pub fn new(file: File, file_io_buffer_size: FileIoBufferSize) -> Self {
+    pub fn new(file: File, disk_io_tune: DiskIoTune) -> Self {
         Self {
             file,
-            file_io_buffer_size,
+            disk_io_tune,
             read_going: false,
             buf: BytesMut::new(),
             ts1: Instant::now(),
@@ -212,7 +212,7 @@ impl Stream for FileContentStream {
                 let mut buf = if !self.read_going {
                     self.ts1 = Instant::now();
                     let mut buf = BytesMut::new();
-                    buf.resize(self.file_io_buffer_size.0, 0);
+                    buf.resize(self.disk_io_tune.read_buffer_len, 0);
                     buf
                 } else {
                     mem::replace(&mut self.buf, BytesMut::new())
@@ -225,18 +225,12 @@ impl Stream for FileContentStream {
                 match pollres {
                     Ready(Ok(_)) => {
                         let nread = rb.filled().len();
-                        let cap0 = rb.capacity();
-                        let rem0 = rb.remaining();
-                        let remmut0 = nread;
                         buf.truncate(nread);
                         self.read_going = false;
                         let ts2 = Instant::now();
                         if nread == 0 {
                             let ret = FileChunkRead {
                                 buf,
-                                cap0,
-                                rem0,
-                                remmut0,
                                 duration: ts2.duration_since(self.ts1),
                             };
                             self.done = true;
@@ -244,14 +238,11 @@ impl Stream for FileContentStream {
                         } else {
                             let ret = FileChunkRead {
                                 buf,
-                                cap0,
-                                rem0,
-                                remmut0,
                                 duration: ts2.duration_since(self.ts1),
                             };
                             if false && self.nlog < 6 {
                                 self.nlog += 1;
-                                info!("{:?}  ret {:?}", self.file_io_buffer_size, ret);
+                                info!("{:?}  ret {:?}", self.disk_io_tune, ret);
                             }
                             Ready(Some(Ok(ret)))
                         }
@@ -269,13 +260,15 @@ impl Stream for FileContentStream {
 
 pub fn file_content_stream(
     file: File,
-    file_io_buffer_size: FileIoBufferSize,
+    disk_io_tune: DiskIoTune,
 ) -> impl Stream<Item = Result<FileChunkRead, Error>> + Send {
-    FileContentStream::new(file, file_io_buffer_size)
+    warn!("file_content_stream  disk_io_tune {disk_io_tune:?}");
+    FileContentStream::new(file, disk_io_tune)
 }
 
 enum FCS2 {
     GetPosition,
+    ReadingSimple,
     Reading,
 }
 
@@ -288,16 +281,17 @@ pub struct FileContentStream2 {
     fcs2: FCS2,
     file: Pin<Box<File>>,
     file_pos: u64,
-    file_io_buffer_size: FileIoBufferSize,
+    eof: bool,
+    disk_io_tune: DiskIoTune,
     get_position_fut: Pin<Box<dyn Future<Output = Result<u64, Error>> + Send>>,
+    read_fut: Pin<Box<dyn Future<Output = Result<ReadResult, Error>> + Send>>,
     reads: VecDeque<ReadStep>,
-    nlog: usize,
     done: bool,
     complete: bool,
 }
 
 impl FileContentStream2 {
-    pub fn new(file: File, file_io_buffer_size: FileIoBufferSize) -> Self {
+    pub fn new(file: File, disk_io_tune: DiskIoTune) -> Self {
         let mut file = Box::pin(file);
         let ffr = unsafe {
             let ffr = Pin::get_unchecked_mut(file.as_mut());
@@ -305,15 +299,18 @@ impl FileContentStream2 {
         };
         let ff = ffr
             .seek(SeekFrom::Current(0))
-            .map_err(|e| Error::with_msg_no_trace(format!("Seek error")));
+            .map_err(|_| Error::with_msg_no_trace(format!("Seek error")));
         Self {
             fcs2: FCS2::GetPosition,
             file,
             file_pos: 0,
-            file_io_buffer_size,
+            eof: false,
+            disk_io_tune,
             get_position_fut: Box::pin(ff),
+            read_fut: Box::pin(futures_util::future::ready(Err(Error::with_msg_no_trace(format!(
+                "dummy"
+            ))))),
             reads: VecDeque::new(),
-            nlog: 0,
             done: false,
             complete: false,
         }
@@ -335,7 +332,17 @@ impl Stream for FileContentStream2 {
                 match self.fcs2 {
                     FCS2::GetPosition => match self.get_position_fut.poll_unpin(cx) {
                         Ready(Ok(k)) => {
+                            info!("current file pos: {k}");
                             self.file_pos = k;
+                            if false {
+                                let fd = self.file.as_raw_fd();
+                                let count = self.disk_io_tune.read_buffer_len as u64;
+                                self.read_fut = Box::pin(read3::Read3::get().read(fd, self.file_pos, count));
+                                self.file_pos += count;
+                                self.fcs2 = FCS2::ReadingSimple;
+                            } else {
+                                self.fcs2 = FCS2::Reading;
+                            }
                             continue;
                         }
                         Ready(Err(e)) => {
@@ -344,43 +351,96 @@ impl Stream for FileContentStream2 {
                         }
                         Pending => Pending,
                     },
+                    FCS2::ReadingSimple => match self.read_fut.poll_unpin(cx) {
+                        Ready(Ok(res)) => {
+                            if res.eof {
+                                let item = FileChunkRead {
+                                    buf: res.buf,
+                                    duration: Duration::from_millis(0),
+                                };
+                                self.done = true;
+                                Ready(Some(Ok(item)))
+                            } else {
+                                let item = FileChunkRead {
+                                    buf: res.buf,
+                                    duration: Duration::from_millis(0),
+                                };
+                                let fd = self.file.as_raw_fd();
+                                let count = self.disk_io_tune.read_buffer_len as u64;
+                                self.read_fut = Box::pin(read3::Read3::get().read(fd, self.file_pos, count));
+                                self.file_pos += count;
+                                Ready(Some(Ok(item)))
+                            }
+                        }
+                        Ready(Err(e)) => {
+                            self.done = true;
+                            Ready(Some(Err(e)))
+                        }
+                        Pending => Pending,
+                    },
                     FCS2::Reading => {
-                        // TODO Keep the read queue full.
-                        // TODO Do not add more reads when EOF is encountered.
-                        while self.reads.len() < 4 {
-                            let count = self.file_io_buffer_size.bytes() as u64;
-                            let r3 = readat::Read3::get();
-                            let x = r3.read(self.file.as_raw_fd(), self.file_pos, count);
-                            self.reads.push_back(ReadStep::Fut(Box::pin(x)));
+                        while !self.eof && self.reads.len() < self.disk_io_tune.read_queue_len {
+                            let fd = self.file.as_raw_fd();
+                            let pos = self.file_pos;
+                            let count = self.disk_io_tune.read_buffer_len as u64;
+                            trace!("create ReadTask  fd {fd}  pos {pos}  count {count}");
+                            let r3 = read3::Read3::get();
+                            let fut = r3.read(fd, pos, count);
+                            self.reads.push_back(ReadStep::Fut(Box::pin(fut)));
                             self.file_pos += count;
                         }
-                        // TODO must poll all futures to make progress... but if they resolve, must poll no more!
-                        //   therefore, need some enum type for the pending futures list to also store the resolved ones.
                         for e in &mut self.reads {
                             match e {
                                 ReadStep::Fut(k) => match k.poll_unpin(cx) {
                                     Ready(k) => {
+                                        trace!("received a result");
                                         *e = ReadStep::Res(k);
                                     }
                                     Pending => {}
                                 },
-                                ReadStep::Res(_k) => {}
+                                ReadStep::Res(_) => {}
                             }
                         }
-                        // TODO Check the front if something is ready.
                         if let Some(ReadStep::Res(_)) = self.reads.front() {
                             if let Some(ReadStep::Res(res)) = self.reads.pop_front() {
-                                // TODO check for error or return the read data.
-                                // TODO if read data contains EOF flag, raise EOF flag also in self,
-                                // and abort.
-                                // TODO make sure that everything runs stable even if this Stream is simply dropped
-                                // or read results are not waited for and channels or oneshots get dropped.
+                                trace!("pop front result");
+                                match res {
+                                    Ok(rr) => {
+                                        if rr.eof {
+                                            if self.eof {
+                                                trace!("see EOF in ReadResult  AGAIN");
+                                            } else {
+                                                debug!("see EOF in ReadResult  SET OUR FLAG");
+                                                self.eof = true;
+                                            }
+                                        }
+                                        let res = FileChunkRead {
+                                            buf: rr.buf,
+                                            duration: Duration::from_millis(0),
+                                        };
+                                        Ready(Some(Ok(res)))
+                                    }
+                                    Err(e) => {
+                                        error!("received ReadResult error: {e}");
+                                        self.done = true;
+                                        let e = Error::with_msg(format!("I/O error: {e}"));
+                                        Ready(Some(Err(e)))
+                                    }
+                                }
                             } else {
-                                // TODO return error, this should never happen because we check before.
+                                self.done = true;
+                                let e = Error::with_msg(format!("logic error"));
+                                error!("{e}");
+                                Ready(Some(Err(e)))
                             }
+                        } else if let None = self.reads.front() {
+                            debug!("empty read fut queue, end");
+                            self.done = true;
+                            continue;
+                        } else {
+                            trace!("read fut queue Pending");
+                            Pending
                         }
-                        // TODO handle case that self.reads is empty.
-                        todo!()
                     }
                 }
             };
@@ -390,9 +450,10 @@ impl Stream for FileContentStream2 {
 
 pub fn file_content_stream_2(
     file: File,
-    file_io_buffer_size: FileIoBufferSize,
+    disk_io_tune: DiskIoTune,
 ) -> impl Stream<Item = Result<FileChunkRead, Error>> + Send {
-    FileContentStream2::new(file, file_io_buffer_size)
+    warn!("file_content_stream_2  disk_io_tune {disk_io_tune:?}");
+    FileContentStream2::new(file, disk_io_tune)
 }
 
 pub struct NeedMinBuffer {

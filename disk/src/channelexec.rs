@@ -274,11 +274,14 @@ impl ChannelExecFunction for PlainEvents {
         let _ = byte_order;
         let _ = event_value_shape;
         let perf_opts = PerfOpts { inmem_bufcap: 4096 };
+        // TODO let upstream provide DiskIoTune
+        let mut disk_io_tune = netpod::DiskIoTune::default();
+        disk_io_tune.read_buffer_len = self.disk_io_buffer_size;
         let evq = RawEventsQuery {
             channel: self.channel,
             range: self.range,
             agg_kind: self.agg_kind,
-            disk_io_buffer_size: self.disk_io_buffer_size,
+            disk_io_tune,
             do_decompress: true,
         };
         let s = MergedFromRemotes::<Identity<NTY>>::new(evq, perf_opts, self.node_config.node_config.cluster);
@@ -452,11 +455,14 @@ impl ChannelExecFunction for PlainEventsJson {
         let _ = byte_order;
         let _ = event_value_shape;
         let perf_opts = PerfOpts { inmem_bufcap: 4096 };
+        // TODO let upstream provide DiskIoTune
+        let mut disk_io_tune = netpod::DiskIoTune::default();
+        disk_io_tune.read_buffer_len = self.disk_io_buffer_size;
         let evq = RawEventsQuery {
             channel: self.channel,
             range: self.range,
             agg_kind: self.agg_kind,
-            disk_io_buffer_size: self.disk_io_buffer_size,
+            disk_io_tune,
             do_decompress: true,
         };
         let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster);

@@ -104,7 +104,7 @@ pub fn tracing_init() {
                     "streams::rangefilter=info",
                     "items::eventvalues=info",
                     "items::xbinnedscalarevents=info",
-                    "disk::binned=info",
+                    "disk=debug",
                     "nodenet::conn=info",
                     "daqbuffer::test=info",
                     "dq=info",

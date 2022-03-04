@@ -1,14 +1,13 @@
 use crate::dataopen::{open_expanded_files, open_files, OpenedFileSet};
 use crate::eventchunker::{EventChunker, EventChunkerConf, EventFull};
-use crate::file_content_stream;
 use crate::merge::MergedStream;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::{LogItem, RangeCompletableItem, Sitemty, StreamItem};
+use netpod::log::*;
 use netpod::timeunits::SEC;
-use netpod::{log::*, FileIoBufferSize};
-use netpod::{ChannelConfig, NanoRange, Node};
+use netpod::{ChannelConfig, DiskIoTune, NanoRange, Node};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use streams::rangefilter::RangeFilter;
@@ -21,7 +20,7 @@ pub struct EventChunkerMultifile {
     channel_config: ChannelConfig,
     file_chan: async_channel::Receiver<Result<OpenedFileSet, Error>>,
     evs: Option<Pin<Box<dyn InputTraits + Send>>>,
-    file_io_buffer_size: FileIoBufferSize,
+    disk_io_tune: DiskIoTune,
     event_chunker_conf: EventChunkerConf,
     range: NanoRange,
     data_completed: bool,
@@ -41,7 +40,7 @@ impl EventChunkerMultifile {
         channel_config: ChannelConfig,
         node: Node,
         node_ix: usize,
-        file_io_buffer_size: FileIoBufferSize,
+        disk_io_tune: DiskIoTune,
         event_chunker_conf: EventChunkerConf,
         expand: bool,
         do_decompress: bool,
@@ -54,7 +53,7 @@ impl EventChunkerMultifile {
         Self {
             file_chan,
             evs: None,
-            file_io_buffer_size,
+            disk_io_tune,
             event_chunker_conf,
             channel_config,
             range,
@@ -157,9 +156,9 @@ impl Stream for EventChunkerMultifile {
                                         let item = LogItem::quick(Level::INFO, msg);
                                         match file.file {
                                             Some(file) => {
-                                                let inp = Box::pin(file_content_stream(
+                                                let inp = Box::pin(crate::file_content_stream(
                                                     file,
-                                                    self.file_io_buffer_size.clone(),
+                                                    self.disk_io_tune.clone(),
                                                 ));
                                                 let chunker = EventChunker::from_event_boundary(
                                                     inp,
@@ -184,14 +183,14 @@ impl Stream for EventChunkerMultifile {
                                         Ready(Some(Ok(StreamItem::Log(item))))
                                     } else {
                                         let msg = format!("handle OFS MERGED {:?}", ofs);
-                                        debug!("{}", msg);
+                                        info!("{}", msg);
                                         let item = LogItem::quick(Level::INFO, msg);
                                         let mut chunkers = vec![];
                                         for of in ofs.files {
                                             if let Some(file) = of.file {
-                                                let inp = Box::pin(file_content_stream(
+                                                let inp = Box::pin(crate::file_content_stream_2(
                                                     file,
-                                                    self.file_io_buffer_size.clone(),
+                                                    self.disk_io_tune.clone(),
                                                 ));
                                                 let chunker = EventChunker::from_event_boundary(
                                                     inp,
@@ -245,9 +244,9 @@ mod test {
     use err::Error;
     use futures_util::StreamExt;
     use items::{RangeCompletableItem, StreamItem};
-    use netpod::log::*;
     use netpod::timeunits::{DAY, MS};
-    use netpod::{ByteSize, ChannelConfig, FileIoBufferSize, Nanos};
+    use netpod::{log::*, DiskIoTune};
+    use netpod::{ByteSize, ChannelConfig, Nanos};
     use streams::rangefilter::RangeFilter;
 
     fn read_expanded_for_range(range: netpod::NanoRange, nodeix: usize) -> Result<(usize, Vec<u64>), Error> {
@@ -268,10 +267,10 @@ mod test {
         };
         let cluster = netpod::test_cluster();
         let node = cluster.nodes[nodeix].clone();
-        let buffer_size = 512;
         let event_chunker_conf = EventChunkerConf {
             disk_stats_every: ByteSize::kb(1024),
         };
+        let disk_io_tune = DiskIoTune::default_for_testing();
         let task = async move {
             let mut event_count = 0;
             let events = EventChunkerMultifile::new(
@@ -279,7 +278,7 @@ mod test {
                 channel_config,
                 node,
                 nodeix,
-                FileIoBufferSize::new(buffer_size),
+                disk_io_tune,
                 event_chunker_conf,
                 true,
                 true,
