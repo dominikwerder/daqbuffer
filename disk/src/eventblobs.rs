@@ -188,10 +188,7 @@ impl Stream for EventChunkerMultifile {
                                         let mut chunkers = vec![];
                                         for of in ofs.files {
                                             if let Some(file) = of.file {
-                                                let inp = Box::pin(crate::file_content_stream_2(
-                                                    file,
-                                                    self.disk_io_tune.clone(),
-                                                ));
+                                                let inp = crate::file_content_stream(file, self.disk_io_tune.clone());
                                                 let chunker = EventChunker::from_event_boundary(
                                                     inp,
                                                     self.channel_config.clone(),

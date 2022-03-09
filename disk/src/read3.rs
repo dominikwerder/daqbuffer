@@ -9,6 +9,8 @@ use tokio::sync::{mpsc, oneshot};
 
 const DO_TRACE: bool = false;
 
+static READ3: AtomicPtr<Read3> = AtomicPtr::new(std::ptr::null_mut());
+
 pub struct ReadTask {
     fd: RawFd,
     pos: u64,
@@ -90,78 +92,7 @@ impl Read3 {
             match rrx.recv() {
                 Ok(mut jrx) => match jrx.blocking_recv() {
                     Some(rt) => match self.rtx.send(jrx) {
-                        Ok(_) => {
-                            let ts1 = Instant::now();
-                            let mut prc = 0;
-                            let fd = rt.fd;
-                            let mut rpos = rt.pos;
-                            let mut buf = BytesMut::with_capacity(rt.count as usize);
-                            let mut writable = rt.count as usize;
-                            let rr = unsafe {
-                                loop {
-                                    if DO_TRACE {
-                                        trace!("do pread  fd {fd}  count {writable}  offset {rpos}  wid {wid}");
-                                    }
-                                    let ec = libc::pread(fd, buf.as_mut_ptr() as _, writable, rpos as i64);
-                                    prc += 1;
-                                    if ec == -1 {
-                                        let errno = *libc::__errno_location();
-                                        if errno == libc::EINVAL {
-                                            debug!("pread  EOF  fd {fd}  count {writable}  offset {rpos}  wid {wid}");
-                                            let rr = ReadResult { buf, eof: true };
-                                            break Ok(rr);
-                                        } else {
-                                            warn!("pread  ERROR  errno {errno}  fd {fd}  count {writable}  offset {rpos}  wid {wid}");
-                                            // TODO use a more structured error
-                                            let e = Error::with_msg_no_trace(format!(
-                                                "pread  ERROR  errno {errno}  fd {fd}  count {writable}  offset {rpos}  wid {wid}"
-                                            ));
-                                            break Err(e);
-                                        }
-                                    } else if ec == 0 {
-                                        debug!("pread  EOF  fd {fd}  count {writable}  offset {rpos}  wid {wid}  prc {prc}");
-                                        let rr = ReadResult { buf, eof: true };
-                                        break Ok(rr);
-                                    } else if ec > 0 {
-                                        if ec as usize > writable {
-                                            error!(
-                                                "pread  TOOLARGE  ec {ec}  fd {fd}  count {writable}  offset {rpos}  wid {wid}  prc {prc}"
-                                            );
-                                            break 'outer;
-                                        } else {
-                                            rpos += ec as u64;
-                                            writable -= ec as usize;
-                                            buf.set_len(buf.len() + (ec as usize));
-                                            if writable == 0 {
-                                                let ts2 = Instant::now();
-                                                let dur = ts2.duration_since(ts1);
-                                                let dms = 1e3 * dur.as_secs_f32();
-                                                if DO_TRACE {
-                                                    trace!(
-                                                    "pread  DONE  ec {ec}  fd {fd}  wid {wid}  prc {prc}  dms {dms:.2}"
-                                                );
-                                                }
-                                                let rr = ReadResult { buf, eof: false };
-                                                break Ok(rr);
-                                            }
-                                        }
-                                    } else {
-                                        error!(
-                                            "pread  UNEXPECTED  ec {}  fd {}  count {}  offset {rpos}  wid {wid}",
-                                            ec, rt.fd, writable
-                                        );
-                                        break 'outer;
-                                    }
-                                }
-                            };
-                            match rt.rescell.send(rr) {
-                                Ok(_) => {}
-                                Err(_) => {
-                                    self.can_not_publish.fetch_add(1, Ordering::AcqRel);
-                                    warn!("can not publish the read result  wid {wid}");
-                                }
-                            }
-                        }
+                        Ok(_) => self.read_worker_job(wid, rt),
                         Err(e) => {
                             error!("can not return the job receiver: wid {wid}  {e}");
                             break 'outer;
@@ -179,6 +110,71 @@ impl Read3 {
             }
         }
     }
-}
 
-static READ3: AtomicPtr<Read3> = AtomicPtr::new(std::ptr::null_mut());
+    fn read_worker_job(&self, wid: u32, rt: ReadTask) {
+        let ts1 = Instant::now();
+        let mut prc = 0;
+        let fd = rt.fd;
+        let mut rpos = rt.pos;
+        let mut buf = BytesMut::with_capacity(rt.count as usize);
+        let mut writable = rt.count as usize;
+        let rr = loop {
+            if DO_TRACE {
+                trace!("do pread  fd {fd}  count {writable}  offset {rpos}  wid {wid}");
+            }
+            let ec = unsafe { libc::pread(fd, buf.as_mut_ptr() as _, writable, rpos as i64) };
+            prc += 1;
+            if ec == -1 {
+                let errno = unsafe { *libc::__errno_location() };
+                if errno == libc::EINVAL {
+                    debug!("pread  EOF  fd {fd}  count {writable}  offset {rpos}  wid {wid}");
+                    let rr = ReadResult { buf, eof: true };
+                    break Ok(rr);
+                } else {
+                    warn!("pread  ERROR  errno {errno}  fd {fd}  count {writable}  offset {rpos}  wid {wid}");
+                    // TODO use a more structured error
+                    let e = Error::with_msg_no_trace(format!(
+                        "pread  ERROR  errno {errno}  fd {fd}  count {writable}  offset {rpos}  wid {wid}"
+                    ));
+                    break Err(e);
+                }
+            } else if ec == 0 {
+                debug!("pread  EOF  fd {fd}  count {writable}  offset {rpos}  wid {wid}  prc {prc}");
+                let rr = ReadResult { buf, eof: true };
+                break Ok(rr);
+            } else if ec > 0 {
+                if ec as usize > writable {
+                    error!("pread  TOOLARGE  ec {ec}  fd {fd}  count {writable}  offset {rpos}  wid {wid}  prc {prc}");
+                    return;
+                } else {
+                    rpos += ec as u64;
+                    writable -= ec as usize;
+                    unsafe { buf.set_len(buf.len() + (ec as usize)) };
+                    if writable == 0 {
+                        let ts2 = Instant::now();
+                        let dur = ts2.duration_since(ts1);
+                        let dms = 1e3 * dur.as_secs_f32();
+                        if DO_TRACE {
+                            trace!("pread  DONE  ec {ec}  fd {fd}  wid {wid}  prc {prc}  dms {dms:.2}");
+                        }
+                        let rr = ReadResult { buf, eof: false };
+                        break Ok(rr);
+                    }
+                }
+            } else {
+                error!(
+                    "pread  UNEXPECTED  ec {}  fd {}  count {}  offset {rpos}  wid {wid}",
+                    ec, rt.fd, writable
+                );
+                return;
+            }
+        };
+        match rt.rescell.send(rr) {
+            Ok(_) => {}
+            Err(_) => {
+                self.can_not_publish.fetch_add(1, Ordering::AcqRel);
+                warn!("can not publish the read result  wid {wid}");
+            }
+        }
+    }
+}

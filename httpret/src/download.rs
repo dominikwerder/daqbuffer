@@ -1,11 +1,10 @@
-use std::pin::Pin;
-
 use crate::err::Error;
 use crate::response;
-use futures_util::{Stream, TryStreamExt};
+use futures_util::TryStreamExt;
 use http::{Method, StatusCode};
 use hyper::{Body, Request, Response};
-use netpod::{get_url_query_pairs, DiskIoTune, FromUrl, NodeConfigCached, ReadSys};
+use netpod::log::*;
+use netpod::{get_url_query_pairs, DiskIoTune, FromUrl, NodeConfigCached};
 use url::Url;
 
 #[derive(Clone, Debug)]
@@ -67,18 +66,12 @@ impl DownloadHandler {
         };
         let url = url::Url::parse(&format!("http://dummy{}", head.uri))?;
         let query = DownloadQuery::from_url(&url)?;
-        let file = tokio::fs::OpenOptions::new().read(true).open(base.join(p2)).await?;
-        let s = match query.disk_io_tune.read_sys {
-            ReadSys::TokioAsyncRead => {
-                let s = disk::file_content_stream(file, query.disk_io_tune.clone()).map_ok(|x| x.into_buf());
-                Box::pin(s) as Pin<Box<dyn Stream<Item = _> + Send>>
-            }
-            ReadSys::Read3 => {
-                let s = disk::file_content_stream_2(file, query.disk_io_tune.clone()).map_ok(|x| x.into_buf());
-                Box::pin(s) as _
-            }
-        };
-        Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::wrap_stream(s))?)
+        // TODO wrap file operation to return a better error.
+        let pp = base.join(p2);
+        info!("Try to open {pp:?}");
+        let file = tokio::fs::OpenOptions::new().read(true).open(pp).await?;
+        let s = disk::file_content_stream(file, query.disk_io_tune.clone()).map_ok(|x| x.into_buf());
+        Ok(response(StatusCode::OK).body(Body::wrap_stream(s))?)
     }
 
     pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {

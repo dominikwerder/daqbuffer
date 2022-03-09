@@ -17,6 +17,7 @@ pub mod merge;
 pub mod paths;
 pub mod raw;
 pub mod read3;
+pub mod read4;
 pub mod streamlog;
 
 use crate::dtflags::{ARRAY, BIG_ENDIAN, COMPRESSION, SHAPE};
@@ -26,9 +27,8 @@ use futures_core::Stream;
 use futures_util::future::FusedFuture;
 use futures_util::{FutureExt, StreamExt, TryFutureExt};
 use netpod::histo::HistoLog2;
-use netpod::log::*;
+use netpod::{log::*, ReadSys};
 use netpod::{ChannelConfig, DiskIoTune, Node, Shape};
-use read3::ReadResult;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::io::SeekFrom;
@@ -40,6 +40,7 @@ use std::time::{Duration, Instant};
 use std::{fmt, mem};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncRead, AsyncSeekExt, ReadBuf};
+use tokio::sync::mpsc;
 
 // TODO transform this into a self-test or remove.
 pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: Node) -> Result<netpod::BodyStream, Error> {
@@ -258,39 +259,31 @@ impl Stream for FileContentStream {
     }
 }
 
-pub fn file_content_stream(
-    file: File,
-    disk_io_tune: DiskIoTune,
-) -> impl Stream<Item = Result<FileChunkRead, Error>> + Send {
-    warn!("file_content_stream  disk_io_tune {disk_io_tune:?}");
-    FileContentStream::new(file, disk_io_tune)
-}
-
-enum FCS2 {
+enum FCS3 {
     GetPosition,
     ReadingSimple,
     Reading,
 }
 
 enum ReadStep {
-    Fut(Pin<Box<dyn Future<Output = Result<ReadResult, Error>> + Send>>),
-    Res(Result<ReadResult, Error>),
+    Fut(Pin<Box<dyn Future<Output = Result<read3::ReadResult, Error>> + Send>>),
+    Res(Result<read3::ReadResult, Error>),
 }
 
-pub struct FileContentStream2 {
-    fcs2: FCS2,
+pub struct FileContentStream3 {
+    fcs: FCS3,
     file: Pin<Box<File>>,
     file_pos: u64,
     eof: bool,
     disk_io_tune: DiskIoTune,
     get_position_fut: Pin<Box<dyn Future<Output = Result<u64, Error>> + Send>>,
-    read_fut: Pin<Box<dyn Future<Output = Result<ReadResult, Error>> + Send>>,
+    read_fut: Pin<Box<dyn Future<Output = Result<read3::ReadResult, Error>> + Send>>,
     reads: VecDeque<ReadStep>,
     done: bool,
     complete: bool,
 }
 
-impl FileContentStream2 {
+impl FileContentStream3 {
     pub fn new(file: File, disk_io_tune: DiskIoTune) -> Self {
         let mut file = Box::pin(file);
         let ffr = unsafe {
@@ -301,7 +294,7 @@ impl FileContentStream2 {
             .seek(SeekFrom::Current(0))
             .map_err(|_| Error::with_msg_no_trace(format!("Seek error")));
         Self {
-            fcs2: FCS2::GetPosition,
+            fcs: FCS3::GetPosition,
             file,
             file_pos: 0,
             eof: false,
@@ -317,7 +310,7 @@ impl FileContentStream2 {
     }
 }
 
-impl Stream for FileContentStream2 {
+impl Stream for FileContentStream3 {
     type Item = Result<FileChunkRead, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
@@ -329,8 +322,8 @@ impl Stream for FileContentStream2 {
                 self.complete = true;
                 Ready(None)
             } else {
-                match self.fcs2 {
-                    FCS2::GetPosition => match self.get_position_fut.poll_unpin(cx) {
+                match self.fcs {
+                    FCS3::GetPosition => match self.get_position_fut.poll_unpin(cx) {
                         Ready(Ok(k)) => {
                             info!("current file pos: {k}");
                             self.file_pos = k;
@@ -339,9 +332,9 @@ impl Stream for FileContentStream2 {
                                 let count = self.disk_io_tune.read_buffer_len as u64;
                                 self.read_fut = Box::pin(read3::Read3::get().read(fd, self.file_pos, count));
                                 self.file_pos += count;
-                                self.fcs2 = FCS2::ReadingSimple;
+                                self.fcs = FCS3::ReadingSimple;
                             } else {
-                                self.fcs2 = FCS2::Reading;
+                                self.fcs = FCS3::Reading;
                             }
                             continue;
                         }
@@ -351,7 +344,7 @@ impl Stream for FileContentStream2 {
                         }
                         Pending => Pending,
                     },
-                    FCS2::ReadingSimple => match self.read_fut.poll_unpin(cx) {
+                    FCS3::ReadingSimple => match self.read_fut.poll_unpin(cx) {
                         Ready(Ok(res)) => {
                             if res.eof {
                                 let item = FileChunkRead {
@@ -378,7 +371,7 @@ impl Stream for FileContentStream2 {
                         }
                         Pending => Pending,
                     },
-                    FCS2::Reading => {
+                    FCS3::Reading => {
                         while !self.eof && self.reads.len() < self.disk_io_tune.read_queue_len {
                             let fd = self.file.as_raw_fd();
                             let pos = self.file_pos;
@@ -448,12 +441,146 @@ impl Stream for FileContentStream2 {
     }
 }
 
-pub fn file_content_stream_2(
+enum FCS4 {
+    Init,
+    Setup,
+    Reading,
+}
+
+pub struct FileContentStream4 {
+    fcs: FCS4,
+    file: Pin<Box<File>>,
+    disk_io_tune: DiskIoTune,
+    setup_fut:
+        Option<Pin<Box<dyn Future<Output = Result<mpsc::Receiver<Result<read4::ReadResult, Error>>, Error>> + Send>>>,
+    inp: Option<mpsc::Receiver<Result<read4::ReadResult, Error>>>,
+    recv_fut: Pin<Box<dyn Future<Output = Option<Result<read4::ReadResult, Error>>> + Send>>,
+    done: bool,
+    complete: bool,
+}
+
+impl FileContentStream4 {
+    pub fn new(file: File, disk_io_tune: DiskIoTune) -> Self {
+        let file = Box::pin(file);
+        Self {
+            fcs: FCS4::Init,
+            file,
+            disk_io_tune,
+            setup_fut: None,
+            inp: None,
+            recv_fut: Box::pin(futures_util::future::ready(Some(Err(Error::with_msg_no_trace(
+                format!("dummy"),
+            ))))),
+            done: false,
+            complete: false,
+        }
+    }
+}
+
+impl Stream for FileContentStream4 {
+    type Item = Result<FileChunkRead, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        loop {
+            break if self.complete {
+                panic!("poll_next on complete")
+            } else if self.done {
+                self.complete = true;
+                Ready(None)
+            } else {
+                match self.fcs {
+                    FCS4::Init => {
+                        let read4 = read4::Read4::get();
+                        let fd = self.file.as_raw_fd();
+                        let buflen = self.disk_io_tune.read_buffer_len as u64;
+                        let fut = read4.read(fd, buflen, self.disk_io_tune.read_queue_len);
+                        self.setup_fut = Some(Box::pin(fut) as _);
+                        self.fcs = FCS4::Setup;
+                        continue;
+                    }
+                    FCS4::Setup => match self.setup_fut.as_mut().unwrap().poll_unpin(cx) {
+                        Ready(k) => match k {
+                            Ok(k) => {
+                                self.setup_fut = None;
+                                self.fcs = FCS4::Reading;
+                                self.inp = Some(k);
+                                // TODO
+                                let rm = self.inp.as_mut().unwrap();
+                                let rm = unsafe {
+                                    std::mem::transmute::<
+                                        &mut mpsc::Receiver<Result<read4::ReadResult, Error>>,
+                                        &'static mut mpsc::Receiver<Result<read4::ReadResult, Error>>,
+                                    >(rm)
+                                };
+                                self.recv_fut = Box::pin(rm.recv()) as _;
+                                continue;
+                            }
+                            Err(e) => {
+                                self.done = true;
+                                let e = Error::with_msg_no_trace(format!("init failed {e:?}"));
+                                Ready(Some(Err(e)))
+                            }
+                        },
+                        Pending => Pending,
+                    },
+                    FCS4::Reading => match self.recv_fut.poll_unpin(cx) {
+                        Ready(k) => match k {
+                            Some(k) => match k {
+                                Ok(k) => {
+                                    // TODO
+                                    let rm = self.inp.as_mut().unwrap();
+                                    let rm = unsafe {
+                                        std::mem::transmute::<
+                                            &mut mpsc::Receiver<Result<read4::ReadResult, Error>>,
+                                            &'static mut mpsc::Receiver<Result<read4::ReadResult, Error>>,
+                                        >(rm)
+                                    };
+                                    self.recv_fut = Box::pin(rm.recv()) as _;
+                                    let item = FileChunkRead {
+                                        buf: k.buf,
+                                        duration: Duration::from_millis(0),
+                                    };
+                                    Ready(Some(Ok(item)))
+                                }
+                                Err(e) => {
+                                    self.done = true;
+                                    let e = Error::with_msg_no_trace(format!("init failed {e:?}"));
+                                    Ready(Some(Err(e)))
+                                }
+                            },
+                            None => {
+                                self.done = true;
+                                continue;
+                            }
+                        },
+                        Pending => Pending,
+                    },
+                }
+            };
+        }
+    }
+}
+
+pub fn file_content_stream(
     file: File,
     disk_io_tune: DiskIoTune,
-) -> impl Stream<Item = Result<FileChunkRead, Error>> + Send {
-    warn!("file_content_stream_2  disk_io_tune {disk_io_tune:?}");
-    FileContentStream2::new(file, disk_io_tune)
+) -> Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>> {
+    warn!("file_content_stream  disk_io_tune {disk_io_tune:?}");
+    match &disk_io_tune.read_sys {
+        ReadSys::TokioAsyncRead => {
+            let s = FileContentStream::new(file, disk_io_tune);
+            Box::pin(s) as Pin<Box<dyn Stream<Item = _> + Send>>
+        }
+        ReadSys::Read3 => {
+            let s = FileContentStream3::new(file, disk_io_tune);
+            Box::pin(s) as _
+        }
+        ReadSys::Read4 => {
+            let s = FileContentStream4::new(file, disk_io_tune);
+            Box::pin(s) as _
+        }
+    }
 }
 
 pub struct NeedMinBuffer {

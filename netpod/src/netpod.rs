@@ -1336,6 +1336,7 @@ impl Default for FileIoBufferSize {
 pub enum ReadSys {
     TokioAsyncRead,
     Read3,
+    Read4,
 }
 
 impl ReadSys {
@@ -1350,6 +1351,8 @@ impl From<&str> for ReadSys {
             Self::TokioAsyncRead
         } else if k == "Read3" {
             Self::Read3
+        } else if k == "Read4" {
+            Self::Read4
         } else {
             Self::default()
         }
