@@ -21,6 +21,11 @@ impl Buffer {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.rp = 0;
+        self.wp = 0;
+    }
+
     pub fn len(&self) -> usize {
         self.wp - self.rp
     }
@@ -86,7 +91,7 @@ impl Buffer {
             self.rp = 0;
             self.wp = ll;
         } else if self.wp == self.buf.len() {
-            eprintln!("ERROR no more space in buffer");
+            //eprintln!("ERROR no more space in buffer");
         }
     }
 }
@@ -193,12 +198,21 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin) -> Result<(), Error> {
     let mut buf = Buffer::new();
     loop {
         // Get some more data.
-        let b = buf.writable();
+        let mut b = buf.writable();
         if false {
             write!(&mut fout, "[APPEND-WRITABLE]  {} writable bytes\n", b.len())?;
         }
-        if b.len() < 1 {
-            eprintln!("ERROR attempt to read with zero length buffer");
+        if b.len() == 0 {
+            write!(&mut fout, "[DISCARD]  {} discarded bytes\n", b.len())?;
+            buf.reset();
+            b = buf.writable();
+        }
+        let b = b;
+        if b.len() == 0 {
+            let msg = format!("[ERROR DISCARD]  still no space  wp {}  rp {}\n", buf.wp, buf.rp);
+            write!(&mut fout, "{}", msg)?;
+            let e = Error::with_msg_no_trace(msg);
+            return Err(e);
         }
         let n1 = stdin.read(b)?;
         buf.inc_wp(n1);
@@ -232,6 +246,12 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin) -> Result<(), Error> {
                     bytes_written += j.len() as u64 + 1;
                 }
                 buf.advance(n2);
+                if buf.len() > 256 {
+                    write!(&mut fout, "[TRUNCATED LINE FOLLOWS]\n")?;
+                    fout.write_all(&buf.readable()[..256])?;
+                    fout.write_all(b"\n")?;
+                    buf.reset();
+                }
             }
             Err(e) => {
                 eprintln!("ERROR parse fail: {e}");

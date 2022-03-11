@@ -130,23 +130,6 @@ impl Read4 {
             }
             return;
         }
-        if false {
-            let ec = unsafe { libc::madvise(fd, 0, libc::SEEK_CUR) };
-            if ec == -1 {
-                let errno = unsafe { *libc::__errno_location() };
-                let msg = format!("seek error  wid {wid}  fd {fd}  errno {errno}");
-                error!("{}", msg);
-                let e = Error::with_msg_no_trace(msg);
-                match rt.results.blocking_send(Err(e)) {
-                    Ok(_) => {}
-                    Err(_) => {
-                        self.can_not_publish.fetch_add(1, Ordering::AcqRel);
-                        error!("Can not publish error");
-                    }
-                }
-                return;
-            }
-        }
         let mut rpos = ec as u64;
         let mut apos = rpos / rt.buflen * rt.buflen;
         let mut prc = 0;

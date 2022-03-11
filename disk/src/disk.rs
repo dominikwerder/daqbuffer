@@ -39,7 +39,7 @@ use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use std::{fmt, mem};
 use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncRead, AsyncSeekExt, ReadBuf};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, ReadBuf};
 use tokio::sync::mpsc;
 
 // TODO transform this into a self-test or remove.
@@ -253,6 +253,89 @@ impl Stream for FileContentStream {
                         Ready(Some(Err(e.into())))
                     }
                     Pending => Pending,
+                }
+            };
+        }
+    }
+}
+
+enum FCS2 {
+    Idle,
+    Reading(
+        (
+            Box<BytesMut>,
+            Pin<Box<dyn Future<Output = Result<usize, Error>> + Send>>,
+        ),
+    ),
+}
+
+pub struct FileContentStream2 {
+    fcs: FCS2,
+    file: Pin<Box<File>>,
+    disk_io_tune: DiskIoTune,
+    done: bool,
+    complete: bool,
+}
+
+impl FileContentStream2 {
+    pub fn new(file: File, disk_io_tune: DiskIoTune) -> Self {
+        let file = Box::pin(file);
+        Self {
+            fcs: FCS2::Idle,
+            file,
+            disk_io_tune,
+            done: false,
+            complete: false,
+        }
+    }
+
+    fn make_reading(&mut self) {
+        let mut buf = Box::new(BytesMut::with_capacity(self.disk_io_tune.read_buffer_len));
+        let bufref = unsafe { &mut *((&mut buf as &mut BytesMut) as *mut BytesMut) };
+        let fileref = unsafe { &mut *((&mut self.file) as *mut Pin<Box<File>>) };
+        let fut = AsyncReadExt::read_buf(fileref, bufref).map_err(|e| e.into());
+        self.fcs = FCS2::Reading((buf, Box::pin(fut)));
+    }
+}
+
+impl Stream for FileContentStream2 {
+    type Item = Result<FileChunkRead, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        loop {
+            break if self.complete {
+                panic!("poll_next on complete")
+            } else if self.done {
+                self.complete = true;
+                Ready(None)
+            } else {
+                match self.fcs {
+                    FCS2::Idle => {
+                        self.make_reading();
+                        continue;
+                    }
+                    FCS2::Reading((ref mut buf, ref mut fut)) => match fut.poll_unpin(cx) {
+                        Ready(Ok(n)) => {
+                            let mut buf2 = BytesMut::new();
+                            std::mem::swap(buf as &mut BytesMut, &mut buf2);
+                            let item = FileChunkRead {
+                                buf: buf2,
+                                duration: Duration::from_millis(0),
+                            };
+                            if n == 0 {
+                                self.done = true;
+                            } else {
+                                self.make_reading();
+                            }
+                            Ready(Some(Ok(item)))
+                        }
+                        Ready(Err(e)) => {
+                            self.done = true;
+                            Ready(Some(Err(e.into())))
+                        }
+                        Pending => Pending,
+                    },
                 }
             };
         }
@@ -566,11 +649,15 @@ pub fn file_content_stream(
     file: File,
     disk_io_tune: DiskIoTune,
 ) -> Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>> {
-    warn!("file_content_stream  disk_io_tune {disk_io_tune:?}");
+    debug!("file_content_stream  disk_io_tune {disk_io_tune:?}");
     match &disk_io_tune.read_sys {
         ReadSys::TokioAsyncRead => {
             let s = FileContentStream::new(file, disk_io_tune);
             Box::pin(s) as Pin<Box<dyn Stream<Item = _> + Send>>
+        }
+        ReadSys::Read2 => {
+            let s = FileContentStream2::new(file, disk_io_tune);
+            Box::pin(s) as _
         }
         ReadSys::Read3 => {
             let s = FileContentStream3::new(file, disk_io_tune);

@@ -101,13 +101,8 @@ pub fn tracing_init() {
                     "archapp::archeng::backreadbuf=info",
                     "archapp::archeng::pipe=debug",
                     "archapp::storagemerge=info",
-                    "streams::rangefilter=info",
-                    "items::eventvalues=info",
-                    "items::xbinnedscalarevents=info",
-                    "disk=debug",
-                    "nodenet::conn=info",
-                    "daqbuffer::test=info",
-                    "dq=info",
+                    "[log_span_d]=debug",
+                    "[log_span_t]=trace",
                 ]
                 .join(","),
             ))

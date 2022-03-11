@@ -1335,6 +1335,7 @@ impl Default for FileIoBufferSize {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ReadSys {
     TokioAsyncRead,
+    Read2,
     Read3,
     Read4,
 }
@@ -1349,6 +1350,8 @@ impl From<&str> for ReadSys {
     fn from(k: &str) -> Self {
         if k == "TokioAsyncRead" {
             Self::TokioAsyncRead
+        } else if k == "Read2" {
+            Self::Read2
         } else if k == "Read3" {
             Self::Read3
         } else if k == "Read4" {

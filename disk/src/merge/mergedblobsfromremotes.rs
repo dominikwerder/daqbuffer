@@ -25,7 +25,7 @@ pub struct MergedBlobsFromRemotes {
 
 impl MergedBlobsFromRemotes {
     pub fn new(evq: RawEventsQuery, perf_opts: PerfOpts, cluster: Cluster) -> Self {
-        info!("MergedBlobsFromRemotes  evq {:?}", evq);
+        debug!("MergedBlobsFromRemotes  evq {:?}", evq);
         let mut tcp_establish_futs = vec![];
         for node in &cluster.nodes {
             let f = x_processed_event_blobs_stream_from_node(evq.clone(), perf_opts.clone(), node.clone());

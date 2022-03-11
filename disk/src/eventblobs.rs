@@ -109,7 +109,7 @@ impl Stream for EventChunkerMultifile {
                                             self.max_ts = g;
                                             const EMIT_COUNT_MAX: usize = 10;
                                             if self.emit_count < EMIT_COUNT_MAX {
-                                                info!(
+                                                debug!(
                                                     "EventChunkerMultifile  emit {}/{}  events {}",
                                                     self.emit_count,
                                                     EMIT_COUNT_MAX,

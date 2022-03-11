@@ -313,7 +313,7 @@ async fn get_timebins(channel_config: &ChannelConfig, node: Node) -> Result<Vec<
             Ok(timebins)
         }
         Err(e) => {
-            info!(
+            debug!(
                 "get_timebins  no timebins for {:?}  {:?}  p0 {:?}",
                 channel_config, e, p0
             );

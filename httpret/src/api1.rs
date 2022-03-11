@@ -11,7 +11,7 @@ use items::{RangeCompletableItem, Sitemty, StreamItem};
 use itertools::Itertools;
 use netpod::query::RawEventsQuery;
 use netpod::timeunits::SEC;
-use netpod::{log::*, DiskIoTune, ACCEPT_ALL};
+use netpod::{log::*, DiskIoTune, ReadSys, ACCEPT_ALL};
 use netpod::{ByteSize, Channel, FileIoBufferSize, NanoRange, NodeConfigCached, PerfOpts, Shape, APP_OCTET};
 use netpod::{ChannelSearchQuery, ChannelSearchResult, ProxyConfig, APP_JSON};
 use parse::channelconfig::{
@@ -23,6 +23,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+use tracing_futures::Instrument;
 use url::Url;
 
 pub trait BackendAware {
@@ -485,6 +486,10 @@ pub struct Api1Query {
     events_max: u64,
     #[serde(default)]
     io_queue_len: u64,
+    #[serde(default)]
+    log_level: String,
+    #[serde(default)]
+    read_sys: String,
 }
 
 impl Api1Query {
@@ -496,6 +501,8 @@ impl Api1Query {
         if self.io_queue_len != 0 {
             k.read_queue_len = self.io_queue_len as usize;
         }
+        let read_sys: ReadSys = self.read_sys.as_str().into();
+        k.read_sys = read_sys;
         k
     }
 }
@@ -576,7 +583,7 @@ impl DataApiPython3DataStream {
         for i1 in 0..b.tss.len() {
             const EVIMAX: usize = 6;
             if *count_events < EVIMAX {
-                info!(
+                debug!(
                     "ev info {}/{} decomps len {:?}  BE {:?}  scalar-type {:?}  shape {:?}  comps {:?}",
                     *count_events + 1,
                     EVIMAX,
@@ -611,7 +618,7 @@ impl DataApiPython3DataStream {
                     compression,
                 };
                 let h = serde_json::to_string(&head)?;
-                info!("sending channel header {}", h);
+                debug!("sending channel header {}", h);
                 let l1 = 1 + h.as_bytes().len() as u32;
                 d.put_u32(l1);
                 d.put_u8(0);
@@ -722,7 +729,7 @@ impl Stream for DataApiPython3DataStream {
                                 MatchingConfigEntry::Entry(entry) => entry.clone(),
                             };
                             let channel = self.channels[self.chan_ix - 1].clone();
-                            info!("found channel_config for {}: {:?}", channel.name, entry);
+                            debug!("found channel_config for {}: {:?}", channel.name, entry);
                             let evq = RawEventsQuery {
                                 channel,
                                 range: self.range.clone(),
@@ -856,11 +863,6 @@ impl Api1EventsBinaryHandler {
     }
 
     pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-        info!(
-            "Api1EventsBinaryHandler::handle  uri: {:?}  headers: {:?}",
-            req.uri(),
-            req.headers()
-        );
         if req.method() != Method::POST {
             return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?);
         }
@@ -872,18 +874,34 @@ impl Api1EventsBinaryHandler {
             .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?
             .to_owned();
         let body_data = hyper::body::to_bytes(body).await?;
-        info!(
-            "Api1EventsBinaryHandler  query json: {}",
-            String::from_utf8_lossy(&body_data)
-        );
         let qu: Api1Query = if let Ok(qu) = serde_json::from_slice(&body_data) {
             qu
         } else {
             error!("got body_data: {:?}", String::from_utf8(body_data[..].to_vec()));
             return Err(Error::with_msg_no_trace("can not parse query"));
         };
+        let span = if qu.log_level == "trace" {
+            tracing::span!(tracing::Level::TRACE, "log_span_t")
+        } else if qu.log_level == "debug" {
+            tracing::span!(tracing::Level::DEBUG, "log_span_d")
+        } else {
+            tracing::Span::none()
+        };
+        self.handle_for_query(qu, accept, span.clone(), node_config)
+            .instrument(span)
+            .await
+    }
+
+    pub async fn handle_for_query(
+        &self,
+        qu: Api1Query,
+        accept: String,
+        span: tracing::Span,
+        node_config: &NodeConfigCached,
+    ) -> Result<Response<Body>, Error> {
+        // TODO this should go to usage statistics:
         info!(
-            "Api1Query  {:?}  {}  {:?}",
+            "Handle Api1Query  {:?}  {}  {:?}",
             qu.range,
             qu.channels.len(),
             qu.channels.first()
@@ -892,7 +910,7 @@ impl Api1EventsBinaryHandler {
         let end_date = chrono::DateTime::parse_from_rfc3339(&qu.range.end_date);
         let beg_date = beg_date?;
         let end_date = end_date?;
-        info!("Api1Query  beg_date {:?}  end_date {:?}", beg_date, end_date);
+        trace!("Api1Query  beg_date {:?}  end_date {:?}", beg_date, end_date);
         //let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         //let query = PlainEventsBinaryQuery::from_url(&url)?;
         if accept != APP_OCTET && accept != ACCEPT_ALL {
@@ -925,8 +943,10 @@ impl Api1EventsBinaryHandler {
             status_id.clone(),
             node_config.clone(),
         );
+        let s = s.instrument(span);
+        let body = BodyStream::wrapped(s, format!("Api1EventsBinaryHandler"));
         let ret = response(StatusCode::OK).header("x-daqbuffer-request-id", status_id);
-        let ret = ret.body(BodyStream::wrapped(s, format!("Api1EventsBinaryHandler")))?;
+        let ret = ret.body(body)?;
         Ok(ret)
     }
 }
