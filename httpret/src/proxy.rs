@@ -454,7 +454,52 @@ pub async fn proxy_api1_single_backend_query(
     _req: Request<Body>,
     _proxy_config: &ProxyConfig,
 ) -> Result<Response<Body>, Error> {
-    panic!()
+    // TODO
+    /*
+    if let Some(back) = proxy_config.backends_event_download.first() {
+        let is_tls = req
+            .uri()
+            .scheme()
+            .ok_or_else(|| Error::with_msg_no_trace("no uri scheme"))?
+            == &http::uri::Scheme::HTTPS;
+        let bld = Request::builder().method(req.method());
+        let bld = bld.uri(req.uri());
+        // TODO to proxy events over multiple backends, we also have to concat results from different backends.
+        // TODO Carry on needed headers (but should not simply append all)
+        for (k, v) in req.headers() {
+            bld.header(k, v);
+        }
+        {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            let mut hasher = DefaultHasher::new();
+            proxy_config.name.hash(&mut hasher);
+            let mid = hasher.finish();
+            bld.header(format!("proxy-mark-{mid:0x}"), proxy_config.name);
+        }
+        let body_data = hyper::body::to_bytes(req.into_body()).await?;
+        let reqout = bld.body(Body::from(body_data))?;
+        let resfut = {
+            use hyper::Client;
+            if is_tls {
+                let https = HttpsConnector::new();
+                let client = Client::builder().build::<_, Body>(https);
+                let req = client.request(reqout);
+                let req = Box::pin(req) as Pin<Box<dyn Future<Output = Result<Response<Body>, hyper::Error>> + Send>>;
+                req
+            } else {
+                let client = Client::new();
+                let req = client.request(reqout);
+                let req = Box::pin(req) as _;
+                req
+            }
+        };
+        resfut.timeout();
+    } else {
+        Err(Error::with_msg_no_trace(format!("no api1 event backend configured")))
+    }
+    */
+    todo!()
 }
 
 pub async fn proxy_single_backend_query<QT>(

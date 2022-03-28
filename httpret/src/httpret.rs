@@ -205,8 +205,8 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         if req.method() == Method::GET {
             let ret = serde_json::json!({
                 "data_api_version": {
-                    "major": 4,
-                    "minor": 0,
+                    "major": 4u32,
+                    "minor": 0u32,
                 },
             });
             Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
@@ -276,12 +276,6 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
     } else if path == "/api/4/update_search_cache" {
         if req.method() == Method::GET {
             Ok(update_search_cache(req, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
-        }
-    } else if path == "/api/4/ca_connect_1" {
-        if req.method() == Method::GET {
-            Ok(ca_connect_1(req, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -920,22 +914,6 @@ pub fn status_board() -> Result<RwLockWriteGuard<'static, StatusBoard>, Error> {
         Ok(x) => Ok(x),
         Err(e) => Err(Error::with_msg(format!("{e:?}"))),
     }
-}
-
-pub async fn ca_connect_1(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    let url = Url::parse(&format!("dummy:{}", req.uri()))?;
-    let pairs = get_url_query_pairs(&url);
-    let res = netfetch::ca::ca_connect_1(pairs, node_config).await?;
-    let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
-        .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {
-            Ok(mut item) => {
-                item.push('\n');
-                Ok(item)
-            }
-            Err(e) => Err(e),
-        })))?;
-    Ok(ret)
 }
 
 pub async fn archapp_scan_files(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {

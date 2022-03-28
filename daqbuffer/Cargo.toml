@@ -30,4 +30,3 @@ netpod = { path = "../netpod" }
 #httpret = { path = "../httpret" }
 disk = { path = "../disk" }
 daqbufp2 = { path = "../daqbufp2" }
-netfetch = { path = "../netfetch" }

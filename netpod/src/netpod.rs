@@ -1477,10 +1477,16 @@ pub struct ProxyConfig {
     pub name: String,
     pub listen: String,
     pub port: u16,
+    #[serde(default)]
     pub backends_status: Vec<ProxyBackend>,
+    #[serde(default)]
     pub backends: Vec<ProxyBackend>,
+    #[serde(default)]
     pub backends_pulse_map: Vec<ProxyBackend>,
+    #[serde(default)]
     pub backends_search: Vec<ProxyBackend>,
+    #[serde(default)]
+    pub backends_event_download: Vec<ProxyBackend>,
     pub api_0_search_hosts: Option<Vec<String>>,
     pub api_0_search_backends: Option<Vec<String>>,
 }

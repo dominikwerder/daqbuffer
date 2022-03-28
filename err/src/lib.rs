@@ -208,6 +208,16 @@ where
     }
 }
 
+pub trait ToErr {
+    fn to_err(self) -> Error;
+}
+
+impl<T: ToErr> From<T> for Error {
+    fn from(k: T) -> Self {
+        k.to_err()
+    }
+}
+
 impl From<PublicError> for Error {
     fn from(k: PublicError) -> Self {
         Self {
