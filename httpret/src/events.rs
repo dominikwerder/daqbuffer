@@ -68,9 +68,10 @@ async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached)
 }
 
 async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    debug!("httpret  plain_events_json  req: {:?}", req);
+    info!("httpret  plain_events_json  req: {:?}", req);
     let (head, _body) = req.into_parts();
     let query = PlainEventsJsonQuery::from_request_head(&head)?;
+
     let op = disk::channelexec::PlainEventsJson::new(
         query.channel().clone(),
         query.range().clone(),

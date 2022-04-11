@@ -478,6 +478,84 @@ struct LocalMap {
     channels: Vec<String>,
 }
 
+pub trait ErrConv<T> {
+    fn err_conv(self) -> Result<T, err::Error>;
+}
+
+impl<T> ErrConv<T> for Result<T, scylla::transport::errors::NewSessionError> {
+    fn err_conv(self) -> Result<T, err::Error> {
+        self.map_err(|e| err::Error::with_msg_no_trace(format!("{e:?}")))
+    }
+}
+
+impl<T> ErrConv<T> for Result<T, scylla::transport::errors::QueryError> {
+    fn err_conv(self) -> Result<T, err::Error> {
+        self.map_err(|e| err::Error::with_msg_no_trace(format!("{e:?}")))
+    }
+}
+
+impl<T> ErrConv<T> for Result<T, scylla::transport::query_result::RowsExpectedError> {
+    fn err_conv(self) -> Result<T, err::Error> {
+        self.map_err(|e| err::Error::with_msg_no_trace(format!("{e:?}")))
+    }
+}
+
+pub struct MapPulseScyllaHandler {}
+
+impl MapPulseScyllaHandler {
+    pub fn prefix() -> &'static str {
+        "/api/4/scylla/map/pulse/"
+    }
+
+    pub fn handler(req: &Request<Body>) -> Option<Self> {
+        if req.uri().path().starts_with(Self::prefix()) {
+            Some(Self {})
+        } else {
+            None
+        }
+    }
+
+    pub async fn handle(&self, req: Request<Body>, _node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+        if req.method() != Method::GET {
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+        }
+        let urls = format!("dummy://{}", req.uri());
+        let url = url::Url::parse(&urls)?;
+        let query = MapPulseQuery::from_url(&url)?;
+        let pulse = query.pulse;
+        let scy = scylla::SessionBuilder::new()
+            .known_node("sf-daqbuf-34:19042")
+            .default_consistency(scylla::batch::Consistency::One)
+            .use_keyspace("ks1", false)
+            .build()
+            .await
+            .err_conv()?;
+        let pulse_a = (pulse >> 14) as i64;
+        let pulse_b = (pulse & 0x3fff) as i32;
+        let res = scy
+            .query(
+                "select ts_a, ts_b from pulse where pulse_a = ? and pulse_b = ?",
+                (pulse_a, pulse_b),
+            )
+            .await
+            .err_conv()?;
+        let rows = res.rows().err_conv()?;
+        let mut tss = vec![];
+        let mut channels = vec![];
+        use scylla::frame::response::result::CqlValue;
+        let ts_a_def = CqlValue::BigInt(0);
+        let ts_b_def = CqlValue::Int(0);
+        for row in rows {
+            let ts_a = row.columns[0].as_ref().unwrap_or(&ts_a_def).as_bigint().unwrap_or(0) as u64;
+            let ts_b = row.columns[1].as_ref().unwrap_or(&ts_b_def).as_int().unwrap_or(0) as u32 as u64;
+            tss.push(ts_a * netpod::timeunits::SEC + ts_b);
+            channels.push("scylla".into());
+        }
+        let ret = LocalMap { pulse, tss, channels };
+        Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
+    }
+}
+
 pub struct MapPulseLocalHttpFunction {}
 
 impl MapPulseLocalHttpFunction {

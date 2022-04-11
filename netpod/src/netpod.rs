@@ -116,6 +116,8 @@ impl ScalarType {
             "int64" => I64,
             "float" => F32,
             "double" => F64,
+            "float32" => F32,
+            "float64" => F64,
             "string" => STRING,
             _ => {
                 return Err(Error::with_msg_no_trace(format!(

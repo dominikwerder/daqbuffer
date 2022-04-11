@@ -33,3 +33,4 @@ archapp_wrap = { path = "../archapp_wrap" }
 nodenet = { path = "../nodenet" }
 commonio = { path = "../commonio" }
 taskrun = { path = "../taskrun" }
+scylla = "0.4"

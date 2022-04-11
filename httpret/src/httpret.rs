@@ -206,7 +206,8 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
             let ret = serde_json::json!({
                 "data_api_version": {
                     "major": 4u32,
-                    "minor": 0u32,
+                    "minor": 1u32,
+                    "patch": 0u32,
                 },
             });
             Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
@@ -304,6 +305,8 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
     } else if let Some(h) = api1::Api1EventsBinaryHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = evinfo::EventInfoScan::handler(&req) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = pulsemap::MapPulseScyllaHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = pulsemap::IndexFullHttpFunction::handler(&req) {
         h.handle(req, &node_config).await

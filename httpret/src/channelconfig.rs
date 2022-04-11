@@ -3,9 +3,11 @@ use crate::{response, ToPublicResponse};
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
 use netpod::log::*;
-use netpod::NodeConfigCached;
-use netpod::{ChannelConfigQuery, FromUrl};
+use netpod::{ChannelConfigQuery, FromUrl, ScalarType, Shape};
+use netpod::{ChannelConfigResponse, NodeConfigCached};
 use netpod::{ACCEPT_ALL, APP_JSON};
+use scylla::frame::response::cql_to_rust::FromRowError as ScyFromRowError;
+use scylla::transport::errors::{NewSessionError as ScyNewSessionError, QueryError as ScyQueryError};
 use url::Url;
 
 pub struct ChannelConfigHandler {}
@@ -43,11 +45,65 @@ impl ChannelConfigHandler {
     }
 }
 
+trait ErrConv<T> {
+    fn err_conv(self) -> Result<T, Error>;
+}
+
+impl<T> ErrConv<T> for Result<T, ScyQueryError> {
+    fn err_conv(self) -> Result<T, Error> {
+        match self {
+            Ok(k) => Ok(k),
+            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
+        }
+    }
+}
+
+impl<T> ErrConv<T> for Result<T, ScyNewSessionError> {
+    fn err_conv(self) -> Result<T, Error> {
+        match self {
+            Ok(k) => Ok(k),
+            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
+        }
+    }
+}
+
+impl<T> ErrConv<T> for Result<T, ScyFromRowError> {
+    fn err_conv(self) -> Result<T, Error> {
+        match self {
+            Ok(k) => Ok(k),
+            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
+        }
+    }
+}
+
 pub async fn channel_config(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    info!("channel_config");
     let url = Url::parse(&format!("dummy:{}", req.uri()))?;
     //let pairs = get_url_query_pairs(&url);
     let q = ChannelConfigQuery::from_url(&url)?;
-    let conf = if let Some(conf) = &node_config.node.channel_archiver {
+    info!("channel_config  for q {q:?}");
+    let conf = if q.channel.backend == "scylla" {
+        // Find the "series" id.
+        let scy = scylla::SessionBuilder::new()
+            .known_node("sf-daqbuf-34:8340")
+            .build()
+            .await
+            .err_conv()?;
+        let cql = "select dtype, series from series_by_channel where facility = ? and channel_name = ?";
+        let res = scy.query(cql, ()).await.err_conv()?;
+        let rows = res.rows_typed_or_empty::<(i32, i32)>();
+        for r in rows {
+            let r = r.err_conv()?;
+            info!("got row  {r:?}");
+        }
+        let res = ChannelConfigResponse {
+            channel: q.channel,
+            scalar_type: ScalarType::F32,
+            byte_order: None,
+            shape: Shape::Scalar,
+        };
+        res
+    } else if let Some(conf) = &node_config.node.channel_archiver {
         archapp_wrap::archapp::archeng::channel_config_from_db(&q, conf, &node_config.node_config.cluster.database)
             .await?
     } else if let Some(conf) = &node_config.node.archiver_appliance {
