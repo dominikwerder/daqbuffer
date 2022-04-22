@@ -494,10 +494,7 @@ pub async fn read_data_1(
         DbrType::DbrTimeDouble => {
             if datafile_header.dbr_count == 1 {
                 trace!("~~~~~~~~~~~~~~~~~~~~~   read  scalar  DbrTimeDouble");
-                let mut evs = ScalarEvents {
-                    tss: vec![],
-                    values: vec![],
-                };
+                let mut evs = ScalarEvents::empty();
                 let n1 = datafile_header.num_samples as usize;
                 //let n2 = datafile_header.dbr_type.byte_len();
                 let n2 = 2 + 2 + 4 + 4 + (4) + 8;

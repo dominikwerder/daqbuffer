@@ -269,8 +269,12 @@ where
             }
             let decomp = ev.decomps[i1].as_ref().unwrap().as_ref();
             let val = self.evs.convert(decomp, be)?;
-            let k =
-                <<EVS as EventValueFromBytes<NTY, END>>::Batch as EventAppendable>::append_event(ret, ev.tss[i1], val);
+            let k = <<EVS as EventValueFromBytes<NTY, END>>::Batch as EventAppendable>::append_event(
+                ret,
+                ev.tss[i1],
+                ev.pulses[i1],
+                val,
+            );
             ret = Some(k);
         }
         Ok(ret)

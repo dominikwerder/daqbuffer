@@ -381,7 +381,7 @@ where
     Self: Sized,
 {
     type Value;
-    fn append_event(ret: Option<Self>, ts: u64, value: Self::Value) -> Self;
+    fn append_event(ret: Option<Self>, ts: u64, pulse: u64, value: Self::Value) -> Self;
 }
 
 pub trait TimeBins: Send + Unpin + WithLen + Appendable + FilterFittingInside {
@@ -479,6 +479,12 @@ pub fn ts_offs_from_abs(tss: &[u64]) -> (u64, Vec<u64>, Vec<u64>) {
         .map(|(&j, k)| (j - ts_anchor_ns - k))
         .collect();
     (ts_anchor_sec, ts_off_ms, ts_off_ns)
+}
+
+pub fn pulse_offs_from_abs(pulse: &[u64]) -> (u64, Vec<u64>) {
+    let pulse_anchor = pulse.first().map_or(0, |k| *k);
+    let pulse_off: Vec<_> = pulse.iter().map(|k| *k - pulse_anchor).collect();
+    (pulse_anchor, pulse_off)
 }
 
 pub trait TimeBinnableTypeAggregator: Send {

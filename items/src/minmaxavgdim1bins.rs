@@ -2,9 +2,9 @@ use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector, ToJsonBytes, ToJsonResult};
 use crate::waveevents::WaveEvents;
 use crate::{
-    ts_offs_from_abs, Appendable, FilterFittingInside, Fits, FitsInside, IsoDateTime, RangeOverlapInfo, ReadPbv,
-    ReadableFromFile, Sitemty, SitemtyFrameType, SubFrId, TimeBinnableType, TimeBinnableTypeAggregator, TimeBins,
-    WithLen,
+    pulse_offs_from_abs, ts_offs_from_abs, Appendable, FilterFittingInside, Fits, FitsInside, IsoDateTime,
+    RangeOverlapInfo, ReadPbv, ReadableFromFile, Sitemty, SitemtyFrameType, SubFrId, TimeBinnableType,
+    TimeBinnableTypeAggregator, TimeBins, WithLen,
 };
 use chrono::{TimeZone, Utc};
 use err::Error;
@@ -451,6 +451,10 @@ pub struct WaveEventsCollectedResult<NTY> {
     ts_off_ms: Vec<u64>,
     #[serde(rename = "tsNs")]
     ts_off_ns: Vec<u64>,
+    #[serde(rename = "pulseAnchor")]
+    pulse_anchor: u64,
+    #[serde(rename = "pulseOff")]
+    pulse_off: Vec<u64>,
     values: Vec<Vec<NTY>>,
     #[serde(skip_serializing_if = "crate::bool_is_false", rename = "finalisedRange")]
     range_complete: bool,
@@ -502,10 +506,13 @@ where
 
     fn result(self) -> Result<Self::Output, Error> {
         let tst = ts_offs_from_abs(&self.vals.tss);
+        let (pulse_anchor, pulse_off) = pulse_offs_from_abs(&self.vals.pulses);
         let ret = Self::Output {
             ts_anchor_sec: tst.0,
             ts_off_ms: tst.1,
             ts_off_ns: tst.2,
+            pulse_anchor,
+            pulse_off,
             values: self.vals.vals,
             range_complete: self.range_complete,
             timed_out: self.timed_out,

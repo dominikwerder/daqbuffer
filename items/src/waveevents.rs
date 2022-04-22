@@ -17,7 +17,16 @@ use tokio::fs::File;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WaveEvents<NTY> {
     pub tss: Vec<u64>,
+    pub pulses: Vec<u64>,
     pub vals: Vec<Vec<NTY>>,
+}
+
+impl<NTY> WaveEvents<NTY> {
+    pub fn push(&mut self, ts: u64, pulse: u64, value: Vec<NTY>) {
+        self.tss.push(ts);
+        self.pulses.push(pulse);
+        self.vals.push(value);
+    }
 }
 
 impl<NTY> WaveEvents<NTY> {
@@ -42,6 +51,7 @@ impl<NTY> WaveEvents<NTY> {
     pub fn empty() -> Self {
         Self {
             tss: vec![],
+            pulses: vec![],
             vals: vec![],
         }
     }
@@ -319,10 +329,9 @@ where
 {
     type Value = Vec<NTY>;
 
-    fn append_event(ret: Option<Self>, ts: u64, value: Self::Value) -> Self {
+    fn append_event(ret: Option<Self>, ts: u64, pulse: u64, value: Self::Value) -> Self {
         let mut ret = if let Some(ret) = ret { ret } else { Self::empty() };
-        ret.tss.push(ts);
-        ret.vals.push(value);
+        ret.push(ts, pulse, value);
         ret
     }
 }
@@ -455,6 +464,7 @@ pub struct WavePlainProc<NTY> {
     _m1: PhantomData<NTY>,
 }
 
+// TODO purpose?
 impl<NTY> EventsNodeProcessor for WavePlainProc<NTY>
 where
     NTY: NumOps,
@@ -472,11 +482,13 @@ where
             let n = if n > 5 { 5 } else { n };
             WaveEvents {
                 tss: inp.tss,
+                pulses: inp.pulses,
                 vals: inp.vals.iter().map(|k| k[..n].to_vec()).collect(),
             }
         } else {
             WaveEvents {
                 tss: inp.tss,
+                pulses: inp.pulses,
                 vals: inp.vals,
             }
         }

@@ -644,23 +644,25 @@ fn events_item_to_framable(ei: EventsItem) -> Result<Box<dyn Framable + Send>, E
     match ei {
         EventsItem::Plain(PlainEvents::Scalar(ScalarPlainEvents::I32(h))) => {
             let range: NanoRange = err::todoval();
-            let (x, y) = h
+            let (tss, pulses, values) = h
                 .tss
                 .into_iter()
+                .zip(h.pulses.into_iter())
                 .zip(h.values.into_iter())
-                .filter_map(|(j, k)| {
-                    if j < range.beg || j >= range.end {
+                .filter_map(|((t, p), v)| {
+                    if t < range.beg || t >= range.end {
                         None
                     } else {
-                        Some((j, k))
+                        Some((t, p, v))
                     }
                 })
-                .fold((vec![], vec![]), |(mut a, mut b), (j, k)| {
+                .fold((vec![], vec![], vec![]), |(mut a, mut b, mut c), (j, k, l)| {
                     a.push(j);
                     b.push(k);
-                    (a, b)
+                    c.push(l);
+                    (a, b, c)
                 });
-            let b = ScalarEvents { tss: x, values: y };
+            let b = ScalarEvents { tss, pulses, values };
             let b = Ok(StreamItem::DataItem(RangeCompletableItem::Data(b)));
             let ret = Box::new(b);
             Ok(ret)

@@ -160,7 +160,12 @@ impl fmt::Debug for Error {
         } else {
             String::new()
         };
-        write!(fmt, "{}", self.msg)?;
+        write!(fmt, "msg: {}", self.msg)?;
+        if let Some(msgs) = self.public_msg() {
+            for msg in msgs {
+                write!(fmt, "\npublic: {}", msg)?;
+            }
+        }
         if !trace_str.is_empty() {
             write!(fmt, "\nTrace:\n{}", trace_str)?;
         }

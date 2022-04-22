@@ -224,6 +224,10 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         }
     } else if let Some(h) = channelconfig::ChannelConfigHandler::handler(&req) {
         h.handle(req, &node_config).await
+    } else if let Some(h) = channelconfig::ScyllaConfigsHisto::handler(&req) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = channelconfig::ScyllaChannelsWithType::handler(&req) {
+        h.handle(req, &node_config).await
     } else if let Some(h) = events::EventsHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if path == "/api/4/binned" {

@@ -4,6 +4,9 @@ version = "0.0.1-a.0"
 authors = ["Dominik Werder <dominik.werder@gmail.com>"]
 edition = "2018"
 
+[lib]
+path = "src/bitshuffle.rs"
+
 [dependencies]
 libc = "0.2.92"
 

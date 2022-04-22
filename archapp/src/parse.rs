@@ -42,10 +42,7 @@ pub struct PbFileReader {
 fn parse_scalar_byte(m: &[u8], year: u32) -> Result<EventsItem, Error> {
     let msg = crate::generated::EPICSEvent::ScalarByte::parse_from_bytes(m)
         .map_err(|_| Error::with_msg(format!("can not parse pb-type {}", "ScalarByte")))?;
-    let mut t = ScalarEvents::<i8> {
-        tss: vec![],
-        values: vec![],
-    };
+    let mut t = ScalarEvents::<i8>::empty();
     let yd = Utc.ymd(year as i32, 1, 1).and_hms(0, 0, 0);
     let ts = yd.timestamp() as u64 * 1000000000 + msg.get_secondsintoyear() as u64 * 1000000000 + msg.get_nano() as u64;
     let v = msg.get_val().first().map_or(0, |k| *k as i8);
@@ -58,10 +55,7 @@ macro_rules! scalar_parse {
     ($m:expr, $year:expr, $pbt:ident, $eit:ident, $evty:ident) => {{
         let msg = crate::generated::EPICSEvent::$pbt::parse_from_bytes($m)
             .map_err(|e| Error::with_msg(format!("can not parse pb-type {}  {:?}", stringify!($pbt), e)))?;
-        let mut t = ScalarEvents::<$evty> {
-            tss: vec![],
-            values: vec![],
-        };
+        let mut t = ScalarEvents::<$evty>::empty();
         let yd = Utc.ymd($year as i32, 1, 1).and_hms(0, 0, 0);
         let ts =
             yd.timestamp() as u64 * 1000000000 + msg.get_secondsintoyear() as u64 * 1000000000 + msg.get_nano() as u64;
@@ -77,10 +71,7 @@ macro_rules! wave_parse {
     ($m:expr, $year:expr, $pbt:ident, $eit:ident, $evty:ident) => {{
         let msg = crate::generated::EPICSEvent::$pbt::parse_from_bytes($m)
             .map_err(|_| Error::with_msg(format!("can not parse pb-type {}", stringify!($pbt))))?;
-        let mut t = WaveEvents::<$evty> {
-            tss: vec![],
-            vals: vec![],
-        };
+        let mut t = WaveEvents::<$evty>::empty();
         let yd = Utc.ymd($year as i32, 1, 1).and_hms(0, 0, 0);
         let ts =
             yd.timestamp() as u64 * 1000000000 + msg.get_secondsintoyear() as u64 * 1000000000 + msg.get_nano() as u64;

@@ -131,6 +131,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
             }),
             archiver_appliance: None,
             channel_archiver: None,
+            access_scylla: false,
         };
         ensemble.nodes.push(node);
     }

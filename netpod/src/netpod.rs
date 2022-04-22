@@ -41,7 +41,7 @@ pub struct BodyStream {
     pub inner: Box<dyn futures_core::Stream<Item = Result<bytes::Bytes, Error>> + Send + Unpin>,
 }
 
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub enum ScalarType {
     U8,
     U16,
@@ -96,8 +96,8 @@ impl ScalarType {
             I16 => "int16",
             I32 => "int32",
             I64 => "int64",
-            F32 => "float",
-            F64 => "double",
+            F32 => "float32",
+            F64 => "float64",
             BOOL => "bool",
             STRING => "string",
         }
@@ -119,6 +119,7 @@ impl ScalarType {
             "float32" => F32,
             "float64" => F64,
             "string" => STRING,
+            "bool" => BOOL,
             _ => {
                 return Err(Error::with_msg_no_trace(format!(
                     "from_bsread_str can not understand bsread {}",
@@ -146,6 +147,13 @@ impl ScalarType {
             }
         };
         Ok(ret)
+    }
+
+    pub fn from_scylla_i32(k: i32) -> Result<Self, Error> {
+        if k < 0 || k > u8::MAX as i32 {
+            return Err(Error::with_public_msg_no_trace(format!("bad scalar type index {k}")));
+        }
+        Self::from_dtype_index(k as u8)
     }
 
     pub fn bytes(&self) -> u8 {
@@ -200,6 +208,10 @@ impl ScalarType {
             ScalarType::STRING => "string",
         }
     }
+
+    pub fn to_scylla_i32(&self) -> i32 {
+        self.index() as i32
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -232,6 +244,8 @@ pub struct Node {
     pub sf_databuffer: Option<SfDatabuffer>,
     pub archiver_appliance: Option<ArchiverAppliance>,
     pub channel_archiver: Option<ChannelArchiver>,
+    #[serde(default)]
+    pub access_scylla: bool,
 }
 
 struct Visit1 {}
@@ -302,6 +316,7 @@ impl Node {
             }),
             archiver_appliance: None,
             channel_archiver: None,
+            access_scylla: false,
         }
     }
 }
@@ -315,6 +330,12 @@ pub struct Database {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ScyllaConfig {
+    pub hosts: Vec<String>,
+    pub keyspace: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Cluster {
     pub backend: String,
     pub nodes: Vec<Node>,
@@ -325,6 +346,7 @@ pub struct Cluster {
     pub is_central_storage: bool,
     #[serde(rename = "fileIoBufferSize", default)]
     pub file_io_buffer_size: FileIoBufferSize,
+    pub scylla: Option<ScyllaConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -563,7 +585,7 @@ pub struct ChannelConfig {
     pub byte_order: ByteOrder,
 }
 
-#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
 pub enum Shape {
     Scalar,
     Wave(u32),
@@ -601,6 +623,7 @@ impl Shape {
         }
     }
 
+    // TODO use simply a list to represent all shapes: empty, or with 1 or 2 entries.
     pub fn from_db_jsval(v: &JsVal) -> Result<Shape, Error> {
         match v {
             JsVal::String(s) => {
@@ -626,6 +649,41 @@ impl Shape {
                 "Shape from_db_jsval can not understand {:?}",
                 v
             ))),
+        }
+    }
+
+    pub fn from_dims_str(s: &str) -> Result<Self, Error> {
+        let a: Vec<u32> = serde_json::from_str(s)?;
+        if a.len() == 0 {
+            Ok(Shape::Scalar)
+        } else if a.len() == 1 {
+            Ok(Shape::Wave(a[0]))
+        } else if a.len() == 2 {
+            Ok(Shape::Image(a[0], a[1]))
+        } else {
+            Err(Error::with_public_msg_no_trace("only scalar, 1d and 2d supported"))
+        }
+    }
+
+    pub fn from_scylla_shape_dims(v: &[i32]) -> Result<Self, Error> {
+        let res = if v.len() == 0 {
+            Shape::Scalar
+        } else if v.len() == 1 {
+            Shape::Wave(v[0] as u32)
+        } else if v.len() == 2 {
+            Shape::Image(v[0] as u32, v[1] as u32)
+        } else {
+            return Err(Error::with_public_msg_no_trace(format!("bad shape_dims {v:?}")));
+        };
+        Ok(res)
+    }
+
+    pub fn to_scylla_vec(&self) -> Vec<i32> {
+        use Shape::*;
+        match self {
+            Scalar => vec![],
+            Wave(n) => vec![*n as i32],
+            Image(n, m) => vec![*n as i32, *m as i32],
         }
     }
 }
@@ -1636,6 +1694,7 @@ pub fn test_cluster() -> Cluster {
             }),
             archiver_appliance: None,
             channel_archiver: None,
+            access_scylla: false,
         })
         .collect();
     Cluster {
@@ -1647,6 +1706,7 @@ pub fn test_cluster() -> Cluster {
             user: "testingdaq".into(),
             pass: "testingdaq".into(),
         },
+        scylla: None,
         run_map_pulse_task: false,
         is_central_storage: false,
         file_io_buffer_size: Default::default(),
@@ -1667,6 +1727,7 @@ pub fn sls_test_cluster() -> Cluster {
             channel_archiver: Some(ChannelArchiver {
                 data_base_paths: vec![test_data_base_path_channel_archiver_sls()],
             }),
+            access_scylla: false,
         })
         .collect();
     Cluster {
@@ -1678,6 +1739,7 @@ pub fn sls_test_cluster() -> Cluster {
             user: "testingdaq".into(),
             pass: "testingdaq".into(),
         },
+        scylla: None,
         run_map_pulse_task: false,
         is_central_storage: false,
         file_io_buffer_size: Default::default(),
@@ -1698,6 +1760,7 @@ pub fn archapp_test_cluster() -> Cluster {
             archiver_appliance: Some(ArchiverAppliance {
                 data_base_paths: vec![test_data_base_path_archiver_appliance()],
             }),
+            access_scylla: false,
         })
         .collect();
     Cluster {
@@ -1709,6 +1772,7 @@ pub fn archapp_test_cluster() -> Cluster {
             user: "testingdaq".into(),
             pass: "testingdaq".into(),
         },
+        scylla: None,
         run_map_pulse_task: false,
         is_central_storage: false,
         file_io_buffer_size: Default::default(),

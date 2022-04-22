@@ -392,13 +392,11 @@ impl TimeBinnableTypeAggregator for StatsEventsAggregator {
 impl EventAppendable for StatsEvents {
     type Value = f32;
 
-    fn append_event(ret: Option<Self>, ts: u64, _value: Self::Value) -> Self {
-        let mut ret = if let Some(ret) = ret { ret } else { Self::empty() };
-        ret.tss.push(ts);
+    fn append_event(ret: Option<Self>, _ts: u64, _pulse: u64, _value: Self::Value) -> Self {
+        let ret = if let Some(ret) = ret { ret } else { Self::empty() };
         // TODO
         error!("TODO statsevents append_event");
         err::todo();
-        ret.pulses.push(42);
         ret
     }
 }

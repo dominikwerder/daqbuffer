@@ -20,6 +20,7 @@ pub fn make_test_node(id: u32) -> Node {
         }),
         archiver_appliance: None,
         channel_archiver: None,
+        access_scylla: false,
     }
 }
 

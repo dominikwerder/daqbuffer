@@ -2,8 +2,8 @@ use crate::minmaxavgbins::MinMaxAvgBins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
-    ts_offs_from_abs, Appendable, ByteEstimate, Clearable, EventAppendable, FilterFittingInside, Fits, FitsInside,
-    PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, TimeBinnableType,
+    pulse_offs_from_abs, ts_offs_from_abs, Appendable, ByteEstimate, Clearable, EventAppendable, FilterFittingInside,
+    Fits, FitsInside, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, TimeBinnableType,
     TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
@@ -15,11 +15,38 @@ use tokio::fs::File;
 
 // TODO in this module reduce clones.
 
-// TODO add pulse.
 #[derive(Serialize, Deserialize)]
 pub struct ScalarEvents<NTY> {
     pub tss: Vec<u64>,
+    pub pulses: Vec<u64>,
     pub values: Vec<NTY>,
+}
+
+impl<NTY> ScalarEvents<NTY> {
+    #[inline(always)]
+    pub fn push(&mut self, ts: u64, pulse: u64, value: NTY) {
+        self.tss.push(ts);
+        self.pulses.push(pulse);
+        self.values.push(value);
+    }
+
+    // TODO should avoid the copies.
+    #[inline(always)]
+    pub fn extend_from_slice(&mut self, src: &Self)
+    where
+        NTY: Clone,
+    {
+        self.tss.extend_from_slice(&src.tss);
+        self.pulses.extend_from_slice(&src.pulses);
+        self.values.extend_from_slice(&src.values);
+    }
+
+    #[inline(always)]
+    pub fn clearx(&mut self) {
+        self.tss.clear();
+        self.pulses.clear();
+        self.values.clear();
+    }
 }
 
 impl<NTY> SitemtyFrameType for ScalarEvents<NTY>
@@ -33,6 +60,7 @@ impl<NTY> ScalarEvents<NTY> {
     pub fn empty() -> Self {
         Self {
             tss: vec![],
+            pulses: vec![],
             values: vec![],
         }
     }
@@ -148,8 +176,7 @@ where
     NTY: NumOps,
 {
     fn push_index(&mut self, src: &Self, ix: usize) {
-        self.tss.push(src.tss[ix]);
-        self.values.push(src.values[ix].clone());
+        self.push(src.tss[ix], src.pulses[ix], src.values[ix].clone());
     }
 }
 
@@ -162,15 +189,13 @@ where
     }
 
     fn append(&mut self, src: &Self) {
-        self.tss.extend_from_slice(&src.tss);
-        self.values.extend_from_slice(&src.values);
+        self.extend_from_slice(src);
     }
 }
 
 impl<NTY> Clearable for ScalarEvents<NTY> {
     fn clear(&mut self) {
-        self.tss.clear();
-        self.values.clear();
+        ScalarEvents::<NTY>::clearx(self);
     }
 }
 
@@ -234,6 +259,10 @@ pub struct EventValuesCollectorOutput<NTY> {
     ts_off_ms: Vec<u64>,
     #[serde(rename = "tsNs")]
     ts_off_ns: Vec<u64>,
+    #[serde(rename = "pulseAnchor")]
+    pulse_anchor: u64,
+    #[serde(rename = "pulseOff")]
+    pulse_off: Vec<u64>,
     values: Vec<NTY>,
     #[serde(skip_serializing_if = "crate::bool_is_false", rename = "finalisedRange")]
     range_complete: bool,
@@ -262,10 +291,13 @@ where
 
     fn result(self) -> Result<Self::Output, Error> {
         let tst = ts_offs_from_abs(&self.vals.tss);
+        let (pulse_anchor, pulse_off) = pulse_offs_from_abs(&self.vals.pulses);
         let ret = Self::Output {
             ts_anchor_sec: tst.0,
             ts_off_ms: tst.1,
             ts_off_ns: tst.2,
+            pulse_anchor,
+            pulse_off,
             values: self.vals.values,
             range_complete: self.range_complete,
             timed_out: self.timed_out,
@@ -501,10 +533,9 @@ where
 {
     type Value = NTY;
 
-    fn append_event(ret: Option<Self>, ts: u64, value: Self::Value) -> Self {
+    fn append_event(ret: Option<Self>, ts: u64, pulse: u64, value: Self::Value) -> Self {
         let mut ret = if let Some(ret) = ret { ret } else { Self::empty() };
-        ret.tss.push(ts);
-        ret.values.push(value);
+        ret.push(ts, pulse, value);
         ret
     }
 }

@@ -1,4 +1,4 @@
-// TODO move these frame-related things out of crate disk. Probably better into `nodenet`
+use crate::scylla::make_scylla_stream;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
 use futures_core::Stream;
@@ -6,48 +6,16 @@ use futures_util::StreamExt;
 use items::frame::{decode_frame, make_term_frame};
 use items::{Framable, StreamItem};
 use netpod::histo::HistoLog2;
+use netpod::log::*;
 use netpod::query::RawEventsQuery;
-use netpod::{log::*, AggKind};
+use netpod::AggKind;
 use netpod::{EventQueryJsonStringFrame, NodeConfigCached, PerfOpts};
-use scylla::frame::response::cql_to_rust::FromRowError as ScyFromRowError;
-use scylla::transport::errors::{NewSessionError as ScyNewSessionError, QueryError as ScyQueryError};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
 use tracing::Instrument;
-
-trait ErrConv<T> {
-    fn err_conv(self) -> Result<T, Error>;
-}
-
-impl<T> ErrConv<T> for Result<T, ScyQueryError> {
-    fn err_conv(self) -> Result<T, Error> {
-        match self {
-            Ok(k) => Ok(k),
-            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
-        }
-    }
-}
-
-impl<T> ErrConv<T> for Result<T, ScyNewSessionError> {
-    fn err_conv(self) -> Result<T, Error> {
-        match self {
-            Ok(k) => Ok(k),
-            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
-        }
-    }
-}
-
-impl<T> ErrConv<T> for Result<T, ScyFromRowError> {
-    fn err_conv(self) -> Result<T, Error> {
-        match self {
-            Ok(k) => Ok(k),
-            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
-        }
-    }
-}
 
 pub async fn events_service(node_config: NodeConfigCached) -> Result<(), Error> {
     let addr = format!("{}:{}", node_config.node.listen, node_config.node.port_raw);
@@ -150,59 +118,38 @@ async fn events_conn_handler_inner_try(
     };
     debug!("---  got query   evq {:?}", evq);
 
-    // TODO make scylla usage configurable in config
-    if evq.channel.backend == "scylla" {
-        // Find the "series" id.
-        let scy = scylla::SessionBuilder::new()
-            .known_node("sf-daqbuf-34:8340")
-            .build()
-            .await
-            .err_conv();
-        let scy = match scy {
-            Ok(k) => k,
-            Err(e) => return Err((e, netout))?,
-        };
-        let cql = "select dtype, series from series_by_channel where facility = ? and channel_name = ?";
-        let res = scy.query(cql, ()).await.err_conv();
-        let res = match res {
-            Ok(k) => k,
-            Err(e) => return Err((e, netout))?,
-        };
-        let rows = res.rows_typed_or_empty::<(i32, i32)>();
-        for r in rows {
-            let r = match r.err_conv() {
-                Ok(k) => k,
-                Err(e) => return Err((e, netout))?,
-            };
-            info!("got row  {r:?}");
-        }
-        error!("TODO scylla fetch continue here");
-        err::todo();
-    }
-
-    let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>> =
-        if let Some(aa) = &node_config.node.channel_archiver {
-            match archapp_wrap::archapp::archeng::pipe::make_event_pipe(&evq, node_config.clone(), aa.clone()).await {
-                Ok(j) => j,
-                Err(e) => return Err((e, netout))?,
-            }
-        } else if let Some(aa) = &node_config.node.archiver_appliance {
-            match archapp_wrap::make_event_pipe(&evq, aa).await {
+    let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>> = if evq.channel.backend == "scylla" {
+        if node_config.node.access_scylla {
+            let scyco = node_config.node_config.cluster.scylla.as_ref().unwrap();
+            match make_scylla_stream(&evq, scyco).await {
                 Ok(j) => j,
                 Err(e) => return Err((e, netout))?,
             }
         } else {
-            match evq.agg_kind {
-                AggKind::EventBlobs => match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
-                    Ok(j) => j,
-                    Err(e) => return Err((e, netout))?,
-                },
-                _ => match disk::raw::conn::make_event_pipe(&evq, node_config).await {
-                    Ok(j) => j,
-                    Err(e) => return Err((e, netout))?,
-                },
-            }
-        };
+            Box::pin(futures_util::stream::empty())
+        }
+    } else if let Some(aa) = &node_config.node.channel_archiver {
+        match archapp_wrap::archapp::archeng::pipe::make_event_pipe(&evq, node_config.clone(), aa.clone()).await {
+            Ok(j) => j,
+            Err(e) => return Err((e, netout))?,
+        }
+    } else if let Some(aa) = &node_config.node.archiver_appliance {
+        match archapp_wrap::make_event_pipe(&evq, aa).await {
+            Ok(j) => j,
+            Err(e) => return Err((e, netout))?,
+        }
+    } else {
+        match evq.agg_kind {
+            AggKind::EventBlobs => match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
+                Ok(j) => j,
+                Err(e) => return Err((e, netout))?,
+            },
+            _ => match disk::raw::conn::make_event_pipe(&evq, node_config).await {
+                Ok(j) => j,
+                Err(e) => return Err((e, netout))?,
+            },
+        }
+    };
     let mut buf_len_histo = HistoLog2::new(5);
     while let Some(item) = p1.next().await {
         let item = item.make_frame();
