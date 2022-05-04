@@ -80,7 +80,7 @@ impl ScalarType {
             13 => STRING,
             //13 => return Err(Error::with_msg(format!("STRING not supported"))),
             6 => return Err(Error::with_msg(format!("CHARACTER not supported"))),
-            _ => return Err(Error::with_msg(format!("unknown dtype code: {}", ix))),
+            _ => return Err(Error::with_msg(format!("unknown dtype code: {:?}", ix))),
         };
         Ok(g)
     }
@@ -122,8 +122,28 @@ impl ScalarType {
             "bool" => BOOL,
             _ => {
                 return Err(Error::with_msg_no_trace(format!(
-                    "from_bsread_str can not understand bsread {}",
+                    "from_bsread_str can not understand bsread {:?}",
                     s
+                )))
+            }
+        };
+        Ok(ret)
+    }
+
+    pub fn from_ca_id(k: u16) -> Result<Self, Error> {
+        use ScalarType::*;
+        let ret = match k {
+            0 => STRING,
+            1 => I16,
+            2 => F32,
+            3 => I16,
+            4 => I8,
+            5 => I32,
+            6 => F64,
+            _ => {
+                return Err(Error::with_msg_no_trace(format!(
+                    "from_ca_id can not understand {:?}",
+                    k
                 )))
             }
         };
@@ -141,7 +161,7 @@ impl ScalarType {
             "F64" => F64,
             _ => {
                 return Err(Error::with_msg_no_trace(format!(
-                    "from_archeng_db_str can not understand {}",
+                    "from_archeng_db_str can not understand {:?}",
                     s
                 )))
             }
@@ -676,6 +696,22 @@ impl Shape {
             return Err(Error::with_public_msg_no_trace(format!("bad shape_dims {v:?}")));
         };
         Ok(res)
+    }
+
+    pub fn from_ca_count(k: u16) -> Result<Self, Error> {
+        if k == 0 {
+            Err(Error::with_public_msg_no_trace(format!(
+                "zero sized ca data count {k:?}"
+            )))
+        } else if k == 1 {
+            Ok(Shape::Scalar)
+        } else if k <= 2048 {
+            Ok(Shape::Wave(k as u32))
+        } else {
+            Err(Error::with_public_msg_no_trace(format!(
+                "too large ca data count {k:?}"
+            )))
+        }
     }
 
     pub fn to_scylla_vec(&self) -> Vec<i32> {

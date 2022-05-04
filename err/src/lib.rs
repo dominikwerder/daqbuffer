@@ -295,6 +295,12 @@ impl From<FromUtf8Error> for Error {
     }
 }
 
+impl From<std::str::Utf8Error> for Error {
+    fn from(k: std::str::Utf8Error) -> Self {
+        Self::with_msg(k.to_string())
+    }
+}
+
 /*
 impl<T: fmt::Debug> From<nom::Err<T>> for Error {
     fn from(k: nom::Err<T>) -> Self {
