@@ -270,6 +270,7 @@ impl BlockRefStream {
         let channel = Channel {
             backend: "".into(),
             name: channel_name,
+            series: None,
             //name: "ARIDI-PCT:CURRENT".into(),
         };
         use archapp_wrap::archapp::archeng;
@@ -335,6 +336,7 @@ impl BlockStream {
         let channel = Channel {
             backend: node_config.node_config.cluster.backend.clone(),
             name: channel_name,
+            series: None,
         };
         use archapp_wrap::archapp::archeng;
         let ixpaths = archeng::indexfiles::index_file_path_list(channel.clone(), database.clone()).await?;

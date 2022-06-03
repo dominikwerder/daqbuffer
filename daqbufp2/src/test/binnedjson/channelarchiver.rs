@@ -8,6 +8,7 @@ fn get_scalar_2_events() -> Result<(), Error> {
         let channel = Channel {
             backend: "sls-archive".into(),
             name: "ARIDI-PCT:CURRENT".into(),
+            series: None,
         };
         let begstr = "2021-11-10T00:00:00Z";
         let endstr = "2021-11-10T00:10:00Z";
@@ -50,6 +51,7 @@ fn get_scalar_2_binned() -> Result<(), Error> {
         let channel = Channel {
             backend: "sls-archive".into(),
             name: "ARIDI-PCT:CURRENT".into(),
+            series: None,
         };
         let begstr = "2021-11-10T00:00:00Z";
         let endstr = "2021-11-10T00:10:00Z";
@@ -71,6 +73,7 @@ fn get_wave_1_events() -> Result<(), Error> {
         let channel = Channel {
             backend: "sls-archive".into(),
             name: "ARIDI-MBF-X:CBM-IN".into(),
+            series: None,
         };
         let begstr = "2021-11-09T00:00:00Z";
         let endstr = "2021-11-09T00:10:00Z";
@@ -111,6 +114,7 @@ fn get_wave_1_binned() -> Result<(), Error> {
         let channel = Channel {
             backend: "sls-archive".into(),
             name: "ARIDI-MBF-X:CBM-IN".into(),
+            series: None,
         };
         let begstr = "2021-11-09T00:00:00Z";
         let endstr = "2021-11-11T00:10:00Z";

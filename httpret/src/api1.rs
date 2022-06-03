@@ -930,6 +930,7 @@ impl Api1EventsBinaryHandler {
             .map(|x| Channel {
                 backend: backend.into(),
                 name: x.clone(),
+                series: None,
             })
             .collect();
         // TODO use a better stream protocol with built-in error delivery.

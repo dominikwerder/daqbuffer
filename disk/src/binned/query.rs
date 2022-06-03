@@ -1,7 +1,10 @@
 use err::Error;
 use http::request::Parts;
 use netpod::query::{agg_kind_from_binning_scheme, binning_scheme_append_to_url, CacheUsage};
-use netpod::{channel_from_pairs, AggKind, AppendToUrl, ByteSize, Channel, PreBinnedPatchCoord};
+use netpod::{
+    channel_append_to_url, channel_from_pairs, AggKind, AppendToUrl, ByteSize, Channel, PreBinnedPatchCoord,
+    ScalarType, Shape,
+};
 use std::collections::BTreeMap;
 use url::Url;
 
@@ -10,6 +13,8 @@ pub struct PreBinnedQuery {
     patch: PreBinnedPatchCoord,
     agg_kind: AggKind,
     channel: Channel,
+    scalar_type: ScalarType,
+    shape: Shape,
     cache_usage: CacheUsage,
     disk_io_buffer_size: usize,
     disk_stats_every: ByteSize,
@@ -20,6 +25,8 @@ impl PreBinnedQuery {
     pub fn new(
         patch: PreBinnedPatchCoord,
         channel: Channel,
+        scalar_type: ScalarType,
+        shape: Shape,
         agg_kind: AggKind,
         cache_usage: CacheUsage,
         disk_io_buffer_size: usize,
@@ -28,8 +35,10 @@ impl PreBinnedQuery {
     ) -> Self {
         Self {
             patch,
-            agg_kind,
             channel,
+            scalar_type,
+            shape,
+            agg_kind,
             cache_usage,
             disk_io_buffer_size,
             disk_stats_every,
@@ -45,25 +54,35 @@ impl PreBinnedQuery {
         let pairs = pairs;
         let bin_t_len = pairs
             .get("binTlen")
-            .ok_or(Error::with_msg("missing binTlen"))?
+            .ok_or_else(|| Error::with_msg("missing binTlen"))?
             .parse()?;
         let patch_t_len = pairs
             .get("patchTlen")
-            .ok_or(Error::with_msg("missing patchTlen"))?
+            .ok_or_else(|| Error::with_msg("missing patchTlen"))?
             .parse()?;
         let patch_ix = pairs
             .get("patchIx")
-            .ok_or(Error::with_msg("missing patchIx"))?
+            .ok_or_else(|| Error::with_msg("missing patchIx"))?
             .parse()?;
         let disk_stats_every = pairs
             .get("diskStatsEveryKb")
-            .ok_or(Error::with_msg("missing diskStatsEveryKb"))?;
+            .ok_or_else(|| Error::with_msg("missing diskStatsEveryKb"))?;
         let disk_stats_every = disk_stats_every
             .parse()
             .map_err(|e| Error::with_msg(format!("can not parse diskStatsEveryKb {:?}", e)))?;
+        let scalar_type = pairs
+            .get("scalarType")
+            .ok_or_else(|| Error::with_msg("missing scalarType"))
+            .map(|x| ScalarType::from_url_str(&x))??;
+        let shape = pairs
+            .get("shape")
+            .ok_or_else(|| Error::with_msg("missing shape"))
+            .map(|x| Shape::from_url_str(&x))??;
         let ret = Self {
             patch: PreBinnedPatchCoord::new(bin_t_len, patch_t_len, patch_ix),
             channel: channel_from_pairs(&pairs)?,
+            scalar_type,
+            shape,
             agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::DimXBins1),
             cache_usage: CacheUsage::from_pairs(&pairs)?,
             disk_io_buffer_size: pairs
@@ -99,6 +118,14 @@ impl PreBinnedQuery {
         &self.channel
     }
 
+    pub fn scalar_type(&self) -> &ScalarType {
+        &self.scalar_type
+    }
+
+    pub fn shape(&self) -> &Shape {
+        &self.shape
+    }
+
     pub fn agg_kind(&self) -> &AggKind {
         &self.agg_kind
     }
@@ -120,9 +147,10 @@ impl AppendToUrl for PreBinnedQuery {
     fn append_to_url(&self, url: &mut Url) {
         self.patch.append_to_url(url);
         binning_scheme_append_to_url(&self.agg_kind, url);
+        channel_append_to_url(url, &self.channel);
         let mut g = url.query_pairs_mut();
-        g.append_pair("channelBackend", &self.channel.backend);
-        g.append_pair("channelName", &self.channel.name);
+        g.append_pair("scalarType", &format!("{:?}", self.scalar_type));
+        g.append_pair("shape", &format!("{:?}", self.shape));
         g.append_pair("cacheUsage", &format!("{}", self.cache_usage.query_param_value()));
         g.append_pair("diskIoBufferSize", &format!("{}", self.disk_io_buffer_size));
         g.append_pair("diskStatsEveryKb", &format!("{}", self.disk_stats_every.bytes() / 1024));

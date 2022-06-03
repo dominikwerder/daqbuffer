@@ -485,9 +485,11 @@ mod test {
             backend: "sls-archive".into(),
             //name: "X05DA-FE-WI1:TC1".into(),
             name: "ARIDI-PCT:CURRENT".into(),
+            series: None,
         };
         let dbconf = Database {
             host: "localhost".into(),
+            port: 5432,
             name: "testingdaq".into(),
             user: "testingdaq".into(),
             pass: "testingdaq".into(),

@@ -227,6 +227,7 @@ impl Stream for ConfigStream {
                                 let channel = Channel {
                                     name: item,
                                     backend: "".into(),
+                                    series: None,
                                 };
                                 let now = SystemTime::now()
                                     .duration_since(std::time::UNIX_EPOCH)

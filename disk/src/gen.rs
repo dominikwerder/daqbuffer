@@ -31,6 +31,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 channel: Channel {
                     backend: "testbackend".into(),
                     name: "scalar-i32-be".into(),
+                    series: None,
                 },
                 keyspace: 2,
                 time_bin_size: Nanos { ns: DAY },
@@ -49,6 +50,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 channel: Channel {
                     backend: "testbackend".into(),
                     name: "wave-f64-be-n21".into(),
+                    series: None,
                 },
                 keyspace: 3,
                 time_bin_size: Nanos { ns: DAY },
@@ -67,6 +69,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 channel: Channel {
                     backend: "testbackend".into(),
                     name: "wave-u16-le-n77".into(),
+                    series: None,
                 },
                 keyspace: 3,
                 time_bin_size: Nanos { ns: DAY },
@@ -85,6 +88,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 channel: Channel {
                     backend: "testbackend".into(),
                     name: "tw-scalar-i32-be".into(),
+                    series: None,
                 },
                 keyspace: 2,
                 time_bin_size: Nanos { ns: DAY },
@@ -103,6 +107,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                 channel: Channel {
                     backend: "testbackend".into(),
                     name: "const-regular-scalar-i32-be".into(),
+                    series: None,
                 },
                 keyspace: 2,
                 time_bin_size: Nanos { ns: DAY },
@@ -131,7 +136,6 @@ pub async fn gen_test_data() -> Result<(), Error> {
             }),
             archiver_appliance: None,
             channel_archiver: None,
-            access_scylla: false,
         };
         ensemble.nodes.push(node);
     }

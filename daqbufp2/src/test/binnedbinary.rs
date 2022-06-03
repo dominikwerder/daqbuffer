@@ -102,6 +102,7 @@ where
     let channel = Channel {
         backend: channel_backend.into(),
         name: channel_name.into(),
+        series:None,
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
     let mut query = BinnedQuery::new(channel, range, bin_count, agg_kind);

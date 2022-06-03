@@ -41,7 +41,7 @@ pub struct BodyStream {
     pub inner: Box<dyn futures_core::Stream<Item = Result<bytes::Bytes, Error>> + Send + Unpin>,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum ScalarType {
     U8,
     U16,
@@ -55,6 +55,68 @@ pub enum ScalarType {
     F64,
     BOOL,
     STRING,
+}
+
+impl Serialize for ScalarType {
+    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error>
+    where
+        S::Error: serde::ser::Error,
+    {
+        use ScalarType::*;
+        match self {
+            U8 => ser.serialize_str("u8"),
+            U16 => ser.serialize_str("u16"),
+            U32 => ser.serialize_str("u32"),
+            U64 => ser.serialize_str("u64"),
+            I8 => ser.serialize_str("i8"),
+            I16 => ser.serialize_str("i16"),
+            I32 => ser.serialize_str("i32"),
+            I64 => ser.serialize_str("i64"),
+            F32 => ser.serialize_str("f32"),
+            F64 => ser.serialize_str("f64"),
+            BOOL => ser.serialize_str("bool"),
+            STRING => ser.serialize_str("string"),
+        }
+    }
+}
+
+struct ScalarTypeVis;
+
+impl<'de> serde::de::Visitor<'de> for ScalarTypeVis {
+    type Value = ScalarType;
+
+    fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str("a string describing the ScalarType variant")
+    }
+
+    fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+        let s = value.to_lowercase();
+        let ret = match s.as_str() {
+            "u8" => ScalarType::U8,
+            "u16" => ScalarType::U16,
+            "u32" => ScalarType::U32,
+            "u64" => ScalarType::U64,
+            "i8" => ScalarType::I8,
+            "i16" => ScalarType::I16,
+            "i32" => ScalarType::I32,
+            "i64" => ScalarType::I64,
+            "f32" => ScalarType::F32,
+            "f64" => ScalarType::F64,
+            "bool" => ScalarType::BOOL,
+            "string" => ScalarType::STRING,
+            k => return Err(E::custom(format!("can not understand variant {k:?}"))),
+        };
+        Ok(ret)
+    }
+}
+
+impl<'de> Deserialize<'de> for ScalarType {
+    fn deserialize<D>(de: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        de.deserialize_str(ScalarTypeVis)
+    }
 }
 
 pub trait HasScalarType {
@@ -83,6 +145,24 @@ impl ScalarType {
             _ => return Err(Error::with_msg(format!("unknown dtype code: {:?}", ix))),
         };
         Ok(g)
+    }
+
+    pub fn to_variant_str(&self) -> &'static str {
+        use ScalarType::*;
+        match self {
+            U8 => "u8",
+            U16 => "u16",
+            U32 => "u32",
+            U64 => "u64",
+            I8 => "i8",
+            I16 => "i16",
+            I32 => "i32",
+            I64 => "i64",
+            F32 => "f32",
+            F64 => "f64",
+            BOOL => "bool",
+            STRING => "string",
+        }
     }
 
     pub fn to_bsread_str(&self) -> &'static str {
@@ -232,6 +312,11 @@ impl ScalarType {
     pub fn to_scylla_i32(&self) -> i32 {
         self.index() as i32
     }
+
+    pub fn from_url_str(s: &str) -> Result<Self, Error> {
+        let ret = serde_json::from_str(&format!("\"{s}\""))?;
+        Ok(ret)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -264,8 +349,6 @@ pub struct Node {
     pub sf_databuffer: Option<SfDatabuffer>,
     pub archiver_appliance: Option<ArchiverAppliance>,
     pub channel_archiver: Option<ChannelArchiver>,
-    #[serde(default)]
-    pub access_scylla: bool,
 }
 
 struct Visit1 {}
@@ -336,7 +419,6 @@ impl Node {
             }),
             archiver_appliance: None,
             channel_archiver: None,
-            access_scylla: false,
         }
     }
 }
@@ -345,6 +427,7 @@ impl Node {
 pub struct Database {
     pub name: String,
     pub host: String,
+    pub port: u16,
     pub user: String,
     pub pass: String,
 }
@@ -440,6 +523,8 @@ pub struct NodeStatus {
 pub struct Channel {
     pub backend: String,
     pub name: String,
+    // TODO ideally, all channels would have a unique id. For scylla backends, we require the id.
+    pub series: Option<u64>,
 }
 
 pub struct HostPort {
@@ -705,7 +790,7 @@ impl Shape {
             )))
         } else if k == 1 {
             Ok(Shape::Scalar)
-        } else if k <= 2048 {
+        } else if k <= 1024 * 32 {
             Ok(Shape::Wave(k as u32))
         } else {
             Err(Error::with_public_msg_no_trace(format!(
@@ -721,6 +806,11 @@ impl Shape {
             Wave(n) => vec![*n as i32],
             Image(n, m) => vec![*n as i32, *m as i32],
         }
+    }
+
+    pub fn from_url_str(s: &str) -> Result<Self, Error> {
+        let ret = serde_json::from_str(s)?;
+        Ok(ret)
     }
 }
 
@@ -1492,8 +1582,20 @@ pub fn channel_from_pairs(pairs: &BTreeMap<String, String>) -> Result<Channel, E
             .get("channelName")
             .ok_or(Error::with_public_msg("missing channelName"))?
             .into(),
+        series: pairs
+            .get("seriesId")
+            .and_then(|x| x.parse::<u64>().map_or(None, |x| Some(x))),
     };
     Ok(ret)
+}
+
+pub fn channel_append_to_url(url: &mut Url, channel: &Channel) {
+    let mut qp = url.query_pairs_mut();
+    qp.append_pair("channelBackend", &channel.backend);
+    qp.append_pair("channelName", &channel.name);
+    if let Some(series) = &channel.series {
+        qp.append_pair("seriesId", &format!("{}", series));
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1547,6 +1649,7 @@ mod test {
 pub struct ChannelSearchSingleResult {
     pub backend: String,
     pub name: String,
+    pub series: u64,
     pub source: String,
     #[serde(rename = "type")]
     pub ty: String,
@@ -1653,9 +1756,8 @@ impl FromUrl for ChannelConfigQuery {
 impl AppendToUrl for ChannelConfigQuery {
     fn append_to_url(&self, url: &mut Url) {
         let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
+        channel_append_to_url(url, &self.channel);
         let mut g = url.query_pairs_mut();
-        g.append_pair("channelBackend", &self.channel.backend);
-        g.append_pair("channelName", &self.channel.name);
         g.append_pair(
             "begDate",
             &Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt).to_string(),
@@ -1730,7 +1832,6 @@ pub fn test_cluster() -> Cluster {
             }),
             archiver_appliance: None,
             channel_archiver: None,
-            access_scylla: false,
         })
         .collect();
     Cluster {
@@ -1738,6 +1839,7 @@ pub fn test_cluster() -> Cluster {
         nodes,
         database: Database {
             host: "127.0.0.1".into(),
+            port: 5432,
             name: "testingdaq".into(),
             user: "testingdaq".into(),
             pass: "testingdaq".into(),
@@ -1763,7 +1865,6 @@ pub fn sls_test_cluster() -> Cluster {
             channel_archiver: Some(ChannelArchiver {
                 data_base_paths: vec![test_data_base_path_channel_archiver_sls()],
             }),
-            access_scylla: false,
         })
         .collect();
     Cluster {
@@ -1771,6 +1872,7 @@ pub fn sls_test_cluster() -> Cluster {
         nodes,
         database: Database {
             host: "127.0.0.1".into(),
+            port: 5432,
             name: "testingdaq".into(),
             user: "testingdaq".into(),
             pass: "testingdaq".into(),
@@ -1796,7 +1898,6 @@ pub fn archapp_test_cluster() -> Cluster {
             archiver_appliance: Some(ArchiverAppliance {
                 data_base_paths: vec![test_data_base_path_archiver_appliance()],
             }),
-            access_scylla: false,
         })
         .collect();
     Cluster {
@@ -1804,6 +1905,7 @@ pub fn archapp_test_cluster() -> Cluster {
         nodes,
         database: Database {
             host: "127.0.0.1".into(),
+            port: 5432,
             name: "testingdaq".into(),
             user: "testingdaq".into(),
             pass: "testingdaq".into(),
@@ -1838,4 +1940,31 @@ pub fn test_data_base_path_archiver_appliance() -> PathBuf {
         .join("lts")
         .join("ArchiverStore");
     data_base_path
+}
+
+#[cfg(test)]
+mod test_parse {
+    use super::*;
+
+    #[test]
+    fn parse_scalar_type_shape() {
+        let mut url: Url = "http://test/path".parse().unwrap();
+        {
+            let mut g = url.query_pairs_mut();
+            g.append_pair("scalarType", &format!("{:?}", ScalarType::F32));
+            g.append_pair("shape", &format!("{:?}", Shape::Image(3, 4)));
+        }
+        let url = url;
+        let urls = format!("{}", url);
+        let url: Url = urls.parse().unwrap();
+        let mut a = BTreeMap::new();
+        for (k, v) in url.query_pairs() {
+            let k = k.to_string();
+            let v = v.to_string();
+            info!("k {k:?}  v {v:?}");
+            a.insert(k, v);
+        }
+        assert_eq!(a.get("scalarType").unwrap(), "f32");
+        assert_eq!(a.get("shape").unwrap(), "Image(3, 4)");
+    }
 }

@@ -12,7 +12,7 @@ use netpod::log::*;
 use netpod::query::CacheUsage;
 use netpod::{
     x_bin_count, AggKind, AppendToUrl, BinnedRange, ByteSize, Channel, NodeConfigCached, PerfOpts,
-    PreBinnedPatchIterator, Shape,
+    PreBinnedPatchIterator, ScalarType, Shape,
 };
 use serde::de::DeserializeOwned;
 use std::future::ready;
@@ -164,6 +164,7 @@ where
         patch_it: PreBinnedPatchIterator,
         channel: Channel,
         range: BinnedRange,
+        scalar_type: ScalarType,
         shape: Shape,
         agg_kind: AggKind,
         cache_usage: CacheUsage,
@@ -185,12 +186,15 @@ where
         let pmax = patches.len();
         let inp = futures_util::stream::iter(patches.into_iter().enumerate())
             .map({
+                let shape = shape.clone();
                 let agg_kind = agg_kind.clone();
                 let node_config = node_config.clone();
                 move |(pix, patch)| {
                     let query = PreBinnedQuery::new(
                         patch,
                         channel.clone(),
+                        scalar_type.clone(),
+                        shape.clone(),
                         agg_kind.clone(),
                         cache_usage.clone(),
                         disk_io_buffer_size,

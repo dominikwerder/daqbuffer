@@ -49,7 +49,7 @@ pub async fn get_node_disk_ident(node_config: &NodeConfigCached, dbc: &Client) -
     let rows = dbc
         .query(sql, &[&node_config.node_config.cluster.backend, &node_config.node.host])
         .await
-        .errconv()?;
+        .err_conv()?;
     if rows.len() != 1 {
         return Err(Error::with_msg(format!(
             "get_node can't find unique entry for {} {}",
@@ -73,7 +73,7 @@ pub async fn get_node_disk_ident_2(
     let rows = dbc
         .query(sql, &[&node_config.node_config.cluster.backend, &node_config.node.host])
         .await
-        .errconv()?;
+        .err_conv()?;
     if rows.len() != 1 {
         return Err(Error::with_msg(format!(
             "get_node can't find unique entry for {} {}",
@@ -327,16 +327,16 @@ impl Stream for UpdatedDbWithChannelNamesStream {
 
 async fn update_db_with_channel_name_list(list: Vec<String>, backend: i64, dbc: &Client) -> Result<(), Error> {
     crate::delay_io_short().await;
-    dbc.query("begin", &[]).await.errconv()?;
+    dbc.query("begin", &[]).await.err_conv()?;
     for ch in list {
         dbc.query(
             "insert into channels (facility, name) values ($1, $2) on conflict do nothing",
             &[&backend, &ch],
         )
         .await
-        .errconv()?;
+        .err_conv()?;
     }
-    dbc.query("commit", &[]).await.errconv()?;
+    dbc.query("commit", &[]).await.err_conv()?;
     Ok(())
 }
 
@@ -351,7 +351,7 @@ pub async fn update_db_with_channel_names(
         let dbc = crate::create_connection(&db_config).await?;
         let node_disk_ident = get_node_disk_ident(&node_config, &dbc).await?;
         let c1 = Arc::new(RwLock::new(0u32));
-        dbc.query("begin", &[]).await.errconv()?;
+        dbc.query("begin", &[]).await.err_conv()?;
         let dbc = Arc::new(dbc);
         let tx = Arc::new(tx);
         let base_path = &node_config
@@ -373,33 +373,33 @@ pub async fn update_db_with_channel_names(
                     &[&fac, &ch],
                 )
                 .await
-                .errconv()?;
+                .err_conv()?;
                 let c2 = {
                     let mut g = c1.write()?;
                     *g += 1;
                     *g
                 };
                 if c2 % 200 == 0 {
-                    dbc.query("commit", &[]).await.errconv()?;
+                    dbc.query("commit", &[]).await.err_conv()?;
                     let ret = UpdatedDbWithChannelNames {
                         msg: format!("current {}", ch),
                         count: c2,
                     };
-                    tx.send(Ok(ret)).await.errconv()?;
+                    tx.send(Ok(ret)).await.err_conv()?;
                     crate::delay_io_medium().await;
-                    dbc.query("begin", &[]).await.errconv()?;
+                    dbc.query("begin", &[]).await.err_conv()?;
                 }
                 Ok(())
             }
         })
         .await?;
-        dbc.query("commit", &[]).await.errconv()?;
+        dbc.query("commit", &[]).await.err_conv()?;
         let c2 = *c1.read()?;
         let ret = UpdatedDbWithChannelNames {
             msg: format!("all done"),
             count: c2,
         };
-        tx.send(Ok(ret)).await.errconv()?;
+        tx.send(Ok(ret)).await.err_conv()?;
         Ok::<_, Error>(())
     };
     let block2 = async move {
@@ -468,15 +468,15 @@ pub async fn update_db_with_all_channel_configs(
                 &[&node_disk_ident.facility],
             )
             .await
-            .errconv()?;
+            .err_conv()?;
         let mut c1 = 0;
-        dbc.query("begin", &[]).await.errconv()?;
+        dbc.query("begin", &[]).await.err_conv()?;
         let mut count_inserted = 0;
         let mut count_updated = 0;
         for row in rows {
-            let rowid: i64 = row.try_get(0).errconv()?;
-            let _facility: i64 = row.try_get(1).errconv()?;
-            let channel: String = row.try_get(2).errconv()?;
+            let rowid: i64 = row.try_get(0).err_conv()?;
+            let _facility: i64 = row.try_get(1).err_conv()?;
+            let channel: String = row.try_get(2).err_conv()?;
             match update_db_with_channel_config(
                 node_config,
                 node_disk_ident,
@@ -499,26 +499,26 @@ pub async fn update_db_with_all_channel_configs(
                 Ok(UpdateChannelConfigResult::Done) => {
                     c1 += 1;
                     if c1 % 200 == 0 {
-                        dbc.query("commit", &[]).await.errconv()?;
+                        dbc.query("commit", &[]).await.err_conv()?;
                         let msg = format!(
                             "channel no {:6}  inserted {:6}  updated {:6}",
                             c1, count_inserted, count_updated
                         );
                         let ret = UpdatedDbWithAllChannelConfigs { msg, count: c1 };
-                        tx.send(Ok(ret)).await.errconv()?;
-                        dbc.query("begin", &[]).await.errconv()?;
+                        tx.send(Ok(ret)).await.err_conv()?;
+                        dbc.query("begin", &[]).await.err_conv()?;
                     }
                     crate::delay_io_short().await;
                 }
             }
         }
-        dbc.query("commit", &[]).await.errconv()?;
+        dbc.query("commit", &[]).await.err_conv()?;
         let msg = format!(
             "ALL DONE  channel no {:6}  inserted {:6}  updated {:6}",
             c1, count_inserted, count_updated
         );
         let ret = UpdatedDbWithAllChannelConfigs { msg, count: c1 };
-        tx.send(Ok(ret)).await.errconv()?;
+        tx.send(Ok(ret)).await.err_conv()?;
         Ok::<_, Error>(())
     }
     .then({
@@ -528,7 +528,7 @@ pub async fn update_db_with_all_channel_configs(
                 Err(e) => {
                     let msg = format!("Seeing error: {:?}", e);
                     let ret = UpdatedDbWithAllChannelConfigs { msg, count: 0 };
-                    tx2.send(Ok(ret)).await.errconv()?;
+                    tx2.send(Ok(ret)).await.err_conv()?;
                 }
             }
             Ok::<_, Error>(())
@@ -551,7 +551,7 @@ pub async fn update_db_with_all_channel_configs(
 
 pub async fn update_search_cache(node_config: &NodeConfigCached) -> Result<(), Error> {
     let dbc = crate::create_connection(&node_config.node_config.cluster.database).await?;
-    dbc.query("select update_cache()", &[]).await.errconv()?;
+    dbc.query("select update_cache()", &[]).await.err_conv()?;
     Ok(())
 }
 
@@ -597,7 +597,7 @@ pub async fn update_db_with_channel_config(
             &[&node_disk_ident.rowid(), &channel_id],
         )
         .await
-        .errconv()?;
+        .err_conv()?;
     if rows.len() > 1 {
         return Err(Error::with_msg("more than one row"));
     }
@@ -612,7 +612,7 @@ pub async fn update_db_with_channel_config(
             "insert into configs_history (rowid_original, node, channel, fileSize, parsedUntil, config, tsinsert) ",
             "select rowid as rowid_original, node, channel, fileSize, parsedUntil, config, now() from configs where rowid = $1"
             );
-            dbc.query(sql, &[&rowid]).await.errconv()?;
+            dbc.query(sql, &[&rowid]).await.err_conv()?;
         }
         //ensure!(meta.len() >= parsed_until as u64, ConfigFileOnDiskShrunk{path});
         (Some(rowid), true)
@@ -635,14 +635,14 @@ pub async fn update_db_with_channel_config(
                     ],
                 )
                 .await
-                .errconv()?;
+                .err_conv()?;
                 *count_inserted += 1;
             }
             Some(_config_id_2) => {
                 dbc.query(
                     "insert into configs (node, channel, fileSize, parsedUntil, config) values ($1, $2, $3, $4, $5) on conflict (node, channel) do update set fileSize = $3, parsedUntil = $4, config = $5",
                     &[&node_disk_ident.rowid(), &channel_id, &(meta.len() as i64), &(buf.len() as i64), &serde_json::to_value(config)?],
-                ).await.errconv()?;
+                ).await.err_conv()?;
                 *count_updated += 1;
             }
         }
@@ -662,25 +662,25 @@ pub async fn update_db_with_all_channel_datafiles(
             &[&node_disk_ident.facility()],
         )
         .await
-        .errconv()?;
+        .err_conv()?;
     let mut c1 = 0;
-    dbc.query("begin", &[]).await.errconv()?;
+    dbc.query("begin", &[]).await.err_conv()?;
     for row in rows {
-        let rowid: i64 = row.try_get(0).errconv()?;
-        let _facility: i64 = row.try_get(1).errconv()?;
-        let channel: String = row.try_get(2).errconv()?;
+        let rowid: i64 = row.try_get(0).err_conv()?;
+        let _facility: i64 = row.try_get(1).err_conv()?;
+        let channel: String = row.try_get(2).err_conv()?;
         update_db_with_channel_datafiles(node_config, node_disk_ident, ks_prefix, rowid, &channel, dbc.clone()).await?;
         c1 += 1;
         if c1 % 40 == 0 {
             trace!("import datafiles  {}  {}", c1, channel);
-            dbc.query("commit", &[]).await.errconv()?;
-            dbc.query("begin", &[]).await.errconv()?;
+            dbc.query("commit", &[]).await.err_conv()?;
+            dbc.query("begin", &[]).await.err_conv()?;
         }
         if false && c1 >= 30 {
             break;
         }
     }
-    dbc.query("commit", &[]).await.errconv()?;
+    dbc.query("commit", &[]).await.err_conv()?;
     Ok(())
 }
 
@@ -744,7 +744,7 @@ impl ChannelDatafileDescSink for DatafileDbWriter {
                     &((k.timebin() + 1) as i64 * k.binsize() as i64),
                     &serde_json::to_value(k)?,
                 ]
-            ).await.errconv()?;
+            ).await.err_conv()?;
             *c1.write()? += 1;
             Ok(())
         })

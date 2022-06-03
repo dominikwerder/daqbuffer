@@ -310,6 +310,8 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                                                         backend: c.backend.clone(),
                                                         description: String::new(),
                                                         name: c.name.clone(),
+                                                        // TODO api 0 does not provide a series id
+                                                        series: 0,
                                                         shape: vec![],
                                                         source: c.source.clone(),
                                                         ty: c.ty.clone(),

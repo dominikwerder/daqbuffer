@@ -103,7 +103,6 @@ where
         buf: BytesMut,
         wp: usize,
     ) -> (Option<Option<Result<InMemoryFrame, Error>>>, BytesMut, usize) {
-        let mut buf = buf;
         let nb = wp;
         if nb >= INMEM_FRAME_HEAD {
             let magic = u32::from_le_bytes(*arrayref::array_ref![buf, 0, 4]);
@@ -162,16 +161,20 @@ where
                     let payload_crc_match = payload_crc_ind == payload_crc;
                     let frame_crc_match = frame_crc_ind == frame_crc;
                     if !payload_crc_match || !frame_crc_match {
+                        let ss = String::from_utf8_lossy(&buf[..buf.len().min(256)]);
+                        warn!("CRC mismatch A\n{ss:?}");
                         return (
                             Some(Some(Err(Error::with_msg(format!(
-                                "InMemoryFrameAsyncReadStream  tryparse  crc mismatch  {}  {}",
+                                "InMemoryFrameAsyncReadStream  tryparse  crc mismatch A  {}  {}",
                                 payload_crc_match, frame_crc_match,
                             ))))),
                             buf,
                             wp,
                         );
                     }
+                    let mut buf = buf;
                     let mut buf3 = buf.split_to(nl);
+                    let buf = buf;
                     buf3.advance(INMEM_FRAME_HEAD);
                     buf3.truncate(len as usize);
                     let mut h = crc32fast::Hasher::new();
@@ -179,9 +182,12 @@ where
                     let payload_crc_2 = h.finalize();
                     let payload_crc_2_match = payload_crc_2 == payload_crc_ind;
                     if !payload_crc_2_match {
+                        let sa = String::from_utf8_lossy(&buf[..buf.len().min(256)]);
+                        let sb = String::from_utf8_lossy(&buf3[..buf3.len().min(256)]);
+                        warn!("CRC mismatch B\n{sa:?}\n{sb:?}");
                         return (
                             Some(Some(Err(Error::with_msg(format!(
-                                "InMemoryFrameAsyncReadStream  tryparse  crc mismatch  {}  {}  {}",
+                                "InMemoryFrameAsyncReadStream  tryparse  crc mismatch B  {}  {}  {}",
                                 payload_crc_match, frame_crc_match, payload_crc_2_match,
                             ))))),
                             buf,

@@ -815,6 +815,7 @@ mod test {
         let chn = netpod::Channel {
             backend: "testbackend".into(),
             name: "scalar-i32-be".into(),
+            series: None,
         };
         // TODO read config from disk? Or expose the config from data generator?
         let channel_config = ChannelConfig {

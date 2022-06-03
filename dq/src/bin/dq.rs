@@ -79,6 +79,7 @@ pub fn main() -> Result<(), Error> {
                     channel: Channel {
                         backend: String::new(),
                         name: config.channel_name.clone(),
+                        series: None,
                     },
                     keyspace: ce.ks as u8,
                     time_bin_size: ce.bs,

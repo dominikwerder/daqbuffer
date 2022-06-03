@@ -56,6 +56,7 @@ pub async fn get_binned(
     let channel = Channel {
         backend: channel_backend.clone(),
         name: channel_name.into(),
+        series: None,
     };
     let agg_kind = AggKind::DimXBins1;
     let range = NanoRange::from_date_time(beg_date, end_date);

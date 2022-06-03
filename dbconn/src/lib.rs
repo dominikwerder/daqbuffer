@@ -1,6 +1,5 @@
 pub mod scan;
 pub mod search;
-
 pub mod pg {
     pub use tokio_postgres::{Client, Error};
 }
@@ -8,15 +7,17 @@ pub mod pg {
 use err::Error;
 use netpod::log::*;
 use netpod::{Channel, Database, NodeConfigCached};
+use scylla::frame::response::cql_to_rust::FromRowError as ScyFromRowError;
+use scylla::transport::errors::{NewSessionError as ScyNewSessionError, QueryError as ScyQueryError};
 use std::time::Duration;
 use tokio_postgres::{Client, NoTls};
 
 trait ErrConv<T> {
-    fn errconv(self) -> Result<T, Error>;
+    fn err_conv(self) -> Result<T, Error>;
 }
 
 impl<T> ErrConv<T> for Result<T, tokio_postgres::Error> {
-    fn errconv(self) -> Result<T, Error> {
+    fn err_conv(self) -> Result<T, Error> {
         match self {
             Ok(k) => Ok(k),
             Err(e) => Err(Error::with_msg(e.to_string())),
@@ -25,10 +26,36 @@ impl<T> ErrConv<T> for Result<T, tokio_postgres::Error> {
 }
 
 impl<T, A> ErrConv<T> for Result<T, async_channel::SendError<A>> {
-    fn errconv(self) -> Result<T, Error> {
+    fn err_conv(self) -> Result<T, Error> {
         match self {
             Ok(k) => Ok(k),
             Err(e) => Err(Error::with_msg(e.to_string())),
+        }
+    }
+}
+impl<T> ErrConv<T> for Result<T, ScyQueryError> {
+    fn err_conv(self) -> Result<T, Error> {
+        match self {
+            Ok(k) => Ok(k),
+            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
+        }
+    }
+}
+
+impl<T> ErrConv<T> for Result<T, ScyNewSessionError> {
+    fn err_conv(self) -> Result<T, Error> {
+        match self {
+            Ok(k) => Ok(k),
+            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
+        }
+    }
+}
+
+impl<T> ErrConv<T> for Result<T, ScyFromRowError> {
+    fn err_conv(self) -> Result<T, Error> {
+        match self {
+            Ok(k) => Ok(k),
+            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
         }
     }
 }
@@ -68,7 +95,7 @@ pub async fn channel_exists(channel: &Channel, node_config: &NodeConfigCached) -
     let rows = cl
         .query("select rowid from channels where name = $1::text", &[&channel.name])
         .await
-        .errconv()?;
+        .err_conv()?;
     debug!("channel_exists  {} rows", rows.len());
     for row in rows {
         debug!(
@@ -89,7 +116,7 @@ pub async fn database_size(node_config: &NodeConfigCached) -> Result<u64, Error>
             &[&node_config.node_config.cluster.database.name],
         )
         .await
-        .errconv()?;
+        .err_conv()?;
     if rows.len() == 0 {
         Err(Error::with_msg("could not get database size"))?;
     }
@@ -115,7 +142,7 @@ pub async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, E
     );
     let sql = sql.as_str();
     let cl = create_connection(&node_config.node_config.cluster.database).await?;
-    let rows = cl.query(sql, &[]).await.errconv()?;
+    let rows = cl.query(sql, &[]).await.err_conv()?;
     let mut sizes = TableSizes { sizes: vec![] };
     sizes.sizes.push((format!("table"), format!("size")));
     for row in rows {
@@ -127,7 +154,7 @@ pub async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, E
 pub async fn random_channel(node_config: &NodeConfigCached) -> Result<String, Error> {
     let sql = "select name from channels order by rowid limit 1 offset (random() * (select count(rowid) from channels))::bigint";
     let cl = create_connection(&node_config.node_config.cluster.database).await?;
-    let rows = cl.query(sql, &[]).await.errconv()?;
+    let rows = cl.query(sql, &[]).await.err_conv()?;
     if rows.len() == 0 {
         Err(Error::with_msg("can not get random channel"))?;
     }
@@ -141,11 +168,11 @@ pub async fn insert_channel(name: String, facility: i64, dbc: &Client) -> Result
             &[&facility, &name],
         )
         .await
-        .errconv()?;
+        .err_conv()?;
     if rows[0].get::<_, i64>(0) == 0 {
         let sql =
             concat!("insert into channels (facility, name) values ($1, $2) on conflict (facility, name) do nothing");
-        dbc.query(sql, &[&facility, &name]).await.errconv()?;
+        dbc.query(sql, &[&facility, &name]).await.err_conv()?;
     }
     Ok(())
 }

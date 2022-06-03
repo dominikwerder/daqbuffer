@@ -1,3 +1,4 @@
+use crate::channelconfig::chconf_from_events_json;
 use crate::err::Error;
 use crate::response;
 use bytes::Bytes;
@@ -73,6 +74,7 @@ impl EventInfoScan {
         query: &PlainEventsJsonQuery,
         node_config: &NodeConfigCached,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>, Error> {
+        let chconf = chconf_from_events_json(&query, node_config).await?;
         let ret = channel_exec(
             EvInfoFunc::new(
                 query.clone(),
@@ -82,6 +84,8 @@ impl EventInfoScan {
             ),
             query.channel(),
             query.range(),
+            chconf.scalar_type,
+            chconf.shape,
             AggKind::Stats1,
             node_config,
         )

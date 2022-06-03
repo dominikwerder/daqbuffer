@@ -20,7 +20,6 @@ pub fn make_test_node(id: u32) -> Node {
         }),
         archiver_appliance: None,
         channel_archiver: None,
-        access_scylla: false,
     }
 }
 
@@ -40,6 +39,7 @@ async fn agg_x_dim_0_inner() {
             channel: Channel {
                 backend: "sf-databuffer".into(),
                 name: "S10BC01-DBAM070:EOM1_T1".into(),
+                series: None,
             },
             keyspace: 2,
             time_bin_size: Nanos { ns: DAY },
@@ -94,6 +94,7 @@ async fn agg_x_dim_1_inner() {
             channel: Channel {
                 backend: "ks".into(),
                 name: "wave1".into(),
+                series: None,
             },
             keyspace: 3,
             time_bin_size: Nanos { ns: DAY },

@@ -1,6 +1,6 @@
 use crate::{
-    channel_from_pairs, get_url_query_pairs, AggKind, AppendToUrl, ByteSize, Channel, FromUrl, HasBackend, HasTimeout,
-    NanoRange, ToNanos,
+    channel_append_to_url, channel_from_pairs, get_url_query_pairs, AggKind, AppendToUrl, ByteSize, Channel, FromUrl,
+    HasBackend, HasTimeout, NanoRange, ToNanos,
 };
 use crate::{log::*, DiskIoTune};
 use chrono::{DateTime, TimeZone, Utc};
@@ -239,10 +239,9 @@ impl AppendToUrl for BinnedQuery {
     fn append_to_url(&self, url: &mut Url) {
         let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
         {
+            channel_append_to_url(url, &self.channel);
             let mut g = url.query_pairs_mut();
             g.append_pair("cacheUsage", &self.cache_usage.to_string());
-            g.append_pair("channelBackend", &self.channel.backend);
-            g.append_pair("channelName", &self.channel.name);
             g.append_pair("binCount", &format!("{}", self.bin_count));
             g.append_pair(
                 "begDate",

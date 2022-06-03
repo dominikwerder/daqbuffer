@@ -15,6 +15,7 @@ use crate::err::Error;
 use crate::gather::gather_get_json;
 use crate::pulsemap::UpdateTask;
 use bytes::Bytes;
+use channelconfig::{chconf_from_binned, ChConf};
 use disk::binned::query::PreBinnedQuery;
 use future::Future;
 use futures_core::Stream;
@@ -206,7 +207,7 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
             let ret = serde_json::json!({
                 "data_api_version": {
                     "major": 4u32,
-                    "minor": 1u32,
+                    "minor": 2u32,
                     "patch": 0u32,
                 },
             });
@@ -227,6 +228,12 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
     } else if let Some(h) = channelconfig::ScyllaConfigsHisto::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = channelconfig::ScyllaChannelsWithType::handler(&req) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = channelconfig::IocForChannel::handler(&req) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = channelconfig::ScyllaChannelsActive::handler(&req) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = channelconfig::ChannelFromSeries::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = events::EventsHandler::handler(&req) {
         h.handle(req, &node_config).await
@@ -527,20 +534,25 @@ async fn binned_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Res
     let (head, _body) = req.into_parts();
     let url = Url::parse(&format!("dummy:{}", head.uri))?;
     let query = BinnedQuery::from_url(&url)?;
+    let chconf = chconf_from_binned(&query, node_config).await?;
     let desc = format!("binned-BEG-{}-END-{}", query.range().beg / SEC, query.range().end / SEC);
     let span1 = span!(Level::INFO, "httpret::binned", desc = &desc.as_str());
     span1.in_scope(|| {
         debug!("binned STARTING  {:?}", query);
     });
     match head.headers.get(http::header::ACCEPT) {
-        Some(v) if v == APP_OCTET => binned_binary(query, node_config).await,
-        Some(v) if v == APP_JSON || v == ACCEPT_ALL => binned_json(query, node_config).await,
+        Some(v) if v == APP_OCTET => binned_binary(query, chconf, node_config).await,
+        Some(v) if v == APP_JSON || v == ACCEPT_ALL => binned_json(query, chconf, node_config).await,
         _ => Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?),
     }
 }
 
-async fn binned_binary(query: BinnedQuery, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    let ret = match disk::binned::binned_bytes_for_http(&query, node_config).await {
+async fn binned_binary(
+    query: BinnedQuery,
+    chconf: ChConf,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
+    let ret = match disk::binned::binned_bytes_for_http(&query, chconf.scalar_type, chconf.shape, node_config).await {
         Ok(s) => {
             response(StatusCode::OK).body(BodyStream::wrapped(s.map_err(Error::from), format!("binned_binary")))?
         }
@@ -556,8 +568,12 @@ async fn binned_binary(query: BinnedQuery, node_config: &NodeConfigCached) -> Re
     Ok(ret)
 }
 
-async fn binned_json(query: BinnedQuery, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    let ret = match disk::binned::binned_json(&query, node_config).await {
+async fn binned_json(
+    query: BinnedQuery,
+    chconf: ChConf,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
+    let ret = match disk::binned::binned_json(&query, chconf.scalar_type, chconf.shape, node_config).await {
         Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s.map_err(Error::from), format!("binned_json")))?,
         Err(e) => {
             if query.report_error() {

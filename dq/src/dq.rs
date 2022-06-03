@@ -337,6 +337,7 @@ pub async fn convert(convert_params: ConvertParams) -> Result<(), Error> {
     let channel = Channel {
         backend: String::new(),
         name: convert_params.channel_name.into(),
+        series: None,
     };
     let mut data_writer = DataWriter::new(
         convert_params.output_dir,

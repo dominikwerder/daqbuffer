@@ -1,3 +1,4 @@
+use crate::channelconfig::{chconf_from_events_binary, chconf_from_events_json};
 use crate::err::Error;
 use crate::{response, response_err, BodyStream, ToPublicResponse};
 use disk::events::{PlainEventsBinaryQuery, PlainEventsJsonQuery};
@@ -52,13 +53,23 @@ async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached)
     debug!("httpret  plain_events_binary  req: {:?}", req);
     let url = Url::parse(&format!("dummy:{}", req.uri()))?;
     let query = PlainEventsBinaryQuery::from_url(&url)?;
+    let chconf = chconf_from_events_binary(&query, node_config).await?;
     let op = disk::channelexec::PlainEvents::new(
         query.channel().clone(),
         query.range().clone(),
         query.disk_io_buffer_size(),
         node_config.clone(),
     );
-    let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), AggKind::Plain, node_config).await?;
+    let s = disk::channelexec::channel_exec(
+        op,
+        query.channel(),
+        query.range(),
+        chconf.scalar_type,
+        chconf.shape,
+        AggKind::Plain,
+        node_config,
+    )
+    .await?;
     let s = s.map(|item| item.make_frame());
     let ret = response(StatusCode::OK).body(BodyStream::wrapped(
         s.map_err(Error::from),
@@ -71,6 +82,7 @@ async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -
     info!("httpret  plain_events_json  req: {:?}", req);
     let (head, _body) = req.into_parts();
     let query = PlainEventsJsonQuery::from_request_head(&head)?;
+    let chconf = chconf_from_events_json(&query, node_config).await?;
     let op = disk::channelexec::PlainEventsJson::new(
         query.channel().clone(),
         query.range().clone(),
@@ -80,7 +92,16 @@ async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -
         query.events_max().unwrap_or(u64::MAX),
         query.do_log(),
     );
-    let s = disk::channelexec::channel_exec(op, query.channel(), query.range(), AggKind::Plain, node_config).await?;
+    let s = disk::channelexec::channel_exec(
+        op,
+        query.channel(),
+        query.range(),
+        chconf.scalar_type,
+        chconf.shape,
+        AggKind::Plain,
+        node_config,
+    )
+    .await?;
     let ret = response(StatusCode::OK).body(BodyStream::wrapped(
         s.map_err(Error::from),
         format!("plain_events_json"),

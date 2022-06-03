@@ -116,6 +116,7 @@ fn simple_fetch() {
                 channel: Channel {
                     backend: "sf-databuffer".into(),
                     name: "S10BC01-DBAM070:BAM_CH1_NORM".into(),
+                    series: None,
                 },
                 keyspace: 3,
                 time_bin_size: Nanos { ns: DAY },

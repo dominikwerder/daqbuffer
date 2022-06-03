@@ -18,13 +18,17 @@ lazy_static::lazy_static! {
 }
 
 pub fn get_runtime() -> Arc<Runtime> {
+    get_runtime_opts(24, 128)
+}
+
+pub fn get_runtime_opts(nworkers: usize, nblocking: usize) -> Arc<Runtime> {
     let mut g = RUNTIME.lock().unwrap();
     match g.as_ref() {
         None => {
             tracing_init();
             let res = tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(12)
-                .max_blocking_threads(256)
+                .worker_threads(nworkers)
+                .max_blocking_threads(nblocking)
                 .enable_all()
                 .on_thread_start(|| {
                     let _old = panic::take_hook();
@@ -81,16 +85,24 @@ lazy_static::lazy_static! {
 pub fn tracing_init() {
     let mut g = INITMX.lock().unwrap();
     if *g == 0 {
+        //use tracing_subscriber::fmt::time::FormatTime;
+        let fmtstr = "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z";
+        //let format = tracing_subscriber::fmt::format().with_timer(timer);
+        let timer = tracing_subscriber::fmt::time::UtcTime::new(time::format_description::parse(fmtstr).unwrap());
+        //use tracing_subscriber::prelude::*;
+        //let trsub = tracing_subscriber::fmt::layer();
+        //let console_layer = console_subscriber::spawn();
+        //tracing_subscriber::registry().with(console_layer).with(trsub).init();
+        //console_subscriber::init();
         tracing_subscriber::fmt()
-            .with_timer(tracing_subscriber::fmt::time::ChronoUtc::with_format(
-                "%Y-%m-%dT%H:%M:%S%.3fZ".into(),
-            ))
-            //.with_timer(tracing_subscriber::fmt::time::uptime())
+            .with_timer(timer)
             .with_target(true)
             .with_thread_names(true)
             //.with_max_level(tracing::Level::INFO)
             .with_env_filter(tracing_subscriber::EnvFilter::new(
                 [
+                    //"tokio=trace",
+                    //"runtime=trace",
                     "info",
                     "archapp::archeng=info",
                     "archapp::archeng::datablockstream=info",

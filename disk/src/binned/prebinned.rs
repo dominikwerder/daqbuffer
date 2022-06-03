@@ -13,13 +13,13 @@ use items::numops::{BoolNum, NumOps, StringNum};
 use items::{
     Appendable, Clearable, EventsNodeProcessor, Framable, FrameType, PushableIndex, Sitemty, TimeBinnableType,
 };
-use netpod::{AggKind, ByteOrder, ChannelConfigQuery, NodeConfigCached, ScalarType, Shape};
+use netpod::{AggKind, ByteOrder, NodeConfigCached, ScalarType, Shape};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::pin::Pin;
 
 fn make_num_pipeline_nty_end_evs_enp<NTY, END, EVS, ENP>(
-    shape: Shape,
+    _shape: Shape,
     agg_kind: AggKind,
     _event_value_shape: EVS,
     _events_node_proc: ENP,
@@ -36,7 +36,7 @@ where
     Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
         Framable + FrameType + DeserializeOwned,
 {
-    let ret = PreBinnedValueStream::<NTY, END, EVS, ENP>::new(query, shape, agg_kind, node_config);
+    let ret = PreBinnedValueStream::<NTY, END, EVS, ENP>::new(query, agg_kind, node_config);
     let ret = StreamExt::map(ret, |item| Box::new(item) as Box<dyn Framable>);
     Box::pin(ret)
 }
@@ -138,9 +138,6 @@ macro_rules! match_end {
     };
 }
 
-// TODO is the distinction on byte order necessary here?
-// We should rely on the "events" http api to deliver data, and the cache, both
-// of those have fixed endianness.
 fn make_num_pipeline(
     scalar_type: ScalarType,
     byte_order: ByteOrder,
@@ -185,17 +182,11 @@ pub async fn pre_binned_bytes_for_http(
         ));
         return Err(err);
     }
-    let q = ChannelConfigQuery {
-        channel: query.channel().clone(),
-        range: query.patch().patch_range(),
-        expand: query.agg_kind().need_expand(),
-    };
-    let conf = httpclient::get_channel_config(&q, node_config).await?;
     let ret = make_num_pipeline(
-        conf.scalar_type.clone(),
+        query.scalar_type().clone(),
         // TODO actually, make_num_pipeline should not depend on endianness.
-        conf.byte_order.unwrap_or(ByteOrder::LE).clone(),
-        conf.shape.clone(),
+        ByteOrder::LE,
+        query.shape().clone(),
         query.agg_kind().clone(),
         query.clone(),
         node_config,

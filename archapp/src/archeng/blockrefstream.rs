@@ -198,6 +198,7 @@ mod test {
             let channel = Channel {
                 backend: "sls-archive".into(),
                 name: "X05DA-FE-WI1:TC1".into(),
+                series: None,
             };
             use chrono::{DateTime, Utc};
             let dtbeg: DateTime<Utc> = "2021-10-01T00:00:00Z".parse()?;
@@ -211,6 +212,7 @@ mod test {
             };
             let dbconf = Database {
                 host: "localhost".into(),
+                port: 5432,
                 name: "testingdaq".into(),
                 user: "testingdaq".into(),
                 pass: "testingdaq".into(),

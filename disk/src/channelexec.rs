@@ -197,29 +197,20 @@ pub async fn channel_exec<F>(
     f: F,
     channel: &Channel,
     range: &NanoRange,
+    scalar_type: ScalarType,
+    shape: Shape,
     agg_kind: AggKind,
     node_config: &NodeConfigCached,
 ) -> Result<F::Output, Error>
 where
     F: ChannelExecFunction,
 {
-    let q = ChannelConfigQuery {
-        channel: channel.clone(),
-        range: range.clone(),
-        expand: agg_kind.need_expand(),
-    };
-    let conf = httpclient::get_channel_config(&q, node_config).await.map_err(|e| {
-        e.add_public_msg(format!(
-            "Can not find channel config for channel: {:?}",
-            q.channel.name()
-        ))
-    })?;
     let ret = channel_exec_config(
         f,
-        conf.scalar_type.clone(),
-        // TODO is the byte order ever important here?
-        conf.byte_order.unwrap_or(ByteOrder::LE).clone(),
-        conf.shape.clone(),
+        scalar_type,
+        // TODO TODO TODO is the byte order ever important here?
+        ByteOrder::LE,
+        shape,
         agg_kind,
         node_config,
     )?;

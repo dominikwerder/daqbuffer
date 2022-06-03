@@ -116,40 +116,38 @@ async fn events_conn_handler_inner_try(
             return Err((Error::with_msg("json parse error"), netout))?;
         }
     };
-    debug!("---  got query   evq {:?}", evq);
+    info!("events_conn_handler_inner_try  evq {:?}", evq);
 
-    let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>> = if evq.channel.backend == "scylla" {
-        if node_config.node.access_scylla {
-            let scyco = node_config.node_config.cluster.scylla.as_ref().unwrap();
-            match make_scylla_stream(&evq, scyco).await {
+    let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>> =
+        if let Some(conf) = &node_config.node_config.cluster.scylla {
+            let scyco = conf;
+            let dbconf = node_config.node_config.cluster.database.clone();
+            match make_scylla_stream(&evq, scyco, dbconf).await {
+                Ok(j) => j,
+                Err(e) => return Err((e, netout))?,
+            }
+        } else if let Some(aa) = &node_config.node.channel_archiver {
+            match archapp_wrap::archapp::archeng::pipe::make_event_pipe(&evq, node_config.clone(), aa.clone()).await {
+                Ok(j) => j,
+                Err(e) => return Err((e, netout))?,
+            }
+        } else if let Some(aa) = &node_config.node.archiver_appliance {
+            match archapp_wrap::make_event_pipe(&evq, aa).await {
                 Ok(j) => j,
                 Err(e) => return Err((e, netout))?,
             }
         } else {
-            Box::pin(futures_util::stream::empty())
-        }
-    } else if let Some(aa) = &node_config.node.channel_archiver {
-        match archapp_wrap::archapp::archeng::pipe::make_event_pipe(&evq, node_config.clone(), aa.clone()).await {
-            Ok(j) => j,
-            Err(e) => return Err((e, netout))?,
-        }
-    } else if let Some(aa) = &node_config.node.archiver_appliance {
-        match archapp_wrap::make_event_pipe(&evq, aa).await {
-            Ok(j) => j,
-            Err(e) => return Err((e, netout))?,
-        }
-    } else {
-        match evq.agg_kind {
-            AggKind::EventBlobs => match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
-                Ok(j) => j,
-                Err(e) => return Err((e, netout))?,
-            },
-            _ => match disk::raw::conn::make_event_pipe(&evq, node_config).await {
-                Ok(j) => j,
-                Err(e) => return Err((e, netout))?,
-            },
-        }
-    };
+            match evq.agg_kind {
+                AggKind::EventBlobs => match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
+                    Ok(j) => j,
+                    Err(e) => return Err((e, netout))?,
+                },
+                _ => match disk::raw::conn::make_event_pipe(&evq, node_config).await {
+                    Ok(j) => j,
+                    Err(e) => return Err((e, netout))?,
+                },
+            }
+        };
     let mut buf_len_histo = HistoLog2::new(5);
     while let Some(item) = p1.next().await {
         let item = item.make_frame();

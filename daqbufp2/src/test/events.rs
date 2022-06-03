@@ -62,6 +62,7 @@ where
     let channel = Channel {
         backend: channel_backend.into(),
         name: channel_name.into(),
+        series: None,
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
     let query = PlainEventsBinaryQuery::new(channel, range, 1024 * 4);
@@ -272,6 +273,7 @@ pub async fn get_plain_events_json(
     let channel = Channel {
         backend: channel_backend.into(),
         name: channel_name.into(),
+        series: None,
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
     let query = PlainEventsJsonQuery::new(channel, range, 1024 * 4, None, false);

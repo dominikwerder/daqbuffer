@@ -17,7 +17,7 @@ use items::{
 use netpod::log::*;
 use netpod::query::{CacheUsage, RawEventsQuery};
 use netpod::{
-    x_bin_count, AggKind, BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange, Shape,
+    x_bin_count, AggKind, BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange,
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -37,7 +37,6 @@ where
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch>,
 {
     query: PreBinnedQuery,
-    shape: Shape,
     agg_kind: AggKind,
     node_config: NodeConfigCached,
     open_check_local_file: Option<Pin<Box<dyn Future<Output = Result<File, io::Error>> + Send>>>,
@@ -71,10 +70,9 @@ where
     // TODO who exactly needs this DeserializeOwned?
     Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>: FrameType + DeserializeOwned,
 {
-    pub fn new(query: PreBinnedQuery, shape: Shape, agg_kind: AggKind, node_config: &NodeConfigCached) -> Self {
+    pub fn new(query: PreBinnedQuery, agg_kind: AggKind, node_config: &NodeConfigCached) -> Self {
         Self {
             query,
-            shape,
             agg_kind,
             node_config: node_config.clone(),
             open_check_local_file: None,
@@ -133,7 +131,7 @@ where
         let ret = TBinnerStream::<_, <ENP as EventsNodeProcessor>::Output>::new(
             s,
             range,
-            x_bin_count(&self.shape, &self.agg_kind),
+            x_bin_count(&self.query.shape().clone(), &self.agg_kind),
             self.agg_kind.do_time_weighted(),
         );
         Ok(Box::pin(ret))
@@ -180,6 +178,8 @@ where
                     let query = PreBinnedQuery::new(
                         patch,
                         q2.channel().clone(),
+                        q2.scalar_type().clone(),
+                        q2.shape().clone(),
                         q2.agg_kind().clone(),
                         q2.cache_usage().clone(),
                         disk_io_buffer_size,

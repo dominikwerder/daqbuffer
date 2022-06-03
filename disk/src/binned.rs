@@ -54,7 +54,7 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
     fn exec<NTY, END, EVS, ENP>(
         self,
         _byte_order: END,
-        _scalar_type: ScalarType,
+        scalar_type: ScalarType,
         shape: Shape,
         event_value_shape: EVS,
         _events_node_proc: ENP,
@@ -93,6 +93,7 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
                     PreBinnedPatchIterator::from_range(pre_range),
                     self.query.channel().clone(),
                     range.clone(),
+                    scalar_type,
                     shape,
                     self.query.agg_kind().clone(),
                     self.query.cache_usage().clone(),
@@ -147,12 +148,16 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
 
 pub async fn binned_bytes_for_http(
     query: &BinnedQuery,
+    scalar_type: ScalarType,
+    shape: Shape,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>, Error> {
     let ret = channel_exec(
         BinnedBinaryChannelExec::new(query.clone(), node_config.clone()),
         query.channel(),
         query.range(),
+        scalar_type,
+        shape,
         query.agg_kind().clone(),
         node_config,
     )
@@ -306,7 +311,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
     fn exec<NTY, END, EVS, ENP>(
         self,
         _byte_order: END,
-        _scalar_type: ScalarType,
+        scalar_type: ScalarType,
         shape: Shape,
         event_value_shape: EVS,
         _events_node_proc: ENP,
@@ -346,6 +351,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
                     PreBinnedPatchIterator::from_range(pre_range),
                     self.query.channel().clone(),
                     range.clone(),
+                    scalar_type,
                     shape,
                     self.query.agg_kind().clone(),
                     self.query.cache_usage().clone(),
@@ -400,12 +406,16 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
 
 pub async fn binned_json(
     query: &BinnedQuery,
+    scalar_type: ScalarType,
+    shape: Shape,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>, Error> {
     let ret = channel_exec(
         BinnedJsonChannelExec::new(query.clone(), query.timeout(), node_config.clone()),
         query.channel(),
         query.range(),
+        scalar_type,
+        shape,
         query.agg_kind().clone(),
         node_config,
     )

@@ -119,6 +119,7 @@ fn get_sls_archive_1() -> Result<(), Error> {
         let channel = Channel {
             backend: "sls-archive".into(),
             name: "ABOMA-CH-6G:U-DCLINK".into(),
+            series: None,
         };
         let begstr = "2021-11-10T01:00:00Z";
         let endstr = "2021-11-10T01:01:00Z";
@@ -140,6 +141,7 @@ fn get_sls_archive_3() -> Result<(), Error> {
         let channel = Channel {
             backend: "sls-archive".into(),
             name: "ARIDI-PCT:CURRENT".into(),
+            series: None,
         };
         let begstr = "2021-11-09T00:00:00Z";
         let endstr = "2021-11-11T00:10:00Z";
@@ -161,6 +163,7 @@ fn get_sls_archive_wave_2() -> Result<(), Error> {
         let channel = Channel {
             backend: "sls-archive".into(),
             name: "ARIDI-MBF-X:CBM-IN".into(),
+            series: None,
         };
         let begstr = "2021-11-09T10:00:00Z";
         let endstr = "2021-11-10T06:00:00Z";
@@ -192,6 +195,7 @@ async fn get_binned_json_common(
     let channel = Channel {
         backend: channel_backend.into(),
         name: channel_name.into(),
+        series: None,
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
     let mut query = BinnedQuery::new(channel, range, bin_count, agg_kind);

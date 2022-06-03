@@ -345,6 +345,7 @@ mod test {
                     channel: Channel {
                         backend: "testbackend".into(),
                         name: "scalar-i32-be".into(),
+                        series: None,
                     },
                     keyspace: 2,
                     time_bin_size: Nanos { ns: DAY },

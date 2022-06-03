@@ -250,6 +250,7 @@ mod test {
         let chn = netpod::Channel {
             backend: "testbackend".into(),
             name: "scalar-i32-be".into(),
+            series: None,
         };
         // TODO read config from disk.
         let channel_config = ChannelConfig {
