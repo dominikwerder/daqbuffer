@@ -334,12 +334,23 @@ macro_rules! read_next_scalar_values {
             type ST = $st;
             type SCYTY = $scyty;
             info!("{}  series {}  ts_msp {}", stringify!($fname), series, ts_msp);
+            let _ts_lsp_max = if range.end <= ts_msp {
+                // TODO we should not be here...
+            } else {
+            };
+            if range.end > i64::MAX as u64 {
+                return Err(Error::with_msg_no_trace(format!("range.end overflows i64")));
+            }
+            let ts_lsp_max = range.end;
             let cql = concat!(
                 "select ts_lsp, pulse, value from ",
                 $table_name,
-                " where series = ? and ts_msp = ?"
+                " where series = ? and ts_msp = ? and ts_lsp < ?"
             );
-            let res = scy.query(cql, (series, ts_msp as i64)).await.err_conv()?;
+            let res = scy
+                .query(cql, (series, ts_msp as i64, ts_lsp_max as i64))
+                .await
+                .err_conv()?;
             let mut ret = ScalarEvents::<ST>::empty();
             let mut discarded = 0;
             for row in res.rows_typed_or_empty::<(i64, i64, SCYTY)>() {
@@ -369,7 +380,7 @@ macro_rules! read_next_array_values {
         async fn $fname(
             series: i64,
             ts_msp: u64,
-            range: NanoRange,
+            _range: NanoRange,
             scy: Arc<ScySession>,
         ) -> Result<WaveEvents<$st>, Error> {
             type ST = $st;

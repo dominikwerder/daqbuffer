@@ -225,6 +225,8 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         }
     } else if let Some(h) = channelconfig::ChannelConfigHandler::handler(&req) {
         h.handle(req, &node_config).await
+    } else if let Some(h) = channelconfig::ScyllaChannelEventSeriesId::handler(&req) {
+        h.handle(req, &node_config).await
     } else if let Some(h) = channelconfig::ScyllaConfigsHisto::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = channelconfig::ScyllaChannelsWithType::handler(&req) {
@@ -232,6 +234,8 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
     } else if let Some(h) = channelconfig::IocForChannel::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = channelconfig::ScyllaChannelsActive::handler(&req) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = channelconfig::ScyllaSeriesTsMsp::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = channelconfig::ChannelFromSeries::handler(&req) {
         h.handle(req, &node_config).await

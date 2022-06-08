@@ -691,10 +691,121 @@ pub struct ChannelConfig {
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
+pub enum ShapeOld {
+    Scalar,
+    Wave(u32),
+    Image(u32, u32),
+}
+
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub enum Shape {
     Scalar,
     Wave(u32),
     Image(u32, u32),
+}
+
+impl Serialize for Shape {
+    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error>
+    where
+        S::Error: serde::ser::Error,
+    {
+        use Shape::*;
+        match self {
+            Scalar => ser.collect_seq([0u32; 0].iter()),
+            Wave(a) => ser.collect_seq([*a].iter()),
+            Image(a, b) => ser.collect_seq([*a, *b].iter()),
+        }
+    }
+}
+
+struct ShapeVis;
+
+impl<'de> serde::de::Visitor<'de> for ShapeVis {
+    type Value = Shape;
+
+    fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.write_str("a string describing the Shape variant")
+    }
+
+    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+    where
+        E: serde::de::Error,
+    {
+        info!("visit_str  {v}");
+        if v == "Scalar" {
+            Ok(Shape::Scalar)
+        } else {
+            Err(E::custom(format!("unexpected value: {v:?}")))
+        }
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::MapAccess<'de>,
+    {
+        use serde::de::Error;
+        while let Some(key) = map.next_key::<String>()? {
+            info!("See key {key:?}");
+            return if key == "Wave" {
+                let n: u32 = map.next_value()?;
+                Ok(Shape::Wave(n))
+            } else if key == "Image" {
+                let a = map.next_value::<[u32; 2]>()?;
+                Ok(Shape::Image(a[0], a[1]))
+            } else {
+                Err(A::Error::custom(format!("unexpected key {key:?}")))
+            };
+        }
+        Err(A::Error::custom(format!("invalid shape format")))
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: serde::de::SeqAccess<'de>,
+    {
+        info!("visit_seq");
+        let mut a = vec![];
+        while let Some(item) = seq.next_element()? {
+            let n: u32 = item;
+            a.push(n);
+        }
+        if a.len() == 0 {
+            Ok(Shape::Scalar)
+        } else if a.len() == 1 {
+            Ok(Shape::Wave(a[0]))
+        } else if a.len() == 2 {
+            Ok(Shape::Image(a[0], a[1]))
+        } else {
+            use serde::de::Error;
+            Err(A::Error::custom(format!("bad shape")))
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for Shape {
+    fn deserialize<D>(de: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        de.deserialize_any(ShapeVis)
+        /*
+        // TODO can not clone.. how to try the alternatives?
+        match de.deserialize_str(ShapeVis) {
+            Ok(k) => {
+                info!("De worked first try: {k:?}");
+                Ok(k)
+            }
+            Err(_) => {
+                let ret = match <ShapeOld as Deserialize<'de>>::deserialize(de)? {
+                    ShapeOld::Scalar => Shape::Scalar,
+                    ShapeOld::Wave(a) => Shape::Wave(a),
+                    ShapeOld::Image(a, b) => Shape::Image(a, b),
+                };
+                Ok(ret)
+            }
+        }
+        */
+    }
 }
 
 impl Shape {
@@ -812,6 +923,34 @@ impl Shape {
         let ret = serde_json::from_str(s)?;
         Ok(ret)
     }
+}
+
+#[test]
+fn test_shape_serde() {
+    let s = serde_json::to_string(&Shape::Image(42, 43)).unwrap();
+    assert_eq!(s, r#"[42,43]"#);
+    let s = serde_json::to_string(&ShapeOld::Scalar).unwrap();
+    assert_eq!(s, r#""Scalar""#);
+    let s = serde_json::to_string(&ShapeOld::Wave(8)).unwrap();
+    assert_eq!(s, r#"{"Wave":8}"#);
+    let s = serde_json::to_string(&ShapeOld::Image(42, 43)).unwrap();
+    assert_eq!(s, r#"{"Image":[42,43]}"#);
+    let s = serde_json::from_str::<ShapeOld>(r#""Scalar""#).unwrap();
+    assert_eq!(s, ShapeOld::Scalar);
+    let s = serde_json::from_str::<ShapeOld>(r#"{"Wave": 123}"#).unwrap();
+    assert_eq!(s, ShapeOld::Wave(123));
+    let s = serde_json::from_str::<ShapeOld>(r#"{"Image":[77, 78]}"#).unwrap();
+    assert_eq!(s, ShapeOld::Image(77, 78));
+    let s = serde_json::from_str::<Shape>(r#"[]"#).unwrap();
+    assert_eq!(s, Shape::Scalar);
+    let s = serde_json::from_str::<Shape>(r#"[12]"#).unwrap();
+    assert_eq!(s, Shape::Wave(12));
+    let s = serde_json::from_str::<Shape>(r#"[12, 13]"#).unwrap();
+    assert_eq!(s, Shape::Image(12, 13));
+    let s = serde_json::from_str::<Shape>(r#""Scalar""#).unwrap();
+    assert_eq!(s, Shape::Scalar);
+    let s = serde_json::from_str::<Shape>(r#"{"Wave":55}"#).unwrap();
+    assert_eq!(s, Shape::Wave(55));
 }
 
 pub trait HasShape {
