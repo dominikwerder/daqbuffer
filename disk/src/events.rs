@@ -7,101 +7,7 @@ use url::Url;
 
 // TODO move this query type out of this `binned` mod
 #[derive(Clone, Debug)]
-pub struct PlainEventsBinaryQuery {
-    channel: Channel,
-    range: NanoRange,
-    disk_io_buffer_size: usize,
-    report_error: bool,
-    timeout: Duration,
-}
-
-impl PlainEventsBinaryQuery {
-    pub fn new(channel: Channel, range: NanoRange, disk_io_buffer_size: usize) -> Self {
-        Self {
-            channel,
-            range,
-            disk_io_buffer_size,
-            report_error: false,
-            timeout: Duration::from_millis(10000),
-        }
-    }
-
-    pub fn from_url(url: &Url) -> Result<Self, Error> {
-        let pairs = get_url_query_pairs(url);
-        let beg_date = pairs.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
-        let end_date = pairs.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
-        let ret = Self {
-            channel: channel_from_pairs(&pairs)?,
-            range: NanoRange {
-                beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
-                end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
-            },
-            disk_io_buffer_size: pairs
-                .get("diskIoBufferSize")
-                .map_or("4096", |k| k)
-                .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse diskIoBufferSize {:?}", e)))?,
-            report_error: pairs
-                .get("reportError")
-                .map_or("false", |k| k)
-                .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,
-            timeout: pairs
-                .get("timeout")
-                .map_or("10000", |k| k)
-                .parse::<u64>()
-                .map(|k| Duration::from_millis(k))
-                .map_err(|e| Error::with_msg(format!("can not parse timeout {:?}", e)))?,
-        };
-        Ok(ret)
-    }
-
-    pub fn range(&self) -> &NanoRange {
-        &self.range
-    }
-
-    pub fn channel(&self) -> &Channel {
-        &self.channel
-    }
-
-    pub fn disk_io_buffer_size(&self) -> usize {
-        self.disk_io_buffer_size
-    }
-
-    pub fn report_error(&self) -> bool {
-        self.report_error
-    }
-
-    pub fn timeout(&self) -> Duration {
-        self.timeout
-    }
-
-    pub fn set_timeout(&mut self, k: Duration) {
-        self.timeout = k;
-    }
-}
-
-impl AppendToUrl for PlainEventsBinaryQuery {
-    fn append_to_url(&self, url: &mut Url) {
-        let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
-        channel_append_to_url(url, &self.channel);
-        let mut g = url.query_pairs_mut();
-        g.append_pair(
-            "begDate",
-            &Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt).to_string(),
-        );
-        g.append_pair(
-            "endDate",
-            &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
-        );
-        g.append_pair("diskIoBufferSize", &format!("{}", self.disk_io_buffer_size));
-        g.append_pair("timeout", &format!("{}", self.timeout.as_millis()));
-    }
-}
-
-// TODO move this query type out of this `binned` mod
-#[derive(Clone, Debug)]
-pub struct PlainEventsJsonQuery {
+pub struct PlainEventsQuery {
     channel: Channel,
     range: NanoRange,
     disk_io_buffer_size: usize,
@@ -109,9 +15,11 @@ pub struct PlainEventsJsonQuery {
     timeout: Duration,
     events_max: Option<u64>,
     do_log: bool,
+    do_test_main_error: bool,
+    do_test_stream_error: bool,
 }
 
-impl PlainEventsJsonQuery {
+impl PlainEventsQuery {
     pub fn new(
         channel: Channel,
         range: NanoRange,
@@ -127,6 +35,8 @@ impl PlainEventsJsonQuery {
             timeout: Duration::from_millis(10000),
             events_max,
             do_log,
+            do_test_main_error: false,
+            do_test_stream_error: false,
         }
     }
 
@@ -164,6 +74,16 @@ impl PlainEventsJsonQuery {
                 .map_or("false", |k| k)
                 .parse()
                 .map_err(|e| Error::with_public_msg(format!("can not parse doLog {:?}", e)))?,
+            do_test_main_error: pairs
+                .get("doTestMainError")
+                .map_or("false", |k| k)
+                .parse()
+                .map_err(|e| Error::with_public_msg(format!("can not parse doTestMainError {:?}", e)))?,
+            do_test_stream_error: pairs
+                .get("doTestStreamError")
+                .map_or("false", |k| k)
+                .parse()
+                .map_err(|e| Error::with_public_msg(format!("can not parse doTestStreamError {:?}", e)))?,
         };
         Ok(ret)
     }
@@ -202,8 +122,24 @@ impl PlainEventsJsonQuery {
         self.do_log
     }
 
+    pub fn do_test_main_error(&self) -> bool {
+        self.do_test_main_error
+    }
+
+    pub fn do_test_stream_error(&self) -> bool {
+        self.do_test_stream_error
+    }
+
     pub fn set_timeout(&mut self, k: Duration) {
         self.timeout = k;
+    }
+
+    pub fn set_do_test_main_error(&mut self, k: bool) {
+        self.do_test_main_error = k;
+    }
+
+    pub fn set_do_test_stream_error(&mut self, k: bool) {
+        self.do_test_stream_error = k;
     }
 
     pub fn append_to_url(&self, url: &mut Url) {
@@ -227,25 +163,25 @@ impl PlainEventsJsonQuery {
     }
 }
 
-impl HasBackend for PlainEventsJsonQuery {
+impl HasBackend for PlainEventsQuery {
     fn backend(&self) -> &str {
         &self.channel.backend
     }
 }
 
-impl HasTimeout for PlainEventsJsonQuery {
+impl HasTimeout for PlainEventsQuery {
     fn timeout(&self) -> Duration {
         self.timeout.clone()
     }
 }
 
-impl FromUrl for PlainEventsJsonQuery {
+impl FromUrl for PlainEventsQuery {
     fn from_url(url: &Url) -> Result<Self, Error> {
         Self::from_url(url)
     }
 }
 
-impl AppendToUrl for PlainEventsJsonQuery {
+impl AppendToUrl for PlainEventsQuery {
     fn append_to_url(&self, url: &mut Url) {
         self.append_to_url(url)
     }

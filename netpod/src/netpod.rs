@@ -1711,6 +1711,12 @@ impl DiskIoTune {
     }
 }
 
+impl Default for DiskIoTune {
+    fn default() -> Self {
+        Self::default()
+    }
+}
+
 pub fn channel_from_pairs(pairs: &BTreeMap<String, String>) -> Result<Channel, Error> {
     let ret = Channel {
         backend: pairs

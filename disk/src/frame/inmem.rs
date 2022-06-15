@@ -158,11 +158,14 @@ where
                     let frame_crc_ind =
                         u32::from_le_bytes(*arrayref::array_ref![buf, INMEM_FRAME_HEAD + len as usize, 4]);
                     let payload_crc_ind = u32::from_le_bytes(*arrayref::array_ref![buf, 16, 4]);
+                    //info!("len {}", len);
+                    //info!("payload_crc_ind {}", payload_crc_ind);
+                    //info!("frame_crc_ind {}", frame_crc_ind);
                     let payload_crc_match = payload_crc_ind == payload_crc;
                     let frame_crc_match = frame_crc_ind == frame_crc;
-                    if !payload_crc_match || !frame_crc_match {
+                    if !frame_crc_match || !payload_crc_match {
                         let ss = String::from_utf8_lossy(&buf[..buf.len().min(256)]);
-                        warn!("CRC mismatch A\n{ss:?}");
+                        warn!("CRC mismatch A  frame_crc_match {frame_crc_match}  payload_crc_match {payload_crc_match}\n{ss:?}");
                         return (
                             Some(Some(Err(Error::with_msg(format!(
                                 "InMemoryFrameAsyncReadStream  tryparse  crc mismatch A  {}  {}",

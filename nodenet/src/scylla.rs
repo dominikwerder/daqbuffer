@@ -169,10 +169,16 @@ pub struct ScyllaFramableStream {
     shape: Option<Shape>,
     scy: Arc<ScySession>,
     pgclient: Arc<PgClient>,
+    do_test_stream_error: bool,
 }
 
 impl ScyllaFramableStream {
-    pub fn new(evq: &RawEventsQuery, scy: Arc<ScySession>, pgclient: Arc<PgClient>) -> Self {
+    pub fn new(
+        evq: &RawEventsQuery,
+        scy: Arc<ScySession>,
+        pgclient: Arc<PgClient>,
+        do_test_stream_error: bool,
+    ) -> Self {
         Self {
             state: FrState::New,
             series: evq.channel.series.unwrap(),
@@ -183,6 +189,7 @@ impl ScyllaFramableStream {
             shape: None,
             scy,
             pgclient,
+            do_test_stream_error,
         }
     }
 }
@@ -192,6 +199,13 @@ impl Stream for ScyllaFramableStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        if self.do_test_stream_error {
+            let e = Error::with_msg(format!("Test PRIVATE STREAM error."))
+                .add_public_msg(format!("Test PUBLIC STREAM error."));
+            return Ready(Some(
+                Box::new(Err::<StreamItem<RangeCompletableItem<ScalarEvents<f32>>>, _>(e)) as _,
+            ));
+        }
         loop {
             break match self.state {
                 FrState::New => {
@@ -296,7 +310,7 @@ async fn find_series(series: u64, pgclient: Arc<PgClient>) -> Result<(ScalarType
 }
 
 async fn find_ts_msp(series: i64, range: NanoRange, scy: Arc<ScySession>) -> Result<Vec<u64>, Error> {
-    info!("find_ts_msp  series {}  {:?}", series, range);
+    trace!("find_ts_msp  series {}  {:?}", series, range);
     // TODO use prepared statements
     let cql = "select ts_msp from ts_msp where series = ? and ts_msp < ? order by ts_msp desc limit 1";
     let res = scy.query(cql, (series, range.beg as i64)).await.err_conv()?;
@@ -305,7 +319,7 @@ async fn find_ts_msp(series: i64, range: NanoRange, scy: Arc<ScySession>) -> Res
         let row = row.err_conv()?;
         before.push(row.0 as u64);
     }
-    info!("FOUND BEFORE THE REQUESTED TIME:  {}  {:?}", before.len(), before);
+    trace!("FOUND BEFORE THE REQUESTED TIME:  {}  {:?}", before.len(), before);
     let cql = "select ts_msp from ts_msp where series = ? and ts_msp >= ? and ts_msp < ?";
     let res = scy
         .query(cql, (series, range.beg as i64, range.end as i64))
@@ -319,7 +333,7 @@ async fn find_ts_msp(series: i64, range: NanoRange, scy: Arc<ScySession>) -> Res
         let row = row.err_conv()?;
         ret.push(row.0 as u64);
     }
-    info!("found in total {} rows  {:?}", ret.len(), ret);
+    trace!("found in total {} rows", ret.len());
     Ok(ret)
 }
 
@@ -333,7 +347,7 @@ macro_rules! read_next_scalar_values {
         ) -> Result<ScalarEvents<$st>, Error> {
             type ST = $st;
             type SCYTY = $scyty;
-            info!("{}  series {}  ts_msp {}", stringify!($fname), series, ts_msp);
+            trace!("{}  series {}  ts_msp {}", stringify!($fname), series, ts_msp);
             let _ts_lsp_max = if range.end <= ts_msp {
                 // TODO we should not be here...
             } else {
@@ -364,7 +378,7 @@ macro_rules! read_next_scalar_values {
                     ret.push(ts, pulse, value);
                 }
             }
-            info!(
+            trace!(
                 "found in total {} events  ts_msp {}  discarded {}",
                 ret.tss.len(),
                 ts_msp,
@@ -416,6 +430,7 @@ pub async fn make_scylla_stream(
     evq: &RawEventsQuery,
     scyco: &ScyllaConfig,
     dbconf: Database,
+    do_test_stream_error: bool,
 ) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error> {
     info!("make_scylla_stream open scylla connection");
     // TODO reuse existing connection:
@@ -434,7 +449,7 @@ pub async fn make_scylla_stream(
     tokio::spawn(pgconn);
     let pgclient = Arc::new(pgclient);
     let scy = Arc::new(scy);
-    let res = Box::pin(ScyllaFramableStream::new(evq, scy, pgclient)) as _;
+    let res = Box::pin(ScyllaFramableStream::new(evq, scy, pgclient, do_test_stream_error)) as _;
     Ok(res)
 }
 

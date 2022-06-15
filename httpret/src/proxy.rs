@@ -5,7 +5,7 @@ use crate::err::Error;
 use crate::gather::{gather_get_json_generic, SubRes};
 use crate::pulsemap::MapPulseQuery;
 use crate::{api_1_docs, api_4_docs, response, response_err, Cont};
-use disk::events::PlainEventsJsonQuery;
+use disk::events::PlainEventsQuery;
 use futures_core::Stream;
 use futures_util::pin_mut;
 use http::{Method, StatusCode};
@@ -108,7 +108,7 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
     } else if path == "/api/4/search/channel" {
         Ok(api4::channel_search(req, proxy_config).await?)
     } else if path == "/api/4/events" {
-        Ok(proxy_single_backend_query::<PlainEventsJsonQuery>(req, proxy_config).await?)
+        Ok(proxy_single_backend_query::<PlainEventsQuery>(req, proxy_config).await?)
     } else if path.starts_with("/api/4/map/pulse/") {
         Ok(proxy_single_backend_query::<MapPulseQuery>(req, proxy_config).await?)
     } else if path == "/api/4/binned" {

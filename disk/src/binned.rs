@@ -112,16 +112,12 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
                 debug!(
                     "BinnedBinaryChannelExec  no covering range for prebinned, merge from remotes instead {range:?}"
                 );
-                // TODO let BinnedQuery provide the DiskIoTune.
-                let mut disk_io_tune = netpod::DiskIoTune::default();
-                disk_io_tune.read_buffer_len = self.query.disk_io_buffer_size() as usize;
-                let evq = RawEventsQuery {
-                    channel: self.query.channel().clone(),
-                    range: self.query.range().clone(),
-                    agg_kind: self.query.agg_kind().clone(),
-                    disk_io_tune,
-                    do_decompress: true,
-                };
+                // TODO let BinnedQuery provide the DiskIoTune and pass to RawEventsQuery:
+                let evq = RawEventsQuery::new(
+                    self.query.channel().clone(),
+                    self.query.range().clone(),
+                    self.query.agg_kind().clone(),
+                );
                 let x_bin_count = x_bin_count(&shape, self.query.agg_kind());
                 let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster.clone());
                 let s = TBinnerStream::<_, <ENP as EventsNodeProcessor>::Output>::new(
@@ -369,16 +365,12 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
             }
             Ok(None) => {
                 debug!("BinnedJsonChannelExec  no covering range for prebinned, merge from remotes instead {range:?}");
-                // TODO let BinnedQuery provide the DiskIoTune.
-                let mut disk_io_tune = netpod::DiskIoTune::default();
-                disk_io_tune.read_buffer_len = self.query.disk_io_buffer_size() as usize;
-                let evq = RawEventsQuery {
-                    channel: self.query.channel().clone(),
-                    range: self.query.range().clone(),
-                    agg_kind: self.query.agg_kind().clone(),
-                    disk_io_tune,
-                    do_decompress: true,
-                };
+                // TODO let BinnedQuery provide the DiskIoTune and pass to RawEventsQuery:
+                let evq = RawEventsQuery::new(
+                    self.query.channel().clone(),
+                    self.query.range().clone(),
+                    self.query.agg_kind().clone(),
+                );
                 let x_bin_count = x_bin_count(&shape, self.query.agg_kind());
                 let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster.clone());
                 let s = TBinnerStream::<_, <ENP as EventsNodeProcessor>::Output>::new(

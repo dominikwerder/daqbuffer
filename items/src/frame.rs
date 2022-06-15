@@ -4,12 +4,15 @@ use crate::{
 };
 use bytes::{BufMut, BytesMut};
 use err::Error;
+#[allow(unused)]
+use netpod::log::*;
 use serde::{de::DeserializeOwned, Serialize};
 
 pub fn make_frame<FT>(item: &FT) -> Result<BytesMut, Error>
 where
     FT: FrameType + Serialize,
 {
+    //trace!("make_frame");
     if item.is_err() {
         make_error_frame(item.err().unwrap())
     } else {
@@ -21,6 +24,7 @@ pub fn make_frame_2<FT>(item: &FT, fty: u32) -> Result<BytesMut, Error>
 where
     FT: Serialize,
 {
+    //trace!("make_frame_2");
     match bincode::serialize(item) {
         Ok(enc) => {
             if enc.len() > u32::MAX as usize {
@@ -35,11 +39,15 @@ where
             buf.put_u32_le(fty);
             buf.put_u32_le(enc.len() as u32);
             buf.put_u32_le(payload_crc);
+            // TODO add padding to align to 8 bytes.
+            //trace!("enc len {}", enc.len());
+            //trace!("payload_crc {}", payload_crc);
             buf.put(enc.as_ref());
             let mut h = crc32fast::Hasher::new();
             h.update(&buf);
             let frame_crc = h.finalize();
             buf.put_u32_le(frame_crc);
+            //trace!("frame_crc {}", frame_crc);
             Ok(buf)
         }
         Err(e) => Err(e)?,
@@ -47,10 +55,11 @@ where
 }
 
 pub fn make_error_frame(error: &::err::Error) -> Result<BytesMut, Error> {
+    //trace!("make_error_frame");
     match bincode::serialize(error) {
         Ok(enc) => {
             let mut h = crc32fast::Hasher::new();
-            h.update(&[]);
+            h.update(&enc);
             let payload_crc = h.finalize();
             let mut buf = BytesMut::with_capacity(INMEM_FRAME_HEAD);
             buf.put_u32_le(INMEM_FRAME_MAGIC);
@@ -58,11 +67,15 @@ pub fn make_error_frame(error: &::err::Error) -> Result<BytesMut, Error> {
             buf.put_u32_le(ERROR_FRAME_TYPE_ID);
             buf.put_u32_le(enc.len() as u32);
             buf.put_u32_le(payload_crc);
+            // TODO add padding to align to 8 bytes.
+            //trace!("enc len {}", enc.len());
+            //trace!("payload_crc {}", payload_crc);
             buf.put(enc.as_ref());
             let mut h = crc32fast::Hasher::new();
             h.update(&buf);
             let frame_crc = h.finalize();
             buf.put_u32_le(frame_crc);
+            //trace!("frame_crc {}", frame_crc);
             Ok(buf)
         }
         Err(e) => Err(e)?,
@@ -70,15 +83,19 @@ pub fn make_error_frame(error: &::err::Error) -> Result<BytesMut, Error> {
 }
 
 pub fn make_term_frame() -> BytesMut {
+    //trace!("make_term_frame");
+    let enc = [];
     let mut h = crc32fast::Hasher::new();
-    h.update(&[]);
+    h.update(&enc);
     let payload_crc = h.finalize();
     let mut buf = BytesMut::with_capacity(INMEM_FRAME_HEAD);
     buf.put_u32_le(INMEM_FRAME_MAGIC);
     buf.put_u32_le(INMEM_FRAME_ENCID);
     buf.put_u32_le(TERM_FRAME_TYPE_ID);
-    buf.put_u32_le(0);
+    buf.put_u32_le(enc.len() as u32);
     buf.put_u32_le(payload_crc);
+    // TODO add padding to align to 8 bytes.
+    buf.put(enc.as_ref());
     let mut h = crc32fast::Hasher::new();
     h.update(&buf);
     let frame_crc = h.finalize();

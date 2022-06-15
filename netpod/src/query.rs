@@ -71,8 +71,28 @@ pub struct RawEventsQuery {
     pub channel: Channel,
     pub range: NanoRange,
     pub agg_kind: AggKind,
+    #[serde(default)]
     pub disk_io_tune: DiskIoTune,
+    #[serde(default)]
     pub do_decompress: bool,
+    #[serde(default)]
+    pub do_test_main_error: bool,
+    #[serde(default)]
+    pub do_test_stream_error: bool,
+}
+
+impl RawEventsQuery {
+    pub fn new(channel: Channel, range: NanoRange, agg_kind: AggKind) -> Self {
+        Self {
+            channel,
+            range,
+            agg_kind,
+            disk_io_tune: DiskIoTune::default(),
+            do_decompress: false,
+            do_test_main_error: false,
+            do_test_stream_error: false,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

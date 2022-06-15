@@ -20,6 +20,8 @@ use bytes::BytesMut;
 use chrono::{TimeZone, Utc};
 use err::Error;
 use frame::make_error_frame;
+#[allow(unused)]
+use netpod::log::*;
 use netpod::timeunits::{MS, SEC};
 use netpod::{log::Level, AggKind, EventDataReadStats, EventQueryJsonStringFrame, NanoRange, Shape};
 use netpod::{DiskStats, RangeFilterStats};
@@ -282,6 +284,7 @@ where
     }
 
     fn make_frame(&self) -> Result<BytesMut, Error> {
+        //trace!("make_frame");
         match self {
             Ok(_) => make_frame_2(self, T::FRAME_TYPE_ID),
             Err(e) => make_error_frame(e),

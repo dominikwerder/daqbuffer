@@ -1,7 +1,7 @@
 use crate::channelconfig::{chconf_from_events_binary, chconf_from_events_json};
 use crate::err::Error;
 use crate::{response, response_err, BodyStream, ToPublicResponse};
-use disk::events::{PlainEventsBinaryQuery, PlainEventsJsonQuery};
+use disk::events::PlainEventsQuery;
 use futures_util::{StreamExt, TryStreamExt};
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
@@ -52,14 +52,9 @@ async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Res
 async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     debug!("httpret  plain_events_binary  req: {:?}", req);
     let url = Url::parse(&format!("dummy:{}", req.uri()))?;
-    let query = PlainEventsBinaryQuery::from_url(&url)?;
+    let query = PlainEventsQuery::from_url(&url)?;
     let chconf = chconf_from_events_binary(&query, node_config).await?;
-    let op = disk::channelexec::PlainEvents::new(
-        query.channel().clone(),
-        query.range().clone(),
-        query.disk_io_buffer_size(),
-        node_config.clone(),
-    );
+    let op = disk::channelexec::PlainEvents::new(query.channel().clone(), query.range().clone(), node_config.clone());
     let s = disk::channelexec::channel_exec(
         op,
         query.channel(),
@@ -81,12 +76,13 @@ async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached)
 async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     info!("httpret  plain_events_json  req: {:?}", req);
     let (head, _body) = req.into_parts();
-    let query = PlainEventsJsonQuery::from_request_head(&head)?;
+    let query = PlainEventsQuery::from_request_head(&head)?;
     let chconf = chconf_from_events_json(&query, node_config).await?;
     let op = disk::channelexec::PlainEventsJson::new(
+        // TODO pass only the query, not channel, range again:
+        query.clone(),
         query.channel().clone(),
         query.range().clone(),
-        query.disk_io_buffer_size(),
         query.timeout(),
         node_config.clone(),
         query.events_max().unwrap_or(u64::MAX),

@@ -2,7 +2,7 @@ use crate::err::Error;
 use crate::{response, ToPublicResponse};
 use dbconn::create_connection;
 use disk::binned::query::PreBinnedQuery;
-use disk::events::{PlainEventsBinaryQuery, PlainEventsJsonQuery};
+use disk::events::PlainEventsQuery;
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
 use netpod::log::*;
@@ -24,11 +24,11 @@ pub struct ChConf {
     pub shape: Shape,
 }
 
-pub async fn chconf_from_events_binary(_q: &PlainEventsBinaryQuery, _conf: &NodeConfigCached) -> Result<ChConf, Error> {
+pub async fn chconf_from_events_binary(_q: &PlainEventsQuery, _conf: &NodeConfigCached) -> Result<ChConf, Error> {
     err::todoval()
 }
 
-pub async fn chconf_from_events_json(q: &PlainEventsJsonQuery, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
+pub async fn chconf_from_events_json(q: &PlainEventsQuery, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
     if q.channel().backend != ncc.node_config.cluster.backend {
         warn!(
             "Mismatched backend  {}  VS  {}",
@@ -843,36 +843,37 @@ impl ChannelFromSeries {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct IocForChannelQuery {
-    channel: String,
+    facility: String,
+    #[serde(rename = "channelName")]
+    channel_name: String,
 }
 
 impl FromUrl for IocForChannelQuery {
     fn from_url(url: &Url) -> Result<Self, err::Error> {
         let pairs = get_url_query_pairs(url);
-        let channel = pairs
+        let facility = pairs
+            .get("facility")
+            .ok_or_else(|| Error::with_public_msg_no_trace("missing facility"))?
+            .into();
+        let channel_name = pairs
             .get("channelName")
             .ok_or_else(|| Error::with_public_msg_no_trace("missing channelName"))?
             .into();
-        Ok(Self { channel })
+        Ok(Self { facility, channel_name })
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ChannelIoc {
-    channel: String,
-    ioc: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct IocForChannelRes {
-    channels: Vec<Channel>,
+    #[serde(rename = "iocAddr")]
+    ioc_addr: String,
 }
 
 pub struct IocForChannel {}
 
 impl IocForChannel {
     pub fn handler(req: &Request<Body>) -> Option<Self> {
-        if req.uri().path() == "/api/4/ioc/channel" {
+        if req.uri().path() == "/api/4/channel/ioc" {
             Some(Self {})
         } else {
             None
@@ -889,9 +890,16 @@ impl IocForChannel {
             if accept == APP_JSON || accept == ACCEPT_ALL {
                 let url = Url::parse(&format!("dummy:{}", req.uri()))?;
                 let q = IocForChannelQuery::from_url(&url)?;
-                let res = self.find(&q, node_config).await?;
-                let body = Body::from(serde_json::to_vec(&res)?);
-                Ok(response(StatusCode::OK).body(body)?)
+                match self.find(&q, node_config).await {
+                    Ok(k) => {
+                        let body = Body::from(serde_json::to_vec(&k)?);
+                        Ok(response(StatusCode::OK).body(body)?)
+                    }
+                    Err(e) => {
+                        let body = Body::from(format!("{:?}", e.public_msg()));
+                        Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body)?)
+                    }
+                }
             } else {
                 Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
             }
@@ -900,13 +908,26 @@ impl IocForChannel {
         }
     }
 
-    async fn find(&self, q: &IocForChannelQuery, node_config: &NodeConfigCached) -> Result<IocForChannelRes, Error> {
-        // TODO implement lookup in postgres
-        let _ = q;
-        let _pgconn = create_connection(&node_config.node_config.cluster.database).await?;
-        let _facility = "scylla";
-        let ret = IocForChannelRes { channels: vec![] };
-        Ok(ret)
+    async fn find(
+        &self,
+        q: &IocForChannelQuery,
+        node_config: &NodeConfigCached,
+    ) -> Result<Option<IocForChannelRes>, Error> {
+        let dbconf = &node_config.node_config.cluster.database;
+        let pg_client = create_connection(dbconf).await?;
+        let rows = pg_client
+            .query(
+                "select addr from ioc_by_channel where facility = $1 and channel = $2",
+                &[&q.facility, &q.channel_name],
+            )
+            .await?;
+        if let Some(row) = rows.first() {
+            let ioc_addr = row.get(0);
+            let ret = IocForChannelRes { ioc_addr };
+            Ok(Some(ret))
+        } else {
+            Ok(None)
+        }
     }
 }
 

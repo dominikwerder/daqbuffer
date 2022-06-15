@@ -103,16 +103,12 @@ where
         Pin<Box<dyn Stream<Item = Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>> + Send>>,
         Error,
     > {
-        // TODO let PreBinnedQuery provide the tune:
-        let mut disk_io_tune = netpod::DiskIoTune::default();
-        disk_io_tune.read_buffer_len = self.query.disk_io_buffer_size();
-        let evq = RawEventsQuery {
-            channel: self.query.channel().clone(),
-            range: self.query.patch().patch_range(),
-            agg_kind: self.query.agg_kind().clone(),
-            disk_io_tune,
-            do_decompress: true,
-        };
+        // TODO let PreBinnedQuery provide the tune and pass to RawEventsQuery:
+        let evq = RawEventsQuery::new(
+            self.query.channel().clone(),
+            self.query.patch().patch_range(),
+            self.query.agg_kind().clone(),
+        );
         if self.query.patch().patch_t_len() % self.query.patch().bin_t_len() != 0 {
             let msg = format!(
                 "Patch length inconsistency  {}  {}",
@@ -218,6 +214,20 @@ where
             Err(e) => return Err(e),
         }
         Ok(())
+    }
+
+    fn poll_open_check_local_file(
+        self: &mut Self,
+        _fut: Pin<Box<dyn Future<Output = Result<File, io::Error>> + Send>>,
+    ) -> (
+        Poll<Option<Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>>>,
+        Pin<Box<dyn Future<Output = Result<File, io::Error>> + Send>>,
+    ) {
+        todo!()
+    }
+
+    fn _check_for_existing_cached_data(&mut self) -> Result<(), Error> {
+        todo!()
     }
 }
 
@@ -367,6 +377,10 @@ where
                     }
                     Pending => Pending,
                 }
+            } else if let Some(fut) = self.open_check_local_file.take() {
+                let (res, fut) = Self::poll_open_check_local_file(&mut self, fut);
+                self.open_check_local_file = Some(fut);
+                res
             } else if let Some(fut) = self.open_check_local_file.as_mut() {
                 match fut.poll_unpin(cx) {
                     Ready(item) => {

@@ -3,6 +3,7 @@ use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
     LittleEndian, NumFromBytes,
 };
+use crate::events::PlainEventsQuery;
 use crate::merge::mergedfromremotes::MergedFromRemotes;
 use bytes::Bytes;
 use err::Error;
@@ -18,9 +19,7 @@ use items::{
 };
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
-use netpod::{
-    AggKind, ByteOrder, Channel, ChannelConfigQuery, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape,
-};
+use netpod::{AggKind, ByteOrder, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
 use std::fmt::Debug;
@@ -195,8 +194,8 @@ where
 
 pub async fn channel_exec<F>(
     f: F,
-    channel: &Channel,
-    range: &NanoRange,
+    _channel: &Channel,
+    _range: &NanoRange,
     scalar_type: ScalarType,
     shape: Shape,
     agg_kind: AggKind,
@@ -221,17 +220,15 @@ pub struct PlainEvents {
     channel: Channel,
     range: NanoRange,
     agg_kind: AggKind,
-    disk_io_buffer_size: usize,
     node_config: NodeConfigCached,
 }
 
 impl PlainEvents {
-    pub fn new(channel: Channel, range: NanoRange, disk_io_buffer_size: usize, node_config: NodeConfigCached) -> Self {
+    pub fn new(channel: Channel, range: NanoRange, node_config: NodeConfigCached) -> Self {
         Self {
             channel,
             range,
             agg_kind: AggKind::Plain,
-            disk_io_buffer_size,
             node_config,
         }
     }
@@ -265,16 +262,8 @@ impl ChannelExecFunction for PlainEvents {
         let _ = byte_order;
         let _ = event_value_shape;
         let perf_opts = PerfOpts { inmem_bufcap: 4096 };
-        // TODO let upstream provide DiskIoTune
-        let mut disk_io_tune = netpod::DiskIoTune::default();
-        disk_io_tune.read_buffer_len = self.disk_io_buffer_size;
-        let evq = RawEventsQuery {
-            channel: self.channel,
-            range: self.range,
-            agg_kind: self.agg_kind,
-            disk_io_tune,
-            do_decompress: true,
-        };
+        // TODO let upstream provide DiskIoTune and pass in RawEventsQuery:
+        let evq = RawEventsQuery::new(self.channel, self.range, self.agg_kind);
         let s = MergedFromRemotes::<Identity<NTY>>::new(evq, perf_opts, self.node_config.node_config.cluster);
         let s = s.map(|item| Box::new(item) as Box<dyn Framable>);
         Ok(Box::pin(s))
@@ -286,10 +275,10 @@ impl ChannelExecFunction for PlainEvents {
 }
 
 pub struct PlainEventsJson {
+    query: PlainEventsQuery,
     channel: Channel,
     range: NanoRange,
     agg_kind: AggKind,
-    disk_io_buffer_size: usize,
     timeout: Duration,
     node_config: NodeConfigCached,
     events_max: u64,
@@ -298,19 +287,19 @@ pub struct PlainEventsJson {
 
 impl PlainEventsJson {
     pub fn new(
+        query: PlainEventsQuery,
         channel: Channel,
         range: NanoRange,
-        disk_io_buffer_size: usize,
         timeout: Duration,
         node_config: NodeConfigCached,
         events_max: u64,
         do_log: bool,
     ) -> Self {
         Self {
+            query,
             channel,
             range,
             agg_kind: AggKind::Plain,
-            disk_io_buffer_size,
             timeout,
             node_config,
             events_max,
@@ -373,6 +362,7 @@ where
                             }
                         }
                         StreamItem::Stats(item) => match item {
+                            // TODO factor and simplify the stats collection:
                             items::StatsItem::EventDataReadStats(_) => {}
                             items::StatsItem::RangeFilterStats(_) => {}
                             items::StatsItem::DiskStats(item) => match item {
@@ -422,10 +412,10 @@ impl ChannelExecFunction for PlainEventsJson {
 
     fn exec<NTY, END, EVS, ENP>(
         self,
-        byte_order: END,
+        _byte_order: END,
         _scalar_type: ScalarType,
         _shape: Shape,
-        event_value_shape: EVS,
+        _event_value_shape: EVS,
         _events_node_proc: ENP,
     ) -> Result<Self::Output, Error>
     where
@@ -443,19 +433,11 @@ impl ChannelExecFunction for PlainEventsJson {
         Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
             FrameType + Framable + DeserializeOwned,
     {
-        let _ = byte_order;
-        let _ = event_value_shape;
         let perf_opts = PerfOpts { inmem_bufcap: 4096 };
-        // TODO let upstream provide DiskIoTune
-        let mut disk_io_tune = netpod::DiskIoTune::default();
-        disk_io_tune.read_buffer_len = self.disk_io_buffer_size;
-        let evq = RawEventsQuery {
-            channel: self.channel,
-            range: self.range,
-            agg_kind: self.agg_kind,
-            disk_io_tune,
-            do_decompress: true,
-        };
+        // TODO let upstream provide DiskIoTune and set in RawEventsQuery.
+        let mut evq = RawEventsQuery::new(self.channel, self.range, self.agg_kind);
+        evq.do_test_main_error = self.query.do_test_main_error();
+        evq.do_test_stream_error = self.query.do_test_stream_error();
         let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster);
         let f = collect_plain_events_json(s, self.timeout, 0, self.events_max, self.do_log);
         let f = FutureExt::map(f, |item| match item {

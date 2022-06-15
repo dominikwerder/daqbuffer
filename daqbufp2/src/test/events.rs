@@ -1,7 +1,7 @@
 use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
 use chrono::{DateTime, Utc};
-use disk::events::{PlainEventsBinaryQuery, PlainEventsJsonQuery};
+use disk::events::PlainEventsQuery;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::streamlog::Streamlog;
 use err::Error;
@@ -12,7 +12,7 @@ use items::numops::NumOps;
 use items::scalarevents::ScalarEvents;
 use items::{FrameType, RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithLen};
 use netpod::log::*;
-use netpod::{AppendToUrl, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_JSON, APP_OCTET};
+use netpod::{Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_JSON, APP_OCTET};
 use serde_json::Value as JsonValue;
 use std::fmt::Debug;
 use std::future::ready;
@@ -65,7 +65,7 @@ where
         series: None,
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let query = PlainEventsBinaryQuery::new(channel, range, 1024 * 4);
+    let query = PlainEventsQuery::new(channel, range, 1024 * 4, None, false);
     let hp = HostPort::from_node(node0);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
     query.append_to_url(&mut url);
@@ -276,7 +276,7 @@ pub async fn get_plain_events_json(
         series: None,
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let query = PlainEventsJsonQuery::new(channel, range, 1024 * 4, None, false);
+    let query = PlainEventsQuery::new(channel, range, 1024 * 4, None, false);
     let hp = HostPort::from_node(node0);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
     query.append_to_url(&mut url);

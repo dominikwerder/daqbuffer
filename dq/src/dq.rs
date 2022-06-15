@@ -375,16 +375,14 @@ pub async fn convert(convert_params: ConvertParams) -> Result<(), Error> {
                 channel.name()
             )));
         }
-        let evq = RawEventsQuery {
-            channel: channel.clone(),
-            range: NanoRange {
+        let evq = RawEventsQuery::new(
+            channel.clone(),
+            NanoRange {
                 beg: u64::MIN,
                 end: u64::MAX,
             },
-            agg_kind: AggKind::Plain,
-            disk_io_tune: netpod::DiskIoTune::default(),
-            do_decompress: true,
-        };
+            AggKind::Plain,
+        );
         let f1 = pbr.into_file();
         // TODO can the positioning-logic maybe re-use the pbr?
         let z = archapp::events::position_file_for_evq(f1, evq.clone(), fni.year).await?;

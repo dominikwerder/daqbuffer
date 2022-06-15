@@ -77,6 +77,8 @@ impl AsyncRead for HttpBodyAsAsyncRead {
     }
 }
 
+// For file-based caching, this determined the node where the cache file is located.
+// No longer needed for scylla-based caching.
 pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoord, channel: &Channel, cluster: &Cluster) -> u32 {
     let mut hash = tiny_keccak::Sha3::v256();
     hash.update(channel.backend.as_bytes());
@@ -158,6 +160,7 @@ pub struct WrittenPbCache {
     pub duration: Duration,
 }
 
+// TODO only used for old archiver
 pub async fn write_pb_cache_min_max_avg_scalar<T>(
     values: T,
     patch: PreBinnedPatchCoord,

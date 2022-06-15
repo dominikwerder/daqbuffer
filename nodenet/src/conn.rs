@@ -31,7 +31,6 @@ pub async fn events_service(node_config: NodeConfigCached) -> Result<(), Error> 
 }
 
 async fn events_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: NodeConfigCached) -> Result<(), Error> {
-    //use tracing_futures::Instrument;
     let span1 = span!(Level::INFO, "events_conn_handler");
     let r = events_conn_handler_inner(stream, addr, &node_config)
         .instrument(span1)
@@ -39,7 +38,7 @@ async fn events_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: N
     match r {
         Ok(k) => Ok(k),
         Err(e) => {
-            error!("raw_conn_handler sees error: {:?}", e);
+            error!("events_conn_handler sees error: {:?}", e);
             Err(e)
         }
     }
@@ -53,8 +52,14 @@ async fn events_conn_handler_inner(
     match events_conn_handler_inner_try(stream, addr, node_config).await {
         Ok(_) => (),
         Err(ce) => {
-            // TODO pass errors over network.
-            error!("events_conn_handler_inner: {:?}", ce.err);
+            // Try to pass the error over the network.
+            // If that fails, give error to the caller.
+            let mut out = ce.netout;
+            let e = ce.err;
+            let buf = items::frame::make_error_frame(&e)?;
+            //type T = StreamItem<items::RangeCompletableItem<items::scalarevents::ScalarEvents<u32>>>;
+            //let buf = Err::<T, _>(e).make_frame()?;
+            out.write_all(&buf).await?;
         }
     }
     Ok(())
@@ -118,11 +123,17 @@ async fn events_conn_handler_inner_try(
     };
     info!("events_conn_handler_inner_try  evq {:?}", evq);
 
+    if evq.do_test_main_error {
+        let e = Error::with_msg(format!("Test error private message."))
+            .add_public_msg(format!("Test error PUBLIC message."));
+        return Err((e, netout).into());
+    }
+
     let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>> =
         if let Some(conf) = &node_config.node_config.cluster.scylla {
             let scyco = conf;
             let dbconf = node_config.node_config.cluster.database.clone();
-            match make_scylla_stream(&evq, scyco, dbconf).await {
+            match make_scylla_stream(&evq, scyco, dbconf, evq.do_test_stream_error).await {
                 Ok(j) => j,
                 Err(e) => return Err((e, netout))?,
             }

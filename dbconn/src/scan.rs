@@ -1,9 +1,9 @@
-#![allow(unused_imports)]
+use crate::{create_connection, delay_io_medium, delay_io_short, ErrConv};
 use async_channel::{bounded, Receiver};
 use chrono::{DateTime, Utc};
 use err::Error;
 use futures_core::Stream;
-use futures_util::{pin_mut, FutureExt, StreamExt};
+use futures_util::FutureExt;
 use netpod::log::*;
 use netpod::{Database, NodeConfigCached};
 use parse::channelconfig::NErr;
@@ -11,7 +11,6 @@ use pin_project::pin_project;
 use serde::{Deserialize, Serialize};
 use std::future::Future;
 use std::io::ErrorKind;
-use std::marker::PhantomPinned;
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -19,8 +18,6 @@ use std::sync::{Arc, RwLock};
 use std::task::{Context, Poll};
 use tokio::fs::{DirEntry, ReadDir};
 use tokio_postgres::Client;
-
-use crate::ErrConv;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NodeDiskIdent {
@@ -214,7 +211,7 @@ impl UpdatedDbWithChannelNamesStream {
             channel_inp_done: false,
             clist: vec![],
         };
-        ret.client_fut = Some(Box::pin(crate::create_connection(
+        ret.client_fut = Some(Box::pin(create_connection(
             &ret.node_config_ref.node_config.cluster.database,
         )));
         Ok(ret)
@@ -326,7 +323,7 @@ impl Stream for UpdatedDbWithChannelNamesStream {
 }
 
 async fn update_db_with_channel_name_list(list: Vec<String>, backend: i64, dbc: &Client) -> Result<(), Error> {
-    crate::delay_io_short().await;
+    delay_io_short().await;
     dbc.query("begin", &[]).await.err_conv()?;
     for ch in list {
         dbc.query(
@@ -348,7 +345,7 @@ pub async fn update_db_with_channel_names(
     let tx2 = tx.clone();
     let db_config = db_config.clone();
     let block1 = async move {
-        let dbc = crate::create_connection(&db_config).await?;
+        let dbc = create_connection(&db_config).await?;
         let node_disk_ident = get_node_disk_ident(&node_config, &dbc).await?;
         let c1 = Arc::new(RwLock::new(0u32));
         dbc.query("begin", &[]).await.err_conv()?;
@@ -386,7 +383,7 @@ pub async fn update_db_with_channel_names(
                         count: c2,
                     };
                     tx.send(Ok(ret)).await.err_conv()?;
-                    crate::delay_io_medium().await;
+                    delay_io_medium().await;
                     dbc.query("begin", &[]).await.err_conv()?;
                 }
                 Ok(())
@@ -459,7 +456,7 @@ pub async fn update_db_with_all_channel_configs(
     let tx3 = tx.clone();
     let block1 = async move {
         let node_config = &node_config;
-        let dbc = crate::create_connection(&node_config.node_config.cluster.database).await?;
+        let dbc = create_connection(&node_config.node_config.cluster.database).await?;
         let dbc = Arc::new(dbc);
         let node_disk_ident = &get_node_disk_ident(node_config, &dbc).await?;
         let rows = dbc
@@ -490,11 +487,11 @@ pub async fn update_db_with_all_channel_configs(
             {
                 Err(e) => {
                     error!("{:?}", e);
-                    crate::delay_io_medium().await;
+                    delay_io_medium().await;
                 }
                 Ok(UpdateChannelConfigResult::NotFound) => {
                     warn!("can not find channel config {}", channel);
-                    crate::delay_io_medium().await;
+                    delay_io_medium().await;
                 }
                 Ok(UpdateChannelConfigResult::Done) => {
                     c1 += 1;
@@ -508,7 +505,7 @@ pub async fn update_db_with_all_channel_configs(
                         tx.send(Ok(ret)).await.err_conv()?;
                         dbc.query("begin", &[]).await.err_conv()?;
                     }
-                    crate::delay_io_short().await;
+                    delay_io_short().await;
                 }
             }
         }
@@ -550,7 +547,7 @@ pub async fn update_db_with_all_channel_configs(
 }
 
 pub async fn update_search_cache(node_config: &NodeConfigCached) -> Result<(), Error> {
-    let dbc = crate::create_connection(&node_config.node_config.cluster.database).await?;
+    let dbc = create_connection(&node_config.node_config.cluster.database).await?;
     dbc.query("select update_cache()", &[]).await.err_conv()?;
     Ok(())
 }
@@ -655,7 +652,7 @@ pub async fn update_db_with_all_channel_datafiles(
     node_disk_ident: &NodeDiskIdent,
     ks_prefix: &str,
 ) -> Result<(), Error> {
-    let dbc = Arc::new(crate::create_connection(&node_config.node_config.cluster.database).await?);
+    let dbc = Arc::new(create_connection(&node_config.node_config.cluster.database).await?);
     let rows = dbc
         .query(
             "select rowid, facility, name from channels where facility = $1 order by facility, name",

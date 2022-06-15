@@ -9,7 +9,7 @@ use disk::decode::Endianness;
 use disk::decode::EventValueFromBytes;
 use disk::decode::EventValueShape;
 use disk::decode::NumFromBytes;
-use disk::events::PlainEventsJsonQuery;
+use disk::events::PlainEventsQuery;
 use disk::merge::mergedfromremotes::MergedFromRemotes;
 use futures_util::FutureExt;
 use futures_util::Stream;
@@ -58,7 +58,7 @@ impl EventInfoScan {
         }
         let (head, _body) = req.into_parts();
         let url = Url::parse(&format!("dummy:{}", head.uri))?;
-        let query = PlainEventsJsonQuery::from_url(&url)?;
+        let query = PlainEventsQuery::from_url(&url)?;
         let ret = match Self::exec(&query, node_config).await {
             Ok(stream) => {
                 //
@@ -71,7 +71,7 @@ impl EventInfoScan {
     }
 
     pub async fn exec(
-        query: &PlainEventsJsonQuery,
+        query: &PlainEventsQuery,
         node_config: &NodeConfigCached,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>, Error> {
         let chconf = chconf_from_events_json(&query, node_config).await?;
@@ -95,14 +95,14 @@ impl EventInfoScan {
 }
 
 pub struct EvInfoFunc {
-    query: PlainEventsJsonQuery,
+    query: PlainEventsQuery,
     timeout: Duration,
     node_config: NodeConfigCached,
     events_max: u64,
 }
 
 impl EvInfoFunc {
-    pub fn new(query: PlainEventsJsonQuery, timeout: Duration, events_max: u64, node_config: NodeConfigCached) -> Self {
+    pub fn new(query: PlainEventsQuery, timeout: Duration, events_max: u64, node_config: NodeConfigCached) -> Self {
         Self {
             query,
             timeout,
@@ -149,16 +149,8 @@ impl ChannelExecFunction for EvInfoFunc {
         let _ = byte_order;
         let _ = event_value_shape;
         let perf_opts = PerfOpts { inmem_bufcap: 4096 };
-        // TODO let PlainEventsJsonQuery provide the tune
-        let mut disk_io_tune = netpod::DiskIoTune::default();
-        disk_io_tune.read_buffer_len = self.query.disk_io_buffer_size();
-        let evq = RawEventsQuery {
-            channel: self.query.channel().clone(),
-            range: self.query.range().clone(),
-            agg_kind: AggKind::Plain,
-            disk_io_tune,
-            do_decompress: true,
-        };
+        // TODO let PlainEventsJsonQuery provide the tune and pass to RawEventsQuery:
+        let evq = RawEventsQuery::new(self.query.channel().clone(), self.query.range().clone(), AggKind::Plain);
 
         // TODO Use a Merged-From-Multiple-Local-Splits.
         // TODO Pass the read buffer size from query parameter: GPFS needs a larger buffer..

@@ -534,6 +534,7 @@ pub struct DataApiPython3DataStream {
     chan_stream: Option<Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>>,
     config_fut: Option<Pin<Box<dyn Future<Output = Result<Config, Error>> + Send>>>,
     disk_io_tune: DiskIoTune,
+    #[allow(unused)]
     do_decompress: bool,
     #[allow(unused)]
     event_count: u64,
@@ -730,13 +731,7 @@ impl Stream for DataApiPython3DataStream {
                             };
                             let channel = self.channels[self.chan_ix - 1].clone();
                             debug!("found channel_config for {}: {:?}", channel.name, entry);
-                            let evq = RawEventsQuery {
-                                channel,
-                                range: self.range.clone(),
-                                agg_kind: netpod::AggKind::EventBlobs,
-                                disk_io_tune: self.disk_io_tune.clone(),
-                                do_decompress: self.do_decompress,
-                            };
+                            let evq = RawEventsQuery::new(channel, self.range.clone(), netpod::AggKind::EventBlobs);
                             let perf_opts = PerfOpts { inmem_bufcap: 1024 * 4 };
                             // TODO is this a good to place decide this?
                             let s = if self.node_config.node_config.cluster.is_central_storage {

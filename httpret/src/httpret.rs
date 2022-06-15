@@ -1,4 +1,5 @@
 pub mod api1;
+pub mod bodystream;
 pub mod channelarchiver;
 pub mod channelconfig;
 pub mod download;
@@ -11,16 +12,16 @@ pub mod pulsemap;
 pub mod search;
 pub mod settings;
 
+use self::bodystream::{BodyStream, ToPublicResponse};
+use crate::bodystream::response;
 use crate::err::Error;
 use crate::gather::gather_get_json;
 use crate::pulsemap::UpdateTask;
-use bytes::Bytes;
 use channelconfig::{chconf_from_binned, ChConf};
 use disk::binned::query::PreBinnedQuery;
 use future::Future;
-use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt, TryStreamExt};
-use http::{HeaderMap, Method, StatusCode};
+use http::{Method, StatusCode};
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
@@ -41,13 +42,8 @@ use std::sync::{Once, RwLock, RwLockWriteGuard};
 use std::time::SystemTime;
 use std::{future, net, panic, pin, task};
 use task::{Context, Poll};
-use tracing::field::Empty;
 use tracing::Instrument;
 use url::Url;
-
-fn proxy_mark() -> &'static str {
-    "7c5e408a"
-}
 
 pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
     static STATUS_BOARD_INIT: Once = Once::new();
@@ -390,123 +386,6 @@ pub fn api_1_docs(path: &str) -> Result<Response<Body>, Error> {
     Ok(response(StatusCode::NOT_FOUND).body(Body::empty())?)
 }
 
-fn response<T>(status: T) -> http::response::Builder
-where
-    http::StatusCode: std::convert::TryFrom<T>,
-    <http::StatusCode as std::convert::TryFrom<T>>::Error: Into<http::Error>,
-{
-    Response::builder()
-        .status(status)
-        .header("Access-Control-Allow-Origin", "*")
-        .header("Access-Control-Allow-Headers", "*")
-        .header("x-proxy-log-mark", proxy_mark())
-}
-
-struct BodyStreamWrap(netpod::BodyStream);
-
-impl hyper::body::HttpBody for BodyStreamWrap {
-    type Data = bytes::Bytes;
-    type Error = ::err::Error;
-
-    fn poll_data(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        self.0.inner.poll_next_unpin(cx)
-    }
-
-    fn poll_trailers(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
-        Poll::Ready(Ok(None))
-    }
-}
-
-struct BodyStream<S> {
-    inp: S,
-    desc: String,
-}
-
-impl<S, I> BodyStream<S>
-where
-    S: Stream<Item = Result<I, Error>> + Unpin + Send + 'static,
-    I: Into<Bytes> + Sized + 'static,
-{
-    pub fn new(inp: S, desc: String) -> Self {
-        Self { inp, desc }
-    }
-
-    pub fn wrapped(inp: S, desc: String) -> Body {
-        Body::wrap_stream(Self::new(inp, desc))
-    }
-}
-
-impl<S, I> Stream for BodyStream<S>
-where
-    S: Stream<Item = Result<I, Error>> + Unpin,
-    I: Into<Bytes> + Sized,
-{
-    type Item = Result<I, Error>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let span1 = span!(Level::INFO, "httpret::BodyStream", desc = Empty);
-        span1.record("desc", &self.desc.as_str());
-        span1.in_scope(|| {
-            use Poll::*;
-            let t = std::panic::catch_unwind(AssertUnwindSafe(|| self.inp.poll_next_unpin(cx)));
-            match t {
-                Ok(r) => match r {
-                    Ready(Some(Ok(k))) => Ready(Some(Ok(k))),
-                    Ready(Some(Err(e))) => {
-                        error!("body stream error: {e:?}");
-                        Ready(Some(Err(Error::from(e))))
-                    }
-                    Ready(None) => Ready(None),
-                    Pending => Pending,
-                },
-                Err(e) => {
-                    error!("panic caught in httpret::BodyStream: {e:?}");
-                    let e = Error::with_msg(format!("panic caught in httpret::BodyStream: {e:?}"));
-                    Ready(Some(Err(e)))
-                }
-            }
-        })
-    }
-}
-
-trait ToPublicResponse {
-    fn to_public_response(&self) -> Response<Body>;
-}
-
-impl ToPublicResponse for Error {
-    fn to_public_response(&self) -> Response<Body> {
-        self.0.to_public_response()
-    }
-}
-
-impl ToPublicResponse for ::err::Error {
-    fn to_public_response(&self) -> Response<Body> {
-        use ::err::Reason;
-        let e = self.to_public_error();
-        let status = match e.reason() {
-            Some(Reason::BadRequest) => StatusCode::BAD_REQUEST,
-            Some(Reason::InternalError) => StatusCode::INTERNAL_SERVER_ERROR,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
-        };
-        let msg = match serde_json::to_string(&e) {
-            Ok(s) => s,
-            Err(_) => "can not serialize error".into(),
-        };
-        match response(status)
-            .header(http::header::ACCEPT, APP_JSON)
-            .body(Body::from(msg))
-        {
-            Ok(res) => res,
-            Err(e) => {
-                error!("can not generate http error response {e:?}");
-                let mut res = Response::new(Body::default());
-                *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
-                res
-            }
-        }
-    }
-}
-
 pub struct StatusBoardAllHandler {}
 
 impl StatusBoardAllHandler {
@@ -530,7 +409,10 @@ impl StatusBoardAllHandler {
 async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     match binned_inner(req, node_config).await {
         Ok(ret) => Ok(ret),
-        Err(e) => Ok(e.to_public_response()),
+        Err(e) => {
+            error!("fn binned: {e:?}");
+            Ok(e.to_public_response())
+        }
     }
 }
 
@@ -556,20 +438,13 @@ async fn binned_binary(
     chconf: ChConf,
     node_config: &NodeConfigCached,
 ) -> Result<Response<Body>, Error> {
-    let ret = match disk::binned::binned_bytes_for_http(&query, chconf.scalar_type, chconf.shape, node_config).await {
-        Ok(s) => {
-            response(StatusCode::OK).body(BodyStream::wrapped(s.map_err(Error::from), format!("binned_binary")))?
-        }
-        Err(e) => {
-            if query.report_error() {
-                response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?
-            } else {
-                error!("fn binned_binary: {:?}", e);
-                response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
-            }
-        }
-    };
-    Ok(ret)
+    let body_stream =
+        disk::binned::binned_bytes_for_http(&query, chconf.scalar_type, chconf.shape, node_config).await?;
+    let res = response(StatusCode::OK).body(BodyStream::wrapped(
+        body_stream.map_err(Error::from),
+        format!("binned_binary"),
+    ))?;
+    Ok(res)
 }
 
 async fn binned_json(
@@ -577,18 +452,12 @@ async fn binned_json(
     chconf: ChConf,
     node_config: &NodeConfigCached,
 ) -> Result<Response<Body>, Error> {
-    let ret = match disk::binned::binned_json(&query, chconf.scalar_type, chconf.shape, node_config).await {
-        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s.map_err(Error::from), format!("binned_json")))?,
-        Err(e) => {
-            if query.report_error() {
-                response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?
-            } else {
-                error!("fn binned_json: {:?}", e);
-                response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
-            }
-        }
-    };
-    Ok(ret)
+    let body_stream = disk::binned::binned_json(&query, chconf.scalar_type, chconf.shape, node_config).await?;
+    let res = response(StatusCode::OK).body(BodyStream::wrapped(
+        body_stream.map_err(Error::from),
+        format!("binned_json"),
+    ))?;
+    Ok(res)
 }
 
 async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
