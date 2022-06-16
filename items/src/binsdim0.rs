@@ -17,7 +17,7 @@ use std::marker::PhantomData;
 use tokio::fs::File;
 
 #[derive(Clone, Serialize, Deserialize)]
-pub struct MinMaxAvgBins<NTY> {
+pub struct MinMaxAvgDim0Bins<NTY> {
     pub ts1s: Vec<u64>,
     pub ts2s: Vec<u64>,
     pub counts: Vec<u64>,
@@ -27,14 +27,14 @@ pub struct MinMaxAvgBins<NTY> {
     pub avgs: Vec<Option<f32>>,
 }
 
-impl<NTY> SitemtyFrameType for MinMaxAvgBins<NTY>
+impl<NTY> SitemtyFrameType for MinMaxAvgDim0Bins<NTY>
 where
     NTY: SubFrId,
 {
     const FRAME_TYPE_ID: u32 = crate::MIN_MAX_AVG_BINS + NTY::SUB;
 }
 
-impl<NTY> fmt::Debug for MinMaxAvgBins<NTY>
+impl<NTY> fmt::Debug for MinMaxAvgDim0Bins<NTY>
 where
     NTY: fmt::Debug,
 {
@@ -53,7 +53,7 @@ where
     }
 }
 
-impl<NTY> MinMaxAvgBins<NTY> {
+impl<NTY> MinMaxAvgDim0Bins<NTY> {
     pub fn empty() -> Self {
         Self {
             ts1s: vec![],
@@ -66,7 +66,7 @@ impl<NTY> MinMaxAvgBins<NTY> {
     }
 }
 
-impl<NTY> FitsInside for MinMaxAvgBins<NTY> {
+impl<NTY> FitsInside for MinMaxAvgDim0Bins<NTY> {
     fn fits_inside(&self, range: NanoRange) -> Fits {
         if self.ts1s.is_empty() {
             Fits::Empty
@@ -90,7 +90,7 @@ impl<NTY> FitsInside for MinMaxAvgBins<NTY> {
     }
 }
 
-impl<NTY> FilterFittingInside for MinMaxAvgBins<NTY> {
+impl<NTY> FilterFittingInside for MinMaxAvgDim0Bins<NTY> {
     fn filter_fitting_inside(self, fit_range: NanoRange) -> Option<Self> {
         match self.fits_inside(fit_range) {
             Fits::Inside | Fits::PartlyGreater | Fits::PartlyLower | Fits::PartlyLowerAndGreater => Some(self),
@@ -99,7 +99,7 @@ impl<NTY> FilterFittingInside for MinMaxAvgBins<NTY> {
     }
 }
 
-impl<NTY> RangeOverlapInfo for MinMaxAvgBins<NTY> {
+impl<NTY> RangeOverlapInfo for MinMaxAvgDim0Bins<NTY> {
     fn ends_before(&self, range: NanoRange) -> bool {
         match self.ts2s.last() {
             Some(&ts) => ts <= range.beg,
@@ -122,7 +122,7 @@ impl<NTY> RangeOverlapInfo for MinMaxAvgBins<NTY> {
     }
 }
 
-impl<NTY> TimeBins for MinMaxAvgBins<NTY>
+impl<NTY> TimeBins for MinMaxAvgDim0Bins<NTY>
 where
     NTY: NumOps,
 {
@@ -135,13 +135,13 @@ where
     }
 }
 
-impl<NTY> WithLen for MinMaxAvgBins<NTY> {
+impl<NTY> WithLen for MinMaxAvgDim0Bins<NTY> {
     fn len(&self) -> usize {
         self.ts1s.len()
     }
 }
 
-impl<NTY> Appendable for MinMaxAvgBins<NTY>
+impl<NTY> Appendable for MinMaxAvgDim0Bins<NTY>
 where
     NTY: NumOps,
 {
@@ -159,7 +159,7 @@ where
     }
 }
 
-impl<NTY> ReadableFromFile for MinMaxAvgBins<NTY>
+impl<NTY> ReadableFromFile for MinMaxAvgDim0Bins<NTY>
 where
     NTY: NumOps,
 {
@@ -174,11 +174,11 @@ where
     }
 }
 
-impl<NTY> TimeBinnableType for MinMaxAvgBins<NTY>
+impl<NTY> TimeBinnableType for MinMaxAvgDim0Bins<NTY>
 where
     NTY: NumOps,
 {
-    type Output = MinMaxAvgBins<NTY>;
+    type Output = MinMaxAvgDim0Bins<NTY>;
     type Aggregator = MinMaxAvgBinsAggregator<NTY>;
 
     fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
@@ -190,7 +190,7 @@ where
     }
 }
 
-impl<NTY> ToJsonResult for Sitemty<MinMaxAvgBins<NTY>>
+impl<NTY> ToJsonResult for Sitemty<MinMaxAvgDim0Bins<NTY>>
 where
     NTY: NumOps,
 {
@@ -236,7 +236,7 @@ pub struct MinMaxAvgBinsCollector<NTY> {
     bin_count_exp: u32,
     timed_out: bool,
     range_complete: bool,
-    vals: MinMaxAvgBins<NTY>,
+    vals: MinMaxAvgDim0Bins<NTY>,
     _m1: PhantomData<NTY>,
 }
 
@@ -246,7 +246,7 @@ impl<NTY> MinMaxAvgBinsCollector<NTY> {
             bin_count_exp,
             timed_out: false,
             range_complete: false,
-            vals: MinMaxAvgBins::<NTY>::empty(),
+            vals: MinMaxAvgDim0Bins::<NTY>::empty(),
             _m1: PhantomData,
         }
     }
@@ -265,7 +265,7 @@ impl<NTY> Collector for MinMaxAvgBinsCollector<NTY>
 where
     NTY: NumOps + Serialize,
 {
-    type Input = MinMaxAvgBins<NTY>;
+    type Input = MinMaxAvgDim0Bins<NTY>;
     type Output = MinMaxAvgBinsCollectedResult<NTY>;
 
     fn ingest(&mut self, src: &Self::Input) {
@@ -315,7 +315,7 @@ where
     }
 }
 
-impl<NTY> Collectable for MinMaxAvgBins<NTY>
+impl<NTY> Collectable for MinMaxAvgDim0Bins<NTY>
 where
     NTY: NumOps + Serialize,
 {
@@ -352,8 +352,8 @@ impl<NTY> TimeBinnableTypeAggregator for MinMaxAvgBinsAggregator<NTY>
 where
     NTY: NumOps,
 {
-    type Input = MinMaxAvgBins<NTY>;
-    type Output = MinMaxAvgBins<NTY>;
+    type Input = MinMaxAvgDim0Bins<NTY>;
+    type Output = MinMaxAvgDim0Bins<NTY>;
 
     fn range(&self) -> &NanoRange {
         &self.range

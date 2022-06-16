@@ -7,7 +7,7 @@ use err::Error;
 use futures_util::{StreamExt, TryStreamExt};
 use http::StatusCode;
 use hyper::Body;
-use items::minmaxavgbins::MinMaxAvgBins;
+use items::binsdim0::MinMaxAvgDim0Bins;
 use items::{FrameType, RangeCompletableItem, Sitemty, StatsItem, StreamItem, SubFrId, WithLen};
 use netpod::query::{BinnedQuery, CacheUsage};
 use netpod::{log::*, AppendToUrl};
@@ -102,7 +102,7 @@ where
     let channel = Channel {
         backend: channel_backend.into(),
         name: channel_name.into(),
-        series:None,
+        series: None,
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
     let mut query = BinnedQuery::new(channel, range, bin_count, agg_kind);
@@ -195,10 +195,10 @@ where
                         None
                     }
                     StreamItem::DataItem(frame) => {
-                        if frame.tyid() != <Sitemty<MinMaxAvgBins<NTY>> as FrameType>::FRAME_TYPE_ID {
+                        if frame.tyid() != <Sitemty<MinMaxAvgDim0Bins<NTY>> as FrameType>::FRAME_TYPE_ID {
                             error!("test receives unexpected tyid {:x}", frame.tyid());
                         }
-                        match bincode::deserialize::<Sitemty<MinMaxAvgBins<NTY>>>(frame.buf()) {
+                        match bincode::deserialize::<Sitemty<MinMaxAvgDim0Bins<NTY>>>(frame.buf()) {
                             Ok(item) => match item {
                                 Ok(item) => match item {
                                     StreamItem::Log(item) => {

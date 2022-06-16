@@ -1,4 +1,4 @@
-use crate::minmaxavgdim1bins::MinMaxAvgDim1Bins;
+use crate::binsdim1::MinMaxAvgDim1Bins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{

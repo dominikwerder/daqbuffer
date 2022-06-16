@@ -1,9 +1,9 @@
 pub mod binnedevents;
+pub mod binsdim0;
+pub mod binsdim1;
 pub mod eventsitem;
 pub mod frame;
 pub mod inmem;
-pub mod minmaxavgbins;
-pub mod minmaxavgdim1bins;
 pub mod numops;
 pub mod plainevents;
 pub mod scalarevents;

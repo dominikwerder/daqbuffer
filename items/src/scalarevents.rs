@@ -1,4 +1,4 @@
-use crate::minmaxavgbins::MinMaxAvgBins;
+use crate::binsdim0::MinMaxAvgDim0Bins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
@@ -217,7 +217,7 @@ impl<NTY> TimeBinnableType for ScalarEvents<NTY>
 where
     NTY: NumOps,
 {
-    type Output = MinMaxAvgBins<NTY>;
+    type Output = MinMaxAvgDim0Bins<NTY>;
     type Aggregator = EventValuesAggregator<NTY>;
 
     fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
@@ -442,13 +442,13 @@ where
         }
     }
 
-    fn result_reset_unweight(&mut self, range: NanoRange, _expand: bool) -> MinMaxAvgBins<NTY> {
+    fn result_reset_unweight(&mut self, range: NanoRange, _expand: bool) -> MinMaxAvgDim0Bins<NTY> {
         let avg = if self.sumc == 0 {
             None
         } else {
             Some(self.sum / self.sumc as f32)
         };
-        let ret = MinMaxAvgBins {
+        let ret = MinMaxAvgDim0Bins {
             ts1s: vec![self.range.beg],
             ts2s: vec![self.range.end],
             counts: vec![self.count],
@@ -466,7 +466,7 @@ where
         ret
     }
 
-    fn result_reset_time_weight(&mut self, range: NanoRange, expand: bool) -> MinMaxAvgBins<NTY> {
+    fn result_reset_time_weight(&mut self, range: NanoRange, expand: bool) -> MinMaxAvgDim0Bins<NTY> {
         // TODO check callsite for correct expand status.
         if true || expand {
             debug!("result_reset_time_weight calls apply_event_time_weight");
@@ -478,7 +478,7 @@ where
             let sc = self.range.delta() as f32 * 1e-9;
             Some(self.sum / sc)
         };
-        let ret = MinMaxAvgBins {
+        let ret = MinMaxAvgDim0Bins {
             ts1s: vec![self.range.beg],
             ts2s: vec![self.range.end],
             counts: vec![self.count],
@@ -502,7 +502,7 @@ where
     NTY: NumOps,
 {
     type Input = ScalarEvents<NTY>;
-    type Output = MinMaxAvgBins<NTY>;
+    type Output = MinMaxAvgDim0Bins<NTY>;
 
     fn range(&self) -> &NanoRange {
         &self.range
