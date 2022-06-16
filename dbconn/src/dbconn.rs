@@ -1,4 +1,5 @@
 pub mod scan;
+pub mod bincache;
 pub mod search;
 pub mod pg {
     pub use tokio_postgres::{Client, Error};

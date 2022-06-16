@@ -1,6 +1,4 @@
-use std::mem;
-
-use crate::minmaxavgwavebins::MinMaxAvgWaveBins;
+use crate::minmaxavgdim1bins::MinMaxAvgDim1Bins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
@@ -10,9 +8,10 @@ use crate::{
 };
 use err::Error;
 use netpod::log::*;
-use netpod::timeunits::{MS, SEC};
+use netpod::timeunits::*;
 use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
+use std::mem;
 use tokio::fs::File;
 
 // TODO  rename Wave -> Dim1
@@ -177,7 +176,7 @@ impl<NTY> TimeBinnableType for XBinnedWaveEvents<NTY>
 where
     NTY: NumOps,
 {
-    type Output = MinMaxAvgWaveBins<NTY>;
+    type Output = MinMaxAvgDim1Bins<NTY>;
     type Aggregator = XBinnedWaveEventsAggregator<NTY>;
 
     fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
@@ -324,7 +323,7 @@ where
         }
     }
 
-    fn result_reset_unweight(&mut self, range: NanoRange, _expand: bool) -> MinMaxAvgWaveBins<NTY> {
+    fn result_reset_unweight(&mut self, range: NanoRange, _expand: bool) -> MinMaxAvgDim1Bins<NTY> {
         let avg = if self.sumc == 0 {
             None
         } else {
@@ -332,7 +331,7 @@ where
         };
         let min = mem::replace(&mut self.min, None);
         let max = mem::replace(&mut self.max, None);
-        let ret = MinMaxAvgWaveBins {
+        let ret = MinMaxAvgDim1Bins {
             ts1s: vec![self.range.beg],
             ts2s: vec![self.range.end],
             counts: vec![self.count],
@@ -350,7 +349,7 @@ where
         ret
     }
 
-    fn result_reset_time_weight(&mut self, range: NanoRange, expand: bool) -> MinMaxAvgWaveBins<NTY> {
+    fn result_reset_time_weight(&mut self, range: NanoRange, expand: bool) -> MinMaxAvgDim1Bins<NTY> {
         // TODO check callsite for correct expand status.
         if true || expand {
             self.apply_event_time_weight(self.range.end);
@@ -363,7 +362,7 @@ where
         };
         let min = mem::replace(&mut self.min, None);
         let max = mem::replace(&mut self.max, None);
-        let ret = MinMaxAvgWaveBins {
+        let ret = MinMaxAvgDim1Bins {
             ts1s: vec![self.range.beg],
             ts2s: vec![self.range.end],
             counts: vec![self.count],
@@ -387,7 +386,7 @@ where
     NTY: NumOps,
 {
     type Input = XBinnedWaveEvents<NTY>;
-    type Output = MinMaxAvgWaveBins<NTY>;
+    type Output = MinMaxAvgDim1Bins<NTY>;
 
     fn range(&self) -> &NanoRange {
         &self.range
