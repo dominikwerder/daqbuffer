@@ -6,6 +6,7 @@ use crate::decode::{
     LittleEndian, NumFromBytes,
 };
 use bytes::Bytes;
+use dbconn::bincache::pre_binned_value_stream;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -13,19 +14,21 @@ use items::numops::{BoolNum, NumOps, StringNum};
 use items::{
     Appendable, Clearable, EventsNodeProcessor, Framable, FrameType, PushableIndex, Sitemty, TimeBinnableType,
 };
-use netpod::{AggKind, ByteOrder, NodeConfigCached, ScalarType, Shape};
+use netpod::log::*;
+use netpod::{AggKind, ByteOrder, ChannelTyped, NodeConfigCached, ScalarType, Shape};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::pin::Pin;
 
-fn make_num_pipeline_nty_end_evs_enp<NTY, END, EVS, ENP>(
-    _shape: Shape,
+async fn make_num_pipeline_nty_end_evs_enp<NTY, END, EVS, ENP>(
+    scalar_type: ScalarType,
+    shape: Shape,
     agg_kind: AggKind,
     _event_value_shape: EVS,
     _events_node_proc: ENP,
     query: PreBinnedQuery,
     node_config: &NodeConfigCached,
-) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>
+) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error>
 where
     NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
     END: Endianness + 'static,
@@ -36,17 +39,43 @@ where
     Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
         Framable + FrameType + DeserializeOwned,
 {
-    let ret = PreBinnedValueStream::<NTY, END, EVS, ENP>::new(query, agg_kind, node_config);
-    let ret = StreamExt::map(ret, |item| Box::new(item) as Box<dyn Framable>);
-    Box::pin(ret)
+    if let Some(scyconf) = &node_config.node_config.cluster.cache_scylla {
+        info!("~~~~~~~~~~~~~~~  make_num_pipeline_nty_end_evs_enp using scylla as cache");
+        let chn = ChannelTyped {
+            channel: query.channel().clone(),
+            scalar_type,
+            shape,
+        };
+        let stream = pre_binned_value_stream(&chn, query.patch(), scyconf).await?;
+        let stream = stream.map(|x| {
+            //
+            match x {
+                Ok(k) => {
+                    let g = Box::new(k) as Box<dyn Framable>;
+                    g
+                }
+                Err(e) => {
+                    let u: Sitemty<items::scalarevents::ScalarEvents<f32>> = Err(e);
+                    Box::new(u) as Box<dyn Framable>
+                }
+            }
+        });
+        let stream = Box::pin(stream) as Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>;
+        Ok(stream)
+    } else {
+        let ret = PreBinnedValueStream::<NTY, END, EVS, ENP>::new(query, agg_kind, node_config);
+        let ret = StreamExt::map(ret, |item| Box::new(item) as Box<dyn Framable>);
+        Ok(Box::pin(ret))
+    }
 }
 
-fn make_num_pipeline_nty_end<NTY, END>(
+async fn make_num_pipeline_nty_end<NTY, END>(
+    scalar_type: ScalarType,
     shape: Shape,
     agg_kind: AggKind,
     query: PreBinnedQuery,
     node_config: &NodeConfigCached,
-) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>
+) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error>
 where
     NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
     END: Endianness + 'static,
@@ -59,6 +88,7 @@ where
                 AggKind::TimeWeightedScalar | AggKind::DimXBins1 => {
                     let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggToSingleBin as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     make_num_pipeline_nty_end_evs_enp::<NTY, END, _, _>(
+                        scalar_type,
                         shape,
                         agg_kind,
                         evs,
@@ -66,10 +96,12 @@ where
                         query,
                         node_config,
                     )
+                    .await
                 }
                 AggKind::DimXBinsN(_) => {
                     let events_node_proc = <<EventValuesDim0Case<NTY> as EventValueShape<NTY, END>>::NumXAggToNBins as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     make_num_pipeline_nty_end_evs_enp::<NTY, END, _, _>(
+                        scalar_type,
                         shape,
                         agg_kind,
                         evs,
@@ -77,6 +109,7 @@ where
                         query,
                         node_config,
                     )
+                    .await
                 }
                 AggKind::Plain => {
                     panic!();
@@ -94,6 +127,7 @@ where
                 AggKind::TimeWeightedScalar | AggKind::DimXBins1 => {
                     let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggToSingleBin as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     make_num_pipeline_nty_end_evs_enp::<NTY, END, _, _>(
+                        scalar_type,
                         shape,
                         agg_kind,
                         evs,
@@ -101,10 +135,12 @@ where
                         query,
                         node_config,
                     )
+                    .await
                 }
                 AggKind::DimXBinsN(_) => {
                     let events_node_proc = <<EventValuesDim1Case<NTY> as EventValueShape<NTY, END>>::NumXAggToNBins as EventsNodeProcessor>::create(shape.clone(), agg_kind.clone());
                     make_num_pipeline_nty_end_evs_enp::<NTY, END, _, _>(
+                        scalar_type,
                         shape,
                         agg_kind,
                         evs,
@@ -112,6 +148,7 @@ where
                         query,
                         node_config,
                     )
+                    .await
                 }
                 AggKind::Plain => {
                     panic!();
@@ -130,35 +167,41 @@ where
 }
 
 macro_rules! match_end {
-    ($nty:ident, $end:expr, $shape:expr, $agg_kind:expr, $query:expr, $node_config:expr) => {
+    ($nty:ident, $end:expr, $scalar_type:expr, $shape:expr, $agg_kind:expr, $query:expr, $node_config:expr) => {
         match $end {
-            ByteOrder::LE => make_num_pipeline_nty_end::<$nty, LittleEndian>($shape, $agg_kind, $query, $node_config),
-            ByteOrder::BE => make_num_pipeline_nty_end::<$nty, BigEndian>($shape, $agg_kind, $query, $node_config),
+            ByteOrder::LE => {
+                make_num_pipeline_nty_end::<$nty, LittleEndian>($scalar_type, $shape, $agg_kind, $query, $node_config)
+                    .await
+            }
+            ByteOrder::BE => {
+                make_num_pipeline_nty_end::<$nty, BigEndian>($scalar_type, $shape, $agg_kind, $query, $node_config)
+                    .await
+            }
         }
     };
 }
 
-fn make_num_pipeline(
+async fn make_num_pipeline(
     scalar_type: ScalarType,
     byte_order: ByteOrder,
     shape: Shape,
     agg_kind: AggKind,
     query: PreBinnedQuery,
     node_config: &NodeConfigCached,
-) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>> {
+) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error> {
     match scalar_type {
-        ScalarType::U8 => match_end!(u8, byte_order, shape, agg_kind, query, node_config),
-        ScalarType::U16 => match_end!(u16, byte_order, shape, agg_kind, query, node_config),
-        ScalarType::U32 => match_end!(u32, byte_order, shape, agg_kind, query, node_config),
-        ScalarType::U64 => match_end!(u64, byte_order, shape, agg_kind, query, node_config),
-        ScalarType::I8 => match_end!(i8, byte_order, shape, agg_kind, query, node_config),
-        ScalarType::I16 => match_end!(i16, byte_order, shape, agg_kind, query, node_config),
-        ScalarType::I32 => match_end!(i32, byte_order, shape, agg_kind, query, node_config),
-        ScalarType::I64 => match_end!(i64, byte_order, shape, agg_kind, query, node_config),
-        ScalarType::F32 => match_end!(f32, byte_order, shape, agg_kind, query, node_config),
-        ScalarType::F64 => match_end!(f64, byte_order, shape, agg_kind, query, node_config),
-        ScalarType::BOOL => match_end!(BoolNum, byte_order, shape, agg_kind, query, node_config),
-        ScalarType::STRING => match_end!(StringNum, byte_order, shape, agg_kind, query, node_config),
+        ScalarType::U8 => match_end!(u8, byte_order, scalar_type, shape, agg_kind, query, node_config),
+        ScalarType::U16 => match_end!(u16, byte_order, scalar_type, shape, agg_kind, query, node_config),
+        ScalarType::U32 => match_end!(u32, byte_order, scalar_type, shape, agg_kind, query, node_config),
+        ScalarType::U64 => match_end!(u64, byte_order, scalar_type, shape, agg_kind, query, node_config),
+        ScalarType::I8 => match_end!(i8, byte_order, scalar_type, shape, agg_kind, query, node_config),
+        ScalarType::I16 => match_end!(i16, byte_order, scalar_type, shape, agg_kind, query, node_config),
+        ScalarType::I32 => match_end!(i32, byte_order, scalar_type, shape, agg_kind, query, node_config),
+        ScalarType::I64 => match_end!(i64, byte_order, scalar_type, shape, agg_kind, query, node_config),
+        ScalarType::F32 => match_end!(f32, byte_order, scalar_type, shape, agg_kind, query, node_config),
+        ScalarType::F64 => match_end!(f64, byte_order, scalar_type, shape, agg_kind, query, node_config),
+        ScalarType::BOOL => match_end!(BoolNum, byte_order, scalar_type, shape, agg_kind, query, node_config),
+        ScalarType::STRING => match_end!(StringNum, byte_order, scalar_type, shape, agg_kind, query, node_config),
     }
 }
 
@@ -191,6 +234,7 @@ pub async fn pre_binned_bytes_for_http(
         query.clone(),
         node_config,
     )
+    .await?
     .map(|item| match item.make_frame() {
         Ok(item) => Ok(item.freeze()),
         Err(e) => Err(e),

@@ -24,66 +24,71 @@ pub struct ChConf {
     pub shape: Shape,
 }
 
-pub async fn chconf_from_events_binary(_q: &PlainEventsQuery, _conf: &NodeConfigCached) -> Result<ChConf, Error> {
-    err::todoval()
+pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
+    if channel.backend != ncc.node_config.cluster.backend {
+        warn!(
+            "mismatched backend  {}  vs  {}",
+            channel.backend, ncc.node_config.cluster.backend
+        );
+    }
+    // This requires the series id.
+    let series = channel.series.ok_or_else(|| {
+        Error::with_msg_no_trace(format!("needs a series id  {:?}", channel))
+            .add_public_msg(format!("series id of channel not supplied"))
+    })?;
+    // TODO use a common already running worker pool for these queries:
+    let dbconf = &ncc.node_config.cluster.database;
+    let dburl = format!(
+        "postgresql://{}:{}@{}:{}/{}",
+        dbconf.user, dbconf.pass, dbconf.host, dbconf.port, dbconf.name
+    );
+    let (pgclient, pgconn) = tokio_postgres::connect(&dburl, tokio_postgres::NoTls)
+        .await
+        .err_conv()?;
+    tokio::spawn(pgconn);
+    let res = pgclient
+        .query(
+            "select scalar_type, shape_dims from series_by_channel where series = $1",
+            &[&(series as i64)],
+        )
+        .await
+        .err_conv()?;
+    if res.len() == 0 {
+        warn!("can not find channel information for series {series}");
+        let e = Error::with_public_msg_no_trace(format!("can not find channel information for series {series}"));
+        Err(e)
+    } else if res.len() > 1 {
+        error!("multiple channel information for series {series}");
+        let e = Error::with_public_msg_no_trace(format!("can not find channel information for series {series}"));
+        Err(e)
+    } else {
+        let row = res.first().unwrap();
+        let scalar_type = ScalarType::from_dtype_index(row.get::<_, i32>(0) as u8)?;
+        // TODO can I get a slice from psql driver?
+        let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(1))?;
+        let ret = ChConf { scalar_type, shape };
+        Ok(ret)
+    }
+}
+
+pub async fn chconf_from_events_binary(q: &PlainEventsQuery, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
+    chconf_from_database(q.channel(), ncc).await
 }
 
 pub async fn chconf_from_events_json(q: &PlainEventsQuery, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
-    if q.channel().backend != ncc.node_config.cluster.backend {
-        warn!(
-            "Mismatched backend  {}  VS  {}",
-            q.channel().backend,
-            ncc.node_config.cluster.backend
-        );
-    }
-    if let Some(_conf) = &ncc.node_config.cluster.scylla {
-        // This requires the series id.
-        let series = q
-            .channel()
-            .series
-            .ok_or_else(|| Error::with_msg_no_trace(format!("needs a series id")))?;
-        // TODO use a common already running worker pool for these queries:
-        let dbconf = &ncc.node_config.cluster.database;
-        let dburl = format!(
-            "postgresql://{}:{}@{}:{}/{}",
-            dbconf.user, dbconf.pass, dbconf.host, dbconf.port, dbconf.name
-        );
-        let (pgclient, pgconn) = tokio_postgres::connect(&dburl, tokio_postgres::NoTls)
-            .await
-            .err_conv()?;
-        tokio::spawn(pgconn);
-        let res = pgclient
-            .query(
-                "select scalar_type, shape_dims from series_by_channel where series = $1",
-                &[&(series as i64)],
-            )
-            .await
-            .err_conv()?;
-        if res.len() == 0 {
-            error!("can not find channel for series {series}");
-            err::todoval()
-        } else if res.len() > 1 {
-            error!("can not find channel for series {series}");
-            err::todoval()
-        } else {
-            let row = res.first().unwrap();
-            let scalar_type = ScalarType::from_dtype_index(row.get::<_, i32>(0) as u8)?;
-            // TODO can I get a slice from psql driver?
-            let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(1))?;
-            let ret = ChConf { scalar_type, shape };
-            Ok(ret)
-        }
-    } else {
-        err::todoval()
-    }
+    chconf_from_database(q.channel(), ncc).await
 }
 
-pub async fn chconf_from_prebinned(_q: &PreBinnedQuery, _conf: &NodeConfigCached) -> Result<ChConf, Error> {
-    err::todoval()
+pub async fn chconf_from_prebinned(q: &PreBinnedQuery, _ncc: &NodeConfigCached) -> Result<ChConf, Error> {
+    let ret = ChConf {
+        scalar_type: q.scalar_type().clone(),
+        shape: q.shape().clone(),
+    };
+    Ok(ret)
 }
 
-pub async fn chconf_from_binned(_q: &BinnedQuery, _conf: &NodeConfigCached) -> Result<ChConf, Error> {
-    err::todoval()
+pub async fn chconf_from_binned(q: &BinnedQuery, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
+    chconf_from_database(q.channel(), ncc).await
 }
 
 pub struct ChannelConfigHandler {}

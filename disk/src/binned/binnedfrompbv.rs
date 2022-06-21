@@ -32,14 +32,9 @@ pub struct FetchedPreBinned<TBT> {
 }
 
 impl<TBT> FetchedPreBinned<TBT> {
-    pub fn new(query: &PreBinnedQuery, node_config: &NodeConfigCached) -> Result<Self, Error> {
-        let nodeix = node_ix_for_patch(&query.patch(), &query.channel(), &node_config.node_config.cluster);
-        let node = &node_config.node_config.cluster.nodes[nodeix as usize];
-        let mut url = {
-            let host = &node.host;
-            let port = node.port;
-            Url::parse(&format!("http://{host}:{port}/api/4/prebinned"))?
-        };
+    pub fn new(query: &PreBinnedQuery, host: String, port: u16) -> Result<Self, Error> {
+        // TODO should not assume http:
+        let mut url = Url::parse(&format!("http://{host}:{port}/api/4/prebinned"))?;
         query.append_to_url(&mut url);
         let ret = Self {
             uri: Uri::from_str(&url.to_string()).map_err(Error::from_string)?,
@@ -201,8 +196,10 @@ where
                         disk_stats_every.clone(),
                         report_error,
                     );
+                    let nodeix = node_ix_for_patch(&query.patch(), &query.channel(), &node_config.node_config.cluster);
+                    let node = &node_config.node_config.cluster.nodes[nodeix as usize];
                     let ret: Pin<Box<dyn Stream<Item = _> + Send>> =
-                        match FetchedPreBinned::<TBT>::new(&query, &node_config) {
+                        match FetchedPreBinned::<TBT>::new(&query, node.host.clone(), node.port.clone()) {
                             Ok(stream) => Box::pin(stream.map(move |q| (pix, q))),
                             Err(e) => {
                                 error!("error from PreBinnedValueFetchedStream::new {e:?}");

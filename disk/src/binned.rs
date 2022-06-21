@@ -336,7 +336,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
         let souter = match PreBinnedPatchRange::covering_range(self.query.range().clone(), self.query.bin_count()) {
             Ok(Some(pre_range)) => {
-                debug!("BinnedJsonChannelExec  found pre_range: {pre_range:?}");
+                info!("BinnedJsonChannelExec  found pre_range: {pre_range:?}");
                 if range.grid_spec.bin_t_len() < pre_range.grid_spec.bin_t_len() {
                     let msg = format!(
                         "BinnedJsonChannelExec  incompatible ranges:\npre_range: {pre_range:?}\nrange: {range:?}"
@@ -364,7 +364,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
                 Ok(Box::pin(s) as Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>)
             }
             Ok(None) => {
-                debug!("BinnedJsonChannelExec  no covering range for prebinned, merge from remotes instead {range:?}");
+                info!("BinnedJsonChannelExec  no covering range for prebinned, merge from remotes instead {range:?}");
                 // TODO let BinnedQuery provide the DiskIoTune and pass to RawEventsQuery:
                 let evq = RawEventsQuery::new(
                     self.query.channel().clone(),
@@ -392,6 +392,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
     }
 
     fn empty() -> Self::Output {
+        info!("BinnedJsonChannelExec  fn empty");
         Box::pin(futures_util::stream::empty())
     }
 }

@@ -291,6 +291,19 @@ where
     }
 }
 
+impl<T> Framable for Box<T>
+where
+    T: Framable + ?Sized,
+{
+    fn typeid(&self) -> u32 {
+        self.as_ref().typeid()
+    }
+
+    fn make_frame(&self) -> Result<BytesMut, Error> {
+        self.as_ref().make_frame()
+    }
+}
+
 pub trait EventsNodeProcessor: Send + Unpin {
     type Input;
     type Output: Send + Unpin + DeserializeOwned + WithTimestamps + TimeBinnableType + ByteEstimate;
@@ -397,6 +410,20 @@ pub trait TimeBinnableType:
     type Output: TimeBinnableType;
     type Aggregator: TimeBinnableTypeAggregator<Input = Self, Output = Self::Output> + Send + Unpin;
     fn aggregator(range: NanoRange, bin_count: usize, do_time_weight: bool) -> Self::Aggregator;
+}
+
+/// Provides a time-binned representation of the implementing type.
+/// In contrast to `TimeBinnableType` this is meant for trait objects.
+pub trait TimeBinnableDyn {}
+
+pub trait TimeBinnableDynAggregator: Send {
+    fn ingest(&mut self, item: &dyn TimeBinnableDyn);
+    fn result(&mut self) -> Box<dyn TimeBinned>;
+}
+
+pub trait TimeBinned: Framable + Send + TimeBinnableDyn {
+    fn aggregator_new(&self) -> Box<dyn TimeBinnableDynAggregator>;
+    fn as_time_binnable_dyn(&self) -> &dyn TimeBinnableDyn;
 }
 
 // TODO should get I/O and tokio dependence out of this crate

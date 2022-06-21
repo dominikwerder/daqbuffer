@@ -32,6 +32,10 @@ impl Error {
     pub fn public_msg(&self) -> Option<&Vec<String>> {
         self.0.public_msg()
     }
+
+    pub fn add_public_msg(self, msg: impl Into<String>) -> Self {
+        Error(self.0.add_public_msg(msg))
+    }
 }
 
 impl fmt::Debug for Error {

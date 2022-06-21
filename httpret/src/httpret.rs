@@ -419,7 +419,10 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
 async fn binned_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let url = Url::parse(&format!("dummy:{}", head.uri))?;
-    let query = BinnedQuery::from_url(&url)?;
+    let query = BinnedQuery::from_url(&url).map_err(|e| {
+        let msg = format!("can not parse query: {}", e.msg());
+        e.add_public_msg(msg)
+    })?;
     let chconf = chconf_from_binned(&query, node_config).await?;
     let desc = format!("binned-BEG-{}-END-{}", query.range().beg / SEC, query.range().end / SEC);
     let span1 = span!(Level::INFO, "httpret::binned", desc = &desc.as_str());
@@ -463,7 +466,10 @@ async fn binned_json(
 async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     match prebinned_inner(req, node_config).await {
         Ok(ret) => Ok(ret),
-        Err(e) => Ok(response(StatusCode::BAD_REQUEST).body(Body::from(e.msg().to_string()))?),
+        Err(e) => {
+            error!("fn prebinned: {e:?}");
+            Ok(response(StatusCode::BAD_REQUEST).body(Body::from(e.msg().to_string()))?)
+        }
     }
 }
 

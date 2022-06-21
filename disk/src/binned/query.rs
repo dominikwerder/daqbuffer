@@ -1,6 +1,7 @@
 use err::Error;
 use http::request::Parts;
 use netpod::query::{agg_kind_from_binning_scheme, binning_scheme_append_to_url, CacheUsage};
+use netpod::timeunits::SEC;
 use netpod::{
     channel_append_to_url, channel_from_pairs, AggKind, AppendToUrl, ByteSize, Channel, PreBinnedPatchCoord,
     ScalarType, Shape,
@@ -52,11 +53,11 @@ impl PreBinnedQuery {
             pairs.insert(j.to_string(), k.to_string());
         }
         let pairs = pairs;
-        let bin_t_len = pairs
+        let bin_t_len: u64 = pairs
             .get("binTlen")
             .ok_or_else(|| Error::with_msg("missing binTlen"))?
             .parse()?;
-        let patch_t_len = pairs
+        let patch_t_len: u64 = pairs
             .get("patchTlen")
             .ok_or_else(|| Error::with_msg("missing patchTlen"))?
             .parse()?;
@@ -79,7 +80,7 @@ impl PreBinnedQuery {
             .ok_or_else(|| Error::with_msg("missing shape"))
             .map(|x| Shape::from_url_str(&x))??;
         let ret = Self {
-            patch: PreBinnedPatchCoord::new(bin_t_len, patch_t_len, patch_ix),
+            patch: PreBinnedPatchCoord::new(bin_t_len * SEC, patch_t_len * SEC, patch_ix),
             channel: channel_from_pairs(&pairs)?,
             scalar_type,
             shape,
@@ -148,9 +149,10 @@ impl AppendToUrl for PreBinnedQuery {
         self.patch.append_to_url(url);
         binning_scheme_append_to_url(&self.agg_kind, url);
         channel_append_to_url(url, &self.channel);
+        self.shape.append_to_url(url);
+        self.scalar_type.append_to_url(url);
         let mut g = url.query_pairs_mut();
-        g.append_pair("scalarType", &format!("{:?}", self.scalar_type));
-        g.append_pair("shape", &format!("{:?}", self.shape));
+        // TODO add also impl AppendToUrl for these if applicable:
         g.append_pair("cacheUsage", &format!("{}", self.cache_usage.query_param_value()));
         g.append_pair("diskIoBufferSize", &format!("{}", self.disk_io_buffer_size));
         g.append_pair("diskStatsEveryKb", &format!("{}", self.disk_stats_every.bytes() / 1024));

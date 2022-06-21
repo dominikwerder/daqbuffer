@@ -319,6 +319,13 @@ impl ScalarType {
     }
 }
 
+impl AppendToUrl for ScalarType {
+    fn append_to_url(&self, url: &mut Url) {
+        let mut g = url.query_pairs_mut();
+        g.append_pair("scalarType", self.to_variant_str());
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SfDatabuffer {
     pub data_base_path: PathBuf,
@@ -450,6 +457,7 @@ pub struct Cluster {
     #[serde(rename = "fileIoBufferSize", default)]
     pub file_io_buffer_size: FileIoBufferSize,
     pub scylla: Option<ScyllaConfig>,
+    pub cache_scylla: Option<ScyllaConfig>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -519,12 +527,49 @@ pub struct NodeStatus {
     pub archiver_appliance_status: Option<NodeStatusArchiverAppliance>,
 }
 
+/**
+Describes a "channel" which is a time-series with a unique name within a "backend".
+In the near future, each channel should have assigned a unique id within a "backend".
+Also the concept of "backend" should be split into "facility" and some optional other identifier
+for cases like post-mortem, or to differentiate between channel-access and bsread for cases where
+the same channel-name is delivered via different methods.
+*/
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Channel {
+    // TODO ideally, all channels would have a unique id. For scylla backends, we require the id.
+    // In the near future, we should also require a unique id for "databuffer" backends, indexed in postgres.
+    pub series: Option<u64>,
+    // "backend" is currently used in the existing systems for multiple purposes:
+    // it can indicate the facility (eg. sf-databuffer, hipa, ...) but also some special subsystem (eg. sf-rf-databuffer).
     pub backend: String,
     pub name: String,
-    // TODO ideally, all channels would have a unique id. For scylla backends, we require the id.
-    pub series: Option<u64>,
+}
+
+impl Channel {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn series_id(&self) -> Result<u64, Error> {
+        self.series
+            .ok_or_else(|| Error::with_msg_no_trace(format!("no series id in channel")))
+    }
+}
+
+/**
+
+*/
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ChannelTyped {
+    pub channel: Channel,
+    pub scalar_type: ScalarType,
+    pub shape: Shape,
+}
+
+impl ChannelTyped {
+    pub fn series_id(&self) -> Result<u64, Error> {
+        self.channel.series_id()
+    }
 }
 
 pub struct HostPort {
@@ -545,12 +590,6 @@ impl HostPort {
             host: node.host.clone(),
             port: node.port,
         }
-    }
-}
-
-impl Channel {
-    pub fn name(&self) -> &str {
-        &self.name
     }
 }
 
@@ -925,6 +964,13 @@ impl Shape {
     }
 }
 
+impl AppendToUrl for Shape {
+    fn append_to_url(&self, url: &mut Url) {
+        let mut g = url.query_pairs_mut();
+        g.append_pair("shape", &format!("{:?}", self.to_scylla_vec()));
+    }
+}
+
 #[test]
 fn test_shape_serde() {
     let s = serde_json::to_string(&Shape::Image(42, 43)).unwrap();
@@ -1074,16 +1120,14 @@ impl PreBinnedPatchGridSpec {
 
 impl std::fmt::Debug for PreBinnedPatchGridSpec {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(
-            fmt,
-            "PreBinnedPatchGridSpec {{ bin_t_len: {:?}, patch_t_len(): {:?} }}",
-            self.bin_t_len / SEC,
-            self.patch_t_len() / SEC,
-        )
+        fmt.debug_struct("PreBinnedPatchGridSpec")
+            .field("bin_t_len", &(self.bin_t_len / SEC))
+            .field("patch_t_len", &(self.patch_t_len() / SEC))
+            .finish_non_exhaustive()
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PreBinnedPatchRange {
     pub grid_spec: PreBinnedPatchGridSpec,
     pub offset: u64,
@@ -1218,8 +1262,8 @@ impl PreBinnedPatchCoord {
 impl AppendToUrl for PreBinnedPatchCoord {
     fn append_to_url(&self, url: &mut Url) {
         let mut g = url.query_pairs_mut();
-        g.append_pair("patchTlen", &format!("{}", self.spec.patch_t_len()));
-        g.append_pair("binTlen", &format!("{}", self.spec.bin_t_len()));
+        g.append_pair("patchTlen", &format!("{}", self.spec.patch_t_len() / SEC));
+        g.append_pair("binTlen", &format!("{}", self.spec.bin_t_len() / SEC));
         g.append_pair("patchIx", &format!("{}", self.ix()));
     }
 }
@@ -1932,6 +1976,7 @@ pub struct EventQueryJsonStringFrame(pub String);
 
 /**
 Provide basic information about a channel, especially it's shape.
+Also, byte-order is important for clients that process the raw databuffer event data (python data_api3).
 */
 #[derive(Serialize, Deserialize)]
 pub struct ChannelInfo {
@@ -1990,6 +2035,7 @@ pub fn test_cluster() -> Cluster {
             pass: "testingdaq".into(),
         },
         scylla: None,
+        cache_scylla: None,
         run_map_pulse_task: false,
         is_central_storage: false,
         file_io_buffer_size: Default::default(),
@@ -2023,6 +2069,7 @@ pub fn sls_test_cluster() -> Cluster {
             pass: "testingdaq".into(),
         },
         scylla: None,
+        cache_scylla: None,
         run_map_pulse_task: false,
         is_central_storage: false,
         file_io_buffer_size: Default::default(),
@@ -2056,6 +2103,7 @@ pub fn archapp_test_cluster() -> Cluster {
             pass: "testingdaq".into(),
         },
         scylla: None,
+        cache_scylla: None,
         run_map_pulse_task: false,
         is_central_storage: false,
         file_io_buffer_size: Default::default(),

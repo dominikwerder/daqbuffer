@@ -185,10 +185,17 @@ where
                         disk_stats_every.clone(),
                         report_error,
                     );
+                    let nodeix = crate::cache::node_ix_for_patch(
+                        &query.patch(),
+                        &query.channel(),
+                        &node_config.node_config.cluster,
+                    );
+                    let node = &node_config.node_config.cluster.nodes[nodeix as usize];
                     let ret =
                         FetchedPreBinned::<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>::new(
                             &query,
-                            &node_config,
+                            node.host.clone(),
+                            node.port.clone(),
                         )?;
                     Ok(ret)
                 }
