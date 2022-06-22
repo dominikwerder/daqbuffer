@@ -31,4 +31,5 @@ disk = { path = "../disk" }
 archapp_wrap = { path = "../archapp_wrap" }
 #parse = { path = "../parse" }
 items = { path = "../items" }
+dbconn = { path = "../dbconn" }
 taskrun = { path = "../taskrun" }

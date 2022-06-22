@@ -1,4 +1,4 @@
-use crate::scylla::make_scylla_stream;
+use dbconn::events_scylla::make_scylla_stream;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
 use futures_core::Stream;

@@ -421,9 +421,11 @@ pub trait TimeBinnableDynAggregator: Send {
     fn result(&mut self) -> Box<dyn TimeBinned>;
 }
 
-pub trait TimeBinned: Framable + Send + TimeBinnableDyn {
+pub trait TimeBinned: Framable + Sync + Send + TimeBinnableDyn {
     fn aggregator_new(&self) -> Box<dyn TimeBinnableDynAggregator>;
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnableDyn;
+    fn workaround_clone(&self) -> Box<dyn TimeBinned>;
+    fn dummy_test_i32(&self) -> i32;
 }
 
 // TODO should get I/O and tokio dependence out of this crate

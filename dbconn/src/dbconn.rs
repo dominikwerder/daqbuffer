@@ -1,5 +1,6 @@
-pub mod scan;
 pub mod bincache;
+pub mod events_scylla;
+pub mod scan;
 pub mod search;
 pub mod pg {
     pub use tokio_postgres::{Client, Error};
