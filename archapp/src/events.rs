@@ -53,8 +53,9 @@ pub fn parse_data_filename(s: &str) -> Result<DataFilename, Error> {
     Ok(ret)
 }
 
+// TODO do we need Send here?
 pub trait FrameMakerTrait: Send {
-    fn make_frame(&mut self, ei: Sitemty<EventsItem>) -> Box<dyn Framable>;
+    fn make_frame(&mut self, ei: Sitemty<EventsItem>) -> Box<dyn Framable + Send>;
 }
 
 pub struct FrameMaker {
@@ -176,7 +177,7 @@ macro_rules! arm2 {
             },
             Err(e) => Err(e),
         };
-        Box::new(ret) as Box<dyn Framable>
+        Box::new(ret) as Box<dyn Framable + Send>
     }};
 }
 
@@ -302,7 +303,7 @@ macro_rules! arm1 {
 }
 
 impl FrameMakerTrait for FrameMaker {
-    fn make_frame(&mut self, item: Sitemty<EventsItem>) -> Box<dyn Framable> {
+    fn make_frame(&mut self, item: Sitemty<EventsItem>) -> Box<dyn Framable + Send> {
         let scalar_type = &self.scalar_type;
         let shape = &self.shape;
         let agg_kind = &self.agg_kind;
@@ -323,7 +324,7 @@ impl FrameMakerTrait for FrameMaker {
 pub async fn make_event_pipe(
     evq: &RawEventsQuery,
     aa: &ArchiverAppliance,
-) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error> {
+) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>, Error> {
     let ci = channel_info(&evq.channel, aa).await?;
     let mut inps = vec![];
     let mut names = vec![];

@@ -1,6 +1,7 @@
 use crate::inmem::InMemoryFrame;
 use crate::{
-    FrameType, ERROR_FRAME_TYPE_ID, INMEM_FRAME_ENCID, INMEM_FRAME_HEAD, INMEM_FRAME_MAGIC, TERM_FRAME_TYPE_ID,
+    FrameType, FrameTypeStatic, ERROR_FRAME_TYPE_ID, INMEM_FRAME_ENCID, INMEM_FRAME_HEAD, INMEM_FRAME_MAGIC,
+    TERM_FRAME_TYPE_ID,
 };
 use bytes::{BufMut, BytesMut};
 use err::Error;
@@ -16,17 +17,31 @@ where
     if item.is_err() {
         make_error_frame(item.err().unwrap())
     } else {
-        make_frame_2(item, FT::FRAME_TYPE_ID)
+        make_frame_2(
+            item,
+            //FT::FRAME_TYPE_ID
+            item.frame_type_id(),
+        )
     }
 }
 
 pub fn make_frame_2<FT>(item: &FT, fty: u32) -> Result<BytesMut, Error>
 where
-    FT: Serialize,
+    FT: erased_serde::Serialize,
 {
     //trace!("make_frame_2");
-    match bincode::serialize(item) {
-        Ok(enc) => {
+    let mut out = vec![];
+    let opts = bincode::DefaultOptions::new()
+        //.with_fixint_encoding()
+        //.allow_trailing_bytes()
+        ;
+    let mut ser = bincode::Serializer::new(&mut out, opts);
+    //let mut ser = serde_json::Serializer::new(std::io::stdout());
+    let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser);
+    //match bincode::serialize(item) {
+    match item.erased_serialize(&mut ser2) {
+        Ok(_) => {
+            let enc = out;
             if enc.len() > u32::MAX as usize {
                 return Err(Error::with_msg(format!("too long payload {}", enc.len())));
             }
@@ -105,7 +120,7 @@ pub fn make_term_frame() -> BytesMut {
 
 pub fn decode_frame<T>(frame: &InMemoryFrame) -> Result<T, Error>
 where
-    T: FrameType + DeserializeOwned,
+    T: FrameTypeStatic + DeserializeOwned,
 {
     if frame.encid() != INMEM_FRAME_ENCID {
         return Err(Error::with_msg(format!("unknown encoder id {:?}", frame)));
@@ -125,7 +140,7 @@ where
         };
         Ok(T::from_error(k))
     } else {
-        let tyid = <T as FrameType>::FRAME_TYPE_ID;
+        let tyid = T::FRAME_TYPE_ID;
         if frame.tyid() != tyid {
             return Err(Error::with_msg(format!(
                 "type id mismatch  expect {:x}  found {:?}",

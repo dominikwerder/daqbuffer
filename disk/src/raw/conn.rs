@@ -12,7 +12,6 @@ use items::{EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, Stream
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
 use netpod::{AggKind, ByteOrder, ByteSize, Channel, DiskIoTune, NanoRange, NodeConfigCached, ScalarType, Shape};
-
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, ConfigEntry, MatchingConfigEntry};
 use std::pin::Pin;
 
@@ -20,7 +19,7 @@ fn make_num_pipeline_stream_evs<NTY, END, EVS, ENP>(
     event_value_shape: EVS,
     events_node_proc: ENP,
     event_blobs: EventChunkerMultifile,
-) -> Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>
+) -> Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>
 where
     NTY: NumOps + NumFromBytes<NTY, END> + 'static,
     END: Endianness + 'static,
@@ -44,7 +43,7 @@ where
         },
         Err(e) => Err(e),
     })
-    .map(|item| Box::new(item) as Box<dyn Framable>);
+    .map(|item| Box::new(item) as Box<dyn Framable + Send>);
     Box::pin(s2)
 }
 
@@ -142,7 +141,7 @@ macro_rules! pipe1 {
 pub async fn make_event_pipe(
     evq: &RawEventsQuery,
     node_config: &NodeConfigCached,
-) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error> {
+) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>, Error> {
     if false {
         match dbconn::channel_exists(&evq.channel, &node_config).await {
             Ok(_) => (),
@@ -309,7 +308,7 @@ pub fn make_remote_event_blobs_stream(
 pub async fn make_event_blobs_pipe(
     evq: &RawEventsQuery,
     node_config: &NodeConfigCached,
-) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error> {
+) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>, Error> {
     if false {
         match dbconn::channel_exists(&evq.channel, &node_config).await {
             Ok(_) => (),
@@ -331,9 +330,9 @@ pub async fn make_event_blobs_pipe(
             evq.disk_io_tune.clone(),
             node_config,
         )?;
-        let s = event_blobs.map(|item| Box::new(item) as Box<dyn Framable>);
+        let s = event_blobs.map(|item| Box::new(item) as Box<dyn Framable + Send>);
         //let s = tracing_futures::Instrumented::instrument(s, tracing::info_span!("make_event_blobs_pipe"));
-        let pipe: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>;
+        let pipe: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>;
         pipe = Box::pin(s);
         pipe
     } else {
@@ -347,9 +346,9 @@ pub async fn make_event_blobs_pipe(
             evq.disk_io_tune.clone(),
             node_config,
         )?;
-        let s = event_blobs.map(|item| Box::new(item) as Box<dyn Framable>);
+        let s = event_blobs.map(|item| Box::new(item) as Box<dyn Framable + Send>);
         //let s = tracing_futures::Instrumented::instrument(s, tracing::info_span!("make_event_blobs_pipe"));
-        let pipe: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>;
+        let pipe: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>;
         pipe = Box::pin(s);
         pipe
     };

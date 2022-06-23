@@ -114,6 +114,7 @@ pub trait NumOps:
     + Clone
     + AsPrimF32
     + Send
+    + Sync
     + Unpin
     + Debug
     + Zero

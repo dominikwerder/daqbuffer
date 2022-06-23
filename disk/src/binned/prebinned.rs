@@ -12,7 +12,8 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use items::numops::{BoolNum, NumOps, StringNum};
 use items::{
-    Appendable, Clearable, EventsNodeProcessor, Framable, FrameType, PushableIndex, Sitemty, TimeBinnableType,
+    Appendable, Clearable, EventsNodeProcessor, Framable, FrameType, PushableIndex, RangeCompletableItem, Sitemty,
+    SitemtyFrameType, StreamItem, TimeBinnableType, TimeBinned,
 };
 use netpod::log::*;
 use netpod::{AggKind, ByteOrder, ChannelTyped, NodeConfigCached, ScalarType, Shape};
@@ -28,7 +29,7 @@ async fn make_num_pipeline_nty_end_evs_enp<NTY, END, EVS, ENP>(
     _events_node_proc: ENP,
     query: PreBinnedQuery,
     node_config: &NodeConfigCached,
-) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error>
+) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>, Error>
 where
     NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
     END: Endianness + 'static,
@@ -38,6 +39,7 @@ where
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
     Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
         Framable + FrameType + DeserializeOwned,
+    <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: SitemtyFrameType + TimeBinned,
 {
     if let Some(scyconf) = &node_config.node_config.cluster.cache_scylla {
         info!("~~~~~~~~~~~~~~~  make_num_pipeline_nty_end_evs_enp using scylla as cache");
@@ -50,21 +52,29 @@ where
         let stream = stream.map(|x| {
             //
             match x {
-                Ok(k) => {
-                    let g = Box::new(k) as Box<dyn Framable>;
-                    g
-                }
-                Err(e) => {
-                    let u: Sitemty<items::scalarevents::ScalarEvents<f32>> = Err(e);
-                    Box::new(u) as Box<dyn Framable>
-                }
+                Ok(k) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(k))),
+                Err(e) => Err(e),
             }
         });
-        let stream = Box::pin(stream) as Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>;
+        let stream = Box::pin(stream) as Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>;
         Ok(stream)
     } else {
         let ret = PreBinnedValueStream::<NTY, END, EVS, ENP>::new(query, agg_kind, node_config);
-        let ret = StreamExt::map(ret, |item| Box::new(item) as Box<dyn Framable>);
+        let ret = StreamExt::map(ret, |item| {
+            //
+            match item {
+                Ok(StreamItem::DataItem(RangeCompletableItem::Data(k))) => {
+                    let g = Box::new(k) as Box<dyn TimeBinned>;
+                    Ok(StreamItem::DataItem(RangeCompletableItem::Data(g)))
+                }
+                Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)) => {
+                    Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
+                }
+                Ok(StreamItem::Log(k)) => Ok(StreamItem::Log(k)),
+                Ok(StreamItem::Stats(k)) => Ok(StreamItem::Stats(k)),
+                Err(e) => Err(e),
+            }
+        });
         Ok(Box::pin(ret))
     }
 }
@@ -75,7 +85,7 @@ async fn make_num_pipeline_nty_end<NTY, END>(
     agg_kind: AggKind,
     query: PreBinnedQuery,
     node_config: &NodeConfigCached,
-) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error>
+) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>, Error>
 where
     NTY: NumOps + NumFromBytes<NTY, END> + Serialize + 'static,
     END: Endianness + 'static,
@@ -188,7 +198,7 @@ async fn make_num_pipeline(
     agg_kind: AggKind,
     query: PreBinnedQuery,
     node_config: &NodeConfigCached,
-) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error> {
+) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>, Error> {
     match scalar_type {
         ScalarType::U8 => match_end!(u8, byte_order, scalar_type, shape, agg_kind, query, node_config),
         ScalarType::U16 => match_end!(u16, byte_order, scalar_type, shape, agg_kind, query, node_config),

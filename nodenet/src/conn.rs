@@ -4,7 +4,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::frame::{decode_frame, make_term_frame};
-use items::{Framable, StreamItem};
+use items::{Framable, RangeCompletableItem, StreamItem};
 use netpod::histo::HistoLog2;
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
@@ -129,12 +129,31 @@ async fn events_conn_handler_inner_try(
         return Err((e, netout).into());
     }
 
-    let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>> =
+    let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> =
         if let Some(conf) = &node_config.node_config.cluster.scylla {
             let scyco = conf;
             let dbconf = node_config.node_config.cluster.database.clone();
             match make_scylla_stream(&evq, scyco, dbconf, evq.do_test_stream_error).await {
-                Ok(j) => j,
+                Ok(s) => {
+                    //
+                    let s = s.map(|item| {
+                        //
+                        /*match item {
+                            Ok(StreamItem::Data(RangeCompletableItem::Data(k))) => {
+                                let b = Box::new(b);
+                                Ok(StreamItem::Data(RangeCompletableItem::Data(b)))
+                            }
+                            Ok(StreamItem::Data(RangeCompletableItem::Complete)) => {
+                                Ok(StreamItem::Data(RangeCompletableItem::Complete))
+                            }
+                            Ok(StreamItem::Log(k)) => Ok(StreamItem::Log(k)),
+                            Ok(StreamItem::Stats(k)) => Ok(StreamItem::Stats(k)),
+                            Err(e) => Err(e),
+                        }*/
+                        Box::new(item) as Box<dyn Framable + Send>
+                    });
+                    Box::pin(s)
+                }
                 Err(e) => return Err((e, netout))?,
             }
         } else if let Some(aa) = &node_config.node.channel_archiver {

@@ -1,8 +1,8 @@
-use crate::events_scylla::ScyllaFramableStream;
+use crate::events_scylla::EventsStreamScylla;
 use crate::ErrConv;
 use err::Error;
 use futures_util::{Future, Stream, StreamExt};
-use items::TimeBinned;
+use items::{TimeBinnableDyn, TimeBinned};
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
 use netpod::{
@@ -142,13 +142,15 @@ pub async fn fetch_uncached_binned_events(
     // TODO ask Scylla directly, do not go through HTTP.
     // Refactor the event fetch stream code such that I can use that easily here.
     let evq = RawEventsQuery::new(chn.channel.clone(), range.clone(), AggKind::Plain);
-    let _res = Box::pin(ScyllaFramableStream::new(
+    let _res = Box::pin(EventsStreamScylla::new(
         &evq,
         chn.scalar_type.clone(),
         chn.shape.clone(),
         scy,
         false,
     ));
+    // TODO add the time binner.
+    // TODO return the result of the binning procedure.
     // TODO ScyllaFramableStream must return a new events trait object designed for trait object use.
     err::todoval()
 }

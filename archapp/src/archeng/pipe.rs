@@ -19,7 +19,7 @@ pub async fn make_event_pipe(
     evq: &RawEventsQuery,
     node: NodeConfigCached,
     conf: ChannelArchiver,
-) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error> {
+) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>, Error> {
     debug!("make_event_pipe  {:?}", evq);
     let channel_config = {
         let q = ChannelConfigQuery {

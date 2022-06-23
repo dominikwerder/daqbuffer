@@ -243,7 +243,7 @@ impl PlainEvents {
 }
 
 impl ChannelExecFunction for PlainEvents {
-    type Output = Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>;
+    type Output = Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>;
 
     fn exec<NTY, END, EVS, ENP>(
         self,
@@ -265,7 +265,7 @@ impl ChannelExecFunction for PlainEvents {
         // TODO let upstream provide DiskIoTune and pass in RawEventsQuery:
         let evq = RawEventsQuery::new(self.channel, self.range, self.agg_kind);
         let s = MergedFromRemotes::<Identity<NTY>>::new(evq, perf_opts, self.node_config.node_config.cluster);
-        let s = s.map(|item| Box::new(item) as Box<dyn Framable>);
+        let s = s.map(|item| Box::new(item) as Box<dyn Framable + Send>);
         Ok(Box::pin(s))
     }
 

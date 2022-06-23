@@ -7,7 +7,7 @@ use futures_util::TryStreamExt;
 use http::StatusCode;
 use hyper::Body;
 use items::xbinnedwaveevents::XBinnedWaveEvents;
-use items::{FrameType, Sitemty, StreamItem};
+use items::{Sitemty, StreamItem};
 use netpod::query::{BinnedQuery, CacheUsage};
 use netpod::{log::*, AppendToUrl};
 use netpod::{AggKind, ByteSize, Channel, HostPort, NanoRange, PerfOpts, APP_OCTET};
@@ -113,7 +113,9 @@ pub async fn get_binned(
                         // The expected type nowadays depends on the channel and agg-kind.
                         err::todo();
                         type ExpectedType = Sitemty<XBinnedWaveEvents<u8>>;
-                        let type_id_exp = <ExpectedType as FrameType>::FRAME_TYPE_ID;
+                        // TODO the non-data variants of Sitemty no longer carry a frame id.
+                        //let type_id_exp = <ExpectedType as FrameType>::FRAME_TYPE_ID;
+                        let type_id_exp: u32 = err::todoval();
                         if frame.tyid() != type_id_exp {
                             error!("unexpected type id  got {}  exp {}", frame.tyid(), type_id_exp);
                         }

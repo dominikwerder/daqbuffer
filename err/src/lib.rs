@@ -317,9 +317,7 @@ impl<I> nom::error::ParseError<I> for Error {
         Self::with_msg(format!("ParseError  kind {:?}  other {:?}", kind, other))
     }
 }
-*/
 
-/*
 impl From<JoinError> for Error {
     fn from(k: JoinError) -> Self {
         Self::with_msg(format!("JoinError {:?}", k))
@@ -329,12 +327,18 @@ impl From<JoinError> for Error {
 
 impl From<Box<bincode::ErrorKind>> for Error {
     fn from(k: Box<bincode::ErrorKind>) -> Self {
-        Self::with_msg(format!("bincode::ErrorKind {:?}", k))
+        Self::with_msg(k.to_string())
     }
 }
 
 impl From<serde_cbor::Error> for Error {
     fn from(k: serde_cbor::Error) -> Self {
+        Self::with_msg(k.to_string())
+    }
+}
+
+impl From<erased_serde::Error> for Error {
+    fn from(k: erased_serde::Error) -> Self {
         Self::with_msg(k.to_string())
     }
 }

@@ -39,11 +39,11 @@ pub const TERM_FRAME_TYPE_ID: u32 = 0x01;
 pub const ERROR_FRAME_TYPE_ID: u32 = 0x02;
 pub const EVENT_QUERY_JSON_STRING_FRAME: u32 = 0x100;
 pub const EVENT_VALUES_FRAME_TYPE_ID: u32 = 0x500;
-pub const MIN_MAX_AVG_BINS: u32 = 0x700;
 pub const WAVE_EVENTS_FRAME_TYPE_ID: u32 = 0x800;
 pub const X_BINNED_SCALAR_EVENTS_FRAME_TYPE_ID: u32 = 0x8800;
 pub const X_BINNED_WAVE_EVENTS_FRAME_TYPE_ID: u32 = 0x900;
 pub const MIN_MAX_AVG_WAVE_BINS: u32 = 0xa00;
+pub const MIN_MAX_AVG_DIM_0_BINS_FRAME_TYPE_ID: u32 = 0x700;
 pub const MIN_MAX_AVG_DIM_1_BINS_FRAME_TYPE_ID: u32 = 0xb00;
 pub const EVENT_FULL_FRAME_TYPE_ID: u32 = 0x2200;
 pub const EVENTS_ITEM_FRAME_TYPE_ID: u32 = 0x2300;
@@ -212,38 +212,68 @@ impl SubFrId for BoolNum {
     const SUB: u32 = 14;
 }
 
+// To be implemented by the data containers, i.e. the T's in Sitemty<T>, e.g. ScalarEvents.
+// TODO rename this, since it is misleading because it is not meanto to be implemented by Sitemty.
 pub trait SitemtyFrameType {
-    const FRAME_TYPE_ID: u32;
+    //const FRAME_TYPE_ID: u32;
+    fn frame_type_id(&self) -> u32;
 }
 
-pub trait FrameType {
+pub trait FrameTypeStatic {
     const FRAME_TYPE_ID: u32;
-    fn is_err(&self) -> bool;
-    fn err(&self) -> Option<&::err::Error>;
     fn from_error(x: ::err::Error) -> Self;
 }
 
-impl FrameType for EventQueryJsonStringFrame {
+// Meant to be implemented by Sitemty.
+pub trait FrameType {
+    fn frame_type_id(&self) -> u32;
+    fn is_err(&self) -> bool;
+    fn err(&self) -> Option<&::err::Error>;
+}
+
+impl FrameTypeStatic for EventQueryJsonStringFrame {
     const FRAME_TYPE_ID: u32 = EVENT_QUERY_JSON_STRING_FRAME;
 
+    fn from_error(_x: err::Error) -> Self {
+        error!("FrameTypeStatic::from_error todo");
+        todo!()
+    }
+}
+
+impl<T: FrameTypeStatic> FrameTypeStatic for Sitemty<T> {
+    const FRAME_TYPE_ID: u32 = <T as FrameTypeStatic>::FRAME_TYPE_ID;
+
+    fn from_error(_: err::Error) -> Self {
+        // TODO remove this method.
+        panic!()
+    }
+}
+
+impl<T> FrameType for Box<T>
+where
+    T: FrameType,
+{
+    fn frame_type_id(&self) -> u32 {
+        self.as_ref().frame_type_id()
+    }
+
     fn is_err(&self) -> bool {
-        false
+        self.as_ref().is_err()
     }
 
     fn err(&self) -> Option<&::err::Error> {
-        None
-    }
-
-    fn from_error(_x: ::err::Error) -> Self {
-        panic!()
+        self.as_ref().err()
     }
 }
 
 impl<T> FrameType for Sitemty<T>
 where
-    T: SitemtyFrameType,
+    // SitemtyFrameType
+    T: FrameTypeStatic,
 {
-    const FRAME_TYPE_ID: u32 = T::FRAME_TYPE_ID;
+    fn frame_type_id(&self) -> u32 {
+        <T as FrameTypeStatic>::FRAME_TYPE_ID
+    }
 
     fn is_err(&self) -> bool {
         match self {
@@ -258,47 +288,74 @@ where
             Err(e) => Some(e),
         }
     }
+}
 
-    fn from_error(x: ::err::Error) -> Self {
-        Err(x)
+impl FrameType for EventQueryJsonStringFrame {
+    fn frame_type_id(&self) -> u32 {
+        <Self as FrameTypeStatic>::FRAME_TYPE_ID
+    }
+
+    fn is_err(&self) -> bool {
+        false
+    }
+
+    fn err(&self) -> Option<&::err::Error> {
+        None
     }
 }
 
-pub trait ProvidesFrameType {
-    fn frame_type_id(&self) -> u32;
+impl SitemtyFrameType for Box<dyn TimeBinned> {
+    fn frame_type_id(&self) -> u32 {
+        self.as_time_binnable_dyn().frame_type_id()
+    }
 }
 
-pub trait Framable: Send {
-    fn typeid(&self) -> u32;
+// TODO do we need Send here?
+pub trait Framable {
     fn make_frame(&self) -> Result<BytesMut, Error>;
 }
 
+// erased_serde::Serialize
+pub trait FramableInner: SitemtyFrameType + Send {
+    fn _dummy(&self);
+}
+
+// erased_serde::Serialize`
+impl<T: SitemtyFrameType + Send> FramableInner for T {
+    fn _dummy(&self) {}
+}
+
+//impl<T: SitemtyFrameType + Serialize + Send> FramableInner for Box<T> {}
+
 // TODO need also Framable for those types defined in other crates.
+// TODO not all T have FrameTypeStatic, e.g. Box<dyn TimeBinned>
 impl<T> Framable for Sitemty<T>
-where
-    T: SitemtyFrameType + Serialize + Send,
+//where
+//Self: erased_serde::Serialize,
+//T: FramableInner + FrameTypeStatic,
+//T: Sized,
 {
-    fn typeid(&self) -> u32 {
-        T::FRAME_TYPE_ID
+    fn make_frame(&self) -> Result<BytesMut, Error> {
+        todo!()
     }
 
-    fn make_frame(&self) -> Result<BytesMut, Error> {
+    /*fn make_frame(&self) -> Result<BytesMut, Error> {
         //trace!("make_frame");
         match self {
-            Ok(_) => make_frame_2(self, T::FRAME_TYPE_ID),
+            Ok(_) => make_frame_2(
+                self,
+                //T::FRAME_TYPE_ID
+                self.frame_type_id(),
+            ),
             Err(e) => make_error_frame(e),
         }
-    }
+    }*/
 }
 
 impl<T> Framable for Box<T>
 where
     T: Framable + ?Sized,
 {
-    fn typeid(&self) -> u32 {
-        self.as_ref().typeid()
-    }
-
     fn make_frame(&self) -> Result<BytesMut, Error> {
         self.as_ref().make_frame()
     }
@@ -405,7 +462,7 @@ pub trait TimeBins: Send + Unpin + WithLen + Appendable + FilterFittingInside {
 }
 
 pub trait TimeBinnableType:
-    Send + Unpin + RangeOverlapInfo + FilterFittingInside + Appendable + Serialize + ReadableFromFile
+    Send + Unpin + RangeOverlapInfo + FilterFittingInside + Appendable + Serialize + ReadableFromFile + FrameTypeStatic
 {
     type Output: TimeBinnableType;
     type Aggregator: TimeBinnableTypeAggregator<Input = Self, Output = Self::Output> + Send + Unpin;
@@ -414,18 +471,37 @@ pub trait TimeBinnableType:
 
 /// Provides a time-binned representation of the implementing type.
 /// In contrast to `TimeBinnableType` this is meant for trait objects.
-pub trait TimeBinnableDyn {}
+
+// TODO should not require Sync!
+// TODO SitemtyFrameType is already supertrait of FramableInner.
+pub trait TimeBinnableDyn: FramableInner + SitemtyFrameType + Sync + Send {
+    fn aggregator_new(&self) -> Box<dyn TimeBinnableDynAggregator>;
+}
 
 pub trait TimeBinnableDynAggregator: Send {
     fn ingest(&mut self, item: &dyn TimeBinnableDyn);
     fn result(&mut self) -> Box<dyn TimeBinned>;
 }
 
-pub trait TimeBinned: Framable + Sync + Send + TimeBinnableDyn {
-    fn aggregator_new(&self) -> Box<dyn TimeBinnableDynAggregator>;
+/// Container of some form of events, for use as trait object.
+pub trait EventsDyn: TimeBinnableDyn {}
+
+/// Data in time-binned form.
+pub trait TimeBinned: TimeBinnableDyn {
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnableDyn;
     fn workaround_clone(&self) -> Box<dyn TimeBinned>;
     fn dummy_test_i32(&self) -> i32;
+}
+
+// TODO this impl is already covered by the generic one:
+/*impl FramableInner for Box<dyn TimeBinned> {
+    fn _dummy(&self) {}
+}*/
+
+impl TimeBinnableDyn for Box<dyn TimeBinned> {
+    fn aggregator_new(&self) -> Box<dyn TimeBinnableDynAggregator> {
+        self.as_time_binnable_dyn().aggregator_new()
+    }
 }
 
 // TODO should get I/O and tokio dependence out of this crate

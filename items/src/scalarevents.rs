@@ -2,9 +2,9 @@ use crate::binsdim0::MinMaxAvgDim0Bins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
-    pulse_offs_from_abs, ts_offs_from_abs, Appendable, ByteEstimate, Clearable, EventAppendable, FilterFittingInside,
-    Fits, FitsInside, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, TimeBinnableType,
-    TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    pulse_offs_from_abs, ts_offs_from_abs, Appendable, ByteEstimate, Clearable, EventAppendable, EventsDyn,
+    FilterFittingInside, Fits, FitsInside, FrameTypeStatic, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile,
+    SitemtyFrameType, TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
@@ -49,11 +49,26 @@ impl<NTY> ScalarEvents<NTY> {
     }
 }
 
-impl<NTY> SitemtyFrameType for ScalarEvents<NTY>
+impl<NTY> FrameTypeStatic for ScalarEvents<NTY>
 where
     NTY: NumOps,
 {
     const FRAME_TYPE_ID: u32 = crate::EVENT_VALUES_FRAME_TYPE_ID + NTY::SUB;
+
+    fn from_error(_: err::Error) -> Self {
+        // TODO this method should not be used, remove.
+        error!("impl<NTY> FrameTypeStatic for ScalarEvents<NTY>");
+        panic!()
+    }
+}
+
+impl<NTY> SitemtyFrameType for ScalarEvents<NTY>
+where
+    NTY: NumOps,
+{
+    fn frame_type_id(&self) -> u32 {
+        <Self as FrameTypeStatic>::FRAME_TYPE_ID
+    }
 }
 
 impl<NTY> ScalarEvents<NTY> {
@@ -539,3 +554,11 @@ where
         ret
     }
 }
+
+impl<NTY: NumOps> TimeBinnableDyn for ScalarEvents<NTY> {
+    fn aggregator_new(&self) -> Box<dyn crate::TimeBinnableDynAggregator> {
+        todo!()
+    }
+}
+
+impl<NTY: NumOps> EventsDyn for ScalarEvents<NTY> {}

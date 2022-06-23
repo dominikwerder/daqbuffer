@@ -4,7 +4,7 @@ use crate::streams::{Collectable, Collector};
 use crate::{
     ts_offs_from_abs, Appendable, ByteEstimate, Clearable, FilterFittingInside, Fits, FitsInside, PushableIndex,
     RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType,
-    TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    TimeBinnableTypeAggregator, WithLen, WithTimestamps, FrameTypeStatic,
 };
 use err::Error;
 use netpod::log::*;
@@ -23,11 +23,24 @@ pub struct XBinnedScalarEvents<NTY> {
     pub avgs: Vec<f32>,
 }
 
-impl<NTY> SitemtyFrameType for XBinnedScalarEvents<NTY>
+impl<NTY> FrameTypeStatic for XBinnedScalarEvents<NTY>
 where
     NTY: SubFrId,
 {
     const FRAME_TYPE_ID: u32 = crate::X_BINNED_SCALAR_EVENTS_FRAME_TYPE_ID + NTY::SUB;
+
+    fn from_error(_: err::Error) -> Self {
+        panic!()
+    }
+}
+
+impl<NTY> SitemtyFrameType for XBinnedScalarEvents<NTY>
+where
+    NTY: SubFrId,
+{
+    fn frame_type_id(&self) -> u32 {
+        <Self as FrameTypeStatic>::FRAME_TYPE_ID
+    }
 }
 
 impl<NTY> XBinnedScalarEvents<NTY> {

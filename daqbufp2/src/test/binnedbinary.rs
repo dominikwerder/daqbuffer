@@ -8,7 +8,7 @@ use futures_util::{StreamExt, TryStreamExt};
 use http::StatusCode;
 use hyper::Body;
 use items::binsdim0::MinMaxAvgDim0Bins;
-use items::{FrameType, RangeCompletableItem, Sitemty, StatsItem, StreamItem, SubFrId, WithLen};
+use items::{RangeCompletableItem, Sitemty, StatsItem, StreamItem, SubFrId, WithLen};
 use netpod::query::{BinnedQuery, CacheUsage};
 use netpod::{log::*, AppendToUrl};
 use netpod::{AggKind, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_OCTET};
@@ -195,7 +195,9 @@ where
                         None
                     }
                     StreamItem::DataItem(frame) => {
-                        if frame.tyid() != <Sitemty<MinMaxAvgDim0Bins<NTY>> as FrameType>::FRAME_TYPE_ID {
+                        // TODO non-data Sitety no longer carry frame id:
+                        //if frame.tyid() != <Sitemty<MinMaxAvgDim0Bins<NTY>> as FrameType>::FRAME_TYPE_ID {
+                        if frame.tyid() != err::todoval::<u32>() {
                             error!("test receives unexpected tyid {:x}", frame.tyid());
                         }
                         match bincode::deserialize::<Sitemty<MinMaxAvgDim0Bins<NTY>>>(frame.buf()) {

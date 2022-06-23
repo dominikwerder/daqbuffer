@@ -10,7 +10,7 @@ use http::StatusCode;
 use hyper::Body;
 use items::numops::NumOps;
 use items::scalarevents::ScalarEvents;
-use items::{FrameType, RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithLen};
+use items::{RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithLen};
 use netpod::log::*;
 use netpod::{Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_JSON, APP_OCTET};
 use serde_json::Value as JsonValue;
@@ -150,7 +150,9 @@ where
                         None
                     }
                     StreamItem::DataItem(frame) => {
-                        if frame.tyid() != <Sitemty<ScalarEvents<NTY>> as FrameType>::FRAME_TYPE_ID {
+                        // TODO the non-data variants of Sitemty no longer carry frame type id:
+                        //if frame.tyid() != <Sitemty<ScalarEvents<NTY>> as FrameType>::FRAME_TYPE_ID {
+                        if frame.tyid() != err::todoval::<u32>() {
                             error!("test receives unexpected tyid {:x}", frame.tyid());
                             None
                         } else {

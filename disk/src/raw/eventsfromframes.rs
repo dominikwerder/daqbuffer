@@ -2,7 +2,7 @@ use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::frame::decode_frame;
-use items::{FrameType, Sitemty, StreamItem};
+use items::{FrameTypeStatic, Sitemty, StreamItem};
 use netpod::log::*;
 use serde::de::DeserializeOwned;
 use std::marker::PhantomData;
@@ -37,8 +37,7 @@ where
 impl<T, I> Stream for EventsFromFrames<T, I>
 where
     T: AsyncRead + Unpin,
-    I: DeserializeOwned + Unpin,
-    Sitemty<I>: FrameType,
+    I: FrameTypeStatic + DeserializeOwned + Unpin,
 {
     type Item = Sitemty<I>;
 

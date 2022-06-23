@@ -36,7 +36,7 @@ pub fn scan_files_insert(
 pub async fn make_event_pipe(
     evq: &RawEventsQuery,
     aa: &ArchiverAppliance,
-) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable>> + Send>>, Error> {
+) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>, Error> {
     archapp::events::make_event_pipe(evq, aa).await
 }
 

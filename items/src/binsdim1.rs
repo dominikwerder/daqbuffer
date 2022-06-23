@@ -2,9 +2,9 @@ use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector, ToJsonBytes, ToJsonResult};
 use crate::waveevents::WaveEvents;
 use crate::{
-    pulse_offs_from_abs, ts_offs_from_abs, Appendable, FilterFittingInside, Fits, FitsInside, IsoDateTime,
-    RangeOverlapInfo, ReadPbv, ReadableFromFile, Sitemty, SitemtyFrameType, SubFrId, TimeBinnableType,
-    TimeBinnableTypeAggregator, TimeBins, WithLen,
+    pulse_offs_from_abs, ts_offs_from_abs, Appendable, FilterFittingInside, Fits, FitsInside, FrameTypeStatic,
+    IsoDateTime, RangeOverlapInfo, ReadPbv, ReadableFromFile, Sitemty, SitemtyFrameType, SubFrId, TimeBinnableDyn,
+    TimeBinnableDynAggregator, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinned, TimeBins, WithLen,
 };
 use chrono::{TimeZone, Utc};
 use err::Error;
@@ -27,11 +27,25 @@ pub struct MinMaxAvgDim1Bins<NTY> {
     pub avgs: Vec<Option<Vec<f32>>>,
 }
 
-impl<NTY> SitemtyFrameType for MinMaxAvgDim1Bins<NTY>
+impl<NTY> FrameTypeStatic for MinMaxAvgDim1Bins<NTY>
 where
     NTY: SubFrId,
 {
     const FRAME_TYPE_ID: u32 = crate::MIN_MAX_AVG_DIM_1_BINS_FRAME_TYPE_ID + NTY::SUB;
+
+    fn from_error(_: err::Error) -> Self {
+        // TODO remove usage of this
+        panic!()
+    }
+}
+
+impl<NTY> SitemtyFrameType for MinMaxAvgDim1Bins<NTY>
+where
+    NTY: SubFrId,
+{
+    fn frame_type_id(&self) -> u32 {
+        <Self as FrameTypeStatic>::FRAME_TYPE_ID
+    }
 }
 
 impl<NTY> fmt::Debug for MinMaxAvgDim1Bins<NTY>
@@ -529,5 +543,27 @@ where
 
     fn new_collector(bin_count_exp: u32) -> Self::Collector {
         Self::Collector::new(bin_count_exp)
+    }
+}
+
+impl<NTY: NumOps> TimeBinnableDyn for MinMaxAvgDim1Bins<NTY> {
+    fn aggregator_new(&self) -> Box<dyn TimeBinnableDynAggregator> {
+        todo!()
+    }
+}
+
+impl<NTY: NumOps> TimeBinned for MinMaxAvgDim1Bins<NTY> {
+    fn as_time_binnable_dyn(&self) -> &dyn TimeBinnableDyn {
+        self as &dyn TimeBinnableDyn
+    }
+
+    fn workaround_clone(&self) -> Box<dyn TimeBinned> {
+        // TODO remove
+        panic!()
+    }
+
+    fn dummy_test_i32(&self) -> i32 {
+        // TODO remove
+        panic!()
     }
 }

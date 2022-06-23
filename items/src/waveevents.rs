@@ -3,9 +3,9 @@ use crate::numops::NumOps;
 use crate::xbinnedscalarevents::XBinnedScalarEvents;
 use crate::xbinnedwaveevents::XBinnedWaveEvents;
 use crate::{
-    Appendable, ByteEstimate, Clearable, EventAppendable, EventsNodeProcessor, FilterFittingInside, Fits, FitsInside,
-    PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType,
-    TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    Appendable, ByteEstimate, Clearable, EventAppendable, EventsDyn, EventsNodeProcessor, FilterFittingInside, Fits,
+    FitsInside, FrameTypeStatic, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId,
+    TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
@@ -40,11 +40,25 @@ impl<NTY> WaveEvents<NTY> {
     }
 }
 
-impl<NTY> SitemtyFrameType for WaveEvents<NTY>
+impl<NTY> FrameTypeStatic for WaveEvents<NTY>
 where
     NTY: SubFrId,
 {
     const FRAME_TYPE_ID: u32 = crate::WAVE_EVENTS_FRAME_TYPE_ID + NTY::SUB;
+
+    fn from_error(_: err::Error) -> Self {
+        // TODO remove this method.
+        panic!()
+    }
+}
+
+impl<NTY> SitemtyFrameType for WaveEvents<NTY>
+where
+    NTY: SubFrId,
+{
+    fn frame_type_id(&self) -> u32 {
+        <Self as FrameTypeStatic>::FRAME_TYPE_ID
+    }
 }
 
 impl<NTY> WaveEvents<NTY> {
@@ -494,3 +508,11 @@ where
         }
     }
 }
+
+impl<NTY: NumOps> TimeBinnableDyn for WaveEvents<NTY> {
+    fn aggregator_new(&self) -> Box<dyn crate::TimeBinnableDynAggregator> {
+        todo!()
+    }
+}
+
+impl<NTY: NumOps> EventsDyn for WaveEvents<NTY> {}
