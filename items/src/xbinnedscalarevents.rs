@@ -2,13 +2,13 @@ use crate::binsdim0::MinMaxAvgDim0Bins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
-    ts_offs_from_abs, Appendable, ByteEstimate, Clearable, FilterFittingInside, Fits, FitsInside, PushableIndex,
-    RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType,
-    TimeBinnableTypeAggregator, WithLen, WithTimestamps, FrameTypeStatic,
+    ts_offs_from_abs, Appendable, ByteEstimate, Clearable, FilterFittingInside, Fits, FitsInside, FrameTypeStatic,
+    NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType,
+    TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
-use netpod::NanoRange;
+use netpod::{NanoRange, Shape};
 use serde::{Deserialize, Serialize};
 use tokio::fs::File;
 
@@ -145,6 +145,17 @@ where
     }
 }
 
+impl<NTY> NewEmpty for XBinnedScalarEvents<NTY> {
+    fn empty(_shape: Shape) -> Self {
+        Self {
+            tss: Vec::new(),
+            avgs: Vec::new(),
+            mins: Vec::new(),
+            maxs: Vec::new(),
+        }
+    }
+}
+
 impl<NTY> Appendable for XBinnedScalarEvents<NTY>
 where
     NTY: NumOps,
@@ -158,6 +169,13 @@ where
         self.mins.extend_from_slice(&src.mins);
         self.maxs.extend_from_slice(&src.maxs);
         self.avgs.extend_from_slice(&src.avgs);
+    }
+
+    fn append_zero(&mut self, ts1: u64, _ts2: u64) {
+        self.tss.push(ts1);
+        self.mins.push(NTY::zero());
+        self.maxs.push(NTY::zero());
+        self.avgs.push(0.);
     }
 }
 
@@ -206,8 +224,8 @@ where
 {
     range: NanoRange,
     count: u64,
-    min: Option<NTY>,
-    max: Option<NTY>,
+    min: NTY,
+    max: NTY,
     sumc: u64,
     sum: f32,
     int_ts: u64,
@@ -227,8 +245,8 @@ where
             int_ts: range.beg,
             range,
             count: 0,
-            min: None,
-            max: None,
+            min: NTY::zero(),
+            max: NTY::zero(),
             sumc: 0,
             sum: 0f32,
             last_ts: 0,
@@ -240,26 +258,17 @@ where
     }
 
     fn apply_min_max(&mut self, min: NTY, max: NTY) {
-        self.min = match &self.min {
-            None => Some(min),
-            Some(cmin) => {
-                if &min < cmin {
-                    Some(min)
-                } else {
-                    Some(cmin.clone())
-                }
+        if self.count == 0 {
+            self.min = min;
+            self.max = max;
+        } else {
+            if min < self.min {
+                self.min = min;
             }
-        };
-        self.max = match &self.max {
-            None => Some(max),
-            Some(cmax) => {
-                if &max > cmax {
-                    Some(max)
-                } else {
-                    Some(cmax.clone())
-                }
+            if max > self.max {
+                self.max = max;
             }
-        };
+        }
     }
 
     fn apply_event_unweight(&mut self, avg: f32, min: NTY, max: NTY) {
@@ -330,9 +339,9 @@ where
 
     fn result_reset_unweight(&mut self, range: NanoRange, _expand: bool) -> MinMaxAvgDim0Bins<NTY> {
         let avg = if self.sumc == 0 {
-            None
+            0f32
         } else {
-            Some(self.sum / self.sumc as f32)
+            self.sum / self.sumc as f32
         };
         let ret = MinMaxAvgDim0Bins {
             ts1s: vec![self.range.beg],
@@ -345,8 +354,8 @@ where
         self.int_ts = range.beg;
         self.range = range;
         self.count = 0;
-        self.min = None;
-        self.max = None;
+        self.min = NTY::zero();
+        self.max = NTY::zero();
         self.sum = 0f32;
         self.sumc = 0;
         ret
@@ -359,7 +368,7 @@ where
         }
         let avg = {
             let sc = self.range.delta() as f32 * 1e-9;
-            Some(self.sum / sc)
+            self.sum / sc
         };
         let ret = MinMaxAvgDim0Bins {
             ts1s: vec![self.range.beg],
@@ -372,8 +381,8 @@ where
         self.int_ts = range.beg;
         self.range = range;
         self.count = 0;
-        self.min = None;
-        self.max = None;
+        self.min = NTY::zero();
+        self.max = NTY::zero();
         self.sum = 0f32;
         self.sumc = 0;
         ret

@@ -1,17 +1,19 @@
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector, ToJsonBytes, ToJsonResult};
 use crate::{
-    ts_offs_from_abs, Appendable, FilterFittingInside, Fits, FitsInside, FrameTypeStatic, IsoDateTime,
-    RangeOverlapInfo, ReadPbv, ReadableFromFile, Sitemty, SitemtyFrameType, SubFrId, TimeBinnableDyn,
-    TimeBinnableDynAggregator, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinned, TimeBins, WithLen,
+    ts_offs_from_abs, Appendable, FilterFittingInside, Fits, FitsInside, FrameTypeStatic, IsoDateTime, NewEmpty,
+    RangeOverlapInfo, ReadPbv, ReadableFromFile, Sitemty, SitemtyFrameType, SubFrId, TimeBinnableDyn, TimeBinnableType,
+    TimeBinnableTypeAggregator, TimeBinned, TimeBinnerDyn, TimeBins, WithLen,
 };
 use chrono::{TimeZone, Utc};
 use err::Error;
 use netpod::log::*;
 use netpod::timeunits::SEC;
-use netpod::NanoRange;
+use netpod::{NanoRange, Shape};
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
+use std::collections::VecDeque;
 use std::fmt;
 use std::marker::PhantomData;
 use tokio::fs::File;
@@ -21,10 +23,9 @@ pub struct MinMaxAvgDim0Bins<NTY> {
     pub ts1s: Vec<u64>,
     pub ts2s: Vec<u64>,
     pub counts: Vec<u64>,
-    // TODO get rid of Option:
-    pub mins: Vec<Option<NTY>>,
-    pub maxs: Vec<Option<NTY>>,
-    pub avgs: Vec<Option<f32>>,
+    pub mins: Vec<NTY>,
+    pub maxs: Vec<NTY>,
+    pub avgs: Vec<f32>,
 }
 
 impl<NTY> FrameTypeStatic for MinMaxAvgDim0Bins<NTY>
@@ -155,6 +156,19 @@ impl<NTY> WithLen for MinMaxAvgDim0Bins<NTY> {
     }
 }
 
+impl<NTY> NewEmpty for MinMaxAvgDim0Bins<NTY> {
+    fn empty(_shape: Shape) -> Self {
+        Self {
+            ts1s: Vec::new(),
+            ts2s: Vec::new(),
+            counts: Vec::new(),
+            mins: Vec::new(),
+            maxs: Vec::new(),
+            avgs: Vec::new(),
+        }
+    }
+}
+
 impl<NTY> Appendable for MinMaxAvgDim0Bins<NTY>
 where
     NTY: NumOps,
@@ -170,6 +184,15 @@ where
         self.mins.extend_from_slice(&src.mins);
         self.maxs.extend_from_slice(&src.maxs);
         self.avgs.extend_from_slice(&src.avgs);
+    }
+
+    fn append_zero(&mut self, ts1: u64, ts2: u64) {
+        self.ts1s.push(ts1);
+        self.ts2s.push(ts2);
+        self.counts.push(0);
+        self.mins.push(NTY::zero());
+        self.maxs.push(NTY::zero());
+        self.avgs.push(0.);
     }
 }
 
@@ -193,7 +216,7 @@ where
     NTY: NumOps,
 {
     type Output = MinMaxAvgDim0Bins<NTY>;
-    type Aggregator = MinMaxAvgBinsAggregator<NTY>;
+    type Aggregator = MinMaxAvgDim0BinsAggregator<NTY>;
 
     fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
         debug!(
@@ -233,11 +256,10 @@ pub struct MinMaxAvgBinsCollectedResult<NTY> {
     ts_off_ms: Vec<u64>,
     #[serde(rename = "tsNs")]
     ts_off_ns: Vec<u64>,
-    //ts_bin_edges: Vec<IsoDateTime>,
     counts: Vec<u64>,
-    mins: Vec<Option<NTY>>,
-    maxs: Vec<Option<NTY>>,
-    avgs: Vec<Option<f32>>,
+    mins: Vec<NTY>,
+    maxs: Vec<NTY>,
+    avgs: Vec<f32>,
     #[serde(skip_serializing_if = "crate::bool_is_false", rename = "finalisedRange")]
     finalised_range: bool,
     #[serde(skip_serializing_if = "Zero::is_zero", rename = "missingBins")]
@@ -340,29 +362,29 @@ where
     }
 }
 
-pub struct MinMaxAvgBinsAggregator<NTY> {
+pub struct MinMaxAvgDim0BinsAggregator<NTY> {
     range: NanoRange,
     count: u64,
-    min: Option<NTY>,
-    max: Option<NTY>,
+    min: NTY,
+    max: NTY,
     sumc: u64,
     sum: f32,
 }
 
-impl<NTY> MinMaxAvgBinsAggregator<NTY> {
+impl<NTY: NumOps> MinMaxAvgDim0BinsAggregator<NTY> {
     pub fn new(range: NanoRange, _do_time_weight: bool) -> Self {
         Self {
             range,
             count: 0,
-            min: None,
-            max: None,
+            min: NTY::zero(),
+            max: NTY::zero(),
             sumc: 0,
             sum: 0f32,
         }
     }
 }
 
-impl<NTY> TimeBinnableTypeAggregator for MinMaxAvgBinsAggregator<NTY>
+impl<NTY> TimeBinnableTypeAggregator for MinMaxAvgDim0BinsAggregator<NTY>
 where
     NTY: NumOps,
 {
@@ -375,55 +397,33 @@ where
 
     fn ingest(&mut self, item: &Self::Input) {
         for i1 in 0..item.ts1s.len() {
-            if item.ts2s[i1] <= self.range.beg {
+            if item.counts[i1] == 0 {
+            } else if item.ts2s[i1] <= self.range.beg {
             } else if item.ts1s[i1] >= self.range.end {
             } else {
-                self.min = match &self.min {
-                    None => item.mins[i1].clone(),
-                    Some(min) => match &item.mins[i1] {
-                        None => Some(min.clone()),
-                        Some(v) => {
-                            if v < &min {
-                                Some(v.clone())
-                            } else {
-                                Some(min.clone())
-                            }
-                        }
-                    },
-                };
-                self.max = match &self.max {
-                    None => item.maxs[i1].clone(),
-                    Some(max) => match &item.maxs[i1] {
-                        None => Some(max.clone()),
-                        Some(v) => {
-                            if v > &max {
-                                Some(v.clone())
-                            } else {
-                                Some(max.clone())
-                            }
-                        }
-                    },
-                };
-                match item.avgs[i1] {
-                    None => {}
-                    Some(v) => {
-                        if v.is_nan() {
-                        } else {
-                            self.sum += v;
-                            self.sumc += 1;
-                        }
+                if self.count == 0 {
+                    self.min = item.mins[i1].clone();
+                    self.max = item.maxs[i1].clone();
+                } else {
+                    if item.mins[i1] < self.min {
+                        self.min = item.mins[i1].clone();
+                    }
+                    if item.maxs[i1] > self.max {
+                        self.max = item.maxs[i1].clone();
                     }
                 }
                 self.count += item.counts[i1];
+                self.sum += item.avgs[i1];
+                self.sumc += 1;
             }
         }
     }
 
     fn result_reset(&mut self, range: NanoRange, _expand: bool) -> Self::Output {
         let avg = if self.sumc == 0 {
-            None
+            0f32
         } else {
-            Some(self.sum / self.sumc as f32)
+            self.sum / self.sumc as f32
         };
         let ret = Self::Output {
             ts1s: vec![self.range.beg],
@@ -434,8 +434,8 @@ where
             avgs: vec![avg],
         };
         self.count = 0;
-        self.min = None;
-        self.max = None;
+        self.min = NTY::zero();
+        self.max = NTY::zero();
         self.range = range;
         self.sum = 0f32;
         self.sumc = 0;
@@ -443,9 +443,171 @@ where
     }
 }
 
-impl<NTY: NumOps> TimeBinnableDyn for MinMaxAvgDim0Bins<NTY> {
-    fn aggregator_new(&self) -> Box<dyn TimeBinnableDynAggregator> {
-        todo!()
+impl<NTY: NumOps + 'static> TimeBinnableDyn for MinMaxAvgDim0Bins<NTY> {
+    fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Box<dyn TimeBinnerDyn> {
+        eprintln!("MinMaxAvgDim0Bins time_binner_new");
+        info!("MinMaxAvgDim0Bins time_binner_new");
+        let ret = MinMaxAvgDim0BinsTimeBinner::<NTY>::new(edges.into(), do_time_weight);
+        Box::new(ret)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+}
+
+pub struct MinMaxAvgDim0BinsTimeBinner<NTY: NumOps> {
+    edges: VecDeque<u64>,
+    do_time_weight: bool,
+    range: NanoRange,
+    agg: Option<MinMaxAvgDim0BinsAggregator<NTY>>,
+    ready: Option<<MinMaxAvgDim0BinsAggregator<NTY> as TimeBinnableTypeAggregator>::Output>,
+}
+
+impl<NTY: NumOps> MinMaxAvgDim0BinsTimeBinner<NTY> {
+    fn new(edges: VecDeque<u64>, do_time_weight: bool) -> Self {
+        let range = if edges.len() >= 2 {
+            NanoRange {
+                beg: edges[0],
+                end: edges[1],
+            }
+        } else {
+            // Using a dummy for this case.
+            NanoRange { beg: 1, end: 2 }
+        };
+        Self {
+            edges,
+            do_time_weight,
+            range,
+            agg: None,
+            ready: None,
+        }
+    }
+
+    // Move the bin from the current aggregator (if any) to our output collection,
+    // and step forward in our bin list.
+    fn cycle(&mut self) {
+        eprintln!("cycle");
+        // TODO where to take expand from? Is it still required after all?
+        let expand = true;
+        let have_next_bin = self.edges.len() >= 3;
+        let range_next = if have_next_bin {
+            NanoRange {
+                beg: self.edges[1],
+                end: self.edges[2],
+            }
+        } else {
+            // Using a dummy for this case.
+            NanoRange { beg: 1, end: 2 }
+        };
+        if let Some(agg) = self.agg.as_mut() {
+            eprintln!("cycle: use existing agg: {:?}", agg.range);
+            let mut h = agg.result_reset(range_next.clone(), expand);
+            match self.ready.as_mut() {
+                Some(fin) => {
+                    fin.append(&mut h);
+                }
+                None => {
+                    self.ready = Some(h);
+                }
+            }
+        } else if have_next_bin {
+            eprintln!("cycle: append a zero bin");
+            let mut h = MinMaxAvgDim0Bins::<NTY>::empty();
+            h.append_zero(self.range.beg, self.range.end);
+            match self.ready.as_mut() {
+                Some(fin) => {
+                    fin.append(&mut h);
+                }
+                None => {
+                    self.ready = Some(h);
+                }
+            }
+        } else {
+            eprintln!("cycle: no more next bin");
+        }
+        self.range = range_next;
+        self.edges.pop_front();
+        if !have_next_bin {
+            self.agg = None;
+        }
+    }
+}
+
+impl<NTY: NumOps + 'static> TimeBinnerDyn for MinMaxAvgDim0BinsTimeBinner<NTY> {
+    fn cycle(&mut self) {
+        Self::cycle(self)
+    }
+
+    fn ingest(&mut self, item: &dyn TimeBinnableDyn) {
+        const SELF: &str = "MinMaxAvgDim0BinsTimeBinner";
+        if item.len() == 0 {
+            // Return already here, RangeOverlapInfo would not give much sense.
+            return;
+        }
+        if self.edges.len() < 2 {
+            warn!("TimeBinnerDyn for {SELF}  no more bin in edges A");
+            return;
+        }
+        // TODO optimize by remembering at which event array index we have arrived.
+        // That needs modified interfaces which can take and yield the start and latest index.
+        loop {
+            while item.starts_after(self.range.clone()) {
+                self.cycle();
+                if self.edges.len() < 2 {
+                    warn!("TimeBinnerDyn for {SELF}  no more bin in edges B");
+                    return;
+                }
+            }
+            if item.ends_before(self.range.clone()) {
+                return;
+            } else {
+                if self.edges.len() < 2 {
+                    warn!("TimeBinnerDyn for {SELF}  edge list exhausted");
+                    return;
+                } else {
+                    if self.agg.is_none() {
+                        self.agg = Some(MinMaxAvgDim0BinsAggregator::new(
+                            self.range.clone(),
+                            self.do_time_weight,
+                        ));
+                    }
+                    let agg = self.agg.as_mut().unwrap();
+                    if let Some(item) =
+                        item.as_any()
+                            .downcast_ref::<<MinMaxAvgDim0BinsAggregator<NTY> as TimeBinnableTypeAggregator>::Input>()
+                    {
+                        agg.ingest(item);
+                    } else {
+                        let tyid_item = std::any::Any::type_id(item.as_any());
+                        error!("not correct item type  {:?}", tyid_item);
+                    };
+                    if item.ends_after(self.range.clone()) {
+                        self.cycle();
+                        if self.edges.len() < 2 {
+                            warn!("TimeBinnerDyn for {SELF}  no more bin in edges C");
+                            return;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    fn bins_ready_count(&self) -> usize {
+        match &self.ready {
+            Some(k) => k.len(),
+            None => 0,
+        }
+    }
+
+    fn bins_ready(&mut self) -> Option<Box<dyn crate::TimeBinned>> {
+        match self.ready.take() {
+            Some(k) => Some(Box::new(k)),
+            None => None,
+        }
     }
 }
 
@@ -454,13 +616,23 @@ impl<NTY: NumOps> TimeBinned for MinMaxAvgDim0Bins<NTY> {
         self as &dyn TimeBinnableDyn
     }
 
-    fn workaround_clone(&self) -> Box<dyn TimeBinned> {
-        // TODO remove
-        panic!()
+    fn edges_slice(&self) -> (&[u64], &[u64]) {
+        (&self.ts1s[..], &self.ts2s[..])
     }
 
-    fn dummy_test_i32(&self) -> i32 {
-        // TODO remove
-        panic!()
+    fn counts(&self) -> &[u64] {
+        &self.counts[..]
+    }
+
+    fn mins(&self) -> Vec<f32> {
+        self.mins.iter().map(|x| x.clone().as_prim_f32()).collect()
+    }
+
+    fn maxs(&self) -> Vec<f32> {
+        self.maxs.iter().map(|x| x.clone().as_prim_f32()).collect()
+    }
+
+    fn avgs(&self) -> Vec<f32> {
+        self.avgs.clone()
     }
 }

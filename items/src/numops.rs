@@ -115,6 +115,7 @@ pub trait NumOps:
     + AsPrimF32
     + Send
     + Sync
+    + 'static
     + Unpin
     + Debug
     + Zero

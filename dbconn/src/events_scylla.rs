@@ -3,10 +3,10 @@ use err::Error;
 use futures_util::{Future, FutureExt, Stream};
 use items::scalarevents::ScalarEvents;
 use items::waveevents::WaveEvents;
-use items::{EventsDyn,  RangeCompletableItem, Sitemty, StreamItem};
+use items::{EventsDyn, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
-use netpod::{Database, NanoRange, ScalarType, ScyllaConfig, Shape};
+use netpod::{Channel, Database, NanoRange, ScalarType, ScyllaConfig, Shape};
 use scylla::Session as ScySession;
 use std::collections::VecDeque;
 use std::pin::Pin;
@@ -111,11 +111,11 @@ enum FrState {
 
 pub struct EventsStreamScylla {
     state: FrState,
+    series: u64,
     #[allow(unused)]
     evq: RawEventsQuery,
     scalar_type: ScalarType,
     shape: Shape,
-    series: u64,
     range: NanoRange,
     scy: Arc<ScySession>,
     do_test_stream_error: bool,
@@ -123,6 +123,7 @@ pub struct EventsStreamScylla {
 
 impl EventsStreamScylla {
     pub fn new(
+        series: u64,
         evq: &RawEventsQuery,
         scalar_type: ScalarType,
         shape: Shape,
@@ -131,7 +132,7 @@ impl EventsStreamScylla {
     ) -> Self {
         Self {
             state: FrState::New,
-            series: evq.channel.series.unwrap(),
+            series,
             evq: evq.clone(),
             scalar_type,
             shape,
@@ -204,19 +205,25 @@ impl Stream for EventsStreamScylla {
     }
 }
 
-async fn find_series(series: u64, pgclient: Arc<PgClient>) -> Result<(ScalarType, Shape), Error> {
-    info!("find_series  series {}", series);
-    let rows = {
-        let q = "select facility, channel, scalar_type, shape_dims from series_by_channel where series = $1";
+async fn find_series(channel: &Channel, pgclient: Arc<PgClient>) -> Result<(u64, ScalarType, Shape), Error> {
+    info!("find_series  channel {:?}", channel);
+    let rows = if let Some(series) = channel.series() {
+        let q = "select series, facility, channel, scalar_type, shape_dims from series_by_channel where series = $1";
         pgclient.query(q, &[&(series as i64)]).await.err_conv()?
+    } else {
+        let q = "select series, facility, channel, scalar_type, shape_dims from series_by_channel where facility = $1 and channel = $2";
+        pgclient
+            .query(q, &[&channel.backend(), &channel.name()])
+            .await
+            .err_conv()?
     };
     if rows.len() < 1 {
-        return Err(Error::with_public_msg_no_trace(
-            "Multiple series found for channel, can not return data for ambiguous series",
-        ));
+        return Err(Error::with_public_msg_no_trace(format!(
+            "No series found for {channel:?}"
+        )));
     }
     if rows.len() > 1 {
-        error!("Multiple series found for channel, can not return data for ambiguous series");
+        error!("Multiple series found for {channel:?}");
         return Err(Error::with_public_msg_no_trace(
             "Multiple series found for channel, can not return data for ambiguous series",
         ));
@@ -225,15 +232,14 @@ async fn find_series(series: u64, pgclient: Arc<PgClient>) -> Result<(ScalarType
         .into_iter()
         .next()
         .ok_or_else(|| Error::with_public_msg_no_trace(format!("can not find series for channel")))?;
-    info!("row {row:?}");
-    let _facility: String = row.get(0);
-    let _channel: String = row.get(1);
-    let a: i32 = row.get(2);
+    let series = row.get::<_, i64>(0) as u64;
+    let _facility: String = row.get(1);
+    let _channel: String = row.get(2);
+    let a: i32 = row.get(3);
     let scalar_type = ScalarType::from_scylla_i32(a)?;
-    let a: Vec<i32> = row.get(3);
+    let a: Vec<i32> = row.get(4);
     let shape = Shape::from_scylla_shape_dims(&a)?;
-    info!("make_scylla_stream  series {series}  scalar_type {scalar_type:?}  shape {shape:?}");
-    Ok((scalar_type, shape))
+    Ok((series, scalar_type, shape))
 }
 
 async fn find_ts_msp(series: i64, range: NanoRange, scy: Arc<ScySession>) -> Result<Vec<u64>, Error> {
@@ -359,20 +365,21 @@ pub async fn make_scylla_stream(
     dbconf: Database,
     do_test_stream_error: bool,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn EventsDyn>>> + Send>>, Error> {
-    info!("make_scylla_stream open scylla connection");
     // TODO should RawEventsQuery already contain ScalarType and Shape?
-    let (scalar_type, shape) = {
+    let (series, scalar_type, shape) = {
         let u = {
             let d = &dbconf;
             format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, d.port, d.name)
         };
+        info!("---------------    open postgres connection");
         let (pgclient, pgconn) = tokio_postgres::connect(&u, tokio_postgres::NoTls).await.err_conv()?;
         // TODO use common connection/pool:
         tokio::spawn(pgconn);
         let pgclient = Arc::new(pgclient);
-        find_series(evq.channel.series.unwrap(), pgclient.clone()).await?
+        find_series(&evq.channel, pgclient.clone()).await?
     };
     // TODO reuse existing connection:
+    info!("---------------    open scylla connection");
     let scy = scylla::SessionBuilder::new()
         .known_nodes(&scyco.hosts)
         .use_keyspace(&scyco.keyspace, true)
@@ -381,6 +388,7 @@ pub async fn make_scylla_stream(
         .err_conv()?;
     let scy = Arc::new(scy);
     let res = Box::pin(EventsStreamScylla::new(
+        series,
         evq,
         scalar_type,
         shape,

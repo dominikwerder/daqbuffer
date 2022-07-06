@@ -565,6 +565,11 @@ impl Appendable for EventFull {
         self.shapes.extend_from_slice(&src.shapes);
         self.comps.extend_from_slice(&src.comps);
     }
+
+    fn append_zero(&mut self, _ts1: u64, _ts2: u64) {
+        // TODO do we still need this type?
+        todo!()
+    }
 }
 
 impl Clearable for EventFull {

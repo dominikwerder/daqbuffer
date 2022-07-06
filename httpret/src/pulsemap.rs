@@ -465,6 +465,12 @@ impl FromUrl for MapPulseQuery {
         let ret = Self { backend, pulse };
         Ok(ret)
     }
+
+    fn from_pairs(_pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
+        Err(err::Error::with_msg_no_trace(format!(
+            "can not only construct from pairs"
+        )))
+    }
 }
 
 impl AppendToUrl for MapPulseQuery {

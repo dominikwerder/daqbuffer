@@ -94,6 +94,12 @@ impl Appendable for EventsItem {
             },
         }
     }
+
+    fn append_zero(&mut self, _ts1: u64, _ts2: u64) {
+        // TODO can this implement Appendable in a sane way? Do we need it?
+        // TODO can we remove EventsItem?
+        err::todo();
+    }
 }
 
 impl PushableIndex for EventsItem {

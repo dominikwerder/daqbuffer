@@ -29,7 +29,7 @@ use net::SocketAddr;
 use netpod::log::*;
 use netpod::query::BinnedQuery;
 use netpod::timeunits::SEC;
-use netpod::{channel_from_pairs, get_url_query_pairs};
+use netpod::{get_url_query_pairs, Channel};
 use netpod::{FromUrl, NodeConfigCached, NodeStatus, NodeStatusArchiverAppliance};
 use netpod::{ACCEPT_ALL, APP_JSON, APP_JSON_LINES, APP_OCTET};
 use nodenet::conn::events_service;
@@ -235,6 +235,8 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         h.handle(req, &node_config).await
     } else if let Some(h) = channelconfig::ChannelFromSeries::handler(&req) {
         h.handle(req, &node_config).await
+    } else if let Some(h) = channelconfig::AmbigiousChannelNames::handler(&req) {
+        h.handle(req, &node_config).await
     } else if let Some(h) = events::EventsHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if path == "/api/4/binned" {
@@ -424,6 +426,11 @@ async fn binned_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Res
         e.add_public_msg(msg)
     })?;
     let chconf = chconf_from_binned(&query, node_config).await?;
+    // Update the series id since we don't require some unique identifier yet.
+    let mut query = query;
+    query.set_series_id(chconf.series);
+    let query = query;
+    // ---
     let desc = format!("binned-BEG-{}-END-{}", query.range().beg / SEC, query.range().end / SEC);
     let span1 = span!(Level::INFO, "httpret::binned", desc = &desc.as_str());
     span1.in_scope(|| {
@@ -874,7 +881,7 @@ pub async fn archapp_scan_files_insert(
 pub async fn archapp_channel_info(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let url = Url::parse(&format!("dummy:{}", req.uri()))?;
     let pairs = get_url_query_pairs(&url);
-    let channel = channel_from_pairs(&pairs)?;
+    let channel = Channel::from_pairs(&pairs)?;
     match archapp_wrap::channel_info(&channel, node_config).await {
         Ok(res) => {
             let buf = serde_json::to_vec(&res)?;

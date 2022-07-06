@@ -2,10 +2,7 @@ use err::Error;
 use http::request::Parts;
 use netpod::query::{agg_kind_from_binning_scheme, binning_scheme_append_to_url, CacheUsage};
 use netpod::timeunits::SEC;
-use netpod::{
-    channel_append_to_url, channel_from_pairs, AggKind, AppendToUrl, ByteSize, Channel, PreBinnedPatchCoord,
-    ScalarType, Shape,
-};
+use netpod::{AggKind, AppendToUrl, ByteSize, Channel, FromUrl, PreBinnedPatchCoord, ScalarType, Shape};
 use std::collections::BTreeMap;
 use url::Url;
 
@@ -81,7 +78,7 @@ impl PreBinnedQuery {
             .map(|x| Shape::from_url_str(&x))??;
         let ret = Self {
             patch: PreBinnedPatchCoord::new(bin_t_len * SEC, patch_t_len * SEC, patch_ix),
-            channel: channel_from_pairs(&pairs)?,
+            channel: Channel::from_pairs(&pairs)?,
             scalar_type,
             shape,
             agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::DimXBins1),
@@ -148,7 +145,7 @@ impl AppendToUrl for PreBinnedQuery {
     fn append_to_url(&self, url: &mut Url) {
         self.patch.append_to_url(url);
         binning_scheme_append_to_url(&self.agg_kind, url);
-        channel_append_to_url(url, &self.channel);
+        self.channel.append_to_url(url);
         self.shape.append_to_url(url);
         self.scalar_type.append_to_url(url);
         let mut g = url.query_pairs_mut();

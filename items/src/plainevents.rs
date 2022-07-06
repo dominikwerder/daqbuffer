@@ -50,6 +50,11 @@ impl Appendable for ScalarPlainEvents {
             }
         })
     }
+
+    fn append_zero(&mut self, _ts1: u64, _ts2: u64) {
+        // TODO can this implement Appendable in a sane way? Do we need it?
+        err::todo();
+    }
 }
 
 impl PushableIndex for ScalarPlainEvents {
@@ -157,6 +162,11 @@ impl Appendable for WavePlainEvents {
             _ => panic!(),
         } })
     }
+
+    fn append_zero(&mut self, _ts1: u64, _ts2: u64) {
+        // TODO can this implement Appendable in a sane way? Do we need it?
+        err::todo();
+    }
 }
 
 impl PushableIndex for WavePlainEvents {
@@ -252,6 +262,11 @@ impl Appendable for PlainEvents {
                 _ => panic!(),
             },
         }
+    }
+
+    fn append_zero(&mut self, _ts1: u64, _ts2: u64) {
+        // TODO can this implement Appendable in a sane way? Do we need it?
+        err::todo();
     }
 }
 

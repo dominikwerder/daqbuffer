@@ -6,7 +6,7 @@ use futures_util::{StreamExt, TryStreamExt};
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
 use netpod::log::*;
-use netpod::{AggKind, NodeConfigCached};
+use netpod::{AggKind, FromUrl, NodeConfigCached};
 use netpod::{ACCEPT_ALL, APP_JSON, APP_OCTET};
 use url::Url;
 
@@ -54,6 +54,13 @@ async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached)
     let url = Url::parse(&format!("dummy:{}", req.uri()))?;
     let query = PlainEventsQuery::from_url(&url)?;
     let chconf = chconf_from_events_binary(&query, node_config).await?;
+
+    // Update the series id since we don't require some unique identifier yet.
+    let mut query = query;
+    query.set_series_id(chconf.series);
+    let query = query;
+    // ---
+
     let op = disk::channelexec::PlainEvents::new(query.channel().clone(), query.range().clone(), node_config.clone());
     let s = disk::channelexec::channel_exec(
         op,
@@ -78,6 +85,13 @@ async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -
     let (head, _body) = req.into_parts();
     let query = PlainEventsQuery::from_request_head(&head)?;
     let chconf = chconf_from_events_json(&query, node_config).await?;
+
+    // Update the series id since we don't require some unique identifier yet.
+    let mut query = query;
+    query.set_series_id(chconf.series);
+    let query = query;
+    // ---
+
     let op = disk::channelexec::PlainEventsJson::new(
         // TODO pass only the query, not channel, range again:
         query.clone(),

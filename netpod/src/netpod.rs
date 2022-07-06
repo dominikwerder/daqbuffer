@@ -527,38 +527,69 @@ pub struct NodeStatus {
     pub archiver_appliance_status: Option<NodeStatusArchiverAppliance>,
 }
 
-/**
-Describes a "channel" which is a time-series with a unique name within a "backend".
-In the near future, each channel should have assigned a unique id within a "backend".
-Also the concept of "backend" should be split into "facility" and some optional other identifier
-for cases like post-mortem, or to differentiate between channel-access and bsread for cases where
-the same channel-name is delivered via different methods.
-*/
+// Describes a "channel" which is a time-series with a unique name within a "backend".
+// Also the concept of "backend" could be split into "facility" and some optional other identifier
+// for cases like e.g. post-mortem, or to differentiate between channel-access and bsread for cases where
+// the same channel-name is delivered via different methods.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Channel {
-    // TODO ideally, all channels would have a unique id. For scylla backends, we require the id.
-    // In the near future, we should also require a unique id for "databuffer" backends, indexed in postgres.
     pub series: Option<u64>,
     // "backend" is currently used in the existing systems for multiple purposes:
-    // it can indicate the facility (eg. sf-databuffer, hipa, ...) but also some special subsystem (eg. sf-rf-databuffer).
+    // it can indicate the facility (eg. sf-databuffer, hipa, ...) but also
+    // some special subsystem (eg. sf-rf-databuffer).
     pub backend: String,
     pub name: String,
 }
 
 impl Channel {
+    pub fn backend(&self) -> &str {
+        &self.backend
+    }
+
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    pub fn series_id(&self) -> Result<u64, Error> {
+    pub fn series(&self) -> Option<u64> {
         self.series
-            .ok_or_else(|| Error::with_msg_no_trace(format!("no series id in channel")))
     }
 }
 
-/**
+impl FromUrl for Channel {
+    fn from_url(url: &Url) -> Result<Self, Error> {
+        let pairs = get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
 
-*/
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+        let ret = Channel {
+            backend: pairs
+                .get("channelBackend")
+                .ok_or(Error::with_public_msg("missing channelBackend"))?
+                .into(),
+            name: pairs
+                .get("channelName")
+                .ok_or(Error::with_public_msg("missing channelName"))?
+                .into(),
+            series: pairs
+                .get("seriesId")
+                .and_then(|x| x.parse::<u64>().map_or(None, |x| Some(x))),
+        };
+        Ok(ret)
+    }
+}
+
+impl AppendToUrl for Channel {
+    fn append_to_url(&self, url: &mut Url) {
+        let mut g = url.query_pairs_mut();
+        g.append_pair("channelBackend", &self.backend);
+        g.append_pair("channelName", &self.name);
+        if let Some(series) = self.series {
+            g.append_pair("seriesId", &format!("{series}"));
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChannelTyped {
     pub channel: Channel,
@@ -567,8 +598,8 @@ pub struct ChannelTyped {
 }
 
 impl ChannelTyped {
-    pub fn series_id(&self) -> Result<u64, Error> {
-        self.channel.series_id()
+    pub fn channel(&self) -> &Channel {
+        &self.channel
     }
 }
 
@@ -770,7 +801,6 @@ impl<'de> serde::de::Visitor<'de> for ShapeVis {
     where
         E: serde::de::Error,
     {
-        info!("visit_str  {v}");
         if v == "Scalar" {
             Ok(Shape::Scalar)
         } else {
@@ -784,7 +814,6 @@ impl<'de> serde::de::Visitor<'de> for ShapeVis {
     {
         use serde::de::Error;
         while let Some(key) = map.next_key::<String>()? {
-            info!("See key {key:?}");
             return if key == "Wave" {
                 let n: u32 = map.next_value()?;
                 Ok(Shape::Wave(n))
@@ -802,7 +831,6 @@ impl<'de> serde::de::Visitor<'de> for ShapeVis {
     where
         A: serde::de::SeqAccess<'de>,
     {
-        info!("visit_seq");
         let mut a = vec![];
         while let Some(item) = seq.next_element()? {
             let n: u32 = item;
@@ -827,23 +855,6 @@ impl<'de> Deserialize<'de> for Shape {
         D: serde::Deserializer<'de>,
     {
         de.deserialize_any(ShapeVis)
-        /*
-        // TODO can not clone.. how to try the alternatives?
-        match de.deserialize_str(ShapeVis) {
-            Ok(k) => {
-                info!("De worked first try: {k:?}");
-                Ok(k)
-            }
-            Err(_) => {
-                let ret = match <ShapeOld as Deserialize<'de>>::deserialize(de)? {
-                    ShapeOld::Scalar => Shape::Scalar,
-                    ShapeOld::Wave(a) => Shape::Wave(a),
-                    ShapeOld::Image(a, b) => Shape::Image(a, b),
-                };
-                Ok(ret)
-            }
-        }
-        */
     }
 }
 
@@ -1012,42 +1023,34 @@ pub mod timeunits {
     pub const DAY: u64 = HOUR * 24;
 }
 
-//const BIN_T_LEN_OPTIONS_0: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
-
-//const PATCH_T_LEN_KEY: [u64; 4] = [SEC, MIN * 10, HOUR * 2, DAY];
-
-//const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 4] = [MIN * 60, HOUR * 4, DAY * 4, DAY * 32];
-// Maybe alternative for GLS:
-//const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 4] = [HOUR * 4, DAY * 4, DAY * 16, DAY * 32];
-
-//const PATCH_T_LEN_OPTIONS_WAVE: [u64; 4] = [MIN * 10, HOUR * 2, DAY * 4, DAY * 32];
-
-const BIN_T_LEN_OPTIONS_0: [u64; 2] = [
+const BIN_T_LEN_OPTIONS_0: [u64; 3] = [
     //
     //SEC,
-    //MIN * 10,
-    HOUR * 2,
+    MIN * 1,
+    HOUR * 1,
     DAY,
 ];
 
-const PATCH_T_LEN_KEY: [u64; 2] = [
+const PATCH_T_LEN_KEY: [u64; 3] = [
     //
     //SEC,
-    //MIN * 10,
-    HOUR * 2,
+    MIN * 1,
+    HOUR * 1,
     DAY,
 ];
-const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 2] = [
+
+const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 3] = [
     //
     //MIN * 60,
-    //HOUR * 4,
-    DAY * 8,
-    DAY * 32,
+    HOUR * 6,
+    DAY * 16,
+    DAY * 64,
 ];
-const PATCH_T_LEN_OPTIONS_WAVE: [u64; 2] = [
+
+const PATCH_T_LEN_OPTIONS_WAVE: [u64; 3] = [
     //
     //MIN * 10,
-    //HOUR * 2,
+    HOUR * 6,
     DAY * 8,
     DAY * 32,
 ];
@@ -1207,8 +1210,32 @@ impl PreBinnedPatchRange {
             }
         }
     }
+
+    pub fn edges(&self) -> Vec<u64> {
+        let mut ret = vec![];
+        let mut t = self.grid_spec.patch_t_len() * self.offset;
+        ret.push(t);
+        let bin_count = self.grid_spec.patch_t_len() / self.grid_spec.bin_t_len() * self.count;
+        let bin_len = self.grid_spec.bin_t_len();
+        for _ in 0..bin_count {
+            t += bin_len;
+            ret.push(t);
+        }
+        ret
+    }
+
+    pub fn patch_count(&self) -> u64 {
+        self.count
+    }
+
+    pub fn bin_count(&self) -> u64 {
+        self.grid_spec.patch_t_len() / self.grid_spec.bin_t_len() * self.patch_count()
+    }
 }
 
+/// Identifies one patch on the binning grid at a certain resolution.
+/// A patch consists of `bin_count` consecutive bins.
+/// In total, a given `PreBinnedPatchCoord` spans a time range from `patch_beg` to `patch_end`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PreBinnedPatchCoord {
     spec: PreBinnedPatchGridSpec,
@@ -1256,6 +1283,17 @@ impl PreBinnedPatchCoord {
             spec: PreBinnedPatchGridSpec::new(bin_t_len, patch_t_len),
             ix: patch_ix,
         }
+    }
+
+    pub fn edges(&self) -> Vec<u64> {
+        let mut ret = vec![];
+        let mut t = self.patch_beg();
+        ret.push(t);
+        for _ in 0..self.bin_count() {
+            t += self.bin_t_len();
+            ret.push(t);
+        }
+        ret
     }
 }
 
@@ -1761,32 +1799,6 @@ impl Default for DiskIoTune {
     }
 }
 
-pub fn channel_from_pairs(pairs: &BTreeMap<String, String>) -> Result<Channel, Error> {
-    let ret = Channel {
-        backend: pairs
-            .get("channelBackend")
-            .ok_or(Error::with_public_msg("missing channelBackend"))?
-            .into(),
-        name: pairs
-            .get("channelName")
-            .ok_or(Error::with_public_msg("missing channelName"))?
-            .into(),
-        series: pairs
-            .get("seriesId")
-            .and_then(|x| x.parse::<u64>().map_or(None, |x| Some(x))),
-    };
-    Ok(ret)
-}
-
-pub fn channel_append_to_url(url: &mut Url, channel: &Channel) {
-    let mut qp = url.query_pairs_mut();
-    qp.append_pair("channelBackend", &channel.backend);
-    qp.append_pair("channelName", &channel.name);
-    if let Some(series) = &channel.series {
-        qp.append_pair("seriesId", &format!("{}", series));
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelSearchQuery {
     pub backend: Option<String>,
@@ -1889,6 +1901,8 @@ pub trait HasTimeout {
 
 pub trait FromUrl: Sized {
     fn from_url(url: &Url) -> Result<Self, Error>;
+    // TODO put this in separate trait, because some implementors need url path segments to construct.
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error>;
 }
 
 pub trait AppendToUrl {
@@ -1899,12 +1913,10 @@ pub fn get_url_query_pairs(url: &Url) -> BTreeMap<String, String> {
     BTreeMap::from_iter(url.query_pairs().map(|(j, k)| (j.to_string(), k.to_string())))
 }
 
-/**
-Request type of the channel/config api. \
-At least on some backends the channel configuration may change depending on the queried range.
-Therefore, the query includes the range.
-The presence of a configuration in some range does not imply that there is any data available.
-*/
+// Request type of the channel/config api.
+// At least on some backends the channel configuration may change depending on the queried range.
+// Therefore, the query includes the range.
+// The presence of a configuration in some range does not imply that there is any data available.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelConfigQuery {
     pub channel: Channel,
@@ -1927,11 +1939,15 @@ impl HasTimeout for ChannelConfigQuery {
 impl FromUrl for ChannelConfigQuery {
     fn from_url(url: &Url) -> Result<Self, Error> {
         let pairs = get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
         let beg_date = pairs.get("begDate").ok_or(Error::with_public_msg("missing begDate"))?;
         let end_date = pairs.get("endDate").ok_or(Error::with_public_msg("missing endDate"))?;
         let expand = pairs.get("expand").map(|s| s == "true").unwrap_or(false);
         let ret = Self {
-            channel: channel_from_pairs(&pairs)?,
+            channel: Channel::from_pairs(&pairs)?,
             range: NanoRange {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
@@ -1945,7 +1961,7 @@ impl FromUrl for ChannelConfigQuery {
 impl AppendToUrl for ChannelConfigQuery {
     fn append_to_url(&self, url: &mut Url) {
         let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
-        channel_append_to_url(url, &self.channel);
+        self.channel.append_to_url(url);
         let mut g = url.query_pairs_mut();
         g.append_pair(
             "begDate",

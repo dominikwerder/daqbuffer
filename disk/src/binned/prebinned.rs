@@ -42,13 +42,21 @@ where
     <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: SitemtyFrameType + TimeBinned,
 {
     if let Some(scyconf) = &node_config.node_config.cluster.cache_scylla {
-        info!("~~~~~~~~~~~~~~~  make_num_pipeline_nty_end_evs_enp using scylla as cache");
+        trace!("~~~~~~~~~~~~~~~  make_num_pipeline_nty_end_evs_enp using scylla as cache");
         let chn = ChannelTyped {
             channel: query.channel().clone(),
             scalar_type,
             shape,
         };
-        let stream = pre_binned_value_stream(&chn, query.patch(), scyconf).await?;
+        let stream = pre_binned_value_stream(
+            chn.channel().series().unwrap(),
+            &chn,
+            query.patch(),
+            agg_kind,
+            query.cache_usage(),
+            scyconf,
+        )
+        .await?;
         let stream = stream.map(|x| {
             //
             match x {

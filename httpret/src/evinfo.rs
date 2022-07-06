@@ -29,6 +29,7 @@ use netpod::log::*;
 use netpod::query::RawEventsQuery;
 use netpod::AggKind;
 use netpod::Channel;
+use netpod::FromUrl;
 use netpod::NanoRange;
 use netpod::NodeConfigCached;
 use netpod::PerfOpts;

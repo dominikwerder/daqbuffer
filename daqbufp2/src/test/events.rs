@@ -12,7 +12,7 @@ use items::numops::NumOps;
 use items::scalarevents::ScalarEvents;
 use items::{RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithLen};
 use netpod::log::*;
-use netpod::{Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_JSON, APP_OCTET};
+use netpod::{AppendToUrl, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_JSON, APP_OCTET};
 use serde_json::Value as JsonValue;
 use std::fmt::Debug;
 use std::future::ready;

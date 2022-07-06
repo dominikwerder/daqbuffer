@@ -1,6 +1,5 @@
 use crate::{
-    channel_append_to_url, channel_from_pairs, get_url_query_pairs, AggKind, AppendToUrl, ByteSize, Channel, FromUrl,
-    HasBackend, HasTimeout, NanoRange, ToNanos,
+    get_url_query_pairs, AggKind, AppendToUrl, ByteSize, Channel, FromUrl, HasBackend, HasTimeout, NanoRange, ToNanos,
 };
 use crate::{log::*, DiskIoTune};
 use chrono::{DateTime, TimeZone, Utc};
@@ -171,6 +170,14 @@ impl BinnedQuery {
         self.do_log
     }
 
+    pub fn set_series_id(&mut self, series: u64) {
+        self.channel.series = Some(series);
+    }
+
+    pub fn channel_mut(&mut self) -> &mut Channel {
+        &mut self.channel
+    }
+
     pub fn set_cache_usage(&mut self, k: CacheUsage) {
         self.cache_usage = k;
     }
@@ -203,6 +210,10 @@ impl HasTimeout for BinnedQuery {
 impl FromUrl for BinnedQuery {
     fn from_url(url: &Url) -> Result<Self, Error> {
         let pairs = get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
         let beg_date = pairs.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
         let end_date = pairs.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
         let disk_stats_every = pairs.get("diskStatsEveryKb").map_or("2000", |k| k);
@@ -210,7 +221,7 @@ impl FromUrl for BinnedQuery {
             .parse()
             .map_err(|e| Error::with_msg(format!("can not parse diskStatsEveryKb {:?}", e)))?;
         let ret = Self {
-            channel: channel_from_pairs(&pairs)?,
+            channel: Channel::from_pairs(&pairs)?,
             range: NanoRange {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
@@ -220,7 +231,7 @@ impl FromUrl for BinnedQuery {
                 .ok_or(Error::with_msg("missing binCount"))?
                 .parse()
                 .map_err(|e| Error::with_msg(format!("can not parse binCount {:?}", e)))?,
-            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::DimXBins1),
+            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::TimeWeightedScalar),
             cache_usage: CacheUsage::from_pairs(&pairs)?,
             disk_io_buffer_size: pairs
                 .get("diskIoBufferSize")
@@ -259,7 +270,7 @@ impl AppendToUrl for BinnedQuery {
     fn append_to_url(&self, url: &mut Url) {
         let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
         {
-            channel_append_to_url(url, &self.channel);
+            self.channel.append_to_url(url);
             let mut g = url.query_pairs_mut();
             g.append_pair("cacheUsage", &self.cache_usage.to_string());
             g.append_pair("binCount", &format!("{}", self.bin_count));

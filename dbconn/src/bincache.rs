@@ -2,28 +2,109 @@ use crate::events_scylla::EventsStreamScylla;
 use crate::ErrConv;
 use err::Error;
 use futures_util::{Future, Stream, StreamExt};
-use items::{TimeBinnableDyn, TimeBinned};
+use items::binsdim0::MinMaxAvgDim0Bins;
+use items::{empty_binned_dyn, empty_events_dyn, RangeCompletableItem, StreamItem, TimeBinned};
 use netpod::log::*;
-use netpod::query::RawEventsQuery;
+use netpod::query::{CacheUsage, RawEventsQuery};
+use netpod::timeunits::*;
 use netpod::{
-    AggKind, ChannelTyped, NanoRange, PreBinnedPatchCoord, PreBinnedPatchIterator, PreBinnedPatchRange, ScyllaConfig,
+    AggKind, ChannelTyped, PreBinnedPatchCoord, PreBinnedPatchIterator, PreBinnedPatchRange, ScalarType, ScyllaConfig,
+    Shape,
 };
 use scylla::Session as ScySession;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
 
 pub async fn read_cached_scylla(
+    series: u64,
     chn: &ChannelTyped,
     coord: &PreBinnedPatchCoord,
+    _agg_kind: AggKind,
     scy: &ScySession,
 ) -> Result<Option<Box<dyn TimeBinned>>, Error> {
-    let _ = coord;
-    let series = chn.series_id()?;
-    let res = scy.query_iter("", (series as i64,)).await.err_conv()?;
-    let _ = res;
-    // TODO look for the data. Based on the ChannelTyped we know what type the caller expects.
-    err::todoval()
+    let vals = (
+        series as i64,
+        (coord.bin_t_len() / SEC) as i32,
+        (coord.patch_t_len() / SEC) as i32,
+        coord.ix() as i64,
+    );
+    let res = scy
+            .query_iter(
+                "select counts, avgs, mins, maxs from binned_scalar_f32 where series = ? and bin_len_sec = ? and patch_len_sec = ? and agg_kind = 'dummy-agg-kind' and offset = ?",
+                vals,
+            )
+            .await;
+    let mut res = res.err_conv().map_err(|e| {
+        error!("can not read from cache");
+        e
+    })?;
+    while let Some(item) = res.next().await {
+        let row = item.err_conv()?;
+        let edges = coord.edges();
+        let (counts, avgs, mins, maxs): (Vec<i64>, Vec<f32>, Vec<f32>, Vec<f32>) = row.into_typed().err_conv()?;
+        let mut counts_mismatch = false;
+        if edges.len() != counts.len() + 1 {
+            counts_mismatch = true;
+        }
+        if counts.len() != avgs.len() {
+            counts_mismatch = true;
+        }
+        let ts1s = edges[..(edges.len() - 1).min(edges.len())].to_vec();
+        let ts2s = edges[1.min(edges.len())..].to_vec();
+        if ts1s.len() != ts2s.len() {
+            error!("ts1s vs ts2s mismatch");
+            counts_mismatch = true;
+        }
+        if ts1s.len() != counts.len() {
+            counts_mismatch = true;
+        }
+        let avgs = avgs.into_iter().map(|x| x).collect::<Vec<_>>();
+        let mins = mins.into_iter().map(|x| x as _).collect::<Vec<_>>();
+        let maxs = maxs.into_iter().map(|x| x as _).collect::<Vec<_>>();
+        if counts_mismatch {
+            error!(
+                "mismatch:  edges {}  ts1s {}  ts2s {}  counts {}  avgs {}  mins {}  maxs {}",
+                edges.len(),
+                ts1s.len(),
+                ts2s.len(),
+                counts.len(),
+                avgs.len(),
+                mins.len(),
+                maxs.len(),
+            );
+        }
+        let counts: Vec<_> = counts.into_iter().map(|x| x as u64).collect();
+        // TODO construct a dyn TimeBinned using the scalar type and shape information.
+        // TODO place the values with little copying into the TimeBinned.
+        use ScalarType::*;
+        use Shape::*;
+        match &chn.shape {
+            Scalar => match &chn.scalar_type {
+                F64 => {
+                    let ret = MinMaxAvgDim0Bins::<f64> {
+                        ts1s,
+                        ts2s,
+                        counts,
+                        avgs,
+                        mins,
+                        maxs,
+                    };
+                    return Ok(Some(Box::new(ret)));
+                }
+                _ => {
+                    error!("TODO can not yet restore {:?} {:?}", chn.scalar_type, chn.shape);
+                    err::todoval()
+                }
+            },
+            _ => {
+                error!("TODO can not yet restore {:?} {:?}", chn.scalar_type, chn.shape);
+                err::todoval()
+            }
+        }
+    }
+    Ok(None)
 }
 
 #[allow(unused)]
@@ -50,136 +131,277 @@ impl<'a> Future for WriteFut<'a> {
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let _ = cx;
-        todo!()
+        Poll::Ready(Ok(()))
     }
 }
 
 pub fn write_cached_scylla<'a>(
+    series: u64,
     chn: &ChannelTyped,
-    coord: &PreBinnedPatchCoord,
+    coord: &'a PreBinnedPatchCoord,
     data: &'a dyn TimeBinned,
     scy: &ScySession,
 ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + Send + 'a>> {
-    let chn = unsafe { &*(chn as *const ChannelTyped) };
+    let _chn = unsafe { &*(chn as *const ChannelTyped) };
     let data = unsafe { &*(data as *const dyn TimeBinned) };
     let scy = unsafe { &*(scy as *const ScySession) };
     let fut = async move {
-        let _ = coord;
-        let series = chn.series_id()?;
-        let res = scy
-            .query_iter("", (series as i64, data.dummy_test_i32()))
-            .await
-            .err_conv()?;
-        let _ = res;
-        // TODO write the data.
-        //err::todoval();
+        let bin_len_sec = (coord.bin_t_len() / SEC) as i32;
+        let patch_len_sec = (coord.patch_t_len() / SEC) as i32;
+        let offset = coord.ix();
+        warn!(
+            "write_cached_scylla  len {}  where series = {} and bin_len_sec = {} and patch_len_sec = {} and agg_kind = 'dummy-agg-kind' and offset = {}",
+            series,
+            bin_len_sec,
+            patch_len_sec,
+            offset,
+            data.counts().len()
+        );
+        let stmt = scy.prepare("insert into binned_scalar_f32 (series, bin_len_sec, patch_len_sec, agg_kind, offset, counts, avgs, mins, maxs) values (?, ?, ?, 'dummy-agg-kind', ?, ?, ?, ?, ?)").await.err_conv()?;
+        scy.execute(
+            &stmt,
+            (
+                series as i64,
+                bin_len_sec,
+                patch_len_sec,
+                offset as i64,
+                data.counts().iter().map(|x| *x as i64).collect::<Vec<_>>(),
+                data.avgs(),
+                data.mins(),
+                data.maxs(),
+            ),
+        )
+        .await
+        .err_conv()
+        .map_err(|e| {
+            error!("can not write to cache");
+            e
+        })?;
         Ok(())
     };
     Box::pin(fut)
 }
 
-// TODO must indicate to the caller whether it is safe to cache this (complete).
 pub async fn fetch_uncached_data(
+    series: u64,
     chn: ChannelTyped,
     coord: PreBinnedPatchCoord,
+    agg_kind: AggKind,
+    cache_usage: CacheUsage,
     scy: Arc<ScySession>,
-) -> Result<Option<Box<dyn TimeBinned>>, Error> {
-    info!("fetch_uncached_data");
-    let range = coord.patch_range();
-    // TODO why the extra plus one?
-    let bin = match PreBinnedPatchRange::covering_range(range, coord.bin_count() + 1) {
-        Ok(Some(range)) => fetch_uncached_higher_res_prebinned(&chn, &range, scy.clone()).await,
-        Ok(None) => fetch_uncached_binned_events(&chn, &coord.patch_range(), scy.clone()).await,
+) -> Result<Option<(Box<dyn TimeBinned>, bool)>, Error> {
+    info!("fetch_uncached_data  {coord:?}");
+    // Try to find a higher resolution pre-binned grid which covers the requested patch.
+    let (bin, complete) = match PreBinnedPatchRange::covering_range(coord.patch_range(), coord.bin_count() + 1) {
+        Ok(Some(range)) => {
+            fetch_uncached_higher_res_prebinned(series, &chn, range, agg_kind, cache_usage.clone(), scy.clone()).await
+        }
+        Ok(None) => fetch_uncached_binned_events(series, &chn, coord.clone(), agg_kind, scy.clone()).await,
         Err(e) => Err(e),
     }?;
-    //let data = bin.workaround_clone();
-    WriteFut::new(&chn, &coord, bin.as_ref(), &scy).await?;
-    write_cached_scylla(&chn, &coord, bin.as_ref(), &scy).await?;
-    Ok(Some(bin))
+    if true || complete {
+        let edges = coord.edges();
+        if edges.len() < bin.len() + 1 {
+            error!(
+                "attempt to write overfull bin to cache  edges {}  bin {}",
+                edges.len(),
+                bin.len()
+            );
+            return Err(Error::with_msg_no_trace(format!(
+                "attempt to write overfull bin to cache"
+            )));
+        } else if edges.len() > bin.len() + 1 {
+            let missing = edges.len() - bin.len() - 1;
+            error!("attempt to write incomplete bin to cache missing {missing}");
+        }
+        if let CacheUsage::Use | CacheUsage::Recreate = &cache_usage {
+            WriteFut::new(&chn, &coord, bin.as_ref(), &scy).await?;
+            write_cached_scylla(series, &chn, &coord, bin.as_ref(), &scy).await?;
+        }
+    }
+    Ok(Some((bin, complete)))
 }
 
 pub fn fetch_uncached_data_box(
+    series: u64,
     chn: &ChannelTyped,
     coord: &PreBinnedPatchCoord,
+    agg_kind: AggKind,
+    cache_usage: CacheUsage,
     scy: Arc<ScySession>,
-) -> Pin<Box<dyn Future<Output = Result<Option<Box<dyn TimeBinned>>, Error>> + Send>> {
-    Box::pin(fetch_uncached_data(chn.clone(), coord.clone(), scy))
+) -> Pin<Box<dyn Future<Output = Result<Option<(Box<dyn TimeBinned>, bool)>, Error>> + Send>> {
+    Box::pin(fetch_uncached_data(
+        series,
+        chn.clone(),
+        coord.clone(),
+        agg_kind,
+        cache_usage,
+        scy,
+    ))
 }
 
 pub async fn fetch_uncached_higher_res_prebinned(
+    series: u64,
     chn: &ChannelTyped,
-    range: &PreBinnedPatchRange,
+    range: PreBinnedPatchRange,
+    agg_kind: AggKind,
+    cache_usage: CacheUsage,
     scy: Arc<ScySession>,
-) -> Result<Box<dyn TimeBinned>, Error> {
-    let mut aggt = None;
+) -> Result<(Box<dyn TimeBinned>, bool), Error> {
+    // TODO refine the AggKind scheme or introduce a new BinningOpts type and get time-weight from there.
+    let do_time_weight = true;
+    // We must produce some result with correct types even if upstream delivers nothing at all.
+    let bin0 = empty_binned_dyn(&chn.scalar_type, &chn.shape, &agg_kind);
+    let mut time_binner = bin0.time_binner_new(range.edges(), do_time_weight);
+    let mut complete = true;
     let patch_it = PreBinnedPatchIterator::from_range(range.clone());
     for patch in patch_it {
+        // We request data here for a Coord, meaning that we expect to receive multiple bins.
+        // The expectation is that we receive a single TimeBinned which contains all bins of that PatchCoord.
         let coord = PreBinnedPatchCoord::new(patch.bin_t_len(), patch.patch_t_len(), patch.ix());
-        let mut stream = pre_binned_value_stream_with_scy(chn, &coord, scy.clone()).await?;
-        while let Some(item) = stream.next().await {
-            let item = item?;
-            // TODO here I will need some new API to aggregate (time-bin) trait objects.
-            // Each TimeBinned must provide some way to do that...
-            // I also need an Aggregator which does not know before the first item what output type it will produce.
-            let _ = item;
-            if aggt.is_none() {
-                aggt = Some(item.aggregator_new());
-            }
-            let aggt = aggt.as_mut().unwrap();
-            aggt.ingest(item.as_time_binnable_dyn());
-        }
+        let (bin, comp) =
+            pre_binned_value_stream_with_scy(series, chn, &coord, agg_kind.clone(), cache_usage.clone(), scy.clone())
+                .await?;
+        complete = complete & comp;
+        time_binner.ingest(bin.as_time_binnable_dyn());
     }
-    let mut aggt = aggt.unwrap();
-    let res = aggt.result();
-    Ok(res)
+    // Fixed limit to defend against a malformed implementation:
+    let mut i = 0;
+    while i < 80000 && time_binner.bins_ready_count() < range.bin_count() as usize {
+        if false {
+            trace!(
+                "extra cycle {}  {}  {}",
+                i,
+                time_binner.bins_ready_count(),
+                range.bin_count()
+            );
+        }
+        time_binner.cycle();
+        i += 1;
+    }
+    if time_binner.bins_ready_count() < range.bin_count() as usize {
+        return Err(Error::with_msg_no_trace(format!(
+            "unable to produce all bins for the patch range {} vs {}",
+            time_binner.bins_ready_count(),
+            range.bin_count(),
+        )));
+    }
+    let ready = time_binner
+        .bins_ready()
+        .ok_or_else(|| Error::with_msg_no_trace(format!("unable to produce any bins for the patch range")))?;
+    Ok((ready, complete))
 }
 
 pub async fn fetch_uncached_binned_events(
+    series: u64,
     chn: &ChannelTyped,
-    range: &NanoRange,
+    coord: PreBinnedPatchCoord,
+    agg_kind: AggKind,
     scy: Arc<ScySession>,
-) -> Result<Box<dyn TimeBinned>, Error> {
-    // TODO ask Scylla directly, do not go through HTTP.
-    // Refactor the event fetch stream code such that I can use that easily here.
-    let evq = RawEventsQuery::new(chn.channel.clone(), range.clone(), AggKind::Plain);
-    let _res = Box::pin(EventsStreamScylla::new(
-        &evq,
-        chn.scalar_type.clone(),
-        chn.shape.clone(),
-        scy,
-        false,
-    ));
-    // TODO add the time binner.
-    // TODO return the result of the binning procedure.
-    // TODO ScyllaFramableStream must return a new events trait object designed for trait object use.
-    err::todoval()
+) -> Result<(Box<dyn TimeBinned>, bool), Error> {
+    // TODO refine the AggKind scheme or introduce a new BinningOpts type and get time-weight from there.
+    let do_time_weight = true;
+    // We must produce some result with correct types even if upstream delivers nothing at all.
+    let bin0 = empty_events_dyn(&chn.scalar_type, &chn.shape, &agg_kind);
+    let mut time_binner = bin0.time_binner_new(coord.edges(), do_time_weight);
+    let deadline = Instant::now();
+    let deadline = deadline
+        .checked_add(Duration::from_millis(6000))
+        .ok_or_else(|| Error::with_msg_no_trace(format!("deadline overflow")))?;
+    let evq = RawEventsQuery::new(chn.channel.clone(), coord.patch_range(), AggKind::Plain);
+    let mut events_dyn = EventsStreamScylla::new(series, &evq, chn.scalar_type.clone(), chn.shape.clone(), scy, false);
+    let mut complete = false;
+    loop {
+        let item = tokio::time::timeout_at(deadline.into(), events_dyn.next()).await;
+        let item = match item {
+            Ok(Some(k)) => k,
+            Ok(None) => break,
+            Err(_) => {
+                error!("fetch_uncached_binned_events  timeout");
+                return Err(Error::with_msg_no_trace(format!(
+                    "TODO handle fetch_uncached_binned_events timeout"
+                )));
+            }
+        };
+        match item {
+            Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))) => {
+                time_binner.ingest(item.as_time_binnable_dyn());
+                // TODO could also ask the binner here whether we are "complete" to stop sending useless data.
+            }
+            Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)) => {
+                complete = true;
+            }
+            Ok(StreamItem::Stats(_item)) => {
+                warn!("TODO forward in stream bincache stats");
+            }
+            Ok(StreamItem::Log(item)) => {
+                warn!("TODO forward in stream bincache log msg {}", item.msg);
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    // Fixed limit to defend against a malformed implementation:
+    let mut i = 0;
+    while i < 80000 && time_binner.bins_ready_count() < coord.bin_count() as usize {
+        if false {
+            trace!(
+                "extra cycle {}  {}  {}",
+                i,
+                time_binner.bins_ready_count(),
+                coord.bin_count()
+            );
+        }
+        time_binner.cycle();
+        i += 1;
+    }
+    if time_binner.bins_ready_count() < coord.bin_count() as usize {
+        return Err(Error::with_msg_no_trace(format!(
+            "unable to produce all bins for the patch range {} vs {}",
+            time_binner.bins_ready_count(),
+            coord.bin_count(),
+        )));
+    }
+    let ready = time_binner
+        .bins_ready()
+        .ok_or_else(|| Error::with_msg_no_trace(format!("unable to produce any bins for the patch")))?;
+    Ok((ready, complete))
 }
 
 pub async fn pre_binned_value_stream_with_scy(
+    series: u64,
     chn: &ChannelTyped,
     coord: &PreBinnedPatchCoord,
+    agg_kind: AggKind,
+    cache_usage: CacheUsage,
     scy: Arc<ScySession>,
-) -> Result<Pin<Box<dyn Stream<Item = Result<Box<dyn TimeBinned>, Error>> + Send>>, Error> {
-    info!("pre_binned_value_stream_with_scy  {chn:?}  {coord:?}");
-    // TODO determine the range:
-    let range = err::todoval();
-    if let Some(item) = read_cached_scylla(chn, &range, &scy).await? {
-        Ok(Box::pin(futures_util::stream::iter([Ok(item)])))
+) -> Result<(Box<dyn TimeBinned>, bool), Error> {
+    trace!("pre_binned_value_stream_with_scy  {chn:?}  {coord:?}");
+    if let (Some(item), CacheUsage::Use) = (
+        read_cached_scylla(series, chn, coord, agg_kind.clone(), &scy).await?,
+        &cache_usage,
+    ) {
+        info!("+++++++++++++    GOOD READ");
+        Ok((item, true))
     } else {
-        let bin = fetch_uncached_data_box(chn, coord, scy).await?;
-        // TODO when can it ever be that we get back a None?
-        // TODO also, probably the caller wants to know whether the bin is Complete.
-        let bin = bin.unwrap();
-        Ok(Box::pin(futures_util::stream::iter([Ok(bin)])))
+        if let CacheUsage::Use = &cache_usage {
+            warn!("--+--+--+--+--+--+   NOT YET CACHED");
+        }
+        let res = fetch_uncached_data_box(series, chn, coord, agg_kind, cache_usage, scy).await?;
+        let (bin, complete) =
+            res.ok_or_else(|| Error::with_msg_no_trace(format!("pre_binned_value_stream_with_scy got None bin")))?;
+        Ok((bin, complete))
     }
 }
 
 pub async fn pre_binned_value_stream(
+    series: u64,
     chn: &ChannelTyped,
     coord: &PreBinnedPatchCoord,
+    agg_kind: AggKind,
+    cache_usage: CacheUsage,
     scyconf: &ScyllaConfig,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<Box<dyn TimeBinned>, Error>> + Send>>, Error> {
-    info!("pre_binned_value_stream  {chn:?}  {coord:?}  {scyconf:?}");
+    trace!("pre_binned_value_stream  series {series}  {chn:?}  {coord:?}  {scyconf:?}");
     let scy = scylla::SessionBuilder::new()
         .known_nodes(&scyconf.hosts)
         .use_keyspace(&scyconf.keyspace, true)
@@ -187,5 +409,6 @@ pub async fn pre_binned_value_stream(
         .await
         .err_conv()?;
     let scy = Arc::new(scy);
-    pre_binned_value_stream_with_scy(chn, coord, scy).await
+    let res = pre_binned_value_stream_with_scy(series, chn, coord, agg_kind, cache_usage, scy).await?;
+    Ok(Box::pin(futures_util::stream::iter([Ok(res.0)])))
 }

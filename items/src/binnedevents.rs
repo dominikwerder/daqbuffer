@@ -60,6 +60,11 @@ impl Appendable for SingleBinWaveEvents {
             }
         })
     }
+
+    fn append_zero(&mut self, _ts1: u64, _ts2: u64) {
+        // TODO can this implement Appendable in a sane way? Do we need it?
+        err::todo();
+    }
 }
 
 impl PushableIndex for SingleBinWaveEvents {
@@ -149,6 +154,11 @@ impl Appendable for MultiBinWaveEvents {
                 _ => panic!(),
             }
         })
+    }
+
+    fn append_zero(&mut self, _ts1: u64, _ts2: u64) {
+        // TODO can this implement Appendable in a sane way? Do we need it?
+        err::todo();
     }
 }
 
@@ -248,6 +258,11 @@ impl Appendable for XBinnedEvents {
                 _ => panic!(),
             },
         }
+    }
+
+    fn append_zero(&mut self, _ts1: u64, _ts2: u64) {
+        // TODO can this implement Appendable in a sane way? Do we need it?
+        err::todo();
     }
 }
 

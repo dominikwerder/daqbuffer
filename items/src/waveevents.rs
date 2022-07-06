@@ -4,8 +4,8 @@ use crate::xbinnedscalarevents::XBinnedScalarEvents;
 use crate::xbinnedwaveevents::XBinnedWaveEvents;
 use crate::{
     Appendable, ByteEstimate, Clearable, EventAppendable, EventsDyn, EventsNodeProcessor, FilterFittingInside, Fits,
-    FitsInside, FrameTypeStatic, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId,
-    TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    FitsInside, FrameTypeStatic, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile,
+    SitemtyFrameType, SubFrId, TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
@@ -161,6 +161,16 @@ where
     }
 }
 
+impl<NTY> NewEmpty for WaveEvents<NTY> {
+    fn empty(_shape: Shape) -> Self {
+        Self {
+            tss: Vec::new(),
+            pulses: Vec::new(),
+            vals: Vec::new(),
+        }
+    }
+}
+
 impl<NTY> Appendable for WaveEvents<NTY>
 where
     NTY: NumOps,
@@ -172,6 +182,12 @@ where
     fn append(&mut self, src: &Self) {
         self.tss.extend_from_slice(&src.tss);
         self.vals.extend_from_slice(&src.vals);
+    }
+
+    fn append_zero(&mut self, ts1: u64, _ts2: u64) {
+        self.tss.push(ts1);
+        self.pulses.push(0);
+        self.vals.push(Vec::new());
     }
 }
 
@@ -509,10 +525,10 @@ where
     }
 }
 
-impl<NTY: NumOps> TimeBinnableDyn for WaveEvents<NTY> {
-    fn aggregator_new(&self) -> Box<dyn crate::TimeBinnableDynAggregator> {
-        todo!()
+impl<NTY: NumOps> crate::TimeBinnableDynStub for WaveEvents<NTY> {}
+
+impl<NTY: NumOps> EventsDyn for WaveEvents<NTY> {
+    fn as_time_binnable_dyn(&self) -> &dyn TimeBinnableDyn {
+        self as &dyn TimeBinnableDyn
     }
 }
-
-impl<NTY: NumOps> EventsDyn for WaveEvents<NTY> {}

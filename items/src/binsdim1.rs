@@ -3,14 +3,14 @@ use crate::streams::{Collectable, Collector, ToJsonBytes, ToJsonResult};
 use crate::waveevents::WaveEvents;
 use crate::{
     pulse_offs_from_abs, ts_offs_from_abs, Appendable, FilterFittingInside, Fits, FitsInside, FrameTypeStatic,
-    IsoDateTime, RangeOverlapInfo, ReadPbv, ReadableFromFile, Sitemty, SitemtyFrameType, SubFrId, TimeBinnableDyn,
-    TimeBinnableDynAggregator, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinned, TimeBins, WithLen,
+    IsoDateTime, NewEmpty, RangeOverlapInfo, ReadPbv, ReadableFromFile, Sitemty, SitemtyFrameType, SubFrId,
+    TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinned, TimeBins, WithLen,
 };
 use chrono::{TimeZone, Utc};
 use err::Error;
 use netpod::log::*;
 use netpod::timeunits::SEC;
-use netpod::NanoRange;
+use netpod::{NanoRange, Shape};
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -155,6 +155,19 @@ impl<NTY> WithLen for MinMaxAvgDim1Bins<NTY> {
     }
 }
 
+impl<NTY> NewEmpty for MinMaxAvgDim1Bins<NTY> {
+    fn empty(_shape: Shape) -> Self {
+        Self {
+            ts1s: Vec::new(),
+            ts2s: Vec::new(),
+            counts: Vec::new(),
+            mins: Vec::new(),
+            maxs: Vec::new(),
+            avgs: Vec::new(),
+        }
+    }
+}
+
 impl<NTY> Appendable for MinMaxAvgDim1Bins<NTY>
 where
     NTY: NumOps,
@@ -170,6 +183,15 @@ where
         self.mins.extend_from_slice(&src.mins);
         self.maxs.extend_from_slice(&src.maxs);
         self.avgs.extend_from_slice(&src.avgs);
+    }
+
+    fn append_zero(&mut self, ts1: u64, ts2: u64) {
+        self.ts1s.push(ts1);
+        self.ts2s.push(ts2);
+        self.counts.push(0);
+        self.avgs.push(None);
+        self.mins.push(None);
+        self.maxs.push(None);
     }
 }
 
@@ -546,24 +568,30 @@ where
     }
 }
 
-impl<NTY: NumOps> TimeBinnableDyn for MinMaxAvgDim1Bins<NTY> {
-    fn aggregator_new(&self) -> Box<dyn TimeBinnableDynAggregator> {
-        todo!()
-    }
-}
+impl<NTY: NumOps> crate::TimeBinnableDynStub for MinMaxAvgDim1Bins<NTY> {}
 
 impl<NTY: NumOps> TimeBinned for MinMaxAvgDim1Bins<NTY> {
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnableDyn {
         self as &dyn TimeBinnableDyn
     }
 
-    fn workaround_clone(&self) -> Box<dyn TimeBinned> {
-        // TODO remove
-        panic!()
+    fn edges_slice(&self) -> (&[u64], &[u64]) {
+        (&self.ts1s[..], &self.ts2s[..])
     }
 
-    fn dummy_test_i32(&self) -> i32 {
-        // TODO remove
-        panic!()
+    fn counts(&self) -> &[u64] {
+        &self.counts[..]
+    }
+
+    fn avgs(&self) -> Vec<f32> {
+        err::todoval()
+    }
+
+    fn mins(&self) -> Vec<f32> {
+        err::todoval()
+    }
+
+    fn maxs(&self) -> Vec<f32> {
+        err::todoval()
     }
 }

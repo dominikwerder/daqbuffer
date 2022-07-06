@@ -20,10 +20,19 @@ use std::time::{Duration, Instant};
 use url::Url;
 
 pub struct ChConf {
+    pub series: u64,
     pub scalar_type: ScalarType,
     pub shape: Shape,
 }
 
+/// It is an unsolved question as to how we want to uniquely address channels.
+/// Currently, the usual (backend, channelname) works in 99% of the cases, but the edge-cases
+/// are not solved. At the same time, it is desirable to avoid to complicate things for users.
+/// Current state:
+/// If the series id is given, we take that.
+/// Otherwise we try to uniquely identify the series id from the given information.
+/// In the future, we can even try to involve time range information for that, but backends like
+/// old archivers and sf databuffer do not support such lookup.
 pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
     if channel.backend != ncc.node_config.cluster.backend {
         warn!(
@@ -31,11 +40,6 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
             channel.backend, ncc.node_config.cluster.backend
         );
     }
-    // This requires the series id.
-    let series = channel.series.ok_or_else(|| {
-        Error::with_msg_no_trace(format!("needs a series id  {:?}", channel))
-            .add_public_msg(format!("series id of channel not supplied"))
-    })?;
     // TODO use a common already running worker pool for these queries:
     let dbconf = &ncc.node_config.cluster.database;
     let dburl = format!(
@@ -46,28 +50,59 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
         .await
         .err_conv()?;
     tokio::spawn(pgconn);
-    let res = pgclient
-        .query(
-            "select scalar_type, shape_dims from series_by_channel where series = $1",
-            &[&(series as i64)],
-        )
-        .await
-        .err_conv()?;
-    if res.len() == 0 {
-        warn!("can not find channel information for series {series}");
-        let e = Error::with_public_msg_no_trace(format!("can not find channel information for series {series}"));
-        Err(e)
-    } else if res.len() > 1 {
-        error!("multiple channel information for series {series}");
-        let e = Error::with_public_msg_no_trace(format!("can not find channel information for series {series}"));
-        Err(e)
+    if let Some(series) = channel.series() {
+        let res = pgclient
+            .query(
+                "select scalar_type, shape_dims from series_by_channel where series = $1",
+                &[&(series as i64)],
+            )
+            .await
+            .err_conv()?;
+        if res.len() < 1 {
+            warn!("can not find channel information for series {series} given through {channel:?}");
+            let e = Error::with_public_msg_no_trace(format!("can not find channel information for {channel:?}"));
+            Err(e)
+        } else {
+            let row = res.first().unwrap();
+            let scalar_type = ScalarType::from_dtype_index(row.get::<_, i32>(0) as u8)?;
+            // TODO can I get a slice from psql driver?
+            let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(1))?;
+            let ret = ChConf {
+                series,
+                scalar_type,
+                shape,
+            };
+            Ok(ret)
+        }
     } else {
-        let row = res.first().unwrap();
-        let scalar_type = ScalarType::from_dtype_index(row.get::<_, i32>(0) as u8)?;
-        // TODO can I get a slice from psql driver?
-        let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(1))?;
-        let ret = ChConf { scalar_type, shape };
-        Ok(ret)
+        let res = pgclient
+            .query(
+                "select series, scalar_type, shape_dims from series_by_channel where facility = $1 and channel = $2",
+                &[&channel.backend(), &channel.name()],
+            )
+            .await
+            .err_conv()?;
+        if res.len() < 1 {
+            warn!("can not find channel information for {channel:?}");
+            let e = Error::with_public_msg_no_trace(format!("can not find channel information for {channel:?}"));
+            Err(e)
+        } else if res.len() > 1 {
+            warn!("ambigious channel {channel:?}");
+            let e = Error::with_public_msg_no_trace(format!("ambigious channel {channel:?}"));
+            Err(e)
+        } else {
+            let row = res.first().unwrap();
+            let series = row.get::<_, i64>(0) as u64;
+            let scalar_type = ScalarType::from_dtype_index(row.get::<_, i32>(1) as u8)?;
+            // TODO can I get a slice from psql driver?
+            let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(2))?;
+            let ret = ChConf {
+                series,
+                scalar_type,
+                shape,
+            };
+            Ok(ret)
+        }
     }
 }
 
@@ -81,6 +116,10 @@ pub async fn chconf_from_events_json(q: &PlainEventsQuery, ncc: &NodeConfigCache
 
 pub async fn chconf_from_prebinned(q: &PreBinnedQuery, _ncc: &NodeConfigCached) -> Result<ChConf, Error> {
     let ret = ChConf {
+        series: q
+            .channel()
+            .series()
+            .expect("PreBinnedQuery is expected to contain the series id"),
         scalar_type: q.scalar_type().clone(),
         shape: q.shape().clone(),
     };
@@ -330,6 +369,10 @@ pub struct ChannelsWithTypeQuery {
 impl FromUrl for ChannelsWithTypeQuery {
     fn from_url(url: &Url) -> Result<Self, err::Error> {
         let pairs = get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
         let s = pairs
             .get("scalar_type")
             .ok_or_else(|| Error::with_public_msg_no_trace("missing scalar_type"))?;
@@ -440,6 +483,10 @@ fn bool_false(x: &bool) -> bool {
 impl FromUrl for ScyllaChannelEventSeriesIdQuery {
     fn from_url(url: &Url) -> Result<Self, err::Error> {
         let pairs = get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
         let facility = pairs
             .get("facility")
             .ok_or_else(|| Error::with_public_msg_no_trace("missing facility"))?
@@ -624,6 +671,10 @@ pub struct ScyllaChannelsActiveQuery {
 impl FromUrl for ScyllaChannelsActiveQuery {
     fn from_url(url: &Url) -> Result<Self, err::Error> {
         let pairs = get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
         let s = pairs
             .get("tsedge")
             .ok_or_else(|| Error::with_public_msg_no_trace("missing tsedge"))?;
@@ -731,6 +782,10 @@ pub struct ChannelFromSeriesQuery {
 impl FromUrl for ChannelFromSeriesQuery {
     fn from_url(url: &Url) -> Result<Self, err::Error> {
         let pairs = get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
         let s = pairs
             .get("seriesId")
             .ok_or_else(|| Error::with_public_msg_no_trace("missing seriesId"))?;
@@ -856,6 +911,10 @@ pub struct IocForChannelQuery {
 impl FromUrl for IocForChannelQuery {
     fn from_url(url: &Url) -> Result<Self, err::Error> {
         let pairs = get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
         let facility = pairs
             .get("facility")
             .ok_or_else(|| Error::with_public_msg_no_trace("missing facility"))?
@@ -945,6 +1004,10 @@ pub struct ScyllaSeriesTsMspQuery {
 impl FromUrl for ScyllaSeriesTsMspQuery {
     fn from_url(url: &Url) -> Result<Self, err::Error> {
         let pairs = get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
         let s = pairs
             .get("seriesId")
             .ok_or_else(|| Error::with_public_msg_no_trace("missing seriesId"))?;
@@ -1026,6 +1089,77 @@ impl ScyllaSeriesTsMsp {
             ts_msps.push(ts_msp as u64);
         }
         let ret = ScyllaSeriesTsMspResponse { ts_msps };
+        Ok(ret)
+    }
+}
+
+#[derive(Serialize)]
+pub struct AmbigiousChannel {
+    series: u64,
+    name: String,
+    scalar_type: ScalarType,
+    shape: Shape,
+}
+
+#[derive(Serialize)]
+pub struct AmbigiousChannelNamesResponse {
+    ambigious: Vec<AmbigiousChannel>,
+}
+
+pub struct AmbigiousChannelNames {}
+
+impl AmbigiousChannelNames {
+    pub fn handler(req: &Request<Body>) -> Option<Self> {
+        if req.uri().path() == "/api/4/channels/ambigious" {
+            Some(Self {})
+        } else {
+            None
+        }
+    }
+
+    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+        if req.method() == Method::GET {
+            let accept_def = APP_JSON;
+            let accept = req
+                .headers()
+                .get(http::header::ACCEPT)
+                .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
+            if accept == APP_JSON || accept == ACCEPT_ALL {
+                match self.process(node_config).await {
+                    Ok(k) => {
+                        let body = Body::from(serde_json::to_vec(&k)?);
+                        Ok(response(StatusCode::OK).body(body)?)
+                    }
+                    Err(e) => Ok(response(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::from(format!("{:?}", e.public_msg())))?),
+                }
+            } else {
+                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+            }
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    }
+
+    async fn process(&self, node_config: &NodeConfigCached) -> Result<AmbigiousChannelNamesResponse, Error> {
+        let dbconf = &node_config.node_config.cluster.database;
+        let pg_client = create_connection(dbconf).await?;
+        let rows = pg_client
+            .query(
+                "select t2.series, t2.channel, t2.scalar_type, t2.shape_dims, t2.agg_kind from series_by_channel t1, series_by_channel t2 where t2.channel = t1.channel and t2.series != t1.series",
+                &[],
+            )
+            .await?;
+        let mut ret = AmbigiousChannelNamesResponse { ambigious: Vec::new() };
+        for row in rows {
+            let g = AmbigiousChannel {
+                series: row.get::<_, i64>(0) as u64,
+                name: row.get(1),
+                scalar_type: ScalarType::from_scylla_i32(row.get(2))?,
+                shape: Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(3))?,
+            };
+            ret.ambigious.push(g);
+        }
         Ok(ret)
     }
 }

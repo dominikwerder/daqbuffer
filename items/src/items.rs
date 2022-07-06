@@ -18,15 +18,15 @@ use crate::numops::BoolNum;
 use bytes::BytesMut;
 use chrono::{TimeZone, Utc};
 use err::Error;
-use frame::make_error_frame;
 #[allow(unused)]
 use netpod::log::*;
 use netpod::timeunits::{MS, SEC};
 use netpod::{log::Level, AggKind, EventDataReadStats, EventQueryJsonStringFrame, NanoRange, Shape};
-use netpod::{DiskStats, RangeFilterStats};
+use netpod::{DiskStats, RangeFilterStats, ScalarType};
 use numops::StringNum;
 use serde::de::{self, DeserializeOwned, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
+use std::any::Any;
 use std::fmt;
 use std::future::Future;
 use std::marker::PhantomData;
@@ -39,15 +39,16 @@ pub const TERM_FRAME_TYPE_ID: u32 = 0x01;
 pub const ERROR_FRAME_TYPE_ID: u32 = 0x02;
 pub const EVENT_QUERY_JSON_STRING_FRAME: u32 = 0x100;
 pub const EVENT_VALUES_FRAME_TYPE_ID: u32 = 0x500;
-pub const WAVE_EVENTS_FRAME_TYPE_ID: u32 = 0x800;
-pub const X_BINNED_SCALAR_EVENTS_FRAME_TYPE_ID: u32 = 0x8800;
-pub const X_BINNED_WAVE_EVENTS_FRAME_TYPE_ID: u32 = 0x900;
-pub const MIN_MAX_AVG_WAVE_BINS: u32 = 0xa00;
 pub const MIN_MAX_AVG_DIM_0_BINS_FRAME_TYPE_ID: u32 = 0x700;
-pub const MIN_MAX_AVG_DIM_1_BINS_FRAME_TYPE_ID: u32 = 0xb00;
+pub const MIN_MAX_AVG_DIM_1_BINS_FRAME_TYPE_ID: u32 = 0x800;
+pub const MIN_MAX_AVG_WAVE_BINS: u32 = 0xa00;
+pub const WAVE_EVENTS_FRAME_TYPE_ID: u32 = 0xb00;
+pub const NON_DATA_FRAME_TYPE_ID: u32 = 0xc00;
 pub const EVENT_FULL_FRAME_TYPE_ID: u32 = 0x2200;
 pub const EVENTS_ITEM_FRAME_TYPE_ID: u32 = 0x2300;
 pub const STATS_EVENTS_FRAME_TYPE_ID: u32 = 0x2400;
+pub const X_BINNED_SCALAR_EVENTS_FRAME_TYPE_ID: u32 = 0x8800;
+pub const X_BINNED_WAVE_EVENTS_FRAME_TYPE_ID: u32 = 0x8900;
 
 pub fn bool_is_false(j: &bool) -> bool {
     *j == false
@@ -177,7 +178,7 @@ impl SubFrId for u32 {
 }
 
 impl SubFrId for u64 {
-    const SUB: u32 = 10;
+    const SUB: u32 = 0xa;
 }
 
 impl SubFrId for i8 {
@@ -197,19 +198,19 @@ impl SubFrId for i64 {
 }
 
 impl SubFrId for f32 {
-    const SUB: u32 = 11;
+    const SUB: u32 = 0xb;
 }
 
 impl SubFrId for f64 {
-    const SUB: u32 = 12;
+    const SUB: u32 = 0xc;
 }
 
 impl SubFrId for StringNum {
-    const SUB: u32 = 13;
+    const SUB: u32 = 0xd;
 }
 
 impl SubFrId for BoolNum {
-    const SUB: u32 = 14;
+    const SUB: u32 = 0xe;
 }
 
 // To be implemented by the data containers, i.e. the T's in Sitemty<T>, e.g. ScalarEvents.
@@ -243,9 +244,8 @@ impl FrameTypeStatic for EventQueryJsonStringFrame {
 impl<T: FrameTypeStatic> FrameTypeStatic for Sitemty<T> {
     const FRAME_TYPE_ID: u32 = <T as FrameTypeStatic>::FRAME_TYPE_ID;
 
-    fn from_error(_: err::Error) -> Self {
-        // TODO remove this method.
-        panic!()
+    fn from_error(e: err::Error) -> Self {
+        Err(e)
     }
 }
 
@@ -310,46 +310,45 @@ impl SitemtyFrameType for Box<dyn TimeBinned> {
     }
 }
 
+impl SitemtyFrameType for Box<dyn EventsDyn> {
+    fn frame_type_id(&self) -> u32 {
+        self.as_time_binnable_dyn().frame_type_id()
+    }
+}
+
 // TODO do we need Send here?
 pub trait Framable {
     fn make_frame(&self) -> Result<BytesMut, Error>;
 }
 
-// erased_serde::Serialize
-pub trait FramableInner: SitemtyFrameType + Send {
+pub trait FramableInner: erased_serde::Serialize + SitemtyFrameType + Send {
     fn _dummy(&self);
 }
 
-// erased_serde::Serialize`
-impl<T: SitemtyFrameType + Send> FramableInner for T {
+impl<T: erased_serde::Serialize + SitemtyFrameType + Send> FramableInner for T {
     fn _dummy(&self) {}
 }
 
-//impl<T: SitemtyFrameType + Serialize + Send> FramableInner for Box<T> {}
+erased_serde::serialize_trait_object!(EventsDyn);
+erased_serde::serialize_trait_object!(TimeBinnableDyn);
+erased_serde::serialize_trait_object!(TimeBinned);
 
-// TODO need also Framable for those types defined in other crates.
-// TODO not all T have FrameTypeStatic, e.g. Box<dyn TimeBinned>
 impl<T> Framable for Sitemty<T>
-//where
-//Self: erased_serde::Serialize,
-//T: FramableInner + FrameTypeStatic,
-//T: Sized,
+where
+    T: Sized + serde::Serialize + SitemtyFrameType,
 {
     fn make_frame(&self) -> Result<BytesMut, Error> {
-        todo!()
-    }
-
-    /*fn make_frame(&self) -> Result<BytesMut, Error> {
-        //trace!("make_frame");
         match self {
-            Ok(_) => make_frame_2(
-                self,
-                //T::FRAME_TYPE_ID
-                self.frame_type_id(),
-            ),
-            Err(e) => make_error_frame(e),
+            Ok(StreamItem::DataItem(RangeCompletableItem::Data(k))) => {
+                let frame_type_id = k.frame_type_id();
+                make_frame_2(self, frame_type_id)
+            }
+            _ => {
+                let frame_type_id = NON_DATA_FRAME_TYPE_ID;
+                make_frame_2(self, frame_type_id)
+            }
         }
-    }*/
+    }
 }
 
 impl<T> Framable for Box<T>
@@ -421,6 +420,7 @@ pub trait ByteEstimate {
 }
 
 pub trait RangeOverlapInfo {
+    // TODO do not take by value.
     fn ends_before(&self, range: NanoRange) -> bool;
     fn ends_after(&self, range: NanoRange) -> bool;
     fn starts_after(&self, range: NanoRange) -> bool;
@@ -439,9 +439,16 @@ pub trait PushableIndex {
     fn push_index(&mut self, src: &Self, ix: usize);
 }
 
+pub trait NewEmpty {
+    fn empty(shape: Shape) -> Self;
+}
+
 pub trait Appendable: WithLen {
     fn empty_like_self(&self) -> Self;
     fn append(&mut self, src: &Self);
+
+    // TODO the `ts2` makes no sense for non-bin-implementors
+    fn append_zero(&mut self, ts1: u64, ts2: u64);
 }
 
 pub trait Clearable {
@@ -462,7 +469,15 @@ pub trait TimeBins: Send + Unpin + WithLen + Appendable + FilterFittingInside {
 }
 
 pub trait TimeBinnableType:
-    Send + Unpin + RangeOverlapInfo + FilterFittingInside + Appendable + Serialize + ReadableFromFile + FrameTypeStatic
+    Send
+    + Unpin
+    + RangeOverlapInfo
+    + FilterFittingInside
+    + NewEmpty
+    + Appendable
+    + Serialize
+    + ReadableFromFile
+    + FrameTypeStatic
 {
     type Output: TimeBinnableType;
     type Aggregator: TimeBinnableTypeAggregator<Input = Self, Output = Self::Output> + Send + Unpin;
@@ -474,33 +489,81 @@ pub trait TimeBinnableType:
 
 // TODO should not require Sync!
 // TODO SitemtyFrameType is already supertrait of FramableInner.
-pub trait TimeBinnableDyn: FramableInner + SitemtyFrameType + Sync + Send {
-    fn aggregator_new(&self) -> Box<dyn TimeBinnableDynAggregator>;
+pub trait TimeBinnableDyn:
+    std::fmt::Debug + FramableInner + SitemtyFrameType + WithLen + RangeOverlapInfo + Any + Sync + Send + 'static
+{
+    fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Box<dyn TimeBinnerDyn>;
+    fn as_any(&self) -> &dyn Any;
 }
 
+pub trait TimeBinnableDynStub:
+    std::fmt::Debug + FramableInner + SitemtyFrameType + WithLen + RangeOverlapInfo + Any + Sync + Send + 'static
+{
+}
+
+// impl for the stubs TODO: remove
+impl<T> TimeBinnableDyn for T
+where
+    T: TimeBinnableDynStub,
+{
+    fn time_binner_new(&self, _edges: Vec<u64>, _do_time_weight: bool) -> Box<dyn TimeBinnerDyn> {
+        error!("TODO impl time_binner_new for T {}", std::any::type_name::<T>());
+        err::todoval()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
+    }
+}
+
+// TODO maybe this is no longer needed:
 pub trait TimeBinnableDynAggregator: Send {
     fn ingest(&mut self, item: &dyn TimeBinnableDyn);
     fn result(&mut self) -> Box<dyn TimeBinned>;
 }
 
 /// Container of some form of events, for use as trait object.
-pub trait EventsDyn: TimeBinnableDyn {}
+pub trait EventsDyn: TimeBinnableDyn {
+    fn as_time_binnable_dyn(&self) -> &dyn TimeBinnableDyn;
+}
 
 /// Data in time-binned form.
 pub trait TimeBinned: TimeBinnableDyn {
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnableDyn;
-    fn workaround_clone(&self) -> Box<dyn TimeBinned>;
-    fn dummy_test_i32(&self) -> i32;
+    fn edges_slice(&self) -> (&[u64], &[u64]);
+    fn counts(&self) -> &[u64];
+    fn mins(&self) -> Vec<f32>;
+    fn maxs(&self) -> Vec<f32>;
+    fn avgs(&self) -> Vec<f32>;
 }
 
-// TODO this impl is already covered by the generic one:
-/*impl FramableInner for Box<dyn TimeBinned> {
-    fn _dummy(&self) {}
-}*/
+impl WithLen for Box<dyn TimeBinned> {
+    fn len(&self) -> usize {
+        self.as_time_binnable_dyn().len()
+    }
+}
+
+impl RangeOverlapInfo for Box<dyn TimeBinned> {
+    fn ends_before(&self, range: NanoRange) -> bool {
+        self.as_time_binnable_dyn().ends_before(range)
+    }
+
+    fn ends_after(&self, range: NanoRange) -> bool {
+        self.as_time_binnable_dyn().ends_after(range)
+    }
+
+    fn starts_after(&self, range: NanoRange) -> bool {
+        self.as_time_binnable_dyn().starts_after(range)
+    }
+}
 
 impl TimeBinnableDyn for Box<dyn TimeBinned> {
-    fn aggregator_new(&self) -> Box<dyn TimeBinnableDynAggregator> {
-        self.as_time_binnable_dyn().aggregator_new()
+    fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Box<dyn TimeBinnerDyn> {
+        self.as_time_binnable_dyn().time_binner_new(edges, do_time_weight)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self as &dyn Any
     }
 }
 
@@ -620,4 +683,120 @@ pub fn inspect_timestamps(events: &dyn TimestampInspectable, range: NanoRange) -
         }
     }
     buf
+}
+
+pub trait TimeBinnerDyn: Send {
+    fn bins_ready_count(&self) -> usize;
+    fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>>;
+    fn ingest(&mut self, item: &dyn TimeBinnableDyn);
+
+    /// Caller indicates that there will be no more data for the current bin.
+    /// Implementor is expected to prepare processing the next bin.
+    /// The next call to `Self::bins_ready_count` must return one higher count than before.
+    fn cycle(&mut self);
+}
+
+pub fn empty_events_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggKind) -> Box<dyn TimeBinnableDyn> {
+    match shape {
+        Shape::Scalar => match agg_kind {
+            AggKind::TimeWeightedScalar => {
+                use ScalarType::*;
+                type K<T> = scalarevents::ScalarEvents<T>;
+                match scalar_type {
+                    U8 => Box::new(K::<u8>::empty()),
+                    U16 => Box::new(K::<u16>::empty()),
+                    U32 => Box::new(K::<u32>::empty()),
+                    U64 => Box::new(K::<u64>::empty()),
+                    I8 => Box::new(K::<i8>::empty()),
+                    I16 => Box::new(K::<i16>::empty()),
+                    I32 => Box::new(K::<i32>::empty()),
+                    I64 => Box::new(K::<i64>::empty()),
+                    F32 => Box::new(K::<f32>::empty()),
+                    F64 => Box::new(K::<f64>::empty()),
+                    _ => err::todoval(),
+                }
+            }
+            _ => err::todoval(),
+        },
+        Shape::Wave(_n) => match agg_kind {
+            AggKind::DimXBins1 => {
+                use ScalarType::*;
+                type K<T> = waveevents::WaveEvents<T>;
+                match scalar_type {
+                    U8 => Box::new(K::<u8>::empty()),
+                    F32 => Box::new(K::<f32>::empty()),
+                    F64 => Box::new(K::<f64>::empty()),
+                    _ => err::todoval(),
+                }
+            }
+            _ => err::todoval(),
+        },
+        Shape::Image(..) => err::todoval(),
+    }
+}
+
+pub fn empty_binned_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggKind) -> Box<dyn TimeBinnableDyn> {
+    match shape {
+        Shape::Scalar => match agg_kind {
+            AggKind::TimeWeightedScalar => {
+                use ScalarType::*;
+                type K<T> = binsdim0::MinMaxAvgDim0Bins<T>;
+                match scalar_type {
+                    U8 => Box::new(K::<u8>::empty()),
+                    U16 => Box::new(K::<u16>::empty()),
+                    U32 => Box::new(K::<u32>::empty()),
+                    U64 => Box::new(K::<u64>::empty()),
+                    I8 => Box::new(K::<i8>::empty()),
+                    I16 => Box::new(K::<i16>::empty()),
+                    I32 => Box::new(K::<i32>::empty()),
+                    I64 => Box::new(K::<i64>::empty()),
+                    F32 => Box::new(K::<f32>::empty()),
+                    F64 => Box::new(K::<f64>::empty()),
+                    _ => err::todoval(),
+                }
+            }
+            _ => err::todoval(),
+        },
+        Shape::Wave(_n) => match agg_kind {
+            AggKind::DimXBins1 => {
+                use ScalarType::*;
+                type K<T> = binsdim0::MinMaxAvgDim0Bins<T>;
+                match scalar_type {
+                    U8 => Box::new(K::<u8>::empty()),
+                    F32 => Box::new(K::<f32>::empty()),
+                    F64 => Box::new(K::<f64>::empty()),
+                    _ => err::todoval(),
+                }
+            }
+            _ => err::todoval(),
+        },
+        Shape::Image(..) => err::todoval(),
+    }
+}
+
+#[test]
+fn bin_binned_01() {
+    use binsdim0::MinMaxAvgDim0Bins;
+    let edges = vec![SEC * 1000, SEC * 1010, SEC * 1020];
+    let inp0 = <MinMaxAvgDim0Bins<u32> as NewEmpty>::empty(Shape::Scalar);
+    let mut time_binner = inp0.time_binner_new(edges, true);
+    let inp1 = MinMaxAvgDim0Bins::<u32> {
+        ts1s: vec![SEC * 1000, SEC * 1010],
+        ts2s: vec![SEC * 1010, SEC * 1020],
+        counts: vec![1, 1],
+        mins: vec![3, 4],
+        maxs: vec![10, 9],
+        avgs: vec![7., 6.],
+    };
+    assert_eq!(time_binner.bins_ready_count(), 0);
+    time_binner.ingest(&inp1);
+    assert_eq!(time_binner.bins_ready_count(), 1);
+    time_binner.cycle();
+    assert_eq!(time_binner.bins_ready_count(), 2);
+    time_binner.cycle();
+    //assert_eq!(time_binner.bins_ready_count(), 2);
+    let bins = time_binner.bins_ready().expect("bins should be ready");
+    eprintln!("bins: {:?}", bins);
+    assert_eq!(bins.counts().len(), 2);
+    assert_eq!(time_binner.bins_ready_count(), 0);
 }

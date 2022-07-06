@@ -13,15 +13,10 @@ pub fn make_frame<FT>(item: &FT) -> Result<BytesMut, Error>
 where
     FT: FrameType + Serialize,
 {
-    //trace!("make_frame");
     if item.is_err() {
         make_error_frame(item.err().unwrap())
     } else {
-        make_frame_2(
-            item,
-            //FT::FRAME_TYPE_ID
-            item.frame_type_id(),
-        )
+        make_frame_2(item, item.frame_type_id())
     }
 }
 
@@ -29,12 +24,13 @@ pub fn make_frame_2<FT>(item: &FT, fty: u32) -> Result<BytesMut, Error>
 where
     FT: erased_serde::Serialize,
 {
-    //trace!("make_frame_2");
+    trace!("make_frame_2  fty {:x}", fty);
     let mut out = vec![];
+    use bincode::Options;
     let opts = bincode::DefaultOptions::new()
-        //.with_fixint_encoding()
-        //.allow_trailing_bytes()
-        ;
+        .with_little_endian()
+        .with_fixint_encoding()
+        .allow_trailing_bytes();
     let mut ser = bincode::Serializer::new(&mut out, opts);
     //let mut ser = serde_json::Serializer::new(std::io::stdout());
     let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser);
@@ -136,20 +132,41 @@ where
     if frame.tyid() == ERROR_FRAME_TYPE_ID {
         let k: ::err::Error = match bincode::deserialize(frame.buf()) {
             Ok(item) => item,
-            Err(e) => Err(e)?,
+            Err(e) => {
+                error!(
+                    "ERROR bincode::deserialize  len {}  ERROR_FRAME_TYPE_ID",
+                    frame.buf().len()
+                );
+                let n = frame.buf().len().min(64);
+                let s = String::from_utf8_lossy(&frame.buf()[..n]);
+                error!("frame.buf as string: {:?}", s);
+                Err(e)?
+            }
         };
         Ok(T::from_error(k))
     } else {
         let tyid = T::FRAME_TYPE_ID;
         if frame.tyid() != tyid {
             return Err(Error::with_msg(format!(
-                "type id mismatch  expect {:x}  found {:?}",
-                tyid, frame
+                "type id mismatch  expect {:x}  found {:x}  {:?}",
+                tyid,
+                frame.tyid(),
+                frame
             )));
         }
         match bincode::deserialize(frame.buf()) {
             Ok(item) => Ok(item),
-            Err(e) => Err(e)?,
+            Err(e) => {
+                error!(
+                    "ERROR bincode::deserialize  len {}  tyid {:x}",
+                    frame.buf().len(),
+                    frame.tyid()
+                );
+                let n = frame.buf().len().min(64);
+                let s = String::from_utf8_lossy(&frame.buf()[..n]);
+                error!("frame.buf as string: {:?}", s);
+                Err(e)?
+            }
         }
     }
 }

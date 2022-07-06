@@ -1,12 +1,12 @@
 use crate::streams::{Collectable, Collector};
 use crate::{
     ts_offs_from_abs, Appendable, ByteEstimate, Clearable, EventAppendable, FilterFittingInside, Fits, FitsInside,
-    FrameTypeStatic, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, TimeBinnableType,
-    TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    FrameTypeStatic, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType,
+    TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
-use netpod::NanoRange;
+use netpod::{NanoRange, Shape};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use tokio::fs::File;
@@ -141,6 +141,15 @@ impl PushableIndex for StatsEvents {
     }
 }
 
+impl NewEmpty for StatsEvents {
+    fn empty(_shape: Shape) -> Self {
+        Self {
+            tss: Vec::new(),
+            pulses: Vec::new(),
+        }
+    }
+}
+
 impl Appendable for StatsEvents {
     fn empty_like_self(&self) -> Self {
         Self::empty()
@@ -149,6 +158,11 @@ impl Appendable for StatsEvents {
     fn append(&mut self, src: &Self) {
         self.tss.extend_from_slice(&src.tss);
         self.pulses.extend_from_slice(&src.pulses);
+    }
+
+    fn append_zero(&mut self, ts1: u64, _ts2: u64) {
+        self.tss.push(ts1);
+        self.pulses.push(0);
     }
 }
 

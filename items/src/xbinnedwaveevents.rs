@@ -2,14 +2,14 @@ use crate::binsdim1::MinMaxAvgDim1Bins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
-    Appendable, ByteEstimate, Clearable, FilterFittingInside, Fits, FitsInside, FrameTypeStatic, PushableIndex,
-    RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType,
+    Appendable, ByteEstimate, Clearable, FilterFittingInside, Fits, FitsInside, FrameTypeStatic, NewEmpty,
+    PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType,
     TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
 use netpod::timeunits::*;
-use netpod::NanoRange;
+use netpod::{NanoRange, Shape};
 use serde::{Deserialize, Serialize};
 use std::mem;
 use tokio::fs::File;
@@ -147,6 +147,17 @@ where
     }
 }
 
+impl<NTY> NewEmpty for XBinnedWaveEvents<NTY> {
+    fn empty(_shape: Shape) -> Self {
+        Self {
+            tss: Vec::new(),
+            avgs: Vec::new(),
+            mins: Vec::new(),
+            maxs: Vec::new(),
+        }
+    }
+}
+
 impl<NTY> Appendable for XBinnedWaveEvents<NTY>
 where
     NTY: NumOps,
@@ -160,6 +171,13 @@ where
         self.mins.extend_from_slice(&src.mins);
         self.maxs.extend_from_slice(&src.maxs);
         self.avgs.extend_from_slice(&src.avgs);
+    }
+
+    fn append_zero(&mut self, ts1: u64, _ts2: u64) {
+        self.tss.push(ts1);
+        self.mins.push(Vec::new());
+        self.maxs.push(Vec::new());
+        self.avgs.push(Vec::new());
     }
 }
 
