@@ -5,12 +5,12 @@ pub mod search;
 pub mod pg {
     pub use tokio_postgres::{Client, Error};
 }
-
 use err::Error;
 use netpod::log::*;
-use netpod::{Channel, Database, NodeConfigCached};
+use netpod::{Channel, Database, NodeConfigCached, ScyllaConfig};
 use scylla::frame::response::cql_to_rust::FromRowError as ScyFromRowError;
 use scylla::transport::errors::{NewSessionError as ScyNewSessionError, QueryError as ScyQueryError};
+use scylla::Session as ScySession;
 use std::time::Duration;
 use tokio_postgres::{Client, NoTls};
 
@@ -90,6 +90,16 @@ pub async fn create_connection(db_config: &Database) -> Result<Client, Error> {
         Ok::<_, Error>(())
     });
     Ok(cl)
+}
+
+pub async fn create_scylla_connection(scyconf: &ScyllaConfig) -> Result<ScySession, Error> {
+    let scy = scylla::SessionBuilder::new()
+        .known_nodes(&scyconf.hosts)
+        .use_keyspace(&scyconf.keyspace, true)
+        .build()
+        .await
+        .err_conv()?;
+    Ok(scy)
 }
 
 pub async fn channel_exists(channel: &Channel, node_config: &NodeConfigCached) -> Result<bool, Error> {

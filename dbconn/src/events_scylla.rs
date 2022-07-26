@@ -14,9 +14,9 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio_postgres::Client as PgClient;
 
-macro_rules! impl_read_values_fut {
+macro_rules! read_values {
     ($fname:ident, $self:expr, $ts_msp:expr) => {{
-        let fut = $fname($self.series, $ts_msp, $self.range.clone(), $self.scy.clone());
+        let fut = $fname($self.series, $ts_msp, $self.range.clone(), $self.fwd, $self.scy.clone());
         let fut = fut.map(|x| {
             match x {
                 Ok(k) => {
@@ -37,7 +37,8 @@ struct ReadValues {
     scalar_type: ScalarType,
     shape: Shape,
     range: NanoRange,
-    ts_msp: VecDeque<u64>,
+    ts_msps: VecDeque<u64>,
+    fwd: bool,
     fut: Pin<Box<dyn Future<Output = Result<Box<dyn EventsDyn>, Error>> + Send>>,
     scy: Arc<ScySession>,
 }
@@ -48,23 +49,29 @@ impl ReadValues {
         scalar_type: ScalarType,
         shape: Shape,
         range: NanoRange,
-        ts_msp: VecDeque<u64>,
+        ts_msps: VecDeque<u64>,
+        fwd: bool,
         scy: Arc<ScySession>,
     ) -> Self {
-        Self {
+        let mut ret = Self {
             series,
             scalar_type,
             shape,
             range,
-            ts_msp,
-            fut: Box::pin(futures_util::future::lazy(|_| panic!())),
+            ts_msps,
+            fwd,
+            fut: Box::pin(futures_util::future::ready(Err(Error::with_msg_no_trace(
+                "future not initialized",
+            )))),
             scy,
-        }
+        };
+        ret.next();
+        ret
     }
 
     fn next(&mut self) -> bool {
-        if let Some(ts_msp) = self.ts_msp.pop_front() {
-            self.fut = self.make_fut(ts_msp, self.ts_msp.len() > 1);
+        if let Some(ts_msp) = self.ts_msps.pop_front() {
+            self.fut = self.make_fut(ts_msp, self.ts_msps.len() > 1);
             true
         } else {
             false
@@ -76,23 +83,28 @@ impl ReadValues {
         ts_msp: u64,
         _has_more_msp: bool,
     ) -> Pin<Box<dyn Future<Output = Result<Box<dyn EventsDyn>, Error>> + Send>> {
-        // TODO this also needs to differentiate on Shape.
         let fut = match &self.shape {
             Shape::Scalar => match &self.scalar_type {
+                ScalarType::I8 => {
+                    read_values!(read_next_values_scalar_i8, self, ts_msp)
+                }
+                ScalarType::I16 => {
+                    read_values!(read_next_values_scalar_i16, self, ts_msp)
+                }
                 ScalarType::I32 => {
-                    impl_read_values_fut!(read_next_values_scalar_i32, self, ts_msp)
+                    read_values!(read_next_values_scalar_i32, self, ts_msp)
                 }
                 ScalarType::F32 => {
-                    impl_read_values_fut!(read_next_values_scalar_f32, self, ts_msp)
+                    read_values!(read_next_values_scalar_f32, self, ts_msp)
                 }
                 ScalarType::F64 => {
-                    impl_read_values_fut!(read_next_values_scalar_f64, self, ts_msp)
+                    read_values!(read_next_values_scalar_f64, self, ts_msp)
                 }
                 _ => err::todoval(),
             },
             Shape::Wave(_) => match &self.scalar_type {
                 ScalarType::U16 => {
-                    impl_read_values_fut!(read_next_values_array_u16, self, ts_msp)
+                    read_values!(read_next_values_array_u16, self, ts_msp)
                 }
                 _ => err::todoval(),
             },
@@ -104,7 +116,9 @@ impl ReadValues {
 
 enum FrState {
     New,
-    FindMsp(Pin<Box<dyn Future<Output = Result<Vec<u64>, Error>> + Send>>),
+    FindMsp(Pin<Box<dyn Future<Output = Result<VecDeque<u64>, Error>> + Send>>),
+    ReadBack1(ReadValues),
+    ReadBack2(ReadValues),
     ReadValues(ReadValues),
     Done,
 }
@@ -117,6 +131,7 @@ pub struct EventsStreamScylla {
     scalar_type: ScalarType,
     shape: Shape,
     range: NanoRange,
+    ts_msps: VecDeque<u64>,
     scy: Arc<ScySession>,
     do_test_stream_error: bool,
 }
@@ -137,8 +152,127 @@ impl EventsStreamScylla {
             scalar_type,
             shape,
             range: evq.range.clone(),
+            ts_msps: VecDeque::new(),
             scy,
             do_test_stream_error,
+        }
+    }
+
+    fn ts_msps_found(&mut self, ts_msps: VecDeque<u64>) {
+        info!("found  ts_msps {ts_msps:?}");
+        self.ts_msps = ts_msps;
+        // Find the largest MSP which can potentially contain some event before the range.
+        let befores: Vec<_> = self
+            .ts_msps
+            .iter()
+            .map(|x| *x)
+            .filter(|x| *x < self.range.beg)
+            .collect();
+        if befores.len() >= 1 {
+            let st = ReadValues::new(
+                self.series as i64,
+                self.scalar_type.clone(),
+                self.shape.clone(),
+                self.range.clone(),
+                [befores[befores.len() - 1]].into(),
+                false,
+                self.scy.clone(),
+            );
+            self.state = FrState::ReadBack1(st);
+        } else if self.ts_msps.len() >= 1 {
+            let st = ReadValues::new(
+                self.series as i64,
+                self.scalar_type.clone(),
+                self.shape.clone(),
+                self.range.clone(),
+                self.ts_msps.clone(),
+                true,
+                self.scy.clone(),
+            );
+            self.state = FrState::ReadValues(st);
+        } else {
+            self.state = FrState::Done;
+        }
+    }
+
+    fn back_1_done(&mut self, item: Box<dyn EventsDyn>) -> Option<Box<dyn EventsDyn>> {
+        info!("back_1_done  len {}", item.len());
+        if item.len() == 0 {
+            // Find the 2nd largest MSP which can potentially contain some event before the range.
+            let befores: Vec<_> = self
+                .ts_msps
+                .iter()
+                .map(|x| *x)
+                .filter(|x| *x < self.range.beg)
+                .collect();
+            if befores.len() >= 2 {
+                let st = ReadValues::new(
+                    self.series as i64,
+                    self.scalar_type.clone(),
+                    self.shape.clone(),
+                    self.range.clone(),
+                    [befores[befores.len() - 2]].into(),
+                    false,
+                    self.scy.clone(),
+                );
+                self.state = FrState::ReadBack2(st);
+                None
+            } else if self.ts_msps.len() >= 1 {
+                let st = ReadValues::new(
+                    self.series as i64,
+                    self.scalar_type.clone(),
+                    self.shape.clone(),
+                    self.range.clone(),
+                    self.ts_msps.clone(),
+                    true,
+                    self.scy.clone(),
+                );
+                self.state = FrState::ReadValues(st);
+                None
+            } else {
+                self.state = FrState::Done;
+                None
+            }
+        } else {
+            if self.ts_msps.len() > 0 {
+                let st = ReadValues::new(
+                    self.series as i64,
+                    self.scalar_type.clone(),
+                    self.shape.clone(),
+                    self.range.clone(),
+                    self.ts_msps.clone(),
+                    true,
+                    self.scy.clone(),
+                );
+                self.state = FrState::ReadValues(st);
+                Some(item)
+            } else {
+                self.state = FrState::Done;
+                Some(item)
+            }
+        }
+    }
+
+    fn back_2_done(&mut self, item: Box<dyn EventsDyn>) -> Option<Box<dyn EventsDyn>> {
+        info!("back_2_done  len {}", item.len());
+        if self.ts_msps.len() >= 1 {
+            let st = ReadValues::new(
+                self.series as i64,
+                self.scalar_type.clone(),
+                self.shape.clone(),
+                self.range.clone(),
+                self.ts_msps.clone(),
+                true,
+                self.scy.clone(),
+            );
+            self.state = FrState::ReadValues(st);
+        } else {
+            self.state = FrState::Done;
+        }
+        if item.len() > 0 {
+            Some(item)
+        } else {
+            None
         }
     }
 }
@@ -162,24 +296,41 @@ impl Stream for EventsStreamScylla {
                     continue;
                 }
                 FrState::FindMsp(ref mut fut) => match fut.poll_unpin(cx) {
-                    Ready(Ok(ts_msp)) => {
-                        info!("found ts_msp {ts_msp:?}");
-                        // TODO get rid of into() for VecDeque
-                        let mut st = ReadValues::new(
-                            self.series as i64,
-                            self.scalar_type.clone(),
-                            self.shape.clone(),
-                            self.range.clone(),
-                            // TODO get rid of the conversion:
-                            ts_msp.into(),
-                            self.scy.clone(),
-                        );
-                        if st.next() {
-                            self.state = FrState::ReadValues(st);
-                        } else {
-                            self.state = FrState::Done;
-                        }
+                    Ready(Ok(ts_msps)) => {
+                        self.ts_msps_found(ts_msps);
                         continue;
+                    }
+                    Ready(Err(e)) => {
+                        self.state = FrState::Done;
+                        Ready(Some(Err(e)))
+                    }
+                    Pending => Pending,
+                },
+                FrState::ReadBack1(ref mut st) => match st.fut.poll_unpin(cx) {
+                    Ready(Ok(item)) => {
+                        if let Some(item) = self.back_1_done(item) {
+                            item.verify();
+                            item.output_info();
+                            Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))))
+                        } else {
+                            continue;
+                        }
+                    }
+                    Ready(Err(e)) => {
+                        self.state = FrState::Done;
+                        Ready(Some(Err(e)))
+                    }
+                    Pending => Pending,
+                },
+                FrState::ReadBack2(ref mut st) => match st.fut.poll_unpin(cx) {
+                    Ready(Ok(item)) => {
+                        if let Some(item) = self.back_2_done(item) {
+                            item.verify();
+                            item.output_info();
+                            Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))))
+                        } else {
+                            continue;
+                        }
                     }
                     Ready(Err(e)) => {
                         self.state = FrState::Done;
@@ -189,8 +340,10 @@ impl Stream for EventsStreamScylla {
                 },
                 FrState::ReadValues(ref mut st) => match st.fut.poll_unpin(cx) {
                     Ready(Ok(item)) => {
-                        if st.next() {
-                        } else {
+                        info!("read values");
+                        item.verify();
+                        item.output_info();
+                        if !st.next() {
                             info!("ReadValues exhausted");
                             self.state = FrState::Done;
                         }
@@ -242,29 +395,28 @@ async fn find_series(channel: &Channel, pgclient: Arc<PgClient>) -> Result<(u64,
     Ok((series, scalar_type, shape))
 }
 
-async fn find_ts_msp(series: i64, range: NanoRange, scy: Arc<ScySession>) -> Result<Vec<u64>, Error> {
+async fn find_ts_msp(series: i64, range: NanoRange, scy: Arc<ScySession>) -> Result<VecDeque<u64>, Error> {
     trace!("find_ts_msp  series {}  {:?}", series, range);
     // TODO use prepared statements
-    let cql = "select ts_msp from ts_msp where series = ? and ts_msp < ? order by ts_msp desc limit 1";
+    let cql = "select ts_msp from ts_msp where series = ? and ts_msp <= ? order by ts_msp desc limit 2";
     let res = scy.query(cql, (series, range.beg as i64)).await.err_conv()?;
-    let mut before = vec![];
+    let mut before = VecDeque::new();
     for row in res.rows_typed_or_empty::<(i64,)>() {
         let row = row.err_conv()?;
-        before.push(row.0 as u64);
+        before.push_front(row.0 as u64);
     }
-    trace!("FOUND BEFORE THE REQUESTED TIME:  {}  {:?}", before.len(), before);
-    let cql = "select ts_msp from ts_msp where series = ? and ts_msp >= ? and ts_msp < ?";
+    let cql = "select ts_msp from ts_msp where series = ? and ts_msp > ? and ts_msp < ?";
     let res = scy
         .query(cql, (series, range.beg as i64, range.end as i64))
         .await
         .err_conv()?;
-    let mut ret = vec![];
-    for x in before {
-        ret.push(x);
+    let mut ret = VecDeque::new();
+    for h in before {
+        ret.push_back(h);
     }
     for row in res.rows_typed_or_empty::<(i64,)>() {
         let row = row.err_conv()?;
-        ret.push(row.0 as u64);
+        ret.push_back(row.0 as u64);
     }
     trace!("found in total {} rows", ret.len());
     Ok(ret)
@@ -276,47 +428,65 @@ macro_rules! read_next_scalar_values {
             series: i64,
             ts_msp: u64,
             range: NanoRange,
+            fwd: bool,
             scy: Arc<ScySession>,
         ) -> Result<ScalarEvents<$st>, Error> {
             type ST = $st;
             type SCYTY = $scyty;
-            trace!("{}  series {}  ts_msp {}", stringify!($fname), series, ts_msp);
-            let _ts_lsp_max = if range.end <= ts_msp {
-                // TODO we should not be here...
-            } else {
-            };
+            if ts_msp >= range.end {
+                warn!("given ts_msp {}  >=  range.end {}", ts_msp, range.end);
+            }
             if range.end > i64::MAX as u64 {
                 return Err(Error::with_msg_no_trace(format!("range.end overflows i64")));
             }
-            let ts_lsp_max = range.end;
-            let cql = concat!(
-                "select ts_lsp, pulse, value from ",
-                $table_name,
-                " where series = ? and ts_msp = ? and ts_lsp < ?"
-            );
-            let res = scy
-                .query(cql, (series, ts_msp as i64, ts_lsp_max as i64))
-                .await
-                .err_conv()?;
+            let res = if fwd {
+                let ts_lsp_min = if ts_msp < range.beg { range.beg - ts_msp } else { 0 };
+                let ts_lsp_max = if ts_msp < range.end { range.end - ts_msp } else { 0 };
+                trace!(
+                    "FWD  ts_msp {}  ts_lsp_min {}  ts_lsp_max {}  {}",
+                    ts_msp,
+                    ts_lsp_min,
+                    ts_lsp_max,
+                    stringify!($fname)
+                );
+                // TODO use prepared!
+                let cql = concat!(
+                    "select ts_lsp, pulse, value from ",
+                    $table_name,
+                    " where series = ? and ts_msp = ? and ts_lsp >= ? and ts_lsp < ?"
+                );
+                scy.query(cql, (series, ts_msp as i64, ts_lsp_min as i64, ts_lsp_max as i64))
+                    .await
+                    .err_conv()?
+            } else {
+                let ts_lsp_max = if ts_msp < range.beg { range.beg - ts_msp } else { 0 };
+                info!(
+                    "BCK  ts_msp {}  ts_lsp_max {}  range beg {}  end {}  {}",
+                    ts_msp,
+                    ts_lsp_max,
+                    range.beg,
+                    range.end,
+                    stringify!($fname)
+                );
+                // TODO use prepared!
+                let cql = concat!(
+                    "select ts_lsp, pulse, value from ",
+                    $table_name,
+                    " where series = ? and ts_msp = ? and ts_lsp < ? order by ts_lsp desc limit 1"
+                );
+                scy.query(cql, (series, ts_msp as i64, ts_lsp_max as i64))
+                    .await
+                    .err_conv()?
+            };
             let mut ret = ScalarEvents::<ST>::empty();
-            let mut discarded = 0;
             for row in res.rows_typed_or_empty::<(i64, i64, SCYTY)>() {
                 let row = row.err_conv()?;
                 let ts = ts_msp + row.0 as u64;
                 let pulse = row.1 as u64;
                 let value = row.2 as ST;
-                if ts < range.beg || ts >= range.end {
-                    discarded += 1;
-                } else {
-                    ret.push(ts, pulse, value);
-                }
+                ret.push(ts, pulse, value);
             }
-            trace!(
-                "found in total {} events  ts_msp {}  discarded {}",
-                ret.tss.len(),
-                ts_msp,
-                discarded
-            );
+            trace!("found in total {} events  ts_msp {}", ret.tss.len(), ts_msp);
             Ok(ret)
         }
     };
@@ -328,8 +498,12 @@ macro_rules! read_next_array_values {
             series: i64,
             ts_msp: u64,
             _range: NanoRange,
+            _fwd: bool,
             scy: Arc<ScySession>,
         ) -> Result<WaveEvents<$st>, Error> {
+            if true {
+                return Err(Error::with_msg_no_trace("redo based on scalar case"));
+            }
             type ST = $st;
             type SCYTY = $scyty;
             info!("{}  series {}  ts_msp {}", stringify!($fname), series, ts_msp);
@@ -353,6 +527,8 @@ macro_rules! read_next_array_values {
     };
 }
 
+read_next_scalar_values!(read_next_values_scalar_i8, i8, i8, "events_scalar_i8");
+read_next_scalar_values!(read_next_values_scalar_i16, i16, i16, "events_scalar_i16");
 read_next_scalar_values!(read_next_values_scalar_i32, i32, i32, "events_scalar_i32");
 read_next_scalar_values!(read_next_values_scalar_f32, f32, f32, "events_scalar_f32");
 read_next_scalar_values!(read_next_values_scalar_f64, f64, f64, "events_scalar_f64");

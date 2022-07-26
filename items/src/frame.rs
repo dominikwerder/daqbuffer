@@ -1,7 +1,7 @@
 use crate::inmem::InMemoryFrame;
 use crate::{
-    FrameType, FrameTypeStatic, ERROR_FRAME_TYPE_ID, INMEM_FRAME_ENCID, INMEM_FRAME_HEAD, INMEM_FRAME_MAGIC,
-    TERM_FRAME_TYPE_ID,
+    FrameType, FrameTypeStatic, Sitemty, StreamItem, ERROR_FRAME_TYPE_ID, INMEM_FRAME_ENCID, INMEM_FRAME_HEAD,
+    INMEM_FRAME_MAGIC, NON_DATA_FRAME_TYPE_ID, TERM_FRAME_TYPE_ID,
 };
 use bytes::{BufMut, BytesMut};
 use err::Error;
@@ -144,6 +144,40 @@ where
             }
         };
         Ok(T::from_error(k))
+    } else if frame.tyid() == NON_DATA_FRAME_TYPE_ID {
+        error!("TODO NON_DATA_FRAME_TYPE_ID");
+        type TT = Sitemty<crate::scalarevents::ScalarEvents<u32>>;
+        let _k: TT = match bincode::deserialize::<TT>(frame.buf()) {
+            Ok(item) => match item {
+                Ok(StreamItem::DataItem(_)) => {
+                    error!(
+                        "ERROR bincode::deserialize  len {}  NON_DATA_FRAME_TYPE_ID  but found Ok(StreamItem::DataItem)",
+                        frame.buf().len()
+                    );
+                    let n = frame.buf().len().min(64);
+                    let s = String::from_utf8_lossy(&frame.buf()[..n]);
+                    error!("frame.buf as string: {:?}", s);
+                    Err(Error::with_msg_no_trace("NON_DATA_FRAME_TYPE_ID decode error"))?
+                }
+                Ok(StreamItem::Log(k)) => Ok(StreamItem::Log(k)),
+                Ok(StreamItem::Stats(k)) => Ok(StreamItem::Stats(k)),
+                Err(e) => {
+                    error!("decode_frame sees error: {e:?}");
+                    Err(e)
+                }
+            },
+            Err(e) => {
+                error!(
+                    "ERROR bincode::deserialize  len {}  ERROR_FRAME_TYPE_ID",
+                    frame.buf().len()
+                );
+                let n = frame.buf().len().min(64);
+                let s = String::from_utf8_lossy(&frame.buf()[..n]);
+                error!("frame.buf as string: {:?}", s);
+                Err(e)?
+            }
+        };
+        Err(Error::with_msg_no_trace("TODO NON_DATA_FRAME_TYPE_ID"))
     } else {
         let tyid = T::FRAME_TYPE_ID;
         if frame.tyid() != tyid {

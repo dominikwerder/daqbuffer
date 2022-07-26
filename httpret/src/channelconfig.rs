@@ -1,18 +1,21 @@
 use crate::err::Error;
 use crate::{response, ToPublicResponse};
-use dbconn::create_connection;
+use dbconn::{create_connection, create_scylla_connection};
 use disk::binned::query::PreBinnedQuery;
 use disk::events::PlainEventsQuery;
+use futures_util::StreamExt;
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
 use netpod::log::*;
 use netpod::query::BinnedQuery;
+use netpod::timeunits::*;
 use netpod::{get_url_query_pairs, Channel, ChannelConfigQuery, Database, FromUrl, ScalarType, ScyllaConfig, Shape};
 use netpod::{ChannelConfigResponse, NodeConfigCached};
 use netpod::{ACCEPT_ALL, APP_JSON};
 use scylla::batch::Consistency;
 use scylla::frame::response::cql_to_rust::FromRowError as ScyFromRowError;
 use scylla::transport::errors::{NewSessionError as ScyNewSessionError, QueryError as ScyQueryError};
+use scylla::transport::iterator::NextRowError;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
@@ -196,6 +199,15 @@ impl<T> ErrConv<T> for Result<T, ScyFromRowError> {
     }
 }
 
+impl<T> ErrConv<T> for Result<T, NextRowError> {
+    fn err_conv(self) -> Result<T, Error> {
+        match self {
+            Ok(k) => Ok(k),
+            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
+        }
+    }
+}
+
 impl<T> ErrConv<T> for Result<T, tokio_postgres::Error> {
     fn err_conv(self) -> Result<T, Error> {
         match self {
@@ -322,11 +334,11 @@ impl ScyllaConfigsHisto {
             .build()
             .await
             .err_conv()?;
-        let facility = "scylla";
+        let backend = "scylla";
         let res = scy
             .query(
                 "select scalar_type, shape_dims, series from series_by_channel where facility = ? allow filtering",
-                (facility,),
+                (backend,),
             )
             .await
             .err_conv()?;
@@ -441,11 +453,11 @@ impl ScyllaChannelsWithType {
             .build()
             .await
             .err_conv()?;
-        let facility = "scylla";
+        let backend = "scylla";
         let res = scy
             .query(
                 "select channel_name, series from series_by_channel where facility = ? and scalar_type = ? and shape_dims = ? allow filtering",
-                (facility, q.scalar_type.to_scylla_i32(), q.shape.to_scylla_vec()),
+                (backend, q.scalar_type.to_scylla_i32(), q.shape.to_scylla_vec()),
             )
             .await
             .err_conv()?;
@@ -453,7 +465,7 @@ impl ScyllaChannelsWithType {
         for row in res.rows_typed_or_empty::<(String, i64)>() {
             let (channel_name, series) = row.err_conv()?;
             let ch = Channel {
-                backend: facility.into(),
+                backend: backend.into(),
                 name: channel_name,
                 series: Some(series as u64),
             };
@@ -466,9 +478,9 @@ impl ScyllaChannelsWithType {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ScyllaChannelEventSeriesIdQuery {
-    facility: String,
+    backend: String,
     #[serde(rename = "channelName")]
-    channel_name: String,
+    name: String,
     #[serde(rename = "scalarType")]
     scalar_type: ScalarType,
     shape: Shape,
@@ -487,11 +499,11 @@ impl FromUrl for ScyllaChannelEventSeriesIdQuery {
     }
 
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
-        let facility = pairs
-            .get("facility")
-            .ok_or_else(|| Error::with_public_msg_no_trace("missing facility"))?
+        let backend = pairs
+            .get("backend")
+            .ok_or_else(|| Error::with_public_msg_no_trace("missing backend"))?
             .into();
-        let channel_name = pairs
+        let name = pairs
             .get("channelName")
             .ok_or_else(|| Error::with_public_msg_no_trace("missing channelName"))?
             .into();
@@ -505,8 +517,8 @@ impl FromUrl for ScyllaChannelEventSeriesIdQuery {
         let shape = Shape::from_dims_str(s)?;
         let do_create = pairs.get("doCreate").map_or("false", |x| x.as_str()) == "true";
         Ok(Self {
-            facility,
-            channel_name,
+            backend,
+            name,
             scalar_type,
             shape,
             do_create,
@@ -521,7 +533,7 @@ pub struct ScyllaChannelEventSeriesIdResponse {
 }
 
 /**
-Get the series-id for a channel identified by facility, channel name, scalar type, shape.
+Get the series-id for a channel identified by backend, channel name, scalar type, shape.
 */
 pub struct ScyllaChannelEventSeriesId {}
 
@@ -581,7 +593,7 @@ impl ScyllaChannelEventSeriesId {
         let res = pg_client
             .query(
                 "select series from series_by_channel where facility = $1 and channel = $2 and scalar_type = $3 and shape_dims = $4 and agg_kind = 0",
-                &[&q.facility, &q.channel_name, &q.scalar_type.to_scylla_i32(), &q.shape.to_scylla_vec()],
+                &[&q.backend, &q.name, &q.scalar_type.to_scylla_i32(), &q.shape.to_scylla_vec()],
             )
             .await
             .err_conv()?;
@@ -592,16 +604,13 @@ impl ScyllaChannelEventSeriesId {
             let ret = ScyllaChannelEventSeriesIdResponse { series };
             Ok(ret)
         } else if q.do_create == false {
-            return Err(Error::with_msg_no_trace(format!(
-                "series id not found for {}",
-                q.channel_name
-            )));
+            return Err(Error::with_msg_no_trace(format!("series id not found for {}", q.name)));
         } else {
             let tsbeg = Instant::now();
             use md5::Digest;
             let mut h = md5::Md5::new();
-            h.update(q.facility.as_bytes());
-            h.update(q.channel_name.as_bytes());
+            h.update(q.backend.as_bytes());
+            h.update(q.name.as_bytes());
             h.update(format!("{:?}", q.scalar_type).as_bytes());
             h.update(format!("{:?}", q.shape).as_bytes());
             for _ in 0..200 {
@@ -628,8 +637,8 @@ impl ScyllaChannelEventSeriesId {
                         ),
                         &[
                             &(series as i64),
-                            &q.facility,
-                            &q.channel_name,
+                            &q.backend,
+                            &q.name,
                             &q.scalar_type.to_scylla_i32(),
                             &q.shape.to_scylla_vec(),
                         ],
@@ -642,18 +651,18 @@ impl ScyllaChannelEventSeriesId {
                 } else {
                     warn!(
                         "tried to insert {series:?} for {} {} {:?} {:?} trying again...",
-                        q.facility, q.channel_name, q.scalar_type, q.shape
+                        q.backend, q.name, q.scalar_type, q.shape
                     );
                 }
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
             error!(
                 "tried to insert new series id for {} {} {:?} {:?} but failed",
-                q.facility, q.channel_name, q.scalar_type, q.shape
+                q.backend, q.name, q.scalar_type, q.shape
             );
             Err(Error::with_msg_no_trace(format!(
                 "get_series_id  can not create and insert series id  {:?}  {:?}  {:?}  {:?}",
-                q.facility, q.channel_name, q.scalar_type, q.shape
+                q.backend, q.name, q.scalar_type, q.shape
             )))
         }
     }
@@ -762,7 +771,6 @@ impl ScyllaChannelsActive {
             )
             .await
             .err_conv()?;
-            use futures_util::StreamExt;
             while let Some(row) = res.next().await {
                 let row = row.err_conv()?;
                 let (series,): (i64,) = row.into_typed().err_conv()?;
@@ -796,7 +804,7 @@ impl FromUrl for ChannelFromSeriesQuery {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ChannelFromSeriesResponse {
-    facility: String,
+    backend: String,
     #[serde(rename = "channelName")]
     channel: String,
     #[serde(rename = "scalarType")]
@@ -881,7 +889,7 @@ impl ChannelFromSeries {
             // TODO return code 204
             return Err(Error::with_msg_no_trace("can not find series"));
         };
-        let facility: String = res.get(0);
+        let backend: String = res.get(0);
         let channel: String = res.get(1);
         let scalar_type: i32 = res.get(2);
         // TODO check and document the format in the storage:
@@ -891,7 +899,7 @@ impl ChannelFromSeries {
         let agg_kind: i32 = res.get(4);
         // TODO method is called from_scylla_shape_dims but document that postgres uses the same format.
         let ret = ChannelFromSeriesResponse {
-            facility,
+            backend,
             channel,
             scalar_type,
             shape,
@@ -903,9 +911,9 @@ impl ChannelFromSeries {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct IocForChannelQuery {
-    facility: String,
+    backend: String,
     #[serde(rename = "channelName")]
-    channel_name: String,
+    name: String,
 }
 
 impl FromUrl for IocForChannelQuery {
@@ -915,15 +923,15 @@ impl FromUrl for IocForChannelQuery {
     }
 
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
-        let facility = pairs
-            .get("facility")
-            .ok_or_else(|| Error::with_public_msg_no_trace("missing facility"))?
+        let backend = pairs
+            .get("backend")
+            .ok_or_else(|| Error::with_public_msg_no_trace("missing backend"))?
             .into();
-        let channel_name = pairs
+        let name = pairs
             .get("channelName")
             .ok_or_else(|| Error::with_public_msg_no_trace("missing channelName"))?
             .into();
-        Ok(Self { facility, channel_name })
+        Ok(Self { backend, name })
     }
 }
 
@@ -982,7 +990,7 @@ impl IocForChannel {
         let rows = pg_client
             .query(
                 "select addr from ioc_by_channel where facility = $1 and channel = $2",
-                &[&q.facility, &q.channel_name],
+                &[&q.backend, &q.name],
             )
             .await?;
         if let Some(row) = rows.first() {
@@ -1082,7 +1090,6 @@ impl ScyllaSeriesTsMsp {
             .query_iter("select ts_msp from ts_msp where series = ?", (q.series as i64,))
             .await
             .err_conv()?;
-        use futures_util::StreamExt;
         while let Some(row) = res.next().await {
             let row = row.err_conv()?;
             let (ts_msp,): (i64,) = row.into_typed().err_conv()?;
@@ -1161,5 +1168,128 @@ impl AmbigiousChannelNames {
             ret.ambigious.push(g);
         }
         Ok(ret)
+    }
+}
+
+struct TestData01Iter {}
+
+impl Iterator for TestData01Iter {
+    type Item = f64;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        None
+    }
+}
+
+struct Msps(Vec<u64>);
+struct Lsps(Vec<u64>);
+struct Pulses(Vec<u64>);
+struct ValsF64(Vec<f64>);
+
+fn test_data_f64_01() -> (Msps, Lsps, Pulses, ValsF64) {
+    let mut msps = Msps(Vec::new());
+    let mut lsps = Lsps(Vec::new());
+    let mut pulses = Pulses(Vec::new());
+    let mut vals = ValsF64(Vec::new());
+    let mut msp = 0;
+    let mut i1 = 0;
+    for i in 0..2000 {
+        let ts = SEC * 1600000000 + MIN * 2 * i;
+        let pulse = 10000 + i;
+        if msp == 0 || i1 >= 40 {
+            msp = ts / MIN * MIN;
+            i1 = 0;
+        }
+        msps.0.push(msp);
+        lsps.0.push(ts - msp);
+        pulses.0.push(pulse);
+        vals.0.push(pulse as f64 + 0.4 + 0.2 * (pulse as f64).sin());
+        i1 += 1;
+    }
+    (msps, lsps, pulses, vals)
+}
+
+pub struct GenerateScyllaTestData {}
+
+impl GenerateScyllaTestData {
+    pub fn handler(req: &Request<Body>) -> Option<Self> {
+        if req.uri().path() == "/api/4/test/generate/scylla" {
+            Some(Self {})
+        } else {
+            None
+        }
+    }
+
+    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+        if req.method() == Method::GET {
+            let accept_def = APP_JSON;
+            let accept = req
+                .headers()
+                .get(http::header::ACCEPT)
+                .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
+            if accept == APP_JSON || accept == ACCEPT_ALL {
+                match self.process(node_config).await {
+                    Ok(k) => {
+                        let body = Body::from(serde_json::to_vec(&k)?);
+                        Ok(response(StatusCode::OK).body(body)?)
+                    }
+                    Err(e) => Ok(response(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(Body::from(format!("{:?}", e.public_msg())))?),
+                }
+            } else {
+                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+            }
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    }
+
+    async fn process(&self, node_config: &NodeConfigCached) -> Result<(), Error> {
+        let dbconf = &node_config.node_config.cluster.database;
+        let _pg_client = create_connection(dbconf).await?;
+        let scyconf = node_config.node_config.cluster.scylla.as_ref().unwrap();
+        let scy = create_scylla_connection(scyconf).await?;
+        let series: u64 = 42001;
+        // TODO query `ts_msp` for all MSP values und use that to delete from event table first.
+        // Only later delete also from the `ts_msp` table.
+        let it = scy
+            .query_iter("select ts_msp from ts_msp where series = ?", (series as i64,))
+            .await
+            .err_conv()?;
+        let mut it = it.into_typed::<(i64,)>();
+        while let Some(row) = it.next().await {
+            let row = row.err_conv()?;
+            let values = (series as i64, row.0);
+            scy.query("delete from events_scalar_f64 where series = ? and ts_msp = ?", values)
+                .await
+                .err_conv()?;
+        }
+        scy.query("delete from ts_msp where series = ?", (series as i64,))
+            .await
+            .err_conv()?;
+
+        // Generate
+        let (msps, lsps, pulses, vals) = test_data_f64_01();
+        let mut last = 0;
+        for msp in msps.0.iter().map(|x| *x) {
+            if msp != last {
+                scy.query(
+                    "insert into ts_msp (series, ts_msp) values (?, ?)",
+                    (series as i64, msp as i64),
+                )
+                .await
+                .err_conv()?;
+            }
+            last = msp;
+        }
+        for (((msp, lsp), pulse), val) in msps.0.into_iter().zip(lsps.0).zip(pulses.0).zip(vals.0) {
+            scy.query(
+                "insert into events_scalar_f64 (series, ts_msp, ts_lsp, pulse, value) values (?, ?, ?, ?, ?)",
+                (series as i64, msp as i64, lsp as i64, pulse as i64, val),
+            )
+            .await
+            .err_conv()?;
+        }
+        Ok(())
     }
 }

@@ -219,7 +219,10 @@ where
                             // TODO unordered cases
                             if lowest_ts < self.ts_last_emit {
                                 self.errored = true;
-                                let msg = format!("unordered event at  lowest_ts {}", lowest_ts);
+                                let msg = format!(
+                                    "unordered event at  lowest_ts {}  ts_last_emit {}",
+                                    lowest_ts, self.ts_last_emit
+                                );
                                 return Ready(Some(Err(Error::with_public_msg(msg))));
                             } else {
                                 self.ts_last_emit = self.ts_last_emit.max(lowest_ts);
@@ -230,6 +233,12 @@ where
                                 match &self.current[lowest_ix] {
                                     MergedCurVal::Val(val) => {
                                         let mut ldst = batch.unwrap_or_else(|| val.empty_like_self());
+                                        if false {
+                                            info!(
+                                                "Push event  rix {}  lowest_ix {}  lowest_ts {}",
+                                                rix, lowest_ix, lowest_ts
+                                            );
+                                        }
                                         ldst.push_index(val, rix);
                                         self.batch = Some(ldst);
                                     }

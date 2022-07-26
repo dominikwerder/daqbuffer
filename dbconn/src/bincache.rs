@@ -151,11 +151,11 @@ pub fn write_cached_scylla<'a>(
         let offset = coord.ix();
         warn!(
             "write_cached_scylla  len {}  where series = {} and bin_len_sec = {} and patch_len_sec = {} and agg_kind = 'dummy-agg-kind' and offset = {}",
+            data.counts().len(),
             series,
             bin_len_sec,
             patch_len_sec,
             offset,
-            data.counts().len()
         );
         let stmt = scy.prepare("insert into binned_scalar_f32 (series, bin_len_sec, patch_len_sec, agg_kind, offset, counts, avgs, mins, maxs) values (?, ?, ?, 'dummy-agg-kind', ?, ?, ?, ?, ?)").await.err_conv()?;
         scy.execute(
@@ -194,7 +194,23 @@ pub async fn fetch_uncached_data(
     // Try to find a higher resolution pre-binned grid which covers the requested patch.
     let (bin, complete) = match PreBinnedPatchRange::covering_range(coord.patch_range(), coord.bin_count() + 1) {
         Ok(Some(range)) => {
-            fetch_uncached_higher_res_prebinned(series, &chn, range, agg_kind, cache_usage.clone(), scy.clone()).await
+            if coord.patch_range() != range.range() {
+                error!(
+                    "The chosen covering range does not exactly cover the requested patch  {:?}  vs  {:?}",
+                    coord.patch_range(),
+                    range.range()
+                );
+            }
+            fetch_uncached_higher_res_prebinned(
+                series,
+                &chn,
+                coord.clone(),
+                range,
+                agg_kind,
+                cache_usage.clone(),
+                scy.clone(),
+            )
+            .await
         }
         Ok(None) => fetch_uncached_binned_events(series, &chn, coord.clone(), agg_kind, scy.clone()).await,
         Err(e) => Err(e),
@@ -243,52 +259,75 @@ pub fn fetch_uncached_data_box(
 pub async fn fetch_uncached_higher_res_prebinned(
     series: u64,
     chn: &ChannelTyped,
+    coord: PreBinnedPatchCoord,
     range: PreBinnedPatchRange,
     agg_kind: AggKind,
     cache_usage: CacheUsage,
     scy: Arc<ScySession>,
 ) -> Result<(Box<dyn TimeBinned>, bool), Error> {
+    let edges = coord.edges();
     // TODO refine the AggKind scheme or introduce a new BinningOpts type and get time-weight from there.
     let do_time_weight = true;
     // We must produce some result with correct types even if upstream delivers nothing at all.
     let bin0 = empty_binned_dyn(&chn.scalar_type, &chn.shape, &agg_kind);
-    let mut time_binner = bin0.time_binner_new(range.edges(), do_time_weight);
+    let mut time_binner = bin0.time_binner_new(edges.clone(), do_time_weight);
     let mut complete = true;
     let patch_it = PreBinnedPatchIterator::from_range(range.clone());
-    for patch in patch_it {
+    for patch_coord in patch_it {
         // We request data here for a Coord, meaning that we expect to receive multiple bins.
         // The expectation is that we receive a single TimeBinned which contains all bins of that PatchCoord.
-        let coord = PreBinnedPatchCoord::new(patch.bin_t_len(), patch.patch_t_len(), patch.ix());
-        let (bin, comp) =
-            pre_binned_value_stream_with_scy(series, chn, &coord, agg_kind.clone(), cache_usage.clone(), scy.clone())
-                .await?;
-        complete = complete & comp;
+        //let patch_coord = PreBinnedPatchCoord::new(patch.bin_t_len(), patch.patch_t_len(), patch.ix());
+        let (bin, comp) = pre_binned_value_stream_with_scy(
+            series,
+            chn,
+            &patch_coord,
+            agg_kind.clone(),
+            cache_usage.clone(),
+            scy.clone(),
+        )
+        .await?;
+        if let Err(msg) = bin.validate() {
+            error!(
+                "pre-binned intermediate issue {}  coord {:?}  patch_coord {:?}",
+                msg, coord, patch_coord
+            );
+        }
+        complete = complete && comp;
         time_binner.ingest(bin.as_time_binnable_dyn());
     }
     // Fixed limit to defend against a malformed implementation:
     let mut i = 0;
-    while i < 80000 && time_binner.bins_ready_count() < range.bin_count() as usize {
+    while i < 80000 && time_binner.bins_ready_count() < coord.bin_count() as usize {
+        let n1 = time_binner.bins_ready_count();
         if false {
             trace!(
-                "extra cycle {}  {}  {}",
+                "pre-binned extra cycle  {}  {}  {}",
                 i,
                 time_binner.bins_ready_count(),
-                range.bin_count()
+                coord.bin_count()
             );
         }
         time_binner.cycle();
         i += 1;
+        if time_binner.bins_ready_count() <= n1 {
+            warn!("pre-binned cycle did not add another bin, break");
+            break;
+        }
     }
-    if time_binner.bins_ready_count() < range.bin_count() as usize {
+    if time_binner.bins_ready_count() < coord.bin_count() as usize {
         return Err(Error::with_msg_no_trace(format!(
-            "unable to produce all bins for the patch range {} vs {}",
+            "pre-binned unable to produce all bins for the patch  bins_ready {}  coord.bin_count {}  edges.len {}",
             time_binner.bins_ready_count(),
-            range.bin_count(),
+            coord.bin_count(),
+            edges.len(),
         )));
     }
     let ready = time_binner
         .bins_ready()
         .ok_or_else(|| Error::with_msg_no_trace(format!("unable to produce any bins for the patch range")))?;
+    if let Err(msg) = ready.validate() {
+        error!("pre-binned final issue {}  coord {:?}", msg, coord);
+    }
     Ok((ready, complete))
 }
 
@@ -299,16 +338,17 @@ pub async fn fetch_uncached_binned_events(
     agg_kind: AggKind,
     scy: Arc<ScySession>,
 ) -> Result<(Box<dyn TimeBinned>, bool), Error> {
+    let edges = coord.edges();
     // TODO refine the AggKind scheme or introduce a new BinningOpts type and get time-weight from there.
     let do_time_weight = true;
     // We must produce some result with correct types even if upstream delivers nothing at all.
     let bin0 = empty_events_dyn(&chn.scalar_type, &chn.shape, &agg_kind);
-    let mut time_binner = bin0.time_binner_new(coord.edges(), do_time_weight);
+    let mut time_binner = bin0.time_binner_new(edges.clone(), do_time_weight);
     let deadline = Instant::now();
     let deadline = deadline
         .checked_add(Duration::from_millis(6000))
         .ok_or_else(|| Error::with_msg_no_trace(format!("deadline overflow")))?;
-    let evq = RawEventsQuery::new(chn.channel.clone(), coord.patch_range(), AggKind::Plain);
+    let evq = RawEventsQuery::new(chn.channel.clone(), coord.patch_range(), agg_kind);
     let mut events_dyn = EventsStreamScylla::new(series, &evq, chn.scalar_type.clone(), chn.shape.clone(), scy, false);
     let mut complete = false;
     loop {
@@ -343,9 +383,10 @@ pub async fn fetch_uncached_binned_events(
     // Fixed limit to defend against a malformed implementation:
     let mut i = 0;
     while i < 80000 && time_binner.bins_ready_count() < coord.bin_count() as usize {
+        let n1 = time_binner.bins_ready_count();
         if false {
             trace!(
-                "extra cycle {}  {}  {}",
+                "events extra cycle {}  {}  {}",
                 i,
                 time_binner.bins_ready_count(),
                 coord.bin_count()
@@ -353,17 +394,25 @@ pub async fn fetch_uncached_binned_events(
         }
         time_binner.cycle();
         i += 1;
+        if time_binner.bins_ready_count() <= n1 {
+            warn!("events cycle did not add another bin, break");
+            break;
+        }
     }
     if time_binner.bins_ready_count() < coord.bin_count() as usize {
         return Err(Error::with_msg_no_trace(format!(
-            "unable to produce all bins for the patch range {} vs {}",
+            "events unable to produce all bins for the patch  bins_ready {}  coord.bin_count {}  edges.len {}",
             time_binner.bins_ready_count(),
             coord.bin_count(),
+            edges.len(),
         )));
     }
     let ready = time_binner
         .bins_ready()
         .ok_or_else(|| Error::with_msg_no_trace(format!("unable to produce any bins for the patch")))?;
+    if let Err(msg) = ready.validate() {
+        error!("time binned invalid {}  coord {:?}", msg, coord);
+    }
     Ok((ready, complete))
 }
 

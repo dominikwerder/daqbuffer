@@ -116,14 +116,14 @@ pub async fn search_channel_scylla(
     let mut res = vec![];
     for row in rows {
         let series = row.get::<_, i64>(0) as u64;
-        let facility: String = row.get(1);
+        let backend: String = row.get(1);
         let channel: String = row.get(2);
         let a: i32 = row.get(3);
         let scalar_type = ScalarType::from_scylla_i32(a)?;
         let a: Vec<i32> = row.get(4);
         let shape = Shape::from_scylla_shape_dims(&a)?;
         let k = ChannelSearchSingleResult {
-            backend: facility,
+            backend,
             name: channel,
             series,
             source: "".into(),

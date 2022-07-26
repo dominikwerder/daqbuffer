@@ -525,6 +525,8 @@ pub trait TimeBinnableDynAggregator: Send {
 /// Container of some form of events, for use as trait object.
 pub trait EventsDyn: TimeBinnableDyn {
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnableDyn;
+    fn verify(&self);
+    fn output_info(&self);
 }
 
 /// Data in time-binned form.
@@ -535,6 +537,7 @@ pub trait TimeBinned: TimeBinnableDyn {
     fn mins(&self) -> Vec<f32>;
     fn maxs(&self) -> Vec<f32>;
     fn avgs(&self) -> Vec<f32>;
+    fn validate(&self) -> Result<(), String>;
 }
 
 impl WithLen for Box<dyn TimeBinned> {
@@ -662,6 +665,8 @@ pub trait TimeBinnableTypeAggregator: Send {
     type Output: TimeBinnableType;
     fn range(&self) -> &NanoRange;
     fn ingest(&mut self, item: &Self::Input);
+    // TODO this API is too convoluted for a minimal performance gain: should separate `result` and `reset`
+    // or simply require to construct a new which is almost equally expensive.
     fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output;
 }
 
@@ -690,8 +695,12 @@ pub trait TimeBinnerDyn: Send {
     fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>>;
     fn ingest(&mut self, item: &dyn TimeBinnableDyn);
 
-    /// Caller indicates that there will be no more data for the current bin.
-    /// Implementor is expected to prepare processing the next bin.
+    /// If there is a bin in progress with non-zero count, push it to the result set.
+    /// With push_empty == true, a bin in progress is pushed even if it contains no counts.
+    fn push_in_progress(&mut self, push_empty: bool);
+
+    /// Implies `Self::push_in_progress` but in addition, pushes a zero-count bin if the call
+    /// to `push_in_progress` did not change the result count, as long as edges are left.
     /// The next call to `Self::bins_ready_count` must return one higher count than before.
     fn cycle(&mut self);
 }
@@ -777,7 +786,7 @@ pub fn empty_binned_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggK
 #[test]
 fn bin_binned_01() {
     use binsdim0::MinMaxAvgDim0Bins;
-    let edges = vec![SEC * 1000, SEC * 1010, SEC * 1020];
+    let edges = vec![SEC * 1000, SEC * 1010, SEC * 1020, SEC * 1030];
     let inp0 = <MinMaxAvgDim0Bins<u32> as NewEmpty>::empty(Shape::Scalar);
     let mut time_binner = inp0.time_binner_new(edges, true);
     let inp1 = MinMaxAvgDim0Bins::<u32> {
@@ -791,12 +800,52 @@ fn bin_binned_01() {
     assert_eq!(time_binner.bins_ready_count(), 0);
     time_binner.ingest(&inp1);
     assert_eq!(time_binner.bins_ready_count(), 1);
-    time_binner.cycle();
+    time_binner.push_in_progress(false);
     assert_eq!(time_binner.bins_ready_count(), 2);
+    // From here on, pushing any more should not change the bin count:
+    time_binner.push_in_progress(false);
+    assert_eq!(time_binner.bins_ready_count(), 2);
+    // On the other hand, cycling should add one more zero-bin:
+    time_binner.cycle();
+    assert_eq!(time_binner.bins_ready_count(), 3);
+    time_binner.cycle();
+    assert_eq!(time_binner.bins_ready_count(), 3);
+    let bins = time_binner.bins_ready().expect("bins should be ready");
+    eprintln!("bins: {:?}", bins);
+    assert_eq!(time_binner.bins_ready_count(), 0);
+    assert_eq!(bins.counts(), &[1, 1, 0]);
+    // TODO use proper float-compare logic:
+    assert_eq!(bins.mins(), &[3., 4., 0.]);
+    assert_eq!(bins.maxs(), &[10., 9., 0.]);
+    assert_eq!(bins.avgs(), &[7., 6., 0.]);
+}
+
+#[test]
+fn bin_binned_02() {
+    use binsdim0::MinMaxAvgDim0Bins;
+    let edges = vec![SEC * 1000, SEC * 1020];
+    let inp0 = <MinMaxAvgDim0Bins<u32> as NewEmpty>::empty(Shape::Scalar);
+    let mut time_binner = inp0.time_binner_new(edges, true);
+    let inp1 = MinMaxAvgDim0Bins::<u32> {
+        ts1s: vec![SEC * 1000, SEC * 1010],
+        ts2s: vec![SEC * 1010, SEC * 1020],
+        counts: vec![1, 1],
+        mins: vec![3, 4],
+        maxs: vec![10, 9],
+        avgs: vec![7., 6.],
+    };
+    assert_eq!(time_binner.bins_ready_count(), 0);
+    time_binner.ingest(&inp1);
+    assert_eq!(time_binner.bins_ready_count(), 0);
+    time_binner.cycle();
+    assert_eq!(time_binner.bins_ready_count(), 1);
     time_binner.cycle();
     //assert_eq!(time_binner.bins_ready_count(), 2);
     let bins = time_binner.bins_ready().expect("bins should be ready");
     eprintln!("bins: {:?}", bins);
-    assert_eq!(bins.counts().len(), 2);
     assert_eq!(time_binner.bins_ready_count(), 0);
+    assert_eq!(bins.counts(), &[2]);
+    assert_eq!(bins.mins(), &[3.]);
+    assert_eq!(bins.maxs(), &[10.]);
+    assert_eq!(bins.avgs(), &[13. / 2.]);
 }

@@ -531,4 +531,12 @@ impl<NTY: NumOps> EventsDyn for WaveEvents<NTY> {
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnableDyn {
         self as &dyn TimeBinnableDyn
     }
+
+    fn verify(&self) {
+        todo!()
+    }
+
+    fn output_info(&self) {
+        todo!()
+    }
 }

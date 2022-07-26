@@ -660,7 +660,7 @@ impl fmt::Debug for Nanos {
     }
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct NanoRange {
     pub beg: u64,
     pub end: u64,
@@ -1031,14 +1031,6 @@ const BIN_T_LEN_OPTIONS_0: [u64; 3] = [
     DAY,
 ];
 
-const PATCH_T_LEN_KEY: [u64; 3] = [
-    //
-    //SEC,
-    MIN * 1,
-    HOUR * 1,
-    DAY,
-];
-
 const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 3] = [
     //
     //MIN * 60,
@@ -1108,7 +1100,7 @@ impl PreBinnedPatchGridSpec {
     }
 
     pub fn is_valid_bin_t_len(bin_t_len: u64) -> bool {
-        for &j in PATCH_T_LEN_KEY.iter() {
+        for &j in BIN_T_LEN_OPTIONS_0.iter() {
             if bin_t_len == j {
                 return true;
             }
@@ -1142,21 +1134,21 @@ fn get_patch_t_len(bin_t_len: u64) -> u64 {
     let shape = Shape::Scalar;
     match shape {
         Shape::Scalar => {
-            for (i1, &j) in PATCH_T_LEN_KEY.iter().enumerate() {
+            for (i1, &j) in BIN_T_LEN_OPTIONS_0.iter().enumerate() {
                 if bin_t_len == j {
                     return PATCH_T_LEN_OPTIONS_SCALAR[i1];
                 }
             }
         }
         Shape::Wave(..) => {
-            for (i1, &j) in PATCH_T_LEN_KEY.iter().enumerate() {
+            for (i1, &j) in BIN_T_LEN_OPTIONS_0.iter().enumerate() {
                 if bin_t_len == j {
                     return PATCH_T_LEN_OPTIONS_WAVE[i1];
                 }
             }
         }
         Shape::Image(..) => {
-            for (i1, &j) in PATCH_T_LEN_KEY.iter().enumerate() {
+            for (i1, &j) in BIN_T_LEN_OPTIONS_0.iter().enumerate() {
                 if bin_t_len == j {
                     return PATCH_T_LEN_OPTIONS_WAVE[i1];
                 }
@@ -1221,7 +1213,19 @@ impl PreBinnedPatchRange {
             t += bin_len;
             ret.push(t);
         }
+        if ret.len() as u64 != self.bin_count() + 1 {
+            error!("edges() yields wrong number  {} vs {}", ret.len(), self.bin_count());
+            panic!();
+        }
         ret
+    }
+
+    pub fn range(&self) -> NanoRange {
+        let pl = self.grid_spec.patch_t_len;
+        NanoRange {
+            beg: pl * self.offset,
+            end: pl * (self.offset + self.count),
+        }
     }
 
     pub fn patch_count(&self) -> u64 {
@@ -1352,7 +1356,7 @@ impl BinnedGridSpec {
     }
 
     pub fn is_valid_bin_t_len(bin_t_len: u64) -> bool {
-        for &j in PATCH_T_LEN_KEY.iter() {
+        for &j in BIN_T_LEN_OPTIONS_0.iter() {
             if bin_t_len == j {
                 return true;
             }
@@ -1850,6 +1854,7 @@ mod test {
 pub struct ChannelSearchSingleResult {
     pub backend: String,
     pub name: String,
+    #[serde(rename = "seriesId")]
     pub series: u64,
     pub source: String,
     #[serde(rename = "type")]

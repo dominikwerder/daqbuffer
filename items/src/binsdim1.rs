@@ -594,4 +594,8 @@ impl<NTY: NumOps> TimeBinned for MinMaxAvgDim1Bins<NTY> {
     fn maxs(&self) -> Vec<f32> {
         err::todoval()
     }
+
+    fn validate(&self) -> Result<(), String> {
+        err::todoval()
+    }
 }
