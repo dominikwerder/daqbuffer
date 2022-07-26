@@ -28,7 +28,6 @@ tokio-postgres = "0.7.6"
 err = { path = "../err" }
 netpod = { path = "../netpod" }
 disk = { path = "../disk" }
-archapp_wrap = { path = "../archapp_wrap" }
 #parse = { path = "../parse" }
 items = { path = "../items" }
 dbconn = { path = "../dbconn" }

@@ -271,11 +271,10 @@ pub async fn channel_config(req: Request<Body>, node_config: &NodeConfigCached) 
     let conf = if let Some(scyco) = &node_config.node_config.cluster.scylla {
         let pgconf = node_config.node_config.cluster.database.clone();
         config_from_scylla(q, pgconf, scyco.clone(), node_config).await?
-    } else if let Some(conf) = &node_config.node.channel_archiver {
-        archapp_wrap::archapp::archeng::channel_config_from_db(&q, conf, &node_config.node_config.cluster.database)
-            .await?
-    } else if let Some(conf) = &node_config.node.archiver_appliance {
-        archapp_wrap::channel_config(&q, conf).await?
+    } else if let Some(_) = &node_config.node.channel_archiver {
+        return Err(Error::with_msg_no_trace("archapp not built"));
+    } else if let Some(_) = &node_config.node.archiver_appliance {
+        return Err(Error::with_msg_no_trace("archapp not built"));
     } else {
         parse::channelconfig::channel_config(&q, &node_config.node).await?
     };

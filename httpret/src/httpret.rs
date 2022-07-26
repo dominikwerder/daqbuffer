@@ -1,6 +1,5 @@
 pub mod api1;
 pub mod bodystream;
-pub mod channelarchiver;
 pub mod channelconfig;
 pub mod download;
 pub mod err;
@@ -29,7 +28,6 @@ use net::SocketAddr;
 use netpod::log::*;
 use netpod::query::BinnedQuery;
 use netpod::timeunits::SEC;
-use netpod::{get_url_query_pairs, Channel};
 use netpod::{FromUrl, NodeConfigCached, NodeStatus, NodeStatusArchiverAppliance};
 use netpod::{ACCEPT_ALL, APP_JSON, APP_JSON_LINES, APP_OCTET};
 use nodenet::conn::events_service;
@@ -295,24 +293,6 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/4/archapp/files/scan/msgs" {
-        if req.method() == Method::GET {
-            Ok(archapp_scan_files(req, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
-        }
-    } else if path == "/api/4/archapp/files/scan/insert" {
-        if req.method() == Method::GET {
-            Ok(archapp_scan_files_insert(req, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
-        }
-    } else if path == "/api/4/archapp/channel/info" {
-        if req.method() == Method::GET {
-            Ok(archapp_channel_info(req, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
-        }
     } else if let Some(h) = download::DownloadHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = settings::SettingsThreadsMaxHandler::handler(&req) {
@@ -334,22 +314,6 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
     } else if let Some(h) = pulsemap::MapPulseHttpFunction::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = pulsemap::Api4MapPulseHttpFunction::handler(&req) {
-        h.handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::ListIndexFilesHttpFunction::handler(path) {
-        h.handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::ListChannelsHttpFunction::handler(path) {
-        h.handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::ScanIndexFiles::handler(path) {
-        h.handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::ScanChannels::handler(path) {
-        h.handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::ScanConfigs::handler(path) {
-        h.handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::ChannelNames::handler(path) {
-        h.handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::BlockRefStream::handler(path) {
-        h.handle(req, &node_config).await
-    } else if let Some(h) = channelarchiver::BlockStream::handler(path) {
         h.handle(req, &node_config).await
     } else if let Some(h) = api1::RequestStatusHandler::handler(&req) {
         h.handle(req, &node_config).await
@@ -824,79 +788,5 @@ pub fn status_board() -> Result<RwLockWriteGuard<'static, StatusBoard>, Error> {
     match x {
         Ok(x) => Ok(x),
         Err(e) => Err(Error::with_msg(format!("{e:?}"))),
-    }
-}
-
-pub async fn archapp_scan_files(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    let url = Url::parse(&format!("dummy:{}", req.uri()))?;
-    let pairs = get_url_query_pairs(&url);
-    let res = archapp_wrap::scan_files(pairs, node_config.clone()).await?;
-    let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
-        .body(Body::wrap_stream(res.map(|k| match k {
-            Ok(k) => match k.serialize() {
-                Ok(mut item) => {
-                    item.push(0xa);
-                    Ok(item)
-                }
-                Err(e) => Err(e),
-            },
-            Err(e) => match serde_json::to_vec(&e) {
-                Ok(mut item) => {
-                    item.push(0xa);
-                    Ok(item)
-                }
-                Err(e) => Err(e.into()),
-            },
-        })))?;
-    Ok(ret)
-}
-
-pub async fn archapp_scan_files_insert(
-    req: Request<Body>,
-    node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
-    let url = Url::parse(&format!("dummy:{}", req.uri()))?;
-    let pairs = get_url_query_pairs(&url);
-    let res = archapp_wrap::scan_files_insert(pairs, node_config.clone()).await?;
-    let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
-        .body(Body::wrap_stream(res.map(|k| match k {
-            Ok(k) => match k.serialize() {
-                Ok(mut item) => {
-                    item.push(0xa);
-                    Ok(item)
-                }
-                Err(e) => Err(e),
-            },
-            Err(e) => match serde_json::to_vec(&e) {
-                Ok(mut item) => {
-                    item.push(0xa);
-                    Ok(item)
-                }
-                Err(e) => Err(e.into()),
-            },
-        })))?;
-    Ok(ret)
-}
-
-pub async fn archapp_channel_info(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    let url = Url::parse(&format!("dummy:{}", req.uri()))?;
-    let pairs = get_url_query_pairs(&url);
-    let channel = Channel::from_pairs(&pairs)?;
-    match archapp_wrap::channel_info(&channel, node_config).await {
-        Ok(res) => {
-            let buf = serde_json::to_vec(&res)?;
-            let ret = response(StatusCode::OK)
-                .header(http::header::CONTENT_TYPE, APP_JSON)
-                .body(Body::from(buf))?;
-            Ok(ret)
-        }
-        Err(e) => {
-            let ret = response(StatusCode::INTERNAL_SERVER_ERROR)
-                .header(http::header::CONTENT_TYPE, "text/text")
-                .body(Body::from(format!("{:?}", e)))?;
-            Ok(ret)
-        }
     }
 }

@@ -30,7 +30,6 @@ tokio-postgres = { version = "0.7.6", features = ["runtime", "with-chrono-0_4", 
 disk = { path = "../disk" }
 items = { path = "../items" }
 parse = { path = "../parse" }
-archapp_wrap = { path = "../archapp_wrap" }
 nodenet = { path = "../nodenet" }
 commonio = { path = "../commonio" }
 taskrun = { path = "../taskrun" }

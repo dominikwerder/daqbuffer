@@ -21,4 +21,3 @@ netpod = { path = "../netpod" }
 items = { path = "../items" }
 parse = { path = "../parse" }
 disk = { path = "../disk" }
-archapp = { path = "../archapp" }

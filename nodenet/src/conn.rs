@@ -156,16 +156,12 @@ async fn events_conn_handler_inner_try(
                 }
                 Err(e) => return Err((e, netout))?,
             }
-        } else if let Some(aa) = &node_config.node.channel_archiver {
-            match archapp_wrap::archapp::archeng::pipe::make_event_pipe(&evq, node_config.clone(), aa.clone()).await {
-                Ok(j) => j,
-                Err(e) => return Err((e, netout))?,
-            }
-        } else if let Some(aa) = &node_config.node.archiver_appliance {
-            match archapp_wrap::make_event_pipe(&evq, aa).await {
-                Ok(j) => j,
-                Err(e) => return Err((e, netout))?,
-            }
+        } else if let Some(_) = &node_config.node.channel_archiver {
+            let e = Error::with_msg_no_trace("archapp not built");
+            return Err((e, netout))?;
+        } else if let Some(_) = &node_config.node.archiver_appliance {
+            let e = Error::with_msg_no_trace("archapp not built");
+            return Err((e, netout))?;
         } else {
             match evq.agg_kind {
                 AggKind::EventBlobs => match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {

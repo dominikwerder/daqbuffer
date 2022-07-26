@@ -1,6 +1,6 @@
 use clap::Parser;
 use err::Error;
-use netpod::{timeunits::*, Nanos};
+use netpod::timeunits::*;
 use std::{path::PathBuf, str::FromStr};
 
 #[derive(Debug, Parser)]
@@ -39,6 +39,7 @@ pub struct ConvertArchiverApplianceChannel {
 
 #[derive(Clone, Debug)]
 pub struct TimeBinSize {
+    #[allow(unused)]
     nanos: u64,
 }
 
@@ -68,15 +69,9 @@ pub fn main() -> Result<(), Error> {
     taskrun::run(async {
         let opts = Opts::parse();
         match opts.subcmd {
-            SubCmd::ConvertArchiverApplianceChannel(sub) => {
-                let params = dq::ConvertParams {
-                    keyspace_prefix: sub.keyspace_prefix,
-                    channel_name: sub.channel_name,
-                    input_dir: sub.input_dir,
-                    output_dir: sub.output_dir,
-                    time_bin_size: Nanos::from_ns(sub.time_bin_size.nanos),
-                };
-                dq::convert(params).await
+            SubCmd::ConvertArchiverApplianceChannel(_) => {
+                eprintln!("error: archapp not built");
+                Ok(())
             }
         }
     })
