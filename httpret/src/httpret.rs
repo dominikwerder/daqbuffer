@@ -6,6 +6,7 @@ pub mod err;
 pub mod events;
 pub mod evinfo;
 pub mod gather;
+pub mod prometheus;
 pub mod proxy;
 pub mod pulsemap;
 pub mod search;
@@ -51,6 +52,9 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
         let x = Box::new(a);
         STATUS_BOARD.store(Box::into_raw(x), Ordering::SeqCst);
     });
+    if let Some(bind) = node_config.node.prometheus_api_bind {
+        tokio::spawn(prometheus::host(bind));
+    }
     let _update_task = if node_config.node_config.cluster.run_map_pulse_task {
         Some(UpdateTask::new(node_config.clone()))
     } else {

@@ -13,6 +13,7 @@ use serde_json::Value as JsVal;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::iter::FromIterator;
+use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::str::FromStr;
@@ -356,6 +357,7 @@ pub struct Node {
     pub sf_databuffer: Option<SfDatabuffer>,
     pub archiver_appliance: Option<ArchiverAppliance>,
     pub channel_archiver: Option<ChannelArchiver>,
+    pub prometheus_api_bind: Option<SocketAddr>,
 }
 
 struct Visit1 {}
@@ -426,6 +428,7 @@ impl Node {
             }),
             archiver_appliance: None,
             channel_archiver: None,
+            prometheus_api_bind: None,
         }
     }
 }
@@ -2043,6 +2046,7 @@ pub fn test_cluster() -> Cluster {
             }),
             archiver_appliance: None,
             channel_archiver: None,
+            prometheus_api_bind: None,
         })
         .collect();
     Cluster {
@@ -2077,6 +2081,7 @@ pub fn sls_test_cluster() -> Cluster {
             channel_archiver: Some(ChannelArchiver {
                 data_base_paths: vec![test_data_base_path_channel_archiver_sls()],
             }),
+            prometheus_api_bind: None,
         })
         .collect();
     Cluster {
@@ -2111,6 +2116,7 @@ pub fn archapp_test_cluster() -> Cluster {
             archiver_appliance: Some(ArchiverAppliance {
                 data_base_paths: vec![test_data_base_path_archiver_appliance()],
             }),
+            prometheus_api_bind: None,
         })
         .collect();
     Cluster {

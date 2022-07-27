@@ -2,7 +2,7 @@
 name = "httpret"
 version = "0.0.1-a.0"
 authors = ["Dominik Werder <dominik.werder@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [lib]
 path = "src/httpret.rs"
@@ -35,3 +35,4 @@ commonio = { path = "../commonio" }
 taskrun = { path = "../taskrun" }
 scylla = "0.4"
 md-5 = "0.9"
+regex = "1.6"

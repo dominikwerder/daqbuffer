@@ -3,11 +3,11 @@ members = ["daqbuffer", "h5out", "items", "items_proc", "nodenet", "httpclient",
 
 [profile.release]
 opt-level = 1
-debug = 1
+debug = 0
 overflow-checks = false
 debug-assertions = false
-lto = "off"
-codegen-units = 64
+lto = "thin"
+codegen-units = 128
 incremental = true
 
 [profile.release2]

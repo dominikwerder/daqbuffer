@@ -136,6 +136,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
             }),
             archiver_appliance: None,
             channel_archiver: None,
+            prometheus_api_bind: None,
         };
         ensemble.nodes.push(node);
     }
