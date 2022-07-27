@@ -475,7 +475,6 @@ impl EventsItemStream {
                                         }
                                         _ => panic!(),
                                     },
-                                    PlainEvents::Wave(_) => panic!(),
                                 },
                                 EventsItem::XBinnedEvents(_) => todo!(),
                             },

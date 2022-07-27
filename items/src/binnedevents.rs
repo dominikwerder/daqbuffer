@@ -27,17 +27,8 @@ impl SingleBinWaveEvents {
     }
 
     // TODO possible to remove?
-    fn x_aggregate(self, ak: &AggKind) -> EventsItem {
-        items_proc::tycases1!(self, Self, (k), {
-            match ak {
-                AggKind::EventBlobs => panic!(),
-                AggKind::Plain => EventsItem::XBinnedEvents(XBinnedEvents::SingleBinWave(SingleBinWaveEvents::$id(k))),
-                AggKind::TimeWeightedScalar => err::todoval(),
-                AggKind::DimXBins1 => err::todoval(),
-                AggKind::DimXBinsN(_) => EventsItem::Plain(PlainEvents::Wave(err::todoval())),
-                AggKind::Stats1 => err::todoval(),
-            }
-        })
+    fn x_aggregate(self, _: &AggKind) -> EventsItem {
+        err::todoval()
     }
 }
 
@@ -122,17 +113,9 @@ impl MultiBinWaveEvents {
         items_proc::tycases1!(self, Self, (k), { "$id".into() })
     }
 
-    fn x_aggregate(self, ak: &AggKind) -> EventsItem {
-        items_proc::tycases1!(self, Self, (k), {
-            match ak {
-                AggKind::EventBlobs => panic!(),
-                AggKind::Plain => EventsItem::XBinnedEvents(XBinnedEvents::MultiBinWave(MultiBinWaveEvents::$id(k))),
-                AggKind::TimeWeightedScalar => err::todoval(),
-                AggKind::DimXBins1 => err::todoval(),
-                AggKind::DimXBinsN(_) => EventsItem::Plain(PlainEvents::Wave(err::todoval())),
-                AggKind::Stats1 => err::todoval(),
-            }
-        })
+    // TODO remove
+    fn x_aggregate(self, _: &AggKind) -> EventsItem {
+        err::todoval()
     }
 }
 

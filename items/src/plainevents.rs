@@ -1,14 +1,8 @@
-use crate::binnedevents::{SingleBinWaveEvents, XBinnedEvents};
 use crate::eventsitem::EventsItem;
 use crate::scalarevents::ScalarEvents;
-use crate::waveevents::{WaveEvents, WaveXBinner};
-use crate::xbinnedscalarevents::XBinnedScalarEvents;
-use crate::{Appendable, Clearable, EventsNodeProcessor, PushableIndex, WithLen, WithTimestamps};
-use err::Error;
+use crate::{Appendable, Clearable, PushableIndex, WithLen, WithTimestamps};
 use netpod::{AggKind, HasScalarType, HasShape, ScalarType, Shape};
 use serde::{Deserialize, Serialize};
-
-//items_proc::enumvars!(ScalarPlainEvents, EventValues);
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ScalarPlainEvents {
@@ -92,120 +86,9 @@ impl HasScalarType for ScalarPlainEvents {
     }
 }
 
-//items_proc::enumvars!(WavePlainEvents, WaveEvents);
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum WavePlainEvents {
-    U8(WaveEvents<u8>),
-    U16(WaveEvents<u16>),
-    U32(WaveEvents<u32>),
-    U64(WaveEvents<u64>),
-    I8(WaveEvents<i8>),
-    I16(WaveEvents<i16>),
-    I32(WaveEvents<i32>),
-    I64(WaveEvents<i64>),
-    F32(WaveEvents<f32>),
-    F64(WaveEvents<f64>),
-    String(WaveEvents<String>),
-}
-
-impl WavePlainEvents {
-    pub fn shape(&self) -> Result<Shape, Error> {
-        items_proc::tycases1!(self, Self, (k), { k.shape() })
-    }
-}
-
-impl WavePlainEvents {
-    pub fn variant_name(&self) -> String {
-        items_proc::tycases1!(self, Self, (k), {
-            format!("$id({})", k.vals.first().map_or(0, |j| j.len()))
-        })
-    }
-
-    fn x_aggregate(self, ak: &AggKind) -> EventsItem {
-        let shape = self.shape().unwrap();
-        items_proc::tycases1!(self, Self, (k), {
-            match ak {
-                AggKind::EventBlobs => panic!(),
-                AggKind::Plain => EventsItem::Plain(PlainEvents::Wave(WavePlainEvents::$id(k))),
-                AggKind::TimeWeightedScalar => {
-                    let p = WaveXBinner::<$ty>::create(shape, ak.clone());
-                    let j: XBinnedScalarEvents<$ty> = p.process(k);
-                    EventsItem::XBinnedEvents(XBinnedEvents::SingleBinWave(SingleBinWaveEvents::$id(j)))
-                }
-                AggKind::DimXBins1 => {
-                    let p = WaveXBinner::<$ty>::create(shape, ak.clone());
-                    let j: XBinnedScalarEvents<$ty> = p.process(k);
-                    EventsItem::XBinnedEvents(XBinnedEvents::SingleBinWave(SingleBinWaveEvents::$id(j)))
-                }
-                AggKind::DimXBinsN(_) => EventsItem::Plain(PlainEvents::Wave(err::todoval())),
-                AggKind::Stats1 => err::todoval(),
-            }
-        })
-    }
-}
-
-impl Clearable for WavePlainEvents {
-    fn clear(&mut self) {
-        items_proc::tycases1!(self, Self, (k), { k.clear() })
-    }
-}
-
-impl Appendable for WavePlainEvents {
-    fn empty_like_self(&self) -> Self {
-        items_proc::tycases1!(self, Self, (k), { Self::$id(k.empty_like_self()) })
-    }
-
-    fn append(&mut self, src: &Self) {
-        items_proc::tycases1!(self, Self, (k), { match src {
-            Self::$id(j) => k.append(j),
-            _ => panic!(),
-        } })
-    }
-
-    fn append_zero(&mut self, _ts1: u64, _ts2: u64) {
-        // TODO can this implement Appendable in a sane way? Do we need it?
-        err::todo();
-    }
-}
-
-impl PushableIndex for WavePlainEvents {
-    fn push_index(&mut self, src: &Self, ix: usize) {
-        items_proc::tycases1!(self, Self, (k), { match src {
-            Self::$id(j) => k.push_index(j, ix),
-            _ => panic!(),
-        } })
-    }
-}
-
-impl WithLen for WavePlainEvents {
-    fn len(&self) -> usize {
-        items_proc::tycases1!(self, Self, (k), { k.len() })
-    }
-}
-
-impl WithTimestamps for WavePlainEvents {
-    fn ts(&self, ix: usize) -> u64 {
-        items_proc::tycases1!(self, Self, (k), { k.ts(ix) })
-    }
-}
-
-impl HasShape for WavePlainEvents {
-    fn shape(&self) -> Shape {
-        self.shape().unwrap()
-    }
-}
-
-impl HasScalarType for WavePlainEvents {
-    fn scalar_type(&self) -> ScalarType {
-        items_proc::tycases1!(self, Self, (k), { ScalarType::$id })
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize)]
 pub enum PlainEvents {
     Scalar(ScalarPlainEvents),
-    Wave(WavePlainEvents),
 }
 
 impl PlainEvents {
@@ -213,7 +96,6 @@ impl PlainEvents {
         use PlainEvents::*;
         match self {
             Scalar(_) => false,
-            Wave(_) => true,
         }
     }
 
@@ -221,15 +103,13 @@ impl PlainEvents {
         use PlainEvents::*;
         match self {
             Scalar(h) => format!("Scalar({})", h.variant_name()),
-            Wave(h) => format!("Scalar({})", h.variant_name()),
         }
     }
 
-    pub fn x_aggregate(self, ak: &AggKind) -> EventsItem {
+    pub fn x_aggregate(self, _: &AggKind) -> EventsItem {
         use PlainEvents::*;
         match self {
             Scalar(k) => EventsItem::Plain(PlainEvents::Scalar(k)),
-            Wave(k) => k.x_aggregate(ak),
         }
     }
 }
@@ -238,7 +118,6 @@ impl Clearable for PlainEvents {
     fn clear(&mut self) {
         match self {
             PlainEvents::Scalar(k) => k.clear(),
-            PlainEvents::Wave(k) => k.clear(),
         }
     }
 }
@@ -247,7 +126,6 @@ impl Appendable for PlainEvents {
     fn empty_like_self(&self) -> Self {
         match self {
             Self::Scalar(k) => Self::Scalar(k.empty_like_self()),
-            Self::Wave(k) => Self::Wave(k.empty_like_self()),
         }
     }
 
@@ -255,11 +133,6 @@ impl Appendable for PlainEvents {
         match self {
             PlainEvents::Scalar(k) => match src {
                 Self::Scalar(j) => k.append(j),
-                _ => panic!(),
-            },
-            PlainEvents::Wave(k) => match src {
-                Self::Wave(j) => k.append(j),
-                _ => panic!(),
             },
         }
     }
@@ -275,11 +148,6 @@ impl PushableIndex for PlainEvents {
         match self {
             Self::Scalar(k) => match src {
                 Self::Scalar(j) => k.push_index(j, ix),
-                _ => panic!(),
-            },
-            Self::Wave(k) => match src {
-                Self::Wave(j) => k.push_index(j, ix),
-                _ => panic!(),
             },
         }
     }
@@ -290,7 +158,6 @@ impl WithLen for PlainEvents {
         use PlainEvents::*;
         match self {
             Scalar(j) => j.len(),
-            Wave(j) => j.len(),
         }
     }
 }
@@ -300,7 +167,6 @@ impl WithTimestamps for PlainEvents {
         use PlainEvents::*;
         match self {
             Scalar(j) => j.ts(ix),
-            Wave(j) => j.ts(ix),
         }
     }
 }
@@ -310,7 +176,6 @@ impl HasShape for PlainEvents {
         use PlainEvents::*;
         match self {
             Scalar(h) => HasShape::shape(h),
-            Wave(h) => HasShape::shape(h),
         }
     }
 }
@@ -320,7 +185,6 @@ impl HasScalarType for PlainEvents {
         use PlainEvents::*;
         match self {
             Scalar(h) => h.scalar_type(),
-            Wave(h) => h.scalar_type(),
         }
     }
 }
