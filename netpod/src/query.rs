@@ -343,3 +343,81 @@ pub fn agg_kind_from_binning_scheme(pairs: &BTreeMap<String, String>) -> Result<
     };
     Ok(ret)
 }
+
+#[derive(Clone, Debug)]
+pub struct ChannelStateEvents {
+    channel: Channel,
+    range: NanoRange,
+}
+
+impl ChannelStateEvents {
+    pub fn new(channel: Channel, range: NanoRange) -> Self {
+        Self { channel, range }
+    }
+
+    pub fn range(&self) -> &NanoRange {
+        &self.range
+    }
+
+    pub fn channel(&self) -> &Channel {
+        &self.channel
+    }
+
+    pub fn set_series_id(&mut self, series: u64) {
+        self.channel.series = Some(series);
+    }
+
+    pub fn channel_mut(&mut self) -> &mut Channel {
+        &mut self.channel
+    }
+}
+
+impl HasBackend for ChannelStateEvents {
+    fn backend(&self) -> &str {
+        &self.channel.backend
+    }
+}
+
+impl HasTimeout for ChannelStateEvents {
+    fn timeout(&self) -> Duration {
+        Duration::from_millis(6000)
+    }
+}
+
+impl FromUrl for ChannelStateEvents {
+    fn from_url(url: &Url) -> Result<Self, Error> {
+        let pairs = get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+        let beg_date = pairs.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
+        let end_date = pairs.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
+        let ret = Self {
+            channel: Channel::from_pairs(&pairs)?,
+            range: NanoRange {
+                beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
+                end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
+            },
+        };
+        let self_name = std::any::type_name::<Self>();
+        info!("{self_name}::from_url  {ret:?}");
+        Ok(ret)
+    }
+}
+
+impl AppendToUrl for ChannelStateEvents {
+    fn append_to_url(&self, url: &mut Url) {
+        let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
+        self.channel.append_to_url(url);
+        let mut g = url.query_pairs_mut();
+        g.append_pair(
+            "begDate",
+            &Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt).to_string(),
+        );
+        g.append_pair(
+            "endDate",
+            &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
+        );
+    }
+}

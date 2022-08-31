@@ -869,11 +869,13 @@ impl Api1EventsBinaryHandler {
             .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?
             .to_owned();
         let body_data = hyper::body::to_bytes(body).await?;
-        let qu: Api1Query = if let Ok(qu) = serde_json::from_slice(&body_data) {
-            qu
-        } else {
-            error!("got body_data: {:?}", String::from_utf8(body_data[..].to_vec()));
-            return Err(Error::with_msg_no_trace("can not parse query"));
+        let qu: Api1Query = match serde_json::from_slice(&body_data) {
+            Ok(qu) => qu,
+            Err(e) => {
+                error!("got body_data: {:?}", String::from_utf8_lossy(&body_data[..]));
+                error!("can not parse: {e}");
+                return Err(Error::with_msg_no_trace("can not parse query"));
+            }
         };
         let span = if qu.log_level == "trace" {
             tracing::span!(tracing::Level::TRACE, "log_span_t")

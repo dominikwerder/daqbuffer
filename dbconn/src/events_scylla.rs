@@ -1,11 +1,12 @@
 use crate::ErrConv;
 use err::Error;
-use futures_util::{Future, FutureExt, Stream};
+use futures_util::{Future, FutureExt, Stream, StreamExt};
 use items::scalarevents::ScalarEvents;
 use items::waveevents::WaveEvents;
 use items::{EventsDyn, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::log::*;
-use netpod::query::RawEventsQuery;
+use netpod::query::{ChannelStateEvents, RawEventsQuery};
+use netpod::timeunits::DAY;
 use netpod::{Channel, Database, NanoRange, ScalarType, ScyllaConfig, Shape};
 use scylla::Session as ScySession;
 use std::collections::VecDeque;
@@ -572,4 +573,49 @@ pub async fn make_scylla_stream(
         do_test_stream_error,
     )) as _;
     Ok(res)
+}
+
+pub async fn channel_state_events(
+    evq: &ChannelStateEvents,
+    scyco: &ScyllaConfig,
+    _dbconf: Database,
+) -> Result<Vec<(u64, u32)>, Error> {
+    let scy = scylla::SessionBuilder::new()
+        .known_nodes(&scyco.hosts)
+        .use_keyspace(&scyco.keyspace, true)
+        .build()
+        .await
+        .err_conv()?;
+    let scy = Arc::new(scy);
+    let mut ret = Vec::new();
+    let div = DAY;
+    let mut ts_msp = evq.range().beg / div * div;
+    loop {
+        let series = (evq
+            .channel()
+            .series()
+            .ok_or(Error::with_msg_no_trace(format!("series id not given"))))?;
+        let params = (series as i64, ts_msp as i64);
+        let mut res = scy
+            .query_iter(
+                "select ts_lsp, kind from channel_status where series = ? and ts_msp = ?",
+                params,
+            )
+            .await
+            .err_conv()?;
+        while let Some(row) = res.next().await {
+            let row = row.err_conv()?;
+            let (ts_lsp, kind): (i64, i32) = row.into_typed().err_conv()?;
+            let ts = ts_msp + ts_lsp as u64;
+            let kind = kind as u32;
+            if ts >= evq.range().beg && ts < evq.range().end {
+                ret.push((ts, kind));
+            }
+        }
+        ts_msp += DAY;
+        if ts_msp >= evq.range().end {
+            break;
+        }
+    }
+    Ok(ret)
 }

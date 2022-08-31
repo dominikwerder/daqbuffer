@@ -650,7 +650,7 @@ impl MapPulseHistoHttpFunction {
             let uri: Uri = s.parse()?;
             let fut = hyper::Client::new().get(uri);
             let fut = tokio::time::timeout(Duration::from_millis(1000), fut);
-            futs.push(fut);
+            futs.push_back(fut);
         }
         use futures_util::stream::StreamExt;
         let mut map = BTreeMap::new();
