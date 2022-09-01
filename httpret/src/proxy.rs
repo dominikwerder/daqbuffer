@@ -5,7 +5,6 @@ use crate::err::Error;
 use crate::gather::{gather_get_json_generic, SubRes};
 use crate::pulsemap::MapPulseQuery;
 use crate::{api_1_docs, api_4_docs, response, response_err, Cont};
-use disk::events::PlainEventsQuery;
 use futures_core::Stream;
 use futures_util::pin_mut;
 use http::{Method, StatusCode};
@@ -14,7 +13,7 @@ use hyper::{Body, Request, Response, Server};
 use hyper_tls::HttpsConnector;
 use itertools::Itertools;
 use netpod::log::*;
-use netpod::query::BinnedQuery;
+use netpod::query::{BinnedQuery, PlainEventsQuery};
 use netpod::{
     AppendToUrl, ChannelConfigQuery, ChannelSearchQuery, ChannelSearchResult, ChannelSearchSingleResult, FromUrl,
     HasBackend, HasTimeout, ProxyConfig, ACCEPT_ALL, APP_JSON,

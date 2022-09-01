@@ -1,7 +1,6 @@
 use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
 use chrono::{DateTime, Utc};
-use disk::events::PlainEventsQuery;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::streamlog::Streamlog;
 use err::Error;
@@ -12,6 +11,7 @@ use items::numops::NumOps;
 use items::scalarevents::ScalarEvents;
 use items::{RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithLen};
 use netpod::log::*;
+use netpod::query::PlainEventsQuery;
 use netpod::{AppendToUrl, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_JSON, APP_OCTET};
 use serde_json::Value as JsonValue;
 use std::fmt::Debug;

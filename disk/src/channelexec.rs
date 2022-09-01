@@ -3,7 +3,6 @@ use crate::decode::{
     BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
     LittleEndian, NumFromBytes,
 };
-use crate::events::PlainEventsQuery;
 use crate::merge::mergedfromremotes::MergedFromRemotes;
 use bytes::Bytes;
 use err::Error;
@@ -18,7 +17,7 @@ use items::{
     TimeBinnableType,
 };
 use netpod::log::*;
-use netpod::query::RawEventsQuery;
+use netpod::query::{PlainEventsQuery, RawEventsQuery};
 use netpod::{AggKind, ByteOrder, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;

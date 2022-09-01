@@ -1,5 +1,4 @@
 pub mod binnedevents;
-pub mod binnernew;
 pub mod binsdim0;
 pub mod binsdim1;
 pub mod eventsitem;

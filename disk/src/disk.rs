@@ -9,7 +9,6 @@ pub mod dataopen;
 pub mod decode;
 pub mod eventblobs;
 pub mod eventchunker;
-pub mod events;
 pub mod frame;
 pub mod gen;
 pub mod index;

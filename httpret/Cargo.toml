@@ -29,10 +29,12 @@ dbconn = { path = "../dbconn" }
 tokio-postgres = { version = "0.7.6", features = ["runtime", "with-chrono-0_4", "with-serde_json-1"] }
 disk = { path = "../disk" }
 items = { path = "../items" }
+items_2 = { path = "../items_2" }
 parse = { path = "../parse" }
 nodenet = { path = "../nodenet" }
 commonio = { path = "../commonio" }
 taskrun = { path = "../taskrun" }
-scylla = "0.4"
+scyllaconn = { path = "../scyllaconn" }
+scylla = "0.5"
 md-5 = "0.9"
 regex = "1.6"
