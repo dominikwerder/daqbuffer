@@ -1,8 +1,6 @@
 use crate::streams::{CollectableType, CollectorType, ToJsonResult};
-use crate::{
-    ts_offs_from_abs, AppendEmptyBin, Empty, IsoDateTime, ScalarOps, TimeBinnable, TimeBinnableType,
-    TimeBinnableTypeAggregator, TimeBinned, TimeBinner, TimeSeries, WithLen,
-};
+use crate::{ts_offs_from_abs, AppendEmptyBin, Empty, IsoDateTime, RangeOverlapInfo, ScalarOps, TimeBins, WithLen};
+use crate::{TimeBinnable, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinned, TimeBinner};
 use chrono::{TimeZone, Utc};
 use err::Error;
 use netpod::log::*;
@@ -17,12 +15,12 @@ use std::{fmt, mem};
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct MinMaxAvgDim0Bins<NTY> {
-    pub ts1s: Vec<u64>,
-    pub ts2s: Vec<u64>,
-    pub counts: Vec<u64>,
-    pub mins: Vec<NTY>,
-    pub maxs: Vec<NTY>,
-    pub avgs: Vec<f32>,
+    pub ts1s: VecDeque<u64>,
+    pub ts2s: VecDeque<u64>,
+    pub counts: VecDeque<u64>,
+    pub mins: VecDeque<NTY>,
+    pub maxs: VecDeque<NTY>,
+    pub avgs: VecDeque<f32>,
 }
 
 impl<NTY> fmt::Debug for MinMaxAvgDim0Bins<NTY>
@@ -48,12 +46,12 @@ where
 impl<NTY> MinMaxAvgDim0Bins<NTY> {
     pub fn empty() -> Self {
         Self {
-            ts1s: vec![],
-            ts2s: vec![],
-            counts: vec![],
-            mins: vec![],
-            maxs: vec![],
-            avgs: vec![],
+            ts1s: VecDeque::new(),
+            ts2s: VecDeque::new(),
+            counts: VecDeque::new(),
+            mins: VecDeque::new(),
+            maxs: VecDeque::new(),
+            avgs: VecDeque::new(),
         }
     }
 }
@@ -64,41 +62,71 @@ impl<NTY> WithLen for MinMaxAvgDim0Bins<NTY> {
     }
 }
 
+impl<NTY> RangeOverlapInfo for MinMaxAvgDim0Bins<NTY> {
+    fn ends_before(&self, range: NanoRange) -> bool {
+        if let Some(&max) = self.ts2s.back() {
+            max <= range.beg
+        } else {
+            true
+        }
+    }
+
+    fn ends_after(&self, range: NanoRange) -> bool {
+        if let Some(&max) = self.ts2s.back() {
+            max > range.end
+        } else {
+            true
+        }
+    }
+
+    fn starts_after(&self, range: NanoRange) -> bool {
+        if let Some(&min) = self.ts1s.front() {
+            min >= range.end
+        } else {
+            true
+        }
+    }
+}
+
 impl<NTY> Empty for MinMaxAvgDim0Bins<NTY> {
     fn empty() -> Self {
         Self {
-            ts1s: Vec::new(),
-            ts2s: Vec::new(),
-            counts: Vec::new(),
-            mins: Vec::new(),
-            maxs: Vec::new(),
-            avgs: Vec::new(),
+            ts1s: Default::default(),
+            ts2s: Default::default(),
+            counts: Default::default(),
+            mins: Default::default(),
+            maxs: Default::default(),
+            avgs: Default::default(),
         }
     }
 }
 
 impl<NTY: ScalarOps> AppendEmptyBin for MinMaxAvgDim0Bins<NTY> {
     fn append_empty_bin(&mut self, ts1: u64, ts2: u64) {
-        self.ts1s.push(ts1);
-        self.ts2s.push(ts2);
-        self.counts.push(0);
-        self.mins.push(NTY::zero());
-        self.maxs.push(NTY::zero());
-        self.avgs.push(0.);
+        self.ts1s.push_back(ts1);
+        self.ts2s.push_back(ts2);
+        self.counts.push_back(0);
+        self.mins.push_back(NTY::zero());
+        self.maxs.push_back(NTY::zero());
+        self.avgs.push_back(0.);
     }
 }
 
-impl<NTY: ScalarOps> TimeSeries for MinMaxAvgDim0Bins<NTY> {
+impl<NTY: ScalarOps> TimeBins for MinMaxAvgDim0Bins<NTY> {
     fn ts_min(&self) -> Option<u64> {
-        todo!("collection of bins can not be TimeSeries")
+        self.ts1s.front().map(Clone::clone)
     }
 
     fn ts_max(&self) -> Option<u64> {
-        todo!("collection of bins can not be TimeSeries")
+        self.ts2s.back().map(Clone::clone)
     }
 
     fn ts_min_max(&self) -> Option<(u64, u64)> {
-        todo!("collection of bins can not be TimeSeries")
+        if let (Some(min), Some(max)) = (self.ts1s.front().map(Clone::clone), self.ts2s.back().map(Clone::clone)) {
+            Some((min, max))
+        } else {
+            None
+        }
     }
 }
 
@@ -131,13 +159,13 @@ pub struct MinMaxAvgBinsCollectedResult<NTY> {
     #[serde(rename = "tsAnchor")]
     ts_anchor_sec: u64,
     #[serde(rename = "tsMs")]
-    ts_off_ms: Vec<u64>,
+    ts_off_ms: VecDeque<u64>,
     #[serde(rename = "tsNs")]
-    ts_off_ns: Vec<u64>,
-    counts: Vec<u64>,
-    mins: Vec<NTY>,
-    maxs: Vec<NTY>,
-    avgs: Vec<f32>,
+    ts_off_ns: VecDeque<u64>,
+    counts: VecDeque<u64>,
+    mins: VecDeque<NTY>,
+    maxs: VecDeque<NTY>,
+    avgs: VecDeque<f32>,
     #[serde(skip_serializing_if = "crate::bool_is_false", rename = "finalisedRange")]
     finalised_range: bool,
     #[serde(skip_serializing_if = "Zero::is_zero", rename = "missingBins")]
@@ -196,12 +224,12 @@ impl<NTY: ScalarOps> CollectorType for MinMaxAvgBinsCollector<NTY> {
         // TODO could save the copy:
         let mut ts_all = self.vals.ts1s.clone();
         if self.vals.ts2s.len() > 0 {
-            ts_all.push(*self.vals.ts2s.last().unwrap());
+            ts_all.push_back(*self.vals.ts2s.back().unwrap());
         }
         info!("TODO return proper continueAt");
         let bin_count_exp = 100 as u32;
         let continue_at = if self.vals.ts1s.len() < bin_count_exp as usize {
-            match ts_all.last() {
+            match ts_all.back() {
                 Some(&k) => {
                     let iso = IsoDateTime(Utc.timestamp_nanos(k as i64));
                     Some(iso)
@@ -211,11 +239,14 @@ impl<NTY: ScalarOps> CollectorType for MinMaxAvgBinsCollector<NTY> {
         } else {
             None
         };
-        let tst = ts_offs_from_abs(&ts_all);
-        let counts = mem::replace(&mut self.vals.counts, Vec::new());
-        let mins = mem::replace(&mut self.vals.mins, Vec::new());
-        let maxs = mem::replace(&mut self.vals.maxs, Vec::new());
-        let avgs = mem::replace(&mut self.vals.avgs, Vec::new());
+        if ts_all.as_slices().1.len() != 0 {
+            panic!();
+        }
+        let tst = ts_offs_from_abs(ts_all.as_slices().0);
+        let counts = mem::replace(&mut self.vals.counts, VecDeque::new());
+        let mins = mem::replace(&mut self.vals.mins, VecDeque::new());
+        let maxs = mem::replace(&mut self.vals.maxs, VecDeque::new());
+        let avgs = mem::replace(&mut self.vals.avgs, VecDeque::new());
         let ret = MinMaxAvgBinsCollectedResult::<NTY> {
             ts_anchor_sec: tst.0,
             ts_off_ms: tst.1,
@@ -302,12 +333,12 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for MinMaxAvgDim0BinsAggregator<
             self.avg = self.sum / self.sumc as f32;
         }
         let ret = Self::Output {
-            ts1s: vec![self.range.beg],
-            ts2s: vec![self.range.end],
-            counts: vec![self.count],
-            mins: vec![self.min.clone()],
-            maxs: vec![self.max.clone()],
-            avgs: vec![self.avg],
+            ts1s: [self.range.beg].into(),
+            ts2s: [self.range.end].into(),
+            counts: [self.count].into(),
+            mins: [self.min.clone()].into(),
+            maxs: [self.max.clone()].into(),
+            avgs: [self.avg].into(),
         };
         self.range = range;
         self.count = 0;
@@ -499,23 +530,33 @@ impl<NTY: ScalarOps> TimeBinned for MinMaxAvgDim0Bins<NTY> {
     }
 
     fn edges_slice(&self) -> (&[u64], &[u64]) {
-        (&self.ts1s[..], &self.ts2s[..])
+        if self.ts1s.as_slices().1.len() != 0 {
+            panic!();
+        }
+        if self.ts2s.as_slices().1.len() != 0 {
+            panic!();
+        }
+        (&self.ts1s.as_slices().0, &self.ts2s.as_slices().0)
     }
 
     fn counts(&self) -> &[u64] {
-        &self.counts[..]
+        // TODO check for contiguous
+        self.counts.as_slices().0
     }
 
+    // TODO is Vec needed?
     fn mins(&self) -> Vec<f32> {
         self.mins.iter().map(|x| x.clone().as_prim_f32()).collect()
     }
 
+    // TODO is Vec needed?
     fn maxs(&self) -> Vec<f32> {
         self.maxs.iter().map(|x| x.clone().as_prim_f32()).collect()
     }
 
+    // TODO is Vec needed?
     fn avgs(&self) -> Vec<f32> {
-        self.avgs.clone()
+        self.avgs.iter().map(Clone::clone).collect()
     }
 
     fn validate(&self) -> Result<(), String> {

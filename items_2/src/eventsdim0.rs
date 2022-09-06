@@ -1,10 +1,8 @@
 use crate::binsdim0::MinMaxAvgDim0Bins;
 use crate::streams::{CollectableType, CollectorType, ToJsonResult};
-use crate::{pulse_offs_from_abs, ts_offs_from_abs};
-use crate::{
-    Empty, Events, ScalarOps, TimeBinnable, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinner, TimeSeries,
-    WithLen,
-};
+use crate::{pulse_offs_from_abs, ts_offs_from_abs, RangeOverlapInfo};
+use crate::{Empty, Events, ScalarOps, WithLen};
+use crate::{TimeBinnable, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinner};
 use err::Error;
 use netpod::log::*;
 use netpod::NanoRange;
@@ -13,30 +11,28 @@ use std::any::Any;
 use std::collections::VecDeque;
 use std::{fmt, mem};
 
-// TODO in this module reduce clones.
-
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventsDim0<NTY> {
-    pub tss: Vec<u64>,
-    pub pulses: Vec<u64>,
-    pub values: Vec<NTY>,
+    pub tss: VecDeque<u64>,
+    pub pulses: VecDeque<u64>,
+    pub values: VecDeque<NTY>,
 }
 
 impl<NTY> EventsDim0<NTY> {
     #[inline(always)]
     pub fn push(&mut self, ts: u64, pulse: u64, value: NTY) {
-        self.tss.push(ts);
-        self.pulses.push(pulse);
-        self.values.push(value);
+        self.tss.push_back(ts);
+        self.pulses.push_back(pulse);
+        self.values.push_back(value);
     }
 }
 
 impl<NTY> Empty for EventsDim0<NTY> {
     fn empty() -> Self {
         Self {
-            tss: vec![],
-            pulses: vec![],
-            values: vec![],
+            tss: VecDeque::new(),
+            pulses: VecDeque::new(),
+            values: VecDeque::new(),
         }
     }
 }
@@ -50,10 +46,10 @@ where
             fmt,
             "count {}  ts {:?} .. {:?}  vals {:?} .. {:?}",
             self.tss.len(),
-            self.tss.first(),
-            self.tss.last(),
-            self.values.first(),
-            self.values.last(),
+            self.tss.front(),
+            self.tss.back(),
+            self.values.front(),
+            self.values.back(),
         )
     }
 }
@@ -64,20 +60,28 @@ impl<NTY> WithLen for EventsDim0<NTY> {
     }
 }
 
-impl<NTY> TimeSeries for EventsDim0<NTY> {
-    fn ts_min(&self) -> Option<u64> {
-        self.tss.first().map(Clone::clone)
-    }
-
-    fn ts_max(&self) -> Option<u64> {
-        self.tss.last().map(Clone::clone)
-    }
-
-    fn ts_min_max(&self) -> Option<(u64, u64)> {
-        if self.tss.len() == 0 {
-            None
+impl<NTY: ScalarOps> RangeOverlapInfo for EventsDim0<NTY> {
+    fn ends_before(&self, range: NanoRange) -> bool {
+        if let Some(&max) = self.tss.back() {
+            max < range.beg
         } else {
-            Some((self.tss.first().unwrap().clone(), self.tss.last().unwrap().clone()))
+            true
+        }
+    }
+
+    fn ends_after(&self, range: NanoRange) -> bool {
+        if let Some(&max) = self.tss.back() {
+            max >= range.end
+        } else {
+            true
+        }
+    }
+
+    fn starts_after(&self, range: NanoRange) -> bool {
+        if let Some(&min) = self.tss.front() {
+            min >= range.end
+        } else {
+            true
         }
     }
 }
@@ -123,14 +127,14 @@ pub struct EventValuesCollectorOutput<NTY> {
     #[serde(rename = "tsAnchor")]
     ts_anchor_sec: u64,
     #[serde(rename = "tsMs")]
-    ts_off_ms: Vec<u64>,
+    ts_off_ms: VecDeque<u64>,
     #[serde(rename = "tsNs")]
-    ts_off_ns: Vec<u64>,
+    ts_off_ns: VecDeque<u64>,
     #[serde(rename = "pulseAnchor")]
     pulse_anchor: u64,
     #[serde(rename = "pulseOff")]
-    pulse_off: Vec<u64>,
-    values: Vec<NTY>,
+    pulse_off: VecDeque<u64>,
+    values: VecDeque<NTY>,
     #[serde(skip_serializing_if = "crate::bool_is_false", rename = "finalisedRange")]
     range_complete: bool,
     #[serde(skip_serializing_if = "crate::bool_is_false", rename = "timedOut")]
@@ -164,15 +168,16 @@ impl<NTY: ScalarOps> CollectorType for EventValuesCollector<NTY> {
     }
 
     fn result(&mut self) -> Result<Self::Output, Error> {
-        let tst = ts_offs_from_abs(&self.vals.tss);
-        let (pulse_anchor, pulse_off) = pulse_offs_from_abs(&self.vals.pulses);
+        // TODO require contiguous slices
+        let tst = ts_offs_from_abs(&self.vals.tss.as_slices().0);
+        let (pulse_anchor, pulse_off) = pulse_offs_from_abs(&self.vals.pulses.as_slices().0);
         let ret = Self::Output {
             ts_anchor_sec: tst.0,
             ts_off_ms: tst.1,
             ts_off_ns: tst.2,
             pulse_anchor,
-            pulse_off,
-            values: mem::replace(&mut self.vals.values, Vec::new()),
+            pulse_off: pulse_off,
+            values: mem::replace(&mut self.vals.values, VecDeque::new()),
             range_complete: self.range_complete,
             timed_out: self.timed_out,
         };
@@ -345,12 +350,12 @@ impl<NTY: ScalarOps> EventValuesAggregator<NTY> {
             (g.clone(), g.clone(), g.as_prim_f32())
         };
         let ret = MinMaxAvgDim0Bins {
-            ts1s: vec![self.range.beg],
-            ts2s: vec![self.range.end],
-            counts: vec![self.count],
-            mins: vec![min],
-            maxs: vec![max],
-            avgs: vec![avg],
+            ts1s: [self.range.beg].into(),
+            ts2s: [self.range.end].into(),
+            counts: [self.count].into(),
+            mins: [min].into(),
+            maxs: [max].into(),
+            avgs: [avg].into(),
         };
         self.int_ts = range.beg;
         self.range = range;
@@ -379,12 +384,12 @@ impl<NTY: ScalarOps> EventValuesAggregator<NTY> {
             (g.clone(), g.clone(), g.as_prim_f32())
         };
         let ret = MinMaxAvgDim0Bins {
-            ts1s: vec![self.range.beg],
-            ts2s: vec![self.range.end],
-            counts: vec![self.count],
-            mins: vec![min],
-            maxs: vec![max],
-            avgs: vec![avg],
+            ts1s: [self.range.beg].into(),
+            ts2s: [self.range.end].into(),
+            counts: [self.count].into(),
+            mins: [min].into(),
+            maxs: [max].into(),
+            avgs: [avg].into(),
         };
         self.int_ts = range.beg;
         self.range = range;
@@ -473,6 +478,27 @@ impl<NTY: ScalarOps> Events for EventsDim0<NTY> {
 
     fn as_collectable_mut(&mut self) -> &mut dyn crate::streams::Collectable {
         self
+    }
+
+    fn take_new_events_until_ts(&mut self, ts_end: u64) -> Box<dyn Events> {
+        let n1 = self.tss.iter().take_while(|&&x| x < ts_end).count();
+        let tss = self.tss.drain(..n1).collect();
+        let pulses = self.pulses.drain(..n1).collect();
+        let values = self.values.drain(..n1).collect();
+        let ret = Self { tss, pulses, values };
+        Box::new(ret)
+    }
+
+    fn ts_min(&self) -> Option<u64> {
+        self.tss.front().map(|&x| x)
+    }
+
+    fn partial_eq_dyn(&self, other: &dyn Events) -> bool {
+        if let Some(other) = other.as_any().downcast_ref::<Self>() {
+            self == other
+        } else {
+            false
+        }
     }
 }
 

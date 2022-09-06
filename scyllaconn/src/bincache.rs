@@ -10,6 +10,7 @@ use netpod::timeunits::*;
 use netpod::{AggKind, ChannelTyped, ScalarType, Shape};
 use netpod::{PreBinnedPatchCoord, PreBinnedPatchIterator, PreBinnedPatchRange};
 use scylla::Session as ScySession;
+use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -49,8 +50,8 @@ pub async fn read_cached_scylla(
         if counts.len() != avgs.len() {
             counts_mismatch = true;
         }
-        let ts1s = edges[..(edges.len() - 1).min(edges.len())].to_vec();
-        let ts2s = edges[1.min(edges.len())..].to_vec();
+        let ts1s: VecDeque<_> = edges[..(edges.len() - 1).min(edges.len())].iter().map(|&x| x).collect();
+        let ts2s: VecDeque<_> = edges[1.min(edges.len())..].iter().map(|&x| x).collect();
         if ts1s.len() != ts2s.len() {
             error!("ts1s vs ts2s mismatch");
             counts_mismatch = true;
@@ -58,9 +59,9 @@ pub async fn read_cached_scylla(
         if ts1s.len() != counts.len() {
             counts_mismatch = true;
         }
-        let avgs = avgs.into_iter().map(|x| x).collect::<Vec<_>>();
-        let mins = mins.into_iter().map(|x| x as _).collect::<Vec<_>>();
-        let maxs = maxs.into_iter().map(|x| x as _).collect::<Vec<_>>();
+        let avgs: VecDeque<_> = avgs.into_iter().map(|x| x).collect();
+        let mins: VecDeque<_> = mins.into_iter().map(|x| x as _).collect();
+        let maxs: VecDeque<_> = maxs.into_iter().map(|x| x as _).collect();
         if counts_mismatch {
             error!(
                 "mismatch:  edges {}  ts1s {}  ts2s {}  counts {}  avgs {}  mins {}  maxs {}",
@@ -73,7 +74,7 @@ pub async fn read_cached_scylla(
                 maxs.len(),
             );
         }
-        let counts: Vec<_> = counts.into_iter().map(|x| x as u64).collect();
+        let counts: VecDeque<_> = counts.into_iter().map(|x| x as u64).collect();
         // TODO construct a dyn TimeBinned using the scalar type and shape information.
         // TODO place the values with little copying into the TimeBinned.
         use ScalarType::*;
