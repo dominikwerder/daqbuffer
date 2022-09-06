@@ -2,6 +2,7 @@ use crate::WithLen;
 use err::Error;
 use serde::Serialize;
 use std::any::Any;
+use std::fmt;
 
 pub trait CollectorType: Send + Unpin + WithLen {
     type Input: Collectable;
@@ -66,7 +67,7 @@ pub trait ToJsonBytes {
     fn to_json_bytes(&self) -> Result<Vec<u8>, Error>;
 }
 
-pub trait ToJsonResult {
+pub trait ToJsonResult: fmt::Debug + Send {
     fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error>;
 }
 

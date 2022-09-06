@@ -5,7 +5,7 @@ use items::scalarevents::ScalarEvents;
 use items::waveevents::WaveEvents;
 use items::{EventsDyn, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::log::*;
-use netpod::query::{ChannelStateEvents, RawEventsQuery};
+use netpod::query::{ChannelStateEventsQuery, RawEventsQuery};
 use netpod::timeunits::DAY;
 use netpod::{Channel, Database, NanoRange, ScalarType, ScyllaConfig, Shape};
 use scylla::Session as ScySession;
@@ -576,7 +576,7 @@ pub async fn make_scylla_stream(
 }
 
 pub async fn channel_state_events(
-    evq: &ChannelStateEvents,
+    evq: &ChannelStateEventsQuery,
     scyco: &ScyllaConfig,
     _dbconf: Database,
 ) -> Result<Vec<(u64, u32)>, Error> {

@@ -2,6 +2,7 @@ use crate::eventsdim0::EventsDim0;
 use crate::{ChannelEvents, ChannelEventsMerger, ConnStatus, Empty};
 use crate::{ConnStatusEvent, Error};
 use futures_util::StreamExt;
+use netpod::timeunits::SEC;
 
 #[test]
 fn merge01() {
@@ -134,4 +135,98 @@ fn merge03() {
         assert_eq!(item.as_ref(), None);
     };
     tokio::runtime::Runtime::new().unwrap().block_on(fut);
+}
+
+#[test]
+fn bin01() {
+    let fut = async {
+        let mut events_vec1 = Vec::new();
+        for j in 0..2 {
+            let mut events = EventsDim0::empty();
+            for i in 10 * j..10 * (1 + j) {
+                events.push(SEC * i, i, 17f32);
+            }
+            events_vec1.push(Ok(ChannelEvents::Events(Box::new(events))));
+        }
+        let inp1 = events_vec1;
+        let inp1 = futures_util::stream::iter(inp1);
+        let inp1 = Box::pin(inp1);
+        let inp2 = Box::pin(futures_util::stream::empty());
+        let mut stream = ChannelEventsMerger::new(inp1, inp2);
+        let mut coll = None;
+        let mut binner = None;
+        let edges: Vec<_> = (0..10).into_iter().map(|t| SEC * 10 * t).collect();
+        let do_time_weight = true;
+        while let Some(item) = stream.next().await {
+            let item = item?;
+            match item {
+                ChannelEvents::Events(events) => {
+                    if binner.is_none() {
+                        let bb = events
+                            .as_time_binnable_dyn()
+                            .time_binner_new(edges.clone(), do_time_weight);
+                        binner = Some(bb);
+                    }
+                    let binner = binner.as_mut().unwrap();
+                    binner.ingest(events.as_time_binnable_dyn());
+                    eprintln!("bins_ready_count: {}", binner.bins_ready_count());
+                    if binner.bins_ready_count() > 0 {
+                        let ready = binner.bins_ready();
+                        match ready {
+                            Some(mut ready) => {
+                                eprintln!("ready {ready:?}");
+                                if coll.is_none() {
+                                    coll = Some(ready.as_collectable_mut().new_collector());
+                                }
+                                let cl = coll.as_mut().unwrap();
+                                cl.ingest(ready.as_collectable_mut());
+                            }
+                            None => {
+                                return Err(format!("bins_ready_count but no result").into());
+                            }
+                        }
+                    }
+                }
+                ChannelEvents::Status(_) => {
+                    eprintln!("TODO Status");
+                }
+                ChannelEvents::RangeComplete => {
+                    eprintln!("TODO RangeComplete");
+                }
+            }
+        }
+        if let Some(mut binner) = binner {
+            binner.cycle();
+            // TODO merge with the same logic above in the loop.
+            if binner.bins_ready_count() > 0 {
+                let ready = binner.bins_ready();
+                match ready {
+                    Some(mut ready) => {
+                        eprintln!("ready {ready:?}");
+                        if coll.is_none() {
+                            coll = Some(ready.as_collectable_mut().new_collector());
+                        }
+                        let cl = coll.as_mut().unwrap();
+                        cl.ingest(ready.as_collectable_mut());
+                    }
+                    None => {
+                        return Err(format!("bins_ready_count but no result").into());
+                    }
+                }
+            }
+        }
+        match coll {
+            Some(mut coll) => {
+                let res = coll.result().map_err(|e| format!("{e}"))?;
+                //let res = res.to_json_result().map_err(|e| format!("{e}"))?;
+                //let res = res.to_json_bytes().map_err(|e| format!("{e}"))?;
+                eprintln!("res {res:?}");
+            }
+            None => {
+                panic!();
+            }
+        }
+        Ok::<_, Error>(())
+    };
+    tokio::runtime::Runtime::new().unwrap().block_on(fut).unwrap();
 }

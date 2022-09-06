@@ -1,5 +1,8 @@
-use crate::streams::{CollectableType, CollectorType, ToJsonResult};
-use crate::{ts_offs_from_abs, AppendEmptyBin, Empty, IsoDateTime, RangeOverlapInfo, ScalarOps, TimeBins, WithLen};
+use crate::streams::{Collectable, CollectableType, CollectorType, ToJsonResult};
+use crate::{
+    ts_offs_from_abs, ts_offs_from_abs_with_anchor, AppendEmptyBin, Empty, IsoDateTime, RangeOverlapInfo, ScalarOps,
+    TimeBins, WithLen,
+};
 use crate::{TimeBinnable, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinned, TimeBinner};
 use chrono::{TimeZone, Utc};
 use err::Error;
@@ -10,11 +13,10 @@ use num_traits::Zero;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::VecDeque;
-use std::marker::PhantomData;
 use std::{fmt, mem};
 
-#[derive(Clone, Serialize, Deserialize)]
-pub struct MinMaxAvgDim0Bins<NTY> {
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct BinsDim0<NTY> {
     pub ts1s: VecDeque<u64>,
     pub ts2s: VecDeque<u64>,
     pub counts: VecDeque<u64>,
@@ -23,7 +25,7 @@ pub struct MinMaxAvgDim0Bins<NTY> {
     pub avgs: VecDeque<f32>,
 }
 
-impl<NTY> fmt::Debug for MinMaxAvgDim0Bins<NTY>
+impl<NTY> fmt::Debug for BinsDim0<NTY>
 where
     NTY: fmt::Debug,
 {
@@ -43,7 +45,7 @@ where
     }
 }
 
-impl<NTY> MinMaxAvgDim0Bins<NTY> {
+impl<NTY> BinsDim0<NTY> {
     pub fn empty() -> Self {
         Self {
             ts1s: VecDeque::new(),
@@ -56,13 +58,13 @@ impl<NTY> MinMaxAvgDim0Bins<NTY> {
     }
 }
 
-impl<NTY> WithLen for MinMaxAvgDim0Bins<NTY> {
+impl<NTY> WithLen for BinsDim0<NTY> {
     fn len(&self) -> usize {
         self.ts1s.len()
     }
 }
 
-impl<NTY> RangeOverlapInfo for MinMaxAvgDim0Bins<NTY> {
+impl<NTY> RangeOverlapInfo for BinsDim0<NTY> {
     fn ends_before(&self, range: NanoRange) -> bool {
         if let Some(&max) = self.ts2s.back() {
             max <= range.beg
@@ -88,7 +90,7 @@ impl<NTY> RangeOverlapInfo for MinMaxAvgDim0Bins<NTY> {
     }
 }
 
-impl<NTY> Empty for MinMaxAvgDim0Bins<NTY> {
+impl<NTY> Empty for BinsDim0<NTY> {
     fn empty() -> Self {
         Self {
             ts1s: Default::default(),
@@ -101,7 +103,7 @@ impl<NTY> Empty for MinMaxAvgDim0Bins<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> AppendEmptyBin for MinMaxAvgDim0Bins<NTY> {
+impl<NTY: ScalarOps> AppendEmptyBin for BinsDim0<NTY> {
     fn append_empty_bin(&mut self, ts1: u64, ts2: u64) {
         self.ts1s.push_back(ts1);
         self.ts2s.push_back(ts2);
@@ -112,7 +114,7 @@ impl<NTY: ScalarOps> AppendEmptyBin for MinMaxAvgDim0Bins<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> TimeBins for MinMaxAvgDim0Bins<NTY> {
+impl<NTY: ScalarOps> TimeBins for BinsDim0<NTY> {
     fn ts_min(&self) -> Option<u64> {
         self.ts1s.front().map(Clone::clone)
     }
@@ -130,9 +132,9 @@ impl<NTY: ScalarOps> TimeBins for MinMaxAvgDim0Bins<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> TimeBinnableType for MinMaxAvgDim0Bins<NTY> {
-    type Output = MinMaxAvgDim0Bins<NTY>;
-    type Aggregator = MinMaxAvgDim0BinsAggregator<NTY>;
+impl<NTY: ScalarOps> TimeBinnableType for BinsDim0<NTY> {
+    type Output = BinsDim0<NTY>;
+    type Aggregator = BinsDim0Aggregator<NTY>;
 
     fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
         let self_name = std::any::type_name::<Self>();
@@ -144,24 +146,18 @@ impl<NTY: ScalarOps> TimeBinnableType for MinMaxAvgDim0Bins<NTY> {
     }
 }
 
-pub struct MinMaxAvgBinsCollected<NTY> {
-    _m1: PhantomData<NTY>,
-}
-
-impl<NTY> MinMaxAvgBinsCollected<NTY> {
-    pub fn new() -> Self {
-        Self { _m1: PhantomData }
-    }
-}
-
-#[derive(Serialize)]
-pub struct MinMaxAvgBinsCollectedResult<NTY> {
+#[derive(Debug, Serialize)]
+pub struct BinsDim0CollectedResult<NTY> {
     #[serde(rename = "tsAnchor")]
     ts_anchor_sec: u64,
-    #[serde(rename = "tsMs")]
-    ts_off_ms: VecDeque<u64>,
-    #[serde(rename = "tsNs")]
-    ts_off_ns: VecDeque<u64>,
+    #[serde(rename = "ts1Ms")]
+    ts1_off_ms: VecDeque<u64>,
+    #[serde(rename = "ts2Ms")]
+    ts2_off_ms: VecDeque<u64>,
+    #[serde(rename = "ts1Ns")]
+    ts1_off_ns: VecDeque<u64>,
+    #[serde(rename = "ts2Ns")]
+    ts2_off_ns: VecDeque<u64>,
     counts: VecDeque<u64>,
     mins: VecDeque<NTY>,
     maxs: VecDeque<NTY>,
@@ -174,41 +170,47 @@ pub struct MinMaxAvgBinsCollectedResult<NTY> {
     continue_at: Option<IsoDateTime>,
 }
 
-impl<NTY: ScalarOps> ToJsonResult for MinMaxAvgBinsCollectedResult<NTY> {
+impl<NTY: ScalarOps> ToJsonResult for BinsDim0CollectedResult<NTY> {
     fn to_json_result(&self) -> Result<Box<dyn crate::streams::ToJsonBytes>, Error> {
         let k = serde_json::to_value(self)?;
         Ok(Box::new(k))
     }
 }
 
-pub struct MinMaxAvgBinsCollector<NTY> {
+pub struct BinsDim0Collector<NTY> {
     timed_out: bool,
     range_complete: bool,
-    vals: MinMaxAvgDim0Bins<NTY>,
+    vals: BinsDim0<NTY>,
 }
 
-impl<NTY> MinMaxAvgBinsCollector<NTY> {
+impl<NTY> BinsDim0Collector<NTY> {
     pub fn new() -> Self {
         Self {
             timed_out: false,
             range_complete: false,
-            vals: MinMaxAvgDim0Bins::<NTY>::empty(),
+            vals: BinsDim0::<NTY>::empty(),
         }
     }
 }
 
-impl<NTY> WithLen for MinMaxAvgBinsCollector<NTY> {
+impl<NTY> WithLen for BinsDim0Collector<NTY> {
     fn len(&self) -> usize {
         self.vals.ts1s.len()
     }
 }
 
-impl<NTY: ScalarOps> CollectorType for MinMaxAvgBinsCollector<NTY> {
-    type Input = MinMaxAvgDim0Bins<NTY>;
-    type Output = MinMaxAvgBinsCollectedResult<NTY>;
+impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
+    type Input = BinsDim0<NTY>;
+    type Output = BinsDim0CollectedResult<NTY>;
 
-    fn ingest(&mut self, _src: &mut Self::Input) {
-        err::todo();
+    fn ingest(&mut self, src: &mut Self::Input) {
+        // TODO could be optimized by non-contiguous container.
+        self.vals.ts1s.append(&mut src.ts1s);
+        self.vals.ts2s.append(&mut src.ts2s);
+        self.vals.counts.append(&mut src.counts);
+        self.vals.mins.append(&mut src.mins);
+        self.vals.maxs.append(&mut src.maxs);
+        self.vals.avgs.append(&mut src.avgs);
     }
 
     fn set_range_complete(&mut self) {
@@ -221,7 +223,7 @@ impl<NTY: ScalarOps> CollectorType for MinMaxAvgBinsCollector<NTY> {
 
     fn result(&mut self) -> Result<Self::Output, Error> {
         let bin_count = self.vals.ts1s.len() as u32;
-        // TODO could save the copy:
+        // TODO save the clone:
         let mut ts_all = self.vals.ts1s.clone();
         if self.vals.ts2s.len() > 0 {
             ts_all.push_back(*self.vals.ts2s.back().unwrap());
@@ -242,15 +244,18 @@ impl<NTY: ScalarOps> CollectorType for MinMaxAvgBinsCollector<NTY> {
         if ts_all.as_slices().1.len() != 0 {
             panic!();
         }
-        let tst = ts_offs_from_abs(ts_all.as_slices().0);
+        let tst1 = ts_offs_from_abs(self.vals.ts1s.as_slices().0);
+        let tst2 = ts_offs_from_abs_with_anchor(tst1.0, self.vals.ts2s.as_slices().0);
         let counts = mem::replace(&mut self.vals.counts, VecDeque::new());
         let mins = mem::replace(&mut self.vals.mins, VecDeque::new());
         let maxs = mem::replace(&mut self.vals.maxs, VecDeque::new());
         let avgs = mem::replace(&mut self.vals.avgs, VecDeque::new());
-        let ret = MinMaxAvgBinsCollectedResult::<NTY> {
-            ts_anchor_sec: tst.0,
-            ts_off_ms: tst.1,
-            ts_off_ns: tst.2,
+        let ret = BinsDim0CollectedResult::<NTY> {
+            ts_anchor_sec: tst1.0,
+            ts1_off_ms: tst1.1,
+            ts1_off_ns: tst1.2,
+            ts2_off_ms: tst2.0,
+            ts2_off_ns: tst2.1,
             counts,
             mins,
             maxs,
@@ -263,15 +268,15 @@ impl<NTY: ScalarOps> CollectorType for MinMaxAvgBinsCollector<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> CollectableType for MinMaxAvgDim0Bins<NTY> {
-    type Collector = MinMaxAvgBinsCollector<NTY>;
+impl<NTY: ScalarOps> CollectableType for BinsDim0<NTY> {
+    type Collector = BinsDim0Collector<NTY>;
 
     fn new_collector() -> Self::Collector {
         Self::Collector::new()
     }
 }
 
-pub struct MinMaxAvgDim0BinsAggregator<NTY> {
+pub struct BinsDim0Aggregator<NTY> {
     range: NanoRange,
     count: u64,
     min: NTY,
@@ -282,7 +287,7 @@ pub struct MinMaxAvgDim0BinsAggregator<NTY> {
     sum: f32,
 }
 
-impl<NTY: ScalarOps> MinMaxAvgDim0BinsAggregator<NTY> {
+impl<NTY: ScalarOps> BinsDim0Aggregator<NTY> {
     pub fn new(range: NanoRange, _do_time_weight: bool) -> Self {
         Self {
             range,
@@ -296,9 +301,9 @@ impl<NTY: ScalarOps> MinMaxAvgDim0BinsAggregator<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> TimeBinnableTypeAggregator for MinMaxAvgDim0BinsAggregator<NTY> {
-    type Input = MinMaxAvgDim0Bins<NTY>;
-    type Output = MinMaxAvgDim0Bins<NTY>;
+impl<NTY: ScalarOps> TimeBinnableTypeAggregator for BinsDim0Aggregator<NTY> {
+    type Input = BinsDim0<NTY>;
+    type Output = BinsDim0<NTY>;
 
     fn range(&self) -> &NanoRange {
         &self.range
@@ -348,9 +353,9 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for MinMaxAvgDim0BinsAggregator<
     }
 }
 
-impl<NTY: ScalarOps> TimeBinnable for MinMaxAvgDim0Bins<NTY> {
+impl<NTY: ScalarOps> TimeBinnable for BinsDim0<NTY> {
     fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Box<dyn TimeBinner> {
-        let ret = MinMaxAvgDim0BinsTimeBinner::<NTY>::new(edges.into(), do_time_weight);
+        let ret = BinsDim0TimeBinner::<NTY>::new(edges.into(), do_time_weight);
         Box::new(ret)
     }
 
@@ -359,14 +364,14 @@ impl<NTY: ScalarOps> TimeBinnable for MinMaxAvgDim0Bins<NTY> {
     }
 }
 
-pub struct MinMaxAvgDim0BinsTimeBinner<NTY: ScalarOps> {
+pub struct BinsDim0TimeBinner<NTY: ScalarOps> {
     edges: VecDeque<u64>,
     do_time_weight: bool,
-    agg: Option<MinMaxAvgDim0BinsAggregator<NTY>>,
-    ready: Option<<MinMaxAvgDim0BinsAggregator<NTY> as TimeBinnableTypeAggregator>::Output>,
+    agg: Option<BinsDim0Aggregator<NTY>>,
+    ready: Option<<BinsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output>,
 }
 
-impl<NTY: ScalarOps> MinMaxAvgDim0BinsTimeBinner<NTY> {
+impl<NTY: ScalarOps> BinsDim0TimeBinner<NTY> {
     fn new(edges: VecDeque<u64>, do_time_weight: bool) -> Self {
         Self {
             edges,
@@ -390,7 +395,7 @@ impl<NTY: ScalarOps> MinMaxAvgDim0BinsTimeBinner<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> TimeBinner for MinMaxAvgDim0BinsTimeBinner<NTY> {
+impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
     fn ingest(&mut self, item: &dyn TimeBinnable) {
         let self_name = std::any::type_name::<Self>();
         if item.len() == 0 {
@@ -427,7 +432,7 @@ impl<NTY: ScalarOps> TimeBinner for MinMaxAvgDim0BinsTimeBinner<NTY> {
                     let agg = if let Some(agg) = self.agg.as_mut() {
                         agg
                     } else {
-                        self.agg = Some(MinMaxAvgDim0BinsAggregator::new(
+                        self.agg = Some(BinsDim0Aggregator::new(
                             // We know here that we have enough edges for another bin.
                             // and `next_bin_range` will pop the first edge.
                             self.next_bin_range().unwrap(),
@@ -438,7 +443,7 @@ impl<NTY: ScalarOps> TimeBinner for MinMaxAvgDim0BinsTimeBinner<NTY> {
                     if let Some(item) = item
                         .as_any()
                         // TODO make statically sure that we attempt to cast to the correct type here:
-                        .downcast_ref::<<MinMaxAvgDim0BinsAggregator<NTY> as TimeBinnableTypeAggregator>::Input>()
+                        .downcast_ref::<<BinsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Input>()
                     {
                         agg.ingest(item);
                     } else {
@@ -502,7 +507,7 @@ impl<NTY: ScalarOps> TimeBinner for MinMaxAvgDim0BinsTimeBinner<NTY> {
         self.push_in_progress(true);
         if self.bins_ready_count() == n {
             if let Some(_range) = self.next_bin_range() {
-                let bins = MinMaxAvgDim0Bins::<NTY>::empty();
+                let bins = BinsDim0::<NTY>::empty();
                 err::todo();
                 //bins.append_zero(range.beg, range.end);
                 match self.ready.as_mut() {
@@ -524,7 +529,7 @@ impl<NTY: ScalarOps> TimeBinner for MinMaxAvgDim0BinsTimeBinner<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> TimeBinned for MinMaxAvgDim0Bins<NTY> {
+impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnable {
         self as &dyn TimeBinnable
     }
@@ -575,5 +580,9 @@ impl<NTY: ScalarOps> TimeBinned for MinMaxAvgDim0Bins<NTY> {
         } else {
             Err(msg)
         }
+    }
+
+    fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
+        self
     }
 }

@@ -2,7 +2,7 @@ use crate::errconv::ErrConv;
 use crate::events::EventsStreamScylla;
 use err::Error;
 use futures_util::{Future, Stream, StreamExt};
-use items_2::binsdim0::MinMaxAvgDim0Bins;
+use items_2::binsdim0::BinsDim0;
 use items_2::{empty_binned_dyn, empty_events_dyn, ChannelEvents, TimeBinned};
 use netpod::log::*;
 use netpod::query::{CacheUsage, PlainEventsQuery, RawEventsQuery};
@@ -82,7 +82,7 @@ pub async fn read_cached_scylla(
         match &chn.shape {
             Scalar => match &chn.scalar_type {
                 F64 => {
-                    let ret = MinMaxAvgDim0Bins::<f64> {
+                    let ret = BinsDim0::<f64> {
                         ts1s,
                         ts2s,
                         counts,

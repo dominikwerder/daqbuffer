@@ -1,4 +1,4 @@
-use crate::binsdim0::MinMaxAvgDim0Bins;
+use crate::binsdim0::BinsDim0;
 use crate::streams::{CollectableType, CollectorType, ToJsonResult};
 use crate::{pulse_offs_from_abs, ts_offs_from_abs, RangeOverlapInfo};
 use crate::{Empty, Events, ScalarOps, WithLen};
@@ -87,7 +87,7 @@ impl<NTY: ScalarOps> RangeOverlapInfo for EventsDim0<NTY> {
 }
 
 impl<NTY: ScalarOps> TimeBinnableType for EventsDim0<NTY> {
-    type Output = MinMaxAvgDim0Bins<NTY>;
+    type Output = BinsDim0<NTY>;
     type Aggregator = EventValuesAggregator<NTY>;
 
     fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
@@ -122,7 +122,7 @@ impl<NTY> WithLen for EventValuesCollector<NTY> {
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct EventValuesCollectorOutput<NTY> {
     #[serde(rename = "tsAnchor")]
     ts_anchor_sec: u64,
@@ -338,7 +338,7 @@ impl<NTY: ScalarOps> EventValuesAggregator<NTY> {
         }
     }
 
-    fn result_reset_unweight(&mut self, range: NanoRange, _expand: bool) -> MinMaxAvgDim0Bins<NTY> {
+    fn result_reset_unweight(&mut self, range: NanoRange, _expand: bool) -> BinsDim0<NTY> {
         let (min, max, avg) = if self.sumc > 0 {
             let avg = self.sum / self.sumc as f32;
             (self.min.clone(), self.max.clone(), avg)
@@ -349,7 +349,7 @@ impl<NTY: ScalarOps> EventValuesAggregator<NTY> {
             };
             (g.clone(), g.clone(), g.as_prim_f32())
         };
-        let ret = MinMaxAvgDim0Bins {
+        let ret = BinsDim0 {
             ts1s: [self.range.beg].into(),
             ts2s: [self.range.end].into(),
             counts: [self.count].into(),
@@ -365,7 +365,7 @@ impl<NTY: ScalarOps> EventValuesAggregator<NTY> {
         ret
     }
 
-    fn result_reset_time_weight(&mut self, range: NanoRange, expand: bool) -> MinMaxAvgDim0Bins<NTY> {
+    fn result_reset_time_weight(&mut self, range: NanoRange, expand: bool) -> BinsDim0<NTY> {
         // TODO check callsite for correct expand status.
         if expand {
             debug!("result_reset_time_weight calls apply_event_time_weight");
@@ -383,7 +383,7 @@ impl<NTY: ScalarOps> EventValuesAggregator<NTY> {
             };
             (g.clone(), g.clone(), g.as_prim_f32())
         };
-        let ret = MinMaxAvgDim0Bins {
+        let ret = BinsDim0 {
             ts1s: [self.range.beg].into(),
             ts2s: [self.range.end].into(),
             counts: [self.count].into(),
@@ -402,14 +402,16 @@ impl<NTY: ScalarOps> EventValuesAggregator<NTY> {
 
 impl<NTY: ScalarOps> TimeBinnableTypeAggregator for EventValuesAggregator<NTY> {
     type Input = EventsDim0<NTY>;
-    type Output = MinMaxAvgDim0Bins<NTY>;
+    type Output = BinsDim0<NTY>;
 
     fn range(&self) -> &NanoRange {
         &self.range
     }
 
     fn ingest(&mut self, item: &Self::Input) {
-        debug!("ingest  len {}", item.len());
+        for ts in &item.tss {
+            eprintln!("EventValuesAggregator ingest {ts:20}");
+        }
         if self.do_time_weight {
             self.ingest_time_weight(item)
         } else {
@@ -512,6 +514,8 @@ pub struct ScalarEventsTimeBinner<NTY: ScalarOps> {
 
 impl<NTY: ScalarOps> ScalarEventsTimeBinner<NTY> {
     fn new(edges: VecDeque<u64>, do_time_weight: bool) -> Self {
+        let self_name = std::any::type_name::<Self>();
+        eprintln!("{self_name}::new  edges {edges:?}");
         Self {
             edges,
             do_time_weight,
@@ -661,7 +665,7 @@ impl<NTY: ScalarOps> TimeBinner for ScalarEventsTimeBinner<NTY> {
         self.push_in_progress(true);
         if self.bins_ready_count() == n {
             if let Some(_range) = self.next_bin_range() {
-                let bins = MinMaxAvgDim0Bins::<NTY>::empty();
+                let bins = BinsDim0::<NTY>::empty();
                 error!("TODO eventsdim0 time binner append");
                 err::todo();
                 //bins.append_zero(range.beg, range.end);

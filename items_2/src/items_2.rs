@@ -6,6 +6,7 @@ pub mod test;
 
 use chrono::{DateTime, TimeZone, Utc};
 use futures_util::Stream;
+use futures_util::StreamExt;
 use netpod::log::*;
 use netpod::timeunits::*;
 use netpod::{AggKind, NanoRange, ScalarType, Shape};
@@ -17,6 +18,7 @@ use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use streams::Collectable;
+use streams::ToJsonResult;
 
 pub fn bool_is_false(x: &bool) -> bool {
     *x == false
@@ -33,6 +35,17 @@ pub fn ts_offs_from_abs(tss: &[u64]) -> (u64, VecDeque<u64>, VecDeque<u64>) {
         .map(|(&j, k)| (j - ts_anchor_ns - k))
         .collect();
     (ts_anchor_sec, ts_off_ms, ts_off_ns)
+}
+
+pub fn ts_offs_from_abs_with_anchor(ts_anchor_sec: u64, tss: &[u64]) -> (VecDeque<u64>, VecDeque<u64>) {
+    let ts_anchor_ns = ts_anchor_sec * SEC;
+    let ts_off_ms: VecDeque<_> = tss.iter().map(|&k| (k - ts_anchor_ns) / MS).collect();
+    let ts_off_ns = tss
+        .iter()
+        .zip(ts_off_ms.iter().map(|&k| k * MS))
+        .map(|(&j, k)| (j - ts_anchor_ns - k))
+        .collect();
+    (ts_off_ms, ts_off_ns)
 }
 
 // TODO take iterator instead of slice, because a VecDeque can't produce a slice in general.
@@ -112,6 +125,7 @@ struct Ts(u64);
 
 #[derive(Debug, PartialEq)]
 pub enum ErrorKind {
+    General,
     #[allow(unused)]
     MismatchedType,
 }
@@ -120,11 +134,27 @@ pub enum ErrorKind {
 pub struct Error {
     #[allow(unused)]
     kind: ErrorKind,
+    msg: Option<String>,
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{self:?}")
+    }
 }
 
 impl From<ErrorKind> for Error {
     fn from(kind: ErrorKind) -> Self {
-        Self { kind }
+        Self { kind, msg: None }
+    }
+}
+
+impl From<String> for Error {
+    fn from(msg: String) -> Self {
+        Self {
+            msg: Some(msg),
+            kind: ErrorKind::General,
+        }
     }
 }
 
@@ -190,9 +220,9 @@ pub fn make_iso_ts(tss: &[u64]) -> Vec<IsoDateTime> {
 }
 
 pub trait TimeBinner: Send {
+    fn ingest(&mut self, item: &dyn TimeBinnable);
     fn bins_ready_count(&self) -> usize;
     fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>>;
-    fn ingest(&mut self, item: &dyn TimeBinnable);
 
     /// If there is a bin in progress with non-zero count, push it to the result set.
     /// With push_empty == true, a bin in progress is pushed even if it contains no counts.
@@ -206,13 +236,13 @@ pub trait TimeBinner: Send {
 
 /// Provides a time-binned representation of the implementing type.
 /// In contrast to `TimeBinnableType` this is meant for trait objects.
-pub trait TimeBinnable: WithLen + RangeOverlapInfo + Any + Send {
+pub trait TimeBinnable: fmt::Debug + WithLen + RangeOverlapInfo + Any + Send {
     fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Box<dyn TimeBinner>;
     fn as_any(&self) -> &dyn Any;
 }
 
 /// Container of some form of events, for use as trait object.
-pub trait Events: fmt::Debug + Any + Collectable + TimeBinnable {
+pub trait Events: fmt::Debug + Any + Collectable + TimeBinnable + Send {
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnable;
     fn verify(&self);
     fn output_info(&self);
@@ -229,8 +259,9 @@ impl PartialEq for Box<dyn Events> {
 }
 
 /// Data in time-binned form.
-pub trait TimeBinned: TimeBinnable {
+pub trait TimeBinned: Any + TimeBinnable {
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnable;
+    fn as_collectable_mut(&mut self) -> &mut dyn Collectable;
     fn edges_slice(&self) -> (&[u64], &[u64]);
     fn counts(&self) -> &[u64];
     fn mins(&self) -> Vec<f32>;
@@ -297,7 +328,7 @@ pub fn empty_binned_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggK
         Shape::Scalar => match agg_kind {
             AggKind::TimeWeightedScalar => {
                 use ScalarType::*;
-                type K<T> = binsdim0::MinMaxAvgDim0Bins<T>;
+                type K<T> = binsdim0::BinsDim0<T>;
                 match scalar_type {
                     U8 => Box::new(K::<u8>::empty()),
                     U16 => Box::new(K::<u16>::empty()),
@@ -323,7 +354,7 @@ pub fn empty_binned_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggK
         Shape::Wave(_n) => match agg_kind {
             AggKind::DimXBins1 => {
                 use ScalarType::*;
-                type K<T> = binsdim0::MinMaxAvgDim0Bins<T>;
+                type K<T> = binsdim0::BinsDim0<T>;
                 match scalar_type {
                     U8 => Box::new(K::<u8>::empty()),
                     F32 => Box::new(K::<f32>::empty()),
@@ -418,8 +449,8 @@ impl MergableEvents for ChannelEvents {
 }
 
 pub struct ChannelEventsMerger {
-    inp1: Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>>>>,
-    inp2: Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>>>>,
+    inp1: Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>> + Send>>,
+    inp2: Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>> + Send>>,
     inp1_done: bool,
     inp2_done: bool,
     inp1_item: Option<ChannelEvents>,
@@ -432,8 +463,8 @@ pub struct ChannelEventsMerger {
 
 impl ChannelEventsMerger {
     pub fn new(
-        inp1: Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>>>>,
-        inp2: Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>>>>,
+        inp1: Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>> + Send>>,
+        inp2: Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>> + Send>>,
     ) -> Self {
         Self {
             done: false,
@@ -680,5 +711,86 @@ impl Collectable for Box<dyn Collectable> {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         Collectable::as_any_mut(self.as_mut())
+    }
+}
+
+pub async fn binned_collected(
+    inp: Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>> + Send>>,
+) -> Result<Box<dyn ToJsonResult>, Error> {
+    let mut coll = None;
+    let mut binner = None;
+    let edges: Vec<_> = (0..10).into_iter().map(|t| SEC * 10 * t).collect();
+    let do_time_weight = true;
+    let mut inp = inp;
+    while let Some(item) = inp.next().await {
+        let item = item?;
+        match item {
+            ChannelEvents::Events(events) => {
+                if binner.is_none() {
+                    let bb = events
+                        .as_time_binnable_dyn()
+                        .time_binner_new(edges.clone(), do_time_weight);
+                    binner = Some(bb);
+                }
+                let binner = binner.as_mut().unwrap();
+                binner.ingest(events.as_time_binnable_dyn());
+                eprintln!("bins_ready_count: {}", binner.bins_ready_count());
+                if binner.bins_ready_count() > 0 {
+                    let ready = binner.bins_ready();
+                    match ready {
+                        Some(mut ready) => {
+                            eprintln!("ready {ready:?}");
+                            if coll.is_none() {
+                                coll = Some(ready.as_collectable_mut().new_collector());
+                            }
+                            let cl = coll.as_mut().unwrap();
+                            cl.ingest(ready.as_collectable_mut());
+                        }
+                        None => {
+                            return Err(format!("bins_ready_count but no result").into());
+                        }
+                    }
+                }
+            }
+            ChannelEvents::Status(_) => {
+                eprintln!("TODO Status");
+            }
+            ChannelEvents::RangeComplete => {
+                eprintln!("TODO RangeComplete");
+            }
+        }
+    }
+    if let Some(mut binner) = binner {
+        binner.cycle();
+        // TODO merge with the same logic above in the loop.
+        if binner.bins_ready_count() > 0 {
+            let ready = binner.bins_ready();
+            match ready {
+                Some(mut ready) => {
+                    eprintln!("ready {ready:?}");
+                    if coll.is_none() {
+                        coll = Some(ready.as_collectable_mut().new_collector());
+                    }
+                    let cl = coll.as_mut().unwrap();
+                    cl.ingest(ready.as_collectable_mut());
+                }
+                None => {
+                    return Err(format!("bins_ready_count but no result").into());
+                }
+            }
+        }
+    }
+    match coll {
+        Some(mut coll) => {
+            let res = coll.result().map_err(|e| format!("{e}"))?;
+            //let res = res.to_json_result().map_err(|e| format!("{e}"))?;
+            //let res = res.to_json_bytes().map_err(|e| format!("{e}"))?;
+            eprintln!("res {res:?}");
+            Ok(res)
+        }
+        None => {
+            //empty_binned_dyn(scalar_type, shape, agg_kind)
+            Err(format!("TODO produce empty result"))?
+        }
     }
 }

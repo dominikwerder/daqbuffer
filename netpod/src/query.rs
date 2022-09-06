@@ -521,12 +521,12 @@ pub fn agg_kind_from_binning_scheme(pairs: &BTreeMap<String, String>) -> Result<
 }
 
 #[derive(Clone, Debug)]
-pub struct ChannelStateEvents {
+pub struct ChannelStateEventsQuery {
     channel: Channel,
     range: NanoRange,
 }
 
-impl ChannelStateEvents {
+impl ChannelStateEventsQuery {
     pub fn new(channel: Channel, range: NanoRange) -> Self {
         Self { channel, range }
     }
@@ -548,19 +548,19 @@ impl ChannelStateEvents {
     }
 }
 
-impl HasBackend for ChannelStateEvents {
+impl HasBackend for ChannelStateEventsQuery {
     fn backend(&self) -> &str {
         &self.channel.backend
     }
 }
 
-impl HasTimeout for ChannelStateEvents {
+impl HasTimeout for ChannelStateEventsQuery {
     fn timeout(&self) -> Duration {
         Duration::from_millis(6000)
     }
 }
 
-impl FromUrl for ChannelStateEvents {
+impl FromUrl for ChannelStateEventsQuery {
     fn from_url(url: &Url) -> Result<Self, Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
@@ -582,7 +582,7 @@ impl FromUrl for ChannelStateEvents {
     }
 }
 
-impl AppendToUrl for ChannelStateEvents {
+impl AppendToUrl for ChannelStateEventsQuery {
     fn append_to_url(&self, url: &mut Url) {
         let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
         self.channel.append_to_url(url);

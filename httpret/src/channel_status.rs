@@ -3,7 +3,7 @@ use crate::err::Error;
 use dbconn::events_scylla::channel_state_events;
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
-use netpod::query::ChannelStateEvents;
+use netpod::query::ChannelStateEventsQuery;
 use netpod::{FromUrl, NodeConfigCached, ACCEPT_ALL, APP_JSON};
 use url::Url;
 
@@ -27,7 +27,7 @@ impl ChannelStatusConnectionEvents {
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept == APP_JSON || accept == ACCEPT_ALL {
                 let url = Url::parse(&format!("dummy:{}", req.uri()))?;
-                let q = ChannelStateEvents::from_url(&url)?;
+                let q = ChannelStateEventsQuery::from_url(&url)?;
                 match self.fetch_data(&q, node_config).await {
                     Ok(k) => {
                         let body = Body::from(serde_json::to_vec(&k)?);
@@ -46,7 +46,7 @@ impl ChannelStatusConnectionEvents {
 
     async fn fetch_data(
         &self,
-        q: &ChannelStateEvents,
+        q: &ChannelStateEventsQuery,
         node_config: &NodeConfigCached,
     ) -> Result<Vec<(u64, u32)>, Error> {
         let dbconf = &node_config.node_config.cluster.database;

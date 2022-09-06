@@ -2,11 +2,11 @@ use crate::errconv::ErrConv;
 use err::Error;
 use futures_util::{Future, FutureExt, Stream, StreamExt};
 use items_2::eventsdim0::EventsDim0;
-use items_2::{ChannelEvents, Empty, Events};
+use items_2::{ChannelEvents, ConnStatus, ConnStatusEvent, Empty, Events};
 use netpod::log::*;
-use netpod::query::{ChannelStateEvents, PlainEventsQuery};
+use netpod::query::{ChannelStateEventsQuery, PlainEventsQuery};
 use netpod::timeunits::*;
-use netpod::{Channel, Database, NanoRange, ScalarType, Shape};
+use netpod::{Channel, NanoRange, ScalarType, Shape};
 use scylla::Session as ScySession;
 use std::collections::VecDeque;
 use std::pin::Pin;
@@ -568,39 +568,57 @@ pub async fn make_scylla_stream(
 }
 
 pub async fn channel_state_events(
-    evq: &ChannelStateEvents,
+    evq: &ChannelStateEventsQuery,
     scy: Arc<ScySession>,
-    _dbconf: Database,
-) -> Result<Vec<(u64, u32)>, Error> {
-    let mut ret = Vec::new();
-    let div = DAY;
-    let mut ts_msp = evq.range().beg / div * div;
-    loop {
-        let series = (evq
-            .channel()
-            .series()
-            .ok_or(Error::with_msg_no_trace(format!("series id not given"))))?;
-        let params = (series as i64, ts_msp as i64);
-        let mut res = scy
-            .query_iter(
-                "select ts_lsp, kind from channel_status where series = ? and ts_msp = ?",
-                params,
-            )
-            .await
-            .err_conv()?;
-        while let Some(row) = res.next().await {
-            let row = row.err_conv()?;
-            let (ts_lsp, kind): (i64, i32) = row.into_typed().err_conv()?;
-            let ts = ts_msp + ts_lsp as u64;
-            let kind = kind as u32;
-            if ts >= evq.range().beg && ts < evq.range().end {
-                ret.push((ts, kind));
+) -> Result<Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>> + Send>>, Error> {
+    let (tx, rx) = async_channel::bounded(8);
+    let evq = evq.clone();
+    let fut = async move {
+        let div = DAY;
+        let mut ts_msp = evq.range().beg / div * div;
+        loop {
+            let series = (evq
+                .channel()
+                .series()
+                .ok_or(Error::with_msg_no_trace(format!("series id not given"))))?;
+            let params = (series as i64, ts_msp as i64);
+            let mut res = scy
+                .query_iter(
+                    "select ts_lsp, kind from channel_status where series = ? and ts_msp = ?",
+                    params,
+                )
+                .await
+                .err_conv()?;
+            while let Some(row) = res.next().await {
+                let row = row.err_conv()?;
+                let (ts_lsp, kind): (i64, i32) = row.into_typed().err_conv()?;
+                let ts = ts_msp + ts_lsp as u64;
+                let kind = kind as u32;
+                if ts >= evq.range().beg && ts < evq.range().end {
+                    let status = match kind {
+                        1 => ConnStatus::Connect,
+                        2 => ConnStatus::Disconnect,
+                        _ => {
+                            let e = Error::with_msg_no_trace(format!("bad status kind {kind}"));
+                            let e2 = Error::with_msg_no_trace(format!("bad status kind {kind}"));
+                            let _ = tx.send(Err(e)).await;
+                            return Err(e2);
+                        }
+                    };
+                    let ev = ConnStatusEvent { ts, status };
+                    tx.send(Ok(ChannelEvents::Status(ev)))
+                        .await
+                        .map_err(|e| format!("{e}"))?;
+                }
+            }
+            ts_msp += DAY;
+            if ts_msp >= evq.range().end {
+                break;
             }
         }
-        ts_msp += DAY;
-        if ts_msp >= evq.range().end {
-            break;
-        }
-    }
-    Ok(ret)
+        Ok(())
+    };
+    // TODO join the task (better: rewrite as proper stream)
+    tokio::spawn(fut);
+    Ok(Box::pin(rx))
 }
