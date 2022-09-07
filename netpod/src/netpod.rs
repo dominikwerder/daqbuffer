@@ -1050,24 +1050,32 @@ const PATCH_T_LEN_OPTIONS_WAVE: [u64; 3] = [
     DAY * 32,
 ];
 
-const BIN_THRESHOLDS: [u64; 31] = [
-    2,
-    10,
-    100,
-    1000,
-    10_000,
-    100_000,
+const BIN_THRESHOLDS: [u64; 39] = [
     MU,
+    MU * 2,
+    MU * 5,
     MU * 10,
+    MU * 20,
+    MU * 50,
     MU * 100,
+    MU * 200,
+    MU * 500,
     MS,
+    MS * 2,
+    MS * 5,
     MS * 10,
+    MS * 20,
+    MS * 50,
     MS * 100,
+    MS * 200,
+    MS * 500,
     SEC,
+    SEC * 2,
     SEC * 5,
     SEC * 10,
     SEC * 20,
     MIN,
+    MIN * 2,
     MIN * 5,
     MIN * 10,
     MIN * 20,
@@ -1386,7 +1394,7 @@ pub struct BinnedRange {
 }
 
 impl BinnedRange {
-    pub fn covering_range(range: NanoRange, min_bin_count: u32) -> Result<Option<Self>, Error> {
+    pub fn covering_range(range: NanoRange, min_bin_count: u32) -> Result<Self, Error> {
         let thresholds = &BIN_THRESHOLDS;
         if min_bin_count < 1 {
             Err(Error::with_msg("min_bin_count < 1"))?;
@@ -1402,7 +1410,7 @@ impl BinnedRange {
         let mut i1 = thresholds.len();
         loop {
             if i1 <= 0 {
-                break Ok(None);
+                panic!();
             } else {
                 i1 -= 1;
                 let t = thresholds[i1];
@@ -1418,7 +1426,7 @@ impl BinnedRange {
                         count,
                         offset,
                     };
-                    break Ok(Some(ret));
+                    break Ok(ret);
                 }
             }
         }
@@ -1433,9 +1441,20 @@ impl BinnedRange {
 
     pub fn full_range(&self) -> NanoRange {
         NanoRange {
-            beg: (self.offset + 0) * self.grid_spec.bin_t_len,
+            beg: self.offset * self.grid_spec.bin_t_len,
             end: (self.offset + self.count) * self.grid_spec.bin_t_len,
         }
+    }
+
+    pub fn edges(&self) -> Vec<u64> {
+        let mut ret = Vec::new();
+        let mut t = self.offset * self.grid_spec.bin_t_len;
+        let end = (self.offset + self.count) * self.grid_spec.bin_t_len;
+        while t <= end {
+            ret.push(t);
+            t += self.grid_spec.bin_t_len;
+        }
+        ret
     }
 }
 

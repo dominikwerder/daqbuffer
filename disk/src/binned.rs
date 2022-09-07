@@ -75,10 +75,7 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
             FrameType + Framable + DeserializeOwned,
     {
         let _ = event_value_shape;
-        let range =
-            BinnedRange::covering_range(self.query.range().clone(), self.query.bin_count())?.ok_or(Error::with_msg(
-                format!("BinnedBinaryChannelExec  BinnedRange::covering_range returned None"),
-            ))?;
+        let range = BinnedRange::covering_range(self.query.range().clone(), self.query.bin_count())?;
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
         let souter = match PreBinnedPatchRange::covering_range(self.query.range().clone(), self.query.bin_count()) {
             Ok(Some(pre_range)) => {
@@ -328,10 +325,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
             FrameType + Framable + DeserializeOwned,
     {
         let _ = event_value_shape;
-        let range =
-            BinnedRange::covering_range(self.query.range().clone(), self.query.bin_count())?.ok_or(Error::with_msg(
-                format!("BinnedJsonChannelExec  BinnedRange::covering_range returned None"),
-            ))?;
+        let range = BinnedRange::covering_range(self.query.range().clone(), self.query.bin_count())?;
         let t_bin_count = range.count as u32;
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
         let souter = match PreBinnedPatchRange::covering_range(self.query.range().clone(), self.query.bin_count()) {

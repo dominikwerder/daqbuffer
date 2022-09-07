@@ -2,7 +2,7 @@ use crate::errconv::ErrConv;
 use err::Error;
 use futures_util::{Future, FutureExt, Stream, StreamExt};
 use items_2::eventsdim0::EventsDim0;
-use items_2::{ChannelEvents, ConnStatus, ConnStatusEvent, Empty, Events};
+use items_2::{ChannelEvents, ConnStatus, ConnStatusEvent, Empty, Events, WithLen};
 use netpod::log::*;
 use netpod::query::{ChannelStateEventsQuery, PlainEventsQuery};
 use netpod::timeunits::*;
@@ -17,16 +17,14 @@ use tokio_postgres::Client as PgClient;
 macro_rules! read_values {
     ($fname:ident, $self:expr, $ts_msp:expr) => {{
         let fut = $fname($self.series, $ts_msp, $self.range.clone(), $self.fwd, $self.scy.clone());
-        let fut = fut.map(|x| {
-            match x {
-                Ok(k) => {
-                    // TODO why static needed?
-                    //let b = Box::new(k) as Box<dyn Events + 'static>;
-                    let b = Box::new(k) as Box<dyn Events>;
-                    Ok(b)
-                }
-                Err(e) => Err(e),
+        let fut = fut.map(|x| match x {
+            Ok(k) => {
+                let self_name = std::any::type_name::<Self>();
+                info!("{self_name} read values len {}", k.len());
+                let b = Box::new(k) as Box<dyn Events>;
+                Ok(b)
             }
+            Err(e) => Err(e),
         });
         let fut = Box::pin(fut) as Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>>;
         fut
@@ -347,7 +345,6 @@ impl Stream for EventsStreamScylla {
                 },
                 FrState::ReadValues(ref mut st) => match st.fut.poll_unpin(cx) {
                     Ready(Ok(item)) => {
-                        info!("read values");
                         item.verify();
                         item.output_info();
                         if !st.next() {
@@ -365,7 +362,7 @@ impl Stream for EventsStreamScylla {
     }
 }
 
-async fn find_series(channel: &Channel, pgclient: Arc<PgClient>) -> Result<(u64, ScalarType, Shape), Error> {
+pub async fn find_series(channel: &Channel, pgclient: Arc<PgClient>) -> Result<(u64, ScalarType, Shape), Error> {
     info!("find_series  channel {:?}", channel);
     let rows = if let Some(series) = channel.series() {
         let q = "select series, facility, channel, scalar_type, shape_dims from series_by_channel where series = $1";
@@ -549,13 +546,12 @@ read_next_array_values!(read_next_values_array_u16, u16, i16, "events_wave_u16")
 
 pub async fn make_scylla_stream(
     evq: &PlainEventsQuery,
+    series: u64,
+    scalar_type: ScalarType,
+    shape: Shape,
     scy: Arc<ScySession>,
-    pgclient: &Arc<PgClient>,
     do_test_stream_error: bool,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>> + Send>>, Error> {
-    // Need to know details about the series in order to fetch data:
-    // TODO should query already contain ScalarType and Shape?
-    let (series, scalar_type, shape) = { find_series(evq.channel(), pgclient.clone()).await? };
     let res = Box::pin(EventsStreamScylla::new(
         series,
         evq,

@@ -10,6 +10,10 @@ use std::num::{ParseFloatError, ParseIntError};
 use std::string::FromUtf8Error;
 use std::sync::PoisonError;
 
+pub mod bt {
+    pub use backtrace::Backtrace;
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum Reason {
     InternalError,
@@ -409,9 +413,13 @@ impl From<&Error> for PublicError {
 }
 
 pub fn todo() {
-    todo!("TODO");
+    let bt = backtrace::Backtrace::new();
+    eprintln!("TODO\n{bt:?}");
+    todo!("TODO\n{bt:?}");
 }
 
 pub fn todoval<T>() -> T {
-    todo!("TODO todoval")
+    let bt = backtrace::Backtrace::new();
+    eprintln!("TODO\n{bt:?}");
+    todo!("TODO todoval\n{bt:?}")
 }

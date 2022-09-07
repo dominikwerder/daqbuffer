@@ -7,11 +7,11 @@ use hyper::Body;
 use items_2::{binned_collected, ChannelEvents, ChannelEventsMerger};
 use netpod::log::*;
 use netpod::query::{BinnedQuery, ChannelStateEventsQuery, PlainEventsQuery};
-use netpod::{AggKind, FromUrl, NodeConfigCached};
+use netpod::{AggKind, BinnedRange, FromUrl, NodeConfigCached};
 use netpod::{ACCEPT_ALL, APP_JSON, APP_OCTET};
 use scyllaconn::create_scy_session;
 use scyllaconn::errconv::ErrConv;
-use scyllaconn::events::{channel_state_events, make_scylla_stream};
+use scyllaconn::events::{channel_state_events, find_series, make_scylla_stream};
 use std::pin::Pin;
 use std::sync::Arc;
 use url::Url;
@@ -184,7 +184,8 @@ impl EventsHandlerScylla {
         };
         let mut stream = if let Some(scyco) = &node_config.node_config.cluster.scylla {
             let scy = create_scy_session(scyco).await?;
-            let stream = make_scylla_stream(&evq, scy, &pgclient, false).await?;
+            let (series, scalar_type, shape) = { find_series(evq.channel(), pgclient.clone()).await? };
+            let stream = make_scylla_stream(&evq, series, scalar_type.clone(), shape.clone(), scy, false).await?;
             stream
         } else {
             return Err(Error::with_public_msg(format!("no scylla configured")));
@@ -195,7 +196,7 @@ impl EventsHandlerScylla {
                 Ok(k) => match k {
                     ChannelEvents::Events(mut item) => {
                         if coll.is_none() {
-                            coll = Some(item.new_collector());
+                            coll = Some(item.new_collector(0));
                         }
                         let cl = coll.as_mut().unwrap();
                         cl.ingest(item.as_collectable_mut());
@@ -244,7 +245,10 @@ impl BinnedHandlerScylla {
         }
         match self.fetch(req, node_config).await {
             Ok(ret) => Ok(ret),
-            Err(e) => Ok(e.to_public_response()),
+            Err(e) => {
+                eprintln!("error: {e}");
+                Ok(e.to_public_response())
+            }
         }
     }
 
@@ -287,17 +291,41 @@ impl BinnedHandlerScylla {
             let mut query2 = PlainEventsQuery::new(evq.channel().clone(), evq.range().clone(), 0, None, false);
             query2.set_timeout(evq.timeout());
             let query2 = query2;
-            let stream = make_scylla_stream(&query2, scy.clone(), &pgclient, false).await?;
+            let (series, scalar_type, shape) = { find_series(evq.channel(), pgclient.clone()).await? };
+            let stream =
+                make_scylla_stream(&query2, series, scalar_type.clone(), shape.clone(), scy.clone(), false).await?;
             let query3 = ChannelStateEventsQuery::new(evq.channel().clone(), evq.range().clone());
-            let state_stream = channel_state_events(&query3, scy.clone()).await?;
+            let state_stream = channel_state_events(&query3, scy.clone())
+                .await?
+                .map(|x| {
+                    //eprintln!("state_stream {x:?}");
+                    x
+                })
+                .map_err(|e| items_2::Error::from(format!("{e}")));
             // TODO let the stream itself use the items_2 error, do not convert here.
-            let data_stream = Box::pin(stream.map_err(|e| items_2::Error::from(format!("{e}"))));
-            let state_stream = Box::pin(state_stream.map_err(|e| items_2::Error::from(format!("{e}"))));
-            let merged_stream = ChannelEventsMerger::new(data_stream, state_stream);
+            let data_stream = stream
+                .map(|x| {
+                    //eprintln!("data_stream {x:?}");
+                    x
+                })
+                .map_err(|e| items_2::Error::from(format!("{e}")));
+            let data_stream = Box::pin(data_stream) as _;
+            let state_stream = Box::pin(state_stream) as _;
+            let merged_stream = ChannelEventsMerger::new(vec![data_stream, state_stream]);
             let merged_stream = Box::pin(merged_stream) as Pin<Box<dyn Stream<Item = _> + Send>>;
-            let binned_collected = binned_collected(merged_stream)
-                .await
-                .map_err(|e| Error::with_msg_no_trace(format!("{e}")))?;
+            let covering = BinnedRange::covering_range(evq.range().clone(), evq.bin_count())?;
+            //eprintln!("edges {:?}", covering.edges());
+            // TODO return partial result if timed out.
+            let binned_collected = binned_collected(
+                scalar_type.clone(),
+                shape.clone(),
+                evq.agg_kind().clone(),
+                covering.edges(),
+                evq.timeout(),
+                merged_stream,
+            )
+            .await
+            .map_err(|e| Error::with_msg_no_trace(format!("{e}")))?;
             let res = binned_collected.to_json_result()?;
             let res = res.to_json_bytes()?;
             let ret = response(StatusCode::OK).body(Body::from(res))?;

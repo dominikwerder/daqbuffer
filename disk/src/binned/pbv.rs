@@ -123,8 +123,7 @@ where
         }
         // TODO do I need to set up more transformations or binning to deliver the requested data?
         let count = self.query.patch().patch_t_len() / self.query.patch().bin_t_len();
-        let range = BinnedRange::covering_range(evq.range.clone(), count as u32)?
-            .ok_or(Error::with_msg("covering_range returns None"))?;
+        let range = BinnedRange::covering_range(evq.range.clone(), count as u32)?;
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
         let s = MergedFromRemotes::<ENP>::new(evq, perf_opts, self.node_config.node_config.cluster.clone());
         let ret = TBinnerStream::<_, <ENP as EventsNodeProcessor>::Output>::new(

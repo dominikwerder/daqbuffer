@@ -45,7 +45,7 @@ where
     }
 }
 
-impl<NTY> BinsDim0<NTY> {
+impl<NTY: ScalarOps> BinsDim0<NTY> {
     pub fn empty() -> Self {
         Self {
             ts1s: VecDeque::new(),
@@ -55,6 +55,24 @@ impl<NTY> BinsDim0<NTY> {
             maxs: VecDeque::new(),
             avgs: VecDeque::new(),
         }
+    }
+
+    pub fn append_zero(&mut self, beg: u64, end: u64) {
+        self.ts1s.push_back(beg);
+        self.ts2s.push_back(end);
+        self.counts.push_back(0);
+        self.mins.push_back(NTY::zero());
+        self.maxs.push_back(NTY::zero());
+        self.avgs.push_back(0.);
+    }
+
+    pub fn append_all_from(&mut self, src: &mut Self) {
+        self.ts1s.extend(src.ts1s.drain(..));
+        self.ts2s.extend(src.ts2s.drain(..));
+        self.counts.extend(src.counts.drain(..));
+        self.mins.extend(src.mins.drain(..));
+        self.maxs.extend(src.maxs.drain(..));
+        self.avgs.extend(src.avgs.drain(..));
     }
 }
 
@@ -170,10 +188,40 @@ pub struct BinsDim0CollectedResult<NTY> {
     continue_at: Option<IsoDateTime>,
 }
 
+impl<NTY> BinsDim0CollectedResult<NTY> {
+    pub fn ts_anchor_sec(&self) -> u64 {
+        self.ts_anchor_sec
+    }
+
+    pub fn counts(&self) -> &VecDeque<u64> {
+        &self.counts
+    }
+
+    pub fn missing_bins(&self) -> u32 {
+        self.missing_bins
+    }
+
+    pub fn continue_at(&self) -> Option<IsoDateTime> {
+        self.continue_at.clone()
+    }
+
+    pub fn mins(&self) -> &VecDeque<NTY> {
+        &self.mins
+    }
+
+    pub fn maxs(&self) -> &VecDeque<NTY> {
+        &self.maxs
+    }
+}
+
 impl<NTY: ScalarOps> ToJsonResult for BinsDim0CollectedResult<NTY> {
     fn to_json_result(&self) -> Result<Box<dyn crate::streams::ToJsonBytes>, Error> {
         let k = serde_json::to_value(self)?;
         Ok(Box::new(k))
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -181,14 +229,16 @@ pub struct BinsDim0Collector<NTY> {
     timed_out: bool,
     range_complete: bool,
     vals: BinsDim0<NTY>,
+    bin_count_exp: u32,
 }
 
 impl<NTY> BinsDim0Collector<NTY> {
-    pub fn new() -> Self {
+    pub fn new(bin_count_exp: u32) -> Self {
         Self {
             timed_out: false,
             range_complete: false,
             vals: BinsDim0::<NTY>::empty(),
+            bin_count_exp,
         }
     }
 }
@@ -223,25 +273,21 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
 
     fn result(&mut self) -> Result<Self::Output, Error> {
         let bin_count = self.vals.ts1s.len() as u32;
-        // TODO save the clone:
-        let mut ts_all = self.vals.ts1s.clone();
-        if self.vals.ts2s.len() > 0 {
-            ts_all.push_back(*self.vals.ts2s.back().unwrap());
-        }
-        info!("TODO return proper continueAt");
-        let bin_count_exp = 100 as u32;
-        let continue_at = if self.vals.ts1s.len() < bin_count_exp as usize {
-            match ts_all.back() {
+        let (missing_bins, continue_at) = if bin_count < self.bin_count_exp {
+            match self.vals.ts2s.back() {
                 Some(&k) => {
                     let iso = IsoDateTime(Utc.timestamp_nanos(k as i64));
-                    Some(iso)
+                    (self.bin_count_exp - bin_count, Some(iso))
                 }
                 None => Err(Error::with_msg("partial_content but no bin in result"))?,
             }
         } else {
-            None
+            (0, None)
         };
-        if ts_all.as_slices().1.len() != 0 {
+        if self.vals.ts1s.as_slices().1.len() != 0 {
+            panic!();
+        }
+        if self.vals.ts2s.as_slices().1.len() != 0 {
             panic!();
         }
         let tst1 = ts_offs_from_abs(self.vals.ts1s.as_slices().0);
@@ -261,7 +307,7 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
             maxs,
             avgs,
             finalised_range: self.range_complete,
-            missing_bins: bin_count_exp - bin_count,
+            missing_bins,
             continue_at,
         };
         Ok(ret)
@@ -271,8 +317,8 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
 impl<NTY: ScalarOps> CollectableType for BinsDim0<NTY> {
     type Collector = BinsDim0Collector<NTY>;
 
-    fn new_collector() -> Self::Collector {
-        Self::Collector::new()
+    fn new_collector(bin_count_exp: u32) -> Self::Collector {
+        Self::Collector::new(bin_count_exp)
     }
 }
 
@@ -361,6 +407,11 @@ impl<NTY: ScalarOps> TimeBinnable for BinsDim0<NTY> {
 
     fn as_any(&self) -> &dyn Any {
         self as &dyn Any
+    }
+
+    fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
+        let k = serde_json::to_value(self).unwrap();
+        Box::new(k) as _
     }
 }
 
@@ -484,14 +535,13 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
         let expand = true;
         if let Some(agg) = self.agg.as_mut() {
             let dummy_range = NanoRange { beg: 4, end: 5 };
-            let bins = agg.result_reset(dummy_range, expand);
+            let mut bins = agg.result_reset(dummy_range, expand);
             self.agg = None;
             assert_eq!(bins.len(), 1);
             if push_empty || bins.counts[0] != 0 {
                 match self.ready.as_mut() {
-                    Some(_ready) => {
-                        err::todo();
-                        //ready.append(&mut bins);
+                    Some(ready) => {
+                        ready.append_all_from(&mut bins);
                     }
                     None => {
                         self.ready = Some(bins);
@@ -506,14 +556,12 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
         let n = self.bins_ready_count();
         self.push_in_progress(true);
         if self.bins_ready_count() == n {
-            if let Some(_range) = self.next_bin_range() {
-                let bins = BinsDim0::<NTY>::empty();
-                err::todo();
-                //bins.append_zero(range.beg, range.end);
+            if let Some(range) = self.next_bin_range() {
+                let mut bins = BinsDim0::<NTY>::empty();
+                bins.append_zero(range.beg, range.end);
                 match self.ready.as_mut() {
-                    Some(_ready) => {
-                        err::todo();
-                        //ready.append(&mut bins);
+                    Some(ready) => {
+                        ready.append_all_from(&mut bins);
                     }
                     None => {
                         self.ready = Some(bins);

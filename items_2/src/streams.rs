@@ -24,11 +24,11 @@ pub trait Collector: Send + Unpin + WithLen {
 pub trait CollectableType {
     type Collector: CollectorType<Input = Self>;
 
-    fn new_collector() -> Self::Collector;
+    fn new_collector(bin_count_exp: u32) -> Self::Collector;
 }
 
 pub trait Collectable: Any {
-    fn new_collector(&self) -> Box<dyn Collector>;
+    fn new_collector(&self, bin_count_exp: u32) -> Box<dyn Collector>;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
@@ -53,8 +53,8 @@ impl<T: CollectorType + 'static> Collector for T {
 }
 
 impl<T: CollectableType + 'static> Collectable for T {
-    fn new_collector(&self) -> Box<dyn Collector> {
-        Box::new(T::new_collector()) as _
+    fn new_collector(&self, bin_count_exp: u32) -> Box<dyn Collector> {
+        Box::new(T::new_collector(bin_count_exp)) as _
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -63,12 +63,25 @@ impl<T: CollectableType + 'static> Collectable for T {
     }
 }
 
+// TODO check usage of this trait
 pub trait ToJsonBytes {
     fn to_json_bytes(&self) -> Result<Vec<u8>, Error>;
 }
 
+// TODO check usage of this trait
 pub trait ToJsonResult: fmt::Debug + Send {
     fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error>;
+    fn as_any(&self) -> &dyn Any;
+}
+
+impl ToJsonResult for serde_json::Value {
+    fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error> {
+        Ok(Box::new(self.clone()))
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 impl ToJsonBytes for serde_json::Value {

@@ -376,7 +376,7 @@ pub async fn fetch_uncached_binned_events(
         };
         match item {
             Ok(ChannelEvents::Events(item)) => {
-                time_binner.ingest(item.as_time_binnable_dyn());
+                time_binner.ingest(item.as_time_binnable());
                 // TODO could also ask the binner here whether we are "complete" to stop sending useless data.
             }
             Ok(ChannelEvents::Status(_)) => {
