@@ -612,7 +612,7 @@ pub async fn channel_state_events(
                 ret.push((ts, kind));
             }
         }
-        ts_msp += DAY;
+        ts_msp += div;
         if ts_msp >= evq.range().end {
             break;
         }

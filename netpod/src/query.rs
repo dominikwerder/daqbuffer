@@ -94,11 +94,11 @@ impl RawEventsQuery {
     }
 }
 
-// TODO move this query type out of this `binned` mod
 #[derive(Clone, Debug)]
 pub struct PlainEventsQuery {
     channel: Channel,
     range: NanoRange,
+    do_one_before_range: bool,
     disk_io_buffer_size: usize,
     report_error: bool,
     timeout: Duration,
@@ -119,6 +119,7 @@ impl PlainEventsQuery {
         Self {
             channel,
             range,
+            do_one_before_range: false,
             disk_io_buffer_size,
             report_error: false,
             timeout: Duration::from_millis(10000),
@@ -163,6 +164,10 @@ impl PlainEventsQuery {
 
     pub fn do_test_stream_error(&self) -> bool {
         self.do_test_stream_error
+    }
+
+    pub fn do_one_before_range(&self) -> bool {
+        self.do_one_before_range
     }
 
     pub fn set_series_id(&mut self, series: u64) {
@@ -243,6 +248,11 @@ impl FromUrl for PlainEventsQuery {
                 .map_or("false", |k| k)
                 .parse()
                 .map_err(|e| Error::with_public_msg(format!("can not parse doTestStreamError {:?}", e)))?,
+            do_one_before_range: pairs
+                .get("getOneBeforeRange")
+                .map_or("false", |k| k)
+                .parse()
+                .map_err(|e| Error::with_public_msg(format!("can not parse getOneBeforeRange {:?}", e)))?,
         };
         Ok(ret)
     }
@@ -267,6 +277,7 @@ impl AppendToUrl for PlainEventsQuery {
             g.append_pair("eventsMax", &format!("{}", x));
         }
         g.append_pair("doLog", &format!("{}", self.do_log));
+        g.append_pair("getOneBeforeRange", &format!("{}", self.do_one_before_range));
     }
 }
 

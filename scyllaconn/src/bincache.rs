@@ -358,9 +358,18 @@ pub async fn fetch_uncached_binned_events(
     let deadline = deadline
         .checked_add(Duration::from_millis(6000))
         .ok_or_else(|| Error::with_msg_no_trace(format!("deadline overflow")))?;
+    let do_one_before_range = agg_kind.need_expand();
     let _evq = RawEventsQuery::new(chn.channel.clone(), coord.patch_range(), agg_kind);
     let evq = PlainEventsQuery::new(chn.channel.clone(), coord.patch_range(), 4096, None, true);
-    let mut events_dyn = EventsStreamScylla::new(series, &evq, chn.scalar_type.clone(), chn.shape.clone(), scy, false);
+    let mut events_dyn = EventsStreamScylla::new(
+        series,
+        evq.range().clone(),
+        do_one_before_range,
+        chn.scalar_type.clone(),
+        chn.shape.clone(),
+        scy,
+        false,
+    );
     let mut complete = false;
     loop {
         let item = tokio::time::timeout_at(deadline.into(), events_dyn.next()).await;

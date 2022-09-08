@@ -16,7 +16,14 @@ use tokio_postgres::Client as PgClient;
 
 macro_rules! read_values {
     ($fname:ident, $self:expr, $ts_msp:expr) => {{
-        let fut = $fname($self.series, $ts_msp, $self.range.clone(), $self.fwd, $self.scy.clone());
+        let fut = $fname(
+            $self.series,
+            $ts_msp,
+            $self.range.clone(),
+            $self.fwd,
+            $self.do_one_before_range,
+            $self.scy.clone(),
+        );
         let fut = fut.map(|x| match x {
             Ok(k) => {
                 let self_name = std::any::type_name::<Self>();
@@ -38,6 +45,7 @@ struct ReadValues {
     range: NanoRange,
     ts_msps: VecDeque<u64>,
     fwd: bool,
+    do_one_before_range: bool,
     fut: Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>>,
     scy: Arc<ScySession>,
 }
@@ -50,6 +58,7 @@ impl ReadValues {
         range: NanoRange,
         ts_msps: VecDeque<u64>,
         fwd: bool,
+        do_one_before_range: bool,
         scy: Arc<ScySession>,
     ) -> Self {
         let mut ret = Self {
@@ -59,6 +68,7 @@ impl ReadValues {
             range,
             ts_msps,
             fwd,
+            do_one_before_range,
             fut: Box::pin(futures_util::future::ready(Err(Error::with_msg_no_trace(
                 "future not initialized",
             )))),
@@ -137,6 +147,7 @@ pub struct EventsStreamScylla {
     scalar_type: ScalarType,
     shape: Shape,
     range: NanoRange,
+    do_one_before_range: bool,
     ts_msps: VecDeque<u64>,
     scy: Arc<ScySession>,
     do_test_stream_error: bool,
@@ -145,26 +156,30 @@ pub struct EventsStreamScylla {
 impl EventsStreamScylla {
     pub fn new(
         series: u64,
-        evq: &PlainEventsQuery,
+        range: NanoRange,
+        do_one_before_range: bool,
         scalar_type: ScalarType,
         shape: Shape,
         scy: Arc<ScySession>,
         do_test_stream_error: bool,
     ) -> Self {
+        let self_name = std::any::type_name::<Self>();
+        info!("{self_name}  do_one_before_range {do_one_before_range}");
         Self {
             state: FrState::New,
             series,
             scalar_type,
             shape,
-            range: evq.range().clone(),
+            range,
+            do_one_before_range,
             ts_msps: VecDeque::new(),
             scy,
             do_test_stream_error,
         }
     }
 
-    fn ts_msps_found(&mut self, ts_msps: VecDeque<u64>) {
-        info!("found  ts_msps {ts_msps:?}");
+    fn ts_msps_found_one_before(&mut self, ts_msps: VecDeque<u64>) {
+        info!("ts_msps_found_one_before  ts_msps {ts_msps:?}");
         self.ts_msps = ts_msps;
         // Find the largest MSP which can potentially contain some event before the range.
         let befores: Vec<_> = self
@@ -181,6 +196,7 @@ impl EventsStreamScylla {
                 self.range.clone(),
                 [befores[befores.len() - 1]].into(),
                 false,
+                self.do_one_before_range,
                 self.scy.clone(),
             );
             self.state = FrState::ReadBack1(st);
@@ -192,12 +208,17 @@ impl EventsStreamScylla {
                 self.range.clone(),
                 self.ts_msps.clone(),
                 true,
+                self.do_one_before_range,
                 self.scy.clone(),
             );
             self.state = FrState::ReadValues(st);
         } else {
             self.state = FrState::Done;
         }
+    }
+
+    fn ts_msps_found(&mut self, ts_msps: VecDeque<u64>) {
+        self.ts_msps_found_one_before(ts_msps);
     }
 
     fn back_1_done(&mut self, item: Box<dyn Events>) -> Option<Box<dyn Events>> {
@@ -218,6 +239,7 @@ impl EventsStreamScylla {
                     self.range.clone(),
                     [befores[befores.len() - 2]].into(),
                     false,
+                    self.do_one_before_range,
                     self.scy.clone(),
                 );
                 self.state = FrState::ReadBack2(st);
@@ -230,6 +252,7 @@ impl EventsStreamScylla {
                     self.range.clone(),
                     self.ts_msps.clone(),
                     true,
+                    self.do_one_before_range,
                     self.scy.clone(),
                 );
                 self.state = FrState::ReadValues(st);
@@ -247,6 +270,7 @@ impl EventsStreamScylla {
                     self.range.clone(),
                     self.ts_msps.clone(),
                     true,
+                    self.do_one_before_range,
                     self.scy.clone(),
                 );
                 self.state = FrState::ReadValues(st);
@@ -268,6 +292,7 @@ impl EventsStreamScylla {
                 self.range.clone(),
                 self.ts_msps.clone(),
                 true,
+                self.do_one_before_range,
                 self.scy.clone(),
             );
             self.state = FrState::ReadValues(st);
@@ -433,6 +458,7 @@ macro_rules! read_next_scalar_values {
             ts_msp: u64,
             range: NanoRange,
             fwd: bool,
+            do_one_before: bool,
             scy: Arc<ScySession>,
         ) -> Result<EventsDim0<$st>, Error> {
             type ST = $st;
@@ -486,9 +512,12 @@ macro_rules! read_next_scalar_values {
             for row in res.rows_typed_or_empty::<(i64, i64, SCYTY)>() {
                 let row = row.err_conv()?;
                 let ts = ts_msp + row.0 as u64;
-                let pulse = row.1 as u64;
-                let value = row.2 as ST;
-                ret.push(ts, pulse, value);
+                // TODO this should probably better be done at cql level.
+                if do_one_before || ts >= range.beg {
+                    let pulse = row.1 as u64;
+                    let value = row.2 as ST;
+                    ret.push(ts, pulse, value);
+                }
             }
             trace!("found in total {} events  ts_msp {}", ret.tss.len(), ts_msp);
             Ok(ret)
@@ -503,6 +532,7 @@ macro_rules! read_next_array_values {
             ts_msp: u64,
             _range: NanoRange,
             _fwd: bool,
+            _do_one_before: bool,
             scy: Arc<ScySession>,
         ) -> Result<EventsDim0<$st>, Error> {
             // TODO change return type: so far EventsDim1 does not exist.
@@ -546,20 +576,22 @@ read_next_array_values!(read_next_values_array_u16, u16, i16, "events_wave_u16")
 
 pub async fn make_scylla_stream(
     evq: &PlainEventsQuery,
+    do_one_before_range: bool,
     series: u64,
     scalar_type: ScalarType,
     shape: Shape,
     scy: Arc<ScySession>,
     do_test_stream_error: bool,
-) -> Result<Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>> + Send>>, Error> {
-    let res = Box::pin(EventsStreamScylla::new(
+) -> Result<EventsStreamScylla, Error> {
+    let res = EventsStreamScylla::new(
         series,
-        evq,
+        evq.range().clone(),
+        do_one_before_range,
         scalar_type,
         shape,
         scy,
         do_test_stream_error,
-    )) as _;
+    );
     Ok(res)
 }
 
@@ -607,7 +639,7 @@ pub async fn channel_state_events(
                         .map_err(|e| format!("{e}"))?;
                 }
             }
-            ts_msp += DAY;
+            ts_msp += div;
             if ts_msp >= evq.range().end {
                 break;
             }

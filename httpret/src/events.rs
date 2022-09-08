@@ -4,7 +4,7 @@ use crate::{response, response_err, BodyStream, ToPublicResponse};
 use futures_util::{Stream, StreamExt, TryStreamExt};
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
-use items_2::{binned_collected, ChannelEvents, ChannelEventsMerger};
+use items_2::{binned_collected, empty_events_dyn, empty_events_dyn_2, ChannelEvents, ChannelEventsMerger};
 use netpod::log::*;
 use netpod::query::{BinnedQuery, ChannelStateEventsQuery, PlainEventsQuery};
 use netpod::{AggKind, BinnedRange, FromUrl, NodeConfigCached};
@@ -14,6 +14,7 @@ use scyllaconn::errconv::ErrConv;
 use scyllaconn::events::{channel_state_events, find_series, make_scylla_stream};
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Instant;
 use url::Url;
 
 pub struct EventsHandler {}
@@ -164,11 +165,13 @@ impl EventsHandlerScylla {
     }
 
     async fn gather(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+        let self_name = std::any::type_name::<Self>();
         let (head, _body) = req.into_parts();
-        warn!("TODO PlainEventsQuery needs to take AggKind");
+        warn!("TODO PlainEventsQuery needs to take AggKind to do x-binning");
         let s1 = format!("dummy:{}", head.uri);
         let url = Url::parse(&s1)?;
         let evq = PlainEventsQuery::from_url(&url)?;
+        let deadline = Instant::now() + evq.timeout();
         let pgclient = {
             // TODO use common connection/pool:
             info!("---------------    open postgres connection");
@@ -182,16 +185,50 @@ impl EventsHandlerScylla {
             let pgclient = Arc::new(pgclient);
             pgclient
         };
-        let mut stream = if let Some(scyco) = &node_config.node_config.cluster.scylla {
-            let scy = create_scy_session(scyco).await?;
-            let (series, scalar_type, shape) = { find_series(evq.channel(), pgclient.clone()).await? };
-            let stream = make_scylla_stream(&evq, series, scalar_type.clone(), shape.clone(), scy, false).await?;
-            stream
+        let scyco = if let Some(scyco) = &node_config.node_config.cluster.scylla {
+            scyco
         } else {
             return Err(Error::with_public_msg(format!("no scylla configured")));
         };
+        let scy = create_scy_session(scyco).await?;
+        let do_one_before_range = evq.do_one_before_range();
+        let (series, scalar_type, shape) = find_series(evq.channel(), pgclient.clone()).await?;
+        let empty_item = empty_events_dyn_2(&scalar_type, &shape, &AggKind::TimeWeightedScalar);
+        let empty_stream =
+            futures_util::stream::once(futures_util::future::ready(Ok(ChannelEvents::Events(empty_item))));
+        let stream2 = make_scylla_stream(
+            &evq,
+            do_one_before_range,
+            series,
+            scalar_type.clone(),
+            shape.clone(),
+            scy,
+            false,
+        )
+        .await?;
+        let mut stream = empty_stream.chain(stream2);
         let mut coll = None;
-        while let Some(item) = stream.next().await {
+        let mut fut = None;
+        loop {
+            // Alternative way, test what works better:
+            if fut.is_none() {
+                fut = Some(stream.next());
+            }
+            let item = match tokio::time::timeout_at(deadline.into(), fut.as_mut().unwrap()).await {
+                Ok(Some(item)) => {
+                    fut.take();
+                    item
+                }
+                Ok(None) => {
+                    fut.take();
+                    break;
+                }
+                Err(_) => {
+                    warn!("{self_name} timeout");
+                    fut.take();
+                    break;
+                }
+            };
             match item {
                 Ok(k) => match k {
                     ChannelEvents::Events(mut item) => {
@@ -218,10 +255,13 @@ impl EventsHandlerScylla {
                 Ok(ret)
             }
             None => {
-                let ret = response(StatusCode::OK).body(BodyStream::wrapped(
-                    futures_util::stream::iter([Ok(Vec::new())]),
-                    format!("EventsHandlerScylla::gather"),
-                ))?;
+                error!("should never happen with changed logic, remove case");
+                err::todo();
+                let item = empty_events_dyn(&scalar_type, &shape, &AggKind::TimeWeightedScalar);
+                let res = item.to_box_to_json_result();
+                let res = res.to_json_result()?;
+                let res = res.to_json_bytes()?;
+                let ret = response(StatusCode::OK).body(Body::from(res))?;
                 Ok(ret)
             }
         }
@@ -269,10 +309,11 @@ impl BinnedHandlerScylla {
 
     async fn gather(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
         let (head, _body) = req.into_parts();
-        warn!("TODO BinnedQuery needs to take AggKind");
+        warn!("TODO BinnedQuery needs to take AggKind to do x-binngin");
         let s1 = format!("dummy:{}", head.uri);
         let url = Url::parse(&s1)?;
         let evq = BinnedQuery::from_url(&url)?;
+        let do_one_before_range = evq.agg_kind().need_expand();
         let pgclient = {
             // TODO use common connection/pool:
             info!("---------------    open postgres connection");
@@ -288,13 +329,23 @@ impl BinnedHandlerScylla {
         };
         if let Some(scyco) = &node_config.node_config.cluster.scylla {
             let scy = create_scy_session(scyco).await?;
-            let mut query2 = PlainEventsQuery::new(evq.channel().clone(), evq.range().clone(), 0, None, false);
+            let covering = BinnedRange::covering_range(evq.range().clone(), evq.bin_count())?;
+            let range = covering.full_range();
+            let mut query2 = PlainEventsQuery::new(evq.channel().clone(), range.clone(), 0, None, false);
             query2.set_timeout(evq.timeout());
             let query2 = query2;
-            let (series, scalar_type, shape) = { find_series(evq.channel(), pgclient.clone()).await? };
-            let stream =
-                make_scylla_stream(&query2, series, scalar_type.clone(), shape.clone(), scy.clone(), false).await?;
-            let query3 = ChannelStateEventsQuery::new(evq.channel().clone(), evq.range().clone());
+            let (series, scalar_type, shape) = find_series(evq.channel(), pgclient.clone()).await?;
+            let stream = make_scylla_stream(
+                &query2,
+                do_one_before_range,
+                series,
+                scalar_type.clone(),
+                shape.clone(),
+                scy.clone(),
+                false,
+            )
+            .await?;
+            let query3 = ChannelStateEventsQuery::new(evq.channel().clone(), range.clone());
             let state_stream = channel_state_events(&query3, scy.clone())
                 .await?
                 .map(|x| {
@@ -313,9 +364,6 @@ impl BinnedHandlerScylla {
             let state_stream = Box::pin(state_stream) as _;
             let merged_stream = ChannelEventsMerger::new(vec![data_stream, state_stream]);
             let merged_stream = Box::pin(merged_stream) as Pin<Box<dyn Stream<Item = _> + Send>>;
-            let covering = BinnedRange::covering_range(evq.range().clone(), evq.bin_count())?;
-            //eprintln!("edges {:?}", covering.edges());
-            // TODO return partial result if timed out.
             let binned_collected = binned_collected(
                 scalar_type.clone(),
                 shape.clone(),

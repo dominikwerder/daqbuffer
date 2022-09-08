@@ -18,7 +18,6 @@ use crate::bodystream::response;
 use crate::err::Error;
 use crate::gather::gather_get_json;
 use crate::pulsemap::UpdateTask;
-use channel_status::ChannelStatusConnectionEvents;
 use channelconfig::{chconf_from_binned, ChConf};
 use disk::binned::query::PreBinnedQuery;
 use future::Future;
@@ -249,7 +248,9 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         h.handle(req, &node_config).await
     } else if let Some(h) = events::BinnedHandlerScylla::handler(&req) {
         h.handle(req, &node_config).await
-    } else if let Some(h) = ChannelStatusConnectionEvents::handler(&req) {
+    } else if let Some(h) = channel_status::ConnectionStatusEvents::handler(&req) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = channel_status::ChannelConnectionStatusEvents::handler(&req) {
         h.handle(req, &node_config).await
     } else if path == "/api/4/binned" {
         if req.method() == Method::GET {

@@ -239,12 +239,11 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/events?channel
     <li>channelName (e.g. "SLAAR-LSCP4-LAS6891:CH7:1")</li>
     <li>begDate (e.g. "2021-05-26T07:10:00.000Z")</li>
     <li>endDate (e.g. "2021-05-26T07:16:00.000Z")</li>
-    <li>binCount (number of requested bins in time-dimension, e.g. "6". The actual number of returned bins depends
-      on
-      bin-cache-grid-resolution. The server tries to find the best match.)</li>
+    <li>binCount (number of requested bins in time-dimension, e.g. "6". The actual number of returned bins depends on
+      bin-cache-grid-resolution. The server tries to find a reasonable match.)</li>
     <li>binningScheme (optional)</li>
     <ul>
-      <li>if not specified: default is "binningScheme=unweightedScalar".</li>
+      <li>if not specified: default is "binningScheme=timeWeightedScalar".</li>
       <li>"binningScheme=unweightedScalar": non-weighted binning, waveform gets first averaged to a scalar.</li>
       <li>"binningScheme=timeWeightedScalar": time-weighted binning, waveform gets first averaged to a scalar.
       </li>
@@ -272,159 +271,38 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/binned?channel
 
   <h4>Example response (without usage of binningScheme):</h4>
   <pre>{
-  "avgs": [
-    16204.087890625,
-    16204.3798828125,
-    16203.9296875,
-    16204.232421875,
-    16202.974609375,
-    16203.208984375,
-    16203.4345703125
-  ],
-  "counts": [
-    1000,
-    999,
-    1000,
-    999,
-    1000,
-    999,
-    1000
-  ],
-  "finalisedRange": true,
-  "maxs": [
-    48096,
-    48100,
-    48094,
-    48096,
-    48096,
-    48095,
-    48096
-  ],
-  "mins": [
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0
-  ],
   "tsAnchor": 1623769850,
   "tsMs": [
     0,
     10000,
-    20000,
-    30000,
-    40000,
-    50000,
-    60000,
-    70000
+    20000
   ],
   "tsNs": [
     0,
     0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0
-  ]
-}
-</pre>
-
-  <h4>Example response (waveform channel and usage of binningScheme):</h4>
-  <pre>{
-  "tsAnchor": 1623769950,
-  "tsMs": [
-    0,
-    10000,
-    20000,
-    30000,
-    40000,
-    50000,
-    60000,
-    70000
-  ],
-  "tsNs": [
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
     0
   ],
-  "finalisedRange": true,
   "counts": [
     1000,
-    1000,
-    ...
+    999,
+    1000
   ],
   "avgs": [
-    [
-      0.013631398789584637,
-      34936.76953125,
-      45045.5078125,
-      31676.30859375,
-      880.7999877929688,
-      576.4010620117188,
-      295.1236877441406
-    ],
-    [
-      0.01851877197623253,
-      34935.734375,
-      45044.2734375,
-      31675.359375,
-      880.7310791015625,
-      576.3038330078125,
-      295.06134033203125
-    ],
-    ...
+    16204.087890625,
+    16204.3798828125,
+    16203.9296875
   ],
   "maxs": [
-    [
-      111,
-      48093,
-      45804,
-      47122,
-      1446,
-      783,
-      431
-    ],
-    [
-      120,
-      48092,
-      45803,
-      47124,
-      1452,
-      782,
-      431
-    ],
-    ...
+    48096,
+    48100,
+    48094
   ],
   "mins": [
-    [
-      0,
-      0,
-      44329,
-      267,
-      519,
-      394,
-      0
-    ],
-    [
-      0,
-      0,
-      44327,
-      265,
-      514,
-      395,
-      0
-    ],
-    ...
-  ]
+    0,
+    0,
+    0
+  ],
+  "finalisedRange": true
 }
 </pre>
 

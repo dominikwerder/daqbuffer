@@ -292,6 +292,46 @@ pub trait TimeBinnableTypeAggregator: Send {
     fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output;
 }
 
+pub fn empty_events_dyn_2(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggKind) -> Box<dyn Events> {
+    match shape {
+        Shape::Scalar => match agg_kind {
+            AggKind::TimeWeightedScalar => {
+                use ScalarType::*;
+                type K<T> = eventsdim0::EventsDim0<T>;
+                match scalar_type {
+                    U8 => Box::new(K::<u8>::empty()),
+                    U16 => Box::new(K::<u16>::empty()),
+                    U32 => Box::new(K::<u32>::empty()),
+                    U64 => Box::new(K::<u64>::empty()),
+                    I8 => Box::new(K::<i8>::empty()),
+                    I16 => Box::new(K::<i16>::empty()),
+                    I32 => Box::new(K::<i32>::empty()),
+                    I64 => Box::new(K::<i64>::empty()),
+                    F32 => Box::new(K::<f32>::empty()),
+                    F64 => Box::new(K::<f64>::empty()),
+                    _ => {
+                        error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
+                        err::todoval()
+                    }
+                }
+            }
+            _ => {
+                error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
+                err::todoval()
+            }
+        },
+        Shape::Wave(..) => {
+            error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
+            err::todoval()
+        }
+        Shape::Image(..) => {
+            error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
+            err::todoval()
+        }
+    }
+}
+
+// TODO needed any longer?
 pub fn empty_events_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggKind) -> Box<dyn TimeBinnable> {
     match shape {
         Shape::Scalar => match agg_kind {
@@ -310,22 +350,22 @@ pub fn empty_events_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggK
                     F32 => Box::new(K::<f32>::empty()),
                     F64 => Box::new(K::<f64>::empty()),
                     _ => {
-                        error!("TODO empty_events_dyn");
+                        error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
                         err::todoval()
                     }
                 }
             }
             _ => {
-                error!("TODO empty_events_dyn");
+                error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
                 err::todoval()
             }
         },
         Shape::Wave(..) => {
-            error!("TODO empty_events_dyn");
+            error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
             err::todoval()
         }
         Shape::Image(..) => {
-            error!("TODO empty_events_dyn");
+            error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
             err::todoval()
         }
     }
@@ -718,15 +758,17 @@ pub async fn binned_collected(
     timeout: Duration,
     inp: Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>> + Send>>,
 ) -> Result<Box<dyn ToJsonResult>, Error> {
+    let deadline = Instant::now() + timeout;
     let bin_count_exp = edges.len().max(2) as u32 - 1;
     let do_time_weight = agg_kind.do_time_weighted();
     let mut coll = None;
     let mut binner = None;
-    let mut inp = inp;
-    let deadline = Instant::now() + timeout;
+    let empty_item = empty_events_dyn_2(&scalar_type, &shape, &AggKind::TimeWeightedScalar);
+    let empty_stream = futures_util::stream::once(futures_util::future::ready(Ok(ChannelEvents::Events(empty_item))));
+    let mut stream = empty_stream.chain(inp);
     loop {
         let item = futures_util::select! {
-            k = inp.next().fuse() => {
+            k = stream.next().fuse() => {
                 if let Some(k) = k {
                     k?
                 }else {
@@ -798,6 +840,8 @@ pub async fn binned_collected(
             Ok(res)
         }
         None => {
+            error!("TODO should never happen with changed logic, remove");
+            err::todo();
             let item = empty_binned_dyn(&scalar_type, &shape, &AggKind::DimXBins1);
             let ret = item.to_box_to_json_result();
             Ok(ret)

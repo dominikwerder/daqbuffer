@@ -186,6 +186,8 @@ pub struct BinsDim0CollectedResult<NTY> {
     missing_bins: u32,
     #[serde(skip_serializing_if = "Option::is_none", rename = "continueAt")]
     continue_at: Option<IsoDateTime>,
+    #[serde(skip_serializing_if = "Option::is_none", rename = "finishedAt")]
+    finished_at: Option<IsoDateTime>,
 }
 
 impl<NTY> BinsDim0CollectedResult<NTY> {
@@ -273,16 +275,19 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
 
     fn result(&mut self) -> Result<Self::Output, Error> {
         let bin_count = self.vals.ts1s.len() as u32;
-        let (missing_bins, continue_at) = if bin_count < self.bin_count_exp {
+        let (missing_bins, continue_at, finished_at) = if bin_count < self.bin_count_exp {
             match self.vals.ts2s.back() {
                 Some(&k) => {
-                    let iso = IsoDateTime(Utc.timestamp_nanos(k as i64));
-                    (self.bin_count_exp - bin_count, Some(iso))
+                    let missing_bins = self.bin_count_exp - bin_count;
+                    let continue_at = IsoDateTime(Utc.timestamp_nanos(k as i64));
+                    let u = k + (k - self.vals.ts1s.back().unwrap()) * missing_bins as u64;
+                    let finished_at = IsoDateTime(Utc.timestamp_nanos(u as i64));
+                    (missing_bins, Some(continue_at), Some(finished_at))
                 }
                 None => Err(Error::with_msg("partial_content but no bin in result"))?,
             }
         } else {
-            (0, None)
+            (0, None, None)
         };
         if self.vals.ts1s.as_slices().1.len() != 0 {
             panic!();
@@ -309,6 +314,7 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
             finalised_range: self.range_complete,
             missing_bins,
             continue_at,
+            finished_at,
         };
         Ok(ret)
     }
