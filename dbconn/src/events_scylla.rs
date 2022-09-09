@@ -578,7 +578,6 @@ pub async fn make_scylla_stream(
 pub async fn channel_state_events(
     evq: &ChannelStateEventsQuery,
     scyco: &ScyllaConfig,
-    _dbconf: Database,
 ) -> Result<Vec<(u64, u32)>, Error> {
     let scy = scylla::SessionBuilder::new()
         .known_nodes(&scyco.hosts)

@@ -1,6 +1,5 @@
 use crate::bodystream::response;
 use crate::err::Error;
-use dbconn::events_scylla::channel_state_events;
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
 use netpod::query::ChannelStateEventsQuery;
@@ -49,14 +48,13 @@ impl ConnectionStatusEvents {
         q: &ChannelStateEventsQuery,
         node_config: &NodeConfigCached,
     ) -> Result<Vec<(u64, u32)>, Error> {
-        let dbconf = &node_config.node_config.cluster.database;
         let scyco = node_config
             .node_config
             .cluster
             .scylla
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let ret = channel_state_events(q, scyco, dbconf.clone()).await?;
+        let ret = dbconn::events_scylla::channel_state_events(q, scyco).await?;
         Ok(ret)
     }
 }
@@ -103,14 +101,13 @@ impl ChannelConnectionStatusEvents {
         q: &ChannelStateEventsQuery,
         node_config: &NodeConfigCached,
     ) -> Result<Vec<(u64, u32)>, Error> {
-        let dbconf = &node_config.node_config.cluster.database;
         let scyco = node_config
             .node_config
             .cluster
             .scylla
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let ret = channel_state_events(q, scyco, dbconf.clone()).await?;
+        let ret = dbconn::events_scylla::channel_state_events(q, scyco).await?;
         Ok(ret)
     }
 }
