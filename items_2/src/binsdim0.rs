@@ -581,6 +581,8 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
             }
         }
     }
+
+    fn set_range_complete(&mut self) {}
 }
 
 impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {

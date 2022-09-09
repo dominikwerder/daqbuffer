@@ -32,6 +32,13 @@ impl<NTY> EventsDim0<NTY> {
         self.pulses.push_back(pulse);
         self.values.push_back(value);
     }
+
+    #[inline(always)]
+    pub fn push_front(&mut self, ts: u64, pulse: u64, value: NTY) {
+        self.tss.push_front(ts);
+        self.pulses.push_front(pulse);
+        self.values.push_front(value);
+    }
 }
 
 impl<NTY> Empty for EventsDim0<NTY> {
@@ -751,4 +758,6 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
             }
         }
     }
+
+    fn set_range_complete(&mut self) {}
 }

@@ -14,6 +14,172 @@ use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio_postgres::Client as PgClient;
 
+async fn find_ts_msp(series: i64, range: NanoRange, scy: Arc<ScySession>) -> Result<VecDeque<u64>, Error> {
+    info!("find_ts_msp  series {}  {:?}", series, range);
+    let mut ret = VecDeque::new();
+    // TODO use prepared statements
+    let cql = "select ts_msp from ts_msp where series = ? and ts_msp > ? and ts_msp < ?";
+    let res = scy
+        .query(cql, (series, range.beg as i64, range.end as i64))
+        .await
+        .err_conv()?;
+    for row in res.rows_typed_or_empty::<(i64,)>() {
+        let row = row.err_conv()?;
+        ret.push_back(row.0 as u64);
+    }
+    let cql = "select ts_msp from ts_msp where series = ? and ts_msp >= ? limit 1";
+    let res = scy.query(cql, (series, range.end as i64)).await.err_conv()?;
+    for row in res.rows_typed_or_empty::<(i64,)>() {
+        let row = row.err_conv()?;
+        ret.push_back(row.0 as u64);
+    }
+    let cql = "select ts_msp from ts_msp where series = ? and ts_msp <= ? order by ts_msp desc limit 2";
+    let res = scy.query(cql, (series, range.beg as i64)).await.err_conv()?;
+    for row in res.rows_typed_or_empty::<(i64,)>() {
+        let row = row.err_conv()?;
+        ret.push_front(row.0 as u64);
+    }
+    trace!("found in total {} rows", ret.len());
+    Ok(ret)
+}
+
+macro_rules! read_next_scalar_values {
+    ($fname:ident, $st:ty, $scyty:ty, $table_name:expr) => {
+        async fn $fname(
+            series: i64,
+            ts_msp: u64,
+            range: NanoRange,
+            fwd: bool,
+            do_one_before: bool,
+            scy: Arc<ScySession>,
+        ) -> Result<EventsDim0<$st>, Error> {
+            type ST = $st;
+            type SCYTY = $scyty;
+            if ts_msp >= range.end {
+                warn!(
+                    "given ts_msp {}  >=  range.end {}  not necessary to read this",
+                    ts_msp, range.end
+                );
+            }
+            if range.end > i64::MAX as u64 {
+                return Err(Error::with_msg_no_trace(format!("range.end overflows i64")));
+            }
+            let res = if fwd {
+                let ts_lsp_min = if ts_msp < range.beg { range.beg - ts_msp } else { 0 };
+                let ts_lsp_max = if ts_msp < range.end { range.end - ts_msp } else { 0 };
+                trace!(
+                    "FWD  ts_msp {}  ts_lsp_min {}  ts_lsp_max {}  beg {}  end {}  {}",
+                    ts_msp,
+                    ts_lsp_min,
+                    ts_lsp_max,
+                    range.beg,
+                    range.end,
+                    stringify!($fname)
+                );
+                // TODO use prepared!
+                let cql = concat!(
+                    "select ts_lsp, pulse, value from ",
+                    $table_name,
+                    " where series = ? and ts_msp = ? and ts_lsp >= ? and ts_lsp < ?"
+                );
+                scy.query(cql, (series, ts_msp as i64, ts_lsp_min as i64, ts_lsp_max as i64))
+                    .await
+                    .err_conv()?
+            } else {
+                let ts_lsp_max = if ts_msp < range.beg { range.beg - ts_msp } else { 0 };
+                info!(
+                    "BCK  ts_msp {}  ts_lsp_max {}  beg {}  end {}  {}",
+                    ts_msp,
+                    ts_lsp_max,
+                    range.beg,
+                    range.end,
+                    stringify!($fname)
+                );
+                // TODO use prepared!
+                let cql = concat!(
+                    "select ts_lsp, pulse, value from ",
+                    $table_name,
+                    " where series = ? and ts_msp = ? and ts_lsp < ? order by ts_lsp desc limit 1"
+                );
+                scy.query(cql, (series, ts_msp as i64, ts_lsp_max as i64))
+                    .await
+                    .err_conv()?
+            };
+            let mut last_before = None;
+            let mut ret = EventsDim0::<ST>::empty();
+            for row in res.rows_typed_or_empty::<(i64, i64, SCYTY)>() {
+                let row = row.err_conv()?;
+                let ts = ts_msp + row.0 as u64;
+                let pulse = row.1 as u64;
+                let value = row.2 as ST;
+                if ts >= range.end {
+                } else if ts >= range.beg {
+                    ret.push(ts, pulse, value);
+                } else {
+                    last_before = Some((ts, pulse, value));
+                }
+            }
+            if do_one_before {
+                if let Some((ts, pulse, value)) = last_before {
+                    info!("PREPENDING THE LAST BEFORE  {ts}  {value:?}");
+                    ret.push_front(ts, pulse, value);
+                }
+            }
+            info!("found in total {} events  ts_msp {}", ret.tss.len(), ts_msp);
+            Ok(ret)
+        }
+    };
+}
+
+macro_rules! read_next_array_values {
+    ($fname:ident, $st:ty, $scyty:ty, $table_name:expr) => {
+        async fn $fname(
+            series: i64,
+            ts_msp: u64,
+            _range: NanoRange,
+            _fwd: bool,
+            _do_one_before: bool,
+            scy: Arc<ScySession>,
+        ) -> Result<EventsDim0<$st>, Error> {
+            // TODO change return type: so far EventsDim1 does not exist.
+            error!("TODO read_next_array_values");
+            err::todo();
+            if true {
+                return Err(Error::with_msg_no_trace("redo based on scalar case"));
+            }
+            type ST = $st;
+            type _SCYTY = $scyty;
+            info!("{}  series {}  ts_msp {}", stringify!($fname), series, ts_msp);
+            let cql = concat!(
+                "select ts_lsp, pulse, value from ",
+                $table_name,
+                " where series = ? and ts_msp = ?"
+            );
+            let _res = scy.query(cql, (series, ts_msp as i64)).await.err_conv()?;
+            let ret = EventsDim0::<ST>::empty();
+            /*
+            for row in res.rows_typed_or_empty::<(i64, i64, Vec<SCYTY>)>() {
+                let row = row.err_conv()?;
+                let ts = ts_msp + row.0 as u64;
+                let pulse = row.1 as u64;
+                let value = row.2.into_iter().map(|x| x as ST).collect();
+                ret.push(ts, pulse, value);
+            }
+            */
+            info!("found in total {} events  ts_msp {}", ret.tss.len(), ts_msp);
+            Ok(ret)
+        }
+    };
+}
+
+read_next_scalar_values!(read_next_values_scalar_i8, i8, i8, "events_scalar_i8");
+read_next_scalar_values!(read_next_values_scalar_i16, i16, i16, "events_scalar_i16");
+read_next_scalar_values!(read_next_values_scalar_i32, i32, i32, "events_scalar_i32");
+read_next_scalar_values!(read_next_values_scalar_f32, f32, f32, "events_scalar_f32");
+read_next_scalar_values!(read_next_values_scalar_f64, f64, f64, "events_scalar_f64");
+
+read_next_array_values!(read_next_values_array_u16, u16, i16, "events_wave_u16");
+
 macro_rules! read_values {
     ($fname:ident, $self:expr, $ts_msp:expr) => {{
         let fut = $fname(
@@ -80,7 +246,7 @@ impl ReadValues {
 
     fn next(&mut self) -> bool {
         if let Some(ts_msp) = self.ts_msps.pop_front() {
-            self.fut = self.make_fut(ts_msp, self.ts_msps.len() > 1);
+            self.fut = self.make_fut(ts_msp, self.ts_msps.len() > 0);
             true
         } else {
             false
@@ -178,8 +344,8 @@ impl EventsStreamScylla {
         }
     }
 
-    fn ts_msps_found_one_before(&mut self, ts_msps: VecDeque<u64>) {
-        info!("ts_msps_found_one_before  ts_msps {ts_msps:?}");
+    fn ts_msps_found(&mut self, ts_msps: VecDeque<u64>) {
+        info!("ts_msps_found  ts_msps {ts_msps:?}");
         self.ts_msps = ts_msps;
         // Find the largest MSP which can potentially contain some event before the range.
         let befores: Vec<_> = self
@@ -188,7 +354,8 @@ impl EventsStreamScylla {
             .map(|x| *x)
             .filter(|x| *x < self.range.beg)
             .collect();
-        if befores.len() >= 1 {
+        if self.do_one_before_range && befores.len() >= 1 {
+            info!("Try ReadBack1");
             let st = ReadValues::new(
                 self.series as i64,
                 self.scalar_type.clone(),
@@ -201,6 +368,7 @@ impl EventsStreamScylla {
             );
             self.state = FrState::ReadBack1(st);
         } else if self.ts_msps.len() >= 1 {
+            info!("Go straight for forward read");
             let st = ReadValues::new(
                 self.series as i64,
                 self.scalar_type.clone(),
@@ -217,13 +385,10 @@ impl EventsStreamScylla {
         }
     }
 
-    fn ts_msps_found(&mut self, ts_msps: VecDeque<u64>) {
-        self.ts_msps_found_one_before(ts_msps);
-    }
-
     fn back_1_done(&mut self, item: Box<dyn Events>) -> Option<Box<dyn Events>> {
         info!("back_1_done  len {}", item.len());
         if item.len() == 0 {
+            info!("ReadBack1 returned empty");
             // Find the 2nd largest MSP which can potentially contain some event before the range.
             let befores: Vec<_> = self
                 .ts_msps
@@ -232,6 +397,7 @@ impl EventsStreamScylla {
                 .filter(|x| *x < self.range.beg)
                 .collect();
             if befores.len() >= 2 {
+                info!("Try ReadBack2");
                 let st = ReadValues::new(
                     self.series as i64,
                     self.scalar_type.clone(),
@@ -245,6 +411,7 @@ impl EventsStreamScylla {
                 self.state = FrState::ReadBack2(st);
                 None
             } else if self.ts_msps.len() >= 1 {
+                info!("No 2nd back MSP, go for forward read");
                 let st = ReadValues::new(
                     self.series as i64,
                     self.scalar_type.clone(),
@@ -262,6 +429,7 @@ impl EventsStreamScylla {
                 None
             }
         } else {
+            info!("FOUND ONE BEFORE");
             if self.ts_msps.len() > 0 {
                 let st = ReadValues::new(
                     self.series as i64,
@@ -284,6 +452,9 @@ impl EventsStreamScylla {
 
     fn back_2_done(&mut self, item: Box<dyn Events>) -> Option<Box<dyn Events>> {
         info!("back_2_done  len {}", item.len());
+        if item.len() == 0 {
+            info!("ReadBack2 returned empty");
+        }
         if self.ts_msps.len() >= 1 {
             let st = ReadValues::new(
                 self.series as i64,
@@ -423,156 +594,6 @@ pub async fn find_series(channel: &Channel, pgclient: Arc<PgClient>) -> Result<(
     let shape = Shape::from_scylla_shape_dims(&a)?;
     Ok((series, scalar_type, shape))
 }
-
-async fn find_ts_msp(series: i64, range: NanoRange, scy: Arc<ScySession>) -> Result<VecDeque<u64>, Error> {
-    trace!("find_ts_msp  series {}  {:?}", series, range);
-    // TODO use prepared statements
-    let cql = "select ts_msp from ts_msp where series = ? and ts_msp <= ? order by ts_msp desc limit 2";
-    let res = scy.query(cql, (series, range.beg as i64)).await.err_conv()?;
-    let mut before = VecDeque::new();
-    for row in res.rows_typed_or_empty::<(i64,)>() {
-        let row = row.err_conv()?;
-        before.push_front(row.0 as u64);
-    }
-    let cql = "select ts_msp from ts_msp where series = ? and ts_msp > ? and ts_msp < ?";
-    let res = scy
-        .query(cql, (series, range.beg as i64, range.end as i64))
-        .await
-        .err_conv()?;
-    let mut ret = VecDeque::new();
-    for h in before {
-        ret.push_back(h);
-    }
-    for row in res.rows_typed_or_empty::<(i64,)>() {
-        let row = row.err_conv()?;
-        ret.push_back(row.0 as u64);
-    }
-    trace!("found in total {} rows", ret.len());
-    Ok(ret)
-}
-
-macro_rules! read_next_scalar_values {
-    ($fname:ident, $st:ty, $scyty:ty, $table_name:expr) => {
-        async fn $fname(
-            series: i64,
-            ts_msp: u64,
-            range: NanoRange,
-            fwd: bool,
-            do_one_before: bool,
-            scy: Arc<ScySession>,
-        ) -> Result<EventsDim0<$st>, Error> {
-            type ST = $st;
-            type SCYTY = $scyty;
-            if ts_msp >= range.end {
-                warn!("given ts_msp {}  >=  range.end {}", ts_msp, range.end);
-            }
-            if range.end > i64::MAX as u64 {
-                return Err(Error::with_msg_no_trace(format!("range.end overflows i64")));
-            }
-            let res = if fwd {
-                let ts_lsp_min = if ts_msp < range.beg { range.beg - ts_msp } else { 0 };
-                let ts_lsp_max = if ts_msp < range.end { range.end - ts_msp } else { 0 };
-                trace!(
-                    "FWD  ts_msp {}  ts_lsp_min {}  ts_lsp_max {}  {}",
-                    ts_msp,
-                    ts_lsp_min,
-                    ts_lsp_max,
-                    stringify!($fname)
-                );
-                // TODO use prepared!
-                let cql = concat!(
-                    "select ts_lsp, pulse, value from ",
-                    $table_name,
-                    " where series = ? and ts_msp = ? and ts_lsp >= ? and ts_lsp < ?"
-                );
-                scy.query(cql, (series, ts_msp as i64, ts_lsp_min as i64, ts_lsp_max as i64))
-                    .await
-                    .err_conv()?
-            } else {
-                let ts_lsp_max = if ts_msp < range.beg { range.beg - ts_msp } else { 0 };
-                info!(
-                    "BCK  ts_msp {}  ts_lsp_max {}  range beg {}  end {}  {}",
-                    ts_msp,
-                    ts_lsp_max,
-                    range.beg,
-                    range.end,
-                    stringify!($fname)
-                );
-                // TODO use prepared!
-                let cql = concat!(
-                    "select ts_lsp, pulse, value from ",
-                    $table_name,
-                    " where series = ? and ts_msp = ? and ts_lsp < ? order by ts_lsp desc limit 1"
-                );
-                scy.query(cql, (series, ts_msp as i64, ts_lsp_max as i64))
-                    .await
-                    .err_conv()?
-            };
-            let mut ret = EventsDim0::<ST>::empty();
-            for row in res.rows_typed_or_empty::<(i64, i64, SCYTY)>() {
-                let row = row.err_conv()?;
-                let ts = ts_msp + row.0 as u64;
-                // TODO this should probably better be done at cql level.
-                if do_one_before || ts >= range.beg {
-                    let pulse = row.1 as u64;
-                    let value = row.2 as ST;
-                    ret.push(ts, pulse, value);
-                }
-            }
-            trace!("found in total {} events  ts_msp {}", ret.tss.len(), ts_msp);
-            Ok(ret)
-        }
-    };
-}
-
-macro_rules! read_next_array_values {
-    ($fname:ident, $st:ty, $scyty:ty, $table_name:expr) => {
-        async fn $fname(
-            series: i64,
-            ts_msp: u64,
-            _range: NanoRange,
-            _fwd: bool,
-            _do_one_before: bool,
-            scy: Arc<ScySession>,
-        ) -> Result<EventsDim0<$st>, Error> {
-            // TODO change return type: so far EventsDim1 does not exist.
-            error!("TODO read_next_array_values");
-            err::todo();
-            if true {
-                return Err(Error::with_msg_no_trace("redo based on scalar case"));
-            }
-            type ST = $st;
-            type _SCYTY = $scyty;
-            info!("{}  series {}  ts_msp {}", stringify!($fname), series, ts_msp);
-            let cql = concat!(
-                "select ts_lsp, pulse, value from ",
-                $table_name,
-                " where series = ? and ts_msp = ?"
-            );
-            let _res = scy.query(cql, (series, ts_msp as i64)).await.err_conv()?;
-            let ret = EventsDim0::<ST>::empty();
-            /*
-            for row in res.rows_typed_or_empty::<(i64, i64, Vec<SCYTY>)>() {
-                let row = row.err_conv()?;
-                let ts = ts_msp + row.0 as u64;
-                let pulse = row.1 as u64;
-                let value = row.2.into_iter().map(|x| x as ST).collect();
-                ret.push(ts, pulse, value);
-            }
-            */
-            info!("found in total {} events  ts_msp {}", ret.tss.len(), ts_msp);
-            Ok(ret)
-        }
-    };
-}
-
-read_next_scalar_values!(read_next_values_scalar_i8, i8, i8, "events_scalar_i8");
-read_next_scalar_values!(read_next_values_scalar_i16, i16, i16, "events_scalar_i16");
-read_next_scalar_values!(read_next_values_scalar_i32, i32, i32, "events_scalar_i32");
-read_next_scalar_values!(read_next_values_scalar_f32, f32, f32, "events_scalar_f32");
-read_next_scalar_values!(read_next_values_scalar_f64, f64, f64, "events_scalar_f64");
-
-read_next_array_values!(read_next_values_array_u16, u16, i16, "events_wave_u16");
 
 pub async fn make_scylla_stream(
     evq: &PlainEventsQuery,
