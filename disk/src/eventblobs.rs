@@ -32,6 +32,7 @@ pub struct EventChunkerMultifile {
     do_decompress: bool,
     max_ts: u64,
     emit_count: usize,
+    do_emit_err_after: Option<usize>,
 }
 
 impl EventChunkerMultifile {
@@ -66,6 +67,7 @@ impl EventChunkerMultifile {
             do_decompress,
             max_ts: 0,
             emit_count: 0,
+            do_emit_err_after: None,
         }
     }
 }
@@ -107,22 +109,22 @@ impl Stream for EventChunkerMultifile {
                                             Ready(Some(Err(e)))
                                         } else {
                                             self.max_ts = g;
-                                            const EMIT_COUNT_MAX: usize = 10;
-                                            if self.emit_count < EMIT_COUNT_MAX {
-                                                debug!(
-                                                    "EventChunkerMultifile  emit {}/{}  events {}",
-                                                    self.emit_count,
-                                                    EMIT_COUNT_MAX,
-                                                    h.tss.len()
-                                                );
-                                                self.emit_count += 1;
-                                                Ready(Some(k))
-                                            } else if (self.range.beg % 1000000) / 1000 == 666 {
-                                                // TODO move this test feature into some other query parameter.
-                                                warn!("GENERATE ERROR FOR TESTING PURPOSE");
-                                                let e = Error::with_msg(format!("Private-error-message"));
-                                                let e = e.add_public_msg(format!("Public-error-message"));
-                                                Ready(Some(Err(e)))
+                                            if let Some(after) = self.do_emit_err_after {
+                                                if self.emit_count < after {
+                                                    debug!(
+                                                        "EventChunkerMultifile  emit {}/{}  events {}",
+                                                        self.emit_count,
+                                                        after,
+                                                        h.tss.len()
+                                                    );
+                                                    self.emit_count += 1;
+                                                    Ready(Some(k))
+                                                } else {
+                                                    warn!("GENERATE ERROR FOR TESTING PURPOSE");
+                                                    let e = Error::with_msg(format!("Private-error-message"));
+                                                    let e = e.add_public_msg(format!("Public-error-message"));
+                                                    Ready(Some(Err(e)))
+                                                }
                                             } else {
                                                 Ready(Some(k))
                                             }
