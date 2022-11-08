@@ -110,7 +110,7 @@ where
             let tyid = u32::from_le_bytes(*arrayref::array_ref![buf, 8, 4]);
             let len = u32::from_le_bytes(*arrayref::array_ref![buf, 12, 4]);
             if magic != INMEM_FRAME_MAGIC {
-                let z = nb.min(32);
+                let z = nb.min(256);
                 let u = String::from_utf8_lossy(&buf[0..z]);
                 let e = Error::with_msg("INCORRECT MAGIC");
                 error!("incorrect magic  buf as utf8: {:?}  error: {:?}", u, e);

@@ -103,7 +103,9 @@ async fn go() -> Result<(), Error> {
     Ok(())
 }
 
-#[test]
+// TODO test data needs to be generated
+//#[test]
+#[allow(unused)]
 fn simple_fetch() {
     use daqbuffer::err::ErrConv;
     use netpod::Nanos;

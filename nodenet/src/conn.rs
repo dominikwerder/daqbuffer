@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod test;
+
 use dbconn::events_scylla::make_scylla_stream;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
@@ -42,27 +45,6 @@ async fn events_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: N
             Err(e)
         }
     }
-}
-
-async fn events_conn_handler_inner(
-    stream: TcpStream,
-    addr: SocketAddr,
-    node_config: &NodeConfigCached,
-) -> Result<(), Error> {
-    match events_conn_handler_inner_try(stream, addr, node_config).await {
-        Ok(_) => (),
-        Err(ce) => {
-            // Try to pass the error over the network.
-            // If that fails, give error to the caller.
-            let mut out = ce.netout;
-            let e = ce.err;
-            let buf = items::frame::make_error_frame(&e)?;
-            //type T = StreamItem<items::RangeCompletableItem<items::scalarevents::ScalarEvents<u32>>>;
-            //let buf = Err::<T, _>(e).make_frame()?;
-            out.write_all(&buf).await?;
-        }
-    }
-    Ok(())
 }
 
 struct ConnErr {
@@ -200,5 +182,26 @@ async fn events_conn_handler_inner_try(
         Err(e) => return Err((e, netout))?,
     }
     debug!("events_conn_handler_inner_try  buf_len_histo: {:?}", buf_len_histo);
+    Ok(())
+}
+
+async fn events_conn_handler_inner(
+    stream: TcpStream,
+    addr: SocketAddr,
+    node_config: &NodeConfigCached,
+) -> Result<(), Error> {
+    match events_conn_handler_inner_try(stream, addr, node_config).await {
+        Ok(_) => (),
+        Err(ce) => {
+            // Try to pass the error over the network.
+            // If that fails, give error to the caller.
+            let mut out = ce.netout;
+            let e = ce.err;
+            let buf = items::frame::make_error_frame(&e)?;
+            //type T = StreamItem<items::RangeCompletableItem<items::scalarevents::ScalarEvents<u32>>>;
+            //let buf = Err::<T, _>(e).make_frame()?;
+            out.write_all(&buf).await?;
+        }
+    }
     Ok(())
 }

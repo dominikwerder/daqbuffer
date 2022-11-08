@@ -2,20 +2,12 @@ use crate::ChannelConfigExt;
 use bitshuffle::bitshuffle_compress;
 use bytes::{BufMut, BytesMut};
 use err::Error;
-use netpod::{timeunits::*, ByteOrder, Channel, ChannelConfig, GenVar, Node, SfDatabuffer, Shape};
-use netpod::{Nanos, ScalarType};
+use netpod::log::*;
+use netpod::timeunits::*;
+use netpod::{ByteOrder, Channel, ChannelConfig, GenVar, Nanos, Node, ScalarType, SfDatabuffer, Shape};
 use std::path::{Path, PathBuf};
 use tokio::fs::{File, OpenOptions};
 use tokio::io::AsyncWriteExt;
-#[allow(unused_imports)]
-use tracing::{debug, error, info, trace, warn};
-
-#[test]
-pub fn gen_test_data_test() {
-    if false {
-        taskrun::run(gen_test_data()).unwrap();
-    }
-}
 
 pub async fn gen_test_data() -> Result<(), Error> {
     let homedir = std::env::var("HOME").unwrap();
