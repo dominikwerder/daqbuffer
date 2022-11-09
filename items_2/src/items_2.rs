@@ -253,7 +253,7 @@ pub trait TimeBinnable: fmt::Debug + WithLen + RangeOverlapInfo + Any + Send {
 }
 
 /// Container of some form of events, for use as trait object.
-pub trait Events: fmt::Debug + Any + Collectable + TimeBinnable + Send {
+pub trait Events: fmt::Debug + Any + Collectable + TimeBinnable + Send + erased_serde::Serialize {
     fn as_time_binnable(&self) -> &dyn TimeBinnable;
     fn verify(&self) -> bool;
     fn output_info(&self);
@@ -263,6 +263,8 @@ pub trait Events: fmt::Debug + Any + Collectable + TimeBinnable + Send {
     fn take_new_events_until_ts(&mut self, ts_end: u64) -> Box<dyn Events>;
     fn partial_eq_dyn(&self, other: &dyn Events) -> bool;
 }
+
+erased_serde::serialize_trait_object!(Events);
 
 impl PartialEq for Box<dyn Events> {
     fn eq(&self, other: &Self) -> bool {
@@ -429,13 +431,13 @@ pub fn empty_binned_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggK
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ConnStatus {
     Connect,
     Disconnect,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConnStatusEvent {
     pub ts: u64,
     pub status: ConnStatus,
@@ -458,7 +460,7 @@ impl<T: MergableEvents> MergableEvents for Box<T> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub enum ChannelEvents {
     Events(Box<dyn Events>),
     Status(ConnStatusEvent),

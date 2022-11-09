@@ -13,8 +13,8 @@ use items::numops::{BoolNum, NumOps, StringNum};
 use items::scalarevents::ScalarEvents;
 use items::streams::{Collectable, Collector};
 use items::{
-    Clearable, EventsNodeProcessor, Framable, FrameType, PushableIndex, RangeCompletableItem, Sitemty, StreamItem,
-    TimeBinnableType,
+    Clearable, EventsNodeProcessor, Framable, FrameType, FrameTypeStatic, PushableIndex, RangeCompletableItem, Sitemty,
+    StreamItem, TimeBinnableType,
 };
 use netpod::log::*;
 use netpod::query::{PlainEventsQuery, RawEventsQuery};
@@ -75,9 +75,10 @@ where
         + TimeBinnableType<Output = <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>
         + Collectable
         + Unpin,
-    Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
+    // TODO shouldn't one of FrameType or FrameTypeStatic be enough?
+    Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + FrameTypeStatic + Framable + 'static,
     Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
-        FrameType + Framable + DeserializeOwned,
+        FrameType + FrameTypeStatic + Framable + DeserializeOwned,
 {
     Ok(f.exec(byte_order, scalar_type, shape, event_value_shape, events_node_proc)?)
 }

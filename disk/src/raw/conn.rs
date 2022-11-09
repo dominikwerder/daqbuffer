@@ -1,12 +1,10 @@
-use crate::decode::{
-    BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
-    EventsDecodedStream, LittleEndian, NumFromBytes,
-};
+use crate::decode::{BigEndian, Endianness, LittleEndian};
+use crate::decode::{EventValueFromBytes, EventValueShape, EventsDecodedStream, NumFromBytes};
+use crate::decode::{EventValuesDim0Case, EventValuesDim1Case};
 use crate::eventblobs::EventChunkerMultifile;
 use crate::eventchunker::{EventChunkerConf, EventFull};
 use err::Error;
-use futures_core::Stream;
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
 use items::numops::{BoolNum, NumOps, StringNum};
 use items::{EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::log::*;
@@ -319,6 +317,8 @@ pub async fn make_event_blobs_pipe(
     let range = &evq.range;
     let entry = get_applicable_entry(&evq.range, evq.channel.clone(), node_config).await?;
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
+    type ItemType = Sitemty<EventFull>;
+    // TODO should depend on host config
     let pipe = if true {
         let event_blobs = make_remote_event_blobs_stream(
             range.clone(),
@@ -330,7 +330,7 @@ pub async fn make_event_blobs_pipe(
             evq.disk_io_tune.clone(),
             node_config,
         )?;
-        let s = event_blobs.map(|item| Box::new(item) as Box<dyn Framable + Send>);
+        let s = event_blobs.map(|item: ItemType| Box::new(item) as Box<dyn Framable + Send>);
         //let s = tracing_futures::Instrumented::instrument(s, tracing::info_span!("make_event_blobs_pipe"));
         let pipe: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>;
         pipe = Box::pin(s);
@@ -346,7 +346,7 @@ pub async fn make_event_blobs_pipe(
             evq.disk_io_tune.clone(),
             node_config,
         )?;
-        let s = event_blobs.map(|item| Box::new(item) as Box<dyn Framable + Send>);
+        let s = event_blobs.map(|item: ItemType| Box::new(item) as Box<dyn Framable + Send>);
         //let s = tracing_futures::Instrumented::instrument(s, tracing::info_span!("make_event_blobs_pipe"));
         let pipe: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>;
         pipe = Box::pin(s);

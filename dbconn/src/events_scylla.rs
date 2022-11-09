@@ -476,7 +476,9 @@ read_next_scalar_values!(read_next_values_scalar_f64, f64, f64, "events_scalar_f
 
 read_next_array_values!(read_next_values_array_u16, u16, i16, "events_wave_u16");
 
-pub async fn make_scylla_stream(
+// TODO remove
+#[allow(unused)]
+async fn make_scylla_stream(
     _evq: &RawEventsQuery,
     _scyco: &ScyllaConfig,
     _dbconf: Database,

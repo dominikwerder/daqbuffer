@@ -11,15 +11,14 @@ use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use items::numops::NumOps;
 use items::{
-    Appendable, Clearable, EventsNodeProcessor, EventsTypeAliases, FrameType, PushableIndex, RangeCompletableItem,
-    ReadableFromFile, Sitemty, StreamItem, TimeBinnableType,
+    Appendable, Clearable, EventsNodeProcessor, EventsTypeAliases, FrameDecodable, FrameType, PushableIndex,
+    RangeCompletableItem, ReadableFromFile, Sitemty, StreamItem, TimeBinnableType,
 };
 use netpod::log::*;
 use netpod::query::{CacheUsage, RawEventsQuery};
-use netpod::{
-    x_bin_count, AggKind, BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange,
-};
-use serde::de::DeserializeOwned;
+use netpod::x_bin_count;
+use netpod::{AggKind, BinnedRange, PreBinnedPatchIterator, PreBinnedPatchRange};
+use netpod::{NodeConfigCached, PerfOpts};
 use serde::Serialize;
 use std::future::Future;
 use std::io;
@@ -70,7 +69,7 @@ where
     // TODO is this needed:
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType,
     // TODO who exactly needs this DeserializeOwned?
-    Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>: FrameType + DeserializeOwned,
+    Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>: FrameType + FrameDecodable,
 {
     pub fn new(query: PreBinnedQuery, agg_kind: AggKind, node_config: &NodeConfigCached) -> Self {
         Self {
@@ -484,7 +483,7 @@ where
     <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable + Clearable,
     // TODO needed?
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType,
-    Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>: FrameType + DeserializeOwned,
+    Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>: FrameType + FrameDecodable,
 {
     type Item = Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>;
 

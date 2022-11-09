@@ -4,7 +4,7 @@ use crate::xbinnedscalarevents::XBinnedScalarEvents;
 use crate::xbinnedwaveevents::XBinnedWaveEvents;
 use crate::{
     Appendable, ByteEstimate, Clearable, EventAppendable, EventsDyn, EventsNodeProcessor, FilterFittingInside, Fits,
-    FitsInside, FrameTypeStatic, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile,
+    FitsInside, FrameTypeStaticSYC, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile,
     SitemtyFrameType, SubFrId, TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
@@ -40,16 +40,11 @@ impl<NTY> WaveEvents<NTY> {
     }
 }
 
-impl<NTY> FrameTypeStatic for WaveEvents<NTY>
+impl<NTY> FrameTypeStaticSYC for WaveEvents<NTY>
 where
     NTY: SubFrId,
 {
     const FRAME_TYPE_ID: u32 = crate::WAVE_EVENTS_FRAME_TYPE_ID + NTY::SUB;
-
-    fn from_error(_: err::Error) -> Self {
-        // TODO remove this method.
-        panic!()
-    }
 }
 
 impl<NTY> SitemtyFrameType for WaveEvents<NTY>
@@ -57,7 +52,7 @@ where
     NTY: SubFrId,
 {
     fn frame_type_id(&self) -> u32 {
-        <Self as FrameTypeStatic>::FRAME_TYPE_ID
+        <Self as FrameTypeStaticSYC>::FRAME_TYPE_ID
     }
 }
 

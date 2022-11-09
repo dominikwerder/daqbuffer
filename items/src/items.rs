@@ -18,10 +18,11 @@ use crate::numops::BoolNum;
 use bytes::BytesMut;
 use chrono::{TimeZone, Utc};
 use err::Error;
+use frame::{make_error_frame, make_log_frame, make_range_complete_frame, make_stats_frame};
 #[allow(unused)]
 use netpod::log::*;
 use netpod::timeunits::{MS, SEC};
-use netpod::{log::Level, AggKind, EventDataReadStats, EventQueryJsonStringFrame, NanoRange, Shape};
+use netpod::{log::Level, AggKind, EventDataReadStats, NanoRange, Shape};
 use netpod::{DiskStats, RangeFilterStats, ScalarType};
 use numops::StringNum;
 use serde::de::{self, DeserializeOwned, Visitor};
@@ -38,12 +39,14 @@ use tokio::io::{AsyncRead, ReadBuf};
 pub const TERM_FRAME_TYPE_ID: u32 = 0x01;
 pub const ERROR_FRAME_TYPE_ID: u32 = 0x02;
 pub const EVENT_QUERY_JSON_STRING_FRAME: u32 = 0x100;
-pub const EVENT_VALUES_FRAME_TYPE_ID: u32 = 0x500;
+pub const EVENTS_0D_FRAME_TYPE_ID: u32 = 0x500;
 pub const MIN_MAX_AVG_DIM_0_BINS_FRAME_TYPE_ID: u32 = 0x700;
 pub const MIN_MAX_AVG_DIM_1_BINS_FRAME_TYPE_ID: u32 = 0x800;
 pub const MIN_MAX_AVG_WAVE_BINS: u32 = 0xa00;
 pub const WAVE_EVENTS_FRAME_TYPE_ID: u32 = 0xb00;
-pub const NON_DATA_FRAME_TYPE_ID: u32 = 0xc00;
+pub const LOG_FRAME_TYPE_ID: u32 = 0xc00;
+pub const STATS_FRAME_TYPE_ID: u32 = 0xd00;
+pub const RANGE_COMPLETE_FRAME_TYPE_ID: u32 = 0xe00;
 pub const EVENT_FULL_FRAME_TYPE_ID: u32 = 0x2200;
 pub const EVENTS_ITEM_FRAME_TYPE_ID: u32 = 0x2300;
 pub const STATS_EVENTS_FRAME_TYPE_ID: u32 = 0x2400;
@@ -166,87 +169,82 @@ pub trait SubFrId {
 }
 
 impl SubFrId for u8 {
-    const SUB: u32 = 3;
+    const SUB: u32 = 0x03;
 }
 
 impl SubFrId for u16 {
-    const SUB: u32 = 5;
+    const SUB: u32 = 0x05;
 }
 
 impl SubFrId for u32 {
-    const SUB: u32 = 8;
+    const SUB: u32 = 0x08;
 }
 
 impl SubFrId for u64 {
-    const SUB: u32 = 0xa;
+    const SUB: u32 = 0x0a;
 }
 
 impl SubFrId for i8 {
-    const SUB: u32 = 2;
+    const SUB: u32 = 0x02;
 }
 
 impl SubFrId for i16 {
-    const SUB: u32 = 4;
+    const SUB: u32 = 0x04;
 }
 
 impl SubFrId for i32 {
-    const SUB: u32 = 7;
+    const SUB: u32 = 0x07;
 }
 
 impl SubFrId for i64 {
-    const SUB: u32 = 9;
+    const SUB: u32 = 0x09;
 }
 
 impl SubFrId for f32 {
-    const SUB: u32 = 0xb;
+    const SUB: u32 = 0x0b;
 }
 
 impl SubFrId for f64 {
-    const SUB: u32 = 0xc;
+    const SUB: u32 = 0x0c;
 }
 
 impl SubFrId for StringNum {
-    const SUB: u32 = 0xd;
+    const SUB: u32 = 0x0d;
 }
 
 impl SubFrId for BoolNum {
-    const SUB: u32 = 0xe;
+    const SUB: u32 = 0x0e;
 }
 
 // To be implemented by the data containers, i.e. the T's in Sitemty<T>, e.g. ScalarEvents.
 // TODO rename this, since it is misleading because it is not meanto to be implemented by Sitemty.
 pub trait SitemtyFrameType {
-    //const FRAME_TYPE_ID: u32;
+    // TODO check actual usage of this
     fn frame_type_id(&self) -> u32;
 }
 
 pub trait FrameTypeStatic {
     const FRAME_TYPE_ID: u32;
-    fn from_error(x: ::err::Error) -> Self;
 }
 
+// Required for any inner type of Sitemty.
+pub trait FrameTypeStaticSYC {
+    const FRAME_TYPE_ID: u32;
+}
+
+impl<T> FrameTypeStatic for Sitemty<T>
+where
+    T: FrameTypeStaticSYC,
+{
+    const FRAME_TYPE_ID: u32 = <T as FrameTypeStaticSYC>::FRAME_TYPE_ID;
+}
+
+// Framable trait objects need some inspection to handle the supposed-to-be common Err ser format:
 // Meant to be implemented by Sitemty.
 pub trait FrameType {
     fn frame_type_id(&self) -> u32;
     fn is_err(&self) -> bool;
     fn err(&self) -> Option<&::err::Error>;
-}
-
-impl FrameTypeStatic for EventQueryJsonStringFrame {
-    const FRAME_TYPE_ID: u32 = EVENT_QUERY_JSON_STRING_FRAME;
-
-    fn from_error(_x: err::Error) -> Self {
-        error!("FrameTypeStatic::from_error todo");
-        todo!()
-    }
-}
-
-impl<T: FrameTypeStatic> FrameTypeStatic for Sitemty<T> {
-    const FRAME_TYPE_ID: u32 = <T as FrameTypeStatic>::FRAME_TYPE_ID;
-
-    fn from_error(e: err::Error) -> Self {
-        Err(e)
-    }
 }
 
 impl<T> FrameType for Box<T>
@@ -268,11 +266,10 @@ where
 
 impl<T> FrameType for Sitemty<T>
 where
-    // SitemtyFrameType
-    T: FrameTypeStatic,
+    T: FrameTypeStaticSYC,
 {
     fn frame_type_id(&self) -> u32 {
-        <T as FrameTypeStatic>::FRAME_TYPE_ID
+        <T as FrameTypeStaticSYC>::FRAME_TYPE_ID
     }
 
     fn is_err(&self) -> bool {
@@ -290,20 +287,6 @@ where
     }
 }
 
-impl FrameType for EventQueryJsonStringFrame {
-    fn frame_type_id(&self) -> u32 {
-        <Self as FrameTypeStatic>::FRAME_TYPE_ID
-    }
-
-    fn is_err(&self) -> bool {
-        false
-    }
-
-    fn err(&self) -> Option<&::err::Error> {
-        None
-    }
-}
-
 impl SitemtyFrameType for Box<dyn TimeBinned> {
     fn frame_type_id(&self) -> u32 {
         self.as_time_binnable_dyn().frame_type_id()
@@ -316,7 +299,6 @@ impl SitemtyFrameType for Box<dyn EventsDyn> {
     }
 }
 
-// TODO do we need Send here?
 pub trait Framable {
     fn make_frame(&self) -> Result<BytesMut, Error>;
 }
@@ -343,10 +325,10 @@ where
                 let frame_type_id = k.frame_type_id();
                 make_frame_2(self, frame_type_id)
             }
-            _ => {
-                let frame_type_id = NON_DATA_FRAME_TYPE_ID;
-                make_frame_2(self, frame_type_id)
-            }
+            Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)) => make_range_complete_frame(),
+            Ok(StreamItem::Log(item)) => make_log_frame(item),
+            Ok(StreamItem::Stats(item)) => make_stats_frame(item),
+            Err(e) => make_error_frame(e),
         }
     }
 }
@@ -358,6 +340,41 @@ where
     fn make_frame(&self) -> Result<BytesMut, Error> {
         self.as_ref().make_frame()
     }
+}
+
+pub trait FrameDecodable: FrameTypeStatic + DeserializeOwned {
+    fn from_error(e: ::err::Error) -> Self;
+    fn from_log(item: LogItem) -> Self;
+    fn from_stats(item: StatsItem) -> Self;
+    fn from_range_complete() -> Self;
+}
+
+impl<T> FrameDecodable for Sitemty<T>
+where
+    T: FrameTypeStaticSYC + DeserializeOwned,
+{
+    fn from_error(e: err::Error) -> Self {
+        Err(e)
+    }
+
+    fn from_log(item: LogItem) -> Self {
+        Ok(StreamItem::Log(item))
+    }
+
+    fn from_stats(item: StatsItem) -> Self {
+        Ok(StreamItem::Stats(item))
+    }
+
+    fn from_range_complete() -> Self {
+        Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct EventQueryJsonStringFrame(pub String);
+
+impl FrameTypeStaticSYC for EventQueryJsonStringFrame {
+    const FRAME_TYPE_ID: u32 = EVENT_QUERY_JSON_STRING_FRAME;
 }
 
 pub trait EventsNodeProcessor: Send + Unpin {
@@ -476,8 +493,9 @@ pub trait TimeBinnableType:
     + NewEmpty
     + Appendable
     + Serialize
+    + DeserializeOwned
     + ReadableFromFile
-    + FrameTypeStatic
+    + FrameTypeStaticSYC
 {
     type Output: TimeBinnableType;
     type Aggregator: TimeBinnableTypeAggregator<Input = Self, Output = Self::Output> + Send + Unpin;

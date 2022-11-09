@@ -76,8 +76,9 @@ impl Stream for EventChunkerMultifile {
     type Item = Result<StreamItem<RangeCompletableItem<EventFull>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let span1 = span!(Level::INFO, "EventChunkerMultifile", desc = tracing::field::Empty);
-        span1.record("desc", &"");
+        //tracing::field::DebugValue;
+        let span1 = span!(Level::INFO, "EventChunkerMultifile", node_ix = self.node_ix);
+        //span1.record("node_ix", &self.node_ix);
         span1.in_scope(|| {
             use Poll::*;
             'outer: loop {

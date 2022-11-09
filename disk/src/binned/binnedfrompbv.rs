@@ -7,14 +7,13 @@ use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use http::{StatusCode, Uri};
 use items::frame::decode_frame;
-use items::{FrameType, FrameTypeStatic, RangeCompletableItem, Sitemty, StreamItem, TimeBinnableType};
+use items::{FrameDecodable, FrameType, FrameTypeStaticSYC, TimeBinnableType};
+use items::{RangeCompletableItem, Sitemty, StreamItem};
 use netpod::log::*;
 use netpod::query::CacheUsage;
-use netpod::{
-    x_bin_count, AggKind, AppendToUrl, BinnedRange, ByteSize, Channel, NodeConfigCached, PerfOpts,
-    PreBinnedPatchIterator, ScalarType, Shape,
-};
-use serde::de::DeserializeOwned;
+use netpod::x_bin_count;
+use netpod::PreBinnedPatchIterator;
+use netpod::{AggKind, AppendToUrl, BinnedRange, ByteSize, Channel, NodeConfigCached, PerfOpts, ScalarType, Shape};
 use std::future::ready;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -34,7 +33,8 @@ pub struct FetchedPreBinned<TBT> {
 impl<TBT> FetchedPreBinned<TBT> {
     pub fn new(query: &PreBinnedQuery, host: String, port: u16) -> Result<Self, Error>
     where
-        TBT: TimeBinnableType,
+        TBT: FrameTypeStaticSYC + TimeBinnableType,
+        Sitemty<TBT>: FrameDecodable,
     {
         // TODO should not assume http:
         let mut url = Url::parse(&format!("http://{host}:{port}/api/4/prebinned"))?;
@@ -53,8 +53,8 @@ impl<TBT> FetchedPreBinned<TBT> {
 
 impl<TBT> Stream for FetchedPreBinned<TBT>
 where
-    TBT: FrameTypeStatic + TimeBinnableType,
-    Sitemty<TBT>: FrameType + DeserializeOwned,
+    TBT: FrameTypeStaticSYC + TimeBinnableType,
+    Sitemty<TBT>: FrameDecodable,
 {
     type Item = Sitemty<TBT>;
 
@@ -156,7 +156,7 @@ where
 impl<TBT> BinnedFromPreBinned<TBT>
 where
     TBT: TimeBinnableType<Output = TBT> + Unpin + 'static,
-    Sitemty<TBT>: FrameType + DeserializeOwned,
+    Sitemty<TBT>: FrameType + FrameDecodable,
 {
     pub fn new(
         patch_it: PreBinnedPatchIterator,
@@ -252,7 +252,8 @@ where
 
 impl<TBT> Stream for BinnedFromPreBinned<TBT>
 where
-    TBT: TimeBinnableType,
+    TBT: TimeBinnableType<Output = TBT> + Unpin + 'static,
+    Sitemty<TBT>: FrameType + FrameDecodable,
 {
     type Item = Sitemty<TBT>;
 

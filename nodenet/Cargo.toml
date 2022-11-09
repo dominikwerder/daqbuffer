@@ -2,7 +2,7 @@
 name = "nodenet"
 version = "0.0.1-a.1"
 authors = ["Dominik Werder <dominik.werder@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 [lib]
 path = "src/nodenet.rs"
@@ -30,5 +30,7 @@ netpod = { path = "../netpod" }
 disk = { path = "../disk" }
 #parse = { path = "../parse" }
 items = { path = "../items" }
+items_2 = { path = "../items_2" }
 dbconn = { path = "../dbconn" }
+scyllaconn = { path = "../scyllaconn" }
 taskrun = { path = "../taskrun" }

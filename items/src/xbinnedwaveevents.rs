@@ -2,7 +2,7 @@ use crate::binsdim1::MinMaxAvgDim1Bins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
-    Appendable, ByteEstimate, Clearable, FilterFittingInside, Fits, FitsInside, FrameTypeStatic, NewEmpty,
+    Appendable, ByteEstimate, Clearable, FilterFittingInside, Fits, FitsInside, FrameTypeStaticSYC, NewEmpty,
     PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType, SubFrId, TimeBinnableType,
     TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
@@ -23,15 +23,11 @@ pub struct XBinnedWaveEvents<NTY> {
     pub avgs: Vec<Vec<f32>>,
 }
 
-impl<NTY> FrameTypeStatic for XBinnedWaveEvents<NTY>
+impl<NTY> FrameTypeStaticSYC for XBinnedWaveEvents<NTY>
 where
     NTY: SubFrId,
 {
     const FRAME_TYPE_ID: u32 = crate::X_BINNED_WAVE_EVENTS_FRAME_TYPE_ID + NTY::SUB;
-
-    fn from_error(_: err::Error) -> Self {
-        panic!()
-    }
 }
 
 // TODO use a generic impl for this:
@@ -40,7 +36,7 @@ where
     NTY: SubFrId,
 {
     fn frame_type_id(&self) -> u32 {
-        <Self as FrameTypeStatic>::FRAME_TYPE_ID
+        <Self as FrameTypeStaticSYC>::FRAME_TYPE_ID
     }
 }
 

@@ -11,8 +11,6 @@ pub enum EventsItem {
 }
 
 impl SitemtyFrameType for EventsItem {
-    //const FRAME_TYPE_ID: u32 = crate::EVENTS_ITEM_FRAME_TYPE_ID;
-
     fn frame_type_id(&self) -> u32 {
         crate::EVENTS_ITEM_FRAME_TYPE_ID
     }

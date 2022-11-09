@@ -12,12 +12,11 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use items::numops::{BoolNum, NumOps, StringNum};
 use items::{
-    Appendable, Clearable, EventsNodeProcessor, Framable, FrameType, PushableIndex, RangeCompletableItem, Sitemty,
-    SitemtyFrameType, StreamItem, TimeBinnableType, TimeBinned,
+    Appendable, Clearable, EventsNodeProcessor, Framable, FrameDecodable, FrameType, PushableIndex,
+    RangeCompletableItem, Sitemty, SitemtyFrameType, StreamItem, TimeBinnableType, TimeBinned,
 };
 use netpod::log::*;
 use netpod::{AggKind, ByteOrder, ChannelTyped, NodeConfigCached, ScalarType, Shape};
-use serde::de::DeserializeOwned;
 use serde::Serialize;
 use std::pin::Pin;
 
@@ -36,10 +35,9 @@ where
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
     <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable + Clearable + 'static,
-    Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
-    Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
-        Framable + FrameType + DeserializeOwned,
     <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: SitemtyFrameType + TimeBinned,
+    Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
+    Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>: Framable + FrameType + FrameDecodable,
 {
     if let Some(scyconf) = &node_config.node_config.cluster.cache_scylla {
         trace!("~~~~~~~~~~~~~~~  make_num_pipeline_nty_end_evs_enp using scylla as cache");
@@ -58,11 +56,11 @@ where
         )
         .await?;
         let stream = stream.map(|x| {
-            //
-            match x {
+            let ret = match x {
                 Ok(k) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(k))),
                 Err(e) => Err(e),
-            }
+            };
+            ret
         });
         let stream = Box::pin(stream) as Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>;
         Ok(stream)

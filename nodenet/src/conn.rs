@@ -1,18 +1,17 @@
 #[cfg(test)]
 mod test;
 
-use dbconn::events_scylla::make_scylla_stream;
 use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::frame::{decode_frame, make_term_frame};
-use items::{Framable, StreamItem};
+use items::{EventQueryJsonStringFrame, Framable, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::histo::HistoLog2;
 use netpod::log::*;
-use netpod::query::RawEventsQuery;
+use netpod::query::{PlainEventsQuery, RawEventsQuery};
 use netpod::AggKind;
-use netpod::{EventQueryJsonStringFrame, NodeConfigCached, PerfOpts};
+use netpod::{NodeConfigCached, PerfOpts};
 use std::net::SocketAddr;
 use std::pin::Pin;
 use tokio::io::AsyncWriteExt;
@@ -29,20 +28,6 @@ pub async fn events_service(node_config: NodeConfigCached) -> Result<(), Error> 
                 taskrun::spawn(events_conn_handler(stream, addr, node_config.clone()));
             }
             Err(e) => Err(e)?,
-        }
-    }
-}
-
-async fn events_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: NodeConfigCached) -> Result<(), Error> {
-    let span1 = span!(Level::INFO, "events_conn_handler");
-    let r = events_conn_handler_inner(stream, addr, &node_config)
-        .instrument(span1)
-        .await;
-    match r {
-        Ok(k) => Ok(k),
-        Err(e) => {
-            error!("events_conn_handler sees error: {:?}", e);
-            Err(e)
         }
     }
 }
@@ -91,8 +76,18 @@ async fn events_conn_handler_inner_try(
         error!("missing command frame");
         return Err((Error::with_msg("missing command frame"), netout))?;
     }
-    let qitem: EventQueryJsonStringFrame = match decode_frame(&frames[0]) {
-        Ok(k) => k,
+    // TODO this does not need all variants of Sitemty.
+    let qitem = match decode_frame::<Sitemty<EventQueryJsonStringFrame>>(&frames[0]) {
+        Ok(k) => match k {
+            Ok(k) => match k {
+                StreamItem::DataItem(k) => match k {
+                    RangeCompletableItem::Data(k) => k,
+                    RangeCompletableItem::RangeComplete => panic!(),
+                },
+                _ => panic!(),
+            },
+            Err(e) => return Err((e, netout).into()),
+        },
         Err(e) => return Err((e, netout).into()),
     };
     let res: Result<RawEventsQuery, _> = serde_json::from_str(&qitem.0);
@@ -113,31 +108,53 @@ async fn events_conn_handler_inner_try(
 
     let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> =
         if let Some(conf) = &node_config.node_config.cluster.scylla {
+            // TODO depends in general on the query
+            // TODO why both in PlainEventsQuery and as separate parameter? Check other usages.
+            let do_one_before_range = false;
+            // TODO use better builder pattern with shortcuts for production and dev defaults
+            let qu = PlainEventsQuery::new(evq.channel, evq.range, 1024 * 8, None, true);
             let scyco = conf;
-            let dbconf = node_config.node_config.cluster.database.clone();
-            match make_scylla_stream(&evq, scyco, dbconf, evq.do_test_stream_error).await {
-                Ok(s) => {
-                    //
-                    let s = s.map(|item| {
-                        //
-                        /*match item {
-                            Ok(StreamItem::Data(RangeCompletableItem::Data(k))) => {
-                                let b = Box::new(b);
-                                Ok(StreamItem::Data(RangeCompletableItem::Data(b)))
-                            }
-                            Ok(StreamItem::Data(RangeCompletableItem::Complete)) => {
-                                Ok(StreamItem::Data(RangeCompletableItem::Complete))
-                            }
-                            Ok(StreamItem::Log(k)) => Ok(StreamItem::Log(k)),
-                            Ok(StreamItem::Stats(k)) => Ok(StreamItem::Stats(k)),
-                            Err(e) => Err(e),
-                        }*/
-                        Box::new(item) as Box<dyn Framable + Send>
-                    });
-                    Box::pin(s)
-                }
+            let _dbconf = node_config.node_config.cluster.database.clone();
+            let scy = match scyllaconn::create_scy_session(scyco).await {
+                Ok(k) => k,
                 Err(e) => return Err((e, netout))?,
-            }
+            };
+            let series = err::todoval();
+            let scalar_type = err::todoval();
+            let shape = err::todoval();
+            let do_test_stream_error = false;
+            let stream = match scyllaconn::events::make_scylla_stream(
+                &qu,
+                do_one_before_range,
+                series,
+                scalar_type,
+                shape,
+                scy,
+                do_test_stream_error,
+            )
+            .await
+            {
+                Ok(k) => k,
+                Err(e) => return Err((e, netout))?,
+            };
+            let s = stream.map(|item| {
+                let item = match item {
+                    Ok(item) => match item {
+                        items_2::ChannelEvents::Events(_item) => {
+                            // TODO
+                            let item = items::scalarevents::ScalarEvents::<f64>::empty();
+                            Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
+                        }
+                        items_2::ChannelEvents::RangeComplete => {
+                            Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
+                        }
+                        items_2::ChannelEvents::Status(_item) => todo!(),
+                    },
+                    Err(e) => Err(e),
+                };
+                Box::new(item) as Box<dyn Framable + Send>
+            });
+            Box::pin(s)
         } else if let Some(_) = &node_config.node.channel_archiver {
             let e = Error::with_msg_no_trace("archapp not built");
             return Err((e, netout))?;
@@ -172,7 +189,10 @@ async fn events_conn_handler_inner_try(
             }
         }
     }
-    let buf = make_term_frame();
+    let buf = match make_term_frame() {
+        Ok(k) => k,
+        Err(e) => return Err((e, netout))?,
+    };
     match netout.write_all(&buf).await {
         Ok(_) => (),
         Err(e) => return Err((e, netout))?,
@@ -204,4 +224,18 @@ async fn events_conn_handler_inner(
         }
     }
     Ok(())
+}
+
+async fn events_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: NodeConfigCached) -> Result<(), Error> {
+    let span1 = span!(Level::INFO, "events_conn_handler");
+    let r = events_conn_handler_inner(stream, addr, &node_config)
+        .instrument(span1)
+        .await;
+    match r {
+        Ok(k) => Ok(k),
+        Err(e) => {
+            error!("events_conn_handler sees error: {:?}", e);
+            Err(e)
+        }
+    }
 }

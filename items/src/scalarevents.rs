@@ -3,7 +3,7 @@ use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
     pulse_offs_from_abs, ts_offs_from_abs, Appendable, ByteEstimate, Clearable, EventAppendable, EventsDyn,
-    FilterFittingInside, Fits, FitsInside, FrameTypeStatic, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv,
+    FilterFittingInside, Fits, FitsInside, FrameTypeStaticSYC, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv,
     ReadableFromFile, SitemtyFrameType, TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinnerDyn,
     WithLen, WithTimestamps,
 };
@@ -52,17 +52,11 @@ impl<NTY> ScalarEvents<NTY> {
     }
 }
 
-impl<NTY> FrameTypeStatic for ScalarEvents<NTY>
+impl<NTY> FrameTypeStaticSYC for ScalarEvents<NTY>
 where
     NTY: NumOps,
 {
-    const FRAME_TYPE_ID: u32 = crate::EVENT_VALUES_FRAME_TYPE_ID + NTY::SUB;
-
-    fn from_error(_: err::Error) -> Self {
-        // TODO this method should not be used, remove.
-        error!("impl<NTY> FrameTypeStatic for ScalarEvents<NTY>");
-        panic!()
-    }
+    const FRAME_TYPE_ID: u32 = crate::EVENTS_0D_FRAME_TYPE_ID + NTY::SUB;
 }
 
 impl<NTY> SitemtyFrameType for ScalarEvents<NTY>
@@ -70,7 +64,7 @@ where
     NTY: NumOps,
 {
     fn frame_type_id(&self) -> u32 {
-        <Self as FrameTypeStatic>::FRAME_TYPE_ID
+        <Self as FrameTypeStaticSYC>::FRAME_TYPE_ID
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::streams::{Collectable, Collector};
 use crate::{
     ts_offs_from_abs, Appendable, ByteEstimate, Clearable, EventAppendable, FilterFittingInside, Fits, FitsInside,
-    FrameTypeStatic, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType,
+    FrameTypeStaticSYC, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType,
     TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
@@ -17,18 +17,13 @@ pub struct StatsEvents {
     pub pulses: Vec<u64>,
 }
 
-impl FrameTypeStatic for StatsEvents {
+impl FrameTypeStaticSYC for StatsEvents {
     const FRAME_TYPE_ID: u32 = crate::STATS_EVENTS_FRAME_TYPE_ID;
-
-    fn from_error(_: err::Error) -> Self {
-        // TODO remove usage of this
-        panic!()
-    }
 }
 
 impl SitemtyFrameType for StatsEvents {
     fn frame_type_id(&self) -> u32 {
-        <Self as FrameTypeStatic>::FRAME_TYPE_ID
+        <Self as FrameTypeStaticSYC>::FRAME_TYPE_ID
     }
 }
 

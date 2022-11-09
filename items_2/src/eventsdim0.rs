@@ -11,13 +11,6 @@ use std::any::Any;
 use std::collections::VecDeque;
 use std::{fmt, mem};
 
-#[allow(unused)]
-macro_rules! trace {
-    ($($x:expr),*) => {
-        {let _ = format!($($x),*);}
-    };
-}
-
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventsDim0<NTY> {
     pub tss: VecDeque<u64>,
@@ -574,6 +567,7 @@ pub struct EventsDim0TimeBinner<NTY: ScalarOps> {
     edges: VecDeque<u64>,
     agg: EventsDim0Aggregator<NTY>,
     ready: Option<<EventsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output>,
+    range_complete: bool,
 }
 
 impl<NTY: ScalarOps> EventsDim0TimeBinner<NTY> {
@@ -594,6 +588,7 @@ impl<NTY: ScalarOps> EventsDim0TimeBinner<NTY> {
             edges,
             agg,
             ready: None,
+            range_complete: false,
         };
         Ok(ret)
     }
@@ -759,5 +754,7 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
         }
     }
 
-    fn set_range_complete(&mut self) {}
+    fn set_range_complete(&mut self) {
+        self.range_complete = true;
+    }
 }

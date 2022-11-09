@@ -1,11 +1,12 @@
+use clap::ArgAction;
 use clap::Parser;
 
 #[derive(Debug, Parser)]
-#[clap(name = "daqbuffer", author, version)]
+#[command(author, version)]
 pub struct Opts {
-    #[clap(short, long, parse(from_occurrences))]
-    pub verbose: i32,
-    #[clap(subcommand)]
+    #[arg(long, action(ArgAction::Count))]
+    pub verbose: u8,
+    #[command(subcommand)]
     pub subcmd: SubCmd,
 }
 
@@ -21,19 +22,19 @@ pub enum SubCmd {
 
 #[derive(Debug, Parser)]
 pub struct Retrieval {
-    #[clap(long)]
+    #[arg(long)]
     pub config: String,
 }
 
 #[derive(Debug, Parser)]
 pub struct Proxy {
-    #[clap(long)]
+    #[arg(long)]
     pub config: String,
 }
 
 #[derive(Debug, Parser)]
 pub struct Client {
-    #[clap(subcommand)]
+    #[command(subcommand)]
     pub client_type: ClientType,
 }
 
@@ -45,36 +46,36 @@ pub enum ClientType {
 
 #[derive(Debug, Parser)]
 pub struct StatusClient {
-    #[clap(long)]
+    #[arg(long)]
     pub host: String,
-    #[clap(long)]
+    #[arg(long)]
     pub port: u16,
 }
 
 #[derive(Debug, Parser)]
 pub struct BinnedClient {
-    #[clap(long)]
+    #[arg(long)]
     pub host: String,
-    #[clap(long)]
+    #[arg(long)]
     pub port: u16,
-    #[clap(long)]
+    #[arg(long)]
     pub backend: String,
-    #[clap(long)]
+    #[arg(long)]
     pub channel: String,
-    #[clap(long)]
+    #[arg(long)]
     pub beg: String,
-    #[clap(long)]
+    #[arg(long)]
     pub end: String,
-    #[clap(long)]
+    #[arg(long)]
     pub bins: u32,
-    #[clap(long, default_value = "use")]
+    #[arg(long, default_value = "use")]
     pub cache: String,
-    #[clap(long, default_value = "1048576")]
+    #[arg(long, default_value = "1048576")]
     pub disk_stats_every_kb: u32,
 }
 
 #[derive(Debug, Parser)]
 pub struct Logappend {
-    #[clap(long)]
+    #[arg(long)]
     pub dir: String,
 }

@@ -2014,9 +2014,6 @@ pub struct ChannelConfigResponse {
     pub shape: Shape,
 }
 
-#[derive(Serialize, Deserialize)]
-pub struct EventQueryJsonStringFrame(pub String);
-
 /**
 Provide basic information about a channel, especially it's shape.
 Also, byte-order is important for clients that process the raw databuffer event data (python data_api3).

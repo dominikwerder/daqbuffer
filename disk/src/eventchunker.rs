@@ -4,7 +4,7 @@ use bytes::{Buf, BytesMut};
 use err::Error;
 use futures_util::{Stream, StreamExt};
 use items::{
-    Appendable, ByteEstimate, Clearable, FrameTypeStatic, PushableIndex, RangeCompletableItem, SitemtyFrameType,
+    Appendable, ByteEstimate, Clearable, FrameTypeStaticSYC, PushableIndex, RangeCompletableItem, SitemtyFrameType,
     StatsItem, StreamItem, WithLen, WithTimestamps,
 };
 use netpod::histo::HistoLog2;
@@ -528,18 +528,13 @@ impl EventFull {
     }
 }
 
-impl FrameTypeStatic for EventFull {
+impl FrameTypeStaticSYC for EventFull {
     const FRAME_TYPE_ID: u32 = items::EVENT_FULL_FRAME_TYPE_ID;
-
-    fn from_error(_: err::Error) -> Self {
-        // TODO remove usage of this
-        panic!()
-    }
 }
 
 impl SitemtyFrameType for EventFull {
     fn frame_type_id(&self) -> u32 {
-        <Self as FrameTypeStatic>::FRAME_TYPE_ID
+        <Self as FrameTypeStaticSYC>::FRAME_TYPE_ID
     }
 }
 

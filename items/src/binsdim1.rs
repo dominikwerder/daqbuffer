@@ -2,7 +2,7 @@ use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector, ToJsonBytes, ToJsonResult};
 use crate::waveevents::WaveEvents;
 use crate::{
-    pulse_offs_from_abs, ts_offs_from_abs, Appendable, FilterFittingInside, Fits, FitsInside, FrameTypeStatic,
+    pulse_offs_from_abs, ts_offs_from_abs, Appendable, FilterFittingInside, Fits, FitsInside, FrameTypeStaticSYC,
     IsoDateTime, NewEmpty, RangeOverlapInfo, ReadPbv, ReadableFromFile, Sitemty, SitemtyFrameType, SubFrId,
     TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinned, TimeBins, WithLen,
 };
@@ -27,16 +27,11 @@ pub struct MinMaxAvgDim1Bins<NTY> {
     pub avgs: Vec<Option<Vec<f32>>>,
 }
 
-impl<NTY> FrameTypeStatic for MinMaxAvgDim1Bins<NTY>
+impl<NTY> FrameTypeStaticSYC for MinMaxAvgDim1Bins<NTY>
 where
     NTY: SubFrId,
 {
     const FRAME_TYPE_ID: u32 = crate::MIN_MAX_AVG_DIM_1_BINS_FRAME_TYPE_ID + NTY::SUB;
-
-    fn from_error(_: err::Error) -> Self {
-        // TODO remove usage of this
-        panic!()
-    }
 }
 
 impl<NTY> SitemtyFrameType for MinMaxAvgDim1Bins<NTY>
@@ -44,7 +39,7 @@ where
     NTY: SubFrId,
 {
     fn frame_type_id(&self) -> u32 {
-        <Self as FrameTypeStatic>::FRAME_TYPE_ID
+        <Self as FrameTypeStaticSYC>::FRAME_TYPE_ID
     }
 }
 

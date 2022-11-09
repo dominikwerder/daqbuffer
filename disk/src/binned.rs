@@ -17,16 +17,13 @@ use futures_util::StreamExt;
 use items::numops::NumOps;
 use items::streams::{Collectable, Collector};
 use items::{
-    Clearable, EventsNodeProcessor, FilterFittingInside, Framable, FrameType, PushableIndex, RangeCompletableItem,
-    Sitemty, StreamItem, TimeBinnableType, WithLen,
+    Clearable, EventsNodeProcessor, FilterFittingInside, Framable, FrameDecodable, FrameType, PushableIndex,
+    RangeCompletableItem, Sitemty, StreamItem, TimeBinnableType, WithLen,
 };
 use netpod::log::*;
 use netpod::query::{BinnedQuery, RawEventsQuery};
-use netpod::{
-    x_bin_count, BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange, ScalarType,
-    Shape,
-};
-use serde::de::DeserializeOwned;
+use netpod::x_bin_count;
+use netpod::{BinnedRange, NodeConfigCached, PerfOpts, PreBinnedPatchIterator, PreBinnedPatchRange, ScalarType, Shape};
 use std::fmt::Debug;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -72,7 +69,7 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
             + Unpin,
         Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
         Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
-            FrameType + Framable + DeserializeOwned,
+            FrameType + Framable + FrameDecodable,
     {
         let _ = event_value_shape;
         let range = BinnedRange::covering_range(self.query.range().clone(), self.query.bin_count())?;
@@ -322,7 +319,7 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
             + Unpin,
         Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
         Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>:
-            FrameType + Framable + DeserializeOwned,
+            FrameType + Framable + FrameDecodable,
     {
         let _ = event_value_shape;
         let range = BinnedRange::covering_range(self.query.range().clone(), self.query.bin_count())?;
