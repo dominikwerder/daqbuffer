@@ -1,11 +1,19 @@
 use crate::numops::NumOps;
+use crate::pulse_offs_from_abs;
 use crate::streams::{Collectable, Collector, ToJsonBytes, ToJsonResult};
+use crate::ts_offs_from_abs;
 use crate::waveevents::WaveEvents;
-use crate::{
-    pulse_offs_from_abs, ts_offs_from_abs, Appendable, FilterFittingInside, Fits, FitsInside, FrameTypeStaticSYC,
-    IsoDateTime, NewEmpty, RangeOverlapInfo, ReadPbv, ReadableFromFile, Sitemty, SitemtyFrameType, SubFrId,
-    TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinned, TimeBins, WithLen,
-};
+use crate::Appendable;
+use crate::FilterFittingInside;
+use crate::FrameTypeInnerStatic;
+use crate::IsoDateTime;
+use crate::RangeOverlapInfo;
+use crate::ReadableFromFile;
+use crate::TimeBinnableDyn;
+use crate::TimeBinnableType;
+use crate::TimeBinnableTypeAggregator;
+use crate::TimeBins;
+use crate::{Fits, FitsInside, NewEmpty, ReadPbv, Sitemty, SubFrId, TimeBinned, WithLen};
 use chrono::{TimeZone, Utc};
 use err::Error;
 use netpod::log::*;
@@ -27,20 +35,11 @@ pub struct MinMaxAvgDim1Bins<NTY> {
     pub avgs: Vec<Option<Vec<f32>>>,
 }
 
-impl<NTY> FrameTypeStaticSYC for MinMaxAvgDim1Bins<NTY>
+impl<NTY> FrameTypeInnerStatic for MinMaxAvgDim1Bins<NTY>
 where
     NTY: SubFrId,
 {
     const FRAME_TYPE_ID: u32 = crate::MIN_MAX_AVG_DIM_1_BINS_FRAME_TYPE_ID + NTY::SUB;
-}
-
-impl<NTY> SitemtyFrameType for MinMaxAvgDim1Bins<NTY>
-where
-    NTY: SubFrId,
-{
-    fn frame_type_id(&self) -> u32 {
-        <Self as FrameTypeStaticSYC>::FRAME_TYPE_ID
-    }
 }
 
 impl<NTY> fmt::Debug for MinMaxAvgDim1Bins<NTY>

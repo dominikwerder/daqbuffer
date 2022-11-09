@@ -1,8 +1,8 @@
 use crate::streams::{Collectable, Collector};
 use crate::{
     ts_offs_from_abs, Appendable, ByteEstimate, Clearable, EventAppendable, FilterFittingInside, Fits, FitsInside,
-    FrameTypeStaticSYC, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SitemtyFrameType,
-    TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    FrameTypeInnerStatic, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, TimeBinnableType,
+    TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
@@ -17,14 +17,8 @@ pub struct StatsEvents {
     pub pulses: Vec<u64>,
 }
 
-impl FrameTypeStaticSYC for StatsEvents {
+impl FrameTypeInnerStatic for StatsEvents {
     const FRAME_TYPE_ID: u32 = crate::STATS_EVENTS_FRAME_TYPE_ID;
-}
-
-impl SitemtyFrameType for StatsEvents {
-    fn frame_type_id(&self) -> u32 {
-        <Self as FrameTypeStaticSYC>::FRAME_TYPE_ID
-    }
 }
 
 impl StatsEvents {

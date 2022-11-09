@@ -12,8 +12,8 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use items::numops::{BoolNum, NumOps, StringNum};
 use items::{
-    Appendable, Clearable, EventsNodeProcessor, Framable, FrameDecodable, FrameType, PushableIndex,
-    RangeCompletableItem, Sitemty, SitemtyFrameType, StreamItem, TimeBinnableType, TimeBinned,
+    Appendable, Clearable, EventsNodeProcessor, Framable, FrameDecodable, FrameType, FrameTypeInnerDyn, PushableIndex,
+    RangeCompletableItem, Sitemty, StreamItem, TimeBinnableType, TimeBinned,
 };
 use netpod::log::*;
 use netpod::{AggKind, ByteOrder, ChannelTyped, NodeConfigCached, ScalarType, Shape};
@@ -35,7 +35,7 @@ where
     EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
     ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
     <ENP as EventsNodeProcessor>::Output: PushableIndex + Appendable + Clearable + 'static,
-    <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: SitemtyFrameType + TimeBinned,
+    <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output: FrameTypeInnerDyn + TimeBinned,
     Sitemty<<ENP as EventsNodeProcessor>::Output>: FrameType + Framable + 'static,
     Sitemty<<<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output>: Framable + FrameType + FrameDecodable,
 {

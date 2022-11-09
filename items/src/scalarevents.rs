@@ -3,9 +3,9 @@ use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
     pulse_offs_from_abs, ts_offs_from_abs, Appendable, ByteEstimate, Clearable, EventAppendable, EventsDyn,
-    FilterFittingInside, Fits, FitsInside, FrameTypeStaticSYC, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv,
-    ReadableFromFile, SitemtyFrameType, TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinnerDyn,
-    WithLen, WithTimestamps,
+    FilterFittingInside, Fits, FitsInside, FrameTypeInnerStatic, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv,
+    ReadableFromFile, TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinnerDyn, WithLen,
+    WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
@@ -52,20 +52,11 @@ impl<NTY> ScalarEvents<NTY> {
     }
 }
 
-impl<NTY> FrameTypeStaticSYC for ScalarEvents<NTY>
+impl<NTY> FrameTypeInnerStatic for ScalarEvents<NTY>
 where
     NTY: NumOps,
 {
     const FRAME_TYPE_ID: u32 = crate::EVENTS_0D_FRAME_TYPE_ID + NTY::SUB;
-}
-
-impl<NTY> SitemtyFrameType for ScalarEvents<NTY>
-where
-    NTY: NumOps,
-{
-    fn frame_type_id(&self) -> u32 {
-        <Self as FrameTypeStaticSYC>::FRAME_TYPE_ID
-    }
 }
 
 impl<NTY> ScalarEvents<NTY> {

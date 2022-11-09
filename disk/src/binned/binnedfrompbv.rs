@@ -7,7 +7,7 @@ use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use http::{StatusCode, Uri};
 use items::frame::decode_frame;
-use items::{FrameDecodable, FrameType, FrameTypeStaticSYC, TimeBinnableType};
+use items::{FrameDecodable, FrameType, FrameTypeInnerStatic, TimeBinnableType};
 use items::{RangeCompletableItem, Sitemty, StreamItem};
 use netpod::log::*;
 use netpod::query::CacheUsage;
@@ -33,7 +33,7 @@ pub struct FetchedPreBinned<TBT> {
 impl<TBT> FetchedPreBinned<TBT> {
     pub fn new(query: &PreBinnedQuery, host: String, port: u16) -> Result<Self, Error>
     where
-        TBT: FrameTypeStaticSYC + TimeBinnableType,
+        TBT: FrameTypeInnerStatic + TimeBinnableType,
         Sitemty<TBT>: FrameDecodable,
     {
         // TODO should not assume http:
@@ -53,7 +53,7 @@ impl<TBT> FetchedPreBinned<TBT> {
 
 impl<TBT> Stream for FetchedPreBinned<TBT>
 where
-    TBT: FrameTypeStaticSYC + TimeBinnableType,
+    TBT: FrameTypeInnerStatic + TimeBinnableType,
     Sitemty<TBT>: FrameDecodable,
 {
     type Item = Sitemty<TBT>;

@@ -216,27 +216,35 @@ impl SubFrId for BoolNum {
     const SUB: u32 = 0x0e;
 }
 
-// To be implemented by the data containers, i.e. the T's in Sitemty<T>, e.g. ScalarEvents.
-// TODO rename this, since it is misleading because it is not meanto to be implemented by Sitemty.
-pub trait SitemtyFrameType {
+// Required for any inner type of Sitemty.
+pub trait FrameTypeInnerStatic {
+    const FRAME_TYPE_ID: u32;
+}
+
+// To be implemented by the T of Sitemty<T>, e.g. ScalarEvents.
+pub trait FrameTypeInnerDyn {
     // TODO check actual usage of this
     fn frame_type_id(&self) -> u32;
+}
+
+impl<T> FrameTypeInnerDyn for T
+where
+    T: FrameTypeInnerStatic,
+{
+    fn frame_type_id(&self) -> u32 {
+        <Self as FrameTypeInnerStatic>::FRAME_TYPE_ID
+    }
 }
 
 pub trait FrameTypeStatic {
     const FRAME_TYPE_ID: u32;
 }
 
-// Required for any inner type of Sitemty.
-pub trait FrameTypeStaticSYC {
-    const FRAME_TYPE_ID: u32;
-}
-
 impl<T> FrameTypeStatic for Sitemty<T>
 where
-    T: FrameTypeStaticSYC,
+    T: FrameTypeInnerStatic,
 {
-    const FRAME_TYPE_ID: u32 = <T as FrameTypeStaticSYC>::FRAME_TYPE_ID;
+    const FRAME_TYPE_ID: u32 = <T as FrameTypeInnerStatic>::FRAME_TYPE_ID;
 }
 
 // Framable trait objects need some inspection to handle the supposed-to-be common Err ser format:
@@ -266,10 +274,10 @@ where
 
 impl<T> FrameType for Sitemty<T>
 where
-    T: FrameTypeStaticSYC,
+    T: FrameTypeInnerStatic,
 {
     fn frame_type_id(&self) -> u32 {
-        <T as FrameTypeStaticSYC>::FRAME_TYPE_ID
+        <T as FrameTypeInnerStatic>::FRAME_TYPE_ID
     }
 
     fn is_err(&self) -> bool {
@@ -287,13 +295,13 @@ where
     }
 }
 
-impl SitemtyFrameType for Box<dyn TimeBinned> {
+impl FrameTypeInnerDyn for Box<dyn TimeBinned> {
     fn frame_type_id(&self) -> u32 {
         self.as_time_binnable_dyn().frame_type_id()
     }
 }
 
-impl SitemtyFrameType for Box<dyn EventsDyn> {
+impl FrameTypeInnerDyn for Box<dyn EventsDyn> {
     fn frame_type_id(&self) -> u32 {
         self.as_time_binnable_dyn().frame_type_id()
     }
@@ -303,11 +311,11 @@ pub trait Framable {
     fn make_frame(&self) -> Result<BytesMut, Error>;
 }
 
-pub trait FramableInner: erased_serde::Serialize + SitemtyFrameType + Send {
+pub trait FramableInner: erased_serde::Serialize + FrameTypeInnerDyn + Send {
     fn _dummy(&self);
 }
 
-impl<T: erased_serde::Serialize + SitemtyFrameType + Send> FramableInner for T {
+impl<T: erased_serde::Serialize + FrameTypeInnerDyn + Send> FramableInner for T {
     fn _dummy(&self) {}
 }
 
@@ -317,7 +325,7 @@ erased_serde::serialize_trait_object!(TimeBinned);
 
 impl<T> Framable for Sitemty<T>
 where
-    T: Sized + serde::Serialize + SitemtyFrameType,
+    T: Sized + serde::Serialize + FrameTypeInnerDyn,
 {
     fn make_frame(&self) -> Result<BytesMut, Error> {
         match self {
@@ -351,7 +359,7 @@ pub trait FrameDecodable: FrameTypeStatic + DeserializeOwned {
 
 impl<T> FrameDecodable for Sitemty<T>
 where
-    T: FrameTypeStaticSYC + DeserializeOwned,
+    T: FrameTypeInnerStatic + DeserializeOwned,
 {
     fn from_error(e: err::Error) -> Self {
         Err(e)
@@ -373,7 +381,7 @@ where
 #[derive(Serialize, Deserialize)]
 pub struct EventQueryJsonStringFrame(pub String);
 
-impl FrameTypeStaticSYC for EventQueryJsonStringFrame {
+impl FrameTypeInnerStatic for EventQueryJsonStringFrame {
     const FRAME_TYPE_ID: u32 = EVENT_QUERY_JSON_STRING_FRAME;
 }
 
@@ -495,7 +503,7 @@ pub trait TimeBinnableType:
     + Serialize
     + DeserializeOwned
     + ReadableFromFile
-    + FrameTypeStaticSYC
+    + FrameTypeInnerStatic
 {
     type Output: TimeBinnableType;
     type Aggregator: TimeBinnableTypeAggregator<Input = Self, Output = Self::Output> + Send + Unpin;
@@ -508,14 +516,14 @@ pub trait TimeBinnableType:
 // TODO should not require Sync!
 // TODO SitemtyFrameType is already supertrait of FramableInner.
 pub trait TimeBinnableDyn:
-    std::fmt::Debug + FramableInner + SitemtyFrameType + WithLen + RangeOverlapInfo + Any + Sync + Send + 'static
+    std::fmt::Debug + FramableInner + FrameTypeInnerDyn + WithLen + RangeOverlapInfo + Any + Sync + Send + 'static
 {
     fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Box<dyn TimeBinnerDyn>;
     fn as_any(&self) -> &dyn Any;
 }
 
 pub trait TimeBinnableDynStub:
-    std::fmt::Debug + FramableInner + SitemtyFrameType + WithLen + RangeOverlapInfo + Any + Sync + Send + 'static
+    std::fmt::Debug + FramableInner + FrameTypeInnerDyn + WithLen + RangeOverlapInfo + Any + Sync + Send + 'static
 {
 }
 
