@@ -14,7 +14,7 @@ pub mod bt {
     pub use backtrace::Backtrace;
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Reason {
     InternalError,
     BadRequest,
@@ -24,7 +24,7 @@ pub enum Reason {
 /**
 The common error type for this application.
 */
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Error {
     msg: String,
     trace_str: Option<String>,

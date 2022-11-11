@@ -1,5 +1,6 @@
 pub mod binsdim0;
 pub mod eventsdim0;
+pub mod merger;
 pub mod streams;
 #[cfg(test)]
 pub mod test;
@@ -9,6 +10,9 @@ use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items::FrameTypeInnerStatic;
+use items::RangeCompletableItem;
+use items::Sitemty;
+use items::StreamItem;
 use items::SubFrId;
 use netpod::log::*;
 use netpod::timeunits::*;
@@ -17,9 +21,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
-use std::ops::ControlFlow;
 use std::pin::Pin;
-use std::task::{Context, Poll};
 use std::time::Duration;
 use std::time::Instant;
 use streams::Collectable;
@@ -139,6 +141,7 @@ pub enum ErrorKind {
     MismatchedType,
 }
 
+// TODO stack error better
 #[derive(Debug, PartialEq)]
 pub struct Error {
     #[allow(unused)]
@@ -164,6 +167,23 @@ impl From<String> for Error {
             msg: Some(msg),
             kind: ErrorKind::General,
         }
+    }
+}
+
+// TODO this discards structure
+impl From<err::Error> for Error {
+    fn from(e: err::Error) -> Self {
+        Self {
+            msg: Some(format!("{e}")),
+            kind: ErrorKind::General,
+        }
+    }
+}
+
+// TODO this discards structure
+impl From<Error> for err::Error {
+    fn from(e: Error) -> Self {
+        err::Error::with_msg_no_trace(format!("{e}"))
     }
 }
 
@@ -276,6 +296,7 @@ pub trait Events: fmt::Debug + Any + Collectable + TimeBinnable + Send + erased_
     fn ts_min(&self) -> Option<u64>;
     fn ts_max(&self) -> Option<u64>;
     fn take_new_events_until_ts(&mut self, ts_end: u64) -> Box<dyn Events>;
+    fn clone_dyn(&self) -> Box<dyn Events>;
     fn partial_eq_dyn(&self, other: &dyn Events) -> bool;
     fn serde_id(&self) -> &'static str;
     fn nty_id(&self) -> u32;
@@ -483,8 +504,15 @@ impl<T: MergableEvents> MergableEvents for Box<T> {
 pub enum ChannelEvents {
     Events(Box<dyn Events>),
     Status(ConnStatusEvent),
-    // TODO the RangeComplete event would probably fit better on some outer layer:
-    RangeComplete,
+}
+
+impl Clone for ChannelEvents {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Events(arg0) => Self::Events(arg0.clone_dyn()),
+            Self::Status(arg0) => Self::Status(arg0.clone()),
+        }
+    }
 }
 
 mod serde_channel_events {
@@ -510,7 +538,6 @@ mod serde_channel_events {
                     ser.end()
                 }
                 ChannelEvents::Status(val) => serializer.serialize_newtype_variant(name, 1, "Status", val),
-                ChannelEvents::RangeComplete => serializer.serialize_unit_variant(name, 2, "RangeComplete"),
             }
         }
     }
@@ -627,7 +654,6 @@ impl MergableEvents for ChannelEvents {
         match self {
             Events(k) => k.ts_min(),
             Status(k) => Some(k.ts),
-            RangeComplete => None,
         }
     }
 
@@ -639,258 +665,6 @@ impl MergableEvents for ChannelEvents {
 
 impl FrameTypeInnerStatic for ChannelEvents {
     const FRAME_TYPE_ID: u32 = items::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID;
-}
-
-type MergeInp = Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>> + Send>>;
-
-pub struct ChannelEventsMerger {
-    inps: Vec<Option<MergeInp>>,
-    items: Vec<Option<ChannelEvents>>,
-    range_complete: bool,
-    done: bool,
-    done2: bool,
-    complete: bool,
-}
-
-impl fmt::Debug for ChannelEventsMerger {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        let inps: Vec<_> = self.inps.iter().map(|x| x.is_some()).collect();
-        fmt.debug_struct(std::any::type_name::<Self>())
-            .field("inps", &inps)
-            .field("items", &self.items)
-            .field("range_complete", &self.range_complete)
-            .field("done", &self.done)
-            .field("done2", &self.done2)
-            .finish()
-    }
-}
-
-impl ChannelEventsMerger {
-    pub fn new(inps: Vec<MergeInp>) -> Self {
-        let n = inps.len();
-        Self {
-            done: false,
-            done2: false,
-            complete: false,
-            inps: inps.into_iter().map(|x| Some(x)).collect(),
-            items: (0..n).into_iter().map(|_| None).collect(),
-            range_complete: false,
-        }
-    }
-
-    fn process(mut self: Pin<&mut Self>, _cx: &mut Context) -> Result<ControlFlow<ChannelEvents>, Error> {
-        use ControlFlow::*;
-        let mut tslows = [None, None];
-        for (i1, itemopt) in self.items.iter_mut().enumerate() {
-            if let Some(item) = itemopt {
-                let t1 = item.ts_min();
-                if let Some(t1) = t1 {
-                    if let Some((_, a)) = tslows[0] {
-                        if t1 < a {
-                            tslows[1] = tslows[0];
-                            tslows[0] = Some((i1, t1));
-                        } else {
-                            if let Some((_, b)) = tslows[1] {
-                                if t1 < b {
-                                    tslows[1] = Some((i1, t1));
-                                } else {
-                                    // nothing to do
-                                }
-                            } else {
-                                tslows[1] = Some((i1, t1));
-                            }
-                        }
-                    } else {
-                        tslows[0] = Some((i1, t1));
-                    }
-                } else {
-                    match item {
-                        ChannelEvents::Events(_) => {
-                            trace!("events item without ts min discovered {item:?}");
-                            itemopt.take();
-                            return Ok(Continue(()));
-                        }
-                        ChannelEvents::Status(_) => {
-                            return Err(format!("channel status without timestamp").into());
-                        }
-                        ChannelEvents::RangeComplete => {
-                            trace!("---------------------  ChannelEvents::RangeComplete \n======================");
-                            *itemopt = None;
-                            self.range_complete = true;
-                            return Ok(Continue(()));
-                        }
-                    }
-                }
-            }
-        }
-        if let Some((il0, _tl0)) = tslows[0] {
-            if let Some((_il1, tl1)) = tslows[1] {
-                let item = self.items[il0].as_mut().unwrap();
-                match item {
-                    ChannelEvents::Events(item) => {
-                        if let Some(th0) = item.ts_max() {
-                            if th0 < tl1 {
-                                let ret = self.items[il0].take().unwrap();
-                                Ok(Break(ret))
-                            } else {
-                                let ritem = item.take_new_events_until_ts(tl1);
-                                if item.len() == 0 {
-                                    // TODO should never be here
-                                    self.items[il0] = None;
-                                }
-                                Ok(Break(ChannelEvents::Events(ritem)))
-                            }
-                        } else {
-                            // TODO should never be here because ts-max should always exist here.
-                            let ritem = item.take_new_events_until_ts(tl1);
-                            if item.len() == 0 {}
-                            Ok(Break(ChannelEvents::Events(ritem)))
-                        }
-                    }
-                    ChannelEvents::Status(_) => {
-                        let ret = self.items[il0].take().unwrap();
-                        Ok(Break(ret))
-                    }
-                    ChannelEvents::RangeComplete => Err(format!("RangeComplete considered in merge-lowest").into()),
-                }
-            } else {
-                let item = self.items[il0].as_mut().unwrap();
-                match item {
-                    ChannelEvents::Events(_) => {
-                        let ret = self.items[il0].take().unwrap();
-                        Ok(Break(ret))
-                    }
-                    ChannelEvents::Status(_) => {
-                        let ret = self.items[il0].take().unwrap();
-                        Ok(Break(ret))
-                    }
-                    ChannelEvents::RangeComplete => Err(format!("RangeComplete considered in merge-lowest").into()),
-                }
-            }
-        } else {
-            Err(format!("after low ts search nothing found").into())
-        }
-    }
-
-    fn refill(mut self: Pin<&mut Self>, cx: &mut Context) -> ControlFlow<Poll<Error>> {
-        use ControlFlow::*;
-        use Poll::*;
-        let mut has_pending = false;
-        for i1 in 0..self.inps.len() {
-            let item = &self.items[i1];
-            if item.is_none() {
-                if let Some(inp) = &mut self.inps[i1] {
-                    match inp.poll_next_unpin(cx) {
-                        Ready(Some(Ok(k))) => {
-                            if let ChannelEvents::Events(events) = &k {
-                                if events.len() == 0 {
-                                    warn!("empty events item {events:?}");
-                                } else {
-                                    trace!("\nrefilled with events {}\nREFILLED\n{:?}\n\n", events.len(), events);
-                                }
-                            }
-                            self.items[i1] = Some(k);
-                        }
-                        Ready(Some(Err(e))) => return Break(Ready(e)),
-                        Ready(None) => {
-                            self.inps[i1] = None;
-                        }
-                        Pending => {
-                            has_pending = true;
-                        }
-                    }
-                }
-            }
-        }
-        if has_pending {
-            Break(Pending)
-        } else {
-            Continue(())
-        }
-    }
-
-    fn poll2(mut self: Pin<&mut Self>, cx: &mut Context) -> ControlFlow<Poll<Option<<Self as Stream>::Item>>> {
-        use ControlFlow::*;
-        use Poll::*;
-        let mut has_pending = false;
-        match Self::refill(Pin::new(&mut self), cx) {
-            Break(Ready(e)) => return Break(Ready(Some(Err(e)))),
-            Break(Pending) => {
-                has_pending = true;
-            }
-            Continue(()) => {}
-        }
-        let ninps = self.inps.iter().filter(|a| a.is_some()).count();
-        let nitems = self.items.iter().filter(|a| a.is_some()).count();
-        let nitemsmissing = self
-            .inps
-            .iter()
-            .zip(self.items.iter())
-            .filter(|(a, b)| a.is_some() && b.is_none())
-            .count();
-        if ninps == 0 && nitems == 0 {
-            self.done = true;
-            Break(Ready(None))
-        } else if nitemsmissing != 0 {
-            if !has_pending {
-                let e = Error::from(format!("missing but no pending"));
-                Break(Ready(Some(Err(e))))
-            } else {
-                Break(Pending)
-            }
-        } else {
-            match Self::process(Pin::new(&mut self), cx) {
-                Ok(Break(item)) => Break(Ready(Some(Ok(item)))),
-                Ok(Continue(())) => Continue(()),
-                Err(e) => Break(Ready(Some(Err(e)))),
-            }
-        }
-    }
-}
-
-impl Stream for ChannelEventsMerger {
-    type Item = Result<ChannelEvents, Error>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        use Poll::*;
-        //let self_name = std::any::type_name::<Self>();
-        //eprintln!("{self_name}  poll_next");
-        loop {
-            break if self.complete {
-                panic!("poll after complete");
-            } else if self.done2 {
-                self.complete = true;
-                Ready(None)
-            } else if self.done {
-                self.done2 = true;
-                if self.range_complete {
-                    trace!("MERGER EMITTING ChannelEvents::RangeComplete");
-                    Ready(Some(Ok(ChannelEvents::RangeComplete)))
-                } else {
-                    continue;
-                }
-            } else {
-                match Self::poll2(self.as_mut(), cx) {
-                    ControlFlow::Continue(()) => continue,
-                    ControlFlow::Break(k) => {
-                        match &k {
-                            Ready(Some(Ok(ChannelEvents::Events(item)))) => {
-                                trace!("\n\nMERGER EMITTING\n{:?}\n\n", item);
-                            }
-                            Ready(Some(Ok(ChannelEvents::RangeComplete))) => {
-                                trace!("\nLOGIC ERROR MERGER EMITTING PLAIN ChannelEvents::RangeComplete");
-                            }
-                            Ready(Some(Err(_))) => {
-                                self.done = true;
-                            }
-                            _ => {}
-                        }
-                        k
-                    }
-                }
-            };
-        }
-    }
 }
 
 // TODO do this with some blanket impl:
@@ -911,8 +685,9 @@ pub async fn binned_collected(
     agg_kind: AggKind,
     edges: Vec<u64>,
     timeout: Duration,
-    inp: Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>> + Send>>,
+    inp: Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>,
 ) -> Result<Box<dyn ToJsonResult>, Error> {
+    info!("binned_collected");
     let deadline = Instant::now() + timeout;
     let mut did_timeout = false;
     let bin_count_exp = edges.len().max(2) as u32 - 1;
@@ -925,10 +700,10 @@ pub async fn binned_collected(
         bin_count_exp: u32,
         force: bool,
     ) -> Result<(), Error> {
-        //info!("bins_ready_count: {}", binner.bins_ready_count());
+        info!("flush_binned  bins_ready_count: {}", binner.bins_ready_count());
         if force {
             if binner.bins_ready_count() == 0 {
-                warn!("cycle the binner");
+                warn!("cycle the binner forced");
                 binner.cycle();
             } else {
                 warn!("binner was some ready, do nothing");
@@ -938,7 +713,7 @@ pub async fn binned_collected(
             let ready = binner.bins_ready();
             match ready {
                 Some(mut ready) => {
-                    trace!("binned_collected ready {ready:?}");
+                    info!("binned_collected ready {ready:?}");
                     if coll.is_none() {
                         *coll = Some(ready.as_collectable_mut().new_collector(bin_count_exp));
                     }
@@ -955,7 +730,9 @@ pub async fn binned_collected(
     let mut coll = None;
     let mut binner = None;
     let empty_item = empty_events_dyn_2(&scalar_type, &shape, &AggKind::TimeWeightedScalar);
-    let empty_stream = futures_util::stream::once(futures_util::future::ready(Ok(ChannelEvents::Events(empty_item))));
+    let empty_stream = futures_util::stream::once(futures_util::future::ready(Ok(StreamItem::DataItem(
+        RangeCompletableItem::Data(ChannelEvents::Events(empty_item)),
+    ))));
     let mut stream = empty_stream.chain(inp);
     loop {
         let item = futures_util::select! {
@@ -972,22 +749,34 @@ pub async fn binned_collected(
             }
         };
         match item {
-            ChannelEvents::Events(events) => {
-                trace!("binned_collected sees\n{:?}", events);
-                if binner.is_none() {
-                    let bb = events.as_time_binnable().time_binner_new(edges.clone(), do_time_weight);
-                    binner = Some(bb);
+            StreamItem::DataItem(k) => match k {
+                RangeCompletableItem::RangeComplete => {
+                    warn!("binned_collected TODO RangeComplete");
+                    did_range_complete = true;
                 }
-                let binner = binner.as_mut().unwrap();
-                binner.ingest(events.as_time_binnable());
-                flush_binned(binner, &mut coll, bin_count_exp, false)?;
+                RangeCompletableItem::Data(k) => match k {
+                    ChannelEvents::Events(events) => {
+                        info!("binned_collected sees\n{:?}", events);
+                        if binner.is_none() {
+                            let bb = events.as_time_binnable().time_binner_new(edges.clone(), do_time_weight);
+                            binner = Some(bb);
+                        }
+                        let binner = binner.as_mut().unwrap();
+                        binner.ingest(events.as_time_binnable());
+                        flush_binned(binner, &mut coll, bin_count_exp, false)?;
+                    }
+                    ChannelEvents::Status(item) => {
+                        info!("{:?}", item);
+                    }
+                },
+            },
+            StreamItem::Log(item) => {
+                // TODO collect also errors here?
+                info!("{:?}", item);
             }
-            ChannelEvents::Status(_) => {
-                warn!("binned_collected TODO Status");
-            }
-            ChannelEvents::RangeComplete => {
-                warn!("binned_collected TODO RangeComplete");
-                did_range_complete = true;
+            StreamItem::Stats(item) => {
+                // TODO do something with the stats
+                info!("{:?}", item);
             }
         }
     }
@@ -996,6 +785,7 @@ pub async fn binned_collected(
             binner.set_range_complete();
         }
         if !did_timeout {
+            warn!("cycle the binner");
             binner.cycle();
         }
         flush_binned(&mut binner, &mut coll, bin_count_exp, false)?;

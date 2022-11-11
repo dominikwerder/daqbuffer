@@ -58,27 +58,27 @@ pub fn bool_is_false(j: &bool) -> bool {
     *j == false
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum RangeCompletableItem<T> {
     RangeComplete,
     Data(T),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum StatsItem {
     EventDataReadStats(EventDataReadStats),
     RangeFilterStats(RangeFilterStats),
     DiskStats(DiskStats),
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum StreamItem<T> {
     DataItem(T),
     Log(LogItem),
     Stats(StatsItem),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LogItem {
     pub node_ix: u32,
     #[serde(with = "levelserde")]

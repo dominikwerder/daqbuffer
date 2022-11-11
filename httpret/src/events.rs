@@ -4,7 +4,8 @@ use crate::{response, response_err, BodyStream, ToPublicResponse};
 use futures_util::{Stream, StreamExt, TryStreamExt};
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
-use items_2::{binned_collected, empty_events_dyn, empty_events_dyn_2, ChannelEvents, ChannelEventsMerger};
+use items_2::merger::ChannelEventsMerger;
+use items_2::{binned_collected, empty_events_dyn, empty_events_dyn_2, ChannelEvents};
 use netpod::log::*;
 use netpod::query::{BinnedQuery, ChannelStateEventsQuery, PlainEventsQuery};
 use netpod::{AggKind, BinnedRange, FromUrl, NodeConfigCached};
@@ -239,7 +240,6 @@ impl EventsHandlerScylla {
                         cl.ingest(item.as_collectable_mut());
                     }
                     ChannelEvents::Status(..) => {}
-                    ChannelEvents::RangeComplete => {}
                 },
                 Err(e) => {
                     return Err(e.into());
@@ -360,9 +360,12 @@ impl BinnedHandlerScylla {
                     x
                 })
                 .map_err(|e| items_2::Error::from(format!("{e}")));
-            let data_stream = Box::pin(data_stream) as _;
-            let state_stream = Box::pin(state_stream) as _;
-            let merged_stream = ChannelEventsMerger::new(vec![data_stream, state_stream]);
+            todo!();
+            type Items = Pin<Box<dyn Stream<Item = Result<ChannelEvents, items_2::Error>> + Send>>;
+            let data_stream = Box::pin(data_stream) as Items;
+            let state_stream = Box::pin(state_stream) as Items;
+            let merged_stream = ChannelEventsMerger::new(todo!());
+            //let merged_stream = ChannelEventsMerger::new(vec![data_stream, state_stream]);
             let merged_stream = Box::pin(merged_stream) as Pin<Box<dyn Stream<Item = _> + Send>>;
             let binned_collected = binned_collected(
                 scalar_type.clone(),

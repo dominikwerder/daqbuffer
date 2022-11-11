@@ -169,9 +169,6 @@ async fn events_conn_handler_inner_try(
                             let item = items::scalarevents::ScalarEvents::<f64>::empty();
                             Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                         }
-                        items_2::ChannelEvents::RangeComplete => {
-                            Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
-                        }
                         items_2::ChannelEvents::Status(_item) => todo!(),
                     },
                     Err(e) => Err(e),

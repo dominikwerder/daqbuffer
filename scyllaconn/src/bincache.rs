@@ -383,6 +383,8 @@ pub async fn fetch_uncached_binned_events(
                 )));
             }
         };
+        // TODO as soon we encounter RangeComplete we just:
+        // complete = true;
         match item {
             Ok(ChannelEvents::Events(item)) => {
                 time_binner.ingest(item.as_time_binnable());
@@ -393,9 +395,6 @@ pub async fn fetch_uncached_binned_events(
                 return Err(Error::with_msg_no_trace(format!(
                     "unexpected read of channel status events"
                 )));
-            }
-            Ok(ChannelEvents::RangeComplete) => {
-                complete = true;
             }
             Err(e) => return Err(e),
         }

@@ -573,6 +573,10 @@ impl<NTY: ScalarOps> Events for EventsDim0<NTY> {
     fn nty_id(&self) -> u32 {
         NTY::SUB
     }
+
+    fn clone_dyn(&self) -> Box<dyn Events> {
+        Box::new(self.clone())
+    }
 }
 
 pub struct EventsDim0TimeBinner<NTY: ScalarOps> {

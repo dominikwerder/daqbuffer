@@ -1640,7 +1640,7 @@ pub mod log {
     pub use tracing::{debug, error, event, info, span, trace, warn, Level};
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EventDataReadStats {
     pub parsed_bytes: u64,
 }
@@ -1655,7 +1655,7 @@ impl EventDataReadStats {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RangeFilterStats {
     pub events_pre: u64,
     pub events_post: u64,
@@ -1672,7 +1672,7 @@ impl RangeFilterStats {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum DiskStats {
     OpenStats(OpenStats),
     SeekStats(SeekStats),
@@ -1680,7 +1680,7 @@ pub enum DiskStats {
     ReadExactStats(ReadExactStats),
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct OpenStats {
     pub duration: Duration,
 }
@@ -1691,7 +1691,7 @@ impl OpenStats {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SeekStats {
     pub duration: Duration,
 }
@@ -1702,7 +1702,7 @@ impl SeekStats {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ReadStats {
     pub duration: Duration,
 }
@@ -1713,7 +1713,7 @@ impl ReadStats {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ReadExactStats {
     pub duration: Duration,
 }
