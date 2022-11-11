@@ -8,6 +8,8 @@ use chrono::{DateTime, TimeZone, Utc};
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items::FrameTypeInnerStatic;
+use items::SubFrId;
 use netpod::log::*;
 use netpod::timeunits::*;
 use netpod::{AggKind, NanoRange, ScalarType, Shape};
@@ -100,7 +102,9 @@ impl_as_prim_f32!(i64);
 impl_as_prim_f32!(f32);
 impl_as_prim_f32!(f64);
 
-pub trait ScalarOps: fmt::Debug + Clone + PartialOrd + AsPrimF32 + Serialize + Unpin + Send + 'static {
+pub trait ScalarOps:
+    fmt::Debug + Clone + PartialOrd + SubFrId + AsPrimF32 + Serialize + Unpin + Send + 'static
+{
     fn zero() -> Self;
 }
 
@@ -160,6 +164,17 @@ impl From<String> for Error {
             msg: Some(msg),
             kind: ErrorKind::General,
         }
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl serde::de::Error for Error {
+    fn custom<T>(msg: T) -> Self
+    where
+        T: fmt::Display,
+    {
+        format!("{msg}").into()
     }
 }
 
@@ -262,6 +277,8 @@ pub trait Events: fmt::Debug + Any + Collectable + TimeBinnable + Send + erased_
     fn ts_max(&self) -> Option<u64>;
     fn take_new_events_until_ts(&mut self, ts_end: u64) -> Box<dyn Events>;
     fn partial_eq_dyn(&self, other: &dyn Events) -> bool;
+    fn serde_id(&self) -> &'static str;
+    fn nty_id(&self) -> u32;
 }
 
 erased_serde::serialize_trait_object!(Events);
@@ -460,11 +477,138 @@ impl<T: MergableEvents> MergableEvents for Box<T> {
     }
 }
 
-#[derive(Debug, Serialize)]
+/// Events on a channel consist not only of e.g. timestamped values, but can be also
+/// connection status changes.
+#[derive(Debug)]
 pub enum ChannelEvents {
     Events(Box<dyn Events>),
     Status(ConnStatusEvent),
+    // TODO the RangeComplete event would probably fit better on some outer layer:
     RangeComplete,
+}
+
+mod serde_channel_events {
+    use super::{ChannelEvents, Events};
+    use crate::eventsdim0::EventsDim0;
+    use serde::de::{self, EnumAccess, VariantAccess, Visitor};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::fmt;
+
+    impl Serialize for ChannelEvents {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let name = "ChannelEvents";
+            match self {
+                ChannelEvents::Events(obj) => {
+                    use serde::ser::SerializeTupleVariant;
+                    let mut ser = serializer.serialize_tuple_variant(name, 0, "Events", 3)?;
+                    ser.serialize_field(obj.serde_id())?;
+                    ser.serialize_field(&obj.nty_id())?;
+                    ser.serialize_field(obj)?;
+                    ser.end()
+                }
+                ChannelEvents::Status(val) => serializer.serialize_newtype_variant(name, 1, "Status", val),
+                ChannelEvents::RangeComplete => serializer.serialize_unit_variant(name, 2, "RangeComplete"),
+            }
+        }
+    }
+
+    struct EventsBoxVisitor;
+
+    impl<'de> Visitor<'de> for EventsBoxVisitor {
+        type Value = Box<dyn Events>;
+
+        fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            write!(fmt, "Events object")
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: de::SeqAccess<'de>,
+        {
+            use items::SubFrId;
+            let e0: &str = seq.next_element()?.ok_or(de::Error::missing_field("ty .0"))?;
+            let e1: u32 = seq.next_element()?.ok_or(de::Error::missing_field("nty .1"))?;
+            if e0 == EventsDim0::<u8>::serde_id() {
+                match e1 {
+                    f32::SUB => {
+                        let obj: EventsDim0<f32> = seq.next_element()?.ok_or(de::Error::missing_field("obj .2"))?;
+                        Ok(Box::new(obj))
+                    }
+                    _ => Err(de::Error::custom(&format!("unknown nty {e1}"))),
+                }
+            } else {
+                Err(de::Error::custom(&format!("unknown ty {e0}")))
+            }
+        }
+    }
+
+    pub struct ChannelEventsVisitor;
+
+    impl ChannelEventsVisitor {
+        fn name() -> &'static str {
+            "ChannelEvents"
+        }
+
+        fn allowed_variants() -> &'static [&'static str] {
+            &["Events", "Status", "RangeComplete"]
+        }
+    }
+
+    impl<'de> Visitor<'de> for ChannelEventsVisitor {
+        type Value = ChannelEvents;
+
+        fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            write!(fmt, "ChannelEvents")
+        }
+
+        fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
+        where
+            A: EnumAccess<'de>,
+        {
+            let (id, var) = data.variant()?;
+            match id {
+                "Events" => {
+                    let c = var.tuple_variant(3, EventsBoxVisitor)?;
+                    Ok(Self::Value::Events(c))
+                }
+                _ => return Err(de::Error::unknown_variant(id, Self::allowed_variants())),
+            }
+        }
+    }
+
+    impl<'de> Deserialize<'de> for ChannelEvents {
+        fn deserialize<D>(de: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            de.deserialize_enum(
+                ChannelEventsVisitor::name(),
+                ChannelEventsVisitor::allowed_variants(),
+                ChannelEventsVisitor,
+            )
+        }
+    }
+}
+
+#[cfg(test)]
+mod test_channel_events_serde {
+    use super::ChannelEvents;
+    use crate::{eventsdim0::EventsDim0, Empty};
+
+    #[test]
+    fn channel_events() {
+        let mut evs = EventsDim0::empty();
+        evs.push(8, 2, 3.0f32);
+        evs.push(12, 3, 3.2f32);
+        let item = ChannelEvents::Events(Box::new(evs));
+        let s = serde_json::to_string_pretty(&item).unwrap();
+        eprintln!("{s}");
+        let w: ChannelEvents = serde_json::from_str(&s).unwrap();
+        eprintln!("{w:?}");
+    }
 }
 
 impl PartialEq for ChannelEvents {
@@ -491,6 +635,10 @@ impl MergableEvents for ChannelEvents {
         error!("TODO impl MergableEvents for ChannelEvents");
         err::todoval()
     }
+}
+
+impl FrameTypeInnerStatic for ChannelEvents {
+    const FRAME_TYPE_ID: u32 = items::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID;
 }
 
 type MergeInp = Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>> + Send>>;

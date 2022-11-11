@@ -107,7 +107,31 @@ async fn events_conn_handler_inner_try(
     }
 
     let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> =
-        if let Some(conf) = &node_config.node_config.cluster.scylla {
+        if evq.channel().backend() == "test-adhoc-dyn" {
+            use items_2::ChannelEvents;
+            use items_2::Empty;
+            use netpod::timeunits::MS;
+            let node_ix = node_config.ix;
+            if evq.channel().name() == "scalar-i32" {
+                let mut item = items_2::eventsdim0::EventsDim0::<f32>::empty();
+                let td = MS * 10;
+                let mut ts = MS * 17 + MS * td * node_ix as u64;
+                let mut pulse = 1 + node_ix as u64;
+                for _ in 0..20 {
+                    item.push(ts, pulse, ts as _);
+                    ts += 3 * td;
+                    pulse += 3;
+                }
+                let item = ChannelEvents::Events(Box::new(item) as _);
+                let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
+                let item = Box::new(item) as _;
+                let stream = futures_util::stream::iter([item]);
+                Box::pin(stream)
+            } else {
+                let stream = futures_util::stream::empty();
+                Box::pin(stream)
+            }
+        } else if let Some(conf) = &node_config.node_config.cluster.scylla {
             // TODO depends in general on the query
             // TODO why both in PlainEventsQuery and as separate parameter? Check other usages.
             let do_one_before_range = false;

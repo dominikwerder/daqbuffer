@@ -32,6 +32,10 @@ impl<NTY> EventsDim0<NTY> {
         self.pulses.push_front(pulse);
         self.values.push_front(value);
     }
+
+    pub fn serde_id() -> &'static str {
+        "EventsDim0"
+    }
 }
 
 impl<NTY> Empty for EventsDim0<NTY> {
@@ -560,6 +564,14 @@ impl<NTY: ScalarOps> Events for EventsDim0<NTY> {
         } else {
             false
         }
+    }
+
+    fn serde_id(&self) -> &'static str {
+        Self::serde_id()
+    }
+
+    fn nty_id(&self) -> u32 {
+        NTY::SUB
     }
 }
 

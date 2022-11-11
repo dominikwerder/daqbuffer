@@ -1,14 +1,13 @@
 use super::*;
-use disk::eventchunker::EventFull;
 use items::frame::make_frame;
 use items::Sitemty;
+use items_2::ChannelEvents;
 use netpod::timeunits::SEC;
-use netpod::{Channel, Cluster, Database, DiskIoTune, FileIoBufferSize, NanoRange, Node, NodeConfig, SfDatabuffer};
+use netpod::{Channel, Cluster, Database, FileIoBufferSize, NanoRange, Node, NodeConfig, SfDatabuffer};
 use tokio::net::TcpListener;
 
 #[test]
 fn raw_data_00() {
-    //taskrun::run(disk::gen::gen_test_data()).unwrap();
     let fut = async {
         let lis = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let mut con = TcpStream::connect(lis.local_addr().unwrap()).await.unwrap();
@@ -50,26 +49,16 @@ fn raw_data_00() {
             },
             ix: 0,
         };
-        let qu = RawEventsQuery {
-            channel: Channel {
-                series: None,
-                backend: "testbackend".into(),
-                name: "scalar-i32-be".into(),
-            },
-            range: NanoRange {
-                beg: SEC,
-                end: SEC * 10,
-            },
-            agg_kind: AggKind::Plain,
-            disk_io_tune: DiskIoTune {
-                read_sys: netpod::ReadSys::TokioAsyncRead,
-                read_buffer_len: 1024 * 4,
-                read_queue_len: 1,
-            },
-            do_decompress: true,
-            do_test_main_error: false,
-            do_test_stream_error: false,
+        let channel = Channel {
+            series: None,
+            backend: "test-adhoc-dyn".into(),
+            name: "scalar-i32".into(),
         };
+        let range = NanoRange {
+            beg: SEC,
+            end: SEC * 10,
+        };
+        let qu = RawEventsQuery::new(channel, range, AggKind::Plain);
         let query = EventQueryJsonStringFrame(serde_json::to_string(&qu).unwrap());
         let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(query)));
         let frame = make_frame(&item).unwrap();
@@ -85,14 +74,14 @@ fn raw_data_00() {
                 Ok(frame) => match frame {
                     StreamItem::DataItem(k) => {
                         eprintln!("{k:?}");
-                        if k.tyid() == items::EVENT_FULL_FRAME_TYPE_ID {
+                        if k.tyid() == items::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID {
                         } else if k.tyid() == items::ERROR_FRAME_TYPE_ID {
                         } else if k.tyid() == items::LOG_FRAME_TYPE_ID {
                         } else if k.tyid() == items::STATS_FRAME_TYPE_ID {
                         } else {
                             panic!("unexpected frame type id {:x}", k.tyid());
                         }
-                        let item: Result<Sitemty<EventFull>, Error> = decode_frame(&k);
+                        let item: Sitemty<ChannelEvents> = decode_frame(&k).unwrap();
                         eprintln!("decoded: {:?}", item);
                     }
                     StreamItem::Log(_) => todo!(),

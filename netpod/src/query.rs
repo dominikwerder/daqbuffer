@@ -62,9 +62,8 @@ impl fmt::Display for CacheUsage {
     }
 }
 
-/**
-Query parameters to request (optionally) X-processed, but not T-processed events.
-*/
+/// Query parameters to request (optionally) X-processed, but not T-processed events.
+// TODO maybe merge with PlainEventsQuery?
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RawEventsQuery {
     pub channel: Channel,
@@ -91,6 +90,10 @@ impl RawEventsQuery {
             do_test_main_error: false,
             do_test_stream_error: false,
         }
+    }
+
+    pub fn channel(&self) -> &Channel {
+        &self.channel
     }
 }
 
