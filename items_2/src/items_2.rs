@@ -756,7 +756,6 @@ pub async fn binned_collected(
                 }
                 RangeCompletableItem::Data(k) => match k {
                     ChannelEvents::Events(events) => {
-                        info!("binned_collected sees\n{:?}", events);
                         if binner.is_none() {
                             let bb = events.as_time_binnable().time_binner_new(edges.clone(), do_time_weight);
                             binner = Some(bb);
@@ -766,32 +765,40 @@ pub async fn binned_collected(
                         flush_binned(binner, &mut coll, bin_count_exp, false)?;
                     }
                     ChannelEvents::Status(item) => {
-                        info!("{:?}", item);
+                        trace!("{:?}", item);
                     }
                 },
             },
             StreamItem::Log(item) => {
                 // TODO collect also errors here?
-                info!("{:?}", item);
+                trace!("{:?}", item);
             }
             StreamItem::Stats(item) => {
                 // TODO do something with the stats
-                info!("{:?}", item);
+                trace!("{:?}", item);
             }
         }
     }
     if let Some(mut binner) = binner {
         if did_range_complete {
+            trace!("did_range_complete");
             binner.set_range_complete();
+        } else {
+            debug!("range not complete");
         }
-        if !did_timeout {
-            warn!("cycle the binner");
+        if did_timeout {
+            warn!("timeout");
+        } else {
+            trace!("cycle the binner");
             binner.cycle();
         }
+        trace!("flush binned");
         flush_binned(&mut binner, &mut coll, bin_count_exp, false)?;
         if coll.is_none() {
-            warn!("force a bin");
+            debug!("force a bin");
             flush_binned(&mut binner, &mut coll, bin_count_exp, true)?;
+        } else {
+            trace!("coll is already some");
         }
     } else {
         error!("no binner, should always have one");
@@ -809,4 +816,13 @@ pub async fn binned_collected(
             Ok(ret)
         }
     }
+}
+
+pub fn runfut<T, F>(fut: F) -> Result<T, err::Error>
+where
+    F: std::future::Future<Output = Result<T, Error>>,
+{
+    use futures_util::TryFutureExt;
+    let fut = fut.map_err(|e| e.into());
+    taskrun::run(fut)
 }

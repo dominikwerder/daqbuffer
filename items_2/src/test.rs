@@ -1,11 +1,12 @@
 use crate::binsdim0::BinsDim0CollectedResult;
 use crate::eventsdim0::EventsDim0;
 use crate::merger::ChannelEventsMerger;
-use crate::{binned_collected, ChannelEvents, Empty, Events, IsoDateTime};
+use crate::{binned_collected, runfut, ChannelEvents, Empty, Events, IsoDateTime};
 use crate::{ConnStatus, ConnStatusEvent, Error};
 use chrono::{TimeZone, Utc};
 use futures_util::StreamExt;
 use items::{RangeCompletableItem, Sitemty, StreamItem};
+use netpod::log::*;
 use netpod::timeunits::*;
 use netpod::{AggKind, BinnedRange, NanoRange, ScalarType, Shape};
 use std::time::Duration;
@@ -36,8 +37,9 @@ fn merge01() {
         assert_eq!(item.as_ref(), events_vec2.get(0));
         let item = merger.next().await;
         assert_eq!(item.as_ref(), None);
+        Ok(())
     };
-    tokio::runtime::Runtime::new().unwrap().block_on(fut);
+    runfut(fut).unwrap();
 }
 
 #[test]
@@ -71,8 +73,9 @@ fn merge02() {
         assert_eq!(item.as_ref(), exp.get(1));
         let item = merger.next().await;
         assert_eq!(item.as_ref(), None);
+        Ok(())
     };
-    tokio::runtime::Runtime::new().unwrap().block_on(fut);
+    runfut(fut).unwrap();
 }
 
 fn push_evd0(vec: &mut Vec<Sitemty<ChannelEvents>>, events: Box<dyn Events>) {
@@ -156,8 +159,9 @@ fn merge03() {
         assert_eq!(item.as_ref(), events_vec2.get(2));
         let item = merger.next().await;
         assert_eq!(item.as_ref(), None);
+        Ok(())
     };
-    tokio::runtime::Runtime::new().unwrap().block_on(fut);
+    runfut(fut).unwrap();
 }
 
 #[test]
@@ -260,7 +264,7 @@ fn bin01() {
         }
         Ok::<_, Error>(())
     };
-    tokio::runtime::Runtime::new().unwrap().block_on(fut).unwrap();
+    runfut(fut).unwrap();
 }
 
 #[test]
@@ -310,11 +314,12 @@ fn bin02() {
         eprintln!("collected {:?}", collected);
         Ok::<_, Error>(())
     };
-    tokio::runtime::Runtime::new().unwrap().block_on(fut).unwrap();
+    runfut(fut).unwrap();
 }
 
 #[test]
-fn bin03() {
+fn binned_timeout_01() {
+    trace!("binned_timeout_01 uses a delay");
     const TSBASE: u64 = SEC * 1600000000;
     fn val(ts: u64) -> f32 {
         2f32 + ((ts / SEC) % 2) as f32 + 0.2 * ((ts / (MS * 100)) % 2) as f32
@@ -334,12 +339,12 @@ fn bin03() {
         events_vec1.push(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)));
         let inp1 = events_vec1;
         let inp1 = futures_util::stream::iter(inp1).enumerate().then(|(i, k)| async move {
-            if i == 4 {
+            if i == 5 {
                 let _ = tokio::time::sleep(Duration::from_millis(10000)).await;
             }
             k
         });
-        let edges = (0..10).into_iter().map(|x| TSBASE + SEC * 1 + SEC * x).collect();
+        let edges = (0..10).into_iter().map(|x| TSBASE + SEC * (1 + x)).collect();
         let inp1 = Box::pin(inp1) as _;
         let timeout = Duration::from_millis(400);
         let res = binned_collected(
@@ -363,5 +368,5 @@ fn bin03() {
         );
         Ok::<_, Error>(())
     };
-    tokio::runtime::Runtime::new().unwrap().block_on(fut).unwrap();
+    runfut(fut).unwrap();
 }

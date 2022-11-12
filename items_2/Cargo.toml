@@ -6,6 +6,7 @@ edition = "2021"
 
 [lib]
 path = "src/items_2.rs"
+doctest = false
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
@@ -22,3 +23,4 @@ err = { path = "../err" }
 items = { path = "../items" }
 items_proc = { path = "../items_proc" }
 netpod = { path = "../netpod" }
+taskrun = { path = "../taskrun" }

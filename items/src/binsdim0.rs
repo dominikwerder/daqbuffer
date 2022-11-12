@@ -483,11 +483,17 @@ impl<NTY: NumOps> MinMaxAvgDim0BinsTimeBinner<NTY> {
             None
         }
     }
+
+    fn struct_name() -> &'static str {
+        std::any::type_name::<Self>()
+    }
 }
 
 impl<NTY: NumOps + 'static> TimeBinnerDyn for MinMaxAvgDim0BinsTimeBinner<NTY> {
     fn ingest(&mut self, item: &dyn TimeBinnableDyn) {
-        const SELF: &str = "MinMaxAvgDim0BinsTimeBinner";
+        //const SELF: &str = "MinMaxAvgDim0BinsTimeBinner";
+        #[allow(non_snake_case)]
+        let SELF = Self::struct_name();
         if item.len() == 0 {
             // Return already here, RangeOverlapInfo would not give much sense.
             return;

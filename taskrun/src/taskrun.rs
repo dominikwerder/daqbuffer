@@ -66,7 +66,10 @@ pub fn get_runtime_opts(nworkers: usize, nblocking: usize) -> Arc<Runtime> {
     }
 }
 
-pub fn run<T, F: std::future::Future<Output = Result<T, Error>>>(f: F) -> Result<T, Error> {
+pub fn run<T, F>(f: F) -> Result<T, Error>
+where
+    F: std::future::Future<Output = Result<T, Error>>,
+{
     let runtime = get_runtime();
     let res = runtime.block_on(async { f.await });
     match res {
@@ -94,22 +97,25 @@ pub fn tracing_init() {
         //let console_layer = console_subscriber::spawn();
         //tracing_subscriber::registry().with(console_layer).with(trsub).init();
         //console_subscriber::init();
+        #[allow(unused)]
+        let log_filter = tracing_subscriber::EnvFilter::new(
+            [
+                //"tokio=trace",
+                //"runtime=trace",
+                "warn",
+                "disk::binned::pbv=trace",
+                "[log_span_d]=debug",
+                "[log_span_t]=trace",
+            ]
+            .join(","),
+        );
         tracing_subscriber::fmt()
             .with_timer(timer)
             .with_target(true)
             .with_thread_names(true)
             //.with_max_level(tracing::Level::INFO)
-            .with_env_filter(tracing_subscriber::EnvFilter::new(
-                [
-                    //"tokio=trace",
-                    //"runtime=trace",
-                    "info",
-                    "disk::binned::pbv=trace",
-                    "[log_span_d]=debug",
-                    "[log_span_t]=trace",
-                ]
-                .join(","),
-            ))
+            //.with_env_filter(log_filter)
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .init();
         *g = 1;
         //warn!("tracing_init  done");
