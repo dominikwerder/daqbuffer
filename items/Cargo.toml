@@ -21,3 +21,4 @@ tokio = { version = "1.20.1", features = ["rt-multi-thread", "io-util", "net", "
 err = { path = "../err" }
 items_proc = { path = "../items_proc" }
 netpod = { path = "../netpod" }
+parse = { path = "../parse" }

@@ -2,9 +2,9 @@ use crate::decode::{BigEndian, Endianness, LittleEndian};
 use crate::decode::{EventValueFromBytes, EventValueShape, EventsDecodedStream, NumFromBytes};
 use crate::decode::{EventValuesDim0Case, EventValuesDim1Case};
 use crate::eventblobs::EventChunkerMultifile;
-use crate::eventchunker::{EventChunkerConf, EventFull};
 use err::Error;
 use futures_util::{Stream, StreamExt};
+use items::eventfull::EventFull;
 use items::numops::{BoolNum, NumOps, StringNum};
 use items::{EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::log::*;
@@ -12,6 +12,7 @@ use netpod::query::RawEventsQuery;
 use netpod::{AggKind, ByteOrder, ByteSize, Channel, DiskIoTune, NanoRange, NodeConfigCached, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, ConfigEntry, MatchingConfigEntry};
 use std::pin::Pin;
+use streams::eventchunker::EventChunkerConf;
 
 fn make_num_pipeline_stream_evs<NTY, END, EVS, ENP>(
     event_value_shape: EVS,

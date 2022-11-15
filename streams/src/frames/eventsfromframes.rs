@@ -1,4 +1,4 @@
-use crate::frame::inmem::InMemoryFrameAsyncReadStream;
+use super::inmem::InMemoryFrameAsyncReadStream;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::frame::decode_frame;

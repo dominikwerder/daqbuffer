@@ -29,3 +29,4 @@ netpod = { path = "../netpod" }
 httpret = { path = "../httpret" }
 disk = { path = "../disk" }
 items = { path = "../items" }
+streams = { path = "../streams" }

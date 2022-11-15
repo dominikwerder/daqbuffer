@@ -34,3 +34,4 @@ items_2 = { path = "../items_2" }
 dbconn = { path = "../dbconn" }
 scyllaconn = { path = "../scyllaconn" }
 taskrun = { path = "../taskrun" }
+streams = { path = "../streams" }

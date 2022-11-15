@@ -1,7 +1,7 @@
 use crate::eventblobs::EventChunkerMultifile;
-use crate::eventchunker::EventChunkerConf;
 use netpod::{test_data_base_path_databuffer, timeunits::*, SfDatabuffer};
 use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, NanoRange, Nanos, Node, ScalarType, Shape};
+use streams::eventchunker::EventChunkerConf;
 #[allow(unused_imports)]
 use tracing::{debug, error, info, trace, warn};
 

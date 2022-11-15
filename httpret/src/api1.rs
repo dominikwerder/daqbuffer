@@ -2,11 +2,11 @@ use crate::err::Error;
 use crate::gather::{gather_get_json_generic, SubRes};
 use crate::{response, BodyStream};
 use bytes::{BufMut, BytesMut};
-use disk::eventchunker::{EventChunkerConf, EventFull};
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt, TryFutureExt, TryStreamExt};
 use http::{Method, StatusCode};
 use hyper::{Body, Client, Request, Response};
+use items::eventfull::EventFull;
 use items::{RangeCompletableItem, Sitemty, StreamItem};
 use itertools::Itertools;
 use netpod::query::RawEventsQuery;
@@ -14,15 +14,16 @@ use netpod::timeunits::SEC;
 use netpod::{log::*, DiskIoTune, ReadSys, ACCEPT_ALL};
 use netpod::{ByteSize, Channel, FileIoBufferSize, NanoRange, NodeConfigCached, PerfOpts, Shape, APP_OCTET};
 use netpod::{ChannelSearchQuery, ChannelSearchResult, ProxyConfig, APP_JSON};
-use parse::channelconfig::{
-    extract_matching_config_entry, read_local_config, Config, ConfigEntry, MatchingConfigEntry,
-};
+use parse::channelconfig::extract_matching_config_entry;
+use parse::channelconfig::read_local_config;
+use parse::channelconfig::{Config, ConfigEntry, MatchingConfigEntry};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
+use streams::eventchunker::EventChunkerConf;
 use tracing_futures::Instrument;
 use url::Url;
 

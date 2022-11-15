@@ -1,13 +1,9 @@
 use clap::Parser;
-//use disk::decode::EventValueShape;
-//use disk::decode::EventValuesDim0Case;
-use disk::eventchunker::EventChunkerConf;
 use err::Error;
 use netpod::log::*;
-#[allow(unused)]
-use netpod::timeunits::*;
 use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, NanoRange, Shape};
 use std::path::PathBuf;
+use streams::eventchunker::{EventChunker, EventChunkerConf};
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -96,7 +92,7 @@ pub fn main() -> Result<(), Error> {
                 let stats_conf = EventChunkerConf {
                     disk_stats_every: ByteSize::mb(2),
                 };
-                let chunks = disk::eventchunker::EventChunker::from_start(
+                let chunks = EventChunker::from_start(
                     inp,
                     channel_config.clone(),
                     range,

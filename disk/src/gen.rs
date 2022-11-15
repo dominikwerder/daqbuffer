@@ -428,7 +428,7 @@ async fn gen_event(
     buf.put_u8(0);
     buf.put_u8(0);
     buf.put_i32(-1);
-    use crate::dtflags::*;
+    use streams::dtflags::*;
     if config.compression {
         match config.shape {
             Shape::Wave(ele_count) => {

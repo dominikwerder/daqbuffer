@@ -21,3 +21,4 @@ netpod = { path = "../netpod" }
 items = { path = "../items" }
 parse = { path = "../parse" }
 disk = { path = "../disk" }
+streams = { path = "../streams" }

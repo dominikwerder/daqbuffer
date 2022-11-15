@@ -1,7 +1,6 @@
 use crate::agg::binnedt::TBinnerStream;
 use crate::binned::query::PreBinnedQuery;
 use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead};
-use crate::frame::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
@@ -19,6 +18,7 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::task::{Context, Poll};
+use streams::frames::inmem::InMemoryFrameAsyncReadStream;
 use url::Url;
 
 pub struct FetchedPreBinned<TBT> {

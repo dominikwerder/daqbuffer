@@ -1,7 +1,3 @@
-#[cfg(test)]
-mod test;
-
-use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -14,10 +10,14 @@ use netpod::AggKind;
 use netpod::{NodeConfigCached, PerfOpts};
 use std::net::SocketAddr;
 use std::pin::Pin;
+use streams::frames::inmem::InMemoryFrameAsyncReadStream;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
 use tracing::Instrument;
+
+#[cfg(test)]
+mod test;
 
 pub async fn events_service(node_config: NodeConfigCached) -> Result<(), Error> {
     let addr = format!("{}:{}", node_config.node.listen, node_config.node.port_raw);

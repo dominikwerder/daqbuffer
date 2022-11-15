@@ -1,6 +1,7 @@
 pub mod binnedevents;
 pub mod binsdim0;
 pub mod binsdim1;
+pub mod eventfull;
 pub mod eventsitem;
 pub mod frame;
 pub mod inmem;

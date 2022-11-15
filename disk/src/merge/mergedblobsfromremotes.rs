@@ -1,9 +1,8 @@
-use crate::eventchunker::EventFull;
 use crate::merge::MergedStream;
-use crate::raw::client::x_processed_event_blobs_stream_from_node;
 use err::Error;
 use futures_core::Stream;
 use futures_util::{pin_mut, StreamExt};
+use items::eventfull::EventFull;
 use items::Sitemty;
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
@@ -11,6 +10,7 @@ use netpod::{Cluster, PerfOpts};
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use streams::tcprawclient::x_processed_event_blobs_stream_from_node;
 
 type T001<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;
 type T002<T> = Pin<Box<dyn Future<Output = Result<T001<T>, Error>> + Send>>;

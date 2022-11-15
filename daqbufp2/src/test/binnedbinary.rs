@@ -1,7 +1,6 @@
 use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
 use chrono::{DateTime, Utc};
-use disk::frame::inmem::InMemoryFrameAsyncReadStream;
 use disk::streamlog::Streamlog;
 use err::Error;
 use futures_util::{StreamExt, TryStreamExt};
@@ -15,6 +14,7 @@ use netpod::{AggKind, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_OCTET
 use serde::de::DeserializeOwned;
 use std::fmt;
 use std::future::ready;
+use streams::frames::inmem::InMemoryFrameAsyncReadStream;
 use tokio::io::AsyncRead;
 use url::Url;
 

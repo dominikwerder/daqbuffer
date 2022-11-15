@@ -31,6 +31,7 @@ disk = { path = "../disk" }
 items = { path = "../items" }
 items_2 = { path = "../items_2" }
 parse = { path = "../parse" }
+streams = { path = "../streams" }
 nodenet = { path = "../nodenet" }
 commonio = { path = "../commonio" }
 taskrun = { path = "../taskrun" }

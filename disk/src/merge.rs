@@ -299,7 +299,6 @@ where
 #[cfg(test)]
 mod test {
     use crate::dataopen::position_file_for_test;
-    use crate::eventchunker::{EventChunker, EventChunkerConf};
     use crate::file_content_stream;
     use crate::merge::MergedStream;
     use err::Error;
@@ -310,6 +309,8 @@ mod test {
     use netpod::timeunits::{DAY, MS};
     use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, NanoRange, Nanos, ScalarType, Shape};
     use std::path::PathBuf;
+    use streams::eventchunker::EventChunker;
+    use streams::eventchunker::EventChunkerConf;
 
     fn scalar_file_path() -> PathBuf {
         test_data_base_path_databuffer()

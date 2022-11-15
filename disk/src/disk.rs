@@ -19,24 +19,25 @@ pub mod read3;
 pub mod read4;
 pub mod streamlog;
 
-use crate::dtflags::{ARRAY, BIG_ENDIAN, COMPRESSION, SHAPE};
 use bytes::{Bytes, BytesMut};
 use err::Error;
 use futures_core::Stream;
 use futures_util::future::FusedFuture;
-use futures_util::{FutureExt, StreamExt, TryFutureExt};
-use netpod::histo::HistoLog2;
-use netpod::{log::*, ReadSys};
+use futures_util::{FutureExt, TryFutureExt};
+use netpod::log::*;
+use netpod::ReadSys;
 use netpod::{ChannelConfig, DiskIoTune, Node, Shape};
 use std::collections::VecDeque;
 use std::future::Future;
 use std::io::SeekFrom;
+use std::mem;
 use std::os::unix::prelude::AsRawFd;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
-use std::{fmt, mem};
+use std::time::Instant;
+use streams::dtflags::{ARRAY, BIG_ENDIAN, COMPRESSION, SHAPE};
+use streams::filechunkread::FileChunkRead;
 use tokio::fs::{File, OpenOptions};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, ReadBuf};
 use tokio::sync::mpsc;
@@ -150,27 +151,6 @@ impl FusedFuture for Fopen1 {
 
 unsafe impl Send for Fopen1 {}
 
-pub struct FileChunkRead {
-    buf: BytesMut,
-    duration: Duration,
-}
-
-impl FileChunkRead {
-    pub fn into_buf(self) -> BytesMut {
-        self.buf
-    }
-}
-
-impl fmt::Debug for FileChunkRead {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("FileChunkRead")
-            .field("buf.len", &self.buf.len())
-            .field("buf.cap", &self.buf.capacity())
-            .field("duration", &self.duration)
-            .finish()
-    }
-}
-
 pub struct FileContentStream {
     file: File,
     disk_io_tune: DiskIoTune,
@@ -229,17 +209,11 @@ impl Stream for FileContentStream {
                         self.read_going = false;
                         let ts2 = Instant::now();
                         if nread == 0 {
-                            let ret = FileChunkRead {
-                                buf,
-                                duration: ts2.duration_since(self.ts1),
-                            };
+                            let ret = FileChunkRead::with_buf_dur(buf, ts2.duration_since(self.ts1));
                             self.done = true;
                             Ready(Some(Ok(ret)))
                         } else {
-                            let ret = FileChunkRead {
-                                buf,
-                                duration: ts2.duration_since(self.ts1),
-                            };
+                            let ret = FileChunkRead::with_buf_dur(buf, ts2.duration_since(self.ts1));
                             if false && self.nlog < 6 {
                                 self.nlog += 1;
                                 info!("{:?}  ret {:?}", self.disk_io_tune, ret);
@@ -316,12 +290,8 @@ impl Stream for FileContentStream2 {
                     }
                     FCS2::Reading((ref mut buf, ref mut fut)) => match fut.poll_unpin(cx) {
                         Ready(Ok(n)) => {
-                            let mut buf2 = BytesMut::new();
-                            std::mem::swap(buf as &mut BytesMut, &mut buf2);
-                            let item = FileChunkRead {
-                                buf: buf2,
-                                duration: Duration::from_millis(0),
-                            };
+                            let buf2 = std::mem::replace(buf as &mut BytesMut, BytesMut::new());
+                            let item = FileChunkRead::with_buf(buf2);
                             if n == 0 {
                                 self.done = true;
                             } else {
@@ -429,17 +399,11 @@ impl Stream for FileContentStream3 {
                     FCS3::ReadingSimple => match self.read_fut.poll_unpin(cx) {
                         Ready(Ok(res)) => {
                             if res.eof {
-                                let item = FileChunkRead {
-                                    buf: res.buf,
-                                    duration: Duration::from_millis(0),
-                                };
+                                let item = FileChunkRead::with_buf(res.buf);
                                 self.done = true;
                                 Ready(Some(Ok(item)))
                             } else {
-                                let item = FileChunkRead {
-                                    buf: res.buf,
-                                    duration: Duration::from_millis(0),
-                                };
+                                let item = FileChunkRead::with_buf(res.buf);
                                 let fd = self.file.as_raw_fd();
                                 let count = self.disk_io_tune.read_buffer_len as u64;
                                 self.read_fut = Box::pin(read3::Read3::get().read(fd, self.file_pos, count));
@@ -489,10 +453,7 @@ impl Stream for FileContentStream3 {
                                                 self.eof = true;
                                             }
                                         }
-                                        let res = FileChunkRead {
-                                            buf: rr.buf,
-                                            duration: Duration::from_millis(0),
-                                        };
+                                        let res = FileChunkRead::with_buf(rr.buf);
                                         Ready(Some(Ok(res)))
                                     }
                                     Err(e) => {
@@ -619,10 +580,7 @@ impl Stream for FileContentStream4 {
                                         >(rm)
                                     };
                                     self.recv_fut = Box::pin(rm.recv()) as _;
-                                    let item = FileChunkRead {
-                                        buf: k.buf,
-                                        duration: Duration::from_millis(0),
-                                    };
+                                    let item = FileChunkRead::with_buf(k.buf);
                                     Ready(Some(Ok(item)))
                                 }
                                 Err(e) => {
@@ -667,110 +625,6 @@ pub fn file_content_stream(
             Box::pin(s) as _
         }
     }
-}
-
-pub struct NeedMinBuffer {
-    inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>,
-    need_min: u32,
-    left: Option<FileChunkRead>,
-    buf_len_histo: HistoLog2,
-    errored: bool,
-    completed: bool,
-}
-
-impl NeedMinBuffer {
-    pub fn new(inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>) -> Self {
-        Self {
-            inp: inp,
-            need_min: 1,
-            left: None,
-            buf_len_histo: HistoLog2::new(8),
-            errored: false,
-            completed: false,
-        }
-    }
-
-    pub fn put_back(&mut self, buf: FileChunkRead) {
-        assert!(self.left.is_none());
-        self.left = Some(buf);
-    }
-
-    pub fn set_need_min(&mut self, need_min: u32) {
-        self.need_min = need_min;
-    }
-}
-
-// TODO collect somewhere else
-impl Drop for NeedMinBuffer {
-    fn drop(&mut self) {
-        debug!("NeedMinBuffer  Drop Stats:\nbuf_len_histo: {:?}", self.buf_len_histo);
-    }
-}
-
-impl Stream for NeedMinBuffer {
-    type Item = Result<FileChunkRead, Error>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        use Poll::*;
-        loop {
-            break if self.completed {
-                panic!("NeedMinBuffer  poll_next on completed");
-            } else if self.errored {
-                self.completed = true;
-                return Ready(None);
-            } else {
-                match self.inp.poll_next_unpin(cx) {
-                    Ready(Some(Ok(fcr))) => {
-                        self.buf_len_histo.ingest(fcr.buf.len() as u32);
-                        //info!("NeedMinBuffer got buf  len {}", fcr.buf.len());
-                        match self.left.take() {
-                            Some(mut lfcr) => {
-                                // TODO measure:
-                                lfcr.buf.unsplit(fcr.buf);
-                                lfcr.duration += fcr.duration;
-                                let fcr = lfcr;
-                                if fcr.buf.len() as u32 >= self.need_min {
-                                    //info!("with left ready  len {}  need_min {}", buf.len(), self.need_min);
-                                    Ready(Some(Ok(fcr)))
-                                } else {
-                                    //info!("with left not enough  len {}  need_min {}", buf.len(), self.need_min);
-                                    self.left.replace(fcr);
-                                    continue;
-                                }
-                            }
-                            None => {
-                                if fcr.buf.len() as u32 >= self.need_min {
-                                    //info!("simply ready  len {}  need_min {}", buf.len(), self.need_min);
-                                    Ready(Some(Ok(fcr)))
-                                } else {
-                                    //info!("no previous leftover, need more  len {}  need_min {}", buf.len(), self.need_min);
-                                    self.left.replace(fcr);
-                                    continue;
-                                }
-                            }
-                        }
-                    }
-                    Ready(Some(Err(e))) => {
-                        self.errored = true;
-                        Ready(Some(Err(e.into())))
-                    }
-                    Ready(None) => {
-                        // TODO collect somewhere
-                        debug!("NeedMinBuffer  histo: {:?}", self.buf_len_histo);
-                        Ready(None)
-                    }
-                    Pending => Pending,
-                }
-            };
-        }
-    }
-}
-
-pub mod dtflags {
-    pub const COMPRESSION: u8 = 0x80;
-    pub const ARRAY: u8 = 0x40;
-    pub const BIG_ENDIAN: u8 = 0x20;
-    pub const SHAPE: u8 = 0x10;
 }
 
 trait ChannelConfigExt {
