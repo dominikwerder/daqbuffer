@@ -1,6 +1,7 @@
 use super::binnedjson::ScalarEventsResponse;
 use super::events::get_plain_events_json;
 use crate::nodes::require_archapp_test_host_running;
+use crate::test::events::ch_gen;
 use err::Error;
 use netpod::f64_close;
 use netpod::log::*;
@@ -11,7 +12,7 @@ fn get_events_1() -> Result<(), Error> {
         let rh = require_archapp_test_host_running()?;
         let cluster = &rh.cluster;
         let res = get_plain_events_json(
-            "SARUN16-MQUA080:X",
+            ch_gen("SARUN16-MQUA080:X"),
             "2021-01-04T00:00:00Z",
             "2021-01-30T00:00:00Z",
             cluster,

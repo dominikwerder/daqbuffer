@@ -4,9 +4,12 @@ use crate::log::*;
 use err::Error;
 use std::future::Future;
 use std::panic;
-use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, Mutex, Once};
 use tokio::runtime::Runtime;
 use tokio::task::JoinHandle;
+
+static INIT_TRACING_ONCE: Once = Once::new();
 
 pub mod log {
     #[allow(unused_imports)]
@@ -25,7 +28,6 @@ pub fn get_runtime_opts(nworkers: usize, nblocking: usize) -> Arc<Runtime> {
     let mut g = RUNTIME.lock().unwrap();
     match g.as_ref() {
         None => {
-            tracing_init();
             let res = tokio::runtime::Builder::new_multi_thread()
                 .worker_threads(nworkers)
                 .max_blocking_threads(nblocking)
@@ -56,8 +58,14 @@ pub fn get_runtime_opts(nworkers: usize, nblocking: usize) -> Arc<Runtime> {
                         //old(info);
                     }));
                 })
-                .build()
-                .unwrap();
+                .build();
+            let res = match res {
+                Ok(x) => x,
+                Err(e) => {
+                    eprintln!("ERROR {e}");
+                    panic!();
+                }
+            };
             let a = Arc::new(res);
             *g = Some(a.clone());
             a
@@ -71,6 +79,12 @@ where
     F: std::future::Future<Output = Result<T, Error>>,
 {
     let runtime = get_runtime();
+    match tracing_init() {
+        Ok(_) => {}
+        Err(e) => {
+            eprintln!("TRACING: {e:?}");
+        }
+    }
     let res = runtime.block_on(async { f.await });
     match res {
         Ok(k) => Ok(k),
@@ -81,44 +95,86 @@ where
     }
 }
 
-lazy_static::lazy_static! {
-    pub static ref INITMX: Mutex<u32> = Mutex::new(0);
-}
-
-pub fn tracing_init() {
-    let mut g = INITMX.lock().unwrap();
-    if *g == 0 {
-        //use tracing_subscriber::fmt::time::FormatTime;
-        let fmtstr = "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z";
-        //let format = tracing_subscriber::fmt::format().with_timer(timer);
-        let timer = tracing_subscriber::fmt::time::UtcTime::new(time::format_description::parse(fmtstr).unwrap());
-        //use tracing_subscriber::prelude::*;
-        //let trsub = tracing_subscriber::fmt::layer();
-        //let console_layer = console_subscriber::spawn();
-        //tracing_subscriber::registry().with(console_layer).with(trsub).init();
-        //console_subscriber::init();
-        #[allow(unused)]
-        let log_filter = tracing_subscriber::EnvFilter::new(
-            [
-                //"tokio=trace",
-                //"runtime=trace",
-                "warn",
-                "disk::binned::pbv=trace",
-                "[log_span_d]=debug",
-                "[log_span_t]=trace",
-            ]
-            .join(","),
-        );
-        tracing_subscriber::fmt()
+fn tracing_init_inner() -> Result<(), Error> {
+    use tracing_subscriber::layer::SubscriberExt;
+    use tracing_subscriber::util::SubscriberInitExt;
+    use tracing_subscriber::Layer;
+    let fmtstr = "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z";
+    let timer = tracing_subscriber::fmt::time::UtcTime::new(
+        time::format_description::parse(fmtstr).map_err(|e| format!("{e}"))?,
+    );
+    if true {
+        let fmt_layer = tracing_subscriber::fmt::Layer::new()
             .with_timer(timer)
             .with_target(true)
             .with_thread_names(true)
-            //.with_max_level(tracing::Level::INFO)
-            //.with_env_filter(log_filter)
-            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_filter(tracing_subscriber::EnvFilter::from_default_env());
+        let z = tracing_subscriber::registry().with(fmt_layer);
+        #[cfg(CONSOLE)]
+        {
+            let console_layer = console_subscriber::spawn();
+            let z = z.with(console_layer);
+        }
+        z.try_init().map_err(|e| format!("{e}"))?;
+    }
+    #[cfg(DISABLED_LOKI)]
+    // TODO tracing_loki seems not well composable, try open telemetry instead.
+    if false {
+        /*let fmt_layer = tracing_subscriber::fmt::Layer::new()
+        .with_timer(timer)
+        .with_target(true)
+        .with_thread_names(true)
+        .with_filter(tracing_subscriber::EnvFilter::from_default_env());*/
+        let url = "http://[::1]:6947";
+        //let url = "http://127.0.0.1:6947";
+        //let url = "http://[::1]:6132";
+        let (loki_layer, loki_task) = tracing_loki::layer(
+            tracing_loki::url::Url::parse(url)?,
+            vec![(format!("daqbuffer"), format!("dev"))].into_iter().collect(),
+            [].into(),
+        )
+        .map_err(|e| format!("{e}"))?;
+        //let loki_layer = loki_layer.with_filter(log_filter);
+        eprintln!("MADE LAYER");
+        tracing_subscriber::registry()
+            //.with(fmt_layer)
+            .with(loki_layer)
+            //.try_init()
+            //.map_err(|e| format!("{e}"))?;
             .init();
-        *g = 1;
-        //warn!("tracing_init  done");
+        eprintln!("REGISTERED");
+        if true {
+            tokio::spawn(loki_task);
+            eprintln!("SPAWNED TASK");
+        }
+        eprintln!("INFO LOKI");
+    }
+    Ok(())
+}
+
+pub fn tracing_init() -> Result<(), ()> {
+    use std::sync::atomic::Ordering;
+    let is_good = Arc::new(AtomicUsize::new(0));
+    {
+        let is_good = is_good.clone();
+        INIT_TRACING_ONCE.call_once(move || match tracing_init_inner() {
+            Ok(_) => {
+                is_good.store(1, Ordering::Release);
+            }
+            Err(e) => {
+                is_good.store(2, Ordering::Release);
+                eprintln!("tracing_init_inner gave error {e}");
+            }
+        });
+    }
+    let n = is_good.load(Ordering::Acquire);
+    if n == 2 {
+        Err(())
+    } else if n == 1 {
+        Ok(())
+    } else {
+        eprintln!("ERROR Unknown tracing state");
+        Err(())
     }
 }
 

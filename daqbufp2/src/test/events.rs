@@ -19,9 +19,20 @@ use std::future::ready;
 use tokio::io::AsyncRead;
 use url::Url;
 
-#[test]
-fn get_plain_events_binary_0() {
-    taskrun::run(get_plain_events_binary_0_inner()).unwrap();
+fn ch_adhoc(name: &str) -> Channel {
+    Channel {
+        series: None,
+        backend: "testbackend".into(),
+        name: name.into(),
+    }
+}
+
+pub fn ch_gen(name: &str) -> Channel {
+    Channel {
+        series: None,
+        backend: "testbackend".into(),
+        name: name.into(),
+    }
 }
 
 // TODO OFFENDING TEST add actual checks on result
@@ -40,6 +51,11 @@ async fn get_plain_events_binary_0_inner() -> Result<(), Error> {
         .await?;
     }
     Ok(())
+}
+
+#[test]
+fn get_plain_events_binary_0() {
+    taskrun::run(get_plain_events_binary_0_inner()).unwrap();
 }
 
 async fn get_plain_events_binary<NTY>(
@@ -218,16 +234,31 @@ where
     Ok(ret)
 }
 
+async fn get_plain_events_json_0_inner() -> Result<(), Error> {
+    let rh = require_test_hosts_running()?;
+    let cluster = &rh.cluster;
+    get_plain_events_json(
+        ch_gen("scalar-i32-be"),
+        "1970-01-01T00:20:10.000Z",
+        "1970-01-01T00:20:12.000Z",
+        cluster,
+        true,
+        4,
+    )
+    .await?;
+    Ok(())
+}
+
 #[test]
 fn get_plain_events_json_0() {
     taskrun::run(get_plain_events_json_0_inner()).unwrap();
 }
 
-async fn get_plain_events_json_0_inner() -> Result<(), Error> {
+async fn get_plain_events_json_1_inner() -> Result<(), Error> {
     let rh = require_test_hosts_running()?;
     let cluster = &rh.cluster;
     get_plain_events_json(
-        "scalar-i32-be",
+        ch_gen("wave-f64-be-n21"),
         "1970-01-01T00:20:10.000Z",
         "1970-01-01T00:20:12.000Z",
         cluster,
@@ -243,13 +274,13 @@ fn get_plain_events_json_1() {
     taskrun::run(get_plain_events_json_1_inner()).unwrap();
 }
 
-async fn get_plain_events_json_1_inner() -> Result<(), Error> {
+async fn get_plain_events_json_2_inner() -> Result<(), Error> {
     let rh = require_test_hosts_running()?;
     let cluster = &rh.cluster;
     get_plain_events_json(
-        "wave-f64-be-n21",
+        ch_adhoc("inmem-d0-i32"),
+        "1970-01-01T00:20:04.000Z",
         "1970-01-01T00:20:10.000Z",
-        "1970-01-01T00:20:12.000Z",
         cluster,
         true,
         4,
@@ -258,9 +289,14 @@ async fn get_plain_events_json_1_inner() -> Result<(), Error> {
     Ok(())
 }
 
+#[test]
+fn get_plain_events_json_2() {
+    taskrun::run(get_plain_events_json_2_inner()).unwrap();
+}
+
 // TODO improve by a more information-rich return type.
 pub async fn get_plain_events_json(
-    channel_name: &str,
+    channel: Channel,
     beg_date: &str,
     end_date: &str,
     cluster: &Cluster,
@@ -271,19 +307,13 @@ pub async fn get_plain_events_json(
     let node0 = &cluster.nodes[0];
     let beg_date: DateTime<Utc> = beg_date.parse()?;
     let end_date: DateTime<Utc> = end_date.parse()?;
-    let channel_backend = "testbackend";
-    let channel = Channel {
-        backend: channel_backend.into(),
-        name: channel_name.into(),
-        series: None,
-    };
     let range = NanoRange::from_date_time(beg_date, end_date);
     let query = PlainEventsQuery::new(channel, range, 1024 * 4, None, false);
     let hp = HostPort::from_node(node0);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    debug!("get_plain_events  get {}", url);
+    info!("get_plain_events  get {}", url);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(url.to_string())
@@ -292,12 +322,18 @@ pub async fn get_plain_events_json(
         .ec()?;
     let client = hyper::Client::new();
     let res = client.request(req).await.ec()?;
+
+    trace!("Response {res:?}");
+
     if res.status() != StatusCode::OK {
         error!("client response {:?}", res);
     }
     let buf = hyper::body::to_bytes(res.into_body()).await.ec()?;
     let s = String::from_utf8_lossy(&buf);
     let res: JsonValue = serde_json::from_str(&s)?;
+
+    eprintln!("res {res:?}");
+
     // TODO assert more
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;

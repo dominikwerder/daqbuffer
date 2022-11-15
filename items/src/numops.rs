@@ -110,7 +110,6 @@ impl PartialOrd for StringNum {
 
 pub trait NumOps:
     Sized
-    //+ Copy
     + Clone
     + AsPrimF32
     + Send
@@ -119,7 +118,6 @@ pub trait NumOps:
     + Unpin
     + Debug
     + Zero
-    //+ AsPrimitive<f32>
     + Bounded
     + PartialOrd
     + SubFrId

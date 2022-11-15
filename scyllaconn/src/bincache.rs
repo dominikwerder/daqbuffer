@@ -383,8 +383,10 @@ pub async fn fetch_uncached_binned_events(
                 )));
             }
         };
-        // TODO as soon we encounter RangeComplete we just:
-        // complete = true;
+        if false {
+            // TODO as soon we encounter RangeComplete we just:
+            complete = true;
+        }
         match item {
             Ok(ChannelEvents::Events(item)) => {
                 time_binner.ingest(item.as_time_binnable());

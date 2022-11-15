@@ -47,20 +47,29 @@ async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Res
         .headers()
         .get(http::header::ACCEPT)
         .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
+    let url = {
+        let s1 = format!("dummy:{}", req.uri());
+        Url::parse(&s1)
+            .map_err(Error::from)
+            .map_err(|e| e.add_public_msg(format!("Can not parse query url")))?
+    };
     if accept == APP_JSON || accept == ACCEPT_ALL {
-        Ok(plain_events_json(req, node_config).await?)
+        Ok(plain_events_json(url, req, node_config).await?)
     } else if accept == APP_OCTET {
-        Ok(plain_events_binary(req, node_config).await?)
+        Ok(plain_events_binary(url, req, node_config).await?)
     } else {
         let ret = response_err(StatusCode::NOT_ACCEPTABLE, format!("Unsupported Accept: {:?}", accept))?;
         Ok(ret)
     }
 }
 
-async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+async fn plain_events_binary(
+    url: Url,
+    req: Request<Body>,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
     debug!("httpret  plain_events_binary  req: {:?}", req);
-    let url = Url::parse(&format!("dummy:{}", req.uri()))?;
-    let query = PlainEventsQuery::from_url(&url)?;
+    let query = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
     let chconf = chconf_from_events_binary(&query, node_config).await?;
 
     // Update the series id since we don't require some unique identifier yet.
@@ -88,13 +97,18 @@ async fn plain_events_binary(req: Request<Body>, node_config: &NodeConfigCached)
     Ok(ret)
 }
 
-async fn plain_events_json(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("httpret  plain_events_json  req: {:?}", req);
-    let (head, _body) = req.into_parts();
-    let s1 = format!("dummy:{}", head.uri);
-    let url = Url::parse(&s1)?;
+async fn plain_events_json(
+    url: Url,
+    req: Request<Body>,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
+    debug!("httpret  plain_events_json  req: {:?}", req);
+    let (_head, _body) = req.into_parts();
     let query = PlainEventsQuery::from_url(&url)?;
-    let chconf = chconf_from_events_json(&query, node_config).await?;
+    let chconf = chconf_from_events_json(&query, node_config).await.map_err(|e| {
+        error!("chconf_from_events_json {e:?}");
+        e.add_public_msg(format!("Can not get channel information"))
+    })?;
 
     // Update the series id since we don't require some unique identifier yet.
     let mut query = query;
@@ -360,11 +374,13 @@ impl BinnedHandlerScylla {
                     x
                 })
                 .map_err(|e| items_2::Error::from(format!("{e}")));
-            todo!();
+            error!("TODO BinnedHandlerScylla::gather");
+            err::todo();
             type Items = Pin<Box<dyn Stream<Item = Result<ChannelEvents, items_2::Error>> + Send>>;
-            let data_stream = Box::pin(data_stream) as Items;
-            let state_stream = Box::pin(state_stream) as Items;
-            let merged_stream = ChannelEventsMerger::new(todo!());
+            let _data_stream = Box::pin(data_stream) as Items;
+            let _sate_stream = Box::pin(state_stream) as Items;
+            let merged_stream = ChannelEventsMerger::new(err::todoval());
+            let _ = merged_stream;
             //let merged_stream = ChannelEventsMerger::new(vec![data_stream, state_stream]);
             let merged_stream = Box::pin(merged_stream) as Pin<Box<dyn Stream<Item = _> + Send>>;
             let binned_collected = binned_collected(

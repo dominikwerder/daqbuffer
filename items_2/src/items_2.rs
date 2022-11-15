@@ -678,6 +678,40 @@ impl Collectable for Box<dyn Collectable> {
     }
 }
 
+fn flush_binned(
+    binner: &mut Box<dyn TimeBinner>,
+    coll: &mut Option<Box<dyn Collector>>,
+    bin_count_exp: u32,
+    force: bool,
+) -> Result<(), Error> {
+    trace!("flush_binned  bins_ready_count: {}", binner.bins_ready_count());
+    if force {
+        if binner.bins_ready_count() == 0 {
+            debug!("cycle the binner forced");
+            binner.cycle();
+        } else {
+            debug!("bins ready, do not force");
+        }
+    }
+    if binner.bins_ready_count() > 0 {
+        let ready = binner.bins_ready();
+        match ready {
+            Some(mut ready) => {
+                trace!("binned_collected ready {ready:?}");
+                if coll.is_none() {
+                    *coll = Some(ready.as_collectable_mut().new_collector(bin_count_exp));
+                }
+                let cl = coll.as_mut().unwrap();
+                cl.ingest(ready.as_collectable_mut());
+                Ok(())
+            }
+            None => Err(format!("bins_ready_count but no result").into()),
+        }
+    } else {
+        Ok(())
+    }
+}
+
 // TODO handle status information.
 pub async fn binned_collected(
     scalar_type: ScalarType,
@@ -687,52 +721,24 @@ pub async fn binned_collected(
     timeout: Duration,
     inp: Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>,
 ) -> Result<Box<dyn ToJsonResult>, Error> {
-    info!("binned_collected");
+    event!(Level::TRACE, "binned_collected");
+    if edges.len() < 2 {
+        return Err(format!("binned_collected  but edges.len() {}", edges.len()).into());
+    }
+    let ts_edges_max = *edges.last().unwrap();
     let deadline = Instant::now() + timeout;
     let mut did_timeout = false;
     let bin_count_exp = edges.len().max(2) as u32 - 1;
     let do_time_weight = agg_kind.do_time_weighted();
     // TODO maybe TimeBinner should take all ChannelEvents and handle this?
     let mut did_range_complete = false;
-    fn flush_binned(
-        binner: &mut Box<dyn TimeBinner>,
-        coll: &mut Option<Box<dyn Collector>>,
-        bin_count_exp: u32,
-        force: bool,
-    ) -> Result<(), Error> {
-        info!("flush_binned  bins_ready_count: {}", binner.bins_ready_count());
-        if force {
-            if binner.bins_ready_count() == 0 {
-                warn!("cycle the binner forced");
-                binner.cycle();
-            } else {
-                warn!("binner was some ready, do nothing");
-            }
-        }
-        if binner.bins_ready_count() > 0 {
-            let ready = binner.bins_ready();
-            match ready {
-                Some(mut ready) => {
-                    info!("binned_collected ready {ready:?}");
-                    if coll.is_none() {
-                        *coll = Some(ready.as_collectable_mut().new_collector(bin_count_exp));
-                    }
-                    let cl = coll.as_mut().unwrap();
-                    cl.ingest(ready.as_collectable_mut());
-                    Ok(())
-                }
-                None => Err(format!("bins_ready_count but no result").into()),
-            }
-        } else {
-            Ok(())
-        }
-    }
     let mut coll = None;
     let mut binner = None;
     let empty_item = empty_events_dyn_2(&scalar_type, &shape, &AggKind::TimeWeightedScalar);
-    let empty_stream = futures_util::stream::once(futures_util::future::ready(Ok(StreamItem::DataItem(
-        RangeCompletableItem::Data(ChannelEvents::Events(empty_item)),
+    let tmp_item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(ChannelEvents::Events(
+        empty_item,
     ))));
+    let empty_stream = futures_util::stream::once(futures_util::future::ready(tmp_item));
     let mut stream = empty_stream.chain(inp);
     loop {
         let item = futures_util::select! {
@@ -751,18 +757,23 @@ pub async fn binned_collected(
         match item {
             StreamItem::DataItem(k) => match k {
                 RangeCompletableItem::RangeComplete => {
-                    warn!("binned_collected TODO RangeComplete");
                     did_range_complete = true;
                 }
                 RangeCompletableItem::Data(k) => match k {
                     ChannelEvents::Events(events) => {
-                        if binner.is_none() {
-                            let bb = events.as_time_binnable().time_binner_new(edges.clone(), do_time_weight);
-                            binner = Some(bb);
+                        if events.starts_after(NanoRange {
+                            beg: 0,
+                            end: ts_edges_max,
+                        }) {
+                        } else {
+                            if binner.is_none() {
+                                let bb = events.as_time_binnable().time_binner_new(edges.clone(), do_time_weight);
+                                binner = Some(bb);
+                            }
+                            let binner = binner.as_mut().unwrap();
+                            binner.ingest(events.as_time_binnable());
+                            flush_binned(binner, &mut coll, bin_count_exp, false)?;
                         }
-                        let binner = binner.as_mut().unwrap();
-                        binner.ingest(events.as_time_binnable());
-                        flush_binned(binner, &mut coll, bin_count_exp, false)?;
                     }
                     ChannelEvents::Status(item) => {
                         trace!("{:?}", item);
@@ -806,13 +817,14 @@ pub async fn binned_collected(
     match coll {
         Some(mut coll) => {
             let res = coll.result().map_err(|e| format!("{e}"))?;
+            tokio::time::sleep(Duration::from_millis(2000)).await;
             Ok(res)
         }
         None => {
-            error!("TODO should never happen with changed logic, remove");
-            err::todo();
+            error!("binned_collected nothing collected");
             let item = empty_binned_dyn(&scalar_type, &shape, &AggKind::DimXBins1);
             let ret = item.to_box_to_json_result();
+            tokio::time::sleep(Duration::from_millis(2000)).await;
             Ok(ret)
         }
     }

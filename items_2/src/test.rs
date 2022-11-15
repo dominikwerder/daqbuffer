@@ -324,7 +324,9 @@ fn binned_timeout_01() {
     fn val(ts: u64) -> f32 {
         2f32 + ((ts / SEC) % 2) as f32 + 0.2 * ((ts / (MS * 100)) % 2) as f32
     }
+    eprintln!("binned_timeout_01  ENTER");
     let fut = async {
+        eprintln!("binned_timeout_01  IN FUT");
         let mut events_vec1 = Vec::new();
         let mut t = TSBASE;
         for _ in 0..20 {

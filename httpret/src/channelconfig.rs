@@ -42,6 +42,16 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
             channel.backend, ncc.node_config.cluster.backend
         );
     }
+    if channel.backend() == "testbackend" {
+        if channel.name() == "inmem-d0-i32" {
+            let ret = ChConf {
+                series: 1,
+                scalar_type: ScalarType::I32,
+                shape: Shape::Scalar,
+            };
+            return Ok(ret);
+        }
+    }
     // TODO use a common already running worker pool for these queries:
     let dbconf = &ncc.node_config.cluster.database;
     let dburl = format!(

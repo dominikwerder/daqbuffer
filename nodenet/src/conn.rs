@@ -107,12 +107,12 @@ async fn events_conn_handler_inner_try(
     }
 
     let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> =
-        if evq.channel().backend() == "test-adhoc-dyn" {
+        if evq.channel().backend() == "testbackend" {
             use items_2::ChannelEvents;
             use items_2::Empty;
             use netpod::timeunits::MS;
             let node_ix = node_config.ix;
-            if evq.channel().name() == "scalar-i32" {
+            if evq.channel().name() == "inmem-d0-i32" {
                 let mut item = items_2::eventsdim0::EventsDim0::<f32>::empty();
                 let td = MS * 10;
                 let mut ts = MS * 17 + MS * td * node_ix as u64;
