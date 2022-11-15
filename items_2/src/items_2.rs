@@ -310,6 +310,71 @@ impl PartialEq for Box<dyn Events> {
     }
 }
 
+struct EventsCollector {}
+
+impl WithLen for EventsCollector {
+    fn len(&self) -> usize {
+        todo!()
+    }
+}
+
+impl Collector for EventsCollector {
+    fn ingest(&mut self, src: &mut dyn Collectable) {
+        todo!()
+    }
+
+    fn set_range_complete(&mut self) {
+        todo!()
+    }
+
+    fn set_timed_out(&mut self) {
+        todo!()
+    }
+
+    fn result(&mut self) -> Result<Box<dyn ToJsonResult>, err::Error> {
+        todo!()
+    }
+}
+
+impl Collectable for Box<dyn Events> {
+    fn new_collector(&self) -> Box<dyn Collector> {
+        Box::new(EventsCollector {})
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        todo!()
+    }
+}
+
+/*impl crate::streams::CollectorType for EventsCollector {
+    type Input = dyn Events;
+    type Output = Box<dyn Events>;
+
+    fn ingest(&mut self, src: &mut Self::Input) {
+        todo!()
+    }
+
+    fn set_range_complete(&mut self) {
+        todo!()
+    }
+
+    fn set_timed_out(&mut self) {
+        todo!()
+    }
+
+    fn result(&mut self) -> Result<Self::Output, err::Error> {
+        todo!()
+    }
+}*/
+
+/*impl crate::streams::CollectableType for dyn Events {
+    type Collector = EventsCollector;
+
+    fn new_collector() -> Self::Collector {
+        todo!()
+    }
+}*/
+
 /// Data in time-binned form.
 pub trait TimeBinned: Any + TimeBinnable {
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnable;
@@ -506,6 +571,10 @@ pub enum ChannelEvents {
     Status(ConnStatusEvent),
 }
 
+impl FrameTypeInnerStatic for ChannelEvents {
+    const FRAME_TYPE_ID: u32 = items::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID;
+}
+
 impl Clone for ChannelEvents {
     fn clone(&self) -> Self {
         match self {
@@ -663,14 +732,10 @@ impl MergableEvents for ChannelEvents {
     }
 }
 
-impl FrameTypeInnerStatic for ChannelEvents {
-    const FRAME_TYPE_ID: u32 = items::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID;
-}
-
 // TODO do this with some blanket impl:
 impl Collectable for Box<dyn Collectable> {
-    fn new_collector(&self, bin_count_exp: u32) -> Box<dyn streams::Collector> {
-        Collectable::new_collector(self.as_ref(), bin_count_exp)
+    fn new_collector(&self) -> Box<dyn streams::Collector> {
+        Collectable::new_collector(self.as_ref())
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -681,7 +746,6 @@ impl Collectable for Box<dyn Collectable> {
 fn flush_binned(
     binner: &mut Box<dyn TimeBinner>,
     coll: &mut Option<Box<dyn Collector>>,
-    bin_count_exp: u32,
     force: bool,
 ) -> Result<(), Error> {
     trace!("flush_binned  bins_ready_count: {}", binner.bins_ready_count());
@@ -699,7 +763,7 @@ fn flush_binned(
             Some(mut ready) => {
                 trace!("binned_collected ready {ready:?}");
                 if coll.is_none() {
-                    *coll = Some(ready.as_collectable_mut().new_collector(bin_count_exp));
+                    *coll = Some(ready.as_collectable_mut().new_collector());
                 }
                 let cl = coll.as_mut().unwrap();
                 cl.ingest(ready.as_collectable_mut());
@@ -728,6 +792,8 @@ pub async fn binned_collected(
     let ts_edges_max = *edges.last().unwrap();
     let deadline = Instant::now() + timeout;
     let mut did_timeout = false;
+    // TODO use a trait to allow check of unfinished data [hcn2956jxhwsf]
+    #[allow(unused)]
     let bin_count_exp = edges.len().max(2) as u32 - 1;
     let do_time_weight = agg_kind.do_time_weighted();
     // TODO maybe TimeBinner should take all ChannelEvents and handle this?
@@ -772,7 +838,7 @@ pub async fn binned_collected(
                             }
                             let binner = binner.as_mut().unwrap();
                             binner.ingest(events.as_time_binnable());
-                            flush_binned(binner, &mut coll, bin_count_exp, false)?;
+                            flush_binned(binner, &mut coll, false)?;
                         }
                     }
                     ChannelEvents::Status(item) => {
@@ -804,10 +870,10 @@ pub async fn binned_collected(
             binner.cycle();
         }
         trace!("flush binned");
-        flush_binned(&mut binner, &mut coll, bin_count_exp, false)?;
+        flush_binned(&mut binner, &mut coll, false)?;
         if coll.is_none() {
             debug!("force a bin");
-            flush_binned(&mut binner, &mut coll, bin_count_exp, true)?;
+            flush_binned(&mut binner, &mut coll, true)?;
         } else {
             trace!("coll is already some");
         }

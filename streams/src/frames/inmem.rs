@@ -1,7 +1,6 @@
 use bytes::{BufMut, BytesMut};
 use err::Error;
-use futures_core::Stream;
-use futures_util::pin_mut;
+use futures_util::{pin_mut, Stream};
 use items::inmem::InMemoryFrame;
 use items::StreamItem;
 use items::{INMEM_FRAME_FOOT, INMEM_FRAME_HEAD, INMEM_FRAME_MAGIC};

@@ -23,12 +23,11 @@ pub trait Collector: Send + Unpin + WithLen {
 
 pub trait CollectableType {
     type Collector: CollectorType<Input = Self>;
-
-    fn new_collector(bin_count_exp: u32) -> Self::Collector;
+    fn new_collector() -> Self::Collector;
 }
 
 pub trait Collectable: Any {
-    fn new_collector(&self, bin_count_exp: u32) -> Box<dyn Collector>;
+    fn new_collector(&self) -> Box<dyn Collector>;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
@@ -53,8 +52,8 @@ impl<T: CollectorType + 'static> Collector for T {
 }
 
 impl<T: CollectableType + 'static> Collectable for T {
-    fn new_collector(&self, bin_count_exp: u32) -> Box<dyn Collector> {
-        Box::new(T::new_collector(bin_count_exp)) as _
+    fn new_collector(&self) -> Box<dyn Collector> {
+        Box::new(T::new_collector()) as _
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -69,10 +68,12 @@ pub trait ToJsonBytes {
 }
 
 // TODO check usage of this trait
-pub trait ToJsonResult: fmt::Debug + Send {
+pub trait ToJsonResult: erased_serde::Serialize + fmt::Debug + Send {
     fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error>;
     fn as_any(&self) -> &dyn Any;
 }
+
+erased_serde::serialize_trait_object!(ToJsonResult);
 
 impl ToJsonResult for serde_json::Value {
     fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error> {

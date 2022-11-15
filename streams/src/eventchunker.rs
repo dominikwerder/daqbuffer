@@ -5,10 +5,7 @@ use bytes::{Buf, BytesMut};
 use err::Error;
 use futures_util::{Stream, StreamExt};
 use items::eventfull::EventFull;
-use items::{
-     RangeCompletableItem, StatsItem,
-    StreamItem, WithLen,
-};
+use items::{RangeCompletableItem, StatsItem, StreamItem, WithLen};
 use netpod::histo::HistoLog2;
 use netpod::log::*;
 use netpod::timeunits::SEC;

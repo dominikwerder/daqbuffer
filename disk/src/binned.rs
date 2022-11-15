@@ -7,7 +7,7 @@ pub mod query;
 use crate::agg::binnedt::TBinnerStream;
 use crate::binned::binnedfrompbv::BinnedFromPreBinned;
 use crate::binnedstream::BoxedStream;
-use crate::channelexec::{channel_exec, collect_plain_events_json, ChannelExecFunction};
+use crate::channelexec::{channel_exec, ChannelExecFunction};
 use crate::decode::{Endianness, EventValueFromBytes, EventValueShape, NumFromBytes};
 use crate::merge::mergedfromremotes::MergedFromRemotes;
 use bytes::Bytes;
@@ -15,7 +15,7 @@ use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
 use items::numops::NumOps;
-use items::streams::{Collectable, Collector};
+use items::streams::{collect_plain_events_json, Collectable, Collector};
 use items::{
     Clearable, EventsNodeProcessor, FilterFittingInside, Framable, FrameDecodable, FrameType, PushableIndex,
     RangeCompletableItem, Sitemty, StreamItem, TimeBinnableType, WithLen,

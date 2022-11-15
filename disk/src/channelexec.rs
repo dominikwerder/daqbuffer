@@ -1,8 +1,6 @@
 use crate::agg::enp::Identity;
-use crate::decode::{
-    BigEndian, Endianness, EventValueFromBytes, EventValueShape, EventValuesDim0Case, EventValuesDim1Case,
-    LittleEndian, NumFromBytes,
-};
+use crate::decode::{BigEndian, Endianness, EventValueFromBytes, EventValueShape, LittleEndian, NumFromBytes};
+use crate::decode::{EventValuesDim0Case, EventValuesDim1Case};
 use crate::merge::mergedfromremotes::MergedFromRemotes;
 use bytes::Bytes;
 use err::Error;
@@ -11,20 +9,15 @@ use futures_util::future::FutureExt;
 use futures_util::StreamExt;
 use items::numops::{BoolNum, NumOps, StringNum};
 use items::scalarevents::ScalarEvents;
-use items::streams::{Collectable, Collector};
-use items::{
-    Clearable, EventsNodeProcessor, Framable, FrameType, FrameTypeStatic, PushableIndex, RangeCompletableItem, Sitemty,
-    StreamItem, TimeBinnableType,
-};
-use netpod::log::*;
+use items::streams::{collect_plain_events_json, Collectable};
+use items::{Clearable, EventsNodeProcessor, Framable, FrameType, FrameTypeStatic};
+use items::{PushableIndex, Sitemty, TimeBinnableType};
 use netpod::query::{PlainEventsQuery, RawEventsQuery};
 use netpod::{AggKind, ByteOrder, Channel, NanoRange, NodeConfigCached, PerfOpts, ScalarType, Shape};
 use serde::de::DeserializeOwned;
-use serde_json::Value as JsonValue;
 use std::fmt::Debug;
 use std::pin::Pin;
 use std::time::Duration;
-use tokio::time::timeout_at;
 
 pub trait ChannelExecFunction {
     type Output;
@@ -314,97 +307,6 @@ impl PlainEventsJson {
     pub fn range(&self) -> &NanoRange {
         &self.range
     }
-}
-
-// TODO rename, it is also used for binned:
-pub async fn collect_plain_events_json<T, S>(
-    stream: S,
-    timeout: Duration,
-    bin_count_exp: u32,
-    events_max: u64,
-    do_log: bool,
-) -> Result<JsonValue, Error>
-where
-    S: Stream<Item = Sitemty<T>> + Unpin,
-    T: Collectable + Debug,
-{
-    let deadline = tokio::time::Instant::now() + timeout;
-    // TODO in general a Collector does not need to know about the expected number of bins.
-    // It would make more sense for some specific Collector kind to know.
-    // Therefore introduce finer grained types.
-    let mut collector = <T as Collectable>::new_collector(bin_count_exp);
-    let mut i1 = 0;
-    let mut stream = stream;
-    let mut total_duration = Duration::ZERO;
-    loop {
-        let item = if i1 == 0 {
-            stream.next().await
-        } else {
-            if false {
-                None
-            } else {
-                match timeout_at(deadline, stream.next()).await {
-                    Ok(k) => k,
-                    Err(_) => {
-                        collector.set_timed_out();
-                        None
-                    }
-                }
-            }
-        };
-        match item {
-            Some(item) => {
-                match item {
-                    Ok(item) => match item {
-                        StreamItem::Log(item) => {
-                            if do_log {
-                                debug!("collect_plain_events_json log {:?}", item);
-                            }
-                        }
-                        StreamItem::Stats(item) => match item {
-                            // TODO factor and simplify the stats collection:
-                            items::StatsItem::EventDataReadStats(_) => {}
-                            items::StatsItem::RangeFilterStats(_) => {}
-                            items::StatsItem::DiskStats(item) => match item {
-                                netpod::DiskStats::OpenStats(k) => {
-                                    total_duration += k.duration;
-                                }
-                                netpod::DiskStats::SeekStats(k) => {
-                                    total_duration += k.duration;
-                                }
-                                netpod::DiskStats::ReadStats(k) => {
-                                    total_duration += k.duration;
-                                }
-                                netpod::DiskStats::ReadExactStats(k) => {
-                                    total_duration += k.duration;
-                                }
-                            },
-                        },
-                        StreamItem::DataItem(item) => match item {
-                            RangeCompletableItem::RangeComplete => {
-                                collector.set_range_complete();
-                            }
-                            RangeCompletableItem::Data(item) => {
-                                collector.ingest(&item);
-                                i1 += 1;
-                                if i1 >= events_max {
-                                    break;
-                                }
-                            }
-                        },
-                    },
-                    Err(e) => {
-                        // TODO  Need to use some flags to get good enough error message for remote user.
-                        Err(e)?;
-                    }
-                };
-            }
-            None => break,
-        }
-    }
-    let ret = serde_json::to_value(collector.result()?)?;
-    debug!("Total duration: {:?}", total_duration);
-    Ok(ret)
 }
 
 impl ChannelExecFunction for PlainEventsJson {

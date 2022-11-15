@@ -8,7 +8,7 @@ to request such data from nodes.
 use crate::frames::eventsfromframes::EventsFromFrames;
 use crate::frames::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
-use futures_core::Stream;
+use futures_util::Stream;
 use items::eventfull::EventFull;
 use items::frame::{make_frame, make_term_frame};
 use items::{EventQueryJsonStringFrame, EventsNodeProcessor, RangeCompletableItem, Sitemty, StreamItem};

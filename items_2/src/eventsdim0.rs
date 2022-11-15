@@ -115,17 +115,14 @@ pub struct EventsDim0Collector<NTY> {
     vals: EventsDim0<NTY>,
     range_complete: bool,
     timed_out: bool,
-    #[allow(unused)]
-    bin_count_exp: u32,
 }
 
 impl<NTY> EventsDim0Collector<NTY> {
-    pub fn new(bin_count_exp: u32) -> Self {
+    pub fn new() -> Self {
         Self {
             vals: EventsDim0::empty(),
             range_complete: false,
             timed_out: false,
-            bin_count_exp,
         }
     }
 }
@@ -206,8 +203,8 @@ impl<NTY: ScalarOps> CollectorType for EventsDim0Collector<NTY> {
 impl<NTY: ScalarOps> CollectableType for EventsDim0<NTY> {
     type Collector = EventsDim0Collector<NTY>;
 
-    fn new_collector(bin_count_exp: u32) -> Self::Collector {
-        Self::Collector::new(bin_count_exp)
+    fn new_collector() -> Self::Collector {
+        Self::Collector::new()
     }
 }
 

@@ -99,6 +99,10 @@ impl LogItem {
 
 pub type Sitemty<T> = Result<StreamItem<RangeCompletableItem<T>>, Error>;
 
+pub fn sitem_data<X>(x: X) -> Sitemty<X> {
+    Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
+}
+
 struct VisitLevel;
 
 impl<'de> Visitor<'de> for VisitLevel {

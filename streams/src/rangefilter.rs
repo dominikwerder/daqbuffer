@@ -1,6 +1,5 @@
 use err::Error;
-use futures_core::Stream;
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
 use items::StatsItem;
 use items::{Appendable, Clearable, PushableIndex, RangeCompletableItem, Sitemty, StreamItem, WithTimestamps};
 use netpod::{log::*, RangeFilterStats};

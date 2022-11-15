@@ -231,16 +231,14 @@ pub struct BinsDim0Collector<NTY> {
     timed_out: bool,
     range_complete: bool,
     vals: BinsDim0<NTY>,
-    bin_count_exp: u32,
 }
 
 impl<NTY> BinsDim0Collector<NTY> {
-    pub fn new(bin_count_exp: u32) -> Self {
+    pub fn new() -> Self {
         Self {
             timed_out: false,
             range_complete: false,
             vals: BinsDim0::<NTY>::empty(),
-            bin_count_exp,
         }
     }
 }
@@ -274,11 +272,12 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
     }
 
     fn result(&mut self) -> Result<Self::Output, Error> {
+        let bin_count_exp = 0;
         let bin_count = self.vals.ts1s.len() as u32;
-        let (missing_bins, continue_at, finished_at) = if bin_count < self.bin_count_exp {
+        let (missing_bins, continue_at, finished_at) = if bin_count < bin_count_exp {
             match self.vals.ts2s.back() {
                 Some(&k) => {
-                    let missing_bins = self.bin_count_exp - bin_count;
+                    let missing_bins = bin_count_exp - bin_count;
                     let continue_at = IsoDateTime(Utc.timestamp_nanos(k as i64));
                     let u = k + (k - self.vals.ts1s.back().unwrap()) * missing_bins as u64;
                     let finished_at = IsoDateTime(Utc.timestamp_nanos(u as i64));
@@ -323,8 +322,8 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
 impl<NTY: ScalarOps> CollectableType for BinsDim0<NTY> {
     type Collector = BinsDim0Collector<NTY>;
 
-    fn new_collector(bin_count_exp: u32) -> Self::Collector {
-        Self::Collector::new(bin_count_exp)
+    fn new_collector() -> Self::Collector {
+        Self::Collector::new()
     }
 }
 

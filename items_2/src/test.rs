@@ -185,6 +185,8 @@ fn bin01() {
         let mut coll = None;
         let mut binner = None;
         let edges: Vec<_> = (0..10).into_iter().map(|t| SEC * 10 * t).collect();
+        // TODO implement continue-at [hcn2956jxhwsf]
+        #[allow(unused)]
         let bin_count_exp = (edges.len() - 1) as u32;
         let do_time_weight = true;
         while let Some(item) = stream.next().await {
@@ -207,7 +209,7 @@ fn bin01() {
                                     Some(mut ready) => {
                                         eprintln!("ready {ready:?}");
                                         if coll.is_none() {
-                                            coll = Some(ready.as_collectable_mut().new_collector(bin_count_exp));
+                                            coll = Some(ready.as_collectable_mut().new_collector());
                                         }
                                         let cl = coll.as_mut().unwrap();
                                         cl.ingest(ready.as_collectable_mut());
@@ -240,7 +242,7 @@ fn bin01() {
                     Some(mut ready) => {
                         eprintln!("ready {ready:?}");
                         if coll.is_none() {
-                            coll = Some(ready.as_collectable_mut().new_collector(bin_count_exp));
+                            coll = Some(ready.as_collectable_mut().new_collector());
                         }
                         let cl = coll.as_mut().unwrap();
                         cl.ingest(ready.as_collectable_mut());
