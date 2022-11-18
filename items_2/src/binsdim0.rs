@@ -15,6 +15,7 @@ use std::any::Any;
 use std::collections::VecDeque;
 use std::{fmt, mem};
 
+// TODO make members private
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct BinsDim0<NTY> {
     pub ts1s: VecDeque<u64>,
@@ -57,6 +58,15 @@ impl<NTY: ScalarOps> BinsDim0<NTY> {
         }
     }
 
+    pub fn push(&mut self, ts1: u64, ts2: u64, count: u64, min: NTY, max: NTY, avg: f32) {
+        self.ts1s.push_back(ts1);
+        self.ts2s.push_back(ts2);
+        self.counts.push_back(count);
+        self.mins.push_back(min);
+        self.maxs.push_back(max);
+        self.avgs.push_back(avg);
+    }
+
     pub fn append_zero(&mut self, beg: u64, end: u64) {
         self.ts1s.push_back(beg);
         self.ts2s.push_back(end);
@@ -73,6 +83,36 @@ impl<NTY: ScalarOps> BinsDim0<NTY> {
         self.mins.extend(src.mins.drain(..));
         self.maxs.extend(src.maxs.drain(..));
         self.avgs.extend(src.avgs.drain(..));
+    }
+
+    pub fn equal_slack(&self, other: &Self) -> bool {
+        for (&a, &b) in self.ts1s.iter().zip(other.ts1s.iter()) {
+            if a != b {
+                return false;
+            }
+        }
+        for (&a, &b) in self.ts2s.iter().zip(other.ts2s.iter()) {
+            if a != b {
+                return false;
+            }
+        }
+        for (a, b) in self.mins.iter().zip(other.mins.iter()) {
+            if !a.equal_slack(b) {
+                return false;
+            }
+        }
+        return true;
+        for (a, b) in self.maxs.iter().zip(other.maxs.iter()) {
+            if !a.equal_slack(b) {
+                return false;
+            }
+        }
+        for (a, b) in self.avgs.iter().zip(other.avgs.iter()) {
+            if !a.equal_slack(b) {
+                return false;
+            }
+        }
+        true
     }
 }
 

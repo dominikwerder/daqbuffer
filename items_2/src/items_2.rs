@@ -111,28 +111,45 @@ pub trait ScalarOps:
     fmt::Debug + Clone + PartialOrd + SubFrId + AsPrimF32 + Serialize + Unpin + Send + 'static
 {
     fn zero() -> Self;
+    fn equal_slack(&self, rhs: &Self) -> bool;
 }
 
 macro_rules! impl_num_ops {
-    ($ty:ident, $zero:expr) => {
+    ($ty:ident, $zero:expr, $equal_slack:ident) => {
         impl ScalarOps for $ty {
             fn zero() -> Self {
                 $zero
+            }
+
+            fn equal_slack(&self, rhs: &Self) -> bool {
+                $equal_slack(*self, *rhs)
             }
         }
     };
 }
 
-impl_num_ops!(u8, 0);
-impl_num_ops!(u16, 0);
-impl_num_ops!(u32, 0);
-impl_num_ops!(u64, 0);
-impl_num_ops!(i8, 0);
-impl_num_ops!(i16, 0);
-impl_num_ops!(i32, 0);
-impl_num_ops!(i64, 0);
-impl_num_ops!(f32, 0.);
-impl_num_ops!(f64, 0.);
+fn equal_int<T: PartialEq>(a: T, b: T) -> bool {
+    a == b
+}
+
+fn equal_f32(a: f32, b: f32) -> bool {
+    (a - b).abs() < 1e-4 || (a / b > 0.999 && a / b < 1.001)
+}
+
+fn equal_f64(a: f64, b: f64) -> bool {
+    (a - b).abs() < 1e-6 || (a / b > 0.99999 && a / b < 1.00001)
+}
+
+impl_num_ops!(u8, 0, equal_int);
+impl_num_ops!(u16, 0, equal_int);
+impl_num_ops!(u32, 0, equal_int);
+impl_num_ops!(u64, 0, equal_int);
+impl_num_ops!(i8, 0, equal_int);
+impl_num_ops!(i16, 0, equal_int);
+impl_num_ops!(i32, 0, equal_int);
+impl_num_ops!(i64, 0, equal_int);
+impl_num_ops!(f32, 0., equal_f32);
+impl_num_ops!(f64, 0., equal_f64);
 
 #[allow(unused)]
 struct Ts(u64);
