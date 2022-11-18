@@ -11,6 +11,8 @@ pub trait CollectorType: Send + Unpin + WithLen {
     fn ingest(&mut self, src: &mut Self::Input);
     fn set_range_complete(&mut self);
     fn set_timed_out(&mut self);
+
+    // TODO use this crate's Error instead:
     fn result(&mut self) -> Result<Self::Output, Error>;
 }
 

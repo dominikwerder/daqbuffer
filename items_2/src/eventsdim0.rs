@@ -122,6 +122,7 @@ impl<NTY: ScalarOps> TimeBinnableType for EventsDim0<NTY> {
     }
 }
 
+#[derive(Debug)]
 pub struct EventsDim0Collector<NTY> {
     vals: EventsDim0<NTY>,
     range_complete: bool,
@@ -216,6 +217,32 @@ impl<NTY: ScalarOps> CollectableType for EventsDim0<NTY> {
 
     fn new_collector() -> Self::Collector {
         Self::Collector::new()
+    }
+}
+
+impl<NTY: ScalarOps> crate::collect::Collector for EventsDim0Collector<NTY> {
+    type Input = EventsDim0<NTY>;
+    // TODO the output probably needs to be different to accommodate also range-complete, continue-at, etc
+    type Output = EventsDim0CollectorOutput<NTY>;
+
+    fn len(&self) -> usize {
+        self.vals.len()
+    }
+
+    fn ingest(&mut self, item: &mut Self::Input) {
+        CollectorType::ingest(self, item)
+    }
+
+    fn set_range_complete(&mut self) {
+        CollectorType::set_range_complete(self)
+    }
+
+    fn set_timed_out(&mut self) {
+        CollectorType::set_timed_out(self)
+    }
+
+    fn result(&mut self) -> Result<Self::Output, crate::Error> {
+        CollectorType::result(self).map_err(Into::into)
     }
 }
 
@@ -807,5 +834,13 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
 
     fn set_range_complete(&mut self) {
         self.range_complete = true;
+    }
+}
+
+impl<NTY: ScalarOps> crate::collect::Collectable for EventsDim0<NTY> {
+    type Collector;
+
+    fn new_collector(&self) -> Self::Collector {
+        todo!()
     }
 }

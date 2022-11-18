@@ -1,4 +1,5 @@
 pub mod binsdim0;
+pub mod collect;
 pub mod eventsdim0;
 pub mod merger;
 pub mod merger_cev;
@@ -365,15 +366,17 @@ impl PartialEq for Box<dyn Events> {
     }
 }
 
-struct EventsCollector {}
+// TODO remove
+struct EventsCollector2 {}
 
-impl WithLen for EventsCollector {
+impl WithLen for EventsCollector2 {
     fn len(&self) -> usize {
         todo!()
     }
 }
 
-impl Collector for EventsCollector {
+// TODO remove
+impl Collector for EventsCollector2 {
     fn ingest(&mut self, _src: &mut dyn Collectable) {
         todo!()
     }
@@ -391,9 +394,10 @@ impl Collector for EventsCollector {
     }
 }
 
+// TODO remove
 impl Collectable for Box<dyn Events> {
     fn new_collector(&self) -> Box<dyn Collector> {
-        Box::new(EventsCollector {})
+        Box::new(EventsCollector2 {})
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
@@ -737,7 +741,8 @@ mod serde_channel_events {
 #[cfg(test)]
 mod test_channel_events_serde {
     use super::ChannelEvents;
-    use crate::{eventsdim0::EventsDim0, Empty};
+    use crate::eventsdim0::EventsDim0;
+    use crate::Empty;
 
     #[test]
     fn channel_events() {
@@ -950,6 +955,50 @@ impl crate::timebin::TimeBinnable for ChannelEvents {
     }
 }
 
+#[derive(Debug)]
+pub struct EventsCollector {
+    coll: Option<Box<()>>,
+}
+
+impl EventsCollector {
+    pub fn new() -> Self {
+        Self { coll: Box::new(()) }
+    }
+}
+
+impl crate::collect::Collector for EventsCollector {
+    type Input = Box<dyn Events>;
+    type Output = Box<dyn Events>;
+
+    fn len(&self) -> usize {
+        todo!()
+    }
+
+    fn ingest(&mut self, item: &mut Self::Input) {
+        todo!()
+    }
+
+    fn set_range_complete(&mut self) {
+        todo!()
+    }
+
+    fn set_timed_out(&mut self) {
+        todo!()
+    }
+
+    fn result(&mut self) -> Result<Self::Output, Error> {
+        todo!()
+    }
+}
+
+impl crate::collect::Collectable for Box<dyn Events> {
+    type Collector = EventsCollector;
+
+    fn new_collector(&self) -> Self::Collector {
+        Collectable::new_collector(self)
+    }
+}
+
 // TODO do this with some blanket impl:
 impl Collectable for Box<dyn Collectable> {
     fn new_collector(&self) -> Box<dyn streams::Collector> {
@@ -994,7 +1043,7 @@ fn flush_binned(
     }
 }
 
-// TODO handle status information.
+// TODO remove
 pub async fn binned_collected(
     scalar_type: ScalarType,
     shape: Shape,
