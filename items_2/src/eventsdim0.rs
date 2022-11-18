@@ -5,6 +5,7 @@ use crate::{Empty, Events, ScalarOps, WithLen};
 use crate::{TimeBinnable, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinner};
 use err::Error;
 use netpod::log::*;
+use netpod::timeunits::SEC;
 use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -53,15 +54,25 @@ where
     NTY: fmt::Debug,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            fmt,
-            "count {}  ts {:?} .. {:?}  vals {:?} .. {:?}",
-            self.tss.len(),
-            self.tss.front(),
-            self.tss.back(),
-            self.values.front(),
-            self.values.back(),
-        )
+        if true {
+            write!(
+                fmt,
+                "EventsDim0 {{ count {}  ts {:?}  vals {:?} }}",
+                self.tss.len(),
+                self.tss.iter().map(|x| x / SEC).collect::<Vec<_>>(),
+                self.values,
+            )
+        } else {
+            write!(
+                fmt,
+                "EventsDim0 {{ count {}  ts {:?} .. {:?}  vals {:?} .. {:?} }}",
+                self.tss.len(),
+                self.tss.front().map(|x| x / SEC),
+                self.tss.back().map(|x| x / SEC),
+                self.values.front(),
+                self.values.back(),
+            )
+        }
     }
 }
 
@@ -539,12 +550,39 @@ impl<NTY: ScalarOps> Events for EventsDim0<NTY> {
     }
 
     fn take_new_events_until_ts(&mut self, ts_end: u64) -> Box<dyn Events> {
-        let n1 = self.tss.iter().take_while(|&&x| x < ts_end).count();
+        // TODO improve the search
+        let n1 = self.tss.iter().take_while(|&&x| x <= ts_end).count();
         let tss = self.tss.drain(..n1).collect();
         let pulses = self.pulses.drain(..n1).collect();
         let values = self.values.drain(..n1).collect();
         let ret = Self { tss, pulses, values };
         Box::new(ret)
+    }
+
+    fn move_into_fresh(&mut self, ts_end: u64) -> Box<dyn Events> {
+        // TODO improve the search
+        let n1 = self.tss.iter().take_while(|&&x| x <= ts_end).count();
+        let tss = self.tss.drain(..n1).collect();
+        let pulses = self.pulses.drain(..n1).collect();
+        let values = self.values.drain(..n1).collect();
+        let ret = Self { tss, pulses, values };
+        Box::new(ret)
+    }
+
+    fn move_into_existing(&mut self, tgt: &mut Box<dyn Events>, ts_end: u64) -> Result<(), ()> {
+        // TODO as_any and as_any_mut are declared on unrealted traits. Simplify.
+        if let Some(tgt) = tgt.as_any_mut().downcast_mut::<Self>() {
+            // TODO improve the search
+            let n1 = self.tss.iter().take_while(|&&x| x <= ts_end).count();
+            // TODO make it harder to forget new members when the struct may get modified in the future
+            tgt.tss.extend(self.tss.drain(..n1));
+            tgt.pulses.extend(self.pulses.drain(..n1));
+            tgt.values.extend(self.values.drain(..n1));
+            Ok(())
+        } else {
+            eprintln!("downcast to EventsDim0 FAILED");
+            Err(())
+        }
     }
 
     fn ts_min(&self) -> Option<u64> {

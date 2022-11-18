@@ -3,7 +3,6 @@ use futures_util::{Stream, StreamExt};
 use items::{RangeCompletableItem, Sitemty, StreamItem};
 use items_2::streams::{Collectable, Collector};
 use netpod::log::*;
-use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::fmt;
 use std::time::Duration;
@@ -11,12 +10,7 @@ use std::time::Duration;
 // This is meant to work with trait object event containers (crate items_2)
 
 // TODO rename, it is also used for binned:
-pub async fn collect_plain_events_json<T, S>(
-    stream: S,
-    timeout: Duration,
-    events_max: u64,
-    do_log: bool,
-) -> Result<JsonValue, Error>
+pub async fn collect_plain_events_json<T, S>(stream: S, timeout: Duration, events_max: u64) -> Result<JsonValue, Error>
 where
     S: Stream<Item = Sitemty<T>> + Unpin,
     T: Collectable + fmt::Debug,
@@ -52,9 +46,7 @@ where
                 match item {
                     Ok(item) => match item {
                         StreamItem::Log(item) => {
-                            if do_log {
-                                debug!("collect_plain_events_json log {:?}", item);
-                            }
+                            trace!("collect_plain_events_json log {:?}", item);
                         }
                         StreamItem::Stats(item) => {
                             use items::StatsItem;

@@ -816,8 +816,8 @@ impl<'de> serde::de::Visitor<'de> for ShapeVis {
         A: serde::de::MapAccess<'de>,
     {
         use serde::de::Error;
-        while let Some(key) = map.next_key::<String>()? {
-            return if key == "Wave" {
+        if let Some(key) = map.next_key::<String>()? {
+            if key == "Wave" {
                 let n: u32 = map.next_value()?;
                 Ok(Shape::Wave(n))
             } else if key == "Image" {
@@ -825,9 +825,10 @@ impl<'de> serde::de::Visitor<'de> for ShapeVis {
                 Ok(Shape::Image(a[0], a[1]))
             } else {
                 Err(A::Error::custom(format!("unexpected key {key:?}")))
-            };
+            }
+        } else {
+            Err(A::Error::custom(format!("invalid shape format")))
         }
-        Err(A::Error::custom(format!("invalid shape format")))
     }
 
     fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
@@ -1186,7 +1187,7 @@ impl PreBinnedPatchRange {
         let bs = dt / min_bin_count as u64;
         let mut i1 = bin_t_len_options.len();
         loop {
-            if i1 <= 0 {
+            if i1 == 0 {
                 break Ok(None);
             } else {
                 i1 -= 1;
@@ -1409,8 +1410,9 @@ impl BinnedRange {
         let bs = dt / min_bin_count as u64;
         let mut i1 = thresholds.len();
         loop {
-            if i1 <= 0 {
-                panic!();
+            if i1 == 0 {
+                let msg = format!("covering_range thresholds bad i {i1}");
+                return Err(Error::with_msg_no_trace(msg));
             } else {
                 i1 -= 1;
                 let t = thresholds[i1];
@@ -2027,9 +2029,7 @@ pub struct ChannelInfo {
 }
 
 pub fn f32_close(a: f32, b: f32) -> bool {
-    if (a - b).abs() < 1e-5 {
-        true
-    } else if a / b > 0.9999 && a / b < 1.0001 {
+    if (a - b).abs() < 1e-4 || (a / b > 0.999 && a / b < 1.001) {
         true
     } else {
         false
@@ -2037,9 +2037,7 @@ pub fn f32_close(a: f32, b: f32) -> bool {
 }
 
 pub fn f64_close(a: f64, b: f64) -> bool {
-    if (a - b).abs() < 1e-5 {
-        true
-    } else if a / b > 0.9999 && a / b < 1.0001 {
+    if (a - b).abs() < 1e-5 || (a / b > 0.9999 && a / b < 1.0001) {
         true
     } else {
         false

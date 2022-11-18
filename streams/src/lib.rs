@@ -8,3 +8,6 @@ pub mod needminbuffer;
 pub mod plaineventsjson;
 pub mod rangefilter;
 pub mod tcprawclient;
+#[cfg(test)]
+pub mod test;
+pub mod timebin;

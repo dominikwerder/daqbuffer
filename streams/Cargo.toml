@@ -24,3 +24,6 @@ items = { path = "../items" }
 items_2 = { path = "../items_2" }
 parse = { path = "../parse" }
 bitshuffle = { path = "../bitshuffle" }
+
+[dev-dependencies]
+taskrun = { path = "../taskrun" }

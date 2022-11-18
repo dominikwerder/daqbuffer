@@ -4,21 +4,17 @@ use crate::log::*;
 use err::Error;
 use std::future::Future;
 use std::panic;
-use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, Mutex, Once};
+use std::sync::{Arc, Mutex};
 use tokio::runtime::Runtime;
 use tokio::task::JoinHandle;
-
-static INIT_TRACING_ONCE: Once = Once::new();
 
 pub mod log {
     #[allow(unused_imports)]
     pub use tracing::{debug, error, info, trace, warn};
 }
 
-lazy_static::lazy_static! {
-    static ref RUNTIME: Mutex<Option<Arc<Runtime>>> = Mutex::new(None);
-}
+static INIT_TRACING_ONCE: Mutex<usize> = Mutex::new(0);
+static RUNTIME: Mutex<Option<Arc<Runtime>>> = Mutex::new(None);
 
 pub fn get_runtime() -> Arc<Runtime> {
     get_runtime_opts(24, 128)
@@ -153,24 +149,19 @@ fn tracing_init_inner() -> Result<(), Error> {
 }
 
 pub fn tracing_init() -> Result<(), ()> {
-    use std::sync::atomic::Ordering;
-    let is_good = Arc::new(AtomicUsize::new(0));
-    {
-        let is_good = is_good.clone();
-        INIT_TRACING_ONCE.call_once(move || match tracing_init_inner() {
+    let mut initg = INIT_TRACING_ONCE.lock().unwrap();
+    if *initg == 0 {
+        match tracing_init_inner() {
             Ok(_) => {
-                is_good.store(1, Ordering::Release);
+                *initg = 1;
             }
             Err(e) => {
-                is_good.store(2, Ordering::Release);
+                *initg = 2;
                 eprintln!("tracing_init_inner gave error {e}");
             }
-        });
-    }
-    let n = is_good.load(Ordering::Acquire);
-    if n == 2 {
-        Err(())
-    } else if n == 1 {
+        }
+        Ok(())
+    } else if *initg == 1 {
         Ok(())
     } else {
         eprintln!("ERROR Unknown tracing state");

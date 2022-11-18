@@ -1,15 +1,127 @@
 use crate::binsdim0::BinsDim0CollectedResult;
 use crate::eventsdim0::EventsDim0;
-use crate::merger::ChannelEventsMerger;
+use crate::merger::{Mergeable, Merger};
+use crate::merger_cev::ChannelEventsMerger;
+use crate::testgen::make_some_boxed_d0_f32;
 use crate::{binned_collected, runfut, ChannelEvents, Empty, Events, IsoDateTime};
 use crate::{ConnStatus, ConnStatusEvent, Error};
 use chrono::{TimeZone, Utc};
-use futures_util::StreamExt;
-use items::{RangeCompletableItem, Sitemty, StreamItem};
+use futures_util::{stream, StreamExt};
+use items::{sitem_data, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::log::*;
 use netpod::timeunits::*;
 use netpod::{AggKind, BinnedRange, NanoRange, ScalarType, Shape};
 use std::time::Duration;
+
+#[test]
+fn items_move_events() {
+    let evs = make_some_boxed_d0_f32(10, SEC, SEC, 0, 1846713782);
+    let v0 = ChannelEvents::Events(evs);
+    let mut v1 = v0.clone();
+    eprintln!("{v1:?}");
+    eprintln!("{}", v1.len());
+    let mut v2 = v1.move_into_fresh(4);
+    eprintln!("{}", v1.len());
+    eprintln!("{}", v2.len());
+    v1.move_into_existing(&mut v2, u64::MAX).unwrap();
+    eprintln!("{}", v1.len());
+    eprintln!("{}", v2.len());
+    eprintln!("{v1:?}");
+    eprintln!("{v2:?}");
+    assert_eq!(v1.len(), 0);
+    assert_eq!(v2.len(), 10);
+    assert_eq!(v2, v0);
+}
+
+#[test]
+fn items_merge_00() {
+    let fut = async {
+        use crate::merger::Merger;
+        let evs0 = make_some_boxed_d0_f32(10, SEC * 1, SEC * 2, 0, 1846713782);
+        let evs1 = make_some_boxed_d0_f32(10, SEC * 2, SEC * 2, 0, 828764893);
+        let v0 = ChannelEvents::Events(evs0);
+        let v1 = ChannelEvents::Events(evs1);
+        let stream0 = Box::pin(stream::iter(vec![sitem_data(v0)]));
+        let stream1 = Box::pin(stream::iter(vec![sitem_data(v1)]));
+        let mut merger = Merger::new(vec![stream0, stream1], 8);
+        while let Some(item) = merger.next().await {
+            eprintln!("{item:?}");
+        }
+        Ok(())
+    };
+    runfut(fut).unwrap();
+}
+
+#[test]
+fn items_merge_01() {
+    let fut = async {
+        use crate::merger::Merger;
+        let evs0 = make_some_boxed_d0_f32(10, SEC * 1, SEC * 2, 0, 1846713782);
+        let evs1 = make_some_boxed_d0_f32(10, SEC * 2, SEC * 2, 0, 828764893);
+        let v0 = ChannelEvents::Events(evs0);
+        let v1 = ChannelEvents::Events(evs1);
+        let v2 = ChannelEvents::Status(ConnStatusEvent::new(MS * 100, ConnStatus::Connect));
+        let v3 = ChannelEvents::Status(ConnStatusEvent::new(MS * 2300, ConnStatus::Disconnect));
+        let v4 = ChannelEvents::Status(ConnStatusEvent::new(MS * 2800, ConnStatus::Connect));
+        let stream0 = Box::pin(stream::iter(vec![sitem_data(v0)]));
+        let stream1 = Box::pin(stream::iter(vec![sitem_data(v1)]));
+        let stream2 = Box::pin(stream::iter(vec![sitem_data(v2), sitem_data(v3), sitem_data(v4)]));
+        let mut merger = Merger::new(vec![stream0, stream1, stream2], 8);
+        let mut total_event_count = 0;
+        while let Some(item) = merger.next().await {
+            eprintln!("{item:?}");
+            let item = item?;
+            match item {
+                StreamItem::DataItem(item) => match item {
+                    RangeCompletableItem::RangeComplete => {}
+                    RangeCompletableItem::Data(item) => {
+                        total_event_count += item.len();
+                    }
+                },
+                StreamItem::Log(_) => {}
+                StreamItem::Stats(_) => {}
+            }
+        }
+        assert_eq!(total_event_count, 23);
+        Ok(())
+    };
+    runfut(fut).unwrap();
+}
+
+#[test]
+fn items_merge_02() {
+    let fut = async {
+        let evs0 = make_some_boxed_d0_f32(100, SEC * 1, SEC * 2, 0, 1846713782);
+        let evs1 = make_some_boxed_d0_f32(100, SEC * 2, SEC * 2, 0, 828764893);
+        let v0 = ChannelEvents::Events(evs0);
+        let v1 = ChannelEvents::Events(evs1);
+        let v2 = ChannelEvents::Status(ConnStatusEvent::new(MS * 100, ConnStatus::Connect));
+        let v3 = ChannelEvents::Status(ConnStatusEvent::new(MS * 2300, ConnStatus::Disconnect));
+        let v4 = ChannelEvents::Status(ConnStatusEvent::new(MS * 2800, ConnStatus::Connect));
+        let stream0 = Box::pin(stream::iter(vec![sitem_data(v0)]));
+        let stream1 = Box::pin(stream::iter(vec![sitem_data(v1)]));
+        let stream2 = Box::pin(stream::iter(vec![sitem_data(v2), sitem_data(v3), sitem_data(v4)]));
+        let mut merger = Merger::new(vec![stream0, stream1, stream2], 8);
+        let mut total_event_count = 0;
+        while let Some(item) = merger.next().await {
+            eprintln!("{item:?}");
+            let item = item.unwrap();
+            match item {
+                StreamItem::DataItem(item) => match item {
+                    RangeCompletableItem::RangeComplete => {}
+                    RangeCompletableItem::Data(item) => {
+                        total_event_count += item.len();
+                    }
+                },
+                StreamItem::Log(_) => {}
+                StreamItem::Stats(_) => {}
+            }
+        }
+        assert_eq!(total_event_count, 203);
+        Ok(())
+    };
+    runfut(fut).unwrap();
+}
 
 #[test]
 fn merge01() {

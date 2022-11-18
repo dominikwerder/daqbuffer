@@ -27,7 +27,7 @@ where
     SER: Serialize,
 {
     let inps = open_tcp_streams(&query, cluster).await?;
-    let mut merged = items_2::merger::ChannelEventsMerger::new(inps);
+    let mut merged = items_2::merger_cev::ChannelEventsMerger::new(inps);
     let timeout = Duration::from_millis(2000);
     let events_max = 100;
     let do_log = false;

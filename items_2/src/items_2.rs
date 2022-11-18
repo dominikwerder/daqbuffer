@@ -1,10 +1,14 @@
 pub mod binsdim0;
 pub mod eventsdim0;
 pub mod merger;
+pub mod merger_cev;
 pub mod streams;
 #[cfg(test)]
 pub mod test;
+pub mod testgen;
+pub mod timebin;
 
+use crate::streams::Collector;
 use chrono::{DateTime, TimeZone, Utc};
 use futures_util::FutureExt;
 use futures_util::Stream;
@@ -14,6 +18,7 @@ use items::RangeCompletableItem;
 use items::Sitemty;
 use items::StreamItem;
 use items::SubFrId;
+use merger_cev::MergeableCev;
 use netpod::log::*;
 use netpod::timeunits::*;
 use netpod::{AggKind, NanoRange, ScalarType, Shape};
@@ -26,8 +31,6 @@ use std::time::Duration;
 use std::time::Instant;
 use streams::Collectable;
 use streams::ToJsonResult;
-
-use crate::streams::Collector;
 
 pub fn bool_is_false(x: &bool) -> bool {
     *x == false
@@ -276,6 +279,8 @@ pub trait TimeBinner: Send {
     fn set_range_complete(&mut self);
 }
 
+// TODO remove the Any bound. Factor out into custom AsAny trait.
+
 /// Provides a time-binned representation of the implementing type.
 /// In contrast to `TimeBinnableType` this is meant for trait objects.
 pub trait TimeBinnable: fmt::Debug + WithLen + RangeOverlapInfo + Any + Send {
@@ -287,6 +292,8 @@ pub trait TimeBinnable: fmt::Debug + WithLen + RangeOverlapInfo + Any + Send {
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult>;
 }
 
+// TODO can I remove the Any bound?
+
 /// Container of some form of events, for use as trait object.
 pub trait Events: fmt::Debug + Any + Collectable + TimeBinnable + Send + erased_serde::Serialize {
     fn as_time_binnable(&self) -> &dyn TimeBinnable;
@@ -296,6 +303,8 @@ pub trait Events: fmt::Debug + Any + Collectable + TimeBinnable + Send + erased_
     fn ts_min(&self) -> Option<u64>;
     fn ts_max(&self) -> Option<u64>;
     fn take_new_events_until_ts(&mut self, ts_end: u64) -> Box<dyn Events>;
+    fn move_into_fresh(&mut self, ts_end: u64) -> Box<dyn Events>;
+    fn move_into_existing(&mut self, tgt: &mut Box<dyn Events>, ts_end: u64) -> Result<(), ()>;
     fn clone_dyn(&self) -> Box<dyn Events>;
     fn partial_eq_dyn(&self, other: &dyn Events) -> bool;
     fn serde_id(&self) -> &'static str;
@@ -303,6 +312,35 @@ pub trait Events: fmt::Debug + Any + Collectable + TimeBinnable + Send + erased_
 }
 
 erased_serde::serialize_trait_object!(Events);
+
+impl crate::merger::Mergeable for Box<dyn Events> {
+    fn len(&self) -> usize {
+        self.as_ref().len()
+    }
+
+    fn ts_min(&self) -> Option<u64> {
+        self.as_ref().ts_min()
+    }
+
+    fn ts_max(&self) -> Option<u64> {
+        self.as_ref().ts_max()
+    }
+
+    fn is_compatible_target(&self, _tgt: &Self) -> bool {
+        // TODO currently unused
+        todo!()
+    }
+
+    fn move_into_fresh(&mut self, ts_end: u64) -> Self {
+        self.as_mut().move_into_fresh(ts_end)
+    }
+
+    fn move_into_existing(&mut self, tgt: &mut Self, ts_end: u64) -> Result<(), merger::MergeError> {
+        self.as_mut()
+            .move_into_existing(tgt, ts_end)
+            .map_err(|()| merger::MergeError::NotCompatible)
+    }
+}
 
 impl PartialEq for Box<dyn Events> {
     fn eq(&self, other: &Self) -> bool {
@@ -319,7 +357,7 @@ impl WithLen for EventsCollector {
 }
 
 impl Collector for EventsCollector {
-    fn ingest(&mut self, src: &mut dyn Collectable) {
+    fn ingest(&mut self, _src: &mut dyn Collectable) {
         todo!()
     }
 
@@ -534,6 +572,7 @@ pub fn empty_binned_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggK
     }
 }
 
+// TODO maybe rename to ChannelStatus?
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ConnStatus {
     Connect,
@@ -546,20 +585,9 @@ pub struct ConnStatusEvent {
     pub status: ConnStatus,
 }
 
-trait MergableEvents: Any {
-    fn ts_min(&self) -> Option<u64>;
-    fn ts_max(&self) -> Option<u64>;
-}
-
-impl<T: MergableEvents> MergableEvents for Box<T> {
-    fn ts_min(&self) -> Option<u64> {
-        eprintln!("TODO MergableEvents for Box<T>");
-        err::todoval()
-    }
-
-    fn ts_max(&self) -> Option<u64> {
-        eprintln!("TODO MergableEvents for Box<T>");
-        err::todoval()
+impl ConnStatusEvent {
+    pub fn new(ts: u64, status: ConnStatus) -> Self {
+        Self { ts, status }
     }
 }
 
@@ -717,7 +745,7 @@ impl PartialEq for ChannelEvents {
     }
 }
 
-impl MergableEvents for ChannelEvents {
+impl MergeableCev for ChannelEvents {
     fn ts_min(&self) -> Option<u64> {
         use ChannelEvents::*;
         match self {
@@ -729,6 +757,179 @@ impl MergableEvents for ChannelEvents {
     fn ts_max(&self) -> Option<u64> {
         error!("TODO impl MergableEvents for ChannelEvents");
         err::todoval()
+    }
+}
+
+impl crate::merger::Mergeable for ChannelEvents {
+    fn len(&self) -> usize {
+        match self {
+            ChannelEvents::Events(k) => k.len(),
+            ChannelEvents::Status(_) => 1,
+        }
+    }
+
+    fn ts_min(&self) -> Option<u64> {
+        match self {
+            ChannelEvents::Events(k) => k.ts_min(),
+            ChannelEvents::Status(k) => Some(k.ts),
+        }
+    }
+
+    fn ts_max(&self) -> Option<u64> {
+        match self {
+            ChannelEvents::Events(k) => k.ts_max(),
+            ChannelEvents::Status(k) => Some(k.ts),
+        }
+    }
+
+    fn is_compatible_target(&self, tgt: &Self) -> bool {
+        use ChannelEvents::*;
+        match self {
+            Events(_) => {
+                // TODO better to delegate this to inner type?
+                if let Events(_) = tgt {
+                    true
+                } else {
+                    false
+                }
+            }
+            Status(_) => {
+                // TODO better to delegate this to inner type?
+                if let Status(_) = tgt {
+                    true
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
+    fn move_into_fresh(&mut self, ts_end: u64) -> Self {
+        match self {
+            ChannelEvents::Events(k) => ChannelEvents::Events(k.move_into_fresh(ts_end)),
+            ChannelEvents::Status(k) => ChannelEvents::Status(k.clone()),
+        }
+    }
+
+    fn move_into_existing(&mut self, tgt: &mut Self, ts_end: u64) -> Result<(), merger::MergeError> {
+        match self {
+            ChannelEvents::Events(k) => match tgt {
+                ChannelEvents::Events(tgt) => k.move_into_existing(tgt, ts_end),
+                ChannelEvents::Status(_) => Err(merger::MergeError::NotCompatible),
+            },
+            ChannelEvents::Status(_) => match tgt {
+                ChannelEvents::Events(_) => Err(merger::MergeError::NotCompatible),
+                ChannelEvents::Status(_) => Err(merger::MergeError::Full),
+            },
+        }
+    }
+}
+
+impl Collectable for ChannelEvents {
+    fn new_collector(&self) -> Box<dyn Collector> {
+        match self {
+            ChannelEvents::Events(_item) => todo!(),
+            ChannelEvents::Status(_) => todo!(),
+        }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+pub struct ChannelEventsTimeBinner {
+    // TODO `ConnStatus` contains all the changes that can happen to a connection, but
+    // here we would rather require a simplified current state for binning purpose.
+    edges: Vec<u64>,
+    do_time_weight: bool,
+    conn_state: ConnStatus,
+    binner: Option<Box<dyn crate::TimeBinner>>,
+}
+
+impl fmt::Debug for ChannelEventsTimeBinner {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ChannelEventsTimeBinner")
+            .field("conn_state", &self.conn_state)
+            .finish()
+    }
+}
+
+impl crate::timebin::TimeBinner for ChannelEventsTimeBinner {
+    type Input = ChannelEvents;
+    type Output = Box<dyn crate::TimeBinned>;
+
+    fn ingest(&mut self, item: &mut Self::Input) {
+        match item {
+            ChannelEvents::Events(item) => {
+                if self.binner.is_none() {
+                    let binner = item.time_binner_new(self.edges.clone(), self.do_time_weight);
+                    self.binner = Some(binner);
+                }
+                match self.binner.as_mut() {
+                    Some(binner) => binner.ingest(item.as_time_binnable()),
+                    None => {
+                        error!("ingest without active binner item {item:?}");
+                        ()
+                    }
+                }
+            }
+            ChannelEvents::Status(item) => {
+                warn!("TODO consider channel status in time binning {item:?}");
+            }
+        }
+    }
+
+    fn set_range_complete(&mut self) {
+        match self.binner.as_mut() {
+            Some(binner) => binner.set_range_complete(),
+            None => (),
+        }
+    }
+
+    fn bins_ready_count(&self) -> usize {
+        match &self.binner {
+            Some(binner) => binner.bins_ready_count(),
+            None => 0,
+        }
+    }
+
+    fn bins_ready(&mut self) -> Option<Self::Output> {
+        match self.binner.as_mut() {
+            Some(binner) => binner.bins_ready(),
+            None => None,
+        }
+    }
+
+    fn push_in_progress(&mut self, push_empty: bool) {
+        match self.binner.as_mut() {
+            Some(binner) => binner.push_in_progress(push_empty),
+            None => (),
+        }
+    }
+
+    fn cycle(&mut self) {
+        match self.binner.as_mut() {
+            Some(binner) => binner.cycle(),
+            None => (),
+        }
+    }
+}
+
+impl crate::timebin::TimeBinnable for ChannelEvents {
+    type TimeBinner = ChannelEventsTimeBinner;
+
+    fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Self::TimeBinner {
+        let (binner, status) = match self {
+            ChannelEvents::Events(_events) => (None, ConnStatus::Connect),
+            ChannelEvents::Status(status) => (None, status.status.clone()),
+        };
+        ChannelEventsTimeBinner {
+            edges,
+            do_time_weight,
+            conn_state: status,
+            binner,
+        }
     }
 }
 

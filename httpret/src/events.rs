@@ -4,7 +4,7 @@ use crate::{response, response_err, BodyStream, ToPublicResponse};
 use futures_util::{Stream, StreamExt, TryStreamExt};
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
-use items_2::merger::ChannelEventsMerger;
+use items_2::merger_cev::ChannelEventsMerger;
 use items_2::{binned_collected, empty_events_dyn, empty_events_dyn_2, ChannelEvents};
 use netpod::query::{BinnedQuery, ChannelStateEventsQuery, PlainEventsQuery};
 use netpod::{log::*, HasBackend};
