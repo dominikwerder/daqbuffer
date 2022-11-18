@@ -101,7 +101,6 @@ impl<NTY: ScalarOps> BinsDim0<NTY> {
                 return false;
             }
         }
-        return true;
         for (a, b) in self.maxs.iter().zip(other.maxs.iter()) {
             if !a.equal_slack(b) {
                 return false;

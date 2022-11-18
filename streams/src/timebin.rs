@@ -115,8 +115,25 @@ where
             } else {
                 match self.deadline_fut.poll_unpin(cx) {
                     Ready(()) => {
-                        // TODO add timeout behavior
-                        todo!();
+                        trace2!("timeout");
+                        let self_range_complete = self.range_complete;
+                        if let Some(binner) = self.binner.as_mut() {
+                            trace2!("bins ready count before finish {}", binner.bins_ready_count());
+                            // TODO rework the finish logic
+                            if self_range_complete {
+                                binner.set_range_complete();
+                            }
+                            trace2!("bins ready count after finish  {}", binner.bins_ready_count());
+                            if let Some(bins) = binner.bins_ready() {
+                                self.done_data = true;
+                                return Ready(Some(sitem_data(bins)));
+                            } else {
+                                self.done_data = true;
+                                continue;
+                            }
+                        } else {
+                            continue;
+                        }
                     }
                     Pending => {}
                 }
