@@ -15,4 +15,3 @@ async-channel = "1.6"
 chrono = { version = "0.4", features = ["serde"] }
 url = "2.2"
 regex = "1.5"
-bincode = "1.3"

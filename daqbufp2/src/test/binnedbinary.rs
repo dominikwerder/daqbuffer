@@ -216,7 +216,7 @@ where
                                 }
                             },
                             Err(e) => {
-                                error!("bincode error: {:?}", e);
+                                error!("{:?}", e);
                                 Some(Err(e.into()))
                             }
                         }

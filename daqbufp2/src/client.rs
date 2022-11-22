@@ -142,7 +142,7 @@ pub async fn get_binned(
                                 }
                             },
                             Err(e) => {
-                                error!("len {}  bincode error {:?}", n1, e);
+                                error!("len {}  {:?}", n1, e);
                                 Some(Err(e.into()))
                             }
                         }

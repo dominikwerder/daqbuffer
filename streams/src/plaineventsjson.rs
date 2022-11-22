@@ -29,6 +29,7 @@ where
 {
     // TODO should be able to ask for data-events only, instead of mixed data and status events.
     let inps = open_tcp_streams::<_, items_2::channelevents::ChannelEvents>(&query, cluster).await?;
+    //let inps = open_tcp_streams::<_, Box<dyn items_2::Events>>(&query, cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader:
     #[cfg(NOTHING)]
     let stream = {

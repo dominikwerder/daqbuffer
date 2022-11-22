@@ -305,36 +305,6 @@ impl From<std::str::Utf8Error> for Error {
     }
 }
 
-/*
-impl<T: fmt::Debug> From<nom::Err<T>> for Error {
-    fn from(k: nom::Err<T>) -> Self {
-        Self::with_msg(format!("nom::Err<T> {:?}", k))
-    }
-}
-
-impl<I> nom::error::ParseError<I> for Error {
-    fn from_error_kind(_input: I, kind: nom::error::ErrorKind) -> Self {
-        Self::with_msg(format!("ParseError  {:?}", kind))
-    }
-
-    fn append(_input: I, kind: nom::error::ErrorKind, other: Self) -> Self {
-        Self::with_msg(format!("ParseError  kind {:?}  other {:?}", kind, other))
-    }
-}
-
-impl From<JoinError> for Error {
-    fn from(k: JoinError) -> Self {
-        Self::with_msg(format!("JoinError {:?}", k))
-    }
-}
-*/
-
-impl From<Box<bincode::ErrorKind>> for Error {
-    fn from(k: Box<bincode::ErrorKind>) -> Self {
-        Self::with_msg(k.to_string())
-    }
-}
-
 impl From<serde_cbor::Error> for Error {
     fn from(k: serde_cbor::Error) -> Self {
         Self::with_msg(k.to_string())
