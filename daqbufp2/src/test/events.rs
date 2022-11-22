@@ -5,6 +5,7 @@ use disk::streamlog::Streamlog;
 use err::Error;
 use futures_util::{StreamExt, TryStreamExt};
 use http::StatusCode;
+use httpclient::HttpBodyAsAsyncRead;
 use hyper::Body;
 use items::numops::NumOps;
 use items::scalarevents::ScalarEvents;
@@ -99,7 +100,7 @@ where
         error!("client response {res:?}");
         return Err(format!("get_plain_events_binary  client response {res:?}").into());
     }
-    let s1 = disk::cache::HttpBodyAsAsyncRead::new(res);
+    let s1 = HttpBodyAsAsyncRead::new(res);
     let s2 = InMemoryFrameAsyncReadStream::new(s1, perf_opts.inmem_bufcap);
     let res = consume_plain_events_binary::<NTY, _>(s2).await?;
     let t2 = chrono::Utc::now();

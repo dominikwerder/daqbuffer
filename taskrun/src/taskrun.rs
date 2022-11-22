@@ -70,9 +70,9 @@ pub fn get_runtime_opts(nworkers: usize, nblocking: usize) -> Arc<Runtime> {
     }
 }
 
-pub fn run<T, F>(f: F) -> Result<T, Error>
+pub fn run<T, F>(fut: F) -> Result<T, Error>
 where
-    F: std::future::Future<Output = Result<T, Error>>,
+    F: Future<Output = Result<T, Error>>,
 {
     let runtime = get_runtime();
     match tracing_init() {
@@ -81,7 +81,7 @@ where
             eprintln!("TRACING: {e:?}");
         }
     }
-    let res = runtime.block_on(async { f.await });
+    let res = runtime.block_on(async { fut.await });
     match res {
         Ok(k) => Ok(k),
         Err(e) => {

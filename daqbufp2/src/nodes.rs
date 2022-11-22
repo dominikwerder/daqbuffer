@@ -1,7 +1,10 @@
 use crate::spawn_test_hosts;
 use err::Error;
+use netpod::log::*;
 use netpod::Cluster;
 use std::sync::{Arc, Mutex};
+use std::{thread};
+use std::time::Duration;
 use tokio::task::JoinHandle;
 
 pub struct RunningHosts {
@@ -47,7 +50,7 @@ pub fn require_test_hosts_running() -> Result<Arc<RunningHosts>, Error> {
     let mut g = HOSTS_RUNNING.lock().unwrap();
     match g.as_ref() {
         None => {
-            netpod::log::info!("\n\n+++++++++++++++++++  MAKE NEW RunningHosts\n\n");
+            info!("\n\n+++++++++++++++++++  MAKE NEW RunningHosts\n\n");
             let cluster = netpod::test_cluster();
             let jhs = spawn_test_hosts(cluster.clone());
             let ret = RunningHosts {
@@ -56,10 +59,12 @@ pub fn require_test_hosts_running() -> Result<Arc<RunningHosts>, Error> {
             };
             let a = Arc::new(ret);
             *g = Some(a.clone());
+            // TODO check in different way that test hosts are up, sockets connected, ready for testing
+            thread::sleep(Duration::from_millis(400));
             Ok(a)
         }
         Some(gg) => {
-            netpod::log::debug!("\n\n+++++++++++++++++++  REUSE RunningHost\n\n");
+            debug!("\n\n+++++++++++++++++++  REUSE RunningHost\n\n");
             Ok(gg.clone())
         }
     }

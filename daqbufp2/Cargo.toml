@@ -5,13 +5,12 @@ authors = ["Dominik Werder <dominik.werder@gmail.com>"]
 edition = "2021"
 
 [dependencies]
-tokio = { version = "1.7.1", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
+tokio = { version = "1.22.0", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
 hyper = "0.14"
 http = "0.2"
 tracing = "0.1.25"
-tracing-subscriber = "0.2.17"
-futures-core = "0.3.14"
-futures-util = "0.3.14"
+tracing-subscriber = "0.3.16"
+futures-util = "0.3.25"
 bytes = "1.0.1"
 serde = "1.0"
 serde_derive = "1.0"
@@ -24,6 +23,7 @@ err = { path = "../err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }
 httpret = { path = "../httpret" }
+httpclient = { path = "../httpclient" }
 disk = { path = "../disk" }
 items = { path = "../items" }
 streams = { path = "../streams" }

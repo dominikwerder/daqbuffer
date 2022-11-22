@@ -1,8 +1,5 @@
-use bytes::Bytes;
 use chrono::Utc;
 use err::Error;
-use futures_util::pin_mut;
-use hyper::{Body, Response};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{AggKind, Channel, Cluster, NodeConfigCached, PreBinnedPatchCoord};
@@ -10,72 +7,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::io;
 use std::path::PathBuf;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use std::time::{Duration, Instant};
 use tiny_keccak::Hasher;
-use tokio::io::{AsyncRead, ReadBuf};
-
-// TODO move to a better fitting module:
-pub struct HttpBodyAsAsyncRead {
-    inp: Response<Body>,
-    left: Bytes,
-    rp: usize,
-}
-
-impl HttpBodyAsAsyncRead {
-    pub fn new(inp: Response<Body>) -> Self {
-        Self {
-            inp,
-            left: Bytes::new(),
-            rp: 0,
-        }
-    }
-}
-
-impl AsyncRead for HttpBodyAsAsyncRead {
-    fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut ReadBuf) -> Poll<io::Result<()>> {
-        use hyper::body::HttpBody;
-        use Poll::*;
-        if self.left.len() != 0 {
-            let n1 = buf.remaining();
-            let n2 = self.left.len() - self.rp;
-            if n2 <= n1 {
-                buf.put_slice(self.left[self.rp..].as_ref());
-                self.left = Bytes::new();
-                self.rp = 0;
-                Ready(Ok(()))
-            } else {
-                buf.put_slice(self.left[self.rp..(self.rp + n2)].as_ref());
-                self.rp += n2;
-                Ready(Ok(()))
-            }
-        } else {
-            let f = &mut self.inp;
-            pin_mut!(f);
-            match f.poll_data(cx) {
-                Ready(Some(Ok(k))) => {
-                    let n1 = buf.remaining();
-                    if k.len() <= n1 {
-                        buf.put_slice(k.as_ref());
-                        Ready(Ok(()))
-                    } else {
-                        buf.put_slice(k[..n1].as_ref());
-                        self.left = k;
-                        self.rp = n1;
-                        Ready(Ok(()))
-                    }
-                }
-                Ready(Some(Err(e))) => Ready(Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    Error::with_msg(format!("Received by HttpBodyAsAsyncRead: {:?}", e)),
-                ))),
-                Ready(None) => Ready(Ok(())),
-                Pending => Pending,
-            }
-        }
-    }
-}
 
 // For file-based caching, this determined the node where the cache file is located.
 // No longer needed for scylla-based caching.

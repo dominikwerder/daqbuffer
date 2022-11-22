@@ -1,10 +1,16 @@
+#[cfg(test)]
+mod api1;
+#[cfg(test)]
+mod api4;
 pub mod archapp;
 pub mod binnedbinary;
 pub mod binnedjson;
-pub mod events;
+#[cfg(test)]
+mod events;
 #[cfg(test)]
 mod eventsjson;
-pub mod timeweightedjson;
+#[cfg(test)]
+mod timeweightedjson;
 
 use bytes::BytesMut;
 use err::Error;

@@ -1,4 +1,3 @@
-pub mod api1;
 pub mod histo;
 pub mod query;
 pub mod status;

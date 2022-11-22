@@ -4,11 +4,13 @@ use disk::streamlog::Streamlog;
 use err::Error;
 use futures_util::TryStreamExt;
 use http::StatusCode;
+use httpclient::HttpBodyAsAsyncRead;
 use hyper::Body;
 use items::xbinnedwaveevents::XBinnedWaveEvents;
 use items::{Sitemty, StreamItem};
+use netpod::log::*;
 use netpod::query::{BinnedQuery, CacheUsage};
-use netpod::{log::*, AppendToUrl};
+use netpod::AppendToUrl;
 use netpod::{AggKind, ByteSize, Channel, HostPort, NanoRange, PerfOpts, APP_OCTET};
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
 use url::Url;
@@ -91,7 +93,7 @@ pub async fn get_binned(
         )));
     }
     let perf_opts = PerfOpts { inmem_bufcap: 512 };
-    let s1 = disk::cache::HttpBodyAsAsyncRead::new(res);
+    let s1 = HttpBodyAsAsyncRead::new(res);
     let s2 = InMemoryFrameAsyncReadStream::new(s1, perf_opts.inmem_bufcap);
     use futures_util::StreamExt;
     use std::future::ready;

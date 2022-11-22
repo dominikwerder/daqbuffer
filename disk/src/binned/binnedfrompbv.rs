@@ -1,10 +1,11 @@
 use crate::agg::binnedt::TBinnerStream;
 use crate::binned::query::PreBinnedQuery;
-use crate::cache::{node_ix_for_patch, HttpBodyAsAsyncRead};
+use crate::cache::node_ix_for_patch;
 use err::Error;
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt};
 use http::{StatusCode, Uri};
+use httpclient::HttpBodyAsAsyncRead;
 use items::frame::decode_frame;
 use items::{FrameDecodable, FrameType, FrameTypeInnerStatic, TimeBinnableType};
 use items::{RangeCompletableItem, Sitemty, StreamItem};

@@ -5,6 +5,7 @@ use disk::streamlog::Streamlog;
 use err::Error;
 use futures_util::{StreamExt, TryStreamExt};
 use http::StatusCode;
+use httpclient::HttpBodyAsAsyncRead;
 use hyper::Body;
 use items::binsdim0::MinMaxAvgDim0Bins;
 use items::{RangeCompletableItem, Sitemty, StatsItem, StreamItem, SubFrId, WithLen};
@@ -125,7 +126,7 @@ where
     if res.status() != StatusCode::OK {
         error!("client response {:?}", res);
     }
-    let s1 = disk::cache::HttpBodyAsAsyncRead::new(res);
+    let s1 = HttpBodyAsAsyncRead::new(res);
     let s2 = InMemoryFrameAsyncReadStream::new(s1, perf_opts.inmem_bufcap);
     let res = consume_binned_response::<NTY, _>(s2).await?;
     let t2 = chrono::Utc::now();

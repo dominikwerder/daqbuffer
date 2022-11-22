@@ -9,11 +9,13 @@ use hyper::{Body, Client, Request, Response};
 use items::eventfull::EventFull;
 use items::{RangeCompletableItem, Sitemty, StreamItem};
 use itertools::Itertools;
+use netpod::log::*;
+use netpod::query::api1::Api1Query;
 use netpod::query::RawEventsQuery;
 use netpod::timeunits::SEC;
-use netpod::{log::*, DiskIoTune, ReadSys, ACCEPT_ALL};
-use netpod::{ByteSize, Channel, FileIoBufferSize, NanoRange, NodeConfigCached, PerfOpts, Shape, APP_OCTET};
-use netpod::{ChannelSearchQuery, ChannelSearchResult, ProxyConfig, APP_JSON};
+use netpod::{ByteSize, Channel, DiskIoTune, NanoRange, NodeConfigCached, PerfOpts, Shape};
+use netpod::{ChannelSearchQuery, ChannelSearchResult, ProxyConfig};
+use netpod::{ACCEPT_ALL, APP_JSON, APP_OCTET};
 use parse::channelconfig::extract_matching_config_entry;
 use parse::channelconfig::read_local_config;
 use parse::channelconfig::{Config, ConfigEntry, MatchingConfigEntry};
@@ -466,56 +468,6 @@ async fn process_answer(res: Response<Body>) -> Result<JsonValue, Error> {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Api1Range {
-    #[serde(rename = "startDate")]
-    start_date: String,
-    #[serde(rename = "endDate")]
-    end_date: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Api1Query {
-    channels: Vec<String>,
-    range: Api1Range,
-    // All following parameters are private and not to be used
-    #[serde(default)]
-    file_io_buffer_size: Option<FileIoBufferSize>,
-    #[serde(default)]
-    decompress: bool,
-    #[serde(default = "u64_max", skip_serializing_if = "is_u64_max")]
-    events_max: u64,
-    #[serde(default)]
-    io_queue_len: u64,
-    #[serde(default)]
-    log_level: String,
-    #[serde(default)]
-    read_sys: String,
-}
-
-impl Api1Query {
-    pub fn disk_io_tune(&self) -> DiskIoTune {
-        let mut k = DiskIoTune::default();
-        if let Some(x) = &self.file_io_buffer_size {
-            k.read_buffer_len = x.0;
-        }
-        if self.io_queue_len != 0 {
-            k.read_queue_len = self.io_queue_len as usize;
-        }
-        let read_sys: ReadSys = self.read_sys.as_str().into();
-        k.read_sys = read_sys;
-        k
-    }
-}
-
-fn u64_max() -> u64 {
-    u64::MAX
-}
-
-fn is_u64_max(x: &u64) -> bool {
-    *x == u64::MAX
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Api1ChannelHeader {
     name: String,
@@ -878,9 +830,9 @@ impl Api1EventsBinaryHandler {
                 return Err(Error::with_msg_no_trace("can not parse query"));
             }
         };
-        let span = if qu.log_level == "trace" {
+        let span = if qu.log_level() == "trace" {
             tracing::span!(tracing::Level::TRACE, "log_span_t")
-        } else if qu.log_level == "debug" {
+        } else if qu.log_level() == "debug" {
             tracing::span!(tracing::Level::DEBUG, "log_span_d")
         } else {
             tracing::Span::none()
@@ -900,14 +852,12 @@ impl Api1EventsBinaryHandler {
         // TODO this should go to usage statistics:
         info!(
             "Handle Api1Query  {:?}  {}  {:?}",
-            qu.range,
-            qu.channels.len(),
-            qu.channels.first()
+            qu.range(),
+            qu.channels().len(),
+            qu.channels().first()
         );
-        let beg_date = chrono::DateTime::parse_from_rfc3339(&qu.range.start_date);
-        let end_date = chrono::DateTime::parse_from_rfc3339(&qu.range.end_date);
-        let beg_date = beg_date?;
-        let end_date = end_date?;
+        let beg_date = qu.range().beg().clone();
+        let end_date = qu.range().end().clone();
         trace!("Api1Query  beg_date {:?}  end_date {:?}", beg_date, end_date);
         //let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         //let query = PlainEventsBinaryQuery::from_url(&url)?;
@@ -923,7 +873,7 @@ impl Api1EventsBinaryHandler {
         // TODO check for valid given backend name:
         let backend = &node_config.node_config.cluster.backend;
         let chans = qu
-            .channels
+            .channels()
             .iter()
             .map(|x| Channel {
                 backend: backend.into(),
@@ -937,8 +887,8 @@ impl Api1EventsBinaryHandler {
             range.clone(),
             chans,
             qu.disk_io_tune().clone(),
-            qu.decompress,
-            qu.events_max,
+            qu.decompress(),
+            qu.events_max(),
             status_id.clone(),
             node_config.clone(),
         );
