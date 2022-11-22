@@ -8,7 +8,7 @@ edition = "2021"
 path = "src/commonio.rs"
 
 [dependencies]
-tokio = { version = "1.18.1", features = ["io-util", "net", "time", "fs"] }
+tokio = { version = "1.21.1", features = ["io-util", "net", "time", "fs"] }
 tracing = "0.1"
 futures-core = "0.3.15"
 futures-util = "0.3.15"
@@ -16,7 +16,6 @@ bytes = "1"
 serde = { version = "1", features = ["derive"] }
 serde_derive = "1"
 serde_json = "1"
-bincode = "1.3"
 chrono = "0.4"
 async-channel = "1"
 parking_lot = "0.11"

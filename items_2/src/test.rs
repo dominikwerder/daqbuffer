@@ -1,10 +1,11 @@
 use crate::binsdim0::BinsDim0CollectedResult;
+use crate::channelevents::{ConnStatus, ConnStatusEvent};
 use crate::eventsdim0::EventsDim0;
 use crate::merger::{Mergeable, Merger};
 use crate::merger_cev::ChannelEventsMerger;
 use crate::testgen::make_some_boxed_d0_f32;
+use crate::Error;
 use crate::{binned_collected, runfut, ChannelEvents, Empty, Events, IsoDateTime};
-use crate::{ConnStatus, ConnStatusEvent, Error};
 use chrono::{TimeZone, Utc};
 use futures_util::{stream, StreamExt};
 use items::{sitem_data, RangeCompletableItem, Sitemty, StreamItem};

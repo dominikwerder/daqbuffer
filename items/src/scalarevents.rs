@@ -3,8 +3,8 @@ use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
     pulse_offs_from_abs, ts_offs_from_abs, Appendable, ByteEstimate, Clearable, EventAppendable, EventsDyn,
-    FilterFittingInside, Fits, FitsInside, FrameTypeInnerStatic, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv,
-    ReadableFromFile, TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinnerDyn, WithLen,
+    FilterFittingInside, Fits, FitsInside, FrameType, FrameTypeInnerStatic, NewEmpty, PushableIndex, RangeOverlapInfo,
+    ReadPbv, ReadableFromFile, TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinnerDyn, WithLen,
     WithTimestamps,
 };
 use err::Error;
@@ -26,6 +26,14 @@ pub struct ScalarEvents<NTY> {
 }
 
 impl<NTY> ScalarEvents<NTY> {
+    pub fn empty() -> Self {
+        Self {
+            tss: vec![],
+            pulses: vec![],
+            values: vec![],
+        }
+    }
+
     #[inline(always)]
     pub fn push(&mut self, ts: u64, pulse: u64, value: NTY) {
         self.tss.push(ts);
@@ -59,13 +67,12 @@ where
     const FRAME_TYPE_ID: u32 = crate::EVENTS_0D_FRAME_TYPE_ID + NTY::SUB;
 }
 
-impl<NTY> ScalarEvents<NTY> {
-    pub fn empty() -> Self {
-        Self {
-            tss: vec![],
-            pulses: vec![],
-            values: vec![],
-        }
+impl<NTY> FrameType for ScalarEvents<NTY>
+where
+    NTY: NumOps,
+{
+    fn frame_type_id(&self) -> u32 {
+        <Self as FrameTypeInnerStatic>::FRAME_TYPE_ID
     }
 }
 

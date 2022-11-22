@@ -37,8 +37,9 @@ use std::task::{Context, Poll};
 use tokio::fs::File;
 use tokio::io::{AsyncRead, ReadBuf};
 
-pub const TERM_FRAME_TYPE_ID: u32 = 0x01;
-pub const ERROR_FRAME_TYPE_ID: u32 = 0x02;
+pub const TERM_FRAME_TYPE_ID: u32 = 0xaa01;
+pub const ERROR_FRAME_TYPE_ID: u32 = 0xaa02;
+pub const SITEMTY_NONSPEC_FRAME_TYPE_ID: u32 = 0xaa04;
 pub const EVENT_QUERY_JSON_STRING_FRAME: u32 = 0x100;
 pub const EVENTS_0D_FRAME_TYPE_ID: u32 = 0x500;
 pub const MIN_MAX_AVG_DIM_0_BINS_FRAME_TYPE_ID: u32 = 0x700;
@@ -98,6 +99,25 @@ impl LogItem {
 }
 
 pub type Sitemty<T> = Result<StreamItem<RangeCompletableItem<T>>, Error>;
+
+impl<T> FrameType for Sitemty<T>
+where
+    T: FrameType,
+{
+    fn frame_type_id(&self) -> u32 {
+        match self {
+            Ok(item) => match item {
+                StreamItem::DataItem(item) => match item {
+                    RangeCompletableItem::RangeComplete => SITEMTY_NONSPEC_FRAME_TYPE_ID,
+                    RangeCompletableItem::Data(item) => item.frame_type_id(),
+                },
+                StreamItem::Log(_) => SITEMTY_NONSPEC_FRAME_TYPE_ID,
+                StreamItem::Stats(_) => SITEMTY_NONSPEC_FRAME_TYPE_ID,
+            },
+            Err(_) => ERROR_FRAME_TYPE_ID,
+        }
+    }
+}
 
 pub fn sitem_data<X>(x: X) -> Sitemty<X> {
     Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
@@ -257,8 +277,6 @@ where
 // Meant to be implemented by Sitemty.
 pub trait FrameType {
     fn frame_type_id(&self) -> u32;
-    fn is_err(&self) -> bool;
-    fn err(&self) -> Option<&::err::Error>;
 }
 
 impl<T> FrameType for Box<T>
@@ -268,7 +286,29 @@ where
     fn frame_type_id(&self) -> u32 {
         self.as_ref().frame_type_id()
     }
+}
 
+impl FrameTypeInnerDyn for Box<dyn TimeBinned> {
+    fn frame_type_id(&self) -> u32 {
+        FrameTypeInnerDyn::frame_type_id(self.as_time_binnable_dyn())
+    }
+}
+
+impl FrameTypeInnerDyn for Box<dyn EventsDyn> {
+    fn frame_type_id(&self) -> u32 {
+        FrameTypeInnerDyn::frame_type_id(self.as_time_binnable_dyn())
+    }
+}
+
+pub trait ContainsError {
+    fn is_err(&self) -> bool;
+    fn err(&self) -> Option<&::err::Error>;
+}
+
+impl<T> ContainsError for Box<T>
+where
+    T: ContainsError,
+{
     fn is_err(&self) -> bool {
         self.as_ref().is_err()
     }
@@ -278,14 +318,7 @@ where
     }
 }
 
-impl<T> FrameType for Sitemty<T>
-where
-    T: FrameTypeInnerStatic,
-{
-    fn frame_type_id(&self) -> u32 {
-        <T as FrameTypeInnerStatic>::FRAME_TYPE_ID
-    }
-
+impl<T> ContainsError for Sitemty<T> {
     fn is_err(&self) -> bool {
         match self {
             Ok(_) => false,
@@ -298,18 +331,6 @@ where
             Ok(_) => None,
             Err(e) => Some(e),
         }
-    }
-}
-
-impl FrameTypeInnerDyn for Box<dyn TimeBinned> {
-    fn frame_type_id(&self) -> u32 {
-        self.as_time_binnable_dyn().frame_type_id()
-    }
-}
-
-impl FrameTypeInnerDyn for Box<dyn EventsDyn> {
-    fn frame_type_id(&self) -> u32 {
-        self.as_time_binnable_dyn().frame_type_id()
     }
 }
 
@@ -331,7 +352,7 @@ erased_serde::serialize_trait_object!(TimeBinned);
 
 impl<T> Framable for Sitemty<T>
 where
-    T: Sized + serde::Serialize + FrameTypeInnerDyn,
+    T: Sized + serde::Serialize + FrameType,
 {
     fn make_frame(&self) -> Result<BytesMut, Error> {
         match self {
@@ -389,6 +410,12 @@ pub struct EventQueryJsonStringFrame(pub String);
 
 impl FrameTypeInnerStatic for EventQueryJsonStringFrame {
     const FRAME_TYPE_ID: u32 = EVENT_QUERY_JSON_STRING_FRAME;
+}
+
+impl FrameType for EventQueryJsonStringFrame {
+    fn frame_type_id(&self) -> u32 {
+        EventQueryJsonStringFrame::FRAME_TYPE_ID
+    }
 }
 
 pub trait EventsNodeProcessor: Send + Unpin {
@@ -522,14 +549,32 @@ pub trait TimeBinnableType:
 // TODO should not require Sync!
 // TODO SitemtyFrameType is already supertrait of FramableInner.
 pub trait TimeBinnableDyn:
-    std::fmt::Debug + FramableInner + FrameTypeInnerDyn + WithLen + RangeOverlapInfo + Any + Sync + Send + 'static
+    std::fmt::Debug
+    + FramableInner
+    + FrameType
+    + FrameTypeInnerDyn
+    + WithLen
+    + RangeOverlapInfo
+    + Any
+    + Sync
+    + Send
+    + 'static
 {
     fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Box<dyn TimeBinnerDyn>;
     fn as_any(&self) -> &dyn Any;
 }
 
 pub trait TimeBinnableDynStub:
-    std::fmt::Debug + FramableInner + FrameTypeInnerDyn + WithLen + RangeOverlapInfo + Any + Sync + Send + 'static
+    std::fmt::Debug
+    + FramableInner
+    + FrameType
+    + FrameTypeInnerDyn
+    + WithLen
+    + RangeOverlapInfo
+    + Any
+    + Sync
+    + Send
+    + 'static
 {
 }
 
@@ -570,6 +615,12 @@ pub trait TimeBinned: TimeBinnableDyn {
     fn maxs(&self) -> Vec<f32>;
     fn avgs(&self) -> Vec<f32>;
     fn validate(&self) -> Result<(), String>;
+}
+
+impl FrameType for Box<dyn TimeBinned> {
+    fn frame_type_id(&self) -> u32 {
+        FrameType::frame_type_id(self.as_ref())
+    }
 }
 
 impl WithLen for Box<dyn TimeBinned> {

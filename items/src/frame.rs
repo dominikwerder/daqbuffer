@@ -1,18 +1,32 @@
 use crate::inmem::InMemoryFrame;
-use crate::{FrameDecodable, FrameType, LogItem, StatsItem};
-use crate::{
-    ERROR_FRAME_TYPE_ID, INMEM_FRAME_ENCID, INMEM_FRAME_HEAD, INMEM_FRAME_MAGIC, LOG_FRAME_TYPE_ID,
-    RANGE_COMPLETE_FRAME_TYPE_ID, STATS_FRAME_TYPE_ID, TERM_FRAME_TYPE_ID,
-};
+use crate::{ContainsError, FrameDecodable, FrameType, LogItem, StatsItem};
+use crate::{ERROR_FRAME_TYPE_ID, INMEM_FRAME_ENCID, INMEM_FRAME_HEAD, INMEM_FRAME_MAGIC};
+use crate::{LOG_FRAME_TYPE_ID, RANGE_COMPLETE_FRAME_TYPE_ID, STATS_FRAME_TYPE_ID, TERM_FRAME_TYPE_ID};
 use bytes::{BufMut, BytesMut};
 use err::Error;
 #[allow(unused)]
 use netpod::log::*;
 use serde::Serialize;
 
+trait EC {
+    fn ec(self) -> err::Error;
+}
+
+impl EC for rmp_serde::encode::Error {
+    fn ec(self) -> err::Error {
+        err::Error::with_msg_no_trace(format!("{self:?}"))
+    }
+}
+
+impl EC for rmp_serde::decode::Error {
+    fn ec(self) -> err::Error {
+        err::Error::with_msg_no_trace(format!("{self:?}"))
+    }
+}
+
 pub fn make_frame<FT>(item: &FT) -> Result<BytesMut, Error>
 where
-    FT: FrameType + Serialize,
+    FT: FrameType + ContainsError + Serialize,
 {
     if item.is_err() {
         make_error_frame(item.err().unwrap())
@@ -21,21 +35,15 @@ where
     }
 }
 
-pub fn make_frame_2<FT>(item: &FT, fty: u32) -> Result<BytesMut, Error>
+pub fn make_frame_2<T>(item: &T, fty: u32) -> Result<BytesMut, Error>
 where
-    FT: erased_serde::Serialize,
+    T: erased_serde::Serialize,
 {
     trace!("make_frame_2  fty {:x}", fty);
-    let mut out = vec![];
-    use bincode::Options;
-    let opts = bincode::DefaultOptions::new()
-        .with_little_endian()
-        .with_fixint_encoding()
-        .allow_trailing_bytes();
-    let mut ser = bincode::Serializer::new(&mut out, opts);
-    //let mut ser = serde_json::Serializer::new(std::io::stdout());
+    let mut out = Vec::new();
+    let mut ser = rmp_serde::Serializer::new(&mut out);
     let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser);
-    //match bincode::serialize(item) {
+    //let writer = ciborium::ser::into_writer(&item, &mut out).unwrap();
     match item.erased_serialize(&mut ser2) {
         Ok(_) => {
             let enc = out;
@@ -69,7 +77,7 @@ where
 // TODO remove duplication for these similar `make_*_frame` functions:
 
 pub fn make_error_frame(error: &::err::Error) -> Result<BytesMut, Error> {
-    match bincode::serialize(error) {
+    match rmp_serde::to_vec(error) {
         Ok(enc) => {
             let mut h = crc32fast::Hasher::new();
             h.update(&enc);
@@ -91,12 +99,12 @@ pub fn make_error_frame(error: &::err::Error) -> Result<BytesMut, Error> {
             //trace!("frame_crc {}", frame_crc);
             Ok(buf)
         }
-        Err(e) => Err(e)?,
+        Err(e) => Err(e.ec())?,
     }
 }
 
 pub fn make_log_frame(item: &LogItem) -> Result<BytesMut, Error> {
-    match bincode::serialize(item) {
+    match rmp_serde::to_vec(item) {
         Ok(enc) => {
             let mut h = crc32fast::Hasher::new();
             h.update(&enc);
@@ -115,12 +123,12 @@ pub fn make_log_frame(item: &LogItem) -> Result<BytesMut, Error> {
             buf.put_u32_le(frame_crc);
             Ok(buf)
         }
-        Err(e) => Err(e)?,
+        Err(e) => Err(e.ec())?,
     }
 }
 
 pub fn make_stats_frame(item: &StatsItem) -> Result<BytesMut, Error> {
-    match bincode::serialize(item) {
+    match rmp_serde::to_vec(item) {
         Ok(enc) => {
             let mut h = crc32fast::Hasher::new();
             h.update(&enc);
@@ -139,7 +147,7 @@ pub fn make_stats_frame(item: &StatsItem) -> Result<BytesMut, Error> {
             buf.put_u32_le(frame_crc);
             Ok(buf)
         }
-        Err(e) => Err(e)?,
+        Err(e) => Err(e.ec())?,
     }
 }
 
@@ -199,47 +207,38 @@ where
         )));
     }
     if frame.tyid() == ERROR_FRAME_TYPE_ID {
-        let k: ::err::Error = match bincode::deserialize(frame.buf()) {
+        let k: ::err::Error = match rmp_serde::from_slice(frame.buf()) {
             Ok(item) => item,
             Err(e) => {
-                error!(
-                    "ERROR bincode::deserialize  len {}  ERROR_FRAME_TYPE_ID",
-                    frame.buf().len()
-                );
+                error!("ERROR deserialize  len {}  ERROR_FRAME_TYPE_ID", frame.buf().len());
                 let n = frame.buf().len().min(128);
                 let s = String::from_utf8_lossy(&frame.buf()[..n]);
                 error!("frame.buf as string: {:?}", s);
-                Err(e)?
+                Err(e.ec())?
             }
         };
         Ok(T::from_error(k))
     } else if frame.tyid() == LOG_FRAME_TYPE_ID {
-        let k: LogItem = match bincode::deserialize(frame.buf()) {
+        let k: LogItem = match rmp_serde::from_slice(frame.buf()) {
             Ok(item) => item,
             Err(e) => {
-                error!(
-                    "ERROR bincode::deserialize  len {}  LOG_FRAME_TYPE_ID",
-                    frame.buf().len()
-                );
+                error!("ERROR deserialize  len {}  LOG_FRAME_TYPE_ID", frame.buf().len());
                 let n = frame.buf().len().min(128);
                 let s = String::from_utf8_lossy(&frame.buf()[..n]);
                 error!("frame.buf as string: {:?}", s);
-                Err(e)?
+                Err(e.ec())?
             }
         };
         Ok(T::from_log(k))
     } else if frame.tyid() == STATS_FRAME_TYPE_ID {
-        let k: StatsItem = match bincode::deserialize(frame.buf()) {
+        let k: StatsItem = match rmp_serde::from_slice(frame.buf()) {
             Ok(item) => item,
             Err(e) => {
-                error!(
-                    "ERROR bincode::deserialize  len {}  STATS_FRAME_TYPE_ID",
-                    frame.buf().len()
-                );
+                error!("ERROR deserialize  len {}  STATS_FRAME_TYPE_ID", frame.buf().len());
                 let n = frame.buf().len().min(128);
                 let s = String::from_utf8_lossy(&frame.buf()[..n]);
                 error!("frame.buf as string: {:?}", s);
-                Err(e)?
+                Err(e.ec())?
             }
         };
         Ok(T::from_stats(k))
@@ -256,18 +255,14 @@ where
                 frame
             )))
         } else {
-            match bincode::deserialize(frame.buf()) {
+            match rmp_serde::from_slice(frame.buf()) {
                 Ok(item) => Ok(item),
                 Err(e) => {
-                    error!(
-                        "ERROR bincode::deserialize  len {}  tyid {:x}",
-                        frame.buf().len(),
-                        frame.tyid()
-                    );
+                    error!("ERROR deserialize  len {}  tyid {:x}", frame.buf().len(), frame.tyid());
                     let n = frame.buf().len().min(64);
                     let s = String::from_utf8_lossy(&frame.buf()[..n]);
                     error!("frame.buf as string: {:?}", s);
-                    Err(e)?
+                    Err(e.ec())?
                 }
             }
         }

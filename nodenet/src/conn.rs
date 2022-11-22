@@ -3,6 +3,7 @@ use futures_core::Stream;
 use futures_util::StreamExt;
 use items::frame::{decode_frame, make_term_frame};
 use items::{EventQueryJsonStringFrame, Framable, RangeCompletableItem, Sitemty, StreamItem};
+use items_2::channelevents::ChannelEvents;
 use netpod::histo::HistoLog2;
 use netpod::log::*;
 use netpod::query::{PlainEventsQuery, RawEventsQuery};
@@ -108,19 +109,31 @@ async fn events_conn_handler_inner_try(
 
     let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> =
         if evq.channel().backend() == "testbackend" {
-            use items_2::ChannelEvents;
+            warn!("TEST BACKEND DATA");
             use items_2::Empty;
             use netpod::timeunits::MS;
+            let node_count = node_config.node_config.cluster.nodes.len();
             let node_ix = node_config.ix;
             if evq.channel().name() == "inmem-d0-i32" {
+                let mut item = items_2::eventsdim0::EventsDim0::<i32>::empty();
+                let td = MS * 10;
+                for i in 0..20 {
+                    let ts = MS * 17 + td * node_ix as u64 + td * node_count as u64 * i;
+                    let pulse = 1 + node_ix as u64 + node_count as u64 * i;
+                    item.push(ts, pulse, pulse as _);
+                }
+                let item = ChannelEvents::Events(Box::new(item) as _);
+                let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
+                let item = Box::new(item) as _;
+                let stream = futures_util::stream::iter([item]);
+                Box::pin(stream)
+            } else if evq.channel().name() == "inmem-d0-f32" {
                 let mut item = items_2::eventsdim0::EventsDim0::<f32>::empty();
                 let td = MS * 10;
-                let mut ts = MS * 17 + MS * td * node_ix as u64;
-                let mut pulse = 1 + node_ix as u64;
-                for _ in 0..20 {
+                for i in 0..20 {
+                    let ts = MS * 17 + td * node_ix as u64 + td * node_count as u64 * i;
+                    let pulse = 1 + node_ix as u64 + node_count as u64 * i;
                     item.push(ts, pulse, ts as _);
-                    ts += 3 * td;
-                    pulse += 3;
                 }
                 let item = ChannelEvents::Events(Box::new(item) as _);
                 let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
@@ -164,12 +177,12 @@ async fn events_conn_handler_inner_try(
             let s = stream.map(|item| {
                 let item = match item {
                     Ok(item) => match item {
-                        items_2::ChannelEvents::Events(_item) => {
+                        ChannelEvents::Events(_item) => {
                             // TODO
                             let item = items::scalarevents::ScalarEvents::<f64>::empty();
                             Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                         }
-                        items_2::ChannelEvents::Status(_item) => todo!(),
+                        ChannelEvents::Status(_item) => todo!(),
                     },
                     Err(e) => Err(e),
                 };

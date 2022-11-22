@@ -1,8 +1,9 @@
 use crate::errconv::ErrConv;
 use err::Error;
 use futures_util::{Future, FutureExt, Stream, StreamExt};
+use items_2::channelevents::{ChannelEvents, ConnStatus, ConnStatusEvent};
 use items_2::eventsdim0::EventsDim0;
-use items_2::{ChannelEvents, ConnStatus, ConnStatusEvent, Empty, Events, WithLen};
+use items_2::{Empty, Events, WithLen};
 use netpod::log::*;
 use netpod::query::{ChannelStateEventsQuery, PlainEventsQuery};
 use netpod::timeunits::*;

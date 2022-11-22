@@ -1,16 +1,16 @@
 use crate::merge::open_tcp_streams;
 use bytes::Bytes;
 use err::Error;
-use futures_util::{future, stream, FutureExt, Stream, StreamExt};
-use items::streams::collect_plain_events_json;
-use items::{sitem_data, RangeCompletableItem, Sitemty, StreamItem};
-use items_2::ChannelEvents;
+use futures_util::{Stream, StreamExt};
+use items::Sitemty;
+#[allow(unused)]
 use netpod::log::*;
 use netpod::Cluster;
 use serde::Serialize;
+use serde_json::Value as JsonValue;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 pub struct BytesStream(Pin<Box<dyn Stream<Item = Sitemty<Bytes>> + Send>>);
 
@@ -22,52 +22,27 @@ impl Stream for BytesStream {
     }
 }
 
-pub async fn plain_events_json<SER>(query: SER, cluster: &Cluster) -> Result<BytesStream, Error>
+// TODO remove?
+pub async fn plain_events_json<SER>(query: SER, cluster: &Cluster) -> Result<JsonValue, Error>
 where
     SER: Serialize,
 {
-    let inps = open_tcp_streams(&query, cluster).await?;
-    let mut merged = items_2::merger_cev::ChannelEventsMerger::new(inps);
-    let timeout = Duration::from_millis(2000);
+    // TODO should be able to ask for data-events only, instead of mixed data and status events.
+    let inps = open_tcp_streams::<_, items_2::channelevents::ChannelEvents>(&query, cluster).await?;
+    // TODO propagate also the max-buf-len for the first stage event reader:
+    #[cfg(NOTHING)]
+    let stream = {
+        let mut it = inps.into_iter();
+        let inp0 = it.next().unwrap();
+        let inp1 = it.next().unwrap();
+        let inp2 = it.next().unwrap();
+        let stream = inp0.chain(inp1).chain(inp2);
+        stream
+    };
+    let stream = { items_2::merger::Merger::new(inps, 1) };
+    let deadline = Instant::now() + Duration::from_millis(2000);
     let events_max = 100;
-    let do_log = false;
-    let mut coll = None;
-    while let Some(item) = merged.next().await {
-        let item = item?;
-        match item {
-            StreamItem::DataItem(item) => match item {
-                RangeCompletableItem::RangeComplete => todo!(),
-                RangeCompletableItem::Data(item) => match item {
-                    ChannelEvents::Events(mut item) => {
-                        if coll.is_none() {
-                            coll = Some(item.new_collector());
-                        }
-                        let coll = coll
-                            .as_mut()
-                            .ok_or_else(|| Error::with_msg_no_trace(format!("no collector")))?;
-                        coll.ingest(&mut item);
-                    }
-                    ChannelEvents::Status(_) => todo!(),
-                },
-            },
-            StreamItem::Log(item) => {
-                info!("log {item:?}");
-            }
-            StreamItem::Stats(item) => {
-                info!("stats {item:?}");
-            }
-        }
-    }
-    // TODO compare with
-    // streams::collect::collect_plain_events_json
-    // and remove duplicate functionality.
-    let mut coll = coll.ok_or_else(|| Error::with_msg_no_trace(format!("no collector created")))?;
-    let res = coll.result()?;
-    // TODO factor the conversion of the result out to a higher level.
-    // The output of this function should again be collectable, maybe even binnable and otherwise processable.
-    let js = serde_json::to_vec(&res)?;
-    let item = sitem_data(Bytes::from(js));
-    let stream = stream::once(future::ready(item));
-    let stream = BytesStream(Box::pin(stream));
-    Ok(stream)
+    let collected = crate::collect::collect(stream, deadline, events_max).await?;
+    let jsval = serde_json::to_value(&collected)?;
+    Ok(jsval)
 }

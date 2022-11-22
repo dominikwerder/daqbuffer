@@ -3,7 +3,9 @@ use netpod::{ScalarType, Shape};
 use parse::channelconfig::CompressionMethod;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::{Appendable, ByteEstimate, Clearable, FrameTypeInnerStatic, PushableIndex, WithLen, WithTimestamps};
+use crate::{
+    Appendable, ByteEstimate, Clearable, FrameType, FrameTypeInnerStatic, PushableIndex, WithLen, WithTimestamps,
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EventFull {
@@ -97,6 +99,12 @@ impl EventFull {
 
 impl FrameTypeInnerStatic for EventFull {
     const FRAME_TYPE_ID: u32 = crate::EVENT_FULL_FRAME_TYPE_ID;
+}
+
+impl FrameType for EventFull {
+    fn frame_type_id(&self) -> u32 {
+        <Self as FrameTypeInnerStatic>::FRAME_TYPE_ID
+    }
 }
 
 impl WithLen for EventFull {

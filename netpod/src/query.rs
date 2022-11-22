@@ -97,7 +97,7 @@ impl RawEventsQuery {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct PlainEventsQuery {
     channel: Channel,
     range: NanoRange,

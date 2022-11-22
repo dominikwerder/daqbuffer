@@ -377,6 +377,18 @@ impl From<TryFromSliceError> for Error {
     }
 }
 
+impl From<rmp_serde::encode::Error> for Error {
+    fn from(k: rmp_serde::encode::Error) -> Self {
+        Self::with_msg(format!("{:?}", k))
+    }
+}
+
+impl From<rmp_serde::decode::Error> for Error {
+    fn from(k: rmp_serde::decode::Error) -> Self {
+        Self::with_msg(format!("{:?}", k))
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PublicError {
     reason: Option<Reason>,

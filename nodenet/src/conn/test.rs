@@ -1,7 +1,7 @@
 use super::*;
 use items::frame::make_frame;
 use items::Sitemty;
-use items_2::ChannelEvents;
+use items_2::channelevents::ChannelEvents;
 use netpod::timeunits::SEC;
 use netpod::{Channel, Cluster, Database, FileIoBufferSize, NanoRange, Node, NodeConfig, SfDatabuffer};
 use tokio::net::TcpListener;

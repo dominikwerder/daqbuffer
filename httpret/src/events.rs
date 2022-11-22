@@ -4,9 +4,10 @@ use crate::{response, response_err, BodyStream, ToPublicResponse};
 use futures_util::{Stream, StreamExt, TryStreamExt};
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
+use items_2::channelevents::ChannelEvents;
 use items_2::merger_cev::ChannelEventsMerger;
-use items_2::{binned_collected, empty_events_dyn, empty_events_dyn_2, ChannelEvents};
-use netpod::query::{BinnedQuery, ChannelStateEventsQuery, PlainEventsQuery};
+use items_2::{binned_collected, empty_events_dyn, empty_events_dyn_2};
+use netpod::query::{BinnedQuery, ChannelStateEventsQuery, PlainEventsQuery, RawEventsQuery};
 use netpod::{log::*, HasBackend};
 use netpod::{AggKind, BinnedRange, FromUrl, NodeConfigCached};
 use netpod::{ACCEPT_ALL, APP_JSON, APP_OCTET};
@@ -53,6 +54,7 @@ async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Res
             .map_err(Error::from)
             .map_err(|e| e.add_public_msg(format!("Can not parse query url")))?
     };
+    // TODO format error.
     if accept == APP_JSON || accept == ACCEPT_ALL {
         Ok(plain_events_json(url, req, node_config).await?)
     } else if accept == APP_OCTET {
@@ -117,7 +119,11 @@ async fn plain_events_json(
     // ---
 
     if query.backend() == "testbackend" {
-        err::todoval()
+        let query = RawEventsQuery::new(query.channel().clone(), query.range().clone(), AggKind::Plain);
+        let item = streams::plaineventsjson::plain_events_json(query, &node_config.node_config.cluster).await?;
+        let buf = serde_json::to_vec(&item)?;
+        let ret = response(StatusCode::OK).body(Body::from(buf))?;
+        Ok(ret)
     } else {
         let op = disk::channelexec::PlainEventsJson::new(
             // TODO pass only the query, not channel, range again:
@@ -252,7 +258,7 @@ impl EventsHandlerScylla {
                 Ok(k) => match k {
                     ChannelEvents::Events(mut item) => {
                         if coll.is_none() {
-                            coll = Some(item.new_collector());
+                            coll = Some(items_2::streams::Collectable::new_collector(item.as_ref()));
                         }
                         let cl = coll.as_mut().unwrap();
                         cl.ingest(item.as_collectable_mut());

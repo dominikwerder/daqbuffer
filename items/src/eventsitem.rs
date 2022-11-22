@@ -4,6 +4,7 @@ use crate::{Appendable, Clearable, FrameTypeInnerDyn, PushableIndex, WithLen, Wi
 use netpod::{AggKind, HasScalarType, HasShape, ScalarType, Shape};
 use serde::{Deserialize, Serialize};
 
+// TODO remove
 #[derive(Debug, Serialize, Deserialize)]
 pub enum EventsItem {
     Plain(PlainEvents),

@@ -6,8 +6,9 @@ mod timebin;
 use err::Error;
 use futures_util::{stream, Stream};
 use items::{sitem_data, Sitemty};
+use items_2::channelevents::ChannelEvents;
 use items_2::eventsdim0::EventsDim0;
-use items_2::{ChannelEvents, Empty};
+use items_2::Empty;
 use netpod::timeunits::SEC;
 use std::pin::Pin;
 
@@ -46,7 +47,7 @@ fn merge_mergeable_00() -> Result<(), Error> {
     let fut = async {
         let inp0 = inmem_test_events_d0_i32_00();
         let inp1 = inmem_test_events_d0_i32_01();
-        let mut merger = items_2::merger::Merger::new(vec![inp0, inp1], 4);
+        let _merger = items_2::merger::Merger::new(vec![inp0, inp1], 4);
         Ok(())
     };
     runfut(fut)

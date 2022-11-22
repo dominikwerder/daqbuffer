@@ -1,14 +1,15 @@
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use err::Error;
 use netpod::timeunits::*;
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
+use std::str::FromStr;
 
 #[derive(Debug, Parser)]
-#[clap(name = "DAQ buffer tools", version)]
+#[command(author, version)]
 pub struct Opts {
-    #[clap(short, long, parse(from_occurrences))]
+    #[arg(short, long, action(ArgAction::Count))]
     pub verbose: u32,
-    #[clap(subcommand)]
+    #[command(subcommand)]
     pub subcmd: SubCmd,
 }
 
@@ -21,19 +22,19 @@ pub enum SubCmd {
 #[derive(Debug, Parser)]
 pub struct ConvertArchiverApplianceChannel {
     /// Prefix for keyspaces, e.g. specify `daq` to get scalar keyspace directory `daq_2`.
-    #[clap(long)]
+    #[arg(long)]
     keyspace_prefix: String,
     /// Name of the channel to convert.
-    #[clap(long)]
+    #[arg(long)]
     channel_name: String,
     /// Look for archiver appliance data at given path.
-    #[clap(long)]
+    #[arg(long)]
     input_dir: PathBuf,
     /// Generate Databuffer format at given path.
-    #[clap(long)]
+    #[arg(long)]
     output_dir: PathBuf,
     /// Size of the time-bins in the generated Databuffer format.\nUnit-suffixes: `h` (hours), `d` (days)
-    #[clap(default_value = "1d", long)]
+    #[arg(default_value = "1d", long)]
     time_bin_size: TimeBinSize,
 }
 

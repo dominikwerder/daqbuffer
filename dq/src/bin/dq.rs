@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use err::Error;
 use netpod::log::*;
 use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, NanoRange, Shape};
@@ -8,11 +8,11 @@ use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
 #[derive(Debug, Parser)]
-#[clap(name = "DAQ buffer tools", version)]
+#[command(name = "DAQ buffer tools", author, version)]
 pub struct Opts {
-    #[clap(short, long, parse(from_occurrences))]
+    #[arg(short, long, action(ArgAction::Count))]
     pub verbose: u32,
-    #[clap(subcommand)]
+    #[command(subcommand)]
     pub subcmd: SubCmd,
 }
 
@@ -24,15 +24,15 @@ pub enum SubCmd {
 
 #[derive(Debug, Parser)]
 pub struct ReadDatabufferConfigfile {
-    #[clap(long)]
+    #[arg(long)]
     configfile: PathBuf,
 }
 
 #[derive(Debug, Parser)]
 pub struct ReadDatabufferDatafile {
-    #[clap(long)]
+    #[arg(long)]
     configfile: PathBuf,
-    #[clap(long)]
+    #[arg(long)]
     datafile: PathBuf,
 }
 

@@ -2,6 +2,8 @@ pub mod archapp;
 pub mod binnedbinary;
 pub mod binnedjson;
 pub mod events;
+#[cfg(test)]
+mod eventsjson;
 pub mod timeweightedjson;
 
 use bytes::BytesMut;

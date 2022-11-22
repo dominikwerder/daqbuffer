@@ -8,8 +8,9 @@ use http::StatusCode;
 use hyper::Body;
 use items::binsdim0::MinMaxAvgDim0Bins;
 use items::{RangeCompletableItem, Sitemty, StatsItem, StreamItem, SubFrId, WithLen};
+use netpod::log::*;
 use netpod::query::{BinnedQuery, CacheUsage};
-use netpod::{log::*, AppendToUrl};
+use netpod::AppendToUrl;
 use netpod::{AggKind, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_OCTET};
 use serde::de::DeserializeOwned;
 use std::fmt;
@@ -200,7 +201,7 @@ where
                         if frame.tyid() != err::todoval::<u32>() {
                             error!("test receives unexpected tyid {:x}", frame.tyid());
                         }
-                        match bincode::deserialize::<Sitemty<MinMaxAvgDim0Bins<NTY>>>(frame.buf()) {
+                        match rmp_serde::from_slice::<Sitemty<MinMaxAvgDim0Bins<NTY>>>(frame.buf()) {
                             Ok(item) => match item {
                                 Ok(item) => match item {
                                     StreamItem::Log(item) => {

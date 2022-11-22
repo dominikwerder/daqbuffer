@@ -172,7 +172,7 @@ where
                             error!("test receives unexpected tyid {:x}", frame.tyid());
                             None
                         } else {
-                            match bincode::deserialize::<Sitemty<ScalarEvents<NTY>>>(frame.buf()) {
+                            match rmp_serde::from_slice::<Sitemty<ScalarEvents<NTY>>>(frame.buf()) {
                                 Ok(item) => match item {
                                     Ok(item) => match item {
                                         StreamItem::Log(item) => {

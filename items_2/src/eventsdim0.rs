@@ -164,6 +164,20 @@ pub struct EventsDim0CollectorOutput<NTY> {
     timed_out: bool,
 }
 
+impl<NTY: ScalarOps> EventsDim0CollectorOutput<NTY> {
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+}
+
+impl<NTY: ScalarOps> crate::AsAnyRef for EventsDim0CollectorOutput<NTY> {
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl<NTY: ScalarOps> crate::collect::Collected for EventsDim0CollectorOutput<NTY> {}
+
 impl<NTY: ScalarOps> ToJsonResult for EventsDim0CollectorOutput<NTY> {
     fn to_json_result(&self) -> Result<Box<dyn crate::streams::ToJsonBytes>, Error> {
         let k = serde_json::to_value(self)?;
@@ -222,7 +236,6 @@ impl<NTY: ScalarOps> CollectableType for EventsDim0<NTY> {
 
 impl<NTY: ScalarOps> crate::collect::Collector for EventsDim0Collector<NTY> {
     type Input = EventsDim0<NTY>;
-    // TODO the output probably needs to be different to accommodate also range-complete, continue-at, etc
     type Output = EventsDim0CollectorOutput<NTY>;
 
     fn len(&self) -> usize {
@@ -576,6 +589,14 @@ impl<NTY: ScalarOps> Events for EventsDim0<NTY> {
         self
     }
 
+    fn as_collectable_with_default_ref(&self) -> &dyn crate::collect::CollectableWithDefault {
+        self
+    }
+
+    fn as_collectable_with_default_mut(&mut self) -> &mut dyn crate::collect::CollectableWithDefault {
+        self
+    }
+
     fn take_new_events_until_ts(&mut self, ts_end: u64) -> Box<dyn Events> {
         // TODO improve the search
         let n1 = self.tss.iter().take_while(|&&x| x <= ts_end).count();
@@ -598,7 +619,7 @@ impl<NTY: ScalarOps> Events for EventsDim0<NTY> {
 
     fn move_into_existing(&mut self, tgt: &mut Box<dyn Events>, ts_end: u64) -> Result<(), ()> {
         // TODO as_any and as_any_mut are declared on unrealted traits. Simplify.
-        if let Some(tgt) = tgt.as_any_mut().downcast_mut::<Self>() {
+        if let Some(tgt) = crate::streams::Collectable::as_any_mut(tgt.as_mut()).downcast_mut::<Self>() {
             // TODO improve the search
             let n1 = self.tss.iter().take_while(|&&x| x <= ts_end).count();
             // TODO make it harder to forget new members when the struct may get modified in the future
@@ -837,10 +858,83 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
     }
 }
 
+#[derive(Debug)]
+pub struct EventsDim0CollectorDyn {}
+
+impl EventsDim0CollectorDyn {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+impl crate::collect::CollectorDyn for EventsDim0CollectorDyn {
+    fn len(&self) -> usize {
+        todo!()
+    }
+
+    fn ingest(&mut self, _item: &mut dyn crate::collect::CollectableWithDefault) {
+        // TODO remove this struct?
+        todo!()
+    }
+
+    fn set_range_complete(&mut self) {
+        todo!()
+    }
+
+    fn set_timed_out(&mut self) {
+        todo!()
+    }
+
+    fn result(&mut self) -> Result<Box<dyn crate::collect::Collected>, crate::Error> {
+        todo!()
+    }
+}
+
+impl<NTY: ScalarOps> crate::collect::CollectorDyn for EventsDim0Collector<NTY> {
+    fn len(&self) -> usize {
+        WithLen::len(self)
+    }
+
+    fn ingest(&mut self, item: &mut dyn crate::collect::CollectableWithDefault) {
+        let x = item.as_any_mut();
+        if let Some(item) = x.downcast_mut::<EventsDim0<NTY>>() {
+            CollectorType::ingest(self, item)
+        } else {
+            // TODO need possibility to return error
+            ()
+        }
+    }
+
+    fn set_range_complete(&mut self) {
+        CollectorType::set_range_complete(self);
+    }
+
+    fn set_timed_out(&mut self) {
+        CollectorType::set_timed_out(self);
+    }
+
+    fn result(&mut self) -> Result<Box<dyn crate::collect::Collected>, crate::Error> {
+        CollectorType::result(self)
+            .map(|x| Box::new(x) as _)
+            .map_err(|e| e.into())
+    }
+}
+
+impl<NTY: ScalarOps> crate::collect::CollectableWithDefault for EventsDim0<NTY> {
+    fn new_collector(&self) -> Box<dyn crate::collect::CollectorDyn> {
+        let coll = EventsDim0Collector::<NTY>::new();
+        Box::new(coll)
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
 impl<NTY: ScalarOps> crate::collect::Collectable for EventsDim0<NTY> {
-    type Collector;
+    type Collector = EventsDim0Collector<NTY>;
 
     fn new_collector(&self) -> Self::Collector {
-        todo!()
+        EventsDim0Collector::new()
     }
 }

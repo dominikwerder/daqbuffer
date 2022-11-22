@@ -229,6 +229,14 @@ pub struct BinsDim0CollectedResult<NTY> {
     finished_at: Option<IsoDateTime>,
 }
 
+impl<NTY: ScalarOps> crate::AsAnyRef for BinsDim0CollectedResult<NTY> {
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl<NTY: ScalarOps> crate::collect::Collected for BinsDim0CollectedResult<NTY> {}
+
 impl<NTY> BinsDim0CollectedResult<NTY> {
     pub fn ts_anchor_sec(&self) -> u64 {
         self.ts_anchor_sec

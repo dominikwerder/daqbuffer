@@ -658,7 +658,7 @@ impl Nanos {
 
 impl fmt::Debug for Nanos {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let ts = chrono::Utc.timestamp((self.ns / SEC) as i64, (self.ns % SEC) as u32);
+        let ts = chrono::Utc.timestamp_opt((self.ns / SEC) as i64, (self.ns % SEC) as u32);
         f.debug_struct("Nanos").field("ns", &ts).finish()
     }
 }
@@ -671,8 +671,8 @@ pub struct NanoRange {
 
 impl fmt::Debug for NanoRange {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let beg = chrono::Utc.timestamp((self.beg / SEC) as i64, (self.beg % SEC) as u32);
-        let end = chrono::Utc.timestamp((self.end / SEC) as i64, (self.end % SEC) as u32);
+        let beg = chrono::Utc.timestamp_opt((self.beg / SEC) as i64, (self.beg % SEC) as u32);
+        let end = chrono::Utc.timestamp_opt((self.end / SEC) as i64, (self.end % SEC) as u32);
         f.debug_struct("NanoRange")
             .field("beg", &beg)
             .field("end", &end)

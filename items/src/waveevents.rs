@@ -4,8 +4,8 @@ use crate::xbinnedscalarevents::XBinnedScalarEvents;
 use crate::xbinnedwaveevents::XBinnedWaveEvents;
 use crate::{
     Appendable, ByteEstimate, Clearable, EventAppendable, EventsDyn, EventsNodeProcessor, FilterFittingInside, Fits,
-    FitsInside, FrameTypeInnerStatic, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SubFrId,
-    TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    FitsInside, FrameType, FrameTypeInnerStatic, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile,
+    SubFrId, TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
@@ -30,6 +30,14 @@ impl<NTY> WaveEvents<NTY> {
 }
 
 impl<NTY> WaveEvents<NTY> {
+    pub fn empty() -> Self {
+        Self {
+            tss: Vec::new(),
+            pulses: Vec::new(),
+            vals: Vec::new(),
+        }
+    }
+
     pub fn shape(&self) -> Result<Shape, Error> {
         if let Some(k) = self.vals.first() {
             let ret = Shape::Wave(k.len() as u32);
@@ -47,13 +55,12 @@ where
     const FRAME_TYPE_ID: u32 = crate::WAVE_EVENTS_FRAME_TYPE_ID + NTY::SUB;
 }
 
-impl<NTY> WaveEvents<NTY> {
-    pub fn empty() -> Self {
-        Self {
-            tss: vec![],
-            pulses: vec![],
-            vals: vec![],
-        }
+impl<NTY> FrameType for WaveEvents<NTY>
+where
+    NTY: NumOps,
+{
+    fn frame_type_id(&self) -> u32 {
+        <Self as FrameTypeInnerStatic>::FRAME_TYPE_ID
     }
 }
 

@@ -120,7 +120,7 @@ pub async fn get_binned(
                             error!("unexpected type id  got {}  exp {}", frame.tyid(), type_id_exp);
                         }
                         let n1 = frame.buf().len();
-                        match bincode::deserialize::<ExpectedType>(frame.buf()) {
+                        match rmp_serde::from_slice::<ExpectedType>(frame.buf()) {
                             Ok(item) => match item {
                                 Ok(item) => {
                                     match item {

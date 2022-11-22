@@ -6,7 +6,7 @@ use std::fmt;
 
 pub trait CollectorType: Send + Unpin + WithLen {
     type Input: Collectable;
-    type Output: ToJsonResult + Serialize;
+    type Output: crate::collect::Collected + ToJsonResult + Serialize;
 
     fn ingest(&mut self, src: &mut Self::Input);
     fn set_range_complete(&mut self);

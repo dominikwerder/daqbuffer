@@ -668,10 +668,20 @@ mod instant_serde {
     use super::*;
     use serde::Serializer;
     pub fn ser<S: Serializer>(x: &SystemTime, ser: S) -> Result<S::Ok, S::Error> {
+        use chrono::LocalResult;
         let dur = x.duration_since(std::time::UNIX_EPOCH).unwrap();
-        let dt = chrono::TimeZone::timestamp(&chrono::Utc, dur.as_secs() as i64, dur.subsec_nanos());
-        let s = dt.format("%Y-%m-%dT%H:%M:%S%.3f").to_string();
-        ser.serialize_str(&s)
+        let res = chrono::TimeZone::timestamp_opt(&chrono::Utc, dur.as_secs() as i64, dur.subsec_nanos());
+        match res {
+            LocalResult::None => Err(serde::ser::Error::custom(format!("Bad local instant conversion"))),
+            LocalResult::Single(dt) => {
+                let s = dt.format("%Y-%m-%dT%H:%M:%S%.3f").to_string();
+                ser.serialize_str(&s)
+            }
+            LocalResult::Ambiguous(dt, _dt2) => {
+                let s = dt.format("%Y-%m-%dT%H:%M:%S%.3f").to_string();
+                ser.serialize_str(&s)
+            }
+        }
     }
 }
 

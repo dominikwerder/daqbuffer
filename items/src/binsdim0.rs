@@ -1,6 +1,5 @@
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector, ToJsonBytes, ToJsonResult};
-use crate::ts_offs_from_abs;
 use crate::Appendable;
 use crate::FilterFittingInside;
 use crate::Fits;
@@ -12,6 +11,7 @@ use crate::ReadableFromFile;
 use crate::Sitemty;
 use crate::SubFrId;
 use crate::TimeBinnableDyn;
+use crate::{ts_offs_from_abs, FrameType};
 use crate::{NewEmpty, RangeOverlapInfo, WithLen};
 use crate::{TimeBinnableType, TimeBinnableTypeAggregator};
 use crate::{TimeBinned, TimeBinnerDyn, TimeBins};
@@ -43,6 +43,15 @@ where
     NTY: SubFrId,
 {
     const FRAME_TYPE_ID: u32 = crate::MIN_MAX_AVG_DIM_0_BINS_FRAME_TYPE_ID + NTY::SUB;
+}
+
+impl<NTY> FrameType for MinMaxAvgDim0Bins<NTY>
+where
+    NTY: SubFrId,
+{
+    fn frame_type_id(&self) -> u32 {
+        <Self as FrameTypeInnerStatic>::FRAME_TYPE_ID
+    }
 }
 
 impl<NTY> fmt::Debug for MinMaxAvgDim0Bins<NTY>
@@ -202,7 +211,7 @@ where
     }
 
     fn from_buf(buf: &[u8]) -> Result<Self, Error> {
-        let dec = serde_cbor::from_slice(&buf)?;
+        let dec = rmp_serde::from_slice(&buf)?;
         Ok(dec)
     }
 }
