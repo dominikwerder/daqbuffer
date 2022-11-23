@@ -813,7 +813,7 @@ mod test {
             end: DAY + HOUR * 8,
         };
         let chn = netpod::Channel {
-            backend: "testbackend".into(),
+            backend: "test-disk-databuffer".into(),
             name: "scalar-i32-be".into(),
             series: None,
         };

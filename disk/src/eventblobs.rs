@@ -254,7 +254,7 @@ mod test {
 
     fn read_expanded_for_range(range: netpod::NanoRange, nodeix: usize) -> Result<(usize, Vec<u64>), Error> {
         let chn = netpod::Channel {
-            backend: "testbackend".into(),
+            backend: "test-disk-databuffer".into(),
             name: "scalar-i32-be".into(),
             series: None,
         };

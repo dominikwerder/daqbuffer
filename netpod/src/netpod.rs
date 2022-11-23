@@ -3,10 +3,11 @@ pub mod query;
 pub mod status;
 pub mod streamext;
 
+use crate::log::*;
+use bytes::Bytes;
 use chrono::{DateTime, TimeZone, Utc};
 use err::Error;
-use futures_core::Stream;
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsVal;
 use std::collections::BTreeMap;
@@ -19,8 +20,6 @@ use std::str::FromStr;
 use std::task::{Context, Poll};
 use std::time::Duration;
 use timeunits::*;
-#[allow(unused_imports)]
-use tracing::{debug, error, info, trace, warn};
 use url::Url;
 
 pub const APP_JSON: &'static str = "application/json";
@@ -37,8 +36,8 @@ pub struct AggQuerySingleChannel {
 }
 
 pub struct BodyStream {
-    //pub receiver: async_channel::Receiver<Result<bytes::Bytes, Error>>,
-    pub inner: Box<dyn futures_core::Stream<Item = Result<bytes::Bytes, Error>> + Send + Unpin>,
+    //pub receiver: async_channel::Receiver<Result<Bytes, Error>>,
+    pub inner: Box<dyn Stream<Item = Result<Bytes, Error>> + Send + Unpin>,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -1748,7 +1747,7 @@ impl ByteSize {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct FileIoBufferSize(pub usize);
 
 impl FileIoBufferSize {

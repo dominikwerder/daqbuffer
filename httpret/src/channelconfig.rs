@@ -42,7 +42,7 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
             channel.backend, ncc.node_config.cluster.backend
         );
     }
-    if channel.backend() == "testbackend" {
+    if channel.backend() == "test-inmem" {
         if channel.name() == "inmem-d0-i32" {
             let ret = ChConf {
                 series: 1,

@@ -18,7 +18,7 @@ fn events_plain_json_00() -> Result<(), Error> {
         let cluster = &rh.cluster;
         events_plain_json(
             Channel {
-                backend: "testbackend".into(),
+                backend: "test-inmem".into(),
                 name: "inmem-d0-i32".into(),
                 series: None,
             },

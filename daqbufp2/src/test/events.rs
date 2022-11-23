@@ -23,7 +23,7 @@ use url::Url;
 fn ch_adhoc(name: &str) -> Channel {
     Channel {
         series: None,
-        backend: "testbackend".into(),
+        backend: "test-disk-databuffer".into(),
         name: name.into(),
     }
 }
@@ -31,7 +31,7 @@ fn ch_adhoc(name: &str) -> Channel {
 pub fn ch_gen(name: &str) -> Channel {
     Channel {
         series: None,
-        backend: "testbackend".into(),
+        backend: "test-disk-databuffer".into(),
         name: name.into(),
     }
 }

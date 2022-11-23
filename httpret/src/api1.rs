@@ -875,9 +875,9 @@ impl Api1EventsBinaryHandler {
         let chans = qu
             .channels()
             .iter()
-            .map(|x| Channel {
+            .map(|ch| Channel {
                 backend: backend.into(),
-                name: x.clone(),
+                name: ch.name().into(),
                 series: None,
             })
             .collect();
@@ -888,7 +888,7 @@ impl Api1EventsBinaryHandler {
             chans,
             qu.disk_io_tune().clone(),
             qu.decompress(),
-            qu.events_max(),
+            qu.events_max().unwrap_or(u64::MAX),
             status_id.clone(),
             node_config.clone(),
         );

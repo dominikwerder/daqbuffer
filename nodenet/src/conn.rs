@@ -108,7 +108,7 @@ async fn events_conn_handler_inner_try(
     }
 
     let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> =
-        if evq.channel().backend() == "testbackend" {
+        if evq.channel().backend() == "test-inmem" {
             warn!("TEST BACKEND DATA");
             use items_2::Empty;
             use netpod::timeunits::MS;

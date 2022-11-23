@@ -10,6 +10,7 @@ use tokio::fs::{File, OpenOptions};
 use tokio::io::AsyncWriteExt;
 
 pub async fn gen_test_data() -> Result<(), Error> {
+    let backend = String::from("test-disk-databuffer");
     let homedir = std::env::var("HOME").unwrap();
     let data_base_path = PathBuf::from(homedir).join("daqbuffer-testdata").join("databuffer");
     let ksprefix = String::from("ks");
@@ -21,7 +22,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         let chn = ChannelGenProps {
             config: ChannelConfig {
                 channel: Channel {
-                    backend: "testbackend".into(),
+                    backend: backend.clone(),
                     name: "scalar-i32-be".into(),
                     series: None,
                 },
@@ -40,7 +41,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         let chn = ChannelGenProps {
             config: ChannelConfig {
                 channel: Channel {
-                    backend: "testbackend".into(),
+                    backend: backend.clone(),
                     name: "wave-f64-be-n21".into(),
                     series: None,
                 },
@@ -59,7 +60,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         let chn = ChannelGenProps {
             config: ChannelConfig {
                 channel: Channel {
-                    backend: "testbackend".into(),
+                    backend: backend.clone(),
                     name: "wave-u16-le-n77".into(),
                     series: None,
                 },
@@ -78,7 +79,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         let chn = ChannelGenProps {
             config: ChannelConfig {
                 channel: Channel {
-                    backend: "testbackend".into(),
+                    backend: backend.clone(),
                     name: "tw-scalar-i32-be".into(),
                     series: None,
                 },
@@ -97,7 +98,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         let chn = ChannelGenProps {
             config: ChannelConfig {
                 channel: Channel {
-                    backend: "testbackend".into(),
+                    backend: backend.clone(),
                     name: "const-regular-scalar-i32-be".into(),
                     series: None,
                 },
