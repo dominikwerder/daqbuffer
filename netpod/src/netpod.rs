@@ -40,7 +40,7 @@ pub struct BodyStream {
     pub inner: Box<dyn Stream<Item = Result<Bytes, Error>> + Send + Unpin>,
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ScalarType {
     U8,
     U16,
@@ -54,6 +54,18 @@ pub enum ScalarType {
     F64,
     BOOL,
     STRING,
+}
+
+impl fmt::Debug for ScalarType {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{}", self.to_variant_str())
+    }
+}
+
+impl fmt::Display for ScalarType {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{}", self.to_variant_str())
+    }
 }
 
 impl Serialize for ScalarType {
@@ -347,9 +359,9 @@ pub struct Node {
     pub host: String,
     // TODO for `listen` and the ports, would be great to allow a default on Cluster level.
     pub listen: String,
-    #[serde(deserialize_with = "port_from_any")]
+    #[serde(deserialize_with = "serde_port::port_from_any")]
     pub port: u16,
-    #[serde(deserialize_with = "port_from_any")]
+    #[serde(deserialize_with = "serde_port::port_from_any")]
     pub port_raw: u16,
     pub cache_base_path: PathBuf,
     pub sf_databuffer: Option<SfDatabuffer>,
@@ -358,56 +370,76 @@ pub struct Node {
     pub prometheus_api_bind: Option<SocketAddr>,
 }
 
-struct Visit1 {}
+mod serde_port {
+    use super::*;
 
-impl<'de> serde::de::Visitor<'de> for Visit1 {
-    type Value = u16;
+    struct Vis;
 
-    fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "a tcp port number, in numeric or string form.")
-    }
+    impl<'de> serde::de::Visitor<'de> for Vis {
+        type Value = u16;
 
-    fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        if v > u16::MAX as u64 {
-            Err(serde::de::Error::invalid_type(
-                serde::de::Unexpected::Unsigned(v),
-                &self,
-            ))
-        } else {
-            self.visit_i64(v as i64)
+        fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            write!(fmt, "a tcp port number, in numeric or string form.")
+        }
+
+        fn visit_u64<E>(self, val: u64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            if val > u16::MAX as u64 {
+                Err(serde::de::Error::invalid_type(
+                    serde::de::Unexpected::Unsigned(val),
+                    &self,
+                ))
+            } else {
+                self.visit_i64(val as i64)
+            }
+        }
+
+        fn visit_i64<E>(self, val: i64) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            if val < 1 || val > u16::MAX as i64 {
+                Err(serde::de::Error::invalid_type(
+                    serde::de::Unexpected::Signed(val),
+                    &self,
+                ))
+            } else {
+                Ok(val as u16)
+            }
+        }
+
+        fn visit_str<E>(self, val: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            match val.parse::<u16>() {
+                Err(_) => Err(serde::de::Error::invalid_type(serde::de::Unexpected::Str(val), &self)),
+                Ok(v) => Ok(v),
+            }
         }
     }
 
-    fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+    pub fn port_from_any<'de, D>(de: D) -> Result<u16, D::Error>
     where
-        E: serde::de::Error,
+        D: serde::Deserializer<'de>,
     {
-        if v < 1 || v > u16::MAX as i64 {
-            Err(serde::de::Error::invalid_type(serde::de::Unexpected::Signed(v), &self))
-        } else {
-            Ok(v as u16)
-        }
+        de.deserialize_any(Vis)
     }
 
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        match v.parse::<u16>() {
-            Err(_) => Err(serde::de::Error::invalid_type(serde::de::Unexpected::Str(v), &self)),
-            Ok(v) => Ok(v),
+    #[test]
+    fn test_port_from_any() {
+        #[derive(Deserialize)]
+        struct Conf {
+            #[serde(deserialize_with = "port_from_any")]
+            port: u16,
         }
+        let conf: Conf = serde_json::from_str(r#"{"port":"9192"}"#).unwrap();
+        assert_eq!(conf.port, 9192);
+        let conf: Conf = serde_json::from_str(r#"{"port":9194}"#).unwrap();
+        assert_eq!(conf.port, 9194);
     }
-}
-
-fn port_from_any<'de, D>(de: D) -> Result<u16, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    de.deserialize_any(Visit1 {})
 }
 
 impl Node {
@@ -775,88 +807,95 @@ pub enum Shape {
     Image(u32, u32),
 }
 
-impl Serialize for Shape {
-    fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error>
-    where
-        S::Error: serde::ser::Error,
-    {
-        use Shape::*;
-        match self {
-            Scalar => ser.collect_seq([0u32; 0].iter()),
-            Wave(a) => ser.collect_seq([*a].iter()),
-            Image(a, b) => ser.collect_seq([*a, *b].iter()),
-        }
-    }
-}
+mod serde_shape {
+    use super::*;
 
-struct ShapeVis;
-
-impl<'de> serde::de::Visitor<'de> for ShapeVis {
-    type Value = Shape;
-
-    fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.write_str("a string describing the Shape variant")
-    }
-
-    fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-    where
-        E: serde::de::Error,
-    {
-        if v == "Scalar" {
-            Ok(Shape::Scalar)
-        } else {
-            Err(E::custom(format!("unexpected value: {v:?}")))
+    impl Serialize for Shape {
+        fn serialize<S: serde::Serializer>(&self, ser: S) -> Result<S::Ok, S::Error>
+        where
+            S::Error: serde::ser::Error,
+        {
+            use Shape::*;
+            match self {
+                Scalar => ser.collect_seq([0u32; 0].iter()),
+                Wave(a) => ser.collect_seq([*a].iter()),
+                Image(a, b) => ser.collect_seq([*a, *b].iter()),
+            }
         }
     }
 
-    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-    where
-        A: serde::de::MapAccess<'de>,
-    {
-        use serde::de::Error;
-        if let Some(key) = map.next_key::<String>()? {
-            if key == "Wave" {
-                let n: u32 = map.next_value()?;
-                Ok(Shape::Wave(n))
-            } else if key == "Image" {
-                let a = map.next_value::<[u32; 2]>()?;
+    struct ShapeVis;
+
+    impl<'de> serde::de::Visitor<'de> for ShapeVis {
+        type Value = Shape;
+
+        fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            fmt.write_str("a vector describing the shape")
+        }
+
+        // TODO unused, do not support deser from any for Shape
+        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            if v == "Scalar" {
+                Ok(Shape::Scalar)
+            } else {
+                Err(E::custom(format!("unexpected value: {v:?}")))
+            }
+        }
+
+        // TODO unused, do not support deser from any for Shape
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::MapAccess<'de>,
+        {
+            use serde::de::Error;
+            if let Some(key) = map.next_key::<String>()? {
+                if key == "Wave" {
+                    let n: u32 = map.next_value()?;
+                    Ok(Shape::Wave(n))
+                } else if key == "Image" {
+                    let a = map.next_value::<[u32; 2]>()?;
+                    Ok(Shape::Image(a[0], a[1]))
+                } else {
+                    Err(A::Error::custom(format!("unexpected key {key:?}")))
+                }
+            } else {
+                Err(A::Error::custom(format!("invalid shape format")))
+            }
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let mut a = vec![];
+            while let Some(item) = seq.next_element()? {
+                let n: u32 = item;
+                a.push(n);
+            }
+            if a.len() == 0 {
+                Ok(Shape::Scalar)
+            } else if a.len() == 1 {
+                Ok(Shape::Wave(a[0]))
+            } else if a.len() == 2 {
                 Ok(Shape::Image(a[0], a[1]))
             } else {
-                Err(A::Error::custom(format!("unexpected key {key:?}")))
+                use serde::de::Error;
+                Err(A::Error::custom(format!("bad shape")))
             }
-        } else {
-            Err(A::Error::custom(format!("invalid shape format")))
         }
     }
 
-    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-    where
-        A: serde::de::SeqAccess<'de>,
-    {
-        let mut a = vec![];
-        while let Some(item) = seq.next_element()? {
-            let n: u32 = item;
-            a.push(n);
+    impl<'de> Deserialize<'de> for Shape {
+        fn deserialize<D>(de: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            let res = de.deserialize_seq(ShapeVis);
+            res
         }
-        if a.len() == 0 {
-            Ok(Shape::Scalar)
-        } else if a.len() == 1 {
-            Ok(Shape::Wave(a[0]))
-        } else if a.len() == 2 {
-            Ok(Shape::Image(a[0], a[1]))
-        } else {
-            use serde::de::Error;
-            Err(A::Error::custom(format!("bad shape")))
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for Shape {
-    fn deserialize<D>(de: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        de.deserialize_any(ShapeVis)
     }
 }
 
@@ -994,22 +1033,18 @@ fn test_shape_serde() {
     assert_eq!(s, r#"{"Wave":8}"#);
     let s = serde_json::to_string(&ShapeOld::Image(42, 43)).unwrap();
     assert_eq!(s, r#"{"Image":[42,43]}"#);
-    let s = serde_json::from_str::<ShapeOld>(r#""Scalar""#).unwrap();
+    let s: ShapeOld = serde_json::from_str(r#""Scalar""#).unwrap();
     assert_eq!(s, ShapeOld::Scalar);
-    let s = serde_json::from_str::<ShapeOld>(r#"{"Wave": 123}"#).unwrap();
+    let s: ShapeOld = serde_json::from_str(r#"{"Wave": 123}"#).unwrap();
     assert_eq!(s, ShapeOld::Wave(123));
-    let s = serde_json::from_str::<ShapeOld>(r#"{"Image":[77, 78]}"#).unwrap();
+    let s: ShapeOld = serde_json::from_str(r#"{"Image":[77, 78]}"#).unwrap();
     assert_eq!(s, ShapeOld::Image(77, 78));
-    let s = serde_json::from_str::<Shape>(r#"[]"#).unwrap();
+    let s: Shape = serde_json::from_str(r#"[]"#).unwrap();
     assert_eq!(s, Shape::Scalar);
-    let s = serde_json::from_str::<Shape>(r#"[12]"#).unwrap();
+    let s: Shape = serde_json::from_str(r#"[12]"#).unwrap();
     assert_eq!(s, Shape::Wave(12));
-    let s = serde_json::from_str::<Shape>(r#"[12, 13]"#).unwrap();
+    let s: Shape = serde_json::from_str(r#"[12, 13]"#).unwrap();
     assert_eq!(s, Shape::Image(12, 13));
-    let s = serde_json::from_str::<Shape>(r#""Scalar""#).unwrap();
-    assert_eq!(s, Shape::Scalar);
-    let s = serde_json::from_str::<Shape>(r#"{"Wave":55}"#).unwrap();
-    assert_eq!(s, Shape::Wave(55));
 }
 
 pub trait HasShape {

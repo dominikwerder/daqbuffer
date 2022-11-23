@@ -1,3 +1,4 @@
+use crate::frame::bincode_from_slice;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector, ToJsonBytes, ToJsonResult};
 use crate::ts_offs_from_abs;
@@ -208,7 +209,7 @@ where
     }
 
     fn from_buf(buf: &[u8]) -> Result<Self, Error> {
-        let dec = rmp_serde::from_slice(&buf)?;
+        let dec = bincode_from_slice(buf)?;
         Ok(dec)
     }
 }
