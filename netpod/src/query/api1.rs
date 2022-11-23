@@ -1,5 +1,5 @@
+use crate::query::datetime::Datetime;
 use crate::{DiskIoTune, FileIoBufferSize, ReadSys};
-use chrono::{DateTime, FixedOffset};
 use err::Error;
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -16,96 +16,27 @@ fn bool_is_true(x: &bool) -> bool {
 pub struct Api1Range {
     #[serde(rename = "type", default, skip_serializing_if = "String::is_empty")]
     ty: String,
-    #[serde(
-        rename = "startDate",
-        serialize_with = "datetime_serde::ser",
-        deserialize_with = "datetime_serde::de"
-    )]
-    beg: DateTime<FixedOffset>,
-    #[serde(
-        rename = "endDate",
-        serialize_with = "datetime_serde::ser",
-        deserialize_with = "datetime_serde::de"
-    )]
-    end: DateTime<FixedOffset>,
-}
-
-mod datetime_serde {
-    use super::*;
-    use serde::de::Visitor;
-    use serde::{Deserializer, Serializer};
-
-    // RFC 3339 / ISO 8601
-
-    pub fn ser<S: Serializer>(val: &DateTime<FixedOffset>, ser: S) -> Result<S::Ok, S::Error> {
-        use fmt::Write;
-        let mut s = String::with_capacity(64);
-        write!(&mut s, "{}", val.format("%Y-%m-%dT%H:%M:%S")).map_err(|_| serde::ser::Error::custom("fmt"))?;
-        let mus = val.timestamp_subsec_micros();
-        if mus % 1000 != 0 {
-            write!(&mut s, "{}", val.format(".%6f")).map_err(|_| serde::ser::Error::custom("fmt"))?;
-        } else if mus != 0 {
-            write!(&mut s, "{}", val.format(".%3f")).map_err(|_| serde::ser::Error::custom("fmt"))?;
-        }
-        if val.offset().local_minus_utc() == 0 {
-            write!(&mut s, "Z").map_err(|_| serde::ser::Error::custom("fmt"))?;
-        } else {
-            write!(&mut s, "{}", val.format("%:z")).map_err(|_| serde::ser::Error::custom("fmt"))?;
-        }
-        ser.serialize_str(&s)
-    }
-
-    struct DateTimeVisitor {}
-
-    impl<'de> Visitor<'de> for DateTimeVisitor {
-        type Value = DateTime<FixedOffset>;
-
-        fn expecting(&self, fmt: &mut fmt::Formatter) -> std::fmt::Result {
-            write!(fmt, "DateTimeWithOffset")
-        }
-
-        fn visit_str<E>(self, val: &str) -> Result<Self::Value, E>
-        where
-            E: serde::de::Error,
-        {
-            let res = DateTime::<FixedOffset>::parse_from_rfc3339(val);
-            match res {
-                Ok(res) => Ok(res),
-                // TODO deliver better fine grained error
-                Err(e) => Err(serde::de::Error::custom(format!("{e}"))),
-            }
-        }
-    }
-
-    pub fn de<'de, D>(de: D) -> Result<DateTime<FixedOffset>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        de.deserialize_str(DateTimeVisitor {})
-    }
+    #[serde(rename = "startDate")]
+    beg: Datetime,
+    #[serde(rename = "endDate")]
+    end: Datetime,
 }
 
 impl Api1Range {
-    pub fn new<A, B>(beg: A, end: B) -> Result<Self, Error>
-    where
-        A: TryInto<DateTime<FixedOffset>>,
-        B: TryInto<DateTime<FixedOffset>>,
-        <A as TryInto<DateTime<FixedOffset>>>::Error: fmt::Debug,
-        <B as TryInto<DateTime<FixedOffset>>>::Error: fmt::Debug,
-    {
+    pub fn new(beg: Datetime, end: Datetime) -> Result<Self, Error> {
         let ret = Self {
             ty: String::new(),
-            beg: beg.try_into().map_err(|e| format!("{e:?}"))?,
-            end: end.try_into().map_err(|e| format!("{e:?}"))?,
+            beg,
+            end,
         };
         Ok(ret)
     }
 
-    pub fn beg(&self) -> &DateTime<FixedOffset> {
+    pub fn beg(&self) -> &Datetime {
         &self.beg
     }
 
-    pub fn end(&self) -> &DateTime<FixedOffset> {
+    pub fn end(&self) -> &Datetime {
         &self.end
     }
 }
@@ -132,7 +63,7 @@ fn serde_de_range_offset() {
 
 #[test]
 fn serde_ser_range_offset() {
-    use chrono::{NaiveDate, TimeZone};
+    use chrono::{FixedOffset, NaiveDate, TimeZone};
     let beg = FixedOffset::east_opt(60 * 60 * 3)
         .unwrap()
         .from_local_datetime(
@@ -153,30 +84,32 @@ fn serde_ser_range_offset() {
         )
         .earliest()
         .unwrap();
-    let range = Api1Range::new(beg, end).unwrap();
+    let range = Api1Range::new(beg.into(), end.into()).unwrap();
     let js = serde_json::to_string(&range).unwrap();
     let exp = r#"{"startDate":"2022-11-22T13:14:15.016+03:00","endDate":"2022-11-22T13:14:15.800-01:00"}"#;
     assert_eq!(js, exp);
 }
 
 #[test]
-fn serde_ser_range_01() {
-    let beg: DateTime<FixedOffset> = "2022-11-22T02:03:04Z".parse().unwrap();
-    let end: DateTime<FixedOffset> = "2022-11-22T02:03:04.123Z".parse().unwrap();
+fn serde_ser_range_01() -> Result<(), Error> {
+    let beg = Datetime::try_from("2022-11-22T02:03:04Z")?;
+    let end = Datetime::try_from("2022-11-22T02:03:04.123Z")?;
     let range = Api1Range::new(beg, end).unwrap();
     let js = serde_json::to_string(&range).unwrap();
     let exp = r#"{"startDate":"2022-11-22T02:03:04Z","endDate":"2022-11-22T02:03:04.123Z"}"#;
     assert_eq!(js, exp);
+    Ok(())
 }
 
 #[test]
-fn serde_ser_range_02() {
-    let beg: DateTime<FixedOffset> = "2022-11-22T02:03:04.987654Z".parse().unwrap();
-    let end: DateTime<FixedOffset> = "2022-11-22T02:03:04.777000Z".parse().unwrap();
+fn serde_ser_range_02() -> Result<(), Error> {
+    let beg = Datetime::try_from("2022-11-22T02:03:04.987654Z")?;
+    let end = Datetime::try_from("2022-11-22T02:03:04.777000Z")?;
     let range = Api1Range::new(beg, end).unwrap();
     let js = serde_json::to_string(&range).unwrap();
     let exp = r#"{"startDate":"2022-11-22T02:03:04.987654Z","endDate":"2022-11-22T02:03:04.777Z"}"#;
     assert_eq!(js, exp);
+    Ok(())
 }
 
 /// In Api1, the list of channels consists of either `BACKEND/CHANNELNAME`
@@ -356,9 +289,9 @@ impl Api1Query {
 }
 
 #[test]
-fn serde_api1_query() {
-    let beg: DateTime<FixedOffset> = "2022-11-22T08:09:10Z".parse().unwrap();
-    let end: DateTime<FixedOffset> = "2022-11-23T08:11:05.455009+02:00".parse().unwrap();
+fn serde_api1_query() -> Result<(), Error> {
+    let beg = Datetime::try_from("2022-11-22T08:09:10Z")?;
+    let end = Datetime::try_from("2022-11-23T08:11:05.455009+02:00")?;
     let range = Api1Range::new(beg, end).unwrap();
     let ch0 = ChannelTuple::from_name("nameonly".into());
     let ch1 = ChannelTuple::new("somebackend".into(), "somechan".into());
@@ -368,4 +301,5 @@ fn serde_api1_query() {
         js,
         r#"{"range":{"startDate":"2022-11-22T08:09:10Z","endDate":"2022-11-23T08:11:05.455009+02:00"},"channels":["nameonly","somebackend/somechan"]}"#
     );
+    Ok(())
 }

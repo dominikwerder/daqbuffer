@@ -25,9 +25,7 @@ fn events_f64_plain() -> Result<(), Error> {
         let node = &cluster.nodes[0];
         let url: Url = format!("http://{}:{}/api/1/query", node.host, node.port).parse()?;
         let accept = "application/octet-stream";
-        let beg: DateTime<Utc> = "1970-01-01T00:00:00Z".parse()?;
-        let end: DateTime<Utc> = "1970-01-01T00:01:00Z".parse()?;
-        let range = Api1Range::new(beg, end)?;
+        let range = Api1Range::new("1970-01-01T00:00:00Z".try_into()?, "1970-01-01T00:01:00Z".try_into()?)?;
         // TODO the channel list needs to get pre-processed to check for backend prefix!
         let ch = ChannelTuple::new("test-disk-databuffer".into(), "scalar-i32-be".into());
         let qu = Api1Query::new(range, vec![ch]);

@@ -4,6 +4,7 @@ Error handling and reporting.
 
 use serde::{Deserialize, Serialize};
 use std::array::TryFromSliceError;
+use std::convert::Infallible;
 use std::fmt;
 use std::net::AddrParseError;
 use std::num::{ParseFloatError, ParseIntError};
@@ -236,6 +237,12 @@ impl From<PublicError> for Error {
             reason: k.reason(),
             parent: None,
         }
+    }
+}
+
+impl ToErr for Infallible {
+    fn to_err(self) -> Error {
+        Error::with_msg_no_trace(String::new())
     }
 }
 
