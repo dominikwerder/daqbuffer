@@ -30,6 +30,7 @@ use net::SocketAddr;
 use netpod::log::*;
 use netpod::query::BinnedQuery;
 use netpod::timeunits::SEC;
+use netpod::ProxyConfig;
 use netpod::{FromUrl, NodeConfigCached, NodeStatus, NodeStatusArchiverAppliance};
 use netpod::{ACCEPT_ALL, APP_JSON, APP_JSON_LINES, APP_OCTET};
 use nodenet::conn::events_service;
@@ -44,6 +45,8 @@ use std::{future, net, panic, pin, task};
 use task::{Context, Poll};
 use tracing::Instrument;
 use url::Url;
+
+pub const PSI_DAQBUFFER_SERVICE_MARK: &'static str = "PSI-Daqbuffer-Service-Mark";
 
 pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
     static STATUS_BOARD_INIT: Once = Once::new();
@@ -132,6 +135,41 @@ where
 
 impl<F> UnwindSafe for Cont<F> {}
 
+pub struct ReqCtx {
+    pub marks: Vec<String>,
+    pub mark: String,
+}
+
+impl ReqCtx {
+    fn with_node<T>(req: &Request<T>, nc: &NodeConfigCached) -> Self {
+        let mut marks = Vec::new();
+        for (n, v) in req.headers().iter() {
+            if n == PSI_DAQBUFFER_SERVICE_MARK {
+                marks.push(String::from_utf8_lossy(v.as_bytes()).to_string());
+            }
+        }
+        Self {
+            marks,
+            mark: format!("{}:{}", nc.node_config.name, nc.node.port),
+        }
+    }
+}
+
+impl ReqCtx {
+    fn with_proxy<T>(req: &Request<T>, proxy: &ProxyConfig) -> Self {
+        let mut marks = Vec::new();
+        for (n, v) in req.headers().iter() {
+            if n == PSI_DAQBUFFER_SERVICE_MARK {
+                marks.push(String::from_utf8_lossy(v.as_bytes()).to_string());
+            }
+        }
+        Self {
+            marks,
+            mark: format!("{}:{}", proxy.name, proxy.port),
+        }
+    }
+}
+
 // TODO remove because I want error bodies to be json.
 pub fn response_err<T>(status: StatusCode, msg: T) -> Result<Response<Body>, Error>
 where
@@ -193,11 +231,28 @@ macro_rules! static_http_api1 {
 }
 
 async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    let ctx = ReqCtx::with_node(&req, node_config);
+    let mut res = http_service_inner(req, &ctx, node_config).await?;
+    let hm = res.headers_mut();
+    hm.append("Access-Control-Allow-Origin", "*".parse().unwrap());
+    hm.append("Access-Control-Allow-Headers", "*".parse().unwrap());
+    for m in &ctx.marks {
+        hm.append(PSI_DAQBUFFER_SERVICE_MARK, m.parse().unwrap());
+    }
+    hm.append(PSI_DAQBUFFER_SERVICE_MARK, ctx.mark.parse().unwrap());
+    Ok(res)
+}
+
+async fn http_service_inner(
+    req: Request<Body>,
+    ctx: &ReqCtx,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/4/node_status" {
         if req.method() == Method::GET {
-            Ok(node_status(req, &node_config).await?)
+            Ok(node_status(req, ctx, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -245,34 +300,34 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
     } else if let Some(h) = events::EventsHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = events::EventsHandlerScylla::handler(&req) {
-        h.handle(req, &node_config).await
+        h.handle(req, ctx, &node_config).await
     } else if let Some(h) = events::BinnedHandlerScylla::handler(&req) {
-        h.handle(req, &node_config).await
+        h.handle(req, ctx, &node_config).await
     } else if let Some(h) = channel_status::ConnectionStatusEvents::handler(&req) {
-        h.handle(req, &node_config).await
+        h.handle(req, ctx, &node_config).await
     } else if let Some(h) = channel_status::ChannelConnectionStatusEvents::handler(&req) {
-        h.handle(req, &node_config).await
+        h.handle(req, ctx, &node_config).await
     } else if path == "/api/4/binned" {
         if req.method() == Method::GET {
-            Ok(binned(req, node_config).await?)
+            Ok(binned(req, ctx, node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else if path == "/api/4/prebinned" {
         if req.method() == Method::GET {
-            Ok(prebinned(req, &node_config).await?)
+            Ok(prebinned(req, ctx, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else if path == "/api/4/table_sizes" {
         if req.method() == Method::GET {
-            Ok(table_sizes(req, &node_config).await?)
+            Ok(table_sizes(req, ctx, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else if path == "/api/4/random/channel" {
         if req.method() == Method::GET {
-            Ok(random_channel(req, &node_config).await?)
+            Ok(random_channel(req, ctx, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -284,25 +339,25 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         }
     } else if path == "/api/4/clear_cache" {
         if req.method() == Method::GET {
-            Ok(clear_cache_all(req, &node_config).await?)
+            Ok(clear_cache_all(req, ctx, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else if path == "/api/4/update_db_with_channel_names" {
         if req.method() == Method::GET {
-            Ok(update_db_with_channel_names(req, &node_config).await?)
+            Ok(update_db_with_channel_names(req, ctx, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else if path == "/api/4/update_db_with_all_channel_configs" {
         if req.method() == Method::GET {
-            Ok(update_db_with_all_channel_configs(req, &node_config).await?)
+            Ok(update_db_with_all_channel_configs(req, ctx, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else if path == "/api/4/update_search_cache" {
         if req.method() == Method::GET {
-            Ok(update_search_cache(req, &node_config).await?)
+            Ok(update_search_cache(req, ctx, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -311,7 +366,7 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
     } else if let Some(h) = settings::SettingsThreadsMaxHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = api1::Api1EventsBinaryHandler::handler(&req) {
-        h.handle(req, &node_config).await
+        h.handle(req, ctx, &node_config).await
     } else if let Some(h) = evinfo::EventInfoScan::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = pulsemap::MapPulseScyllaHandler::handler(&req) {
@@ -387,8 +442,8 @@ impl StatusBoardAllHandler {
     }
 }
 
-async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    match binned_inner(req, node_config).await {
+async fn binned(req: Request<Body>, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    match binned_inner(req, ctx, node_config).await {
         Ok(ret) => Ok(ret),
         Err(e) => {
             error!("fn binned: {e:?}");
@@ -397,7 +452,11 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
     }
 }
 
-async fn binned_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+async fn binned_inner(
+    req: Request<Body>,
+    ctx: &ReqCtx,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let url = Url::parse(&format!("dummy:{}", head.uri))?;
     let query = BinnedQuery::from_url(&url).map_err(|e| {
@@ -416,8 +475,8 @@ async fn binned_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Res
         debug!("binned STARTING  {:?}", query);
     });
     match head.headers.get(http::header::ACCEPT) {
-        Some(v) if v == APP_OCTET => binned_binary(query, chconf, node_config).await,
-        Some(v) if v == APP_JSON || v == ACCEPT_ALL => binned_json(query, chconf, node_config).await,
+        Some(v) if v == APP_OCTET => binned_binary(query, chconf, &ctx, node_config).await,
+        Some(v) if v == APP_JSON || v == ACCEPT_ALL => binned_json(query, chconf, &ctx, node_config).await,
         _ => Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?),
     }
 }
@@ -425,6 +484,7 @@ async fn binned_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Res
 async fn binned_binary(
     query: BinnedQuery,
     chconf: ChConf,
+    _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
 ) -> Result<Response<Body>, Error> {
     let body_stream =
@@ -439,6 +499,7 @@ async fn binned_binary(
 async fn binned_json(
     query: BinnedQuery,
     chconf: ChConf,
+    _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
 ) -> Result<Response<Body>, Error> {
     let body_stream = disk::binned::binned_json(&query, chconf.scalar_type, chconf.shape, node_config).await?;
@@ -449,8 +510,8 @@ async fn binned_json(
     Ok(res)
 }
 
-async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    match prebinned_inner(req, node_config).await {
+async fn prebinned(req: Request<Body>, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    match prebinned_inner(req, ctx, node_config).await {
         Ok(ret) => Ok(ret),
         Err(e) => {
             error!("fn prebinned: {e:?}");
@@ -459,7 +520,11 @@ async fn prebinned(req: Request<Body>, node_config: &NodeConfigCached) -> Result
     }
 }
 
-async fn prebinned_inner(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+async fn prebinned_inner(
+    req: Request<Body>,
+    _ctx: &ReqCtx,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let query = PreBinnedQuery::from_request(&head)?;
     let desc = format!(
@@ -486,7 +551,11 @@ async fn prebinned_inner(req: Request<Body>, node_config: &NodeConfigCached) -> 
     Ok(ret)
 }
 
-async fn node_status(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+async fn node_status(
+    req: Request<Body>,
+    _ctx: &ReqCtx,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
     let (_head, _body) = req.into_parts();
     let archiver_appliance_status = match node_config.node.archiver_appliance.as_ref() {
         Some(k) => {
@@ -525,7 +594,11 @@ async fn node_status(req: Request<Body>, node_config: &NodeConfigCached) -> Resu
     Ok(ret)
 }
 
-async fn table_sizes(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+async fn table_sizes(
+    req: Request<Body>,
+    _ctx: &ReqCtx,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
     let (_head, _body) = req.into_parts();
     let sizes = dbconn::table_sizes(node_config).await?;
     let mut ret = String::new();
@@ -537,14 +610,22 @@ async fn table_sizes(req: Request<Body>, node_config: &NodeConfigCached) -> Resu
     Ok(ret)
 }
 
-pub async fn random_channel(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+pub async fn random_channel(
+    req: Request<Body>,
+    _ctx: &ReqCtx,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
     let (_head, _body) = req.into_parts();
     let ret = dbconn::random_channel(node_config).await?;
     let ret = response(StatusCode::OK).body(Body::from(ret))?;
     Ok(ret)
 }
 
-pub async fn clear_cache_all(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+pub async fn clear_cache_all(
+    req: Request<Body>,
+    _ctx: &ReqCtx,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let dry = match head.uri.query() {
         Some(q) => q.contains("dry"),
@@ -559,6 +640,7 @@ pub async fn clear_cache_all(req: Request<Body>, node_config: &NodeConfigCached)
 
 pub async fn update_db_with_channel_names(
     req: Request<Body>,
+    _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
 ) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
@@ -594,6 +676,7 @@ pub async fn update_db_with_channel_names(
 
 pub async fn update_db_with_channel_names_3(
     req: Request<Body>,
+    _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
 ) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
@@ -616,6 +699,7 @@ pub async fn update_db_with_channel_names_3(
 
 pub async fn update_db_with_all_channel_configs(
     req: Request<Body>,
+    _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
 ) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
@@ -636,7 +720,11 @@ pub async fn update_db_with_all_channel_configs(
     Ok(ret)
 }
 
-pub async fn update_search_cache(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+pub async fn update_search_cache(
+    req: Request<Body>,
+    _ctx: &ReqCtx,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
         Some(q) => q.contains("dry"),

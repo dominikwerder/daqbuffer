@@ -112,8 +112,8 @@ macro_rules! pipe3 {
 macro_rules! pipe2 {
     ($nty:ident, $end:expr, $shape:expr, $agg_kind:expr, $event_blobs:expr) => {
         match $end {
-            ByteOrder::LE => pipe3!($nty, LittleEndian, $shape, $agg_kind, $event_blobs),
-            ByteOrder::BE => pipe3!($nty, BigEndian, $shape, $agg_kind, $event_blobs),
+            ByteOrder::Little => pipe3!($nty, LittleEndian, $shape, $agg_kind, $event_blobs),
+            ByteOrder::Big => pipe3!($nty, BigEndian, $shape, $agg_kind, $event_blobs),
         }
     };
 }

@@ -152,8 +152,10 @@ where
 macro_rules! match_end {
     ($f:expr, $nty:ident, $end:expr, $scalar_type:expr, $shape:expr, $agg_kind:expr, $node_config:expr) => {
         match $end {
-            ByteOrder::LE => channel_exec_nty_end::<_, $nty, _>($f, LittleEndian {}, $scalar_type, $shape, $agg_kind),
-            ByteOrder::BE => channel_exec_nty_end::<_, $nty, _>($f, BigEndian {}, $scalar_type, $shape, $agg_kind),
+            ByteOrder::Little => {
+                channel_exec_nty_end::<_, $nty, _>($f, LittleEndian {}, $scalar_type, $shape, $agg_kind)
+            }
+            ByteOrder::Big => channel_exec_nty_end::<_, $nty, _>($f, BigEndian {}, $scalar_type, $shape, $agg_kind),
         }
     };
 }
@@ -201,7 +203,7 @@ where
         f,
         scalar_type,
         // TODO TODO TODO is the byte order ever important here?
-        ByteOrder::LE,
+        ByteOrder::Little,
         shape,
         agg_kind,
         node_config,

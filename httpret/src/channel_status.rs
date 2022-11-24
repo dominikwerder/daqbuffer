@@ -1,5 +1,6 @@
 use crate::bodystream::response;
 use crate::err::Error;
+use crate::ReqCtx;
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
 use netpod::query::ChannelStateEventsQuery;
@@ -17,7 +18,12 @@ impl ConnectionStatusEvents {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(
+        &self,
+        req: Request<Body>,
+        _ctx: &ReqCtx,
+        node_config: &NodeConfigCached,
+    ) -> Result<Response<Body>, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -70,7 +76,12 @@ impl ChannelConnectionStatusEvents {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(
+        &self,
+        req: Request<Body>,
+        _ctx: &ReqCtx,
+        node_config: &NodeConfigCached,
+    ) -> Result<Response<Body>, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req

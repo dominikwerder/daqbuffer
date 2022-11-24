@@ -1,6 +1,6 @@
 use crate::channelconfig::{chconf_from_events_binary, chconf_from_events_json};
 use crate::err::Error;
-use crate::{response, response_err, BodyStream, ToPublicResponse};
+use crate::{response, response_err, BodyStream, ReqCtx, ToPublicResponse};
 use futures_util::{Stream, StreamExt, TryStreamExt};
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
@@ -164,17 +164,27 @@ impl EventsHandlerScylla {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(
+        &self,
+        req: Request<Body>,
+        ctx: &ReqCtx,
+        node_config: &NodeConfigCached,
+    ) -> Result<Response<Body>, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
-        match self.fetch(req, node_config).await {
+        match self.fetch(req, ctx, node_config).await {
             Ok(ret) => Ok(ret),
             Err(e) => Ok(e.to_public_response()),
         }
     }
 
-    async fn fetch(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    async fn fetch(
+        &self,
+        req: Request<Body>,
+        ctx: &ReqCtx,
+        node_config: &NodeConfigCached,
+    ) -> Result<Response<Body>, Error> {
         info!("EventsHandlerScylla  req: {:?}", req);
         let accept_def = APP_JSON;
         let accept = req
@@ -182,14 +192,19 @@ impl EventsHandlerScylla {
             .get(http::header::ACCEPT)
             .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
         if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
-            Ok(self.gather(req, node_config).await?)
+            Ok(self.gather(req, ctx, node_config).await?)
         } else {
             let ret = response_err(StatusCode::NOT_ACCEPTABLE, format!("Unsupported Accept: {:?}", accept))?;
             Ok(ret)
         }
     }
 
-    async fn gather(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    async fn gather(
+        &self,
+        req: Request<Body>,
+        _ctx: &ReqCtx,
+        node_config: &NodeConfigCached,
+    ) -> Result<Response<Body>, Error> {
         let self_name = std::any::type_name::<Self>();
         let (head, _body) = req.into_parts();
         warn!("TODO PlainEventsQuery needs to take AggKind to do x-binning");
@@ -303,11 +318,16 @@ impl BinnedHandlerScylla {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(
+        &self,
+        req: Request<Body>,
+        ctx: &ReqCtx,
+        node_config: &NodeConfigCached,
+    ) -> Result<Response<Body>, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
-        match self.fetch(req, node_config).await {
+        match self.fetch(req, ctx, node_config).await {
             Ok(ret) => Ok(ret),
             Err(e) => {
                 eprintln!("error: {e}");
@@ -316,7 +336,12 @@ impl BinnedHandlerScylla {
         }
     }
 
-    async fn fetch(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    async fn fetch(
+        &self,
+        req: Request<Body>,
+        ctx: &ReqCtx,
+        node_config: &NodeConfigCached,
+    ) -> Result<Response<Body>, Error> {
         info!("BinnedHandlerScylla  req: {:?}", req);
         let accept_def = APP_JSON;
         let accept = req
@@ -324,14 +349,19 @@ impl BinnedHandlerScylla {
             .get(http::header::ACCEPT)
             .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
         if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
-            Ok(self.gather(req, node_config).await?)
+            Ok(self.gather(req, ctx, node_config).await?)
         } else {
             let ret = response_err(StatusCode::NOT_ACCEPTABLE, format!("Unsupported Accept: {:?}", accept))?;
             Ok(ret)
         }
     }
 
-    async fn gather(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    async fn gather(
+        &self,
+        req: Request<Body>,
+        _ctx: &ReqCtx,
+        node_config: &NodeConfigCached,
+    ) -> Result<Response<Body>, Error> {
         let (head, _body) = req.into_parts();
         warn!("TODO BinnedQuery needs to take AggKind to do x-binngin");
         let s1 = format!("dummy:{}", head.uri);

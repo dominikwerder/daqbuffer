@@ -4,7 +4,7 @@ use crate::api1::{channel_search_configs_v1, channel_search_list_v1, gather_json
 use crate::err::Error;
 use crate::gather::{gather_get_json_generic, SubRes};
 use crate::pulsemap::MapPulseQuery;
-use crate::{api_1_docs, api_4_docs, response, response_err, Cont};
+use crate::{api_1_docs, api_4_docs, response, response_err, Cont, ReqCtx, PSI_DAQBUFFER_SERVICE_MARK};
 use futures_core::Stream;
 use futures_util::pin_mut;
 use http::{Method, StatusCode};
@@ -14,10 +14,9 @@ use hyper_tls::HttpsConnector;
 use itertools::Itertools;
 use netpod::log::*;
 use netpod::query::{BinnedQuery, PlainEventsQuery};
-use netpod::{
-    AppendToUrl, ChannelConfigQuery, ChannelSearchQuery, ChannelSearchResult, ChannelSearchSingleResult, FromUrl,
-    HasBackend, HasTimeout, ProxyConfig, ACCEPT_ALL, APP_JSON,
-};
+use netpod::{AppendToUrl, ChannelConfigQuery, FromUrl, HasBackend, HasTimeout, ProxyConfig};
+use netpod::{ChannelSearchQuery, ChannelSearchResult, ChannelSearchSingleResult};
+use netpod::{ACCEPT_ALL, APP_JSON};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::future::Future;
@@ -70,6 +69,23 @@ async fn proxy_http_service(req: Request<Body>, proxy_config: ProxyConfig) -> Re
 }
 
 async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) -> Result<Response<Body>, Error> {
+    let ctx = ReqCtx::with_proxy(&req, proxy_config);
+    let mut res = proxy_http_service_inner(req, &ctx, proxy_config).await?;
+    let hm = res.headers_mut();
+    hm.insert("Access-Control-Allow-Origin", "*".parse().unwrap());
+    hm.insert("Access-Control-Allow-Headers", "*".parse().unwrap());
+    for m in &ctx.marks {
+        hm.append(PSI_DAQBUFFER_SERVICE_MARK, m.parse().unwrap());
+    }
+    hm.append(PSI_DAQBUFFER_SERVICE_MARK, ctx.mark.parse().unwrap());
+    Ok(res)
+}
+
+async fn proxy_http_service_inner(
+    req: Request<Body>,
+    ctx: &ReqCtx,
+    proxy_config: &ProxyConfig,
+) -> Result<Response<Body>, Error> {
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/1/channels" {
@@ -84,16 +100,15 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
         Ok(proxy_api1_single_backend_query(req, proxy_config).await?)
     } else if path.starts_with("/api/1/map/pulse/") {
         warn!("/api/1/map/pulse/ DEPRECATED");
-        Ok(proxy_api1_map_pulse(req, proxy_config).await?)
+        Ok(proxy_api1_map_pulse(req, ctx, proxy_config).await?)
     } else if path.starts_with("/api/1/gather/") {
         Ok(gather_json_2_v1(req, "/api/1/gather/", proxy_config).await?)
     } else if path == "/api/4/version" {
         if req.method() == Method::GET {
             let ret = serde_json::json!({
-                //"data_api_version": "4.0.0-beta",
                 "data_api_version": {
                     "major": 4,
-                    "minor": 0,
+                    "minor": 1,
                 },
             });
             Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
@@ -107,13 +122,13 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
     } else if path == "/api/4/search/channel" {
         Ok(api4::channel_search(req, proxy_config).await?)
     } else if path == "/api/4/events" {
-        Ok(proxy_single_backend_query::<PlainEventsQuery>(req, proxy_config).await?)
+        Ok(proxy_single_backend_query::<PlainEventsQuery>(req, ctx, proxy_config).await?)
     } else if path.starts_with("/api/4/map/pulse/") {
-        Ok(proxy_single_backend_query::<MapPulseQuery>(req, proxy_config).await?)
+        Ok(proxy_single_backend_query::<MapPulseQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/binned" {
-        Ok(proxy_single_backend_query::<BinnedQuery>(req, proxy_config).await?)
+        Ok(proxy_single_backend_query::<BinnedQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/channel/config" {
-        Ok(proxy_single_backend_query::<ChannelConfigQuery>(req, proxy_config).await?)
+        Ok(proxy_single_backend_query::<ChannelConfigQuery>(req, ctx, proxy_config).await?)
     } else if path.starts_with("/api/1/documentation/") {
         if req.method() == Method::GET {
             api_1_docs(path)
@@ -149,12 +164,18 @@ async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) 
     } else if path.starts_with(DISTRI_PRE) {
         proxy_distribute_v2(req).await
     } else {
-        Ok(response(StatusCode::NOT_FOUND).body(Body::from(format!(
-            "Sorry, proxy can not find: {:?}  {:?}  {:?}",
-            req.method(),
-            req.uri().path(),
-            req.uri().query(),
-        )))?)
+        use std::fmt::Write;
+        let mut body = String::new();
+        let out = &mut body;
+        write!(out, "METHOD {:?}<br>\n", req.method())?;
+        write!(out, "URI {:?}<br>\n", req.uri())?;
+        write!(out, "HOST {:?}<br>\n", req.uri().host())?;
+        write!(out, "PORT {:?}<br>\n", req.uri().port())?;
+        write!(out, "PATH {:?}<br>\n", req.uri().path())?;
+        for (hn, hv) in req.headers() {
+            write!(out, "HEADER {hn:?}: {hv:?}<br>\n")?;
+        }
+        Ok(response(StatusCode::NOT_FOUND).body(Body::from(body))?)
     }
 }
 
@@ -381,7 +402,11 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
     }
 }
 
-pub async fn proxy_api1_map_pulse(req: Request<Body>, proxy_config: &ProxyConfig) -> Result<Response<Body>, Error> {
+pub async fn proxy_api1_map_pulse(
+    req: Request<Body>,
+    _ctx: &ReqCtx,
+    proxy_config: &ProxyConfig,
+) -> Result<Response<Body>, Error> {
     let s2 = format!("http://dummy/{}", req.uri());
     info!("s2: {:?}", s2);
     let url = Url::parse(&s2)?;
@@ -505,6 +530,7 @@ pub async fn proxy_api1_single_backend_query(
 
 pub async fn proxy_single_backend_query<QT>(
     req: Request<Body>,
+    _ctx: &ReqCtx,
     proxy_config: &ProxyConfig,
 ) -> Result<Response<Body>, Error>
 where

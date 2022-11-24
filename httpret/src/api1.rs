@@ -1,6 +1,6 @@
 use crate::err::Error;
 use crate::gather::{gather_get_json_generic, SubRes};
-use crate::{response, BodyStream};
+use crate::{response, BodyStream, ReqCtx};
 use bytes::{BufMut, BytesMut};
 use futures_core::Stream;
 use futures_util::{FutureExt, StreamExt, TryFutureExt, TryStreamExt};
@@ -9,10 +9,10 @@ use hyper::{Body, Client, Request, Response};
 use items::eventfull::EventFull;
 use items::{RangeCompletableItem, Sitemty, StreamItem};
 use itertools::Itertools;
-use netpod::log::*;
 use netpod::query::api1::Api1Query;
 use netpod::query::RawEventsQuery;
 use netpod::timeunits::SEC;
+use netpod::{log::*, ScalarType};
 use netpod::{ByteSize, Channel, DiskIoTune, NanoRange, NodeConfigCached, PerfOpts, Shape};
 use netpod::{ChannelSearchQuery, ChannelSearchResult, ProxyConfig};
 use netpod::{ACCEPT_ALL, APP_JSON, APP_OCTET};
@@ -21,6 +21,7 @@ use parse::channelconfig::read_local_config;
 use parse::channelconfig::{Config, ConfigEntry, MatchingConfigEntry};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -468,15 +469,125 @@ async fn process_answer(res: Response<Body>) -> Result<JsonValue, Error> {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Api1ScalarType {
+    #[serde(rename = "uint8")]
+    U8,
+    #[serde(rename = "uint16")]
+    U16,
+    #[serde(rename = "uint32")]
+    U32,
+    #[serde(rename = "uint64")]
+    U64,
+    #[serde(rename = "int8")]
+    I8,
+    #[serde(rename = "int16")]
+    I16,
+    #[serde(rename = "int32")]
+    I32,
+    #[serde(rename = "int64")]
+    I64,
+    #[serde(rename = "float32")]
+    F32,
+    #[serde(rename = "float64")]
+    F64,
+    #[serde(rename = "bool")]
+    BOOL,
+    #[serde(rename = "string")]
+    STRING,
+}
+
+impl Api1ScalarType {
+    pub fn to_str(&self) -> &'static str {
+        use Api1ScalarType as A;
+        match self {
+            A::U8 => "uint8",
+            A::U16 => "uint16",
+            A::U32 => "uint32",
+            A::U64 => "uint64",
+            A::I8 => "int8",
+            A::I16 => "int16",
+            A::I32 => "int32",
+            A::I64 => "int64",
+            A::F32 => "float32",
+            A::F64 => "float64",
+            A::BOOL => "bool",
+            A::STRING => "string",
+        }
+    }
+}
+
+impl fmt::Display for Api1ScalarType {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{}", self.to_str())
+    }
+}
+
+impl From<&ScalarType> for Api1ScalarType {
+    fn from(k: &ScalarType) -> Self {
+        use Api1ScalarType as B;
+        use ScalarType as A;
+        match k {
+            A::U8 => B::U8,
+            A::U16 => B::U16,
+            A::U32 => B::U32,
+            A::U64 => B::U64,
+            A::I8 => B::I8,
+            A::I16 => B::I16,
+            A::I32 => B::I32,
+            A::I64 => B::I64,
+            A::F32 => B::F32,
+            A::F64 => B::F64,
+            A::BOOL => B::BOOL,
+            A::STRING => B::STRING,
+        }
+    }
+}
+
+impl From<ScalarType> for Api1ScalarType {
+    fn from(x: ScalarType) -> Self {
+        (&x).into()
+    }
+}
+
+#[test]
+fn test_custom_variant_name() {
+    let val = Api1ScalarType::F32;
+    assert_eq!(format!("{val:?}"), "F32");
+    assert_eq!(format!("{val}"), "float32");
+    let s = serde_json::to_string(&val).unwrap();
+    assert_eq!(s, "\"float32\"");
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Api1ByteOrder {
+    #[serde(rename = "LITTLE_ENDIAN")]
+    Little,
+    #[serde(rename = "BIG_ENDIAN")]
+    Big,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Api1ChannelHeader {
     name: String,
     #[serde(rename = "type")]
-    ty: String,
+    ty: Api1ScalarType,
     #[serde(rename = "byteOrder")]
-    byte_order: String,
+    byte_order: Api1ByteOrder,
+    #[serde(default)]
     shape: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     compression: Option<usize>,
+}
+
+impl Api1ChannelHeader {
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn ty(&self) -> Api1ScalarType {
+        self.ty.clone()
+    }
 }
 
 pub struct DataApiPython3DataStream {
@@ -560,11 +671,11 @@ impl DataApiPython3DataStream {
             if !*header_out {
                 let head = Api1ChannelHeader {
                     name: channel.name.clone(),
-                    ty: b.scalar_types[i1].to_api3proto().into(),
+                    ty: (&b.scalar_types[i1]).into(),
                     byte_order: if b.be[i1] {
-                        "BIG_ENDIAN".into()
+                        Api1ByteOrder::Big
                     } else {
-                        "LITTLE_ENDIAN".into()
+                        Api1ByteOrder::Little
                     },
                     // The shape is inconsistent on the events.
                     // Seems like the config is to be trusted in this case.
@@ -576,39 +687,18 @@ impl DataApiPython3DataStream {
                 let l1 = 1 + h.as_bytes().len() as u32;
                 d.put_u32(l1);
                 d.put_u8(0);
+                debug!("header frame byte len {}", 4 + 1 + h.as_bytes().len());
                 d.extend_from_slice(h.as_bytes());
-                d.put_u32(l1);
                 *header_out = true;
             }
-            {
-                match &b.shapes[i1] {
-                    Shape::Image(_, _) => {
-                        let l1 = 17 + b.blobs[i1].len() as u32;
-                        d.put_u32(l1);
-                        d.put_u8(1);
-                        d.put_u64(b.tss[i1]);
-                        d.put_u64(b.pulses[i1]);
-                        d.put_slice(&b.blobs[i1]);
-                        d.put_u32(l1);
-                    }
-                    Shape::Wave(_) => {
-                        let l1 = 17 + b.blobs[i1].len() as u32;
-                        d.put_u32(l1);
-                        d.put_u8(1);
-                        d.put_u64(b.tss[i1]);
-                        d.put_u64(b.pulses[i1]);
-                        d.put_slice(&b.blobs[i1]);
-                        d.put_u32(l1);
-                    }
-                    _ => {
-                        let l1 = 17 + b.blobs[i1].len() as u32;
-                        d.put_u32(l1);
-                        d.put_u8(1);
-                        d.put_u64(b.tss[i1]);
-                        d.put_u64(b.pulses[i1]);
-                        d.put_slice(&b.blobs[i1]);
-                        d.put_u32(l1);
-                    }
+            match &b.shapes[i1] {
+                _ => {
+                    let l1 = 17 + b.blobs[i1].len() as u32;
+                    d.put_u32(l1);
+                    d.put_u8(1);
+                    d.put_u64(b.tss[i1]);
+                    d.put_u64(b.pulses[i1]);
+                    d.put_slice(&b.blobs[i1]);
                 }
             }
             *count_events += 1;
@@ -810,7 +900,12 @@ impl Api1EventsBinaryHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(
+        &self,
+        req: Request<Body>,
+        _ctx: &ReqCtx,
+        node_config: &NodeConfigCached,
+    ) -> Result<Response<Body>, Error> {
         if req.method() != Method::POST {
             return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?);
         }

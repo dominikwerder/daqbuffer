@@ -21,6 +21,9 @@ pub fn spawn_test_hosts(cluster: Cluster) -> Vec<JoinHandle<Result<(), Error>>> 
         let h = tokio::spawn(httpret::host(node_config).map_err(Error::from));
         ret.push(h);
     }
+
+    // TODO spawn also two proxy nodes
+
     ret
 }
 

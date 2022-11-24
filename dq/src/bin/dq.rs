@@ -83,7 +83,7 @@ pub fn main() -> Result<(), Error> {
                     compression: false,
                     shape: Shape::Scalar,
                     array: false,
-                    byte_order: ByteOrder::LE,
+                    byte_order: ByteOrder::Little,
                 };
                 let range = NanoRange {
                     beg: u64::MIN,

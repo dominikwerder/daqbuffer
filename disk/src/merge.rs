@@ -360,7 +360,7 @@ mod test {
                     keyspace: 2,
                     time_bin_size: Nanos { ns: DAY },
                     scalar_type: ScalarType::I32,
-                    byte_order: ByteOrder::BE,
+                    byte_order: ByteOrder::Big,
                     array: false,
                     compression: false,
                     shape: Shape::Scalar,

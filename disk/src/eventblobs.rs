@@ -264,7 +264,7 @@ mod test {
             keyspace: 2,
             time_bin_size: Nanos { ns: DAY },
             scalar_type: netpod::ScalarType::I32,
-            byte_order: netpod::ByteOrder::big_endian(),
+            byte_order: netpod::ByteOrder::Big,
             shape: netpod::Shape::Scalar,
             array: false,
             compression: false,

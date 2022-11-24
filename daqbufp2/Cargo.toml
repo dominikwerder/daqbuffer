@@ -4,6 +4,9 @@ version = "0.0.1-a.dev.12"
 authors = ["Dominik Werder <dominik.werder@gmail.com>"]
 edition = "2021"
 
+[lib]
+path = "src/daqbufp2.rs"
+
 [dependencies]
 tokio = { version = "1.22.0", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
 hyper = "0.14"
@@ -27,3 +30,6 @@ httpclient = { path = "../httpclient" }
 disk = { path = "../disk" }
 items = { path = "../items" }
 streams = { path = "../streams" }
+
+[dev-dependencies]
+nom = "7.1.1"

@@ -185,11 +185,11 @@ where
 macro_rules! match_end {
     ($nty:ident, $end:expr, $scalar_type:expr, $shape:expr, $agg_kind:expr, $query:expr, $node_config:expr) => {
         match $end {
-            ByteOrder::LE => {
+            ByteOrder::Little => {
                 make_num_pipeline_nty_end::<$nty, LittleEndian>($scalar_type, $shape, $agg_kind, $query, $node_config)
                     .await
             }
-            ByteOrder::BE => {
+            ByteOrder::Big => {
                 make_num_pipeline_nty_end::<$nty, BigEndian>($scalar_type, $shape, $agg_kind, $query, $node_config)
                     .await
             }
@@ -244,7 +244,7 @@ pub async fn pre_binned_bytes_for_http(
     let ret = make_num_pipeline(
         query.scalar_type().clone(),
         // TODO actually, make_num_pipeline should not depend on endianness.
-        ByteOrder::LE,
+        ByteOrder::Little,
         query.shape().clone(),
         query.agg_kind().clone(),
         query.clone(),

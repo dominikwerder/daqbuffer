@@ -303,23 +303,6 @@ impl ScalarType {
         }
     }
 
-    pub fn to_api3proto(&self) -> &'static str {
-        match self {
-            ScalarType::U8 => "uint8",
-            ScalarType::U16 => "uint16",
-            ScalarType::U32 => "uint32",
-            ScalarType::U64 => "uint64",
-            ScalarType::I8 => "int8",
-            ScalarType::I16 => "int16",
-            ScalarType::I32 => "int32",
-            ScalarType::I64 => "int64",
-            ScalarType::F32 => "float32",
-            ScalarType::F64 => "float64",
-            ScalarType::BOOL => "bool",
-            ScalarType::STRING => "string",
-        }
-    }
-
     pub fn to_scylla_i32(&self) -> i32 {
         self.index() as i32
     }
@@ -725,31 +708,23 @@ impl NanoRange {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ByteOrder {
-    LE,
-    BE,
+    Little,
+    Big,
 }
 
 impl ByteOrder {
-    pub fn little_endian() -> Self {
-        Self::LE
-    }
-
-    pub fn big_endian() -> Self {
-        Self::BE
-    }
-
     pub fn from_dtype_flags(flags: u8) -> Self {
         if flags & 0x20 == 0 {
-            Self::LE
+            Self::Little
         } else {
-            Self::BE
+            Self::Big
         }
     }
 
     pub fn from_bsread_str(s: &str) -> Result<ByteOrder, Error> {
         match s {
-            "little" => Ok(ByteOrder::LE),
-            "big" => Ok(ByteOrder::BE),
+            "little" => Ok(ByteOrder::Little),
+            "big" => Ok(ByteOrder::Big),
             _ => Err(Error::with_msg_no_trace(format!(
                 "ByteOrder::from_bsread_str can not understand {}",
                 s
@@ -758,7 +733,7 @@ impl ByteOrder {
     }
 
     pub fn is_le(&self) -> bool {
-        if let Self::LE = self {
+        if let Self::Little = self {
             true
         } else {
             false
@@ -766,7 +741,7 @@ impl ByteOrder {
     }
 
     pub fn is_be(&self) -> bool {
-        if let Self::BE = self {
+        if let Self::Big = self {
             true
         } else {
             false

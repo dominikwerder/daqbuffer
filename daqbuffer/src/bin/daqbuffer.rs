@@ -125,7 +125,7 @@ fn simple_fetch() {
                 array: true,
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(42),
-                byte_order: ByteOrder::big_endian(),
+                byte_order: ByteOrder::Big,
                 compression: true,
             },
             timebin: 18720,

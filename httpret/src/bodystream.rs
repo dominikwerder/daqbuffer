@@ -13,20 +13,12 @@ use std::task::{Context, Poll};
 use tracing::field::Empty;
 use tracing::{span, Level};
 
-fn proxy_mark() -> &'static str {
-    "7c5e408a"
-}
-
 pub fn response<T>(status: T) -> http::response::Builder
 where
     http::StatusCode: std::convert::TryFrom<T>,
     <http::StatusCode as std::convert::TryFrom<T>>::Error: Into<http::Error>,
 {
-    Response::builder()
-        .status(status)
-        .header("Access-Control-Allow-Origin", "*")
-        .header("Access-Control-Allow-Headers", "*")
-        .header("x-proxy-log-mark", proxy_mark())
+    Response::builder().status(status)
 }
 
 pub struct BodyStream<S> {
