@@ -23,5 +23,6 @@ chrono = { version = "0.4.22", features = ["serde"] }
 crc32fast = "1.3.2"
 err = { path = "../err" }
 items_proc = { path = "../items_proc" }
+items_0 = { path = "../items_0" }
 netpod = { path = "../netpod" }
 parse = { path = "../parse" }

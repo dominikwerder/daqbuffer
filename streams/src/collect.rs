@@ -1,7 +1,7 @@
 use err::Error;
 use futures_util::{Stream, StreamExt};
 use items::{RangeCompletableItem, Sitemty, StreamItem};
-use items_2::collect::{Collectable, Collector};
+use items_0::collect_c::{Collectable, Collector};
 use netpod::log::*;
 use std::fmt;
 use std::time::{Duration, Instant};

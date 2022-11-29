@@ -273,7 +273,7 @@ impl EventsHandlerScylla {
                 Ok(k) => match k {
                     ChannelEvents::Events(mut item) => {
                         if coll.is_none() {
-                            coll = Some(items_2::streams::Collectable::new_collector(item.as_ref()));
+                            coll = Some(items_0::collect_s::Collectable::new_collector(item.as_ref()));
                         }
                         let cl = coll.as_mut().unwrap();
                         cl.ingest(item.as_collectable_mut());

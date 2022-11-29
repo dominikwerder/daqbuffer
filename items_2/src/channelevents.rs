@@ -1,14 +1,14 @@
-use std::any::Any;
-use std::fmt;
-
+use crate::merger;
 use crate::merger_cev::MergeableCev;
-use crate::streams::Collectable;
-use crate::streams::Collector;
-use crate::{merger, Events};
+use crate::Events;
 use items::FrameType;
 use items::FrameTypeInnerStatic;
+use items_0::collect_s::Collectable;
+use items_0::collect_s::Collector;
 use netpod::log::*;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
+use std::fmt;
 
 // TODO maybe rename to ChannelStatus?
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -170,7 +170,7 @@ mod serde_channel_events {
 mod test_channel_events_serde {
     use super::ChannelEvents;
     use crate::eventsdim0::EventsDim0;
-    use crate::Empty;
+    use items_0::Empty;
 
     #[test]
     fn channel_events() {
@@ -298,8 +298,8 @@ pub struct ChannelEventsTimeBinner {
 }
 
 impl fmt::Debug for ChannelEventsTimeBinner {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("ChannelEventsTimeBinner")
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.debug_struct("ChannelEventsTimeBinner")
             .field("conn_state", &self.conn_state)
             .finish()
     }
@@ -307,7 +307,7 @@ impl fmt::Debug for ChannelEventsTimeBinner {
 
 impl crate::timebin::TimeBinner for ChannelEventsTimeBinner {
     type Input = ChannelEvents;
-    type Output = Box<dyn crate::TimeBinned>;
+    type Output = Box<dyn items_0::TimeBinned>;
 
     fn ingest(&mut self, item: &mut Self::Input) {
         match item {
@@ -386,14 +386,14 @@ impl crate::timebin::TimeBinnable for ChannelEvents {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelEventsCollectorOutput {}
 
-impl crate::AsAnyRef for ChannelEventsCollectorOutput {
+impl items_0::AsAnyRef for ChannelEventsCollectorOutput {
     fn as_any_ref(&self) -> &dyn Any {
         self
     }
 }
 
 impl crate::ToJsonResult for ChannelEventsCollectorOutput {
-    fn to_json_result(&self) -> Result<Box<dyn crate::streams::ToJsonBytes>, err::Error> {
+    fn to_json_result(&self) -> Result<Box<dyn items_0::collect_s::ToJsonBytes>, err::Error> {
         todo!()
     }
 
@@ -402,11 +402,11 @@ impl crate::ToJsonResult for ChannelEventsCollectorOutput {
     }
 }
 
-impl crate::collect::Collected for ChannelEventsCollectorOutput {}
+impl items_0::collect_c::Collected for ChannelEventsCollectorOutput {}
 
 #[derive(Debug)]
 pub struct ChannelEventsCollector {
-    coll: Option<Box<dyn crate::collect::CollectorDyn>>,
+    coll: Option<Box<dyn items_0::collect_c::CollectorDyn>>,
     range_complete: bool,
     timed_out: bool,
 }
@@ -421,9 +421,9 @@ impl ChannelEventsCollector {
     }
 }
 
-impl crate::collect::Collector for ChannelEventsCollector {
+impl items_0::collect_c::Collector for ChannelEventsCollector {
     type Input = ChannelEvents;
-    type Output = Box<dyn crate::collect::Collected>;
+    type Output = Box<dyn items_0::collect_c::Collected>;
 
     fn len(&self) -> usize {
         match &self.coll {
@@ -456,7 +456,7 @@ impl crate::collect::Collector for ChannelEventsCollector {
         self.timed_out = true;
     }
 
-    fn result(&mut self) -> Result<Self::Output, crate::Error> {
+    fn result(&mut self) -> Result<Self::Output, err::Error> {
         match self.coll.as_mut() {
             Some(coll) => {
                 if self.range_complete {
@@ -479,7 +479,7 @@ impl crate::collect::Collector for ChannelEventsCollector {
     }
 }
 
-impl crate::collect::Collectable for ChannelEvents {
+impl items_0::collect_c::Collectable for ChannelEvents {
     type Collector = ChannelEventsCollector;
 
     fn new_collector(&self) -> Self::Collector {

@@ -21,6 +21,7 @@ futures-util = "0.3.24"
 tokio = { version = "1.20", features = ["rt-multi-thread", "sync", "time"] }
 err = { path = "../err" }
 items = { path = "../items" }
+items_0 = { path = "../items_0" }
 items_proc = { path = "../items_proc" }
 netpod = { path = "../netpod" }
 taskrun = { path = "../taskrun" }

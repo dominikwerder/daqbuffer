@@ -296,8 +296,8 @@ where
 
 #[cfg(test)]
 mod test {
+    use items_0::Empty;
     use items_2::channelevents::ChannelEvents;
-    use items_2::Empty;
 
     #[test]
     fn merge_channel_events() {

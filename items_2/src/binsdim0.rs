@@ -1,11 +1,14 @@
-use crate::streams::{Collectable, CollectableType, CollectorType, ToJsonResult};
-use crate::{
-    ts_offs_from_abs, ts_offs_from_abs_with_anchor, AppendEmptyBin, Empty, IsoDateTime, RangeOverlapInfo, ScalarOps,
-    TimeBins, WithLen,
-};
-use crate::{TimeBinnable, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinned, TimeBinner};
+use crate::{ts_offs_from_abs, ts_offs_from_abs_with_anchor};
+use crate::{IsoDateTime, RangeOverlapInfo, ScalarOps};
+use crate::{TimeBinnable, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinner};
 use chrono::{TimeZone, Utc};
 use err::Error;
+use items_0::collect_s::{Collectable, CollectableType, CollectorType, ToJsonResult};
+use items_0::AppendEmptyBin;
+use items_0::Empty;
+use items_0::TimeBinned;
+use items_0::TimeBins;
+use items_0::WithLen;
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::NanoRange;
@@ -229,13 +232,13 @@ pub struct BinsDim0CollectedResult<NTY> {
     finished_at: Option<IsoDateTime>,
 }
 
-impl<NTY: ScalarOps> crate::AsAnyRef for BinsDim0CollectedResult<NTY> {
+impl<NTY: ScalarOps> items_0::AsAnyRef for BinsDim0CollectedResult<NTY> {
     fn as_any_ref(&self) -> &dyn Any {
         self
     }
 }
 
-impl<NTY: ScalarOps> crate::collect::Collected for BinsDim0CollectedResult<NTY> {}
+impl<NTY: ScalarOps> items_0::collect_c::Collected for BinsDim0CollectedResult<NTY> {}
 
 impl<NTY> BinsDim0CollectedResult<NTY> {
     pub fn ts_anchor_sec(&self) -> u64 {
@@ -264,7 +267,7 @@ impl<NTY> BinsDim0CollectedResult<NTY> {
 }
 
 impl<NTY: ScalarOps> ToJsonResult for BinsDim0CollectedResult<NTY> {
-    fn to_json_result(&self) -> Result<Box<dyn crate::streams::ToJsonBytes>, Error> {
+    fn to_json_result(&self) -> Result<Box<dyn items_0::collect_s::ToJsonBytes>, Error> {
         let k = serde_json::to_value(self)?;
         Ok(Box::new(k))
     }
@@ -574,7 +577,7 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
         }
     }
 
-    fn bins_ready(&mut self) -> Option<Box<dyn crate::TimeBinned>> {
+    fn bins_ready(&mut self) -> Option<Box<dyn items_0::TimeBinned>> {
         match self.ready.take() {
             Some(k) => Some(Box::new(k)),
             None => None,

@@ -20,6 +20,7 @@ chrono = { version = "0.4.19", features = ["serde"] }
 err = { path = "../err" }
 netpod = { path = "../netpod" }
 items = { path = "../items" }
+items_0 = { path = "../items_0" }
 items_2 = { path = "../items_2" }
 parse = { path = "../parse" }
 bitshuffle = { path = "../bitshuffle" }

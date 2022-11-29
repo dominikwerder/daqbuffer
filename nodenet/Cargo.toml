@@ -30,6 +30,7 @@ netpod = { path = "../netpod" }
 disk = { path = "../disk" }
 #parse = { path = "../parse" }
 items = { path = "../items" }
+items_0 = { path = "../items_0" }
 items_2 = { path = "../items_2" }
 dbconn = { path = "../dbconn" }
 scyllaconn = { path = "../scyllaconn" }
