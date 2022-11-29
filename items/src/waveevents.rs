@@ -5,13 +5,14 @@ use crate::xbinnedwaveevents::XBinnedWaveEvents;
 use crate::{
     Appendable, ByteEstimate, Clearable, EventAppendable, EventsDyn, EventsNodeProcessor, EventsNodeProcessorOutput,
     FilterFittingInside, Fits, FitsInside, FrameType, FrameTypeInnerStatic, NewEmpty, PushableIndex, RangeOverlapInfo,
-    ReadPbv, ReadableFromFile, SubFrId, TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, WithLen,
-    WithTimestamps,
+    ReadPbv, ReadableFromFile, TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
+use items_0::subfr::SubFrId;
 use netpod::log::*;
 use netpod::{x_bin_count, AggKind, NanoRange, Shape};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::marker::PhantomData;
 use tokio::fs::File;
 
@@ -535,4 +536,11 @@ impl<NTY: NumOps> EventsDyn for WaveEvents<NTY> {
     }
 }
 
-impl<NTY> EventsNodeProcessorOutput for WaveEvents<NTY> where NTY: NumOps {}
+impl<NTY> EventsNodeProcessorOutput for WaveEvents<NTY>
+where
+    NTY: NumOps,
+{
+    fn into_parts<NTY2>(self) -> (VecDeque<NTY2>, VecDeque<u64>) {
+        todo!()
+    }
+}

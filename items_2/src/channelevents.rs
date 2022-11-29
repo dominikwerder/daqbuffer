@@ -97,7 +97,7 @@ mod serde_channel_events {
         where
             A: de::SeqAccess<'de>,
         {
-            use items::SubFrId;
+            use items_0::subfr::SubFrId;
             let e0: &str = seq.next_element()?.ok_or(de::Error::missing_field("ty .0"))?;
             let e1: u32 = seq.next_element()?.ok_or(de::Error::missing_field("nty .1"))?;
             if e0 == EventsDim0::<u8>::serde_id() {

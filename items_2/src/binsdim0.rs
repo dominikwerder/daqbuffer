@@ -1,9 +1,10 @@
 use crate::{ts_offs_from_abs, ts_offs_from_abs_with_anchor};
-use crate::{IsoDateTime, RangeOverlapInfo, ScalarOps};
+use crate::{IsoDateTime, RangeOverlapInfo};
 use crate::{TimeBinnable, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinner};
 use chrono::{TimeZone, Utc};
 use err::Error;
 use items_0::collect_s::{Collectable, CollectableType, CollectorType, ToJsonResult};
+use items_0::scalar_ops::ScalarOps;
 use items_0::AppendEmptyBin;
 use items_0::Empty;
 use items_0::TimeBinned;
@@ -74,8 +75,8 @@ impl<NTY: ScalarOps> BinsDim0<NTY> {
         self.ts1s.push_back(beg);
         self.ts2s.push_back(end);
         self.counts.push_back(0);
-        self.mins.push_back(NTY::zero());
-        self.maxs.push_back(NTY::zero());
+        self.mins.push_back(NTY::zero_b());
+        self.maxs.push_back(NTY::zero_b());
         self.avgs.push_back(0.);
     }
 
@@ -168,8 +169,8 @@ impl<NTY: ScalarOps> AppendEmptyBin for BinsDim0<NTY> {
         self.ts1s.push_back(ts1);
         self.ts2s.push_back(ts2);
         self.counts.push_back(0);
-        self.mins.push_back(NTY::zero());
-        self.maxs.push_back(NTY::zero());
+        self.mins.push_back(NTY::zero_b());
+        self.maxs.push_back(NTY::zero_b());
         self.avgs.push_back(0.);
     }
 }
@@ -393,8 +394,8 @@ impl<NTY: ScalarOps> BinsDim0Aggregator<NTY> {
         Self {
             range,
             count: 0,
-            min: NTY::zero(),
-            max: NTY::zero(),
+            min: NTY::zero_b(),
+            max: NTY::zero_b(),
             avg: 0.,
             sumc: 0,
             sum: 0f32,
@@ -656,12 +657,12 @@ impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
 
     // TODO is Vec needed?
     fn mins(&self) -> Vec<f32> {
-        self.mins.iter().map(|x| x.clone().as_prim_f32()).collect()
+        self.mins.iter().map(|x| x.clone().as_prim_f32_b()).collect()
     }
 
     // TODO is Vec needed?
     fn maxs(&self) -> Vec<f32> {
-        self.maxs.iter().map(|x| x.clone().as_prim_f32()).collect()
+        self.maxs.iter().map(|x| x.clone().as_prim_f32_b()).collect()
     }
 
     // TODO is Vec needed?
@@ -676,7 +677,7 @@ impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
             write!(&mut msg, "ts1s ≠ ts2s\n").unwrap();
         }
         for (i, ((count, min), max)) in self.counts.iter().zip(&self.mins).zip(&self.maxs).enumerate() {
-            if min.as_prim_f32() < 1. && *count != 0 {
+            if min.as_prim_f32_b() < 1. && *count != 0 {
                 write!(&mut msg, "i {}  count {}  min {:?}  max {:?}\n", i, count, min, max).unwrap();
             }
         }

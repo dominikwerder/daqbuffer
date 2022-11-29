@@ -11,6 +11,7 @@ use netpod::log::*;
 use netpod::query::RawEventsQuery;
 use netpod::{AggKind, ByteOrder, ByteSize, Channel, DiskIoTune, NanoRange, NodeConfigCached, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, ConfigEntry, MatchingConfigEntry};
+use std::collections::VecDeque;
 use std::pin::Pin;
 use streams::eventchunker::EventChunkerConf;
 
@@ -33,7 +34,16 @@ where
             StreamItem::DataItem(item) => match item {
                 RangeCompletableItem::Data(item) => {
                     let item = events_node_proc.process(item);
-                    Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
+                    use items::EventsNodeProcessorOutput;
+                    let parts = item.into_parts::<NTY>();
+                    let item = items_2::eventsdim0::EventsDim0 {
+                        tss: parts.1,
+                        pulses: VecDeque::new(),
+                        values: parts.0,
+                    };
+                    let item = Box::new(item) as Box<dyn items_0::Events>;
+                    //Ok(StreamItem::DataItem(RangeCompletableItem::Data(todo!())))
+                    Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
                 }
                 RangeCompletableItem::RangeComplete => Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)),
             },

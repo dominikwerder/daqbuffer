@@ -1,12 +1,15 @@
+use std::collections::VecDeque;
+
 use crate::binsdim0::MinMaxAvgDim0Bins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
     ts_offs_from_abs, Appendable, ByteEstimate, Clearable, EventsNodeProcessorOutput, FilterFittingInside, Fits,
     FitsInside, FrameType, FrameTypeInnerStatic, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile,
-    SubFrId, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
+use items_0::subfr::SubFrId;
 use netpod::log::*;
 use netpod::{NanoRange, Shape};
 use serde::{Deserialize, Serialize};
@@ -502,4 +505,11 @@ where
     }
 }
 
-impl<NTY> EventsNodeProcessorOutput for XBinnedScalarEvents<NTY> where NTY: NumOps {}
+impl<NTY> EventsNodeProcessorOutput for XBinnedScalarEvents<NTY>
+where
+    NTY: NumOps,
+{
+    fn into_parts<NTY2>(self) -> (VecDeque<NTY2>, VecDeque<u64>) {
+        todo!()
+    }
+}

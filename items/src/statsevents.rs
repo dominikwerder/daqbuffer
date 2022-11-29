@@ -8,6 +8,7 @@ use err::Error;
 use netpod::log::*;
 use netpod::{NanoRange, Shape};
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 use std::fmt;
 use tokio::fs::File;
 
@@ -421,4 +422,8 @@ impl EventAppendable for StatsEvents {
     }
 }
 
-impl EventsNodeProcessorOutput for StatsEvents {}
+impl EventsNodeProcessorOutput for StatsEvents {
+    fn into_parts<NTY2>(self) -> (VecDeque<NTY2>, VecDeque<u64>) {
+        todo!()
+    }
+}

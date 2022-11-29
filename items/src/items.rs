@@ -15,7 +15,6 @@ pub mod xbinnedscalarevents;
 pub mod xbinnedwaveevents;
 
 use crate::frame::make_frame_2;
-use crate::numops::BoolNum;
 use bytes::BytesMut;
 use chrono::{TimeZone, Utc};
 use err::Error;
@@ -25,10 +24,10 @@ use netpod::log::*;
 use netpod::timeunits::{MS, SEC};
 use netpod::{log::Level, AggKind, EventDataReadStats, NanoRange, Shape};
 use netpod::{DiskStats, RangeFilterStats, ScalarType};
-use numops::StringNum;
 use serde::de::{self, DeserializeOwned, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
 use std::any::Any;
+use std::collections::VecDeque;
 use std::fmt;
 use std::future::Future;
 use std::marker::PhantomData;
@@ -189,58 +188,6 @@ pub const INMEM_FRAME_ENCID: u32 = 0x12121212;
 pub const INMEM_FRAME_HEAD: usize = 20;
 pub const INMEM_FRAME_FOOT: usize = 4;
 pub const INMEM_FRAME_MAGIC: u32 = 0xc6c3b73d;
-
-pub trait SubFrId {
-    const SUB: u32;
-}
-
-impl SubFrId for u8 {
-    const SUB: u32 = 0x03;
-}
-
-impl SubFrId for u16 {
-    const SUB: u32 = 0x05;
-}
-
-impl SubFrId for u32 {
-    const SUB: u32 = 0x08;
-}
-
-impl SubFrId for u64 {
-    const SUB: u32 = 0x0a;
-}
-
-impl SubFrId for i8 {
-    const SUB: u32 = 0x02;
-}
-
-impl SubFrId for i16 {
-    const SUB: u32 = 0x04;
-}
-
-impl SubFrId for i32 {
-    const SUB: u32 = 0x07;
-}
-
-impl SubFrId for i64 {
-    const SUB: u32 = 0x09;
-}
-
-impl SubFrId for f32 {
-    const SUB: u32 = 0x0b;
-}
-
-impl SubFrId for f64 {
-    const SUB: u32 = 0x0c;
-}
-
-impl SubFrId for StringNum {
-    const SUB: u32 = 0x0d;
-}
-
-impl SubFrId for BoolNum {
-    const SUB: u32 = 0x0e;
-}
 
 // Required for any inner type of Sitemty.
 pub trait FrameTypeInnerStatic {
@@ -421,6 +368,7 @@ impl FrameType for EventQueryJsonStringFrame {
 pub trait EventsNodeProcessorOutput:
     Send + Unpin + DeserializeOwned + WithTimestamps + TimeBinnableType + ByteEstimate
 {
+    fn into_parts<NTY>(self) -> (VecDeque<NTY>, VecDeque<u64>);
 }
 
 pub trait EventsNodeProcessor: Send + Unpin {

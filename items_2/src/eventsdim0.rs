@@ -1,8 +1,8 @@
 use crate::binsdim0::BinsDim0;
-use crate::ScalarOps;
 use crate::{pulse_offs_from_abs, ts_offs_from_abs, RangeOverlapInfo};
 use crate::{TimeBinnable, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinner};
 use err::Error;
+use items_0::scalar_ops::ScalarOps;
 use items_0::{Empty, Events, WithLen};
 use netpod::log::*;
 use netpod::timeunits::SEC;
@@ -292,8 +292,8 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
         Self {
             range,
             count: 0,
-            min: NTY::zero(),
-            max: NTY::zero(),
+            min: NTY::zero_b(),
+            max: NTY::zero_b(),
             sum: 0.,
             sumc: 0,
             int_ts,
@@ -334,7 +334,7 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
     fn apply_event_unweight(&mut self, val: NTY) {
         trace!("TODO check again result_reset_unweight");
         err::todo();
-        let vf = val.as_prim_f32();
+        let vf = val.as_prim_f32_b();
         self.apply_min_max(val);
         if vf.is_nan() {
         } else {
@@ -345,7 +345,7 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
 
     fn apply_event_time_weight(&mut self, ts: u64) {
         if let Some(v) = &self.last_seen_val {
-            let vf = v.as_prim_f32();
+            let vf = v.as_prim_f32_b();
             let v2 = v.clone();
             if ts > self.range.beg {
                 self.apply_min_max(v2);
@@ -435,9 +435,9 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
         } else {
             let g = match &self.last_seen_val {
                 Some(x) => x.clone(),
-                None => NTY::zero(),
+                None => NTY::zero_b(),
             };
-            (g.clone(), g.clone(), g.as_prim_f32())
+            (g.clone(), g.clone(), g.as_prim_f32_b())
         };
         let ret = BinsDim0 {
             ts1s: [self.range.beg].into(),
@@ -470,9 +470,9 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
         } else {
             let g = match &self.last_seen_val {
                 Some(x) => x.clone(),
-                None => NTY::zero(),
+                None => NTY::zero_b(),
             };
-            (g.clone(), g.clone(), g.as_prim_f32())
+            (g.clone(), g.clone(), g.as_prim_f32_b())
         };
         let ret = BinsDim0 {
             ts1s: [self.range.beg].into(),
@@ -488,8 +488,8 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
         self.sum = 0.;
         self.sumc = 0;
         self.did_min_max = false;
-        self.min = NTY::zero();
-        self.max = NTY::zero();
+        self.min = NTY::zero_b();
+        self.max = NTY::zero_b();
         ret
     }
 }

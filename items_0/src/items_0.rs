@@ -1,5 +1,7 @@
 pub mod collect_c;
 pub mod collect_s;
+pub mod scalar_ops;
+pub mod subfr;
 
 use collect_c::CollectableWithDefault;
 use collect_s::Collectable;

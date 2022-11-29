@@ -1,4 +1,4 @@
-use crate::SubFrId;
+use items_0::subfr::SubFrId;
 use num_traits::{Bounded, Float, Zero};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -123,6 +123,7 @@ pub trait NumOps:
     + SubFrId
     + Serialize
     + DeserializeOwned
+    + items_0::scalar_ops::ScalarOps
 {
     fn min_or_nan() -> Self;
     fn max_or_nan() -> Self;
@@ -203,3 +204,43 @@ impl_num_ops!(f32, NAN, NAN, is_nan_float);
 impl_num_ops!(f64, NAN, NAN, is_nan_float);
 impl_num_ops!(BoolNum, MIN, MAX, is_nan_int);
 impl_num_ops!(StringNum, MIN, MAX, is_nan_int);
+
+impl SubFrId for StringNum {
+    const SUB: u32 = 0x0d;
+}
+
+impl SubFrId for BoolNum {
+    const SUB: u32 = 0x0e;
+}
+
+impl items_0::scalar_ops::AsPrimF32 for BoolNum {
+    fn as_prim_f32_b(&self) -> f32 {
+        todo!()
+    }
+}
+
+impl items_0::scalar_ops::AsPrimF32 for StringNum {
+    fn as_prim_f32_b(&self) -> f32 {
+        todo!()
+    }
+}
+
+impl items_0::scalar_ops::ScalarOps for BoolNum {
+    fn zero_b() -> Self {
+        todo!()
+    }
+
+    fn equal_slack(&self, _rhs: &Self) -> bool {
+        todo!()
+    }
+}
+
+impl items_0::scalar_ops::ScalarOps for StringNum {
+    fn zero_b() -> Self {
+        todo!()
+    }
+
+    fn equal_slack(&self, _rhs: &Self) -> bool {
+        todo!()
+    }
+}

@@ -823,4 +823,11 @@ impl<NTY: NumOps + 'static> TimeBinnerDyn for ScalarEventsTimeBinner<NTY> {
     }
 }
 
-impl<NTY> EventsNodeProcessorOutput for ScalarEvents<NTY> where NTY: NumOps {}
+impl<NTY> EventsNodeProcessorOutput for ScalarEvents<NTY>
+where
+    NTY: NumOps,
+{
+    fn into_parts<NTY2>(self) -> (VecDeque<NTY2>, VecDeque<u64>) {
+        todo!()
+    }
+}
