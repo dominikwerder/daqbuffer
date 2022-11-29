@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::VecDeque;
 
 use crate::binsdim0::MinMaxAvgDim0Bins;
@@ -509,7 +510,11 @@ impl<NTY> EventsNodeProcessorOutput for XBinnedScalarEvents<NTY>
 where
     NTY: NumOps,
 {
-    fn into_parts<NTY2>(self) -> (VecDeque<NTY2>, VecDeque<u64>) {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn into_parts(self) -> (Box<dyn Any>, VecDeque<u64>, VecDeque<u64>) {
         todo!()
     }
 }

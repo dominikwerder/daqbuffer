@@ -7,6 +7,8 @@ use futures_util::{Stream, StreamExt};
 use items::eventfull::EventFull;
 use items::numops::{BoolNum, NumOps, StringNum};
 use items::{EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, StreamItem};
+use items_2::channelevents::ChannelEvents;
+use items_2::eventsdim0::EventsDim0;
 use netpod::log::*;
 use netpod::query::RawEventsQuery;
 use netpod::{AggKind, ByteOrder, ByteSize, Channel, DiskIoTune, NanoRange, NodeConfigCached, ScalarType, Shape};
@@ -19,7 +21,7 @@ fn make_num_pipeline_stream_evs<NTY, END, EVS, ENP>(
     event_value_shape: EVS,
     events_node_proc: ENP,
     event_blobs: EventChunkerMultifile,
-) -> Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>
+) -> Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>
 where
     NTY: NumOps + NumFromBytes<NTY, END> + 'static,
     END: Endianness + 'static,
@@ -33,17 +35,35 @@ where
         Ok(item) => match item {
             StreamItem::DataItem(item) => match item {
                 RangeCompletableItem::Data(item) => {
-                    let item = events_node_proc.process(item);
+                    // TODO fix super ugly slow glue code
                     use items::EventsNodeProcessorOutput;
-                    let parts = item.into_parts::<NTY>();
-                    let item = items_2::eventsdim0::EventsDim0 {
-                        tss: parts.1,
-                        pulses: VecDeque::new(),
-                        values: parts.0,
-                    };
-                    let item = Box::new(item) as Box<dyn items_0::Events>;
-                    //Ok(StreamItem::DataItem(RangeCompletableItem::Data(todo!())))
-                    Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
+                    let mut item = events_node_proc.process(item);
+                    if let Some(item) = item
+                        .as_any_mut()
+                        .downcast_mut::<items::scalarevents::ScalarEvents<NTY>>()
+                    {
+                        warn!("ScalarEvents");
+                        let tss: VecDeque<u64> = item.tss.iter().map(|x| *x).collect();
+                        let pulses: VecDeque<u64> = item.pulses.iter().map(|x| *x).collect();
+                        let values: VecDeque<NTY> = item.values.iter().map(|x| x.clone()).collect();
+                        let item = EventsDim0 { tss, pulses, values };
+                        let item = ChannelEvents::Events(Box::new(item));
+                        Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
+                    } else {
+                        if let Some(item) = item.as_any_mut().downcast_mut::<items::waveevents::WaveEvents<NTY>>() {
+                            warn!("WaveEvents");
+                            let _tss: VecDeque<u64> = item.tss.iter().map(|x| *x).collect();
+                            let _pulses: VecDeque<u64> = item.pulses.iter().map(|x| *x).collect();
+                            let _values: VecDeque<Vec<NTY>> = item.vals.iter().map(|x| x.clone()).collect();
+                            //let item = EventsDim1 { tss, pulses, values };
+                            //let item = ChannelEvents::Events(Box::new(item));
+                            //Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
+                            Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
+                        } else {
+                            error!("TODO bad, no idea what this item is");
+                            Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
+                        }
+                    }
                 }
                 RangeCompletableItem::RangeComplete => Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)),
             },
@@ -51,8 +71,7 @@ where
             StreamItem::Stats(item) => Ok(StreamItem::Stats(item)),
         },
         Err(e) => Err(e),
-    })
-    .map(|item| Box::new(item) as Box<dyn Framable + Send>);
+    });
     Box::pin(s2)
 }
 
@@ -150,7 +169,7 @@ macro_rules! pipe1 {
 pub async fn make_event_pipe(
     evq: &RawEventsQuery,
     node_config: &NodeConfigCached,
-) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>, Error> {
+) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     if false {
         match dbconn::channel_exists(&evq.channel, &node_config).await {
             Ok(_) => (),

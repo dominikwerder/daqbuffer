@@ -1,8 +1,8 @@
 use err::Error;
-use futures_core::Stream;
-use futures_util::StreamExt;
+use futures_util::{stream, Stream, StreamExt};
 use items::frame::{decode_frame, make_term_frame};
 use items::{EventQueryJsonStringFrame, Framable, RangeCompletableItem, Sitemty, StreamItem};
+use items_0::Empty;
 use items_2::channelevents::ChannelEvents;
 use netpod::histo::HistoLog2;
 use netpod::log::*;
@@ -107,107 +107,114 @@ async fn events_conn_handler_inner_try(
         return Err((e, netout).into());
     }
 
-    let mut p1: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> =
-        if evq.channel().backend() == "test-inmem" {
-            warn!("TEST BACKEND DATA");
-            use items_0::Empty;
-            use netpod::timeunits::MS;
-            let node_count = node_config.node_config.cluster.nodes.len();
-            let node_ix = node_config.ix;
-            if evq.channel().name() == "inmem-d0-i32" {
-                let mut item = items_2::eventsdim0::EventsDim0::<i32>::empty();
-                let td = MS * 10;
-                for i in 0..20 {
-                    let ts = MS * 17 + td * node_ix as u64 + td * node_count as u64 * i;
-                    let pulse = 1 + node_ix as u64 + node_count as u64 * i;
-                    item.push(ts, pulse, pulse as _);
-                }
-                let item = ChannelEvents::Events(Box::new(item) as _);
-                let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
-                let item = Box::new(item) as _;
-                let stream = futures_util::stream::iter([item]);
-                Box::pin(stream)
-            } else if evq.channel().name() == "inmem-d0-f32" {
-                let mut item = items_2::eventsdim0::EventsDim0::<f32>::empty();
-                let td = MS * 10;
-                for i in 0..20 {
-                    let ts = MS * 17 + td * node_ix as u64 + td * node_count as u64 * i;
-                    let pulse = 1 + node_ix as u64 + node_count as u64 * i;
-                    item.push(ts, pulse, ts as _);
-                }
-                let item = ChannelEvents::Events(Box::new(item) as _);
-                let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
-                let item = Box::new(item) as _;
-                let stream = futures_util::stream::iter([item]);
-                Box::pin(stream)
-            } else {
-                let stream = futures_util::stream::empty();
-                Box::pin(stream)
+    let mut p1: Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>> = if evq.channel().backend() == "test-inmem"
+    {
+        warn!("TEST BACKEND DATA");
+        use netpod::timeunits::MS;
+        let node_count = node_config.node_config.cluster.nodes.len();
+        let node_ix = node_config.ix;
+        if evq.channel().name() == "inmem-d0-i32" {
+            let mut item = items_2::eventsdim0::EventsDim0::<i32>::empty();
+            let td = MS * 10;
+            for i in 0..20 {
+                let ts = MS * 17 + td * node_ix as u64 + td * node_count as u64 * i;
+                let pulse = 1 + node_ix as u64 + node_count as u64 * i;
+                item.push(ts, pulse, pulse as _);
             }
-        } else if let Some(conf) = &node_config.node_config.cluster.scylla {
-            // TODO depends in general on the query
-            // TODO why both in PlainEventsQuery and as separate parameter? Check other usages.
-            let do_one_before_range = false;
-            // TODO use better builder pattern with shortcuts for production and dev defaults
-            let qu = PlainEventsQuery::new(evq.channel, evq.range, 1024 * 8, None, true);
-            let scyco = conf;
-            let _dbconf = node_config.node_config.cluster.database.clone();
-            let scy = match scyllaconn::create_scy_session(scyco).await {
-                Ok(k) => k,
-                Err(e) => return Err((e, netout))?,
-            };
-            let series = err::todoval();
-            let scalar_type = err::todoval();
-            let shape = err::todoval();
-            let do_test_stream_error = false;
-            let stream = match scyllaconn::events::make_scylla_stream(
-                &qu,
-                do_one_before_range,
-                series,
-                scalar_type,
-                shape,
-                scy,
-                do_test_stream_error,
-            )
-            .await
-            {
-                Ok(k) => k,
-                Err(e) => return Err((e, netout))?,
-            };
-            let s = stream.map(|item| {
-                let item = match item {
-                    Ok(item) => match item {
-                        ChannelEvents::Events(_item) => {
-                            // TODO
-                            let item = items::scalarevents::ScalarEvents::<f64>::empty();
-                            Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
-                        }
-                        ChannelEvents::Status(_item) => todo!(),
-                    },
-                    Err(e) => Err(e),
-                };
-                Box::new(item) as Box<dyn Framable + Send>
-            });
-            Box::pin(s)
-        } else if let Some(_) = &node_config.node.channel_archiver {
-            let e = Error::with_msg_no_trace("archapp not built");
-            return Err((e, netout))?;
-        } else if let Some(_) = &node_config.node.archiver_appliance {
-            let e = Error::with_msg_no_trace("archapp not built");
-            return Err((e, netout))?;
+            let item = ChannelEvents::Events(Box::new(item) as _);
+            let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
+            let stream = futures_util::stream::iter([item]);
+            Box::pin(stream)
+        } else if evq.channel().name() == "inmem-d0-f32" {
+            let mut item = items_2::eventsdim0::EventsDim0::<f32>::empty();
+            let td = MS * 10;
+            for i in 0..20 {
+                let ts = MS * 17 + td * node_ix as u64 + td * node_count as u64 * i;
+                let pulse = 1 + node_ix as u64 + node_count as u64 * i;
+                item.push(ts, pulse, ts as _);
+            }
+            let item = ChannelEvents::Events(Box::new(item) as _);
+            let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
+            let stream = futures_util::stream::iter([item]);
+            Box::pin(stream)
         } else {
-            let stream = match evq.agg_kind {
-                AggKind::EventBlobs => match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
-                    Ok(j) => j,
-                    Err(e) => return Err((e, netout))?,
-                },
-                _ => match disk::raw::conn::make_event_pipe(&evq, node_config).await {
-                    Ok(j) => j,
-                    Err(e) => return Err((e, netout))?,
-                },
-            };
-            stream
+            let stream = futures_util::stream::empty();
+            Box::pin(stream)
+        }
+    } else if let Some(conf) = &node_config.node_config.cluster.scylla {
+        // TODO depends in general on the query
+        // TODO why both in PlainEventsQuery and as separate parameter? Check other usages.
+        let do_one_before_range = false;
+        // TODO use better builder pattern with shortcuts for production and dev defaults
+        let qu = PlainEventsQuery::new(evq.channel, evq.range, 1024 * 8, None, true);
+        let scyco = conf;
+        let _dbconf = node_config.node_config.cluster.database.clone();
+        let scy = match scyllaconn::create_scy_session(scyco).await {
+            Ok(k) => k,
+            Err(e) => return Err((e, netout))?,
         };
+        let series = err::todoval();
+        let scalar_type = err::todoval();
+        let shape = err::todoval();
+        let do_test_stream_error = false;
+        let stream = match scyllaconn::events::make_scylla_stream(
+            &qu,
+            do_one_before_range,
+            series,
+            scalar_type,
+            shape,
+            scy,
+            do_test_stream_error,
+        )
+        .await
+        {
+            Ok(k) => k,
+            Err(e) => return Err((e, netout))?,
+        };
+        let e = Error::with_msg_no_trace("TODO scylla events");
+        if true {
+            return Err((e, netout))?;
+        }
+        let _s = stream.map(|item| {
+            let item = match item {
+                Ok(item) => match item {
+                    ChannelEvents::Events(_item) => {
+                        // TODO
+                        let item = items_2::eventsdim0::EventsDim0::<f64>::empty();
+                        let item = ChannelEvents::Events(Box::new(item));
+                        let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
+                        item
+                    }
+                    ChannelEvents::Status(_item) => todo!(),
+                },
+                Err(e) => Err(e),
+            };
+            Box::new(item) as Box<dyn Framable + Send>
+        });
+        let s = stream::empty();
+        Box::pin(s)
+    } else if let Some(_) = &node_config.node.channel_archiver {
+        let e = Error::with_msg_no_trace("archapp not built");
+        return Err((e, netout))?;
+    } else if let Some(_) = &node_config.node.archiver_appliance {
+        let e = Error::with_msg_no_trace("archapp not built");
+        return Err((e, netout))?;
+    } else {
+        let stream = match evq.agg_kind {
+            AggKind::EventBlobs => match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
+                Ok(_stream) => {
+                    let e = Error::with_msg_no_trace("TODO make_event_blobs_pipe");
+                    return Err((e, netout))?;
+                }
+                Err(e) => return Err((e, netout))?,
+            },
+            _ => match disk::raw::conn::make_event_pipe(&evq, node_config).await {
+                Ok(j) => j,
+                Err(e) => return Err((e, netout))?,
+            },
+        };
+        stream
+    };
     let mut buf_len_histo = HistoLog2::new(5);
     while let Some(item) = p1.next().await {
         let item = item.make_frame();

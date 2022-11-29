@@ -12,6 +12,7 @@ use items_0::subfr::SubFrId;
 use netpod::log::*;
 use netpod::{x_bin_count, AggKind, NanoRange, Shape};
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
 use tokio::fs::File;
@@ -540,7 +541,11 @@ impl<NTY> EventsNodeProcessorOutput for WaveEvents<NTY>
 where
     NTY: NumOps,
 {
-    fn into_parts<NTY2>(self) -> (VecDeque<NTY2>, VecDeque<u64>) {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn into_parts(self) -> (Box<dyn Any>, VecDeque<u64>, VecDeque<u64>) {
         todo!()
     }
 }

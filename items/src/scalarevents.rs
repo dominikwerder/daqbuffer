@@ -827,7 +827,15 @@ impl<NTY> EventsNodeProcessorOutput for ScalarEvents<NTY>
 where
     NTY: NumOps,
 {
-    fn into_parts<NTY2>(self) -> (VecDeque<NTY2>, VecDeque<u64>) {
-        todo!()
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn into_parts(self) -> (Box<dyn Any>, VecDeque<u64>, VecDeque<u64>) {
+        (
+            Box::new(VecDeque::from(self.values)),
+            self.tss.into(),
+            self.pulses.into(),
+        )
     }
 }
