@@ -366,6 +366,12 @@ impl From<rmp_serde::decode::Error> for Error {
     }
 }
 
+impl From<http::header::ToStrError> for Error {
+    fn from(k: http::header::ToStrError) -> Self {
+        Self::with_msg(format!("{:?}", k))
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PublicError {
     reason: Option<Reason>,

@@ -118,7 +118,7 @@ async fn plain_events_json(
     let query = query;
     // ---
 
-    if query.backend() == "testbackend" {
+    if true || query.backend().starts_with("test-") {
         let query = RawEventsQuery::new(query.channel().clone(), query.range().clone(), AggKind::Plain);
         let item = streams::plaineventsjson::plain_events_json(query, &node_config.node_config.cluster).await?;
         let buf = serde_json::to_vec(&item)?;

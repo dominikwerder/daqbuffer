@@ -756,6 +756,7 @@ pub enum GenVar {
     ConstRegular,
 }
 
+// TODO move to databuffer-specific crate
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChannelConfig {
     pub channel: Channel,

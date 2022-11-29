@@ -99,18 +99,21 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
 
 pub async fn node_status(req: Request<Body>, proxy_config: &ProxyConfig) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
-    let vdef = header::HeaderValue::from_static(APP_JSON);
-    let v = head.headers.get(header::ACCEPT).unwrap_or(&vdef);
-    if v == APP_JSON || v == ACCEPT_ALL {
-        let mut bodies = vec![];
+    let v = head
+        .headers
+        .get(http::header::ACCEPT)
+        .ok_or(Error::with_msg_no_trace("no accept header"))?;
+    let v = v.to_str()?;
+    if v.contains(APP_JSON) || v.contains(ACCEPT_ALL) {
+        let mut bodies = Vec::new();
         let urls = proxy_config
             .backends_status
             .iter()
-            .map(|pb| match Url::parse(&format!("{}/api/4/node_status", pb.url)) {
+            .map(|b| match Url::parse(&format!("{}/api/4/node_status", b.url)) {
                 Ok(url) => Ok(url),
-                Err(_) => Err(Error::with_msg(format!("parse error for: {:?}", pb))),
+                Err(e) => Err(Error::with_msg(format!("parse error for: {b:?}  {e:?}"))),
             })
-            .fold_ok(vec![], |mut a, x| {
+            .fold_ok(Vec::new(), |mut a, x| {
                 a.push(x);
                 bodies.push(None);
                 a
@@ -137,7 +140,7 @@ pub async fn node_status(req: Request<Body>, proxy_config: &ProxyConfig) -> Resu
             Box::pin(fut) as Pin<Box<dyn Future<Output = _> + Send>>
         };
         let ft = |all: Vec<SubRes<JsVal>>| {
-            let mut sres = vec![];
+            let mut sres = Vec::new();
             for j in all {
                 let val = serde_json::json!({
                     j.tag: j.val,
@@ -145,7 +148,7 @@ pub async fn node_status(req: Request<Body>, proxy_config: &ProxyConfig) -> Resu
                 sres.push(val);
             }
             let res = serde_json::json!({
-                "THIS_PROXY": "status here...",
+                proxy_config.name.clone(): "TODO proxy status",
                 "subnodes": sres,
             });
             let res = response(StatusCode::OK)

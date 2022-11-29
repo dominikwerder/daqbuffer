@@ -67,7 +67,7 @@ pub async fn unused_gather_json_from_hosts(req: Request<Body>, pathpre: &str) ->
         } else {
             req
         };
-        let req = req.header(http::header::ACCEPT, "application/json");
+        let req = req.header(http::header::ACCEPT, APP_JSON);
         let req = req.body(Body::empty());
         let task = tokio::spawn(async move {
             select! {
@@ -100,7 +100,7 @@ pub async fn unused_gather_json_from_hosts(req: Request<Body>, pathpre: &str) ->
         a.push(Hres { gh: tr.0, res });
     }
     let res = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, "application/json")
+        .header(http::header::CONTENT_TYPE, APP_JSON)
         .body(serde_json::to_string(&Jres { hosts: a })?.into())?;
     Ok(res)
 }
@@ -118,8 +118,7 @@ pub async fn gather_get_json(req: Request<Body>, node_config: &NodeConfigCached)
         .map(|node| {
             let uri = format!("http://{}:{}/api/4/{}", node.host, node.port, pathsuf);
             let req = Request::builder().method(Method::GET).uri(uri);
-            let req = req.header("x-log-from-node-name", format!("{}", node_config.node_config.name));
-            let req = req.header(http::header::ACCEPT, "application/json");
+            let req = req.header(http::header::ACCEPT, APP_JSON);
             let req = req.body(Body::empty());
             let task = tokio::spawn(async move {
                 select! {
@@ -187,8 +186,12 @@ where
         + 'static,
     FT: Fn(Vec<SubRes<SM>>) -> Result<Response<Body>, Error>,
 {
-    assert!(urls.len() == bodies.len());
-    assert!(urls.len() == tags.len());
+    if urls.len() != bodies.len() {
+        return Err(Error::with_msg_no_trace("unequal numbers of urls and bodies"));
+    }
+    if urls.len() != tags.len() {
+        return Err(Error::with_msg_no_trace("unequal numbers of urls and tags"));
+    }
     let spawned: Vec<_> = urls
         .into_iter()
         .zip(bodies.into_iter())
@@ -237,7 +240,7 @@ where
             (url, jh)
         })
         .collect();
-    let mut a: Vec<SubRes<SM>> = vec![];
+    let mut a: Vec<SubRes<SM>> = Vec::new();
     for (_url, jh) in spawned {
         let res: SubRes<SM> = match jh.await {
             Ok(k) => match k {
@@ -281,7 +284,7 @@ mod test {
             },
             |_all| {
                 let res = response(StatusCode::OK)
-                    .header(http::header::CONTENT_TYPE, "application/json")
+                    .header(http::header::CONTENT_TYPE, APP_JSON)
                     .body(serde_json::to_string(&42)?.into())?;
                 Ok(res)
             },

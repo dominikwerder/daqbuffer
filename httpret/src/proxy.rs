@@ -167,14 +167,17 @@ async fn proxy_http_service_inner(
         use std::fmt::Write;
         let mut body = String::new();
         let out = &mut body;
+        write!(out, "<pre>\n")?;
         write!(out, "METHOD {:?}<br>\n", req.method())?;
-        write!(out, "URI {:?}<br>\n", req.uri())?;
-        write!(out, "HOST {:?}<br>\n", req.uri().host())?;
-        write!(out, "PORT {:?}<br>\n", req.uri().port())?;
-        write!(out, "PATH {:?}<br>\n", req.uri().path())?;
+        write!(out, "URI    {:?}<br>\n", req.uri())?;
+        write!(out, "HOST   {:?}<br>\n", req.uri().host())?;
+        write!(out, "PORT   {:?}<br>\n", req.uri().port())?;
+        write!(out, "PATH   {:?}<br>\n", req.uri().path())?;
+        write!(out, "QUERY  {:?}<br>\n", req.uri().query())?;
         for (hn, hv) in req.headers() {
             write!(out, "HEADER {hn:?}: {hv:?}<br>\n")?;
         }
+        write!(out, "</pre>\n")?;
         Ok(response(StatusCode::NOT_FOUND).body(Body::from(body))?)
     }
 }
@@ -536,6 +539,7 @@ pub async fn proxy_single_backend_query<QT>(
 where
     QT: FromUrl + AppendToUrl + HasBackend + HasTimeout,
 {
+    info!("proxy_single_backend_query");
     let (head, _body) = req.into_parts();
     match head.headers.get(http::header::ACCEPT) {
         Some(v) => {
@@ -548,15 +552,40 @@ where
                         return Ok(response_err(StatusCode::BAD_REQUEST, msg)?);
                     }
                 };
-                // TODO is this special case used any more?
+                // TODO remove this special case
+                // SPECIAL CASE
+                // For pulse mapping we want to use a separate list of backends from the config file.
+                // In general, caller of this function should already provide the chosen list of backends.
                 let sh = if url.as_str().contains("/map/pulse/") {
                     get_query_host_for_backend_2(&query.backend(), proxy_config)?
                 } else {
                     get_query_host_for_backend(&query.backend(), proxy_config)?
                 };
+                // TODO remove this special case
+                // SPECIAL CASE:
+                // Since the inner proxy is not yet handling map-pulse requests without backend,
+                // we can not simply copy the original url here.
+                // Instead, url needs to get parsed and formatted.
+                // In general, the caller of this function should be able to provide a url, or maybe
+                // better a closure so that the url can even depend on backend.
+                let uri_path: String = if url.as_str().contains("/map/pulse/") {
+                    match MapPulseQuery::from_url(&url) {
+                        Ok(qu) => {
+                            info!("qu {qu:?}");
+                            format!("/api/4/map/pulse/{}/{}", qu.backend, qu.pulse)
+                        }
+                        Err(e) => {
+                            error!("{e:?}");
+                            String::from("/BAD")
+                        }
+                    }
+                } else {
+                    head.uri.path().into()
+                };
+                info!("uri_path {uri_path}");
                 let urls = [sh]
                     .iter()
-                    .map(|sh| match Url::parse(&format!("{}{}", sh, head.uri.path())) {
+                    .map(|sh| match Url::parse(&format!("{}{}", sh, uri_path)) {
                         Ok(mut url) => {
                             query.append_to_url(&mut url);
                             Ok(url)

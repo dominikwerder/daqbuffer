@@ -47,6 +47,7 @@ use tracing::Instrument;
 use url::Url;
 
 pub const PSI_DAQBUFFER_SERVICE_MARK: &'static str = "PSI-Daqbuffer-Service-Mark";
+pub const PSI_DAQBUFFER_SEEN_URL: &'static str = "PSI-Daqbuffer-Seen-Url";
 
 pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
     static STATUS_BOARD_INIT: Once = Once::new();
@@ -231,6 +232,15 @@ macro_rules! static_http_api1 {
 }
 
 async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    use http::HeaderValue;
+    let mut urlmarks = Vec::new();
+    urlmarks.push(format!("{}:{}", req.method(), req.uri()));
+    for (k, v) in req.headers() {
+        if k == PSI_DAQBUFFER_SEEN_URL {
+            let s = String::from_utf8_lossy(v.as_bytes());
+            urlmarks.push(s.into());
+        }
+    }
     let ctx = ReqCtx::with_node(&req, node_config);
     let mut res = http_service_inner(req, &ctx, node_config).await?;
     let hm = res.headers_mut();
@@ -240,6 +250,10 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         hm.append(PSI_DAQBUFFER_SERVICE_MARK, m.parse().unwrap());
     }
     hm.append(PSI_DAQBUFFER_SERVICE_MARK, ctx.mark.parse().unwrap());
+    for s in urlmarks {
+        let v = HeaderValue::from_str(&s).unwrap_or_else(|_| HeaderValue::from_static("invalid"));
+        hm.append(PSI_DAQBUFFER_SEEN_URL, v);
+    }
     Ok(res)
 }
 
@@ -398,12 +412,21 @@ async fn http_service_inner(
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else {
-        Ok(response(StatusCode::NOT_FOUND).body(Body::from(format!(
-            "Sorry, not found: {:?}  {:?}  {:?}",
-            req.method(),
-            req.uri().path(),
-            req.uri().query(),
-        )))?)
+        use std::fmt::Write;
+        let mut body = String::new();
+        let out = &mut body;
+        write!(out, "<pre>\n")?;
+        write!(out, "METHOD {:?}<br>\n", req.method())?;
+        write!(out, "URI    {:?}<br>\n", req.uri())?;
+        write!(out, "HOST   {:?}<br>\n", req.uri().host())?;
+        write!(out, "PORT   {:?}<br>\n", req.uri().port())?;
+        write!(out, "PATH   {:?}<br>\n", req.uri().path())?;
+        write!(out, "QUERY  {:?}<br>\n", req.uri().query())?;
+        for (hn, hv) in req.headers() {
+            write!(out, "HEADER {hn:?}: {hv:?}<br>\n")?;
+        }
+        write!(out, "</pre>\n")?;
+        Ok(response(StatusCode::NOT_FOUND).body(Body::from(body))?)
     }
 }
 

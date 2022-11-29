@@ -88,4 +88,5 @@ impl Convable for chrono::ParseError {}
 impl Convable for url::ParseError {}
 impl Convable for http::uri::InvalidUri {}
 impl Convable for http::Error {}
+impl Convable for http::header::ToStrError {}
 impl Convable for hyper::Error {}

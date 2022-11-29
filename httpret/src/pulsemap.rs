@@ -463,8 +463,8 @@ async fn search_pulse(pulse: u64, path: &Path) -> Result<Option<u64>, Error> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MapPulseQuery {
-    backend: String,
-    pulse: u64,
+    pub backend: String,
+    pub pulse: u64,
 }
 
 impl HasBackend for MapPulseQuery {
@@ -486,12 +486,19 @@ impl FromUrl for MapPulseQuery {
             .ok_or(Error::with_msg_no_trace("no path in url"))?
             .rev();
         let pulsestr = pit.next().ok_or(Error::with_msg_no_trace("no pulse in url path"))?;
-        let backend = pit
-            .next()
-            .ok_or(Error::with_msg_no_trace("no backend in url path"))?
-            .into();
+        let backend = pit.next().unwrap_or("sf-databuffer").into();
+        //.ok_or(Error::with_msg_no_trace("no backend in url path"))?
+        //.into();
+        // TODO !!!
+        // Clients MUST specify the backend
+        let backend = if backend == "pulse" {
+            String::from("sf-databuffer")
+        } else {
+            backend
+        };
         let pulse: u64 = pulsestr.parse()?;
         let ret = Self { backend, pulse };
+        info!("FromUrl {ret:?}");
         Ok(ret)
     }
 

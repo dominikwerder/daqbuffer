@@ -151,6 +151,7 @@ pub async fn make_event_pipe(
     let channel_config = match read_local_config(evq.channel.clone(), node_config.node.clone()).await {
         Ok(k) => k,
         Err(e) => {
+            // TODO introduce detailed error type
             if e.msg().contains("ErrorKind::NotFound") {
                 let s = futures_util::stream::empty();
                 return Ok(Box::pin(s));
