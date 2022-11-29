@@ -418,9 +418,14 @@ impl FrameType for EventQueryJsonStringFrame {
     }
 }
 
+pub trait EventsNodeProcessorOutput:
+    Send + Unpin + DeserializeOwned + WithTimestamps + TimeBinnableType + ByteEstimate
+{
+}
+
 pub trait EventsNodeProcessor: Send + Unpin {
     type Input;
-    type Output: Send + Unpin + DeserializeOwned + WithTimestamps + TimeBinnableType + ByteEstimate;
+    type Output: EventsNodeProcessorOutput;
     fn create(shape: Shape, agg_kind: AggKind) -> Self;
     fn process(&self, inp: Self::Input) -> Self::Output;
 }

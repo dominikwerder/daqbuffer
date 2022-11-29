@@ -3,9 +3,10 @@ use crate::numops::NumOps;
 use crate::xbinnedscalarevents::XBinnedScalarEvents;
 use crate::xbinnedwaveevents::XBinnedWaveEvents;
 use crate::{
-    Appendable, ByteEstimate, Clearable, EventAppendable, EventsDyn, EventsNodeProcessor, FilterFittingInside, Fits,
-    FitsInside, FrameType, FrameTypeInnerStatic, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile,
-    SubFrId, TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    Appendable, ByteEstimate, Clearable, EventAppendable, EventsDyn, EventsNodeProcessor, EventsNodeProcessorOutput,
+    FilterFittingInside, Fits, FitsInside, FrameType, FrameTypeInnerStatic, NewEmpty, PushableIndex, RangeOverlapInfo,
+    ReadPbv, ReadableFromFile, SubFrId, TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, WithLen,
+    WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
@@ -533,3 +534,5 @@ impl<NTY: NumOps> EventsDyn for WaveEvents<NTY> {
         todo!()
     }
 }
+
+impl<NTY> EventsNodeProcessorOutput for WaveEvents<NTY> where NTY: NumOps {}

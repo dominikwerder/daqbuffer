@@ -52,6 +52,16 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
             return Ok(ret);
         }
     }
+    if channel.backend() == "test-disk-databuffer" {
+        if channel.name() == "scalar-i32-be" {
+            let ret = ChConf {
+                series: 1,
+                scalar_type: ScalarType::I32,
+                shape: Shape::Scalar,
+            };
+            return Ok(ret);
+        }
+    }
     // TODO use a common already running worker pool for these queries:
     let dbconf = &ncc.node_config.cluster.database;
     let dburl = format!(

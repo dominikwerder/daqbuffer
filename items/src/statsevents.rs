@@ -1,8 +1,8 @@
 use crate::streams::{Collectable, Collector};
 use crate::{
-    ts_offs_from_abs, Appendable, ByteEstimate, Clearable, EventAppendable, FilterFittingInside, Fits, FitsInside,
-    FrameType, FrameTypeInnerStatic, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile,
-    TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    ts_offs_from_abs, Appendable, ByteEstimate, Clearable, EventAppendable, EventsNodeProcessorOutput,
+    FilterFittingInside, Fits, FitsInside, FrameType, FrameTypeInnerStatic, NewEmpty, PushableIndex, RangeOverlapInfo,
+    ReadPbv, ReadableFromFile, TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
@@ -420,3 +420,5 @@ impl EventAppendable for StatsEvents {
         ret
     }
 }
+
+impl EventsNodeProcessorOutput for StatsEvents {}

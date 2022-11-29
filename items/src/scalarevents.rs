@@ -3,9 +3,9 @@ use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
     pulse_offs_from_abs, ts_offs_from_abs, Appendable, ByteEstimate, Clearable, EventAppendable, EventsDyn,
-    FilterFittingInside, Fits, FitsInside, FrameType, FrameTypeInnerStatic, NewEmpty, PushableIndex, RangeOverlapInfo,
-    ReadPbv, ReadableFromFile, TimeBinnableDyn, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinnerDyn, WithLen,
-    WithTimestamps,
+    EventsNodeProcessorOutput, FilterFittingInside, Fits, FitsInside, FrameType, FrameTypeInnerStatic, NewEmpty,
+    PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, TimeBinnableDyn, TimeBinnableType,
+    TimeBinnableTypeAggregator, TimeBinnerDyn, WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
@@ -822,3 +822,5 @@ impl<NTY: NumOps + 'static> TimeBinnerDyn for ScalarEventsTimeBinner<NTY> {
         }
     }
 }
+
+impl<NTY> EventsNodeProcessorOutput for ScalarEvents<NTY> where NTY: NumOps {}

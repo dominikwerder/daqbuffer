@@ -325,6 +325,26 @@ pub trait TimeBinnable: fmt::Debug + WithLen + RangeOverlapInfo + Any + Send {
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult>;
 }
 
+// Helper trait to bridge between impls of event containers during refactoring.
+// TODO get rid when no longer needed.
+pub trait IntoEvents {
+    fn into_events(self) -> Box<dyn Events>;
+}
+
+impl<NTY> IntoEvents for items::scalarevents::ScalarEvents<NTY>
+where
+    NTY: ScalarOps,
+{
+    fn into_events(self) -> Box<dyn Events> {
+        let ret = items_2::eventsdim0::EventsDim0::<NTY> {
+            tss: self.tss.into(),
+            pulses: self.pulses.into(),
+            values: self.values.into(),
+        };
+        Box::new(ret)
+    }
+}
+
 // TODO can I remove the Any bound?
 
 /// Container of some form of events, for use as trait object.

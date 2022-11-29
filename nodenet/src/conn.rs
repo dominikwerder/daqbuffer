@@ -196,7 +196,7 @@ async fn events_conn_handler_inner_try(
             let e = Error::with_msg_no_trace("archapp not built");
             return Err((e, netout))?;
         } else {
-            match evq.agg_kind {
+            let stream = match evq.agg_kind {
                 AggKind::EventBlobs => match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
                     Ok(j) => j,
                     Err(e) => return Err((e, netout))?,
@@ -205,7 +205,8 @@ async fn events_conn_handler_inner_try(
                     Ok(j) => j,
                     Err(e) => return Err((e, netout))?,
                 },
-            }
+            };
+            stream
         };
     let mut buf_len_histo = HistoLog2::new(5);
     while let Some(item) = p1.next().await {

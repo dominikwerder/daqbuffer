@@ -2,9 +2,9 @@ use crate::binsdim1::MinMaxAvgDim1Bins;
 use crate::numops::NumOps;
 use crate::streams::{Collectable, Collector};
 use crate::{
-    Appendable, ByteEstimate, Clearable, FilterFittingInside, Fits, FitsInside, FrameType, FrameTypeInnerStatic,
-    NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SubFrId, TimeBinnableType,
-    TimeBinnableTypeAggregator, WithLen, WithTimestamps,
+    Appendable, ByteEstimate, Clearable, EventsNodeProcessorOutput, FilterFittingInside, Fits, FitsInside, FrameType,
+    FrameTypeInnerStatic, NewEmpty, PushableIndex, RangeOverlapInfo, ReadPbv, ReadableFromFile, SubFrId,
+    TimeBinnableType, TimeBinnableTypeAggregator, WithLen, WithTimestamps,
 };
 use err::Error;
 use netpod::log::*;
@@ -532,3 +532,5 @@ where
         Self::Collector::new(bin_count_exp)
     }
 }
+
+impl<NTY> EventsNodeProcessorOutput for XBinnedWaveEvents<NTY> where NTY: NumOps {}
