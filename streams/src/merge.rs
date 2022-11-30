@@ -4,6 +4,7 @@ use crate::frames::eventsfromframes::EventsFromFrames;
 use crate::frames::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
 use futures_util::Stream;
+use futures_util::StreamExt;
 use items::frame::make_frame;
 use items::frame::make_term_frame;
 use items::sitem_data;
@@ -41,6 +42,9 @@ where
         // TODO for images, we need larger buffer capacity
         let frames = InMemoryFrameAsyncReadStream::new(netin, 1024 * 128);
         let stream = EventsFromFrames::<_, T>::new(frames);
+        let stream = stream.inspect(|x| {
+            items::on_sitemty_range_complete!(x, warn!("RangeComplete SEEN IN RECEIVED TCP STREAM"));
+        });
         streams.push(Box::pin(stream) as _);
     }
     Ok(streams)

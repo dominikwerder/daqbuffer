@@ -8,13 +8,53 @@ pub mod binnedjson;
 #[cfg(test)]
 mod events;
 #[cfg(test)]
-mod eventsjson;
-#[cfg(test)]
 mod timeweightedjson;
 
 use bytes::BytesMut;
 use err::Error;
 use std::future::Future;
+
+fn f32_iter_cmp_near<A, B>(a: A, b: B) -> bool
+where
+    A: IntoIterator<Item = f32>,
+    B: IntoIterator<Item = f32>,
+{
+    let mut a = a.into_iter();
+    let mut b = b.into_iter();
+    loop {
+        let x = a.next();
+        let y = b.next();
+        if let (Some(x), Some(y)) = (x, y) {
+            let x = {
+                let mut a = x.to_ne_bytes();
+                a[0] &= 0xf0;
+                f32::from_ne_bytes(a)
+            };
+            let y = {
+                let mut a = y.to_ne_bytes();
+                a[0] &= 0xf0;
+                f32::from_ne_bytes(a)
+            };
+            if x != y {
+                return false;
+            }
+        } else if x.is_some() || y.is_some() {
+            return false;
+        } else {
+            return true;
+        }
+    }
+}
+
+#[test]
+fn test_f32_iter_cmp_near() {
+    let a = [-127.553e17];
+    let b = [-127.554e17];
+    assert_eq!(f32_iter_cmp_near(a, b), false);
+    let a = [-127.55300e17];
+    let b = [-127.55301e17];
+    assert_eq!(f32_iter_cmp_near(a, b), true);
+}
 
 fn run_test<F>(f: F) -> Result<(), Error>
 where

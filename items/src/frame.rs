@@ -2,9 +2,8 @@ use crate::inmem::InMemoryFrame;
 use crate::{ContainsError, FrameDecodable, FrameType, LogItem, StatsItem};
 use crate::{ERROR_FRAME_TYPE_ID, INMEM_FRAME_ENCID, INMEM_FRAME_HEAD, INMEM_FRAME_MAGIC};
 use crate::{LOG_FRAME_TYPE_ID, RANGE_COMPLETE_FRAME_TYPE_ID, STATS_FRAME_TYPE_ID, TERM_FRAME_TYPE_ID};
-use bincode::config::{
-    FixintEncoding, LittleEndian, RejectTrailing, WithOtherEndian, WithOtherIntEncoding, WithOtherTrailing,
-};
+use bincode::config::{FixintEncoding, LittleEndian, RejectTrailing};
+use bincode::config::{WithOtherEndian, WithOtherIntEncoding, WithOtherTrailing};
 use bincode::DefaultOptions;
 use bytes::{BufMut, BytesMut};
 use err::Error;
@@ -83,15 +82,35 @@ where
     <T as serde::Deserialize>::deserialize(&mut de).map_err(|e| format!("{e}").into())
 }
 
+pub fn encode_to_vec<S>(item: S) -> Result<Vec<u8>, Error>
+where
+    S: Serialize,
+{
+    serde_json::to_vec(&item).map_err(|e| e.into())
+}
+
+pub fn decode_from_slice<T>(buf: &[u8]) -> Result<T, Error>
+where
+    T: for<'de> serde::Deserialize<'de>,
+{
+    serde_json::from_slice(buf).map_err(|e| e.into())
+}
+
 pub fn make_frame_2<T>(item: &T, fty: u32) -> Result<BytesMut, Error>
 where
     T: erased_serde::Serialize,
 {
     trace!("make_frame_2  fty {:x}", fty);
     let mut out = Vec::new();
-    let mut ser = bincode_ser(&mut out);
     //let mut ser = rmp_serde::Serializer::new(&mut out).with_struct_map();
     //let writer = ciborium::ser::into_writer(&item, &mut out).unwrap();
+    #[cfg(DIS)]
+    let ser2 = {
+        let mut ser = bincode_ser(&mut out);
+        let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser);
+        let _ = ser2;
+    };
+    let mut ser = serde_json::Serializer::new(&mut out);
     let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser);
     match item.erased_serialize(&mut ser2) {
         Ok(_) => {
@@ -126,7 +145,7 @@ where
 // TODO remove duplication for these similar `make_*_frame` functions:
 
 pub fn make_error_frame(error: &::err::Error) -> Result<BytesMut, Error> {
-    match bincode_to_vec(error) {
+    match encode_to_vec(error) {
         Ok(enc) => {
             let mut h = crc32fast::Hasher::new();
             h.update(&enc);
@@ -155,7 +174,7 @@ pub fn make_error_frame(error: &::err::Error) -> Result<BytesMut, Error> {
 // TODO can I remove this usage?
 pub fn make_log_frame(item: &LogItem) -> Result<BytesMut, Error> {
     warn!("make_log_frame {item:?}");
-    match bincode_to_vec(item) {
+    match encode_to_vec(item) {
         Ok(enc) => {
             let mut h = crc32fast::Hasher::new();
             h.update(&enc);
@@ -180,7 +199,7 @@ pub fn make_log_frame(item: &LogItem) -> Result<BytesMut, Error> {
 }
 
 pub fn make_stats_frame(item: &StatsItem) -> Result<BytesMut, Error> {
-    match bincode_to_vec(item) {
+    match encode_to_vec(item) {
         Ok(enc) => {
             let mut h = crc32fast::Hasher::new();
             h.update(&enc);
@@ -204,6 +223,7 @@ pub fn make_stats_frame(item: &StatsItem) -> Result<BytesMut, Error> {
 }
 
 pub fn make_range_complete_frame() -> Result<BytesMut, Error> {
+    warn!("make_range_complete_frame");
     let enc = [];
     let mut h = crc32fast::Hasher::new();
     h.update(&enc);
@@ -259,7 +279,7 @@ where
         )));
     }
     if frame.tyid() == ERROR_FRAME_TYPE_ID {
-        let k: ::err::Error = match bincode_from_slice(frame.buf()) {
+        let k: ::err::Error = match decode_from_slice(frame.buf()) {
             Ok(item) => item,
             Err(e) => {
                 error!("ERROR deserialize  len {}  ERROR_FRAME_TYPE_ID", frame.buf().len());
@@ -271,7 +291,7 @@ where
         };
         Ok(T::from_error(k))
     } else if frame.tyid() == LOG_FRAME_TYPE_ID {
-        let k: LogItem = match bincode_from_slice(frame.buf()) {
+        let k: LogItem = match decode_from_slice(frame.buf()) {
             Ok(item) => item,
             Err(e) => {
                 error!("ERROR deserialize  len {}  LOG_FRAME_TYPE_ID", frame.buf().len());
@@ -282,23 +302,8 @@ where
             }
         };
         Ok(T::from_log(k))
-    } else if frame.tyid() == LOG_FRAME_TYPE_ID {
-        let _: crate::Sitemty<()> = match bincode_from_slice(frame.buf()) {
-            Ok(item) => {
-                error!("GOOD DECODE OF A FULL LOG FRAME SITEMTY {item:?}");
-                item
-            }
-            Err(e) => {
-                error!("ERROR deserialize  len {}  LOG_FRAME_TYPE_ID", frame.buf().len());
-                let n = frame.buf().len().min(128);
-                let s = String::from_utf8_lossy(&frame.buf()[..n]);
-                error!("frame.buf as string: {:?}", s);
-                Err(e)?
-            }
-        };
-        Err(Error::with_msg_no_trace("BAD"))
     } else if frame.tyid() == STATS_FRAME_TYPE_ID {
-        let k: StatsItem = match bincode_from_slice(frame.buf()) {
+        let k: StatsItem = match decode_from_slice(frame.buf()) {
             Ok(item) => item,
             Err(e) => {
                 error!("ERROR deserialize  len {}  STATS_FRAME_TYPE_ID", frame.buf().len());
@@ -310,6 +315,7 @@ where
         };
         Ok(T::from_stats(k))
     } else if frame.tyid() == RANGE_COMPLETE_FRAME_TYPE_ID {
+        warn!("decode_frame  SEE RANGE COMPLETE FRAME TYPE");
         // There is currently no content in this variant.
         Ok(T::from_range_complete())
     } else {
@@ -322,7 +328,7 @@ where
                 frame
             )))
         } else {
-            match bincode_from_slice(frame.buf()) {
+            match decode_from_slice(frame.buf()) {
                 Ok(item) => Ok(item),
                 Err(e) => {
                     error!("ERROR deserialize  len {}  tyid {:x}", frame.buf().len(), frame.tyid());

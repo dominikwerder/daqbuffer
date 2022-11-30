@@ -145,7 +145,7 @@ impl<NTY> WithLen for EventsDim0Collector<NTY> {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct EventsDim0CollectorOutput<NTY> {
     #[serde(rename = "tsAnchor")]
     ts_anchor_sec: u64,
@@ -157,16 +157,46 @@ pub struct EventsDim0CollectorOutput<NTY> {
     pulse_anchor: u64,
     #[serde(rename = "pulseOff")]
     pulse_off: VecDeque<u64>,
+    #[serde(rename = "values")]
     values: VecDeque<NTY>,
-    #[serde(skip_serializing_if = "crate::bool_is_false", rename = "finalisedRange")]
+    #[serde(rename = "finalisedRange", default, skip_serializing_if = "crate::bool_is_false")]
     range_complete: bool,
-    #[serde(skip_serializing_if = "crate::bool_is_false", rename = "timedOut")]
+    #[serde(rename = "timedOut", default, skip_serializing_if = "crate::bool_is_false")]
     timed_out: bool,
 }
 
 impl<NTY: ScalarOps> EventsDim0CollectorOutput<NTY> {
     pub fn len(&self) -> usize {
         self.values.len()
+    }
+
+    pub fn ts_anchor_sec(&self) -> u64 {
+        self.ts_anchor_sec
+    }
+
+    pub fn ts_off_ms(&self) -> &VecDeque<u64> {
+        &self.ts_off_ms
+    }
+
+    pub fn pulse_anchor(&self) -> u64 {
+        self.pulse_anchor
+    }
+
+    pub fn pulse_off(&self) -> &VecDeque<u64> {
+        &self.pulse_off
+    }
+
+    /// Note: only used for unit tests.
+    pub fn values_to_f32(&self) -> VecDeque<f32> {
+        self.values.iter().map(|x| x.as_prim_f32_b()).collect()
+    }
+
+    pub fn range_complete(&self) -> bool {
+        self.range_complete
+    }
+
+    pub fn timed_out(&self) -> bool {
+        self.timed_out
     }
 }
 

@@ -24,7 +24,7 @@ use netpod::log::*;
 use netpod::timeunits::{MS, SEC};
 use netpod::{log::Level, AggKind, EventDataReadStats, NanoRange, Shape};
 use netpod::{DiskStats, RangeFilterStats, ScalarType};
-use serde::de::{self, DeserializeOwned, Visitor};
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize, Serializer};
 use std::any::Any;
 use std::collections::VecDeque;
@@ -99,6 +99,15 @@ impl LogItem {
 
 pub type Sitemty<T> = Result<StreamItem<RangeCompletableItem<T>>, Error>;
 
+#[macro_export]
+macro_rules! on_sitemty_range_complete {
+    ($item:expr, $ex:expr) => {
+        if let Ok($crate::StreamItem::DataItem($crate::RangeCompletableItem::RangeComplete)) = $item {
+            $ex
+        }
+    };
+}
+
 impl<T> FrameType for Sitemty<T>
 where
     T: FrameType,
@@ -122,29 +131,13 @@ pub fn sitem_data<X>(x: X) -> Sitemty<X> {
     Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
 }
 
-struct VisitLevel;
-
-impl<'de> Visitor<'de> for VisitLevel {
-    type Value = u32;
-
-    fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "expect u32 Level code")
-    }
-
-    fn visit_u32<E>(self, v: u32) -> Result<Self::Value, E>
-    where
-        E: de::Error,
-    {
-        Ok(v)
-    }
-}
-
 mod levelserde {
     use super::Level;
-    use super::VisitLevel;
+    use serde::de::{self, Visitor};
     use serde::{Deserializer, Serializer};
+    use std::fmt;
 
-    pub fn serialize<S>(t: &Level, s: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S>(t: &Level, se: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -155,32 +148,44 @@ mod levelserde {
             Level::DEBUG => 4,
             Level::TRACE => 5,
         };
-        s.serialize_u32(g)
+        se.serialize_u32(g)
     }
 
-    pub fn deserialize<'de, D>(d: D) -> Result<Level, D::Error>
+    struct VisitLevel;
+
+    impl VisitLevel {
+        fn from_u32(x: u32) -> Level {
+            match x {
+                1 => Level::ERROR,
+                2 => Level::WARN,
+                3 => Level::INFO,
+                4 => Level::DEBUG,
+                5 => Level::TRACE,
+                _ => Level::TRACE,
+            }
+        }
+    }
+
+    impl<'de> Visitor<'de> for VisitLevel {
+        type Value = Level;
+
+        fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            write!(fmt, "expect Level code")
+        }
+
+        fn visit_u64<E>(self, val: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(VisitLevel::from_u32(val as _))
+        }
+    }
+
+    pub fn deserialize<'de, D>(de: D) -> Result<Level, D::Error>
     where
         D: Deserializer<'de>,
     {
-        match d.deserialize_u32(VisitLevel) {
-            Ok(level) => {
-                let g = if level == 1 {
-                    Level::ERROR
-                } else if level == 2 {
-                    Level::WARN
-                } else if level == 3 {
-                    Level::INFO
-                } else if level == 4 {
-                    Level::DEBUG
-                } else if level == 5 {
-                    Level::TRACE
-                } else {
-                    Level::TRACE
-                };
-                Ok(g)
-            }
-            Err(e) => Err(e),
-        }
+        de.deserialize_u32(VisitLevel)
     }
 }
 
@@ -302,6 +307,7 @@ where
     T: Sized + serde::Serialize + FrameType,
 {
     fn make_frame(&self) -> Result<BytesMut, Error> {
+        info!("--------   make_frame  for Sitemty");
         match self {
             Ok(StreamItem::DataItem(RangeCompletableItem::Data(k))) => {
                 let frame_type_id = k.frame_type_id();

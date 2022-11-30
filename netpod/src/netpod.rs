@@ -2,6 +2,7 @@ pub mod histo;
 pub mod query;
 pub mod status;
 pub mod streamext;
+pub mod api4;
 
 use crate::log::*;
 use bytes::Bytes;

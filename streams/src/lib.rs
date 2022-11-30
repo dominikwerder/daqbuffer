@@ -7,6 +7,7 @@ pub mod merge;
 pub mod needminbuffer;
 pub mod plaineventsjson;
 pub mod rangefilter;
+pub mod slidebuf;
 pub mod tcprawclient;
 #[cfg(test)]
 pub mod test;

@@ -1,5 +1,6 @@
 use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
+use crate::test::f32_iter_cmp_near;
 use chrono::{DateTime, Utc};
 use err::Error;
 use http::StatusCode;
@@ -29,6 +30,62 @@ fn events_plain_json_00() -> Result<(), Error> {
             4,
         )
         .await?;
+        Ok(())
+    };
+    taskrun::run(fut)
+}
+
+#[test]
+fn events_plain_json_01() -> Result<(), Error> {
+    let fut = async {
+        let rh = require_test_hosts_running()?;
+        let cluster = &rh.cluster;
+        let jsv = events_plain_json(
+            Channel {
+                backend: "test-disk-databuffer".into(),
+                name: "scalar-i32-be".into(),
+                series: None,
+            },
+            "1970-01-01T00:20:10.000Z",
+            "1970-01-01T00:20:13.000Z",
+            cluster,
+            true,
+            4,
+        )
+        .await?;
+        let res: items_2::eventsdim0::EventsDim0CollectorOutput<i32> = serde_json::from_value(jsv).unwrap();
+        assert_eq!(res.ts_anchor_sec(), 1210);
+        assert_eq!(res.pulse_anchor(), 2420);
+        let exp = [2420., 2421., 2422., 2423., 2424., 2425.];
+        assert_eq!(f32_iter_cmp_near(res.values_to_f32(), exp), true);
+        assert_eq!(res.range_complete(), true);
+        assert_eq!(res.timed_out(), false);
+        Ok(())
+    };
+    taskrun::run(fut)
+}
+
+#[test]
+fn events_plain_json_02_range_incomplete() -> Result<(), Error> {
+    let fut = async {
+        let rh = require_test_hosts_running()?;
+        let cluster = &rh.cluster;
+        let jsv = events_plain_json(
+            Channel {
+                backend: "test-disk-databuffer".into(),
+                name: "scalar-i32-be".into(),
+                series: None,
+            },
+            "1970-01-03T23:59:55.000Z",
+            "1970-01-04T00:00:01.000Z",
+            cluster,
+            true,
+            4,
+        )
+        .await?;
+        let res: items_2::eventsdim0::EventsDim0CollectorOutput<i32> = serde_json::from_value(jsv).unwrap();
+        assert_eq!(res.range_complete(), false);
+        assert_eq!(res.timed_out(), false);
         Ok(())
     };
     taskrun::run(fut)

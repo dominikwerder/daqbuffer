@@ -10,19 +10,19 @@ use std::task::{Context, Poll};
 
 #[allow(unused)]
 macro_rules! trace2 {
-    ($($arg:tt)*) => ();
+    (D$($arg:tt)*) => ();
     ($($arg:tt)*) => (eprintln!($($arg)*));
 }
 
 #[allow(unused)]
 macro_rules! trace3 {
-    ($($arg:tt)*) => ();
+    (D$($arg:tt)*) => ();
     ($($arg:tt)*) => (eprintln!($($arg)*));
 }
 
 #[allow(unused)]
 macro_rules! trace4 {
-    ($($arg:tt)*) => ();
+    (D$($arg:tt)*) => ();
     ($($arg:tt)*) => (eprintln!($($arg)*));
 }
 
@@ -332,9 +332,9 @@ where
         use ControlFlow::*;
         use Poll::*;
         match Self::refill(Pin::new(&mut self), cx) {
-            Break(Ready(e)) => Break(Ready(Some(Err(e)))),
-            Break(Pending) => Self::poll3(self, cx, true),
             Continue(()) => Self::poll3(self, cx, false),
+            Break(Pending) => Self::poll3(self, cx, true),
+            Break(Ready(e)) => Break(Ready(Some(Err(e)))),
         }
     }
 }

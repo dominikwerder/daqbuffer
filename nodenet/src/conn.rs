@@ -107,8 +107,7 @@ async fn events_conn_handler_inner_try(
         return Err((e, netout).into());
     }
 
-    let mut p1: Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>> = if evq.channel().backend() == "test-inmem"
-    {
+    let p1: Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>> = if evq.channel().backend() == "test-inmem" {
         warn!("TEST BACKEND DATA");
         use netpod::timeunits::MS;
         let node_count = node_config.node_config.cluster.nodes.len();
@@ -215,6 +214,12 @@ async fn events_conn_handler_inner_try(
         };
         stream
     };
+
+    let p1 = p1.inspect(|x| {
+        items::on_sitemty_range_complete!(x, warn!("GOOD  -----------   SEE RangeComplete in conn.rs"));
+    });
+
+    let mut p1 = p1;
     let mut buf_len_histo = HistoLog2::new(5);
     while let Some(item) = p1.next().await {
         let item = item.make_frame();
