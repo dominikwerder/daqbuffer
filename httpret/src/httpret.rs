@@ -322,6 +322,8 @@ async fn http_service_inner(
         h.handle(req, ctx, &node_config).await
     } else if let Some(h) = channel_status::ChannelConnectionStatusEvents::handler(&req) {
         h.handle(req, ctx, &node_config).await
+    } else if let Some(h) = api4::binned::BinnedHandler::handler(&req) {
+        h.handle(req, &node_config).await
     } else if path == "/api/4/binned" {
         if req.method() == Method::GET {
             Ok(binned(req, ctx, node_config).await?)

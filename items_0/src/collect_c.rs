@@ -116,3 +116,39 @@ impl Collectable for Box<dyn Events> {
         EventsCollector::new(coll)
     }
 }
+
+#[derive(Debug)]
+pub struct TimeBinnedCollector {}
+
+impl Collector for TimeBinnedCollector {
+    type Input = Box<dyn crate::TimeBinned>;
+    type Output = Box<dyn Collected>;
+
+    fn len(&self) -> usize {
+        todo!()
+    }
+
+    fn ingest(&mut self, _item: &mut Self::Input) {
+        todo!()
+    }
+
+    fn set_range_complete(&mut self) {
+        todo!()
+    }
+
+    fn set_timed_out(&mut self) {
+        todo!()
+    }
+
+    fn result(&mut self) -> Result<Self::Output, Error> {
+        todo!()
+    }
+}
+
+impl Collectable for Box<dyn crate::TimeBinned> {
+    type Collector = TimeBinnedCollector;
+
+    fn new_collector(&self) -> Self::Collector {
+        todo!()
+    }
+}

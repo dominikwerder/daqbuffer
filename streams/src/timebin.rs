@@ -1,6 +1,7 @@
 use err::Error;
 use futures_util::{Future, FutureExt, Stream, StreamExt};
 use items::{sitem_data, RangeCompletableItem, Sitemty, StreamItem};
+//use items_0::{TimeBinnable, TimeBinner};
 use items_2::timebin::{TimeBinnable, TimeBinner};
 use netpod::log::*;
 use std::fmt;
@@ -11,19 +12,19 @@ use std::time::Instant;
 #[allow(unused)]
 macro_rules! trace2 {
     (D$($arg:tt)*) => ();
-    ($($arg:tt)*) => (eprintln!($($arg)*));
+    ($($arg:tt)*) => (trace!($($arg)*));
 }
 
 #[allow(unused)]
 macro_rules! trace3 {
     (D$($arg:tt)*) => ();
-    ($($arg:tt)*) => (eprintln!($($arg)*));
+    ($($arg:tt)*) => (trace!($($arg)*));
 }
 
 #[allow(unused)]
 macro_rules! trace4 {
     (D$($arg:tt)*) => ();
-    ($($arg:tt)*) => (eprintln!($($arg)*));
+    ($($arg:tt)*) => (trace!($($arg)*));
 }
 
 type MergeInp<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;

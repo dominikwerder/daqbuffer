@@ -65,7 +65,6 @@ async fn events_conn_handler_inner_try(
     {
         match k {
             Ok(StreamItem::DataItem(item)) => {
-                info!("GOT FRAME: {:?}", item);
                 frames.push(item);
             }
             Ok(item) => {
