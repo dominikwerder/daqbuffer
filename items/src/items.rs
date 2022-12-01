@@ -307,7 +307,6 @@ where
     T: Sized + serde::Serialize + FrameType,
 {
     fn make_frame(&self) -> Result<BytesMut, Error> {
-        info!("--------   make_frame  for Sitemty");
         match self {
             Ok(StreamItem::DataItem(RangeCompletableItem::Data(k))) => {
                 let frame_type_id = k.frame_type_id();

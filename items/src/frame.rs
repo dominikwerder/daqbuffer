@@ -223,7 +223,6 @@ pub fn make_stats_frame(item: &StatsItem) -> Result<BytesMut, Error> {
 }
 
 pub fn make_range_complete_frame() -> Result<BytesMut, Error> {
-    warn!("make_range_complete_frame");
     let enc = [];
     let mut h = crc32fast::Hasher::new();
     h.update(&enc);
@@ -315,7 +314,6 @@ where
         };
         Ok(T::from_stats(k))
     } else if frame.tyid() == RANGE_COMPLETE_FRAME_TYPE_ID {
-        warn!("decode_frame  SEE RANGE COMPLETE FRAME TYPE");
         // There is currently no content in this variant.
         Ok(T::from_range_complete())
     } else {

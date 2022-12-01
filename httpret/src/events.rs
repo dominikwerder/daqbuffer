@@ -54,8 +54,7 @@ async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Res
             .map_err(Error::from)
             .map_err(|e| e.add_public_msg(format!("Can not parse query url")))?
     };
-    // TODO format error.
-    if accept == APP_JSON || accept == ACCEPT_ALL {
+    if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
         Ok(plain_events_json(url, req, node_config).await?)
     } else if accept == APP_OCTET {
         Ok(plain_events_binary(url, req, node_config).await?)

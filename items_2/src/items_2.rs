@@ -1,6 +1,5 @@
 pub mod binsdim0;
 pub mod channelevents;
-pub mod collect;
 pub mod eventsdim0;
 pub mod merger;
 pub mod merger_cev;

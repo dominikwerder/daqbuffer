@@ -3,6 +3,7 @@ use futures_util::{Stream, StreamExt};
 use items::sitem_data;
 use items::{RangeCompletableItem, Sitemty, StreamItem};
 use netpod::log::*;
+use std::collections::VecDeque;
 use std::fmt;
 use std::ops::ControlFlow;
 use std::pin::Pin;
@@ -10,20 +11,20 @@ use std::task::{Context, Poll};
 
 #[allow(unused)]
 macro_rules! trace2 {
-    (D$($arg:tt)*) => ();
-    ($($arg:tt)*) => (eprintln!($($arg)*));
+    ($($arg:tt)*) => ();
+    ($($arg:tt)*) => (trace!($($arg)*));
 }
 
 #[allow(unused)]
 macro_rules! trace3 {
-    (D$($arg:tt)*) => ();
-    ($($arg:tt)*) => (eprintln!($($arg)*));
+    ($($arg:tt)*) => ();
+    ($($arg:tt)*) => (trace!($($arg)*));
 }
 
 #[allow(unused)]
 macro_rules! trace4 {
-    (D$($arg:tt)*) => ();
-    ($($arg:tt)*) => (eprintln!($($arg)*));
+    ($($arg:tt)*) => ();
+    ($($arg:tt)*) => (trace!($($arg)*));
 }
 
 #[derive(Debug)]
@@ -58,10 +59,11 @@ pub struct Merger<T> {
     out: Option<T>,
     do_clear_out: bool,
     out_max_len: usize,
-    range_complete: bool,
-    done: bool,
-    done2: bool,
-    done3: bool,
+    range_complete: Vec<bool>,
+    out_of_band_queue: VecDeque<Sitemty<T>>,
+    done_data: bool,
+    done_buffered: bool,
+    done_range_complete: bool,
     complete: bool,
 }
 
@@ -76,9 +78,10 @@ where
             .field("items", &self.items)
             .field("out_max_len", &self.out_max_len)
             .field("range_complete", &self.range_complete)
-            .field("done", &self.done)
-            .field("done2", &self.done2)
-            .field("done3", &self.done3)
+            .field("out_of_band_queue", &self.out_of_band_queue.len())
+            .field("done_data", &self.done_data)
+            .field("done_buffered", &self.done_buffered)
+            .field("done_range_complete", &self.done_range_complete)
             .finish()
     }
 }
@@ -95,10 +98,11 @@ where
             out: None,
             do_clear_out: false,
             out_max_len,
-            range_complete: false,
-            done: false,
-            done2: false,
-            done3: false,
+            range_complete: vec![false; n],
+            out_of_band_queue: VecDeque::new(),
+            done_data: false,
+            done_buffered: false,
+            done_range_complete: false,
             complete: false,
         }
     }
@@ -124,6 +128,7 @@ where
 
     fn process(mut self: Pin<&mut Self>, _cx: &mut Context) -> Result<ControlFlow<()>, Error> {
         use ControlFlow::*;
+        trace4!("process");
         let mut tslows = [None, None];
         for (i1, itemopt) in self.items.iter_mut().enumerate() {
             if let Some(item) = itemopt {
@@ -221,66 +226,63 @@ where
         }
     }
 
-    fn refill(mut self: Pin<&mut Self>, cx: &mut Context) -> ControlFlow<Poll<Error>> {
+    fn refill(mut self: Pin<&mut Self>, cx: &mut Context) -> Result<Poll<()>, Error> {
         trace4!("refill");
-        use ControlFlow::*;
         use Poll::*;
         let mut has_pending = false;
-        for i1 in 0..self.inps.len() {
-            let item = &self.items[i1];
-            if item.is_none() {
-                while let Some(inp) = &mut self.inps[i1] {
-                    trace4!("refill while");
+        for i in 0..self.inps.len() {
+            if self.items[i].is_none() {
+                while let Some(inp) = self.inps[i].as_mut() {
                     match inp.poll_next_unpin(cx) {
-                        Ready(Some(Ok(k))) => {
-                            match k {
-                                StreamItem::DataItem(k) => match k {
-                                    RangeCompletableItem::RangeComplete => {
-                                        trace!("---------------------  ChannelEvents::RangeComplete \n======================");
-                                        // TODO track range complete for all inputs, it's only complete if all inputs are complete.
-                                        self.range_complete = true;
-                                        eprintln!("TODO inp RangeComplete which does not fill slot");
-                                    }
-                                    RangeCompletableItem::Data(k) => {
-                                        self.items[i1] = Some(k);
-                                        break;
-                                    }
-                                },
-                                StreamItem::Log(_) => {
-                                    eprintln!("TODO inp Log which does not fill slot");
+                        Ready(Some(Ok(k))) => match k {
+                            StreamItem::DataItem(k) => match k {
+                                RangeCompletableItem::Data(k) => {
+                                    self.items[i] = Some(k);
+                                    trace4!("refilled {}", i);
                                 }
-                                StreamItem::Stats(_) => {
-                                    eprintln!("TODO inp Stats which does not fill slot");
+                                RangeCompletableItem::RangeComplete => {
+                                    self.range_complete[i] = true;
+                                    debug!("Merger  range_complete {:?}", self.range_complete);
+                                    continue;
                                 }
+                            },
+                            StreamItem::Log(item) => {
+                                // TODO limit queue length
+                                self.out_of_band_queue.push_back(Ok(StreamItem::Log(item)));
+                                continue;
                             }
+                            StreamItem::Stats(item) => {
+                                // TODO limit queue length
+                                self.out_of_band_queue.push_back(Ok(StreamItem::Stats(item)));
+                                continue;
+                            }
+                        },
+                        Ready(Some(Err(e))) => {
+                            self.inps[i] = None;
+                            return Err(e.into());
                         }
-                        Ready(Some(Err(e))) => return Break(Ready(e.into())),
                         Ready(None) => {
-                            self.inps[i1] = None;
+                            self.inps[i] = None;
                         }
                         Pending => {
                             has_pending = true;
                         }
                     }
+                    break;
                 }
-            } else {
-                trace4!("refill  inp {}  has {}", i1, item.as_ref().unwrap().len());
             }
         }
         if has_pending {
-            Break(Pending)
+            Ok(Pending)
         } else {
-            Continue(())
+            Ok(Ready(()))
         }
     }
 
-    fn poll3(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context,
-        has_pending: bool,
-    ) -> ControlFlow<Poll<Option<Result<T, Error>>>> {
+    fn poll3(mut self: Pin<&mut Self>, cx: &mut Context) -> ControlFlow<Poll<Option<Result<T, Error>>>> {
         use ControlFlow::*;
         use Poll::*;
+        #[allow(unused)]
         let ninps = self.inps.iter().filter(|a| a.is_some()).count();
         let nitems = self.items.iter().filter(|a| a.is_some()).count();
         let nitemsmissing = self
@@ -290,16 +292,11 @@ where
             .filter(|(a, b)| a.is_some() && b.is_none())
             .count();
         trace3!("ninps {ninps}  nitems {nitems}  nitemsmissing {nitemsmissing}");
-        if ninps == 0 && nitems == 0 {
-            self.done = true;
+        if nitemsmissing != 0 {
+            let e = Error::from(format!("missing but no pending"));
+            Break(Ready(Some(Err(e))))
+        } else if nitems == 0 {
             Break(Ready(None))
-        } else if nitemsmissing != 0 {
-            if !has_pending {
-                let e = Error::from(format!("missing but no pending"));
-                Break(Ready(Some(Err(e))))
-            } else {
-                Break(Pending)
-            }
         } else {
             match Self::process(Pin::new(&mut self), cx) {
                 Ok(Break(())) => {
@@ -332,9 +329,9 @@ where
         use ControlFlow::*;
         use Poll::*;
         match Self::refill(Pin::new(&mut self), cx) {
-            Continue(()) => Self::poll3(self, cx, false),
-            Break(Pending) => Self::poll3(self, cx, true),
-            Break(Ready(e)) => Break(Ready(Some(Err(e)))),
+            Ok(Ready(())) => Self::poll3(self, cx),
+            Ok(Pending) => Break(Pending),
+            Err(e) => Break(Ready(Some(Err(e)))),
         }
     }
 }
@@ -347,43 +344,44 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        const NAME: &str = "Merger_mergeable";
-        let span = span!(Level::TRACE, NAME);
+        let span = span!(Level::TRACE, "merger");
         let _spanguard = span.enter();
         loop {
-            trace3!("{NAME}  poll");
+            trace3!("poll");
             break if self.complete {
                 panic!("poll after complete");
-            } else if self.done3 {
+            } else if self.done_range_complete {
                 self.complete = true;
                 Ready(None)
-            } else if self.done2 {
-                self.done3 = true;
-                if self.range_complete {
-                    warn!("TODO emit range complete only if all inputs signaled complete");
-                    trace!("{NAME}  emit RangeComplete");
+            } else if self.done_buffered {
+                self.done_range_complete = true;
+                if self.range_complete.iter().all(|x| *x) {
+                    trace!("emit RangeComplete");
                     Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
                 } else {
                     continue;
                 }
-            } else if self.done {
-                self.done2 = true;
+            } else if self.done_data {
+                self.done_buffered = true;
                 if let Some(out) = self.out.take() {
                     Ready(Some(sitem_data(out)))
                 } else {
                     continue;
                 }
+            } else if let Some(item) = self.out_of_band_queue.pop_front() {
+                trace4!("emit out-of-band");
+                Ready(Some(item))
             } else {
                 match Self::poll2(self.as_mut(), cx) {
                     ControlFlow::Continue(()) => continue,
                     ControlFlow::Break(k) => match k {
                         Ready(Some(Ok(item))) => Ready(Some(sitem_data(item))),
                         Ready(Some(Err(e))) => {
-                            self.done = true;
+                            self.done_data = true;
                             Ready(Some(Err(e.into())))
                         }
                         Ready(None) => {
-                            self.done = true;
+                            self.done_data = true;
                             continue;
                         }
                         Pending => Pending,

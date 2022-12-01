@@ -57,35 +57,49 @@ async fn events_conn_handler_inner_try(
     let (netin, mut netout) = stream.into_split();
     let perf_opts = PerfOpts { inmem_bufcap: 512 };
     let mut h = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
-    let mut frames = vec![];
+    let mut frames = Vec::new();
     while let Some(k) = h
         .next()
-        .instrument(span!(Level::INFO, "events_conn_handler  INPUT STREAM READ"))
+        .instrument(span!(Level::INFO, "events_conn_handler/query-input"))
         .await
     {
         match k {
             Ok(StreamItem::DataItem(item)) => {
+                info!("GOT FRAME: {:?}", item);
                 frames.push(item);
             }
-            Ok(_) => {}
+            Ok(item) => {
+                debug!("ignored incoming frame {:?}", item);
+            }
             Err(e) => {
-                return Err((e, netout))?;
+                return Err((e, netout).into());
             }
         }
     }
+    debug!("events_conn_handler input frames received");
     if frames.len() != 1 {
-        error!("missing command frame");
-        return Err((Error::with_msg("missing command frame"), netout))?;
+        error!("{:?}", frames);
+        error!("missing command frame  len {}", frames.len());
+        return Err((Error::with_msg("missing command frame"), netout).into());
+    }
+    //if frames[1].tyid() != items::TERM_FRAME_TYPE_ID {
+    //    return Err((Error::with_msg("input without term frame"), netout).into());
+    //}
+    let query_frame = &frames[0];
+    if query_frame.tyid() != items::EVENT_QUERY_JSON_STRING_FRAME {
+        return Err((Error::with_msg("query frame wrong type"), netout).into());
     }
     // TODO this does not need all variants of Sitemty.
-    let qitem = match decode_frame::<Sitemty<EventQueryJsonStringFrame>>(&frames[0]) {
+    let qitem = match decode_frame::<Sitemty<EventQueryJsonStringFrame>>(query_frame) {
         Ok(k) => match k {
             Ok(k) => match k {
                 StreamItem::DataItem(k) => match k {
                     RangeCompletableItem::Data(k) => k,
-                    RangeCompletableItem::RangeComplete => panic!(),
+                    RangeCompletableItem::RangeComplete => {
+                        return Err((Error::with_msg("bad query item"), netout).into())
+                    }
                 },
-                _ => panic!(),
+                _ => return Err((Error::with_msg("bad query item"), netout).into()),
             },
             Err(e) => return Err((e, netout).into()),
         },
@@ -96,7 +110,7 @@ async fn events_conn_handler_inner_try(
         Ok(k) => k,
         Err(e) => {
             error!("json parse error: {:?}", e);
-            return Err((Error::with_msg("json parse error"), netout))?;
+            return Err((Error::with_msg("json parse error"), netout).into());
         }
     };
     info!("events_conn_handler_inner_try  evq {:?}", evq);

@@ -3,12 +3,18 @@ use bytes::Bytes;
 use err::Error;
 use futures_util::{pin_mut, Stream};
 use items::inmem::InMemoryFrame;
-use items::StreamItem;
+use items::{StreamItem, TERM_FRAME_TYPE_ID};
 use items::{INMEM_FRAME_FOOT, INMEM_FRAME_HEAD, INMEM_FRAME_MAGIC};
 use netpod::log::*;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, ReadBuf};
+
+#[allow(unused)]
+macro_rules! trace2 {
+    ($($arg:tt)*) => ();
+    ($($arg:tt)*) => (trace!($($arg)*));
+}
 
 impl err::ToErr for crate::slidebuf::Error {
     fn to_err(self) -> Error {
@@ -29,7 +35,6 @@ where
     done: bool,
     complete: bool,
     inp_bytes_consumed: u64,
-    npoll: u64,
 }
 
 impl<T> InMemoryFrameAsyncReadStream<T>
@@ -44,12 +49,11 @@ where
             done: false,
             complete: false,
             inp_bytes_consumed: 0,
-            npoll: 0,
         }
     }
 
     fn poll_upstream(&mut self, cx: &mut Context) -> Poll<Result<usize, Error>> {
-        trace!("poll_upstream");
+        trace2!("poll_upstream");
         use Poll::*;
         let mut buf = ReadBuf::new(self.buf.available_writable_area(self.need_min - self.buf.len())?);
         let inp = &mut self.inp;
@@ -58,7 +62,7 @@ where
             Ready(Ok(())) => {
                 let n = buf.filled().len();
                 self.buf.wadv(n)?;
-                trace!("InMemoryFrameAsyncReadStream  READ {} FROM UPSTREAM", n);
+                trace!("recv bytes {}", n);
                 Ready(Ok(n))
             }
             Ready(Err(e)) => Ready(Err(e.into())),
@@ -66,12 +70,10 @@ where
         }
     }
 
-    // Try to parse a frame.
+    // Try to consume bytes to parse a frame.
     // Update the need_min to the most current state.
-    // If successful, return item and number of bytes consumed.
     // Must only be called when at least `need_min` bytes are available.
     fn parse(&mut self) -> Result<Option<InMemoryFrame>, Error> {
-        trace!("parse");
         let buf = self.buf.data();
         if buf.len() < self.need_min {
             return Err(Error::with_msg_no_trace("expect at least need_min"));
@@ -116,9 +118,6 @@ where
         h.update(&buf[INMEM_FRAME_HEAD..p1]);
         let payload_crc = h.finalize();
         let frame_crc_ind = u32::from_le_bytes(buf[p1..p1 + 4].try_into()?);
-        //info!("len {}", len);
-        //info!("payload_crc_ind {}", payload_crc_ind);
-        //info!("frame_crc_ind {}", frame_crc_ind);
         let payload_crc_match = payload_crc_exp == payload_crc;
         let frame_crc_match = frame_crc_ind == frame_crc;
         if !frame_crc_match || !payload_crc_match {
@@ -152,11 +151,8 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        trace!("poll");
-        self.npoll += 1;
-        if self.npoll > 2000 {
-            panic!()
-        }
+        let span = span!(Level::TRACE, "inmem");
+        let _spanguard = span.enter();
         loop {
             break if self.complete {
                 panic!("poll_next on complete")
@@ -171,11 +167,17 @@ where
                             let e = Error::with_msg_no_trace("enough bytes but nothing parsed");
                             Ready(Some(Err(e)))
                         } else {
-                            debug!("not enouh for parse, need to wait for more");
                             continue;
                         }
                     }
-                    Ok(Some(item)) => Ready(Some(Ok(StreamItem::DataItem(item)))),
+                    Ok(Some(item)) => {
+                        if item.tyid() == TERM_FRAME_TYPE_ID {
+                            self.done = true;
+                            continue;
+                        } else {
+                            Ready(Some(Ok(StreamItem::DataItem(item))))
+                        }
+                    }
                     Err(e) => {
                         self.done = true;
                         Ready(Some(Err(e)))
@@ -184,7 +186,6 @@ where
             } else {
                 match self.poll_upstream(cx) {
                     Ready(Ok(n1)) => {
-                        debug!("read {n1}");
                         if n1 == 0 {
                             self.done = true;
                             continue;
@@ -197,10 +198,7 @@ where
                         self.done = true;
                         Ready(Some(Err(e)))
                     }
-                    Pending => {
-                        debug!("PENDING");
-                        Pending
-                    }
+                    Pending => Pending,
                 }
             };
         }

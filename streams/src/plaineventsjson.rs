@@ -1,4 +1,4 @@
-use crate::merge::open_tcp_streams;
+use crate::tcprawclient::open_tcp_streams;
 use bytes::Bytes;
 use err::Error;
 use futures_util::{Stream, StreamExt};
@@ -41,7 +41,7 @@ where
         stream
     };
     let stream = { items_2::merger::Merger::new(inps, 1) };
-    let deadline = Instant::now() + Duration::from_millis(2000);
+    let deadline = Instant::now() + Duration::from_millis(8000);
     let events_max = 100;
     let collected = crate::collect::collect(stream, deadline, events_max).await?;
     let jsval = serde_json::to_value(&collected)?;

@@ -1,4 +1,5 @@
 pub mod api1;
+pub mod api4;
 pub mod bodystream;
 pub mod channel_status;
 pub mod channelconfig;
