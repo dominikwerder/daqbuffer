@@ -1,11 +1,11 @@
 use crate::err::Error;
 use crate::{response, ToPublicResponse};
 use dbconn::{create_connection, create_scylla_connection};
-use disk::binned::query::PreBinnedQuery;
 use futures_util::StreamExt;
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
 use netpod::log::*;
+use netpod::query::prebinned::PreBinnedQuery;
 use netpod::query::{BinnedQuery, PlainEventsQuery};
 use netpod::timeunits::*;
 use netpod::{get_url_query_pairs, Channel, ChannelConfigQuery, Database, FromUrl, ScalarType, ScyllaConfig, Shape};

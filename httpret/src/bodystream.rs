@@ -1,7 +1,6 @@
 use crate::err::Error;
 use bytes::Bytes;
-use futures_core::Stream;
-use futures_util::StreamExt;
+use futures_util::{Stream, StreamExt};
 use http::HeaderMap;
 use http::{Response, StatusCode};
 use hyper::Body;

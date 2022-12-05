@@ -1,14 +1,14 @@
 use crate::channelconfig::{chconf_from_events_binary, chconf_from_events_json};
 use crate::err::Error;
 use crate::{response, response_err, BodyStream, ReqCtx, ToPublicResponse};
-use futures_util::{Stream, StreamExt, TryStreamExt};
+use futures_util::{stream, Stream, StreamExt, TryStreamExt};
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
 use items_2::channelevents::ChannelEvents;
 use items_2::merger_cev::ChannelEventsMerger;
 use items_2::{binned_collected, empty_events_dyn, empty_events_dyn_2};
+use netpod::log::*;
 use netpod::query::{BinnedQuery, ChannelStateEventsQuery, PlainEventsQuery, RawEventsQuery};
-use netpod::{log::*, HasBackend};
 use netpod::{AggKind, BinnedRange, FromUrl, NodeConfigCached};
 use netpod::{ACCEPT_ALL, APP_JSON, APP_OCTET};
 use scyllaconn::create_scy_session;
@@ -72,25 +72,13 @@ async fn plain_events_binary(
     debug!("httpret  plain_events_binary  req: {:?}", req);
     let query = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
     let chconf = chconf_from_events_binary(&query, node_config).await?;
-
     // Update the series id since we don't require some unique identifier yet.
     let mut query = query;
     query.set_series_id(chconf.series);
     let query = query;
     // ---
-
-    let op = disk::channelexec::PlainEvents::new(query.channel().clone(), query.range().clone(), node_config.clone());
-    let s = disk::channelexec::channel_exec(
-        op,
-        query.channel(),
-        query.range(),
-        chconf.scalar_type,
-        chconf.shape,
-        AggKind::Plain,
-        node_config,
-    )
-    .await?;
-    let s = s.map(|item| item.make_frame());
+    let _ = query;
+    let s = stream::iter([Ok::<_, Error>(String::from("TODO_PREBINNED_BINARY_STREAM"))]);
     let ret = response(StatusCode::OK).body(BodyStream::wrapped(
         s.map_err(Error::from),
         format!("plain_events_binary"),
@@ -110,46 +98,16 @@ async fn plain_events_json(
         error!("chconf_from_events_json {e:?}");
         e.add_public_msg(format!("Can not get channel information"))
     })?;
-
     // Update the series id since we don't require some unique identifier yet.
     let mut query = query;
     query.set_series_id(chconf.series);
     let query = query;
     // ---
-
-    if true || query.backend().starts_with("test-") {
-        let query = RawEventsQuery::new(query.channel().clone(), query.range().clone(), AggKind::Plain);
-        let item = streams::plaineventsjson::plain_events_json(query, &node_config.node_config.cluster).await?;
-        let buf = serde_json::to_vec(&item)?;
-        let ret = response(StatusCode::OK).body(Body::from(buf))?;
-        Ok(ret)
-    } else {
-        let op = disk::channelexec::PlainEventsJson::new(
-            // TODO pass only the query, not channel, range again:
-            query.clone(),
-            query.channel().clone(),
-            query.range().clone(),
-            query.timeout(),
-            node_config.clone(),
-            query.events_max().unwrap_or(u64::MAX),
-            query.do_log(),
-        );
-        let s = disk::channelexec::channel_exec(
-            op,
-            query.channel(),
-            query.range(),
-            chconf.scalar_type,
-            chconf.shape,
-            AggKind::Plain,
-            node_config,
-        )
-        .await?;
-        let ret = response(StatusCode::OK).body(BodyStream::wrapped(
-            s.map_err(Error::from),
-            format!("plain_events_json"),
-        ))?;
-        Ok(ret)
-    }
+    let query = RawEventsQuery::new(query.channel().clone(), query.range().clone(), AggKind::Plain);
+    let item = streams::plaineventsjson::plain_events_json(query, &node_config.node_config.cluster).await?;
+    let buf = serde_json::to_vec(&item)?;
+    let ret = response(StatusCode::OK).body(Body::from(buf))?;
+    Ok(ret)
 }
 
 pub struct EventsHandlerScylla {}

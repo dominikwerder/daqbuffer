@@ -6,7 +6,6 @@ pub mod channelconfig;
 pub mod download;
 pub mod err;
 pub mod events;
-pub mod evinfo;
 pub mod gather;
 pub mod prometheus;
 pub mod proxy;
@@ -19,33 +18,32 @@ use crate::bodystream::response;
 use crate::err::Error;
 use crate::gather::gather_get_json;
 use crate::pulsemap::UpdateTask;
-use channelconfig::{chconf_from_binned, ChConf};
-use disk::binned::query::PreBinnedQuery;
-use future::Future;
-use futures_util::{FutureExt, StreamExt, TryStreamExt};
+use futures_util::{Future, FutureExt, StreamExt};
 use http::{Method, StatusCode};
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{server::Server, Body, Request, Response};
 use net::SocketAddr;
 use netpod::log::*;
-use netpod::query::BinnedQuery;
+use netpod::query::prebinned::PreBinnedQuery;
 use netpod::timeunits::SEC;
 use netpod::ProxyConfig;
-use netpod::{FromUrl, NodeConfigCached, NodeStatus, NodeStatusArchiverAppliance};
-use netpod::{ACCEPT_ALL, APP_JSON, APP_JSON_LINES, APP_OCTET};
+use netpod::{NodeConfigCached, NodeStatus, NodeStatusArchiverAppliance};
+use netpod::{APP_JSON, APP_JSON_LINES};
 use nodenet::conn::events_service;
 use panic::{AssertUnwindSafe, UnwindSafe};
 use pin::Pin;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use std::net;
+use std::panic;
+use std::pin;
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::sync::{Once, RwLock, RwLockWriteGuard};
+use std::task;
 use std::time::SystemTime;
-use std::{future, net, panic, pin, task};
-use task::{Context, Poll};
-use tracing::Instrument;
-use url::Url;
+use task::Context;
+use task::Poll;
 
 pub const PSI_DAQBUFFER_SERVICE_MARK: &'static str = "PSI-Daqbuffer-Service-Mark";
 pub const PSI_DAQBUFFER_SEEN_URL: &'static str = "PSI-Daqbuffer-Seen-Url";
@@ -324,12 +322,6 @@ async fn http_service_inner(
         h.handle(req, ctx, &node_config).await
     } else if let Some(h) = api4::binned::BinnedHandler::handler(&req) {
         h.handle(req, &node_config).await
-    } else if path == "/api/4/binned" {
-        if req.method() == Method::GET {
-            Ok(binned(req, ctx, node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
-        }
     } else if path == "/api/4/prebinned" {
         if req.method() == Method::GET {
             Ok(prebinned(req, ctx, &node_config).await?)
@@ -384,8 +376,6 @@ async fn http_service_inner(
         h.handle(req, &node_config).await
     } else if let Some(h) = api1::Api1EventsBinaryHandler::handler(&req) {
         h.handle(req, ctx, &node_config).await
-    } else if let Some(h) = evinfo::EventInfoScan::handler(&req) {
-        h.handle(req, &node_config).await
     } else if let Some(h) = pulsemap::MapPulseScyllaHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = pulsemap::IndexFullHttpFunction::handler(&req) {
@@ -468,74 +458,6 @@ impl StatusBoardAllHandler {
     }
 }
 
-async fn binned(req: Request<Body>, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    match binned_inner(req, ctx, node_config).await {
-        Ok(ret) => Ok(ret),
-        Err(e) => {
-            error!("fn binned: {e:?}");
-            Ok(e.to_public_response())
-        }
-    }
-}
-
-async fn binned_inner(
-    req: Request<Body>,
-    ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
-    let (head, _body) = req.into_parts();
-    let url = Url::parse(&format!("dummy:{}", head.uri))?;
-    let query = BinnedQuery::from_url(&url).map_err(|e| {
-        let msg = format!("can not parse query: {}", e.msg());
-        e.add_public_msg(msg)
-    })?;
-    let chconf = chconf_from_binned(&query, node_config).await?;
-    // Update the series id since we don't require some unique identifier yet.
-    let mut query = query;
-    query.set_series_id(chconf.series);
-    let query = query;
-    // ---
-    let desc = format!("binned-BEG-{}-END-{}", query.range().beg / SEC, query.range().end / SEC);
-    let span1 = span!(Level::INFO, "httpret::binned", desc = &desc.as_str());
-    span1.in_scope(|| {
-        debug!("binned STARTING  {:?}", query);
-    });
-    match head.headers.get(http::header::ACCEPT) {
-        Some(v) if v == APP_OCTET => binned_binary(query, chconf, &ctx, node_config).await,
-        Some(v) if v == APP_JSON || v == ACCEPT_ALL => binned_json(query, chconf, &ctx, node_config).await,
-        _ => Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?),
-    }
-}
-
-async fn binned_binary(
-    query: BinnedQuery,
-    chconf: ChConf,
-    _ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
-    let body_stream =
-        disk::binned::binned_bytes_for_http(&query, chconf.scalar_type, chconf.shape, node_config).await?;
-    let res = response(StatusCode::OK).body(BodyStream::wrapped(
-        body_stream.map_err(Error::from),
-        format!("binned_binary"),
-    ))?;
-    Ok(res)
-}
-
-async fn binned_json(
-    query: BinnedQuery,
-    chconf: ChConf,
-    _ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
-    let body_stream = disk::binned::binned_json(&query, chconf.scalar_type, chconf.shape, node_config).await?;
-    let res = response(StatusCode::OK).body(BodyStream::wrapped(
-        body_stream.map_err(Error::from),
-        format!("binned_json"),
-    ))?;
-    Ok(res)
-}
-
 async fn prebinned(req: Request<Body>, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     match prebinned_inner(req, ctx, node_config).await {
         Ok(ret) => Ok(ret),
@@ -549,10 +471,11 @@ async fn prebinned(req: Request<Body>, ctx: &ReqCtx, node_config: &NodeConfigCac
 async fn prebinned_inner(
     req: Request<Body>,
     _ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
+    _node_config: &NodeConfigCached,
 ) -> Result<Response<Body>, Error> {
     let (head, _body) = req.into_parts();
-    let query = PreBinnedQuery::from_request(&head)?;
+    let url: url::Url = format!("dummy://{}", head.uri).parse()?;
+    let query = PreBinnedQuery::from_url(&url)?;
     let desc = format!(
         "pre-W-{}-B-{}",
         query.patch().bin_t_len() / SEC,
@@ -560,21 +483,10 @@ async fn prebinned_inner(
     );
     let span1 = span!(Level::INFO, "httpret::prebinned", desc = &desc.as_str());
     span1.in_scope(|| {
-        debug!("prebinned STARTING");
+        debug!("begin");
     });
-    let fut = disk::binned::prebinned::pre_binned_bytes_for_http(node_config, &query).instrument(span1);
-    let ret = match fut.await {
-        Ok(s) => response(StatusCode::OK).body(BodyStream::wrapped(s.map_err(Error::from), desc))?,
-        Err(e) => {
-            if query.report_error() {
-                response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?
-            } else {
-                error!("fn prebinned: {:?}", e);
-                response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?
-            }
-        }
-    };
-    Ok(ret)
+    //let fut = disk::binned::prebinned::pre_binned_bytes_for_http(node_config, &query).instrument(span1);
+    todo!()
 }
 
 async fn node_status(

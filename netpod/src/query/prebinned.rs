@@ -1,8 +1,9 @@
+use super::agg_kind_from_binning_scheme;
+use super::binning_scheme_append_to_url;
+use super::CacheUsage;
+use crate::timeunits::SEC;
+use crate::{AggKind, AppendToUrl, ByteSize, Channel, FromUrl, PreBinnedPatchCoord, ScalarType, Shape};
 use err::Error;
-use http::request::Parts;
-use netpod::query::{agg_kind_from_binning_scheme, binning_scheme_append_to_url, CacheUsage};
-use netpod::timeunits::SEC;
-use netpod::{AggKind, AppendToUrl, ByteSize, Channel, FromUrl, PreBinnedPatchCoord, ScalarType, Shape};
 use std::collections::BTreeMap;
 use url::Url;
 
@@ -96,12 +97,6 @@ impl PreBinnedQuery {
                 .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,
         };
         Ok(ret)
-    }
-
-    pub fn from_request(head: &Parts) -> Result<Self, Error> {
-        let s1 = format!("dummy:{}", head.uri);
-        let url = Url::parse(&s1)?;
-        Self::from_url(&url)
     }
 
     pub fn patch(&self) -> &PreBinnedPatchCoord {

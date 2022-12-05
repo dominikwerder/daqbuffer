@@ -1,10 +1,8 @@
 pub mod agg;
 #[cfg(test)]
 pub mod aggtest;
-pub mod binned;
 pub mod binnedstream;
 pub mod cache;
-pub mod channelexec;
 pub mod dataopen;
 pub mod decode;
 pub mod eventblobs;

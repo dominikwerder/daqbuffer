@@ -1,7 +1,7 @@
 use crate::err::Error;
 use crate::gather::{gather_get_json_generic, SubRes};
 use crate::response;
-use futures_core::Future;
+use futures_util::Future;
 use http::{header, Request, Response, StatusCode};
 use hyper::Body;
 use itertools::Itertools;
