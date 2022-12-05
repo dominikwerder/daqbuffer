@@ -110,6 +110,10 @@ mod serde_channel_events {
                         let obj: EventsDim0<f32> = seq.next_element()?.ok_or(de::Error::missing_field("obj .2"))?;
                         Ok(Box::new(obj))
                     }
+                    f64::SUB => {
+                        let obj: EventsDim0<f64> = seq.next_element()?.ok_or(de::Error::missing_field("obj .2"))?;
+                        Ok(Box::new(obj))
+                    }
                     _ => Err(de::Error::custom(&format!("unknown nty {e1}"))),
                 }
             } else {
@@ -422,9 +426,6 @@ impl ChannelEventsCollector {
 }
 
 impl items_0::collect_c::Collector for ChannelEventsCollector {
-    type Input = ChannelEvents;
-    type Output = Box<dyn items_0::collect_c::Collected>;
-
     fn len(&self) -> usize {
         match &self.coll {
             Some(coll) => coll.len(),
@@ -432,19 +433,23 @@ impl items_0::collect_c::Collector for ChannelEventsCollector {
         }
     }
 
-    fn ingest(&mut self, item: &mut Self::Input) {
-        match item {
-            ChannelEvents::Events(item) => {
-                if self.coll.is_none() {
-                    let coll = item.as_ref().as_collectable_with_default_ref().new_collector();
-                    self.coll = Some(coll);
+    fn ingest(&mut self, item: &mut dyn items_0::collect_c::Collectable) {
+        if let Some(item) = item.as_any_mut().downcast_mut::<ChannelEvents>() {
+            match item {
+                ChannelEvents::Events(item) => {
+                    if self.coll.is_none() {
+                        let coll = item.as_ref().as_collectable_with_default_ref().new_collector();
+                        self.coll = Some(coll);
+                    }
+                    let coll = self.coll.as_mut().unwrap();
+                    coll.ingest(item.as_collectable_with_default_mut());
                 }
-                let coll = self.coll.as_mut().unwrap();
-                coll.ingest(item.as_collectable_with_default_mut());
+                ChannelEvents::Status(_) => {
+                    // TODO decide on output format to collect also the connection status events
+                }
             }
-            ChannelEvents::Status(_) => {
-                // TODO decide on output format to collect also the connection status events
-            }
+        } else {
+            error!("ChannelEventsCollector::ingest unexpected item {:?}", item);
         }
     }
 
@@ -456,7 +461,7 @@ impl items_0::collect_c::Collector for ChannelEventsCollector {
         self.timed_out = true;
     }
 
-    fn result(&mut self) -> Result<Self::Output, err::Error> {
+    fn result(&mut self) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         match self.coll.as_mut() {
             Some(coll) => {
                 if self.range_complete {
@@ -479,10 +484,14 @@ impl items_0::collect_c::Collector for ChannelEventsCollector {
     }
 }
 
-impl items_0::collect_c::Collectable for ChannelEvents {
-    type Collector = ChannelEventsCollector;
+impl items_0::AsAnyMut for ChannelEvents {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
 
-    fn new_collector(&self) -> Self::Collector {
-        ChannelEventsCollector::new()
+impl items_0::collect_c::Collectable for ChannelEvents {
+    fn new_collector(&self) -> Box<dyn items_0::collect_c::Collector> {
+        Box::new(ChannelEventsCollector::new())
     }
 }

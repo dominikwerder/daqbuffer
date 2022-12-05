@@ -61,14 +61,8 @@ pub trait AsAnyMut {
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-/*impl AsAnyRef for Box<dyn AsAnyRef> {
-    fn as_any_ref(&self) -> &dyn Any {
-        self.as_ref().as_any_ref()
-    }
-}*/
-
 /// Data in time-binned form.
-pub trait TimeBinned: Any + TimeBinnable {
+pub trait TimeBinned: Any + TimeBinnable + crate::collect_c::Collectable {
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnable;
     fn as_collectable_mut(&mut self) -> &mut dyn Collectable;
     fn edges_slice(&self) -> (&[u64], &[u64]);

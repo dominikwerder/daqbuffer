@@ -1,7 +1,7 @@
 use err::Error;
 use futures_util::{Stream, StreamExt};
 use items::{RangeCompletableItem, Sitemty, StreamItem};
-use items_0::collect_c::{Collectable, Collector};
+use items_0::collect_c::Collectable;
 use netpod::log::*;
 use std::fmt;
 use std::time::{Duration, Instant};
@@ -29,14 +29,14 @@ pub async fn collect<T, S>(
     stream: S,
     deadline: Instant,
     events_max: u64,
-) -> Result<<<T as Collectable>::Collector as Collector>::Output, Error>
+) -> Result<Box<dyn items_0::collect_c::Collected>, Error>
 where
     S: Stream<Item = Sitemty<T>> + Unpin,
     T: Collectable + fmt::Debug,
 {
     let span = tracing::span!(tracing::Level::TRACE, "collect");
     let fut = async {
-        let mut collector: Option<<T as Collectable>::Collector> = None;
+        let mut collector: Option<Box<dyn items_0::collect_c::Collector>> = None;
         let mut stream = stream;
         let deadline = deadline.into();
         let mut range_complete = false;

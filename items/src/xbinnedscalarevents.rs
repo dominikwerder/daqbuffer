@@ -429,7 +429,7 @@ pub struct XBinnedScalarEventsCollectedResult<NTY> {
     mins: Vec<NTY>,
     maxs: Vec<NTY>,
     avgs: Vec<f32>,
-    #[serde(skip_serializing_if = "crate::bool_is_false", rename = "finalisedRange")]
+    #[serde(skip_serializing_if = "crate::bool_is_false", rename = "rangeFinal")]
     finalised_range: bool,
     #[serde(skip_serializing_if = "crate::bool_is_false", rename = "timedOut")]
     timed_out: bool,

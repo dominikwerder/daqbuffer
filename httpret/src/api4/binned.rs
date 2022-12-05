@@ -16,7 +16,7 @@ use url::Url;
 
 async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     info!("httpret  plain_events_json  req: {:?}", req);
-    let (head, _body) = req.into_parts();
+    let (_head, _body) = req.into_parts();
     let query = BinnedQuery::from_url(&url).map_err(|e| {
         let msg = format!("can not parse query: {}", e.msg());
         e.add_public_msg(msg)
@@ -27,7 +27,6 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
     query.set_series_id(chconf.series);
     let query = query;
     // ---
-
     let span1 = span!(
         Level::INFO,
         "httpret::binned",
@@ -38,15 +37,7 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
     span1.in_scope(|| {
         debug!("begin");
     });
-    let _: Result<_, Error> = match head.headers.get(http::header::ACCEPT) {
-        //Some(v) if v == APP_OCTET => binned_binary(query, chconf, &ctx, node_config).await,
-        //Some(v) if v == APP_JSON || v == ACCEPT_ALL => binned_json(query, chconf, &ctx, node_config).await,
-        _ => Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?),
-    };
-
-    // TODO analogue to `streams::plaineventsjson::plain_events_json` create a function for binned json.
-
-    let item = streams::plaineventsjson::plain_events_json("", &node_config.node_config.cluster)
+    let item = streams::timebinnedjson::timebinned_json(&query, &node_config.node_config.cluster)
         .instrument(span1)
         .await?;
     let buf = serde_json::to_vec(&item)?;

@@ -2,6 +2,8 @@ use super::*;
 
 #[test]
 fn get_scalar_2_events() -> Result<(), Error> {
+    let fut = async { return Err::<(), _>(Error::with_msg_no_trace("TODO")) };
+    #[cfg(DISABLED)]
     let fut = async move {
         let rh = require_sls_test_host_running()?;
         let cluster = &rh.cluster;
@@ -45,6 +47,8 @@ fn get_scalar_2_events() -> Result<(), Error> {
 
 #[test]
 fn get_scalar_2_binned() -> Result<(), Error> {
+    let fut = async { return Err::<(), _>(Error::with_msg_no_trace("TODO")) };
+    #[cfg(DISABLED)]
     let fut = async move {
         let rh = require_sls_test_host_running()?;
         let cluster = &rh.cluster;
@@ -57,7 +61,7 @@ fn get_scalar_2_binned() -> Result<(), Error> {
         let endstr = "2021-11-10T00:10:00Z";
         let (res, jsstr) =
             get_binned_json_common_res(channel, begstr, endstr, 10, AggKind::TimeWeightedScalar, cluster).await?;
-        let exp = r##"{"avgs":[401.1745910644531,401.5135498046875,400.8823547363281,400.66156005859375,401.8301086425781,401.19305419921875,400.5584411621094,401.4371337890625,401.4137268066406,400.77880859375],"counts":[19,6,6,19,6,6,6,19,6,6],"finalisedRange":true,"maxs":[402.04977411361034,401.8439029736943,401.22628955394583,402.1298351124666,402.1298351124666,401.5084092642013,400.8869834159359,402.05358654212733,401.74477983225313,401.1271664125047],"mins":[400.08256099885625,401.22628955394583,400.60867613419754,400.0939982844072,401.5084092642013,400.8869834159359,400.2693699961876,400.05968642775446,401.1271664125047,400.50574056423943],"tsAnchor":1636502400,"tsMs":[0,60000,120000,180000,240000,300000,360000,420000,480000,540000,600000],"tsNs":[0,0,0,0,0,0,0,0,0,0,0]}"##;
+        let exp = r##"{"avgs":[401.1745910644531,401.5135498046875,400.8823547363281,400.66156005859375,401.8301086425781,401.19305419921875,400.5584411621094,401.4371337890625,401.4137268066406,400.77880859375],"counts":[19,6,6,19,6,6,6,19,6,6],"rangeFinal":true,"maxs":[402.04977411361034,401.8439029736943,401.22628955394583,402.1298351124666,402.1298351124666,401.5084092642013,400.8869834159359,402.05358654212733,401.74477983225313,401.1271664125047],"mins":[400.08256099885625,401.22628955394583,400.60867613419754,400.0939982844072,401.5084092642013,400.8869834159359,400.2693699961876,400.05968642775446,401.1271664125047,400.50574056423943],"tsAnchor":1636502400,"tsMs":[0,60000,120000,180000,240000,300000,360000,420000,480000,540000,600000],"tsNs":[0,0,0,0,0,0,0,0,0,0,0]}"##;
         let exp: BinnedResponse = serde_json::from_str(exp).unwrap();
         check_close(&res, &exp, &jsstr)?;
         Ok(())
@@ -67,6 +71,8 @@ fn get_scalar_2_binned() -> Result<(), Error> {
 
 #[test]
 fn get_wave_1_events() -> Result<(), Error> {
+    let fut = async { return Err::<(), _>(Error::with_msg_no_trace("TODO")) };
+    #[cfg(DISABLED)]
     let fut = async move {
         let rh = require_sls_test_host_running()?;
         let cluster = &rh.cluster;
@@ -108,6 +114,8 @@ fn get_wave_1_events() -> Result<(), Error> {
 
 #[test]
 fn get_wave_1_binned() -> Result<(), Error> {
+    let fut = async { return Err::<(), _>(Error::with_msg_no_trace("TODO")) };
+    #[cfg(DISABLED)]
     let fut = async move {
         let rh = require_sls_test_host_running()?;
         let cluster = &rh.cluster;

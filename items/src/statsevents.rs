@@ -221,7 +221,7 @@ pub struct StatsEventsCollectorOutput {
     #[serde(rename = "tsNs")]
     ts_off_ns: Vec<u64>,
     // TODO what to collect? pulse min/max
-    #[serde(skip_serializing_if = "crate::bool_is_false", rename = "finalisedRange")]
+    #[serde(skip_serializing_if = "crate::bool_is_false", rename = "rangeFinal")]
     range_complete: bool,
     #[serde(skip_serializing_if = "crate::bool_is_false", rename = "timedOut")]
     timed_out: bool,

@@ -5,6 +5,7 @@ use serde::Serialize;
 use std::any::Any;
 use std::fmt;
 
+// TODO rename to `Typed`
 pub trait CollectorType: Send + Unpin + WithLen {
     type Input: Collectable;
     type Output: Collected + ToJsonResult + Serialize;
@@ -24,6 +25,7 @@ pub trait Collector: Send + Unpin + WithLen {
     fn result(&mut self) -> Result<Box<dyn ToJsonResult>, Error>;
 }
 
+// TODO rename to `Typed`
 pub trait CollectableType {
     type Collector: CollectorType<Input = Self>;
     fn new_collector() -> Self::Collector;

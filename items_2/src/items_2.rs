@@ -1,6 +1,8 @@
 pub mod binsdim0;
+pub mod binsxbindim0;
 pub mod channelevents;
 pub mod eventsdim0;
+pub mod eventsxbindim0;
 pub mod merger;
 pub mod merger_cev;
 pub mod streams;
@@ -138,6 +140,12 @@ impl serde::de::Error for Error {
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct IsoDateTime(DateTime<Utc>);
 
+impl IsoDateTime {
+    pub fn from_u64(ts: u64) -> Self {
+        IsoDateTime(Utc.timestamp_nanos(ts as i64))
+    }
+}
+
 impl Serialize for IsoDateTime {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -182,6 +190,7 @@ impl crate::merger::Mergeable for Box<dyn Events> {
     }
 }
 
+// TODO rename to `Typed`
 pub trait TimeBinnableType: Send + Unpin + RangeOverlapInfo {
     type Output: TimeBinnableType;
     type Aggregator: TimeBinnableTypeAggregator<Input = Self, Output = Self::Output> + Send + Unpin;

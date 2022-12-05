@@ -450,7 +450,7 @@ pub struct XBinnedWaveEventsCollectedResult<NTY> {
     mins: Vec<Vec<NTY>>,
     maxs: Vec<Vec<NTY>>,
     avgs: Vec<Vec<f32>>,
-    #[serde(skip_serializing_if = "crate::bool_is_false", rename = "finalisedRange")]
+    #[serde(skip_serializing_if = "crate::bool_is_false", rename = "rangeFinal")]
     finalised_range: bool,
     #[serde(skip_serializing_if = "crate::bool_is_false", rename = "timedOut")]
     timed_out: bool,

@@ -31,8 +31,8 @@ fn events_plain_json_00() -> Result<(), Error> {
         info!("Receveided a response json value: {jsv:?}");
         let res: items_2::eventsdim0::EventsDim0CollectorOutput<i32> = serde_json::from_value(jsv)?;
         // inmem was meant just for functional test, ignores the requested time range
-        assert_eq!(res.len(), 20);
         assert_eq!(res.ts_anchor_sec(), 0);
+        assert_eq!(res.len(), 60);
         Ok(())
     };
     taskrun::run(fut)

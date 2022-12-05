@@ -77,7 +77,7 @@ impl ChannelExecFunction for BinnedBinaryChannelExec {
         let souter = match PreBinnedPatchRange::covering_range(self.query.range().clone(), self.query.bin_count()) {
             Ok(Some(pre_range)) => {
                 debug!("BinnedBinaryChannelExec  found pre_range: {pre_range:?}");
-                if range.grid_spec.bin_t_len() < pre_range.grid_spec.bin_t_len() {
+                if range.grid_spec().bin_t_len() < pre_range.grid_spec.bin_t_len() {
                     let msg = format!(
                         "BinnedBinaryChannelExec  incompatible ranges:\npre_range: {pre_range:?}\nrange: {range:?}"
                     );
@@ -323,12 +323,12 @@ impl ChannelExecFunction for BinnedJsonChannelExec {
     {
         let _ = event_value_shape;
         let range = BinnedRange::covering_range(self.query.range().clone(), self.query.bin_count())?;
-        let t_bin_count = range.count as u32;
+        let t_bin_count = range.bin_count() as u32;
         let perf_opts = PerfOpts { inmem_bufcap: 512 };
         let souter = match PreBinnedPatchRange::covering_range(self.query.range().clone(), self.query.bin_count()) {
             Ok(Some(pre_range)) => {
                 info!("BinnedJsonChannelExec  found pre_range: {pre_range:?}");
-                if range.grid_spec.bin_t_len() < pre_range.grid_spec.bin_t_len() {
+                if range.grid_spec().bin_t_len() < pre_range.grid_spec.bin_t_len() {
                     let msg = format!(
                         "BinnedJsonChannelExec  incompatible ranges:\npre_range: {pre_range:?}\nrange: {range:?}"
                     );

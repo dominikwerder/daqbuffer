@@ -1,8 +1,8 @@
+pub mod api4;
 pub mod histo;
 pub mod query;
 pub mod status;
 pub mod streamext;
-pub mod api4;
 
 use crate::log::*;
 use bytes::Bytes;
@@ -1399,9 +1399,9 @@ impl fmt::Debug for BinnedGridSpec {
 
 #[derive(Clone, Debug)]
 pub struct BinnedRange {
-    pub grid_spec: BinnedGridSpec,
-    pub offset: u64,
-    pub count: u64,
+    grid_spec: BinnedGridSpec,
+    offset: u64,
+    bin_count: u64,
 }
 
 impl BinnedRange {
@@ -1435,13 +1435,21 @@ impl BinnedRange {
                     let offset = ts1 / bl;
                     let ret = Self {
                         grid_spec,
-                        count,
+                        bin_count: count,
                         offset,
                     };
                     break Ok(ret);
                 }
             }
         }
+    }
+
+    pub fn bin_count(&self) -> u64 {
+        self.bin_count
+    }
+
+    pub fn grid_spec(&self) -> &BinnedGridSpec {
+        &self.grid_spec
     }
 
     pub fn get_range(&self, ix: u32) -> NanoRange {
@@ -1454,19 +1462,49 @@ impl BinnedRange {
     pub fn full_range(&self) -> NanoRange {
         NanoRange {
             beg: self.offset * self.grid_spec.bin_t_len,
-            end: (self.offset + self.count) * self.grid_spec.bin_t_len,
+            end: (self.offset + self.bin_count) * self.grid_spec.bin_t_len,
         }
     }
 
     pub fn edges(&self) -> Vec<u64> {
         let mut ret = Vec::new();
         let mut t = self.offset * self.grid_spec.bin_t_len;
-        let end = (self.offset + self.count) * self.grid_spec.bin_t_len;
+        let end = (self.offset + self.bin_count) * self.grid_spec.bin_t_len;
         while t <= end {
             ret.push(t);
             t += self.grid_spec.bin_t_len;
         }
         ret
+    }
+}
+
+#[cfg(test)]
+mod test_binned_range {
+    use super::*;
+
+    #[test]
+    fn binned_range_00() {
+        let range = NanoRange {
+            beg: HOUR * 72,
+            end: HOUR * 73,
+        };
+        let range = BinnedRange::covering_range(range, 10).unwrap();
+        assert_eq!(range.bin_count(), 12);
+        assert_eq!(range.edges()[0], HOUR * 72);
+        assert_eq!(range.edges()[2], HOUR * 72 + MIN * 5 * 2);
+    }
+
+    #[test]
+    fn binned_range_01() {
+        let range = NanoRange {
+            beg: MIN * 20 + SEC * 10,
+            end: HOUR * 10 + MIN * 20 + SEC * 30,
+        };
+        let range = BinnedRange::covering_range(range, 10).unwrap();
+        assert_eq!(range.bin_count(), 11);
+        assert_eq!(range.edges()[0], HOUR * 0);
+        assert_eq!(range.edges()[1], HOUR * 1);
+        assert_eq!(range.edges()[11], HOUR * 11);
     }
 }
 

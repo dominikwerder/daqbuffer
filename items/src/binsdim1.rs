@@ -259,7 +259,7 @@ pub struct MinMaxAvgDim1BinsCollectedResult<NTY> {
     mins: Vec<Option<Vec<NTY>>>,
     maxs: Vec<Option<Vec<NTY>>>,
     avgs: Vec<Option<Vec<f32>>>,
-    #[serde(skip_serializing_if = "crate::bool_is_false", rename = "finalisedRange")]
+    #[serde(skip_serializing_if = "crate::bool_is_false", rename = "rangeFinal")]
     finalised_range: bool,
     #[serde(skip_serializing_if = "Zero::is_zero", rename = "missingBins")]
     missing_bins: u32,
@@ -497,7 +497,7 @@ pub struct WaveEventsCollectedResult<NTY> {
     #[serde(rename = "pulseOff")]
     pulse_off: Vec<u64>,
     values: Vec<Vec<NTY>>,
-    #[serde(skip_serializing_if = "crate::bool_is_false", rename = "finalisedRange")]
+    #[serde(skip_serializing_if = "crate::bool_is_false", rename = "rangeFinal")]
     range_complete: bool,
     #[serde(skip_serializing_if = "crate::bool_is_false", rename = "timedOut")]
     timed_out: bool,

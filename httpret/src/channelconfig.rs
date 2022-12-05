@@ -43,24 +43,49 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
         );
     }
     if channel.backend() == "test-inmem" {
-        if channel.name() == "inmem-d0-i32" {
+        let ret = if channel.name() == "inmem-d0-i32" {
             let ret = ChConf {
                 series: 1,
                 scalar_type: ScalarType::I32,
                 shape: Shape::Scalar,
             };
-            return Ok(ret);
-        }
+            Ok(ret)
+        } else {
+            error!("no test information");
+            Err(Error::with_msg_no_trace(format!("no test information"))
+                .add_public_msg("No channel config for test channel {:?}"))
+        };
+        return ret;
     }
     if channel.backend() == "test-disk-databuffer" {
-        if channel.name() == "scalar-i32-be" {
+        // TODO the series-ids here are just random. Need to integrate with better test setup.
+        let ret = if channel.name() == "scalar-i32-be" {
             let ret = ChConf {
                 series: 1,
                 scalar_type: ScalarType::I32,
                 shape: Shape::Scalar,
             };
-            return Ok(ret);
-        }
+            Ok(ret)
+        } else if channel.name() == "wave-f64-be-n21" {
+            let ret = ChConf {
+                series: 2,
+                scalar_type: ScalarType::F64,
+                shape: Shape::Wave(21),
+            };
+            Ok(ret)
+        } else if channel.name() == "const-regular-scalar-i32-be" {
+            let ret = ChConf {
+                series: 3,
+                scalar_type: ScalarType::I32,
+                shape: Shape::Scalar,
+            };
+            Ok(ret)
+        } else {
+            error!("no test information");
+            Err(Error::with_msg_no_trace(format!("no test information"))
+                .add_public_msg("No channel config for test channel {:?}"))
+        };
+        return ret;
     }
     // TODO use a common already running worker pool for these queries:
     let dbconf = &ncc.node_config.cluster.database;

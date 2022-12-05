@@ -1,4 +1,4 @@
-use super::binnedjson::ScalarEventsResponse;
+#![allow(unused)]
 use super::events::get_plain_events_json;
 use crate::nodes::require_archapp_test_host_running;
 use crate::test::events::ch_gen;
@@ -8,6 +8,8 @@ use netpod::log::*;
 
 #[test]
 fn get_events_1() -> Result<(), Error> {
+    let fut = async { return Err::<(), _>(Error::with_msg_no_trace("TODO")) };
+    #[cfg(DISABLED)]
     let fut = async {
         let rh = require_archapp_test_host_running()?;
         let cluster = &rh.cluster;

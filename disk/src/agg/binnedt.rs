@@ -121,7 +121,7 @@ where
         // TODO should we accumulate bins before emit? Maybe not, we want to stay responsive.
         // Only if the frequency would be high, that would require cpu time checks. Worth it? Measure..
         self.tmp_agg_results.push_back(ret);
-        if self.curbin >= self.spec.count as u32 {
+        if self.curbin >= self.spec.bin_count() as u32 {
             self.all_bins_emitted = true;
         }
     }

@@ -371,7 +371,7 @@ impl FrameType for EventQueryJsonStringFrame {
 }
 
 pub trait EventsNodeProcessorOutput:
-    Send + Unpin + DeserializeOwned + WithTimestamps + TimeBinnableType + ByteEstimate
+    fmt::Debug + Send + Unpin + DeserializeOwned + WithTimestamps + TimeBinnableType + ByteEstimate
 {
     fn as_any_mut(&mut self) -> &mut dyn Any;
     fn into_parts(self) -> (Box<dyn Any>, VecDeque<u64>, VecDeque<u64>);

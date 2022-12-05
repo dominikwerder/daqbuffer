@@ -199,7 +199,7 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/events?channel
   <p>Example response:</p>
   <pre>
 {
-  "finalisedRange": true,
+  "rangeFinal": true,
   "tsAnchor": 1623763172,
   "tsMs": [
     5,
@@ -224,7 +224,7 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/events?channel
 
   <h4>Finalised range</h4>
   <p>If the server can determine that no more data will be added to the requested time range
-    then it will add the flag <strong>finalisedRange: true</strong> to the response.</p>
+    then it will add the flag <strong>rangeFinal: true</strong> to the response.</p>
 
 
 
@@ -312,7 +312,7 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/binned?channel
     0,
     0
   ],
-  "finalisedRange": true
+  "rangeFinal": true
 }
 </pre>
 
@@ -321,7 +321,7 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/binned?channel
 
   <h4>Finalised range</h4>
   <p>If the server can determine that no more data will be added to the requested time range
-    then it will add the flag <strong>finalisedRange: true</strong> to the response.</p>
+    then it will add the flag <strong>rangeFinal: true</strong> to the response.</p>
 
 
 

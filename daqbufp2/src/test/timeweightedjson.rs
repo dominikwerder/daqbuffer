@@ -11,79 +11,6 @@ use std::time::Duration;
 use url::Url;
 
 #[test]
-fn time_weighted_json_00() -> Result<(), Error> {
-    async fn inner() -> Result<(), Error> {
-        let rh = require_test_hosts_running()?;
-        let cluster = &rh.cluster;
-        let res = get_json_common(
-            "const-regular-scalar-i32-be",
-            "1970-01-01T00:20:10.000Z",
-            "1970-01-01T04:20:30.000Z",
-            20,
-            AggKind::DimXBins1,
-            cluster,
-            25,
-            true,
-        )
-        .await?;
-        let v = res.avgs[0];
-        assert!(v > 41.9999 && v < 42.0001);
-        Ok(())
-    }
-    super::run_test(inner())
-}
-
-#[test]
-fn time_weighted_json_01() -> Result<(), Error> {
-    // TODO OFFENDING TEST
-    if true {
-        return Ok(());
-    }
-    async fn inner() -> Result<(), Error> {
-        let rh = require_test_hosts_running()?;
-        let cluster = &rh.cluster;
-        let res = get_json_common(
-            "const-regular-scalar-i32-be",
-            "1970-01-01T00:20:10.000Z",
-            "1970-01-01T10:20:30.000Z",
-            10,
-            AggKind::DimXBins1,
-            cluster,
-            9,
-            true,
-        )
-        .await?;
-        let v = res.avgs[0];
-        assert!(v > 41.9999 && v < 42.0001);
-        Ok(())
-    }
-    super::run_test(inner())
-}
-
-#[test]
-fn time_weighted_json_02() -> Result<(), Error> {
-    async fn inner() -> Result<(), Error> {
-        let rh = require_test_hosts_running()?;
-        let cluster = &rh.cluster;
-        let res = get_json_common(
-            "const-regular-scalar-i32-be",
-            "1970-01-01T00:20:10.000Z",
-            "1970-01-01T00:20:20.000Z",
-            20,
-            AggKind::TimeWeightedScalar,
-            cluster,
-            100,
-            true,
-        )
-        .await?;
-        let v = res.avgs[0];
-        assert!(v > 41.9999 && v < 42.0001);
-        Ok(())
-    }
-    super::run_test(inner())
-}
-
-#[test]
 fn time_weighted_json_03() -> Result<(), Error> {
     async fn inner() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
@@ -209,15 +136,15 @@ async fn get_json_common(
     if false {
         if expect_finalised_range {
             if !res
-                .get("finalisedRange")
-                .ok_or(Error::with_msg("missing finalisedRange"))?
+                .get("rangeFinal")
+                .ok_or(Error::with_msg("missing rangeFinal"))?
                 .as_bool()
-                .ok_or(Error::with_msg("key finalisedRange not bool"))?
+                .ok_or(Error::with_msg("key rangeFinal not bool"))?
             {
-                return Err(Error::with_msg("expected finalisedRange"));
+                return Err(Error::with_msg("expected rangeFinal"));
             }
-        } else if res.get("finalisedRange").is_some() {
-            return Err(Error::with_msg("expect absent finalisedRange"));
+        } else if res.get("rangeFinal").is_some() {
+            return Err(Error::with_msg("expect absent rangeFinal"));
         }
     }
     let counts = res.get("counts").unwrap().as_array().unwrap();

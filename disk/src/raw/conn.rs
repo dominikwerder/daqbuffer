@@ -49,20 +49,35 @@ where
                         let item = EventsDim0 { tss, pulses, values };
                         let item = ChannelEvents::Events(Box::new(item));
                         Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
+                    } else if let Some(item) = item.as_any_mut().downcast_mut::<items::waveevents::WaveEvents<NTY>>() {
+                        warn!("WaveEvents");
+                        let _tss: VecDeque<u64> = item.tss.iter().map(|x| *x).collect();
+                        let _pulses: VecDeque<u64> = item.pulses.iter().map(|x| *x).collect();
+                        let _values: VecDeque<Vec<NTY>> = item.vals.iter().map(|x| x.clone()).collect();
+                        //let item = EventsDim1 { tss, pulses, values };
+                        //let item = ChannelEvents::Events(Box::new(item));
+                        //Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
+                        Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
+                    } else if let Some(item) = item
+                        .as_any_mut()
+                        .downcast_mut::<items::xbinnedscalarevents::XBinnedScalarEvents<NTY>>()
+                    {
+                        warn!("XBinnedScalarEvents");
+                        let tss: VecDeque<u64> = item.tss.iter().map(|x| *x).collect();
+                        let pulses: VecDeque<u64> = (0..tss.len()).map(|_| 0).collect();
+                        let _avgs: VecDeque<f32> = item.avgs.iter().map(|x| x.clone()).collect();
+                        let mins: VecDeque<NTY> = item.mins.iter().map(|x| x.clone()).collect();
+                        let _maxs: VecDeque<NTY> = item.maxs.iter().map(|x| x.clone()).collect();
+                        let item = EventsDim0 {
+                            tss,
+                            pulses,
+                            values: mins,
+                        };
+                        let item = ChannelEvents::Events(Box::new(item));
+                        Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                     } else {
-                        if let Some(item) = item.as_any_mut().downcast_mut::<items::waveevents::WaveEvents<NTY>>() {
-                            warn!("WaveEvents");
-                            let _tss: VecDeque<u64> = item.tss.iter().map(|x| *x).collect();
-                            let _pulses: VecDeque<u64> = item.pulses.iter().map(|x| *x).collect();
-                            let _values: VecDeque<Vec<NTY>> = item.vals.iter().map(|x| x.clone()).collect();
-                            //let item = EventsDim1 { tss, pulses, values };
-                            //let item = ChannelEvents::Events(Box::new(item));
-                            //Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
-                            Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
-                        } else {
-                            error!("TODO bad, no idea what this item is");
-                            Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
-                        }
+                        error!("TODO bad, no idea what this item is\n\n{:?}\n\n", item);
+                        Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
                     }
                 }
                 RangeCompletableItem::RangeComplete => Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)),

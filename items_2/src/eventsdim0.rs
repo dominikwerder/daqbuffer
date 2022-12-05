@@ -1,5 +1,6 @@
 use crate::binsdim0::BinsDim0;
-use crate::{pulse_offs_from_abs, ts_offs_from_abs, RangeOverlapInfo};
+use crate::{pulse_offs_from_abs, ts_offs_from_abs};
+use crate::{IsoDateTime, RangeOverlapInfo};
 use crate::{TimeBinnable, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinner};
 use err::Error;
 use items_0::scalar_ops::ScalarOps;
@@ -108,7 +109,10 @@ impl<NTY: ScalarOps> RangeOverlapInfo for EventsDim0<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> TimeBinnableType for EventsDim0<NTY> {
+impl<NTY> TimeBinnableType for EventsDim0<NTY>
+where
+    NTY: ScalarOps,
+{
     type Output = BinsDim0<NTY>;
     type Aggregator = EventsDim0Aggregator<NTY>;
 
@@ -159,10 +163,12 @@ pub struct EventsDim0CollectorOutput<NTY> {
     pulse_off: VecDeque<u64>,
     #[serde(rename = "values")]
     values: VecDeque<NTY>,
-    #[serde(rename = "finalisedRange", default, skip_serializing_if = "crate::bool_is_false")]
+    #[serde(rename = "rangeFinal", default, skip_serializing_if = "crate::bool_is_false")]
     range_complete: bool,
     #[serde(rename = "timedOut", default, skip_serializing_if = "crate::bool_is_false")]
     timed_out: bool,
+    #[serde(rename = "continueAt", default, skip_serializing_if = "Option::is_none")]
+    continue_at: Option<IsoDateTime>,
 }
 
 impl<NTY: ScalarOps> EventsDim0CollectorOutput<NTY> {
@@ -206,8 +212,6 @@ impl<NTY: ScalarOps> items_0::AsAnyRef for EventsDim0CollectorOutput<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> items_0::collect_c::Collected for EventsDim0CollectorOutput<NTY> {}
-
 impl<NTY: ScalarOps> items_0::collect_s::ToJsonResult for EventsDim0CollectorOutput<NTY> {
     fn to_json_result(&self) -> Result<Box<dyn items_0::collect_s::ToJsonBytes>, Error> {
         let k = serde_json::to_value(self)?;
@@ -219,12 +223,13 @@ impl<NTY: ScalarOps> items_0::collect_s::ToJsonResult for EventsDim0CollectorOut
     }
 }
 
+impl<NTY: ScalarOps> items_0::collect_c::Collected for EventsDim0CollectorOutput<NTY> {}
+
 impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<NTY> {
     type Input = EventsDim0<NTY>;
     type Output = EventsDim0CollectorOutput<NTY>;
 
     fn ingest(&mut self, src: &mut Self::Input) {
-        // TODO could be optimized by non-contiguous container.
         self.vals.tss.append(&mut src.tss);
         self.vals.pulses.append(&mut src.pulses);
         self.vals.values.append(&mut src.values);
@@ -239,18 +244,38 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
     }
 
     fn result(&mut self) -> Result<Self::Output, Error> {
-        // TODO require contiguous slices
-        let tst = ts_offs_from_abs(&self.vals.tss.as_slices().0);
-        let (pulse_anchor, pulse_off) = pulse_offs_from_abs(&self.vals.pulses.as_slices().0);
+        // If we timed out, we want to hint the client from where to continue.
+        // This is tricky: currently, client can not request a left-exclusive range.
+        // We currently give the timestamp of the last event plus a small delta.
+        // The amount of the delta must take into account what kind of timestamp precision the client
+        // can parse and handle.
+        let continue_at = if self.timed_out {
+            if let Some(ts) = self.vals.tss.back() {
+                Some(IsoDateTime::from_u64(*ts))
+            } else {
+                // TODO tricky: should yield again the original range begin? Leads to recursion.
+                // Range begin plus delta?
+                // Anyway, we don't have the range begin here.
+                warn!("timed out without any result, can not yield a continue-at");
+                None
+            }
+        } else {
+            None
+        };
+        let tss_sl = self.vals.tss.make_contiguous();
+        let pulses_sl = self.vals.pulses.make_contiguous();
+        let (ts_anchor_sec, ts_off_ms, ts_off_ns) = ts_offs_from_abs(tss_sl);
+        let (pulse_anchor, pulse_off) = pulse_offs_from_abs(pulses_sl);
         let ret = Self::Output {
-            ts_anchor_sec: tst.0,
-            ts_off_ms: tst.1,
-            ts_off_ns: tst.2,
+            ts_anchor_sec,
+            ts_off_ms,
+            ts_off_ns,
             pulse_anchor,
             pulse_off: pulse_off,
             values: mem::replace(&mut self.vals.values, VecDeque::new()),
             range_complete: self.range_complete,
             timed_out: self.timed_out,
+            continue_at,
         };
         Ok(ret)
     }
@@ -265,15 +290,16 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectableType for EventsDim0<NTY> {
 }
 
 impl<NTY: ScalarOps> items_0::collect_c::Collector for EventsDim0Collector<NTY> {
-    type Input = EventsDim0<NTY>;
-    type Output = EventsDim0CollectorOutput<NTY>;
-
     fn len(&self) -> usize {
         self.vals.len()
     }
 
-    fn ingest(&mut self, item: &mut Self::Input) {
-        items_0::collect_s::CollectorType::ingest(self, item)
+    fn ingest(&mut self, item: &mut dyn items_0::collect_c::Collectable) {
+        if let Some(item) = item.as_any_mut().downcast_mut::<EventsDim0<NTY>>() {
+            items_0::collect_s::CollectorType::ingest(self, item)
+        } else {
+            error!("EventsDim0Collector::ingest unexpected item {:?}", item);
+        }
     }
 
     fn set_range_complete(&mut self) {
@@ -284,8 +310,11 @@ impl<NTY: ScalarOps> items_0::collect_c::Collector for EventsDim0Collector<NTY> 
         items_0::collect_s::CollectorType::set_timed_out(self)
     }
 
-    fn result(&mut self) -> Result<Self::Output, err::Error> {
-        items_0::collect_s::CollectorType::result(self).map_err(Into::into)
+    fn result(&mut self) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
+        match items_0::collect_s::CollectorType::result(self) {
+            Ok(x) => Ok(Box::new(x)),
+            Err(e) => Err(e.into()),
+        }
     }
 }
 
@@ -888,6 +917,7 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
     }
 }
 
+// TODO remove this struct?
 #[derive(Debug)]
 pub struct EventsDim0CollectorDyn {}
 
@@ -903,7 +933,6 @@ impl items_0::collect_c::CollectorDyn for EventsDim0CollectorDyn {
     }
 
     fn ingest(&mut self, _item: &mut dyn items_0::collect_c::CollectableWithDefault) {
-        // TODO remove this struct?
         todo!()
     }
 
@@ -961,10 +990,14 @@ impl<NTY: ScalarOps> items_0::collect_c::CollectableWithDefault for EventsDim0<N
     }
 }
 
-impl<NTY: ScalarOps> items_0::collect_c::Collectable for EventsDim0<NTY> {
-    type Collector = EventsDim0Collector<NTY>;
+impl<NTY: ScalarOps> items_0::AsAnyMut for EventsDim0<NTY> {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
 
-    fn new_collector(&self) -> Self::Collector {
-        EventsDim0Collector::new()
+impl<NTY: ScalarOps> items_0::collect_c::Collectable for EventsDim0<NTY> {
+    fn new_collector(&self) -> Box<dyn items_0::collect_c::Collector> {
+        Box::new(EventsDim0Collector::<NTY>::new())
     }
 }

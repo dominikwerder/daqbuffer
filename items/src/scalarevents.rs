@@ -290,7 +290,7 @@ pub struct EventValuesCollectorOutput<NTY> {
     #[serde(rename = "pulseOff")]
     pulse_off: Vec<u64>,
     values: Vec<NTY>,
-    #[serde(skip_serializing_if = "crate::bool_is_false", rename = "finalisedRange")]
+    #[serde(skip_serializing_if = "crate::bool_is_false", rename = "rangeFinal")]
     range_complete: bool,
     #[serde(skip_serializing_if = "crate::bool_is_false", rename = "timedOut")]
     timed_out: bool,
