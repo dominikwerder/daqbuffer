@@ -189,7 +189,8 @@ fn binned_d0_json_05() -> Result<(), Error> {
         let res: items_2::binsdim0::BinsDim0CollectedResult<i32> = serde_json::from_value(jsv)?;
         // inmem was meant just for functional test, ignores the requested time range
         assert_eq!(res.ts_anchor_sec(), 0);
-        assert_eq!(res.len(), 3);
+        // TODO make disk parse faster and avoid timeout
+        assert_eq!(res.len(), 11);
         assert_eq!(res.range_final(), false);
         assert_eq!(f32_cmp_near(res.avgs()[0], 42.0), true);
         Ok(())

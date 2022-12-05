@@ -42,7 +42,7 @@ where
                         .as_any_mut()
                         .downcast_mut::<items::scalarevents::ScalarEvents<NTY>>()
                     {
-                        warn!("ScalarEvents");
+                        trace!("ScalarEvents");
                         let tss: VecDeque<u64> = item.tss.iter().map(|x| *x).collect();
                         let pulses: VecDeque<u64> = item.pulses.iter().map(|x| *x).collect();
                         let values: VecDeque<NTY> = item.values.iter().map(|x| x.clone()).collect();
@@ -50,7 +50,7 @@ where
                         let item = ChannelEvents::Events(Box::new(item));
                         Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                     } else if let Some(item) = item.as_any_mut().downcast_mut::<items::waveevents::WaveEvents<NTY>>() {
-                        warn!("WaveEvents");
+                        trace!("WaveEvents");
                         let _tss: VecDeque<u64> = item.tss.iter().map(|x| *x).collect();
                         let _pulses: VecDeque<u64> = item.pulses.iter().map(|x| *x).collect();
                         let _values: VecDeque<Vec<NTY>> = item.vals.iter().map(|x| x.clone()).collect();
@@ -62,7 +62,7 @@ where
                         .as_any_mut()
                         .downcast_mut::<items::xbinnedscalarevents::XBinnedScalarEvents<NTY>>()
                     {
-                        warn!("XBinnedScalarEvents");
+                        trace!("XBinnedScalarEvents");
                         let tss: VecDeque<u64> = item.tss.iter().map(|x| *x).collect();
                         let pulses: VecDeque<u64> = (0..tss.len()).map(|_| 0).collect();
                         let _avgs: VecDeque<f32> = item.avgs.iter().map(|x| x.clone()).collect();
