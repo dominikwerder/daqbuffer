@@ -1,3 +1,5 @@
+pub mod mergedblobsfromremotes;
+
 use err::Error;
 use futures_core::Stream;
 use futures_util::StreamExt;
@@ -9,9 +11,6 @@ use netpod::ByteSize;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::{Context, Poll};
-
-pub mod mergedblobsfromremotes;
-pub mod mergedfromremotes;
 
 const LOG_EMIT_ITEM: bool = false;
 
