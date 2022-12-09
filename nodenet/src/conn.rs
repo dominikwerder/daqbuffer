@@ -1,12 +1,12 @@
 use err::Error;
-use futures_util::{stream, Stream, StreamExt};
+use futures_util::{Stream, StreamExt};
 use items::frame::{decode_frame, make_term_frame};
 use items::{EventQueryJsonStringFrame, Framable, RangeCompletableItem, Sitemty, StreamItem};
 use items_0::Empty;
 use items_2::channelevents::ChannelEvents;
 use netpod::histo::HistoLog2;
 use netpod::log::*;
-use netpod::query::{PlainEventsQuery, RawEventsQuery};
+use netpod::query::PlainEventsQuery;
 use netpod::AggKind;
 use netpod::{NodeConfigCached, PerfOpts};
 use std::net::SocketAddr;
@@ -104,7 +104,7 @@ async fn events_conn_handler_inner_try(
         },
         Err(e) => return Err((e, netout).into()),
     };
-    let res: Result<RawEventsQuery, _> = serde_json::from_str(&qitem.0);
+    let res: Result<PlainEventsQuery, _> = serde_json::from_str(&qitem.0);
     let evq = match res {
         Ok(k) => k,
         Err(e) => {
@@ -114,7 +114,7 @@ async fn events_conn_handler_inner_try(
     };
     info!("events_conn_handler_inner_try  evq {:?}", evq);
 
-    if evq.do_test_main_error {
+    if evq.channel().name() == "test-do-trigger-main-error" {
         let e = Error::with_msg(format!("Test error private message."))
             .add_public_msg(format!("Test error PUBLIC message."));
         return Err((e, netout).into());
@@ -158,19 +158,24 @@ async fn events_conn_handler_inner_try(
         // TODO why both in PlainEventsQuery and as separate parameter? Check other usages.
         let do_one_before_range = false;
         // TODO use better builder pattern with shortcuts for production and dev defaults
-        let qu = PlainEventsQuery::new(evq.channel, evq.range, 1024 * 8, None, true);
+        let f = dbconn::channelconfig::chconf_from_database(evq.channel(), node_config)
+            .await
+            .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")));
+        let f = match f {
+            Ok(k) => k,
+            Err(e) => return Err((e, netout))?,
+        };
         let scyco = conf;
-        let _dbconf = node_config.node_config.cluster.database.clone();
         let scy = match scyllaconn::create_scy_session(scyco).await {
             Ok(k) => k,
             Err(e) => return Err((e, netout))?,
         };
-        let series = err::todoval();
-        let scalar_type = err::todoval();
-        let shape = err::todoval();
+        let series = f.series;
+        let scalar_type = f.scalar_type;
+        let shape = f.shape;
         let do_test_stream_error = false;
         let stream = match scyllaconn::events::make_scylla_stream(
-            &qu,
+            &evq,
             do_one_before_range,
             series,
             scalar_type,
@@ -183,28 +188,25 @@ async fn events_conn_handler_inner_try(
             Ok(k) => k,
             Err(e) => return Err((e, netout))?,
         };
-        let e = Error::with_msg_no_trace("TODO scylla events");
-        if true {
-            return Err((e, netout))?;
-        }
-        let _s = stream.map(|item| {
+        let stream = stream.map(|item| {
             let item = match item {
                 Ok(item) => match item {
-                    ChannelEvents::Events(_item) => {
-                        // TODO
-                        let item = items_2::eventsdim0::EventsDim0::<f64>::empty();
-                        let item = ChannelEvents::Events(Box::new(item));
+                    ChannelEvents::Events(item) => {
+                        let item = ChannelEvents::Events(item);
                         let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
                         item
                     }
-                    ChannelEvents::Status(_item) => todo!(),
+                    ChannelEvents::Status(item) => {
+                        let item = ChannelEvents::Status(item);
+                        let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
+                        item
+                    }
                 },
                 Err(e) => Err(e),
             };
-            Box::new(item) as Box<dyn Framable + Send>
+            item
         });
-        let s = stream::empty();
-        Box::pin(s)
+        Box::pin(stream)
     } else if let Some(_) = &node_config.node.channel_archiver {
         let e = Error::with_msg_no_trace("archapp not built");
         return Err((e, netout))?;
@@ -212,7 +214,7 @@ async fn events_conn_handler_inner_try(
         let e = Error::with_msg_no_trace("archapp not built");
         return Err((e, netout))?;
     } else {
-        let stream = match evq.agg_kind {
+        let stream = match evq.agg_kind() {
             AggKind::EventBlobs => match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
                 Ok(_stream) => {
                     let e = Error::with_msg_no_trace("TODO make_event_blobs_pipe");
@@ -245,6 +247,7 @@ async fn events_conn_handler_inner_try(
                 }
             }
             Err(e) => {
+                error!("events_conn_handler_inner_try sees error in stream: {e:?}");
                 return Err((e, netout))?;
             }
         }
@@ -273,6 +276,7 @@ async fn events_conn_handler_inner(
     match events_conn_handler_inner_try(stream, addr, node_config).await {
         Ok(_) => (),
         Err(ce) => {
+            error!("events_conn_handler_inner sees error {:?}", ce.err);
             // Try to pass the error over the network.
             // If that fails, give error to the caller.
             let mut out = ce.netout;

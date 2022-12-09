@@ -8,15 +8,15 @@ use items_2::channelevents::ChannelEvents;
 use items_2::merger_cev::ChannelEventsMerger;
 use items_2::{binned_collected, empty_events_dyn, empty_events_dyn_2};
 use netpod::log::*;
-use netpod::query::{BinnedQuery, ChannelStateEventsQuery, PlainEventsQuery, RawEventsQuery};
+use netpod::query::{BinnedQuery, ChannelStateEventsQuery, PlainEventsQuery};
 use netpod::{AggKind, BinnedRange, FromUrl, NodeConfigCached};
 use netpod::{ACCEPT_ALL, APP_JSON, APP_OCTET};
 use scyllaconn::create_scy_session;
 use scyllaconn::errconv::ErrConv;
-use scyllaconn::events::{channel_state_events, find_series, make_scylla_stream};
+use scyllaconn::events::{channel_state_events, make_scylla_stream};
 use std::pin::Pin;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use url::Url;
 
 pub struct EventsHandler {}
@@ -103,8 +103,15 @@ async fn plain_events_json(
     query.set_series_id(chconf.series);
     let query = query;
     // ---
-    let query = RawEventsQuery::new(query.channel().clone(), query.range().clone(), AggKind::Plain);
-    let item = streams::plaineventsjson::plain_events_json(query, &node_config.node_config.cluster).await?;
+    //let query = RawEventsQuery::new(query.channel().clone(), query.range().clone(), AggKind::Plain);
+    let item = streams::plaineventsjson::plain_events_json(&query, &node_config.node_config.cluster).await;
+    let item = match item {
+        Ok(item) => item,
+        Err(e) => {
+            error!("got error from streams::plaineventsjson::plain_events_json {e:?}");
+            return Err(e.into());
+        }
+    };
     let buf = serde_json::to_vec(&item)?;
     let ret = response(StatusCode::OK).body(Body::from(buf))?;
     Ok(ret)
@@ -188,8 +195,8 @@ impl EventsHandlerScylla {
             return Err(Error::with_public_msg(format!("no scylla configured")));
         };
         let scy = create_scy_session(scyco).await?;
-        let do_one_before_range = evq.do_one_before_range();
-        let (series, scalar_type, shape) = find_series(evq.channel(), pgclient.clone()).await?;
+        let do_one_before_range = evq.agg_kind().need_expand();
+        let (series, scalar_type, shape) = dbconn::find_series(evq.channel(), pgclient.clone()).await?;
         let empty_item = empty_events_dyn_2(&scalar_type, &shape, &AggKind::TimeWeightedScalar);
         let empty_stream =
             futures_util::stream::once(futures_util::future::ready(Ok(ChannelEvents::Events(empty_item))));
@@ -342,10 +349,17 @@ impl BinnedHandlerScylla {
             let scy = create_scy_session(scyco).await?;
             let covering = BinnedRange::covering_range(evq.range().clone(), evq.bin_count())?;
             let range = covering.full_range();
-            let mut query2 = PlainEventsQuery::new(evq.channel().clone(), range.clone(), 0, None, false);
+            let mut query2 = PlainEventsQuery::new(
+                evq.channel().clone(),
+                range.clone(),
+                evq.agg_kind().clone(),
+                Duration::from_millis(6000),
+                None,
+                false,
+            );
             query2.set_timeout(evq.timeout());
             let query2 = query2;
-            let (series, scalar_type, shape) = find_series(evq.channel(), pgclient.clone()).await?;
+            let (series, scalar_type, shape) = dbconn::find_series(evq.channel(), pgclient.clone()).await?;
             let stream = make_scylla_stream(
                 &query2,
                 do_one_before_range,

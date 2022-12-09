@@ -10,12 +10,13 @@ use hyper::Body;
 use items::numops::NumOps;
 use items::scalarevents::ScalarEvents;
 use items::{RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithLen};
-use netpod::log::*;
 use netpod::query::PlainEventsQuery;
+use netpod::{log::*, AggKind};
 use netpod::{AppendToUrl, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_JSON, APP_OCTET};
 use serde_json::Value as JsonValue;
 use std::fmt::Debug;
 use std::future::ready;
+use std::time::Duration;
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
 use tokio::io::AsyncRead;
 use url::Url;
@@ -82,7 +83,14 @@ where
         series: None,
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let query = PlainEventsQuery::new(channel, range, 1024 * 4, None, false);
+    let query = PlainEventsQuery::new(
+        channel,
+        range,
+        AggKind::TimeWeightedScalar,
+        Duration::from_millis(10000),
+        None,
+        true,
+    );
     let hp = HostPort::from_node(node0);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
     query.append_to_url(&mut url);
@@ -309,7 +317,14 @@ pub async fn get_plain_events_json(
     let beg_date: DateTime<Utc> = beg_date.parse()?;
     let end_date: DateTime<Utc> = end_date.parse()?;
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let query = PlainEventsQuery::new(channel, range, 1024 * 4, None, false);
+    let query = PlainEventsQuery::new(
+        channel,
+        range,
+        AggKind::TimeWeightedScalar,
+        Duration::from_millis(10000),
+        None,
+        true,
+    );
     let hp = HostPort::from_node(node0);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
     query.append_to_url(&mut url);

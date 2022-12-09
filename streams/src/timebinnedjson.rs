@@ -3,7 +3,7 @@ use err::Error;
 use futures_util::StreamExt;
 #[allow(unused)]
 use netpod::log::*;
-use netpod::query::{BinnedQuery, RawEventsQuery};
+use netpod::query::{BinnedQuery, PlainEventsQuery};
 use netpod::{BinnedRange, Cluster};
 use serde_json::Value as JsonValue;
 use std::time::{Duration, Instant};
@@ -12,8 +12,16 @@ pub async fn timebinned_json(query: &BinnedQuery, cluster: &Cluster) -> Result<J
     let binned_range = BinnedRange::covering_range(query.range().clone(), query.bin_count())?;
     let events_max = 10000;
     let do_time_weight = query.agg_kind().do_time_weighted();
-    let deadline = Instant::now() + Duration::from_millis(7500);
-    let rawquery = RawEventsQuery::new(query.channel().clone(), query.range().clone(), query.agg_kind().clone());
+    let timeout = Duration::from_millis(7500);
+    let deadline = Instant::now() + timeout;
+    let rawquery = PlainEventsQuery::new(
+        query.channel().clone(),
+        query.range().clone(),
+        query.agg_kind().clone(),
+        timeout,
+        None,
+        true,
+    );
     let inps = open_tcp_streams::<_, items_2::channelevents::ChannelEvents>(&rawquery, cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader:
     let stream = { items_2::merger::Merger::new(inps, 1) };

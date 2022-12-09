@@ -7,13 +7,12 @@ use items_2::eventsdim0::EventsDim0;
 use netpod::log::*;
 use netpod::query::{ChannelStateEventsQuery, PlainEventsQuery};
 use netpod::timeunits::*;
-use netpod::{Channel, NanoRange, ScalarType, Shape};
+use netpod::{NanoRange, ScalarType, Shape};
 use scylla::Session as ScySession;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
-use tokio_postgres::Client as PgClient;
 
 async fn find_ts_msp(series: i64, range: NanoRange, scy: Arc<ScySession>) -> Result<VecDeque<u64>, Error> {
     info!("find_ts_msp  series {}  {:?}", series, range);
@@ -557,43 +556,6 @@ impl Stream for EventsStreamScylla {
             };
         }
     }
-}
-
-pub async fn find_series(channel: &Channel, pgclient: Arc<PgClient>) -> Result<(u64, ScalarType, Shape), Error> {
-    info!("find_series  channel {:?}", channel);
-    let rows = if let Some(series) = channel.series() {
-        let q = "select series, facility, channel, scalar_type, shape_dims from series_by_channel where series = $1";
-        pgclient.query(q, &[&(series as i64)]).await.err_conv()?
-    } else {
-        let q = "select series, facility, channel, scalar_type, shape_dims from series_by_channel where facility = $1 and channel = $2";
-        pgclient
-            .query(q, &[&channel.backend(), &channel.name()])
-            .await
-            .err_conv()?
-    };
-    if rows.len() < 1 {
-        return Err(Error::with_public_msg_no_trace(format!(
-            "No series found for {channel:?}"
-        )));
-    }
-    if rows.len() > 1 {
-        error!("Multiple series found for {channel:?}");
-        return Err(Error::with_public_msg_no_trace(
-            "Multiple series found for channel, can not return data for ambiguous series",
-        ));
-    }
-    let row = rows
-        .into_iter()
-        .next()
-        .ok_or_else(|| Error::with_public_msg_no_trace(format!("can not find series for channel")))?;
-    let series = row.get::<_, i64>(0) as u64;
-    let _facility: String = row.get(1);
-    let _channel: String = row.get(2);
-    let a: i32 = row.get(3);
-    let scalar_type = ScalarType::from_scylla_i32(a)?;
-    let a: Vec<i32> = row.get(4);
-    let shape = Shape::from_scylla_shape_dims(&a)?;
-    Ok((series, scalar_type, shape))
 }
 
 pub async fn make_scylla_stream(

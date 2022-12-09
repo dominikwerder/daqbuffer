@@ -5,7 +5,7 @@ use futures_util::{pin_mut, StreamExt};
 use items::eventfull::EventFull;
 use items::Sitemty;
 use netpod::log::*;
-use netpod::query::RawEventsQuery;
+use netpod::query::PlainEventsQuery;
 use netpod::{Cluster, PerfOpts};
 use std::future::Future;
 use std::pin::Pin;
@@ -24,7 +24,7 @@ pub struct MergedBlobsFromRemotes {
 }
 
 impl MergedBlobsFromRemotes {
-    pub fn new(evq: RawEventsQuery, perf_opts: PerfOpts, cluster: Cluster) -> Self {
+    pub fn new(evq: PlainEventsQuery, perf_opts: PerfOpts, cluster: Cluster) -> Self {
         debug!("MergedBlobsFromRemotes  evq {:?}", evq);
         let mut tcp_establish_futs = vec![];
         for node in &cluster.nodes {

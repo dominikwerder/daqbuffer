@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::*;
 use items::frame::make_frame;
 use items::Sitemty;
@@ -58,7 +60,7 @@ fn raw_data_00() {
             beg: SEC,
             end: SEC * 10,
         };
-        let qu = RawEventsQuery::new(channel, range, AggKind::Plain);
+        let qu = PlainEventsQuery::new(channel, range, AggKind::Plain, Duration::from_millis(10000), None, true);
         let query = EventQueryJsonStringFrame(serde_json::to_string(&qu).unwrap());
         let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(query)));
         let frame = make_frame(&item).unwrap();

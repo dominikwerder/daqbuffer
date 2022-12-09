@@ -4,7 +4,6 @@ pub mod prebinned;
 
 use crate::get_url_query_pairs;
 use crate::log::*;
-use crate::DiskIoTune;
 use crate::{AggKind, AppendToUrl, ByteSize, Channel, FromUrl, HasBackend, HasTimeout, NanoRange, ToNanos};
 use chrono::{DateTime, TimeZone, Utc};
 use err::Error;
@@ -66,50 +65,15 @@ impl fmt::Display for CacheUsage {
     }
 }
 
-/// Query parameters to request (optionally) X-processed, but not T-processed events.
-// TODO maybe merge with PlainEventsQuery?
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct RawEventsQuery {
-    pub channel: Channel,
-    pub range: NanoRange,
-    pub agg_kind: AggKind,
-    #[serde(default)]
-    pub disk_io_tune: DiskIoTune,
-    #[serde(default)]
-    pub do_decompress: bool,
-    #[serde(default)]
-    pub do_test_main_error: bool,
-    #[serde(default)]
-    pub do_test_stream_error: bool,
-}
-
-impl RawEventsQuery {
-    pub fn new(channel: Channel, range: NanoRange, agg_kind: AggKind) -> Self {
-        Self {
-            channel,
-            range,
-            agg_kind,
-            disk_io_tune: DiskIoTune::default(),
-            do_decompress: false,
-            do_test_main_error: false,
-            do_test_stream_error: false,
-        }
-    }
-
-    pub fn channel(&self) -> &Channel {
-        &self.channel
-    }
-}
-
-#[derive(Clone, Debug, Serialize)]
 pub struct PlainEventsQuery {
     channel: Channel,
     range: NanoRange,
-    do_one_before_range: bool,
-    disk_io_buffer_size: usize,
-    report_error: bool,
+    agg_kind: AggKind,
     timeout: Duration,
     events_max: Option<u64>,
+    stream_batch_len: Option<usize>,
+    report_error: bool,
     do_log: bool,
     do_test_main_error: bool,
     do_test_stream_error: bool,
@@ -119,18 +83,19 @@ impl PlainEventsQuery {
     pub fn new(
         channel: Channel,
         range: NanoRange,
-        disk_io_buffer_size: usize,
+        agg_kind: AggKind,
+        timeout: Duration,
         events_max: Option<u64>,
         do_log: bool,
     ) -> Self {
         Self {
             channel,
             range,
-            do_one_before_range: false,
-            disk_io_buffer_size,
-            report_error: false,
-            timeout: Duration::from_millis(10000),
+            agg_kind,
+            timeout,
             events_max,
+            stream_batch_len: None,
+            report_error: false,
             do_log,
             do_test_main_error: false,
             do_test_stream_error: false,
@@ -145,12 +110,16 @@ impl PlainEventsQuery {
         &self.range
     }
 
+    pub fn agg_kind(&self) -> &AggKind {
+        &self.agg_kind
+    }
+
     pub fn report_error(&self) -> bool {
         self.report_error
     }
 
     pub fn disk_io_buffer_size(&self) -> usize {
-        self.disk_io_buffer_size
+        1024 * 8
     }
 
     pub fn timeout(&self) -> Duration {
@@ -171,10 +140,6 @@ impl PlainEventsQuery {
 
     pub fn do_test_stream_error(&self) -> bool {
         self.do_test_stream_error
-    }
-
-    pub fn do_one_before_range(&self) -> bool {
-        self.do_one_before_range
     }
 
     pub fn set_series_id(&mut self, series: u64) {
@@ -221,16 +186,7 @@ impl FromUrl for PlainEventsQuery {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
             },
-            disk_io_buffer_size: pairs
-                .get("diskIoBufferSize")
-                .map_or("4096", |k| k)
-                .parse()
-                .map_err(|e| Error::with_public_msg(format!("can not parse diskIoBufferSize {:?}", e)))?,
-            report_error: pairs
-                .get("reportError")
-                .map_or("false", |k| k)
-                .parse()
-                .map_err(|e| Error::with_public_msg(format!("can not parse reportError {:?}", e)))?,
+            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::TimeWeightedScalar),
             timeout: pairs
                 .get("timeout")
                 .map_or("10000", |k| k)
@@ -240,6 +196,14 @@ impl FromUrl for PlainEventsQuery {
             events_max: pairs
                 .get("eventsMax")
                 .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
+            stream_batch_len: pairs
+                .get("streamBatchLen")
+                .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
+            report_error: pairs
+                .get("reportError")
+                .map_or("false", |k| k)
+                .parse()
+                .map_err(|e| Error::with_public_msg(format!("can not parse reportError {:?}", e)))?,
             do_log: pairs
                 .get("doLog")
                 .map_or("false", |k| k)
@@ -255,11 +219,6 @@ impl FromUrl for PlainEventsQuery {
                 .map_or("false", |k| k)
                 .parse()
                 .map_err(|e| Error::with_public_msg(format!("can not parse doTestStreamError {:?}", e)))?,
-            do_one_before_range: pairs
-                .get("getOneBeforeRange")
-                .map_or("false", |k| k)
-                .parse()
-                .map_err(|e| Error::with_public_msg(format!("can not parse getOneBeforeRange {:?}", e)))?,
         };
         Ok(ret)
     }
@@ -269,6 +228,7 @@ impl AppendToUrl for PlainEventsQuery {
     fn append_to_url(&self, url: &mut Url) {
         let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
         self.channel.append_to_url(url);
+        binning_scheme_append_to_url(&self.agg_kind, url);
         let mut g = url.query_pairs_mut();
         g.append_pair(
             "begDate",
@@ -278,13 +238,14 @@ impl AppendToUrl for PlainEventsQuery {
             "endDate",
             &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
         );
-        g.append_pair("diskIoBufferSize", &format!("{}", self.disk_io_buffer_size));
         g.append_pair("timeout", &format!("{}", self.timeout.as_millis()));
         if let Some(x) = self.events_max.as_ref() {
             g.append_pair("eventsMax", &format!("{}", x));
         }
+        if let Some(x) = self.stream_batch_len.as_ref() {
+            g.append_pair("streamBatchLen", &format!("{}", x));
+        }
         g.append_pair("doLog", &format!("{}", self.do_log));
-        g.append_pair("getOneBeforeRange", &format!("{}", self.do_one_before_range));
     }
 }
 

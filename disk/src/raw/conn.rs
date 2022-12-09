@@ -10,7 +10,7 @@ use items::{EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, Stream
 use items_2::channelevents::ChannelEvents;
 use items_2::eventsdim0::EventsDim0;
 use netpod::log::*;
-use netpod::query::RawEventsQuery;
+use netpod::query::PlainEventsQuery;
 use netpod::{AggKind, ByteOrder, ByteSize, Channel, DiskIoTune, NanoRange, NodeConfigCached, ScalarType, Shape};
 use parse::channelconfig::{extract_matching_config_entry, read_local_config, ConfigEntry, MatchingConfigEntry};
 use std::collections::VecDeque;
@@ -182,17 +182,17 @@ macro_rules! pipe1 {
 }
 
 pub async fn make_event_pipe(
-    evq: &RawEventsQuery,
+    evq: &PlainEventsQuery,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     if false {
-        match dbconn::channel_exists(&evq.channel, &node_config).await {
+        match dbconn::channel_exists(&evq.channel(), &node_config).await {
             Ok(_) => (),
             Err(e) => return Err(e)?,
         }
     }
-    let range = &evq.range;
-    let channel_config = match read_local_config(evq.channel.clone(), node_config.node.clone()).await {
+    let range = evq.range().clone();
+    let channel_config = match read_local_config(evq.channel().clone(), node_config.node.clone()).await {
         Ok(k) => k,
         Err(e) => {
             // TODO introduce detailed error type
@@ -204,7 +204,7 @@ pub async fn make_event_pipe(
             }
         }
     };
-    let entry_res = match extract_matching_config_entry(range, &channel_config) {
+    let entry_res = match extract_matching_config_entry(&range, &channel_config) {
         Ok(k) => k,
         Err(e) => return Err(e)?,
     };
@@ -218,7 +218,7 @@ pub async fn make_event_pipe(
         Err(e) => return Err(e)?,
     };
     let channel_config = netpod::ChannelConfig {
-        channel: evq.channel.clone(),
+        channel: evq.channel().clone(),
         keyspace: entry.ks as u8,
         time_bin_size: entry.bs,
         shape: shape,
@@ -229,7 +229,7 @@ pub async fn make_event_pipe(
     };
     trace!(
         "make_event_pipe  need_expand {need_expand}  {evq:?}",
-        need_expand = evq.agg_kind.need_expand()
+        need_expand = evq.agg_kind().need_expand()
     );
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     let event_blobs = EventChunkerMultifile::new(
@@ -237,9 +237,9 @@ pub async fn make_event_pipe(
         channel_config.clone(),
         node_config.node.clone(),
         node_config.ix,
-        evq.disk_io_tune.clone(),
+        DiskIoTune::default(),
         event_chunker_conf,
-        evq.agg_kind.need_expand(),
+        evq.agg_kind().need_expand(),
         true,
     );
     let shape = entry.to_shape()?;
@@ -247,7 +247,7 @@ pub async fn make_event_pipe(
         entry.scalar_type,
         entry.byte_order,
         shape,
-        evq.agg_kind.clone(),
+        evq.agg_kind().clone(),
         event_blobs
     );
     Ok(pipe)
@@ -350,30 +350,30 @@ pub fn make_remote_event_blobs_stream(
 }
 
 pub async fn make_event_blobs_pipe(
-    evq: &RawEventsQuery,
+    evq: &PlainEventsQuery,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>, Error> {
     if false {
-        match dbconn::channel_exists(&evq.channel, &node_config).await {
+        match dbconn::channel_exists(evq.channel(), &node_config).await {
             Ok(_) => (),
             Err(e) => return Err(e)?,
         }
     }
-    let expand = evq.agg_kind.need_expand();
-    let range = &evq.range;
-    let entry = get_applicable_entry(&evq.range, evq.channel.clone(), node_config).await?;
+    let expand = evq.agg_kind().need_expand();
+    let range = evq.range();
+    let entry = get_applicable_entry(evq.range(), evq.channel().clone(), node_config).await?;
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     type ItemType = Sitemty<EventFull>;
     // TODO should depend on host config
     let pipe = if true {
         let event_blobs = make_remote_event_blobs_stream(
             range.clone(),
-            evq.channel.clone(),
+            evq.channel().clone(),
             &entry,
             expand,
-            evq.do_decompress,
+            true,
             event_chunker_conf,
-            evq.disk_io_tune.clone(),
+            DiskIoTune::default(),
             node_config,
         )?;
         let s = event_blobs.map(|item: ItemType| Box::new(item) as Box<dyn Framable + Send>);
@@ -384,12 +384,12 @@ pub async fn make_event_blobs_pipe(
     } else {
         let event_blobs = make_local_event_blobs_stream(
             range.clone(),
-            evq.channel.clone(),
+            evq.channel().clone(),
             &entry,
             expand,
-            evq.do_decompress,
+            true,
             event_chunker_conf,
-            evq.disk_io_tune.clone(),
+            DiskIoTune::default(),
             node_config,
         )?;
         let s = event_blobs.map(|item: ItemType| Box::new(item) as Box<dyn Framable + Send>);

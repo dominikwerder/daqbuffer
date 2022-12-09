@@ -7,7 +7,7 @@ use items_2::binsdim0::BinsDim0;
 use items_2::channelevents::ChannelEvents;
 use items_2::{empty_binned_dyn, empty_events_dyn};
 use netpod::log::*;
-use netpod::query::{CacheUsage, PlainEventsQuery, RawEventsQuery};
+use netpod::query::{CacheUsage, PlainEventsQuery};
 use netpod::timeunits::*;
 use netpod::{AggKind, ChannelTyped, ScalarType, Shape};
 use netpod::{PreBinnedPatchCoord, PreBinnedPatchIterator, PreBinnedPatchRange};
@@ -356,13 +356,20 @@ pub async fn fetch_uncached_binned_events(
     // We must produce some result with correct types even if upstream delivers nothing at all.
     let bin0 = empty_events_dyn(&chn.scalar_type, &chn.shape, &agg_kind);
     let mut time_binner = bin0.time_binner_new(edges.clone(), do_time_weight);
+    // TODO handle deadline better
     let deadline = Instant::now();
     let deadline = deadline
         .checked_add(Duration::from_millis(6000))
         .ok_or_else(|| Error::with_msg_no_trace(format!("deadline overflow")))?;
     let do_one_before_range = agg_kind.need_expand();
-    let _evq = RawEventsQuery::new(chn.channel.clone(), coord.patch_range(), agg_kind);
-    let evq = PlainEventsQuery::new(chn.channel.clone(), coord.patch_range(), 4096, None, true);
+    let evq = PlainEventsQuery::new(
+        chn.channel.clone(),
+        coord.patch_range(),
+        AggKind::TimeWeightedScalar,
+        Duration::from_millis(8000),
+        None,
+        true,
+    );
     let mut events_dyn = EventsStreamScylla::new(
         series,
         evq.range().clone(),

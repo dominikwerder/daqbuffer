@@ -5,7 +5,7 @@ use futures_util::{Future, Stream, StreamExt};
 use items::binsdim0::MinMaxAvgDim0Bins;
 use items::{empty_binned_dyn, empty_events_dyn, RangeCompletableItem, StreamItem, TimeBinned};
 use netpod::log::*;
-use netpod::query::{CacheUsage, RawEventsQuery};
+use netpod::query::{CacheUsage, PlainEventsQuery};
 use netpod::timeunits::*;
 use netpod::{
     AggKind, ChannelTyped, PreBinnedPatchCoord, PreBinnedPatchIterator, PreBinnedPatchRange, ScalarType, ScyllaConfig,
@@ -348,7 +348,14 @@ pub async fn fetch_uncached_binned_events(
     let deadline = deadline
         .checked_add(Duration::from_millis(6000))
         .ok_or_else(|| Error::with_msg_no_trace(format!("deadline overflow")))?;
-    let evq = RawEventsQuery::new(chn.channel.clone(), coord.patch_range(), agg_kind);
+    let evq = PlainEventsQuery::new(
+        chn.channel.clone(),
+        coord.patch_range(),
+        agg_kind,
+        Duration::from_millis(6000),
+        None,
+        true,
+    );
     let mut events_dyn = EventsStreamScylla::new(series, &evq, chn.scalar_type.clone(), chn.shape.clone(), scy, false);
     let mut complete = false;
     loop {

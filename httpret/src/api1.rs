@@ -9,7 +9,7 @@ use items::eventfull::EventFull;
 use items::{RangeCompletableItem, Sitemty, StreamItem};
 use itertools::Itertools;
 use netpod::query::api1::Api1Query;
-use netpod::query::RawEventsQuery;
+use netpod::query::PlainEventsQuery;
 use netpod::timeunits::SEC;
 use netpod::{log::*, ScalarType};
 use netpod::{ByteSize, Channel, DiskIoTune, NanoRange, NodeConfigCached, PerfOpts, Shape};
@@ -773,7 +773,14 @@ impl Stream for DataApiPython3DataStream {
                             };
                             let channel = self.channels[self.chan_ix - 1].clone();
                             debug!("found channel_config for {}: {:?}", channel.name, entry);
-                            let evq = RawEventsQuery::new(channel, self.range.clone(), netpod::AggKind::EventBlobs);
+                            let evq = PlainEventsQuery::new(
+                                channel,
+                                self.range.clone(),
+                                netpod::AggKind::EventBlobs,
+                                Duration::from_millis(10000),
+                                None,
+                                true,
+                            );
                             let perf_opts = PerfOpts { inmem_bufcap: 1024 * 4 };
                             // TODO is this a good to place decide this?
                             let s = if self.node_config.node_config.cluster.is_central_storage {
@@ -781,11 +788,11 @@ impl Stream for DataApiPython3DataStream {
                                 // TODO pull up this config
                                 let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
                                 let s = disk::raw::conn::make_local_event_blobs_stream(
-                                    evq.range.clone(),
-                                    evq.channel.clone(),
+                                    evq.range().clone(),
+                                    evq.channel().clone(),
                                     &entry,
-                                    evq.agg_kind.need_expand(),
-                                    evq.do_decompress,
+                                    evq.agg_kind().need_expand(),
+                                    true,
                                     event_chunker_conf,
                                     self.disk_io_tune.clone(),
                                     &self.node_config,

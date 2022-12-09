@@ -5,9 +5,9 @@ use items::scalarevents::ScalarEvents;
 use items::waveevents::WaveEvents;
 use items::{EventsDyn, RangeCompletableItem, Sitemty, StreamItem};
 use netpod::log::*;
-use netpod::query::{ChannelStateEventsQuery, RawEventsQuery};
+use netpod::query::{ChannelStateEventsQuery, PlainEventsQuery};
 use netpod::timeunits::DAY;
-use netpod::{Database, NanoRange, ScalarType, ScyllaConfig, Shape};
+use netpod::{NanoRange, ScalarType, ScyllaConfig, Shape};
 use scylla::Session as ScySession;
 use std::collections::VecDeque;
 use std::pin::Pin;
@@ -126,8 +126,6 @@ enum FrState {
 pub struct EventsStreamScylla {
     state: FrState,
     series: u64,
-    #[allow(unused)]
-    evq: RawEventsQuery,
     scalar_type: ScalarType,
     shape: Shape,
     range: NanoRange,
@@ -139,7 +137,7 @@ pub struct EventsStreamScylla {
 impl EventsStreamScylla {
     pub fn new(
         series: u64,
-        evq: &RawEventsQuery,
+        evq: &PlainEventsQuery,
         scalar_type: ScalarType,
         shape: Shape,
         scy: Arc<ScySession>,
@@ -148,10 +146,9 @@ impl EventsStreamScylla {
         Self {
             state: FrState::New,
             series,
-            evq: evq.clone(),
             scalar_type,
             shape,
-            range: evq.range.clone(),
+            range: evq.range().clone(),
             ts_msps: VecDeque::new(),
             scy,
             do_test_stream_error,
@@ -475,18 +472,6 @@ read_next_scalar_values!(read_next_values_scalar_f32, f32, f32, "events_scalar_f
 read_next_scalar_values!(read_next_values_scalar_f64, f64, f64, "events_scalar_f64");
 
 read_next_array_values!(read_next_values_array_u16, u16, i16, "events_wave_u16");
-
-// TODO remove
-#[allow(unused)]
-async fn make_scylla_stream(
-    _evq: &RawEventsQuery,
-    _scyco: &ScyllaConfig,
-    _dbconf: Database,
-    _do_test_stream_error: bool,
-) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn EventsDyn>>> + Send>>, Error> {
-    error!("forward call to crate scyllaconn");
-    err::todoval()
-}
 
 pub async fn channel_state_events(
     evq: &ChannelStateEventsQuery,
