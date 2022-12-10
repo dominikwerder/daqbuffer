@@ -86,30 +86,34 @@ pub fn encode_to_vec<S>(item: S) -> Result<Vec<u8>, Error>
 where
     S: Serialize,
 {
-    serde_json::to_vec(&item).map_err(|e| e.into())
+    if true {
+        serde_json::to_vec(&item).map_err(|e| e.into())
+    } else {
+        bincode_to_vec(&item)
+    }
 }
 
 pub fn decode_from_slice<T>(buf: &[u8]) -> Result<T, Error>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
-    serde_json::from_slice(buf).map_err(|e| e.into())
+    if true {
+        serde_json::from_slice(buf).map_err(|e| e.into())
+    } else {
+        bincode_from_slice(buf)
+    }
 }
 
 pub fn make_frame_2<T>(item: &T, fty: u32) -> Result<BytesMut, Error>
 where
     T: erased_serde::Serialize,
 {
-    trace!("make_frame_2  fty {:x}", fty);
+    info!("make_frame_2  T = {}  fty {:x}", std::any::type_name::<T>(), fty);
     let mut out = Vec::new();
     //let mut ser = rmp_serde::Serializer::new(&mut out).with_struct_map();
     //let writer = ciborium::ser::into_writer(&item, &mut out).unwrap();
-    #[cfg(DIS)]
-    let ser2 = {
-        let mut ser = bincode_ser(&mut out);
-        let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser);
-        let _ = ser2;
-    };
+    //let mut ser = bincode_ser(&mut out);
+    //let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser);
     let mut ser = serde_json::Serializer::new(&mut out);
     let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser);
     match item.erased_serialize(&mut ser2) {
@@ -121,6 +125,7 @@ where
             let mut h = crc32fast::Hasher::new();
             h.update(&enc);
             let payload_crc = h.finalize();
+            // TODO reserve also for footer via constant
             let mut buf = BytesMut::with_capacity(enc.len() + INMEM_FRAME_HEAD);
             buf.put_u32_le(INMEM_FRAME_MAGIC);
             buf.put_u32_le(INMEM_FRAME_ENCID);
@@ -266,6 +271,7 @@ pub fn decode_frame<T>(frame: &InMemoryFrame) -> Result<T, Error>
 where
     T: FrameDecodable,
 {
+    info!("decode_frame  T = {}", std::any::type_name::<T>());
     if frame.encid() != INMEM_FRAME_ENCID {
         return Err(Error::with_msg(format!("unknown encoder id {:?}", frame)));
     }
@@ -329,6 +335,7 @@ where
             match decode_from_slice(frame.buf()) {
                 Ok(item) => Ok(item),
                 Err(e) => {
+                    error!("decode_frame  T = {}", std::any::type_name::<T>());
                     error!("ERROR deserialize  len {}  tyid {:x}", frame.buf().len(), frame.tyid());
                     let n = frame.buf().len().min(64);
                     let s = String::from_utf8_lossy(&frame.buf()[..n]);

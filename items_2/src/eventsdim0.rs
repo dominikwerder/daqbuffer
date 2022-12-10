@@ -1001,3 +1001,65 @@ impl<NTY: ScalarOps> items_0::collect_c::Collectable for EventsDim0<NTY> {
         Box::new(EventsDim0Collector::<NTY>::new())
     }
 }
+
+#[cfg(test)]
+mod test_frame {
+    use crate::channelevents::ChannelEvents;
+    use crate::eventsdim0::EventsDim0;
+    use err::Error;
+    use items::Framable;
+    use items::RangeCompletableItem;
+    use items::Sitemty;
+    use items::StreamItem;
+    use items_0::AsAnyMut;
+    use items_0::Empty;
+
+    #[test]
+    fn events_bincode() {
+        // core::result::Result<items::StreamItem<items::RangeCompletableItem<items_2::channelevents::ChannelEvents>>, err::Error>
+        let mut events = EventsDim0::empty();
+        events.push(123, 234, 55f32);
+        let events = events;
+        let events: Box<dyn items_0::Events> = Box::new(events);
+        let item = ChannelEvents::Events(events);
+        let item = Ok::<_, Error>(StreamItem::DataItem(RangeCompletableItem::Data(item)));
+        let mut buf = item.make_frame().unwrap();
+        let s = String::from_utf8_lossy(&buf[20..buf.len() - 4]);
+        eprintln!("[[{s}]]");
+        let buflen = buf.len();
+        let frame = items::inmem::InMemoryFrame {
+            encid: items::INMEM_FRAME_ENCID,
+            tyid: 0x2500,
+            len: (buflen - 24) as _,
+            buf: buf.split_off(20).split_to(buflen - 20 - 4).freeze(),
+        };
+        let item: Sitemty<ChannelEvents> = items::frame::decode_frame(&frame).unwrap();
+        let item = if let Ok(x) = item { x } else { panic!() };
+        let item = if let StreamItem::DataItem(x) = item {
+            x
+        } else {
+            panic!()
+        };
+        let item = if let RangeCompletableItem::Data(x) = item {
+            x
+        } else {
+            panic!()
+        };
+        let mut item = if let ChannelEvents::Events(x) = item {
+            x
+        } else {
+            panic!()
+        };
+        let item = if let Some(item) = item.as_any_mut().downcast_mut::<Box<dyn items_0::Events>>() {
+            item
+        } else {
+            panic!()
+        };
+        eprintln!("NOW WE SEE: {:?}", item);
+        let item = if let Some(item) = item.as_any_mut().downcast_ref::<Box<EventsDim0<f32>>>() {
+            item
+        } else {
+            panic!()
+        };
+    }
+}
