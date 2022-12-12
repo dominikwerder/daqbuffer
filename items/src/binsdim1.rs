@@ -18,11 +18,13 @@ use crate::{Fits, FitsInside, NewEmpty, ReadPbv, Sitemty, TimeBinned, WithLen};
 use chrono::{TimeZone, Utc};
 use err::Error;
 use items_0::subfr::SubFrId;
+use items_0::AsAnyRef;
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{NanoRange, Shape};
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
+use std::any::Any;
 use std::fmt;
 use std::marker::PhantomData;
 use tokio::fs::File;
@@ -69,6 +71,15 @@ where
             self.maxs.first(),
             self.avgs.first(),
         )
+    }
+}
+
+impl<NTY> AsAnyRef for MinMaxAvgDim1Bins<NTY>
+where
+    NTY: NumOps,
+{
+    fn as_any_ref(&self) -> &dyn Any {
+        self
     }
 }
 

@@ -9,6 +9,7 @@ use crate::{
 };
 use err::Error;
 use items_0::subfr::SubFrId;
+use items_0::AsAnyRef;
 use netpod::log::*;
 use netpod::{x_bin_count, AggKind, NanoRange, Shape};
 use serde::{Deserialize, Serialize};
@@ -64,6 +65,12 @@ where
 {
     fn frame_type_id(&self) -> u32 {
         <Self as FrameTypeInnerStatic>::FRAME_TYPE_ID
+    }
+}
+
+impl<NTY> AsAnyRef for WaveEvents<NTY> where NTY:NumOps {
+    fn as_any_ref(&self) -> &dyn Any {
+        self
     }
 }
 

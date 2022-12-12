@@ -1,5 +1,5 @@
 use super::collect_c::Collected;
-use crate::WithLen;
+use crate::{AsAnyMut, AsAnyRef, WithLen};
 use err::Error;
 use serde::Serialize;
 use std::any::Any;
@@ -26,14 +26,13 @@ pub trait Collector: Send + Unpin + WithLen {
 }
 
 // TODO rename to `Typed`
-pub trait CollectableType {
+pub trait CollectableType: AsAnyRef + AsAnyMut {
     type Collector: CollectorType<Input = Self>;
     fn new_collector() -> Self::Collector;
 }
 
-pub trait Collectable: Any {
+pub trait Collectable: AsAnyRef + AsAnyMut + Any {
     fn new_collector(&self) -> Box<dyn Collector>;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 impl<T: CollectorType + 'static> Collector for T {
@@ -56,14 +55,12 @@ impl<T: CollectorType + 'static> Collector for T {
     }
 }
 
-impl<T: CollectableType + 'static> Collectable for T {
+impl<T> Collectable for T
+where
+    T: CollectableType + 'static,
+{
     fn new_collector(&self) -> Box<dyn Collector> {
         Box::new(T::new_collector()) as _
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        // TODO interesting: why exactly does returning `&mut self` not work here?
-        self
     }
 }
 
@@ -73,20 +70,27 @@ pub trait ToJsonBytes {
 }
 
 // TODO check usage of this trait
-pub trait ToJsonResult: erased_serde::Serialize + fmt::Debug + Send {
+pub trait ToJsonResult: erased_serde::Serialize + fmt::Debug + AsAnyRef + AsAnyMut + Send {
     fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error>;
-    fn as_any(&self) -> &dyn Any;
 }
 
 erased_serde::serialize_trait_object!(ToJsonResult);
 
+impl AsAnyRef for serde_json::Value {
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl AsAnyMut for serde_json::Value {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
 impl ToJsonResult for serde_json::Value {
     fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error> {
         Ok(Box::new(self.clone()))
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 
@@ -100,9 +104,5 @@ impl ToJsonBytes for serde_json::Value {
 impl Collectable for Box<dyn Collectable> {
     fn new_collector(&self) -> Box<dyn Collector> {
         Collectable::new_collector(self.as_ref())
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        Collectable::as_any_mut(self.as_mut())
     }
 }

@@ -46,7 +46,7 @@ fn time_bin_00() {
                 Ok(item) => match item {
                     StreamItem::DataItem(item) => match item {
                         RangeCompletableItem::Data(item) => {
-                            if let Some(item) = item.as_any().downcast_ref::<BinsDim0<f32>>() {
+                            if let Some(item) = item.as_any_ref().downcast_ref::<BinsDim0<f32>>() {
                                 let exp = exps.pop_front().unwrap();
                                 if !item.equal_slack(&exp) {
                                     return Err(Error::with_msg_no_trace(format!("bad, content not equal")));
@@ -104,7 +104,7 @@ fn time_bin_01() {
                 Ok(item) => match item {
                     StreamItem::DataItem(item) => match item {
                         RangeCompletableItem::Data(item) => {
-                            if let Some(_) = item.as_any().downcast_ref::<BinsDim0<f32>>() {
+                            if let Some(_) = item.as_any_ref().downcast_ref::<BinsDim0<f32>>() {
                             } else {
                                 return Err(Error::with_msg_no_trace(format!("bad, got item with unexpected type")));
                             }

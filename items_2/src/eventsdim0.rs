@@ -4,7 +4,7 @@ use crate::{IsoDateTime, RangeOverlapInfo};
 use crate::{TimeBinnable, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinner};
 use err::Error;
 use items_0::scalar_ops::ScalarOps;
-use items_0::{Empty, Events, WithLen};
+use items_0::{AsAnyMut, AsAnyRef, Empty, Events, WithLen};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::NanoRange;
@@ -37,6 +37,28 @@ impl<NTY> EventsDim0<NTY> {
 
     pub fn serde_id() -> &'static str {
         "EventsDim0"
+    }
+
+    pub fn tss(&self) -> &VecDeque<u64> {
+        &self.tss
+    }
+}
+
+impl<NTY> AsAnyRef for EventsDim0<NTY>
+where
+    NTY: ScalarOps,
+{
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl<NTY> AsAnyMut for EventsDim0<NTY>
+where
+    NTY: ScalarOps,
+{
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 
@@ -206,8 +228,20 @@ impl<NTY: ScalarOps> EventsDim0CollectorOutput<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> items_0::AsAnyRef for EventsDim0CollectorOutput<NTY> {
+impl<NTY> AsAnyRef for EventsDim0CollectorOutput<NTY>
+where
+    NTY: ScalarOps,
+{
     fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl<NTY> AsAnyMut for EventsDim0CollectorOutput<NTY>
+where
+    NTY: ScalarOps,
+{
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }
@@ -216,10 +250,6 @@ impl<NTY: ScalarOps> items_0::collect_s::ToJsonResult for EventsDim0CollectorOut
     fn to_json_result(&self) -> Result<Box<dyn items_0::collect_s::ToJsonBytes>, Error> {
         let k = serde_json::to_value(self)?;
         Ok(Box::new(k))
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 
@@ -593,10 +623,6 @@ impl<NTY: ScalarOps> TimeBinnable for EventsDim0<NTY> {
         Box::new(ret)
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self as &dyn Any
-    }
-
     fn to_box_to_json_result(&self) -> Box<dyn items_0::collect_s::ToJsonResult> {
         let k = serde_json::to_value(self).unwrap();
         Box::new(k) as _
@@ -678,7 +704,7 @@ impl<NTY: ScalarOps> Events for EventsDim0<NTY> {
 
     fn move_into_existing(&mut self, tgt: &mut Box<dyn Events>, ts_end: u64) -> Result<(), ()> {
         // TODO as_any and as_any_mut are declared on unrealted traits. Simplify.
-        if let Some(tgt) = items_0::collect_s::Collectable::as_any_mut(tgt.as_mut()).downcast_mut::<Self>() {
+        if let Some(tgt) = tgt.as_mut().as_any_mut().downcast_mut::<Self>() {
             // TODO improve the search
             let n1 = self.tss.iter().take_while(|&&x| x <= ts_end).count();
             // TODO make it harder to forget new members when the struct may get modified in the future
@@ -701,7 +727,7 @@ impl<NTY: ScalarOps> Events for EventsDim0<NTY> {
     }
 
     fn partial_eq_dyn(&self, other: &dyn Events) -> bool {
-        if let Some(other) = other.as_any().downcast_ref::<Self>() {
+        if let Some(other) = other.as_any_ref().downcast_ref::<Self>() {
             self == other
         } else {
             false
@@ -821,7 +847,7 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
                     return;
                 } else {
                     if let Some(item) = item
-                        .as_any()
+                        .as_any_ref()
                         // TODO make statically sure that we attempt to cast to the correct type here:
                         .downcast_ref::<<EventsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Input>()
                     {
@@ -984,16 +1010,6 @@ impl<NTY: ScalarOps> items_0::collect_c::CollectableWithDefault for EventsDim0<N
         let coll = EventsDim0Collector::<NTY>::new();
         Box::new(coll)
     }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-}
-
-impl<NTY: ScalarOps> items_0::AsAnyMut for EventsDim0<NTY> {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
 }
 
 impl<NTY: ScalarOps> items_0::collect_c::Collectable for EventsDim0<NTY> {
@@ -1013,14 +1029,16 @@ mod test_frame {
     use items::StreamItem;
     use items_0::AsAnyMut;
     use items_0::Empty;
+    use items_0::Events;
 
     #[test]
     fn events_bincode() {
+        taskrun::tracing_init().unwrap();
         // core::result::Result<items::StreamItem<items::RangeCompletableItem<items_2::channelevents::ChannelEvents>>, err::Error>
         let mut events = EventsDim0::empty();
         events.push(123, 234, 55f32);
         let events = events;
-        let events: Box<dyn items_0::Events> = Box::new(events);
+        let events: Box<dyn Events> = Box::new(events);
         let item = ChannelEvents::Events(events);
         let item = Ok::<_, Error>(StreamItem::DataItem(RangeCompletableItem::Data(item)));
         let mut buf = item.make_frame().unwrap();
@@ -1050,16 +1068,35 @@ mod test_frame {
         } else {
             panic!()
         };
-        let item = if let Some(item) = item.as_any_mut().downcast_mut::<Box<dyn items_0::Events>>() {
+        let item = if let Some(item) = item.as_any_mut().downcast_mut::<EventsDim0<f32>>() {
             item
         } else {
             panic!()
         };
         eprintln!("NOW WE SEE: {:?}", item);
-        let item = if let Some(item) = item.as_any_mut().downcast_ref::<Box<EventsDim0<f32>>>() {
+        // type_name_of_val alloc::boxed::Box<dyn items_0::Events>
+        eprintln!("0 {:22?}", item.as_any_mut().type_id());
+        eprintln!("A {:22?}", std::any::TypeId::of::<Box<dyn items_0::Events>>());
+        eprintln!("B {:22?}", std::any::TypeId::of::<dyn items_0::Events>());
+        eprintln!("C {:22?}", std::any::TypeId::of::<&dyn items_0::Events>());
+        eprintln!("D {:22?}", std::any::TypeId::of::<&mut dyn items_0::Events>());
+        eprintln!("E {:22?}", std::any::TypeId::of::<&mut Box<dyn items_0::Events>>());
+        eprintln!("F {:22?}", std::any::TypeId::of::<Box<EventsDim0<f32>>>());
+        eprintln!("G {:22?}", std::any::TypeId::of::<&EventsDim0<f32>>());
+        eprintln!("H {:22?}", std::any::TypeId::of::<&mut EventsDim0<f32>>());
+        eprintln!("I {:22?}", std::any::TypeId::of::<Box<Box<EventsDim0<f32>>>>());
+        //let item = item.as_mut();
+        //eprintln!("1 {:22?}", item.type_id());
+        /*
+        let item = if let Some(item) =
+            items_0::collect_s::Collectable::as_any_mut(item).downcast_ref::<Box<EventsDim0<f32>>>()
+        {
             item
         } else {
             panic!()
         };
+        */
+        eprintln!("Final value: {item:?}");
+        assert_eq!(item.tss(), &[123]);
     }
 }

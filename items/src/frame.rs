@@ -7,6 +7,7 @@ use bincode::config::{WithOtherEndian, WithOtherIntEncoding, WithOtherTrailing};
 use bincode::DefaultOptions;
 use bytes::{BufMut, BytesMut};
 use err::Error;
+use items_0::bincode;
 #[allow(unused)]
 use netpod::log::*;
 use serde::Serialize;
@@ -86,7 +87,7 @@ pub fn encode_to_vec<S>(item: S) -> Result<Vec<u8>, Error>
 where
     S: Serialize,
 {
-    if true {
+    if false {
         serde_json::to_vec(&item).map_err(|e| e.into())
     } else {
         bincode_to_vec(&item)
@@ -97,7 +98,7 @@ pub fn decode_from_slice<T>(buf: &[u8]) -> Result<T, Error>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
-    if true {
+    if false {
         serde_json::from_slice(buf).map_err(|e| e.into())
     } else {
         bincode_from_slice(buf)
@@ -112,10 +113,10 @@ where
     let mut out = Vec::new();
     //let mut ser = rmp_serde::Serializer::new(&mut out).with_struct_map();
     //let writer = ciborium::ser::into_writer(&item, &mut out).unwrap();
-    //let mut ser = bincode_ser(&mut out);
-    //let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser);
-    let mut ser = serde_json::Serializer::new(&mut out);
+    let mut ser = bincode_ser(&mut out);
     let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser);
+    //let mut ser = serde_json::Serializer::new(&mut out);
+    //let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser);
     match item.erased_serialize(&mut ser2) {
         Ok(_) => {
             let enc = out;
@@ -333,7 +334,10 @@ where
             )))
         } else {
             match decode_from_slice(frame.buf()) {
-                Ok(item) => Ok(item),
+                Ok(item) => {
+                    info!("decode_from_slice {} success", std::any::type_name::<T>());
+                    Ok(item)
+                }
                 Err(e) => {
                     error!("decode_frame  T = {}", std::any::type_name::<T>());
                     error!("ERROR deserialize  len {}  tyid {:x}", frame.buf().len(), frame.tyid());

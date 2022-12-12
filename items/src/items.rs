@@ -19,6 +19,7 @@ use bytes::BytesMut;
 use chrono::{TimeZone, Utc};
 use err::Error;
 use frame::{make_error_frame, make_log_frame, make_range_complete_frame, make_stats_frame};
+use items_0::AsAnyRef;
 #[allow(unused)]
 use netpod::log::*;
 use netpod::timeunits::{MS, SEC};
@@ -508,32 +509,23 @@ pub trait TimeBinnableType:
 // TODO should not require Sync!
 // TODO SitemtyFrameType is already supertrait of FramableInner.
 pub trait TimeBinnableDyn:
-    std::fmt::Debug
+    fmt::Debug
     + FramableInner
     + FrameType
     + FrameTypeInnerDyn
     + WithLen
     + RangeOverlapInfo
     + Any
+    + AsAnyRef
     + Sync
     + Send
     + 'static
 {
     fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Box<dyn TimeBinnerDyn>;
-    fn as_any(&self) -> &dyn Any;
 }
 
 pub trait TimeBinnableDynStub:
-    std::fmt::Debug
-    + FramableInner
-    + FrameType
-    + FrameTypeInnerDyn
-    + WithLen
-    + RangeOverlapInfo
-    + Any
-    + Sync
-    + Send
-    + 'static
+    fmt::Debug + FramableInner + FrameType + FrameTypeInnerDyn + WithLen + RangeOverlapInfo + Any + AsAnyRef + Sync + Send + 'static
 {
 }
 
@@ -545,10 +537,6 @@ where
     fn time_binner_new(&self, _edges: Vec<u64>, _do_time_weight: bool) -> Box<dyn TimeBinnerDyn> {
         error!("TODO impl time_binner_new for T {}", std::any::type_name::<T>());
         err::todoval()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self as &dyn Any
     }
 }
 
@@ -605,10 +593,6 @@ impl RangeOverlapInfo for Box<dyn TimeBinned> {
 impl TimeBinnableDyn for Box<dyn TimeBinned> {
     fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Box<dyn TimeBinnerDyn> {
         self.as_time_binnable_dyn().time_binner_new(edges, do_time_weight)
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self as &dyn Any
     }
 }
 

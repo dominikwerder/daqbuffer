@@ -5,11 +5,11 @@ use chrono::{TimeZone, Utc};
 use err::Error;
 use items_0::collect_s::{Collectable, CollectableType, CollectorType, ToJsonResult};
 use items_0::scalar_ops::ScalarOps;
-use items_0::AppendEmptyBin;
 use items_0::Empty;
 use items_0::TimeBinned;
 use items_0::TimeBins;
 use items_0::WithLen;
+use items_0::{AppendEmptyBin, AsAnyMut, AsAnyRef};
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::NanoRange;
@@ -130,6 +130,24 @@ impl<NTY: ScalarOps> BinsXbinDim0<NTY> {
             }
         }
         true
+    }
+}
+
+impl<NTY> AsAnyRef for BinsXbinDim0<NTY>
+where
+    NTY: ScalarOps,
+{
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl<NTY> AsAnyMut for BinsXbinDim0<NTY>
+where
+    NTY: ScalarOps,
+{
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 
@@ -254,8 +272,20 @@ pub struct BinsXbinDim0CollectedResult<NTY> {
     finished_at: Option<IsoDateTime>,
 }
 
-impl<NTY: ScalarOps> items_0::AsAnyRef for BinsXbinDim0CollectedResult<NTY> {
+impl<NTY> AsAnyRef for BinsXbinDim0CollectedResult<NTY>
+where
+    NTY: ScalarOps,
+{
     fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl<NTY> AsAnyMut for BinsXbinDim0CollectedResult<NTY>
+where
+    NTY: ScalarOps,
+{
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }
@@ -308,10 +338,6 @@ impl<NTY: ScalarOps> ToJsonResult for BinsXbinDim0CollectedResult<NTY> {
     fn to_json_result(&self) -> Result<Box<dyn items_0::collect_s::ToJsonBytes>, Error> {
         let k = serde_json::to_value(self)?;
         Ok(Box::new(k))
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 
@@ -568,10 +594,6 @@ impl<NTY: ScalarOps> TimeBinnable for BinsXbinDim0<NTY> {
         Box::new(ret)
     }
 
-    fn as_any(&self) -> &dyn Any {
-        self as &dyn Any
-    }
-
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
         let k = serde_json::to_value(self).unwrap();
         Box::new(k) as _
@@ -655,13 +677,13 @@ impl<NTY: ScalarOps> TimeBinner for BinsXbinDim0TimeBinner<NTY> {
                         self.agg.as_mut().unwrap()
                     };
                     if let Some(item) = item
-                        .as_any()
+                        .as_any_ref()
                         // TODO make statically sure that we attempt to cast to the correct type here:
                         .downcast_ref::<<BinsXbinDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Input>()
                     {
                         agg.ingest(item);
                     } else {
-                        let tyid_item = std::any::Any::type_id(item.as_any());
+                        let tyid_item = std::any::Any::type_id(item.as_any_ref());
                         error!("not correct item type  {:?}", tyid_item);
                     };
                     if item.ends_after(agg.range().clone()) {
@@ -796,15 +818,6 @@ impl<NTY: ScalarOps> TimeBinned for BinsXbinDim0<NTY> {
     }
 
     fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
-        self
-    }
-}
-
-impl<NTY> items_0::AsAnyMut for BinsXbinDim0<NTY>
-where
-    NTY: 'static,
-{
-    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }

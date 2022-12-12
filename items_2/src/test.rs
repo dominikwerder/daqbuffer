@@ -474,7 +474,7 @@ fn binned_timeout_01() {
             inp1,
         )
         .await?;
-        let r2: &BinsDim0CollectedResult<f32> = res.as_any().downcast_ref().expect("res seems wrong type");
+        let r2: &BinsDim0CollectedResult<f32> = res.as_any_ref().downcast_ref().expect("res seems wrong type");
         assert_eq!(SEC * r2.ts_anchor_sec(), TSBASE + SEC);
         assert_eq!(r2.counts(), &[10, 10, 10]);
         assert_eq!(r2.mins(), &[3.0, 2.0, 3.0]);

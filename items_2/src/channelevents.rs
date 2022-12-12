@@ -5,6 +5,8 @@ use items::FrameType;
 use items::FrameTypeInnerStatic;
 use items_0::collect_s::Collectable;
 use items_0::collect_s::Collector;
+use items_0::AsAnyMut;
+use items_0::AsAnyRef;
 use netpod::log::*;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -57,12 +59,96 @@ impl Clone for ChannelEvents {
     }
 }
 
+impl AsAnyRef for ChannelEvents {
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl AsAnyMut for ChannelEvents {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
 mod serde_channel_events {
     use super::{ChannelEvents, Events};
+    use crate::channelevents::ConnStatusEvent;
     use crate::eventsdim0::EventsDim0;
+    use items_0::subfr::SubFrId;
     use serde::de::{self, EnumAccess, VariantAccess, Visitor};
+    use serde::ser::SerializeSeq;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::fmt;
+
+    struct EvRef<'a>(&'a dyn Events);
+
+    struct EvBox(Box<dyn Events>);
+
+    impl<'a> Serialize for EvRef<'a> {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let mut ser = serializer.serialize_seq(Some(3))?;
+            ser.serialize_element(self.0.serde_id())?;
+            ser.serialize_element(&self.0.nty_id())?;
+            ser.serialize_element(self.0)?;
+            ser.end()
+        }
+    }
+
+    struct EvBoxVis;
+
+    impl EvBoxVis {
+        fn name() -> &'static str {
+            "Events"
+        }
+    }
+
+    impl<'de> Visitor<'de> for EvBoxVis {
+        type Value = EvBox;
+
+        fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            write!(fmt, "{}", Self::name())
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: de::SeqAccess<'de>,
+        {
+            let e0: &str = seq.next_element()?.ok_or(de::Error::missing_field("[0] cty"))?;
+            let e1: u32 = seq.next_element()?.ok_or(de::Error::missing_field("[1] nty"))?;
+            if e0 == EventsDim0::<u8>::serde_id() {
+                match e1 {
+                    i32::SUB => {
+                        let obj: EventsDim0<i32> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    f32::SUB => {
+                        let obj: EventsDim0<f32> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    f64::SUB => {
+                        let obj: EventsDim0<f64> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    _ => Err(de::Error::custom(&format!("unknown nty {e1}"))),
+                }
+            } else {
+                Err(de::Error::custom(&format!("unknown cty {e0}")))
+            }
+        }
+    }
+
+    impl<'de> Deserialize<'de> for EvBox {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            deserializer.deserialize_seq(EvBoxVis)
+        }
+    }
 
     impl Serialize for ChannelEvents {
         fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -70,75 +156,85 @@ mod serde_channel_events {
             S: Serializer,
         {
             let name = "ChannelEvents";
+            let vars = ChannelEventsVis::allowed_variants();
             match self {
                 ChannelEvents::Events(obj) => {
-                    use serde::ser::SerializeTupleVariant;
-                    let mut ser = serializer.serialize_tuple_variant(name, 0, "Events", 3)?;
-                    ser.serialize_field(obj.serde_id())?;
-                    ser.serialize_field(&obj.nty_id())?;
-                    ser.serialize_field(obj)?;
-                    ser.end()
+                    serializer.serialize_newtype_variant(name, 0, vars[0], &EvRef(obj.as_ref()))
                 }
-                ChannelEvents::Status(val) => serializer.serialize_newtype_variant(name, 1, "Status", val),
+                ChannelEvents::Status(val) => serializer.serialize_newtype_variant(name, 1, vars[1], val),
             }
         }
     }
 
-    struct EventsBoxVisitor;
+    enum VarId {
+        Events,
+        Status,
+    }
 
-    impl<'de> Visitor<'de> for EventsBoxVisitor {
-        type Value = Box<dyn Events>;
+    struct VarIdVis;
+
+    impl<'de> Visitor<'de> for VarIdVis {
+        type Value = VarId;
 
         fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-            write!(fmt, "Events object")
+            write!(fmt, "variant identifier")
         }
 
-        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        fn visit_u64<E>(self, val: u64) -> Result<Self::Value, E>
         where
-            A: de::SeqAccess<'de>,
+            E: de::Error,
         {
-            use items_0::subfr::SubFrId;
-            let e0: &str = seq.next_element()?.ok_or(de::Error::missing_field("ty .0"))?;
-            let e1: u32 = seq.next_element()?.ok_or(de::Error::missing_field("nty .1"))?;
-            if e0 == EventsDim0::<u8>::serde_id() {
-                match e1 {
-                    i32::SUB => {
-                        let obj: EventsDim0<i32> = seq.next_element()?.ok_or(de::Error::missing_field("obj .2"))?;
-                        Ok(Box::new(obj))
-                    }
-                    f32::SUB => {
-                        let obj: EventsDim0<f32> = seq.next_element()?.ok_or(de::Error::missing_field("obj .2"))?;
-                        Ok(Box::new(obj))
-                    }
-                    f64::SUB => {
-                        let obj: EventsDim0<f64> = seq.next_element()?.ok_or(de::Error::missing_field("obj .2"))?;
-                        Ok(Box::new(obj))
-                    }
-                    _ => Err(de::Error::custom(&format!("unknown nty {e1}"))),
-                }
+            match val {
+                0 => Ok(VarId::Events),
+                1 => Ok(VarId::Status),
+                _ => Err(de::Error::invalid_value(
+                    de::Unexpected::Unsigned(val),
+                    &"variant index 0..2",
+                )),
+            }
+        }
+
+        fn visit_str<E>(self, val: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            let vars = ChannelEventsVis::allowed_variants();
+            if val == vars[0] {
+                Ok(VarId::Events)
+            } else if val == vars[1] {
+                Ok(VarId::Status)
             } else {
-                Err(de::Error::custom(&format!("unknown ty {e0}")))
+                Err(de::Error::unknown_variant(val, ChannelEventsVis::allowed_variants()))
             }
         }
     }
 
-    pub struct ChannelEventsVisitor;
+    impl<'de> Deserialize<'de> for VarId {
+        fn deserialize<D>(de: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            de.deserialize_identifier(VarIdVis)
+        }
+    }
 
-    impl ChannelEventsVisitor {
+    pub struct ChannelEventsVis;
+
+    impl ChannelEventsVis {
         fn name() -> &'static str {
             "ChannelEvents"
         }
 
         fn allowed_variants() -> &'static [&'static str] {
-            &["Events", "Status", "RangeComplete"]
+            &["Events", "Status"]
         }
     }
 
-    impl<'de> Visitor<'de> for ChannelEventsVisitor {
+    impl<'de> Visitor<'de> for ChannelEventsVis {
         type Value = ChannelEvents;
 
         fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-            write!(fmt, "ChannelEvents")
+            write!(fmt, "{}", Self::name())
         }
 
         fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
@@ -147,11 +243,14 @@ mod serde_channel_events {
         {
             let (id, var) = data.variant()?;
             match id {
-                "Events" => {
-                    let c = var.tuple_variant(3, EventsBoxVisitor)?;
-                    Ok(Self::Value::Events(c))
+                VarId::Events => {
+                    let x: EvBox = var.newtype_variant()?;
+                    Ok(Self::Value::Events(x.0))
                 }
-                _ => return Err(de::Error::unknown_variant(id, Self::allowed_variants())),
+                VarId::Status => {
+                    let x: ConnStatusEvent = var.newtype_variant()?;
+                    Ok(Self::Value::Status(x))
+                }
             }
         }
     }
@@ -162,9 +261,9 @@ mod serde_channel_events {
             D: Deserializer<'de>,
         {
             de.deserialize_enum(
-                ChannelEventsVisitor::name(),
-                ChannelEventsVisitor::allowed_variants(),
-                ChannelEventsVisitor,
+                ChannelEventsVis::name(),
+                ChannelEventsVis::allowed_variants(),
+                ChannelEventsVis,
             )
         }
     }
@@ -173,8 +272,18 @@ mod serde_channel_events {
 #[cfg(test)]
 mod test_channel_events_serde {
     use super::ChannelEvents;
+    use crate::channelevents::ConnStatusEvent;
     use crate::eventsdim0::EventsDim0;
+    use bincode::config::FixintEncoding;
+    use bincode::config::LittleEndian;
+    use bincode::config::RejectTrailing;
+    use bincode::config::WithOtherEndian;
+    use bincode::config::WithOtherIntEncoding;
+    use bincode::config::WithOtherTrailing;
+    use bincode::DefaultOptions;
+    use items_0::bincode;
     use items_0::Empty;
+    use serde::{Deserialize, Serialize};
 
     #[test]
     fn channel_events() {
@@ -186,6 +295,68 @@ mod test_channel_events_serde {
         eprintln!("{s}");
         let w: ChannelEvents = serde_json::from_str(&s).unwrap();
         eprintln!("{w:?}");
+    }
+
+    type OptsTy = WithOtherTrailing<
+        WithOtherIntEncoding<WithOtherEndian<DefaultOptions, LittleEndian>, FixintEncoding>,
+        RejectTrailing,
+    >;
+
+    fn bincode_opts() -> OptsTy {
+        use bincode::Options;
+        let opts = bincode::DefaultOptions::new()
+            .with_little_endian()
+            .with_fixint_encoding()
+            .reject_trailing_bytes();
+        opts
+    }
+
+    #[test]
+    fn channel_events_bincode() {
+        let mut evs = EventsDim0::empty();
+        evs.push(8, 2, 3.0f32);
+        evs.push(12, 3, 3.2f32);
+        let item = ChannelEvents::Events(Box::new(evs));
+        let opts = bincode_opts();
+        let mut out = Vec::new();
+        let mut ser = bincode::Serializer::new(&mut out, opts);
+        item.serialize(&mut ser).unwrap();
+        eprintln!("serialized into {} bytes", out.len());
+        let mut de = bincode::Deserializer::from_slice(&out, opts);
+        let item = <ChannelEvents as Deserialize>::deserialize(&mut de).unwrap();
+        let item = if let ChannelEvents::Events(x) = item {
+            x
+        } else {
+            panic!()
+        };
+        let item: &EventsDim0<f32> = item.as_any_ref().downcast_ref().unwrap();
+        assert_eq!(item.tss().len(), 2);
+        assert_eq!(item.tss()[1], 12);
+    }
+
+    #[test]
+    fn channel_status_bincode() {
+        let mut evs = EventsDim0::empty();
+        evs.push(8, 2, 3.0f32);
+        evs.push(12, 3, 3.2f32);
+        let status = ConnStatusEvent {
+            ts: 567,
+            status: crate::channelevents::ConnStatus::Connect,
+        };
+        let item = ChannelEvents::Status(status);
+        let opts = bincode_opts();
+        let mut out = Vec::new();
+        let mut ser = bincode::Serializer::new(&mut out, opts);
+        item.serialize(&mut ser).unwrap();
+        eprintln!("serialized into {} bytes", out.len());
+        let mut de = bincode::Deserializer::from_slice(&out, opts);
+        let item = <ChannelEvents as Deserialize>::deserialize(&mut de).unwrap();
+        let item = if let ChannelEvents::Status(x) = item {
+            x
+        } else {
+            panic!()
+        };
+        assert_eq!(item.ts, 567);
     }
 }
 
@@ -285,10 +456,6 @@ impl Collectable for ChannelEvents {
             ChannelEvents::Events(_item) => todo!(),
             ChannelEvents::Status(_) => todo!(),
         }
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
     }
 }
 
@@ -390,8 +557,14 @@ impl crate::timebin::TimeBinnable for ChannelEvents {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelEventsCollectorOutput {}
 
-impl items_0::AsAnyRef for ChannelEventsCollectorOutput {
+impl AsAnyRef for ChannelEventsCollectorOutput {
     fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl AsAnyMut for ChannelEventsCollectorOutput {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }
@@ -399,10 +572,6 @@ impl items_0::AsAnyRef for ChannelEventsCollectorOutput {
 impl crate::ToJsonResult for ChannelEventsCollectorOutput {
     fn to_json_result(&self) -> Result<Box<dyn items_0::collect_s::ToJsonBytes>, err::Error> {
         todo!()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 
@@ -481,12 +650,6 @@ impl items_0::collect_c::Collector for ChannelEventsCollector {
                 todo!()
             }
         }
-    }
-}
-
-impl items_0::AsAnyMut for ChannelEvents {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
     }
 }
 

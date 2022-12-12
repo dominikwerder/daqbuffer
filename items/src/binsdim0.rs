@@ -18,6 +18,7 @@ use crate::{TimeBinned, TimeBinnerDyn, TimeBins};
 use chrono::{TimeZone, Utc};
 use err::Error;
 use items_0::subfr::SubFrId;
+use items_0::AsAnyRef;
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::{NanoRange, Shape};
@@ -71,6 +72,15 @@ where
             self.maxs,
             self.avgs,
         )
+    }
+}
+
+impl<NTY> AsAnyRef for MinMaxAvgDim0Bins<NTY>
+where
+    NTY: NumOps,
+{
+    fn as_any_ref(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -458,10 +468,6 @@ impl<NTY: NumOps + 'static> TimeBinnableDyn for MinMaxAvgDim0Bins<NTY> {
         let ret = MinMaxAvgDim0BinsTimeBinner::<NTY>::new(edges.into(), do_time_weight);
         Box::new(ret)
     }
-
-    fn as_any(&self) -> &dyn Any {
-        self as &dyn Any
-    }
 }
 
 pub struct MinMaxAvgDim0BinsTimeBinner<NTY: NumOps> {
@@ -547,13 +553,13 @@ impl<NTY: NumOps + 'static> TimeBinnerDyn for MinMaxAvgDim0BinsTimeBinner<NTY> {
                         self.agg.as_mut().unwrap()
                     };
                     if let Some(item) = item
-                        .as_any()
+                        .as_any_ref()
                         // TODO make statically sure that we attempt to cast to the correct type here:
                         .downcast_ref::<<MinMaxAvgDim0BinsAggregator<NTY> as TimeBinnableTypeAggregator>::Input>()
                     {
                         agg.ingest(item);
                     } else {
-                        let tyid_item = std::any::Any::type_id(item.as_any());
+                        let tyid_item = std::any::Any::type_id(item.as_any_ref());
                         error!("not correct item type  {:?}", tyid_item);
                     };
                     if item.ends_after(agg.range().clone()) {

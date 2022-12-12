@@ -8,6 +8,7 @@ use crate::{
     TimeBinnableTypeAggregator, TimeBinnerDyn, WithLen, WithTimestamps,
 };
 use err::Error;
+use items_0::AsAnyRef;
 use netpod::log::*;
 use netpod::{NanoRange, Shape};
 use serde::{Deserialize, Serialize};
@@ -90,6 +91,15 @@ where
             self.values.first(),
             self.values.last(),
         )
+    }
+}
+
+impl<NTY> AsAnyRef for ScalarEvents<NTY>
+where
+    NTY: NumOps,
+{
+    fn as_any_ref(&self) -> &dyn Any {
+        self
     }
 }
 
@@ -601,10 +611,6 @@ impl<NTY: NumOps + 'static> TimeBinnableDyn for ScalarEvents<NTY> {
         let ret = ScalarEventsTimeBinner::<NTY>::new(edges.into(), do_time_weight);
         Box::new(ret)
     }
-
-    fn as_any(&self) -> &dyn Any {
-        self as &dyn Any
-    }
 }
 
 impl<NTY: NumOps + 'static> EventsDyn for ScalarEvents<NTY> {
@@ -738,7 +744,7 @@ impl<NTY: NumOps + 'static> TimeBinnerDyn for ScalarEventsTimeBinner<NTY> {
                         self.agg.as_mut().unwrap()
                     };
                     if let Some(item) = item
-                        .as_any()
+                        .as_any_ref()
                         // TODO make statically sure that we attempt to cast to the correct type here:
                         .downcast_ref::<<EventValuesAggregator<NTY> as TimeBinnableTypeAggregator>::Input>()
                     {

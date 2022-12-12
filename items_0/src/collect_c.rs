@@ -1,9 +1,9 @@
 use crate::collect_s::ToJsonBytes;
 use crate::collect_s::ToJsonResult;
+use crate::AsAnyMut;
 use crate::AsAnyRef;
 use crate::Events;
 use err::Error;
-use std::any::Any;
 use std::fmt;
 
 pub trait Collector: fmt::Debug + Send {
@@ -14,7 +14,7 @@ pub trait Collector: fmt::Debug + Send {
     fn result(&mut self) -> Result<Box<dyn Collected>, Error>;
 }
 
-pub trait Collectable: fmt::Debug + crate::AsAnyMut {
+pub trait Collectable: fmt::Debug + AsAnyMut {
     fn new_collector(&self) -> Box<dyn Collector>;
 }
 
@@ -23,19 +23,9 @@ pub trait Collected: fmt::Debug + ToJsonResult + AsAnyRef + Send {}
 
 erased_serde::serialize_trait_object!(Collected);
 
-impl AsAnyRef for Box<dyn Collected> {
-    fn as_any_ref(&self) -> &dyn Any {
-        self.as_ref().as_any_ref()
-    }
-}
-
 impl ToJsonResult for Box<dyn Collected> {
     fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error> {
         self.as_ref().to_json_result()
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 
@@ -57,15 +47,8 @@ pub trait CollectorDyn: fmt::Debug + Send {
     fn result(&mut self) -> Result<Box<dyn Collected>, Error>;
 }
 
-pub trait CollectableWithDefault {
+pub trait CollectableWithDefault: AsAnyMut {
     fn new_collector(&self) -> Box<dyn CollectorDyn>;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-}
-
-impl crate::AsAnyMut for Box<dyn Events> {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
 }
 
 impl Collectable for Box<dyn Events> {
@@ -96,12 +79,6 @@ impl Collector for TimeBinnedCollector {
 
     fn result(&mut self) -> Result<Box<dyn Collected>, Error> {
         todo!()
-    }
-}
-
-impl crate::AsAnyMut for Box<dyn crate::TimeBinned> {
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
     }
 }
 

@@ -3,6 +3,10 @@ pub mod collect_s;
 pub mod scalar_ops;
 pub mod subfr;
 
+pub mod bincode {
+    pub use bincode::*;
+}
+
 use collect_c::CollectableWithDefault;
 use collect_s::Collectable;
 use collect_s::ToJsonResult;
@@ -61,6 +65,24 @@ pub trait AsAnyMut {
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
+impl<T> AsAnyRef for Box<T>
+where
+    T: AsAnyRef + ?Sized,
+{
+    fn as_any_ref(&self) -> &dyn Any {
+        self.as_ref().as_any_ref()
+    }
+}
+
+impl<T> AsAnyMut for Box<T>
+where
+    T: AsAnyMut + ?Sized,
+{
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self.as_mut().as_any_mut()
+    }
+}
+
 /// Data in time-binned form.
 pub trait TimeBinned: Any + TimeBinnable + crate::collect_c::Collectable {
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnable;
@@ -94,11 +116,9 @@ pub trait TimeBinner: Send {
 
 /// Provides a time-binned representation of the implementing type.
 /// In contrast to `TimeBinnableType` this is meant for trait objects.
-pub trait TimeBinnable: fmt::Debug + WithLen + RangeOverlapInfo + Any + Send {
+pub trait TimeBinnable: fmt::Debug + WithLen + RangeOverlapInfo + Any + AsAnyRef + AsAnyMut + Send {
     // TODO implementors may fail if edges contain not at least 2 entries.
     fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Box<dyn TimeBinner>;
-    fn as_any(&self) -> &dyn Any;
-
     // TODO just a helper for the empty result.
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult>;
 }

@@ -4,8 +4,8 @@ use crate::{pulse_offs_from_abs, ts_offs_from_abs};
 use crate::{TimeBinnableType, TimeBinnableTypeAggregator};
 use err::Error;
 use items_0::scalar_ops::ScalarOps;
-use items_0::Empty;
-use items_0::WithLen;
+use items_0::{AsAnyMut, WithLen};
+use items_0::{AsAnyRef, Empty};
 use netpod::log::*;
 use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
@@ -73,6 +73,24 @@ impl<NTY> Empty for EventsXbinDim0<NTY> {
             maxs: VecDeque::new(),
             avgs: VecDeque::new(),
         }
+    }
+}
+
+impl<NTY> AsAnyRef for EventsXbinDim0<NTY>
+where
+    NTY: ScalarOps,
+{
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl<NTY> AsAnyMut for EventsXbinDim0<NTY>
+where
+    NTY: ScalarOps,
+{
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
 
@@ -347,11 +365,20 @@ pub struct EventsXbinDim0CollectorOutput<NTY> {
     // TODO add continue-at
 }
 
-impl<NTY> items_0::AsAnyRef for EventsXbinDim0CollectorOutput<NTY>
+impl<NTY> AsAnyRef for EventsXbinDim0CollectorOutput<NTY>
 where
     NTY: ScalarOps,
 {
     fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl<NTY> AsAnyMut for EventsXbinDim0CollectorOutput<NTY>
+where
+    NTY: ScalarOps,
+{
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }
@@ -363,10 +390,6 @@ where
     fn to_json_result(&self) -> Result<Box<dyn items_0::collect_s::ToJsonBytes>, Error> {
         let k = serde_json::to_value(self)?;
         Ok(Box::new(k))
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
     }
 }
 
@@ -451,15 +474,6 @@ where
 
     fn new_collector() -> Self::Collector {
         Self::Collector::new()
-    }
-}
-
-impl<NTY> items_0::AsAnyMut for EventsXbinDim0<NTY>
-where
-    NTY: ScalarOps,
-{
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
     }
 }
 
