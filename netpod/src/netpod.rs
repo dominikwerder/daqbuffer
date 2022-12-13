@@ -2056,11 +2056,13 @@ impl AppendToUrl for ChannelConfigQuery {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelConfigResponse {
+    #[serde(rename = "channel")]
     pub channel: Channel,
     #[serde(rename = "scalarType")]
     pub scalar_type: ScalarType,
     #[serde(rename = "byteOrder")]
     pub byte_order: Option<ByteOrder>,
+    #[serde(rename = "shape")]
     pub shape: Shape,
 }
 

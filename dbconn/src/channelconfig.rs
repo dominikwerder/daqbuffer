@@ -72,14 +72,7 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
     }
     // TODO use a common already running worker pool for these queries:
     let dbconf = &ncc.node_config.cluster.database;
-    let dburl = format!(
-        "postgresql://{}:{}@{}:{}/{}",
-        dbconf.user, dbconf.pass, dbconf.host, dbconf.port, dbconf.name
-    );
-    let (pgclient, pgconn) = tokio_postgres::connect(&dburl, tokio_postgres::NoTls)
-        .await
-        .err_conv()?;
-    tokio::spawn(pgconn);
+    let pgclient = crate::create_connection(dbconf).await?;
     if let Some(series) = channel.series() {
         let res = pgclient
             .query(

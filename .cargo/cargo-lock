@@ -674,14 +674,12 @@ dependencies = [
 name = "dbconn"
 version = "0.0.2"
 dependencies = [
- "arrayref",
  "async-channel",
  "byteorder",
  "bytes",
  "chrono",
  "crc32fast",
  "err",
- "futures-core",
  "futures-util",
  "items",
  "netpod",
@@ -1239,7 +1237,6 @@ dependencies = [
  "streams",
  "taskrun",
  "tokio",
- "tokio-postgres",
  "tracing",
  "tracing-futures",
  "url",

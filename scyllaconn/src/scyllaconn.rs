@@ -1,4 +1,5 @@
 pub mod bincache;
+pub mod config;
 pub mod errconv;
 pub mod events;
 
