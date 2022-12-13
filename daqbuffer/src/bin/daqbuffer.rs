@@ -52,7 +52,7 @@ async fn go() -> Result<(), Error> {
         SubCmd::Retrieval(subcmd) => {
             info!("daqbuffer {}", clap::crate_version!());
             let mut config_file = File::open(subcmd.config).await?;
-            let mut buf = vec![];
+            let mut buf = Vec::new();
             config_file.read_to_end(&mut buf).await?;
             let node_config: NodeConfig = serde_json::from_slice(&buf)?;
             let node_config: Result<NodeConfigCached, Error> = node_config.into();
@@ -62,7 +62,7 @@ async fn go() -> Result<(), Error> {
         SubCmd::Proxy(subcmd) => {
             info!("daqbuffer proxy {}", clap::crate_version!());
             let mut config_file = File::open(subcmd.config).await?;
-            let mut buf = vec![];
+            let mut buf = Vec::new();
             config_file.read_to_end(&mut buf).await?;
             let proxy_config: ProxyConfig = serde_json::from_slice(&buf)?;
             daqbufp2::run_proxy(proxy_config.clone()).await?;

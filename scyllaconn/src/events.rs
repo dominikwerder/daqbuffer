@@ -125,7 +125,7 @@ macro_rules! read_next_scalar_values {
                     ret.push_front(ts, pulse, value);
                 }
             }
-            info!("found in total {} events  ts_msp {}", ret.tss.len(), ts_msp);
+            trace!("found in total {} events  ts_msp {}", ret.tss.len(), ts_msp);
             Ok(ret)
         }
     };
@@ -166,7 +166,7 @@ macro_rules! read_next_array_values {
                 ret.push(ts, pulse, value);
             }
             */
-            info!("found in total {} events  ts_msp {}", ret.tss.len(), ts_msp);
+            trace!("found in total {} events  ts_msp {}", ret.tss.len(), ts_msp);
             Ok(ret)
         }
     };
@@ -193,7 +193,7 @@ macro_rules! read_values {
         let fut = fut.map(|x| match x {
             Ok(k) => {
                 let self_name = std::any::type_name::<Self>();
-                info!("{self_name} read values len {}", k.len());
+                trace!("{self_name} read values len {}", k.len());
                 let b = Box::new(k) as Box<dyn Events>;
                 Ok(b)
             }

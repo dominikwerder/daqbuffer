@@ -109,7 +109,6 @@ pub fn make_frame_2<T>(item: &T, fty: u32) -> Result<BytesMut, Error>
 where
     T: erased_serde::Serialize,
 {
-    info!("make_frame_2  T = {}  fty {:x}", std::any::type_name::<T>(), fty);
     let mut out = Vec::new();
     //let mut ser = rmp_serde::Serializer::new(&mut out).with_struct_map();
     //let writer = ciborium::ser::into_writer(&item, &mut out).unwrap();
@@ -272,7 +271,6 @@ pub fn decode_frame<T>(frame: &InMemoryFrame) -> Result<T, Error>
 where
     T: FrameDecodable,
 {
-    info!("decode_frame  T = {}", std::any::type_name::<T>());
     if frame.encid() != INMEM_FRAME_ENCID {
         return Err(Error::with_msg(format!("unknown encoder id {:?}", frame)));
     }
@@ -334,10 +332,7 @@ where
             )))
         } else {
             match decode_from_slice(frame.buf()) {
-                Ok(item) => {
-                    info!("decode_from_slice {} success", std::any::type_name::<T>());
-                    Ok(item)
-                }
+                Ok(item) => Ok(item),
                 Err(e) => {
                     error!("decode_frame  T = {}", std::any::type_name::<T>());
                     error!("ERROR deserialize  len {}  tyid {:x}", frame.buf().len(), frame.tyid());

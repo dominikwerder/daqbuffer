@@ -208,7 +208,7 @@ impl UpdatedDbWithChannelNamesStream {
             find: None,
             update_batch: None,
             channel_inp_done: false,
-            clist: vec![],
+            clist: Vec::new(),
         };
         ret.client_fut = Some(Box::pin(create_connection(
             &ret.node_config_ref.node_config.cluster.database,
@@ -243,7 +243,7 @@ impl Stream for UpdatedDbWithChannelNamesStream {
                     Ready(None) => {
                         *pself.channel_inp_done = true;
                         // Work through the collected items
-                        let l = std::mem::replace(pself.clist, vec![]);
+                        let l = std::mem::replace(pself.clist, Vec::new());
                         let fut = update_db_with_channel_name_list(
                             l,
                             pself.ident.as_ref().unwrap().facility,

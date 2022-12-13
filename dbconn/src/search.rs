@@ -26,7 +26,7 @@ pub async fn search_channel_databuffer(
         true
     };
     if empty {
-        let ret = ChannelSearchResult { channels: vec![] };
+        let ret = ChannelSearchResult { channels: Vec::new() };
         return Ok(ret);
     }
     let sql = format!(concat!(
@@ -42,14 +42,14 @@ pub async fn search_channel_databuffer(
         )
         .await
         .err_conv()?;
-    let mut res = vec![];
+    let mut res = Vec::new();
     for row in rows {
         let shapedb: Option<serde_json::Value> = row.get(4);
         let shape = match &shapedb {
             Some(top) => match top {
-                serde_json::Value::Null => vec![],
+                serde_json::Value::Null => Vec::new(),
                 serde_json::Value::Array(items) => {
-                    let mut a = vec![];
+                    let mut a = Vec::new();
                     for item in items {
                         match item {
                             serde_json::Value::Number(n) => match n.as_i64() {
@@ -65,7 +65,7 @@ pub async fn search_channel_databuffer(
                 }
                 _ => return Err(Error::with_msg(format!("can not understand shape {:?}", shapedb))),
             },
-            None => vec![],
+            None => Vec::new(),
         };
         let ty: String = row.get(3);
         let k = ChannelSearchSingleResult {
@@ -149,7 +149,7 @@ pub async fn search_channel_archeng(
         false
     };
     if empty {
-        let ret = ChannelSearchResult { channels: vec![] };
+        let ret = ChannelSearchResult { channels: Vec::new() };
         return Ok(ret);
     }
     let sql = format!(concat!(
@@ -161,7 +161,7 @@ pub async fn search_channel_archeng(
     ));
     let cl = create_connection(database).await?;
     let rows = cl.query(sql.as_str(), &[&query.name_regex]).await.err_conv()?;
-    let mut res = vec![];
+    let mut res = Vec::new();
     for row in rows {
         let name: String = row.get(0);
         let config: JsVal = row.get(1);
@@ -189,7 +189,7 @@ pub async fn search_channel_archeng(
             Some(k) => match k {
                 JsVal::String(k) => {
                     if k == "Scalar" {
-                        vec![]
+                        Vec::new()
                     } else {
                         return Err(Error::with_msg_no_trace(format!(
                             "search_channel_archeng can not understand {:?}",
@@ -223,7 +223,7 @@ pub async fn search_channel_archeng(
                     )));
                 }
             },
-            None => vec![],
+            None => Vec::new(),
         };
         let k = ChannelSearchSingleResult {
             backend: backend.clone(),

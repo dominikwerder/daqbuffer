@@ -120,7 +120,7 @@ pub async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, E
     let sql = sql.as_str();
     let cl = create_connection(&node_config.node_config.cluster.database).await?;
     let rows = cl.query(sql, &[]).await.err_conv()?;
-    let mut sizes = TableSizes { sizes: vec![] };
+    let mut sizes = TableSizes { sizes: Vec::new() };
     sizes.sizes.push((format!("table"), format!("size")));
     for row in rows {
         sizes.sizes.push((row.get(0), row.get(1)));

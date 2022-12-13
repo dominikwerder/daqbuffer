@@ -10,7 +10,7 @@ use netpod::{Cluster, NodeConfig, NodeConfigCached, ProxyConfig};
 use tokio::task::JoinHandle;
 
 pub fn spawn_test_hosts(cluster: Cluster) -> Vec<JoinHandle<Result<(), Error>>> {
-    let mut ret = vec![];
+    let mut ret = Vec::new();
     for node in &cluster.nodes {
         let node_config = NodeConfig {
             cluster: cluster.clone(),
