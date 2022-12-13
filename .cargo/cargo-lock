@@ -217,7 +217,7 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "bitshuffle"
-version = "0.0.1-a.0"
+version = "0.0.2"
 dependencies = [
  "cc",
  "libc",
@@ -893,7 +893,7 @@ dependencies = [
 
 [[package]]
 name = "fsio"
-version = "0.0.1-a.1"
+version = "0.0.2"
 dependencies = [
  "arrayref",
  "async-channel",
@@ -1065,7 +1065,7 @@ dependencies = [
 
 [[package]]
 name = "h5out"
-version = "0.0.1-a.0"
+version = "0.0.1"
 
 [[package]]
 name = "half"
