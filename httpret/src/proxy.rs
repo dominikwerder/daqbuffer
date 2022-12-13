@@ -9,7 +9,6 @@ use futures_util::{pin_mut, Stream};
 use http::{Method, StatusCode};
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
-use hyper_tls::HttpsConnector;
 use itertools::Itertools;
 use netpod::log::*;
 use netpod::query::{BinnedQuery, PlainEventsQuery};
@@ -458,14 +457,8 @@ pub async fn proxy_api1_map_pulse(
             let sh = &g.url;
             let url = format!("{}/api/1/map/pulse/{}", sh, pulseid);
             let req = Request::builder().method(Method::GET).uri(url).body(Body::empty())?;
-            let res = if sh.starts_with("https") {
-                let https = HttpsConnector::new();
-                let c = hyper::Client::builder().build(https);
-                c.request(req).await?
-            } else {
-                let c = hyper::Client::new();
-                c.request(req).await?
-            };
+            let c = hyper::Client::new();
+            let res = c.request(req).await?;
             let ret = response(StatusCode::OK).body(res.into_body())?;
             Ok(ret)
         }

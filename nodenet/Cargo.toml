@@ -22,7 +22,7 @@ byteorder = "1.4.3"
 futures-util = "0.3.14"
 tracing = "0.1.25"
 hex = "0.4.3"
-scylla = "0.5"
+scylla = "0.6.1"
 tokio-postgres = "0.7.7"
 err = { path = "../err" }
 netpod = { path = "../netpod" }

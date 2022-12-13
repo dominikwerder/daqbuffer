@@ -89,7 +89,7 @@ impl Error {
 
     pub fn add_public_msg(mut self, msg: impl Into<String>) -> Self {
         if self.public_msg.is_none() {
-            self.public_msg = Some(vec![]);
+            self.public_msg = Some(Vec::new());
         }
         self.public_msg.as_mut().unwrap().push(msg.into());
         self
@@ -120,7 +120,7 @@ impl Error {
 
 fn fmt_backtrace(trace: &backtrace::Backtrace) -> String {
     use std::io::Write;
-    let mut buf = vec![];
+    let mut buf = Vec::new();
     let mut c1 = 0;
     'outer: for fr in trace.frames() {
         for sy in fr.symbols() {

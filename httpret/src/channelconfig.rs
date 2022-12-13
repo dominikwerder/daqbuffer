@@ -1,15 +1,17 @@
 use crate::err::Error;
 use crate::{response, ToPublicResponse};
-use dbconn::channelconfig::{chconf_from_database, ChConf};
-use dbconn::{create_connection, create_scylla_connection};
+use dbconn::channelconfig::chconf_from_database;
+use dbconn::channelconfig::ChConf;
+use dbconn::create_connection;
 use futures_util::StreamExt;
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
+use netpod::get_url_query_pairs;
 use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
 use netpod::query::{BinnedQuery, PlainEventsQuery};
 use netpod::timeunits::*;
-use netpod::{get_url_query_pairs, Channel, ChannelConfigQuery, Database, FromUrl, ScalarType, ScyllaConfig, Shape};
+use netpod::{Channel, ChannelConfigQuery, Database, FromUrl, ScalarType, ScyllaConfig, Shape};
 use netpod::{ChannelConfigResponse, NodeConfigCached};
 use netpod::{ACCEPT_ALL, APP_JSON};
 use scylla::batch::Consistency;
@@ -221,7 +223,9 @@ impl ScyllaConfigsHisto {
                 .get(http::header::ACCEPT)
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept == APP_JSON || accept == ACCEPT_ALL {
-                let res = self.make_histo(node_config).await?;
+                let res = self
+                    .make_histo(&node_config.node_config.cluster.backend, node_config)
+                    .await?;
                 let body = Body::from(serde_json::to_vec(&res)?);
                 Ok(response(StatusCode::OK).body(body)?)
             } else {
@@ -232,7 +236,7 @@ impl ScyllaConfigsHisto {
         }
     }
 
-    async fn make_histo(&self, node_config: &NodeConfigCached) -> Result<ConfigsHisto, Error> {
+    async fn make_histo(&self, backend: &str, node_config: &NodeConfigCached) -> Result<ConfigsHisto, Error> {
         let scyco = node_config
             .node_config
             .cluster
@@ -246,7 +250,6 @@ impl ScyllaConfigsHisto {
             .build()
             .await
             .err_conv()?;
-        let backend = "scylla";
         let res = scy
             .query(
                 "select scalar_type, shape_dims, series from series_by_channel where facility = ? allow filtering",
@@ -336,7 +339,9 @@ impl ScyllaChannelsWithType {
             if accept == APP_JSON || accept == ACCEPT_ALL {
                 let url = Url::parse(&format!("dummy:{}", req.uri()))?;
                 let q = ChannelsWithTypeQuery::from_url(&url)?;
-                let res = self.get_channels(&q, node_config).await?;
+                let res = self
+                    .get_channels(&q, &node_config.node_config.cluster.backend, node_config)
+                    .await?;
                 let body = Body::from(serde_json::to_vec(&res)?);
                 Ok(response(StatusCode::OK).body(body)?)
             } else {
@@ -350,6 +355,7 @@ impl ScyllaChannelsWithType {
     async fn get_channels(
         &self,
         q: &ChannelsWithTypeQuery,
+        backend: &str,
         node_config: &NodeConfigCached,
     ) -> Result<ChannelListWithType, Error> {
         let scyco = node_config
@@ -365,7 +371,6 @@ impl ScyllaChannelsWithType {
             .build()
             .await
             .err_conv()?;
-        let backend = "scylla";
         let res = scy
             .query(
                 "select channel_name, series from series_by_channel where facility = ? and scalar_type = ? and shape_dims = ? allow filtering",
@@ -1160,7 +1165,7 @@ impl GenerateScyllaTestData {
         let dbconf = &node_config.node_config.cluster.database;
         let _pg_client = create_connection(dbconf).await?;
         let scyconf = node_config.node_config.cluster.scylla.as_ref().unwrap();
-        let scy = create_scylla_connection(scyconf).await?;
+        let scy = scyllaconn::create_scy_session(scyconf).await?;
         let series: u64 = 42001;
         // TODO query `ts_msp` for all MSP values und use that to delete from event table first.
         // Only later delete also from the `ts_msp` table.

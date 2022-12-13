@@ -15,8 +15,8 @@ pub async fn gen_test_data() -> Result<(), Error> {
     let data_base_path = PathBuf::from(homedir).join("daqbuffer-testdata").join("databuffer");
     let ksprefix = String::from("ks");
     let mut ensemble = Ensemble {
-        nodes: vec![],
-        channels: vec![],
+        nodes: Vec::new(),
+        channels: Vec::new(),
     };
     {
         let chn = ChannelGenProps {

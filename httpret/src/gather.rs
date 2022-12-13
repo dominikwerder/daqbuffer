@@ -3,9 +3,9 @@ use crate::response;
 use futures_util::{select, FutureExt};
 use http::{Method, StatusCode};
 use hyper::{Body, Client, Request, Response};
-use hyper_tls::HttpsConnector;
 use netpod::log::*;
-use netpod::{Node, NodeConfigCached, APP_JSON};
+use netpod::APP_JSON;
+use netpod::{Node, NodeConfigCached};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::future::Future;
@@ -175,6 +175,7 @@ pub async fn gather_get_json_generic<SM, NT, FT>(
     tags: Vec<String>,
     nt: NT,
     ft: FT,
+    // TODO use deadline instead
     timeout: Duration,
 ) -> Result<Response<Body>, Error>
 where
@@ -198,7 +199,6 @@ where
         .zip(tags.into_iter())
         .map(move |((url, body), tag)| {
             let url_str = url.as_str();
-            let is_tls = if url_str.starts_with("https://") { true } else { false };
             let req = if body.is_some() {
                 Request::builder().method(Method::POST).uri(url_str)
             } else {
@@ -210,7 +210,6 @@ where
             } else {
                 req
             };
-            //let req = req.header("x-log-from-node-name", format!("{}", node_config.node_config.name));
             let body = match body {
                 None => Body::empty(),
                 Some(body) => body,
@@ -222,15 +221,8 @@ where
                         Err(Error::with_msg("timeout"))
                     }
                     res = {
-                        if is_tls {
-                            let https = HttpsConnector::new();
-                            let client = Client::builder().build::<_, hyper::Body>(https);
-                            client.request(req?).fuse()
-                        }
-                        else {
-                            let client = Client::new();
-                            client.request(req?).fuse()
-                        }
+                        let client = Client::new();
+                        client.request(req?).fuse()
                     } => {
                         let ret = nt(tag, res?).await?;
                         Ok(ret)

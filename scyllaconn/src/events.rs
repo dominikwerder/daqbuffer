@@ -582,7 +582,7 @@ pub async fn make_scylla_stream(
 pub async fn channel_state_events(
     evq: &ChannelStateEventsQuery,
     scy: Arc<ScySession>,
-) -> Result<Pin<Box<dyn Stream<Item = Result<ChannelEvents, Error>> + Send>>, Error> {
+) -> Result<Pin<Box<dyn Stream<Item = Result<ConnStatusEvent, Error>> + Send>>, Error> {
     let (tx, rx) = async_channel::bounded(8);
     let evq = evq.clone();
     let fut = async move {
@@ -618,9 +618,7 @@ pub async fn channel_state_events(
                         }
                     };
                     let ev = ConnStatusEvent { ts, status };
-                    tx.send(Ok(ChannelEvents::Status(ev)))
-                        .await
-                        .map_err(|e| format!("{e}"))?;
+                    tx.send(Ok(ev)).await.map_err(|e| format!("{e}"))?;
                 }
             }
             ts_msp += div;

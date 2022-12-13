@@ -1,8 +1,10 @@
 use crate::bodystream::response;
 use crate::err::Error;
 use crate::ReqCtx;
+use futures_util::StreamExt;
 use http::{Method, Request, Response, StatusCode};
 use hyper::Body;
+use items_2::channelevents::ConnStatusEvent;
 use netpod::query::ChannelStateEventsQuery;
 use netpod::{FromUrl, NodeConfigCached, ACCEPT_ALL, APP_JSON};
 use url::Url;
@@ -53,23 +55,29 @@ impl ConnectionStatusEvents {
         &self,
         q: &ChannelStateEventsQuery,
         node_config: &NodeConfigCached,
-    ) -> Result<Vec<(u64, u32)>, Error> {
+    ) -> Result<Vec<ConnStatusEvent>, Error> {
         let scyco = node_config
             .node_config
             .cluster
             .scylla
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let ret = dbconn::events_scylla::channel_state_events(q, scyco).await?;
+        let scy = scyllaconn::create_scy_session(scyco).await?;
+        let mut stream = scyllaconn::events::channel_state_events(q, scy).await?;
+        let mut ret = Vec::new();
+        while let Some(item) = stream.next().await {
+            let item = item?;
+            ret.push(item);
+        }
         Ok(ret)
     }
 }
 
-pub struct ChannelConnectionStatusEvents {}
+pub struct ChannelStatusEvents {}
 
-impl ChannelConnectionStatusEvents {
+impl ChannelStatusEvents {
     pub fn handler(req: &Request<Body>) -> Option<Self> {
-        if req.uri().path() == "/api/4/scylla/channel/connection/status/events" {
+        if req.uri().path() == "/api/4/scylla/channel/status/events" {
             Some(Self {})
         } else {
             None
@@ -111,14 +119,20 @@ impl ChannelConnectionStatusEvents {
         &self,
         q: &ChannelStateEventsQuery,
         node_config: &NodeConfigCached,
-    ) -> Result<Vec<(u64, u32)>, Error> {
+    ) -> Result<Vec<ConnStatusEvent>, Error> {
         let scyco = node_config
             .node_config
             .cluster
             .scylla
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let ret = dbconn::events_scylla::channel_state_events(q, scyco).await?;
+        let scy = scyllaconn::create_scy_session(scyco).await?;
+        let mut stream = scyllaconn::events::channel_state_events(q, scy).await?;
+        let mut ret = Vec::new();
+        while let Some(item) = stream.next().await {
+            let item = item?;
+            ret.push(item);
+        }
         Ok(ret)
     }
 }

@@ -312,13 +312,9 @@ async fn http_service_inner(
         h.handle(req, &node_config).await
     } else if let Some(h) = events::EventsHandler::handler(&req) {
         h.handle(req, &node_config).await
-    } else if let Some(h) = events::EventsHandlerScylla::handler(&req) {
-        h.handle(req, ctx, &node_config).await
-    } else if let Some(h) = events::BinnedHandlerScylla::handler(&req) {
-        h.handle(req, ctx, &node_config).await
     } else if let Some(h) = channel_status::ConnectionStatusEvents::handler(&req) {
         h.handle(req, ctx, &node_config).await
-    } else if let Some(h) = channel_status::ChannelConnectionStatusEvents::handler(&req) {
+    } else if let Some(h) = channel_status::ChannelStatusEvents::handler(&req) {
         h.handle(req, ctx, &node_config).await
     } else if let Some(h) = api4::binned::BinnedHandler::handler(&req) {
         h.handle(req, &node_config).await
@@ -497,7 +493,7 @@ async fn node_status(
     let (_head, _body) = req.into_parts();
     let archiver_appliance_status = match node_config.node.archiver_appliance.as_ref() {
         Some(k) => {
-            let mut st = vec![];
+            let mut st = Vec::new();
             for p in &k.data_base_paths {
                 let _m = match tokio::fs::metadata(p).await {
                     Ok(m) => m,
@@ -718,7 +714,7 @@ impl StatusBoardEntry {
             ts_updated: SystemTime::now(),
             is_error: false,
             is_ok: false,
-            errors: vec![],
+            errors: Vec::new(),
         }
     }
 }
@@ -808,7 +804,7 @@ impl StatusBoard {
         match self.entries.get(status_id) {
             Some(e) => {
                 if e.is_ok {
-                    let js = StatJs { errors: vec![] };
+                    let js = StatJs { errors: Vec::new() };
                     return serde_json::to_string(&js).unwrap();
                 } else if e.is_error {
                     let errors = e.errors.iter().map(|e| (&e.0).into()).collect();
@@ -816,7 +812,7 @@ impl StatusBoard {
                     return serde_json::to_string(&js).unwrap();
                 } else {
                     warn!("requestStatus for unfinished {status_id}");
-                    let js = StatJs { errors: vec![] };
+                    let js = StatJs { errors: Vec::new() };
                     return serde_json::to_string(&js).unwrap();
                 }
             }

@@ -557,7 +557,7 @@ impl MapPulseScyllaHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, _node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
@@ -565,13 +565,12 @@ impl MapPulseScyllaHandler {
         let url = url::Url::parse(&urls)?;
         let query = MapPulseQuery::from_url(&url)?;
         let pulse = query.pulse;
-        let scy = scylla::SessionBuilder::new()
-            .known_node("sf-daqbuf-34:19042")
-            .default_consistency(scylla::batch::Consistency::One)
-            .use_keyspace("ks1", false)
-            .build()
-            .await
-            .err_conv()?;
+        let scyconf = if let Some(x) = node_config.node_config.cluster.scylla.as_ref() {
+            x
+        } else {
+            return Err(Error::with_public_msg_no_trace("no scylla configured"));
+        };
+        let scy = scyllaconn::create_scy_session(&scyconf).await?;
         let pulse_a = (pulse >> 14) as i64;
         let pulse_b = (pulse & 0x3fff) as i32;
         let res = scy
@@ -582,8 +581,9 @@ impl MapPulseScyllaHandler {
             .await
             .err_conv()?;
         let rows = res.rows().err_conv()?;
-        let mut tss = vec![];
-        let mut channels = vec![];
+        let ch = "pulsemaptable";
+        let mut tss = Vec::new();
+        let mut channels = Vec::new();
         use scylla::frame::response::result::CqlValue;
         let ts_a_def = CqlValue::BigInt(0);
         let ts_b_def = CqlValue::Int(0);
@@ -591,7 +591,7 @@ impl MapPulseScyllaHandler {
             let ts_a = row.columns[0].as_ref().unwrap_or(&ts_a_def).as_bigint().unwrap_or(0) as u64;
             let ts_b = row.columns[1].as_ref().unwrap_or(&ts_b_def).as_int().unwrap_or(0) as u32 as u64;
             tss.push(ts_a * netpod::timeunits::SEC + ts_b);
-            channels.push("scylla".into());
+            channels.push(ch.into());
         }
         let ret = LocalMap { pulse, tss, channels };
         Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
