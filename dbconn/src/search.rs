@@ -1,11 +1,16 @@
-use crate::{create_connection, ErrConv};
+use crate::create_connection;
+use crate::ErrConv;
 use err::Error;
-use netpod::{
-    ChannelArchiver, ChannelSearchQuery, ChannelSearchResult, ChannelSearchSingleResult, Database, NodeConfigCached,
-    ScalarType, ScyllaConfig, Shape,
-};
+use netpod::ChannelArchiver;
+use netpod::ChannelSearchQuery;
+use netpod::ChannelSearchResult;
+use netpod::ChannelSearchSingleResult;
+use netpod::Database;
+use netpod::NodeConfigCached;
+use netpod::ScalarType;
+use netpod::ScyllaConfig;
+use netpod::Shape;
 use serde_json::Value as JsVal;
-use std::sync::Arc;
 
 pub async fn search_channel_databuffer(
     query: ChannelSearchQuery,
@@ -85,37 +90,24 @@ pub async fn search_channel_scylla(
     _scyconf: &ScyllaConfig,
     pgconf: &Database,
 ) -> Result<ChannelSearchResult, Error> {
-    let empty = if !query.name_regex.is_empty() {
-        false
-    } else if !query.source_regex.is_empty() {
-        false
-    } else if !query.description_regex.is_empty() {
-        false
-    } else {
-        true
-    };
+    let empty = if !query.name_regex.is_empty() { false } else { true };
     if empty {
-        let ret = ChannelSearchResult { channels: vec![] };
+        let ret = ChannelSearchResult { channels: Vec::new() };
         return Ok(ret);
     }
     let sql = format!(concat!(
         "select",
         " series, facility, channel, scalar_type, shape_dims",
         " from series_by_channel",
-        " where channel like $1",
+        " where channel ~* $1",
+        " limit 100,"
     ));
-    let u = {
-        let d = &pgconf;
-        format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, d.port, d.name)
-    };
-    let (pgclient, pgconn) = tokio_postgres::connect(&u, tokio_postgres::NoTls).await.err_conv()?;
-    // TODO use common connection/pool:
-    tokio::spawn(pgconn);
-    let pgclient = Arc::new(pgclient);
+    let pgclient = crate::create_connection(pgconf).await?;
     let rows = pgclient.query(sql.as_str(), &[&query.name_regex]).await.err_conv()?;
-    let mut res = vec![];
+    let mut res = Vec::new();
     for row in rows {
-        let series = row.get::<_, i64>(0) as u64;
+        let series: i64 = row.get(0);
+        let series = series as u64;
         let backend: String = row.get(1);
         let channel: String = row.get(2);
         let a: i32 = row.get(3);

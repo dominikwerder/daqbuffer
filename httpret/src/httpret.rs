@@ -10,7 +10,6 @@ pub mod gather;
 pub mod prometheus;
 pub mod proxy;
 pub mod pulsemap;
-pub mod search;
 pub mod settings;
 
 use self::bodystream::{BodyStream, ToPublicResponse};
@@ -284,12 +283,10 @@ async fn http_service_inner(
         }
     } else if let Some(h) = StatusBoardAllHandler::handler(&req) {
         h.handle(req, &node_config).await
-    } else if path == "/api/4/search/channel" {
-        if req.method() == Method::GET {
-            Ok(search::channel_search(req, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
-        }
+    } else if let Some(h) = api4::search::ChannelSearchHandler::handler(&req) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = api4::binned::BinnedHandler::handler(&req) {
+        h.handle(req, &node_config).await
     } else if let Some(h) = channelconfig::ChannelConfigHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = channelconfig::ScyllaChannelsWithType::handler(&req) {
@@ -308,8 +305,6 @@ async fn http_service_inner(
         h.handle(req, ctx, &node_config).await
     } else if let Some(h) = channel_status::ChannelStatusEvents::handler(&req) {
         h.handle(req, ctx, &node_config).await
-    } else if let Some(h) = api4::binned::BinnedHandler::handler(&req) {
-        h.handle(req, &node_config).await
     } else if path == "/api/4/prebinned" {
         if req.method() == Method::GET {
             Ok(prebinned(req, ctx, &node_config).await?)
