@@ -18,16 +18,20 @@ use crate::err::Error;
 use crate::gather::gather_get_json;
 use crate::pulsemap::UpdateTask;
 use futures_util::{Future, FutureExt, StreamExt};
-use http::{Method, StatusCode};
+use http::Method;
+use http::StatusCode;
 use hyper::server::conn::AddrStream;
+use hyper::server::Server;
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{server::Server, Body, Request, Response};
+use hyper::Body;
+use hyper::Request;
+use hyper::Response;
 use net::SocketAddr;
 use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
 use netpod::timeunits::SEC;
+use netpod::NodeConfigCached;
 use netpod::ProxyConfig;
-use netpod::{NodeConfigCached, NodeStatus, NodeStatusArchiverAppliance};
 use netpod::{APP_JSON, APP_JSON_LINES};
 use nodenet::conn::events_service;
 use panic::{AssertUnwindSafe, UnwindSafe};
@@ -262,25 +266,24 @@ async fn http_service_inner(
 ) -> Result<Response<Body>, Error> {
     let uri = req.uri().clone();
     let path = uri.path();
-    if path == "/api/4/node_status" {
+    if path == "/api/4/private/version" {
         if req.method() == Method::GET {
-            Ok(node_status(req, ctx, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
-        }
-    } else if path == "/api/4/version" {
-        if req.method() == Method::GET {
+            let ver_maj: u32 = std::env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0);
+            let ver_min: u32 = std::env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0);
+            let ver_pat: u32 = std::env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0);
             let ret = serde_json::json!({
-                "data_api_version": {
-                    "major": 4u32,
-                    "minor": 2u32,
-                    "patch": 0u32,
+                "daqbuf_version": {
+                    "major": ver_maj,
+                    "minor": ver_min,
+                    "patch": ver_pat,
                 },
             });
             Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if let Some(h) = api4::status::StatusNodesRecursive::handler(&req) {
+        h.handle(req, ctx, &node_config).await
     } else if let Some(h) = StatusBoardAllHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = api4::search::ChannelSearchHandler::handler(&req) {
@@ -308,12 +311,6 @@ async fn http_service_inner(
     } else if path == "/api/4/prebinned" {
         if req.method() == Method::GET {
             Ok(prebinned(req, ctx, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
-        }
-    } else if path == "/api/4/table_sizes" {
-        if req.method() == Method::GET {
-            Ok(table_sizes(req, ctx, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
@@ -470,65 +467,6 @@ async fn prebinned_inner(
     });
     //let fut = disk::binned::prebinned::pre_binned_bytes_for_http(node_config, &query).instrument(span1);
     todo!()
-}
-
-async fn node_status(
-    req: Request<Body>,
-    _ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
-    let (_head, _body) = req.into_parts();
-    let archiver_appliance_status = match node_config.node.archiver_appliance.as_ref() {
-        Some(k) => {
-            let mut st = Vec::new();
-            for p in &k.data_base_paths {
-                let _m = match tokio::fs::metadata(p).await {
-                    Ok(m) => m,
-                    Err(_e) => {
-                        st.push((p.into(), false));
-                        continue;
-                    }
-                };
-                let _ = match tokio::fs::read_dir(p).await {
-                    Ok(rd) => rd,
-                    Err(_e) => {
-                        st.push((p.into(), false));
-                        continue;
-                    }
-                };
-                st.push((p.into(), true));
-            }
-            Some(NodeStatusArchiverAppliance { readable: st })
-        }
-        None => None,
-    };
-    let database_size = dbconn::database_size(node_config).await.map_err(|e| format!("{e:?}"));
-    let ret = NodeStatus {
-        is_sf_databuffer: node_config.node.sf_databuffer.is_some(),
-        is_archiver_engine: node_config.node.channel_archiver.is_some(),
-        is_archiver_appliance: node_config.node.archiver_appliance.is_some(),
-        database_size,
-        archiver_appliance_status,
-    };
-    let ret = serde_json::to_vec(&ret)?;
-    let ret = response(StatusCode::OK).body(Body::from(ret))?;
-    Ok(ret)
-}
-
-async fn table_sizes(
-    req: Request<Body>,
-    _ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
-    let (_head, _body) = req.into_parts();
-    let sizes = dbconn::table_sizes(node_config).await?;
-    let mut ret = String::new();
-    for size in sizes.sizes {
-        use std::fmt::Write;
-        write!(ret, "{:60} {:20}\n", size.0, size.1)?;
-    }
-    let ret = response(StatusCode::OK).body(Body::from(ret))?;
-    Ok(ret)
 }
 
 pub async fn random_channel(

@@ -90,31 +90,26 @@ async fn proxy_http_service_inner(
         Ok(channel_search_list_v1(req, proxy_config).await?)
     } else if path == "/api/1/channels/config" {
         Ok(channel_search_configs_v1(req, proxy_config).await?)
-    } else if path == "/api/1/stats/version" {
-        Err(Error::with_msg("todo"))
-    } else if path == "/api/1/stats/" {
-        Err(Error::with_msg("todo"))
-    } else if path == "/api/1/query" {
-        Ok(proxy_api1_single_backend_query(req, proxy_config).await?)
-    } else if path.starts_with("/api/1/map/pulse/") {
-        warn!("/api/1/map/pulse/ DEPRECATED");
-        Ok(proxy_api1_map_pulse(req, ctx, proxy_config).await?)
     } else if path.starts_with("/api/1/gather/") {
         Ok(gather_json_2_v1(req, "/api/1/gather/", proxy_config).await?)
-    } else if path == "/api/4/version" {
+    } else if path == "/api/4/private/version" {
         if req.method() == Method::GET {
+            let ver_maj: u32 = std::env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0);
+            let ver_min: u32 = std::env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0);
+            let ver_pat: u32 = std::env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0);
             let ret = serde_json::json!({
-                "data_api_version": {
-                    "major": 4,
-                    "minor": 1,
+                "daqbuf_version": {
+                    "major": ver_maj,
+                    "minor": ver_min,
+                    "patch": ver_pat,
                 },
             });
             Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
-    } else if path == "/api/4/node_status" {
-        Ok(api4::node_status(req, proxy_config).await?)
+    } else if let Some(h) = api4::StatusNodesRecursive::handler(&req) {
+        h.handle(req, ctx, &proxy_config).await
     } else if path == "/api/4/backends" {
         Ok(backends(req, proxy_config).await?)
     } else if path == "/api/4/search/channel" {
@@ -254,7 +249,7 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                 let mut methods = vec![];
                 let mut bodies = vec![];
                 let mut urls = proxy_config
-                    .backends_search
+                    .backends
                     .iter()
                     .map(|sh| match Url::parse(&format!("{}/api/4/search/channel", sh.url)) {
                         Ok(mut url) => {
@@ -269,9 +264,8 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                         bodies.push(None);
                         a
                     })?;
-                if let (Some(hosts), Some(backends)) =
-                    (&proxy_config.api_0_search_hosts, &proxy_config.api_0_search_backends)
-                {
+                // TODO probably no longer needed?
+                if let (Some(hosts), Some(backends)) = (None::<&Vec<String>>, None::<&Vec<String>>) {
                     #[derive(Serialize)]
                     struct QueryApi0 {
                         backends: Vec<String>,
@@ -371,11 +365,18 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                     };
                     Box::pin(fut) as Pin<Box<dyn Future<Output = _> + Send>>
                 };
-                let ft = |all: Vec<SubRes<ChannelSearchResult>>| {
-                    let mut res = vec![];
-                    for j in all {
-                        for k in j.val.channels {
-                            res.push(k);
+                let ft = |all: Vec<(crate::gather::Tag, Result<SubRes<ChannelSearchResult>, Error>)>| {
+                    let mut res = Vec::new();
+                    for (_tag, j) in all {
+                        match j {
+                            Ok(j) => {
+                                for k in j.val.channels {
+                                    res.push(k);
+                                }
+                            }
+                            Err(e) => {
+                                warn!("{e}");
+                            }
                         }
                     }
                     let res = ChannelSearchResult { channels: res };
@@ -407,126 +408,6 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
     }
 }
 
-pub async fn proxy_api1_map_pulse(
-    req: Request<Body>,
-    _ctx: &ReqCtx,
-    proxy_config: &ProxyConfig,
-) -> Result<Response<Body>, Error> {
-    let s2 = format!("http://dummy/{}", req.uri());
-    info!("s2: {:?}", s2);
-    let url = Url::parse(&s2)?;
-    let mut backend = None;
-    for (k, v) in url.query_pairs() {
-        if k == "backend" {
-            backend = Some(v.to_string());
-        }
-    }
-    let backend = if let Some(backend) = backend {
-        backend
-    } else {
-        return Ok(super::response_err(
-            StatusCode::BAD_REQUEST,
-            "Required parameter `backend` not specified.",
-        )?);
-    };
-    let pulseid = if let Some(k) = url.path_segments() {
-        if let Some(k) = k.rev().next() {
-            if let Ok(k) = k.to_string().parse::<u64>() {
-                k
-            } else {
-                return Ok(super::response_err(
-                    StatusCode::BAD_REQUEST,
-                    "Can not parse parameter `pulseid`.",
-                )?);
-            }
-        } else {
-            return Ok(super::response_err(
-                StatusCode::BAD_REQUEST,
-                "Can not parse parameter `pulseid`.",
-            )?);
-        }
-    } else {
-        return Ok(super::response_err(
-            StatusCode::BAD_REQUEST,
-            "Required parameter `pulseid` not specified.",
-        )?);
-    };
-    match proxy_config
-        .backends_pulse_map
-        .iter()
-        .filter(|x| x.name == backend)
-        .next()
-    {
-        Some(g) => {
-            let sh = &g.url;
-            let url = format!("{}/api/1/map/pulse/{}", sh, pulseid);
-            let req = Request::builder().method(Method::GET).uri(url).body(Body::empty())?;
-            let c = hyper::Client::new();
-            let res = c.request(req).await?;
-            let ret = response(StatusCode::OK).body(res.into_body())?;
-            Ok(ret)
-        }
-        None => {
-            return Ok(super::response_err(
-                StatusCode::BAD_REQUEST,
-                format!("can not find backend for api1 pulse map"),
-            )?);
-        }
-    }
-}
-
-pub async fn proxy_api1_single_backend_query(
-    _req: Request<Body>,
-    _proxy_config: &ProxyConfig,
-) -> Result<Response<Body>, Error> {
-    // TODO
-    /*
-    if let Some(back) = proxy_config.backends_event_download.first() {
-        let is_tls = req
-            .uri()
-            .scheme()
-            .ok_or_else(|| Error::with_msg_no_trace("no uri scheme"))?
-            == &http::uri::Scheme::HTTPS;
-        let bld = Request::builder().method(req.method());
-        let bld = bld.uri(req.uri());
-        // TODO to proxy events over multiple backends, we also have to concat results from different backends.
-        // TODO Carry on needed headers (but should not simply append all)
-        for (k, v) in req.headers() {
-            bld.header(k, v);
-        }
-        {
-            use std::collections::hash_map::DefaultHasher;
-            use std::hash::{Hash, Hasher};
-            let mut hasher = DefaultHasher::new();
-            proxy_config.name.hash(&mut hasher);
-            let mid = hasher.finish();
-            bld.header(format!("proxy-mark-{mid:0x}"), proxy_config.name);
-        }
-        let body_data = hyper::body::to_bytes(req.into_body()).await?;
-        let reqout = bld.body(Body::from(body_data))?;
-        let resfut = {
-            use hyper::Client;
-            if is_tls {
-                let https = HttpsConnector::new();
-                let client = Client::builder().build::<_, Body>(https);
-                let req = client.request(reqout);
-                let req = Box::pin(req) as Pin<Box<dyn Future<Output = Result<Response<Body>, hyper::Error>> + Send>>;
-                req
-            } else {
-                let client = Client::new();
-                let req = client.request(reqout);
-                let req = Box::pin(req) as _;
-                req
-            }
-        };
-        resfut.timeout();
-    } else {
-        Err(Error::with_msg_no_trace(format!("no api1 event backend configured")))
-    }
-    */
-    todo!()
-}
-
 pub async fn proxy_single_backend_query<QT>(
     req: Request<Body>,
     _ctx: &ReqCtx,
@@ -535,8 +416,8 @@ pub async fn proxy_single_backend_query<QT>(
 where
     QT: FromUrl + AppendToUrl + HasBackend + HasTimeout,
 {
-    info!("proxy_single_backend_query");
     let (head, _body) = req.into_parts();
+    info!("proxy_single_backend_query {}", head.uri);
     match head.headers.get(http::header::ACCEPT) {
         Some(v) => {
             if v == APP_JSON || v == ACCEPT_ALL {
@@ -548,15 +429,7 @@ where
                         return Ok(response_err(StatusCode::BAD_REQUEST, msg)?);
                     }
                 };
-                // TODO remove this special case
-                // SPECIAL CASE
-                // For pulse mapping we want to use a separate list of backends from the config file.
-                // In general, caller of this function should already provide the chosen list of backends.
-                let sh = if url.as_str().contains("/map/pulse/") {
-                    get_query_host_for_backend_2(&query.backend(), proxy_config)?
-                } else {
-                    get_query_host_for_backend(&query.backend(), proxy_config)?
-                };
+                let sh = get_query_host_for_backend(&query.backend(), proxy_config)?;
                 // TODO remove this special case
                 // SPECIAL CASE:
                 // Since the inner proxy is not yet handling map-pulse requests without backend,
@@ -626,16 +499,25 @@ where
                     };
                     Box::pin(fut) as Pin<Box<dyn Future<Output = Result<SubRes<serde_json::Value>, Error>> + Send>>
                 };
-                let ft = |mut all: Vec<SubRes<JsonValue>>| {
+                let ft = |mut all: Vec<(crate::gather::Tag, Result<SubRes<JsonValue>, Error>)>| {
                     if all.len() > 0 {
                         all.truncate(1);
-                        let z = all.pop().unwrap();
-                        let res = z.val;
-                        // TODO want to pass arbitrary body type:
-                        let res = response(z.status)
-                            .header(http::header::CONTENT_TYPE, APP_JSON)
-                            .body(Body::from(serde_json::to_string(&res)?))?;
-                        return Ok(res);
+                        let (_tag, z) = all.pop().unwrap();
+                        match z {
+                            Ok(z) => {
+                                let res = z.val;
+                                // TODO want to pass arbitrary body type:
+                                let res = response(z.status)
+                                    .header(http::header::CONTENT_TYPE, APP_JSON)
+                                    .body(Body::from(serde_json::to_string(&res)?))?;
+                                return Ok(res);
+                            }
+                            Err(e) => {
+                                warn!("{e}");
+                                let res = crate::bodystream::ToPublicResponse::to_public_response(&e);
+                                return Ok(res);
+                            }
+                        }
                     } else {
                         return Err(Error::with_msg("no response from upstream"));
                     }
@@ -654,15 +536,6 @@ where
 
 fn get_query_host_for_backend(backend: &str, proxy_config: &ProxyConfig) -> Result<String, Error> {
     for back in &proxy_config.backends {
-        if back.name == backend {
-            return Ok(back.url.clone());
-        }
-    }
-    return Err(Error::with_msg(format!("host not found for backend {:?}", backend)));
-}
-
-fn get_query_host_for_backend_2(backend: &str, proxy_config: &ProxyConfig) -> Result<String, Error> {
-    for back in &proxy_config.backends_pulse_map {
         if back.name == backend {
             return Ok(back.url.clone());
         }

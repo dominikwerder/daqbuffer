@@ -162,13 +162,16 @@ pub async fn gather_get_json(req: Request<Body>, node_config: &NodeConfigCached)
     Ok(res)
 }
 
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize)]
+pub struct Tag(pub String);
+
 pub struct SubRes<T> {
     pub tag: String,
     pub status: StatusCode,
     pub val: T,
 }
 
-pub async fn gather_get_json_generic<SM, NT, FT>(
+pub async fn gather_get_json_generic<SM, NT, FT, OUT>(
     _method: http::Method,
     urls: Vec<Url>,
     bodies: Vec<Option<Body>>,
@@ -177,7 +180,7 @@ pub async fn gather_get_json_generic<SM, NT, FT>(
     ft: FT,
     // TODO use deadline instead
     timeout: Duration,
-) -> Result<Response<Body>, Error>
+) -> Result<OUT, Error>
 where
     SM: Send + 'static,
     NT: Fn(String, Response<Body>) -> Pin<Box<dyn Future<Output = Result<SubRes<SM>, Error>> + Send>>
@@ -185,7 +188,7 @@ where
         + Sync
         + Copy
         + 'static,
-    FT: Fn(Vec<SubRes<SM>>) -> Result<Response<Body>, Error>,
+    FT: Fn(Vec<(Tag, Result<SubRes<SM>, Error>)>) -> Result<OUT, Error>,
 {
     if urls.len() != bodies.len() {
         return Err(Error::with_msg_no_trace("unequal numbers of urls and bodies"));
@@ -198,6 +201,7 @@ where
         .zip(bodies.into_iter())
         .zip(tags.into_iter())
         .map(move |((url, body), tag)| {
+            info!("Try gather from {}", url);
             let url_str = url.as_str();
             let req = if body.is_some() {
                 Request::builder().method(Method::POST).uri(url_str)
@@ -215,36 +219,37 @@ where
                 Some(body) => body,
             };
             let req = req.body(body);
+            let tag2 = tag.clone();
             let jh = tokio::spawn(async move {
                 select! {
                     _ = sleep(timeout).fuse() => {
-                        Err(Error::with_msg("timeout"))
+                        Err(Error::with_msg_no_trace("timeout"))
                     }
                     res = {
                         let client = Client::new();
                         client.request(req?).fuse()
                     } => {
-                        let ret = nt(tag, res?).await?;
+                        let ret = nt(tag2, res?).await?;
                         Ok(ret)
                     }
                 }
             });
-            (url, jh)
+            (url, tag, jh)
         })
         .collect();
-    let mut a: Vec<SubRes<SM>> = Vec::new();
-    for (_url, jh) in spawned {
-        let res: SubRes<SM> = match jh.await {
+    let mut a = Vec::new();
+    for (_url, tag, jh) in spawned {
+        let res = match jh.await {
             Ok(k) => match k {
-                Ok(k) => k,
+                Ok(k) => (Tag(tag), Ok(k)),
                 Err(e) => {
                     warn!("{e:?}");
-                    return Err(e);
+                    (Tag(tag), Err(e))
                 }
             },
             Err(e) => {
                 warn!("{e:?}");
-                return Err(e.into());
+                (Tag(tag), Err(e.into()))
             }
         };
         a.push(res);
@@ -260,9 +265,9 @@ mod test {
     fn try_search() {
         let fut = gather_get_json_generic(
             hyper::Method::GET,
-            vec![],
-            vec![],
-            vec![],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
             |tag, _res| {
                 let fut = async {
                     let ret = SubRes {
@@ -274,13 +279,8 @@ mod test {
                 };
                 Box::pin(fut)
             },
-            |_all| {
-                let res = response(StatusCode::OK)
-                    .header(http::header::CONTENT_TYPE, APP_JSON)
-                    .body(serde_json::to_string(&42)?.into())?;
-                Ok(res)
-            },
-            Duration::from_millis(4000),
+            |_all| Ok(String::from("DUMMY-SEARCH-TEST-RESULT-TODO")),
+            Duration::from_millis(800),
         );
         let _ = fut;
     }

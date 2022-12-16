@@ -8,6 +8,7 @@ pub mod pg {
 
 use err::Error;
 use netpod::log::*;
+use netpod::TableSizes;
 use netpod::{Channel, Database, NodeConfigCached};
 use netpod::{ScalarType, Shape};
 use std::sync::Arc;
@@ -100,10 +101,6 @@ pub async fn database_size(node_config: &NodeConfigCached) -> Result<u64, Error>
     let size: i64 = rows[0].get(0);
     let size = size as u64;
     Ok(size)
-}
-
-pub struct TableSizes {
-    pub sizes: Vec<(String, String)>,
 }
 
 pub async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, Error> {

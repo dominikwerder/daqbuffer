@@ -114,7 +114,7 @@ pub async fn channel_search_list_v1(req: Request<Body>, proxy_config: &ProxyConf
                     description_regex: query.description_regex.map_or(String::new(), |k| k),
                 };
                 let urls = proxy_config
-                    .backends_search
+                    .backends
                     .iter()
                     .map(|sh| match Url::parse(&format!("{}/api/4/search/channel", sh.url)) {
                         Ok(mut url) => {
@@ -144,29 +144,36 @@ pub async fn channel_search_list_v1(req: Request<Body>, proxy_config: &ProxyConf
                     };
                     Box::pin(fut) as Pin<Box<dyn Future<Output = _> + Send>>
                 };
-                let ft = |all: Vec<SubRes<ChannelSearchResult>>| {
-                    let mut res = ChannelSearchResultV1(vec![]);
-                    for j in all {
-                        for k in j.val.channels {
-                            let mut found = false;
-                            let mut i2 = 0;
-                            for i1 in 0..res.0.len() {
-                                if res.0[i1].backend == k.backend {
-                                    found = true;
-                                    i2 = i1;
-                                    break;
+                let ft = |all: Vec<(crate::gather::Tag, Result<SubRes<ChannelSearchResult>, Error>)>| {
+                    let mut res = ChannelSearchResultV1(Vec::new());
+                    for (_tag, j) in all {
+                        match j {
+                            Ok(j) => {
+                                for k in j.val.channels {
+                                    let mut found = false;
+                                    let mut i2 = 0;
+                                    for i1 in 0..res.0.len() {
+                                        if res.0[i1].backend == k.backend {
+                                            found = true;
+                                            i2 = i1;
+                                            break;
+                                        }
+                                    }
+                                    if !found {
+                                        let u = ChannelSearchResultItemV1 {
+                                            backend: k.backend,
+                                            channels: Vec::new(),
+                                            error: None,
+                                        };
+                                        res.0.push(u);
+                                        i2 = res.0.len() - 1;
+                                    }
+                                    res.0[i2].channels.push(k.name);
                                 }
                             }
-                            if !found {
-                                let u = ChannelSearchResultItemV1 {
-                                    backend: k.backend,
-                                    channels: vec![],
-                                    error: None,
-                                };
-                                res.0.push(u);
-                                i2 = res.0.len() - 1;
+                            Err(e) => {
+                                warn!("{e}");
                             }
-                            res.0[i2].channels.push(k.name);
                         }
                     }
                     let res = response(StatusCode::OK)
@@ -213,7 +220,7 @@ pub async fn channel_search_configs_v1(
                     description_regex: query.description_regex.map_or(String::new(), |k| k),
                 };
                 let urls = proxy_config
-                    .backends_search
+                    .backends
                     .iter()
                     .map(|sh| match Url::parse(&format!("{}/api/4/search/channel", sh.url)) {
                         Ok(mut url) => {
@@ -243,46 +250,53 @@ pub async fn channel_search_configs_v1(
                     };
                     Box::pin(fut) as Pin<Box<dyn Future<Output = _> + Send>>
                 };
-                let ft = |all: Vec<SubRes<ChannelSearchResult>>| {
-                    let mut res = ChannelConfigsResponseV1(vec![]);
-                    for j in all {
-                        for k in j.val.channels {
-                            let mut found = false;
-                            let mut i2 = 0;
-                            for i1 in 0..res.0.len() {
-                                if res.0[i1].backend == k.backend {
-                                    found = true;
-                                    i2 = i1;
-                                    break;
+                let ft = |all: Vec<(crate::gather::Tag, Result<SubRes<ChannelSearchResult>, Error>)>| {
+                    let mut res = ChannelConfigsResponseV1(Vec::new());
+                    for (_tag, j) in all {
+                        match j {
+                            Ok(j) => {
+                                for k in j.val.channels {
+                                    let mut found = false;
+                                    let mut i2 = 0;
+                                    for i1 in 0..res.0.len() {
+                                        if res.0[i1].backend == k.backend {
+                                            found = true;
+                                            i2 = i1;
+                                            break;
+                                        }
+                                    }
+                                    if !found {
+                                        let u = ChannelBackendConfigsV1 {
+                                            backend: k.backend.clone(),
+                                            channels: Vec::new(),
+                                            error: None,
+                                        };
+                                        res.0.push(u);
+                                        i2 = res.0.len() - 1;
+                                    }
+                                    {
+                                        let shape = if k.shape.len() == 0 { None } else { Some(k.shape) };
+                                        let unit = if k.unit.len() == 0 { None } else { Some(k.unit) };
+                                        let description = if k.description.len() == 0 {
+                                            None
+                                        } else {
+                                            Some(k.description)
+                                        };
+                                        let t = ChannelConfigV1 {
+                                            backend: k.backend,
+                                            name: k.name,
+                                            source: k.source,
+                                            description,
+                                            ty: k.ty,
+                                            shape,
+                                            unit,
+                                        };
+                                        res.0[i2].channels.push(t);
+                                    }
                                 }
                             }
-                            if !found {
-                                let u = ChannelBackendConfigsV1 {
-                                    backend: k.backend.clone(),
-                                    channels: vec![],
-                                    error: None,
-                                };
-                                res.0.push(u);
-                                i2 = res.0.len() - 1;
-                            }
-                            {
-                                let shape = if k.shape.len() == 0 { None } else { Some(k.shape) };
-                                let unit = if k.unit.len() == 0 { None } else { Some(k.unit) };
-                                let description = if k.description.len() == 0 {
-                                    None
-                                } else {
-                                    Some(k.description)
-                                };
-                                let t = ChannelConfigV1 {
-                                    backend: k.backend,
-                                    name: k.name,
-                                    source: k.source,
-                                    description,
-                                    ty: k.ty,
-                                    shape,
-                                    unit,
-                                };
-                                res.0[i2].channels.push(t);
+                            Err(e) => {
+                                warn!("{e}");
                             }
                         }
                     }

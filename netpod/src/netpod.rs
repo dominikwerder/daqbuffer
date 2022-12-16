@@ -539,13 +539,24 @@ pub struct NodeStatusArchiverAppliance {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct TableSizes {
+    pub sizes: Vec<(String, String)>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct NodeStatus {
-    //pub node: NodeConfig,
+    pub name: String,
     pub is_sf_databuffer: bool,
     pub is_archiver_engine: bool,
     pub is_archiver_appliance: bool,
-    pub database_size: Result<u64, String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub database_size: Option<Result<u64, String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub table_sizes: Option<Result<TableSizes, Error>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archiver_appliance_status: Option<NodeStatusArchiverAppliance>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subs: Option<BTreeMap<String, Result<NodeStatus, Error>>>,
 }
 
 // Describes a "channel" which is a time-series with a unique name within a "backend".
@@ -1966,18 +1977,7 @@ pub struct ProxyConfig {
     pub name: String,
     pub listen: String,
     pub port: u16,
-    #[serde(default)]
-    pub backends_status: Vec<ProxyBackend>,
-    #[serde(default)]
     pub backends: Vec<ProxyBackend>,
-    #[serde(default)]
-    pub backends_pulse_map: Vec<ProxyBackend>,
-    #[serde(default)]
-    pub backends_search: Vec<ProxyBackend>,
-    #[serde(default)]
-    pub backends_event_download: Vec<ProxyBackend>,
-    pub api_0_search_hosts: Option<Vec<String>>,
-    pub api_0_search_backends: Option<Vec<String>>,
 }
 
 pub trait HasBackend {
