@@ -487,10 +487,7 @@ impl FromUrl for MapPulseQuery {
             .rev();
         let pulsestr = pit.next().ok_or(Error::with_msg_no_trace("no pulse in url path"))?;
         let backend = pit.next().unwrap_or("sf-databuffer").into();
-        //.ok_or(Error::with_msg_no_trace("no backend in url path"))?
-        //.into();
-        // TODO !!!
-        // Clients MUST specify the backend
+        // TODO legacy: use a default backend if not specified.
         let backend = if backend == "pulse" {
             String::from("sf-databuffer")
         } else {

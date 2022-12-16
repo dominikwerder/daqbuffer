@@ -37,6 +37,7 @@ pub async fn chconf_from_prebinned(q: &PreBinnedQuery, _ncc: &NodeConfigCached) 
             .channel()
             .series()
             .expect("PreBinnedQuery is expected to contain the series id"),
+        name: q.channel().name().into(),
         scalar_type: q.scalar_type().clone(),
         shape: q.shape().clone(),
     };
@@ -65,8 +66,8 @@ impl ChannelConfigHandler {
                 .headers()
                 .get(http::header::ACCEPT)
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
-            if accept == APP_JSON || accept == ACCEPT_ALL {
-                match channel_config(req, &node_config).await {
+            if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
+                match self.channel_config(req, &node_config).await {
                     Ok(k) => Ok(k),
                     Err(e) => {
                         warn!("ChannelConfigHandler::handle: got error from channel_config: {e:?}");
@@ -79,6 +80,40 @@ impl ChannelConfigHandler {
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    }
+
+    async fn channel_config(
+        &self,
+        req: Request<Body>,
+        node_config: &NodeConfigCached,
+    ) -> Result<Response<Body>, Error> {
+        info!("channel_config");
+        let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+        let q = ChannelConfigQuery::from_url(&url)?;
+        info!("channel_config  for q {q:?}");
+        let conf = if let Some(_scyco) = &node_config.node_config.cluster.scylla {
+            let c = dbconn::channelconfig::chconf_from_database(&q.channel, node_config).await?;
+            ChannelConfigResponse {
+                channel: Channel {
+                    series: Some(c.series),
+                    backend: q.channel.backend().into(),
+                    name: c.name,
+                },
+                scalar_type: c.scalar_type,
+                byte_order: None,
+                shape: c.shape,
+            }
+        } else if let Some(_) = &node_config.node.channel_archiver {
+            return Err(Error::with_msg_no_trace("no archiver"));
+        } else if let Some(_) = &node_config.node.archiver_appliance {
+            return Err(Error::with_msg_no_trace("no archapp"));
+        } else {
+            parse::channelconfig::channel_config(&q, &node_config.node).await?
+        };
+        let ret = response(StatusCode::OK)
+            .header(http::header::CONTENT_TYPE, APP_JSON)
+            .body(Body::from(serde_json::to_string(&conf)?))?;
+        Ok(ret)
     }
 }
 
@@ -120,32 +155,6 @@ impl<T> ErrConv<T> for Result<T, NextRowError> {
             Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
         }
     }
-}
-
-async fn channel_config(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("channel_config");
-    let url = Url::parse(&format!("dummy:{}", req.uri()))?;
-    let q = ChannelConfigQuery::from_url(&url)?;
-    info!("channel_config  for q {q:?}");
-    let conf = if let Some(_scyco) = &node_config.node_config.cluster.scylla {
-        let c = dbconn::channelconfig::chconf_from_database(&q.channel, node_config).await?;
-        ChannelConfigResponse {
-            channel: q.channel,
-            scalar_type: c.scalar_type,
-            byte_order: None,
-            shape: c.shape,
-        }
-    } else if let Some(_) = &node_config.node.channel_archiver {
-        return Err(Error::with_msg_no_trace("no archiver"));
-    } else if let Some(_) = &node_config.node.archiver_appliance {
-        return Err(Error::with_msg_no_trace("no archapp"));
-    } else {
-        parse::channelconfig::channel_config(&q, &node_config.node).await?
-    };
-    let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, APP_JSON)
-        .body(Body::from(serde_json::to_string(&conf)?))?;
-    Ok(ret)
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -513,7 +522,7 @@ impl ScyllaChannelsActive {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct IocForChannelQuery {
-    #[serde(rename = "channelBackend")]
+    #[serde(rename = "backend")]
     backend: String,
     #[serde(rename = "channelName")]
     name: String,

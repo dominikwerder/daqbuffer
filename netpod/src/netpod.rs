@@ -596,8 +596,8 @@ impl FromUrl for Channel {
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
         let ret = Channel {
             backend: pairs
-                .get("channelBackend")
-                .ok_or(Error::with_public_msg("missing channelBackend"))?
+                .get("backend")
+                .ok_or(Error::with_public_msg("missing backend"))?
                 .into(),
             name: pairs
                 .get("channelName")
@@ -614,10 +614,10 @@ impl FromUrl for Channel {
 impl AppendToUrl for Channel {
     fn append_to_url(&self, url: &mut Url) {
         let mut g = url.query_pairs_mut();
-        g.append_pair("channelBackend", &self.backend);
+        g.append_pair("backend", &self.backend);
         g.append_pair("channelName", &self.name);
         if let Some(series) = self.series {
-            g.append_pair("seriesId", &format!("{series}"));
+            g.append_pair("seriesId", &series.to_string());
         }
     }
 }
@@ -2032,8 +2032,14 @@ impl FromUrl for ChannelConfigQuery {
     }
 
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
-        let beg_date = pairs.get("begDate").ok_or(Error::with_public_msg("missing begDate"))?;
-        let end_date = pairs.get("endDate").ok_or(Error::with_public_msg("missing endDate"))?;
+        let beg_date = pairs
+            .get("begDate")
+            .map(String::from)
+            .unwrap_or_else(|| String::from("2000-01-01T00:00:00Z"));
+        let end_date = pairs
+            .get("endDate")
+            .map(String::from)
+            .unwrap_or_else(|| String::from("3000-01-01T00:00:00Z"));
         let expand = pairs.get("expand").map(|s| s == "true").unwrap_or(false);
         let ret = Self {
             channel: Channel::from_pairs(&pairs)?,
@@ -2072,7 +2078,7 @@ pub struct ChannelConfigResponse {
     pub channel: Channel,
     #[serde(rename = "scalarType")]
     pub scalar_type: ScalarType,
-    #[serde(rename = "byteOrder")]
+    #[serde(rename = "byteOrder", default, skip_serializing_if = "Option::is_none")]
     pub byte_order: Option<ByteOrder>,
     #[serde(rename = "shape")]
     pub shape: Shape,

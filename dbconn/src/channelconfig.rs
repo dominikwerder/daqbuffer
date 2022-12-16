@@ -6,6 +6,7 @@ use crate::ErrConv;
 
 pub struct ChConf {
     pub series: u64,
+    pub name: String,
     pub scalar_type: ScalarType,
     pub shape: Shape,
 }
@@ -29,6 +30,7 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
         let ret = if channel.name() == "inmem-d0-i32" {
             let ret = ChConf {
                 series: 1,
+                name: channel.name().into(),
                 scalar_type: ScalarType::I32,
                 shape: Shape::Scalar,
             };
@@ -45,6 +47,7 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
         let ret = if channel.name() == "scalar-i32-be" {
             let ret = ChConf {
                 series: 1,
+                name: channel.name().into(),
                 scalar_type: ScalarType::I32,
                 shape: Shape::Scalar,
             };
@@ -52,6 +55,7 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
         } else if channel.name() == "wave-f64-be-n21" {
             let ret = ChConf {
                 series: 2,
+                name: channel.name().into(),
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(21),
             };
@@ -59,6 +63,7 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
         } else if channel.name() == "const-regular-scalar-i32-be" {
             let ret = ChConf {
                 series: 3,
+                name: channel.name().into(),
                 scalar_type: ScalarType::I32,
                 shape: Shape::Scalar,
             };
@@ -75,7 +80,7 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
     if let Some(series) = channel.series() {
         let res = pgclient
             .query(
-                "select scalar_type, shape_dims from series_by_channel where series = $1",
+                "select channel, scalar_type, shape_dims from series_by_channel where series = $1",
                 &[&(series as i64)],
             )
             .await
@@ -86,11 +91,13 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
             Err(e)
         } else {
             let row = res.first().unwrap();
-            let scalar_type = ScalarType::from_dtype_index(row.get::<_, i32>(0) as u8)?;
+            let name: String = row.get(0);
+            let scalar_type = ScalarType::from_dtype_index(row.get::<_, i32>(1) as u8)?;
             // TODO can I get a slice from psql driver?
-            let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(1))?;
+            let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(2))?;
             let ret = ChConf {
                 series,
+                name,
                 scalar_type,
                 shape,
             };
@@ -99,7 +106,7 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
     } else {
         let res = pgclient
             .query(
-                "select series, scalar_type, shape_dims from series_by_channel where facility = $1 and channel = $2",
+                "select channel, series, scalar_type, shape_dims from series_by_channel where facility = $1 and channel = $2",
                 &[&channel.backend(), &channel.name()],
             )
             .await
@@ -114,12 +121,14 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
             Err(e)
         } else {
             let row = res.first().unwrap();
-            let series = row.get::<_, i64>(0) as u64;
-            let scalar_type = ScalarType::from_dtype_index(row.get::<_, i32>(1) as u8)?;
+            let name: String = row.get(0);
+            let series = row.get::<_, i64>(1) as u64;
+            let scalar_type = ScalarType::from_dtype_index(row.get::<_, i32>(2) as u8)?;
             // TODO can I get a slice from psql driver?
-            let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(2))?;
+            let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(3))?;
             let ret = ChConf {
                 series,
+                name,
                 scalar_type,
                 shape,
             };

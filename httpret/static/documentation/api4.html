@@ -179,7 +179,7 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/map/pulse/sf-d
   <p><strong>URL:</strong> https://data-api.psi.ch/api/4/events</p>
   <p><strong>Query parameters:</strong></p>
   <ul>
-    <li>channelBackend (e.g. "sf-databuffer")</li>
+    <li>backend (e.g. "sf-databuffer")</li>
     <li>channelName (e.g. "S10CB02-RBOC-DCP10:FOR-AMPLT-AVG")</li>
     <li>begDate (e.g. "2021-05-26T07:10:00.000Z")</li>
     <li>endDate (e.g. "2021-05-26T07:16:00.000Z")</li>
@@ -192,7 +192,7 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/map/pulse/sf-d
 
   <h4>CURL example:</h4>
   <pre>
-curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/events?channelBackend=sf-databuffer
+curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/events?backend=sf-databuffer
   &channelName=S10CB02-RBOC-DCP10:FOR-AMPLT-AVG&begDate=2021-05-26T07:10:00.000Z&endDate=2021-05-26T07:16:00.000Z'
 </pre>
 
@@ -235,7 +235,7 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/events?channel
   <p><strong>URL:</strong> https://data-api.psi.ch/api/4/binned</p>
   <p><strong>Query parameters:</strong></p>
   <ul>
-    <li>channelBackend (e.g. "sf-databuffer")</li>
+    <li>backend (e.g. "sf-databuffer")</li>
     <li>channelName (e.g. "SLAAR-LSCP4-LAS6891:CH7:1")</li>
     <li>begDate (e.g. "2021-05-26T07:10:00.000Z")</li>
     <li>endDate (e.g. "2021-05-26T07:16:00.000Z")</li>
@@ -257,7 +257,7 @@ curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/events?channel
 
   <h4>CURL example:</h4>
   <pre>
-curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/binned?channelBackend=sf-databuffer
+curl -H 'Accept: application/json' 'https://data-api.psi.ch/api/4/binned?backend=sf-databuffer
   &channelName=SLAAR-LSCP4-LAS6891:CH7:1&begDate=2021-05-25T00:00:00.000Z&endDate=2021-05-26T00:00:00.000Z&binCount=3'
 </pre>
 
