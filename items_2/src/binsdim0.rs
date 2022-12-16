@@ -42,17 +42,31 @@ where
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let self_name = std::any::type_name::<Self>();
-        write!(
-            fmt,
-            "{self_name}  count {}  ts1s {:?}  ts2s {:?}  counts {:?}  mins {:?}  maxs {:?}  avgs {:?}",
-            self.ts1s.len(),
-            self.ts1s.iter().map(|k| k / SEC).collect::<Vec<_>>(),
-            self.ts2s.iter().map(|k| k / SEC).collect::<Vec<_>>(),
-            self.counts,
-            self.mins,
-            self.maxs,
-            self.avgs,
-        )
+        if true {
+            write!(
+                fmt,
+                "{self_name}  count {}  ts1s {:?}  ts2s {:?}  counts {:?}  mins {:?}  maxs {:?}  avgs {:?}",
+                self.ts1s.len(),
+                self.ts1s.iter().map(|k| k / SEC).collect::<Vec<_>>(),
+                self.ts2s.iter().map(|k| k / SEC).collect::<Vec<_>>(),
+                self.counts,
+                self.mins,
+                self.maxs,
+                self.avgs,
+            )
+        } else {
+            write!(
+                fmt,
+                "{self_name}  count {}  edges {:?} .. {:?}  counts {:?} .. {:?}  avgs {:?} .. {:?}",
+                self.ts1s.len(),
+                self.ts1s.front().map(|k| k / SEC),
+                self.ts2s.back().map(|k| k / SEC),
+                self.counts.front(),
+                self.counts.back(),
+                self.avgs.front(),
+                self.avgs.back(),
+            )
+        }
     }
 }
 

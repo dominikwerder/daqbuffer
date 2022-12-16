@@ -174,20 +174,16 @@ async fn events_conn_handler_inner_try(
         let scalar_type = f.scalar_type;
         let shape = f.shape;
         let do_test_stream_error = false;
-        let stream = match scyllaconn::events::make_scylla_stream(
-            &evq,
-            do_one_before_range,
+        debug!("Make EventsStreamScylla for {series} {scalar_type:?} {shape:?}");
+        let stream = scyllaconn::events::EventsStreamScylla::new(
             series,
+            evq.range().clone(),
+            do_one_before_range,
             scalar_type,
             shape,
             scy,
             do_test_stream_error,
-        )
-        .await
-        {
-            Ok(k) => k,
-            Err(e) => return Err((e, netout))?,
-        };
+        );
         let stream = stream.map(|item| {
             let item = match item {
                 Ok(item) => match item {

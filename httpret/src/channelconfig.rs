@@ -439,7 +439,7 @@ pub struct ScyllaChannelsActive {}
 
 impl ScyllaChannelsActive {
     pub fn handler(req: &Request<Body>) -> Option<Self> {
-        if req.uri().path() == "/api/4/scylla/channels/active" {
+        if req.uri().path() == "/api/4/channels/active" {
             Some(Self {})
         } else {
             None

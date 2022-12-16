@@ -2,6 +2,7 @@ pub mod bincache;
 pub mod config;
 pub mod errconv;
 pub mod events;
+pub mod status;
 
 use err::Error;
 use errconv::ErrConv;

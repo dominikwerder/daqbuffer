@@ -77,7 +77,7 @@ where
     NTY: fmt::Debug,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        if true {
+        if false {
             write!(
                 fmt,
                 "EventsDim0 {{ count {}  ts {:?}  vals {:?} }}",

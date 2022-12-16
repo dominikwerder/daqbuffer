@@ -19,6 +19,17 @@ pub enum ConnStatus {
     Disconnect,
 }
 
+impl ConnStatus {
+    pub fn from_ca_ingest_status_kind(k: u32) -> Self {
+        match k {
+            1 => Self::Connect,
+            2 => Self::Disconnect,
+            3 => Self::Disconnect,
+            _ => Self::Disconnect,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConnStatusEvent {
     pub ts: u64,
@@ -121,8 +132,36 @@ mod serde_channel_events {
             let e1: u32 = seq.next_element()?.ok_or(de::Error::missing_field("[1] nty"))?;
             if e0 == EventsDim0::<u8>::serde_id() {
                 match e1 {
+                    u8::SUB => {
+                        let obj: EventsDim0<u8> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    u16::SUB => {
+                        let obj: EventsDim0<u16> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    u32::SUB => {
+                        let obj: EventsDim0<u32> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    u64::SUB => {
+                        let obj: EventsDim0<u64> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    i8::SUB => {
+                        let obj: EventsDim0<i8> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    i16::SUB => {
+                        let obj: EventsDim0<i16> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
                     i32::SUB => {
                         let obj: EventsDim0<i32> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    i64::SUB => {
+                        let obj: EventsDim0<i64> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     f32::SUB => {

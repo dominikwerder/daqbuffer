@@ -5,7 +5,7 @@ use items_0::{Empty, Events, WithLen};
 use items_2::channelevents::{ChannelEvents, ConnStatus, ConnStatusEvent};
 use items_2::eventsdim0::EventsDim0;
 use netpod::log::*;
-use netpod::query::{ChannelStateEventsQuery, PlainEventsQuery};
+use netpod::query::ChannelStateEventsQuery;
 use netpod::timeunits::*;
 use netpod::{NanoRange, ScalarType, Shape};
 use scylla::Session as ScySession;
@@ -14,13 +14,13 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 
-async fn find_ts_msp(series: i64, range: NanoRange, scy: Arc<ScySession>) -> Result<VecDeque<u64>, Error> {
+async fn find_ts_msp(series: u64, range: NanoRange, scy: Arc<ScySession>) -> Result<VecDeque<u64>, Error> {
     info!("find_ts_msp  series {}  {:?}", series, range);
     let mut ret = VecDeque::new();
     // TODO use prepared statements
     let cql = "select ts_msp from ts_msp where series = ? and ts_msp > ? and ts_msp < ?";
     let res = scy
-        .query(cql, (series, range.beg as i64, range.end as i64))
+        .query(cql, (series as i64, range.beg as i64, range.end as i64))
         .await
         .err_conv()?;
     for row in res.rows_typed_or_empty::<(i64,)>() {
@@ -28,13 +28,13 @@ async fn find_ts_msp(series: i64, range: NanoRange, scy: Arc<ScySession>) -> Res
         ret.push_back(row.0 as u64);
     }
     let cql = "select ts_msp from ts_msp where series = ? and ts_msp >= ? limit 1";
-    let res = scy.query(cql, (series, range.end as i64)).await.err_conv()?;
+    let res = scy.query(cql, (series as i64, range.end as i64)).await.err_conv()?;
     for row in res.rows_typed_or_empty::<(i64,)>() {
         let row = row.err_conv()?;
         ret.push_back(row.0 as u64);
     }
     let cql = "select ts_msp from ts_msp where series = ? and ts_msp <= ? order by ts_msp desc limit 2";
-    let res = scy.query(cql, (series, range.beg as i64)).await.err_conv()?;
+    let res = scy.query(cql, (series as i64, range.beg as i64)).await.err_conv()?;
     for row in res.rows_typed_or_empty::<(i64,)>() {
         let row = row.err_conv()?;
         ret.push_front(row.0 as u64);
@@ -491,7 +491,7 @@ impl Stream for EventsStreamScylla {
         loop {
             break match self.state {
                 FrState::New => {
-                    let fut = find_ts_msp(self.series as i64, self.range.clone(), self.scy.clone());
+                    let fut = find_ts_msp(self.series, self.range.clone(), self.scy.clone());
                     let fut = Box::pin(fut);
                     self.state = FrState::FindMsp(fut);
                     continue;
@@ -558,28 +558,7 @@ impl Stream for EventsStreamScylla {
     }
 }
 
-pub async fn make_scylla_stream(
-    evq: &PlainEventsQuery,
-    do_one_before_range: bool,
-    series: u64,
-    scalar_type: ScalarType,
-    shape: Shape,
-    scy: Arc<ScySession>,
-    do_test_stream_error: bool,
-) -> Result<EventsStreamScylla, Error> {
-    let res = EventsStreamScylla::new(
-        series,
-        evq.range().clone(),
-        do_one_before_range,
-        scalar_type,
-        shape,
-        scy,
-        do_test_stream_error,
-    );
-    Ok(res)
-}
-
-pub async fn channel_state_events(
+async fn _channel_state_events(
     evq: &ChannelStateEventsQuery,
     scy: Arc<ScySession>,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<ConnStatusEvent, Error>> + Send>>, Error> {

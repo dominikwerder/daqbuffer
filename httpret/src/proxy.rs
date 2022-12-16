@@ -11,7 +11,7 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server};
 use itertools::Itertools;
 use netpod::log::*;
-use netpod::query::{BinnedQuery, PlainEventsQuery};
+use netpod::query::{BinnedQuery, ChannelStateEventsQuery, PlainEventsQuery};
 use netpod::{AppendToUrl, ChannelConfigQuery, FromUrl, HasBackend, HasTimeout, ProxyConfig};
 use netpod::{ChannelSearchQuery, ChannelSearchResult, ChannelSearchSingleResult};
 use netpod::{ACCEPT_ALL, APP_JSON};
@@ -121,6 +121,10 @@ async fn proxy_http_service_inner(
         Ok(api4::channel_search(req, proxy_config).await?)
     } else if path == "/api/4/events" {
         Ok(proxy_single_backend_query::<PlainEventsQuery>(req, ctx, proxy_config).await?)
+    } else if path == "/api/4/status/connection/events" {
+        Ok(proxy_single_backend_query::<ChannelStateEventsQuery>(req, ctx, proxy_config).await?)
+    } else if path == "/api/4/status/channel/events" {
+        Ok(proxy_single_backend_query::<ChannelStateEventsQuery>(req, ctx, proxy_config).await?)
     } else if path.starts_with("/api/4/map/pulse/") {
         Ok(proxy_single_backend_query::<MapPulseQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/binned" {

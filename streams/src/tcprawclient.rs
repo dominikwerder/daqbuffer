@@ -71,7 +71,7 @@ where
         netout.flush().await?;
         netout.forget();
         // TODO for images, we need larger buffer capacity
-        let frames = InMemoryFrameAsyncReadStream::new(netin, 1024 * 128);
+        let frames = InMemoryFrameAsyncReadStream::new(netin, 1024 * 256);
         let stream = EventsFromFrames::<_, T>::new(frames);
         streams.push(Box::pin(stream) as _);
     }

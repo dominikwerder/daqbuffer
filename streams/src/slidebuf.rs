@@ -399,3 +399,13 @@ impl SlideBuf {
         }
     }
 }
+
+impl fmt::Debug for SlideBuf {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.debug_struct("SlideBuf")
+            .field("cap", &self.cap())
+            .field("wp", &self.wp)
+            .field("rp", &self.rp)
+            .finish()
+    }
+}

@@ -13,7 +13,7 @@ pub struct ConnectionStatusEvents {}
 
 impl ConnectionStatusEvents {
     pub fn handler(req: &Request<Body>) -> Option<Self> {
-        if req.uri().path() == "/api/4/scylla/connection/status/events" {
+        if req.uri().path() == "/api/4/status/connection/events" {
             Some(Self {})
         } else {
             None
@@ -63,7 +63,11 @@ impl ConnectionStatusEvents {
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
         let scy = scyllaconn::create_scy_session(scyco).await?;
-        let mut stream = scyllaconn::events::channel_state_events(q, scy).await?;
+        let chconf = dbconn::channelconfig::chconf_from_database(q.channel(), node_config).await?;
+        let series = chconf.series;
+        let do_one_before_range = true;
+        let mut stream =
+            scyllaconn::status::StatusStreamScylla::new(series, q.range().clone(), do_one_before_range, scy);
         let mut ret = Vec::new();
         while let Some(item) = stream.next().await {
             let item = item?;
@@ -77,7 +81,7 @@ pub struct ChannelStatusEvents {}
 
 impl ChannelStatusEvents {
     pub fn handler(req: &Request<Body>) -> Option<Self> {
-        if req.uri().path() == "/api/4/scylla/channel/status/events" {
+        if req.uri().path() == "/api/4/status/channel/events" {
             Some(Self {})
         } else {
             None
@@ -127,7 +131,11 @@ impl ChannelStatusEvents {
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
         let scy = scyllaconn::create_scy_session(scyco).await?;
-        let mut stream = scyllaconn::events::channel_state_events(q, scy).await?;
+        let chconf = dbconn::channelconfig::chconf_from_database(q.channel(), node_config).await?;
+        let series = chconf.series;
+        let do_one_before_range = true;
+        let mut stream =
+            scyllaconn::status::StatusStreamScylla::new(series, q.range().clone(), do_one_before_range, scy);
         let mut ret = Vec::new();
         while let Some(item) = stream.next().await {
             let item = item?;
