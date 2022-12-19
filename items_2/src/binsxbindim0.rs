@@ -10,9 +10,9 @@ use items_0::TimeBinned;
 use items_0::TimeBins;
 use items_0::WithLen;
 use items_0::{AppendEmptyBin, AsAnyMut, AsAnyRef};
-use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::NanoRange;
+use netpod::{log::*, BinnedRange};
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -387,8 +387,12 @@ impl<NTY: ScalarOps> CollectorType for BinsXbinDim0Collector<NTY> {
         self.timed_out = true;
     }
 
-    fn result(&mut self) -> Result<Self::Output, Error> {
-        let bin_count_exp = 0;
+    fn result(&mut self, _range: Option<NanoRange>, binrange: Option<BinnedRange>) -> Result<Self::Output, Error> {
+        let bin_count_exp = if let Some(r) = &binrange {
+            r.bin_count() as u32
+        } else {
+            0
+        };
         let bin_count = self.vals.ts1s.len() as u32;
         let (missing_bins, continue_at, finished_at) = if bin_count < bin_count_exp {
             match self.vals.ts2s.back() {
@@ -503,8 +507,12 @@ where
         CollectorType::set_timed_out(self)
     }
 
-    fn result(&mut self) -> Result<Box<dyn items_0::collect_c::Collected>, Error> {
-        match CollectorType::result(self) {
+    fn result(
+        &mut self,
+        range: Option<NanoRange>,
+        binrange: Option<BinnedRange>,
+    ) -> Result<Box<dyn items_0::collect_c::Collected>, Error> {
+        match CollectorType::result(self, range, binrange) {
             Ok(res) => Ok(Box::new(res)),
             Err(e) => Err(e.into()),
         }

@@ -1,15 +1,11 @@
+use crate::ErrConv;
 use err::Error;
 use netpod::log::*;
-use netpod::{Channel, NodeConfigCached, ScalarType, Shape};
-
-use crate::ErrConv;
-
-pub struct ChConf {
-    pub series: u64,
-    pub name: String,
-    pub scalar_type: ScalarType,
-    pub shape: Shape,
-}
+use netpod::ChConf;
+use netpod::Channel;
+use netpod::NodeConfigCached;
+use netpod::ScalarType;
+use netpod::Shape;
 
 /// It is an unsolved question as to how we want to uniquely address channels.
 /// Currently, the usual (backend, channelname) works in 99% of the cases, but the edge-cases
@@ -26,9 +22,11 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
             channel.backend, ncc.node_config.cluster.backend
         );
     }
+    let backend = channel.backend().into();
     if channel.backend() == "test-inmem" {
         let ret = if channel.name() == "inmem-d0-i32" {
             let ret = ChConf {
+                backend: channel.backend().into(),
                 series: 1,
                 name: channel.name().into(),
                 scalar_type: ScalarType::I32,
@@ -46,6 +44,7 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
         // TODO the series-ids here are just random. Need to integrate with better test setup.
         let ret = if channel.name() == "scalar-i32-be" {
             let ret = ChConf {
+                backend,
                 series: 1,
                 name: channel.name().into(),
                 scalar_type: ScalarType::I32,
@@ -54,6 +53,7 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
             Ok(ret)
         } else if channel.name() == "wave-f64-be-n21" {
             let ret = ChConf {
+                backend,
                 series: 2,
                 name: channel.name().into(),
                 scalar_type: ScalarType::F64,
@@ -62,6 +62,7 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
             Ok(ret)
         } else if channel.name() == "const-regular-scalar-i32-be" {
             let ret = ChConf {
+                backend,
                 series: 3,
                 name: channel.name().into(),
                 scalar_type: ScalarType::I32,
@@ -96,6 +97,7 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
             // TODO can I get a slice from psql driver?
             let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(2))?;
             let ret = ChConf {
+                backend,
                 series,
                 name,
                 scalar_type,
@@ -127,6 +129,7 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
             // TODO can I get a slice from psql driver?
             let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(3))?;
             let ret = ChConf {
+                backend,
                 series,
                 name,
                 scalar_type,

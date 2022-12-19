@@ -1,6 +1,6 @@
 [package]
 name = "daqbuffer"
-version = "4.1.0"
+version = "0.3.0"
 authors = ["Dominik Werder <dominik.werder@gmail.com>"]
 edition = "2021"
 

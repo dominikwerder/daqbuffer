@@ -3,11 +3,23 @@ pub mod datetime;
 pub mod prebinned;
 
 use crate::get_url_query_pairs;
+use crate::is_false;
 use crate::log::*;
-use crate::{AggKind, AppendToUrl, ByteSize, Channel, FromUrl, HasBackend, HasTimeout, NanoRange, ToNanos};
-use chrono::{DateTime, TimeZone, Utc};
+use crate::AggKind;
+use crate::AppendToUrl;
+use crate::ByteSize;
+use crate::Channel;
+use crate::FromUrl;
+use crate::HasBackend;
+use crate::HasTimeout;
+use crate::NanoRange;
+use crate::ToNanos;
+use chrono::DateTime;
+use chrono::TimeZone;
+use chrono::Utc;
 use err::Error;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::time::Duration;
@@ -71,11 +83,19 @@ pub struct PlainEventsQuery {
     range: NanoRange,
     agg_kind: AggKind,
     timeout: Duration,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     events_max: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "humantime_serde")]
+    event_delay: Option<Duration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     stream_batch_len: Option<usize>,
+    #[serde(default, skip_serializing_if = "is_false")]
     report_error: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
     do_log: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
     do_test_main_error: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
     do_test_stream_error: bool,
 }
 
@@ -94,6 +114,7 @@ impl PlainEventsQuery {
             agg_kind,
             timeout,
             events_max,
+            event_delay: None,
             stream_batch_len: None,
             report_error: false,
             do_log,
@@ -126,8 +147,12 @@ impl PlainEventsQuery {
         self.timeout
     }
 
-    pub fn events_max(&self) -> Option<u64> {
-        self.events_max
+    pub fn events_max(&self) -> u64 {
+        self.events_max.unwrap_or(1024 * 1024)
+    }
+
+    pub fn event_delay(&self) -> &Option<Duration> {
+        &self.event_delay
     }
 
     pub fn do_log(&self) -> bool {
@@ -196,6 +221,9 @@ impl FromUrl for PlainEventsQuery {
             events_max: pairs
                 .get("eventsMax")
                 .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
+            event_delay: pairs.get("eventDelay").map_or(Ok(None), |k| {
+                k.parse::<u64>().map(|x| Duration::from_millis(x)).map(|k| Some(k))
+            })?,
             stream_batch_len: pairs
                 .get("streamBatchLen")
                 .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
@@ -242,10 +270,15 @@ impl AppendToUrl for PlainEventsQuery {
         if let Some(x) = self.events_max.as_ref() {
             g.append_pair("eventsMax", &format!("{}", x));
         }
+        if let Some(x) = self.event_delay.as_ref() {
+            g.append_pair("eventDelay", &format!("{:.0}", x.as_secs_f64() * 1e3));
+        }
         if let Some(x) = self.stream_batch_len.as_ref() {
             g.append_pair("streamBatchLen", &format!("{}", x));
         }
-        g.append_pair("doLog", &format!("{}", self.do_log));
+        if self.do_log {
+            g.append_pair("doLog", &format!("{}", self.do_log));
+        }
     }
 }
 
@@ -427,7 +460,12 @@ impl AppendToUrl for BinnedQuery {
         {
             self.channel.append_to_url(url);
             let mut g = url.query_pairs_mut();
-            g.append_pair("cacheUsage", &self.cache_usage.to_string());
+            match &self.cache_usage {
+                CacheUsage::Use => {}
+                _ => {
+                    g.append_pair("cacheUsage", &self.cache_usage.to_string());
+                }
+            }
             g.append_pair("binCount", &format!("{}", self.bin_count));
             g.append_pair(
                 "begDate",
@@ -443,11 +481,16 @@ impl AppendToUrl for BinnedQuery {
         }
         {
             let mut g = url.query_pairs_mut();
-            g.append_pair("diskIoBufferSize", &format!("{}", self.disk_io_buffer_size));
-            g.append_pair("diskStatsEveryKb", &format!("{}", self.disk_stats_every.bytes() / 1024));
+            // TODO
+            //g.append_pair("diskIoBufferSize", &format!("{}", self.disk_io_buffer_size));
+            //g.append_pair("diskStatsEveryKb", &format!("{}", self.disk_stats_every.bytes() / 1024));
             g.append_pair("timeout", &format!("{}", self.timeout.as_millis()));
-            g.append_pair("abortAfterBinCount", &format!("{}", self.abort_after_bin_count));
-            g.append_pair("doLog", &format!("{}", self.do_log));
+            if self.abort_after_bin_count > 0 {
+                g.append_pair("abortAfterBinCount", &format!("{}", self.abort_after_bin_count));
+            }
+            if self.do_log {
+                g.append_pair("doLog", &format!("{}", self.do_log));
+            }
         }
     }
 }

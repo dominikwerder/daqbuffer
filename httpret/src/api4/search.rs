@@ -42,7 +42,7 @@ impl ChannelSearchHandler {
                         Ok(response(StatusCode::OK).body(Body::from(buf))?)
                     }
                     Err(e) => {
-                        warn!("ChannelConfigHandler::handle: got error from channel_config: {e:?}");
+                        warn!("handle: got error from channel_search: {e:?}");
                         Ok(e.to_public_response())
                     }
                 }

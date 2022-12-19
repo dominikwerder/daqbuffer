@@ -15,7 +15,7 @@ fn collect_channel_events() -> Result<(), Error> {
         let stream = stream::iter(vec![sitem_data(evs0), sitem_data(evs1)]);
         let deadline = Instant::now() + Duration::from_millis(4000);
         let events_max = 10000;
-        let res = crate::collect::collect(stream, deadline, events_max).await?;
+        let res = crate::collect::collect(stream, deadline, events_max, None, None).await?;
         //eprintln!("collected result: {res:?}");
         if let Some(res) = res.as_any_ref().downcast_ref::<EventsDim0CollectorOutput<f32>>() {
             eprintln!("Great, a match");

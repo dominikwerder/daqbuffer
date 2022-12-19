@@ -3,7 +3,10 @@ use crate::collect_s::ToJsonResult;
 use crate::AsAnyMut;
 use crate::AsAnyRef;
 use crate::Events;
+use crate::WithLen;
 use err::Error;
+use netpod::BinnedRange;
+use netpod::NanoRange;
 use std::fmt;
 
 pub trait Collector: fmt::Debug + Send {
@@ -11,14 +14,13 @@ pub trait Collector: fmt::Debug + Send {
     fn ingest(&mut self, item: &mut dyn Collectable);
     fn set_range_complete(&mut self);
     fn set_timed_out(&mut self);
-    fn result(&mut self) -> Result<Box<dyn Collected>, Error>;
+    fn result(&mut self, range: Option<NanoRange>, binrange: Option<BinnedRange>) -> Result<Box<dyn Collected>, Error>;
 }
 
-pub trait Collectable: fmt::Debug + AsAnyMut {
+pub trait Collectable: fmt::Debug + AsAnyMut + crate::WithLen {
     fn new_collector(&self) -> Box<dyn Collector>;
 }
 
-// TODO can this get removed?
 pub trait Collected: fmt::Debug + ToJsonResult + AsAnyRef + Send {}
 
 erased_serde::serialize_trait_object!(Collected);
@@ -44,11 +46,17 @@ pub trait CollectorDyn: fmt::Debug + Send {
 
     fn set_timed_out(&mut self);
 
-    fn result(&mut self) -> Result<Box<dyn Collected>, Error>;
+    fn result(&mut self, range: Option<NanoRange>, binrange: Option<BinnedRange>) -> Result<Box<dyn Collected>, Error>;
 }
 
 pub trait CollectableWithDefault: AsAnyMut {
     fn new_collector(&self) -> Box<dyn CollectorDyn>;
+}
+
+impl crate::WithLen for Box<dyn Events> {
+    fn len(&self) -> usize {
+        self.as_ref().len()
+    }
 }
 
 impl Collectable for Box<dyn Events> {
@@ -77,8 +85,18 @@ impl Collector for TimeBinnedCollector {
         todo!()
     }
 
-    fn result(&mut self) -> Result<Box<dyn Collected>, Error> {
+    fn result(
+        &mut self,
+        _range: Option<NanoRange>,
+        _binrange: Option<BinnedRange>,
+    ) -> Result<Box<dyn Collected>, Error> {
         todo!()
+    }
+}
+
+impl WithLen for Box<dyn crate::TimeBinned> {
+    fn len(&self) -> usize {
+        self.as_ref().len()
     }
 }
 

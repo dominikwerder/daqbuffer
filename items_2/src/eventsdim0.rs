@@ -5,9 +5,9 @@ use crate::{TimeBinnable, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinn
 use err::Error;
 use items_0::scalar_ops::ScalarOps;
 use items_0::{AsAnyMut, AsAnyRef, Empty, Events, WithLen};
-use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::NanoRange;
+use netpod::{log::*, BinnedRange};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::VecDeque;
@@ -151,7 +151,7 @@ where
 #[derive(Debug)]
 pub struct EventsDim0Collector<NTY> {
     vals: EventsDim0<NTY>,
-    range_complete: bool,
+    range_final: bool,
     timed_out: bool,
 }
 
@@ -159,7 +159,7 @@ impl<NTY> EventsDim0Collector<NTY> {
     pub fn new() -> Self {
         Self {
             vals: EventsDim0::empty(),
-            range_complete: false,
+            range_final: false,
             timed_out: false,
         }
     }
@@ -186,7 +186,7 @@ pub struct EventsDim0CollectorOutput<NTY> {
     #[serde(rename = "values")]
     values: VecDeque<NTY>,
     #[serde(rename = "rangeFinal", default, skip_serializing_if = "crate::bool_is_false")]
-    range_complete: bool,
+    range_final: bool,
     #[serde(rename = "timedOut", default, skip_serializing_if = "crate::bool_is_false")]
     timed_out: bool,
     #[serde(rename = "continueAt", default, skip_serializing_if = "Option::is_none")]
@@ -220,7 +220,7 @@ impl<NTY: ScalarOps> EventsDim0CollectorOutput<NTY> {
     }
 
     pub fn range_complete(&self) -> bool {
-        self.range_complete
+        self.range_final
     }
 
     pub fn timed_out(&self) -> bool {
@@ -266,14 +266,14 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
     }
 
     fn set_range_complete(&mut self) {
-        self.range_complete = true;
+        self.range_final = true;
     }
 
     fn set_timed_out(&mut self) {
         self.timed_out = true;
     }
 
-    fn result(&mut self) -> Result<Self::Output, Error> {
+    fn result(&mut self, range: Option<NanoRange>, _binrange: Option<BinnedRange>) -> Result<Self::Output, Error> {
         // If we timed out, we want to hint the client from where to continue.
         // This is tricky: currently, client can not request a left-exclusive range.
         // We currently give the timestamp of the last event plus a small delta.
@@ -281,13 +281,17 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
         // can parse and handle.
         let continue_at = if self.timed_out {
             if let Some(ts) = self.vals.tss.back() {
-                Some(IsoDateTime::from_u64(*ts))
+                Some(IsoDateTime::from_u64(*ts + netpod::timeunits::MS))
             } else {
-                // TODO tricky: should yield again the original range begin? Leads to recursion.
-                // Range begin plus delta?
-                // Anyway, we don't have the range begin here.
-                warn!("timed out without any result, can not yield a continue-at");
-                None
+                if let Some(range) = &range {
+                    Some(IsoDateTime::from_u64(range.beg + netpod::timeunits::SEC))
+                } else {
+                    // TODO tricky: should yield again the original range begin? Leads to recursion.
+                    // Range begin plus delta?
+                    // Anyway, we don't have the range begin here.
+                    warn!("timed out without any result, can not yield a continue-at");
+                    None
+                }
             }
         } else {
             None
@@ -303,7 +307,7 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
             pulse_anchor,
             pulse_off: pulse_off,
             values: mem::replace(&mut self.vals.values, VecDeque::new()),
-            range_complete: self.range_complete,
+            range_final: self.range_final,
             timed_out: self.timed_out,
             continue_at,
         };
@@ -340,8 +344,12 @@ impl<NTY: ScalarOps> items_0::collect_c::Collector for EventsDim0Collector<NTY> 
         items_0::collect_s::CollectorType::set_timed_out(self)
     }
 
-    fn result(&mut self) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
-        match items_0::collect_s::CollectorType::result(self) {
+    fn result(
+        &mut self,
+        range: Option<NanoRange>,
+        binrange: Option<BinnedRange>,
+    ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
+        match items_0::collect_s::CollectorType::result(self, range, binrange) {
             Ok(x) => Ok(Box::new(x)),
             Err(e) => Err(e.into()),
         }
@@ -970,7 +978,11 @@ impl items_0::collect_c::CollectorDyn for EventsDim0CollectorDyn {
         todo!()
     }
 
-    fn result(&mut self) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
+    fn result(
+        &mut self,
+        _range: Option<NanoRange>,
+        _binrange: Option<BinnedRange>,
+    ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         todo!()
     }
 }
@@ -998,8 +1010,12 @@ impl<NTY: ScalarOps> items_0::collect_c::CollectorDyn for EventsDim0Collector<NT
         items_0::collect_s::CollectorType::set_timed_out(self);
     }
 
-    fn result(&mut self) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
-        items_0::collect_s::CollectorType::result(self)
+    fn result(
+        &mut self,
+        range: Option<NanoRange>,
+        binrange: Option<BinnedRange>,
+    ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
+        items_0::collect_s::CollectorType::result(self, range, binrange)
             .map(|x| Box::new(x) as _)
             .map_err(|e| e.into())
     }

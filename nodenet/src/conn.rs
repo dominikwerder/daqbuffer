@@ -81,9 +81,6 @@ async fn events_conn_handler_inner_try(
         error!("missing command frame  len {}", frames.len());
         return Err((Error::with_msg("missing command frame"), netout).into());
     }
-    //if frames[1].tyid() != items::TERM_FRAME_TYPE_ID {
-    //    return Err((Error::with_msg("input without term frame"), netout).into());
-    //}
     let query_frame = &frames[0];
     if query_frame.tyid() != items::EVENT_QUERY_JSON_STRING_FRAME {
         return Err((Error::with_msg("query frame wrong type"), netout).into());
@@ -184,24 +181,43 @@ async fn events_conn_handler_inner_try(
             scy,
             do_test_stream_error,
         );
-        let stream = stream.map(|item| {
-            let item = match item {
-                Ok(item) => match item {
-                    ChannelEvents::Events(item) => {
-                        let item = ChannelEvents::Events(item);
-                        let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
-                        item
+        let stream = stream
+            .map(|item| match &item {
+                Ok(k) => match k {
+                    ChannelEvents::Events(k) => {
+                        let n = k.len();
+                        let d = evq.event_delay();
+                        (item, n, d.clone())
                     }
-                    ChannelEvents::Status(item) => {
-                        let item = ChannelEvents::Status(item);
-                        let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
-                        item
-                    }
+                    ChannelEvents::Status(_) => (item, 1, None),
                 },
-                Err(e) => Err(e),
-            };
-            item
-        });
+                Err(_) => (item, 1, None),
+            })
+            .then(|(item, n, d)| async move {
+                if let Some(d) = d {
+                    debug!("sleep {} times {:?}", n, d);
+                    tokio::time::sleep(d).await;
+                }
+                item
+            })
+            .map(|item| {
+                let item = match item {
+                    Ok(item) => match item {
+                        ChannelEvents::Events(item) => {
+                            let item = ChannelEvents::Events(item);
+                            let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
+                            item
+                        }
+                        ChannelEvents::Status(item) => {
+                            let item = ChannelEvents::Status(item);
+                            let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
+                            item
+                        }
+                    },
+                    Err(e) => Err(e),
+                };
+                item
+            });
         Box::pin(stream)
     } else if let Some(_) = &node_config.node.channel_archiver {
         let e = Error::with_msg_no_trace("archapp not built");
@@ -236,6 +252,7 @@ async fn events_conn_handler_inner_try(
         let item = item.make_frame();
         match item {
             Ok(buf) => {
+                info!("write {} bytes", buf.len());
                 buf_len_histo.ingest(buf.len() as u32);
                 match netout.write_all(&buf).await {
                     Ok(_) => {}

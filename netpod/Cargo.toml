@@ -10,6 +10,7 @@ path = "src/netpod.rs"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+humantime-serde = "1.1.1"
 async-channel = "1.6"
 bytes = "1.3"
 chrono = { version = "0.4.19", features = ["serde"] }

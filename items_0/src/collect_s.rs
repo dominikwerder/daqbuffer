@@ -1,6 +1,10 @@
 use super::collect_c::Collected;
-use crate::{AsAnyMut, AsAnyRef, WithLen};
+use crate::AsAnyMut;
+use crate::AsAnyRef;
+use crate::WithLen;
 use err::Error;
+use netpod::BinnedRange;
+use netpod::NanoRange;
 use serde::Serialize;
 use std::any::Any;
 use std::fmt;
@@ -15,14 +19,18 @@ pub trait CollectorType: Send + Unpin + WithLen {
     fn set_timed_out(&mut self);
 
     // TODO use this crate's Error instead:
-    fn result(&mut self) -> Result<Self::Output, Error>;
+    fn result(&mut self, range: Option<NanoRange>, binrange: Option<BinnedRange>) -> Result<Self::Output, Error>;
 }
 
 pub trait Collector: Send + Unpin + WithLen {
     fn ingest(&mut self, src: &mut dyn Collectable);
     fn set_range_complete(&mut self);
     fn set_timed_out(&mut self);
-    fn result(&mut self) -> Result<Box<dyn ToJsonResult>, Error>;
+    fn result(
+        &mut self,
+        range: Option<NanoRange>,
+        binrange: Option<BinnedRange>,
+    ) -> Result<Box<dyn ToJsonResult>, Error>;
 }
 
 // TODO rename to `Typed`
@@ -49,8 +57,12 @@ impl<T: CollectorType + 'static> Collector for T {
         T::set_timed_out(self)
     }
 
-    fn result(&mut self) -> Result<Box<dyn ToJsonResult>, Error> {
-        let ret = T::result(self)?;
+    fn result(
+        &mut self,
+        range: Option<NanoRange>,
+        binrange: Option<BinnedRange>,
+    ) -> Result<Box<dyn ToJsonResult>, Error> {
+        let ret = T::result(self, range, binrange)?;
         Ok(Box::new(ret) as _)
     }
 }

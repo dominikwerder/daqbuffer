@@ -178,7 +178,8 @@ pub async fn gather_get_json_generic<SM, NT, FT, OUT>(
     tags: Vec<String>,
     nt: NT,
     ft: FT,
-    // TODO use deadline instead
+    // TODO use deadline instead.
+    // TODO Wait a bit longer compared to remote to receive partial results.
     timeout: Duration,
 ) -> Result<OUT, Error>
 where
@@ -190,6 +191,8 @@ where
         + 'static,
     FT: Fn(Vec<(Tag, Result<SubRes<SM>, Error>)>) -> Result<OUT, Error>,
 {
+    // TODO remove magic constant
+    let extra_timeout = Duration::from_millis(3000);
     if urls.len() != bodies.len() {
         return Err(Error::with_msg_no_trace("unequal numbers of urls and bodies"));
     }
@@ -222,14 +225,17 @@ where
             let tag2 = tag.clone();
             let jh = tokio::spawn(async move {
                 select! {
-                    _ = sleep(timeout).fuse() => {
+                    _ = sleep(timeout + extra_timeout).fuse() => {
+                        error!("PROXY TIMEOUT");
                         Err(Error::with_msg_no_trace("timeout"))
                     }
                     res = {
                         let client = Client::new();
                         client.request(req?).fuse()
                     } => {
+                        info!("received result in time");
                         let ret = nt(tag2, res?).await?;
+                        info!("transformed result in time");
                         Ok(ret)
                     }
                 }

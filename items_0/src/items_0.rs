@@ -127,7 +127,7 @@ pub trait TimeBinnable: fmt::Debug + WithLen + RangeOverlapInfo + Any + AsAnyRef
 
 /// Container of some form of events, for use as trait object.
 pub trait Events:
-    fmt::Debug + Any + Collectable + CollectableWithDefault + TimeBinnable + Send + erased_serde::Serialize
+    fmt::Debug + Any + Collectable + CollectableWithDefault + TimeBinnable + WithLen + Send + erased_serde::Serialize
 {
     fn as_time_binnable(&self) -> &dyn TimeBinnable;
     fn verify(&self) -> bool;

@@ -1,13 +1,13 @@
 use crate::binsxbindim0::BinsXbinDim0;
-use crate::RangeOverlapInfo;
 use crate::{pulse_offs_from_abs, ts_offs_from_abs};
+use crate::{IsoDateTime, RangeOverlapInfo};
 use crate::{TimeBinnableType, TimeBinnableTypeAggregator};
 use err::Error;
 use items_0::scalar_ops::ScalarOps;
 use items_0::{AsAnyMut, WithLen};
 use items_0::{AsAnyRef, Empty};
-use netpod::log::*;
 use netpod::NanoRange;
+use netpod::{log::*, BinnedRange};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::collections::VecDeque;
@@ -359,10 +359,11 @@ pub struct EventsXbinDim0CollectorOutput<NTY> {
     #[serde(rename = "avgs")]
     avgs: VecDeque<f32>,
     #[serde(rename = "rangeFinal", default, skip_serializing_if = "crate::bool_is_false")]
-    finalised_range: bool,
+    range_final: bool,
     #[serde(rename = "timedOut", default, skip_serializing_if = "crate::bool_is_false")]
     timed_out: bool,
-    // TODO add continue-at
+    #[serde(rename = "continueAt", default, skip_serializing_if = "Option::is_none")]
+    continue_at: Option<IsoDateTime>,
 }
 
 impl<NTY> AsAnyRef for EventsXbinDim0CollectorOutput<NTY>
@@ -398,14 +399,14 @@ impl<NTY> items_0::collect_c::Collected for EventsXbinDim0CollectorOutput<NTY> w
 #[derive(Debug)]
 pub struct EventsXbinDim0Collector<NTY> {
     vals: EventsXbinDim0<NTY>,
-    finalised_range: bool,
+    range_final: bool,
     timed_out: bool,
 }
 
 impl<NTY> EventsXbinDim0Collector<NTY> {
     pub fn new() -> Self {
         Self {
-            finalised_range: false,
+            range_final: false,
             timed_out: false,
             vals: EventsXbinDim0::empty(),
         }
@@ -434,15 +435,32 @@ where
     }
 
     fn set_range_complete(&mut self) {
-        self.finalised_range = true;
+        self.range_final = true;
     }
 
     fn set_timed_out(&mut self) {
         self.timed_out = true;
     }
 
-    fn result(&mut self) -> Result<Self::Output, Error> {
+    fn result(&mut self, range: Option<NanoRange>, _binrange: Option<BinnedRange>) -> Result<Self::Output, Error> {
         use std::mem::replace;
+        let continue_at = if self.timed_out {
+            if let Some(ts) = self.vals.tss.back() {
+                Some(IsoDateTime::from_u64(*ts + netpod::timeunits::MS))
+            } else {
+                if let Some(range) = &range {
+                    Some(IsoDateTime::from_u64(range.beg + netpod::timeunits::SEC))
+                } else {
+                    // TODO tricky: should yield again the original range begin? Leads to recursion.
+                    // Range begin plus delta?
+                    // Anyway, we don't have the range begin here.
+                    warn!("timed out without any result, can not yield a continue-at");
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let mins = replace(&mut self.vals.mins, VecDeque::new());
         let maxs = replace(&mut self.vals.maxs, VecDeque::new());
         let avgs = replace(&mut self.vals.avgs, VecDeque::new());
@@ -459,8 +477,9 @@ where
             mins,
             maxs,
             avgs,
-            finalised_range: self.finalised_range,
+            range_final: self.range_final,
             timed_out: self.timed_out,
+            continue_at,
         };
         Ok(ret)
     }
@@ -497,7 +516,11 @@ where
         todo!()
     }
 
-    fn result(&mut self) -> Result<Box<dyn items_0::collect_c::Collected>, Error> {
+    fn result(
+        &mut self,
+        _range: Option<NanoRange>,
+        _binrange: Option<BinnedRange>,
+    ) -> Result<Box<dyn items_0::collect_c::Collected>, Error> {
         todo!()
     }
 }

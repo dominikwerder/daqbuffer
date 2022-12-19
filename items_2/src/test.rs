@@ -298,7 +298,12 @@ fn bin01() {
         let mut stream = ChannelEventsMerger::new(vec![inp1, inp2]);
         let mut coll = None;
         let mut binner = None;
-        let edges: Vec<_> = (0..10).into_iter().map(|t| SEC * 10 * t).collect();
+        let range = NanoRange {
+            beg: SEC * 0,
+            end: SEC * 100,
+        };
+        let binrange = BinnedRange::covering_range(range, 10).unwrap();
+        let edges = binrange.edges();
         // TODO implement continue-at [hcn2956jxhwsf]
         #[allow(unused)]
         let bin_count_exp = (edges.len() - 1) as u32;
@@ -369,7 +374,7 @@ fn bin01() {
         }
         match coll {
             Some(mut coll) => {
-                let res = coll.result().map_err(|e| format!("{e}"))?;
+                let res = coll.result(None, Some(binrange.clone())).map_err(|e| format!("{e}"))?;
                 //let res = res.to_json_result().map_err(|e| format!("{e}"))?;
                 //let res = res.to_json_bytes().map_err(|e| format!("{e}"))?;
                 eprintln!("res {res:?}");

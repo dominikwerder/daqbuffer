@@ -1,7 +1,6 @@
 use crate::err::Error;
 use crate::{response, ToPublicResponse};
 use dbconn::channelconfig::chconf_from_database;
-use dbconn::channelconfig::ChConf;
 use dbconn::create_connection;
 use futures_util::StreamExt;
 use http::{Method, Request, Response, StatusCode};
@@ -11,6 +10,7 @@ use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
 use netpod::query::{BinnedQuery, PlainEventsQuery};
 use netpod::timeunits::*;
+use netpod::ChConf;
 use netpod::{Channel, ChannelConfigQuery, FromUrl, ScalarType, Shape};
 use netpod::{ChannelConfigResponse, NodeConfigCached};
 use netpod::{ACCEPT_ALL, APP_JSON};
@@ -33,6 +33,7 @@ pub async fn chconf_from_events_json(q: &PlainEventsQuery, ncc: &NodeConfigCache
 
 pub async fn chconf_from_prebinned(q: &PreBinnedQuery, _ncc: &NodeConfigCached) -> Result<ChConf, Error> {
     let ret = ChConf {
+        backend: q.channel().backend().into(),
         series: q
             .channel()
             .series()

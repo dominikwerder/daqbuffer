@@ -1,6 +1,4 @@
-/*!
-Error handling and reporting.
-*/
+//! Error handling and reporting.
 
 use serde::{Deserialize, Serialize};
 use std::array::TryFromSliceError;
@@ -22,15 +20,17 @@ pub enum Reason {
     IoError,
 }
 
-/**
-The common error type for this application.
-*/
+/// The common error type for this application.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct Error {
     msg: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     trace_str: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     public_msg: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     reason: Option<Reason>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     parent: Option<Box<Error>>,
 }
 

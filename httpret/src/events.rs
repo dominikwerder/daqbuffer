@@ -34,7 +34,6 @@ impl EventsHandler {
 }
 
 async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("httpret  plain_events  req: {:?}", req);
     let accept_def = APP_JSON;
     let accept = req
         .headers()
@@ -83,20 +82,19 @@ async fn plain_events_json(
     req: Request<Body>,
     node_config: &NodeConfigCached,
 ) -> Result<Response<Body>, Error> {
-    debug!("httpret  plain_events_json  req: {:?}", req);
+    info!("httpret  plain_events_json  req: {:?}", req);
     let (_head, _body) = req.into_parts();
     let query = PlainEventsQuery::from_url(&url)?;
-    let chconf = chconf_from_events_json(&query, node_config).await.map_err(|e| {
-        error!("chconf_from_events_json {e:?}");
-        e.add_public_msg(format!("Can not get channel information"))
-    })?;
+    let chconf = chconf_from_events_json(&query, node_config)
+        .await
+        .map_err(Error::from)?;
     // Update the series id since we don't require some unique identifier yet.
     let mut query = query;
     query.set_series_id(chconf.series);
     let query = query;
     // ---
     //let query = RawEventsQuery::new(query.channel().clone(), query.range().clone(), AggKind::Plain);
-    let item = streams::plaineventsjson::plain_events_json(&query, &node_config.node_config.cluster).await;
+    let item = streams::plaineventsjson::plain_events_json(&query, &chconf, &node_config.node_config.cluster).await;
     let item = match item {
         Ok(item) => item,
         Err(e) => {

@@ -11,7 +11,7 @@ use err::Error;
 use futures_util::{Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsVal;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::iter::FromIterator;
 use std::net::SocketAddr;
@@ -544,10 +544,27 @@ pub struct TableSizes {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct NodeStatusSub {
+    pub url: String,
+    pub status: Result<NodeStatus, Error>,
+}
+
+fn is_false<T>(x: T) -> bool
+where
+    T: std::borrow::Borrow<bool>,
+{
+    *x.borrow() == false
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct NodeStatus {
     pub name: String,
+    pub version: String,
+    #[serde(default, skip_serializing_if = "is_false")]
     pub is_sf_databuffer: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
     pub is_archiver_engine: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
     pub is_archiver_appliance: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub database_size: Option<Result<u64, String>>,
@@ -555,8 +572,8 @@ pub struct NodeStatus {
     pub table_sizes: Option<Result<TableSizes, Error>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archiver_appliance_status: Option<NodeStatusArchiverAppliance>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub subs: Option<BTreeMap<String, Result<NodeStatus, Error>>>,
+    #[serde(default, skip_serializing_if = "VecDeque::is_empty")]
+    pub subs: VecDeque<NodeStatusSub>,
 }
 
 // Describes a "channel" which is a time-series with a unique name within a "backend".
@@ -601,12 +618,19 @@ impl FromUrl for Channel {
                 .into(),
             name: pairs
                 .get("channelName")
-                .ok_or(Error::with_public_msg("missing channelName"))?
+                //.ok_or(Error::with_public_msg("missing channelName"))?
+                .map(String::from)
+                .unwrap_or(String::new())
                 .into(),
             series: pairs
                 .get("seriesId")
                 .and_then(|x| x.parse::<u64>().map_or(None, |x| Some(x))),
         };
+        if ret.name.is_empty() && ret.series.is_none() {
+            return Err(Error::with_public_msg(format!(
+                "Missing one of channelName or seriesId parameters."
+            )));
+        }
         Ok(ret)
     }
 }
@@ -615,7 +639,9 @@ impl AppendToUrl for Channel {
     fn append_to_url(&self, url: &mut Url) {
         let mut g = url.query_pairs_mut();
         g.append_pair("backend", &self.backend);
-        g.append_pair("channelName", &self.name);
+        if self.name().len() > 0 {
+            g.append_pair("channelName", &self.name);
+        }
         if let Some(series) = self.series {
             g.append_pair("seriesId", &series.to_string());
         }
@@ -2088,12 +2114,21 @@ pub struct ChannelConfigResponse {
 Provide basic information about a channel, especially it's shape.
 Also, byte-order is important for clients that process the raw databuffer event data (python data_api3).
 */
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelInfo {
     pub scalar_type: ScalarType,
     pub byte_order: Option<ByteOrder>,
     pub shape: Shape,
     pub msg: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChConf {
+    pub backend: String,
+    pub series: u64,
+    pub name: String,
+    pub scalar_type: ScalarType,
+    pub shape: Shape,
 }
 
 pub fn f32_close(a: f32, b: f32) -> bool {

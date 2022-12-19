@@ -371,7 +371,8 @@ fn flush_binned(
     }
 }
 
-// TODO remove
+// TODO remove.
+// Compare with items_2::test::bin01
 pub async fn binned_collected(
     scalar_type: ScalarType,
     shape: Shape,
@@ -477,7 +478,7 @@ pub async fn binned_collected(
     }
     match coll {
         Some(mut coll) => {
-            let res = coll.result().map_err(|e| format!("{e}"))?;
+            let res = coll.result(None, None).map_err(|e| format!("{e}"))?;
             tokio::time::sleep(Duration::from_millis(2000)).await;
             Ok(res)
         }

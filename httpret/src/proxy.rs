@@ -112,8 +112,8 @@ async fn proxy_http_service_inner(
         h.handle(req, ctx, &proxy_config).await
     } else if path == "/api/4/backends" {
         Ok(backends(req, proxy_config).await?)
-    } else if path == "/api/4/search/channel" {
-        Ok(api4::channel_search(req, proxy_config).await?)
+    } else if let Some(h) = api4::ChannelSearchAggHandler::handler(&req) {
+        h.handle(req, &proxy_config).await
     } else if path == "/api/4/events" {
         Ok(proxy_single_backend_query::<PlainEventsQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/status/connection/events" {

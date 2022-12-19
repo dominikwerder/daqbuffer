@@ -8,6 +8,8 @@ use items_0::collect_s::Collector;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use netpod::log::*;
+use netpod::BinnedRange;
+use netpod::NanoRange;
 use serde::{Deserialize, Serialize};
 use std::any::Any;
 use std::fmt;
@@ -669,7 +671,11 @@ impl items_0::collect_c::Collector for ChannelEventsCollector {
         self.timed_out = true;
     }
 
-    fn result(&mut self) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
+    fn result(
+        &mut self,
+        range: Option<NanoRange>,
+        binrange: Option<BinnedRange>,
+    ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         match self.coll.as_mut() {
             Some(coll) => {
                 if self.range_complete {
@@ -678,20 +684,25 @@ impl items_0::collect_c::Collector for ChannelEventsCollector {
                 if self.timed_out {
                     coll.set_timed_out();
                 }
-                let res = coll.result()?;
-                //error!("fix output of ChannelEventsCollector [03ce6bc5a]");
-                //err::todo();
-                //let output = ChannelEventsCollectorOutput {};
+                let res = coll.result(range, binrange)?;
                 Ok(res)
             }
             None => {
                 error!("nothing collected [caa8d2565]");
-                todo!()
+                Err(err::Error::with_public_msg_no_trace("nothing collected [caa8d2565]"))
             }
         }
     }
 }
 
+impl items_0::WithLen for ChannelEvents {
+    fn len(&self) -> usize {
+        match self {
+            ChannelEvents::Events(k) => k.len(),
+            ChannelEvents::Status(_) => 1,
+        }
+    }
+}
 impl items_0::collect_c::Collectable for ChannelEvents {
     fn new_collector(&self) -> Box<dyn items_0::collect_c::Collector> {
         Box::new(ChannelEventsCollector::new())

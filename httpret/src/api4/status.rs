@@ -10,6 +10,7 @@ use netpod::NodeConfigCached;
 use netpod::NodeStatus;
 use netpod::NodeStatusArchiverAppliance;
 use netpod::TableSizes;
+use std::collections::VecDeque;
 use std::time::Duration;
 
 async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, Error> {
@@ -94,13 +95,14 @@ impl StatusNodesRecursive {
         let database_size = dbconn::database_size(node_config).await.map_err(|e| format!("{e:?}"));
         let ret = NodeStatus {
             name: format!("{}:{}", node_config.node.host, node_config.node.port),
+            version: core::env!("CARGO_PKG_VERSION").into(),
             is_sf_databuffer: node_config.node.sf_databuffer.is_some(),
             is_archiver_engine: node_config.node.channel_archiver.is_some(),
             is_archiver_appliance: node_config.node.archiver_appliance.is_some(),
             database_size: Some(database_size),
             table_sizes: Some(table_sizes(node_config).await.map_err(Into::into)),
             archiver_appliance_status,
-            subs: None,
+            subs: VecDeque::new(),
         };
         Ok(ret)
     }
