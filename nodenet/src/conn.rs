@@ -252,7 +252,7 @@ async fn events_conn_handler_inner_try(
         let item = item.make_frame();
         match item {
             Ok(buf) => {
-                info!("write {} bytes", buf.len());
+                trace!("write {} bytes", buf.len());
                 buf_len_histo.ingest(buf.len() as u32);
                 match netout.write_all(&buf).await {
                     Ok(_) => {}

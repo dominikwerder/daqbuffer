@@ -15,7 +15,7 @@ use tracing::Instrument;
 use url::Url;
 
 async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("httpret  plain_events_json  req: {:?}", req);
+    debug!("httpret  plain_events_json  req: {:?}", req);
     let (_head, _body) = req.into_parts();
     let query = BinnedQuery::from_url(&url).map_err(|e| {
         let msg = format!("can not parse query: {}", e.msg());
@@ -46,7 +46,6 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
 }
 
 async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    info!("req: {:?}", req);
     let accept = req
         .headers()
         .get(http::header::ACCEPT)

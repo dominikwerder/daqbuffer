@@ -57,7 +57,7 @@ where
                 break;
             }
         };
-        info!("collect_in_span see item");
+        debug!("collect_in_span see item");
         match item {
             Ok(item) => match item {
                 StreamItem::DataItem(item) => match item {
@@ -70,7 +70,7 @@ where
                         }
                     }
                     RangeCompletableItem::Data(mut item) => {
-                        info!("collect_in_span sees {}", item.len());
+                        debug!("collect_in_span sees {}", item.len());
                         if collector.is_none() {
                             let c = item.new_collector();
                             collector = Some(c);
