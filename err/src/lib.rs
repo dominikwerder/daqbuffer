@@ -276,6 +276,12 @@ impl From<serde_json::Error> for Error {
     }
 }
 
+impl<T> From<async_channel::SendError<T>> for Error {
+    fn from(k: async_channel::SendError<T>) -> Self {
+        Self::with_msg(format!("{:?}", k))
+    }
+}
+
 impl From<async_channel::RecvError> for Error {
     fn from(k: async_channel::RecvError) -> Self {
         Self::with_msg(k.to_string())
