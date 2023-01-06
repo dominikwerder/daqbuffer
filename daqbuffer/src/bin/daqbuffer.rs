@@ -51,13 +51,23 @@ async fn go() -> Result<(), Error> {
     match opts.subcmd {
         SubCmd::Retrieval(subcmd) => {
             info!("daqbuffer {}", clap::crate_version!());
-            let mut config_file = File::open(subcmd.config).await?;
+            let mut config_file = File::open(&subcmd.config).await?;
             let mut buf = Vec::new();
             config_file.read_to_end(&mut buf).await?;
-            let node_config: NodeConfig = serde_json::from_slice(&buf)?;
-            let node_config: Result<NodeConfigCached, Error> = node_config.into();
-            let node_config = node_config?;
-            daqbufp2::run_node(node_config.clone()).await?;
+            if let Ok(cfg) = serde_json::from_slice::<NodeConfig>(&buf) {
+                let cfg: Result<NodeConfigCached, Error> = cfg.into();
+                let cfg = cfg?;
+                daqbufp2::run_node(cfg).await?;
+            } else if let Ok(cfg) = serde_yaml::from_slice::<NodeConfig>(&buf) {
+                let cfg: Result<NodeConfigCached, Error> = cfg.into();
+                let cfg = cfg?;
+                daqbufp2::run_node(cfg).await?;
+            } else {
+                return Err(Error::with_msg_no_trace(format!(
+                    "can not parse config at {}",
+                    subcmd.config
+                )));
+            }
         }
         SubCmd::Proxy(subcmd) => {
             info!("daqbuffer proxy {}", clap::crate_version!());

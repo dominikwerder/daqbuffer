@@ -59,7 +59,7 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
     let nt = |tag, res| {
         let fut = async {
             let body = hyper::body::to_bytes(res).await?;
-            info!("got a result {:?}", body);
+            //info!("got a result {:?}", body);
             let res: ChannelSearchResult = match serde_json::from_slice(&body) {
                 Ok(k) => k,
                 Err(_) => {

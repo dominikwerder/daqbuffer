@@ -52,7 +52,7 @@ pub async fn delay_io_medium() {
 pub async fn create_connection(db_config: &Database) -> Result<Client, Error> {
     // TODO use a common already running worker pool for these queries:
     let d = db_config;
-    let uri = format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, 5432, d.name);
+    let uri = format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, d.port, d.name);
     let (cl, conn) = tokio_postgres::connect(&uri, NoTls)
         .await
         .map_err(|e| format!("Can not connect to database: {e:?}"))

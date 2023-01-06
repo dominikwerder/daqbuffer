@@ -62,7 +62,7 @@ where
             Ready(Ok(())) => {
                 let n = buf.filled().len();
                 self.buf.wadv(n)?;
-                debug!("recv bytes {}", n);
+                trace!("recv bytes {}", n);
                 Ready(Ok(n))
             }
             Ready(Err(e)) => Ready(Err(e.into())),
@@ -131,7 +131,7 @@ where
             return Err(e);
         }
         self.inp_bytes_consumed += lentot as u64;
-        debug!("parsed frame well  len {}", len);
+        trace!("parsed frame well  len {}", len);
         let ret = InMemoryFrame {
             len,
             tyid,

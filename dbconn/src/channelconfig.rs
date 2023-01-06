@@ -81,8 +81,8 @@ pub async fn chconf_from_database(channel: &Channel, ncc: &NodeConfigCached) -> 
     if let Some(series) = channel.series() {
         let res = pgclient
             .query(
-                "select channel, scalar_type, shape_dims from series_by_channel where series = $1",
-                &[&(series as i64)],
+                "select channel, scalar_type, shape_dims from series_by_channel where facility = $1 and series = $2",
+                &[&channel.backend(), &(series as i64)],
             )
             .await
             .err_conv()?;
