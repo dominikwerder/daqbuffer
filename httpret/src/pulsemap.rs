@@ -55,6 +55,8 @@ async fn make_tables(node_config: &NodeConfigCached) -> Result<(), Error> {
     conn.execute(sql, &[]).await?;
     let sql = "alter table map_pulse_files add if not exists hostname text not null default ''";
     conn.execute(sql, &[]).await?;
+    let sql = "alter table map_pulse_files add if not exists ks int not null default 2";
+    conn.execute(sql, &[]).await?;
     let sql = "create index if not exists map_pulse_files_ix2 on map_pulse_files (hostname)";
     conn.execute(sql, &[]).await?;
     let sql = "set client_min_messages = 'notice'";
@@ -75,31 +77,77 @@ fn timer_channel_names() -> Vec<String> {
         .flatten()
         .collect();
     all.push("SIN-CVME-TIFGUN-EVR0:RX-PULSEID".into());
+    all.push("SAR-CVME-TIFALL4:EvtSet".into());
+    all.push("SAR-CVME-TIFALL5:EvtSet".into());
+    all.push("SAR-CVME-TIFALL6:EvtSet".into());
+    all.push("SAT-CVME-TIFALL5:EvtSet".into());
+    all.push("SAT-CVME-TIFALL6:EvtSet".into());
     all
 }
 
-async fn datafiles_for_channel(name: String, node_config: &NodeConfigCached) -> Result<Vec<PathBuf>, Error> {
-    let mut a = vec![];
+#[derive(Debug)]
+enum MapfilePath {
+    Scalar(PathBuf),
+    Index(PathBuf, PathBuf),
+}
+
+async fn datafiles_for_channel(name: String, node_config: &NodeConfigCached) -> Result<Vec<MapfilePath>, Error> {
+    let mut a = Vec::new();
     let sfc = node_config.node.sf_databuffer.as_ref().unwrap();
     let channel_path = sfc
         .data_base_path
         .join(format!("{}_2", sfc.ksprefix))
         .join("byTime")
         .join(&name);
-    let mut rd = tokio::fs::read_dir(&channel_path).await?;
-    while let Ok(Some(entry)) = rd.next_entry().await {
-        let mut rd2 = tokio::fs::read_dir(entry.path()).await?;
-        while let Ok(Some(e2)) = rd2.next_entry().await {
-            let mut rd3 = tokio::fs::read_dir(e2.path()).await?;
-            while let Ok(Some(e3)) = rd3.next_entry().await {
-                if e3.file_name().to_string_lossy().ends_with("_00000_Data") {
-                    //info!("path: {:?}", e3.path());
-                    a.push(e3.path());
+    match tokio::fs::read_dir(&channel_path).await {
+        Ok(mut rd) => {
+            while let Ok(Some(entry)) = rd.next_entry().await {
+                let mut rd2 = tokio::fs::read_dir(entry.path()).await?;
+                while let Ok(Some(e2)) = rd2.next_entry().await {
+                    let mut rd3 = tokio::fs::read_dir(e2.path()).await?;
+                    while let Ok(Some(e3)) = rd3.next_entry().await {
+                        if e3.file_name().to_string_lossy().ends_with("_00000_Data") {
+                            let x = MapfilePath::Scalar(e3.path());
+                            a.push(x);
+                        }
+                    }
                 }
             }
+            Ok(a)
         }
+        Err(e) => match e.kind() {
+            std::io::ErrorKind::NotFound => {
+                let channel_path = sfc
+                    .data_base_path
+                    .join(format!("{}_3", sfc.ksprefix))
+                    .join("byTime")
+                    .join(&name);
+                match tokio::fs::read_dir(&channel_path).await {
+                    Ok(mut rd) => {
+                        while let Ok(Some(entry)) = rd.next_entry().await {
+                            let mut rd2 = tokio::fs::read_dir(entry.path()).await?;
+                            while let Ok(Some(e2)) = rd2.next_entry().await {
+                                let mut rd3 = tokio::fs::read_dir(e2.path()).await?;
+                                while let Ok(Some(e3)) = rd3.next_entry().await {
+                                    if e3.file_name().to_string_lossy().ends_with("_00000_Data_Index") {
+                                        let fns = e3.file_name().to_string_lossy().to_string();
+                                        let path_data = e3.path().parent().unwrap().join(&fns[..fns.len() - 6]);
+                                        let x = MapfilePath::Index(e3.path(), path_data);
+                                        a.push(x);
+                                    }
+                                }
+                            }
+                        }
+                        Ok(a)
+                    }
+                    Err(e) => match e.kind() {
+                        _ => return Err(e)?,
+                    },
+                }
+            }
+            _ => return Err(e)?,
+        },
     }
-    Ok(a)
 }
 
 #[derive(Debug)]
@@ -125,6 +173,57 @@ async fn read_buf_or_eof(file: &mut File, buf: &mut BytesMut) -> Result<usize, E
         }
     }
     Ok(m)
+}
+
+async fn read_first_index_chunk(
+    mut file_index: File,
+    file_data: File,
+) -> Result<(Option<ChunkInfo>, File, File), Error> {
+    file_index.seek(SeekFrom::Start(0)).await?;
+    let mut buf = BytesMut::with_capacity(1024);
+    let n1 = read_buf_or_eof(&mut file_index, &mut buf).await?;
+    if n1 < 18 {
+        let msg = format!("can not even read 18 bytes from index file  n1 {}", n1);
+        warn!("{msg}");
+        return Ok((None, file_index, file_data));
+    }
+    let ver = buf.get_i16();
+    if ver != 0 {
+        return Err(Error::with_msg_no_trace(format!("unknown file version  ver {}", ver)));
+    }
+    let ts = buf.get_u64();
+    let pos = buf.get_u64();
+    trace!("read_first_index_chunk  ts {ts}  pos {pos}");
+    let (chunk, file_data) = read_chunk_at(file_data, pos, None).await?;
+    trace!("read_first_index_chunk successful: {chunk:?}");
+    Ok((Some(chunk), file_index, file_data))
+}
+
+async fn read_last_index_chunk(
+    mut file_index: File,
+    file_data: File,
+) -> Result<(Option<ChunkInfo>, File, File), Error> {
+    let flen = file_index.seek(SeekFrom::End(0)).await?;
+    let entry_len = 16;
+    let c1 = (flen - 2) / entry_len;
+    if c1 == 0 {
+        return Ok((None, file_index, file_data));
+    }
+    let p2 = 2 + (c1 - 1) * entry_len;
+    file_index.seek(SeekFrom::Start(p2)).await?;
+    let mut buf = BytesMut::with_capacity(1024);
+    let n1 = read_buf_or_eof(&mut file_index, &mut buf).await?;
+    if n1 < 16 {
+        let msg = format!("can not even read 16 bytes from index file  n1 {}", n1);
+        warn!("{msg}");
+        return Ok((None, file_index, file_data));
+    }
+    let ts = buf.get_u64();
+    let pos = buf.get_u64();
+    trace!("read_last_index_chunk  ts {ts}  pos {pos}");
+    let (chunk, file_data) = read_chunk_at(file_data, pos, None).await?;
+    trace!("read_last_index_chunk successful: {chunk:?}");
+    Ok((Some(chunk), file_index, file_data))
 }
 
 async fn read_first_chunk(mut file: File) -> Result<(Option<ChunkInfo>, File), Error> {
@@ -195,27 +294,29 @@ async fn read_last_chunk(mut file: File, pos_first: u64, chunk_len: u64) -> Resu
     Ok((Some(ret), file))
 }
 
-async fn read_chunk_at(mut file: File, pos: u64, chunk_len: u64) -> Result<(ChunkInfo, File), Error> {
+async fn read_chunk_at(mut file: File, pos: u64, chunk_len: Option<u64>) -> Result<(ChunkInfo, File), Error> {
     file.seek(SeekFrom::Start(pos)).await?;
     let mut buf = BytesMut::with_capacity(1024);
     let n1 = file.read_buf(&mut buf).await?;
     if n1 < 4 + 3 * 8 {
         return Err(Error::with_msg_no_trace(format!(
-            "can not read enough from datafile  n1 {}",
+            "read_chunk_at can not read enough from datafile  n1 {}",
             n1
         )));
     }
     let clen = buf.get_u32() as u64;
-    if clen != chunk_len {
-        return Err(Error::with_msg_no_trace(format!(
-            "read_chunk_at  mismatch: pos {}  clen {}  chunk_len {}",
-            pos, clen, chunk_len
-        )));
+    if let Some(chunk_len) = chunk_len {
+        if clen != chunk_len {
+            return Err(Error::with_msg_no_trace(format!(
+                "read_chunk_at  mismatch: pos {}  clen {}  chunk_len {}",
+                pos, clen, chunk_len
+            )));
+        }
     }
     let _ttl = buf.get_u64();
     let ts = buf.get_u64();
     let pulse = buf.get_u64();
-    //info!("data chunk len {}  ts {}  pulse {}", clen, ts, pulse);
+    info!("data chunk len {}  ts {}  pulse {}", clen, ts, pulse);
     let ret = ChunkInfo {
         pos,
         len: clen,
@@ -256,43 +357,88 @@ impl IndexFullHttpFunction {
         let files = datafiles_for_channel(channel_name.clone(), node_config).await?;
         msg = format!("{}\n{:?}", msg, files);
         let mut latest_pair = (0, 0);
-        for path in files {
-            let splitted: Vec<_> = path.to_str().unwrap().split("/").collect();
-            let timebin: u64 = splitted[splitted.len() - 3].parse()?;
-            let split: u64 = splitted[splitted.len() - 2].parse()?;
-            if false {
-                info!(
-                    "hostname {}  timebin {}  split {}",
-                    node_config.node.host, timebin, split
-                );
-            }
-            let file = tokio::fs::OpenOptions::new().read(true).open(&path).await?;
-            let (r2, file) = read_first_chunk(file).await?;
-            msg = format!("{}\n{:?}", msg, r2);
-            if let Some(r2) = r2 {
-                let (r3, _file) = read_last_chunk(file, r2.pos, r2.len).await?;
-                msg = format!("{}\n{:?}", msg, r3);
-                if let Some(r3) = r3 {
-                    if r3.pulse > latest_pair.0 {
-                        latest_pair = (r3.pulse, r3.ts);
+        for mp in files {
+            match mp {
+                MapfilePath::Scalar(path) => {
+                    let splitted: Vec<_> = path.to_str().unwrap().split("/").collect();
+                    let timebin: u64 = splitted[splitted.len() - 3].parse()?;
+                    let split: u64 = splitted[splitted.len() - 2].parse()?;
+                    if false {
+                        info!(
+                            "hostname {}  timebin {}  split {}",
+                            node_config.node.host, timebin, split
+                        );
                     }
-                    // TODO remove update of static columns when older clients are removed.
-                    let sql = "insert into map_pulse_files (channel, split, timebin, pulse_min, pulse_max, hostname) values ($1, $2, $3, $4, $5, $6) on conflict (channel, split, timebin) do update set pulse_min = $4, pulse_max = $5, upc1 = map_pulse_files.upc1 + 1, hostname = $6";
-                    conn.execute(
-                        sql,
-                        &[
-                            &channel_name,
-                            &(split as i32),
-                            &(timebin as i32),
-                            &(r2.pulse as i64),
-                            &(r3.pulse as i64),
-                            &node_config.node.host,
-                        ],
-                    )
-                    .await?;
+                    let file = tokio::fs::OpenOptions::new().read(true).open(&path).await?;
+                    let (r2, file) = read_first_chunk(file).await?;
+                    msg = format!("{}\n{:?}", msg, r2);
+                    if let Some(r2) = r2 {
+                        let (r3, _file) = read_last_chunk(file, r2.pos, r2.len).await?;
+                        msg = format!("{}\n{:?}", msg, r3);
+                        if let Some(r3) = r3 {
+                            if r3.pulse > latest_pair.0 {
+                                latest_pair = (r3.pulse, r3.ts);
+                            }
+                            // TODO remove update of static columns when older clients are removed.
+                            let sql = "insert into map_pulse_files (channel, split, timebin, pulse_min, pulse_max, hostname) values ($1, $2, $3, $4, $5, $6) on conflict (channel, split, timebin) do update set pulse_min = $4, pulse_max = $5, upc1 = map_pulse_files.upc1 + 1, hostname = $6";
+                            conn.execute(
+                                sql,
+                                &[
+                                    &channel_name,
+                                    &(split as i32),
+                                    &(timebin as i32),
+                                    &(r2.pulse as i64),
+                                    &(r3.pulse as i64),
+                                    &node_config.node.host,
+                                ],
+                            )
+                            .await?;
+                        }
+                    } else {
+                        warn!("could not find first event chunk in {path:?}");
+                    }
                 }
-            } else {
-                warn!("could not find first event chunk in {path:?}");
+                MapfilePath::Index(path_index, path_data) => {
+                    trace!("Index {path_index:?}");
+                    let splitted: Vec<_> = path_index.to_str().unwrap().split("/").collect();
+                    let timebin: u64 = splitted[splitted.len() - 3].parse()?;
+                    let split: u64 = splitted[splitted.len() - 2].parse()?;
+                    if false {
+                        info!(
+                            "hostname {}  timebin {}  split {}",
+                            node_config.node.host, timebin, split
+                        );
+                    }
+                    let file_index = tokio::fs::OpenOptions::new().read(true).open(&path_index).await?;
+                    let file_data = tokio::fs::OpenOptions::new().read(true).open(&path_data).await?;
+                    let (r2, file_index, file_data) = read_first_index_chunk(file_index, file_data).await?;
+                    msg = format!("{}\n{:?}", msg, r2);
+                    if let Some(r2) = r2 {
+                        let (r3, _file_index, _file_data) = read_last_index_chunk(file_index, file_data).await?;
+                        msg = format!("{}\n{:?}", msg, r3);
+                        if let Some(r3) = r3 {
+                            if r3.pulse > latest_pair.0 {
+                                latest_pair = (r3.pulse, r3.ts);
+                            }
+                            // TODO remove update of static columns when older clients are removed.
+                            let sql = "insert into map_pulse_files (channel, split, timebin, pulse_min, pulse_max, hostname, ks) values ($1, $2, $3, $4, $5, $6, 3) on conflict (channel, split, timebin) do update set pulse_min = $4, pulse_max = $5, upc1 = map_pulse_files.upc1 + 1, hostname = $6";
+                            conn.execute(
+                                sql,
+                                &[
+                                    &channel_name,
+                                    &(split as i32),
+                                    &(timebin as i32),
+                                    &(r2.pulse as i64),
+                                    &(r3.pulse as i64),
+                                    &node_config.node.host,
+                                ],
+                            )
+                            .await?;
+                        }
+                    } else {
+                        warn!("could not find first event chunk in {path_index:?}");
+                    }
+                }
             }
         }
         info!("latest for {channel_name}  {latest_pair:?}");
@@ -449,7 +595,7 @@ async fn search_pulse(pulse: u64, path: &Path) -> Result<Option<u64>, Error> {
                     return Ok(None);
                 }
                 let m = p1 + d / chunk_len / 2 * chunk_len;
-                let (z, f2) = read_chunk_at(f1, m, chunk_len).await?;
+                let (z, f2) = read_chunk_at(f1, m, Some(chunk_len)).await?;
                 f1 = f2;
                 if z.pulse == pulse {
                     return Ok(Some(z.ts));
@@ -621,7 +767,7 @@ impl MapPulseLocalHttpFunction {
             .parse()
             .map_err(|_| Error::with_public_msg_no_trace(format!("can not understand pulse map url: {}", req.uri())))?;
         let conn = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
-        let sql = "select channel, hostname, timebin, split from map_pulse_files where hostname = $1 and pulse_min <= $2 and (pulse_max >= $2 or closed = 0)";
+        let sql = "select channel, hostname, timebin, split, ks from map_pulse_files where hostname = $1 and pulse_min <= $2 and (pulse_max >= $2 or closed = 0)";
         let rows = conn.query(sql, &[&node_config.node.host, &(pulse as i64)]).await?;
         let cands: Vec<_> = rows
             .iter()
@@ -630,7 +776,8 @@ impl MapPulseLocalHttpFunction {
                 let hostname: String = r.try_get(1).unwrap_or("nohost".into());
                 let timebin: i32 = r.try_get(2).unwrap_or(0);
                 let split: i32 = r.try_get(3).unwrap_or(0);
-                (channel, hostname, timebin as u32, split as u32)
+                let ks: i32 = r.try_get(4).unwrap_or(0);
+                (channel, hostname, timebin as u32, split as u32, ks as u32)
             })
             .collect();
         //let mut msg = String::new();
@@ -638,8 +785,7 @@ impl MapPulseLocalHttpFunction {
         //write!(&mut msg, "cands: {:?}\n", cands)?;
         let mut tss = Vec::new();
         let mut channels = Vec::new();
-        for (ch, _, tb, sp) in cands {
-            let ks = 2;
+        for (ch, _, tb, sp, ks) in cands {
             match disk::paths::data_path_tb(ks, &ch, tb, 86400000, sp, &node_config.node) {
                 Ok(path) => {
                     //write!(&mut msg, "data_path_tb:  {:?}\n", path)?;

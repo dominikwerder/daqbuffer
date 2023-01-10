@@ -195,7 +195,7 @@ async fn events_conn_handler_inner_try(
             })
             .then(|(item, n, d)| async move {
                 if let Some(d) = d {
-                    debug!("sleep {} times {:?}", n, d);
+                    warn!("sleep {} times {:?}", n, d);
                     tokio::time::sleep(d).await;
                 }
                 item

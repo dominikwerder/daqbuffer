@@ -15,3 +15,4 @@ impl<T, E: Convable> ErrConv<T> for Result<T, E> {
 
 impl Convable for http::Error {}
 impl Convable for hyper::Error {}
+impl Convable for serde_yaml::Error {}

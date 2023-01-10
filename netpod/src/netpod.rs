@@ -568,8 +568,8 @@ pub struct NodeStatus {
     pub is_archiver_appliance: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub database_size: Option<Result<u64, String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub table_sizes: Option<Result<TableSizes, Error>>,
+    //#[serde(default, skip_serializing_if = "Option::is_none")]
+    //pub table_sizes: Option<Result<TableSizes, Error>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub archiver_appliance_status: Option<NodeStatusArchiverAppliance>,
     #[serde(default, skip_serializing_if = "VecDeque::is_empty")]
@@ -1999,11 +1999,17 @@ pub struct ProxyBackend {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StatusSub {
+    pub url: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProxyConfig {
     pub name: String,
     pub listen: String,
     pub port: u16,
     pub backends: Vec<ProxyBackend>,
+    pub status_subs: Vec<StatusSub>,
 }
 
 pub trait HasBackend {

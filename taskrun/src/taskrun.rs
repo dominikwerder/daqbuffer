@@ -100,11 +100,15 @@ fn tracing_init_inner() -> Result<(), Error> {
         time::format_description::parse(fmtstr).map_err(|e| format!("{e}"))?,
     );
     if true {
+        let filter = tracing_subscriber::EnvFilter::builder()
+            .with_default_directive(tracing::metadata::LevelFilter::INFO.into())
+            .from_env()
+            .map_err(|e| Error::with_msg_no_trace(format!("can not build tracing env filter {e}")))?;
         let fmt_layer = tracing_subscriber::fmt::Layer::new()
             .with_timer(timer)
             .with_target(true)
             .with_thread_names(true)
-            .with_filter(tracing_subscriber::EnvFilter::from_default_env());
+            .with_filter(filter);
         let z = tracing_subscriber::registry().with(fmt_layer);
         #[cfg(CONSOLE)]
         {

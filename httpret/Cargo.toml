@@ -1,6 +1,6 @@
 [package]
 name = "httpret"
-version = "0.3.5"
+version = "0.3.6"
 authors = ["Dominik Werder <dominik.werder@gmail.com>"]
 edition = "2021"
 

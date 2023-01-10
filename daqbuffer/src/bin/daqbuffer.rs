@@ -54,11 +54,13 @@ async fn go() -> Result<(), Error> {
             let mut config_file = File::open(&subcmd.config).await?;
             let mut buf = Vec::new();
             config_file.read_to_end(&mut buf).await?;
-            if let Ok(cfg) = serde_json::from_slice::<NodeConfig>(&buf) {
+            if let Ok(cfg) = serde_json::from_slice::<NodeConfig>(b"nothing") {
+                info!("Parsed json config from {}", subcmd.config);
                 let cfg: Result<NodeConfigCached, Error> = cfg.into();
                 let cfg = cfg?;
                 daqbufp2::run_node(cfg).await?;
             } else if let Ok(cfg) = serde_yaml::from_slice::<NodeConfig>(&buf) {
+                info!("Parsed yaml config from {}", subcmd.config);
                 let cfg: Result<NodeConfigCached, Error> = cfg.into();
                 let cfg = cfg?;
                 daqbufp2::run_node(cfg).await?;
@@ -71,10 +73,12 @@ async fn go() -> Result<(), Error> {
         }
         SubCmd::Proxy(subcmd) => {
             info!("daqbuffer proxy {}", clap::crate_version!());
-            let mut config_file = File::open(subcmd.config).await?;
+            let mut config_file = File::open(&subcmd.config).await?;
             let mut buf = Vec::new();
             config_file.read_to_end(&mut buf).await?;
-            let proxy_config: ProxyConfig = serde_json::from_slice(&buf)?;
+            let proxy_config: ProxyConfig =
+                serde_yaml::from_slice(&buf).map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
+            info!("Parsed yaml config from {}", subcmd.config);
             daqbufp2::run_proxy(proxy_config.clone()).await?;
         }
         SubCmd::Client(client) => match client.client_type {

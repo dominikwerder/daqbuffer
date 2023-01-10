@@ -186,14 +186,14 @@ impl StatusNodesRecursive {
         let mut bodies = Vec::new();
         let mut urls = Vec::new();
         let mut tags = Vec::new();
-        for backend in &proxy_config.backends {
-            match Url::parse(&format!("{}{}", backend.url, path)) {
+        for sub in &proxy_config.status_subs {
+            match Url::parse(&format!("{}{}", sub.url, path)) {
                 Ok(url) => {
                     bodies.push(None);
-                    tags.push(url.to_string());
+                    tags.push(sub.url.to_string());
                     urls.push(url);
                 }
-                Err(e) => return Err(Error::with_msg_no_trace(format!("parse error for: {backend:?}  {e:?}"))),
+                Err(e) => return Err(Error::with_msg_no_trace(format!("parse error for: {sub:?}  {e:?}"))),
             }
         }
         let nt = |tag, res| {
@@ -246,7 +246,6 @@ impl StatusNodesRecursive {
                 is_archiver_engine: false,
                 is_archiver_appliance: false,
                 database_size: None,
-                table_sizes: None,
                 archiver_appliance_status: None,
                 subs,
             };
