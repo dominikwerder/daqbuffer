@@ -451,10 +451,7 @@ where
                 if let Some(range) = &range {
                     Some(IsoDateTime::from_u64(range.beg + netpod::timeunits::SEC))
                 } else {
-                    // TODO tricky: should yield again the original range begin? Leads to recursion.
-                    // Range begin plus delta?
-                    // Anyway, we don't have the range begin here.
-                    warn!("timed out without any result, can not yield a continue-at");
+                    warn!("can not determine continue-at parameters");
                     None
                 }
             }

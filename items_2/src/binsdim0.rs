@@ -256,7 +256,7 @@ pub struct BinsDim0CollectedResult<NTY> {
     #[serde(rename = "avgs")]
     avgs: VecDeque<f32>,
     #[serde(rename = "rangeFinal", default, skip_serializing_if = "crate::bool_is_false")]
-    finalised_range: bool,
+    range_final: bool,
     #[serde(rename = "timedOut", default, skip_serializing_if = "crate::bool_is_false")]
     timed_out: bool,
     #[serde(rename = "missingBins", default, skip_serializing_if = "Zero::is_zero")]
@@ -309,7 +309,7 @@ impl<NTY> BinsDim0CollectedResult<NTY> {
     }
 
     pub fn range_final(&self) -> bool {
-        self.finalised_range
+        self.range_final
     }
 
     pub fn missing_bins(&self) -> u32 {
@@ -343,7 +343,7 @@ impl<NTY: ScalarOps> ToJsonResult for BinsDim0CollectedResult<NTY> {
 #[derive(Debug)]
 pub struct BinsDim0Collector<NTY> {
     timed_out: bool,
-    range_complete: bool,
+    range_final: bool,
     vals: BinsDim0<NTY>,
 }
 
@@ -351,7 +351,7 @@ impl<NTY> BinsDim0Collector<NTY> {
     pub fn new() -> Self {
         Self {
             timed_out: false,
-            range_complete: false,
+            range_final: false,
             vals: BinsDim0::<NTY>::empty(),
         }
     }
@@ -379,7 +379,7 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
     }
 
     fn set_range_complete(&mut self) {
-        self.range_complete = true;
+        self.range_final = true;
     }
 
     fn set_timed_out(&mut self) {
@@ -393,16 +393,23 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
             0
         };
         let bin_count = self.vals.ts1s.len() as u32;
-        let (missing_bins, continue_at, finished_at) = if bin_count < bin_count_exp {
-            match self.vals.ts2s.back() {
-                Some(&k) => {
-                    let missing_bins = bin_count_exp - bin_count;
-                    let continue_at = IsoDateTime(Utc.timestamp_nanos(k as i64));
-                    let u = k + (k - self.vals.ts1s.back().unwrap()) * missing_bins as u64;
-                    let finished_at = IsoDateTime(Utc.timestamp_nanos(u as i64));
-                    (missing_bins, Some(continue_at), Some(finished_at))
+        let (missing_bins, continue_at, finished_at) = if self.range_final {
+            if bin_count < bin_count_exp {
+                match self.vals.ts2s.back() {
+                    Some(&k) => {
+                        let missing_bins = bin_count_exp - bin_count;
+                        let continue_at = IsoDateTime(Utc.timestamp_nanos(k as i64));
+                        let u = k + (k - self.vals.ts1s.back().unwrap()) * missing_bins as u64;
+                        let finished_at = IsoDateTime(Utc.timestamp_nanos(u as i64));
+                        (missing_bins, Some(continue_at), Some(finished_at))
+                    }
+                    None => {
+                        warn!("can not determine continue-at parameters");
+                        (0, None, None)
+                    }
                 }
-                None => Err(Error::with_msg("partial_content but no bin in result"))?,
+            } else {
+                (0, None, None)
             }
         } else {
             (0, None, None)
@@ -429,7 +436,7 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
             mins,
             maxs,
             avgs,
-            finalised_range: self.range_complete,
+            range_final: self.range_final,
             timed_out: self.timed_out,
             missing_bins,
             continue_at,
@@ -769,6 +776,11 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
     }
 
     fn set_range_complete(&mut self) {}
+
+    fn empty(&self) -> Box<dyn items_0::TimeBinned> {
+        let ret = <BinsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output::empty();
+        Box::new(ret)
+    }
 }
 
 impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {

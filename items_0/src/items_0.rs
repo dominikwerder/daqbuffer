@@ -110,6 +110,8 @@ pub trait TimeBinner: Send {
     fn cycle(&mut self);
 
     fn set_range_complete(&mut self);
+
+    fn empty(&self) -> Box<dyn TimeBinned>;
 }
 
 // TODO remove the Any bound. Factor out into custom AsAny trait.

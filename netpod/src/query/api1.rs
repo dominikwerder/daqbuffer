@@ -286,6 +286,10 @@ impl Api1Query {
     pub fn events_max(&self) -> Option<u64> {
         self.events_max
     }
+
+    pub fn set_decompress(&mut self, v: bool) {
+        self.decompress = v;
+    }
 }
 
 #[test]

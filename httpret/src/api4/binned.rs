@@ -18,6 +18,7 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
     debug!("httpret  plain_events_json  req: {:?}", req);
     let (_head, _body) = req.into_parts();
     let query = BinnedQuery::from_url(&url).map_err(|e| {
+        error!("binned_json: {e:?}");
         let msg = format!("can not parse query: {}", e.msg());
         e.add_public_msg(msg)
     })?;
@@ -56,6 +57,13 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
             .map_err(Error::from)
             .map_err(|e| e.add_public_msg(format!("Can not parse query url")))?
     };
+    if req
+        .uri()
+        .path_and_query()
+        .map_or(false, |x| x.as_str().contains("DOERR"))
+    {
+        Err(Error::with_msg_no_trace("hidden message").add_public_msg("PublicMessage"))?;
+    }
     if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
         Ok(binned_json(url, req, node_config).await?)
     } else if accept == APP_OCTET {
@@ -86,7 +94,10 @@ impl BinnedHandler {
         }
         match binned(req, node_config).await {
             Ok(ret) => Ok(ret),
-            Err(e) => Ok(e.to_public_response()),
+            Err(e) => {
+                warn!("BinnedHandler handle sees: {e}");
+                Ok(e.to_public_response())
+            }
         }
     }
 }

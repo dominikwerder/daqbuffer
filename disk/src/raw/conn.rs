@@ -353,6 +353,7 @@ pub async fn make_event_blobs_pipe(
     evq: &PlainEventsQuery,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>, Error> {
+    info!("make_event_blobs_pipe {evq:?}");
     if false {
         match dbconn::channel_exists(evq.channel(), &node_config).await {
             Ok(_) => (),

@@ -1,3 +1,5 @@
+pub mod caioclookup;
+
 use crate::bodystream::ToPublicResponse;
 use crate::err::Error;
 use crate::gather::gather_get_json_generic;
@@ -169,7 +171,7 @@ impl StatusNodesRecursive {
                 Ok(ret)
             }
             Err(e) => {
-                error!("{e}");
+                error!("StatusNodesRecursive sees: {e}");
                 let ret = crate::bodystream::ToPublicResponse::to_public_response(&e);
                 Ok(ret)
             }

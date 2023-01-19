@@ -611,7 +611,6 @@ pub struct DataApiPython3DataStream {
     chan_stream: Option<Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>>,
     config_fut: Option<Pin<Box<dyn Future<Output = Result<Config, Error>> + Send>>>,
     disk_io_tune: DiskIoTune,
-    #[allow(unused)]
     do_decompress: bool,
     #[allow(unused)]
     event_count: u64,
@@ -696,12 +695,13 @@ impl DataApiPython3DataStream {
                     compression,
                 };
                 let h = serde_json::to_string(&head)?;
-                debug!("sending channel header {}", h);
+                info!("sending channel header {}", h);
                 let l1 = 1 + h.as_bytes().len() as u32;
                 d.put_u32(l1);
                 d.put_u8(0);
-                debug!("header frame byte len {}", 4 + 1 + h.as_bytes().len());
+                info!("header frame byte len {}", 4 + 1 + h.as_bytes().len());
                 d.extend_from_slice(h.as_bytes());
+                d.put_u32(l1);
                 *header_out = true;
             }
             match &b.shapes[i1] {
@@ -712,6 +712,7 @@ impl DataApiPython3DataStream {
                     d.put_u64(b.tss[i1]);
                     d.put_u64(b.pulses[i1]);
                     d.put_slice(&b.blobs[i1]);
+                    d.put_u32(l1);
                 }
             }
             *count_events += 1;
@@ -806,7 +807,7 @@ impl Stream for DataApiPython3DataStream {
                                     evq.channel().clone(),
                                     &entry,
                                     evq.agg_kind().need_expand(),
-                                    true,
+                                    self.do_decompress,
                                     event_chunker_conf,
                                     self.disk_io_tune.clone(),
                                     &self.node_config,
@@ -937,8 +938,16 @@ impl Api1EventsBinaryHandler {
             .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?
             .to_owned();
         let body_data = hyper::body::to_bytes(body).await?;
-        let qu: Api1Query = match serde_json::from_slice(&body_data) {
-            Ok(qu) => qu,
+        if body_data.len() < 512 && body_data.first() == Some(&"{".as_bytes()[0]) {
+            info!("request body_data string: {}", String::from_utf8_lossy(&body_data));
+        }
+        let qu = match serde_json::from_slice::<Api1Query>(&body_data) {
+            Ok(mut qu) => {
+                if node_config.node_config.cluster.is_central_storage {
+                    qu.set_decompress(false);
+                }
+                qu
+            }
             Err(e) => {
                 error!("got body_data: {:?}", String::from_utf8_lossy(&body_data[..]));
                 error!("can not parse: {e}");
@@ -976,42 +985,43 @@ impl Api1EventsBinaryHandler {
         trace!("Api1Query  beg_date {:?}  end_date {:?}", beg_date, end_date);
         //let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         //let query = PlainEventsBinaryQuery::from_url(&url)?;
-        if accept != APP_OCTET && accept != ACCEPT_ALL {
+        if accept.contains(APP_OCTET) || accept.contains(ACCEPT_ALL) {
+            let beg = beg_date.timestamp() as u64 * SEC + beg_date.timestamp_subsec_nanos() as u64;
+            let end = end_date.timestamp() as u64 * SEC + end_date.timestamp_subsec_nanos() as u64;
+            let range = NanoRange { beg, end };
+            // TODO check for valid given backend name:
+            let backend = &node_config.node_config.cluster.backend;
+            let chans = qu
+                .channels()
+                .iter()
+                .map(|ch| Channel {
+                    backend: backend.into(),
+                    name: ch.name().into(),
+                    series: None,
+                })
+                .collect();
+            // TODO use a better stream protocol with built-in error delivery.
+            let status_id = super::status_board()?.new_status_id();
+            let s = DataApiPython3DataStream::new(
+                range.clone(),
+                chans,
+                qu.disk_io_tune().clone(),
+                qu.decompress(),
+                qu.events_max().unwrap_or(u64::MAX),
+                status_id.clone(),
+                node_config.clone(),
+            );
+            let s = s.instrument(span);
+            let body = BodyStream::wrapped(s, format!("Api1EventsBinaryHandler"));
+            let ret = response(StatusCode::OK).header("x-daqbuffer-request-id", status_id);
+            let ret = ret.body(body)?;
+            Ok(ret)
+        } else {
             // TODO set the public error code and message and return Err(e).
             let e = Error::with_public_msg(format!("Unsupported Accept: {:?}", accept));
             error!("{e:?}");
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
-        let beg = beg_date.timestamp() as u64 * SEC + beg_date.timestamp_subsec_nanos() as u64;
-        let end = end_date.timestamp() as u64 * SEC + end_date.timestamp_subsec_nanos() as u64;
-        let range = NanoRange { beg, end };
-        // TODO check for valid given backend name:
-        let backend = &node_config.node_config.cluster.backend;
-        let chans = qu
-            .channels()
-            .iter()
-            .map(|ch| Channel {
-                backend: backend.into(),
-                name: ch.name().into(),
-                series: None,
-            })
-            .collect();
-        // TODO use a better stream protocol with built-in error delivery.
-        let status_id = super::status_board()?.new_status_id();
-        let s = DataApiPython3DataStream::new(
-            range.clone(),
-            chans,
-            qu.disk_io_tune().clone(),
-            qu.decompress(),
-            qu.events_max().unwrap_or(u64::MAX),
-            status_id.clone(),
-            node_config.clone(),
-        );
-        let s = s.instrument(span);
-        let body = BodyStream::wrapped(s, format!("Api1EventsBinaryHandler"));
-        let ret = response(StatusCode::OK).header("x-daqbuffer-request-id", status_id);
-        let ret = ret.body(body)?;
-        Ok(ret)
     }
 }
 

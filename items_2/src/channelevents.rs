@@ -576,6 +576,13 @@ impl crate::timebin::TimeBinner for ChannelEventsTimeBinner {
             None => (),
         }
     }
+
+    fn empty(&self) -> Option<Self::Output> {
+        match self.binner.as_ref() {
+            Some(binner) => Some(binner.empty()),
+            None => None,
+        }
+    }
 }
 
 impl crate::timebin::TimeBinnable for ChannelEvents {

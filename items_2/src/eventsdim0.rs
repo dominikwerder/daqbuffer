@@ -13,6 +13,12 @@ use std::any::Any;
 use std::collections::VecDeque;
 use std::{fmt, mem};
 
+#[allow(unused)]
+macro_rules! trace2 {
+    (EN$($arg:tt)*) => ();
+    ($($arg:tt)*) => (trace!($($arg)*));
+}
+
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventsDim0<NTY> {
     pub tss: VecDeque<u64>,
@@ -286,10 +292,7 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
                 if let Some(range) = &range {
                     Some(IsoDateTime::from_u64(range.beg + netpod::timeunits::SEC))
                 } else {
-                    // TODO tricky: should yield again the original range begin? Leads to recursion.
-                    // Range begin plus delta?
-                    // Anyway, we don't have the range begin here.
-                    warn!("timed out without any result, can not yield a continue-at");
+                    warn!("can not determine continue-at parameters");
                     None
                 }
             }
@@ -820,13 +823,11 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
 
     fn ingest(&mut self, item: &dyn TimeBinnable) {
         let self_name = std::any::type_name::<Self>();
-        if true {
-            trace!(
-                "TimeBinner for EventsDim0TimeBinner   {:?}\n{:?}\n------------------------------------",
-                self.edges.iter().take(2).collect::<Vec<_>>(),
-                item
-            );
-        }
+        trace2!(
+            "TimeBinner for EventsDim0TimeBinner   {:?}\n{:?}\n------------------------------------",
+            self.edges.iter().take(2).collect::<Vec<_>>(),
+            item
+        );
         if item.len() == 0 {
             // Return already here, RangeOverlapInfo would not give much sense.
             return;
@@ -948,6 +949,11 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
 
     fn set_range_complete(&mut self) {
         self.range_complete = true;
+    }
+
+    fn empty(&self) -> Box<dyn items_0::TimeBinned> {
+        let ret = <EventsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output::empty();
+        Box::new(ret)
     }
 }
 

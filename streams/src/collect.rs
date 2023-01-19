@@ -57,7 +57,7 @@ where
                 break;
             }
         };
-        trace!("collect_in_span see item");
+        trace!("collect_in_span see item {item:?}");
         match item {
             Ok(item) => match item {
                 StreamItem::DataItem(item) => match item {

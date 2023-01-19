@@ -191,7 +191,7 @@ impl crate::merger::Mergeable for Box<dyn Events> {
 }
 
 // TODO rename to `Typed`
-pub trait TimeBinnableType: Send + Unpin + RangeOverlapInfo {
+pub trait TimeBinnableType: Send + Unpin + RangeOverlapInfo + Empty {
     type Output: TimeBinnableType;
     type Aggregator: TimeBinnableTypeAggregator<Input = Self, Output = Self::Output> + Send + Unpin;
     fn aggregator(range: NanoRange, bin_count: usize, do_time_weight: bool) -> Self::Aggregator;

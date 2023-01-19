@@ -81,11 +81,14 @@ where
     }
 
     fn process_item(&mut self, mut item: T) -> () {
+        trace!("process_item {item:?}");
         if self.binner.is_none() {
+            trace!("process_item call time_binner_new");
             let binner = item.time_binner_new(self.edges.clone(), self.do_time_weight);
             self.binner = Some(binner);
         }
         let binner = self.binner.as_mut().unwrap();
+        trace!("process_item call binner ingest");
         binner.ingest(&mut item);
     }
 }
@@ -198,9 +201,17 @@ where
                                     Ready(Some(Err(e)))
                                 }
                             } else {
-                                trace2!("no bins ready yet");
-                                self.done_data = true;
-                                continue;
+                                if let Some(bins) = binner.empty() {
+                                    trace!("at end of stream, bin count zero, return {bins:?}");
+                                    self.done_data = true;
+                                    Ready(Some(sitem_data(bins)))
+                                } else {
+                                    error!("at the end, no bins, can not get empty");
+                                    self.done_data = true;
+                                    let e = Error::with_msg_no_trace(format!("no bins"))
+                                        .add_public_msg(format!("unable to produce bins"));
+                                    Ready(Some(Err(e)))
+                                }
                             }
                         } else {
                             trace2!("input stream finished, still no binner");

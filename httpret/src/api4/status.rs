@@ -44,7 +44,7 @@ impl StatusNodesRecursive {
         let res = match res {
             Ok(res) => res,
             Err(e) => {
-                let e = Error::from(e);
+                let e = Error::from(e).add_public_msg("see timeout");
                 return Ok(crate::bodystream::ToPublicResponse::to_public_response(&e));
             }
         };
@@ -55,7 +55,7 @@ impl StatusNodesRecursive {
                 Ok(ret)
             }
             Err(e) => {
-                error!("{e}");
+                error!("StatusNodesRecursive sees: {e}");
                 let ret = crate::bodystream::ToPublicResponse::to_public_response(&e);
                 Ok(ret)
             }

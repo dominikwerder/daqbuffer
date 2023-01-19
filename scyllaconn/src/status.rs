@@ -41,7 +41,7 @@ async fn read_next_status_events(
         );
         // TODO use prepared!
         let cql = concat!(
-            "select ts_lsp, pulse, kind from channel_status where series = ? and ts_msp = ? and ts_lsp >= ? and ts_lsp < ?"
+            "select ts_lsp, kind from channel_status where series = ? and ts_msp = ? and ts_lsp >= ? and ts_lsp < ?"
         );
         scy.query(
             cql,
@@ -61,7 +61,7 @@ async fn read_next_status_events(
         );
         // TODO use prepared!
         let cql = concat!(
-            "select ts_lsp, pulse, kind from channel_status where series = ? and ts_msp = ? and ts_lsp < ? order by ts_lsp desc limit 1"
+            "select ts_lsp, kind from channel_status where series = ? and ts_msp = ? and ts_lsp < ? order by ts_lsp desc limit 1"
         );
         scy.query(cql, (series as i64, ts_msp as i64, ts_lsp_max as i64))
             .await
@@ -69,11 +69,10 @@ async fn read_next_status_events(
     };
     let mut last_before = None;
     let mut ret = VecDeque::new();
-    for row in res.rows_typed_or_empty::<(i64, i64, i32)>() {
+    for row in res.rows_typed_or_empty::<(i64, i32)>() {
         let row = row.err_conv()?;
         let ts = ts_msp + row.0 as u64;
-        let _pulse = row.1 as u64;
-        let kind = row.2 as u32;
+        let kind = row.1 as u32;
         // from netfetch::store::ChannelStatus
         let ev = ConnStatusEvent {
             ts,
@@ -132,9 +131,10 @@ impl ReadValues {
 
     fn next(&mut self) -> bool {
         if let Some(ts_msp) = self.ts_msps.pop_front() {
-            self.fut = self.make_fut(ts_msp, self.ts_msps.len() > 0);
+            self.fut = self.make_fut(ts_msp);
             true
         } else {
+            info!("no more msp");
             false
         }
     }
@@ -142,8 +142,8 @@ impl ReadValues {
     fn make_fut(
         &mut self,
         ts_msp: u64,
-        _has_more_msp: bool,
     ) -> Pin<Box<dyn Future<Output = Result<VecDeque<ConnStatusEvent>, Error>> + Send>> {
+        info!("make fut for {ts_msp}");
         let fut = read_next_status_events(
             self.series,
             ts_msp,
@@ -168,7 +168,6 @@ pub struct StatusStreamScylla {
     range: NanoRange,
     do_one_before_range: bool,
     scy: Arc<ScySession>,
-    ts_msps: VecDeque<u64>,
     outbuf: VecDeque<ConnStatusEvent>,
 }
 
@@ -180,7 +179,6 @@ impl StatusStreamScylla {
             range,
             do_one_before_range,
             scy,
-            ts_msps: VecDeque::new(),
             outbuf: VecDeque::new(),
         }
     }
@@ -202,13 +200,14 @@ impl Stream for StatusStreamScylla {
                     let mut ts_msps = VecDeque::new();
                     let mut ts = self.range.beg / CONNECTION_STATUS_DIV * CONNECTION_STATUS_DIV;
                     while ts < self.range.end {
+                        info!("Use ts {ts}");
                         ts_msps.push_back(ts);
                         ts += CONNECTION_STATUS_DIV;
                     }
                     let st = ReadValues::new(
                         self.series,
                         self.range.clone(),
-                        self.ts_msps.clone(),
+                        ts_msps,
                         true,
                         self.do_one_before_range,
                         self.scy.clone(),
@@ -227,7 +226,10 @@ impl Stream for StatusStreamScylla {
                         }
                         continue;
                     }
-                    Ready(Err(e)) => Ready(Some(Err(e))),
+                    Ready(Err(e)) => {
+                        error!("{e}");
+                        Ready(Some(Err(e)))
+                    }
                     Pending => Pending,
                 },
                 FrState::Done => Ready(None),

@@ -1,8 +1,8 @@
 use std::fmt;
 
 pub trait TimeBinner: fmt::Debug + Unpin {
-    type Input;
-    type Output;
+    type Input: fmt::Debug;
+    type Output: fmt::Debug;
 
     fn ingest(&mut self, item: &mut Self::Input);
 
@@ -20,6 +20,8 @@ pub trait TimeBinner: fmt::Debug + Unpin {
     /// to `push_in_progress` did not change the result count, as long as edges are left.
     /// The next call to `Self::bins_ready_count` must return one higher count than before.
     fn cycle(&mut self);
+
+    fn empty(&self) -> Option<Self::Output>;
 }
 
 pub trait TimeBinnable: fmt::Debug + Sized {

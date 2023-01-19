@@ -1030,7 +1030,7 @@ impl Shape {
     pub fn to_scylla_vec(&self) -> Vec<i32> {
         use Shape::*;
         match self {
-            Scalar => vec![],
+            Scalar => Vec::new(),
             Wave(n) => vec![*n as i32],
             Image(n, m) => vec![*n as i32, *m as i32],
         }
@@ -1870,11 +1870,12 @@ pub enum ReadSys {
     Read2,
     Read3,
     Read4,
+    Read5,
 }
 
 impl ReadSys {
     pub fn default() -> Self {
-        Self::TokioAsyncRead
+        Self::Read5
     }
 }
 
@@ -1888,6 +1889,8 @@ impl From<&str> for ReadSys {
             Self::Read3
         } else if k == "Read4" {
             Self::Read4
+        } else if k == "Read5" {
+            Self::Read5
         } else {
             Self::default()
         }

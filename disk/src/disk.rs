@@ -17,11 +17,12 @@ pub mod read3;
 pub mod read4;
 pub mod streamlog;
 
-use bytes::{Bytes, BytesMut};
+use bytes::Bytes;
+use bytes::BytesMut;
 use err::Error;
 use futures_core::Stream;
 use futures_util::future::FusedFuture;
-use futures_util::{FutureExt, TryFutureExt};
+use futures_util::{FutureExt, StreamExt, TryFutureExt};
 use netpod::log::*;
 use netpod::ReadSys;
 use netpod::{ChannelConfig, DiskIoTune, Node, Shape};
@@ -32,12 +33,15 @@ use std::mem;
 use std::os::unix::prelude::AsRawFd;
 use std::path::PathBuf;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::Context;
+use std::task::Poll;
 use std::time::Instant;
 use streams::dtflags::{ARRAY, BIG_ENDIAN, COMPRESSION, SHAPE};
 use streams::filechunkread::FileChunkRead;
-use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, ReadBuf};
+use tokio::fs::File;
+use tokio::fs::OpenOptions;
+use tokio::io::ReadBuf;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt};
 use tokio::sync::mpsc;
 
 // TODO transform this into a self-test or remove.
@@ -227,6 +231,55 @@ impl Stream for FileContentStream {
                 }
             };
         }
+    }
+}
+
+fn start_read5(file: File, tx: async_channel::Sender<Result<FileChunkRead, Error>>) -> Result<(), Error> {
+    let fut = async move {
+        info!("start_read5 BEGIN");
+        let mut file = file;
+        loop {
+            let mut buf = BytesMut::new();
+            buf.resize(1024 * 256, 0);
+            match file.read(&mut buf).await {
+                Ok(n) => {
+                    buf.truncate(n);
+                    let item = FileChunkRead::with_buf(buf);
+                    match tx.send(Ok(item)).await {
+                        Ok(()) => {}
+                        Err(_e) => break,
+                    }
+                }
+                Err(e) => match tx.send(Err(e.into())).await {
+                    Ok(()) => {}
+                    Err(_e) => break,
+                },
+            }
+        }
+        info!("start_read5 DONE");
+    };
+    tokio::task::spawn(fut);
+    Ok(())
+}
+
+pub struct FileContentStream5 {
+    rx: async_channel::Receiver<Result<FileChunkRead, Error>>,
+}
+
+impl FileContentStream5 {
+    pub fn new(file: File, _disk_io_tune: DiskIoTune) -> Result<Self, Error> {
+        let (tx, rx) = async_channel::bounded(32);
+        start_read5(file, tx)?;
+        let ret = Self { rx };
+        Ok(ret)
+    }
+}
+
+impl Stream for FileContentStream5 {
+    type Item = Result<FileChunkRead, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        self.rx.poll_next_unpin(cx)
     }
 }
 
@@ -620,6 +673,10 @@ pub fn file_content_stream(
         }
         ReadSys::Read4 => {
             let s = FileContentStream4::new(file, disk_io_tune);
+            Box::pin(s) as _
+        }
+        ReadSys::Read5 => {
+            let s = FileContentStream5::new(file, disk_io_tune).unwrap();
             Box::pin(s) as _
         }
     }

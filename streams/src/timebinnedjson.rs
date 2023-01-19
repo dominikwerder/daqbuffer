@@ -35,7 +35,8 @@ pub async fn timebinned_json(query: &BinnedQuery, chconf: &ChConf, cluster: &Clu
     );
     let inps = open_tcp_streams::<_, items_2::channelevents::ChannelEvents>(&rawquery, cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader:
-    let stream = { items_2::merger::Merger::new(inps, 128) };
+    netpod::log::info!("timebinned_json with empty item {empty:?}");
+    let stream = items_2::merger::Merger::new(inps, 128);
     let stream = stream::iter([empty]).chain(stream);
     let stream = Box::pin(stream);
     let stream = crate::timebin::TimeBinnedStream::new(stream, binned_range.edges(), do_time_weight, deadline);

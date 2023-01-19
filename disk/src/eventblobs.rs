@@ -47,6 +47,7 @@ impl EventChunkerMultifile {
         expand: bool,
         do_decompress: bool,
     ) -> Self {
+        info!("EventChunkerMultifile  do_decompress {do_decompress}");
         let file_chan = if expand {
             open_expanded_files(&range, &channel_config, node)
         } else {
@@ -186,8 +187,11 @@ impl Stream for EventChunkerMultifile {
                                         let item = LogItem::quick(Level::INFO, msg);
                                         Ready(Some(Ok(StreamItem::Log(item))))
                                     } else {
-                                        let msg = format!("handle OFS MERGED {:?}", ofs);
+                                        let msg = format!("handle OFS MERGED timebin {}", ofs.timebin);
                                         info!("{}", msg);
+                                        for x in &ofs.files {
+                                            info!("   path {:?}", x.path);
+                                        }
                                         let item = LogItem::quick(Level::INFO, msg);
                                         let mut chunkers = vec![];
                                         for of in ofs.files {

@@ -36,6 +36,7 @@ pub async fn plain_events_json(
         let stream = inp0.chain(inp1).chain(inp2);
         stream
     };
+    netpod::log::info!("plain_events_json with empty item {empty:?}");
     let stream = { items_2::merger::Merger::new(inps, 1) };
     let stream = stream::iter([empty]).chain(stream);
     let collected = crate::collect::collect(stream, deadline, events_max, Some(query.range().clone()), None).await?;

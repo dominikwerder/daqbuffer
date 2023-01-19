@@ -28,7 +28,10 @@ impl EventsHandler {
         }
         match plain_events(req, node_config).await {
             Ok(ret) => Ok(ret),
-            Err(e) => Ok(e.to_public_response()),
+            Err(e) => {
+                error!("EventsHandler sees {e}");
+                Ok(e.to_public_response())
+            }
         }
     }
 }
