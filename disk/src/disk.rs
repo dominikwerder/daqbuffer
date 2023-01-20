@@ -234,9 +234,13 @@ impl Stream for FileContentStream {
     }
 }
 
-fn start_read5(file: File, tx: async_channel::Sender<Result<FileChunkRead, Error>>) -> Result<(), Error> {
+fn start_read5(
+    file: File,
+    tx: async_channel::Sender<Result<FileChunkRead, Error>>,
+    disk_io_tune: DiskIoTune,
+) -> Result<(), Error> {
     let fut = async move {
-        info!("start_read5 BEGIN");
+        info!("start_read5 BEGIN {disk_io_tune:?}");
         let mut file = file;
         loop {
             let mut buf = BytesMut::new();
@@ -267,9 +271,9 @@ pub struct FileContentStream5 {
 }
 
 impl FileContentStream5 {
-    pub fn new(file: File, _disk_io_tune: DiskIoTune) -> Result<Self, Error> {
+    pub fn new(file: File, disk_io_tune: DiskIoTune) -> Result<Self, Error> {
         let (tx, rx) = async_channel::bounded(32);
-        start_read5(file, tx)?;
+        start_read5(file, tx, disk_io_tune)?;
         let ret = Self { rx };
         Ok(ret)
     }

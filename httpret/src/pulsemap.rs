@@ -85,7 +85,7 @@ fn timer_channel_names() -> Vec<String> {
     all
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum MapfilePath {
     Scalar(PathBuf),
     Index(PathBuf, PathBuf),
@@ -381,9 +381,17 @@ impl IndexFullHttpFunction {
     ) -> Result<String, Error> {
         let mut msg = format!("Index channel {}", channel_name);
         let files = datafiles_for_channel(channel_name.clone(), node_config).await?;
+        let mut files = files;
+        files.sort();
+        let files = files;
         msg = format!("{}\n{:?}", msg, files);
         let mut latest_pair = (0, 0);
-        for mp in files {
+        let n1 = files.len().min(3);
+        let m1 = files.len() - n1;
+        for ch in &files[m1..] {
+            info!("   index over  {:?}", ch);
+        }
+        for mp in files[m1..].into_iter() {
             match mp {
                 MapfilePath::Scalar(path) => {
                     let splitted: Vec<_> = path.to_str().unwrap().split("/").collect();
@@ -513,7 +521,7 @@ async fn update_task(do_abort: Arc<AtomicUsize>, node_config: NodeConfigCached) 
             info!("update_task  break A");
             break;
         }
-        tokio::time::sleep(Duration::from_millis(40000 + (0x3fff & commonio::tokio_rand().await?))).await;
+        tokio::time::sleep(Duration::from_millis(10000 + (0x3fff & commonio::tokio_rand().await?))).await;
         if do_abort.load(Ordering::SeqCst) != 0 {
             info!("update_task  break B");
             break;
@@ -523,11 +531,11 @@ async fn update_task(do_abort: Arc<AtomicUsize>, node_config: NodeConfigCached) 
             Ok(_) => {}
             Err(e) => {
                 error!("issue during last update task: {:?}", e);
-                tokio::time::sleep(Duration::from_millis(50000)).await;
+                tokio::time::sleep(Duration::from_millis(20000)).await;
             }
         }
         let ts2 = Instant::now();
-        let dt = ts2.duration_since(ts1).as_secs_f64() * 1e3;
+        let dt = ts2.duration_since(ts1).as_secs_f32() * 1e3;
         info!("Done update task  {:.0} ms", dt);
     }
     Ok(())
