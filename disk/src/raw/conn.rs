@@ -1,18 +1,42 @@
-use crate::decode::{BigEndian, Endianness, LittleEndian};
-use crate::decode::{EventValueFromBytes, EventValueShape, EventsDecodedStream, NumFromBytes};
-use crate::decode::{EventValuesDim0Case, EventValuesDim1Case};
+use crate::decode::BigEndian;
+use crate::decode::Endianness;
+use crate::decode::EventValueFromBytes;
+use crate::decode::EventValueShape;
+use crate::decode::EventValuesDim0Case;
+use crate::decode::EventValuesDim1Case;
+use crate::decode::EventsDecodedStream;
+use crate::decode::LittleEndian;
+use crate::decode::NumFromBytes;
 use crate::eventblobs::EventChunkerMultifile;
 use err::Error;
-use futures_util::{Stream, StreamExt};
+use futures_util::Stream;
+use futures_util::StreamExt;
 use items::eventfull::EventFull;
-use items::numops::{BoolNum, NumOps, StringNum};
-use items::{EventsNodeProcessor, Framable, RangeCompletableItem, Sitemty, StreamItem};
+use items::numops::BoolNum;
+use items::numops::NumOps;
+use items::numops::StringNum;
+use items::EventsNodeProcessor;
+use items::Framable;
+use items::RangeCompletableItem;
+use items::Sitemty;
+use items::StreamItem;
 use items_2::channelevents::ChannelEvents;
 use items_2::eventsdim0::EventsDim0;
 use netpod::log::*;
 use netpod::query::PlainEventsQuery;
-use netpod::{AggKind, ByteOrder, ByteSize, Channel, DiskIoTune, NanoRange, NodeConfigCached, ScalarType, Shape};
-use parse::channelconfig::{extract_matching_config_entry, read_local_config, ConfigEntry, MatchingConfigEntry};
+use netpod::AggKind;
+use netpod::ByteOrder;
+use netpod::ByteSize;
+use netpod::Channel;
+use netpod::DiskIoTune;
+use netpod::NanoRange;
+use netpod::NodeConfigCached;
+use netpod::ScalarType;
+use netpod::Shape;
+use parse::channelconfig::extract_matching_config_entry;
+use parse::channelconfig::read_local_config;
+use parse::channelconfig::ConfigEntry;
+use parse::channelconfig::MatchingConfigEntry;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use streams::eventchunker::EventChunkerConf;
@@ -322,6 +346,7 @@ pub fn make_remote_event_blobs_stream(
     disk_io_tune: DiskIoTune,
     node_config: &NodeConfigCached,
 ) -> Result<impl Stream<Item = Sitemty<EventFull>>, Error> {
+    info!("make_remote_event_blobs_stream");
     let shape = match entry.to_shape() {
         Ok(k) => k,
         Err(e) => return Err(e)?,
@@ -352,7 +377,7 @@ pub fn make_remote_event_blobs_stream(
 pub async fn make_event_blobs_pipe(
     evq: &PlainEventsQuery,
     node_config: &NodeConfigCached,
-) -> Result<Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>, Error> {
+) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
     info!("make_event_blobs_pipe {evq:?}");
     if false {
         match dbconn::channel_exists(evq.channel(), &node_config).await {
@@ -377,11 +402,12 @@ pub async fn make_event_blobs_pipe(
             DiskIoTune::default(),
             node_config,
         )?;
-        let s = event_blobs.map(|item: ItemType| Box::new(item) as Box<dyn Framable + Send>);
+        /*let s = event_blobs.map(|item: ItemType| Box::new(item) as Box<dyn Framable + Send>);
         //let s = tracing_futures::Instrumented::instrument(s, tracing::info_span!("make_event_blobs_pipe"));
         let pipe: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>;
         pipe = Box::pin(s);
-        pipe
+        pipe*/
+        Box::pin(event_blobs) as _
     } else {
         let event_blobs = make_local_event_blobs_stream(
             range.clone(),
@@ -393,11 +419,12 @@ pub async fn make_event_blobs_pipe(
             DiskIoTune::default(),
             node_config,
         )?;
-        let s = event_blobs.map(|item: ItemType| Box::new(item) as Box<dyn Framable + Send>);
+        /*let s = event_blobs.map(|item: ItemType| Box::new(item) as Box<dyn Framable + Send>);
         //let s = tracing_futures::Instrumented::instrument(s, tracing::info_span!("make_event_blobs_pipe"));
         let pipe: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>;
         pipe = Box::pin(s);
-        pipe
+        pipe*/
+        Box::pin(event_blobs) as _
     };
     Ok(pipe)
 }

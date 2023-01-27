@@ -1,7 +1,9 @@
 pub mod binsdim0;
 pub mod binsxbindim0;
 pub mod channelevents;
+pub mod databuffereventblobs;
 pub mod eventsdim0;
+pub mod eventsdim1;
 pub mod eventsxbindim0;
 pub mod merger;
 pub mod merger_cev;
@@ -222,23 +224,47 @@ pub fn empty_events_dyn_2(scalar_type: &ScalarType, shape: &Shape, agg_kind: &Ag
                     I64 => Box::new(K::<i64>::empty()),
                     F32 => Box::new(K::<f32>::empty()),
                     F64 => Box::new(K::<f64>::empty()),
+                    BOOL => Box::new(K::<bool>::empty()),
                     _ => {
-                        error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
+                        error!("TODO empty_events_dyn_2  {scalar_type:?}  {shape:?}  {agg_kind:?}");
                         err::todoval()
                     }
                 }
             }
             _ => {
-                error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
+                error!("TODO empty_events_dyn_2  {scalar_type:?}  {shape:?}  {agg_kind:?}");
                 err::todoval()
             }
         },
-        Shape::Wave(..) => {
-            error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
-            err::todoval()
-        }
+        Shape::Wave(..) => match agg_kind {
+            AggKind::Plain => {
+                use ScalarType::*;
+                type K<T> = eventsdim1::EventsDim1<T>;
+                match scalar_type {
+                    U8 => Box::new(K::<u8>::empty()),
+                    U16 => Box::new(K::<u16>::empty()),
+                    U32 => Box::new(K::<u32>::empty()),
+                    U64 => Box::new(K::<u64>::empty()),
+                    I8 => Box::new(K::<i8>::empty()),
+                    I16 => Box::new(K::<i16>::empty()),
+                    I32 => Box::new(K::<i32>::empty()),
+                    I64 => Box::new(K::<i64>::empty()),
+                    F32 => Box::new(K::<f32>::empty()),
+                    F64 => Box::new(K::<f64>::empty()),
+                    BOOL => Box::new(K::<bool>::empty()),
+                    _ => {
+                        error!("TODO empty_events_dyn_2  {scalar_type:?}  {shape:?}  {agg_kind:?}");
+                        err::todoval()
+                    }
+                }
+            }
+            _ => {
+                error!("TODO empty_events_dyn_2  {scalar_type:?}  {shape:?}  {agg_kind:?}");
+                err::todoval()
+            }
+        },
         Shape::Image(..) => {
-            error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
+            error!("TODO empty_events_dyn_2  {scalar_type:?}  {shape:?}  {agg_kind:?}");
             err::todoval()
         }
     }
@@ -273,10 +299,33 @@ pub fn empty_events_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggK
                 err::todoval()
             }
         },
-        Shape::Wave(..) => {
-            error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
-            err::todoval()
-        }
+        Shape::Wave(..) => match agg_kind {
+            AggKind::Plain => {
+                use ScalarType::*;
+                type K<T> = eventsdim1::EventsDim1<T>;
+                match scalar_type {
+                    U8 => Box::new(K::<u8>::empty()),
+                    U16 => Box::new(K::<u16>::empty()),
+                    U32 => Box::new(K::<u32>::empty()),
+                    U64 => Box::new(K::<u64>::empty()),
+                    I8 => Box::new(K::<i8>::empty()),
+                    I16 => Box::new(K::<i16>::empty()),
+                    I32 => Box::new(K::<i32>::empty()),
+                    I64 => Box::new(K::<i64>::empty()),
+                    F32 => Box::new(K::<f32>::empty()),
+                    F64 => Box::new(K::<f64>::empty()),
+                    BOOL => Box::new(K::<bool>::empty()),
+                    _ => {
+                        error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
+                        err::todoval()
+                    }
+                }
+            }
+            _ => {
+                error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
+                err::todoval()
+            }
+        },
         Shape::Image(..) => {
             error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
             err::todoval()

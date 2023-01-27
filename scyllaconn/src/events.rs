@@ -3,17 +3,13 @@ use err::Error;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
-use futures_util::StreamExt;
 use items_0::Empty;
 use items_0::Events;
 use items_0::WithLen;
 use items_2::channelevents::ChannelEvents;
-use items_2::channelevents::ConnStatus;
-use items_2::channelevents::ConnStatusEvent;
 use items_2::eventsdim0::EventsDim0;
+use items_2::eventsdim1::EventsDim1;
 use netpod::log::*;
-use netpod::query::ChannelStateEventsQuery;
-use netpod::timeunits::*;
 use netpod::NanoRange;
 use netpod::ScalarType;
 use netpod::Shape;
@@ -61,7 +57,7 @@ async fn find_ts_msp(
 macro_rules! read_next_scalar_values {
     ($fname:ident, $st:ty, $scyty:ty, $table_name:expr) => {
         async fn $fname(
-            series: i64,
+            series: u64,
             ts_msp: u64,
             range: NanoRange,
             fwd: bool,
@@ -97,7 +93,10 @@ macro_rules! read_next_scalar_values {
                     " where series = ? and ts_msp = ? and ts_lsp >= ? and ts_lsp < ?"
                 );
                 let res = scy
-                    .query(cql, (series, ts_msp as i64, ts_lsp_min as i64, ts_lsp_max as i64))
+                    .query(
+                        cql,
+                        (series as i64, ts_msp as i64, ts_lsp_min as i64, ts_lsp_max as i64),
+                    )
                     .await
                     .err_conv()?;
                 let mut last_before = None;
@@ -135,7 +134,7 @@ macro_rules! read_next_scalar_values {
                     " where series = ? and ts_msp = ? and ts_lsp < ? order by ts_lsp desc limit 1"
                 );
                 let res = scy
-                    .query(cql, (series, ts_msp as i64, ts_lsp_max as i64))
+                    .query(cql, (series as i64, ts_msp as i64, ts_lsp_max as i64))
                     .await
                     .err_conv()?;
                 let mut seen_before = false;
@@ -166,37 +165,107 @@ macro_rules! read_next_scalar_values {
 macro_rules! read_next_array_values {
     ($fname:ident, $st:ty, $scyty:ty, $table_name:expr) => {
         async fn $fname(
-            series: i64,
+            series: u64,
             ts_msp: u64,
-            _range: NanoRange,
-            _fwd: bool,
+            range: NanoRange,
+            fwd: bool,
             scy: Arc<ScySession>,
-        ) -> Result<EventsDim0<$st>, Error> {
-            // TODO change return type: so far EventsDim1 does not exist.
-            error!("TODO read_next_array_values");
-            err::todo();
-            if true {
-                return Err(Error::with_msg_no_trace("redo based on scalar case"));
-            }
+        ) -> Result<EventsDim1<$st>, Error> {
             type ST = $st;
-            type _SCYTY = $scyty;
-            trace!("{}  series {}  ts_msp {}", stringify!($fname), series, ts_msp);
-            let cql = concat!(
-                "select ts_lsp, pulse, value from ",
-                $table_name,
-                " where series = ? and ts_msp = ?"
-            );
-            let _res = scy.query(cql, (series, ts_msp as i64)).await.err_conv()?;
-            let ret = EventsDim0::<ST>::empty();
-            /*
-            for row in res.rows_typed_or_empty::<(i64, i64, Vec<SCYTY>)>() {
-                let row = row.err_conv()?;
-                let ts = ts_msp + row.0 as u64;
-                let pulse = row.1 as u64;
-                let value = row.2.into_iter().map(|x| x as ST).collect();
-                ret.push(ts, pulse, value);
+            type SCYTY = $scyty;
+            if ts_msp >= range.end {
+                warn!(
+                    "given ts_msp {}  >=  range.end {}  not necessary to read this",
+                    ts_msp, range.end
+                );
             }
-            */
+            if range.end > i64::MAX as u64 {
+                return Err(Error::with_msg_no_trace(format!("range.end overflows i64")));
+            }
+            let ret = if fwd {
+                let ts_lsp_min = if ts_msp < range.beg { range.beg - ts_msp } else { 0 };
+                let ts_lsp_max = if ts_msp < range.end { range.end - ts_msp } else { 0 };
+                trace!(
+                    "FWD  {}  ts_msp {}  ts_lsp_min {}  ts_lsp_max {}  beg {}  end {}  {}",
+                    stringify!($fname),
+                    ts_msp,
+                    ts_lsp_min,
+                    ts_lsp_max,
+                    range.beg,
+                    range.end,
+                    stringify!($table_name)
+                );
+                // TODO use prepared!
+                let cql = concat!(
+                    "select ts_lsp, pulse, value from ",
+                    $table_name,
+                    " where series = ? and ts_msp = ? and ts_lsp >= ? and ts_lsp < ?"
+                );
+                let res = scy
+                    .query(
+                        cql,
+                        (series as i64, ts_msp as i64, ts_lsp_min as i64, ts_lsp_max as i64),
+                    )
+                    .await
+                    .err_conv()?;
+                let mut last_before = None;
+                let mut ret = EventsDim1::<ST>::empty();
+                for row in res.rows_typed_or_empty::<(i64, i64, Vec<SCYTY>)>() {
+                    let row = row.err_conv()?;
+                    let ts = ts_msp + row.0 as u64;
+                    let pulse = row.1 as u64;
+                    let value = row.2.into_iter().map(|x| x as ST).collect();
+                    if ts >= range.end {
+                    } else if ts >= range.beg {
+                        ret.push(ts, pulse, value);
+                    } else {
+                        if last_before.is_none() {
+                            warn!("encounter event before range in forward read {ts}");
+                        }
+                        last_before = Some((ts, pulse, value));
+                    }
+                }
+                ret
+            } else {
+                let ts_lsp_max = if ts_msp < range.beg { range.beg - ts_msp } else { 0 };
+                trace!(
+                    "BCK  {}  ts_msp {}  ts_lsp_max {}  beg {}  end {}  {}",
+                    stringify!($fname),
+                    ts_msp,
+                    ts_lsp_max,
+                    range.beg,
+                    range.end,
+                    stringify!($table_name)
+                );
+                // TODO use prepared!
+                let cql = concat!(
+                    "select ts_lsp, pulse, value from ",
+                    $table_name,
+                    " where series = ? and ts_msp = ? and ts_lsp < ? order by ts_lsp desc limit 1"
+                );
+                let res = scy
+                    .query(cql, (series as i64, ts_msp as i64, ts_lsp_max as i64))
+                    .await
+                    .err_conv()?;
+                let mut seen_before = false;
+                let mut ret = EventsDim1::<ST>::empty();
+                for row in res.rows_typed_or_empty::<(i64, i64, Vec<SCYTY>)>() {
+                    let row = row.err_conv()?;
+                    let ts = ts_msp + row.0 as u64;
+                    let pulse = row.1 as u64;
+                    let value = row.2.into_iter().map(|x| x as ST).collect();
+                    if ts >= range.end {
+                    } else if ts < range.beg {
+                        ret.push(ts, pulse, value);
+                    } else {
+                        if !seen_before {
+                            warn!("encounter event before range in forward read {ts}");
+                        }
+                        seen_before = true;
+                    }
+                }
+                ret
+            };
             trace!("found in total {} events  ts_msp {}", ret.tss.len(), ts_msp);
             Ok(ret)
         }
@@ -214,7 +283,8 @@ read_next_scalar_values!(read_next_values_scalar_i64, i64, i64, "events_scalar_i
 read_next_scalar_values!(read_next_values_scalar_f32, f32, f32, "events_scalar_f32");
 read_next_scalar_values!(read_next_values_scalar_f64, f64, f64, "events_scalar_f64");
 
-read_next_array_values!(read_next_values_array_u16, u16, i16, "events_wave_u16");
+read_next_array_values!(read_next_values_array_u16, u16, i16, "events_array_u16");
+read_next_array_values!(read_next_values_array_bool, bool, bool, "events_array_bool");
 
 macro_rules! read_values {
     ($fname:ident, $self:expr, $ts_msp:expr) => {{
@@ -234,19 +304,20 @@ macro_rules! read_values {
 }
 
 struct ReadValues {
-    series: i64,
+    series: u64,
     scalar_type: ScalarType,
     shape: Shape,
     range: NanoRange,
     ts_msps: VecDeque<u64>,
     fwd: bool,
     fut: Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>>,
+    fut_done: bool,
     scy: Arc<ScySession>,
 }
 
 impl ReadValues {
     fn new(
-        series: i64,
+        series: u64,
         scalar_type: ScalarType,
         shape: Shape,
         range: NanoRange,
@@ -264,6 +335,7 @@ impl ReadValues {
             fut: Box::pin(futures_util::future::ready(Err(Error::with_msg_no_trace(
                 "future not initialized",
             )))),
+            fut_done: false,
             scy,
         };
         ret.next();
@@ -273,6 +345,7 @@ impl ReadValues {
     fn next(&mut self) -> bool {
         if let Some(ts_msp) = self.ts_msps.pop_front() {
             self.fut = self.make_fut(ts_msp);
+            self.fut_done = false;
             true
         } else {
             false
@@ -320,6 +393,10 @@ impl ReadValues {
             Shape::Wave(_) => match &self.scalar_type {
                 ScalarType::U16 => {
                     read_values!(read_next_values_array_u16, self, ts_msp)
+                }
+                ScalarType::BOOL => {
+                    info!("attempt to read bool");
+                    read_values!(read_next_values_array_bool, self, ts_msp)
                 }
                 _ => {
                     error!("TODO ReadValues add more types");
@@ -401,7 +478,7 @@ impl EventsStreamScylla {
         if let Some(msp) = self.ts_msp_b1.clone() {
             trace!("Try ReadBack1");
             let st = ReadValues::new(
-                self.series as i64,
+                self.series,
                 self.scalar_type.clone(),
                 self.shape.clone(),
                 self.range.clone(),
@@ -413,7 +490,7 @@ impl EventsStreamScylla {
         } else if self.ts_msps.len() >= 1 {
             trace!("Go straight for forward read");
             let st = ReadValues::new(
-                self.series as i64,
+                self.series,
                 self.scalar_type.clone(),
                 self.shape.clone(),
                 self.range.clone(),
@@ -433,7 +510,7 @@ impl EventsStreamScylla {
             self.outqueue.push_back(item);
             if self.ts_msps.len() > 0 {
                 let st = ReadValues::new(
-                    self.series as i64,
+                    self.series,
                     self.scalar_type.clone(),
                     self.shape.clone(),
                     self.range.clone(),
@@ -449,7 +526,7 @@ impl EventsStreamScylla {
             if let Some(msp) = self.ts_msp_b2.clone() {
                 trace!("Try ReadBack2");
                 let st = ReadValues::new(
-                    self.series as i64,
+                    self.series,
                     self.scalar_type.clone(),
                     self.shape.clone(),
                     self.range.clone(),
@@ -461,7 +538,7 @@ impl EventsStreamScylla {
             } else if self.ts_msps.len() >= 1 {
                 trace!("No 2nd back MSP, go for forward read");
                 let st = ReadValues::new(
-                    self.series as i64,
+                    self.series,
                     self.scalar_type.clone(),
                     self.shape.clone(),
                     self.range.clone(),
@@ -483,7 +560,7 @@ impl EventsStreamScylla {
         }
         if self.ts_msps.len() >= 1 {
             let st = ReadValues::new(
-                self.series as i64,
+                self.series,
                 self.scalar_type.clone(),
                 self.shape.clone(),
                 self.range.clone(),
@@ -534,10 +611,12 @@ impl Stream for EventsStreamScylla {
                 },
                 FrState::ReadBack1(ref mut st) => match st.fut.poll_unpin(cx) {
                     Ready(Ok(item)) => {
+                        st.fut_done = true;
                         self.back_1_done(item);
                         continue;
                     }
                     Ready(Err(e)) => {
+                        st.fut_done = true;
                         self.state = FrState::Done;
                         Ready(Some(Err(e)))
                     }
@@ -545,10 +624,12 @@ impl Stream for EventsStreamScylla {
                 },
                 FrState::ReadBack2(ref mut st) => match st.fut.poll_unpin(cx) {
                     Ready(Ok(item)) => {
+                        st.fut_done = true;
                         self.back_2_done(item);
                         continue;
                     }
                     Ready(Err(e)) => {
+                        st.fut_done = true;
                         self.state = FrState::Done;
                         Ready(Some(Err(e)))
                     }
@@ -556,6 +637,7 @@ impl Stream for EventsStreamScylla {
                 },
                 FrState::ReadValues(ref mut st) => match st.fut.poll_unpin(cx) {
                     Ready(Ok(item)) => {
+                        st.fut_done = true;
                         if !st.next() {
                             trace!("ReadValues exhausted");
                             self.state = FrState::Done;
@@ -565,65 +647,14 @@ impl Stream for EventsStreamScylla {
                         }
                         continue;
                     }
-                    Ready(Err(e)) => Ready(Some(Err(e))),
+                    Ready(Err(e)) => {
+                        st.fut_done = true;
+                        Ready(Some(Err(e)))
+                    }
                     Pending => Pending,
                 },
                 FrState::Done => Ready(None),
             };
         }
     }
-}
-
-async fn _channel_state_events(
-    evq: &ChannelStateEventsQuery,
-    scy: Arc<ScySession>,
-) -> Result<Pin<Box<dyn Stream<Item = Result<ConnStatusEvent, Error>> + Send>>, Error> {
-    let (tx, rx) = async_channel::bounded(8);
-    let evq = evq.clone();
-    let fut = async move {
-        let div = DAY;
-        let mut ts_msp = evq.range().beg / div * div;
-        loop {
-            let series = (evq
-                .channel()
-                .series()
-                .ok_or(Error::with_msg_no_trace(format!("series id not given"))))?;
-            let params = (series as i64, ts_msp as i64);
-            let mut res = scy
-                .query_iter(
-                    "select ts_lsp, kind from channel_status where series = ? and ts_msp = ?",
-                    params,
-                )
-                .await
-                .err_conv()?;
-            while let Some(row) = res.next().await {
-                let row = row.err_conv()?;
-                let (ts_lsp, kind): (i64, i32) = row.into_typed().err_conv()?;
-                let ts = ts_msp + ts_lsp as u64;
-                let kind = kind as u32;
-                if ts >= evq.range().beg && ts < evq.range().end {
-                    let status = match kind {
-                        1 => ConnStatus::Connect,
-                        2 => ConnStatus::Disconnect,
-                        _ => {
-                            let e = Error::with_msg_no_trace(format!("bad status kind {kind}"));
-                            let e2 = Error::with_msg_no_trace(format!("bad status kind {kind}"));
-                            let _ = tx.send(Err(e)).await;
-                            return Err(e2);
-                        }
-                    };
-                    let ev = ConnStatusEvent { ts, status };
-                    tx.send(Ok(ev)).await.map_err(|e| format!("{e}"))?;
-                }
-            }
-            ts_msp += div;
-            if ts_msp >= evq.range().end {
-                break;
-            }
-        }
-        Ok(())
-    };
-    // TODO join the task (better: rewrite as proper stream)
-    tokio::spawn(fut);
-    Ok(Box::pin(rx))
 }

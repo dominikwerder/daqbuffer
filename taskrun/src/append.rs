@@ -4,6 +4,8 @@ use std::fs;
 use std::io::{BufWriter, Read, Seek, SeekFrom, Stdin, Write};
 use std::path::{Path, PathBuf};
 
+const MAX_PER_FILE: u64 = 1024 * 1024 * 2;
+
 pub struct Buffer {
     buf: Vec<u8>,
     wp: usize,
@@ -97,7 +99,7 @@ impl Buffer {
 }
 
 fn parse_lines(buf: &[u8]) -> Result<(Vec<Cow<str>>, usize), Error> {
-    let mut ret = vec![];
+    let mut ret = Vec::new();
     let mut i1 = 0;
     let mut i2 = 0;
     while i1 < buf.len() {
@@ -134,9 +136,6 @@ fn parse_lines(buf: &[u8]) -> Result<(Vec<Cow<str>>, usize), Error> {
     Ok((ret, i2))
 }
 
-const MAX_PER_FILE: u64 = 1024 * 1024 * 2;
-const MAX_TOTAL_SIZE: u64 = 1024 * 1024 * 20;
-
 struct Fileinfo {
     path: PathBuf,
     name: String,
@@ -144,7 +143,7 @@ struct Fileinfo {
 }
 
 fn file_list(dir: &Path) -> Result<Vec<Fileinfo>, Error> {
-    let mut ret = vec![];
+    let mut ret = Vec::new();
     let rd = fs::read_dir(&dir)?;
     for e in rd {
         let e = e?;
@@ -191,7 +190,7 @@ fn next_file(dir: &Path) -> Result<BufWriter<fs::File>, Error> {
     Ok(ret)
 }
 
-pub fn append_inner(dirname: &str, mut stdin: Stdin) -> Result<(), Error> {
+pub fn append_inner(dirname: &str, total_size_max: u64, mut stdin: Stdin) -> Result<(), Error> {
     let mut bytes_written = 0;
     let dir = PathBuf::from(dirname);
     let mut fout = open_latest_or_new(&dir)?;
@@ -265,7 +264,7 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin) -> Result<(), Error> {
             let l1 = fout.seek(SeekFrom::End(0))?;
             if l1 >= MAX_PER_FILE {
                 let rd = fs::read_dir(&dir)?;
-                let mut w = vec![];
+                let mut w = Vec::new();
                 for e in rd {
                     let e = e?;
                     let fnos = e.file_name();
@@ -282,7 +281,7 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin) -> Result<(), Error> {
                 let mut lentot = w.iter().map(|g| g.1).fold(0, |a, x| a + x);
                 write!(&mut fout, "[APPEND-LENTOT] {}\n", lentot)?;
                 for q in w {
-                    if lentot <= MAX_TOTAL_SIZE as u64 {
+                    if lentot <= total_size_max {
                         break;
                     }
                     write!(&mut fout, "[APPEND-REMOVE]   {}  {}\n", q.1, q.0.to_string_lossy())?;
@@ -303,8 +302,8 @@ pub fn append_inner(dirname: &str, mut stdin: Stdin) -> Result<(), Error> {
     }
 }
 
-pub fn append(dirname: &str, stdin: Stdin) -> Result<(), Error> {
-    match append_inner(dirname, stdin) {
+pub fn append(dirname: &str, total_size_max: u64, stdin: Stdin) -> Result<(), Error> {
+    match append_inner(dirname, total_size_max, stdin) {
         Ok(k) => {
             eprintln!("append_inner has returned");
             Ok(k)

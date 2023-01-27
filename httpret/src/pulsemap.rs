@@ -1,31 +1,158 @@
 use crate::err::Error;
 use crate::response;
+use async_channel::Receiver;
+use async_channel::Sender;
+use bytes::Buf;
 use bytes::BufMut;
-use bytes::{Buf, BytesMut};
-use futures_util::stream::{FuturesOrdered, FuturesUnordered};
+use bytes::BytesMut;
+use futures_util::stream::FuturesOrdered;
+use futures_util::stream::FuturesUnordered;
 use futures_util::FutureExt;
-use http::{Method, StatusCode, Uri};
-use hyper::{Body, Request, Response};
+use http::Method;
+use http::StatusCode;
+use http::Uri;
+use hyper::Body;
+use hyper::Request;
+use hyper::Response;
 use netpod::log::*;
 use netpod::AppendToUrl;
 use netpod::FromUrl;
 use netpod::HasBackend;
 use netpod::HasTimeout;
 use netpod::NodeConfigCached;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::future::Future;
+use std::io::SeekFrom;
 use std::path::Path;
+use std::path::PathBuf;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
-use std::{io::SeekFrom, path::PathBuf};
+use std::sync::Mutex;
+use std::task::Context;
+use std::task::Poll;
+use std::time::Duration;
+use std::time::Instant;
+use std::time::SystemTime;
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncSeekExt;
 use tokio::task::JoinHandle;
+use tokio::time::error::Elapsed;
 use url::Url;
+
+struct Dummy;
+
+enum CachePortal<V> {
+    Fresh,
+    Existing(Receiver<Dummy>),
+    Known(V),
+}
+
+impl<V> CachePortal<V> {}
+
+enum CacheEntry<V> {
+    Waiting(SystemTime, Sender<Dummy>, Receiver<Dummy>),
+    Known(SystemTime, V),
+}
+
+impl<V> CacheEntry<V> {
+    fn ts(&self) -> &SystemTime {
+        match self {
+            CacheEntry::Waiting(ts, _, _) => ts,
+            CacheEntry::Known(ts, _) => ts,
+        }
+    }
+}
+
+struct CacheInner<K, V> {
+    map: BTreeMap<K, CacheEntry<V>>,
+}
+
+impl<K, V> CacheInner<K, V>
+where
+    K: Ord,
+{
+    const fn new() -> Self {
+        Self { map: BTreeMap::new() }
+    }
+
+    fn housekeeping(&mut self) {
+        if self.map.len() > 200 {
+            info!("trigger housekeeping with len {}", self.map.len());
+            let mut v: Vec<_> = self.map.iter().map(|(k, v)| (v.ts(), k)).collect();
+            v.sort();
+            let ts0 = v[v.len() / 2].0.clone();
+            //let tsnow = SystemTime::now();
+            //let tscut = tsnow.checked_sub(Duration::from_secs(60 * 10)).unwrap_or(tsnow);
+            self.map.retain(|_k, v| v.ts() >= &ts0);
+            info!("housekeeping kept len {}", self.map.len());
+        }
+    }
+}
+
+struct Cache<K, V> {
+    inner: Mutex<CacheInner<K, V>>,
+}
+
+impl<K, V> Cache<K, V>
+where
+    K: Ord,
+    V: Clone,
+{
+    const fn new() -> Self {
+        Self {
+            inner: Mutex::new(CacheInner::new()),
+        }
+    }
+
+    fn housekeeping(&self) {
+        let mut g = self.inner.lock().unwrap();
+        g.housekeeping();
+    }
+
+    fn portal(&self, key: K) -> CachePortal<V> {
+        use std::collections::btree_map::Entry;
+        let mut g = self.inner.lock().unwrap();
+        g.housekeeping();
+        match g.map.entry(key) {
+            Entry::Vacant(e) => {
+                let (tx, rx) = async_channel::bounded(16);
+                let ret = CachePortal::Fresh;
+                let v = CacheEntry::Waiting(SystemTime::now(), tx, rx);
+                e.insert(v);
+                ret
+            }
+            Entry::Occupied(e) => match e.get() {
+                CacheEntry::Waiting(_ts, _tx, rx) => CachePortal::Existing(rx.clone()),
+                CacheEntry::Known(_ts, v) => CachePortal::Known(v.clone()),
+            },
+        }
+    }
+
+    fn set_value(&self, key: K, val: V) {
+        let mut g = self.inner.lock().unwrap();
+        if let Some(e) = g.map.get_mut(&key) {
+            match e {
+                CacheEntry::Waiting(ts, tx, _rx) => {
+                    let tx = tx.clone();
+                    *e = CacheEntry::Known(*ts, val);
+                    tx.close();
+                }
+                CacheEntry::Known(_ts, _val) => {
+                    error!("set_value  already known");
+                }
+            }
+        } else {
+            error!("set_value  no entry for key");
+        }
+    }
+}
+
+static CACHE: Cache<u64, u64> = Cache::new();
 
 pub struct MapPulseHisto {
     _pulse: u64,
@@ -40,6 +167,9 @@ const MAP_PULSE_URL_PREFIX: &'static str = "/api/1/map/pulse/";
 const MAP_PULSE_LOCAL_URL_PREFIX: &'static str = "/api/1/map/pulse/local/";
 const MAP_PULSE_MARK_CLOSED_URL_PREFIX: &'static str = "/api/1/map/pulse/mark/closed/";
 const API_4_MAP_PULSE_URL_PREFIX: &'static str = "/api/4/map/pulse/";
+
+const MAP_PULSE_LOCAL_TIMEOUT: Duration = Duration::from_millis(8000);
+const MAP_PULSE_QUERY_TIMEOUT: Duration = Duration::from_millis(10000);
 
 async fn make_tables(node_config: &NodeConfigCached) -> Result<(), Error> {
     let conn = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
@@ -389,7 +519,7 @@ impl IndexFullHttpFunction {
         let n1 = files.len().min(3);
         let m1 = files.len() - n1;
         for ch in &files[m1..] {
-            info!("   index over  {:?}", ch);
+            trace!("   index over  {:?}", ch);
         }
         for mp in files[m1..].into_iter() {
             match mp {
@@ -463,7 +593,12 @@ impl IndexFullHttpFunction {
                 }
             }
         }
-        info!("latest for {channel_name}  {latest_pair:?}");
+        if channel_name.contains("SAT-CVME-TIFALL5:EvtSet")
+            || channel_name.contains("SINSB04")
+            || channel_name.contains("SINSB03")
+        {
+            info!("latest for {channel_name}  {latest_pair:?}");
+        }
         Ok(msg)
     }
 
@@ -500,7 +635,7 @@ impl UpdateTaskGuard {
     pub async fn abort_wait(&mut self) -> Result<(), Error> {
         if let Some(jh) = self.jh.take() {
             info!("UpdateTaskGuard::abort_wait");
-            let fut = tokio::time::timeout(Duration::from_millis(6000), async { jh.await });
+            let fut = tokio::time::timeout(Duration::from_millis(20000), async { jh.await });
             Ok(fut.await???)
         } else {
             Ok(())
@@ -527,6 +662,7 @@ async fn update_task(do_abort: Arc<AtomicUsize>, node_config: NodeConfigCached) 
             break;
         }
         let ts1 = Instant::now();
+        CACHE.housekeeping();
         match IndexFullHttpFunction::index(&node_config).await {
             Ok(_) => {}
             Err(e) => {
@@ -536,7 +672,7 @@ async fn update_task(do_abort: Arc<AtomicUsize>, node_config: NodeConfigCached) 
         }
         let ts2 = Instant::now();
         let dt = ts2.duration_since(ts1).as_secs_f32() * 1e3;
-        info!("Done update task  {:.0} ms", dt);
+        info!("Done update task  {:.0}ms", dt);
     }
     Ok(())
 }
@@ -721,7 +857,7 @@ impl HasBackend for MapPulseQuery {
 
 impl HasTimeout for MapPulseQuery {
     fn timeout(&self) -> Duration {
-        Duration::from_millis(2000)
+        MAP_PULSE_QUERY_TIMEOUT
     }
 }
 
@@ -860,6 +996,7 @@ impl MapPulseLocalHttpFunction {
         let pulse: u64 = urls[MAP_PULSE_LOCAL_URL_PREFIX.len()..]
             .parse()
             .map_err(|_| Error::with_public_msg_no_trace(format!("can not understand pulse map url: {}", req.uri())))?;
+        let req_from = req.headers().get("x-req-from").map_or(None, |x| Some(format!("{x:?}")));
         let ts1 = Instant::now();
         let conn = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
         let sql = "select channel, hostname, timebin, split, ks from map_pulse_files where hostname = $1 and pulse_min <= $2 and (pulse_max >= $2 or closed = 0)";
@@ -875,9 +1012,10 @@ impl MapPulseLocalHttpFunction {
                 (channel, hostname, timebin as u32, split as u32, ks as u32)
             })
             .collect();
-        trace!(
-            "database query took {}s",
-            Instant::now().duration_since(ts1).as_secs_f32()
+        info!(
+            "map pulse local  req-from {:?}  candidate list in {:.0}ms",
+            req_from,
+            Instant::now().duration_since(ts1).as_secs_f32() * 1e3
         );
         //let mut msg = String::new();
         //use std::fmt::Write;
@@ -1016,23 +1154,46 @@ impl MapPulseHistoHttpFunction {
                 node.host, node.port, MAP_PULSE_LOCAL_URL_PREFIX, pulse
             );
             let uri: Uri = s.parse()?;
-            let fut = hyper::Client::new().get(uri);
-            let fut = tokio::time::timeout(Duration::from_millis(1000), fut);
+            let req = Request::get(uri)
+                .header("x-req-from", &node_config.node.host)
+                .body(Body::empty())?;
+            let fut = hyper::Client::new().request(req);
+            //let fut = hyper::Client::new().get(uri);
+            let fut = tokio::time::timeout(MAP_PULSE_LOCAL_TIMEOUT, fut);
             futs.push_back(fut);
         }
         use futures_util::stream::StreamExt;
         let mut map = BTreeMap::new();
-        while let Some(Ok(Ok(res))) = futs.next().await {
-            if let Ok(b) = hyper::body::to_bytes(res.into_body()).await {
-                if let Ok(lm) = serde_json::from_slice::<LocalMap>(&b) {
-                    for ts in lm.tss {
-                        let a = map.get(&ts);
-                        if let Some(&j) = a {
-                            map.insert(ts, j + 1);
-                        } else {
-                            map.insert(ts, 1);
+        while let Some(futres) = futs.next().await {
+            match futres {
+                Ok(res) => match res {
+                    Ok(res) => match hyper::body::to_bytes(res.into_body()).await {
+                        Ok(body) => match serde_json::from_slice::<LocalMap>(&body) {
+                            Ok(lm) => {
+                                for ts in lm.tss {
+                                    let a = map.get(&ts);
+                                    if let Some(&j) = a {
+                                        map.insert(ts, j + 1);
+                                    } else {
+                                        map.insert(ts, 1);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                error!("pulse map sub request  pulse {pulse}  serde error {e}");
+                            }
+                        },
+                        Err(e) => {
+                            error!("pulse map sub request  pulse {pulse}  body error {e}");
                         }
+                    },
+                    Err(e) => {
+                        error!("pulse map sub request  pulse {pulse}  error {e}");
                     }
+                },
+                Err(e) => {
+                    let _: Elapsed = e;
+                    error!("pulse map sub request timed out  pulse {pulse}");
                 }
             }
         }
@@ -1063,19 +1224,56 @@ impl MapPulseHttpFunction {
         info!("MapPulseHttpFunction  handle  uri: {:?}", req.uri());
         let urls = format!("{}", req.uri());
         let pulse: u64 = urls[MAP_PULSE_URL_PREFIX.len()..].parse()?;
-        let histo = MapPulseHistoHttpFunction::histo(pulse, node_config).await?;
-        let mut i1 = 0;
-        let mut max = 0;
-        for i2 in 0..histo.tss.len() {
-            if histo.counts[i2] > max {
-                max = histo.counts[i2];
-                i1 = i2;
+        match CACHE.portal(pulse) {
+            CachePortal::Fresh => {
+                info!("value not yet in cache  pulse {pulse}");
+                let histo = MapPulseHistoHttpFunction::histo(pulse, node_config).await?;
+                let mut i1 = 0;
+                let mut max = 0;
+                for i2 in 0..histo.tss.len() {
+                    if histo.counts[i2] > max {
+                        max = histo.counts[i2];
+                        i1 = i2;
+                    }
+                }
+                if max > 0 {
+                    let val = histo.tss[i1];
+                    CACHE.set_value(pulse, val);
+                    Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&val)?))?)
+                } else {
+                    Ok(response(StatusCode::NO_CONTENT).body(Body::empty())?)
+                }
             }
-        }
-        if max > 0 {
-            Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&histo.tss[i1])?))?)
-        } else {
-            Ok(response(StatusCode::NO_CONTENT).body(Body::empty())?)
+            CachePortal::Existing(rx) => {
+                info!("waiting for already running pulse map  pulse {pulse}");
+                match rx.recv().await {
+                    Ok(_) => {
+                        error!("should never recv from existing operation  pulse {pulse}");
+                        Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
+                    }
+                    Err(_e) => {
+                        info!("woken up while value wait  pulse {pulse}");
+                        match CACHE.portal(pulse) {
+                            CachePortal::Known(val) => {
+                                info!("good, value after wakeup  pulse {pulse}");
+                                Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&val)?))?)
+                            }
+                            CachePortal::Fresh => {
+                                error!("woken up, but portal fresh  pulse {pulse}");
+                                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
+                            }
+                            CachePortal::Existing(..) => {
+                                error!("woken up, but portal existing  pulse {pulse}");
+                                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
+                            }
+                        }
+                    }
+                }
+            }
+            CachePortal::Known(val) => {
+                info!("value already in cache  pulse {pulse}  ts {val}");
+                Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&val)?))?)
+            }
         }
     }
 }
@@ -1103,7 +1301,69 @@ impl Api4MapPulseHttpFunction {
         info!("Api4MapPulseHttpFunction  handle  uri: {:?}", req.uri());
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let q = MapPulseQuery::from_url(&url)?;
-        let histo = MapPulseHistoHttpFunction::histo(q.pulse, node_config).await?;
+        let pulse = q.pulse;
+
+        let ret = match CACHE.portal(pulse) {
+            CachePortal::Fresh => {
+                info!("value not yet in cache  pulse {pulse}");
+                let histo = MapPulseHistoHttpFunction::histo(pulse, node_config).await?;
+                let mut i1 = 0;
+                let mut max = 0;
+                for i2 in 0..histo.tss.len() {
+                    if histo.counts[i2] > max {
+                        max = histo.counts[i2];
+                        i1 = i2;
+                    }
+                }
+                if histo.tss.len() > 1 {
+                    warn!("Ambigious pulse map  pulse {}  histo {:?}", pulse, histo);
+                }
+                if max > 0 {
+                    let val = histo.tss[i1];
+                    CACHE.set_value(pulse, val);
+                    Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&val)?))?)
+                } else {
+                    Ok(response(StatusCode::NO_CONTENT).body(Body::empty())?)
+                }
+            }
+            CachePortal::Existing(rx) => {
+                info!("waiting for already running pulse map  pulse {pulse}");
+                match rx.recv().await {
+                    Ok(_) => {
+                        error!("should never recv from existing operation  pulse {pulse}");
+                        Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
+                    }
+                    Err(_e) => {
+                        info!("woken up while value wait  pulse {pulse}");
+                        match CACHE.portal(pulse) {
+                            CachePortal::Known(val) => {
+                                info!("good, value after wakeup  pulse {pulse}");
+                                Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&val)?))?)
+                            }
+                            CachePortal::Fresh => {
+                                error!("woken up, but portal fresh  pulse {pulse}");
+                                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
+                            }
+                            CachePortal::Existing(..) => {
+                                error!("woken up, but portal existing  pulse {pulse}");
+                                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
+                            }
+                        }
+                    }
+                }
+            }
+            CachePortal::Known(val) => {
+                info!("value already in cache  pulse {pulse}  ts {val}");
+                Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&val)?))?)
+            }
+        };
+        let ts2 = Instant::now();
+        info!(
+            "Api4MapPulseHttpFunction  took {:.2}s",
+            ts2.duration_since(ts1).as_secs_f32()
+        );
+        ret
+        /*let histo = MapPulseHistoHttpFunction::histo(q.pulse, node_config).await?;
         let mut i1 = 0;
         let mut max = 0;
         for i2 in 0..histo.tss.len() {
@@ -1124,7 +1384,7 @@ impl Api4MapPulseHttpFunction {
             Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&histo.tss[i1])?))?)
         } else {
             Ok(response(StatusCode::NO_CONTENT).body(Body::empty())?)
-        }
+        }*/
     }
 }
 

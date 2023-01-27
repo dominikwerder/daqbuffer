@@ -55,6 +55,7 @@ pub const STATS_EVENTS_FRAME_TYPE_ID: u32 = 0x2400;
 pub const ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID: u32 = 0x2500;
 pub const X_BINNED_SCALAR_EVENTS_FRAME_TYPE_ID: u32 = 0x8800;
 pub const X_BINNED_WAVE_EVENTS_FRAME_TYPE_ID: u32 = 0x8900;
+pub const DATABUFFER_EVENT_BLOB_FRAME_TYPE_ID: u32 = 0x8a00;
 
 pub fn bool_is_false(j: &bool) -> bool {
     *j == false
@@ -525,7 +526,17 @@ pub trait TimeBinnableDyn:
 }
 
 pub trait TimeBinnableDynStub:
-    fmt::Debug + FramableInner + FrameType + FrameTypeInnerDyn + WithLen + RangeOverlapInfo + Any + AsAnyRef + Sync + Send + 'static
+    fmt::Debug
+    + FramableInner
+    + FrameType
+    + FrameTypeInnerDyn
+    + WithLen
+    + RangeOverlapInfo
+    + Any
+    + AsAnyRef
+    + Sync
+    + Send
+    + 'static
 {
 }
 
@@ -748,10 +759,16 @@ pub fn empty_events_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggK
                     I64 => Box::new(K::<i64>::empty()),
                     F32 => Box::new(K::<f32>::empty()),
                     F64 => Box::new(K::<f64>::empty()),
-                    _ => err::todoval(),
+                    _ => {
+                        error!("TODO for {:?} {:?} {:?}", scalar_type, shape, agg_kind);
+                        err::todoval()
+                    }
                 }
             }
-            _ => err::todoval(),
+            _ => {
+                error!("TODO for {:?} {:?} {:?}", scalar_type, shape, agg_kind);
+                err::todoval()
+            }
         },
         Shape::Wave(_n) => match agg_kind {
             AggKind::DimXBins1 => {
@@ -761,12 +778,36 @@ pub fn empty_events_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggK
                     U8 => Box::new(K::<u8>::empty()),
                     F32 => Box::new(K::<f32>::empty()),
                     F64 => Box::new(K::<f64>::empty()),
-                    _ => err::todoval(),
+                    BOOL => Box::new(K::<bool>::empty()),
+                    _ => {
+                        error!("TODO for {:?} {:?} {:?}", scalar_type, shape, agg_kind);
+                        err::todoval()
+                    }
                 }
             }
-            _ => err::todoval(),
+            AggKind::Plain => {
+                use ScalarType::*;
+                type K<T> = waveevents::WaveEvents<T>;
+                match scalar_type {
+                    U8 => Box::new(K::<u8>::empty()),
+                    F32 => Box::new(K::<f32>::empty()),
+                    F64 => Box::new(K::<f64>::empty()),
+                    BOOL => Box::new(K::<bool>::empty()),
+                    _ => {
+                        error!("TODO for {:?} {:?} {:?}", scalar_type, shape, agg_kind);
+                        err::todoval()
+                    }
+                }
+            }
+            _ => {
+                error!("TODO for {:?} {:?} {:?}", scalar_type, shape, agg_kind);
+                err::todoval()
+            }
         },
-        Shape::Image(..) => err::todoval(),
+        Shape::Image(..) => {
+            error!("TODO for {:?} {:?} {:?}", scalar_type, shape, agg_kind);
+            err::todoval()
+        }
     }
 }
 

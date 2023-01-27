@@ -1,7 +1,7 @@
 use items_0::subfr::SubFrId;
-use num_traits::{Bounded, Float, Zero};
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::cmp::Ordering;
 use std::fmt::Debug;
 use std::ops::Add;
@@ -117,8 +117,8 @@ pub trait NumOps:
     + 'static
     + Unpin
     + Debug
-    + Zero
-    + Bounded
+    //+ Zero
+    //+ Bounded
     + PartialOrd
     + SubFrId
     + Serialize
@@ -128,10 +128,11 @@ pub trait NumOps:
     fn min_or_nan() -> Self;
     fn max_or_nan() -> Self;
     fn is_nan(&self) -> bool;
+    fn zero() -> Self;
 }
 
 macro_rules! impl_num_ops {
-    ($ty:ident, $min_or_nan:ident, $max_or_nan:ident, $is_nan:ident) => {
+    ($ty:ident, $min_or_nan:ident, $max_or_nan:ident, $is_nan:ident, $zero:expr) => {
         impl NumOps for $ty {
             fn min_or_nan() -> Self {
                 $ty::$min_or_nan
@@ -142,16 +143,51 @@ macro_rules! impl_num_ops {
             fn is_nan(&self) -> bool {
                 $is_nan(self)
             }
+            fn zero() -> Self {
+                $zero
+            }
         }
     };
+}
+
+impl AsPrimF32 for bool {
+    fn as_prim_f32(&self) -> f32 {
+        if *self {
+            1.
+        } else {
+            0.
+        }
+    }
+}
+
+impl NumOps for bool {
+    fn min_or_nan() -> Self {
+        todo!()
+    }
+
+    fn max_or_nan() -> Self {
+        todo!()
+    }
+
+    fn is_nan(&self) -> bool {
+        todo!()
+    }
+
+    fn zero() -> Self {
+        false
+    }
 }
 
 fn is_nan_int<T>(_x: &T) -> bool {
     false
 }
 
-fn is_nan_float<T: Float>(x: &T) -> bool {
-    x.is_nan()
+fn is_nan_f32(x: &f32) -> bool {
+    f32::is_nan(*x)
+}
+
+fn is_nan_f64(x: &f64) -> bool {
+    f64::is_nan(*x)
 }
 
 pub trait AsPrimF32 {
@@ -192,18 +228,18 @@ impl AsPrimF32 for StringNum {
     }
 }
 
-impl_num_ops!(u8, MIN, MAX, is_nan_int);
-impl_num_ops!(u16, MIN, MAX, is_nan_int);
-impl_num_ops!(u32, MIN, MAX, is_nan_int);
-impl_num_ops!(u64, MIN, MAX, is_nan_int);
-impl_num_ops!(i8, MIN, MAX, is_nan_int);
-impl_num_ops!(i16, MIN, MAX, is_nan_int);
-impl_num_ops!(i32, MIN, MAX, is_nan_int);
-impl_num_ops!(i64, MIN, MAX, is_nan_int);
-impl_num_ops!(f32, NAN, NAN, is_nan_float);
-impl_num_ops!(f64, NAN, NAN, is_nan_float);
-impl_num_ops!(BoolNum, MIN, MAX, is_nan_int);
-impl_num_ops!(StringNum, MIN, MAX, is_nan_int);
+impl_num_ops!(u8, MIN, MAX, is_nan_int, 0);
+impl_num_ops!(u16, MIN, MAX, is_nan_int, 0);
+impl_num_ops!(u32, MIN, MAX, is_nan_int, 0);
+impl_num_ops!(u64, MIN, MAX, is_nan_int, 0);
+impl_num_ops!(i8, MIN, MAX, is_nan_int, 0);
+impl_num_ops!(i16, MIN, MAX, is_nan_int, 0);
+impl_num_ops!(i32, MIN, MAX, is_nan_int, 0);
+impl_num_ops!(i64, MIN, MAX, is_nan_int, 0);
+impl_num_ops!(f32, NAN, NAN, is_nan_f32, 0.);
+impl_num_ops!(f64, NAN, NAN, is_nan_f64, 0.);
+impl_num_ops!(BoolNum, MIN, MAX, is_nan_int, BoolNum(0));
+impl_num_ops!(StringNum, MIN, MAX, is_nan_int, StringNum(String::new()));
 
 impl SubFrId for StringNum {
     const SUB: u32 = 0x0d;

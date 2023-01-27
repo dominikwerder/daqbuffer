@@ -10,9 +10,12 @@ use items_0::AsAnyRef;
 use netpod::log::*;
 use netpod::BinnedRange;
 use netpod::NanoRange;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::any::Any;
 use std::fmt;
+use std::time::Duration;
+use std::time::SystemTime;
 
 // TODO maybe rename to ChannelStatus?
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -25,8 +28,6 @@ impl ConnStatus {
     pub fn from_ca_ingest_status_kind(k: u32) -> Self {
         match k {
             1 => Self::Connect,
-            2 => Self::Disconnect,
-            3 => Self::Disconnect,
             _ => Self::Disconnect,
         }
     }
@@ -35,12 +36,47 @@ impl ConnStatus {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConnStatusEvent {
     pub ts: u64,
+    #[serde(with = "humantime_serde")]
+    //pub datetime: chrono::DateTime<chrono::Utc>,
+    pub datetime: SystemTime,
     pub status: ConnStatus,
 }
 
 impl ConnStatusEvent {
     pub fn new(ts: u64, status: ConnStatus) -> Self {
-        Self { ts, status }
+        let datetime = SystemTime::UNIX_EPOCH + Duration::from_millis(ts / 1000000);
+        Self { ts, datetime, status }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ChannelStatus {
+    Connect,
+    Disconnect,
+}
+
+impl ChannelStatus {
+    pub fn from_ca_ingest_status_kind(k: u32) -> Self {
+        match k {
+            1 => Self::Connect,
+            _ => Self::Disconnect,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChannelStatusEvent {
+    pub ts: u64,
+    #[serde(with = "humantime_serde")]
+    //pub datetime: chrono::DateTime<chrono::Utc>,
+    pub datetime: SystemTime,
+    pub status: ChannelStatus,
+}
+
+impl ChannelStatusEvent {
+    pub fn new(ts: u64, status: ChannelStatus) -> Self {
+        let datetime = SystemTime::UNIX_EPOCH + Duration::from_millis(ts / 1000000);
+        Self { ts, datetime, status }
     }
 }
 
@@ -88,6 +124,7 @@ mod serde_channel_events {
     use super::{ChannelEvents, Events};
     use crate::channelevents::ConnStatusEvent;
     use crate::eventsdim0::EventsDim0;
+    use crate::eventsdim1::EventsDim1;
     use items_0::subfr::SubFrId;
     use serde::de::{self, EnumAccess, VariantAccess, Visitor};
     use serde::ser::SerializeSeq;
@@ -172,6 +209,22 @@ mod serde_channel_events {
                     }
                     f64::SUB => {
                         let obj: EventsDim0<f64> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    bool::SUB => {
+                        let obj: EventsDim0<bool> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    _ => Err(de::Error::custom(&format!("unknown nty {e1}"))),
+                }
+            } else if e0 == EventsDim1::<u8>::serde_id() {
+                match e1 {
+                    f32::SUB => {
+                        let obj: EventsDim1<f32> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    bool::SUB => {
+                        let obj: EventsDim1<bool> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     _ => Err(de::Error::custom(&format!("unknown nty {e1}"))),
@@ -324,7 +377,9 @@ mod test_channel_events_serde {
     use bincode::DefaultOptions;
     use items_0::bincode;
     use items_0::Empty;
-    use serde::{Deserialize, Serialize};
+    use serde::Deserialize;
+    use serde::Serialize;
+    use std::time::SystemTime;
 
     #[test]
     fn channel_events() {
@@ -382,6 +437,7 @@ mod test_channel_events_serde {
         evs.push(12, 3, 3.2f32);
         let status = ConnStatusEvent {
             ts: 567,
+            datetime: SystemTime::UNIX_EPOCH,
             status: crate::channelevents::ConnStatus::Connect,
         };
         let item = ChannelEvents::Status(status);

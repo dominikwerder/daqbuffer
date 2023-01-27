@@ -1,7 +1,10 @@
 use crate::errconv::ErrConv;
 use err::Error;
-use futures_util::{Future, FutureExt, Stream};
-use items_2::channelevents::{ConnStatus, ConnStatusEvent};
+use futures_util::Future;
+use futures_util::FutureExt;
+use futures_util::Stream;
+use items_2::channelevents::ChannelStatus;
+use items_2::channelevents::ChannelStatusEvent;
 use netpod::log::*;
 use netpod::NanoRange;
 use netpod::CONNECTION_STATUS_DIV;
@@ -9,7 +12,10 @@ use scylla::Session as ScySession;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
+use std::task::Context;
+use std::task::Poll;
+use std::time::Duration;
+use std::time::SystemTime;
 
 async fn read_next_status_events(
     series: u64,
@@ -18,7 +24,7 @@ async fn read_next_status_events(
     fwd: bool,
     do_one_before: bool,
     scy: Arc<ScySession>,
-) -> Result<VecDeque<ConnStatusEvent>, Error> {
+) -> Result<VecDeque<ChannelStatusEvent>, Error> {
     if ts_msp >= range.end {
         warn!(
             "given ts_msp {}  >=  range.end {}  not necessary to read this",
@@ -73,10 +79,10 @@ async fn read_next_status_events(
         let row = row.err_conv()?;
         let ts = ts_msp + row.0 as u64;
         let kind = row.1 as u32;
-        // from netfetch::store::ChannelStatus
-        let ev = ConnStatusEvent {
+        let ev = ChannelStatusEvent {
             ts,
-            status: ConnStatus::from_ca_ingest_status_kind(kind),
+            datetime: SystemTime::UNIX_EPOCH + Duration::from_millis(ts / 1000000),
+            status: ChannelStatus::from_ca_ingest_status_kind(kind),
         };
         if ts >= range.end {
         } else if ts >= range.beg {
@@ -101,7 +107,7 @@ struct ReadValues {
     ts_msps: VecDeque<u64>,
     fwd: bool,
     do_one_before_range: bool,
-    fut: Pin<Box<dyn Future<Output = Result<VecDeque<ConnStatusEvent>, Error>> + Send>>,
+    fut: Pin<Box<dyn Future<Output = Result<VecDeque<ChannelStatusEvent>, Error>> + Send>>,
     scy: Arc<ScySession>,
 }
 
@@ -142,7 +148,7 @@ impl ReadValues {
     fn make_fut(
         &mut self,
         ts_msp: u64,
-    ) -> Pin<Box<dyn Future<Output = Result<VecDeque<ConnStatusEvent>, Error>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<VecDeque<ChannelStatusEvent>, Error>> + Send>> {
         info!("make fut for {ts_msp}");
         let fut = read_next_status_events(
             self.series,
@@ -168,7 +174,7 @@ pub struct StatusStreamScylla {
     range: NanoRange,
     do_one_before_range: bool,
     scy: Arc<ScySession>,
-    outbuf: VecDeque<ConnStatusEvent>,
+    outbuf: VecDeque<ChannelStatusEvent>,
 }
 
 impl StatusStreamScylla {
@@ -185,7 +191,7 @@ impl StatusStreamScylla {
 }
 
 impl Stream for StatusStreamScylla {
-    type Item = Result<ConnStatusEvent, Error>;
+    type Item = Result<ChannelStatusEvent, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;

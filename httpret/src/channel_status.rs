@@ -7,6 +7,7 @@ use http::Request;
 use http::Response;
 use http::StatusCode;
 use hyper::Body;
+use items_2::channelevents::ChannelStatusEvent;
 use items_2::channelevents::ConnStatusEvent;
 use netpod::log::*;
 use netpod::query::ChannelStateEventsQuery;
@@ -72,17 +73,20 @@ impl ConnectionStatusEvents {
             .scylla
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("no scylla configured")))?;
-        let scy = scyllaconn::create_scy_session(scyco).await?;
+        let _scy = scyllaconn::create_scy_session(scyco).await?;
         let chconf = dbconn::channelconfig::chconf_from_database(q.channel(), node_config).await?;
-        let series = chconf.series;
-        let do_one_before_range = true;
-        let mut stream =
+        let _series = chconf.series;
+        let _do_one_before_range = true;
+        let ret = Vec::new();
+        if true {
+            return Err(Error::with_msg_no_trace("TODO channel_status fetch_data"));
+        }
+        /*let mut stream =
             scyllaconn::status::StatusStreamScylla::new(series, q.range().clone(), do_one_before_range, scy);
-        let mut ret = Vec::new();
         while let Some(item) = stream.next().await {
             let item = item?;
             ret.push(item);
-        }
+        }*/
         Ok(ret)
     }
 }
@@ -136,7 +140,7 @@ impl ChannelStatusEvents {
         &self,
         q: &ChannelStateEventsQuery,
         node_config: &NodeConfigCached,
-    ) -> Result<Vec<ConnStatusEvent>, Error> {
+    ) -> Result<Vec<ChannelStatusEvent>, Error> {
         let scyco = node_config
             .node_config
             .cluster

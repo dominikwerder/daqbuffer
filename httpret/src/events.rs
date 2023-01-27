@@ -88,6 +88,7 @@ async fn plain_events_json(
     info!("httpret  plain_events_json  req: {:?}", req);
     let (_head, _body) = req.into_parts();
     let query = PlainEventsQuery::from_url(&url)?;
+    info!("plain_events_json query {query:?}");
     let chconf = chconf_from_events_json(&query, node_config)
         .await
         .map_err(Error::from)?;

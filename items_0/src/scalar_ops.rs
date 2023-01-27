@@ -42,6 +42,16 @@ impl_as_prim_f32!(i64);
 impl_as_prim_f32!(f32);
 impl_as_prim_f32!(f64);
 
+impl AsPrimF32 for bool {
+    fn as_prim_f32_b(&self) -> f32 {
+        if *self {
+            1.
+        } else {
+            0.
+        }
+    }
+}
+
 pub trait ScalarOps:
     fmt::Debug + Clone + PartialOrd + SubFrId + AsPrimF32 + Serialize + Unpin + Send + 'static
 {
@@ -49,7 +59,7 @@ pub trait ScalarOps:
     fn equal_slack(&self, rhs: &Self) -> bool;
 }
 
-macro_rules! impl_num_ops {
+macro_rules! impl_scalar_ops {
     ($ty:ident, $zero:expr, $equal_slack:ident) => {
         impl ScalarOps for $ty {
             fn zero_b() -> Self {
@@ -75,13 +85,18 @@ fn equal_f64(a: f64, b: f64) -> bool {
     (a - b).abs() < 1e-6 || (a / b > 0.99999 && a / b < 1.00001)
 }
 
-impl_num_ops!(u8, 0, equal_int);
-impl_num_ops!(u16, 0, equal_int);
-impl_num_ops!(u32, 0, equal_int);
-impl_num_ops!(u64, 0, equal_int);
-impl_num_ops!(i8, 0, equal_int);
-impl_num_ops!(i16, 0, equal_int);
-impl_num_ops!(i32, 0, equal_int);
-impl_num_ops!(i64, 0, equal_int);
-impl_num_ops!(f32, 0., equal_f32);
-impl_num_ops!(f64, 0., equal_f64);
+fn equal_bool(a: bool, b: bool) -> bool {
+    a == b
+}
+
+impl_scalar_ops!(u8, 0, equal_int);
+impl_scalar_ops!(u16, 0, equal_int);
+impl_scalar_ops!(u32, 0, equal_int);
+impl_scalar_ops!(u64, 0, equal_int);
+impl_scalar_ops!(i8, 0, equal_int);
+impl_scalar_ops!(i16, 0, equal_int);
+impl_scalar_ops!(i32, 0, equal_int);
+impl_scalar_ops!(i64, 0, equal_int);
+impl_scalar_ops!(f32, 0., equal_f32);
+impl_scalar_ops!(f64, 0., equal_f64);
+impl_scalar_ops!(bool, false, equal_bool);

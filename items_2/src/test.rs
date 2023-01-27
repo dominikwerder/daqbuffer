@@ -237,6 +237,7 @@ fn merge03() {
         let inp2_events_a = {
             let ev = ConnStatusEvent {
                 ts: 1199,
+                datetime: std::time::SystemTime::UNIX_EPOCH,
                 status: ConnStatus::Disconnect,
             };
             let item: Sitemty<ChannelEvents> = Ok(StreamItem::DataItem(RangeCompletableItem::Data(
@@ -248,6 +249,7 @@ fn merge03() {
         let inp2_events_b = {
             let ev = ConnStatusEvent {
                 ts: 1199,
+                datetime: std::time::SystemTime::UNIX_EPOCH,
                 status: ConnStatus::Disconnect,
             };
             let item: Sitemty<ChannelEvents> = Ok(StreamItem::DataItem(RangeCompletableItem::Data(
