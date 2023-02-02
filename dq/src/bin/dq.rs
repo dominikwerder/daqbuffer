@@ -67,9 +67,10 @@ pub fn main() -> Result<(), Error> {
                     Err(e) => return Err(Error::with_msg_no_trace(format!("can not parse: {:?}", e))),
                 };
                 eprintln!("Read config: {:?}", config);
-                let file = File::open(&sub.datafile).await?;
+                let path = sub.datafile;
+                let file = File::open(&path).await?;
                 let disk_io_tune = netpod::DiskIoTune::default();
-                let inp = Box::pin(disk::file_content_stream(file, disk_io_tune));
+                let inp = Box::pin(disk::file_content_stream(path.clone(), file, disk_io_tune));
                 let ce = &config.entries[0];
                 let channel_config = ChannelConfig {
                     channel: Channel {
@@ -92,15 +93,8 @@ pub fn main() -> Result<(), Error> {
                 let stats_conf = EventChunkerConf {
                     disk_stats_every: ByteSize::mb(2),
                 };
-                let chunks = EventChunker::from_start(
-                    inp,
-                    channel_config.clone(),
-                    range,
-                    stats_conf,
-                    sub.datafile.clone(),
-                    false,
-                    true,
-                );
+                let chunks =
+                    EventChunker::from_start(inp, channel_config.clone(), range, stats_conf, path, false, true);
                 use futures_util::stream::StreamExt;
                 use items::WithLen;
                 //let evs = EventValuesDim0Case::<f64>::new();

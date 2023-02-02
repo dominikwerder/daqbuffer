@@ -73,8 +73,8 @@ impl DownloadHandler {
         // TODO wrap file operation to return a better error.
         let pp = base.join(p2);
         info!("Try to open {pp:?}");
-        let file = tokio::fs::OpenOptions::new().read(true).open(pp).await?;
-        let s = disk::file_content_stream(file, query.disk_io_tune.clone()).map_ok(|x| x.into_buf());
+        let file = tokio::fs::OpenOptions::new().read(true).open(&pp).await?;
+        let s = disk::file_content_stream(pp, file, query.disk_io_tune.clone()).map_ok(|x| x.into_buf());
         Ok(response(StatusCode::OK).body(Body::wrap_stream(s))?)
     }
 

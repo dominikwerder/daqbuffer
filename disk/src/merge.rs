@@ -330,23 +330,23 @@ mod test {
     }
 
     async fn collect_merged_events(paths: Vec<PathBuf>, range: NanoRange) -> Result<CollectedEvents, Error> {
-        let mut files = vec![];
+        let mut files = Vec::new();
         for path in paths {
             let p = position_file_for_test(&path, &range, false, false).await?;
             if !p.found {
                 return Err(Error::with_msg_no_trace("can not position file??"));
             }
-            files.push(
-                p.file
-                    .file
-                    .ok_or_else(|| Error::with_msg(format!("can not open file {:?}", path)))?,
-            );
+            let file = p
+                .file
+                .file
+                .ok_or_else(|| Error::with_msg(format!("can not open file {:?}", path)))?;
+            files.push((path, file));
         }
         let inps = files
             .into_iter()
-            .map(|file| {
+            .map(|(path, file)| {
                 let disk_io_tune = netpod::DiskIoTune::default();
-                let inp = file_content_stream(file, disk_io_tune);
+                let inp = file_content_stream(path, file, disk_io_tune);
                 inp
             })
             .map(|inp| {

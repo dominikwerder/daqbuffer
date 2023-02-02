@@ -35,6 +35,7 @@ use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
+use std::time::Duration;
 use std::time::Instant;
 use streams::dtflags::{ARRAY, BIG_ENDIAN, COMPRESSION, SHAPE};
 use streams::filechunkread::FileChunkRead;
@@ -235,32 +236,72 @@ impl Stream for FileContentStream {
 }
 
 fn start_read5(
+    path: PathBuf,
     file: File,
     tx: async_channel::Sender<Result<FileChunkRead, Error>>,
     disk_io_tune: DiskIoTune,
 ) -> Result<(), Error> {
     let fut = async move {
-        info!("start_read5 BEGIN {disk_io_tune:?}");
         let mut file = file;
+        let pos_beg = match file.stream_position().await {
+            Ok(x) => x,
+            Err(e) => {
+                error!("stream_position  {e}  {path:?}");
+                if let Err(_) = tx
+                    .send(Err(Error::with_msg_no_trace(format!("seek error {path:?}"))))
+                    .await
+                {
+                    error!("broken channel");
+                }
+                return;
+            }
+        };
+        let mut pos = pos_beg;
+        info!("start_read5 BEGIN {disk_io_tune:?}");
         loop {
             let mut buf = BytesMut::new();
             buf.resize(1024 * 256, 0);
-            match file.read(&mut buf).await {
-                Ok(n) => {
+            match tokio::time::timeout(Duration::from_millis(8000), file.read(&mut buf)).await {
+                Ok(Ok(n)) => {
+                    if n == 0 {
+                        info!("read5 EOF  pos_beg {pos_beg}  pos {pos}  path {path:?}");
+                        break;
+                    }
+                    pos += n as u64;
                     buf.truncate(n);
                     let item = FileChunkRead::with_buf(buf);
                     match tx.send(Ok(item)).await {
                         Ok(()) => {}
-                        Err(_e) => break,
+                        Err(_) => {
+                            error!("broken channel");
+                            break;
+                        }
                     }
                 }
-                Err(e) => match tx.send(Err(e.into())).await {
-                    Ok(()) => {}
-                    Err(_e) => break,
+                Ok(Err(e)) => match tx.send(Err(e.into())).await {
+                    Ok(()) => {
+                        break;
+                    }
+                    Err(_) => {
+                        error!("broken channel");
+                        break;
+                    }
                 },
+                Err(_) => {
+                    let msg = format!("I/O timeout  pos_beg {pos_beg}  pos {pos}  path {path:?}");
+                    error!("{msg}");
+                    let e = Error::with_msg_no_trace(msg);
+                    match tx.send(Err(e)).await {
+                        Ok(()) => {}
+                        Err(_e) => {
+                            error!("broken channel");
+                            break;
+                        }
+                    }
+                    break;
+                }
             }
         }
-        info!("start_read5 DONE");
     };
     tokio::task::spawn(fut);
     Ok(())
@@ -271,9 +312,9 @@ pub struct FileContentStream5 {
 }
 
 impl FileContentStream5 {
-    pub fn new(file: File, disk_io_tune: DiskIoTune) -> Result<Self, Error> {
+    pub fn new(path: PathBuf, file: File, disk_io_tune: DiskIoTune) -> Result<Self, Error> {
         let (tx, rx) = async_channel::bounded(32);
-        start_read5(file, tx, disk_io_tune)?;
+        start_read5(path, file, tx, disk_io_tune)?;
         let ret = Self { rx };
         Ok(ret)
     }
@@ -658,6 +699,7 @@ impl Stream for FileContentStream4 {
 }
 
 pub fn file_content_stream(
+    path: PathBuf,
     file: File,
     disk_io_tune: DiskIoTune,
 ) -> Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>> {
@@ -680,7 +722,7 @@ pub fn file_content_stream(
             Box::pin(s) as _
         }
         ReadSys::Read5 => {
-            let s = FileContentStream5::new(file, disk_io_tune).unwrap();
+            let s = FileContentStream5::new(path, file, disk_io_tune).unwrap();
             Box::pin(s) as _
         }
     }
