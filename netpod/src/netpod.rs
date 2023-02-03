@@ -1564,7 +1564,6 @@ pub enum AggKind {
     DimXBinsN(u32),
     Plain,
     TimeWeightedScalar,
-    Stats1,
 }
 
 impl AggKind {
@@ -1575,7 +1574,6 @@ impl AggKind {
             Self::DimXBins1 => false,
             Self::DimXBinsN(_) => false,
             Self::Plain => false,
-            Self::Stats1 => false,
         }
     }
 
@@ -1586,7 +1584,6 @@ impl AggKind {
             Self::DimXBins1 => false,
             Self::DimXBinsN(_) => false,
             Self::Plain => false,
-            Self::Stats1 => false,
         }
     }
 }
@@ -1612,7 +1609,6 @@ pub fn x_bin_count(shape: &Shape, agg_kind: &AggKind) -> usize {
             Shape::Wave(n) => *n as usize,
             Shape::Image(j, k) => *j as usize * *k as usize,
         },
-        AggKind::Stats1 => 0,
     }
 }
 
@@ -1633,9 +1629,6 @@ impl fmt::Display for AggKind {
             }
             Self::TimeWeightedScalar => {
                 write!(fmt, "TimeWeightedScalar")
-            }
-            Self::Stats1 => {
-                write!(fmt, "Stats1")
             }
         }
     }
@@ -1658,8 +1651,6 @@ impl FromStr for AggKind {
             Ok(AggKind::DimXBins1)
         } else if s == "TimeWeightedScalar" {
             Ok(AggKind::TimeWeightedScalar)
-        } else if s == "Stats1" {
-            Ok(AggKind::Stats1)
         } else if s.starts_with(nmark) {
             let nbins: u32 = s[nmark.len()..].parse()?;
             Ok(AggKind::DimXBinsN(nbins))

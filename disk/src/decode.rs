@@ -170,7 +170,6 @@ where
     type NumXAggToSingleBin: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Batch>;
     type NumXAggToNBins: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Batch>;
     type NumXAggPlain: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Batch>;
-    type NumXAggToStats1: EventsNodeProcessor<Input = <Self as EventValueFromBytes<NTY, END>>::Batch>;
 }
 
 pub struct EventValuesDim0Case<NTY> {
@@ -191,7 +190,6 @@ where
     // TODO is this sufficient?
     type NumXAggToNBins = Identity<NTY>;
     type NumXAggPlain = Identity<NTY>;
-    type NumXAggToStats1 = Identity<NTY>;
 }
 
 pub struct EventValuesDim1Case<NTY> {
@@ -212,7 +210,6 @@ where
     type NumXAggToSingleBin = WaveXBinner<NTY>;
     type NumXAggToNBins = WaveNBinner<NTY>;
     type NumXAggPlain = WavePlainProc<NTY>;
-    type NumXAggToStats1 = crate::agg::enp::Stats1Wave<NTY>;
 }
 
 pub struct EventsDecodedStream<NTY, END, EVS>
@@ -334,6 +331,53 @@ where
                             Ready(None)
                         }
                     },
+                    Pending => Pending,
+                }
+            };
+        }
+    }
+}
+
+pub struct EventsDynStream {
+    events_full: EventChunkerMultifile,
+    done: bool,
+    complete: bool,
+}
+
+impl EventsDynStream {
+    pub fn new(events_full: EventChunkerMultifile) -> Self {
+        Self {
+            events_full,
+            done: false,
+            complete: false,
+        }
+    }
+}
+
+impl Stream for EventsDynStream {
+    type Item = Sitemty<Box<dyn items_0::Events>>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        loop {
+            break if self.complete {
+                panic!("poll_next on complete")
+            } else if self.done {
+                self.complete = true;
+                Ready(None)
+            } else {
+                match self.events_full.poll_next_unpin(cx) {
+                    Ready(Some(Ok(k))) => {
+                        todo!()
+                    }
+                    Ready(Some(Err(e))) => {
+                        self.done = true;
+                        Ready(Some(Err(e)))
+                    }
+                    Ready(None) => {
+                        self.done = true;
+                        continue;
+                    }
                     Pending => Pending,
                 }
             };

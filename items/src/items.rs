@@ -8,7 +8,6 @@ pub mod inmem;
 pub mod numops;
 pub mod plainevents;
 pub mod scalarevents;
-pub mod statsevents;
 pub mod streams;
 pub mod waveevents;
 pub mod xbinnedscalarevents;

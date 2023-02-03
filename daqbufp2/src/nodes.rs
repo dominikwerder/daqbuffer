@@ -3,7 +3,7 @@ use err::Error;
 use netpod::log::*;
 use netpod::Cluster;
 use std::sync::{Arc, Mutex};
-use std::{thread};
+use std::thread;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 

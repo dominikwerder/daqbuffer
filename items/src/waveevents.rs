@@ -68,7 +68,10 @@ where
     }
 }
 
-impl<NTY> AsAnyRef for WaveEvents<NTY> where NTY:NumOps {
+impl<NTY> AsAnyRef for WaveEvents<NTY>
+where
+    NTY: NumOps,
+{
     fn as_any_ref(&self) -> &dyn Any {
         self
     }
