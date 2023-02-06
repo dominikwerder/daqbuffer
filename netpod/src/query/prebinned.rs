@@ -131,7 +131,7 @@ impl PreBinnedQuery {
         self.cache_usage.clone()
     }
 
-    pub fn disk_io_buffer_sizee(&self) -> usize {
+    pub fn disk_io_buffer_size(&self) -> usize {
         self.disk_io_buffer_size
     }
 }

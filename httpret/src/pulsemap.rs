@@ -597,7 +597,7 @@ impl IndexFullHttpFunction {
             || channel_name.contains("SINSB04")
             || channel_name.contains("SINSB03")
         {
-            info!("latest for {channel_name}  {latest_pair:?}");
+            trace!("latest for {channel_name}  {latest_pair:?}");
         }
         Ok(msg)
     }
@@ -651,6 +651,7 @@ impl Drop for UpdateTaskGuard {
 }
 
 async fn update_task(do_abort: Arc<AtomicUsize>, node_config: NodeConfigCached) -> Result<(), Error> {
+    let mut print_last = Instant::now();
     loop {
         if do_abort.load(Ordering::SeqCst) != 0 {
             info!("update_task  break A");
@@ -672,7 +673,11 @@ async fn update_task(do_abort: Arc<AtomicUsize>, node_config: NodeConfigCached) 
         }
         let ts2 = Instant::now();
         let dt = ts2.duration_since(ts1).as_secs_f32() * 1e3;
-        info!("Done update task  {:.0}ms", dt);
+        let now2 = Instant::now();
+        if print_last.duration_since(now2) > Duration::from_millis(59000) {
+            print_last = now2;
+            info!("Done update task  {:.0}ms", dt);
+        }
     }
     Ok(())
 }
@@ -877,7 +882,7 @@ impl FromUrl for MapPulseQuery {
         };
         let pulse: u64 = pulsestr.parse()?;
         let ret = Self { backend, pulse };
-        info!("FromUrl {ret:?}");
+        trace!("FromUrl {ret:?}");
         Ok(ret)
     }
 
@@ -1221,12 +1226,12 @@ impl MapPulseHttpFunction {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
-        info!("MapPulseHttpFunction  handle  uri: {:?}", req.uri());
+        trace!("MapPulseHttpFunction  handle  uri: {:?}", req.uri());
         let urls = format!("{}", req.uri());
         let pulse: u64 = urls[MAP_PULSE_URL_PREFIX.len()..].parse()?;
         match CACHE.portal(pulse) {
             CachePortal::Fresh => {
-                info!("value not yet in cache  pulse {pulse}");
+                trace!("value not yet in cache  pulse {pulse}");
                 let histo = MapPulseHistoHttpFunction::histo(pulse, node_config).await?;
                 let mut i1 = 0;
                 let mut max = 0;
@@ -1245,14 +1250,14 @@ impl MapPulseHttpFunction {
                 }
             }
             CachePortal::Existing(rx) => {
-                info!("waiting for already running pulse map  pulse {pulse}");
+                trace!("waiting for already running pulse map  pulse {pulse}");
                 match rx.recv().await {
                     Ok(_) => {
                         error!("should never recv from existing operation  pulse {pulse}");
                         Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
                     }
                     Err(_e) => {
-                        info!("woken up while value wait  pulse {pulse}");
+                        trace!("woken up while value wait  pulse {pulse}");
                         match CACHE.portal(pulse) {
                             CachePortal::Known(val) => {
                                 info!("good, value after wakeup  pulse {pulse}");
@@ -1271,7 +1276,7 @@ impl MapPulseHttpFunction {
                 }
             }
             CachePortal::Known(val) => {
-                info!("value already in cache  pulse {pulse}  ts {val}");
+                trace!("value already in cache  pulse {pulse}  ts {val}");
                 Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&val)?))?)
             }
         }
@@ -1298,14 +1303,14 @@ impl Api4MapPulseHttpFunction {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
         let ts1 = Instant::now();
-        info!("Api4MapPulseHttpFunction  handle  uri: {:?}", req.uri());
+        trace!("Api4MapPulseHttpFunction  handle  uri: {:?}", req.uri());
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let q = MapPulseQuery::from_url(&url)?;
         let pulse = q.pulse;
 
         let ret = match CACHE.portal(pulse) {
             CachePortal::Fresh => {
-                info!("value not yet in cache  pulse {pulse}");
+                trace!("value not yet in cache  pulse {pulse}");
                 let histo = MapPulseHistoHttpFunction::histo(pulse, node_config).await?;
                 let mut i1 = 0;
                 let mut max = 0;
@@ -1327,17 +1332,17 @@ impl Api4MapPulseHttpFunction {
                 }
             }
             CachePortal::Existing(rx) => {
-                info!("waiting for already running pulse map  pulse {pulse}");
+                trace!("waiting for already running pulse map  pulse {pulse}");
                 match rx.recv().await {
                     Ok(_) => {
                         error!("should never recv from existing operation  pulse {pulse}");
                         Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
                     }
                     Err(_e) => {
-                        info!("woken up while value wait  pulse {pulse}");
+                        trace!("woken up while value wait  pulse {pulse}");
                         match CACHE.portal(pulse) {
                             CachePortal::Known(val) => {
-                                info!("good, value after wakeup  pulse {pulse}");
+                                trace!("good, value after wakeup  pulse {pulse}");
                                 Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&val)?))?)
                             }
                             CachePortal::Fresh => {
@@ -1353,38 +1358,16 @@ impl Api4MapPulseHttpFunction {
                 }
             }
             CachePortal::Known(val) => {
-                info!("value already in cache  pulse {pulse}  ts {val}");
+                trace!("value already in cache  pulse {pulse}  ts {val}");
                 Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&val)?))?)
             }
         };
         let ts2 = Instant::now();
-        info!(
-            "Api4MapPulseHttpFunction  took {:.2}s",
-            ts2.duration_since(ts1).as_secs_f32()
-        );
+        let dt = ts2.duration_since(ts1);
+        if dt > Duration::from_millis(1500) {
+            warn!("Api4MapPulseHttpFunction  took {:.2}s", dt.as_secs_f32());
+        }
         ret
-        /*let histo = MapPulseHistoHttpFunction::histo(q.pulse, node_config).await?;
-        let mut i1 = 0;
-        let mut max = 0;
-        for i2 in 0..histo.tss.len() {
-            if histo.counts[i2] > max {
-                max = histo.counts[i2];
-                i1 = i2;
-            }
-        }
-        let ts2 = Instant::now();
-        info!(
-            "Api4MapPulseHttpFunction  took {:.2}s",
-            ts2.duration_since(ts1).as_secs_f32()
-        );
-        if histo.tss.len() > 1 {
-            warn!("Ambigious pulse map  pulse {}  histo {:?}", q.pulse, histo);
-        }
-        if max > 0 {
-            Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&histo.tss[i1])?))?)
-        } else {
-            Ok(response(StatusCode::NO_CONTENT).body(Body::empty())?)
-        }*/
     }
 }
 
