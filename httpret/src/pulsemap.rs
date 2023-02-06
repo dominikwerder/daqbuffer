@@ -497,7 +497,7 @@ impl IndexFullHttpFunction {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
-        let ret = match Self::index(node_config).await {
+        let ret = match Self::index(false, node_config).await {
             Ok(msg) => response(StatusCode::OK).body(Body::from(msg))?,
             Err(e) => response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?,
         };
@@ -507,6 +507,7 @@ impl IndexFullHttpFunction {
     pub async fn index_channel(
         channel_name: String,
         conn: &dbconn::pg::Client,
+        do_print: bool,
         node_config: &NodeConfigCached,
     ) -> Result<String, Error> {
         let mut msg = format!("Index channel {}", channel_name);
@@ -593,23 +594,25 @@ impl IndexFullHttpFunction {
                 }
             }
         }
-        if channel_name.contains("SAT-CVME-TIFALL5:EvtSet")
-            || channel_name.contains("SINSB04")
-            || channel_name.contains("SINSB03")
-        {
-            trace!("latest for {channel_name}  {latest_pair:?}");
+        if do_print {
+            if channel_name.contains("SAT-CVME-TIFALL5:EvtSet")
+                || channel_name.contains("SINSB04")
+                || channel_name.contains("SINSB03")
+            {
+                info!("latest for {channel_name}  {latest_pair:?}");
+            }
         }
         Ok(msg)
     }
 
-    pub async fn index(node_config: &NodeConfigCached) -> Result<String, Error> {
+    pub async fn index(do_print: bool, node_config: &NodeConfigCached) -> Result<String, Error> {
         // TODO avoid double-insert on central storage.
         let mut msg = format!("LOG");
         make_tables(node_config).await?;
         let conn = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
         let chs = timer_channel_names();
         for channel_name in &chs[..] {
-            match Self::index_channel(channel_name.clone(), &conn, node_config).await {
+            match Self::index_channel(channel_name.clone(), &conn, do_print, node_config).await {
                 Ok(m) => {
                     msg.push_str("\n");
                     msg.push_str(&m);
@@ -663,8 +666,14 @@ async fn update_task(do_abort: Arc<AtomicUsize>, node_config: NodeConfigCached) 
             break;
         }
         let ts1 = Instant::now();
+        let do_print = if ts1.duration_since(print_last) >= Duration::from_millis(119000) {
+            print_last = ts1;
+            true
+        } else {
+            false
+        };
         CACHE.housekeeping();
-        match IndexFullHttpFunction::index(&node_config).await {
+        match IndexFullHttpFunction::index(do_print, &node_config).await {
             Ok(_) => {}
             Err(e) => {
                 error!("issue during last update task: {:?}", e);
@@ -673,9 +682,7 @@ async fn update_task(do_abort: Arc<AtomicUsize>, node_config: NodeConfigCached) 
         }
         let ts2 = Instant::now();
         let dt = ts2.duration_since(ts1);
-        let now2 = Instant::now();
-        if print_last.duration_since(now2) > Duration::from_millis(119000) || dt >= Duration::from_millis(4000) {
-            print_last = now2;
+        if do_print || dt >= Duration::from_millis(4000) {
             info!("Done update task  {:.0}ms", dt.as_secs_f32() * 1e3);
         }
     }
@@ -1017,11 +1024,14 @@ impl MapPulseLocalHttpFunction {
                 (channel, hostname, timebin as u32, split as u32, ks as u32)
             })
             .collect();
-        info!(
-            "map pulse local  req-from {:?}  candidate list in {:.0}ms",
-            req_from,
-            Instant::now().duration_since(ts1).as_secs_f32() * 1e3
-        );
+        let dt = Instant::now().duration_since(ts1);
+        if dt >= Duration::from_millis(500) {
+            info!(
+                "map pulse local  req-from {:?}  candidate list in {:.0}ms",
+                req_from,
+                dt.as_secs_f32() * 1e3
+            );
+        }
         //let mut msg = String::new();
         //use std::fmt::Write;
         //write!(&mut msg, "cands: {:?}\n", cands)?;
