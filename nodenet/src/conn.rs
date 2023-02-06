@@ -182,7 +182,8 @@ async fn events_conn_handler_inner_try(
 ) -> Result<(), ConnErr> {
     let _ = addr;
     let (netin, mut netout) = stream.into_split();
-    let perf_opts = PerfOpts { inmem_bufcap: 512 };
+    warn!("fix magic inmem_bufcap option");
+    let perf_opts = PerfOpts::default();
     let mut h = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
     let mut frames = Vec::new();
     while let Some(k) = h

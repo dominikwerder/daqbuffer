@@ -76,7 +76,7 @@ where
     let beg_date: DateTime<Utc> = beg_date.parse()?;
     let end_date: DateTime<Utc> = end_date.parse()?;
     let channel_backend = "testbackend";
-    let perf_opts = PerfOpts { inmem_bufcap: 512 };
+    let perf_opts = PerfOpts::default();
     let channel = Channel {
         backend: channel_backend.into(),
         name: channel_name.into(),

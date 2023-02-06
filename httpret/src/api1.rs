@@ -796,7 +796,8 @@ impl Stream for DataApiPython3DataStream {
                                 None,
                                 true,
                             );
-                            let perf_opts = PerfOpts { inmem_bufcap: 1024 * 4 };
+                            warn!("fix magic inmem_bufcap");
+                            let perf_opts = PerfOpts::default();
                             // TODO is this a good to place decide this?
                             let s = if self.node_config.node_config.cluster.is_central_storage {
                                 info!("Set up central storage stream");

@@ -1,9 +1,5 @@
-pub mod reqstatus;
-
 use crate::bodystream::response;
 use crate::err::Error;
-use crate::ReqCtx;
-use http::HeaderValue;
 use http::Method;
 use http::Request;
 use http::Response;
@@ -11,54 +7,46 @@ use http::StatusCode;
 use hyper::Body;
 use hyper::Client;
 use netpod::log::*;
-use netpod::query::api1::Api1Query;
 use netpod::ProxyConfig;
 use netpod::ACCEPT_ALL;
+use netpod::APP_JSON;
 
-pub struct PythonDataApi1Query {}
+pub struct RequestStatusHandler {}
 
-impl PythonDataApi1Query {
-    pub fn path() -> &'static str {
-        "/api/1/query"
+impl RequestStatusHandler {
+    pub fn path_prefix() -> &'static str {
+        "/api/1/requestStatus/"
     }
 
     pub fn handler(req: &Request<Body>) -> Option<Self> {
-        if req.uri().path() == Self::path() {
+        if req.uri().path().starts_with(Self::path_prefix()) {
             Some(Self {})
         } else {
             None
         }
     }
 
-    pub async fn handle(
-        &self,
-        req: Request<Body>,
-        _ctx: &ReqCtx,
-        proxy_config: &ProxyConfig,
-    ) -> Result<Response<Body>, Error> {
-        if req.method() != Method::POST {
+    pub async fn handle(&self, req: Request<Body>, proxy_config: &ProxyConfig) -> Result<Response<Body>, Error> {
+        let (head, body) = req.into_parts();
+        if head.method != Method::GET {
             return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?);
         }
-        let (head, body) = req.into_parts();
-        let _accept = head
+        let accept = head
             .headers
             .get(http::header::ACCEPT)
             .map_or(Ok(ACCEPT_ALL), |k| k.to_str())
             .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?
             .to_owned();
-        let body_data = hyper::body::to_bytes(body).await?;
-        if body_data.len() < 512 && body_data.first() == Some(&"{".as_bytes()[0]) {
-            info!("request body_data string: {}", String::from_utf8_lossy(&body_data));
+        if accept != APP_JSON && accept != ACCEPT_ALL {
+            // TODO set the public error code and message and return Err(e).
+            let e = Error::with_public_msg(format!("Unsupported Accept: {:?}", accept));
+            error!("{e}");
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
-        let qu = match serde_json::from_slice::<Api1Query>(&body_data) {
-            Ok(qu) => qu,
-            Err(e) => {
-                error!("got body_data: {:?}", String::from_utf8_lossy(&body_data[..]));
-                error!("can not parse: {e}");
-                return Err(Error::with_msg_no_trace("can not parse query"));
-            }
-        };
-        info!("Proxy sees request: {qu:?}");
+        let _body_data = hyper::body::to_bytes(body).await?;
+        let status_id = &head.uri.path()[Self::path_prefix().len()..];
+        info!("RequestStatusHandler  status_id {:?}", status_id);
+
         let back = {
             let mut ret = None;
             for b in &proxy_config.backends {
@@ -70,12 +58,12 @@ impl PythonDataApi1Query {
             ret
         };
         if let Some(back) = back {
-            let url_str = format!("{}/api/1/query", back.url);
+            let url_str = format!("{}{}{}", back.url, Self::path_prefix(), status_id);
             info!("try to ask {url_str}");
             let req = Request::builder()
-                .method(Method::POST)
+                .method(Method::GET)
                 .uri(url_str)
-                .body(Body::from(body_data))?;
+                .body(Body::empty())?;
             let client = Client::new();
             let res = client.request(req).await?;
             let (head, body) = res.into_parts();
@@ -84,11 +72,7 @@ impl PythonDataApi1Query {
                 Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
             } else {
                 info!("backend returned OK");
-                let riq_def = HeaderValue::from_static("(none)");
-                let riq = head.headers.get("x-daqbuffer-request-id").unwrap_or(&riq_def);
-                Ok(response(StatusCode::OK)
-                    .header("x-daqbuffer-request-id", riq)
-                    .body(body)?)
+                Ok(response(StatusCode::OK).body(body)?)
             }
         } else {
             Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)

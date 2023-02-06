@@ -187,6 +187,10 @@ async fn proxy_http_service_inner(
     } else if path.starts_with("/api/4/test/log/debug") {
         debug!("{path}");
         Ok(response(StatusCode::OK).body(Body::empty())?)
+    } else if let Some(h) = api1::PythonDataApi1Query::handler(&req) {
+        h.handle(req, ctx, proxy_config).await
+    } else if let Some(h) = api1::reqstatus::RequestStatusHandler::handler(&req) {
+        h.handle(req, proxy_config).await
     } else if path.starts_with(DISTRI_PRE) {
         proxy_distribute_v2(req).await
     } else {

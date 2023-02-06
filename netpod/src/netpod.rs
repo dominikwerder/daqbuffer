@@ -1819,6 +1819,14 @@ pub struct PerfOpts {
     pub inmem_bufcap: usize,
 }
 
+impl PerfOpts {
+    pub fn default() -> Self {
+        Self {
+            inmem_bufcap: 1024 * 512,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct ByteSize(pub u32);
 

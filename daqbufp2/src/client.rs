@@ -92,7 +92,7 @@ pub async fn get_binned(
             head, s
         )));
     }
-    let perf_opts = PerfOpts { inmem_bufcap: 512 };
+    let perf_opts = PerfOpts::default();
     let s1 = HttpBodyAsAsyncRead::new(res);
     let s2 = InMemoryFrameAsyncReadStream::new(s1, perf_opts.inmem_bufcap);
     use futures_util::StreamExt;
