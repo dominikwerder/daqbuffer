@@ -672,11 +672,11 @@ async fn update_task(do_abort: Arc<AtomicUsize>, node_config: NodeConfigCached) 
             }
         }
         let ts2 = Instant::now();
-        let dt = ts2.duration_since(ts1).as_secs_f32() * 1e3;
+        let dt = ts2.duration_since(ts1);
         let now2 = Instant::now();
-        if print_last.duration_since(now2) > Duration::from_millis(59000) {
+        if print_last.duration_since(now2) > Duration::from_millis(119000) || dt >= Duration::from_millis(4000) {
             print_last = now2;
-            info!("Done update task  {:.0}ms", dt);
+            info!("Done update task  {:.0}ms", dt.as_secs_f32() * 1e3);
         }
     }
     Ok(())
