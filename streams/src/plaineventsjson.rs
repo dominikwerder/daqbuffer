@@ -18,9 +18,7 @@ pub async fn plain_events_json(
     // TODO remove magic constant
     let deadline = Instant::now() + query.timeout() + Duration::from_millis(1000);
     let events_max = query.events_max();
-    let _empty = items::empty_events_dyn(&chconf.scalar_type, &chconf.shape, query.agg_kind());
-    let _empty = items_2::empty_events_dyn(&chconf.scalar_type, &chconf.shape, query.agg_kind());
-    let empty = items_2::empty_events_dyn_2(&chconf.scalar_type, &chconf.shape, query.agg_kind());
+    let empty = items_2::empty_events_dyn_ev(&chconf.scalar_type, &chconf.shape, query.agg_kind())?;
     let empty = ChannelEvents::Events(empty);
     let empty = items::sitem_data(empty);
     // TODO should be able to ask for data-events only, instead of mixed data and status events.

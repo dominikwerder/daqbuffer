@@ -1,70 +1,83 @@
+use crate::Appendable;
+use crate::ByteEstimate;
+use crate::Clearable;
+use crate::FrameType;
+use crate::FrameTypeInnerStatic;
+use crate::PushableIndex;
+use crate::WithLen;
+use crate::WithTimestamps;
 use bytes::BytesMut;
-use netpod::{ScalarType, Shape};
+use netpod::ScalarType;
+use netpod::Shape;
 use parse::channelconfig::CompressionMethod;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-use crate::{
-    Appendable, ByteEstimate, Clearable, FrameType, FrameTypeInnerStatic, PushableIndex, WithLen, WithTimestamps,
-};
+use serde::Deserialize;
+use serde::Deserializer;
+use serde::Serialize;
+use serde::Serializer;
+use std::collections::VecDeque;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EventFull {
-    pub tss: Vec<u64>,
-    pub pulses: Vec<u64>,
-    pub blobs: Vec<Vec<u8>>,
-    #[serde(serialize_with = "decomps_ser", deserialize_with = "decomps_de")]
+    pub tss: VecDeque<u64>,
+    pub pulses: VecDeque<u64>,
+    pub blobs: VecDeque<Vec<u8>>,
+    #[serde(with = "decomps_serde")]
     // TODO allow access to `decomps` via method which checks first if `blobs` is already the decomp.
-    pub decomps: Vec<Option<BytesMut>>,
-    pub scalar_types: Vec<ScalarType>,
-    pub be: Vec<bool>,
-    pub shapes: Vec<Shape>,
-    pub comps: Vec<Option<CompressionMethod>>,
+    pub decomps: VecDeque<Option<BytesMut>>,
+    pub scalar_types: VecDeque<ScalarType>,
+    pub be: VecDeque<bool>,
+    pub shapes: VecDeque<Shape>,
+    pub comps: VecDeque<Option<CompressionMethod>>,
 }
 
-fn decomps_ser<S>(t: &Vec<Option<BytesMut>>, s: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    let a: Vec<_> = t
-        .iter()
-        .map(|k| match k {
-            None => None,
-            Some(j) => Some(j[..].to_vec()),
-        })
-        .collect();
-    Serialize::serialize(&a, s)
-}
+mod decomps_serde {
+    use super::*;
 
-fn decomps_de<'de, D>(d: D) -> Result<Vec<Option<BytesMut>>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let a: Vec<Option<Vec<u8>>> = Deserialize::deserialize(d)?;
-    let a = a
-        .iter()
-        .map(|k| match k {
-            None => None,
-            Some(j) => {
-                let mut a = BytesMut::new();
-                a.extend_from_slice(&j);
-                Some(a)
-            }
-        })
-        .collect();
-    Ok(a)
+    pub fn serialize<S>(t: &VecDeque<Option<BytesMut>>, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let a: Vec<_> = t
+            .iter()
+            .map(|k| match k {
+                None => None,
+                Some(j) => Some(j[..].to_vec()),
+            })
+            .collect();
+        Serialize::serialize(&a, s)
+    }
+
+    pub fn deserialize<'de, D>(d: D) -> Result<VecDeque<Option<BytesMut>>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let a: Vec<Option<Vec<u8>>> = Deserialize::deserialize(d)?;
+        let a = a
+            .iter()
+            .map(|k| match k {
+                None => None,
+                Some(j) => {
+                    let mut a = BytesMut::new();
+                    a.extend_from_slice(&j);
+                    Some(a)
+                }
+            })
+            .collect();
+        Ok(a)
+    }
 }
 
 impl EventFull {
     pub fn empty() -> Self {
         Self {
-            tss: vec![],
-            pulses: vec![],
-            blobs: vec![],
-            decomps: vec![],
-            scalar_types: vec![],
-            be: vec![],
-            shapes: vec![],
-            comps: vec![],
+            tss: VecDeque::new(),
+            pulses: VecDeque::new(),
+            blobs: VecDeque::new(),
+            decomps: VecDeque::new(),
+            scalar_types: VecDeque::new(),
+            be: VecDeque::new(),
+            shapes: VecDeque::new(),
+            comps: VecDeque::new(),
         }
     }
 
@@ -79,14 +92,14 @@ impl EventFull {
         shape: Shape,
         comp: Option<CompressionMethod>,
     ) {
-        self.tss.push(ts);
-        self.pulses.push(pulse);
-        self.blobs.push(blob);
-        self.decomps.push(decomp);
-        self.scalar_types.push(scalar_type);
-        self.be.push(be);
-        self.shapes.push(shape);
-        self.comps.push(comp);
+        self.tss.push_back(ts);
+        self.pulses.push_back(pulse);
+        self.blobs.push_back(blob);
+        self.decomps.push_back(decomp);
+        self.scalar_types.push_back(scalar_type);
+        self.be.push_back(be);
+        self.shapes.push_back(shape);
+        self.comps.push_back(comp);
     }
 
     pub fn decomp(&self, i: usize) -> &[u8] {
@@ -120,14 +133,14 @@ impl Appendable for EventFull {
 
     // TODO expensive, get rid of it.
     fn append(&mut self, src: &Self) {
-        self.tss.extend_from_slice(&src.tss);
-        self.pulses.extend_from_slice(&src.pulses);
-        self.blobs.extend_from_slice(&src.blobs);
-        self.decomps.extend_from_slice(&src.decomps);
-        self.scalar_types.extend_from_slice(&src.scalar_types);
-        self.be.extend_from_slice(&src.be);
-        self.shapes.extend_from_slice(&src.shapes);
-        self.comps.extend_from_slice(&src.comps);
+        self.tss.extend(&src.tss);
+        self.pulses.extend(&src.pulses);
+        self.blobs.extend(src.blobs.iter().map(Clone::clone));
+        self.decomps.extend(src.decomps.iter().map(Clone::clone));
+        self.scalar_types.extend(src.scalar_types.iter().map(Clone::clone));
+        self.be.extend(&src.be);
+        self.shapes.extend(src.shapes.iter().map(Clone::clone));
+        self.comps.extend(src.comps.iter().map(Clone::clone));
     }
 
     fn append_zero(&mut self, _ts1: u64, _ts2: u64) {
@@ -171,13 +184,13 @@ impl ByteEstimate for EventFull {
 impl PushableIndex for EventFull {
     // TODO check all use cases, can't we move?
     fn push_index(&mut self, src: &Self, ix: usize) {
-        self.tss.push(src.tss[ix]);
-        self.pulses.push(src.pulses[ix]);
-        self.blobs.push(src.blobs[ix].clone());
-        self.decomps.push(src.decomps[ix].clone());
-        self.scalar_types.push(src.scalar_types[ix].clone());
-        self.be.push(src.be[ix]);
-        self.shapes.push(src.shapes[ix].clone());
-        self.comps.push(src.comps[ix].clone());
+        self.tss.push_back(src.tss[ix]);
+        self.pulses.push_back(src.pulses[ix]);
+        self.blobs.push_back(src.blobs[ix].clone());
+        self.decomps.push_back(src.decomps[ix].clone());
+        self.scalar_types.push_back(src.scalar_types[ix].clone());
+        self.be.push_back(src.be[ix]);
+        self.shapes.push_back(src.shapes[ix].clone());
+        self.comps.push_back(src.comps[ix].clone());
     }
 }

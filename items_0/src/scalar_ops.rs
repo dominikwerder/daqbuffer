@@ -52,6 +52,13 @@ impl AsPrimF32 for bool {
     }
 }
 
+impl AsPrimF32 for String {
+    fn as_prim_f32_b(&self) -> f32 {
+        // Well, at least some impl.
+        self.len() as f32
+    }
+}
+
 pub trait ScalarOps:
     fmt::Debug + Clone + PartialOrd + SubFrId + AsPrimF32 + Serialize + Unpin + Send + 'static
 {
@@ -67,7 +74,7 @@ macro_rules! impl_scalar_ops {
             }
 
             fn equal_slack(&self, rhs: &Self) -> bool {
-                $equal_slack(*self, *rhs)
+                $equal_slack(self, rhs)
             }
         }
     };
@@ -77,15 +84,19 @@ fn equal_int<T: PartialEq>(a: T, b: T) -> bool {
     a == b
 }
 
-fn equal_f32(a: f32, b: f32) -> bool {
+fn equal_f32(&a: &f32, &b: &f32) -> bool {
     (a - b).abs() < 1e-4 || (a / b > 0.999 && a / b < 1.001)
 }
 
-fn equal_f64(a: f64, b: f64) -> bool {
+fn equal_f64(&a: &f64, &b: &f64) -> bool {
     (a - b).abs() < 1e-6 || (a / b > 0.99999 && a / b < 1.00001)
 }
 
-fn equal_bool(a: bool, b: bool) -> bool {
+fn equal_bool(&a: &bool, &b: &bool) -> bool {
+    a == b
+}
+
+fn equal_string(a: &String, b: &String) -> bool {
     a == b
 }
 
@@ -100,3 +111,4 @@ impl_scalar_ops!(i64, 0, equal_int);
 impl_scalar_ops!(f32, 0., equal_f32);
 impl_scalar_ops!(f64, 0., equal_f64);
 impl_scalar_ops!(bool, false, equal_bool);
+impl_scalar_ops!(String, String::new(), equal_string);

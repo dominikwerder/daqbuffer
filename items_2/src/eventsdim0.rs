@@ -269,6 +269,20 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
         self.vals.tss.append(&mut src.tss);
         self.vals.pulses.append(&mut src.pulses);
         self.vals.values.append(&mut src.values);
+        if self.len() >= 2 {
+            let mut print = false;
+            let c = self.vals.tss.len();
+            if self.vals.tss[c - 2] + 1000000000 <= self.vals.tss[c - 1] {
+                print = true;
+            }
+            let c = self.vals.pulses.len();
+            if self.vals.pulses[c - 2] + 1000 <= self.vals.pulses[c - 1] {
+                print = true;
+            }
+            if print {
+                error!("gap detected\n{self:?}");
+            }
+        }
     }
 
     fn set_range_complete(&mut self) {
@@ -303,13 +317,23 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
         let pulses_sl = self.vals.pulses.make_contiguous();
         let (ts_anchor_sec, ts_off_ms, ts_off_ns) = ts_offs_from_abs(tss_sl);
         let (pulse_anchor, pulse_off) = pulse_offs_from_abs(pulses_sl);
+        let values = mem::replace(&mut self.vals.values, VecDeque::new());
+        if ts_off_ms.len() != ts_off_ns.len() {
+            return Err(Error::with_msg_no_trace("collected len mismatch"));
+        }
+        if ts_off_ms.len() != pulse_off.len() {
+            return Err(Error::with_msg_no_trace("collected len mismatch"));
+        }
+        if ts_off_ms.len() != values.len() {
+            return Err(Error::with_msg_no_trace("collected len mismatch"));
+        }
         let ret = Self::Output {
             ts_anchor_sec,
             ts_off_ms,
             ts_off_ns,
             pulse_anchor,
-            pulse_off: pulse_off,
-            values: mem::replace(&mut self.vals.values, VecDeque::new()),
+            pulse_off,
+            values,
             range_final: self.range_final,
             timed_out: self.timed_out,
             continue_at,

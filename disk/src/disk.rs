@@ -3,6 +3,7 @@ pub mod agg;
 pub mod aggtest;
 pub mod binnedstream;
 pub mod cache;
+pub mod channelconfig;
 pub mod dataopen;
 pub mod decode;
 pub mod eventblobs;
@@ -20,12 +21,17 @@ pub mod streamlog;
 use bytes::Bytes;
 use bytes::BytesMut;
 use err::Error;
-use futures_core::Stream;
 use futures_util::future::FusedFuture;
-use futures_util::{FutureExt, StreamExt, TryFutureExt};
+use futures_util::FutureExt;
+use futures_util::Stream;
+use futures_util::StreamExt;
+use futures_util::TryFutureExt;
 use netpod::log::*;
+use netpod::ChannelConfig;
+use netpod::DiskIoTune;
+use netpod::Node;
 use netpod::ReadSys;
-use netpod::{ChannelConfig, DiskIoTune, Node, Shape};
+use netpod::Shape;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::io::SeekFrom;
@@ -37,12 +43,17 @@ use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
 use std::time::Instant;
-use streams::dtflags::{ARRAY, BIG_ENDIAN, COMPRESSION, SHAPE};
+use streams::dtflags::ARRAY;
+use streams::dtflags::BIG_ENDIAN;
+use streams::dtflags::COMPRESSION;
+use streams::dtflags::SHAPE;
 use streams::filechunkread::FileChunkRead;
 use tokio::fs::File;
 use tokio::fs::OpenOptions;
+use tokio::io::AsyncRead;
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncSeekExt;
 use tokio::io::ReadBuf;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt};
 use tokio::sync::mpsc;
 
 // TODO transform this into a self-test or remove.
@@ -257,14 +268,14 @@ fn start_read5(
             }
         };
         let mut pos = pos_beg;
-        info!("start_read5 BEGIN {disk_io_tune:?}");
+        info!("read5  begin  {disk_io_tune:?}");
         loop {
             let mut buf = BytesMut::new();
-            buf.resize(1024 * 256, 0);
+            buf.resize(disk_io_tune.read_buffer_len, 0);
             match tokio::time::timeout(Duration::from_millis(8000), file.read(&mut buf)).await {
                 Ok(Ok(n)) => {
                     if n == 0 {
-                        info!("read5 EOF  pos_beg {pos_beg}  pos {pos}  path {path:?}");
+                        //info!("read5 EOF  pos_beg {pos_beg}  pos {pos}  path {path:?}");
                         break;
                     }
                     pos += n as u64;
@@ -273,7 +284,7 @@ fn start_read5(
                     match tx.send(Ok(item)).await {
                         Ok(()) => {}
                         Err(_) => {
-                            error!("broken channel");
+                            //error!("broken channel");
                             break;
                         }
                     }
@@ -283,7 +294,7 @@ fn start_read5(
                         break;
                     }
                     Err(_) => {
-                        error!("broken channel");
+                        //error!("broken channel");
                         break;
                     }
                 },
@@ -294,7 +305,7 @@ fn start_read5(
                     match tx.send(Err(e)).await {
                         Ok(()) => {}
                         Err(_e) => {
-                            error!("broken channel");
+                            //error!("broken channel");
                             break;
                         }
                     }
@@ -302,6 +313,8 @@ fn start_read5(
                 }
             }
         }
+        let n = pos - pos_beg;
+        info!("read5  done  {n}");
     };
     tokio::task::spawn(fut);
     Ok(())

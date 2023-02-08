@@ -453,6 +453,7 @@ pub trait FilterFittingInside: Sized {
 }
 
 pub trait PushableIndex {
+    // TODO get rid of usage, involves copy.
     // TODO check whether it makes sense to allow a move out of src. Or use a deque for src type and pop?
     fn push_index(&mut self, src: &Self, ix: usize);
 }
@@ -463,6 +464,8 @@ pub trait NewEmpty {
 
 pub trait Appendable: WithLen {
     fn empty_like_self(&self) -> Self;
+
+    // TODO get rid of usage, involves copy.
     fn append(&mut self, src: &Self);
 
     // TODO the `ts2` makes no sense for non-bin-implementors

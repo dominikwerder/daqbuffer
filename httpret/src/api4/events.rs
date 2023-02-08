@@ -1,14 +1,23 @@
-use crate::channelconfig::{chconf_from_events_binary, chconf_from_events_json};
+use crate::channelconfig::chconf_from_events_v1;
 use crate::err::Error;
-use crate::{response, response_err, BodyStream, ToPublicResponse};
-use futures_util::{stream, TryStreamExt};
-use http::{Method, Request, Response, StatusCode};
+use crate::response;
+use crate::response_err;
+use crate::BodyStream;
+use crate::ToPublicResponse;
+use futures_util::stream;
+use futures_util::TryStreamExt;
+use http::Method;
+use http::Request;
+use http::Response;
+use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
 use netpod::query::PlainEventsQuery;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
-use netpod::{ACCEPT_ALL, APP_JSON, APP_OCTET};
+use netpod::ACCEPT_ALL;
+use netpod::APP_JSON;
+use netpod::APP_OCTET;
 use url::Url;
 
 pub struct EventsHandler {}
@@ -29,7 +38,7 @@ impl EventsHandler {
         match plain_events(req, node_config).await {
             Ok(ret) => Ok(ret),
             Err(e) => {
-                error!("EventsHandler sees {e}");
+                error!("EventsHandler sees: {e}");
                 Ok(e.to_public_response())
             }
         }
@@ -65,7 +74,7 @@ async fn plain_events_binary(
 ) -> Result<Response<Body>, Error> {
     debug!("httpret  plain_events_binary  req: {:?}", req);
     let query = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
-    let chconf = chconf_from_events_binary(&query, node_config).await?;
+    let chconf = chconf_from_events_v1(&query, node_config).await?;
     // Update the series id since we don't require some unique identifier yet.
     let mut query = query;
     query.set_series_id(chconf.series);
@@ -89,9 +98,7 @@ async fn plain_events_json(
     let (_head, _body) = req.into_parts();
     let query = PlainEventsQuery::from_url(&url)?;
     info!("plain_events_json query {query:?}");
-    let chconf = chconf_from_events_json(&query, node_config)
-        .await
-        .map_err(Error::from)?;
+    let chconf = chconf_from_events_v1(&query, node_config).await.map_err(Error::from)?;
     // Update the series id since we don't require some unique identifier yet.
     let mut query = query;
     query.set_series_id(chconf.series);

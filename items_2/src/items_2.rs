@@ -67,8 +67,8 @@ pub fn ts_offs_from_abs_with_anchor(ts_anchor_sec: u64, tss: &[u64]) -> (VecDequ
 
 // TODO take iterator instead of slice, because a VecDeque can't produce a slice in general.
 pub fn pulse_offs_from_abs(pulse: &[u64]) -> (u64, VecDeque<u64>) {
-    let pulse_anchor = pulse.first().map_or(0, |k| *k);
-    let pulse_off = pulse.iter().map(|k| *k - pulse_anchor).collect();
+    let pulse_anchor = pulse.first().map_or(0, |&k| k) / 10000 * 10000;
+    let pulse_off = pulse.iter().map(|&k| k - pulse_anchor).collect();
     (pulse_anchor, pulse_off)
 }
 
@@ -207,10 +207,14 @@ pub trait TimeBinnableTypeAggregator: Send {
     fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output;
 }
 
-pub fn empty_events_dyn_2(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggKind) -> Box<dyn Events> {
-    match shape {
+pub fn empty_events_dyn_ev(
+    scalar_type: &ScalarType,
+    shape: &Shape,
+    agg_kind: &AggKind,
+) -> Result<Box<dyn Events>, Error> {
+    let ret: Box<dyn Events> = match shape {
         Shape::Scalar => match agg_kind {
-            AggKind::TimeWeightedScalar => {
+            AggKind::Plain | AggKind::TimeWeightedScalar => {
                 use ScalarType::*;
                 type K<T> = eventsdim0::EventsDim0<T>;
                 match scalar_type {
@@ -225,10 +229,7 @@ pub fn empty_events_dyn_2(scalar_type: &ScalarType, shape: &Shape, agg_kind: &Ag
                     F32 => Box::new(K::<f32>::empty()),
                     F64 => Box::new(K::<f64>::empty()),
                     BOOL => Box::new(K::<bool>::empty()),
-                    _ => {
-                        error!("TODO empty_events_dyn_2  {scalar_type:?}  {shape:?}  {agg_kind:?}");
-                        err::todoval()
-                    }
+                    STRING => Box::new(K::<String>::empty()),
                 }
             }
             _ => {
@@ -252,10 +253,7 @@ pub fn empty_events_dyn_2(scalar_type: &ScalarType, shape: &Shape, agg_kind: &Ag
                     F32 => Box::new(K::<f32>::empty()),
                     F64 => Box::new(K::<f64>::empty()),
                     BOOL => Box::new(K::<bool>::empty()),
-                    _ => {
-                        error!("TODO empty_events_dyn_2  {scalar_type:?}  {shape:?}  {agg_kind:?}");
-                        err::todoval()
-                    }
+                    STRING => Box::new(K::<String>::empty()),
                 }
             }
             _ => {
@@ -267,73 +265,11 @@ pub fn empty_events_dyn_2(scalar_type: &ScalarType, shape: &Shape, agg_kind: &Ag
             error!("TODO empty_events_dyn_2  {scalar_type:?}  {shape:?}  {agg_kind:?}");
             err::todoval()
         }
-    }
+    };
+    Ok(ret)
 }
 
-// TODO needed any longer?
-pub fn empty_events_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggKind) -> Box<dyn TimeBinnable> {
-    match shape {
-        Shape::Scalar => match agg_kind {
-            AggKind::TimeWeightedScalar => {
-                use ScalarType::*;
-                type K<T> = eventsdim0::EventsDim0<T>;
-                match scalar_type {
-                    U8 => Box::new(K::<u8>::empty()),
-                    U16 => Box::new(K::<u16>::empty()),
-                    U32 => Box::new(K::<u32>::empty()),
-                    U64 => Box::new(K::<u64>::empty()),
-                    I8 => Box::new(K::<i8>::empty()),
-                    I16 => Box::new(K::<i16>::empty()),
-                    I32 => Box::new(K::<i32>::empty()),
-                    I64 => Box::new(K::<i64>::empty()),
-                    F32 => Box::new(K::<f32>::empty()),
-                    F64 => Box::new(K::<f64>::empty()),
-                    _ => {
-                        error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
-                        err::todoval()
-                    }
-                }
-            }
-            _ => {
-                error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
-                err::todoval()
-            }
-        },
-        Shape::Wave(..) => match agg_kind {
-            AggKind::Plain => {
-                use ScalarType::*;
-                type K<T> = eventsdim1::EventsDim1<T>;
-                match scalar_type {
-                    U8 => Box::new(K::<u8>::empty()),
-                    U16 => Box::new(K::<u16>::empty()),
-                    U32 => Box::new(K::<u32>::empty()),
-                    U64 => Box::new(K::<u64>::empty()),
-                    I8 => Box::new(K::<i8>::empty()),
-                    I16 => Box::new(K::<i16>::empty()),
-                    I32 => Box::new(K::<i32>::empty()),
-                    I64 => Box::new(K::<i64>::empty()),
-                    F32 => Box::new(K::<f32>::empty()),
-                    F64 => Box::new(K::<f64>::empty()),
-                    BOOL => Box::new(K::<bool>::empty()),
-                    _ => {
-                        error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
-                        err::todoval()
-                    }
-                }
-            }
-            _ => {
-                error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
-                err::todoval()
-            }
-        },
-        Shape::Image(..) => {
-            error!("TODO empty_events_dyn  {scalar_type:?}  {shape:?}  {agg_kind:?}");
-            err::todoval()
-        }
-    }
-}
-
-pub fn empty_binned_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggKind) -> Box<dyn TimeBinnable> {
+pub fn empty_binned_dyn_tb(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggKind) -> Box<dyn TimeBinnable> {
     match shape {
         Shape::Scalar => match agg_kind {
             AggKind::TimeWeightedScalar => {
@@ -445,7 +381,7 @@ pub async fn binned_collected(
     let mut did_range_complete = false;
     let mut coll = None;
     let mut binner = None;
-    let empty_item = empty_events_dyn_2(&scalar_type, &shape, &AggKind::TimeWeightedScalar);
+    let empty_item = empty_events_dyn_ev(&scalar_type, &shape, &AggKind::TimeWeightedScalar)?;
     let tmp_item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(ChannelEvents::Events(
         empty_item,
     ))));
@@ -533,7 +469,7 @@ pub async fn binned_collected(
         }
         None => {
             error!("binned_collected nothing collected");
-            let item = empty_binned_dyn(&scalar_type, &shape, &AggKind::DimXBins1);
+            let item = empty_binned_dyn_tb(&scalar_type, &shape, &AggKind::DimXBins1);
             let ret = item.to_box_to_json_result();
             tokio::time::sleep(Duration::from_millis(2000)).await;
             Ok(ret)

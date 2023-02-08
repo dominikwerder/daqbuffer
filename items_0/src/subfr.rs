@@ -45,3 +45,7 @@ impl SubFrId for f64 {
 impl SubFrId for bool {
     const SUB: u32 = 0x0d;
 }
+
+impl SubFrId for String {
+    const SUB: u32 = 0x0e;
+}

@@ -1,16 +1,26 @@
-use crate::dataopen::{open_expanded_files, open_files, OpenedFileSet};
+use crate::dataopen::open_expanded_files;
+use crate::dataopen::open_files;
+use crate::dataopen::OpenedFileSet;
 use crate::merge::MergedStream;
 use err::Error;
-use futures_core::Stream;
+use futures_util::Stream;
 use futures_util::StreamExt;
 use items::eventfull::EventFull;
-use items::{LogItem, RangeCompletableItem, Sitemty, StreamItem};
+use items::LogItem;
+use items::RangeCompletableItem;
+use items::Sitemty;
+use items::StreamItem;
 use netpod::log::*;
 use netpod::timeunits::SEC;
-use netpod::{ChannelConfig, DiskIoTune, NanoRange, Node};
+use netpod::ChannelConfig;
+use netpod::DiskIoTune;
+use netpod::NanoRange;
+use netpod::Node;
 use std::pin::Pin;
-use std::task::{Context, Poll};
-use streams::eventchunker::{EventChunker, EventChunkerConf};
+use std::task::Context;
+use std::task::Poll;
+use streams::eventchunker::EventChunker;
+use streams::eventchunker::EventChunkerConf;
 use streams::rangefilter::RangeFilter;
 
 pub trait InputTraits: Stream<Item = Sitemty<EventFull>> {}
@@ -97,7 +107,7 @@ impl Stream for EventChunkerMultifile {
                         Some(evs) => match evs.poll_next_unpin(cx) {
                             Ready(Some(k)) => {
                                 if let Ok(StreamItem::DataItem(RangeCompletableItem::Data(h))) = &k {
-                                    if let Some(&g) = h.tss.last() {
+                                    if let Some(&g) = h.tss.back() {
                                         if g == self.max_ts {
                                             let msg = format!("EventChunkerMultifile  repeated ts {}", g);
                                             error!("{}", msg);

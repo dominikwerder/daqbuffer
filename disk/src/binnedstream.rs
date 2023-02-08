@@ -1,5 +1,5 @@
 use err::Error;
-use futures_core::Stream;
+use futures_util::Stream;
 use futures_util::StreamExt;
 use std::pin::Pin;
 use std::task::{Context, Poll};

@@ -5,24 +5,27 @@ pub mod channel_status;
 pub mod channelconfig;
 pub mod download;
 pub mod err;
-pub mod events;
 pub mod gather;
 pub mod prometheus;
 pub mod proxy;
 pub mod pulsemap;
 pub mod settings;
 
-use self::bodystream::{BodyStream, ToPublicResponse};
+use self::bodystream::BodyStream;
+use self::bodystream::ToPublicResponse;
 use crate::bodystream::response;
 use crate::err::Error;
 use crate::gather::gather_get_json;
 use crate::pulsemap::UpdateTask;
-use futures_util::{Future, FutureExt, StreamExt};
+use futures_util::Future;
+use futures_util::FutureExt;
+use futures_util::StreamExt;
 use http::Method;
 use http::StatusCode;
 use hyper::server::conn::AddrStream;
 use hyper::server::Server;
-use hyper::service::{make_service_fn, service_fn};
+use hyper::service::make_service_fn;
+use hyper::service::service_fn;
 use hyper::Body;
 use hyper::Request;
 use hyper::Response;
@@ -32,17 +35,22 @@ use netpod::query::prebinned::PreBinnedQuery;
 use netpod::timeunits::SEC;
 use netpod::NodeConfigCached;
 use netpod::ProxyConfig;
-use netpod::{APP_JSON, APP_JSON_LINES};
+use netpod::APP_JSON;
+use netpod::APP_JSON_LINES;
 use nodenet::conn::events_service;
-use panic::{AssertUnwindSafe, UnwindSafe};
+use panic::AssertUnwindSafe;
+use panic::UnwindSafe;
 use pin::Pin;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::net;
 use std::panic;
 use std::pin;
-use std::sync::atomic::{AtomicPtr, Ordering};
-use std::sync::{Once, RwLock, RwLockWriteGuard};
+use std::sync::atomic::AtomicPtr;
+use std::sync::atomic::Ordering;
+use std::sync::Once;
+use std::sync::RwLock;
+use std::sync::RwLockWriteGuard;
 use std::task;
 use std::time::SystemTime;
 use task::Context;
@@ -302,7 +310,7 @@ async fn http_service_inner(
         h.handle(req, &node_config).await
     } else if let Some(h) = channelconfig::AmbigiousChannelNames::handler(&req) {
         h.handle(req, &node_config).await
-    } else if let Some(h) = events::EventsHandler::handler(&req) {
+    } else if let Some(h) = api4::events::EventsHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = channel_status::ConnectionStatusEvents::handler(&req) {
         h.handle(req, ctx, &node_config).await

@@ -1,7 +1,6 @@
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use items::eventfull::EventFull;
 use items::frame::decode_frame;
 use items::frame::make_term_frame;
 use items::EventQueryJsonStringFrame;
@@ -98,7 +97,7 @@ async fn make_channel_events_stream(
         // TODO why both in PlainEventsQuery and as separate parameter? Check other usages.
         let do_one_before_range = false;
         // TODO use better builder pattern with shortcuts for production and dev defaults
-        let f = dbconn::channelconfig::chconf_from_database(evq.channel(), node_config)
+        let f = crate::channelconfig::channel_config(evq.range().clone(), evq.channel().clone(), node_config)
             .await
             .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?;
         let scyco = conf;
@@ -164,15 +163,6 @@ async fn make_channel_events_stream(
     } else {
         Ok(disk::raw::conn::make_event_pipe(&evq, node_config).await?)
     }
-}
-
-async fn make_event_blobs_stream(
-    evq: PlainEventsQuery,
-    node_config: &NodeConfigCached,
-) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
-    info!("make_event_blobs_stream");
-    let stream = disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await?;
-    Ok(stream)
 }
 
 async fn events_conn_handler_inner_try(
@@ -247,7 +237,7 @@ async fn events_conn_handler_inner_try(
 
     let mut stream: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> =
         if let AggKind::EventBlobs = evq.agg_kind() {
-            match make_event_blobs_stream(evq, node_config).await {
+            match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
                 Ok(stream) => {
                     let stream = stream.map(|x| Box::new(x) as _);
                     Box::pin(stream)
@@ -273,7 +263,11 @@ async fn events_conn_handler_inner_try(
         let item = item.make_frame();
         match item {
             Ok(buf) => {
-                trace!("write {} bytes", buf.len());
+                if buf.len() > 1024 * 64 {
+                    warn!("emit buf len {}", buf.len());
+                } else {
+                    trace!("emit buf len {}", buf.len());
+                }
                 buf_len_histo.ingest(buf.len() as u32);
                 match netout.write_all(&buf).await {
                     Ok(_) => {}

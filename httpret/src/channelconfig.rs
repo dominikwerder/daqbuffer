@@ -1,34 +1,42 @@
 use crate::err::Error;
-use crate::{response, ToPublicResponse};
-use dbconn::channelconfig::chconf_from_database;
+use crate::response;
+use crate::ToPublicResponse;
 use dbconn::create_connection;
 use futures_util::StreamExt;
-use http::{Method, Request, Response, StatusCode};
+use http::Method;
+use http::Request;
+use http::Response;
+use http::StatusCode;
 use hyper::Body;
 use netpod::get_url_query_pairs;
 use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
-use netpod::query::{BinnedQuery, PlainEventsQuery};
+use netpod::query::BinnedQuery;
+use netpod::query::PlainEventsQuery;
 use netpod::timeunits::*;
 use netpod::ChConf;
-use netpod::{Channel, ChannelConfigQuery, FromUrl, ScalarType, Shape};
-use netpod::{ChannelConfigResponse, NodeConfigCached};
-use netpod::{ACCEPT_ALL, APP_JSON};
+use netpod::Channel;
+use netpod::ChannelConfigQuery;
+use netpod::ChannelConfigResponse;
+use netpod::FromUrl;
+use netpod::NodeConfigCached;
+use netpod::ScalarType;
+use netpod::Shape;
+use netpod::ACCEPT_ALL;
+use netpod::APP_JSON;
 use scylla::batch::Consistency;
 use scylla::frame::response::cql_to_rust::FromRowError as ScyFromRowError;
 use scylla::transport::errors::NewSessionError as ScyNewSessionError;
 use scylla::transport::errors::QueryError as ScyQueryError;
 use scylla::transport::iterator::NextRowError;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::BTreeMap;
 use url::Url;
 
-pub async fn chconf_from_events_binary(q: &PlainEventsQuery, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
-    chconf_from_database(q.channel(), ncc).await.map_err(Into::into)
-}
-
-pub async fn chconf_from_events_json(q: &PlainEventsQuery, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
-    chconf_from_database(q.channel(), ncc).await.map_err(Into::into)
+pub async fn chconf_from_events_v1(q: &PlainEventsQuery, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
+    let ret = nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), ncc).await?;
+    Ok(ret)
 }
 
 pub async fn chconf_from_prebinned(q: &PreBinnedQuery, _ncc: &NodeConfigCached) -> Result<ChConf, Error> {
@@ -46,7 +54,8 @@ pub async fn chconf_from_prebinned(q: &PreBinnedQuery, _ncc: &NodeConfigCached) 
 }
 
 pub async fn chconf_from_binned(q: &BinnedQuery, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
-    chconf_from_database(q.channel(), ncc).await.map_err(Into::into)
+    let ret = nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), ncc).await?;
+    Ok(ret)
 }
 
 pub struct ChannelConfigHandler {}
@@ -93,7 +102,7 @@ impl ChannelConfigHandler {
         let q = ChannelConfigQuery::from_url(&url)?;
         info!("channel_config  for q {q:?}");
         let conf = if let Some(_scyco) = &node_config.node_config.cluster.scylla {
-            let c = dbconn::channelconfig::chconf_from_database(&q.channel, node_config).await?;
+            let c = nodenet::channelconfig::channel_config(q.range.clone(), q.channel.clone(), node_config).await?;
             ChannelConfigResponse {
                 channel: Channel {
                     series: Some(c.series),

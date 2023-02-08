@@ -74,7 +74,7 @@ impl ConnectionStatusEvents {
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("no scylla configured")))?;
         let _scy = scyllaconn::create_scy_session(scyco).await?;
-        let chconf = dbconn::channelconfig::chconf_from_database(q.channel(), node_config).await?;
+        let chconf = nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), node_config).await?;
         let _series = chconf.series;
         let _do_one_before_range = true;
         let ret = Vec::new();
@@ -148,7 +148,7 @@ impl ChannelStatusEvents {
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("no scylla configured")))?;
         let scy = scyllaconn::create_scy_session(scyco).await?;
-        let chconf = dbconn::channelconfig::chconf_from_database(q.channel(), node_config).await?;
+        let chconf = nodenet::channelconfig::channel_config(q.range().clone(),q.channel().clone(), node_config).await?;
         let do_one_before_range = true;
         let mut stream =
             scyllaconn::status::StatusStreamScylla::new(chconf.series, q.range().clone(), do_one_before_range, scy);

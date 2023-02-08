@@ -1,22 +1,33 @@
 use crate::errconv::ErrConv;
 use crate::events::EventsStreamScylla;
 use err::Error;
-use futures_util::{Future, Stream, StreamExt};
+use futures_util::Future;
+use futures_util::Stream;
+use futures_util::StreamExt;
 use items_0::TimeBinned;
 use items_2::binsdim0::BinsDim0;
 use items_2::channelevents::ChannelEvents;
-use items_2::{empty_binned_dyn, empty_events_dyn};
+use items_2::empty_binned_dyn_tb;
+use items_2::empty_events_dyn_ev;
 use netpod::log::*;
-use netpod::query::{CacheUsage, PlainEventsQuery};
+use netpod::query::CacheUsage;
+use netpod::query::PlainEventsQuery;
 use netpod::timeunits::*;
-use netpod::{AggKind, ChannelTyped, ScalarType, Shape};
-use netpod::{PreBinnedPatchCoord, PreBinnedPatchIterator, PreBinnedPatchRange};
+use netpod::AggKind;
+use netpod::ChannelTyped;
+use netpod::PreBinnedPatchCoord;
+use netpod::PreBinnedPatchIterator;
+use netpod::PreBinnedPatchRange;
+use netpod::ScalarType;
+use netpod::Shape;
 use scylla::Session as ScySession;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::Arc;
-use std::task::{Context, Poll};
-use std::time::{Duration, Instant};
+use std::task::Context;
+use std::task::Poll;
+use std::time::Duration;
+use std::time::Instant;
 
 pub async fn read_cached_scylla(
     series: u64,
@@ -281,7 +292,7 @@ pub async fn fetch_uncached_higher_res_prebinned(
     // TODO refine the AggKind scheme or introduce a new BinningOpts type and get time-weight from there.
     let do_time_weight = true;
     // We must produce some result with correct types even if upstream delivers nothing at all.
-    let bin0 = empty_binned_dyn(&chn.scalar_type, &chn.shape, &agg_kind);
+    let bin0 = empty_binned_dyn_tb(&chn.scalar_type, &chn.shape, &agg_kind);
     let mut time_binner = bin0.time_binner_new(edges.clone(), do_time_weight);
     let mut complete = true;
     let patch_it = PreBinnedPatchIterator::from_range(range.clone());
@@ -354,8 +365,11 @@ pub async fn fetch_uncached_binned_events(
     // TODO refine the AggKind scheme or introduce a new BinningOpts type and get time-weight from there.
     let do_time_weight = true;
     // We must produce some result with correct types even if upstream delivers nothing at all.
-    let bin0 = empty_events_dyn(&chn.scalar_type, &chn.shape, &agg_kind);
-    let mut time_binner = bin0.time_binner_new(edges.clone(), do_time_weight);
+    //let bin0 = empty_events_dyn_tb(&chn.scalar_type, &chn.shape, &agg_kind);
+    //let mut time_binner = bin0.time_binner_new(edges.clone(), do_time_weight);
+    let mut time_binner = empty_events_dyn_ev(&chn.scalar_type, &chn.shape, &agg_kind)?
+        .as_time_binnable()
+        .time_binner_new(edges.clone(), do_time_weight);
     // TODO handle deadline better
     let deadline = Instant::now();
     let deadline = deadline

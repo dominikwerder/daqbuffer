@@ -1,31 +1,16 @@
-use crate::decode::BigEndian;
-use crate::decode::Endianness;
-use crate::decode::EventValueFromBytes;
-use crate::decode::EventValueShape;
-use crate::decode::EventValuesDim0Case;
-use crate::decode::EventValuesDim1Case;
-use crate::decode::EventsDecodedStream;
-use crate::decode::LittleEndian;
-use crate::decode::NumFromBytes;
 use crate::eventblobs::EventChunkerMultifile;
 use err::Error;
+use futures_util::stream;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items::eventfull::EventFull;
-use items::numops::BoolNum;
-use items::numops::NumOps;
-use items::numops::StringNum;
-use items::EventsNodeProcessor;
-use items::Framable;
 use items::RangeCompletableItem;
 use items::Sitemty;
 use items::StreamItem;
 use items_2::channelevents::ChannelEvents;
-use items_2::eventsdim0::EventsDim0;
 use netpod::log::*;
 use netpod::query::PlainEventsQuery;
 use netpod::AggKind;
-use netpod::ByteOrder;
 use netpod::ByteSize;
 use netpod::Channel;
 use netpod::DiskIoTune;
@@ -37,167 +22,35 @@ use parse::channelconfig::extract_matching_config_entry;
 use parse::channelconfig::read_local_config;
 use parse::channelconfig::ConfigEntry;
 use parse::channelconfig::MatchingConfigEntry;
-use std::collections::VecDeque;
 use std::pin::Pin;
 use streams::eventchunker::EventChunkerConf;
 
-fn make_num_pipeline_stream_evs<NTY, END, EVS, ENP>(
-    event_value_shape: EVS,
-    events_node_proc: ENP,
+fn make_num_pipeline_stream_evs(
+    scalar_type: ScalarType,
+    shape: Shape,
+    agg_kind: AggKind,
     event_blobs: EventChunkerMultifile,
-) -> Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>
-where
-    NTY: NumOps + NumFromBytes<NTY, END> + 'static,
-    END: Endianness + 'static,
-    EVS: EventValueShape<NTY, END> + EventValueFromBytes<NTY, END> + 'static,
-    ENP: EventsNodeProcessor<Input = <EVS as EventValueFromBytes<NTY, END>>::Batch> + 'static,
-    Sitemty<<ENP as EventsNodeProcessor>::Output>: Framable + 'static,
-    <ENP as EventsNodeProcessor>::Output: 'static,
-{
-    let decs = EventsDecodedStream::<NTY, END, EVS>::new(event_value_shape, event_blobs);
-    let s2 = StreamExt::map(decs, move |item| match item {
+) -> Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>> {
+    let event_stream = match crate::decode::EventsDynStream::new(scalar_type, shape, agg_kind, event_blobs) {
+        Ok(k) => k,
+        Err(e) => {
+            return Box::pin(stream::iter([Err(e)]));
+        }
+    };
+    let stream = event_stream.map(|item| match item {
         Ok(item) => match item {
             StreamItem::DataItem(item) => match item {
-                RangeCompletableItem::Data(item) => {
-                    // TODO fix super ugly slow glue code
-                    use items::EventsNodeProcessorOutput;
-                    let mut item = events_node_proc.process(item);
-                    if let Some(item) = item
-                        .as_any_mut()
-                        .downcast_mut::<items::scalarevents::ScalarEvents<NTY>>()
-                    {
-                        trace!("ScalarEvents");
-                        let tss: VecDeque<u64> = item.tss.iter().map(|x| *x).collect();
-                        let pulses: VecDeque<u64> = item.pulses.iter().map(|x| *x).collect();
-                        let values: VecDeque<NTY> = item.values.iter().map(|x| x.clone()).collect();
-                        let item = EventsDim0 { tss, pulses, values };
-                        let item = ChannelEvents::Events(Box::new(item));
-                        Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
-                    } else if let Some(item) = item.as_any_mut().downcast_mut::<items::waveevents::WaveEvents<NTY>>() {
-                        trace!("WaveEvents");
-                        let _tss: VecDeque<u64> = item.tss.iter().map(|x| *x).collect();
-                        let _pulses: VecDeque<u64> = item.pulses.iter().map(|x| *x).collect();
-                        let _values: VecDeque<Vec<NTY>> = item.vals.iter().map(|x| x.clone()).collect();
-                        //let item = EventsDim1 { tss, pulses, values };
-                        //let item = ChannelEvents::Events(Box::new(item));
-                        //Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
-                        Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
-                    } else if let Some(item) = item
-                        .as_any_mut()
-                        .downcast_mut::<items::xbinnedscalarevents::XBinnedScalarEvents<NTY>>()
-                    {
-                        trace!("XBinnedScalarEvents");
-                        let tss: VecDeque<u64> = item.tss.iter().map(|x| *x).collect();
-                        let pulses: VecDeque<u64> = (0..tss.len()).map(|_| 0).collect();
-                        let _avgs: VecDeque<f32> = item.avgs.iter().map(|x| x.clone()).collect();
-                        let mins: VecDeque<NTY> = item.mins.iter().map(|x| x.clone()).collect();
-                        let _maxs: VecDeque<NTY> = item.maxs.iter().map(|x| x.clone()).collect();
-                        let item = EventsDim0 {
-                            tss,
-                            pulses,
-                            values: mins,
-                        };
-                        let item = ChannelEvents::Events(Box::new(item));
-                        Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
-                    } else {
-                        error!("TODO bad, no idea what this item is\n\n{:?}\n\n", item);
-                        Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
-                    }
-                }
                 RangeCompletableItem::RangeComplete => Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)),
+                RangeCompletableItem::Data(item) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(
+                    ChannelEvents::Events(item),
+                ))),
             },
-            StreamItem::Log(item) => Ok(StreamItem::Log(item)),
-            StreamItem::Stats(item) => Ok(StreamItem::Stats(item)),
+            StreamItem::Log(k) => Ok(StreamItem::Log(k)),
+            StreamItem::Stats(k) => Ok(StreamItem::Stats(k)),
         },
         Err(e) => Err(e),
     });
-    Box::pin(s2)
-}
-
-macro_rules! pipe4 {
-    ($nty:ident, $end:ident, $shape:expr, $evs:ident, $evsv:expr, $agg_kind:expr, $event_blobs:expr) => {
-        match $agg_kind {
-            AggKind::EventBlobs => panic!(),
-            AggKind::TimeWeightedScalar | AggKind::DimXBins1 => {
-                make_num_pipeline_stream_evs::<$nty, $end, $evs<$nty>, _>(
-                    $evsv,
-                    <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToSingleBin::create($shape, $agg_kind),
-                    $event_blobs,
-                )
-            }
-            AggKind::DimXBinsN(_) => make_num_pipeline_stream_evs::<$nty, $end, $evs<$nty>, _>(
-                $evsv,
-                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggToNBins::create($shape, $agg_kind),
-                $event_blobs,
-            ),
-            AggKind::Plain => make_num_pipeline_stream_evs::<$nty, $end, $evs<$nty>, _>(
-                $evsv,
-                <$evs<$nty> as EventValueShape<$nty, $end>>::NumXAggPlain::create($shape, $agg_kind),
-                $event_blobs,
-            ),
-        }
-    };
-}
-
-macro_rules! pipe3 {
-    ($nty:ident, $end:ident, $shape:expr, $agg_kind:expr, $event_blobs:expr) => {
-        match $shape {
-            Shape::Scalar => {
-                pipe4!(
-                    $nty,
-                    $end,
-                    $shape,
-                    EventValuesDim0Case,
-                    EventValuesDim0Case::<$nty>::new(),
-                    $agg_kind,
-                    $event_blobs
-                )
-            }
-            Shape::Wave(n) => {
-                pipe4!(
-                    $nty,
-                    $end,
-                    $shape,
-                    EventValuesDim1Case,
-                    EventValuesDim1Case::<$nty>::new(n),
-                    $agg_kind,
-                    $event_blobs
-                )
-            }
-            Shape::Image(_, _) => {
-                // TODO not needed for python data api v3 protocol, but later for api4.
-                err::todoval()
-            }
-        }
-    };
-}
-
-macro_rules! pipe2 {
-    ($nty:ident, $end:expr, $shape:expr, $agg_kind:expr, $event_blobs:expr) => {
-        match $end {
-            ByteOrder::Little => pipe3!($nty, LittleEndian, $shape, $agg_kind, $event_blobs),
-            ByteOrder::Big => pipe3!($nty, BigEndian, $shape, $agg_kind, $event_blobs),
-        }
-    };
-}
-
-macro_rules! pipe1 {
-    ($nty:expr, $end:expr, $shape:expr, $agg_kind:expr, $event_blobs:expr) => {
-        match $nty {
-            ScalarType::U8 => pipe2!(u8, $end, $shape, $agg_kind, $event_blobs),
-            ScalarType::U16 => pipe2!(u16, $end, $shape, $agg_kind, $event_blobs),
-            ScalarType::U32 => pipe2!(u32, $end, $shape, $agg_kind, $event_blobs),
-            ScalarType::U64 => pipe2!(u64, $end, $shape, $agg_kind, $event_blobs),
-            ScalarType::I8 => pipe2!(i8, $end, $shape, $agg_kind, $event_blobs),
-            ScalarType::I16 => pipe2!(i16, $end, $shape, $agg_kind, $event_blobs),
-            ScalarType::I32 => pipe2!(i32, $end, $shape, $agg_kind, $event_blobs),
-            ScalarType::I64 => pipe2!(i64, $end, $shape, $agg_kind, $event_blobs),
-            ScalarType::F32 => pipe2!(f32, $end, $shape, $agg_kind, $event_blobs),
-            ScalarType::F64 => pipe2!(f64, $end, $shape, $agg_kind, $event_blobs),
-            ScalarType::BOOL => pipe2!(BoolNum, $end, $shape, $agg_kind, $event_blobs),
-            ScalarType::STRING => pipe2!(StringNum, $end, $shape, $agg_kind, $event_blobs),
-        }
-    };
+    Box::pin(stream)
 }
 
 pub async fn make_event_pipe(
@@ -262,12 +115,11 @@ pub async fn make_event_pipe(
         true,
     );
     let shape = entry.to_shape()?;
-    let pipe = pipe1!(
-        entry.scalar_type,
-        entry.byte_order,
-        shape,
+    let pipe = make_num_pipeline_stream_evs(
+        entry.scalar_type.clone(),
+        shape.clone(),
         evq.agg_kind().clone(),
-        event_blobs
+        event_blobs,
     );
     Ok(pipe)
 }

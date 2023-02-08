@@ -1,16 +1,24 @@
 pub mod mergedblobsfromremotes;
 
 use err::Error;
-use futures_core::Stream;
+use futures_util::Stream;
 use futures_util::StreamExt;
+use items::Appendable;
 use items::ByteEstimate;
-use items::{Appendable, LogItem, PushableIndex, RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithTimestamps};
+use items::LogItem;
+use items::PushableIndex;
+use items::RangeCompletableItem;
+use items::Sitemty;
+use items::StatsItem;
+use items::StreamItem;
+use items::WithTimestamps;
 use netpod::histo::HistoLog2;
 use netpod::log::*;
 use netpod::ByteSize;
 use std::collections::VecDeque;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::Context;
+use std::task::Poll;
 
 const LOG_EMIT_ITEM: bool = false;
 
