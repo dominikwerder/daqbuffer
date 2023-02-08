@@ -1,17 +1,27 @@
 use crate::binsdim0::BinsDim0;
-use crate::{pulse_offs_from_abs, ts_offs_from_abs};
-use crate::{IsoDateTime, RangeOverlapInfo};
-use crate::{TimeBinnable, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinner};
+use crate::IsoDateTime;
+use crate::RangeOverlapInfo;
+use crate::TimeBinnable;
+use crate::TimeBinnableType;
+use crate::TimeBinnableTypeAggregator;
+use crate::TimeBinner;
 use err::Error;
 use items_0::scalar_ops::ScalarOps;
-use items_0::{AsAnyMut, AsAnyRef, Empty, Events, WithLen};
+use items_0::AsAnyMut;
+use items_0::AsAnyRef;
+use items_0::Empty;
+use items_0::Events;
+use items_0::WithLen;
+use netpod::log::*;
 use netpod::timeunits::SEC;
+use netpod::BinnedRange;
 use netpod::NanoRange;
-use netpod::{log::*, BinnedRange};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::any::Any;
 use std::collections::VecDeque;
-use std::{fmt, mem};
+use std::fmt;
+use std::mem;
 
 #[allow(unused)]
 macro_rules! trace2 {
@@ -197,6 +207,7 @@ pub struct EventsDim0CollectorOutput<NTY> {
     timed_out: bool,
     #[serde(rename = "continueAt", default, skip_serializing_if = "Option::is_none")]
     continue_at: Option<IsoDateTime>,
+    dummy_marker: u32,
 }
 
 impl<NTY: ScalarOps> EventsDim0CollectorOutput<NTY> {
@@ -231,6 +242,33 @@ impl<NTY: ScalarOps> EventsDim0CollectorOutput<NTY> {
 
     pub fn timed_out(&self) -> bool {
         self.timed_out
+    }
+
+    pub fn is_valid(&self) -> bool {
+        if self.ts_off_ms.len() != self.ts_off_ns.len() {
+            false
+        } else if self.ts_off_ms.len() != self.pulse_off.len() {
+            false
+        } else if self.ts_off_ms.len() != self.values.len() {
+            false
+        } else {
+            true
+        }
+    }
+
+    pub fn info_str(&self) -> String {
+        use fmt::Write;
+        let mut out = String::new();
+        write!(
+            out,
+            "ts_off_ms {}  ts_off_ns {}  pulse_off {}  values {}",
+            self.ts_off_ms.len(),
+            self.ts_off_ns.len(),
+            self.pulse_off.len(),
+            self.values.len(),
+        )
+        .unwrap();
+        out
     }
 }
 
@@ -281,6 +319,8 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
             }
             if print {
                 error!("gap detected\n{self:?}");
+                let bt = std::backtrace::Backtrace::capture();
+                error!("{bt}");
             }
         }
     }
@@ -315,8 +355,8 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
         };
         let tss_sl = self.vals.tss.make_contiguous();
         let pulses_sl = self.vals.pulses.make_contiguous();
-        let (ts_anchor_sec, ts_off_ms, ts_off_ns) = ts_offs_from_abs(tss_sl);
-        let (pulse_anchor, pulse_off) = pulse_offs_from_abs(pulses_sl);
+        let (ts_anchor_sec, ts_off_ms, ts_off_ns) = crate::ts_offs_from_abs(tss_sl);
+        let (pulse_anchor, pulse_off) = crate::pulse_offs_from_abs(pulses_sl);
         let values = mem::replace(&mut self.vals.values, VecDeque::new());
         if ts_off_ms.len() != ts_off_ns.len() {
             return Err(Error::with_msg_no_trace("collected len mismatch"));
@@ -337,7 +377,12 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
             range_final: self.range_final,
             timed_out: self.timed_out,
             continue_at,
+            dummy_marker: 4242,
         };
+        if !ret.is_valid() {
+            error!("invalid:\n{}", ret.info_str());
+        }
+        info!("EventsDim0CollectorOutput {ret:?}");
         Ok(ret)
     }
 }
@@ -661,6 +706,13 @@ impl<NTY: ScalarOps> TimeBinnable for EventsDim0<NTY> {
     fn to_box_to_json_result(&self) -> Box<dyn items_0::collect_s::ToJsonResult> {
         let k = serde_json::to_value(self).unwrap();
         Box::new(k) as _
+    }
+}
+
+impl<STY> items_0::TypeName for EventsDim0<STY> {
+    fn type_name(&self) -> String {
+        let sty = std::any::type_name::<STY>();
+        format!("EventsDim0<{sty}>")
     }
 }
 

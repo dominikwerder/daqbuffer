@@ -14,7 +14,9 @@ pub mod testgen;
 pub mod timebin;
 
 use channelevents::ChannelEvents;
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::DateTime;
+use chrono::TimeZone;
+use chrono::Utc;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
@@ -26,11 +28,17 @@ use items_0::collect_s::ToJsonResult;
 use items_0::Empty;
 use items_0::Events;
 use items_0::RangeOverlapInfo;
-use items_0::{TimeBinnable, TimeBinner};
+use items_0::TimeBinnable;
+use items_0::TimeBinner;
 use netpod::log::*;
 use netpod::timeunits::*;
-use netpod::{AggKind, NanoRange, ScalarType, Shape};
-use serde::{Deserialize, Serialize, Serializer};
+use netpod::AggKind;
+use netpod::NanoRange;
+use netpod::ScalarType;
+use netpod::Shape;
+use serde::Deserialize;
+use serde::Serialize;
+use serde::Serializer;
 use std::collections::VecDeque;
 use std::fmt;
 use std::pin::Pin;
@@ -41,9 +49,9 @@ pub fn bool_is_false(x: &bool) -> bool {
     *x == false
 }
 
-// TODO take iterator instead of slice, because a VecDeque can't produce a slice in general.
 pub fn ts_offs_from_abs(tss: &[u64]) -> (u64, VecDeque<u64>, VecDeque<u64>) {
     let ts_anchor_sec = tss.first().map_or(0, |&k| k) / SEC;
+    info!("ts_offs_from_abs  ts_anchor_sec {ts_anchor_sec}");
     let ts_anchor_ns = ts_anchor_sec * SEC;
     let ts_off_ms: VecDeque<_> = tss.iter().map(|&k| (k - ts_anchor_ns) / MS).collect();
     let ts_off_ns = tss
@@ -65,9 +73,13 @@ pub fn ts_offs_from_abs_with_anchor(ts_anchor_sec: u64, tss: &[u64]) -> (VecDequ
     (ts_off_ms, ts_off_ns)
 }
 
-// TODO take iterator instead of slice, because a VecDeque can't produce a slice in general.
 pub fn pulse_offs_from_abs(pulse: &[u64]) -> (u64, VecDeque<u64>) {
+    error!("pulse_offs_from_abs  {} DATA", pulse.len());
+    for x in pulse {
+        error!("{x}");
+    }
     let pulse_anchor = pulse.first().map_or(0, |&k| k) / 10000 * 10000;
+    info!("pulse_offs_from_abs  pulse_anchor {pulse_anchor}");
     let pulse_off = pulse.iter().map(|&k| k - pulse_anchor).collect();
     (pulse_anchor, pulse_off)
 }

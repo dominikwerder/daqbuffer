@@ -706,12 +706,14 @@ impl DataApiPython3DataStream {
             }
             match &b.shapes[i1] {
                 _ => {
-                    let l1 = 17 + b.blobs[i1].len() as u32;
+                    let empty_blob=Vec::new();
+                    let blob = b.blobs[i1].as_ref().unwrap_or(&empty_blob);
+                    let l1 = 17 + blob.len() as u32;
                     d.put_u32(l1);
                     d.put_u8(1);
                     d.put_u64(b.tss[i1]);
                     d.put_u64(b.pulses[i1]);
-                    d.put_slice(&b.blobs[i1]);
+                    d.put_slice(&blob);
                     d.put_u32(l1);
                 }
             }

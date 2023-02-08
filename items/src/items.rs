@@ -16,8 +16,6 @@ use items_0::AsAnyRef;
 use netpod::log::Level;
 #[allow(unused)]
 use netpod::log::*;
-use netpod::timeunits::MS;
-use netpod::timeunits::SEC;
 use netpod::DiskStats;
 use netpod::EventDataReadStats;
 use netpod::NanoRange;
@@ -655,24 +653,6 @@ where
         self.buf = buf;
         ret
     }
-}
-
-pub fn ts_offs_from_abs(tss: &[u64]) -> (u64, Vec<u64>, Vec<u64>) {
-    let ts_anchor_sec = tss.first().map_or(0, |&k| k) / SEC;
-    let ts_anchor_ns = ts_anchor_sec * SEC;
-    let ts_off_ms: Vec<_> = tss.iter().map(|&k| (k - ts_anchor_ns) / MS).collect();
-    let ts_off_ns = tss
-        .iter()
-        .zip(ts_off_ms.iter().map(|&k| k * MS))
-        .map(|(&j, k)| (j - ts_anchor_ns - k))
-        .collect();
-    (ts_anchor_sec, ts_off_ms, ts_off_ns)
-}
-
-pub fn pulse_offs_from_abs(pulse: &[u64]) -> (u64, Vec<u64>) {
-    let pulse_anchor = pulse.first().map_or(0, |k| *k);
-    let pulse_off: Vec<_> = pulse.iter().map(|k| *k - pulse_anchor).collect();
-    (pulse_anchor, pulse_off)
 }
 
 pub trait TimeBinnableTypeAggregator: Send {

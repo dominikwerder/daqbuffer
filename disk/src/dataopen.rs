@@ -215,7 +215,8 @@ pub fn open_files(
                 match chtx.send(Err(e.into())).await {
                     Ok(_) => {}
                     Err(e) => {
-                        error!("open_files  channel send error {:?}", e);
+                        // This case is fine.
+                        debug!("open_files  channel send error {:?}", e);
                     }
                 }
             }
@@ -245,7 +246,7 @@ async fn open_files_inner(
         if ts_bin.ns + channel_config.time_bin_size.ns <= range.beg {
             continue;
         }
-        let mut a = vec![];
+        let mut a = Vec::new();
         for path in paths::datapaths_for_timebin(tb, &channel_config, &node).await? {
             let w = position_file(&path, range, false, false).await?;
             if w.found {
@@ -281,7 +282,8 @@ pub fn open_expanded_files(
             Err(e) => match chtx.send(Err(e.into())).await {
                 Ok(_) => {}
                 Err(e) => {
-                    error!("open_files  channel send error {:?}", e);
+                    // To be expected
+                    debug!("open_files  channel send error {:?}", e);
                 }
             },
         }
@@ -290,7 +292,7 @@ pub fn open_expanded_files(
 }
 
 async fn get_timebins(channel_config: &ChannelConfig, node: Node) -> Result<Vec<u64>, Error> {
-    let mut timebins = vec![];
+    let mut timebins = Vec::new();
     let p0 = paths::channel_timebins_dir_path(&channel_config, &node)?;
     match tokio::fs::read_dir(&p0).await {
         Ok(rd) => {
@@ -317,7 +319,7 @@ async fn get_timebins(channel_config: &ChannelConfig, node: Node) -> Result<Vec<
                 "get_timebins  no timebins for {:?}  {:?}  p0 {:?}",
                 channel_config, e, p0
             );
-            Ok(vec![])
+            Ok(Vec::new())
         }
     }
 }
@@ -353,7 +355,7 @@ async fn open_expanded_files_inner(
     let mut found_pre = false;
     loop {
         let tb = timebins[p1];
-        let mut a = vec![];
+        let mut a = Vec::new();
         for path in paths::datapaths_for_timebin(tb, &channel_config, &node).await? {
             let w = position_file(&path, range, true, false).await?;
             if w.found {
@@ -381,7 +383,7 @@ async fn open_expanded_files_inner(
         // Append all following positioned files.
         while p1 < timebins.len() {
             let tb = timebins[p1];
-            let mut a = vec![];
+            let mut a = Vec::new();
             for path in paths::datapaths_for_timebin(tb, &channel_config, &node).await? {
                 let w = position_file(&path, range, false, true).await?;
                 if w.found {
@@ -830,7 +832,7 @@ mod test {
         };
         let cluster = netpod::test_cluster();
         let task = async move {
-            let mut paths = vec![];
+            let mut paths = Vec::new();
             let mut files = open_expanded_files(&range, &channel_config, cluster.nodes[0].clone());
             while let Some(file) = files.next().await {
                 match file {

@@ -40,6 +40,7 @@ pub struct EventChunker {
     seen_after_range_count: usize,
     unordered_warn_count: usize,
     repeated_ts_warn_count: usize,
+    dbgdesc: String,
 }
 
 impl Drop for EventChunker {
@@ -83,6 +84,7 @@ impl EventChunker {
         dbg_path: PathBuf,
         expand: bool,
         do_decompress: bool,
+        dbgdesc: String,
     ) -> Self {
         trace!("EventChunker::from_start");
         let mut inp = NeedMinBuffer::new(inp);
@@ -111,6 +113,7 @@ impl EventChunker {
             seen_after_range_count: 0,
             unordered_warn_count: 0,
             repeated_ts_warn_count: 0,
+            dbgdesc,
         }
     }
 
@@ -123,8 +126,18 @@ impl EventChunker {
         dbg_path: PathBuf,
         expand: bool,
         do_decompress: bool,
+        dbgdesc: String,
     ) -> Self {
-        let mut ret = Self::from_start(inp, channel_config, range, stats_conf, dbg_path, expand, do_decompress);
+        let mut ret = Self::from_start(
+            inp,
+            channel_config,
+            range,
+            stats_conf,
+            dbg_path,
+            expand,
+            do_decompress,
+            dbgdesc,
+        );
         ret.state = DataFileState::Event;
         ret.need_min = 4;
         ret.inp.set_need_min(4);
@@ -192,6 +205,7 @@ impl EventChunker {
                         let _ttl = sl.read_i64::<BE>().unwrap();
                         let ts = sl.read_i64::<BE>().unwrap() as u64;
                         let pulse = sl.read_i64::<BE>().unwrap() as u64;
+                        info!("SEE  {ts:20}  {pulse:20}  {0}", self.dbgdesc);
                         if ts == self.max_ts {
                             if self.repeated_ts_warn_count < 20 {
                                 let msg = format!(
@@ -362,17 +376,16 @@ impl EventChunker {
                                     }
                                 }
                             }
+                            let data = &buf.as_ref()[(p1 as usize)..(p1 as usize + k1 as usize)];
                             let decomp = {
                                 if self.do_decompress {
+                                    assert!(data.len() > 12);
                                     let ts1 = Instant::now();
                                     let decomp_bytes = (type_size * ele_count as u32) as usize;
-                                    let mut decomp = BytesMut::with_capacity(decomp_bytes);
-                                    unsafe {
-                                        decomp.set_len(decomp_bytes);
-                                    }
+                                    let mut decomp = vec![0; decomp_bytes];
                                     // TODO limit the buf slice range
                                     match bitshuffle_decompress(
-                                        &buf.as_ref()[(p1 as usize + 12)..(p1 as usize + k1 as usize)],
+                                        &data[12..],
                                         &mut decomp,
                                         ele_count as usize,
                                         ele_size as usize,
@@ -382,6 +395,7 @@ impl EventChunker {
                                             assert!(c1 as u64 + 12 == k1);
                                             let ts2 = Instant::now();
                                             let dt = ts2.duration_since(ts1);
+                                            // TODO analyze the histo
                                             self.decomp_dt_histo.ingest(dt.as_secs() as u32 + dt.subsec_micros());
                                             Some(decomp)
                                         }
@@ -396,7 +410,7 @@ impl EventChunker {
                             ret.add_event(
                                 ts,
                                 pulse,
-                                buf.as_ref()[(p1 as usize)..(p1 as usize + k1 as usize)].to_vec(),
+                                Some(data.to_vec()),
                                 decomp,
                                 ScalarType::from_dtype_index(type_index)?,
                                 is_big_endian,
@@ -409,13 +423,12 @@ impl EventChunker {
                                 Err(Error::with_msg(msg))?;
                             }
                             let vlen = len - p1 as u32 - 4;
-                            // TODO in this case, decomp and comp is the same and not needed.
-                            let decomp = BytesMut::from(&buf[p1 as usize..(p1 as u32 + vlen) as usize]);
+                            let data = &buf[p1 as usize..(p1 as u32 + vlen) as usize];
                             ret.add_event(
                                 ts,
                                 pulse,
-                                buf.as_ref()[(p1 as usize)..(p1 as usize + k1 as usize)].to_vec(),
-                                Some(decomp),
+                                Some(data.to_vec()),
+                                Some(data.to_vec()),
                                 ScalarType::from_dtype_index(type_index)?,
                                 is_big_endian,
                                 shape_this,

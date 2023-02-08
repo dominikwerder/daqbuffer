@@ -159,7 +159,7 @@ where
                 }
             }
         }
-        trace4!("tslows {tslows:?}");
+        info!("tslows {tslows:?}");
         if let Some((il0, _tl0)) = tslows[0] {
             if let Some((_il1, tl1)) = tslows[1] {
                 // There is a second input, take only up to the second highest timestamp

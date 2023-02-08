@@ -34,9 +34,6 @@ pub struct EventChunkerMultifile {
     disk_io_tune: DiskIoTune,
     event_chunker_conf: EventChunkerConf,
     range: NanoRange,
-    data_completed: bool,
-    errored: bool,
-    completed: bool,
     files_count: u32,
     node_ix: usize,
     expand: bool,
@@ -44,6 +41,10 @@ pub struct EventChunkerMultifile {
     max_ts: u64,
     emit_count: usize,
     do_emit_err_after: Option<usize>,
+    range_final: bool,
+    done: bool,
+    done_emit_range_final: bool,
+    complete: bool,
 }
 
 impl EventChunkerMultifile {
@@ -57,7 +58,7 @@ impl EventChunkerMultifile {
         expand: bool,
         do_decompress: bool,
     ) -> Self {
-        info!("EventChunkerMultifile  do_decompress {do_decompress}");
+        info!("EventChunkerMultifile  expand {expand}  do_decompress {do_decompress}");
         let file_chan = if expand {
             open_expanded_files(&range, &channel_config, node)
         } else {
@@ -70,9 +71,6 @@ impl EventChunkerMultifile {
             event_chunker_conf,
             channel_config,
             range,
-            data_completed: false,
-            errored: false,
-            completed: false,
             files_count: 0,
             node_ix,
             expand,
@@ -80,6 +78,10 @@ impl EventChunkerMultifile {
             max_ts: 0,
             emit_count: 0,
             do_emit_err_after: None,
+            range_final: false,
+            done: false,
+            done_emit_range_final: false,
+            complete: false,
         }
     }
 }
@@ -91,170 +93,171 @@ impl Stream for EventChunkerMultifile {
         //tracing::field::DebugValue;
         let span1 = span!(Level::INFO, "EventChunkerMultifile", node_ix = self.node_ix);
         //span1.record("node_ix", &self.node_ix);
-        span1.in_scope(|| {
-            use Poll::*;
-            'outer: loop {
-                break if self.completed {
-                    panic!("EventChunkerMultifile  poll_next on completed");
-                } else if self.errored {
-                    self.completed = true;
-                    return Ready(None);
-                } else if self.data_completed {
-                    self.completed = true;
-                    return Ready(None);
+        let _spg = span1.enter();
+        use Poll::*;
+        'outer: loop {
+            break if self.complete {
+                panic!("EventChunkerMultifile  poll_next on complete");
+            } else if self.done_emit_range_final {
+                self.complete = true;
+                Ready(None)
+            } else if self.done {
+                self.done_emit_range_final = true;
+                if self.range_final {
+                    Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
                 } else {
-                    match &mut self.evs {
-                        Some(evs) => match evs.poll_next_unpin(cx) {
-                            Ready(Some(k)) => {
-                                if let Ok(StreamItem::DataItem(RangeCompletableItem::Data(h))) = &k {
-                                    if let Some(&g) = h.tss.back() {
-                                        if g == self.max_ts {
-                                            let msg = format!("EventChunkerMultifile  repeated ts {}", g);
-                                            error!("{}", msg);
-                                            let e = Error::with_msg(msg);
-                                            self.errored = true;
-                                            Ready(Some(Err(e)))
-                                        } else if g < self.max_ts {
-                                            let msg = format!("EventChunkerMultifile  unordered ts {}", g);
-                                            error!("{}", msg);
-                                            let e = Error::with_msg(msg);
-                                            self.errored = true;
-                                            Ready(Some(Err(e)))
-                                        } else {
-                                            self.max_ts = g;
-                                            if let Some(after) = self.do_emit_err_after {
-                                                if self.emit_count < after {
-                                                    debug!(
-                                                        "EventChunkerMultifile  emit {}/{}  events {}",
-                                                        self.emit_count,
-                                                        after,
-                                                        h.tss.len()
-                                                    );
-                                                    self.emit_count += 1;
-                                                    Ready(Some(k))
-                                                } else {
-                                                    warn!("GENERATE ERROR FOR TESTING PURPOSE");
-                                                    let e = Error::with_msg(format!("Private-error-message"));
-                                                    let e = e.add_public_msg(format!("Public-error-message"));
-                                                    Ready(Some(Err(e)))
-                                                }
-                                            } else {
-                                                Ready(Some(k))
-                                            }
-                                        }
-                                    } else {
-                                        Ready(Some(k))
+                    continue;
+                }
+            } else {
+                match &mut self.evs {
+                    Some(evs) => match evs.poll_next_unpin(cx) {
+                        Ready(Some(Ok(k))) => {
+                            let k = if let StreamItem::DataItem(RangeCompletableItem::Data(h)) = k {
+                                let mut h: EventFull = h;
+                                if h.tss.len() > 0 {
+                                    let min = h.tss.iter().fold(u64::MAX, |a, &x| a.min(x));
+                                    let max = h.tss.iter().fold(u64::MIN, |a, &x| a.max(x));
+                                    if min <= self.max_ts {
+                                        let msg = format!("EventChunkerMultifile  repeated or unordered ts {}", min);
+                                        error!("{}", msg);
                                     }
-                                } else if let Err(_) = &k {
-                                    self.errored = true;
-                                    Ready(Some(k))
+                                    self.max_ts = max;
+                                    if let Some(after) = self.do_emit_err_after {
+                                        if self.emit_count < after {
+                                            debug!(
+                                                "EventChunkerMultifile  emit {}/{}  events {}",
+                                                self.emit_count,
+                                                after,
+                                                h.tss.len()
+                                            );
+                                            self.emit_count += 1;
+                                        }
+                                    }
+                                    if max >= self.range.end {
+                                        info!("REACHED RANGE END, TRUNCATE");
+                                        info!("{:20} ... {:20}", self.range.beg, self.range.end);
+                                        self.range_final = true;
+                                        h.truncate_ts(self.range.end);
+                                        self.evs = None;
+                                        let (tx, rx) = async_channel::bounded(1);
+                                        drop(tx);
+                                        self.file_chan = rx;
+                                    }
+                                }
+                                StreamItem::DataItem(RangeCompletableItem::Data(h))
+                            } else {
+                                k
+                            };
+                            Ready(Some(Ok(k)))
+                        }
+                        Ready(Some(Err(e))) => {
+                            error!("{e}");
+                            self.done = true;
+                            Ready(Some(Err(e)))
+                        }
+                        Ready(None) => {
+                            self.evs = None;
+                            continue 'outer;
+                        }
+                        Pending => Pending,
+                    },
+                    None => match self.file_chan.poll_next_unpin(cx) {
+                        Ready(Some(k)) => match k {
+                            Ok(ofs) => {
+                                self.files_count += ofs.files.len() as u32;
+                                if ofs.files.len() == 1 {
+                                    let mut ofs = ofs;
+                                    let file = ofs.files.pop().unwrap();
+                                    let path = file.path;
+                                    let msg = format!("handle OFS {:?}", ofs);
+                                    debug!("{}", msg);
+                                    let item = LogItem::quick(Level::INFO, msg);
+                                    match file.file {
+                                        Some(file) => {
+                                            let inp = Box::pin(crate::file_content_stream(
+                                                path.clone(),
+                                                file,
+                                                self.disk_io_tune.clone(),
+                                            ));
+                                            let chunker = EventChunker::from_event_boundary(
+                                                inp,
+                                                self.channel_config.clone(),
+                                                self.range.clone(),
+                                                self.event_chunker_conf.clone(),
+                                                path.clone(),
+                                                self.expand,
+                                                self.do_decompress,
+                                                format!("{:?}", path),
+                                            );
+                                            let filtered = RangeFilter::new(chunker, self.range.clone(), self.expand);
+                                            self.evs = Some(Box::pin(filtered));
+                                        }
+                                        None => {}
+                                    }
+                                    Ready(Some(Ok(StreamItem::Log(item))))
+                                } else if ofs.files.len() == 0 {
+                                    let msg = format!("handle OFS {:?}  NO FILES", ofs);
+                                    debug!("{}", msg);
+                                    let item = LogItem::quick(Level::INFO, msg);
+                                    Ready(Some(Ok(StreamItem::Log(item))))
                                 } else {
-                                    Ready(Some(k))
-                                }
-                            }
-                            Ready(None) => {
-                                self.evs = None;
-                                continue 'outer;
-                            }
-                            Pending => Pending,
-                        },
-                        None => match self.file_chan.poll_next_unpin(cx) {
-                            Ready(Some(k)) => match k {
-                                Ok(ofs) => {
-                                    self.files_count += ofs.files.len() as u32;
-                                    if ofs.files.len() == 1 {
-                                        let mut ofs = ofs;
-                                        let file = ofs.files.pop().unwrap();
-                                        let path = file.path;
-                                        let msg = format!("handle OFS {:?}", ofs);
-                                        debug!("{}", msg);
-                                        let item = LogItem::quick(Level::INFO, msg);
-                                        match file.file {
-                                            Some(file) => {
-                                                let inp = Box::pin(crate::file_content_stream(
-                                                    path.clone(),
-                                                    file,
-                                                    self.disk_io_tune.clone(),
-                                                ));
-                                                let chunker = EventChunker::from_event_boundary(
-                                                    inp,
-                                                    self.channel_config.clone(),
-                                                    self.range.clone(),
-                                                    self.event_chunker_conf.clone(),
-                                                    path,
-                                                    self.expand,
-                                                    self.do_decompress,
-                                                );
-                                                let filtered =
-                                                    RangeFilter::new(chunker, self.range.clone(), self.expand);
-                                                self.evs = Some(Box::pin(filtered));
-                                            }
-                                            None => {}
-                                        }
-                                        Ready(Some(Ok(StreamItem::Log(item))))
-                                    } else if ofs.files.len() == 0 {
-                                        let msg = format!("handle OFS {:?}  NO FILES", ofs);
-                                        debug!("{}", msg);
-                                        let item = LogItem::quick(Level::INFO, msg);
-                                        Ready(Some(Ok(StreamItem::Log(item))))
-                                    } else {
-                                        let msg = format!("handle OFS MERGED timebin {}", ofs.timebin);
-                                        info!("{}", msg);
-                                        for x in &ofs.files {
-                                            info!("   path {:?}", x.path);
-                                        }
-                                        let item = LogItem::quick(Level::INFO, msg);
-                                        let mut chunkers = Vec::new();
-                                        for of in ofs.files {
-                                            if let Some(file) = of.file {
-                                                let inp = crate::file_content_stream(
-                                                    of.path.clone(),
-                                                    file,
-                                                    self.disk_io_tune.clone(),
-                                                );
-                                                let chunker = EventChunker::from_event_boundary(
-                                                    inp,
-                                                    self.channel_config.clone(),
-                                                    self.range.clone(),
-                                                    self.event_chunker_conf.clone(),
-                                                    of.path,
-                                                    self.expand,
-                                                    self.do_decompress,
-                                                );
-                                                chunkers.push(chunker);
-                                            }
-                                        }
-                                        let merged = MergedStream::new(chunkers);
-                                        let filtered = RangeFilter::new(merged, self.range.clone(), self.expand);
-                                        self.evs = Some(Box::pin(filtered));
-                                        Ready(Some(Ok(StreamItem::Log(item))))
+                                    let msg = format!("handle OFS MERGED timebin {}", ofs.timebin);
+                                    info!("{}", msg);
+                                    for x in &ofs.files {
+                                        info!("   path {:?}", x.path);
                                     }
+                                    let item = LogItem::quick(Level::INFO, msg);
+                                    let mut chunkers = Vec::new();
+                                    for of in ofs.files {
+                                        if let Some(file) = of.file {
+                                            let inp = crate::file_content_stream(
+                                                of.path.clone(),
+                                                file,
+                                                self.disk_io_tune.clone(),
+                                            );
+                                            let chunker = EventChunker::from_event_boundary(
+                                                inp,
+                                                self.channel_config.clone(),
+                                                self.range.clone(),
+                                                self.event_chunker_conf.clone(),
+                                                of.path.clone(),
+                                                self.expand,
+                                                self.do_decompress,
+                                                format!("{:?}", of.path),
+                                            );
+                                            chunkers.push(chunker);
+                                        }
+                                    }
+                                    let merged = MergedStream::new(chunkers);
+                                    let filtered = RangeFilter::new(merged, self.range.clone(), self.expand);
+                                    self.evs = Some(Box::pin(filtered));
+                                    Ready(Some(Ok(StreamItem::Log(item))))
                                 }
-                                Err(e) => {
-                                    self.errored = true;
-                                    Ready(Some(Err(e)))
-                                }
-                            },
-                            Ready(None) => {
-                                self.data_completed = true;
-                                let item = LogItem::quick(
-                                    Level::INFO,
-                                    format!(
-                                        "EventChunkerMultifile used {} datafiles  beg {}  end {}  node_ix {}",
-                                        self.files_count,
-                                        self.range.beg / SEC,
-                                        self.range.end / SEC,
-                                        self.node_ix
-                                    ),
-                                );
-                                Ready(Some(Ok(StreamItem::Log(item))))
                             }
-                            Pending => Pending,
+                            Err(e) => {
+                                self.done = true;
+                                Ready(Some(Err(e)))
+                            }
                         },
-                    }
-                };
-            }
-        })
+                        Ready(None) => {
+                            self.done = true;
+                            let item = LogItem::quick(
+                                Level::INFO,
+                                format!(
+                                    "EventChunkerMultifile used {} datafiles  beg {}  end {}  node_ix {}",
+                                    self.files_count,
+                                    self.range.beg / SEC,
+                                    self.range.end / SEC,
+                                    self.node_ix
+                                ),
+                            );
+                            Ready(Some(Ok(StreamItem::Log(item))))
+                        }
+                        Pending => Pending,
+                    },
+                }
+            };
+        }
     }
 }
 

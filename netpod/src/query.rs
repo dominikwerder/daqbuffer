@@ -182,6 +182,19 @@ impl PlainEventsQuery {
     pub fn set_do_test_stream_error(&mut self, k: bool) {
         self.do_test_stream_error = k;
     }
+
+    // TODO remove again.
+    pub fn adjust_for_events_query(&mut self) {
+        match &self.agg_kind {
+            AggKind::EventBlobs => {}
+            AggKind::DimXBins1 => {}
+            AggKind::DimXBinsN(_) => {}
+            AggKind::Plain => {}
+            AggKind::TimeWeightedScalar => {
+                self.agg_kind = AggKind::Plain;
+            }
+        }
+    }
 }
 
 impl HasBackend for PlainEventsQuery {
@@ -211,7 +224,7 @@ impl FromUrl for PlainEventsQuery {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
             },
-            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::TimeWeightedScalar),
+            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::Plain),
             timeout: pairs
                 .get("timeout")
                 .map_or("10000", |k| k)

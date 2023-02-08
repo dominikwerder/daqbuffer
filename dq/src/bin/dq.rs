@@ -101,8 +101,16 @@ pub fn main() -> Result<(), Error> {
                 let stats_conf = EventChunkerConf {
                     disk_stats_every: ByteSize::mb(2),
                 };
-                let _chunks =
-                    EventChunker::from_start(inp, channel_config.clone(), range, stats_conf, path, false, true);
+                let _chunks = EventChunker::from_start(
+                    inp,
+                    channel_config.clone(),
+                    range,
+                    stats_conf,
+                    path.clone(),
+                    false,
+                    true,
+                    format!("{:?}", path),
+                );
                 err::todo();
                 Ok(())
             }

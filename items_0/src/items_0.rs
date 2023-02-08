@@ -53,6 +53,10 @@ pub trait Empty {
     fn empty() -> Self;
 }
 
+pub trait TypeName {
+    fn type_name(&self) -> String;
+}
+
 pub trait AppendEmptyBin {
     fn append_empty_bin(&mut self, ts1: u64, ts2: u64);
 }
@@ -129,7 +133,15 @@ pub trait TimeBinnable: fmt::Debug + WithLen + RangeOverlapInfo + Any + AsAnyRef
 
 /// Container of some form of events, for use as trait object.
 pub trait Events:
-    fmt::Debug + Any + Collectable + CollectableWithDefault + TimeBinnable + WithLen + Send + erased_serde::Serialize
+    fmt::Debug
+    + TypeName
+    + Any
+    + Collectable
+    + CollectableWithDefault
+    + TimeBinnable
+    + WithLen
+    + Send
+    + erased_serde::Serialize
 {
     fn as_time_binnable(&self) -> &dyn TimeBinnable;
     fn verify(&self) -> bool;

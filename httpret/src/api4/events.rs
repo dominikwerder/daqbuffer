@@ -72,9 +72,10 @@ async fn plain_events_binary(
     req: Request<Body>,
     node_config: &NodeConfigCached,
 ) -> Result<Response<Body>, Error> {
-    debug!("httpret  plain_events_binary  req: {:?}", req);
+    debug!("plain_events_binary  req: {:?}", req);
     let query = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
     let chconf = chconf_from_events_v1(&query, node_config).await?;
+    info!("plain_events_binary  chconf_from_events_v1: {chconf:?}");
     // Update the series id since we don't require some unique identifier yet.
     let mut query = query;
     query.set_series_id(chconf.series);
@@ -94,11 +95,12 @@ async fn plain_events_json(
     req: Request<Body>,
     node_config: &NodeConfigCached,
 ) -> Result<Response<Body>, Error> {
-    info!("httpret  plain_events_json  req: {:?}", req);
+    info!("plain_events_json  req: {:?}", req);
     let (_head, _body) = req.into_parts();
     let query = PlainEventsQuery::from_url(&url)?;
-    info!("plain_events_json query {query:?}");
+    info!("plain_events_json  query {query:?}");
     let chconf = chconf_from_events_v1(&query, node_config).await.map_err(Error::from)?;
+    info!("plain_events_json  chconf_from_events_v1: {chconf:?}");
     // Update the series id since we don't require some unique identifier yet.
     let mut query = query;
     query.set_series_id(chconf.series);

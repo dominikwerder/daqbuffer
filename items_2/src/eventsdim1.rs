@@ -1,6 +1,4 @@
 use crate::binsdim0::BinsDim0;
-use crate::pulse_offs_from_abs;
-use crate::ts_offs_from_abs;
 use crate::IsoDateTime;
 use crate::RangeOverlapInfo;
 use crate::TimeBinnable;
@@ -10,12 +8,16 @@ use crate::TimeBinner;
 use err::Error;
 use items_0::scalar_ops::ScalarOps;
 use items_0::AsAnyMut;
-use items_0::{AsAnyRef, Empty, Events, WithLen};
+use items_0::AsAnyRef;
+use items_0::Empty;
+use items_0::Events;
+use items_0::WithLen;
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::BinnedRange;
 use netpod::NanoRange;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
@@ -313,8 +315,8 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim1Collector<N
         };
         let tss_sl = self.vals.tss.make_contiguous();
         let pulses_sl = self.vals.pulses.make_contiguous();
-        let (ts_anchor_sec, ts_off_ms, ts_off_ns) = ts_offs_from_abs(tss_sl);
-        let (pulse_anchor, pulse_off) = pulse_offs_from_abs(pulses_sl);
+        let (ts_anchor_sec, ts_off_ms, ts_off_ns) = crate::ts_offs_from_abs(tss_sl);
+        let (pulse_anchor, pulse_off) = crate::pulse_offs_from_abs(pulses_sl);
         let ret = Self::Output {
             ts_anchor_sec,
             ts_off_ms,
@@ -655,6 +657,13 @@ impl<NTY: ScalarOps> TimeBinnable for EventsDim1<NTY> {
     fn to_box_to_json_result(&self) -> Box<dyn items_0::collect_s::ToJsonResult> {
         let k = serde_json::to_value(self).unwrap();
         Box::new(k) as _
+    }
+}
+
+impl<STY> items_0::TypeName for EventsDim1<STY> {
+    fn type_name(&self) -> String {
+        let sty = std::any::type_name::<STY>();
+        format!("EventsDim1<{sty}>")
     }
 }
 

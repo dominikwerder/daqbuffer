@@ -20,16 +20,17 @@ use std::collections::VecDeque;
 pub struct EventFull {
     pub tss: VecDeque<u64>,
     pub pulses: VecDeque<u64>,
-    pub blobs: VecDeque<Vec<u8>>,
-    #[serde(with = "decomps_serde")]
+    pub blobs: VecDeque<Option<Vec<u8>>>,
+    //#[serde(with = "decomps_serde")]
     // TODO allow access to `decomps` via method which checks first if `blobs` is already the decomp.
-    pub decomps: VecDeque<Option<BytesMut>>,
+    pub decomps: VecDeque<Option<Vec<u8>>>,
     pub scalar_types: VecDeque<ScalarType>,
     pub be: VecDeque<bool>,
     pub shapes: VecDeque<Shape>,
     pub comps: VecDeque<Option<CompressionMethod>>,
 }
 
+#[allow(unused)]
 mod decomps_serde {
     use super::*;
 
@@ -85,8 +86,8 @@ impl EventFull {
         &mut self,
         ts: u64,
         pulse: u64,
-        blob: Vec<u8>,
-        decomp: Option<BytesMut>,
+        blob: Option<Vec<u8>>,
+        decomp: Option<Vec<u8>>,
         scalar_type: ScalarType,
         be: bool,
         shape: Shape,
@@ -102,11 +103,26 @@ impl EventFull {
         self.comps.push_back(comp);
     }
 
-    pub fn decomp(&self, i: usize) -> &[u8] {
-        match &self.decomps[i] {
-            Some(decomp) => &decomp,
-            None => &self.blobs[i],
+    pub fn truncate_ts(&mut self, end: u64) {
+        let mut nkeep = usize::MAX;
+        for (i, &ts) in self.tss.iter().enumerate() {
+            if ts >= end {
+                for (i, &ts) in self.tss.iter().enumerate() {
+                    eprintln!("{i:5} {ts:20}");
+                }
+                eprintln!("truncate to  i {i}  ts {ts}");
+                nkeep = i;
+                break;
+            }
         }
+        self.tss.truncate(nkeep);
+        self.pulses.truncate(nkeep);
+        self.blobs.truncate(nkeep);
+        self.decomps.truncate(nkeep);
+        self.scalar_types.truncate(nkeep);
+        self.be.truncate(nkeep);
+        self.shapes.truncate(nkeep);
+        self.comps.truncate(nkeep);
     }
 }
 
@@ -170,13 +186,13 @@ impl WithTimestamps for EventFull {
 
 impl ByteEstimate for EventFull {
     fn byte_estimate(&self) -> u64 {
-        if self.tss.len() == 0 {
+        if self.len() == 0 {
             0
         } else {
             // TODO that is clumsy... it assumes homogenous types.
             // TODO improve via a const fn on NTY
             let decomp_len = self.decomps[0].as_ref().map_or(0, |h| h.len());
-            self.tss.len() as u64 * (40 + self.blobs[0].len() as u64 + decomp_len as u64)
+            self.tss.len() as u64 * (40 + self.blobs[0].as_ref().map_or(0, |x| x.len()) as u64 + decomp_len as u64)
         }
     }
 }

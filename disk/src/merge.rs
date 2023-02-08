@@ -387,9 +387,10 @@ mod test {
                     channel_config,
                     range.clone(),
                     stats_conf,
-                    dbg_path,
+                    dbg_path.clone(),
                     expand,
                     do_decompress,
+                    format!("{:?}", dbg_path),
                 );
                 chunker
             })

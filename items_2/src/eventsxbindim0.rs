@@ -1,14 +1,19 @@
 use crate::binsxbindim0::BinsXbinDim0;
-use crate::{pulse_offs_from_abs, ts_offs_from_abs};
-use crate::{IsoDateTime, RangeOverlapInfo};
-use crate::{TimeBinnableType, TimeBinnableTypeAggregator};
+use crate::IsoDateTime;
+use crate::RangeOverlapInfo;
+use crate::TimeBinnableType;
+use crate::TimeBinnableTypeAggregator;
 use err::Error;
 use items_0::scalar_ops::ScalarOps;
-use items_0::{AsAnyMut, WithLen};
-use items_0::{AsAnyRef, Empty};
+use items_0::AsAnyMut;
+use items_0::AsAnyRef;
+use items_0::Empty;
+use items_0::WithLen;
+use netpod::log::*;
+use netpod::BinnedRange;
 use netpod::NanoRange;
-use netpod::{log::*, BinnedRange};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
@@ -463,8 +468,8 @@ where
         let avgs = replace(&mut self.vals.avgs, VecDeque::new());
         self.vals.tss.make_contiguous();
         self.vals.pulses.make_contiguous();
-        let tst = ts_offs_from_abs(self.vals.tss.as_slices().0);
-        let (pulse_anchor, pulse_off) = pulse_offs_from_abs(&self.vals.pulses.as_slices().0);
+        let tst = crate::ts_offs_from_abs(self.vals.tss.as_slices().0);
+        let (pulse_anchor, pulse_off) = crate::pulse_offs_from_abs(&self.vals.pulses.as_slices().0);
         let ret = Self::Output {
             ts_anchor_sec: tst.0,
             ts_off_ms: tst.1,

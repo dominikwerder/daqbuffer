@@ -348,6 +348,11 @@ impl EventsDynStream {
             .zip(item.pulses.iter())
         {
             let endian = if be { Endian::Big } else { Endian::Little };
+            let buf = if let Some(x) = buf {
+                x
+            } else {
+                return Err(Error::with_msg_no_trace("no buf in event"));
+            };
             self.scalar_conv
                 .convert(ts, pulse, buf, endian, self.events_out.as_mut())?;
         }

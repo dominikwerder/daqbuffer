@@ -78,7 +78,7 @@ where
                         let coll = collector.as_mut().unwrap();
                         coll.ingest(&mut item);
                         if coll.len() as u64 >= events_max {
-                            warn!("Reached events_max {} abort", events_max);
+                            warn!("TODO  compute continue-at  reached events_max {} abort", events_max);
                             break;
                         }
                     }
