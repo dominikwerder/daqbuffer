@@ -1,5 +1,5 @@
 [workspace]
-members = ["daqbuffer", "httpret", "h5out", "items", "items_2", "items_proc", "nodenet", "httpclient", "fsio", "dq"]
+members = ["daqbuffer", "httpret", "h5out", "items", "items_2", "items_proc", "nodenet", "httpclient", "dq"]
 
 [profile.release]
 opt-level = 1

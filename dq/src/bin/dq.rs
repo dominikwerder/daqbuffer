@@ -1,9 +1,17 @@
-use clap::{ArgAction, Parser};
+use clap::ArgAction;
+use clap::Parser;
 use err::Error;
+#[allow(unused)]
 use netpod::log::*;
-use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, NanoRange, Shape};
+use netpod::ByteOrder;
+use netpod::ByteSize;
+use netpod::Channel;
+use netpod::ChannelConfig;
+use netpod::NanoRange;
+use netpod::Shape;
 use std::path::PathBuf;
-use streams::eventchunker::{EventChunker, EventChunkerConf};
+use streams::eventchunker::EventChunker;
+use streams::eventchunker::EventChunkerConf;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -93,33 +101,9 @@ pub fn main() -> Result<(), Error> {
                 let stats_conf = EventChunkerConf {
                     disk_stats_every: ByteSize::mb(2),
                 };
-                let chunks =
+                let _chunks =
                     EventChunker::from_start(inp, channel_config.clone(), range, stats_conf, path, false, true);
-                use futures_util::stream::StreamExt;
-                use items::WithLen;
-                //let evs = EventValuesDim0Case::<f64>::new();
-                let mut stream = disk::decode::EventsItemStream::new(Box::pin(chunks));
-                while let Some(item) = stream.next().await {
-                    let item = item?;
-                    match item {
-                        items::StreamItem::DataItem(item) => {
-                            match item {
-                                items::RangeCompletableItem::RangeComplete => {
-                                    warn!("RangeComplete");
-                                }
-                                items::RangeCompletableItem::Data(item) => {
-                                    info!("{:?}  ({} events)", item, item.len());
-                                }
-                            };
-                        }
-                        items::StreamItem::Log(k) => {
-                            eprintln!("Log item {:?}", k);
-                        }
-                        items::StreamItem::Stats(k) => {
-                            eprintln!("Stats item {:?}", k);
-                        }
-                    }
-                }
+                err::todo();
                 Ok(())
             }
         }

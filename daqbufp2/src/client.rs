@@ -1,17 +1,24 @@
 use crate::err::ErrConv;
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
+use chrono::Utc;
 use disk::streamlog::Streamlog;
 use err::Error;
 use futures_util::TryStreamExt;
 use http::StatusCode;
 use httpclient::HttpBodyAsAsyncRead;
 use hyper::Body;
-use items::xbinnedwaveevents::XBinnedWaveEvents;
-use items::{Sitemty, StreamItem};
+use items::StreamItem;
 use netpod::log::*;
-use netpod::query::{BinnedQuery, CacheUsage};
+use netpod::query::BinnedQuery;
+use netpod::query::CacheUsage;
+use netpod::AggKind;
 use netpod::AppendToUrl;
-use netpod::{AggKind, ByteSize, Channel, HostPort, NanoRange, PerfOpts, APP_OCTET};
+use netpod::ByteSize;
+use netpod::Channel;
+use netpod::HostPort;
+use netpod::NanoRange;
+use netpod::PerfOpts;
+use netpod::APP_OCTET;
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
 use url::Url;
 
@@ -110,44 +117,11 @@ pub async fn get_binned(
                         info!("Stats: {:?}", item);
                         None
                     }
-                    StreamItem::DataItem(frame) => {
+                    StreamItem::DataItem(_frame) => {
                         // TODO
                         // The expected type nowadays depends on the channel and agg-kind.
                         err::todo();
-                        type ExpectedType = Sitemty<XBinnedWaveEvents<u8>>;
-                        // TODO the non-data variants of Sitemty no longer carry a frame id.
-                        //let type_id_exp = <ExpectedType as FrameType>::FRAME_TYPE_ID;
-                        let type_id_exp: u32 = err::todoval();
-                        if frame.tyid() != type_id_exp {
-                            error!("unexpected type id  got {}  exp {}", frame.tyid(), type_id_exp);
-                        }
-                        let n1 = frame.buf().len();
-                        match rmp_serde::from_slice::<ExpectedType>(frame.buf()) {
-                            Ok(item) => match item {
-                                Ok(item) => {
-                                    match item {
-                                        StreamItem::Log(item) => {
-                                            Streamlog::emit(&item);
-                                        }
-                                        StreamItem::Stats(item) => {
-                                            info!("Stats: {:?}", item);
-                                        }
-                                        StreamItem::DataItem(item) => {
-                                            info!("DataItem: {:?}", item);
-                                        }
-                                    }
-                                    Some(Ok(()))
-                                }
-                                Err(e) => {
-                                    error!("len {}  error frame {:?}", n1, e);
-                                    Some(Err(e))
-                                }
-                            },
-                            Err(e) => {
-                                error!("len {}  {:?}", n1, e);
-                                Some(Err(e.into()))
-                            }
-                        }
+                        Some(Ok(()))
                     }
                 },
                 Err(e) => Some(Err(Error::with_msg(format!("{:?}", e)))),

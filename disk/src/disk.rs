@@ -1,4 +1,3 @@
-pub mod agg;
 #[cfg(test)]
 pub mod aggtest;
 pub mod binnedstream;

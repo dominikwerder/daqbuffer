@@ -1,18 +1,26 @@
 use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
+use chrono::Utc;
 use disk::streamlog::Streamlog;
 use err::Error;
-use futures_util::{StreamExt, TryStreamExt};
+use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use http::StatusCode;
 use httpclient::HttpBodyAsAsyncRead;
 use hyper::Body;
-use items::numops::NumOps;
-use items::scalarevents::ScalarEvents;
-use items::{RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithLen};
+use items::StreamItem;
+use netpod::log::*;
 use netpod::query::PlainEventsQuery;
-use netpod::{log::*, AggKind};
-use netpod::{AppendToUrl, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_JSON, APP_OCTET};
+use netpod::AggKind;
+use netpod::AppendToUrl;
+use netpod::Channel;
+use netpod::Cluster;
+use netpod::HostPort;
+use netpod::NanoRange;
+use netpod::PerfOpts;
+use netpod::APP_JSON;
+use netpod::APP_OCTET;
 use serde_json::Value as JsonValue;
 use std::fmt::Debug;
 use std::future::ready;
@@ -42,7 +50,7 @@ async fn get_plain_events_binary_0_inner() -> Result<(), Error> {
     let rh = require_test_hosts_running()?;
     let cluster = &rh.cluster;
     if true {
-        get_plain_events_binary::<i32>(
+        get_plain_events_binary(
             "scalar-i32-be",
             "1970-01-01T00:20:10.000Z",
             "1970-01-01T00:20:50.000Z",
@@ -60,17 +68,14 @@ fn get_plain_events_binary_0() {
     taskrun::run(get_plain_events_binary_0_inner()).unwrap();
 }
 
-async fn get_plain_events_binary<NTY>(
+async fn get_plain_events_binary(
     channel_name: &str,
     beg_date: &str,
     end_date: &str,
     cluster: &Cluster,
     _expect_range_complete: bool,
     _expect_event_count: u64,
-) -> Result<EventsResponse, Error>
-where
-    NTY: NumOps,
-{
+) -> Result<EventsResponse, Error> {
     let t1 = Utc::now();
     let node0 = &cluster.nodes[0];
     let beg_date: DateTime<Utc> = beg_date.parse()?;
@@ -110,7 +115,7 @@ where
     }
     let s1 = HttpBodyAsAsyncRead::new(res);
     let s2 = InMemoryFrameAsyncReadStream::new(s1, perf_opts.inmem_bufcap);
-    let res = consume_plain_events_binary::<NTY, _>(s2).await?;
+    let res = consume_plain_events_binary(s2).await?;
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     // TODO add timeout
@@ -122,6 +127,7 @@ where
     }
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 pub struct EventsResponse {
     event_count: u64,
@@ -156,9 +162,8 @@ impl EventsResponse {
     }
 }
 
-async fn consume_plain_events_binary<NTY, T>(inp: InMemoryFrameAsyncReadStream<T>) -> Result<EventsResponse, Error>
+async fn consume_plain_events_binary<T>(inp: InMemoryFrameAsyncReadStream<T>) -> Result<EventsResponse, Error>
 where
-    NTY: NumOps,
     T: AsyncRead + Unpin,
 {
     let s1 = inp
@@ -174,70 +179,16 @@ where
                         debug!("Stats: {:?}", item);
                         None
                     }
-                    StreamItem::DataItem(frame) => {
-                        // TODO the non-data variants of Sitemty no longer carry frame type id:
-                        //if frame.tyid() != <Sitemty<ScalarEvents<NTY>> as FrameType>::FRAME_TYPE_ID {
-                        if frame.tyid() != err::todoval::<u32>() {
-                            error!("test receives unexpected tyid {:x}", frame.tyid());
-                            None
-                        } else {
-                            match rmp_serde::from_slice::<Sitemty<ScalarEvents<NTY>>>(frame.buf()) {
-                                Ok(item) => match item {
-                                    Ok(item) => match item {
-                                        StreamItem::Log(item) => {
-                                            Streamlog::emit(&item);
-                                            Some(Ok(StreamItem::Log(item)))
-                                        }
-                                        item => Some(Ok(item)),
-                                    },
-                                    Err(e) => {
-                                        error!("TEST GOT ERROR FRAME: {:?}", e);
-                                        Some(Err(e))
-                                    }
-                                },
-                                Err(e) => {
-                                    error!("{:?}", e);
-                                    Some(Err(e.into()))
-                                }
-                            }
-                        }
+                    StreamItem::DataItem(_frame) => {
+                        err::todo();
+                        Some(Ok(()))
                     }
                 },
                 Err(e) => Some(Err(Error::with_msg(format!("WEIRD EMPTY ERROR {:?}", e)))),
             };
             ready(g)
         })
-        .fold(EventsResponse::new(), |mut a, k| {
-            let g = match k {
-                Ok(StreamItem::Log(_item)) => {
-                    a.log_item_count += 1;
-                    a
-                }
-                Ok(StreamItem::Stats(item)) => match item {
-                    StatsItem::EventDataReadStats(item) => {
-                        a.bytes_read += item.parsed_bytes;
-                        a
-                    }
-                    _ => a,
-                },
-                Ok(StreamItem::DataItem(item)) => match item {
-                    RangeCompletableItem::RangeComplete => {
-                        a.range_complete_count += 1;
-                        a
-                    }
-                    RangeCompletableItem::Data(item) => {
-                        a.data_item_count += 1;
-                        a.event_count += WithLen::len(&item) as u64;
-                        a
-                    }
-                },
-                Err(_e) => {
-                    a.err_item_count += 1;
-                    a
-                }
-            };
-            ready(g)
-        });
+        .fold(EventsResponse::new(), |a, _x| ready(a));
     let ret = s1.await;
     debug!("result: {:?}", ret);
     Ok(ret)

@@ -1,19 +1,27 @@
 use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
+use chrono::Utc;
 use disk::streamlog::Streamlog;
 use err::Error;
-use futures_util::{StreamExt, TryStreamExt};
+use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use http::StatusCode;
 use httpclient::HttpBodyAsAsyncRead;
 use hyper::Body;
-use items::binsdim0::MinMaxAvgDim0Bins;
-use items::{RangeCompletableItem, Sitemty, StatsItem, StreamItem, WithLen};
+use items::StreamItem;
 use items_0::subfr::SubFrId;
 use netpod::log::*;
-use netpod::query::{BinnedQuery, CacheUsage};
+use netpod::query::BinnedQuery;
+use netpod::query::CacheUsage;
+use netpod::AggKind;
 use netpod::AppendToUrl;
-use netpod::{AggKind, Channel, Cluster, HostPort, NanoRange, PerfOpts, APP_OCTET};
+use netpod::Channel;
+use netpod::Cluster;
+use netpod::HostPort;
+use netpod::NanoRange;
+use netpod::PerfOpts;
+use netpod::APP_OCTET;
 use serde::de::DeserializeOwned;
 use std::fmt;
 use std::future::ready;
@@ -144,6 +152,7 @@ where
     }
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 pub struct BinnedResponse {
     bin_count: u64,
@@ -178,6 +187,7 @@ impl BinnedResponse {
     }
 }
 
+// TODO
 async fn consume_binned_response<NTY, T>(inp: InMemoryFrameAsyncReadStream<T>) -> Result<BinnedResponse, Error>
 where
     NTY: fmt::Debug + SubFrId + DeserializeOwned,
@@ -197,68 +207,16 @@ where
                         debug!("Stats: {:?}", item);
                         None
                     }
-                    StreamItem::DataItem(frame) => {
-                        // TODO non-data Sitety no longer carry frame id:
-                        //if frame.tyid() != <Sitemty<MinMaxAvgDim0Bins<NTY>> as FrameType>::FRAME_TYPE_ID {
-                        if frame.tyid() != err::todoval::<u32>() {
-                            error!("test receives unexpected tyid {:x}", frame.tyid());
-                        }
-                        match rmp_serde::from_slice::<Sitemty<MinMaxAvgDim0Bins<NTY>>>(frame.buf()) {
-                            Ok(item) => match item {
-                                Ok(item) => match item {
-                                    StreamItem::Log(item) => {
-                                        Streamlog::emit(&item);
-                                        Some(Ok(StreamItem::Log(item)))
-                                    }
-                                    item => Some(Ok(item)),
-                                },
-                                Err(e) => {
-                                    error!("TEST GOT ERROR FRAME: {:?}", e);
-                                    Some(Err(e))
-                                }
-                            },
-                            Err(e) => {
-                                error!("{:?}", e);
-                                Some(Err(e.into()))
-                            }
-                        }
+                    StreamItem::DataItem(_frame) => {
+                        err::todo();
+                        Some(Ok(()))
                     }
                 },
                 Err(e) => Some(Err(Error::with_msg(format!("WEIRD EMPTY ERROR {:?}", e)))),
             };
             ready(g)
         })
-        .fold(BinnedResponse::new(), |mut a, k| {
-            let g = match k {
-                Ok(StreamItem::Log(_item)) => {
-                    a.log_item_count += 1;
-                    a
-                }
-                Ok(StreamItem::Stats(item)) => match item {
-                    StatsItem::EventDataReadStats(item) => {
-                        a.bytes_read += item.parsed_bytes;
-                        a
-                    }
-                    _ => a,
-                },
-                Ok(StreamItem::DataItem(item)) => match item {
-                    RangeCompletableItem::RangeComplete => {
-                        a.range_complete_count += 1;
-                        a
-                    }
-                    RangeCompletableItem::Data(item) => {
-                        a.data_item_count += 1;
-                        a.bin_count += WithLen::len(&item) as u64;
-                        a
-                    }
-                },
-                Err(_e) => {
-                    a.err_item_count += 1;
-                    a
-                }
-            };
-            ready(g)
-        });
+        .fold(BinnedResponse::new(), |a, _x| ready(a));
     let ret = s1.await;
     debug!("BinnedResponse: {:?}", ret);
     Ok(ret)

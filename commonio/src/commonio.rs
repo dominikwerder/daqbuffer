@@ -1,20 +1,33 @@
 pub mod ringbuf;
 
 use async_channel::Sender;
-use err::{ErrStr, Error};
+use err::ErrStr;
+use err::Error;
 use futures_util::StreamExt;
-use items::eventsitem::EventsItem;
-use items::{Sitemty, StatsItem, StreamItem};
+use items::Sitemty;
+use items::StatsItem;
+use items::StreamItem;
 use netpod::log::*;
-use netpod::{DiskStats, OpenStats, ReadExactStats, ReadStats, SeekStats};
-use serde::{Deserialize, Serialize};
+use netpod::DiskStats;
+use netpod::OpenStats;
+use netpod::ReadExactStats;
+use netpod::ReadStats;
+use netpod::SeekStats;
+use serde::Deserialize;
+use serde::Serialize;
 use std::fmt;
-use std::io::{self, ErrorKind, SeekFrom};
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::io;
+use std::io::ErrorKind;
+use std::io::SeekFrom;
+use std::path::Path;
+use std::path::PathBuf;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
-use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
+use tokio::fs::File;
+use tokio::fs::OpenOptions;
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncSeekExt;
 
 const LOG_IO: bool = true;
 const STATS_IO: bool = true;
@@ -62,8 +75,10 @@ pub async fn tokio_rand() -> Result<u64, Error> {
     Ok(x)
 }
 
+pub struct DummyEvent;
+
 pub struct StatsChannel {
-    chn: Sender<Sitemty<EventsItem>>,
+    chn: Sender<Sitemty<DummyEvent>>,
 }
 
 impl fmt::Debug for StatsChannel {
@@ -73,7 +88,7 @@ impl fmt::Debug for StatsChannel {
 }
 
 impl StatsChannel {
-    pub fn new(chn: Sender<Sitemty<EventsItem>>) -> Self {
+    pub fn new(chn: Sender<Sitemty<DummyEvent>>) -> Self {
         Self { chn }
     }
 

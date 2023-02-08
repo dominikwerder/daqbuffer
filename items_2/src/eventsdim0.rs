@@ -1146,3 +1146,73 @@ mod test_frame {
         assert_eq!(item.tss(), &[123]);
     }
 }
+
+/*
+TODO adapt and enable
+#[test]
+fn bin_binned_01() {
+    use binsdim0::MinMaxAvgDim0Bins;
+    let edges = vec![SEC * 1000, SEC * 1010, SEC * 1020, SEC * 1030];
+    let inp0 = <MinMaxAvgDim0Bins<u32> as NewEmpty>::empty(Shape::Scalar);
+    let mut time_binner = inp0.time_binner_new(edges, true);
+    let inp1 = MinMaxAvgDim0Bins::<u32> {
+        ts1s: vec![SEC * 1000, SEC * 1010],
+        ts2s: vec![SEC * 1010, SEC * 1020],
+        counts: vec![1, 1],
+        mins: vec![3, 4],
+        maxs: vec![10, 9],
+        avgs: vec![7., 6.],
+    };
+    assert_eq!(time_binner.bins_ready_count(), 0);
+    time_binner.ingest(&inp1);
+    assert_eq!(time_binner.bins_ready_count(), 1);
+    time_binner.push_in_progress(false);
+    assert_eq!(time_binner.bins_ready_count(), 2);
+    // From here on, pushing any more should not change the bin count:
+    time_binner.push_in_progress(false);
+    assert_eq!(time_binner.bins_ready_count(), 2);
+    // On the other hand, cycling should add one more zero-bin:
+    time_binner.cycle();
+    assert_eq!(time_binner.bins_ready_count(), 3);
+    time_binner.cycle();
+    assert_eq!(time_binner.bins_ready_count(), 3);
+    let bins = time_binner.bins_ready().expect("bins should be ready");
+    eprintln!("bins: {:?}", bins);
+    assert_eq!(time_binner.bins_ready_count(), 0);
+    assert_eq!(bins.counts(), &[1, 1, 0]);
+    // TODO use proper float-compare logic:
+    assert_eq!(bins.mins(), &[3., 4., 0.]);
+    assert_eq!(bins.maxs(), &[10., 9., 0.]);
+    assert_eq!(bins.avgs(), &[7., 6., 0.]);
+}
+
+#[test]
+fn bin_binned_02() {
+    use binsdim0::MinMaxAvgDim0Bins;
+    let edges = vec![SEC * 1000, SEC * 1020];
+    let inp0 = <MinMaxAvgDim0Bins<u32> as NewEmpty>::empty(Shape::Scalar);
+    let mut time_binner = inp0.time_binner_new(edges, true);
+    let inp1 = MinMaxAvgDim0Bins::<u32> {
+        ts1s: vec![SEC * 1000, SEC * 1010],
+        ts2s: vec![SEC * 1010, SEC * 1020],
+        counts: vec![1, 1],
+        mins: vec![3, 4],
+        maxs: vec![10, 9],
+        avgs: vec![7., 6.],
+    };
+    assert_eq!(time_binner.bins_ready_count(), 0);
+    time_binner.ingest(&inp1);
+    assert_eq!(time_binner.bins_ready_count(), 0);
+    time_binner.cycle();
+    assert_eq!(time_binner.bins_ready_count(), 1);
+    time_binner.cycle();
+    //assert_eq!(time_binner.bins_ready_count(), 2);
+    let bins = time_binner.bins_ready().expect("bins should be ready");
+    eprintln!("bins: {:?}", bins);
+    assert_eq!(time_binner.bins_ready_count(), 0);
+    assert_eq!(bins.counts(), &[2]);
+    assert_eq!(bins.mins(), &[3.]);
+    assert_eq!(bins.maxs(), &[10.]);
+    assert_eq!(bins.avgs(), &[13. / 2.]);
+}
+*/

@@ -1,40 +1,42 @@
-pub mod binnedevents;
-pub mod binsdim0;
-pub mod binsdim1;
 pub mod eventfull;
-pub mod eventsitem;
 pub mod frame;
 pub mod inmem;
-pub mod numops;
-pub mod plainevents;
-pub mod scalarevents;
 pub mod streams;
-pub mod waveevents;
-pub mod xbinnedscalarevents;
-pub mod xbinnedwaveevents;
 
 use crate::frame::make_frame_2;
 use bytes::BytesMut;
-use chrono::{TimeZone, Utc};
+use chrono::TimeZone;
+use chrono::Utc;
 use err::Error;
-use frame::{make_error_frame, make_log_frame, make_range_complete_frame, make_stats_frame};
+use frame::make_error_frame;
+use frame::make_log_frame;
+use frame::make_range_complete_frame;
+use frame::make_stats_frame;
 use items_0::AsAnyRef;
+use netpod::log::Level;
 #[allow(unused)]
 use netpod::log::*;
-use netpod::timeunits::{MS, SEC};
-use netpod::{log::Level, AggKind, EventDataReadStats, NanoRange, Shape};
-use netpod::{DiskStats, RangeFilterStats, ScalarType};
+use netpod::timeunits::MS;
+use netpod::timeunits::SEC;
+use netpod::DiskStats;
+use netpod::EventDataReadStats;
+use netpod::NanoRange;
+use netpod::RangeFilterStats;
+use netpod::Shape;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize, Serializer};
+use serde::Deserialize;
+use serde::Serialize;
+use serde::Serializer;
 use std::any::Any;
-use std::collections::VecDeque;
 use std::fmt;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::Context;
+use std::task::Poll;
 use tokio::fs::File;
-use tokio::io::{AsyncRead, ReadBuf};
+use tokio::io::AsyncRead;
+use tokio::io::ReadBuf;
 
 pub const TERM_FRAME_TYPE_ID: u32 = 0xaa01;
 pub const ERROR_FRAME_TYPE_ID: u32 = 0xaa02;
@@ -371,32 +373,6 @@ impl FrameType for EventQueryJsonStringFrame {
     }
 }
 
-pub trait EventsNodeProcessorOutput:
-    fmt::Debug + Send + Unpin + DeserializeOwned + WithTimestamps + TimeBinnableType + ByteEstimate
-{
-    fn as_any_mut(&mut self) -> &mut dyn Any;
-    fn into_parts(self) -> (Box<dyn Any>, VecDeque<u64>, VecDeque<u64>);
-}
-
-pub trait EventsNodeProcessor: Send + Unpin {
-    type Input;
-    type Output: EventsNodeProcessorOutput;
-    fn create(shape: Shape, agg_kind: AggKind) -> Self;
-    fn process(&self, inp: Self::Input) -> Self::Output;
-}
-
-pub trait EventsTypeAliases {
-    type TimeBinOutput;
-}
-
-impl<ENP> EventsTypeAliases for ENP
-where
-    ENP: EventsNodeProcessor,
-    <ENP as EventsNodeProcessor>::Output: TimeBinnableType,
-{
-    type TimeBinOutput = <<ENP as EventsNodeProcessor>::Output as TimeBinnableType>::Output;
-}
-
 #[derive(Clone, Debug, Deserialize)]
 pub struct IsoDateTime(chrono::DateTime<Utc>);
 
@@ -631,7 +607,7 @@ impl<T> ReadPbv<T>
 where
     T: ReadableFromFile,
 {
-    fn new(file: File) -> Self {
+    pub fn new(file: File) -> Self {
         Self {
             // TODO make buffer size a parameter:
             buf: vec![0; 1024 * 32],
@@ -742,179 +718,4 @@ pub trait TimeBinnerDyn: Send {
     /// to `push_in_progress` did not change the result count, as long as edges are left.
     /// The next call to `Self::bins_ready_count` must return one higher count than before.
     fn cycle(&mut self);
-}
-
-pub fn empty_events_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggKind) -> Box<dyn TimeBinnableDyn> {
-    match shape {
-        Shape::Scalar => match agg_kind {
-            AggKind::TimeWeightedScalar => {
-                use ScalarType::*;
-                type K<T> = scalarevents::ScalarEvents<T>;
-                match scalar_type {
-                    U8 => Box::new(K::<u8>::empty()),
-                    U16 => Box::new(K::<u16>::empty()),
-                    U32 => Box::new(K::<u32>::empty()),
-                    U64 => Box::new(K::<u64>::empty()),
-                    I8 => Box::new(K::<i8>::empty()),
-                    I16 => Box::new(K::<i16>::empty()),
-                    I32 => Box::new(K::<i32>::empty()),
-                    I64 => Box::new(K::<i64>::empty()),
-                    F32 => Box::new(K::<f32>::empty()),
-                    F64 => Box::new(K::<f64>::empty()),
-                    _ => {
-                        error!("TODO for {:?} {:?} {:?}", scalar_type, shape, agg_kind);
-                        err::todoval()
-                    }
-                }
-            }
-            _ => {
-                error!("TODO for {:?} {:?} {:?}", scalar_type, shape, agg_kind);
-                err::todoval()
-            }
-        },
-        Shape::Wave(_n) => match agg_kind {
-            AggKind::DimXBins1 => {
-                use ScalarType::*;
-                type K<T> = waveevents::WaveEvents<T>;
-                match scalar_type {
-                    U8 => Box::new(K::<u8>::empty()),
-                    F32 => Box::new(K::<f32>::empty()),
-                    F64 => Box::new(K::<f64>::empty()),
-                    BOOL => Box::new(K::<bool>::empty()),
-                    _ => {
-                        error!("TODO for {:?} {:?} {:?}", scalar_type, shape, agg_kind);
-                        err::todoval()
-                    }
-                }
-            }
-            AggKind::Plain => {
-                use ScalarType::*;
-                type K<T> = waveevents::WaveEvents<T>;
-                match scalar_type {
-                    U8 => Box::new(K::<u8>::empty()),
-                    F32 => Box::new(K::<f32>::empty()),
-                    F64 => Box::new(K::<f64>::empty()),
-                    BOOL => Box::new(K::<bool>::empty()),
-                    _ => {
-                        error!("TODO for {:?} {:?} {:?}", scalar_type, shape, agg_kind);
-                        err::todoval()
-                    }
-                }
-            }
-            _ => {
-                error!("TODO for {:?} {:?} {:?}", scalar_type, shape, agg_kind);
-                err::todoval()
-            }
-        },
-        Shape::Image(..) => {
-            error!("TODO for {:?} {:?} {:?}", scalar_type, shape, agg_kind);
-            err::todoval()
-        }
-    }
-}
-
-pub fn empty_binned_dyn(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggKind) -> Box<dyn TimeBinnableDyn> {
-    match shape {
-        Shape::Scalar => match agg_kind {
-            AggKind::TimeWeightedScalar => {
-                use ScalarType::*;
-                type K<T> = binsdim0::MinMaxAvgDim0Bins<T>;
-                match scalar_type {
-                    U8 => Box::new(K::<u8>::empty()),
-                    U16 => Box::new(K::<u16>::empty()),
-                    U32 => Box::new(K::<u32>::empty()),
-                    U64 => Box::new(K::<u64>::empty()),
-                    I8 => Box::new(K::<i8>::empty()),
-                    I16 => Box::new(K::<i16>::empty()),
-                    I32 => Box::new(K::<i32>::empty()),
-                    I64 => Box::new(K::<i64>::empty()),
-                    F32 => Box::new(K::<f32>::empty()),
-                    F64 => Box::new(K::<f64>::empty()),
-                    _ => err::todoval(),
-                }
-            }
-            _ => err::todoval(),
-        },
-        Shape::Wave(_n) => match agg_kind {
-            AggKind::DimXBins1 => {
-                use ScalarType::*;
-                type K<T> = binsdim0::MinMaxAvgDim0Bins<T>;
-                match scalar_type {
-                    U8 => Box::new(K::<u8>::empty()),
-                    F32 => Box::new(K::<f32>::empty()),
-                    F64 => Box::new(K::<f64>::empty()),
-                    _ => err::todoval(),
-                }
-            }
-            _ => err::todoval(),
-        },
-        Shape::Image(..) => err::todoval(),
-    }
-}
-
-#[test]
-fn bin_binned_01() {
-    use binsdim0::MinMaxAvgDim0Bins;
-    let edges = vec![SEC * 1000, SEC * 1010, SEC * 1020, SEC * 1030];
-    let inp0 = <MinMaxAvgDim0Bins<u32> as NewEmpty>::empty(Shape::Scalar);
-    let mut time_binner = inp0.time_binner_new(edges, true);
-    let inp1 = MinMaxAvgDim0Bins::<u32> {
-        ts1s: vec![SEC * 1000, SEC * 1010],
-        ts2s: vec![SEC * 1010, SEC * 1020],
-        counts: vec![1, 1],
-        mins: vec![3, 4],
-        maxs: vec![10, 9],
-        avgs: vec![7., 6.],
-    };
-    assert_eq!(time_binner.bins_ready_count(), 0);
-    time_binner.ingest(&inp1);
-    assert_eq!(time_binner.bins_ready_count(), 1);
-    time_binner.push_in_progress(false);
-    assert_eq!(time_binner.bins_ready_count(), 2);
-    // From here on, pushing any more should not change the bin count:
-    time_binner.push_in_progress(false);
-    assert_eq!(time_binner.bins_ready_count(), 2);
-    // On the other hand, cycling should add one more zero-bin:
-    time_binner.cycle();
-    assert_eq!(time_binner.bins_ready_count(), 3);
-    time_binner.cycle();
-    assert_eq!(time_binner.bins_ready_count(), 3);
-    let bins = time_binner.bins_ready().expect("bins should be ready");
-    eprintln!("bins: {:?}", bins);
-    assert_eq!(time_binner.bins_ready_count(), 0);
-    assert_eq!(bins.counts(), &[1, 1, 0]);
-    // TODO use proper float-compare logic:
-    assert_eq!(bins.mins(), &[3., 4., 0.]);
-    assert_eq!(bins.maxs(), &[10., 9., 0.]);
-    assert_eq!(bins.avgs(), &[7., 6., 0.]);
-}
-
-#[test]
-fn bin_binned_02() {
-    use binsdim0::MinMaxAvgDim0Bins;
-    let edges = vec![SEC * 1000, SEC * 1020];
-    let inp0 = <MinMaxAvgDim0Bins<u32> as NewEmpty>::empty(Shape::Scalar);
-    let mut time_binner = inp0.time_binner_new(edges, true);
-    let inp1 = MinMaxAvgDim0Bins::<u32> {
-        ts1s: vec![SEC * 1000, SEC * 1010],
-        ts2s: vec![SEC * 1010, SEC * 1020],
-        counts: vec![1, 1],
-        mins: vec![3, 4],
-        maxs: vec![10, 9],
-        avgs: vec![7., 6.],
-    };
-    assert_eq!(time_binner.bins_ready_count(), 0);
-    time_binner.ingest(&inp1);
-    assert_eq!(time_binner.bins_ready_count(), 0);
-    time_binner.cycle();
-    assert_eq!(time_binner.bins_ready_count(), 1);
-    time_binner.cycle();
-    //assert_eq!(time_binner.bins_ready_count(), 2);
-    let bins = time_binner.bins_ready().expect("bins should be ready");
-    eprintln!("bins: {:?}", bins);
-    assert_eq!(time_binner.bins_ready_count(), 0);
-    assert_eq!(bins.counts(), &[2]);
-    assert_eq!(bins.mins(), &[3.]);
-    assert_eq!(bins.maxs(), &[10.]);
-    assert_eq!(bins.avgs(), &[13. / 2.]);
 }
