@@ -182,16 +182,6 @@ impl crate::merger::Mergeable for Box<dyn Events> {
         self.as_ref().ts_max()
     }
 
-    fn move_into_fresh(&mut self, ts_end: u64) -> Self {
-        self.as_mut().move_into_fresh(ts_end)
-    }
-
-    fn move_into_existing(&mut self, tgt: &mut Self, ts_end: u64) -> Result<(), merger::MergeError> {
-        self.as_mut()
-            .move_into_existing(tgt, ts_end)
-            .map_err(|()| merger::MergeError::NotCompatible)
-    }
-
     fn new_empty(&self) -> Self {
         self.as_ref().new_empty()
     }

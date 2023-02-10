@@ -1,18 +1,33 @@
+use crate::binned_collected;
 use crate::binsdim0::BinsDim0CollectedResult;
-use crate::channelevents::{ConnStatus, ConnStatusEvent};
+use crate::channelevents::ConnStatus;
+use crate::channelevents::ConnStatusEvent;
 use crate::eventsdim0::EventsDim0;
-use crate::merger::{Mergeable, Merger};
+use crate::merger::Mergeable;
+use crate::merger::Merger;
 use crate::merger_cev::ChannelEventsMerger;
+use crate::runfut;
 use crate::testgen::make_some_boxed_d0_f32;
+use crate::ChannelEvents;
 use crate::Error;
-use crate::{binned_collected, runfut, ChannelEvents, Events, IsoDateTime};
-use chrono::{TimeZone, Utc};
-use futures_util::{stream, StreamExt};
-use items::{sitem_data, RangeCompletableItem, Sitemty, StreamItem};
+use crate::Events;
+use crate::IsoDateTime;
+use chrono::TimeZone;
+use chrono::Utc;
+use futures_util::stream;
+use futures_util::StreamExt;
+use items::sitem_data;
+use items::RangeCompletableItem;
+use items::Sitemty;
+use items::StreamItem;
 use items_0::Empty;
 use netpod::log::*;
 use netpod::timeunits::*;
-use netpod::{AggKind, BinnedRange, NanoRange, ScalarType, Shape};
+use netpod::AggKind;
+use netpod::BinnedRange;
+use netpod::NanoRange;
+use netpod::ScalarType;
+use netpod::Shape;
 use std::time::Duration;
 
 #[test]
@@ -22,10 +37,25 @@ fn items_move_events() {
     let mut v1 = v0.clone();
     eprintln!("{v1:?}");
     eprintln!("{}", v1.len());
-    let mut v2 = v1.move_into_fresh(4);
+    let mut v2 = v1.new_empty();
+    match v1.find_lowest_index_gt(4) {
+        Some(ilgt) => {
+            v1.drain_into(&mut v2, (0, ilgt)).unwrap();
+        }
+        None => {
+            v1.drain_into(&mut v2, (0, v1.len())).unwrap();
+        }
+    }
     eprintln!("{}", v1.len());
     eprintln!("{}", v2.len());
-    v1.move_into_existing(&mut v2, u64::MAX).unwrap();
+    match v1.find_lowest_index_gt(u64::MAX) {
+        Some(ilgt) => {
+            v1.drain_into(&mut v2, (0, ilgt)).unwrap();
+        }
+        None => {
+            v1.drain_into(&mut v2, (0, v1.len())).unwrap();
+        }
+    }
     eprintln!("{}", v1.len());
     eprintln!("{}", v2.len());
     eprintln!("{v1:?}");
@@ -62,9 +92,9 @@ fn items_merge_01() {
         let evs1 = make_some_boxed_d0_f32(10, SEC * 2, SEC * 2, 0, 828764893);
         let v0 = ChannelEvents::Events(evs0);
         let v1 = ChannelEvents::Events(evs1);
-        let v2 = ChannelEvents::Status(ConnStatusEvent::new(MS * 100, ConnStatus::Connect));
-        let v3 = ChannelEvents::Status(ConnStatusEvent::new(MS * 2300, ConnStatus::Disconnect));
-        let v4 = ChannelEvents::Status(ConnStatusEvent::new(MS * 2800, ConnStatus::Connect));
+        let v2 = ChannelEvents::Status(Some(ConnStatusEvent::new(MS * 100, ConnStatus::Connect)));
+        let v3 = ChannelEvents::Status(Some(ConnStatusEvent::new(MS * 2300, ConnStatus::Disconnect)));
+        let v4 = ChannelEvents::Status(Some(ConnStatusEvent::new(MS * 2800, ConnStatus::Connect)));
         let stream0 = Box::pin(stream::iter(vec![sitem_data(v0)]));
         let stream1 = Box::pin(stream::iter(vec![sitem_data(v1)]));
         let stream2 = Box::pin(stream::iter(vec![sitem_data(v2), sitem_data(v3), sitem_data(v4)]));
@@ -97,9 +127,9 @@ fn items_merge_02() {
         let evs1 = make_some_boxed_d0_f32(100, SEC * 2, SEC * 2, 0, 828764893);
         let v0 = ChannelEvents::Events(evs0);
         let v1 = ChannelEvents::Events(evs1);
-        let v2 = ChannelEvents::Status(ConnStatusEvent::new(MS * 100, ConnStatus::Connect));
-        let v3 = ChannelEvents::Status(ConnStatusEvent::new(MS * 2300, ConnStatus::Disconnect));
-        let v4 = ChannelEvents::Status(ConnStatusEvent::new(MS * 2800, ConnStatus::Connect));
+        let v2 = ChannelEvents::Status(Some(ConnStatusEvent::new(MS * 100, ConnStatus::Connect)));
+        let v3 = ChannelEvents::Status(Some(ConnStatusEvent::new(MS * 2300, ConnStatus::Disconnect)));
+        let v4 = ChannelEvents::Status(Some(ConnStatusEvent::new(MS * 2800, ConnStatus::Connect)));
         let stream0 = Box::pin(stream::iter(vec![sitem_data(v0)]));
         let stream1 = Box::pin(stream::iter(vec![sitem_data(v1)]));
         let stream2 = Box::pin(stream::iter(vec![sitem_data(v2), sitem_data(v3), sitem_data(v4)]));
@@ -241,7 +271,7 @@ fn merge03() {
                 status: ConnStatus::Disconnect,
             };
             let item: Sitemty<ChannelEvents> = Ok(StreamItem::DataItem(RangeCompletableItem::Data(
-                ChannelEvents::Status(ev),
+                ChannelEvents::Status(Some(ev)),
             )));
             vec![item]
         };
@@ -253,7 +283,7 @@ fn merge03() {
                 status: ConnStatus::Disconnect,
             };
             let item: Sitemty<ChannelEvents> = Ok(StreamItem::DataItem(RangeCompletableItem::Data(
-                ChannelEvents::Status(ev),
+                ChannelEvents::Status(Some(ev)),
             )));
             vec![item]
         };

@@ -151,9 +151,8 @@ pub trait Events:
     fn as_collectable_with_default_mut(&mut self) -> &mut dyn CollectableWithDefault;
     fn ts_min(&self) -> Option<u64>;
     fn ts_max(&self) -> Option<u64>;
+    // TODO is this used?
     fn take_new_events_until_ts(&mut self, ts_end: u64) -> Box<dyn Events>;
-    fn move_into_fresh(&mut self, ts_end: u64) -> Box<dyn Events>;
-    fn move_into_existing(&mut self, tgt: &mut Box<dyn Events>, ts_end: u64) -> Result<(), ()>;
     fn new_empty(&self) -> Box<dyn Events>;
     fn drain_into(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), ()>;
     fn find_lowest_index_gt(&self, ts: u64) -> Option<usize>;

@@ -1,13 +1,17 @@
 use crate::Error;
-use futures_util::{Stream, StreamExt};
+use futures_util::Stream;
+use futures_util::StreamExt;
 use items::sitem_data;
-use items::{RangeCompletableItem, Sitemty, StreamItem};
+use items::RangeCompletableItem;
+use items::Sitemty;
+use items::StreamItem;
 use netpod::log::*;
 use std::collections::VecDeque;
 use std::fmt;
-use std::ops::{ControlFlow, RangeBounds};
+use std::ops::ControlFlow;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::Context;
+use std::task::Poll;
 
 #[allow(unused)]
 macro_rules! trace2 {
@@ -43,12 +47,6 @@ pub trait Mergeable<Rhs = Self>: fmt::Debug + Unpin {
     fn len(&self) -> usize;
     fn ts_min(&self) -> Option<u64>;
     fn ts_max(&self) -> Option<u64>;
-
-    // TODO remove, superseded.
-    fn move_into_fresh(&mut self, ts_end: u64) -> Rhs;
-    fn move_into_existing(&mut self, tgt: &mut Rhs, ts_end: u64) -> Result<(), MergeError>;
-
-    // TODO: split the logic into: make fresh container, and a single drain_into method. Or is there any advantage in having both?
     fn new_empty(&self) -> Self;
     fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), MergeError>;
     fn find_lowest_index_gt(&self, ts: u64) -> Option<usize>;

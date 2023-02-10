@@ -17,6 +17,17 @@ pub async fn plain_events_json(
     chconf: &ChConf,
     cluster: &Cluster,
 ) -> Result<JsonValue, Error> {
+    if query.channel().name() == "wasm-test-01" {
+        use wasmer::Value;
+        let wasm = query.channel().name().as_bytes();
+        let mut store = wasmer::Store::default();
+        let module = wasmer::Module::new(&store, wasm).unwrap();
+        let import_object = wasmer::imports! {};
+        let instance = wasmer::Instance::new(&mut store, &module, &import_object).unwrap();
+        let add_one = instance.exports.get_function("event_transform").unwrap();
+        let result = add_one.call(&mut store, &[Value::I32(42)]).unwrap();
+        assert_eq!(result[0], Value::I32(43));
+    }
     // TODO remove magic constant
     let deadline = Instant::now() + query.timeout() + Duration::from_millis(1000);
     let events_max = query.events_max();

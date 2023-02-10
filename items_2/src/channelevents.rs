@@ -85,7 +85,7 @@ impl ChannelStatusEvent {
 #[derive(Debug)]
 pub enum ChannelEvents {
     Events(Box<dyn Events>),
-    Status(ConnStatusEvent),
+    Status(Option<ConnStatusEvent>),
 }
 
 impl FrameTypeInnerStatic for ChannelEvents {
@@ -342,7 +342,7 @@ mod serde_channel_events {
                     Ok(Self::Value::Events(x.0))
                 }
                 VarId::Status => {
-                    let x: ConnStatusEvent = var.newtype_variant()?;
+                    let x: Option<ConnStatusEvent> = var.newtype_variant()?;
                     Ok(Self::Value::Status(x))
                 }
             }
@@ -440,7 +440,7 @@ mod test_channel_events_serde {
             datetime: SystemTime::UNIX_EPOCH,
             status: crate::channelevents::ConnStatus::Connect,
         };
-        let item = ChannelEvents::Status(status);
+        let item = ChannelEvents::Status(Some(status));
         let opts = bincode_opts();
         let mut out = Vec::new();
         let mut ser = bincode::Serializer::new(&mut out, opts);
@@ -453,7 +453,11 @@ mod test_channel_events_serde {
         } else {
             panic!()
         };
-        assert_eq!(item.ts, 567);
+        if let Some(item) = item {
+            assert_eq!(item.ts, 567);
+        } else {
+            panic!()
+        }
     }
 }
 
@@ -472,7 +476,10 @@ impl MergeableCev for ChannelEvents {
         use ChannelEvents::*;
         match self {
             Events(k) => k.ts_min(),
-            Status(k) => Some(k.ts),
+            Status(k) => match k {
+                Some(k) => Some(k.ts),
+                None => None,
+            },
         }
     }
 
@@ -486,40 +493,29 @@ impl crate::merger::Mergeable for ChannelEvents {
     fn len(&self) -> usize {
         match self {
             ChannelEvents::Events(k) => k.len(),
-            ChannelEvents::Status(_) => 1,
+            ChannelEvents::Status(k) => match k {
+                Some(_) => 1,
+                None => 0,
+            },
         }
     }
 
     fn ts_min(&self) -> Option<u64> {
         match self {
             ChannelEvents::Events(k) => k.ts_min(),
-            ChannelEvents::Status(k) => Some(k.ts),
+            ChannelEvents::Status(k) => match k {
+                Some(k) => Some(k.ts),
+                None => None,
+            },
         }
     }
 
     fn ts_max(&self) -> Option<u64> {
         match self {
             ChannelEvents::Events(k) => k.ts_max(),
-            ChannelEvents::Status(k) => Some(k.ts),
-        }
-    }
-
-    fn move_into_fresh(&mut self, ts_end: u64) -> Self {
-        match self {
-            ChannelEvents::Events(k) => ChannelEvents::Events(k.move_into_fresh(ts_end)),
-            ChannelEvents::Status(k) => ChannelEvents::Status(k.clone()),
-        }
-    }
-
-    fn move_into_existing(&mut self, tgt: &mut Self, ts_end: u64) -> Result<(), merger::MergeError> {
-        match self {
-            ChannelEvents::Events(k) => match tgt {
-                ChannelEvents::Events(tgt) => k.move_into_existing(tgt, ts_end),
-                ChannelEvents::Status(_) => Err(merger::MergeError::NotCompatible),
-            },
-            ChannelEvents::Status(_) => match tgt {
-                ChannelEvents::Events(_) => Err(merger::MergeError::NotCompatible),
-                ChannelEvents::Status(_) => Err(merger::MergeError::Full),
+            ChannelEvents::Status(k) => match k {
+                Some(k) => Some(k.ts),
+                None => None,
             },
         }
     }
@@ -539,11 +535,13 @@ impl crate::merger::Mergeable for ChannelEvents {
             },
             ChannelEvents::Status(k) => match dst {
                 ChannelEvents::Events(_) => Err(merger::MergeError::NotCompatible),
-                ChannelEvents::Status(j) => {
-                    // TODO must have some empty-value for the status container.
-                    *j = k.clone();
-                    Ok(())
-                }
+                ChannelEvents::Status(j) => match j {
+                    Some(_) => Err(merger::MergeError::Full),
+                    None => {
+                        *j = k.take();
+                        Ok(())
+                    }
+                },
             },
         }
     }
@@ -552,8 +550,12 @@ impl crate::merger::Mergeable for ChannelEvents {
         match self {
             ChannelEvents::Events(k) => k.find_lowest_index_gt(ts),
             ChannelEvents::Status(k) => {
-                if k.ts > ts {
-                    Some(0)
+                if let Some(k) = k {
+                    if k.ts > ts {
+                        Some(0)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -565,8 +567,12 @@ impl crate::merger::Mergeable for ChannelEvents {
         match self {
             ChannelEvents::Events(k) => k.find_lowest_index_ge(ts),
             ChannelEvents::Status(k) => {
-                if k.ts >= ts {
-                    Some(0)
+                if let Some(k) = k {
+                    if k.ts >= ts {
+                        Some(0)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -578,8 +584,12 @@ impl crate::merger::Mergeable for ChannelEvents {
         match self {
             ChannelEvents::Events(k) => k.find_highest_index_lt(ts),
             ChannelEvents::Status(k) => {
-                if k.ts < ts {
-                    Some(0)
+                if let Some(k) = k {
+                    if k.ts < ts {
+                        Some(0)
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -686,9 +696,10 @@ impl crate::timebin::TimeBinnable for ChannelEvents {
     type TimeBinner = ChannelEventsTimeBinner;
 
     fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Self::TimeBinner {
+        // TODO probably wrong?
         let (binner, status) = match self {
             ChannelEvents::Events(_events) => (None, ConnStatus::Connect),
-            ChannelEvents::Status(status) => (None, status.status.clone()),
+            ChannelEvents::Status(_status) => (None, ConnStatus::Connect),
         };
         ChannelEventsTimeBinner {
             edges,
