@@ -270,7 +270,7 @@ async fn get_binned_json(
     let beg_date: DateTime<Utc> = beg_date.parse()?;
     let end_date: DateTime<Utc> = end_date.parse()?;
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let query = BinnedQuery::new(channel, range, bin_count, AggKind::TimeWeightedScalar);
+    let query = BinnedQuery::new(channel, range, bin_count, Some(AggKind::TimeWeightedScalar));
     let hp = HostPort::from_node(node0);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", hp.host, hp.port))?;
     query.append_to_url(&mut url);

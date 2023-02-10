@@ -93,7 +93,7 @@ pub async fn make_event_pipe(
         channel: evq.channel().clone(),
         keyspace: entry.ks as u8,
         time_bin_size: entry.bs,
-        shape: shape,
+        shape,
         scalar_type: entry.scalar_type.clone(),
         byte_order: entry.byte_order.clone(),
         array: entry.is_array,
@@ -101,7 +101,7 @@ pub async fn make_event_pipe(
     };
     trace!(
         "make_event_pipe  need_expand {need_expand}  {evq:?}",
-        need_expand = evq.agg_kind().need_expand()
+        need_expand = evq.one_before_range()
     );
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     let event_blobs = EventChunkerMultifile::new(
@@ -111,14 +111,14 @@ pub async fn make_event_pipe(
         node_config.ix,
         DiskIoTune::default(),
         event_chunker_conf,
-        evq.agg_kind().need_expand(),
+        evq.one_before_range(),
         true,
     );
     let shape = entry.to_shape()?;
     let pipe = make_num_pipeline_stream_evs(
         entry.scalar_type.clone(),
         shape.clone(),
-        evq.agg_kind().clone(),
+        evq.agg_kind_value(),
         event_blobs,
     );
     Ok(pipe)
@@ -232,7 +232,7 @@ pub async fn make_event_blobs_pipe(
             Err(e) => return Err(e)?,
         }
     }
-    let expand = evq.agg_kind().need_expand();
+    let expand = evq.one_before_range();
     let range = evq.range();
     let entry = get_applicable_entry(evq.range(), evq.channel().clone(), node_config).await?;
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));

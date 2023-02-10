@@ -5,7 +5,7 @@ use items::{RangeCompletableItem, Sitemty, StreamItem};
 use netpod::log::*;
 use std::collections::VecDeque;
 use std::fmt;
-use std::ops::ControlFlow;
+use std::ops::{ControlFlow, RangeBounds};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -43,12 +43,17 @@ pub trait Mergeable<Rhs = Self>: fmt::Debug + Unpin {
     fn len(&self) -> usize;
     fn ts_min(&self) -> Option<u64>;
     fn ts_max(&self) -> Option<u64>;
-    // TODO remove, useless.
-    fn is_compatible_target(&self, tgt: &Rhs) -> bool;
 
-    // TODO rename to `append_*` to make it clear that they simply append, but not re-sort.
+    // TODO remove, superseded.
     fn move_into_fresh(&mut self, ts_end: u64) -> Rhs;
     fn move_into_existing(&mut self, tgt: &mut Rhs, ts_end: u64) -> Result<(), MergeError>;
+
+    // TODO: split the logic into: make fresh container, and a single drain_into method. Or is there any advantage in having both?
+    fn new_empty(&self) -> Self;
+    fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), MergeError>;
+    fn find_lowest_index_gt(&self, ts: u64) -> Option<usize>;
+    fn find_lowest_index_ge(&self, ts: u64) -> Option<usize>;
+    fn find_highest_index_lt(&self, ts: u64) -> Option<usize>;
 }
 
 type MergeInp<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;
@@ -107,6 +112,19 @@ where
         }
     }
 
+    fn drain_into_upto(src: &mut T, dst: &mut T, upto: u64) -> Result<(), MergeError> {
+        match src.find_lowest_index_gt(upto) {
+            Some(ilgt) => {
+                src.drain_into(dst, (0, ilgt))?;
+            }
+            None => {
+                // TODO should not be here.
+                src.drain_into(dst, (0, src.len()))?;
+            }
+        }
+        Ok(())
+    }
+
     fn take_into_output_all(&mut self, src: &mut T) -> Result<(), MergeError> {
         // TODO optimize the case when some large batch should be added to some existing small batch already in out.
         // TODO maybe use two output slots?
@@ -116,14 +134,15 @@ where
     fn take_into_output_upto(&mut self, src: &mut T, upto: u64) -> Result<(), MergeError> {
         // TODO optimize the case when some large batch should be added to some existing small batch already in out.
         // TODO maybe use two output slots?
-        if self.out.is_none() {
-            trace2!("move into fresh");
-            self.out = Some(src.move_into_fresh(upto));
-            Ok(())
+        if let Some(out) = self.out.as_mut() {
+            Self::drain_into_upto(src, out, upto)?;
         } else {
-            let out = self.out.as_mut().unwrap();
-            src.move_into_existing(out, upto)
+            trace2!("move into fresh");
+            let mut fresh = src.new_empty();
+            Self::drain_into_upto(src, &mut fresh, upto)?;
+            self.out = Some(fresh);
         }
+        Ok(())
     }
 
     fn process(mut self: Pin<&mut Self>, _cx: &mut Context) -> Result<ControlFlow<()>, Error> {
@@ -159,7 +178,7 @@ where
                 }
             }
         }
-        info!("tslows {tslows:?}");
+        trace4!("tslows {tslows:?}");
         if let Some((il0, _tl0)) = tslows[0] {
             if let Some((_il1, tl1)) = tslows[1] {
                 // There is a second input, take only up to the second highest timestamp
@@ -167,6 +186,7 @@ where
                 if let Some(th0) = item.ts_max() {
                     if th0 <= tl1 {
                         // Can take the whole item
+                        // TODO gather stats about this case. Should be never for databuffer, and often for scylla.
                         let mut item = self.items[il0].take().unwrap();
                         trace3!("Take all from item {item:?}");
                         match self.take_into_output_all(&mut item) {

@@ -372,6 +372,7 @@ pub async fn fetch_uncached_binned_events(
         .time_binner_new(edges.clone(), do_time_weight);
     // TODO handle deadline better
     let deadline = Instant::now();
+    // TODO take timeout from query
     let deadline = deadline
         .checked_add(Duration::from_millis(6000))
         .ok_or_else(|| Error::with_msg_no_trace(format!("deadline overflow")))?;
@@ -379,10 +380,10 @@ pub async fn fetch_uncached_binned_events(
     let evq = PlainEventsQuery::new(
         chn.channel.clone(),
         coord.patch_range(),
-        AggKind::TimeWeightedScalar,
-        Duration::from_millis(8000),
+        Some(agg_kind),
+        // TODO take from query
+        Some(Duration::from_millis(8000)),
         None,
-        true,
     );
     let mut events_dyn = EventsStreamScylla::new(
         series,

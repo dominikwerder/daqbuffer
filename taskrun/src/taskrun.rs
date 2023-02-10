@@ -20,6 +20,33 @@ pub fn get_runtime() -> Arc<Runtime> {
     get_runtime_opts(24, 128)
 }
 
+#[allow(unused)]
+fn on_thread_start() {
+    let old = panic::take_hook();
+    panic::set_hook(Box::new(move |info| {
+        let payload = if let Some(k) = info.payload().downcast_ref::<Error>() {
+            format!("{:?}", k)
+        } else if let Some(k) = info.payload().downcast_ref::<String>() {
+            k.into()
+        } else if let Some(&k) = info.payload().downcast_ref::<&str>() {
+            k.into()
+        } else {
+            format!("unknown payload type")
+        };
+        error!(
+            "✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗     panicking\n{:?}\nLOCATION: {:?}\nPAYLOAD: {:?}\ninfo object: {:?}\nerr: {:?}",
+            Error::with_msg("catched panic in taskrun::run"),
+            info.location(),
+            info.payload(),
+            info,
+            payload,
+        );
+        if false {
+            old(info);
+        }
+    }));
+}
+
 pub fn get_runtime_opts(nworkers: usize, nblocking: usize) -> Arc<Runtime> {
     let mut g = RUNTIME.lock().unwrap();
     match g.as_ref() {
@@ -28,32 +55,7 @@ pub fn get_runtime_opts(nworkers: usize, nblocking: usize) -> Arc<Runtime> {
                 .worker_threads(nworkers)
                 .max_blocking_threads(nblocking)
                 .enable_all()
-                .on_thread_start(|| {
-                    let _old = panic::take_hook();
-                    panic::set_hook(Box::new(move |info| {
-                        let payload = if let Some(k) = info.payload().downcast_ref::<Error>() {
-                            format!("{:?}", k)
-                        }
-                        else if let Some(k) = info.payload().downcast_ref::<String>() {
-                            k.into()
-                        }
-                        else if let Some(&k) = info.payload().downcast_ref::<&str>() {
-                            k.into()
-                        }
-                        else {
-                            format!("unknown payload type")
-                        };
-                        error!(
-                            "✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗     panicking\n{:?}\nLOCATION: {:?}\nPAYLOAD: {:?}\ninfo object: {:?}\nerr: {:?}",
-                            Error::with_msg("catched panic in taskrun::run"),
-                            info.location(),
-                            info.payload(),
-                            info,
-                            payload,
-                        );
-                        //old(info);
-                    }));
-                })
+                .on_thread_start(on_thread_start)
                 .build();
             let res = match res {
                 Ok(x) => x,

@@ -205,7 +205,6 @@ impl EventChunker {
                         let _ttl = sl.read_i64::<BE>().unwrap();
                         let ts = sl.read_i64::<BE>().unwrap() as u64;
                         let pulse = sl.read_i64::<BE>().unwrap() as u64;
-                        info!("SEE  {ts:20}  {pulse:20}  {0}", self.dbgdesc);
                         if ts == self.max_ts {
                             if self.repeated_ts_warn_count < 20 {
                                 let msg = format!(

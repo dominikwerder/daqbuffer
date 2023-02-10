@@ -102,7 +102,7 @@ async fn get_json_common(
         series: None,
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let mut query = BinnedQuery::new(channel, range, bin_count, agg_kind);
+    let mut query = BinnedQuery::new(channel, range, bin_count, Some(agg_kind));
     query.set_timeout(Duration::from_millis(40000));
     query.set_cache_usage(CacheUsage::Ignore);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", node0.host, node0.port))?;

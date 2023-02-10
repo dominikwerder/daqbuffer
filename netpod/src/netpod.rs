@@ -1747,17 +1747,17 @@ impl EventDataReadStats {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct RangeFilterStats {
-    pub events_pre: u64,
-    pub events_post: u64,
-    pub events_unordered: u64,
+    pub items_no_prune_high: u64,
+    pub items_all_prune_high: u64,
+    pub items_part_prune_high: u64,
 }
 
 impl RangeFilterStats {
     pub fn new() -> Self {
         Self {
-            events_pre: 0,
-            events_post: 0,
-            events_unordered: 0,
+            items_no_prune_high: 0,
+            items_all_prune_high: 0,
+            items_part_prune_high: 0,
         }
     }
 }
@@ -1827,7 +1827,7 @@ impl PerfOpts {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ByteSize(pub u32);
 
 impl ByteSize {

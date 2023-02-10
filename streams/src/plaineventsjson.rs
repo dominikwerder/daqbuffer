@@ -5,6 +5,7 @@ use futures_util::StreamExt;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
 use netpod::query::PlainEventsQuery;
+use netpod::AggKind;
 use netpod::ChConf;
 use netpod::Cluster;
 use serde_json::Value as JsonValue;
@@ -19,9 +20,11 @@ pub async fn plain_events_json(
     // TODO remove magic constant
     let deadline = Instant::now() + query.timeout() + Duration::from_millis(1000);
     let events_max = query.events_max();
-    let mut evquery = query.clone();
-    evquery.adjust_for_events_query();
-    let empty = items_2::empty_events_dyn_ev(&chconf.scalar_type, &chconf.shape, evquery.agg_kind())?;
+    let evquery = query.clone();
+    info!("plain_events_json  evquery {:?}", evquery);
+    let ev_agg_kind = evquery.agg_kind().as_ref().map_or(AggKind::Plain, |x| x.clone());
+    info!("plain_events_json  ev_agg_kind {:?}", ev_agg_kind);
+    let empty = items_2::empty_events_dyn_ev(&chconf.scalar_type, &chconf.shape, &ev_agg_kind)?;
     info!("plain_events_json  with empty item {}", empty.type_name());
     let empty = ChannelEvents::Events(empty);
     let empty = items::sitem_data(empty);
@@ -30,6 +33,7 @@ pub async fn plain_events_json(
     //let inps = open_tcp_streams::<_, Box<dyn items_2::Events>>(&query, cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader:
     let stream = items_2::merger::Merger::new(inps, 1024);
+    let stream = crate::rangefilter2::RangeFilter2::new(stream, query.range().clone(), evquery.one_before_range());
     let stream = stream::iter([empty]).chain(stream);
     let collected = crate::collect::collect(stream, deadline, events_max, Some(query.range().clone()), None).await?;
     let jsval = serde_json::to_value(&collected)?;

@@ -25,7 +25,7 @@ use std::fmt;
 use std::time::Duration;
 use url::Url;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum CacheUsage {
     Use,
     Ignore,
@@ -42,19 +42,22 @@ impl CacheUsage {
         .into()
     }
 
-    pub fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
-        let ret = pairs.get("cacheUsage").map_or(Ok::<_, Error>(CacheUsage::Use), |k| {
-            if k == "use" {
-                Ok(CacheUsage::Use)
-            } else if k == "ignore" {
-                Ok(CacheUsage::Ignore)
-            } else if k == "recreate" {
-                Ok(CacheUsage::Recreate)
-            } else {
-                Err(Error::with_msg(format!("unexpected cacheUsage {:?}", k)))?
-            }
-        })?;
-        Ok(ret)
+    // Missing query parameter is not an error
+    pub fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Option<Self>, Error> {
+        pairs
+            .get("cacheUsage")
+            .map(|k| {
+                if k == "use" {
+                    Ok(Some(CacheUsage::Use))
+                } else if k == "ignore" {
+                    Ok(Some(CacheUsage::Ignore))
+                } else if k == "recreate" {
+                    Ok(Some(CacheUsage::Recreate))
+                } else {
+                    Err(Error::with_msg(format!("unexpected cacheUsage {:?}", k)))?
+                }
+            })
+            .unwrap_or(Ok(None))
     }
 
     pub fn from_string(s: &str) -> Result<Self, Error> {
@@ -81,18 +84,18 @@ impl fmt::Display for CacheUsage {
 pub struct PlainEventsQuery {
     channel: Channel,
     range: NanoRange,
-    agg_kind: AggKind,
-    timeout: Duration,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    agg_kind: Option<AggKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "humantime_serde")]
+    timeout: Option<Duration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     events_max: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "humantime_serde")]
     event_delay: Option<Duration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     stream_batch_len: Option<usize>,
-    #[serde(default, skip_serializing_if = "is_false")]
-    report_error: bool,
-    #[serde(default, skip_serializing_if = "is_false")]
-    do_log: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    buf_len_disk_io: Option<usize>,
     #[serde(default, skip_serializing_if = "is_false")]
     do_test_main_error: bool,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -103,10 +106,9 @@ impl PlainEventsQuery {
     pub fn new(
         channel: Channel,
         range: NanoRange,
-        agg_kind: AggKind,
-        timeout: Duration,
+        agg_kind: Option<AggKind>,
+        timeout: Option<Duration>,
         events_max: Option<u64>,
-        do_log: bool,
     ) -> Self {
         Self {
             channel,
@@ -116,8 +118,7 @@ impl PlainEventsQuery {
             events_max,
             event_delay: None,
             stream_batch_len: None,
-            report_error: false,
-            do_log,
+            buf_len_disk_io: None,
             do_test_main_error: false,
             do_test_stream_error: false,
         }
@@ -131,20 +132,27 @@ impl PlainEventsQuery {
         &self.range
     }
 
-    pub fn agg_kind(&self) -> &AggKind {
+    pub fn agg_kind(&self) -> &Option<AggKind> {
         &self.agg_kind
     }
 
-    pub fn report_error(&self) -> bool {
-        self.report_error
+    pub fn agg_kind_value(&self) -> AggKind {
+        self.agg_kind.as_ref().map_or(AggKind::Plain, |x| x.clone())
     }
 
-    pub fn disk_io_buffer_size(&self) -> usize {
-        1024 * 8
+    pub fn one_before_range(&self) -> bool {
+        match &self.agg_kind {
+            Some(k) => k.need_expand(),
+            None => false,
+        }
+    }
+
+    pub fn buf_len_disk_io(&self) -> usize {
+        self.buf_len_disk_io.unwrap_or(1024 * 8)
     }
 
     pub fn timeout(&self) -> Duration {
-        self.timeout
+        self.timeout.unwrap_or(Duration::from_millis(10000))
     }
 
     pub fn events_max(&self) -> u64 {
@@ -153,10 +161,6 @@ impl PlainEventsQuery {
 
     pub fn event_delay(&self) -> &Option<Duration> {
         &self.event_delay
-    }
-
-    pub fn do_log(&self) -> bool {
-        self.do_log
     }
 
     pub fn do_test_main_error(&self) -> bool {
@@ -171,29 +175,12 @@ impl PlainEventsQuery {
         self.channel.series = Some(series);
     }
 
-    pub fn set_timeout(&mut self, k: Duration) {
-        self.timeout = k;
-    }
-
     pub fn set_do_test_main_error(&mut self, k: bool) {
         self.do_test_main_error = k;
     }
 
     pub fn set_do_test_stream_error(&mut self, k: bool) {
         self.do_test_stream_error = k;
-    }
-
-    // TODO remove again.
-    pub fn adjust_for_events_query(&mut self) {
-        match &self.agg_kind {
-            AggKind::EventBlobs => {}
-            AggKind::DimXBins1 => {}
-            AggKind::DimXBinsN(_) => {}
-            AggKind::Plain => {}
-            AggKind::TimeWeightedScalar => {
-                self.agg_kind = AggKind::Plain;
-            }
-        }
     }
 }
 
@@ -205,7 +192,7 @@ impl HasBackend for PlainEventsQuery {
 
 impl HasTimeout for PlainEventsQuery {
     fn timeout(&self) -> Duration {
-        self.timeout.clone()
+        self.timeout()
     }
 }
 
@@ -224,13 +211,11 @@ impl FromUrl for PlainEventsQuery {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
             },
-            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::Plain),
+            agg_kind: agg_kind_from_binning_scheme(&pairs)?,
             timeout: pairs
                 .get("timeout")
-                .map_or("10000", |k| k)
-                .parse::<u64>()
-                .map(|k| Duration::from_millis(k))
-                .map_err(|e| Error::with_public_msg(format!("can not parse timeout {:?}", e)))?,
+                .map(|x| x.parse::<u64>().map(Duration::from_millis).ok())
+                .unwrap_or(None),
             events_max: pairs
                 .get("eventsMax")
                 .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
@@ -240,26 +225,19 @@ impl FromUrl for PlainEventsQuery {
             stream_batch_len: pairs
                 .get("streamBatchLen")
                 .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
-            report_error: pairs
-                .get("reportError")
-                .map_or("false", |k| k)
-                .parse()
-                .map_err(|e| Error::with_public_msg(format!("can not parse reportError {:?}", e)))?,
-            do_log: pairs
-                .get("doLog")
-                .map_or("false", |k| k)
-                .parse()
-                .map_err(|e| Error::with_public_msg(format!("can not parse doLog {:?}", e)))?,
+            buf_len_disk_io: pairs
+                .get("bufLenDiskIo")
+                .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
             do_test_main_error: pairs
                 .get("doTestMainError")
                 .map_or("false", |k| k)
                 .parse()
-                .map_err(|e| Error::with_public_msg(format!("can not parse doTestMainError {:?}", e)))?,
+                .map_err(|e| Error::with_public_msg(format!("can not parse doTestMainError: {}", e)))?,
             do_test_stream_error: pairs
                 .get("doTestStreamError")
                 .map_or("false", |k| k)
                 .parse()
-                .map_err(|e| Error::with_public_msg(format!("can not parse doTestStreamError {:?}", e)))?,
+                .map_err(|e| Error::with_public_msg(format!("can not parse doTestStreamError: {}", e)))?,
         };
         Ok(ret)
     }
@@ -267,9 +245,11 @@ impl FromUrl for PlainEventsQuery {
 
 impl AppendToUrl for PlainEventsQuery {
     fn append_to_url(&self, url: &mut Url) {
-        let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
+        let date_fmt = "%Y-%m-%dT%H:%M:%S.%6fZ";
         self.channel.append_to_url(url);
-        binning_scheme_append_to_url(&self.agg_kind, url);
+        if let Some(x) = &self.agg_kind {
+            binning_scheme_append_to_url(x, url);
+        }
         let mut g = url.query_pairs_mut();
         g.append_pair(
             "begDate",
@@ -279,7 +259,9 @@ impl AppendToUrl for PlainEventsQuery {
             "endDate",
             &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
         );
-        g.append_pair("timeout", &format!("{}", self.timeout.as_millis()));
+        if let Some(x) = &self.timeout {
+            g.append_pair("timeout", &format!("{}", x.as_millis()));
+        }
         if let Some(x) = self.events_max.as_ref() {
             g.append_pair("eventsMax", &format!("{}", x));
         }
@@ -289,41 +271,49 @@ impl AppendToUrl for PlainEventsQuery {
         if let Some(x) = self.stream_batch_len.as_ref() {
             g.append_pair("streamBatchLen", &format!("{}", x));
         }
-        if self.do_log {
-            g.append_pair("doLog", &format!("{}", self.do_log));
+        if let Some(x) = self.buf_len_disk_io.as_ref() {
+            g.append_pair("bufLenDiskIo", &format!("{}", x));
+        }
+        if self.do_test_main_error {
+            g.append_pair("doTestMainError", "true");
+        }
+        if self.do_test_stream_error {
+            g.append_pair("doTestStreamError", "true");
         }
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BinnedQuery {
     channel: Channel,
     range: NanoRange,
     bin_count: u32,
-    agg_kind: AggKind,
-    cache_usage: CacheUsage,
-    disk_io_buffer_size: usize,
-    disk_stats_every: ByteSize,
-    report_error: bool,
-    timeout: Duration,
-    abort_after_bin_count: u32,
-    do_log: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    agg_kind: Option<AggKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    cache_usage: Option<CacheUsage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bins_max: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    timeout: Option<Duration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    buf_len_disk_io: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    disk_stats_every: Option<ByteSize>,
 }
 
 impl BinnedQuery {
-    pub fn new(channel: Channel, range: NanoRange, bin_count: u32, agg_kind: AggKind) -> Self {
+    pub fn new(channel: Channel, range: NanoRange, bin_count: u32, agg_kind: Option<AggKind>) -> Self {
         Self {
             channel,
             range,
             bin_count,
             agg_kind,
-            cache_usage: CacheUsage::Use,
-            disk_io_buffer_size: 1024 * 4,
-            disk_stats_every: ByteSize(1024 * 1024 * 4),
-            report_error: false,
-            timeout: Duration::from_millis(2000),
-            abort_after_bin_count: 0,
-            do_log: false,
+            cache_usage: None,
+            bins_max: None,
+            buf_len_disk_io: None,
+            disk_stats_every: None,
+            timeout: None,
         }
     }
 
@@ -339,36 +329,44 @@ impl BinnedQuery {
         self.bin_count
     }
 
-    pub fn agg_kind(&self) -> &AggKind {
-        &self.agg_kind
+    pub fn agg_kind(&self) -> AggKind {
+        match &self.agg_kind {
+            Some(x) => x.clone(),
+            None => AggKind::TimeWeightedScalar,
+        }
     }
 
-    pub fn cache_usage(&self) -> &CacheUsage {
-        &self.cache_usage
+    pub fn cache_usage(&self) -> CacheUsage {
+        self.cache_usage.as_ref().map_or(CacheUsage::Use, |x| x.clone())
     }
 
-    pub fn disk_stats_every(&self) -> &ByteSize {
-        &self.disk_stats_every
+    pub fn disk_stats_every(&self) -> ByteSize {
+        match &self.disk_stats_every {
+            Some(x) => x.clone(),
+            None => ByteSize(1024 * 1024 * 4),
+        }
     }
 
-    pub fn disk_io_buffer_size(&self) -> usize {
-        self.disk_io_buffer_size
+    pub fn buf_len_disk_io(&self) -> usize {
+        match self.buf_len_disk_io {
+            Some(x) => x,
+            None => 1024 * 16,
+        }
     }
 
-    pub fn report_error(&self) -> bool {
-        self.report_error
+    pub fn timeout(&self) -> Option<Duration> {
+        self.timeout.clone()
     }
 
-    pub fn timeout(&self) -> Duration {
-        self.timeout
+    pub fn timeout_value(&self) -> Duration {
+        match &self.timeout {
+            Some(x) => x.clone(),
+            None => Duration::from_millis(10000),
+        }
     }
 
-    pub fn abort_after_bin_count(&self) -> u32 {
-        self.abort_after_bin_count
-    }
-
-    pub fn do_log(&self) -> bool {
-        self.do_log
+    pub fn bins_max(&self) -> u32 {
+        self.bins_max.unwrap_or(1024)
     }
 
     pub fn set_series_id(&mut self, series: u64) {
@@ -380,19 +378,19 @@ impl BinnedQuery {
     }
 
     pub fn set_cache_usage(&mut self, k: CacheUsage) {
-        self.cache_usage = k;
+        self.cache_usage = Some(k);
     }
 
     pub fn set_disk_stats_every(&mut self, k: ByteSize) {
-        self.disk_stats_every = k;
+        self.disk_stats_every = Some(k);
     }
 
     pub fn set_timeout(&mut self, k: Duration) {
-        self.timeout = k;
+        self.timeout = Some(k);
     }
 
-    pub fn set_disk_io_buffer_size(&mut self, k: usize) {
-        self.disk_io_buffer_size = k;
+    pub fn set_buf_len_disk_io(&mut self, k: usize) {
+        self.buf_len_disk_io = Some(k);
     }
 }
 
@@ -404,7 +402,7 @@ impl HasBackend for BinnedQuery {
 
 impl HasTimeout for BinnedQuery {
     fn timeout(&self) -> Duration {
-        self.timeout.clone()
+        self.timeout_value()
     }
 }
 
@@ -417,10 +415,6 @@ impl FromUrl for BinnedQuery {
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
         let beg_date = pairs.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
         let end_date = pairs.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
-        let disk_stats_every = pairs.get("diskStatsEveryKb").map_or("2000", |k| k);
-        let disk_stats_every = disk_stats_every
-            .parse()
-            .map_err(|e| Error::with_msg(format!("can not parse diskStatsEveryKb {:?}", e)))?;
         let ret = Self {
             channel: Channel::from_pairs(&pairs)?,
             range: NanoRange {
@@ -432,35 +426,26 @@ impl FromUrl for BinnedQuery {
                 .ok_or(Error::with_msg("missing binCount"))?
                 .parse()
                 .map_err(|e| Error::with_msg(format!("can not parse binCount {:?}", e)))?,
-            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::TimeWeightedScalar),
+            agg_kind: agg_kind_from_binning_scheme(&pairs)?,
             cache_usage: CacheUsage::from_pairs(&pairs)?,
-            disk_io_buffer_size: pairs
-                .get("diskIoBufferSize")
-                .map_or("4096", |k| k)
-                .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse diskIoBufferSize {:?}", e)))?,
-            disk_stats_every: ByteSize::kb(disk_stats_every),
-            report_error: pairs
-                .get("reportError")
-                .map_or("false", |k| k)
-                .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,
+            buf_len_disk_io: pairs
+                .get("bufLenDiskIo")
+                .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
+            disk_stats_every: pairs
+                .get("diskStatsEveryKb")
+                .map(|k| k.parse().ok())
+                .unwrap_or(None)
+                .map(ByteSize::kb),
+            /*report_error: pairs
+            .get("reportError")
+            .map_or("false", |k| k)
+            .parse()
+            .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,*/
             timeout: pairs
                 .get("timeout")
-                .map_or("6000", |k| k)
-                .parse::<u64>()
-                .map(|k| Duration::from_millis(k))
-                .map_err(|e| Error::with_msg(format!("can not parse timeout {:?}", e)))?,
-            abort_after_bin_count: pairs
-                .get("abortAfterBinCount")
-                .map_or("0", |k| k)
-                .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse abortAfterBinCount {:?}", e)))?,
-            do_log: pairs
-                .get("doLog")
-                .map_or("false", |k| k)
-                .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse doLog {:?}", e)))?,
+                .map(|x| x.parse::<u64>().map(Duration::from_millis).ok())
+                .unwrap_or(None),
+            bins_max: pairs.get("binsMax").map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
         };
         debug!("BinnedQuery::from_url  {:?}", ret);
         Ok(ret)
@@ -469,17 +454,13 @@ impl FromUrl for BinnedQuery {
 
 impl AppendToUrl for BinnedQuery {
     fn append_to_url(&self, url: &mut Url) {
-        let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
+        let date_fmt = "%Y-%m-%dT%H:%M:%S.%6fZ";
         {
             self.channel.append_to_url(url);
             let mut g = url.query_pairs_mut();
-            match &self.cache_usage {
-                CacheUsage::Use => {}
-                _ => {
-                    g.append_pair("cacheUsage", &self.cache_usage.to_string());
-                }
+            if let Some(x) = &self.cache_usage {
+                g.append_pair("cacheUsage", &x.query_param_value());
             }
-            g.append_pair("binCount", &format!("{}", self.bin_count));
             g.append_pair(
                 "begDate",
                 &Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt).to_string(),
@@ -488,21 +469,24 @@ impl AppendToUrl for BinnedQuery {
                 "endDate",
                 &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
             );
+            g.append_pair("binCount", &format!("{}", self.bin_count));
         }
-        {
-            binning_scheme_append_to_url(&self.agg_kind, url);
+        if let Some(x) = &self.agg_kind {
+            binning_scheme_append_to_url(x, url);
         }
         {
             let mut g = url.query_pairs_mut();
-            // TODO
-            //g.append_pair("diskIoBufferSize", &format!("{}", self.disk_io_buffer_size));
-            //g.append_pair("diskStatsEveryKb", &format!("{}", self.disk_stats_every.bytes() / 1024));
-            g.append_pair("timeout", &format!("{}", self.timeout.as_millis()));
-            if self.abort_after_bin_count > 0 {
-                g.append_pair("abortAfterBinCount", &format!("{}", self.abort_after_bin_count));
+            if let Some(x) = &self.timeout {
+                g.append_pair("timeout", &format!("{}", x.as_millis()));
             }
-            if self.do_log {
-                g.append_pair("doLog", &format!("{}", self.do_log));
+            if let Some(x) = self.bins_max {
+                g.append_pair("binsMax", &format!("{}", x));
+            }
+            if let Some(x) = self.buf_len_disk_io {
+                g.append_pair("bufLenDiskIo", &format!("{}", x));
+            }
+            if let Some(x) = &self.disk_stats_every {
+                g.append_pair("diskStatsEveryKb", &format!("{}", x.bytes() / 1024));
             }
         }
     }
@@ -511,7 +495,9 @@ impl AppendToUrl for BinnedQuery {
 pub fn binning_scheme_append_to_url(agg_kind: &AggKind, url: &mut Url) {
     let mut g = url.query_pairs_mut();
     match agg_kind {
-        AggKind::EventBlobs => panic!(),
+        AggKind::EventBlobs => {
+            g.append_pair("binningScheme", "eventBlobs");
+        }
         AggKind::TimeWeightedScalar => {
             g.append_pair("binningScheme", "timeWeightedScalar");
         }
@@ -528,26 +514,28 @@ pub fn binning_scheme_append_to_url(agg_kind: &AggKind, url: &mut Url) {
     }
 }
 
-pub fn agg_kind_from_binning_scheme(pairs: &BTreeMap<String, String>) -> Result<AggKind, Error> {
+// Absent AggKind is not considered an error.
+pub fn agg_kind_from_binning_scheme(pairs: &BTreeMap<String, String>) -> Result<Option<AggKind>, Error> {
     let key = "binningScheme";
-    let s = pairs
-        .get(key)
-        .map_or(Err(Error::with_msg(format!("can not find {}", key))), |k| Ok(k))?;
-    let ret = if s == "eventBlobs" {
-        AggKind::EventBlobs
-    } else if s == "fullValue" {
-        AggKind::Plain
-    } else if s == "timeWeightedScalar" {
-        AggKind::TimeWeightedScalar
-    } else if s == "unweightedScalar" {
-        AggKind::DimXBins1
-    } else if s == "binnedX" {
-        let u = pairs.get("binnedXcount").map_or("1", |k| k).parse()?;
-        AggKind::DimXBinsN(u)
+    if let Some(s) = pairs.get(key) {
+        let ret = if s == "eventBlobs" {
+            AggKind::EventBlobs
+        } else if s == "fullValue" {
+            AggKind::Plain
+        } else if s == "timeWeightedScalar" {
+            AggKind::TimeWeightedScalar
+        } else if s == "unweightedScalar" {
+            AggKind::DimXBins1
+        } else if s == "binnedX" {
+            let u = pairs.get("binnedXcount").map_or("1", |k| k).parse()?;
+            AggKind::DimXBinsN(u)
+        } else {
+            return Err(Error::with_msg("can not extract binningScheme"));
+        };
+        Ok(Some(ret))
     } else {
-        return Err(Error::with_msg("can not extract binningScheme"));
-    };
-    Ok(ret)
+        Ok(None)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -614,7 +602,7 @@ impl FromUrl for ChannelStateEventsQuery {
 
 impl AppendToUrl for ChannelStateEventsQuery {
     fn append_to_url(&self, url: &mut Url) {
-        let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
+        let date_fmt = "%Y-%m-%dT%H:%M:%S.%6fZ";
         self.channel.append_to_url(url);
         let mut g = url.query_pairs_mut();
         g.append_pair(

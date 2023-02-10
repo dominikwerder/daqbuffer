@@ -51,7 +51,6 @@ pub fn bool_is_false(x: &bool) -> bool {
 
 pub fn ts_offs_from_abs(tss: &[u64]) -> (u64, VecDeque<u64>, VecDeque<u64>) {
     let ts_anchor_sec = tss.first().map_or(0, |&k| k) / SEC;
-    info!("ts_offs_from_abs  ts_anchor_sec {ts_anchor_sec}");
     let ts_anchor_ns = ts_anchor_sec * SEC;
     let ts_off_ms: VecDeque<_> = tss.iter().map(|&k| (k - ts_anchor_ns) / MS).collect();
     let ts_off_ns = tss
@@ -74,12 +73,7 @@ pub fn ts_offs_from_abs_with_anchor(ts_anchor_sec: u64, tss: &[u64]) -> (VecDequ
 }
 
 pub fn pulse_offs_from_abs(pulse: &[u64]) -> (u64, VecDeque<u64>) {
-    error!("pulse_offs_from_abs  {} DATA", pulse.len());
-    for x in pulse {
-        error!("{x}");
-    }
     let pulse_anchor = pulse.first().map_or(0, |&k| k) / 10000 * 10000;
-    info!("pulse_offs_from_abs  pulse_anchor {pulse_anchor}");
     let pulse_off = pulse.iter().map(|&k| k - pulse_anchor).collect();
     (pulse_anchor, pulse_off)
 }
@@ -188,11 +182,6 @@ impl crate::merger::Mergeable for Box<dyn Events> {
         self.as_ref().ts_max()
     }
 
-    fn is_compatible_target(&self, _tgt: &Self) -> bool {
-        // TODO currently unused
-        todo!()
-    }
-
     fn move_into_fresh(&mut self, ts_end: u64) -> Self {
         self.as_mut().move_into_fresh(ts_end)
     }
@@ -201,6 +190,28 @@ impl crate::merger::Mergeable for Box<dyn Events> {
         self.as_mut()
             .move_into_existing(tgt, ts_end)
             .map_err(|()| merger::MergeError::NotCompatible)
+    }
+
+    fn new_empty(&self) -> Self {
+        self.as_ref().new_empty()
+    }
+
+    fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), merger::MergeError> {
+        self.as_mut()
+            .drain_into(dst, range)
+            .map_err(|()| merger::MergeError::NotCompatible)
+    }
+
+    fn find_lowest_index_gt(&self, ts: u64) -> Option<usize> {
+        self.as_ref().find_lowest_index_gt(ts)
+    }
+
+    fn find_lowest_index_ge(&self, ts: u64) -> Option<usize> {
+        self.as_ref().find_lowest_index_ge(ts)
+    }
+
+    fn find_highest_index_lt(&self, ts: u64) -> Option<usize> {
+        self.as_ref().find_highest_index_lt(ts)
     }
 }
 

@@ -706,7 +706,7 @@ impl DataApiPython3DataStream {
             }
             match &b.shapes[i1] {
                 _ => {
-                    let empty_blob=Vec::new();
+                    let empty_blob = Vec::new();
                     let blob = b.blobs[i1].as_ref().unwrap_or(&empty_blob);
                     let l1 = 17 + blob.len() as u32;
                     d.put_u32(l1);
@@ -793,11 +793,11 @@ impl Stream for DataApiPython3DataStream {
                             let evq = PlainEventsQuery::new(
                                 channel,
                                 self.range.clone(),
-                                netpod::AggKind::EventBlobs,
-                                Duration::from_millis(10000),
+                                Some(netpod::AggKind::EventBlobs),
+                                Some(Duration::from_millis(600000)),
                                 None,
-                                true,
                             );
+                            info!("query for event blobs retrieval: evq {evq:?}");
                             warn!("fix magic inmem_bufcap");
                             let perf_opts = PerfOpts::default();
                             // TODO is this a good to place decide this?
@@ -809,7 +809,7 @@ impl Stream for DataApiPython3DataStream {
                                     evq.range().clone(),
                                     evq.channel().clone(),
                                     &entry,
-                                    evq.agg_kind().need_expand(),
+                                    evq.one_before_range(),
                                     self.do_decompress,
                                     event_chunker_conf,
                                     self.disk_io_tune.clone(),

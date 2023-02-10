@@ -116,9 +116,9 @@ where
         series: None,
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let mut query = BinnedQuery::new(channel, range, bin_count, agg_kind);
+    let mut query = BinnedQuery::new(channel, range, bin_count, Some(agg_kind));
     query.set_cache_usage(CacheUsage::Ignore);
-    query.set_disk_io_buffer_size(1024 * 16);
+    query.set_buf_len_disk_io(1024 * 16);
     let hp = HostPort::from_node(node0);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", hp.host, hp.port))?;
     query.append_to_url(&mut url);

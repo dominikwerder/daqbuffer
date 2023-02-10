@@ -756,6 +756,52 @@ impl<NTY: ScalarOps> Events for EventsDim1<NTY> {
         }
     }
 
+    fn new_empty(&self) -> Box<dyn Events> {
+        Box::new(Self::empty())
+    }
+
+    fn drain_into(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), ()> {
+        // TODO as_any and as_any_mut are declared on unrelated traits. Simplify.
+        if let Some(dst) = dst.as_mut().as_any_mut().downcast_mut::<Self>() {
+            // TODO make it harder to forget new members when the struct may get modified in the future
+            let r = range.0..range.1;
+            dst.tss.extend(self.tss.drain(r.clone()));
+            dst.pulses.extend(self.pulses.drain(r.clone()));
+            dst.values.extend(self.values.drain(r.clone()));
+            Ok(())
+        } else {
+            error!("downcast to EventsDim0 FAILED");
+            Err(())
+        }
+    }
+
+    fn find_lowest_index_gt(&self, ts: u64) -> Option<usize> {
+        for (i, &m) in self.tss.iter().enumerate() {
+            if m > ts {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    fn find_lowest_index_ge(&self, ts: u64) -> Option<usize> {
+        for (i, &m) in self.tss.iter().enumerate() {
+            if m >= ts {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    fn find_highest_index_lt(&self, ts: u64) -> Option<usize> {
+        for (i, &m) in self.tss.iter().enumerate().rev() {
+            if m < ts {
+                return Some(i);
+            }
+        }
+        None
+    }
+
     fn ts_min(&self) -> Option<u64> {
         self.tss.front().map(|&x| x)
     }

@@ -504,28 +504,6 @@ impl crate::merger::Mergeable for ChannelEvents {
         }
     }
 
-    fn is_compatible_target(&self, tgt: &Self) -> bool {
-        use ChannelEvents::*;
-        match self {
-            Events(_) => {
-                // TODO better to delegate this to inner type?
-                if let Events(_) = tgt {
-                    true
-                } else {
-                    false
-                }
-            }
-            Status(_) => {
-                // TODO better to delegate this to inner type?
-                if let Status(_) = tgt {
-                    true
-                } else {
-                    false
-                }
-            }
-        }
-    }
-
     fn move_into_fresh(&mut self, ts_end: u64) -> Self {
         match self {
             ChannelEvents::Events(k) => ChannelEvents::Events(k.move_into_fresh(ts_end)),
@@ -543,6 +521,69 @@ impl crate::merger::Mergeable for ChannelEvents {
                 ChannelEvents::Events(_) => Err(merger::MergeError::NotCompatible),
                 ChannelEvents::Status(_) => Err(merger::MergeError::Full),
             },
+        }
+    }
+
+    fn new_empty(&self) -> Self {
+        match self {
+            ChannelEvents::Events(k) => ChannelEvents::Events(k.new_empty()),
+            ChannelEvents::Status(k) => ChannelEvents::Status(k.clone()),
+        }
+    }
+
+    fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), merger::MergeError> {
+        match self {
+            ChannelEvents::Events(k) => match dst {
+                ChannelEvents::Events(j) => k.drain_into(j, range),
+                ChannelEvents::Status(_) => Err(merger::MergeError::NotCompatible),
+            },
+            ChannelEvents::Status(k) => match dst {
+                ChannelEvents::Events(_) => Err(merger::MergeError::NotCompatible),
+                ChannelEvents::Status(j) => {
+                    // TODO must have some empty-value for the status container.
+                    *j = k.clone();
+                    Ok(())
+                }
+            },
+        }
+    }
+
+    fn find_lowest_index_gt(&self, ts: u64) -> Option<usize> {
+        match self {
+            ChannelEvents::Events(k) => k.find_lowest_index_gt(ts),
+            ChannelEvents::Status(k) => {
+                if k.ts > ts {
+                    Some(0)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    fn find_lowest_index_ge(&self, ts: u64) -> Option<usize> {
+        match self {
+            ChannelEvents::Events(k) => k.find_lowest_index_ge(ts),
+            ChannelEvents::Status(k) => {
+                if k.ts >= ts {
+                    Some(0)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    fn find_highest_index_lt(&self, ts: u64) -> Option<usize> {
+        match self {
+            ChannelEvents::Events(k) => k.find_highest_index_lt(ts),
+            ChannelEvents::Status(k) => {
+                if k.ts < ts {
+                    Some(0)
+                } else {
+                    None
+                }
+            }
         }
     }
 }

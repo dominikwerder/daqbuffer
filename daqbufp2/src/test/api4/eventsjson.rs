@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
 use crate::test::f32_iter_cmp_near;
@@ -105,14 +103,7 @@ async fn events_plain_json(
     let beg_date: DateTime<Utc> = beg_date.parse()?;
     let end_date: DateTime<Utc> = end_date.parse()?;
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let query = PlainEventsQuery::new(
-        channel,
-        range,
-        AggKind::TimeWeightedScalar,
-        Duration::from_millis(10000),
-        None,
-        true,
-    );
+    let query = PlainEventsQuery::new(channel, range, Some(AggKind::TimeWeightedScalar), None, None);
     let hp = HostPort::from_node(node0);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
     query.append_to_url(&mut url);

@@ -60,7 +60,13 @@ fn raw_data_00() {
             beg: SEC,
             end: SEC * 10,
         };
-        let qu = PlainEventsQuery::new(channel, range, AggKind::Plain, Duration::from_millis(10000), None, true);
+        let qu = PlainEventsQuery::new(
+            channel,
+            range,
+            Some(AggKind::Plain),
+            Some(Duration::from_millis(10000)),
+            None,
+        );
         let query = EventQueryJsonStringFrame(serde_json::to_string(&qu).unwrap());
         let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(query)));
         let frame = make_frame(&item).unwrap();

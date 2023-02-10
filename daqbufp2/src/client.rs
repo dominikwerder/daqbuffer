@@ -69,7 +69,7 @@ pub async fn get_binned(
     };
     let agg_kind = AggKind::DimXBins1;
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let mut query = BinnedQuery::new(channel, range, bin_count, agg_kind);
+    let mut query = BinnedQuery::new(channel, range, bin_count, Some(agg_kind));
     query.set_cache_usage(cache_usage);
     query.set_disk_stats_every(ByteSize(1024 * disk_stats_every_kb));
     let hp = HostPort { host: host, port: port };

@@ -154,6 +154,11 @@ pub trait Events:
     fn take_new_events_until_ts(&mut self, ts_end: u64) -> Box<dyn Events>;
     fn move_into_fresh(&mut self, ts_end: u64) -> Box<dyn Events>;
     fn move_into_existing(&mut self, tgt: &mut Box<dyn Events>, ts_end: u64) -> Result<(), ()>;
+    fn new_empty(&self) -> Box<dyn Events>;
+    fn drain_into(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), ()>;
+    fn find_lowest_index_gt(&self, ts: u64) -> Option<usize>;
+    fn find_lowest_index_ge(&self, ts: u64) -> Option<usize>;
+    fn find_highest_index_lt(&self, ts: u64) -> Option<usize>;
     fn clone_dyn(&self) -> Box<dyn Events>;
     fn partial_eq_dyn(&self, other: &dyn Events) -> bool;
     fn serde_id(&self) -> &'static str;

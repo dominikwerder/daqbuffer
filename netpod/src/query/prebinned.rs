@@ -2,7 +2,14 @@ use super::agg_kind_from_binning_scheme;
 use super::binning_scheme_append_to_url;
 use super::CacheUsage;
 use crate::timeunits::SEC;
-use crate::{AggKind, AppendToUrl, ByteSize, Channel, FromUrl, PreBinnedPatchCoord, ScalarType, Shape};
+use crate::AggKind;
+use crate::AppendToUrl;
+use crate::ByteSize;
+use crate::Channel;
+use crate::FromUrl;
+use crate::PreBinnedPatchCoord;
+use crate::ScalarType;
+use crate::Shape;
 use err::Error;
 use std::collections::BTreeMap;
 use url::Url;
@@ -10,14 +17,13 @@ use url::Url;
 #[derive(Clone, Debug)]
 pub struct PreBinnedQuery {
     patch: PreBinnedPatchCoord,
-    agg_kind: AggKind,
     channel: Channel,
     scalar_type: ScalarType,
     shape: Shape,
-    cache_usage: CacheUsage,
-    disk_io_buffer_size: usize,
-    disk_stats_every: ByteSize,
-    report_error: bool,
+    agg_kind: Option<AggKind>,
+    cache_usage: Option<CacheUsage>,
+    buf_len_disk_io: Option<usize>,
+    disk_stats_every: Option<ByteSize>,
 }
 
 impl PreBinnedQuery {
@@ -26,11 +32,10 @@ impl PreBinnedQuery {
         channel: Channel,
         scalar_type: ScalarType,
         shape: Shape,
-        agg_kind: AggKind,
-        cache_usage: CacheUsage,
-        disk_io_buffer_size: usize,
-        disk_stats_every: ByteSize,
-        report_error: bool,
+        agg_kind: Option<AggKind>,
+        cache_usage: Option<CacheUsage>,
+        buf_len_disk_io: Option<usize>,
+        disk_stats_every: Option<ByteSize>,
     ) -> Self {
         Self {
             patch,
@@ -39,9 +44,8 @@ impl PreBinnedQuery {
             shape,
             agg_kind,
             cache_usage,
-            disk_io_buffer_size,
+            buf_len_disk_io,
             disk_stats_every,
-            report_error,
         }
     }
 
@@ -63,12 +67,6 @@ impl PreBinnedQuery {
             .get("patchIx")
             .ok_or_else(|| Error::with_msg("missing patchIx"))?
             .parse()?;
-        let disk_stats_every = pairs
-            .get("diskStatsEveryKb")
-            .ok_or_else(|| Error::with_msg("missing diskStatsEveryKb"))?;
-        let disk_stats_every = disk_stats_every
-            .parse()
-            .map_err(|e| Error::with_msg(format!("can not parse diskStatsEveryKb {:?}", e)))?;
         let scalar_type = pairs
             .get("scalarType")
             .ok_or_else(|| Error::with_msg("missing scalarType"))
@@ -82,29 +80,22 @@ impl PreBinnedQuery {
             channel: Channel::from_pairs(&pairs)?,
             scalar_type,
             shape,
-            agg_kind: agg_kind_from_binning_scheme(&pairs).unwrap_or(AggKind::DimXBins1),
+            agg_kind: agg_kind_from_binning_scheme(&pairs)?,
             cache_usage: CacheUsage::from_pairs(&pairs)?,
-            disk_io_buffer_size: pairs
-                .get("diskIoBufferSize")
-                .map_or("4096", |k| k)
-                .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse diskIoBufferSize {:?}", e)))?,
-            disk_stats_every: ByteSize::kb(disk_stats_every),
-            report_error: pairs
-                .get("reportError")
-                .map_or("false", |k| k)
-                .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,
+            buf_len_disk_io: pairs
+                .get("bufLenDiskIo")
+                .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
+            disk_stats_every: pairs
+                .get("diskStatsEveryKb")
+                .map(|k| k.parse().ok())
+                .unwrap_or(None)
+                .map(ByteSize::kb),
         };
         Ok(ret)
     }
 
     pub fn patch(&self) -> &PreBinnedPatchCoord {
         &self.patch
-    }
-
-    pub fn report_error(&self) -> bool {
-        self.report_error
     }
 
     pub fn channel(&self) -> &Channel {
@@ -119,35 +110,45 @@ impl PreBinnedQuery {
         &self.shape
     }
 
-    pub fn agg_kind(&self) -> &AggKind {
+    pub fn agg_kind(&self) -> &Option<AggKind> {
         &self.agg_kind
     }
 
     pub fn disk_stats_every(&self) -> ByteSize {
-        self.disk_stats_every.clone()
+        match &self.disk_stats_every {
+            Some(x) => x.clone(),
+            None => ByteSize(1024 * 1024 * 4),
+        }
     }
 
     pub fn cache_usage(&self) -> CacheUsage {
-        self.cache_usage.clone()
+        self.cache_usage.as_ref().map_or(CacheUsage::Use, |x| x.clone())
     }
 
-    pub fn disk_io_buffer_size(&self) -> usize {
-        self.disk_io_buffer_size
+    pub fn buf_len_disk_io(&self) -> usize {
+        self.buf_len_disk_io.unwrap_or(1024 * 8)
     }
 }
 
 impl AppendToUrl for PreBinnedQuery {
     fn append_to_url(&self, url: &mut Url) {
         self.patch.append_to_url(url);
-        binning_scheme_append_to_url(&self.agg_kind, url);
         self.channel.append_to_url(url);
         self.shape.append_to_url(url);
         self.scalar_type.append_to_url(url);
+        if let Some(x) = &self.agg_kind {
+            binning_scheme_append_to_url(x, url);
+        }
         let mut g = url.query_pairs_mut();
         // TODO add also impl AppendToUrl for these if applicable:
-        g.append_pair("cacheUsage", &format!("{}", self.cache_usage.query_param_value()));
-        g.append_pair("diskIoBufferSize", &format!("{}", self.disk_io_buffer_size));
-        g.append_pair("diskStatsEveryKb", &format!("{}", self.disk_stats_every.bytes() / 1024));
-        g.append_pair("reportError", &format!("{}", self.report_error()));
+        if let Some(x) = &self.cache_usage {
+            g.append_pair("cacheUsage", &x.query_param_value());
+        }
+        if let Some(x) = self.buf_len_disk_io {
+            g.append_pair("bufLenDiskIo", &format!("{}", x));
+        }
+        if let Some(x) = &self.disk_stats_every {
+            g.append_pair("diskStatsEveryKb", &format!("{}", x.bytes() / 1024));
+        }
     }
 }

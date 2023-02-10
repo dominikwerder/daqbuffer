@@ -236,7 +236,7 @@ async fn events_conn_handler_inner_try(
     }
 
     let mut stream: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> =
-        if let AggKind::EventBlobs = evq.agg_kind() {
+        if let AggKind::EventBlobs = evq.agg_kind_value() {
             match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
                 Ok(stream) => {
                     let stream = stream.map(|x| Box::new(x) as _);
