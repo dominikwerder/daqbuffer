@@ -194,7 +194,7 @@ where
     type Item = Sitemty<ITY>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        let span1 = span!(Level::TRACE, "RangeFilter2", range = tracing::field::Empty);
+        let span1 = span!(Level::INFO, "RangeFilter2", range = tracing::field::Empty);
         span1.record("range", &self.range_str.as_str());
         let _spg = span1.enter();
         Self::poll_next(self, cx)

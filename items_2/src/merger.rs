@@ -15,19 +15,19 @@ use std::task::Poll;
 
 #[allow(unused)]
 macro_rules! trace2 {
-    ($($arg:tt)*) => ();
+    (__$($arg:tt)*) => ();
     ($($arg:tt)*) => (trace!($($arg)*));
 }
 
 #[allow(unused)]
 macro_rules! trace3 {
-    ($($arg:tt)*) => ();
+    (__$($arg:tt)*) => ();
     ($($arg:tt)*) => (trace!($($arg)*));
 }
 
 #[allow(unused)]
 macro_rules! trace4 {
-    ($($arg:tt)*) => ();
+    (__$($arg:tt)*) => ();
     ($($arg:tt)*) => (trace!($($arg)*));
 }
 
@@ -48,6 +48,7 @@ pub trait Mergeable<Rhs = Self>: fmt::Debug + Unpin {
     fn ts_min(&self) -> Option<u64>;
     fn ts_max(&self) -> Option<u64>;
     fn new_empty(&self) -> Self;
+    // TODO when MergeError::Full gets returned, any guarantees about what has been modified or kept unchanged?
     fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), MergeError>;
     fn find_lowest_index_gt(&self, ts: u64) -> Option<usize>;
     fn find_lowest_index_ge(&self, ts: u64) -> Option<usize>;
@@ -68,6 +69,7 @@ pub struct Merger<T> {
     done_buffered: bool,
     done_range_complete: bool,
     complete: bool,
+    poll_count: usize,
 }
 
 impl<T> fmt::Debug for Merger<T>
@@ -107,6 +109,7 @@ where
             done_buffered: false,
             done_range_complete: false,
             complete: false,
+            poll_count: 0,
         }
     }
 
@@ -300,6 +303,7 @@ where
     fn poll3(mut self: Pin<&mut Self>, cx: &mut Context) -> ControlFlow<Poll<Option<Result<T, Error>>>> {
         use ControlFlow::*;
         use Poll::*;
+        trace4!("poll3");
         #[allow(unused)]
         let ninps = self.inps.iter().filter(|a| a.is_some()).count();
         let nitems = self.items.iter().filter(|a| a.is_some()).count();
@@ -362,11 +366,15 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        let span = span!(Level::TRACE, "merger");
-        let _spanguard = span.enter();
+        self.poll_count += 1;
+        let span1 = span!(Level::INFO, "Merger", pc = self.poll_count);
+        let _spg = span1.enter();
         loop {
             trace3!("poll");
-            break if self.complete {
+            break if self.poll_count == usize::MAX {
+                self.done_range_complete = true;
+                continue;
+            } else if self.complete {
                 panic!("poll after complete");
             } else if self.done_range_complete {
                 self.complete = true;

@@ -523,7 +523,7 @@ impl crate::merger::Mergeable for ChannelEvents {
     fn new_empty(&self) -> Self {
         match self {
             ChannelEvents::Events(k) => ChannelEvents::Events(k.new_empty()),
-            ChannelEvents::Status(k) => ChannelEvents::Status(k.clone()),
+            ChannelEvents::Status(_) => ChannelEvents::Status(None),
         }
     }
 
@@ -536,8 +536,20 @@ impl crate::merger::Mergeable for ChannelEvents {
             ChannelEvents::Status(k) => match dst {
                 ChannelEvents::Events(_) => Err(merger::MergeError::NotCompatible),
                 ChannelEvents::Status(j) => match j {
-                    Some(_) => Err(merger::MergeError::Full),
+                    Some(_) => {
+                        trace!("drain_into  merger::MergeError::Full");
+                        Err(merger::MergeError::Full)
+                    }
                     None => {
+                        if range.0 > 0 {
+                            trace!("weird range {range:?}");
+                        }
+                        if range.1 > 1 {
+                            trace!("weird range {range:?}");
+                        }
+                        if range.0 == range.1 {
+                            trace!("try to add empty range to status container {range:?}");
+                        }
                         *j = k.take();
                         Ok(())
                     }

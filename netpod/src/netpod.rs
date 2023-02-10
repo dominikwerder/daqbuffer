@@ -1727,7 +1727,7 @@ where
 
 pub mod log {
     #[allow(unused_imports)]
-    pub use tracing::{debug, error, event, info, span, trace, warn, Level};
+    pub use tracing::{self, debug, error, event, info, span, trace, warn, Level};
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
