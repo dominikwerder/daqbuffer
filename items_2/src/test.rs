@@ -5,7 +5,6 @@ use crate::channelevents::ConnStatusEvent;
 use crate::eventsdim0::EventsDim0;
 use crate::merger::Mergeable;
 use crate::merger::Merger;
-use crate::merger_cev::ChannelEventsMerger;
 use crate::runfut;
 use crate::testgen::make_some_boxed_d0_f32;
 use crate::ChannelEvents;
@@ -176,7 +175,7 @@ fn merge01() {
         let inp2: Vec<Sitemty<ChannelEvents>> = Vec::new();
         let inp2 = futures_util::stream::iter(inp2);
         let inp2 = Box::pin(inp2);
-        let mut merger = ChannelEventsMerger::new(vec![inp1, inp2]);
+        let mut merger = crate::merger::Merger::new(vec![inp1, inp2], 32);
         let item = merger.next().await;
         assert_eq!(item.as_ref(), events_vec2.get(0));
         let item = merger.next().await;
@@ -210,7 +209,7 @@ fn merge02() {
         let inp2: Vec<Sitemty<ChannelEvents>> = Vec::new();
         let inp2 = futures_util::stream::iter(inp2);
         let inp2 = Box::pin(inp2);
-        let mut merger = ChannelEventsMerger::new(vec![inp1, inp2]);
+        let mut merger = crate::merger::Merger::new(vec![inp1, inp2], 10);
         let item = merger.next().await;
         assert_eq!(item.as_ref(), exp.get(0));
         let item = merger.next().await;
@@ -294,7 +293,7 @@ fn merge03() {
         let inp2: Vec<Sitemty<ChannelEvents>> = inp2_events_a;
         let inp2 = futures_util::stream::iter(inp2);
         let inp2 = Box::pin(inp2);
-        let mut merger = ChannelEventsMerger::new(vec![inp1, inp2]);
+        let mut merger = crate::merger::Merger::new(vec![inp1, inp2], 10);
         let item = merger.next().await;
         assert_eq!(item.as_ref(), events_vec2.get(0));
         let item = merger.next().await;
@@ -327,7 +326,7 @@ fn bin01() {
         let inp1 = futures_util::stream::iter(inp1);
         let inp1 = Box::pin(inp1);
         let inp2 = Box::pin(futures_util::stream::empty()) as _;
-        let mut stream = ChannelEventsMerger::new(vec![inp1, inp2]);
+        let mut stream = crate::merger::Merger::new(vec![inp1, inp2], 32);
         let mut coll = None;
         let mut binner = None;
         let range = NanoRange {
@@ -443,7 +442,7 @@ fn bin02() {
         let inp1 = futures_util::stream::iter(inp1);
         let inp1 = Box::pin(inp1);
         let inp2 = Box::pin(futures_util::stream::empty()) as _;
-        let stream = ChannelEventsMerger::new(vec![inp1, inp2]);
+        let stream = crate::merger::Merger::new(vec![inp1, inp2], 32);
         // covering_range result is subject to adjustments, instead, manually choose bin edges
         let range = NanoRange {
             beg: TSBASE + SEC * 1,

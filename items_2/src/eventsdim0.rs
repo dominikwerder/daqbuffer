@@ -1218,6 +1218,31 @@ mod test_frame {
     }
 }
 
+#[cfg(test)]
+mod test_serde_opt {
+    use super::*;
+
+    #[derive(Serialize)]
+    struct A {
+        a: Option<String>,
+        #[serde(default)]
+        b: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        c: Option<String>,
+    }
+
+    #[test]
+    fn test_a() {
+        let s = serde_json::to_string(&A {
+            a: None,
+            b: None,
+            c: None,
+        })
+        .unwrap();
+        assert_eq!(s, r#"{"a":null,"b":null}"#);
+    }
+}
+
 /*
 TODO adapt and enable
 #[test]

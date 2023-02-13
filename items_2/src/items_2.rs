@@ -6,7 +6,6 @@ pub mod eventsdim0;
 pub mod eventsdim1;
 pub mod eventsxbindim0;
 pub mod merger;
-pub mod merger_cev;
 pub mod streams;
 #[cfg(test)]
 pub mod test;

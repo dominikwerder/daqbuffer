@@ -1,5 +1,4 @@
 use crate::merger;
-use crate::merger_cev::MergeableCev;
 use crate::Events;
 use items::FrameType;
 use items::FrameTypeInnerStatic;
@@ -468,24 +467,6 @@ impl PartialEq for ChannelEvents {
             (Self::Status(l0), Self::Status(r0)) => l0 == r0,
             _ => core::mem::discriminant(self) == core::mem::discriminant(other),
         }
-    }
-}
-
-impl MergeableCev for ChannelEvents {
-    fn ts_min(&self) -> Option<u64> {
-        use ChannelEvents::*;
-        match self {
-            Events(k) => k.ts_min(),
-            Status(k) => match k {
-                Some(k) => Some(k.ts),
-                None => None,
-            },
-        }
-    }
-
-    fn ts_max(&self) -> Option<u64> {
-        error!("TODO impl MergableEvents for ChannelEvents");
-        err::todoval()
     }
 }
 
