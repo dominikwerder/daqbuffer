@@ -390,26 +390,27 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
         let bin_count_exp = if let Some(r) = &binrange {
             r.bin_count() as u32
         } else {
+            eprintln!("no binrange given");
             0
         };
         let bin_count = self.vals.ts1s.len() as u32;
-        let (missing_bins, continue_at, finished_at) = if self.range_final {
-            if bin_count < bin_count_exp {
-                match self.vals.ts2s.back() {
-                    Some(&k) => {
-                        let missing_bins = bin_count_exp - bin_count;
-                        let continue_at = IsoDateTime(Utc.timestamp_nanos(k as i64));
-                        let u = k + (k - self.vals.ts1s.back().unwrap()) * missing_bins as u64;
-                        let finished_at = IsoDateTime(Utc.timestamp_nanos(u as i64));
-                        (missing_bins, Some(continue_at), Some(finished_at))
-                    }
-                    None => {
-                        warn!("can not determine continue-at parameters");
-                        (0, None, None)
-                    }
+        eprintln!(
+            "--------------  MAKE MISSING BINS  bin_count_exp {}  bin_count {}",
+            bin_count_exp, bin_count
+        );
+        let (missing_bins, continue_at, finished_at) = if bin_count < bin_count_exp {
+            match self.vals.ts2s.back() {
+                Some(&k) => {
+                    let missing_bins = bin_count_exp - bin_count;
+                    let continue_at = IsoDateTime(Utc.timestamp_nanos(k as i64));
+                    let u = k + (k - self.vals.ts1s.back().unwrap()) * missing_bins as u64;
+                    let finished_at = IsoDateTime(Utc.timestamp_nanos(u as i64));
+                    (missing_bins, Some(continue_at), Some(finished_at))
                 }
-            } else {
-                (0, None, None)
+                None => {
+                    warn!("can not determine continue-at parameters");
+                    (0, None, None)
+                }
             }
         } else {
             (0, None, None)

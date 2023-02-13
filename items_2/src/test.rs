@@ -444,22 +444,19 @@ fn bin02() {
         let inp1 = Box::pin(inp1);
         let inp2 = Box::pin(futures_util::stream::empty()) as _;
         let stream = ChannelEventsMerger::new(vec![inp1, inp2]);
-        if false {
-            // covering_range result is subject to adjustments, instead, manually choose bin edges
-            let range = NanoRange {
-                beg: TSBASE + SEC * 1,
-                end: TSBASE + SEC * 10,
-            };
-            let covering = BinnedRange::covering_range(range, 3).map_err(|e| format!("{e}"))?;
-            assert_eq!(covering.edges().len(), 6);
-        }
-        let edges = (0..10).into_iter().map(|x| TSBASE + SEC * 1 + SEC * x).collect();
+        // covering_range result is subject to adjustments, instead, manually choose bin edges
+        let range = NanoRange {
+            beg: TSBASE + SEC * 1,
+            end: TSBASE + SEC * 10,
+        };
+        let binrange = BinnedRange::covering_range(range, 9).map_err(|e| format!("{e}"))?;
+        assert_eq!(binrange.edges().len(), 10);
         let stream = Box::pin(stream);
         let collected = binned_collected(
             ScalarType::F32,
             Shape::Scalar,
             AggKind::TimeWeightedScalar,
-            edges,
+            binrange,
             Duration::from_millis(2000),
             stream,
         )
@@ -499,19 +496,27 @@ fn binned_timeout_01() {
             }
             k
         });
-        let edges = (0..10).into_iter().map(|x| TSBASE + SEC * (1 + x)).collect();
+        let edges: Vec<_> = (0..10).into_iter().map(|x| TSBASE + SEC * (1 + x)).collect();
+        let range = NanoRange {
+            beg: TSBASE + SEC * 1,
+            end: TSBASE + SEC * 10,
+        };
+        let binrange = BinnedRange::covering_range(range, 9)?;
+        eprintln!("edges1: {:?}", edges);
+        eprintln!("edges2: {:?}", binrange.edges());
         let inp1 = Box::pin(inp1) as _;
         let timeout = Duration::from_millis(400);
         let res = binned_collected(
             ScalarType::F32,
             Shape::Scalar,
             AggKind::TimeWeightedScalar,
-            edges,
+            binrange,
             timeout,
             inp1,
         )
         .await?;
         let r2: &BinsDim0CollectedResult<f32> = res.as_any_ref().downcast_ref().expect("res seems wrong type");
+        eprintln!("rs: {r2:?}");
         assert_eq!(SEC * r2.ts_anchor_sec(), TSBASE + SEC);
         assert_eq!(r2.counts(), &[10, 10, 10]);
         assert_eq!(r2.mins(), &[3.0, 2.0, 3.0]);

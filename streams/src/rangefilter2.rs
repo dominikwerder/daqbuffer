@@ -5,6 +5,7 @@ use items::RangeCompletableItem;
 use items::Sitemty;
 use items::StatsItem;
 use items::StreamItem;
+use items_2::merger::MergeError;
 use items_2::merger::Mergeable;
 use netpod::log::*;
 use netpod::NanoRange;
@@ -76,7 +77,15 @@ where
                 } else {
                     self.stats.items_part_prune_high += 1;
                     let mut dummy = item.new_empty();
-                    item.drain_into(&mut dummy, (ihlt + 1, n))?;
+                    match item.drain_into(&mut dummy, (ihlt + 1, n)) {
+                        Ok(_) => {}
+                        Err(e) => match e {
+                            MergeError::NotCompatible => {
+                                error!("logic error")
+                            }
+                            MergeError::Full => error!("full, logic error"),
+                        },
+                    }
                     item
                 }
             }
@@ -102,7 +111,8 @@ where
                         }
                     } else {
                         let mut dummy = item.new_empty();
-                        item.drain_into(&mut dummy, (0, ilge - 1))?;
+                        item.drain_into(&mut dummy, (0, ilge - 1))
+                            .map_err(|e| format!("{e:?} unexpected MergeError while remove of items"))?;
                         self.slot1 = None;
                         item
                     }
@@ -110,7 +120,8 @@ where
                 None => {
                     let n = item.len();
                     let mut keep = item.new_empty();
-                    item.drain_into(&mut keep, (n.max(1) - 1, n))?;
+                    item.drain_into(&mut keep, (n.max(1) - 1, n))
+                        .map_err(|e| format!("{e:?} unexpected MergeError while remove of items"))?;
                     self.slot1 = Some(keep);
                     item.new_empty()
                 }
