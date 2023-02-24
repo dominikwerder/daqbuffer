@@ -100,6 +100,7 @@ pub async fn search_channel_scylla(
         " series, facility, channel, scalar_type, shape_dims",
         " from series_by_channel",
         " where channel ~* $1",
+        " and scalar_type != -2147483647",
         " limit 400000",
     ));
     let pgclient = crate::create_connection(pgconf).await?;

@@ -94,6 +94,9 @@ impl SlideBuf {
     pub fn wadv(&mut self, x: usize) -> Result<(), Error> {
         check_invariants!(self);
         if self.wcap() < x {
+            self.rewind();
+        }
+        if self.wcap() < x {
             return Err(Error::NotEnoughSpace);
         } else {
             self.wp += x;
@@ -254,6 +257,9 @@ impl SlideBuf {
         check_invariants!(self);
         self.rewind_if_needed(n);
         if self.wcap() < n {
+            self.rewind();
+        }
+        if self.wcap() < n {
             Err(Error::NotEnoughSpace)
         } else {
             let ret = &mut self.buf[self.wp..self.wp + n];
@@ -284,6 +290,9 @@ impl SlideBuf {
         check_invariants!(self);
         self.rewind_if_needed(need_min);
         if self.wcap() < need_min {
+            self.rewind();
+        }
+        if self.wcap() < need_min {
             Err(Error::NotEnoughSpace)
         } else {
             let ret = &mut self.buf[self.wp..];
@@ -294,6 +303,9 @@ impl SlideBuf {
     pub fn put_slice(&mut self, buf: &[u8]) -> Result<(), Error> {
         check_invariants!(self);
         self.rewind_if_needed(buf.len());
+        if self.wcap() < buf.len() {
+            self.rewind();
+        }
         if self.wcap() < buf.len() {
             return Err(Error::NotEnoughSpace);
         } else {
@@ -309,6 +321,9 @@ impl SlideBuf {
         const TS: usize = std::mem::size_of::<T>();
         self.rewind_if_needed(TS);
         if self.wcap() < TS {
+            self.rewind();
+        }
+        if self.wcap() < TS {
             return Err(Error::NotEnoughSpace);
         } else {
             self.buf[self.wp..self.wp + TS].copy_from_slice(&v.to_be_bytes());
@@ -322,6 +337,9 @@ impl SlideBuf {
         type T = u16;
         const TS: usize = std::mem::size_of::<T>();
         self.rewind_if_needed(TS);
+        if self.wcap() < TS {
+            self.rewind();
+        }
         if self.wcap() < TS {
             return Err(Error::NotEnoughSpace);
         } else {
@@ -337,6 +355,9 @@ impl SlideBuf {
         const TS: usize = std::mem::size_of::<T>();
         self.rewind_if_needed(TS);
         if self.wcap() < TS {
+            self.rewind();
+        }
+        if self.wcap() < TS {
             return Err(Error::NotEnoughSpace);
         } else {
             self.buf[self.wp..self.wp + TS].copy_from_slice(&v.to_be_bytes());
@@ -350,6 +371,9 @@ impl SlideBuf {
         type T = u64;
         const TS: usize = std::mem::size_of::<T>();
         self.rewind_if_needed(TS);
+        if self.wcap() < TS {
+            self.rewind();
+        }
         if self.wcap() < TS {
             return Err(Error::NotEnoughSpace);
         } else {
@@ -365,6 +389,9 @@ impl SlideBuf {
         const TS: usize = std::mem::size_of::<T>();
         self.rewind_if_needed(TS);
         if self.wcap() < TS {
+            self.rewind();
+        }
+        if self.wcap() < TS {
             return Err(Error::NotEnoughSpace);
         } else {
             self.buf[self.wp..self.wp + TS].copy_from_slice(&v.to_be_bytes());
@@ -378,6 +405,9 @@ impl SlideBuf {
         type T = f64;
         const TS: usize = std::mem::size_of::<T>();
         self.rewind_if_needed(TS);
+        if self.wcap() < TS {
+            self.rewind();
+        }
         if self.wcap() < TS {
             return Err(Error::NotEnoughSpace);
         } else {

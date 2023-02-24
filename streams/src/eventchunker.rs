@@ -40,7 +40,6 @@ pub struct EventChunker {
     seen_after_range_count: usize,
     unordered_warn_count: usize,
     repeated_ts_warn_count: usize,
-    dbgdesc: String,
 }
 
 impl Drop for EventChunker {
@@ -84,7 +83,6 @@ impl EventChunker {
         dbg_path: PathBuf,
         expand: bool,
         do_decompress: bool,
-        dbgdesc: String,
     ) -> Self {
         trace!("EventChunker::from_start");
         let mut inp = NeedMinBuffer::new(inp);
@@ -113,7 +111,6 @@ impl EventChunker {
             seen_after_range_count: 0,
             unordered_warn_count: 0,
             repeated_ts_warn_count: 0,
-            dbgdesc,
         }
     }
 
@@ -126,18 +123,8 @@ impl EventChunker {
         dbg_path: PathBuf,
         expand: bool,
         do_decompress: bool,
-        dbgdesc: String,
     ) -> Self {
-        let mut ret = Self::from_start(
-            inp,
-            channel_config,
-            range,
-            stats_conf,
-            dbg_path,
-            expand,
-            do_decompress,
-            dbgdesc,
-        );
+        let mut ret = Self::from_start(inp, channel_config, range, stats_conf, dbg_path, expand, do_decompress);
         ret.state = DataFileState::Event;
         ret.need_min = 4;
         ret.inp.set_need_min(4);

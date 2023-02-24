@@ -477,7 +477,7 @@ async fn prebinned_inner(
     todo!()
 }
 
-pub async fn random_channel(
+async fn random_channel(
     req: Request<Body>,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
@@ -488,7 +488,7 @@ pub async fn random_channel(
     Ok(ret)
 }
 
-pub async fn clear_cache_all(
+async fn clear_cache_all(
     req: Request<Body>,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
@@ -505,7 +505,7 @@ pub async fn clear_cache_all(
     Ok(ret)
 }
 
-pub async fn update_db_with_channel_names(
+async fn update_db_with_channel_names(
     req: Request<Body>,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
@@ -541,7 +541,7 @@ pub async fn update_db_with_channel_names(
     }
 }
 
-pub async fn update_db_with_channel_names_3(
+async fn update_db_with_channel_names_3(
     req: Request<Body>,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
@@ -564,7 +564,7 @@ pub async fn update_db_with_channel_names_3(
     Ok(ret)
 }
 
-pub async fn update_db_with_all_channel_configs(
+async fn update_db_with_all_channel_configs(
     req: Request<Body>,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
@@ -587,7 +587,7 @@ pub async fn update_db_with_all_channel_configs(
     Ok(ret)
 }
 
-pub async fn update_search_cache(
+async fn update_search_cache(
     req: Request<Body>,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,

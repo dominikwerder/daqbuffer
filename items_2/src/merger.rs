@@ -367,7 +367,7 @@ where
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         self.poll_count += 1;
-        let span1 = span!(Level::INFO, "Merger", pc = self.poll_count);
+        let span1 = span!(Level::TRACE, "Merger", pc = self.poll_count);
         let _spg = span1.enter();
         loop {
             trace3!("poll");

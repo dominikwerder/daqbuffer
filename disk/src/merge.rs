@@ -154,6 +154,8 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        let span = netpod::log::span!(Level::INFO, "disk::merge");
+        let _spg = span.enter();
         'outer: loop {
             break if self.completed {
                 panic!("poll_next on completed");
@@ -390,7 +392,6 @@ mod test {
                     dbg_path.clone(),
                     expand,
                     do_decompress,
-                    format!("{:?}", dbg_path),
                 );
                 chunker
             })

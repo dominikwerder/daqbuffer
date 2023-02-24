@@ -3,7 +3,7 @@ pub mod scan;
 pub mod search;
 
 pub mod pg {
-    pub use tokio_postgres::{Client, Error};
+    pub use tokio_postgres::{Client, Error, NoTls};
 }
 
 use err::Error;
@@ -11,9 +11,9 @@ use netpod::log::*;
 use netpod::TableSizes;
 use netpod::{Channel, Database, NodeConfigCached};
 use netpod::{ScalarType, Shape};
+use pg::{Client as PgClient, NoTls};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio_postgres::{Client, Client as PgClient, NoTls};
 
 trait ErrConv<T> {
     fn err_conv(self) -> Result<T, Error>;
@@ -49,7 +49,7 @@ pub async fn delay_io_medium() {
     delay_us(2000).await;
 }
 
-pub async fn create_connection(db_config: &Database) -> Result<Client, Error> {
+pub async fn create_connection(db_config: &Database) -> Result<PgClient, Error> {
     // TODO use a common already running worker pool for these queries:
     let d = db_config;
     let uri = format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, d.port, d.name);
@@ -135,7 +135,7 @@ pub async fn random_channel(node_config: &NodeConfigCached) -> Result<String, Er
     Ok(rows[0].get(0))
 }
 
-pub async fn insert_channel(name: String, facility: i64, dbc: &Client) -> Result<(), Error> {
+pub async fn insert_channel(name: String, facility: i64, dbc: &PgClient) -> Result<(), Error> {
     let rows = dbc
         .query(
             "select count(rowid) from channels where facility = $1 and name = $2",

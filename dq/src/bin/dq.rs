@@ -109,7 +109,6 @@ pub fn main() -> Result<(), Error> {
                     path.clone(),
                     false,
                     true,
-                    format!("{:?}", path),
                 );
                 err::todo();
                 Ok(())

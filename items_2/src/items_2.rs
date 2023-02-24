@@ -5,6 +5,7 @@ pub mod databuffereventblobs;
 pub mod eventsdim0;
 pub mod eventsdim1;
 pub mod eventsxbindim0;
+pub mod eventtransform;
 pub mod merger;
 pub mod streams;
 #[cfg(test)]
@@ -251,7 +252,7 @@ pub fn empty_events_dyn_ev(
             }
         },
         Shape::Wave(..) => match agg_kind {
-            AggKind::Plain => {
+            AggKind::Plain | AggKind::TimeWeightedScalar => {
                 use ScalarType::*;
                 type K<T> = eventsdim1::EventsDim1<T>;
                 match scalar_type {

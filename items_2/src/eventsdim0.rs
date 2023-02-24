@@ -207,7 +207,6 @@ pub struct EventsDim0CollectorOutput<NTY> {
     timed_out: bool,
     #[serde(rename = "continueAt", default, skip_serializing_if = "Option::is_none")]
     continue_at: Option<IsoDateTime>,
-    dummy_marker: u32,
 }
 
 impl<NTY: ScalarOps> EventsDim0CollectorOutput<NTY> {
@@ -377,7 +376,6 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
             range_final: self.range_final,
             timed_out: self.timed_out,
             continue_at,
-            dummy_marker: 4242,
         };
         if !ret.is_valid() {
             error!("invalid:\n{}", ret.info_str());

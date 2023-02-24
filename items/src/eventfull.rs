@@ -107,10 +107,6 @@ impl EventFull {
         let mut nkeep = usize::MAX;
         for (i, &ts) in self.tss.iter().enumerate() {
             if ts >= end {
-                for (i, &ts) in self.tss.iter().enumerate() {
-                    eprintln!("{i:5} {ts:20}");
-                }
-                eprintln!("truncate to  i {i}  ts {ts}");
                 nkeep = i;
                 break;
             }

@@ -1,7 +1,8 @@
-use super::inmem::InMemoryFrameAsyncReadStream;
+use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items::frame::decode_frame;
+use items::inmem::InMemoryFrame;
 use items::FrameTypeInnerStatic;
 use items::Sitemty;
 use items::StreamItem;
@@ -11,23 +12,16 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
-use tokio::io::AsyncRead;
 
-pub struct EventsFromFrames<T, I>
-where
-    T: AsyncRead + Unpin,
-{
-    inp: InMemoryFrameAsyncReadStream<T>,
+pub struct EventsFromFrames<O> {
+    inp: Pin<Box<dyn Stream<Item = Result<StreamItem<InMemoryFrame>, Error>> + Send>>,
     errored: bool,
     completed: bool,
-    _m1: PhantomData<I>,
+    _m1: PhantomData<O>,
 }
 
-impl<T, I> EventsFromFrames<T, I>
-where
-    T: AsyncRead + Unpin,
-{
-    pub fn new(inp: InMemoryFrameAsyncReadStream<T>) -> Self {
+impl<O> EventsFromFrames<O> {
+    pub fn new(inp: Pin<Box<dyn Stream<Item = Result<StreamItem<InMemoryFrame>, Error>> + Send>>) -> Self {
         Self {
             inp,
             errored: false,
@@ -37,15 +31,16 @@ where
     }
 }
 
-impl<T, I> Stream for EventsFromFrames<T, I>
+impl<O> Stream for EventsFromFrames<O>
 where
-    T: AsyncRead + Unpin,
-    I: FrameTypeInnerStatic + DeserializeOwned + Unpin,
+    O: FrameTypeInnerStatic + DeserializeOwned + Unpin,
 {
-    type Item = Sitemty<I>;
+    type Item = Sitemty<O>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        let span = netpod::log::span!(netpod::log::Level::INFO, "EvFrFr");
+        let _spg = span.enter();
         loop {
             break if self.completed {
                 panic!("poll_next on completed");
@@ -57,7 +52,7 @@ where
                     Ready(Some(Ok(item))) => match item {
                         StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
                         StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
-                        StreamItem::DataItem(frame) => match decode_frame::<Sitemty<I>>(&frame) {
+                        StreamItem::DataItem(frame) => match decode_frame::<Sitemty<O>>(&frame) {
                             Ok(item) => match item {
                                 Ok(item) => Ready(Some(Ok(item))),
                                 Err(e) => {

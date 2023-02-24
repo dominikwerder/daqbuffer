@@ -134,8 +134,6 @@ impl Stream for EventChunkerMultifile {
                                         }
                                     }
                                     if max >= self.range.end {
-                                        info!("REACHED RANGE END, TRUNCATE");
-                                        info!("{:20} ... {:20}", self.range.beg, self.range.end);
                                         self.range_final = true;
                                         h.truncate_ts(self.range.end);
                                         self.evs = None;
@@ -187,7 +185,6 @@ impl Stream for EventChunkerMultifile {
                                                 path.clone(),
                                                 self.expand,
                                                 self.do_decompress,
-                                                format!("{:?}", path),
                                             );
                                             let filtered = RangeFilter::new(chunker, self.range.clone(), self.expand);
                                             self.evs = Some(Box::pin(filtered));
@@ -223,7 +220,6 @@ impl Stream for EventChunkerMultifile {
                                                 of.path.clone(),
                                                 self.expand,
                                                 self.do_decompress,
-                                                format!("{:?}", of.path),
                                             );
                                             chunkers.push(chunker);
                                         }

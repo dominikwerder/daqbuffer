@@ -20,6 +20,7 @@ use netpod::{Node, PerfOpts};
 use std::pin::Pin;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
+use tracing::Instrument;
 
 pub async fn x_processed_event_blobs_stream_from_node(
     query: PlainEventsQuery,
@@ -43,6 +44,7 @@ pub async fn x_processed_event_blobs_stream_from_node(
     netout.flush().await?;
     netout.forget();
     let frames = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
+    let frames = Box::pin(frames) as _;
     let items = EventsFromFrames::new(frames);
     Ok(Box::pin(items))
 }
@@ -71,8 +73,11 @@ where
         netout.flush().await?;
         netout.forget();
         // TODO for images, we need larger buffer capacity
-        let frames = InMemoryFrameAsyncReadStream::new(netin, 1024 * 1024 * 2);
-        let stream = EventsFromFrames::<_, T>::new(frames);
+        let frames = InMemoryFrameAsyncReadStream::new(netin, 1024 * 1024 * 2)
+            //.instrument(netpod::log::span!(netpod::log::Level::TRACE, "InMemRd"))
+            ;
+        let frames = Box::pin(frames) as _;
+        let stream = EventsFromFrames::<T>::new(frames);
         streams.push(Box::pin(stream) as _);
     }
     Ok(streams)

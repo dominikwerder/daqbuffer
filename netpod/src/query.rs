@@ -5,6 +5,7 @@ pub mod prebinned;
 use crate::get_url_query_pairs;
 use crate::is_false;
 use crate::log::*;
+use crate::transform::Transform;
 use crate::AggKind;
 use crate::AppendToUrl;
 use crate::ByteSize;
@@ -86,6 +87,8 @@ pub struct PlainEventsQuery {
     range: NanoRange,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     agg_kind: Option<AggKind>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    transform: Option<Transform>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "humantime_serde")]
     timeout: Option<Duration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -114,6 +117,7 @@ impl PlainEventsQuery {
             channel,
             range,
             agg_kind,
+            transform: None,
             timeout,
             events_max,
             event_delay: None,
@@ -156,7 +160,7 @@ impl PlainEventsQuery {
     }
 
     pub fn events_max(&self) -> u64 {
-        self.events_max.unwrap_or(1024 * 1024)
+        self.events_max.unwrap_or(1024 * 512)
     }
 
     pub fn event_delay(&self) -> &Option<Duration> {
@@ -206,12 +210,13 @@ impl FromUrl for PlainEventsQuery {
         let beg_date = pairs.get("begDate").ok_or(Error::with_public_msg("missing begDate"))?;
         let end_date = pairs.get("endDate").ok_or(Error::with_public_msg("missing endDate"))?;
         let ret = Self {
-            channel: Channel::from_pairs(&pairs)?,
+            channel: Channel::from_pairs(pairs)?,
             range: NanoRange {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
             },
-            agg_kind: agg_kind_from_binning_scheme(&pairs)?,
+            agg_kind: agg_kind_from_binning_scheme(pairs)?,
+            transform: Some(Transform::from_pairs(pairs)?),
             timeout: pairs
                 .get("timeout")
                 .map(|x| x.parse::<u64>().map(Duration::from_millis).ok())
@@ -247,6 +252,9 @@ impl AppendToUrl for PlainEventsQuery {
     fn append_to_url(&self, url: &mut Url) {
         let date_fmt = "%Y-%m-%dT%H:%M:%S.%6fZ";
         self.channel.append_to_url(url);
+        if let Some(x) = &self.transform {
+            x.append_to_url(url);
+        }
         if let Some(x) = &self.agg_kind {
             binning_scheme_append_to_url(x, url);
         }

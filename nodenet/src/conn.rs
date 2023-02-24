@@ -249,7 +249,30 @@ async fn events_conn_handler_inner_try(
         } else {
             match make_channel_events_stream(evq, node_config).await {
                 Ok(stream) => {
-                    let stream = stream.map(|x| Box::new(x) as _);
+                    let stream = stream
+                        .map({
+                            use items_2::eventtransform::EventTransform;
+                            let mut tf = items_2::eventtransform::IdentityTransform::default();
+                            move |item| match item {
+                                Ok(item2) => match item2 {
+                                    StreamItem::DataItem(item3) => match item3 {
+                                        RangeCompletableItem::Data(item4) => match item4 {
+                                            ChannelEvents::Events(item5) => {
+                                                let a = tf.transform(item5);
+                                                Ok(StreamItem::DataItem(RangeCompletableItem::Data(
+                                                    ChannelEvents::Events(a),
+                                                )))
+                                            }
+                                            x => Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))),
+                                        },
+                                        x => Ok(StreamItem::DataItem(x)),
+                                    },
+                                    x => Ok(x),
+                                },
+                                _ => item,
+                            }
+                        })
+                        .map(|x| Box::new(x) as _);
                     Box::pin(stream)
                 }
                 Err(e) => {
@@ -266,7 +289,7 @@ async fn events_conn_handler_inner_try(
                 if buf.len() > 1024 * 64 {
                     warn!("emit buf len {}", buf.len());
                 } else {
-                    trace!("emit buf len {}", buf.len());
+                    info!("emit buf len {}", buf.len());
                 }
                 buf_len_histo.ingest(buf.len() as u32);
                 match netout.write_all(&buf).await {

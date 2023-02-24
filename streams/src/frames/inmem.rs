@@ -9,6 +9,7 @@ use netpod::log::*;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, ReadBuf};
+use tracing::Instrument;
 
 #[allow(unused)]
 macro_rules! trace2 {
@@ -152,7 +153,7 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        let span = span!(Level::TRACE, "inmem");
+        let span = span!(Level::INFO, "InMemRd");
         let _spanguard = span.enter();
         loop {
             break if self.complete {
