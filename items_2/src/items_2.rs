@@ -188,9 +188,7 @@ impl crate::merger::Mergeable for Box<dyn Events> {
     }
 
     fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), merger::MergeError> {
-        self.as_mut()
-            .drain_into(dst, range)
-            .map_err(|()| merger::MergeError::NotCompatible)
+        self.as_mut().drain_into(dst, range)
     }
 
     fn find_lowest_index_gt(&self, ts: u64) -> Option<usize> {
@@ -246,8 +244,9 @@ pub fn empty_events_dyn_ev(
                     STRING => Box::new(K::<String>::empty()),
                 }
             }
-            _ => {
-                error!("TODO empty_events_dyn_2  {scalar_type:?}  {shape:?}  {agg_kind:?}");
+            AggKind::PulseIdDiff => Box::new(eventsdim0::EventsDim0::<i64>::empty()),
+            AggKind::DimXBins1 | AggKind::DimXBinsN(..) | AggKind::EventBlobs => {
+                error!("TODO empty_events_dyn_ev {agg_kind:?} {scalar_type:?} {shape:?}");
                 err::todoval()
             }
         },
@@ -270,13 +269,14 @@ pub fn empty_events_dyn_ev(
                     STRING => Box::new(K::<String>::empty()),
                 }
             }
-            _ => {
-                error!("TODO empty_events_dyn_2  {scalar_type:?}  {shape:?}  {agg_kind:?}");
+            AggKind::PulseIdDiff => Box::new(eventsdim0::EventsDim0::<i64>::empty()),
+            AggKind::DimXBins1 | AggKind::DimXBinsN(..) | AggKind::EventBlobs => {
+                error!("TODO empty_events_dyn_ev {agg_kind:?} {scalar_type:?} {shape:?}");
                 err::todoval()
             }
         },
         Shape::Image(..) => {
-            error!("TODO empty_events_dyn_2  {scalar_type:?}  {shape:?}  {agg_kind:?}");
+            error!("TODO empty_events_dyn_ev {agg_kind:?} {scalar_type:?} {shape:?}");
             err::todoval()
         }
     };
@@ -300,14 +300,18 @@ pub fn empty_binned_dyn_tb(scalar_type: &ScalarType, shape: &Shape, agg_kind: &A
                     I64 => Box::new(K::<i64>::empty()),
                     F32 => Box::new(K::<f32>::empty()),
                     F64 => Box::new(K::<f64>::empty()),
-                    _ => {
-                        error!("TODO empty_binned_dyn");
+                    BOOL | STRING => {
+                        error!("TODO empty_binned_dyn_tb {agg_kind:?} {scalar_type:?} {shape:?}");
                         err::todoval()
                     }
                 }
             }
-            _ => {
-                error!("TODO empty_binned_dyn");
+            AggKind::Plain
+            | AggKind::DimXBins1
+            | AggKind::DimXBinsN(..)
+            | AggKind::EventBlobs
+            | AggKind::PulseIdDiff => {
+                error!("TODO empty_binned_dyn_tb {agg_kind:?} {scalar_type:?} {shape:?}");
                 err::todoval()
             }
         },
@@ -317,21 +321,32 @@ pub fn empty_binned_dyn_tb(scalar_type: &ScalarType, shape: &Shape, agg_kind: &A
                 type K<T> = binsdim0::BinsDim0<T>;
                 match scalar_type {
                     U8 => Box::new(K::<u8>::empty()),
+                    U16 => Box::new(K::<u16>::empty()),
+                    U32 => Box::new(K::<u32>::empty()),
+                    U64 => Box::new(K::<u64>::empty()),
+                    I8 => Box::new(K::<i8>::empty()),
+                    I16 => Box::new(K::<i16>::empty()),
+                    I32 => Box::new(K::<i32>::empty()),
+                    I64 => Box::new(K::<i64>::empty()),
                     F32 => Box::new(K::<f32>::empty()),
                     F64 => Box::new(K::<f64>::empty()),
-                    _ => {
-                        error!("TODO empty_binned_dyn");
+                    BOOL | STRING => {
+                        error!("TODO empty_binned_dyn_tb {agg_kind:?} {scalar_type:?} {shape:?}");
                         err::todoval()
                     }
                 }
             }
-            _ => {
-                error!("TODO empty_binned_dyn");
+            AggKind::EventBlobs
+            | AggKind::DimXBinsN(..)
+            | AggKind::Plain
+            | AggKind::TimeWeightedScalar
+            | AggKind::PulseIdDiff => {
+                error!("TODO empty_binned_dyn_tb {agg_kind:?} {scalar_type:?} {shape:?}");
                 err::todoval()
             }
         },
         Shape::Image(..) => {
-            error!("TODO empty_binned_dyn");
+            error!("TODO empty_binned_dyn_tb {agg_kind:?} {scalar_type:?} {shape:?}");
             err::todoval()
         }
     }

@@ -117,6 +117,34 @@ async fn make_channel_events_stream(
             do_test_stream_error,
         );
         let stream = stream
+            .map({
+                let agg_kind = evq.agg_kind_value();
+                move |item| match item {
+                    Ok(item) => {
+                        let x = if let AggKind::PulseIdDiff = agg_kind {
+                            let x = match item {
+                                ChannelEvents::Events(item) => {
+                                    let (tss, pulses) = items_0::EventsNonObj::into_tss_pulses(item);
+                                    let mut item = items_2::eventsdim0::EventsDim0::empty();
+                                    let mut pulse_last = pulses.front().map_or(0, |&x| x);
+                                    for (ts, pulse) in tss.into_iter().zip(pulses) {
+                                        let value = pulse as i64 - pulse_last as i64;
+                                        item.push(ts, pulse, value);
+                                        pulse_last = pulse;
+                                    }
+                                    ChannelEvents::Events(Box::new(item))
+                                }
+                                ChannelEvents::Status(x) => ChannelEvents::Status(x),
+                            };
+                            x
+                        } else {
+                            item
+                        };
+                        Ok(x)
+                    }
+                    Err(e) => Err(e),
+                }
+            })
             .map(move |item| match &item {
                 Ok(k) => match k {
                     ChannelEvents::Events(k) => {

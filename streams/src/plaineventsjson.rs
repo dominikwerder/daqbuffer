@@ -44,7 +44,15 @@ pub async fn plain_events_json(
     //let inps = open_tcp_streams::<_, Box<dyn items_2::Events>>(&query, cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader:
     let stream = items_2::merger::Merger::new(inps, 1024);
+    let stream = stream.map(|item| {
+        info!("item after merge: {item:?}");
+        item
+    });
     let stream = crate::rangefilter2::RangeFilter2::new(stream, query.range().clone(), evquery.one_before_range());
+    let stream = stream.map(|item| {
+        info!("item after rangefilter: {item:?}");
+        item
+    });
     let stream = stream::iter([empty]).chain(stream);
     let collected = crate::collect::collect(stream, deadline, events_max, Some(query.range().clone()), None).await?;
     let jsval = serde_json::to_value(&collected)?;

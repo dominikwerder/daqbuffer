@@ -176,6 +176,7 @@ where
                         Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))) => match self.handle_item(item) {
                             Ok(item) => Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))))),
                             Err(e) => {
+                                error!("sees: {e}");
                                 self.data_done = true;
                                 Ready(Some(Err(e)))
                             }

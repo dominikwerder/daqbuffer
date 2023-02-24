@@ -10,8 +10,11 @@ pub mod bincode {
 use collect_c::CollectableWithDefault;
 use collect_s::Collectable;
 use collect_s::ToJsonResult;
-use netpod::{NanoRange, ScalarType, Shape};
+use netpod::NanoRange;
+use netpod::ScalarType;
+use netpod::Shape;
 use std::any::Any;
+use std::collections::VecDeque;
 use std::fmt;
 
 pub trait WithLen {
@@ -129,6 +132,18 @@ pub trait TimeBinnable: fmt::Debug + WithLen + RangeOverlapInfo + Any + AsAnyRef
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult>;
 }
 
+#[derive(Debug)]
+pub enum MergeError {
+    NotCompatible,
+    Full,
+}
+
+impl From<MergeError> for err::Error {
+    fn from(e: MergeError) -> Self {
+        format!("{e:?}").into()
+    }
+}
+
 // TODO can I remove the Any bound?
 
 /// Container of some form of events, for use as trait object.
@@ -142,6 +157,7 @@ pub trait Events:
     + WithLen
     + Send
     + erased_serde::Serialize
+    + EventsNonObj
 {
     fn as_time_binnable(&self) -> &dyn TimeBinnable;
     fn verify(&self) -> bool;
@@ -154,7 +170,7 @@ pub trait Events:
     // TODO is this used?
     fn take_new_events_until_ts(&mut self, ts_end: u64) -> Box<dyn Events>;
     fn new_empty(&self) -> Box<dyn Events>;
-    fn drain_into(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), ()>;
+    fn drain_into(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), MergeError>;
     fn find_lowest_index_gt(&self, ts: u64) -> Option<usize>;
     fn find_lowest_index_ge(&self, ts: u64) -> Option<usize>;
     fn find_highest_index_lt(&self, ts: u64) -> Option<usize>;
@@ -162,6 +178,10 @@ pub trait Events:
     fn partial_eq_dyn(&self, other: &dyn Events) -> bool;
     fn serde_id(&self) -> &'static str;
     fn nty_id(&self) -> u32;
+}
+
+pub trait EventsNonObj {
+    fn into_tss_pulses(self: Box<Self>) -> (VecDeque<u64>, VecDeque<u64>);
 }
 
 erased_serde::serialize_trait_object!(Events);

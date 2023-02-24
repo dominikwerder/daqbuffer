@@ -245,7 +245,11 @@ fn make_scalar_conv(
 ) -> Result<Box<dyn ValueFromBytes>, Error> {
     let ret = match agg_kind {
         AggKind::EventBlobs => todo!("make_scalar_conv  EventBlobs"),
-        AggKind::Plain | AggKind::DimXBinsN(_) | AggKind::DimXBins1 | AggKind::TimeWeightedScalar => match shape {
+        AggKind::Plain
+        | AggKind::DimXBinsN(_)
+        | AggKind::DimXBins1
+        | AggKind::TimeWeightedScalar
+        | AggKind::PulseIdDiff => match shape {
             Shape::Scalar => match scalar_type {
                 ScalarType::U8 => ValueDim0FromBytesImpl::<u8>::boxed(),
                 ScalarType::U16 => ValueDim0FromBytesImpl::<u16>::boxed(),

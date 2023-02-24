@@ -11,6 +11,7 @@ use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use items_0::Empty;
 use items_0::Events;
+use items_0::EventsNonObj;
 use items_0::WithLen;
 use netpod::log::*;
 use netpod::timeunits::SEC;
@@ -713,7 +714,18 @@ impl<STY> items_0::TypeName for EventsDim0<STY> {
     }
 }
 
-impl<NTY: ScalarOps> Events for EventsDim0<NTY> {
+impl<STY: ScalarOps> EventsNonObj for EventsDim0<STY> {
+    fn into_tss_pulses(self: Box<Self>) -> (VecDeque<u64>, VecDeque<u64>) {
+        info!(
+            "EventsDim0::into_tss_pulses  len {}  len {}",
+            self.tss.len(),
+            self.pulses.len()
+        );
+        (self.tss, self.pulses)
+    }
+}
+
+impl<STY: ScalarOps> Events for EventsDim0<STY> {
     fn as_time_binnable(&self) -> &dyn TimeBinnable {
         self as &dyn TimeBinnable
     }
@@ -780,7 +792,7 @@ impl<NTY: ScalarOps> Events for EventsDim0<NTY> {
         Box::new(Self::empty())
     }
 
-    fn drain_into(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), ()> {
+    fn drain_into(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), items_0::MergeError> {
         // TODO as_any and as_any_mut are declared on unrelated traits. Simplify.
         if let Some(dst) = dst.as_mut().as_any_mut().downcast_mut::<Self>() {
             // TODO make it harder to forget new members when the struct may get modified in the future
@@ -791,7 +803,7 @@ impl<NTY: ScalarOps> Events for EventsDim0<NTY> {
             Ok(())
         } else {
             error!("downcast to EventsDim0 FAILED");
-            Err(())
+            Err(items_0::MergeError::NotCompatible)
         }
     }
 
@@ -843,7 +855,7 @@ impl<NTY: ScalarOps> Events for EventsDim0<NTY> {
     }
 
     fn nty_id(&self) -> u32 {
-        NTY::SUB
+        STY::SUB
     }
 
     fn clone_dyn(&self) -> Box<dyn Events> {

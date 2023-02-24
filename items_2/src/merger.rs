@@ -31,17 +31,8 @@ macro_rules! trace4 {
     ($($arg:tt)*) => (trace!($($arg)*));
 }
 
-#[derive(Debug)]
-pub enum MergeError {
-    NotCompatible,
-    Full,
-}
-
-impl From<MergeError> for err::Error {
-    fn from(e: MergeError) -> Self {
-        format!("{e:?}").into()
-    }
-}
+// TODO
+pub use items_0::MergeError;
 
 pub trait Mergeable<Rhs = Self>: fmt::Debug + Unpin {
     fn len(&self) -> usize;
@@ -204,7 +195,8 @@ where
                         // Take only up to the lowest ts of the second-lowest input
                         let mut item = self.items[il0].take().unwrap();
                         trace3!("Take up to {tl1} from item {item:?}");
-                        match self.take_into_output_upto(&mut item, tl1) {
+                        let res = self.take_into_output_upto(&mut item, tl1);
+                        match res {
                             Ok(()) => {
                                 if item.len() == 0 {
                                     // TODO should never be here because we should have taken the whole item
@@ -216,7 +208,7 @@ where
                             }
                             Err(MergeError::Full) | Err(MergeError::NotCompatible) => {
                                 // TODO count for stats
-                                trace3!("Put item back");
+                                info!("Put item back because {res:?}");
                                 self.items[il0] = Some(item);
                                 self.do_clear_out = true;
                                 Ok(Break(()))

@@ -1565,6 +1565,7 @@ pub enum AggKind {
     DimXBinsN(u32),
     Plain,
     TimeWeightedScalar,
+    PulseIdDiff,
 }
 
 impl AggKind {
@@ -1575,6 +1576,7 @@ impl AggKind {
             Self::DimXBins1 => false,
             Self::DimXBinsN(_) => false,
             Self::Plain => false,
+            Self::PulseIdDiff => false,
         }
     }
 
@@ -1585,6 +1587,7 @@ impl AggKind {
             Self::DimXBins1 => false,
             Self::DimXBinsN(_) => false,
             Self::Plain => false,
+            Self::PulseIdDiff => false,
         }
     }
 }
@@ -1610,6 +1613,7 @@ pub fn x_bin_count(shape: &Shape, agg_kind: &AggKind) -> usize {
             Shape::Wave(n) => *n as usize,
             Shape::Image(j, k) => *j as usize * *k as usize,
         },
+        AggKind::PulseIdDiff => 0,
     }
 }
 
@@ -1630,6 +1634,9 @@ impl fmt::Display for AggKind {
             }
             Self::TimeWeightedScalar => {
                 write!(fmt, "TimeWeightedScalar")
+            }
+            Self::PulseIdDiff => {
+                write!(fmt, "PulseIdDiff")
             }
         }
     }
@@ -1655,6 +1662,8 @@ impl FromStr for AggKind {
         } else if s.starts_with(nmark) {
             let nbins: u32 = s[nmark.len()..].parse()?;
             Ok(AggKind::DimXBinsN(nbins))
+        } else if s == "PulseIdDiff" {
+            Ok(AggKind::PulseIdDiff)
         } else {
             Err(Error::with_msg(format!("can not parse {} as AggKind", s)))
         }
