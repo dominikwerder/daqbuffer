@@ -815,6 +815,14 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
     fn clone_dyn(&self) -> Box<dyn Events> {
         Box::new(self.clone())
     }
+
+    fn tss(&self) -> &VecDeque<u64> {
+        &self.tss
+    }
+
+    fn pulses(&self) -> &VecDeque<u64> {
+        &self.pulses
+    }
 }
 
 pub struct EventsDim1TimeBinner<NTY: ScalarOps> {

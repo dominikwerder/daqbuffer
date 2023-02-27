@@ -178,6 +178,8 @@ pub trait Events:
     fn partial_eq_dyn(&self, other: &dyn Events) -> bool;
     fn serde_id(&self) -> &'static str;
     fn nty_id(&self) -> u32;
+    fn tss(&self) -> &VecDeque<u64>;
+    fn pulses(&self) -> &VecDeque<u64>;
 }
 
 pub trait EventsNonObj {
