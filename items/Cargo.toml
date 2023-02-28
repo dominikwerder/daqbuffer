@@ -1,11 +1,8 @@
 [package]
 name = "items"
-version = "0.0.2"
+version = "0.1.0"
 authors = ["Dominik Werder <dominik.werder@gmail.com>"]
 edition = "2021"
-
-[lib]
-path = "src/items.rs"
 
 [dependencies]
 tokio = { version = "1.21.2", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
@@ -13,7 +10,6 @@ futures-util = "0.3.15"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 ciborium = "0.2"
-rmp-serde = "1.1.1"
 bson = "2.4.0"
 erased-serde = "0.3"
 bytes = "1.2.1"
@@ -24,4 +20,3 @@ err = { path = "../err" }
 items_proc = { path = "../items_proc" }
 items_0 = { path = "../items_0" }
 netpod = { path = "../netpod" }
-parse = { path = "../parse" }

@@ -1,10 +1,10 @@
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use items::RangeCompletableItem;
-use items::Sitemty;
-use items::StatsItem;
-use items::StreamItem;
+use items_0::streamitem::RangeCompletableItem;
+use items_0::streamitem::Sitemty;
+use items_0::streamitem::StatsItem;
+use items_0::streamitem::StreamItem;
 use items_2::merger::MergeError;
 use items_2::merger::Mergeable;
 use netpod::log::*;

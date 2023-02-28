@@ -1,15 +1,17 @@
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use items::frame::decode_frame;
-use items::frame::make_term_frame;
-use items::EventQueryJsonStringFrame;
-use items::Framable;
-use items::RangeCompletableItem;
-use items::Sitemty;
-use items::StreamItem;
+use items_0::streamitem::RangeCompletableItem;
+use items_0::streamitem::Sitemty;
+use items_0::streamitem::StreamItem;
+use items_0::streamitem::EVENT_QUERY_JSON_STRING_FRAME;
 use items_0::Empty;
 use items_2::channelevents::ChannelEvents;
+use items_2::framable::EventQueryJsonStringFrame;
+use items_2::framable::Framable;
+use items_2::frame::decode_frame;
+use items_2::frame::make_error_frame;
+use items_2::frame::make_term_frame;
 use netpod::histo::HistoLog2;
 use netpod::log::*;
 use netpod::query::PlainEventsQuery;
@@ -232,7 +234,7 @@ async fn events_conn_handler_inner_try(
         return Err((Error::with_msg("missing command frame"), netout).into());
     }
     let query_frame = &frames[0];
-    if query_frame.tyid() != items::EVENT_QUERY_JSON_STRING_FRAME {
+    if query_frame.tyid() != EVENT_QUERY_JSON_STRING_FRAME {
         return Err((Error::with_msg("query frame wrong type"), netout).into());
     }
     // TODO this does not need all variants of Sitemty.
@@ -364,7 +366,7 @@ async fn events_conn_handler_inner(
             // If that fails, give error to the caller.
             let mut out = ce.netout;
             let e = ce.err;
-            let buf = items::frame::make_error_frame(&e)?;
+            let buf = make_error_frame(&e)?;
             //type T = StreamItem<items::RangeCompletableItem<items::scalarevents::ScalarEvents<u32>>>;
             //let buf = Err::<T, _>(e).make_frame()?;
             out.write_all(&buf).await?;

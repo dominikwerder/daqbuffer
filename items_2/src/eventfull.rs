@@ -1,12 +1,12 @@
-use crate::Appendable;
-use crate::ByteEstimate;
-use crate::Clearable;
-use crate::FrameType;
-use crate::FrameTypeInnerStatic;
-use crate::PushableIndex;
-use crate::WithLen;
-use crate::WithTimestamps;
+use crate::framable::FrameType;
 use bytes::BytesMut;
+use items::ByteEstimate;
+use items::Clearable;
+use items::PushableIndex;
+use items::WithTimestamps;
+use items_0::framable::FrameTypeInnerStatic;
+use items_0::streamitem::EVENT_FULL_FRAME_TYPE_ID;
+use items_0::WithLen;
 use netpod::ScalarType;
 use netpod::Shape;
 use parse::channelconfig::CompressionMethod;
@@ -123,7 +123,7 @@ impl EventFull {
 }
 
 impl FrameTypeInnerStatic for EventFull {
-    const FRAME_TYPE_ID: u32 = crate::EVENT_FULL_FRAME_TYPE_ID;
+    const FRAME_TYPE_ID: u32 = EVENT_FULL_FRAME_TYPE_ID;
 }
 
 impl FrameType for EventFull {
@@ -138,7 +138,13 @@ impl WithLen for EventFull {
     }
 }
 
-impl Appendable for EventFull {
+impl items::WithLen for EventFull {
+    fn len(&self) -> usize {
+        self.tss.len()
+    }
+}
+
+impl items::Appendable for EventFull {
     fn empty_like_self(&self) -> Self {
         Self::empty()
     }

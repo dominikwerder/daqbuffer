@@ -1155,16 +1155,15 @@ impl<NTY: ScalarOps> items_0::collect_c::Collectable for EventsDim0<NTY> {
 
 #[cfg(test)]
 mod test_frame {
+    use super::*;
     use crate::channelevents::ChannelEvents;
-    use crate::eventsdim0::EventsDim0;
-    use err::Error;
-    use items::Framable;
-    use items::RangeCompletableItem;
-    use items::Sitemty;
-    use items::StreamItem;
-    use items_0::AsAnyMut;
-    use items_0::Empty;
-    use items_0::Events;
+    use crate::framable::Framable;
+    use crate::framable::INMEM_FRAME_ENCID;
+    use crate::frame::decode_frame;
+    use crate::inmem::InMemoryFrame;
+    use items_0::streamitem::RangeCompletableItem;
+    use items_0::streamitem::Sitemty;
+    use items_0::streamitem::StreamItem;
 
     #[test]
     fn events_bincode() {
@@ -1180,13 +1179,13 @@ mod test_frame {
         let s = String::from_utf8_lossy(&buf[20..buf.len() - 4]);
         eprintln!("[[{s}]]");
         let buflen = buf.len();
-        let frame = items::inmem::InMemoryFrame {
-            encid: items::INMEM_FRAME_ENCID,
+        let frame = InMemoryFrame {
+            encid: INMEM_FRAME_ENCID,
             tyid: 0x2500,
             len: (buflen - 24) as _,
             buf: buf.split_off(20).split_to(buflen - 20 - 4).freeze(),
         };
-        let item: Sitemty<ChannelEvents> = items::frame::decode_frame(&frame).unwrap();
+        let item: Sitemty<ChannelEvents> = decode_frame(&frame).unwrap();
         let item = if let Ok(x) = item { x } else { panic!() };
         let item = if let StreamItem::DataItem(x) = item {
             x
@@ -1208,31 +1207,34 @@ mod test_frame {
         } else {
             panic!()
         };
-        eprintln!("NOW WE SEE: {:?}", item);
-        // type_name_of_val alloc::boxed::Box<dyn items_0::Events>
-        eprintln!("0 {:22?}", item.as_any_mut().type_id());
-        eprintln!("A {:22?}", std::any::TypeId::of::<Box<dyn items_0::Events>>());
-        eprintln!("B {:22?}", std::any::TypeId::of::<dyn items_0::Events>());
-        eprintln!("C {:22?}", std::any::TypeId::of::<&dyn items_0::Events>());
-        eprintln!("D {:22?}", std::any::TypeId::of::<&mut dyn items_0::Events>());
-        eprintln!("E {:22?}", std::any::TypeId::of::<&mut Box<dyn items_0::Events>>());
-        eprintln!("F {:22?}", std::any::TypeId::of::<Box<EventsDim0<f32>>>());
-        eprintln!("G {:22?}", std::any::TypeId::of::<&EventsDim0<f32>>());
-        eprintln!("H {:22?}", std::any::TypeId::of::<&mut EventsDim0<f32>>());
-        eprintln!("I {:22?}", std::any::TypeId::of::<Box<Box<EventsDim0<f32>>>>());
-        //let item = item.as_mut();
-        //eprintln!("1 {:22?}", item.type_id());
-        /*
-        let item = if let Some(item) =
-            items_0::collect_s::Collectable::as_any_mut(item).downcast_ref::<Box<EventsDim0<f32>>>()
-        {
-            item
-        } else {
-            panic!()
-        };
-        */
-        eprintln!("Final value: {item:?}");
         assert_eq!(item.tss(), &[123]);
+        #[cfg(DISABLED)]
+        {
+            eprintln!("NOW WE SEE: {:?}", item);
+            // type_name_of_val alloc::boxed::Box<dyn items_0::Events>
+            eprintln!("0 {:22?}", item.as_any_mut().type_id());
+            eprintln!("A {:22?}", std::any::TypeId::of::<Box<dyn items_0::Events>>());
+            eprintln!("B {:22?}", std::any::TypeId::of::<dyn items_0::Events>());
+            eprintln!("C {:22?}", std::any::TypeId::of::<&dyn items_0::Events>());
+            eprintln!("D {:22?}", std::any::TypeId::of::<&mut dyn items_0::Events>());
+            eprintln!("E {:22?}", std::any::TypeId::of::<&mut Box<dyn items_0::Events>>());
+            eprintln!("F {:22?}", std::any::TypeId::of::<Box<EventsDim0<f32>>>());
+            eprintln!("G {:22?}", std::any::TypeId::of::<&EventsDim0<f32>>());
+            eprintln!("H {:22?}", std::any::TypeId::of::<&mut EventsDim0<f32>>());
+            eprintln!("I {:22?}", std::any::TypeId::of::<Box<Box<EventsDim0<f32>>>>());
+            //let item = item.as_mut();
+            //eprintln!("1 {:22?}", item.type_id());
+            /*
+            let item = if let Some(item) =
+                items_0::collect_s::Collectable::as_any_mut(item).downcast_ref::<Box<EventsDim0<f32>>>()
+            {
+                item
+            } else {
+                panic!()
+            };
+            */
+            //eprintln!("Final value: {item:?}");
+        }
     }
 }
 

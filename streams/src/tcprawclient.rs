@@ -10,19 +10,22 @@ use crate::frames::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use items::eventfull::EventFull;
-use items::frame::make_frame;
-use items::frame::make_term_frame;
-use items::sitem_data;
-use items::EventQueryJsonStringFrame;
-use items::RangeCompletableItem;
-use items::Sitemty;
-use items::StreamItem;
+use items_0::framable::FrameTypeInnerStatic;
+use items_0::streamitem::sitem_data;
+use items_0::streamitem::RangeCompletableItem;
+use items_0::streamitem::Sitemty;
+use items_0::streamitem::StreamItem;
+use items_2::eventfull::EventFull;
+use items_2::framable::EventQueryJsonStringFrame;
+use items_2::frame::make_frame;
+use items_2::frame::make_term_frame;
 use netpod::log::*;
 use netpod::query::PlainEventsQuery;
 use netpod::Cluster;
 use netpod::Node;
 use netpod::PerfOpts;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use std::fmt;
 use std::pin::Pin;
 use tokio::io::AsyncWriteExt;
@@ -59,9 +62,9 @@ pub type BoxedStream<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;
 
 pub async fn open_tcp_streams<Q, T>(query: Q, cluster: &Cluster) -> Result<Vec<BoxedStream<T>>, Error>
 where
-    Q: serde::Serialize,
+    Q: Serialize,
     // Group bounds in new trait
-    T: items::FrameTypeInnerStatic + serde::de::DeserializeOwned + Send + Unpin + fmt::Debug + 'static,
+    T: FrameTypeInnerStatic + DeserializeOwned + Send + Unpin + fmt::Debug + 'static,
 {
     // TODO when unit tests established, change to async connect:
     let mut streams = Vec::new();

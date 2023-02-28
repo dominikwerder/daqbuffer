@@ -1,11 +1,12 @@
 use crate::test::runfut;
 use err::Error;
 use futures_util::stream;
-use items::sitem_data;
+use items_0::streamitem::sitem_data;
 use items_2::eventsdim0::EventsDim0CollectorOutput;
 use items_2::testgen::make_some_boxed_d0_f32;
 use netpod::timeunits::SEC;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use std::time::Instant;
 
 #[test]
 fn collect_channel_events() -> Result<(), Error> {

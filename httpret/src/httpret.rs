@@ -541,6 +541,7 @@ async fn update_db_with_channel_names(
     }
 }
 
+#[allow(unused)]
 async fn update_db_with_channel_names_3(
     req: Request<Body>,
     _ctx: &ReqCtx,
@@ -611,9 +612,9 @@ pub struct StatusBoardEntry {
     ts_created: SystemTime,
     #[serde(serialize_with = "instant_serde::ser")]
     ts_updated: SystemTime,
-    #[serde(skip_serializing_if = "items::bool_is_false")]
+    #[serde(skip_serializing_if = "items_2::bool_is_false")]
     is_error: bool,
-    #[serde(skip_serializing_if = "items::bool_is_false")]
+    #[serde(skip_serializing_if = "items_2::bool_is_false")]
     is_ok: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     errors: Vec<Error>,

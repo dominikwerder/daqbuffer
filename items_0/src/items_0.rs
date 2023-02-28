@@ -1,6 +1,9 @@
 pub mod collect_c;
 pub mod collect_s;
+pub mod framable;
+pub mod isodate;
 pub mod scalar_ops;
+pub mod streamitem;
 pub mod subfr;
 
 pub mod bincode {
@@ -91,7 +94,7 @@ where
 }
 
 /// Data in time-binned form.
-pub trait TimeBinned: Any + TimeBinnable + crate::collect_c::Collectable {
+pub trait TimeBinned: Any + TimeBinnable + crate::collect_c::Collectable + erased_serde::Serialize {
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnable;
     fn as_collectable_mut(&mut self) -> &mut dyn Collectable;
     fn edges_slice(&self) -> (&[u64], &[u64]);

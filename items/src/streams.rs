@@ -1,7 +1,13 @@
-use crate::{RangeCompletableItem, Sitemty, StreamItem, WithLen};
+use crate::RangeCompletableItem;
+use crate::StreamItem;
+use crate::WithLen;
 use err::Error;
-use futures_util::{Stream, StreamExt};
+use futures_util::Stream;
+use futures_util::StreamExt;
+use items_0::streamitem::Sitemty;
+use items_0::streamitem::StatsItem;
 use netpod::log::*;
+use netpod::DiskStats;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::fmt;
@@ -98,8 +104,6 @@ where
                             }
                         }
                         StreamItem::Stats(item) => {
-                            use crate::StatsItem;
-                            use netpod::DiskStats;
                             match item {
                                 // TODO factor and simplify the stats collection:
                                 StatsItem::EventDataReadStats(_) => {}

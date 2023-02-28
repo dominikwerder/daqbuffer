@@ -1,7 +1,9 @@
+use crate::rangefilter2::RangeFilter2;
 use crate::tcprawclient::open_tcp_streams;
 use err::Error;
 use futures_util::stream;
 use futures_util::StreamExt;
+use items_0::streamitem::sitem_data;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
 use netpod::query::PlainEventsQuery;
@@ -38,7 +40,7 @@ pub async fn plain_events_json(
     let empty = items_2::empty_events_dyn_ev(&chconf.scalar_type, &chconf.shape, &ev_agg_kind)?;
     info!("plain_events_json  with empty item {}", empty.type_name());
     let empty = ChannelEvents::Events(empty);
-    let empty = items::sitem_data(empty);
+    let empty = sitem_data(empty);
     // TODO should be able to ask for data-events only, instead of mixed data and status events.
     let inps = open_tcp_streams::<_, items_2::channelevents::ChannelEvents>(&evquery, cluster).await?;
     //let inps = open_tcp_streams::<_, Box<dyn items_2::Events>>(&query, cluster).await?;
@@ -48,7 +50,7 @@ pub async fn plain_events_json(
         info!("item after merge: {item:?}");
         item
     });
-    let stream = crate::rangefilter2::RangeFilter2::new(stream, query.range().clone(), evquery.one_before_range());
+    let stream = RangeFilter2::new(stream, query.range().clone(), evquery.one_before_range());
     let stream = stream.map(|item| {
         info!("item after rangefilter: {item:?}");
         item

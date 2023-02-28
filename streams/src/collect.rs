@@ -1,10 +1,18 @@
 use err::Error;
-use futures_util::{Stream, StreamExt};
-use items::{RangeCompletableItem, Sitemty, StreamItem};
+use futures_util::Stream;
+use futures_util::StreamExt;
 use items_0::collect_c::Collectable;
-use netpod::{log::*, BinnedRange, NanoRange};
+use items_0::streamitem::RangeCompletableItem;
+use items_0::streamitem::Sitemty;
+use items_0::streamitem::StatsItem;
+use items_0::streamitem::StreamItem;
+use netpod::log::*;
+use netpod::BinnedRange;
+use netpod::DiskStats;
+use netpod::NanoRange;
 use std::fmt;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use std::time::Instant;
 use tracing::Instrument;
 
 #[allow(unused)]
@@ -88,8 +96,6 @@ where
                 }
                 StreamItem::Stats(item) => {
                     trace!("Stats {:?}", item);
-                    use items::StatsItem;
-                    use netpod::DiskStats;
                     match item {
                         // TODO factor and simplify the stats collection:
                         StatsItem::EventDataReadStats(_) => {}

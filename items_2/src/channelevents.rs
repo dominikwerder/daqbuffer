@@ -1,9 +1,10 @@
+use crate::framable::FrameType;
 use crate::merger;
 use crate::Events;
-use items::FrameType;
-use items::FrameTypeInnerStatic;
 use items_0::collect_s::Collectable;
 use items_0::collect_s::Collector;
+use items_0::framable::FrameTypeInnerStatic;
+use items_0::streamitem::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use netpod::log::*;
@@ -88,7 +89,7 @@ pub enum ChannelEvents {
 }
 
 impl FrameTypeInnerStatic for ChannelEvents {
-    const FRAME_TYPE_ID: u32 = items::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID;
+    const FRAME_TYPE_ID: u32 = ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID;
 }
 
 impl FrameType for ChannelEvents {

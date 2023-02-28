@@ -1,12 +1,33 @@
-use std::time::Duration;
-
-use super::*;
-use items::frame::make_frame;
-use items::Sitemty;
+use crate::conn::events_conn_handler;
+use futures_util::StreamExt;
+use items_0::streamitem::RangeCompletableItem;
+use items_0::streamitem::Sitemty;
+use items_0::streamitem::StreamItem;
+use items_0::streamitem::ERROR_FRAME_TYPE_ID;
+use items_0::streamitem::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID;
+use items_0::streamitem::LOG_FRAME_TYPE_ID;
+use items_0::streamitem::STATS_FRAME_TYPE_ID;
 use items_2::channelevents::ChannelEvents;
+use items_2::framable::EventQueryJsonStringFrame;
+use items_2::frame::decode_frame;
+use items_2::frame::make_frame;
+use netpod::query::PlainEventsQuery;
 use netpod::timeunits::SEC;
-use netpod::{Channel, Cluster, Database, FileIoBufferSize, NanoRange, Node, NodeConfig, SfDatabuffer};
+use netpod::AggKind;
+use netpod::Channel;
+use netpod::Cluster;
+use netpod::Database;
+use netpod::FileIoBufferSize;
+use netpod::NanoRange;
+use netpod::Node;
+use netpod::NodeConfig;
+use netpod::NodeConfigCached;
+use netpod::SfDatabuffer;
+use std::time::Duration;
+use streams::frames::inmem::InMemoryFrameAsyncReadStream;
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
+use tokio::net::TcpStream;
 
 #[test]
 fn raw_data_00() {
@@ -82,10 +103,10 @@ fn raw_data_00() {
                 Ok(frame) => match frame {
                     StreamItem::DataItem(k) => {
                         eprintln!("{k:?}");
-                        if k.tyid() == items::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID {
-                        } else if k.tyid() == items::ERROR_FRAME_TYPE_ID {
-                        } else if k.tyid() == items::LOG_FRAME_TYPE_ID {
-                        } else if k.tyid() == items::STATS_FRAME_TYPE_ID {
+                        if k.tyid() == ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID {
+                        } else if k.tyid() == ERROR_FRAME_TYPE_ID {
+                        } else if k.tyid() == LOG_FRAME_TYPE_ID {
+                        } else if k.tyid() == STATS_FRAME_TYPE_ID {
                         } else {
                             panic!("unexpected frame type id {:x}", k.tyid());
                         }

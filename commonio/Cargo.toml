@@ -23,5 +23,5 @@ crc32fast = "1.2"
 err = { path = "../err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }
-items = { path = "../items" }
+items_0 = { path = "../items_0" }
 items_proc = { path = "../items_proc" }

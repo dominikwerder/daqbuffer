@@ -1,10 +1,10 @@
 use crate::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use items::sitem_data;
-use items::RangeCompletableItem;
-use items::Sitemty;
-use items::StreamItem;
+use items_0::streamitem::sitem_data;
+use items_0::streamitem::RangeCompletableItem;
+use items_0::streamitem::Sitemty;
+use items_0::streamitem::StreamItem;
 use netpod::log::*;
 use std::collections::VecDeque;
 use std::fmt;
@@ -359,7 +359,7 @@ where
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         self.poll_count += 1;
-        let span1 = span!(Level::TRACE, "Merger", pc = self.poll_count);
+        let span1 = span!(Level::INFO, "Merger", pc = self.poll_count);
         let _spg = span1.enter();
         loop {
             trace3!("poll");

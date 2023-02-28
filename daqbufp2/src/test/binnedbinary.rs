@@ -9,7 +9,7 @@ use futures_util::TryStreamExt;
 use http::StatusCode;
 use httpclient::HttpBodyAsAsyncRead;
 use hyper::Body;
-use items::StreamItem;
+use items_0::streamitem::StreamItem;
 use items_0::subfr::SubFrId;
 use netpod::log::*;
 use netpod::query::BinnedQuery;
