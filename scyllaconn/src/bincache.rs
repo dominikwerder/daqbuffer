@@ -391,6 +391,7 @@ pub async fn fetch_uncached_binned_events(
         do_one_before_range,
         chn.scalar_type.clone(),
         chn.shape.clone(),
+        true,
         scy,
         false,
     );

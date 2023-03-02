@@ -59,6 +59,10 @@ pub trait Empty {
     fn empty() -> Self;
 }
 
+pub trait Appendable<STY>: Empty + WithLen {
+    fn push(&mut self, ts: u64, pulse: u64, value: STY);
+}
+
 pub trait TypeName {
     fn type_name(&self) -> String;
 }
@@ -195,4 +199,12 @@ impl PartialEq for Box<dyn Events> {
     fn eq(&self, other: &Self) -> bool {
         Events::partial_eq_dyn(self.as_ref(), other.as_ref())
     }
+}
+
+pub struct TransformProperties {
+    pub needs_value: bool,
+}
+
+pub trait TransformStage {
+    fn query_transform_properties(&self) -> TransformProperties;
 }

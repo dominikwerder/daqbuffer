@@ -1410,7 +1410,7 @@ impl Iterator for PreBinnedPatchIterator {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct BinnedGridSpec {
     bin_t_len: u64,
 }
@@ -1447,7 +1447,7 @@ impl fmt::Debug for BinnedGridSpec {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BinnedRange {
     grid_spec: BinnedGridSpec,
     offset: u64,

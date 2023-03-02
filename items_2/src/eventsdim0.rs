@@ -6,6 +6,7 @@ use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
 use crate::TimeBinner;
 use err::Error;
+use items_0::Appendable;
 use items_0::scalar_ops::ScalarOps;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
@@ -1150,6 +1151,15 @@ impl<NTY: ScalarOps> items_0::collect_c::CollectableWithDefault for EventsDim0<N
 impl<NTY: ScalarOps> items_0::collect_c::Collectable for EventsDim0<NTY> {
     fn new_collector(&self) -> Box<dyn items_0::collect_c::Collector> {
         Box::new(EventsDim0Collector::<NTY>::new())
+    }
+}
+
+impl<STY> Appendable<STY> for EventsDim0<STY>
+where
+    STY: ScalarOps,
+{
+    fn push(&mut self, ts: u64, pulse: u64, value: STY) {
+        Self::push(self, ts, pulse, value)
     }
 }
 

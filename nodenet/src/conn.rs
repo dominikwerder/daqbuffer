@@ -108,6 +108,11 @@ async fn make_channel_events_stream(
         let scalar_type = f.scalar_type;
         let shape = f.shape;
         let do_test_stream_error = false;
+        let with_values = if let AggKind::PulseIdDiff = evq.agg_kind_value() {
+            false
+        } else {
+            true
+        };
         debug!("Make EventsStreamScylla for {series} {scalar_type:?} {shape:?}");
         let stream = scyllaconn::events::EventsStreamScylla::new(
             series,
@@ -115,6 +120,7 @@ async fn make_channel_events_stream(
             do_one_before_range,
             scalar_type,
             shape,
+            with_values,
             scy,
             do_test_stream_error,
         );
