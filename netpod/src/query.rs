@@ -14,6 +14,8 @@ use crate::FromUrl;
 use crate::HasBackend;
 use crate::HasTimeout;
 use crate::NanoRange;
+use crate::PulseRange;
+use crate::SeriesRange;
 use crate::ToNanos;
 use chrono::DateTime;
 use chrono::TimeZone;
@@ -82,13 +84,133 @@ impl fmt::Display for CacheUsage {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct TimeRangeQuery {
+    range: NanoRange,
+}
+
+impl FromUrl for TimeRangeQuery {
+    fn from_url(url: &Url) -> Result<Self, Error> {
+        let pairs = get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+        if let (Some(beg), Some(end)) = (pairs.get("begDate"), pairs.get("endDate")) {
+            let ret = Self {
+                range: NanoRange {
+                    beg: beg.parse::<DateTime<Utc>>()?.to_nanos(),
+                    end: end.parse::<DateTime<Utc>>()?.to_nanos(),
+                },
+            };
+            Ok(ret)
+        } else if let (Some(beg), Some(end)) = (pairs.get("begNs"), pairs.get("endNs")) {
+            let ret = Self {
+                range: NanoRange {
+                    beg: beg.parse()?,
+                    end: end.parse()?,
+                },
+            };
+            Ok(ret)
+        } else {
+            Err(Error::with_public_msg("missing date range"))
+        }
+    }
+}
+
+impl AppendToUrl for TimeRangeQuery {
+    fn append_to_url(&self, url: &mut Url) {
+        let date_fmt = "%Y-%m-%dT%H:%M:%S.%6fZ";
+        let mut g = url.query_pairs_mut();
+        g.append_pair(
+            "begDate",
+            &Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt).to_string(),
+        );
+        g.append_pair(
+            "endDate",
+            &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
+        );
+    }
+}
+
+impl From<TimeRangeQuery> for NanoRange {
+    fn from(k: TimeRangeQuery) -> Self {
+        Self {
+            beg: k.range.beg,
+            end: k.range.end,
+        }
+    }
+}
+
+impl From<&NanoRange> for TimeRangeQuery {
+    fn from(k: &NanoRange) -> Self {
+        Self {
+            range: NanoRange { beg: k.beg, end: k.end },
+        }
+    }
+}
+
+impl From<&PulseRange> for PulseRangeQuery {
+    fn from(k: &PulseRange) -> Self {
+        Self {
+            range: PulseRange { beg: k.beg, end: k.end },
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PulseRangeQuery {
+    range: PulseRange,
+}
+
+impl FromUrl for PulseRangeQuery {
+    fn from_url(url: &Url) -> Result<Self, Error> {
+        let pairs = get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+        if let (Some(beg), Some(end)) = (pairs.get("begPulse"), pairs.get("endPulse")) {
+            let ret = Self {
+                range: PulseRange {
+                    beg: beg.parse()?,
+                    end: end.parse()?,
+                },
+            };
+            Ok(ret)
+        } else {
+            Err(Error::with_public_msg("missing pulse range"))
+        }
+    }
+}
+
+impl AppendToUrl for PulseRangeQuery {
+    fn append_to_url(&self, url: &mut Url) {
+        let mut g = url.query_pairs_mut();
+        g.append_pair("begPulse", &self.range.beg.to_string());
+        g.append_pair("endPulse", &self.range.end.to_string());
+    }
+}
+
+impl From<PulseRangeQuery> for PulseRange {
+    fn from(k: PulseRangeQuery) -> Self {
+        Self {
+            beg: k.range.beg,
+            end: k.range.end,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlainEventsQuery {
     channel: Channel,
-    range: NanoRange,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    agg_kind: Option<AggKind>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    transform: Option<Transform>,
+    range: SeriesRange,
+    #[serde(default, skip_serializing_if = "is_false", rename = "oneBeforeRange")]
+    one_before_range: bool,
+    #[serde(
+        default = "Transform::default_events",
+        skip_serializing_if = "Transform::is_default_events"
+    )]
+    transform: Transform,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "humantime_serde")]
     timeout: Option<Duration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -106,20 +228,17 @@ pub struct PlainEventsQuery {
 }
 
 impl PlainEventsQuery {
-    pub fn new(
-        channel: Channel,
-        range: NanoRange,
-        agg_kind: Option<AggKind>,
-        timeout: Option<Duration>,
-        events_max: Option<u64>,
-    ) -> Self {
+    pub fn new<R>(channel: Channel, range: R) -> Self
+    where
+        R: Into<SeriesRange>,
+    {
         Self {
             channel,
-            range,
-            agg_kind,
-            transform: None,
-            timeout,
-            events_max,
+            range: range.into(),
+            one_before_range: false,
+            transform: Transform::default_events(),
+            timeout: Some(Duration::from_millis(4000)),
+            events_max: Some(10000),
             event_delay: None,
             stream_batch_len: None,
             buf_len_disk_io: None,
@@ -132,23 +251,16 @@ impl PlainEventsQuery {
         &self.channel
     }
 
-    pub fn range(&self) -> &NanoRange {
+    pub fn range(&self) -> &SeriesRange {
         &self.range
     }
 
-    pub fn agg_kind(&self) -> &Option<AggKind> {
-        &self.agg_kind
-    }
-
-    pub fn agg_kind_value(&self) -> AggKind {
-        self.agg_kind.as_ref().map_or(AggKind::Plain, |x| x.clone())
-    }
-
     pub fn one_before_range(&self) -> bool {
-        match &self.agg_kind {
-            Some(k) => k.need_expand(),
-            None => false,
-        }
+        self.one_before_range
+    }
+
+    pub fn transform(&self) -> &Transform {
+        &self.transform
     }
 
     pub fn buf_len_disk_io(&self) -> usize {
@@ -206,17 +318,19 @@ impl FromUrl for PlainEventsQuery {
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &std::collections::BTreeMap<String, String>) -> Result<Self, Error> {
-        let beg_date = pairs.get("begDate").ok_or(Error::with_public_msg("missing begDate"))?;
-        let end_date = pairs.get("endDate").ok_or(Error::with_public_msg("missing endDate"))?;
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+        let range = if let Ok(x) = TimeRangeQuery::from_pairs(pairs) {
+            SeriesRange::TimeRange(x.into())
+        } else if let Ok(x) = PulseRangeQuery::from_pairs(pairs) {
+            SeriesRange::PulseRange(x.into())
+        } else {
+            return Err(Error::with_msg_no_trace("no series range in url"));
+        };
         let ret = Self {
             channel: Channel::from_pairs(pairs)?,
-            range: NanoRange {
-                beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
-                end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
-            },
-            agg_kind: agg_kind_from_binning_scheme(pairs)?,
-            transform: Some(Transform::from_pairs(pairs)?),
+            range,
+            one_before_range: pairs.get("oneBeforeRange").map_or("false", |x| x.as_ref()) == "true",
+            transform: Transform::from_pairs(pairs)?,
             timeout: pairs
                 .get("timeout")
                 .map(|x| x.parse::<u64>().map(Duration::from_millis).ok())
@@ -250,23 +364,19 @@ impl FromUrl for PlainEventsQuery {
 
 impl AppendToUrl for PlainEventsQuery {
     fn append_to_url(&self, url: &mut Url) {
-        let date_fmt = "%Y-%m-%dT%H:%M:%S.%6fZ";
+        match &self.range {
+            SeriesRange::TimeRange(k) => TimeRangeQuery::from(k).append_to_url(url),
+            SeriesRange::PulseRange(_) => todo!(),
+        }
         self.channel.append_to_url(url);
-        if let Some(x) = &self.transform {
-            x.append_to_url(url);
+        {
+            let mut g = url.query_pairs_mut();
+            if self.one_before_range() {
+                g.append_pair("oneBeforeRange", "true");
+            }
         }
-        if let Some(x) = &self.agg_kind {
-            binning_scheme_append_to_url(x, url);
-        }
+        self.transform.append_to_url(url);
         let mut g = url.query_pairs_mut();
-        g.append_pair(
-            "begDate",
-            &Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt).to_string(),
-        );
-        g.append_pair(
-            "endDate",
-            &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
-        );
         if let Some(x) = &self.timeout {
             g.append_pair("timeout", &format!("{}", x.as_millis()));
         }
@@ -294,10 +404,13 @@ impl AppendToUrl for PlainEventsQuery {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BinnedQuery {
     channel: Channel,
-    range: NanoRange,
+    range: SeriesRange,
     bin_count: u32,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    agg_kind: Option<AggKind>,
+    #[serde(
+        default = "Transform::default_time_binned",
+        skip_serializing_if = "Transform::is_default_time_binned"
+    )]
+    transform: Transform,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cache_usage: Option<CacheUsage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -311,12 +424,12 @@ pub struct BinnedQuery {
 }
 
 impl BinnedQuery {
-    pub fn new(channel: Channel, range: NanoRange, bin_count: u32, agg_kind: Option<AggKind>) -> Self {
+    pub fn new(channel: Channel, range: SeriesRange, bin_count: u32) -> Self {
         Self {
             channel,
             range,
             bin_count,
-            agg_kind,
+            transform: Transform::default_time_binned(),
             cache_usage: None,
             bins_max: None,
             buf_len_disk_io: None,
@@ -325,7 +438,7 @@ impl BinnedQuery {
         }
     }
 
-    pub fn range(&self) -> &NanoRange {
+    pub fn range(&self) -> &SeriesRange {
         &self.range
     }
 
@@ -337,11 +450,8 @@ impl BinnedQuery {
         self.bin_count
     }
 
-    pub fn agg_kind(&self) -> AggKind {
-        match &self.agg_kind {
-            Some(x) => x.clone(),
-            None => AggKind::TimeWeightedScalar,
-        }
+    pub fn transform(&self) -> &Transform {
+        &self.transform
     }
 
     pub fn cache_usage(&self) -> CacheUsage {
@@ -421,20 +531,22 @@ impl FromUrl for BinnedQuery {
     }
 
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
-        let beg_date = pairs.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
-        let end_date = pairs.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
+        let range = if let Ok(x) = TimeRangeQuery::from_pairs(pairs) {
+            SeriesRange::TimeRange(x.into())
+        } else if let Ok(x) = PulseRangeQuery::from_pairs(pairs) {
+            SeriesRange::PulseRange(x.into())
+        } else {
+            return Err(Error::with_msg_no_trace("no series range in url"));
+        };
         let ret = Self {
             channel: Channel::from_pairs(&pairs)?,
-            range: NanoRange {
-                beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
-                end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
-            },
+            range,
             bin_count: pairs
                 .get("binCount")
                 .ok_or(Error::with_msg("missing binCount"))?
                 .parse()
                 .map_err(|e| Error::with_msg(format!("can not parse binCount {:?}", e)))?,
-            agg_kind: agg_kind_from_binning_scheme(&pairs)?,
+            transform: Transform::from_pairs(pairs)?,
             cache_usage: CacheUsage::from_pairs(&pairs)?,
             buf_len_disk_io: pairs
                 .get("bufLenDiskIo")
@@ -462,40 +574,31 @@ impl FromUrl for BinnedQuery {
 
 impl AppendToUrl for BinnedQuery {
     fn append_to_url(&self, url: &mut Url) {
-        let date_fmt = "%Y-%m-%dT%H:%M:%S.%6fZ";
+        match &self.range {
+            SeriesRange::TimeRange(k) => TimeRangeQuery::from(k).append_to_url(url),
+            SeriesRange::PulseRange(k) => PulseRangeQuery::from(k).append_to_url(url),
+        }
+        self.channel.append_to_url(url);
         {
-            self.channel.append_to_url(url);
             let mut g = url.query_pairs_mut();
-            if let Some(x) = &self.cache_usage {
-                g.append_pair("cacheUsage", &x.query_param_value());
-            }
-            g.append_pair(
-                "begDate",
-                &Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt).to_string(),
-            );
-            g.append_pair(
-                "endDate",
-                &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
-            );
             g.append_pair("binCount", &format!("{}", self.bin_count));
         }
-        if let Some(x) = &self.agg_kind {
-            binning_scheme_append_to_url(x, url);
+        self.transform.append_to_url(url);
+        let mut g = url.query_pairs_mut();
+        if let Some(x) = &self.cache_usage {
+            g.append_pair("cacheUsage", &x.query_param_value());
         }
-        {
-            let mut g = url.query_pairs_mut();
-            if let Some(x) = &self.timeout {
-                g.append_pair("timeout", &format!("{}", x.as_millis()));
-            }
-            if let Some(x) = self.bins_max {
-                g.append_pair("binsMax", &format!("{}", x));
-            }
-            if let Some(x) = self.buf_len_disk_io {
-                g.append_pair("bufLenDiskIo", &format!("{}", x));
-            }
-            if let Some(x) = &self.disk_stats_every {
-                g.append_pair("diskStatsEveryKb", &format!("{}", x.bytes() / 1024));
-            }
+        if let Some(x) = &self.timeout {
+            g.append_pair("timeout", &format!("{}", x.as_millis()));
+        }
+        if let Some(x) = self.bins_max {
+            g.append_pair("binsMax", &format!("{}", x));
+        }
+        if let Some(x) = self.buf_len_disk_io {
+            g.append_pair("bufLenDiskIo", &format!("{}", x));
+        }
+        if let Some(x) = &self.disk_stats_every {
+            g.append_pair("diskStatsEveryKb", &format!("{}", x.bytes() / 1024));
         }
     }
 }

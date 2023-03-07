@@ -13,6 +13,7 @@ use netpod::log::*;
 use netpod::query::CacheUsage;
 use netpod::query::PlainEventsQuery;
 use netpod::timeunits::*;
+use netpod::transform::Transform;
 use netpod::AggKind;
 use netpod::ChannelTyped;
 use netpod::PreBinnedPatchCoord;
@@ -33,7 +34,6 @@ pub async fn read_cached_scylla(
     series: u64,
     chn: &ChannelTyped,
     coord: &PreBinnedPatchCoord,
-    _agg_kind: AggKind,
     scy: &ScySession,
 ) -> Result<Option<Box<dyn TimeBinned>>, Error> {
     let vals = (
@@ -206,7 +206,8 @@ pub async fn fetch_uncached_data(
     series: u64,
     chn: ChannelTyped,
     coord: PreBinnedPatchCoord,
-    agg_kind: AggKind,
+    one_before_range: bool,
+    transform: Transform,
     cache_usage: CacheUsage,
     scy: Arc<ScySession>,
 ) -> Result<Option<(Box<dyn TimeBinned>, bool)>, Error> {
@@ -226,13 +227,16 @@ pub async fn fetch_uncached_data(
                 &chn,
                 coord.clone(),
                 range,
-                agg_kind,
+                one_before_range,
+                transform,
                 cache_usage.clone(),
                 scy.clone(),
             )
             .await
         }
-        Ok(None) => fetch_uncached_binned_events(series, &chn, coord.clone(), agg_kind, scy.clone()).await,
+        Ok(None) => {
+            fetch_uncached_binned_events(series, &chn, coord.clone(), one_before_range, transform, scy.clone()).await
+        }
         Err(e) => Err(e),
     }?;
     if true || complete {
@@ -265,7 +269,8 @@ pub fn fetch_uncached_data_box(
     series: u64,
     chn: &ChannelTyped,
     coord: &PreBinnedPatchCoord,
-    agg_kind: AggKind,
+    one_before_range: bool,
+    transform: Transform,
     cache_usage: CacheUsage,
     scy: Arc<ScySession>,
 ) -> Pin<Box<dyn Future<Output = Result<Option<(Box<dyn TimeBinned>, bool)>, Error>> + Send>> {
@@ -273,7 +278,8 @@ pub fn fetch_uncached_data_box(
         series,
         chn.clone(),
         coord.clone(),
-        agg_kind,
+        one_before_range,
+        transform,
         cache_usage,
         scy,
     ))
@@ -284,7 +290,8 @@ pub async fn fetch_uncached_higher_res_prebinned(
     chn: &ChannelTyped,
     coord: PreBinnedPatchCoord,
     range: PreBinnedPatchRange,
-    agg_kind: AggKind,
+    one_before_range: bool,
+    transform: Transform,
     cache_usage: CacheUsage,
     scy: Arc<ScySession>,
 ) -> Result<(Box<dyn TimeBinned>, bool), Error> {
@@ -292,7 +299,7 @@ pub async fn fetch_uncached_higher_res_prebinned(
     // TODO refine the AggKind scheme or introduce a new BinningOpts type and get time-weight from there.
     let do_time_weight = true;
     // We must produce some result with correct types even if upstream delivers nothing at all.
-    let bin0 = empty_binned_dyn_tb(&chn.scalar_type, &chn.shape, &agg_kind);
+    let bin0 = empty_binned_dyn_tb(&chn.scalar_type, &chn.shape, &transform);
     let mut time_binner = bin0.time_binner_new(edges.clone(), do_time_weight);
     let mut complete = true;
     let patch_it = PreBinnedPatchIterator::from_range(range.clone());
@@ -304,7 +311,8 @@ pub async fn fetch_uncached_higher_res_prebinned(
             series,
             chn,
             &patch_coord,
-            agg_kind.clone(),
+            one_before_range,
+            transform.clone(),
             cache_usage.clone(),
             scy.clone(),
         )
@@ -358,7 +366,8 @@ pub async fn fetch_uncached_binned_events(
     series: u64,
     chn: &ChannelTyped,
     coord: PreBinnedPatchCoord,
-    agg_kind: AggKind,
+    one_before_range: bool,
+    transform: Transform,
     scy: Arc<ScySession>,
 ) -> Result<(Box<dyn TimeBinned>, bool), Error> {
     let edges = coord.edges();
@@ -367,7 +376,7 @@ pub async fn fetch_uncached_binned_events(
     // We must produce some result with correct types even if upstream delivers nothing at all.
     //let bin0 = empty_events_dyn_tb(&chn.scalar_type, &chn.shape, &agg_kind);
     //let mut time_binner = bin0.time_binner_new(edges.clone(), do_time_weight);
-    let mut time_binner = empty_events_dyn_ev(&chn.scalar_type, &chn.shape, &agg_kind)?
+    let mut time_binner = empty_events_dyn_ev(&chn.scalar_type, &chn.shape, &transform)?
         .as_time_binnable()
         .time_binner_new(edges.clone(), do_time_weight);
     // TODO handle deadline better
@@ -376,19 +385,11 @@ pub async fn fetch_uncached_binned_events(
     let deadline = deadline
         .checked_add(Duration::from_millis(6000))
         .ok_or_else(|| Error::with_msg_no_trace(format!("deadline overflow")))?;
-    let do_one_before_range = agg_kind.need_expand();
-    let evq = PlainEventsQuery::new(
-        chn.channel.clone(),
-        coord.patch_range(),
-        Some(agg_kind),
-        // TODO take from query
-        Some(Duration::from_millis(8000)),
-        None,
-    );
+    let evq = PlainEventsQuery::new(chn.channel.clone(), coord.patch_range());
     let mut events_dyn = EventsStreamScylla::new(
         series,
         evq.range().clone(),
-        do_one_before_range,
+        one_before_range,
         chn.scalar_type.clone(),
         chn.shape.clone(),
         true,
@@ -466,22 +467,20 @@ pub async fn pre_binned_value_stream_with_scy(
     series: u64,
     chn: &ChannelTyped,
     coord: &PreBinnedPatchCoord,
-    agg_kind: AggKind,
+    one_before_range: bool,
+    transform: Transform,
     cache_usage: CacheUsage,
     scy: Arc<ScySession>,
 ) -> Result<(Box<dyn TimeBinned>, bool), Error> {
     trace!("pre_binned_value_stream_with_scy  {chn:?}  {coord:?}");
-    if let (Some(item), CacheUsage::Use) = (
-        read_cached_scylla(series, chn, coord, agg_kind.clone(), &scy).await?,
-        &cache_usage,
-    ) {
+    if let (Some(item), CacheUsage::Use) = (read_cached_scylla(series, chn, coord, &scy).await?, &cache_usage) {
         info!("+++++++++++++    GOOD READ");
         Ok((item, true))
     } else {
         if let CacheUsage::Use = &cache_usage {
             warn!("--+--+--+--+--+--+   NOT YET CACHED");
         }
-        let res = fetch_uncached_data_box(series, chn, coord, agg_kind, cache_usage, scy).await?;
+        let res = fetch_uncached_data_box(series, chn, coord, one_before_range, transform, cache_usage, scy).await?;
         let (bin, complete) =
             res.ok_or_else(|| Error::with_msg_no_trace(format!("pre_binned_value_stream_with_scy got None bin")))?;
         Ok((bin, complete))
@@ -497,7 +496,8 @@ pub async fn pre_binned_value_stream(
     scy: Arc<ScySession>,
 ) -> Result<Pin<Box<dyn Stream<Item = Result<Box<dyn TimeBinned>, Error>> + Send>>, Error> {
     trace!("pre_binned_value_stream  series {series}  {chn:?}  {coord:?}");
-    let res = pre_binned_value_stream_with_scy(series, chn, coord, agg_kind, cache_usage, scy).await?;
+    let res =
+        pre_binned_value_stream_with_scy(series, chn, coord, one_before_range, transform, cache_usage, scy).await?;
     error!("TODO pre_binned_value_stream");
     err::todo();
     Ok(Box::pin(futures_util::stream::iter([Ok(res.0)])))

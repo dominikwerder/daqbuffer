@@ -1,16 +1,14 @@
 use crate::get_url_query_pairs;
 use crate::log::*;
 use crate::AppendToUrl;
-use crate::BinnedRange;
 use crate::FromUrl;
-use crate::NanoRange;
 use err::Error;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use url::Url;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum EventTransform {
     EventBlobsVerbatim,
     EventBlobsUncompressed,
@@ -20,14 +18,14 @@ pub enum EventTransform {
     PulseIdDiff,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum TimeBinningTransform {
     None,
-    TimeWeighted(BinnedRange),
-    Unweighted(BinnedRange),
+    TimeWeighted,
+    Unweighted,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Transform {
     event: EventTransform,
     time_binning: TimeBinningTransform,
@@ -36,6 +34,28 @@ pub struct Transform {
 impl Transform {
     fn url_prefix() -> &'static str {
         "transform"
+    }
+
+    pub fn default_events() -> Self {
+        Self {
+            event: EventTransform::ValueFull,
+            time_binning: TimeBinningTransform::None,
+        }
+    }
+
+    pub fn default_time_binned() -> Self {
+        Self {
+            event: EventTransform::MinMaxAvgDev,
+            time_binning: TimeBinningTransform::TimeWeighted,
+        }
+    }
+
+    pub fn is_default_events(&self) -> bool {
+        self == &Self::default_events()
+    }
+
+    pub fn is_default_time_binned(&self) -> bool {
+        self == &Self::default_time_binned()
     }
 }
 
@@ -62,13 +82,7 @@ impl FromUrl for Transform {
             } else if s == "timeWeightedScalar" {
                 Transform {
                     event: EventTransform::MinMaxAvgDev,
-                    time_binning: TimeBinningTransform::TimeWeighted(BinnedRange::covering_range(
-                        NanoRange {
-                            beg: 20000000000,
-                            end: 30000000000,
-                        },
-                        20,
-                    )?),
+                    time_binning: TimeBinningTransform::TimeWeighted,
                 }
             } else if s == "unweightedScalar" {
                 Transform {

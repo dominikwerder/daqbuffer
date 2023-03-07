@@ -1,4 +1,5 @@
 use crate::errconv::ErrConv;
+use crate::ScyllaSeriesRange;
 use err::Error;
 use futures_util::Future;
 use futures_util::FutureExt;
@@ -12,7 +13,6 @@ use items_2::channelevents::ChannelEvents;
 use items_2::eventsdim0::EventsDim0;
 use items_2::eventsdim1::EventsDim1;
 use netpod::log::*;
-use netpod::NanoRange;
 use netpod::ScalarType;
 use netpod::Shape;
 use scylla::Session as ScySession;
@@ -25,7 +25,7 @@ use std::task::Poll;
 
 async fn find_ts_msp(
     series: u64,
-    range: NanoRange,
+    range: ScyllaSeriesRange,
     scy: Arc<ScySession>,
 ) -> Result<(VecDeque<u64>, VecDeque<u64>), Error> {
     trace!("find_ts_msp  series {}  {:?}", series, range);
@@ -131,7 +131,7 @@ impl_scaty_array!(Vec<bool>, bool, Vec<bool>, "events_array_bool");
 struct ReadNextValuesOpts {
     series: u64,
     ts_msp: u64,
-    range: NanoRange,
+    range: ScyllaSeriesRange,
     fwd: bool,
     with_values: bool,
     scy: Arc<ScySession>,
@@ -277,7 +277,7 @@ struct ReadValues {
     series: u64,
     scalar_type: ScalarType,
     shape: Shape,
-    range: NanoRange,
+    range: ScyllaSeriesRange,
     ts_msps: VecDeque<u64>,
     fwd: bool,
     with_values: bool,
@@ -291,7 +291,7 @@ impl ReadValues {
         series: u64,
         scalar_type: ScalarType,
         shape: Shape,
-        range: NanoRange,
+        range: ScyllaSeriesRange,
         ts_msps: VecDeque<u64>,
         fwd: bool,
         with_values: bool,
@@ -397,7 +397,7 @@ pub struct EventsStreamScylla {
     series: u64,
     scalar_type: ScalarType,
     shape: Shape,
-    range: NanoRange,
+    range: ScyllaSeriesRange,
     do_one_before_range: bool,
     ts_msp_bck: VecDeque<u64>,
     ts_msp_fwd: VecDeque<u64>,
@@ -411,7 +411,7 @@ pub struct EventsStreamScylla {
 impl EventsStreamScylla {
     pub fn new(
         series: u64,
-        range: NanoRange,
+        range: ScyllaSeriesRange,
         do_one_before_range: bool,
         scalar_type: ScalarType,
         shape: Shape,

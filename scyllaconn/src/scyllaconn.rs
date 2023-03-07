@@ -11,6 +11,12 @@ use scylla::statement::Consistency;
 use scylla::Session as ScySession;
 use std::sync::Arc;
 
+#[derive(Debug, Clone)]
+pub struct ScyllaSeriesRange {
+    beg: u64,
+    end: u64,
+}
+
 pub async fn create_scy_session(scyconf: &ScyllaConfig) -> Result<Arc<ScySession>, Error> {
     let scy = scylla::SessionBuilder::new()
         .known_nodes(&scyconf.hosts)

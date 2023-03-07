@@ -35,6 +35,7 @@ use items_0::TimeBinnable;
 use items_0::TimeBinner;
 use netpod::log::*;
 use netpod::timeunits::*;
+use netpod::transform::Transform;
 use netpod::AggKind;
 use netpod::BinnedRange;
 use netpod::NanoRange;
@@ -225,11 +226,11 @@ pub trait TimeBinnableTypeAggregator: Send {
 pub fn empty_events_dyn_ev(
     scalar_type: &ScalarType,
     shape: &Shape,
-    agg_kind: &AggKind,
+    transform: &Transform,
 ) -> Result<Box<dyn Events>, Error> {
     let ret: Box<dyn Events> = match shape {
-        Shape::Scalar => match agg_kind {
-            AggKind::Plain | AggKind::TimeWeightedScalar => {
+        Shape::Scalar => match transform {
+            _ if true => {
                 use ScalarType::*;
                 type K<T> = eventsdim0::EventsDim0<T>;
                 match scalar_type {
@@ -247,14 +248,14 @@ pub fn empty_events_dyn_ev(
                     STRING => Box::new(K::<String>::empty()),
                 }
             }
-            AggKind::PulseIdDiff => Box::new(eventsdim0::EventsDim0::<i64>::empty()),
-            AggKind::DimXBins1 | AggKind::DimXBinsN(..) | AggKind::EventBlobs => {
-                error!("TODO empty_events_dyn_ev {agg_kind:?} {scalar_type:?} {shape:?}");
+            _ if true => Box::new(eventsdim0::EventsDim0::<i64>::empty()),
+            _ => {
+                error!("TODO empty_events_dyn_ev {transform:?} {scalar_type:?} {shape:?}");
                 err::todoval()
             }
         },
-        Shape::Wave(..) => match agg_kind {
-            AggKind::Plain | AggKind::TimeWeightedScalar => {
+        Shape::Wave(..) => match transform {
+            _ if true => {
                 use ScalarType::*;
                 type K<T> = eventsdim1::EventsDim1<T>;
                 match scalar_type {
@@ -272,87 +273,23 @@ pub fn empty_events_dyn_ev(
                     STRING => Box::new(K::<String>::empty()),
                 }
             }
-            AggKind::PulseIdDiff => Box::new(eventsdim0::EventsDim0::<i64>::empty()),
-            AggKind::DimXBins1 | AggKind::DimXBinsN(..) | AggKind::EventBlobs => {
-                error!("TODO empty_events_dyn_ev {agg_kind:?} {scalar_type:?} {shape:?}");
+            _ if true => Box::new(eventsdim0::EventsDim0::<i64>::empty()),
+            _ => {
+                error!("TODO empty_events_dyn_ev {transform:?} {scalar_type:?} {shape:?}");
                 err::todoval()
             }
         },
         Shape::Image(..) => {
-            error!("TODO empty_events_dyn_ev {agg_kind:?} {scalar_type:?} {shape:?}");
+            error!("TODO empty_events_dyn_ev {transform:?} {scalar_type:?} {shape:?}");
             err::todoval()
         }
     };
     Ok(ret)
 }
 
-pub fn empty_binned_dyn_tb(scalar_type: &ScalarType, shape: &Shape, agg_kind: &AggKind) -> Box<dyn TimeBinnable> {
-    match shape {
-        Shape::Scalar => match agg_kind {
-            AggKind::TimeWeightedScalar => {
-                use ScalarType::*;
-                type K<T> = binsdim0::BinsDim0<T>;
-                match scalar_type {
-                    U8 => Box::new(K::<u8>::empty()),
-                    U16 => Box::new(K::<u16>::empty()),
-                    U32 => Box::new(K::<u32>::empty()),
-                    U64 => Box::new(K::<u64>::empty()),
-                    I8 => Box::new(K::<i8>::empty()),
-                    I16 => Box::new(K::<i16>::empty()),
-                    I32 => Box::new(K::<i32>::empty()),
-                    I64 => Box::new(K::<i64>::empty()),
-                    F32 => Box::new(K::<f32>::empty()),
-                    F64 => Box::new(K::<f64>::empty()),
-                    BOOL | STRING => {
-                        error!("TODO empty_binned_dyn_tb {agg_kind:?} {scalar_type:?} {shape:?}");
-                        err::todoval()
-                    }
-                }
-            }
-            AggKind::Plain
-            | AggKind::DimXBins1
-            | AggKind::DimXBinsN(..)
-            | AggKind::EventBlobs
-            | AggKind::PulseIdDiff => {
-                error!("TODO empty_binned_dyn_tb {agg_kind:?} {scalar_type:?} {shape:?}");
-                err::todoval()
-            }
-        },
-        Shape::Wave(_n) => match agg_kind {
-            AggKind::DimXBins1 => {
-                use ScalarType::*;
-                type K<T> = binsdim0::BinsDim0<T>;
-                match scalar_type {
-                    U8 => Box::new(K::<u8>::empty()),
-                    U16 => Box::new(K::<u16>::empty()),
-                    U32 => Box::new(K::<u32>::empty()),
-                    U64 => Box::new(K::<u64>::empty()),
-                    I8 => Box::new(K::<i8>::empty()),
-                    I16 => Box::new(K::<i16>::empty()),
-                    I32 => Box::new(K::<i32>::empty()),
-                    I64 => Box::new(K::<i64>::empty()),
-                    F32 => Box::new(K::<f32>::empty()),
-                    F64 => Box::new(K::<f64>::empty()),
-                    BOOL | STRING => {
-                        error!("TODO empty_binned_dyn_tb {agg_kind:?} {scalar_type:?} {shape:?}");
-                        err::todoval()
-                    }
-                }
-            }
-            AggKind::EventBlobs
-            | AggKind::DimXBinsN(..)
-            | AggKind::Plain
-            | AggKind::TimeWeightedScalar
-            | AggKind::PulseIdDiff => {
-                error!("TODO empty_binned_dyn_tb {agg_kind:?} {scalar_type:?} {shape:?}");
-                err::todoval()
-            }
-        },
-        Shape::Image(..) => {
-            error!("TODO empty_binned_dyn_tb {agg_kind:?} {scalar_type:?} {shape:?}");
-            err::todoval()
-        }
-    }
+pub fn empty_binned_dyn_tb(scalar_type: &ScalarType, shape: &Shape, transform: &Transform) -> Box<dyn TimeBinnable> {
+    error!("TODO empty_binned_dyn_tb");
+    todo!()
 }
 
 fn flush_binned(
@@ -399,6 +336,7 @@ pub async fn binned_collected(
     inp: Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>,
 ) -> Result<Box<dyn ToJsonResult>, Error> {
     event!(Level::TRACE, "binned_collected");
+    let transform = Transform::default_time_binned();
     let edges = binrange.edges();
     if edges.len() < 2 {
         return Err(format!("binned_collected  but edges.len() {}", edges.len()).into());
@@ -414,7 +352,7 @@ pub async fn binned_collected(
     let mut did_range_complete = false;
     let mut coll = None;
     let mut binner = None;
-    let empty_item = empty_events_dyn_ev(&scalar_type, &shape, &AggKind::TimeWeightedScalar)?;
+    let empty_item = empty_events_dyn_ev(&scalar_type, &shape, &transform)?;
     let tmp_item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(ChannelEvents::Events(
         empty_item,
     ))));
@@ -502,7 +440,7 @@ pub async fn binned_collected(
         }
         None => {
             error!("binned_collected nothing collected");
-            let item = empty_binned_dyn_tb(&scalar_type, &shape, &AggKind::DimXBins1);
+            let item = empty_binned_dyn_tb(&scalar_type, &shape, &transform);
             let ret = item.to_box_to_json_result();
             tokio::time::sleep(Duration::from_millis(2000)).await;
             Ok(ret)
