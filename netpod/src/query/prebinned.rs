@@ -1,13 +1,12 @@
 use super::agg_kind_from_binning_scheme;
 use super::binning_scheme_append_to_url;
 use super::CacheUsage;
-use crate::timeunits::SEC;
 use crate::AggKind;
 use crate::AppendToUrl;
 use crate::ByteSize;
 use crate::Channel;
 use crate::FromUrl;
-use crate::PreBinnedPatchCoord;
+use crate::PreBinnedPatchCoordEnum;
 use crate::ScalarType;
 use crate::Shape;
 use err::Error;
@@ -16,7 +15,7 @@ use url::Url;
 
 #[derive(Clone, Debug)]
 pub struct PreBinnedQuery {
-    patch: PreBinnedPatchCoord,
+    patch: PreBinnedPatchCoordEnum,
     channel: Channel,
     scalar_type: ScalarType,
     shape: Shape,
@@ -28,7 +27,7 @@ pub struct PreBinnedQuery {
 
 impl PreBinnedQuery {
     pub fn new(
-        patch: PreBinnedPatchCoord,
+        patch: PreBinnedPatchCoordEnum,
         channel: Channel,
         scalar_type: ScalarType,
         shape: Shape,
@@ -55,18 +54,6 @@ impl PreBinnedQuery {
             pairs.insert(j.to_string(), k.to_string());
         }
         let pairs = pairs;
-        let bin_t_len: u64 = pairs
-            .get("binTlen")
-            .ok_or_else(|| Error::with_msg("missing binTlen"))?
-            .parse()?;
-        let patch_t_len: u64 = pairs
-            .get("patchTlen")
-            .ok_or_else(|| Error::with_msg("missing patchTlen"))?
-            .parse()?;
-        let patch_ix = pairs
-            .get("patchIx")
-            .ok_or_else(|| Error::with_msg("missing patchIx"))?
-            .parse()?;
         let scalar_type = pairs
             .get("scalarType")
             .ok_or_else(|| Error::with_msg("missing scalarType"))
@@ -76,7 +63,7 @@ impl PreBinnedQuery {
             .ok_or_else(|| Error::with_msg("missing shape"))
             .map(|x| Shape::from_url_str(&x))??;
         let ret = Self {
-            patch: PreBinnedPatchCoord::new(bin_t_len * SEC, patch_t_len * SEC, patch_ix),
+            patch: PreBinnedPatchCoordEnum::from_pairs(&pairs)?,
             channel: Channel::from_pairs(&pairs)?,
             scalar_type,
             shape,
@@ -94,7 +81,7 @@ impl PreBinnedQuery {
         Ok(ret)
     }
 
-    pub fn patch(&self) -> &PreBinnedPatchCoord {
+    pub fn patch(&self) -> &PreBinnedPatchCoordEnum {
         &self.patch
     }
 
