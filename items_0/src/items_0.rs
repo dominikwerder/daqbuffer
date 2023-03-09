@@ -15,6 +15,7 @@ use collect_c::CollectableWithDefault;
 use collect_s::Collectable;
 use collect_s::ToJsonResult;
 use netpod::BinnedRangeEnum;
+use netpod::Dim0Kind;
 use netpod::NanoRange;
 use netpod::ScalarType;
 use netpod::SeriesRange;
@@ -59,7 +60,7 @@ pub trait EmptyForShape {
 }
 
 pub trait Empty {
-    fn empty() -> Self;
+    fn empty(dim0kind: Dim0Kind) -> Self;
 }
 
 pub trait Appendable<STY>: Empty + WithLen {

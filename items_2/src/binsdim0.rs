@@ -21,12 +21,13 @@ use items_0::TimeBinned;
 use items_0::TimeBinner;
 use items_0::TimeBins;
 use items_0::WithLen;
-use netpod::SeriesRange;
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
+use netpod::Dim0Kind;
 use netpod::NanoRange;
+use netpod::SeriesRange;
 use num_traits::Zero;
 use serde::Deserialize;
 use serde::Serialize;
@@ -50,6 +51,7 @@ pub struct BinsDim0<NTY> {
     pub mins: VecDeque<NTY>,
     pub maxs: VecDeque<NTY>,
     pub avgs: VecDeque<f32>,
+    pub dim0kind: Dim0Kind,
 }
 
 impl<NTY> fmt::Debug for BinsDim0<NTY>
@@ -163,7 +165,7 @@ where
 }
 
 impl<NTY> Empty for BinsDim0<NTY> {
-    fn empty() -> Self {
+    fn empty(dim0kind: Dim0Kind) -> Self {
         Self {
             ts1s: VecDeque::new(),
             ts2s: VecDeque::new(),
@@ -171,6 +173,7 @@ impl<NTY> Empty for BinsDim0<NTY> {
             mins: VecDeque::new(),
             maxs: VecDeque::new(),
             avgs: VecDeque::new(),
+            dim0kind,
         }
     }
 }
@@ -190,7 +193,8 @@ impl<NTY> RangeOverlapInfo for BinsDim0<NTY> {
                 true
             }
         } else if range.is_pulse() {
-            if let Some(&max) = self.pulses.back() {
+            // TODO for the time being, the ts represent either ts or pulse
+            if let Some(&max) = self.ts2s.back() {
                 max <= range.beg_u64()
             } else {
                 true
@@ -209,7 +213,7 @@ impl<NTY> RangeOverlapInfo for BinsDim0<NTY> {
                 true
             }
         } else if range.is_pulse() {
-            if let Some(&max) = self.pulses.back() {
+            if let Some(&max) = self.ts2s.back() {
                 max > range.end_u64()
             } else {
                 true
@@ -228,7 +232,7 @@ impl<NTY> RangeOverlapInfo for BinsDim0<NTY> {
                 true
             }
         } else if range.is_pulse() {
-            if let Some(&min) = self.pulses.front() {
+            if let Some(&min) = self.ts1s.front() {
                 min >= range.end_u64()
             } else {
                 true
@@ -391,9 +395,9 @@ impl<NTY: ScalarOps> ToJsonResult for BinsDim0CollectedResult<NTY> {
 
 #[derive(Debug)]
 pub struct BinsDim0Collector<NTY> {
+    vals: Option<BinsDim0<NTY>>,
     timed_out: bool,
     range_final: bool,
-    vals: BinsDim0<NTY>,
 }
 
 impl<NTY> BinsDim0Collector<NTY> {
@@ -401,7 +405,7 @@ impl<NTY> BinsDim0Collector<NTY> {
         Self {
             timed_out: false,
             range_final: false,
-            vals: BinsDim0::<NTY>::empty(),
+            vals: None,
         }
     }
 }

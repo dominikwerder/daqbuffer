@@ -770,6 +770,13 @@ pub enum SeriesRange {
 }
 
 impl SeriesRange {
+    pub fn dim0kind(&self) -> Dim0Kind {
+        match self {
+            SeriesRange::TimeRange(_) => Dim0Kind::Time,
+            SeriesRange::PulseRange(_) => Dim0Kind::Pulse,
+        }
+    }
+
     pub fn is_time(&self) -> bool {
         match self {
             SeriesRange::TimeRange(_) => true,
@@ -1146,6 +1153,12 @@ pub mod timeunits {
     pub const MIN: u64 = SEC * 60;
     pub const HOUR: u64 = MIN * 60;
     pub const DAY: u64 = HOUR * 24;
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Dim0Kind {
+    Time,
+    Pulse,
 }
 
 pub trait Dim0Index: Clone + fmt::Debug + PartialOrd {
@@ -1677,6 +1690,13 @@ impl BinnedRangeEnum {
 
     pub fn range_at(&self, i: usize) -> Option<SeriesRange> {
         err::todoval()
+    }
+
+    pub fn dim0kind(&self) -> Dim0Kind {
+        match self {
+            BinnedRangeEnum::Time(_) => Dim0Kind::Time,
+            BinnedRangeEnum::Pulse(_) => Dim0Kind::Pulse,
+        }
     }
 }
 
