@@ -11,6 +11,7 @@ use items_0::Empty;
 use items_0::WithLen;
 use netpod::log::*;
 use netpod::BinnedRange;
+use netpod::BinnedRangeEnum;
 use netpod::NanoRange;
 use serde::Deserialize;
 use serde::Serialize;
@@ -447,7 +448,7 @@ where
         self.timed_out = true;
     }
 
-    fn result(&mut self, range: Option<NanoRange>, _binrange: Option<BinnedRange>) -> Result<Self::Output, Error> {
+    fn result(&mut self, range: Option<NanoRange>, _binrange: Option<BinnedRangeEnum>) -> Result<Self::Output, Error> {
         use std::mem::replace;
         let continue_at = if self.timed_out {
             if let Some(ts) = self.vals.tss.back() {
@@ -521,7 +522,7 @@ where
     fn result(
         &mut self,
         _range: Option<NanoRange>,
-        _binrange: Option<BinnedRange>,
+        _binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, Error> {
         todo!()
     }

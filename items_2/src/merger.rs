@@ -409,3 +409,9 @@ where
         }
     }
 }
+
+impl<T> items_0::Transformer for Merger<T> {
+    fn query_transform_properties(&self) -> items_0::TransformProperties {
+        todo!()
+    }
+}

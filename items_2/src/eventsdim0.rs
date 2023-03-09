@@ -1,25 +1,27 @@
 use crate::binsdim0::BinsDim0;
 use crate::IsoDateTime;
 use crate::RangeOverlapInfo;
-use crate::TimeBinnable;
 use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
-use crate::TimeBinner;
 use err::Error;
-use items_0::Appendable;
 use items_0::scalar_ops::ScalarOps;
+use items_0::Appendable;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use items_0::Empty;
 use items_0::Events;
 use items_0::EventsNonObj;
+use items_0::TimeBinnable;
+use items_0::TimeBinner;
 use items_0::WithLen;
 use netpod::log::*;
 use netpod::timeunits::SEC;
-use netpod::BinnedRange;
+use netpod::BinnedRangeEnum;
 use netpod::NanoRange;
+use netpod::SeriesRange;
 use serde::Deserialize;
 use serde::Serialize;
+use std::any;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
@@ -124,26 +126,59 @@ impl<NTY> WithLen for EventsDim0<NTY> {
 }
 
 impl<NTY: ScalarOps> RangeOverlapInfo for EventsDim0<NTY> {
-    fn ends_before(&self, range: NanoRange) -> bool {
-        if let Some(&max) = self.tss.back() {
-            max < range.beg
+    fn ends_before(&self, range: &SeriesRange) -> bool {
+        if range.is_time() {
+            if let Some(&max) = self.tss.back() {
+                max < range.beg_u64()
+            } else {
+                true
+            }
+        } else if range.is_pulse() {
+            if let Some(&max) = self.pulses.back() {
+                max < range.beg_u64()
+            } else {
+                true
+            }
         } else {
+            error!("unexpected");
             true
         }
     }
 
-    fn ends_after(&self, range: NanoRange) -> bool {
-        if let Some(&max) = self.tss.back() {
-            max >= range.end
+    fn ends_after(&self, range: &SeriesRange) -> bool {
+        if range.is_time() {
+            if let Some(&max) = self.tss.back() {
+                max >= range.end_u64()
+            } else {
+                true
+            }
+        } else if range.is_pulse() {
+            if let Some(&max) = self.pulses.back() {
+                max >= range.end_u64()
+            } else {
+                true
+            }
         } else {
-            true
+            error!("unexpected");
+            false
         }
     }
 
-    fn starts_after(&self, range: NanoRange) -> bool {
-        if let Some(&min) = self.tss.front() {
-            min >= range.end
+    fn starts_after(&self, range: &SeriesRange) -> bool {
+        if range.is_time() {
+            if let Some(&min) = self.tss.front() {
+                min >= range.end_u64()
+            } else {
+                true
+            }
+        } else if range.is_pulse() {
+            if let Some(&min) = self.pulses.front() {
+                min >= range.end_u64()
+            } else {
+                true
+            }
         } else {
+            error!("unexpected");
             true
         }
     }
@@ -156,8 +191,8 @@ where
     type Output = BinsDim0<NTY>;
     type Aggregator = EventsDim0Aggregator<NTY>;
 
-    fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
-        let self_name = std::any::type_name::<Self>();
+    fn aggregator(range: SeriesRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+        let self_name = any::type_name::<Self>();
         debug!(
             "TimeBinnableType for {self_name}  aggregator()  range {:?}  x_bin_count {}  do_time_weight {}",
             range, x_bin_count, do_time_weight
@@ -334,7 +369,7 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
         self.timed_out = true;
     }
 
-    fn result(&mut self, range: Option<NanoRange>, _binrange: Option<BinnedRange>) -> Result<Self::Output, Error> {
+    fn result(&mut self, range: Option<NanoRange>, _binrange: Option<BinnedRangeEnum>) -> Result<Self::Output, Error> {
         // If we timed out, we want to hint the client from where to continue.
         // This is tricky: currently, client can not request a left-exclusive range.
         // We currently give the timestamp of the last event plus a small delta.
@@ -418,7 +453,7 @@ impl<NTY: ScalarOps> items_0::collect_c::Collector for EventsDim0Collector<NTY> 
     fn result(
         &mut self,
         range: Option<NanoRange>,
-        binrange: Option<BinnedRange>,
+        binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         match items_0::collect_s::CollectorType::result(self, range, binrange) {
             Ok(x) => Ok(Box::new(x)),
@@ -428,7 +463,7 @@ impl<NTY: ScalarOps> items_0::collect_c::Collector for EventsDim0Collector<NTY> 
 }
 
 pub struct EventsDim0Aggregator<NTY> {
-    range: NanoRange,
+    range: SeriesRange,
     count: u64,
     min: NTY,
     max: NTY,
@@ -455,10 +490,10 @@ impl<NTY> Drop for EventsDim0Aggregator<NTY> {
 }
 
 impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
-    pub fn new(range: NanoRange, do_time_weight: bool) -> Self {
-        let int_ts = range.beg;
+    pub fn new(binrange: SeriesRange, do_time_weight: bool) -> Self {
+        let int_ts = binrange.beg_u64();
         Self {
-            range,
+            range: binrange,
             count: 0,
             min: NTY::zero_b(),
             max: NTY::zero_b(),
@@ -511,15 +546,15 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
         }
     }
 
-    fn apply_event_time_weight(&mut self, ts: u64) {
+    fn apply_event_time_weight(&mut self, px: u64, pxbeg: u64) {
         if let Some(v) = &self.last_seen_val {
             let vf = v.as_prim_f32_b();
             let v2 = v.clone();
-            if ts > self.range.beg {
+            if px > pxbeg {
                 self.apply_min_max(v2);
             }
             let w = if self.do_time_weight {
-                (ts - self.int_ts) as f32 * 1e-9
+                (px - self.int_ts) as f32 * 1e-9
             } else {
                 1.
             };
@@ -528,73 +563,80 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
                 self.sum += vf * w;
                 self.sumc += 1;
             }
-            self.int_ts = ts;
+            self.int_ts = px;
         } else {
-            debug!(
-                "apply_event_time_weight NO VALUE  {}",
-                ts as i64 - self.range.beg as i64
-            );
+            debug!("apply_event_time_weight NO VALUE");
         }
     }
 
     fn ingest_unweight(&mut self, item: &<Self as TimeBinnableTypeAggregator>::Input) {
         trace!("TODO check again result_reset_unweight");
         err::todo();
-        for i1 in 0..item.tss.len() {
-            let ts = item.tss[i1];
-            let val = item.values[i1].clone();
-            if ts < self.range.beg {
-                self.events_ignored_count += 1;
-            } else if ts >= self.range.end {
-                self.events_ignored_count += 1;
-                return;
-            } else {
-                self.apply_event_unweight(val);
-                self.count += 1;
-                self.events_taken_count += 1;
+        if self.range.is_time() {
+            for i1 in 0..item.tss.len() {
+                let ts = item.tss[i1];
+                let val = item.values[i1].clone();
+                if ts < self.range.beg_u64() {
+                    self.events_ignored_count += 1;
+                } else if ts >= self.range.end_u64() {
+                    self.events_ignored_count += 1;
+                    return;
+                } else {
+                    self.apply_event_unweight(val);
+                    self.count += 1;
+                    self.events_taken_count += 1;
+                }
             }
+        } else {
+            error!("TODO ingest_unweight");
+            err::todo();
         }
     }
 
     fn ingest_time_weight(&mut self, item: &<Self as TimeBinnableTypeAggregator>::Input) {
-        let self_name = std::any::type_name::<Self>();
+        let self_name = any::type_name::<Self>();
         trace!("{self_name}::ingest_time_weight  item len {}", item.len());
-        for i1 in 0..item.tss.len() {
-            let ts = item.tss[i1];
-            let val = item.values[i1].clone();
-            trace!("{self_name} ingest  {:6}  {:20}  {:10?}", i1, ts, val);
-            if ts < self.int_ts {
-                if self.last_seen_val.is_none() {
-                    info!(
-                        "ingest_time_weight event before range, only set last  ts {}  val {:?}",
-                        ts, val
-                    );
+        if self.range.is_time() {
+            for i1 in 0..item.tss.len() {
+                let ts = item.tss[i1];
+                let val = item.values[i1].clone();
+                trace!("{self_name} ingest  {:6}  {:20}  {:10?}", i1, ts, val);
+                if ts < self.int_ts {
+                    if self.last_seen_val.is_none() {
+                        info!(
+                            "ingest_time_weight event before range, only set last  ts {}  val {:?}",
+                            ts, val
+                        );
+                    }
+                    self.events_ignored_count += 1;
+                    self.last_seen_ts = ts;
+                    self.last_seen_val = Some(val);
+                } else if ts >= self.range.end_u64() {
+                    self.events_ignored_count += 1;
+                    return;
+                } else {
+                    if false && self.last_seen_val.is_none() {
+                        // TODO no longer needed or?
+                        info!(
+                            "call apply_min_max without last val, use current instead  {}  {:?}",
+                            ts, val
+                        );
+                        self.apply_min_max(val.clone());
+                    }
+                    self.apply_event_time_weight(ts, self.range.beg_u64());
+                    self.count += 1;
+                    self.last_seen_ts = ts;
+                    self.last_seen_val = Some(val);
+                    self.events_taken_count += 1;
                 }
-                self.events_ignored_count += 1;
-                self.last_seen_ts = ts;
-                self.last_seen_val = Some(val);
-            } else if ts >= self.range.end {
-                self.events_ignored_count += 1;
-                return;
-            } else {
-                if false && self.last_seen_val.is_none() {
-                    // TODO no longer needed or?
-                    info!(
-                        "call apply_min_max without last val, use current instead  {}  {:?}",
-                        ts, val
-                    );
-                    self.apply_min_max(val.clone());
-                }
-                self.apply_event_time_weight(ts);
-                self.count += 1;
-                self.last_seen_ts = ts;
-                self.last_seen_val = Some(val);
-                self.events_taken_count += 1;
             }
+        } else {
+            error!("TODO ingest_unweight");
+            err::todo();
         }
     }
 
-    fn result_reset_unweight(&mut self, range: NanoRange, _expand: bool) -> BinsDim0<NTY> {
+    fn result_reset_unweight(&mut self, range: SeriesRange) -> BinsDim0<NTY> {
         trace!("TODO check again result_reset_unweight");
         err::todo();
         let (min, max, avg) = if self.sumc > 0 {
@@ -607,15 +649,20 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
             };
             (g.clone(), g.clone(), g.as_prim_f32_b())
         };
-        let ret = BinsDim0 {
-            ts1s: [self.range.beg].into(),
-            ts2s: [self.range.end].into(),
-            counts: [self.count].into(),
-            mins: [min].into(),
-            maxs: [max].into(),
-            avgs: [avg].into(),
+        let ret = if self.range.is_time() {
+            BinsDim0 {
+                ts1s: [self.range.beg_u64()].into(),
+                ts2s: [self.range.end_u64()].into(),
+                counts: [self.count].into(),
+                mins: [min].into(),
+                maxs: [max].into(),
+                avgs: [avg].into(),
+            }
+        } else {
+            error!("TODO result_reset_unweight");
+            err::todoval()
         };
-        self.int_ts = range.beg;
+        self.int_ts = range.beg_u64();
         self.range = range;
         self.count = 0;
         self.sum = 0f32;
@@ -624,16 +671,17 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
         ret
     }
 
-    fn result_reset_time_weight(&mut self, range: NanoRange, expand: bool) -> BinsDim0<NTY> {
+    fn result_reset_time_weight(&mut self, range: SeriesRange) -> BinsDim0<NTY> {
         // TODO check callsite for correct expand status.
-        if expand {
-            debug!("result_reset_time_weight calls apply_event_time_weight");
-            self.apply_event_time_weight(self.range.end);
+        debug!("result_reset_time_weight calls apply_event_time_weight");
+        if self.range.is_time() {
+            self.apply_event_time_weight(self.range.end_u64(), self.range.beg_u64());
         } else {
-            debug!("result_reset_time_weight NO EXPAND");
+            error!("TODO result_reset_time_weight");
+            err::todoval()
         }
         let (min, max, avg) = if self.sumc > 0 {
-            let avg = self.sum / (self.range.delta() as f32 * 1e-9);
+            let avg = self.sum / (self.range.delta_u64() as f32 * 1e-9);
             (self.min.clone(), self.max.clone(), avg)
         } else {
             let g = match &self.last_seen_val {
@@ -642,15 +690,20 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
             };
             (g.clone(), g.clone(), g.as_prim_f32_b())
         };
-        let ret = BinsDim0 {
-            ts1s: [self.range.beg].into(),
-            ts2s: [self.range.end].into(),
-            counts: [self.count].into(),
-            mins: [min].into(),
-            maxs: [max].into(),
-            avgs: [avg].into(),
+        let ret = if self.range.is_time() {
+            BinsDim0 {
+                ts1s: [self.range.beg_u64()].into(),
+                ts2s: [self.range.end_u64()].into(),
+                counts: [self.count].into(),
+                mins: [min].into(),
+                maxs: [max].into(),
+                avgs: [avg].into(),
+            }
+        } else {
+            error!("TODO result_reset_time_weight");
+            err::todoval()
         };
-        self.int_ts = range.beg;
+        self.int_ts = range.beg_u64();
         self.range = range;
         self.count = 0;
         self.sum = 0.;
@@ -666,7 +719,7 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for EventsDim0Aggregator<NTY> {
     type Input = EventsDim0<NTY>;
     type Output = BinsDim0<NTY>;
 
-    fn range(&self) -> &NanoRange {
+    fn range(&self) -> &SeriesRange {
         &self.range
     }
 
@@ -686,19 +739,19 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for EventsDim0Aggregator<NTY> {
         }
     }
 
-    fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output {
-        trace!("result_reset  {}  {}", range.beg, range.end);
+    fn result_reset(&mut self, range: SeriesRange, _expand: bool) -> Self::Output {
+        trace!("result_reset  {:?}", range);
         if self.do_time_weight {
-            self.result_reset_time_weight(range, expand)
+            self.result_reset_time_weight(range)
         } else {
-            self.result_reset_unweight(range, expand)
+            self.result_reset_unweight(range)
         }
     }
 }
 
 impl<NTY: ScalarOps> TimeBinnable for EventsDim0<NTY> {
-    fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Box<dyn TimeBinner> {
-        let ret = EventsDim0TimeBinner::<NTY>::new(edges.into(), do_time_weight).unwrap();
+    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
+        let ret = EventsDim0TimeBinner::<NTY>::new(binrange, do_time_weight).unwrap();
         Box::new(ret)
     }
 
@@ -873,28 +926,29 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
 }
 
 pub struct EventsDim0TimeBinner<NTY: ScalarOps> {
-    edges: VecDeque<u64>,
+    binrange: BinnedRangeEnum,
+    rix: usize,
+    rng: Option<SeriesRange>,
     agg: EventsDim0Aggregator<NTY>,
     ready: Option<<EventsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output>,
     range_complete: bool,
 }
 
 impl<NTY: ScalarOps> EventsDim0TimeBinner<NTY> {
-    fn new(edges: VecDeque<u64>, do_time_weight: bool) -> Result<Self, Error> {
-        if edges.len() < 2 {
-            return Err(Error::with_msg_no_trace(format!("need at least 2 edges")));
-        }
-        let self_name = std::any::type_name::<Self>();
-        trace!("{self_name}::new  edges {edges:?}");
-        let agg = EventsDim0Aggregator::new(
-            NanoRange {
-                beg: edges[0],
-                end: edges[1],
-            },
-            do_time_weight,
-        );
+    fn self_name() -> &'static str {
+        any::type_name::<Self>()
+    }
+
+    fn new(binrange: BinnedRangeEnum, do_time_weight: bool) -> Result<Self, Error> {
+        trace!("{}::new  binrange {binrange:?}", Self::self_name());
+        let rng = binrange
+            .range_at(0)
+            .ok_or_else(|| Error::with_msg_no_trace("empty binrange"))?;
+        let agg = EventsDim0Aggregator::new(rng, do_time_weight);
         let ret = Self {
-            edges,
+            binrange,
+            rix: 0,
+            rng: Some(agg.range.clone()),
             agg,
             ready: None,
             range_complete: false,
@@ -902,18 +956,13 @@ impl<NTY: ScalarOps> EventsDim0TimeBinner<NTY> {
         Ok(ret)
     }
 
-    fn next_bin_range(&mut self) -> Option<NanoRange> {
-        let self_name = std::any::type_name::<Self>();
-        if self.edges.len() >= 3 {
-            self.edges.pop_front();
-            let ret = NanoRange {
-                beg: self.edges[0],
-                end: self.edges[1],
-            };
-            trace!("{self_name}  next_bin_range  {}  {}", ret.beg, ret.end);
-            Some(ret)
+    fn next_bin_range(&mut self) -> Option<SeriesRange> {
+        let self_name = any::type_name::<Self>();
+        self.rix += 1;
+        if let Some(rng) = self.binrange.range_at(self.rix) {
+            trace!("{self_name}  next_bin_range {:?}", rng);
+            Some(rng)
         } else {
-            self.edges.clear();
             trace!("{self_name}  next_bin_range None");
             None
         }
@@ -936,37 +985,29 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
     }
 
     fn ingest(&mut self, item: &dyn TimeBinnable) {
-        let self_name = std::any::type_name::<Self>();
-        trace2!(
-            "TimeBinner for EventsDim0TimeBinner   {:?}\n{:?}\n------------------------------------",
-            self.edges.iter().take(2).collect::<Vec<_>>(),
-            item
-        );
+        let self_name = any::type_name::<Self>();
+        trace2!("TimeBinner for {self_name}  {:?}", item);
         if item.len() == 0 {
             // Return already here, RangeOverlapInfo would not give much sense.
-            return;
-        }
-        if self.edges.len() < 2 {
-            warn!("{self_name}  no more bin in edges A");
             return;
         }
         // TODO optimize by remembering at which event array index we have arrived.
         // That needs modified interfaces which can take and yield the start and latest index.
         loop {
-            while item.starts_after(self.agg.range().clone()) {
+            while item.starts_after(self.agg.range()) {
                 trace!("{self_name}  IGNORE ITEM  AND CYCLE  BECAUSE item.starts_after");
                 self.cycle();
-                if self.edges.len() < 2 {
+                if self.rng.is_none() {
                     warn!("{self_name}  no more bin in edges B");
                     return;
                 }
             }
-            if item.ends_before(self.agg.range().clone()) {
-                trace!("{self_name}  IGNORE ITEM  BECAUSE ends_before\n-------------      -----------");
+            if item.ends_before(self.agg.range()) {
+                trace!("{self_name}  IGNORE ITEM  BECAUSE ends_before");
                 return;
             } else {
-                if self.edges.len() < 2 {
-                    trace!("{self_name}  edge list exhausted");
+                if self.rng.is_none() {
+                    trace!("{self_name}  no more bin in edges D");
                     return;
                 } else {
                     if let Some(item) = item
@@ -977,10 +1018,10 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
                         // TODO collect statistics associated with this request:
                         trace!("{self_name}  FEED THE ITEM...");
                         self.agg.ingest(item);
-                        if item.ends_after(self.agg.range().clone()) {
+                        if item.ends_after(self.agg.range()) {
                             trace!("{self_name}  FED ITEM, ENDS AFTER.");
                             self.cycle();
-                            if self.edges.len() < 2 {
+                            if self.rng.is_none() {
                                 warn!("{self_name}  no more bin in edges C");
                                 return;
                             } else {
@@ -991,7 +1032,7 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
                             break;
                         }
                     } else {
-                        panic!("{self_name} not correct item type");
+                        error!("{self_name}::ingest  unexpected item type");
                     };
                 }
             }
@@ -999,35 +1040,38 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
     }
 
     fn push_in_progress(&mut self, push_empty: bool) {
-        let self_name = std::any::type_name::<Self>();
+        let self_name = any::type_name::<Self>();
         trace!("{self_name}::push_in_progress");
         // TODO expand should be derived from AggKind. Is it still required after all?
         // TODO here, the expand means that agg will assume that the current value is kept constant during
         // the rest of the time range.
-        if self.edges.len() >= 2 {
+        if self.rng.is_none() {
+        } else {
             let expand = true;
-            let range_next = if let Some(x) = self.next_bin_range() {
-                Some(x)
-            } else {
-                None
-            };
+            let range_next = self.next_bin_range();
+            self.rng = range_next.clone();
             let mut bins = if let Some(range_next) = range_next {
                 self.agg.result_reset(range_next, expand)
             } else {
+                // Acts as placeholder
                 let range_next = NanoRange {
                     beg: u64::MAX - 1,
                     end: u64::MAX,
                 };
-                self.agg.result_reset(range_next, expand)
+                self.agg.result_reset(range_next.into(), expand)
             };
-            assert_eq!(bins.len(), 1);
-            if push_empty || bins.counts[0] != 0 {
-                match self.ready.as_mut() {
-                    Some(ready) => {
-                        ready.append_all_from(&mut bins);
-                    }
-                    None => {
-                        self.ready = Some(bins);
+            if bins.len() != 1 {
+                error!("{self_name}::push_in_progress  bins.len() {}", bins.len());
+                return;
+            } else {
+                if push_empty || bins.counts[0] != 0 {
+                    match self.ready.as_mut() {
+                        Some(ready) => {
+                            ready.append_all_from(&mut bins);
+                        }
+                        None => {
+                            self.ready = Some(bins);
+                        }
                     }
                 }
             }
@@ -1035,15 +1079,21 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
     }
 
     fn cycle(&mut self) {
-        let self_name = std::any::type_name::<Self>();
+        let self_name = any::type_name::<Self>();
         trace!("{self_name}::cycle");
         // TODO refactor this logic.
         let n = self.bins_ready_count();
         self.push_in_progress(true);
         if self.bins_ready_count() == n {
-            if let Some(range) = self.next_bin_range() {
+            let range_next = self.next_bin_range();
+            self.rng = range_next.clone();
+            if let Some(range) = range_next {
                 let mut bins = BinsDim0::<NTY>::empty();
-                bins.append_zero(range.beg, range.end);
+                if range.is_time() {
+                    bins.append_zero(range.beg_u64(), range.end_u64());
+                } else {
+                    error!("TODO  {self_name}::cycle  is_pulse");
+                }
                 match self.ready.as_mut() {
                     Some(ready) => {
                         ready.append_all_from(&mut bins);
@@ -1101,7 +1151,7 @@ impl items_0::collect_c::CollectorDyn for EventsDim0CollectorDyn {
     fn result(
         &mut self,
         _range: Option<NanoRange>,
-        _binrange: Option<BinnedRange>,
+        _binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         todo!()
     }
@@ -1133,7 +1183,7 @@ impl<NTY: ScalarOps> items_0::collect_c::CollectorDyn for EventsDim0Collector<NT
     fn result(
         &mut self,
         range: Option<NanoRange>,
-        binrange: Option<BinnedRange>,
+        binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         items_0::collect_s::CollectorType::result(self, range, binrange)
             .map(|x| Box::new(x) as _)

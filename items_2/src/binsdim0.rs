@@ -1,23 +1,39 @@
-use crate::{ts_offs_from_abs, ts_offs_from_abs_with_anchor};
-use crate::{IsoDateTime, RangeOverlapInfo};
-use crate::{TimeBinnable, TimeBinnableType, TimeBinnableTypeAggregator, TimeBinner};
-use chrono::{TimeZone, Utc};
+use crate::ts_offs_from_abs;
+use crate::ts_offs_from_abs_with_anchor;
+use crate::IsoDateTime;
+use crate::RangeOverlapInfo;
+use crate::TimeBinnableType;
+use crate::TimeBinnableTypeAggregator;
+use chrono::TimeZone;
+use chrono::Utc;
 use err::Error;
-use items_0::collect_s::{Collectable, CollectableType, CollectorType, ToJsonResult};
+use items_0::collect_s::Collectable;
+use items_0::collect_s::CollectableType;
+use items_0::collect_s::CollectorType;
+use items_0::collect_s::ToJsonResult;
 use items_0::scalar_ops::ScalarOps;
+use items_0::AppendEmptyBin;
+use items_0::AsAnyMut;
+use items_0::AsAnyRef;
+use items_0::Empty;
+use items_0::TimeBinnable;
 use items_0::TimeBinned;
+use items_0::TimeBinner;
 use items_0::TimeBins;
 use items_0::WithLen;
-use items_0::{AppendEmptyBin, AsAnyRef};
-use items_0::{AsAnyMut, Empty};
+use netpod::SeriesRange;
+use netpod::log::*;
 use netpod::timeunits::SEC;
+use netpod::BinnedRange;
+use netpod::BinnedRangeEnum;
 use netpod::NanoRange;
-use netpod::{log::*, BinnedRange};
 use num_traits::Zero;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::any::Any;
 use std::collections::VecDeque;
-use std::{fmt, mem};
+use std::fmt;
+use std::mem;
 
 #[allow(unused)]
 macro_rules! trace4 {
@@ -166,26 +182,59 @@ impl<NTY> WithLen for BinsDim0<NTY> {
 }
 
 impl<NTY> RangeOverlapInfo for BinsDim0<NTY> {
-    fn ends_before(&self, range: NanoRange) -> bool {
-        if let Some(&max) = self.ts2s.back() {
-            max <= range.beg
+    fn ends_before(&self, range: &SeriesRange) -> bool {
+        if range.is_time() {
+            if let Some(&max) = self.ts2s.back() {
+                max <= range.beg_u64()
+            } else {
+                true
+            }
+        } else if range.is_pulse() {
+            if let Some(&max) = self.pulses.back() {
+                max <= range.beg_u64()
+            } else {
+                true
+            }
         } else {
+            error!("unexpected");
             true
         }
     }
 
-    fn ends_after(&self, range: NanoRange) -> bool {
-        if let Some(&max) = self.ts2s.back() {
-            max > range.end
+    fn ends_after(&self, range: &SeriesRange) -> bool {
+        if range.is_time() {
+            if let Some(&max) = self.ts2s.back() {
+                max > range.end_u64()
+            } else {
+                true
+            }
+        } else if range.is_pulse() {
+            if let Some(&max) = self.pulses.back() {
+                max > range.end_u64()
+            } else {
+                true
+            }
         } else {
-            true
+            error!("unexpected");
+            false
         }
     }
 
-    fn starts_after(&self, range: NanoRange) -> bool {
-        if let Some(&min) = self.ts1s.front() {
-            min >= range.end
+    fn starts_after(&self, range: &SeriesRange) -> bool {
+        if range.is_time() {
+            if let Some(&min) = self.ts1s.front() {
+                min >= range.end_u64()
+            } else {
+                true
+            }
+        } else if range.is_pulse() {
+            if let Some(&min) = self.pulses.front() {
+                min >= range.end_u64()
+            } else {
+                true
+            }
         } else {
+            error!("unexpected");
             true
         }
     }
@@ -386,7 +435,7 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
         self.timed_out = true;
     }
 
-    fn result(&mut self, _range: Option<NanoRange>, binrange: Option<BinnedRange>) -> Result<Self::Output, Error> {
+    fn result(&mut self, _range: Option<NanoRange>, binrange: Option<BinnedRangeEnum>) -> Result<Self::Output, Error> {
         let bin_count_exp = if let Some(r) = &binrange {
             r.bin_count() as u32
         } else {
@@ -517,7 +566,7 @@ where
     fn result(
         &mut self,
         range: Option<NanoRange>,
-        binrange: Option<BinnedRange>,
+        binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, Error> {
         match CollectorType::result(self, range, binrange) {
             Ok(res) => Ok(Box::new(res)),
@@ -604,8 +653,8 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for BinsDim0Aggregator<NTY> {
 }
 
 impl<NTY: ScalarOps> TimeBinnable for BinsDim0<NTY> {
-    fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Box<dyn TimeBinner> {
-        let ret = BinsDim0TimeBinner::<NTY>::new(edges.into(), do_time_weight);
+    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
+        let ret = BinsDim0TimeBinner::<NTY>::new(binrange, do_time_weight);
         Box::new(ret)
     }
 
@@ -623,7 +672,7 @@ pub struct BinsDim0TimeBinner<NTY: ScalarOps> {
 }
 
 impl<NTY: ScalarOps> BinsDim0TimeBinner<NTY> {
-    fn new(edges: VecDeque<u64>, do_time_weight: bool) -> Self {
+    fn new(binrange: BinnedRangeEnum, do_time_weight: bool) -> Self {
         Self {
             edges,
             do_time_weight,

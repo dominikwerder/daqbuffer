@@ -9,6 +9,7 @@ use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use netpod::log::*;
 use netpod::BinnedRange;
+use netpod::BinnedRangeEnum;
 use netpod::NanoRange;
 use serde::Deserialize;
 use serde::Serialize;
@@ -607,7 +608,7 @@ pub struct ChannelEventsTimeBinner {
     edges: Vec<u64>,
     do_time_weight: bool,
     conn_state: ConnStatus,
-    binner: Option<Box<dyn crate::TimeBinner>>,
+    binner: Option<Box<dyn items_0::TimeBinner>>,
 }
 
 impl fmt::Debug for ChannelEventsTimeBinner {
@@ -719,7 +720,7 @@ impl AsAnyMut for ChannelEventsCollectorOutput {
     }
 }
 
-impl crate::ToJsonResult for ChannelEventsCollectorOutput {
+impl items_0::collect_s::ToJsonResult for ChannelEventsCollectorOutput {
     fn to_json_result(&self) -> Result<Box<dyn items_0::collect_s::ToJsonBytes>, err::Error> {
         todo!()
     }
@@ -783,7 +784,7 @@ impl items_0::collect_c::Collector for ChannelEventsCollector {
     fn result(
         &mut self,
         range: Option<NanoRange>,
-        binrange: Option<BinnedRange>,
+        binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         match self.coll.as_mut() {
             Some(coll) => {

@@ -1,4 +1,4 @@
-use crate::binned_collected;
+use crate::binnedcollected::BinnedCollected;
 use crate::binsdim0::BinsDim0CollectedResult;
 use crate::channelevents::ConnStatus;
 use crate::channelevents::ConnStatusEvent;
@@ -6,6 +6,8 @@ use crate::eventsdim0::EventsDim0;
 use crate::merger::Mergeable;
 use crate::merger::Merger;
 use crate::runfut;
+use crate::streams::TransformerExt;
+use crate::streams::VecStream;
 use crate::testgen::make_some_boxed_d0_f32;
 use crate::ChannelEvents;
 use crate::Error;
@@ -24,10 +26,12 @@ use netpod::log::*;
 use netpod::timeunits::*;
 use netpod::AggKind;
 use netpod::BinnedRange;
+use netpod::BinnedRangeEnum;
 use netpod::NanoRange;
 use netpod::ScalarType;
 use netpod::Shape;
 use std::time::Duration;
+use std::time::Instant;
 
 #[test]
 fn items_move_events() {
@@ -326,94 +330,24 @@ fn bin01() {
         let inp1 = futures_util::stream::iter(inp1);
         let inp1 = Box::pin(inp1);
         let inp2 = Box::pin(futures_util::stream::empty()) as _;
-        let mut stream = crate::merger::Merger::new(vec![inp1, inp2], 32);
-        let mut coll = None;
-        let mut binner = None;
+        let stream = crate::merger::Merger::new(vec![inp1, inp2], 32);
         let range = NanoRange {
             beg: SEC * 0,
             end: SEC * 100,
         };
-        let binrange = BinnedRange::covering_range(range, 10).unwrap();
-        let edges = binrange.edges();
-        // TODO implement continue-at [hcn2956jxhwsf]
-        #[allow(unused)]
-        let bin_count_exp = (edges.len() - 1) as u32;
+        let binrange = BinnedRangeEnum::covering_range(range.into(), 10).unwrap();
+        let deadline = Instant::now() + Duration::from_millis(4000);
         let do_time_weight = true;
-        while let Some(item) = stream.next().await {
-            let item = item?;
-            match item {
-                StreamItem::DataItem(item) => match item {
-                    RangeCompletableItem::RangeComplete => todo!(),
-                    RangeCompletableItem::Data(item) => match item {
-                        ChannelEvents::Events(events) => {
-                            if binner.is_none() {
-                                let bb = events.as_time_binnable().time_binner_new(edges.clone(), do_time_weight);
-                                binner = Some(bb);
-                            }
-                            let binner = binner.as_mut().unwrap();
-                            binner.ingest(events.as_time_binnable());
-                            eprintln!("bins_ready_count: {}", binner.bins_ready_count());
-                            if binner.bins_ready_count() > 0 {
-                                let ready = binner.bins_ready();
-                                match ready {
-                                    Some(mut ready) => {
-                                        eprintln!("ready {ready:?}");
-                                        if coll.is_none() {
-                                            coll = Some(ready.as_collectable_mut().new_collector());
-                                        }
-                                        let cl = coll.as_mut().unwrap();
-                                        cl.ingest(ready.as_collectable_mut());
-                                    }
-                                    None => {
-                                        return Err(format!("bins_ready_count but no result").into());
-                                    }
-                                }
-                            }
-                        }
-                        ChannelEvents::Status(_) => {
-                            eprintln!("TODO Status");
-                        }
-                    },
-                },
-                StreamItem::Log(_) => {
-                    eprintln!("TODO Log");
-                }
-                StreamItem::Stats(_) => {
-                    eprintln!("TODO Stats");
-                }
-            }
-        }
-        if let Some(mut binner) = binner {
-            binner.cycle();
-            // TODO merge with the same logic above in the loop.
-            if binner.bins_ready_count() > 0 {
-                let ready = binner.bins_ready();
-                match ready {
-                    Some(mut ready) => {
-                        eprintln!("ready {ready:?}");
-                        if coll.is_none() {
-                            coll = Some(ready.as_collectable_mut().new_collector());
-                        }
-                        let cl = coll.as_mut().unwrap();
-                        cl.ingest(ready.as_collectable_mut());
-                    }
-                    None => {
-                        return Err(format!("bins_ready_count but no result").into());
-                    }
-                }
-            }
-        }
-        match coll {
-            Some(mut coll) => {
-                let res = coll.result(None, Some(binrange.clone())).map_err(|e| format!("{e}"))?;
-                //let res = res.to_json_result().map_err(|e| format!("{e}"))?;
-                //let res = res.to_json_bytes().map_err(|e| format!("{e}"))?;
-                eprintln!("res {res:?}");
-            }
-            None => {
-                panic!();
-            }
-        }
+        let res = BinnedCollected::new(
+            binrange,
+            ScalarType::F32,
+            Shape::Scalar,
+            do_time_weight,
+            deadline,
+            Box::pin(stream),
+        )
+        .await?;
+        // TODO assert
         Ok::<_, Error>(())
     };
     runfut(fut).unwrap();
@@ -448,19 +382,20 @@ fn bin02() {
             beg: TSBASE + SEC * 1,
             end: TSBASE + SEC * 10,
         };
-        let binrange = BinnedRange::covering_range(range, 9).map_err(|e| format!("{e}"))?;
-        assert_eq!(binrange.edges().len(), 10);
+        let binrange = BinnedRangeEnum::covering_range(range.into(), 9).map_err(|e| format!("{e}"))?;
         let stream = Box::pin(stream);
-        let collected = binned_collected(
+        let deadline = Instant::now() + Duration::from_millis(4000);
+        let do_time_weight = true;
+        let res = BinnedCollected::new(
+            binrange,
             ScalarType::F32,
             Shape::Scalar,
-            AggKind::TimeWeightedScalar,
-            binrange,
-            Duration::from_millis(2000),
-            stream,
+            do_time_weight,
+            deadline,
+            Box::pin(stream),
         )
         .await?;
-        eprintln!("collected {:?}", collected);
+        eprintln!("res {:?}", res);
         Ok::<_, Error>(())
     };
     runfut(fut).unwrap();
@@ -488,8 +423,8 @@ fn binned_timeout_01() {
             events_vec1.push(Ok(StreamItem::DataItem(RangeCompletableItem::Data(cev))));
         }
         events_vec1.push(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)));
-        let inp1 = events_vec1;
-        let inp1 = futures_util::stream::iter(inp1).enumerate().then(|(i, k)| async move {
+        let inp1 = VecStream::new(events_vec1.into_iter().collect());
+        let inp1 = inp1.enumerate2().then2(|(i, k)| async move {
             if i == 5 {
                 let _ = tokio::time::sleep(Duration::from_millis(10000)).await;
             }
@@ -500,21 +435,16 @@ fn binned_timeout_01() {
             beg: TSBASE + SEC * 1,
             end: TSBASE + SEC * 10,
         };
-        let binrange = BinnedRange::covering_range(range, 9)?;
+        let binrange = BinnedRangeEnum::covering_range(range.into(), 9)?;
         eprintln!("edges1: {:?}", edges);
-        eprintln!("edges2: {:?}", binrange.edges());
-        let inp1 = Box::pin(inp1) as _;
+        //eprintln!("edges2: {:?}", binrange.edges());
+        let inp1 = Box::pin(inp1);
         let timeout = Duration::from_millis(400);
-        let res = binned_collected(
-            ScalarType::F32,
-            Shape::Scalar,
-            AggKind::TimeWeightedScalar,
-            binrange,
-            timeout,
-            inp1,
-        )
-        .await?;
-        let r2: &BinsDim0CollectedResult<f32> = res.as_any_ref().downcast_ref().expect("res seems wrong type");
+        let deadline = Instant::now() + Duration::from_millis(4000);
+        let do_time_weight = true;
+        let res =
+            BinnedCollected::new(binrange, ScalarType::F32, Shape::Scalar, do_time_weight, deadline, inp1).await?;
+        let r2: &BinsDim0CollectedResult<f32> = res.result.as_any_ref().downcast_ref().expect("res seems wrong type");
         eprintln!("rs: {r2:?}");
         assert_eq!(SEC * r2.ts_anchor_sec(), TSBASE + SEC);
         assert_eq!(r2.counts(), &[10, 10, 10]);

@@ -769,6 +769,43 @@ pub enum SeriesRange {
     PulseRange(PulseRange),
 }
 
+impl SeriesRange {
+    pub fn is_time(&self) -> bool {
+        match self {
+            SeriesRange::TimeRange(_) => true,
+            SeriesRange::PulseRange(_) => false,
+        }
+    }
+
+    pub fn is_pulse(&self) -> bool {
+        match self {
+            SeriesRange::TimeRange(_) => false,
+            SeriesRange::PulseRange(_) => true,
+        }
+    }
+
+    pub fn beg_u64(&self) -> u64 {
+        match self {
+            SeriesRange::TimeRange(x) => x.beg,
+            SeriesRange::PulseRange(x) => x.beg,
+        }
+    }
+
+    pub fn end_u64(&self) -> u64 {
+        match self {
+            SeriesRange::TimeRange(x) => x.beg,
+            SeriesRange::PulseRange(x) => x.beg,
+        }
+    }
+
+    pub fn delta_u64(&self) -> u64 {
+        match self {
+            SeriesRange::TimeRange(x) => x.end - x.beg,
+            SeriesRange::PulseRange(x) => x.end - x.beg,
+        }
+    }
+}
+
 impl From<NanoRange> for SeriesRange {
     fn from(k: NanoRange) -> Self {
         Self::TimeRange(k)
@@ -1120,16 +1157,16 @@ pub trait Dim0Index: Clone + fmt::Debug + PartialOrd {
     fn div_v(&self, v: &Self) -> u64;
     fn as_u64(&self) -> u64;
     fn series_range(a: Self, b: Self) -> SeriesRange;
-    fn prebin_bin_len_opts() -> &'static [Self];
+    fn prebin_bin_len_opts() -> Vec<Self>;
     fn prebin_patch_len_for(i: usize) -> Self;
     fn to_pre_binned_patch_range_enum(
-        bin_len: &Self,
+        &self,
         bin_count: u64,
         patch_offset: u64,
         patch_count: u64,
     ) -> PreBinnedPatchRangeEnum;
-    fn binned_bin_len_opts() -> &'static [Self];
-    fn to_binned_range_enum(bin_len: &Self, bin_off: u64, bin_cnt: u64) -> BinnedRangeEnum;
+    fn binned_bin_len_opts() -> Vec<Self>;
+    fn to_binned_range_enum(&self, bin_off: u64, bin_cnt: u64) -> BinnedRangeEnum;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
@@ -1140,39 +1177,39 @@ pub struct PulseId(u64);
 
 impl Dim0Index for TsNano {
     fn add(&self, v: &Self) -> Self {
-        todo!()
+        Self(self.0 + v.0)
     }
 
     fn sub(&self, v: &Self) -> Self {
-        todo!()
+        Self(self.0 - v.0)
     }
 
     fn sub_n(&self, v: u64) -> Self {
-        todo!()
+        Self(self.0 - v)
     }
 
     fn times(&self, x: u64) -> Self {
-        todo!()
+        Self(self.0 * x)
     }
 
     fn div_n(&self, n: u64) -> Self {
-        todo!()
+        Self(self.0 / n)
     }
 
     fn div_v(&self, v: &Self) -> u64 {
-        todo!()
+        self.0 / v.0
     }
 
     fn as_u64(&self) -> u64 {
-        todo!()
+        self.0
     }
 
     fn series_range(a: Self, b: Self) -> SeriesRange {
         todo!()
     }
 
-    fn prebin_bin_len_opts() -> &'static [Self] {
-        todo!()
+    fn prebin_bin_len_opts() -> Vec<Self> {
+        PREBIN_TIME_BIN_LEN_VAR0.iter().map(|&x| Self(x)).collect()
     }
 
     fn prebin_patch_len_for(i: usize) -> Self {
@@ -1180,58 +1217,69 @@ impl Dim0Index for TsNano {
     }
 
     fn to_pre_binned_patch_range_enum(
-        bin_len: &Self,
+        &self,
         bin_count: u64,
         patch_offset: u64,
         patch_count: u64,
     ) -> PreBinnedPatchRangeEnum {
-        todo!()
+        PreBinnedPatchRangeEnum::Time(PreBinnedPatchRange {
+            first: PreBinnedPatchCoord {
+                bin_len: self.clone(),
+                bin_count,
+                patch_offset,
+            },
+            patch_count,
+        })
     }
 
-    fn binned_bin_len_opts() -> &'static [Self] {
-        todo!()
+    fn binned_bin_len_opts() -> Vec<Self> {
+        TIME_BIN_THRESHOLDS.iter().map(|&x| Self(x)).collect()
     }
 
-    fn to_binned_range_enum(bin_len: &Self, bin_off: u64, bin_cnt: u64) -> BinnedRangeEnum {
-        todo!()
+    fn to_binned_range_enum(&self, bin_off: u64, bin_cnt: u64) -> BinnedRangeEnum {
+        BinnedRangeEnum::Time(BinnedRange {
+            bin_len: self.clone(),
+            bin_off,
+            bin_cnt,
+        })
     }
 }
 
 impl Dim0Index for PulseId {
     fn add(&self, v: &Self) -> Self {
-        todo!()
+        Self(self.0 + v.0)
     }
 
     fn sub(&self, v: &Self) -> Self {
-        todo!()
+        Self(self.0 - v.0)
     }
 
     fn sub_n(&self, v: u64) -> Self {
-        todo!()
+        Self(self.0 - v)
     }
 
     fn times(&self, x: u64) -> Self {
-        todo!()
+        Self(self.0 * x)
     }
 
     fn div_n(&self, n: u64) -> Self {
-        todo!()
+        Self(self.0 / n)
     }
 
     fn div_v(&self, v: &Self) -> u64 {
-        todo!()
+        self.0 / v.0
     }
 
     fn as_u64(&self) -> u64 {
-        todo!()
+        self.0
     }
 
     fn series_range(a: Self, b: Self) -> SeriesRange {
         todo!()
     }
 
-    fn prebin_bin_len_opts() -> &'static [Self] {
-        todo!()
+    fn prebin_bin_len_opts() -> Vec<Self> {
+        PREBIN_PULSE_BIN_LEN_VAR0.iter().map(|&x| Self(x)).collect()
     }
 
     fn prebin_patch_len_for(i: usize) -> Self {
@@ -1239,24 +1287,37 @@ impl Dim0Index for PulseId {
     }
 
     fn to_pre_binned_patch_range_enum(
-        bin_len: &Self,
+        &self,
         bin_count: u64,
         patch_offset: u64,
         patch_count: u64,
     ) -> PreBinnedPatchRangeEnum {
-        todo!()
+        PreBinnedPatchRangeEnum::Pulse(PreBinnedPatchRange {
+            first: PreBinnedPatchCoord {
+                bin_len: self.clone(),
+                bin_count,
+                patch_offset,
+            },
+            patch_count,
+        })
     }
 
-    fn binned_bin_len_opts() -> &'static [Self] {
-        todo!()
+    fn binned_bin_len_opts() -> Vec<Self> {
+        PULSE_BIN_THRESHOLDS.iter().map(|&x| Self(x)).collect()
     }
 
-    fn to_binned_range_enum(bin_len: &Self, bin_off: u64, bin_cnt: u64) -> BinnedRangeEnum {
-        todo!()
+    fn to_binned_range_enum(&self, bin_off: u64, bin_cnt: u64) -> BinnedRangeEnum {
+        BinnedRangeEnum::Pulse(BinnedRange {
+            bin_len: self.clone(),
+            bin_off,
+            bin_cnt,
+        })
     }
 }
 
-const PREBIN_TIME_BIN_LEN_VAR0: [TsNano; 3] = [TsNano(MIN * 1), TsNano(HOUR * 1), TsNano(DAY)];
+const PREBIN_TIME_BIN_LEN_VAR0: [u64; 3] = [MIN * 1, HOUR * 1, DAY];
+
+const PREBIN_PULSE_BIN_LEN_VAR0: [u64; 4] = [100, 10000, 1000000, 100000000];
 
 const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 3] = [
     //
@@ -1485,11 +1546,11 @@ impl PreBinnedPatchRangeEnum {
         let du = b.sub(&a);
         let max_bin_len = du.div_n(min_bin_count as u64);
         for (i1, bl) in opts.iter().enumerate().rev() {
-            if bl <= &du {
+            if bl <= &max_bin_len {
                 let patch_len = <T as Dim0Index>::prebin_patch_len_for(i1);
                 let bin_count = patch_len.div_v(bl);
                 let patch_off_1 = a.div_v(&patch_len);
-                let patch_off_2 = b.div_v(&patch_len.add(&patch_len).sub_n(1));
+                let patch_off_2 = (b.add(&patch_len).sub_n(1)).div_v(&patch_len);
                 let patch_count = patch_off_2 - patch_off_1;
                 let ret = T::to_pre_binned_patch_range_enum(&bl, bin_count, patch_off_1, patch_count);
                 return Ok(ret);
@@ -1554,23 +1615,22 @@ where
         err::todoval()
     }
 
-    pub fn edges(&self) -> Vec<u64> {
-        /*
+    pub fn edges_u64(&self) -> Vec<u64> {
         let mut ret = Vec::new();
-        let mut t = self.offset * self.grid_spec.bin_t_len;
-        let end = (self.offset + self.bin_count) * self.grid_spec.bin_t_len;
+        let mut t = self.bin_len.times(self.bin_off);
+        let end = self.bin_len.times(self.bin_off + self.bin_cnt);
         while t <= end {
-            ret.push(t);
-            t += self.grid_spec.bin_t_len;
+            ret.push(t.as_u64());
+            t = t.add(&self.bin_len);
         }
-        */
-        err::todoval()
+        ret
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BinnedRangeEnum {
-    Time(PreBinnedPatchRange<TsNano>),
-    Pulse(PreBinnedPatchRange<PulseId>),
+    Time(BinnedRange<TsNano>),
+    Pulse(BinnedRange<PulseId>),
 }
 
 impl BinnedRangeEnum {
@@ -1587,10 +1647,11 @@ impl BinnedRangeEnum {
         }
         let du = b.sub(&a);
         let max_bin_len = du.div_n(min_bin_count as u64);
-        for (i1, bl) in opts.iter().enumerate().rev() {
-            if bl <= &du {
+        for (_, bl) in opts.iter().enumerate().rev() {
+            if bl <= &max_bin_len {
                 let off_1 = a.div_v(&bl);
-                let off_2 = b.div_v(&bl.add(&bl).sub_n(1));
+                let off_2 = (b.add(&bl).sub_n(1)).div_v(&bl);
+                eprintln!("off_1 {off_1:?}  off_2 {off_2:?}");
                 let bin_cnt = off_2 - off_1;
                 let ret = T::to_binned_range_enum(bl, off_1, bin_cnt);
                 return Ok(ret);
@@ -1606,6 +1667,17 @@ impl BinnedRangeEnum {
             SeriesRange::PulseRange(k) => Self::covering_range_ty(PulseId(k.beg), PulseId(k.end), min_bin_count),
         }
     }
+
+    pub fn bin_count(&self) -> u64 {
+        match self {
+            BinnedRangeEnum::Time(k) => k.bin_count(),
+            BinnedRangeEnum::Pulse(k) => k.bin_count(),
+        }
+    }
+
+    pub fn range_at(&self, i: usize) -> Option<SeriesRange> {
+        err::todoval()
+    }
 }
 
 #[cfg(test)]
@@ -1619,11 +1691,11 @@ mod test_binned_range {
             end: HOUR * 73,
         };
         let range = BinnedRangeEnum::covering_range(range.into(), 10).unwrap();
+        assert_eq!(range.bin_count(), 12);
         match range {
             BinnedRangeEnum::Time(range) => {
-                assert_eq!(range.bin_count(), 12);
-                assert_eq!(range.edges()[0], HOUR * 72);
-                assert_eq!(range.edges()[2], HOUR * 72 + MIN * 5 * 2);
+                assert_eq!(range.edges_u64()[0], HOUR * 72);
+                assert_eq!(range.edges_u64()[2], HOUR * 72 + MIN * 5 * 2);
             }
             BinnedRangeEnum::Pulse(_) => panic!(),
         }
@@ -1636,12 +1708,12 @@ mod test_binned_range {
             end: HOUR * 10 + MIN * 20 + SEC * 30,
         };
         let range = BinnedRangeEnum::covering_range(range.into(), 10).unwrap();
+        assert_eq!(range.bin_count(), 11);
         match range {
             BinnedRangeEnum::Time(range) => {
-                assert_eq!(range.bin_count(), 11);
-                assert_eq!(range.edges()[0], HOUR * 0);
-                assert_eq!(range.edges()[1], HOUR * 1);
-                assert_eq!(range.edges()[11], HOUR * 11);
+                assert_eq!(range.edges_u64()[0], HOUR * 0);
+                assert_eq!(range.edges_u64()[1], HOUR * 1);
+                assert_eq!(range.edges_u64()[11], HOUR * 11);
             }
             BinnedRangeEnum::Pulse(_) => panic!(),
         }

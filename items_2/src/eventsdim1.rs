@@ -1,10 +1,8 @@
 use crate::binsdim0::BinsDim0;
 use crate::IsoDateTime;
 use crate::RangeOverlapInfo;
-use crate::TimeBinnable;
 use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
-use crate::TimeBinner;
 use err::Error;
 use items_0::scalar_ops::ScalarOps;
 use items_0::Appendable;
@@ -13,10 +11,13 @@ use items_0::AsAnyRef;
 use items_0::Empty;
 use items_0::Events;
 use items_0::EventsNonObj;
+use items_0::TimeBinnable;
+use items_0::TimeBinner;
 use items_0::WithLen;
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::BinnedRange;
+use netpod::BinnedRangeEnum;
 use netpod::NanoRange;
 use serde::Deserialize;
 use serde::Serialize;
@@ -295,7 +296,7 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim1Collector<N
         self.timed_out = true;
     }
 
-    fn result(&mut self, range: Option<NanoRange>, _binrange: Option<BinnedRange>) -> Result<Self::Output, Error> {
+    fn result(&mut self, range: Option<NanoRange>, _binrange: Option<BinnedRangeEnum>) -> Result<Self::Output, Error> {
         // If we timed out, we want to hint the client from where to continue.
         // This is tricky: currently, client can not request a left-exclusive range.
         // We currently give the timestamp of the last event plus a small delta.
@@ -366,7 +367,7 @@ impl<NTY: ScalarOps> items_0::collect_c::Collector for EventsDim1Collector<NTY> 
     fn result(
         &mut self,
         range: Option<NanoRange>,
-        binrange: Option<BinnedRange>,
+        binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         match items_0::collect_s::CollectorType::result(self, range, binrange) {
             Ok(x) => Ok(Box::new(x)),
@@ -651,8 +652,8 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for EventsDim1Aggregator<NTY> {
 }
 
 impl<NTY: ScalarOps> TimeBinnable for EventsDim1<NTY> {
-    fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Box<dyn TimeBinner> {
-        let ret = EventsDim1TimeBinner::<NTY>::new(edges.into(), do_time_weight).unwrap();
+    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
+        let ret = EventsDim1TimeBinner::<NTY>::new(binrange, do_time_weight).unwrap();
         Box::new(ret)
     }
 
@@ -834,7 +835,7 @@ pub struct EventsDim1TimeBinner<NTY: ScalarOps> {
 }
 
 impl<NTY: ScalarOps> EventsDim1TimeBinner<NTY> {
-    fn new(edges: VecDeque<u64>, do_time_weight: bool) -> Result<Self, Error> {
+    fn new(binrange: BinnedRangeEnum, do_time_weight: bool) -> Result<Self, Error> {
         if edges.len() < 2 {
             return Err(Error::with_msg_no_trace(format!("need at least 2 edges")));
         }
@@ -1055,7 +1056,7 @@ impl items_0::collect_c::CollectorDyn for EventsDim1CollectorDyn {
     fn result(
         &mut self,
         _range: Option<NanoRange>,
-        _binrange: Option<BinnedRange>,
+        _binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         todo!()
     }
@@ -1087,7 +1088,7 @@ impl<NTY: ScalarOps> items_0::collect_c::CollectorDyn for EventsDim1Collector<NT
     fn result(
         &mut self,
         range: Option<NanoRange>,
-        binrange: Option<BinnedRange>,
+        binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         items_0::collect_s::CollectorType::result(self, range, binrange)
             .map(|x| Box::new(x) as _)

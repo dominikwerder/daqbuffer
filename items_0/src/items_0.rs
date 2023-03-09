@@ -5,6 +5,7 @@ pub mod isodate;
 pub mod scalar_ops;
 pub mod streamitem;
 pub mod subfr;
+pub mod transform;
 
 pub mod bincode {
     pub use bincode::*;
@@ -13,8 +14,10 @@ pub mod bincode {
 use collect_c::CollectableWithDefault;
 use collect_s::Collectable;
 use collect_s::ToJsonResult;
+use netpod::BinnedRangeEnum;
 use netpod::NanoRange;
 use netpod::ScalarType;
+use netpod::SeriesRange;
 use netpod::Shape;
 use std::any::Any;
 use std::collections::VecDeque;
@@ -42,9 +45,9 @@ pub enum Fits {
 }
 
 pub trait RangeOverlapInfo {
-    fn ends_before(&self, range: NanoRange) -> bool;
-    fn ends_after(&self, range: NanoRange) -> bool;
-    fn starts_after(&self, range: NanoRange) -> bool;
+    fn ends_before(&self, range: &SeriesRange) -> bool;
+    fn ends_after(&self, range: &SeriesRange) -> bool;
+    fn starts_after(&self, range: &SeriesRange) -> bool;
 }
 
 pub trait EmptyForScalarTypeShape {
@@ -134,7 +137,7 @@ pub trait TimeBinner: Send {
 /// In contrast to `TimeBinnableType` this is meant for trait objects.
 pub trait TimeBinnable: fmt::Debug + WithLen + RangeOverlapInfo + Any + AsAnyRef + AsAnyMut + Send {
     // TODO implementors may fail if edges contain not at least 2 entries.
-    fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Box<dyn TimeBinner>;
+    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner>;
     // TODO just a helper for the empty result.
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult>;
 }
@@ -202,9 +205,28 @@ impl PartialEq for Box<dyn Events> {
 }
 
 pub struct TransformProperties {
+    pub needs_one_before_range: bool,
     pub needs_value: bool,
 }
 
-pub trait TransformStage {
+pub trait Transformer {
     fn query_transform_properties(&self) -> TransformProperties;
+}
+
+impl<T> Transformer for Box<T>
+where
+    T: Transformer,
+{
+    fn query_transform_properties(&self) -> TransformProperties {
+        self.as_ref().query_transform_properties()
+    }
+}
+
+impl<T> Transformer for std::pin::Pin<Box<T>>
+where
+    T: Transformer,
+{
+    fn query_transform_properties(&self) -> TransformProperties {
+        self.as_ref().query_transform_properties()
+    }
 }

@@ -1,6 +1,8 @@
+pub mod binnedcollected;
 pub mod binsdim0;
 pub mod binsxbindim0;
 pub mod channelevents;
+pub mod empty;
 pub mod eventfull;
 pub mod eventsdim0;
 pub mod eventsdim1;
@@ -23,32 +25,21 @@ use chrono::Utc;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use items_0::collect_s::Collector;
-use items_0::collect_s::ToJsonResult;
-use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
-use items_0::streamitem::StreamItem;
 use items_0::Empty;
 use items_0::Events;
 use items_0::RangeOverlapInfo;
-use items_0::TimeBinnable;
-use items_0::TimeBinner;
 use netpod::log::*;
 use netpod::timeunits::*;
-use netpod::transform::Transform;
-use netpod::AggKind;
-use netpod::BinnedRange;
 use netpod::NanoRange;
 use netpod::ScalarType;
+use netpod::SeriesRange;
 use netpod::Shape;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::Serializer;
 use std::collections::VecDeque;
 use std::fmt;
-use std::pin::Pin;
-use std::time::Duration;
-use std::time::Instant;
 
 pub fn bool_is_false(x: &bool) -> bool {
     *x == false
@@ -212,241 +203,20 @@ impl crate::merger::Mergeable for Box<dyn Events> {
 pub trait TimeBinnableType: Send + Unpin + RangeOverlapInfo + Empty {
     type Output: TimeBinnableType;
     type Aggregator: TimeBinnableTypeAggregator<Input = Self, Output = Self::Output> + Send + Unpin;
-    fn aggregator(range: NanoRange, bin_count: usize, do_time_weight: bool) -> Self::Aggregator;
+    fn aggregator(range: SeriesRange, bin_count: usize, do_time_weight: bool) -> Self::Aggregator;
 }
 
 pub trait TimeBinnableTypeAggregator: Send {
     type Input: TimeBinnableType;
     type Output: TimeBinnableType;
-    fn range(&self) -> &NanoRange;
+    fn range(&self) -> &SeriesRange;
     fn ingest(&mut self, item: &Self::Input);
-    fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output;
+    fn result_reset(&mut self, range: SeriesRange, expand: bool) -> Self::Output;
 }
 
-pub fn empty_events_dyn_ev(
-    scalar_type: &ScalarType,
-    shape: &Shape,
-    transform: &Transform,
-) -> Result<Box<dyn Events>, Error> {
-    let ret: Box<dyn Events> = match shape {
-        Shape::Scalar => match transform {
-            _ if true => {
-                use ScalarType::*;
-                type K<T> = eventsdim0::EventsDim0<T>;
-                match scalar_type {
-                    U8 => Box::new(K::<u8>::empty()),
-                    U16 => Box::new(K::<u16>::empty()),
-                    U32 => Box::new(K::<u32>::empty()),
-                    U64 => Box::new(K::<u64>::empty()),
-                    I8 => Box::new(K::<i8>::empty()),
-                    I16 => Box::new(K::<i16>::empty()),
-                    I32 => Box::new(K::<i32>::empty()),
-                    I64 => Box::new(K::<i64>::empty()),
-                    F32 => Box::new(K::<f32>::empty()),
-                    F64 => Box::new(K::<f64>::empty()),
-                    BOOL => Box::new(K::<bool>::empty()),
-                    STRING => Box::new(K::<String>::empty()),
-                }
-            }
-            _ if true => Box::new(eventsdim0::EventsDim0::<i64>::empty()),
-            _ => {
-                error!("TODO empty_events_dyn_ev {transform:?} {scalar_type:?} {shape:?}");
-                err::todoval()
-            }
-        },
-        Shape::Wave(..) => match transform {
-            _ if true => {
-                use ScalarType::*;
-                type K<T> = eventsdim1::EventsDim1<T>;
-                match scalar_type {
-                    U8 => Box::new(K::<u8>::empty()),
-                    U16 => Box::new(K::<u16>::empty()),
-                    U32 => Box::new(K::<u32>::empty()),
-                    U64 => Box::new(K::<u64>::empty()),
-                    I8 => Box::new(K::<i8>::empty()),
-                    I16 => Box::new(K::<i16>::empty()),
-                    I32 => Box::new(K::<i32>::empty()),
-                    I64 => Box::new(K::<i64>::empty()),
-                    F32 => Box::new(K::<f32>::empty()),
-                    F64 => Box::new(K::<f64>::empty()),
-                    BOOL => Box::new(K::<bool>::empty()),
-                    STRING => Box::new(K::<String>::empty()),
-                }
-            }
-            _ if true => Box::new(eventsdim0::EventsDim0::<i64>::empty()),
-            _ => {
-                error!("TODO empty_events_dyn_ev {transform:?} {scalar_type:?} {shape:?}");
-                err::todoval()
-            }
-        },
-        Shape::Image(..) => {
-            error!("TODO empty_events_dyn_ev {transform:?} {scalar_type:?} {shape:?}");
-            err::todoval()
-        }
-    };
-    Ok(ret)
-}
+pub trait ChannelEventsInput: Stream<Item = Sitemty<ChannelEvents>> + items_0::Transformer + Send {}
 
-pub fn empty_binned_dyn_tb(scalar_type: &ScalarType, shape: &Shape, transform: &Transform) -> Box<dyn TimeBinnable> {
-    error!("TODO empty_binned_dyn_tb");
-    todo!()
-}
-
-fn flush_binned(
-    binner: &mut Box<dyn TimeBinner>,
-    coll: &mut Option<Box<dyn Collector>>,
-    force: bool,
-) -> Result<(), Error> {
-    trace!("flush_binned  bins_ready_count: {}", binner.bins_ready_count());
-    if force {
-        if binner.bins_ready_count() == 0 {
-            debug!("cycle the binner forced");
-            binner.cycle();
-        } else {
-            debug!("bins ready, do not force");
-        }
-    }
-    if binner.bins_ready_count() > 0 {
-        let ready = binner.bins_ready();
-        match ready {
-            Some(mut ready) => {
-                trace!("binned_collected ready {ready:?}");
-                if coll.is_none() {
-                    *coll = Some(ready.as_collectable_mut().new_collector());
-                }
-                let cl = coll.as_mut().unwrap();
-                cl.ingest(ready.as_collectable_mut());
-                Ok(())
-            }
-            None => Err(format!("bins_ready_count but no result").into()),
-        }
-    } else {
-        Ok(())
-    }
-}
-
-// TODO remove.
-// Compare with items_2::test::bin01
-pub async fn binned_collected(
-    scalar_type: ScalarType,
-    shape: Shape,
-    agg_kind: AggKind,
-    binrange: BinnedRange,
-    timeout: Duration,
-    inp: Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>,
-) -> Result<Box<dyn ToJsonResult>, Error> {
-    event!(Level::TRACE, "binned_collected");
-    let transform = Transform::default_time_binned();
-    let edges = binrange.edges();
-    if edges.len() < 2 {
-        return Err(format!("binned_collected  but edges.len() {}", edges.len()).into());
-    }
-    let ts_edges_max = *edges.last().unwrap();
-    let deadline = Instant::now() + timeout;
-    let mut did_timeout = false;
-    // TODO use a trait to allow check of unfinished data [hcn2956jxhwsf]
-    #[allow(unused)]
-    let bin_count_exp = edges.len().max(2) as u32 - 1;
-    let do_time_weight = agg_kind.do_time_weighted();
-    // TODO maybe TimeBinner should take all ChannelEvents and handle this?
-    let mut did_range_complete = false;
-    let mut coll = None;
-    let mut binner = None;
-    let empty_item = empty_events_dyn_ev(&scalar_type, &shape, &transform)?;
-    let tmp_item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(ChannelEvents::Events(
-        empty_item,
-    ))));
-    let empty_stream = futures_util::stream::once(futures_util::future::ready(tmp_item));
-    let mut stream = empty_stream.chain(inp);
-    loop {
-        let item = futures_util::select! {
-            k = stream.next().fuse() => {
-                if let Some(k) = k {
-                    k?
-                }else {
-                    break;
-                }
-            },
-            _ = tokio::time::sleep_until(deadline.into()).fuse() => {
-                did_timeout = true;
-                break;
-            }
-        };
-        match item {
-            StreamItem::DataItem(k) => match k {
-                RangeCompletableItem::RangeComplete => {
-                    did_range_complete = true;
-                }
-                RangeCompletableItem::Data(k) => match k {
-                    ChannelEvents::Events(events) => {
-                        if events.starts_after(NanoRange {
-                            beg: 0,
-                            end: ts_edges_max,
-                        }) {
-                        } else {
-                            if binner.is_none() {
-                                let bb = events.as_time_binnable().time_binner_new(edges.clone(), do_time_weight);
-                                binner = Some(bb);
-                            }
-                            let binner = binner.as_mut().unwrap();
-                            binner.ingest(events.as_time_binnable());
-                            flush_binned(binner, &mut coll, false)?;
-                        }
-                    }
-                    ChannelEvents::Status(item) => {
-                        trace!("{:?}", item);
-                    }
-                },
-            },
-            StreamItem::Log(item) => {
-                // TODO collect also errors here?
-                trace!("{:?}", item);
-            }
-            StreamItem::Stats(item) => {
-                // TODO do something with the stats
-                trace!("{:?}", item);
-            }
-        }
-    }
-    if let Some(mut binner) = binner {
-        if did_range_complete {
-            trace!("did_range_complete");
-            binner.set_range_complete();
-        } else {
-            debug!("range not complete");
-        }
-        if did_timeout {
-            warn!("timeout");
-        } else {
-            trace!("cycle the binner");
-            binner.cycle();
-        }
-        trace!("flush binned");
-        flush_binned(&mut binner, &mut coll, false)?;
-        if coll.is_none() {
-            debug!("force a bin");
-            flush_binned(&mut binner, &mut coll, true)?;
-        } else {
-            trace!("coll is already some");
-        }
-    } else {
-        error!("no binner, should always have one");
-    }
-    match coll {
-        Some(mut coll) => {
-            let res = coll.result(None, Some(binrange)).map_err(|e| format!("{e}"))?;
-            tokio::time::sleep(Duration::from_millis(2000)).await;
-            Ok(res)
-        }
-        None => {
-            error!("binned_collected nothing collected");
-            let item = empty_binned_dyn_tb(&scalar_type, &shape, &transform);
-            let ret = item.to_box_to_json_result();
-            tokio::time::sleep(Duration::from_millis(2000)).await;
-            Ok(ret)
-        }
-    }
-}
+impl<T> ChannelEventsInput for T where T: Stream<Item = Sitemty<ChannelEvents>> + items_0::Transformer + Send {}
 
 pub fn runfut<T, F>(fut: F) -> Result<T, err::Error>
 where
