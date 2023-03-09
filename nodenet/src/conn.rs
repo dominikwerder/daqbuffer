@@ -99,7 +99,7 @@ async fn make_channel_events_stream(
         // TODO why both in PlainEventsQuery and as separate parameter? Check other usages.
         let do_one_before_range = false;
         // TODO use better builder pattern with shortcuts for production and dev defaults
-        let f = crate::channelconfig::channel_config(evq.range().clone(), evq.channel().clone(), node_config)
+        let f = crate::channelconfig::channel_config(evq.range().try_into()?, evq.channel().clone(), node_config)
             .await
             .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?;
         let scyco = conf;
@@ -108,7 +108,8 @@ async fn make_channel_events_stream(
         let scalar_type = f.scalar_type;
         let shape = f.shape;
         let do_test_stream_error = false;
-        let with_values = if let AggKind::PulseIdDiff = evq.agg_kind_value() {
+        error!("TODO derive AggKind from Transformed empty [846397]");
+        let with_values = if let AggKind::PulseIdDiff = AggKind::TimeWeightedScalar {
             false
         } else {
             true

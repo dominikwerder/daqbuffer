@@ -813,6 +813,17 @@ impl SeriesRange {
     }
 }
 
+impl TryFrom<&SeriesRange> for NanoRange {
+    type Error = Error;
+
+    fn try_from(val: &SeriesRange) -> Result<NanoRange, Self::Error> {
+        match val {
+            SeriesRange::TimeRange(x) => Ok(x.clone()),
+            SeriesRange::PulseRange(_) => Err(Error::with_msg_no_trace("not a Time range")),
+        }
+    }
+}
+
 impl From<NanoRange> for SeriesRange {
     fn from(k: NanoRange) -> Self {
         Self::TimeRange(k)

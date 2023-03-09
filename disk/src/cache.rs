@@ -2,24 +2,30 @@ use chrono::Utc;
 use err::Error;
 use netpod::log::*;
 use netpod::timeunits::SEC;
-use netpod::{AggKind, Channel, Cluster, NodeConfigCached, PreBinnedPatchCoord};
-use serde::{Deserialize, Serialize};
+use netpod::AggKind;
+use netpod::Channel;
+use netpod::Cluster;
+use netpod::NodeConfigCached;
+use netpod::PreBinnedPatchCoordEnum;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::VecDeque;
 use std::io;
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use std::time::Instant;
 use tiny_keccak::Hasher;
 
 // For file-based caching, this determined the node where the cache file is located.
 // No longer needed for scylla-based caching.
-pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoord, channel: &Channel, cluster: &Cluster) -> u32 {
+pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoordEnum, channel: &Channel, cluster: &Cluster) -> u32 {
     let mut hash = tiny_keccak::Sha3::v256();
     hash.update(channel.backend.as_bytes());
     hash.update(channel.name.as_bytes());
-    hash.update(&patch_coord.patch_beg().to_le_bytes());
+    /*hash.update(&patch_coord.patch_beg().to_le_bytes());
     hash.update(&patch_coord.patch_end().to_le_bytes());
     hash.update(&patch_coord.bin_t_len().to_le_bytes());
-    hash.update(&patch_coord.patch_t_len().to_le_bytes());
+    hash.update(&patch_coord.patch_t_len().to_le_bytes());*/
     let mut out = [0; 32];
     hash.finalize(&mut out);
     let a = [out[0], out[1], out[2], out[3]];
@@ -31,12 +37,12 @@ pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoord, channel: &Channel, c
 pub struct CacheFileDesc {
     // What identifies a cached file?
     channel: Channel,
-    patch: PreBinnedPatchCoord,
+    patch: PreBinnedPatchCoordEnum,
     agg_kind: AggKind,
 }
 
 impl CacheFileDesc {
-    pub fn new(channel: Channel, patch: PreBinnedPatchCoord, agg_kind: AggKind) -> Self {
+    pub fn new(channel: Channel, patch: PreBinnedPatchCoordEnum, agg_kind: AggKind) -> Self {
         Self {
             channel,
             patch,
@@ -50,9 +56,9 @@ impl CacheFileDesc {
         h.update(self.channel.backend.as_bytes());
         h.update(self.channel.name.as_bytes());
         h.update(format!("{}", self.agg_kind).as_bytes());
-        h.update(&self.patch.spec().bin_t_len().to_le_bytes());
-        h.update(&self.patch.spec().patch_t_len().to_le_bytes());
-        h.update(&self.patch.ix().to_le_bytes());
+        //h.update(&self.patch.spec().bin_t_len().to_le_bytes());
+        //h.update(&self.patch.spec().patch_t_len().to_le_bytes());
+        //h.update(&self.patch.ix().to_le_bytes());
         let mut buf = [0; 32];
         h.finalize(&mut buf);
         hex::encode(&buf)
@@ -79,12 +85,12 @@ impl CacheFileDesc {
             .join(&hc[3..6])
             .join(&self.channel.name)
             .join(format!("{}", self.agg_kind))
-            .join(format!(
-                "{:010}-{:010}",
-                self.patch.spec().bin_t_len() / SEC,
-                self.patch.spec().patch_t_len() / SEC
-            ))
-            .join(format!("{}-{:012}", &hash[0..6], self.patch.ix()))
+        /*.join(format!(
+            "{:010}-{:010}",
+            self.patch.spec().bin_t_len() / SEC,
+            self.patch.spec().patch_t_len() / SEC
+        ))
+        .join(format!("{}-{:012}", &hash[0..6], self.patch.ix()))*/
     }
 }
 
@@ -96,7 +102,7 @@ pub struct WrittenPbCache {
 // TODO only used for old archiver
 pub async fn write_pb_cache_min_max_avg_scalar<T>(
     values: T,
-    patch: PreBinnedPatchCoord,
+    patch: PreBinnedPatchCoordEnum,
     agg_kind: AggKind,
     channel: Channel,
     node_config: NodeConfigCached,

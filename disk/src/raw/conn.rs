@@ -76,7 +76,7 @@ pub async fn make_event_pipe(
             }
         }
     };
-    let entry_res = match extract_matching_config_entry(&range, &channel_config) {
+    let entry_res = match extract_matching_config_entry(&(&range).try_into()?, &channel_config) {
         Ok(k) => k,
         Err(e) => return Err(e)?,
     };
@@ -105,7 +105,7 @@ pub async fn make_event_pipe(
     );
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     let event_blobs = EventChunkerMultifile::new(
-        range.clone(),
+        (&range).try_into()?,
         channel_config.clone(),
         node_config.node.clone(),
         node_config.ix,
@@ -115,10 +115,11 @@ pub async fn make_event_pipe(
         true,
     );
     let shape = entry.to_shape()?;
+    error!("TODO replace AggKind in the called code");
     let pipe = make_num_pipeline_stream_evs(
         entry.scalar_type.clone(),
         shape.clone(),
-        evq.agg_kind_value(),
+        AggKind::TimeWeightedScalar,
         event_blobs,
     );
     Ok(pipe)
@@ -234,13 +235,13 @@ pub async fn make_event_blobs_pipe(
     }
     let expand = evq.one_before_range();
     let range = evq.range();
-    let entry = get_applicable_entry(evq.range(), evq.channel().clone(), node_config).await?;
+    let entry = get_applicable_entry(&evq.range().try_into()?, evq.channel().clone(), node_config).await?;
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     type ItemType = Sitemty<EventFull>;
     // TODO should depend on host config
     let pipe = if true {
         let event_blobs = make_remote_event_blobs_stream(
-            range.clone(),
+            range.try_into()?,
             evq.channel().clone(),
             &entry,
             expand,
@@ -257,7 +258,7 @@ pub async fn make_event_blobs_pipe(
         Box::pin(event_blobs) as _
     } else {
         let event_blobs = make_local_event_blobs_stream(
-            range.clone(),
+            range.try_into()?,
             evq.channel().clone(),
             &entry,
             expand,
