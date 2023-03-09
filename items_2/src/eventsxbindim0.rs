@@ -12,9 +12,10 @@ use items_0::WithLen;
 use netpod::log::*;
 use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
-use netpod::NanoRange;
+use netpod::SeriesRange;
 use serde::Deserialize;
 use serde::Serialize;
+use std::any;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
@@ -107,25 +108,16 @@ impl<NTY> WithLen for EventsXbinDim0<NTY> {
 }
 
 impl<NTY> RangeOverlapInfo for EventsXbinDim0<NTY> {
-    fn ends_before(&self, range: NanoRange) -> bool {
-        match self.tss.back() {
-            Some(&ts) => ts < range.beg,
-            None => true,
-        }
+    fn ends_before(&self, range: &SeriesRange) -> bool {
+        todo!()
     }
 
-    fn ends_after(&self, range: NanoRange) -> bool {
-        match self.tss.back() {
-            Some(&ts) => ts >= range.end,
-            None => panic!(),
-        }
+    fn ends_after(&self, range: &SeriesRange) -> bool {
+        todo!()
     }
 
-    fn starts_after(&self, range: NanoRange) -> bool {
-        match self.tss.front() {
-            Some(&ts) => ts >= range.end,
-            None => panic!(),
-        }
+    fn starts_after(&self, range: &SeriesRange) -> bool {
+        todo!()
     }
 }
 
@@ -136,8 +128,8 @@ where
     type Output = BinsXbinDim0<NTY>;
     type Aggregator = EventsXbinDim0Aggregator<NTY>;
 
-    fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
-        let name = std::any::type_name::<Self>();
+    fn aggregator(range: SeriesRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+        let name = any::type_name::<Self>();
         debug!(
             "TimeBinnableType for {}  aggregator()  range {:?}  x_bin_count {}  do_time_weight {}",
             name, range, x_bin_count, do_time_weight
@@ -150,7 +142,7 @@ pub struct EventsXbinDim0Aggregator<NTY>
 where
     NTY: ScalarOps,
 {
-    range: NanoRange,
+    range: SeriesRange,
     count: u64,
     min: NTY,
     max: NTY,
@@ -168,9 +160,9 @@ impl<NTY> EventsXbinDim0Aggregator<NTY>
 where
     NTY: ScalarOps,
 {
-    pub fn new(range: NanoRange, do_time_weight: bool) -> Self {
+    pub fn new(range: SeriesRange, do_time_weight: bool) -> Self {
         Self {
-            int_ts: range.beg,
+            int_ts: todo!(),
             range,
             count: 0,
             min: NTY::zero_b(),
@@ -212,7 +204,7 @@ where
 
     fn apply_event_time_weight(&mut self, ts: u64) {
         //debug!("apply_event_time_weight");
-        if let (Some(avg), Some(min), Some(max)) = (self.last_avg, &self.last_min, &self.last_max) {
+        /*if let (Some(avg), Some(min), Some(max)) = (self.last_avg, &self.last_min, &self.last_max) {
             let min2 = min.clone();
             let max2 = max.clone();
             self.apply_min_max(min2, max2);
@@ -223,11 +215,12 @@ where
             }
             self.sumc += 1;
             self.int_ts = ts;
-        }
+        }*/
+        todo!()
     }
 
     fn ingest_unweight(&mut self, item: &EventsXbinDim0<NTY>) {
-        for i1 in 0..item.tss.len() {
+        /*for i1 in 0..item.tss.len() {
             let ts = item.tss[i1];
             let avg = item.avgs[i1];
             let min = item.mins[i1].clone();
@@ -238,11 +231,12 @@ where
                 self.apply_event_unweight(avg, min, max);
                 self.count += 1;
             }
-        }
+        }*/
+        todo!()
     }
 
     fn ingest_time_weight(&mut self, item: &EventsXbinDim0<NTY>) {
-        for i1 in 0..item.tss.len() {
+        /*for i1 in 0..item.tss.len() {
             let ts = item.tss[i1];
             let avg = item.avgs[i1];
             let min = item.mins[i1].clone();
@@ -262,11 +256,12 @@ where
                 self.last_min = Some(min);
                 self.last_max = Some(max);
             }
-        }
+        }*/
+        todo!()
     }
 
-    fn result_reset_unweight(&mut self, range: NanoRange, _expand: bool) -> BinsXbinDim0<NTY> {
-        let avg = if self.sumc == 0 {
+    fn result_reset_unweight(&mut self, range: SeriesRange, _expand: bool) -> BinsXbinDim0<NTY> {
+        /*let avg = if self.sumc == 0 {
             0f32
         } else {
             self.sum / self.sumc as f32
@@ -286,12 +281,13 @@ where
         self.max = NTY::zero_b();
         self.sum = 0f32;
         self.sumc = 0;
-        ret
+        ret*/
+        todo!()
     }
 
-    fn result_reset_time_weight(&mut self, range: NanoRange, expand: bool) -> BinsXbinDim0<NTY> {
+    fn result_reset_time_weight(&mut self, range: SeriesRange, expand: bool) -> BinsXbinDim0<NTY> {
         // TODO check callsite for correct expand status.
-        if true || expand {
+        /*if true || expand {
             self.apply_event_time_weight(self.range.end);
         }
         let avg = {
@@ -313,7 +309,8 @@ where
         self.max = NTY::zero_b();
         self.sum = 0f32;
         self.sumc = 0;
-        ret
+        ret*/
+        todo!()
     }
 }
 
@@ -324,7 +321,7 @@ where
     type Input = EventsXbinDim0<NTY>;
     type Output = BinsXbinDim0<NTY>;
 
-    fn range(&self) -> &NanoRange {
+    fn range(&self) -> &SeriesRange {
         &self.range
     }
 
@@ -337,7 +334,7 @@ where
         }
     }
 
-    fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output {
+    fn result_reset(&mut self, range: SeriesRange, expand: bool) -> Self::Output {
         if self.do_time_weight {
             self.result_reset_time_weight(range, expand)
         } else {
@@ -448,8 +445,12 @@ where
         self.timed_out = true;
     }
 
-    fn result(&mut self, range: Option<NanoRange>, _binrange: Option<BinnedRangeEnum>) -> Result<Self::Output, Error> {
-        use std::mem::replace;
+    fn result(
+        &mut self,
+        range: Option<SeriesRange>,
+        _binrange: Option<BinnedRangeEnum>,
+    ) -> Result<Self::Output, Error> {
+        /*use std::mem::replace;
         let continue_at = if self.timed_out {
             if let Some(ts) = self.vals.tss.back() {
                 Some(IsoDateTime::from_u64(*ts + netpod::timeunits::MS))
@@ -484,7 +485,8 @@ where
             timed_out: self.timed_out,
             continue_at,
         };
-        Ok(ret)
+        Ok(ret)*/
+        todo!()
     }
 }
 
@@ -521,7 +523,7 @@ where
 
     fn result(
         &mut self,
-        _range: Option<NanoRange>,
+        _range: Option<SeriesRange>,
         _binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, Error> {
         todo!()

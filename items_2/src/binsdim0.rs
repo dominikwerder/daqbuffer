@@ -26,11 +26,10 @@ use netpod::timeunits::SEC;
 use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
 use netpod::Dim0Kind;
-use netpod::NanoRange;
 use netpod::SeriesRange;
-use num_traits::Zero;
 use serde::Deserialize;
 use serde::Serialize;
+use std::any;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
@@ -51,7 +50,7 @@ pub struct BinsDim0<NTY> {
     pub mins: VecDeque<NTY>,
     pub maxs: VecDeque<NTY>,
     pub avgs: VecDeque<f32>,
-    pub dim0kind: Dim0Kind,
+    pub dim0kind: Option<Dim0Kind>,
 }
 
 impl<NTY> fmt::Debug for BinsDim0<NTY>
@@ -59,7 +58,7 @@ where
     NTY: fmt::Debug,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        let self_name = std::any::type_name::<Self>();
+        let self_name = any::type_name::<Self>();
         if true {
             write!(
                 fmt,
@@ -165,7 +164,7 @@ where
 }
 
 impl<NTY> Empty for BinsDim0<NTY> {
-    fn empty(dim0kind: Dim0Kind) -> Self {
+    fn empty() -> Self {
         Self {
             ts1s: VecDeque::new(),
             ts2s: VecDeque::new(),
@@ -173,7 +172,7 @@ impl<NTY> Empty for BinsDim0<NTY> {
             mins: VecDeque::new(),
             maxs: VecDeque::new(),
             avgs: VecDeque::new(),
-            dim0kind,
+            dim0kind: None,
         }
     }
 }
@@ -277,13 +276,14 @@ impl<NTY: ScalarOps> TimeBinnableType for BinsDim0<NTY> {
     type Output = BinsDim0<NTY>;
     type Aggregator = BinsDim0Aggregator<NTY>;
 
-    fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
-        let self_name = std::any::type_name::<Self>();
+    fn aggregator(range: SeriesRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+        let self_name = any::type_name::<Self>();
         debug!(
             "TimeBinnableType for {self_name}  aggregator()  range {:?}  x_bin_count {}  do_time_weight {}",
             range, x_bin_count, do_time_weight
         );
-        Self::Aggregator::new(range, do_time_weight)
+        //Self::Aggregator::new(range, do_time_weight)
+        todo!()
     }
 }
 
@@ -312,7 +312,7 @@ pub struct BinsDim0CollectedResult<NTY> {
     range_final: bool,
     #[serde(rename = "timedOut", default, skip_serializing_if = "crate::bool_is_false")]
     timed_out: bool,
-    #[serde(rename = "missingBins", default, skip_serializing_if = "Zero::is_zero")]
+    #[serde(rename = "missingBins", default, skip_serializing_if = "crate::is_zero_u32")]
     missing_bins: u32,
     #[serde(rename = "continueAt", default, skip_serializing_if = "Option::is_none")]
     continue_at: Option<IsoDateTime>,
@@ -412,7 +412,7 @@ impl<NTY> BinsDim0Collector<NTY> {
 
 impl<NTY> WithLen for BinsDim0Collector<NTY> {
     fn len(&self) -> usize {
-        self.vals.ts1s.len()
+        self.vals.as_ref().map_or(0, |x| x.ts1s.len())
     }
 }
 
@@ -421,14 +421,14 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
     type Output = BinsDim0CollectedResult<NTY>;
 
     fn ingest(&mut self, src: &mut Self::Input) {
-        trace!("\n\n-----------  BinsDim0Collector ingest\n{:?}\n\n", src);
         // TODO could be optimized by non-contiguous container.
-        self.vals.ts1s.append(&mut src.ts1s);
+        /*self.vals.ts1s.append(&mut src.ts1s);
         self.vals.ts2s.append(&mut src.ts2s);
         self.vals.counts.append(&mut src.counts);
         self.vals.mins.append(&mut src.mins);
         self.vals.maxs.append(&mut src.maxs);
-        self.vals.avgs.append(&mut src.avgs);
+        self.vals.avgs.append(&mut src.avgs);*/
+        todo!()
     }
 
     fn set_range_complete(&mut self) {
@@ -439,8 +439,12 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
         self.timed_out = true;
     }
 
-    fn result(&mut self, _range: Option<NanoRange>, binrange: Option<BinnedRangeEnum>) -> Result<Self::Output, Error> {
-        let bin_count_exp = if let Some(r) = &binrange {
+    fn result(
+        &mut self,
+        _range: Option<SeriesRange>,
+        binrange: Option<BinnedRangeEnum>,
+    ) -> Result<Self::Output, Error> {
+        /*let bin_count_exp = if let Some(r) = &binrange {
             r.bin_count() as u32
         } else {
             eprintln!("no binrange given");
@@ -496,7 +500,8 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
             continue_at,
             finished_at,
         };
-        Ok(ret)
+        Ok(ret)*/
+        todo!()
     }
 }
 
@@ -513,7 +518,7 @@ where
     NTY: ScalarOps,
 {
     fn len(&self) -> usize {
-        self.vals.len()
+        self.vals.as_ref().map_or(0, |x| x.len())
     }
 
     fn ingest(&mut self, item: &mut dyn items_0::collect_c::Collectable) {
@@ -569,7 +574,7 @@ where
 
     fn result(
         &mut self,
-        range: Option<NanoRange>,
+        range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, Error> {
         match CollectorType::result(self, range, binrange) {
@@ -580,7 +585,7 @@ where
 }
 
 pub struct BinsDim0Aggregator<NTY> {
-    range: NanoRange,
+    range: SeriesRange,
     count: u64,
     min: NTY,
     max: NTY,
@@ -591,7 +596,7 @@ pub struct BinsDim0Aggregator<NTY> {
 }
 
 impl<NTY: ScalarOps> BinsDim0Aggregator<NTY> {
-    pub fn new(range: NanoRange, _do_time_weight: bool) -> Self {
+    pub fn new(range: SeriesRange, _do_time_weight: bool) -> Self {
         Self {
             range,
             count: 0,
@@ -608,12 +613,12 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for BinsDim0Aggregator<NTY> {
     type Input = BinsDim0<NTY>;
     type Output = BinsDim0<NTY>;
 
-    fn range(&self) -> &NanoRange {
+    fn range(&self) -> &SeriesRange {
         &self.range
     }
 
     fn ingest(&mut self, item: &Self::Input) {
-        for i1 in 0..item.ts1s.len() {
+        /*for i1 in 0..item.ts1s.len() {
             if item.counts[i1] == 0 {
             } else if item.ts2s[i1] <= self.range.beg {
             } else if item.ts1s[i1] >= self.range.end {
@@ -633,11 +638,12 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for BinsDim0Aggregator<NTY> {
                 self.sum += item.avgs[i1];
                 self.sumc += 1;
             }
-        }
+        }*/
+        todo!()
     }
 
-    fn result_reset(&mut self, range: NanoRange, _expand: bool) -> Self::Output {
-        if self.sumc > 0 {
+    fn result_reset(&mut self, range: SeriesRange, _expand: bool) -> Self::Output {
+        /*if self.sumc > 0 {
             self.avg = self.sum / self.sumc as f32;
         }
         let ret = Self::Output {
@@ -652,7 +658,8 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for BinsDim0Aggregator<NTY> {
         self.count = 0;
         self.sum = 0f32;
         self.sumc = 0;
-        ret
+        ret*/
+        todo!()
     }
 }
 
@@ -669,24 +676,26 @@ impl<NTY: ScalarOps> TimeBinnable for BinsDim0<NTY> {
 }
 
 pub struct BinsDim0TimeBinner<NTY: ScalarOps> {
-    edges: VecDeque<u64>,
+    binrange: BinnedRangeEnum,
     do_time_weight: bool,
     agg: Option<BinsDim0Aggregator<NTY>>,
     ready: Option<<BinsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output>,
+    range_final: bool,
 }
 
 impl<NTY: ScalarOps> BinsDim0TimeBinner<NTY> {
     fn new(binrange: BinnedRangeEnum, do_time_weight: bool) -> Self {
         Self {
-            edges,
+            binrange,
             do_time_weight,
             agg: None,
             ready: None,
+            range_final: false,
         }
     }
 
-    fn next_bin_range(&mut self) -> Option<NanoRange> {
-        if self.edges.len() >= 2 {
+    fn next_bin_range(&mut self) -> Option<SeriesRange> {
+        /*if self.edges.len() >= 2 {
             let ret = NanoRange {
                 beg: self.edges[0],
                 end: self.edges[1],
@@ -695,13 +704,14 @@ impl<NTY: ScalarOps> BinsDim0TimeBinner<NTY> {
             Some(ret)
         } else {
             None
-        }
+        }*/
+        todo!()
     }
 }
 
 impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
     fn ingest(&mut self, item: &dyn TimeBinnable) {
-        let self_name = std::any::type_name::<Self>();
+        /*let self_name = any::type_name::<Self>();
         if item.len() == 0 {
             // Return already here, RangeOverlapInfo would not give much sense.
             return;
@@ -765,7 +775,8 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
                     }
                 }
             }
-        }
+        }*/
+        todo!()
     }
 
     fn bins_ready_count(&self) -> usize {
@@ -785,7 +796,7 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
     // TODO there is too much common code between implementors:
     fn push_in_progress(&mut self, push_empty: bool) {
         // TODO expand should be derived from AggKind. Is it still required after all?
-        let expand = true;
+        /*let expand = true;
         if let Some(agg) = self.agg.as_mut() {
             let dummy_range = NanoRange { beg: 4, end: 5 };
             let mut bins = agg.result_reset(dummy_range, expand);
@@ -801,12 +812,13 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
                     }
                 }
             }
-        }
+        }*/
+        todo!()
     }
 
     // TODO there is too much common code between implementors:
     fn cycle(&mut self) {
-        let n = self.bins_ready_count();
+        /*let n = self.bins_ready_count();
         self.push_in_progress(true);
         if self.bins_ready_count() == n {
             if let Some(range) = self.next_bin_range() {
@@ -826,10 +838,13 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
             } else {
                 warn!("cycle: no in-progress bin pushed, but also no more bin to add as zero-bin");
             }
-        }
+        }*/
+        todo!()
     }
 
-    fn set_range_complete(&mut self) {}
+    fn set_range_complete(&mut self) {
+        self.range_final = true;
+    }
 
     fn empty(&self) -> Box<dyn items_0::TimeBinned> {
         let ret = <BinsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output::empty();

@@ -45,6 +45,10 @@ pub fn bool_is_false(x: &bool) -> bool {
     *x == false
 }
 
+pub fn is_zero_u32(x: &u32) -> bool {
+    *x == 0
+}
+
 pub fn ts_offs_from_abs(tss: &[u64]) -> (u64, VecDeque<u64>, VecDeque<u64>) {
     let ts_anchor_sec = tss.first().map_or(0, |&k| k) / SEC;
     let ts_anchor_ns = ts_anchor_sec * SEC;

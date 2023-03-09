@@ -4,7 +4,7 @@ use crate::AsAnyRef;
 use crate::WithLen;
 use err::Error;
 use netpod::BinnedRangeEnum;
-use netpod::NanoRange;
+use netpod::SeriesRange;
 use serde::Serialize;
 use std::any::Any;
 use std::fmt;
@@ -19,7 +19,7 @@ pub trait CollectorType: Send + Unpin + WithLen {
     fn set_timed_out(&mut self);
 
     // TODO use this crate's Error instead:
-    fn result(&mut self, range: Option<NanoRange>, binrange: Option<BinnedRangeEnum>) -> Result<Self::Output, Error>;
+    fn result(&mut self, range: Option<SeriesRange>, binrange: Option<BinnedRangeEnum>) -> Result<Self::Output, Error>;
 }
 
 pub trait Collector: Send + Unpin + WithLen {
@@ -29,7 +29,7 @@ pub trait Collector: Send + Unpin + WithLen {
     // TODO factor the required parameters into new struct? Generic over events or binned?
     fn result(
         &mut self,
-        range: Option<NanoRange>,
+        range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn ToJsonResult>, Error>;
 }
@@ -60,7 +60,7 @@ impl<T: CollectorType + 'static> Collector for T {
 
     fn result(
         &mut self,
-        range: Option<NanoRange>,
+        range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn ToJsonResult>, Error> {
         let ret = T::result(self, range, binrange)?;

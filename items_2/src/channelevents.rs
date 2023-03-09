@@ -11,6 +11,7 @@ use netpod::log::*;
 use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
 use netpod::NanoRange;
+use netpod::SeriesRange;
 use serde::Deserialize;
 use serde::Serialize;
 use std::any::Any;
@@ -605,7 +606,7 @@ impl Collectable for ChannelEvents {
 pub struct ChannelEventsTimeBinner {
     // TODO `ConnStatus` contains all the changes that can happen to a connection, but
     // here we would rather require a simplified current state for binning purpose.
-    edges: Vec<u64>,
+    binrange: BinnedRangeEnum,
     do_time_weight: bool,
     conn_state: ConnStatus,
     binner: Option<Box<dyn items_0::TimeBinner>>,
@@ -627,7 +628,7 @@ impl crate::timebin::TimeBinner for ChannelEventsTimeBinner {
         match item {
             ChannelEvents::Events(item) => {
                 if self.binner.is_none() {
-                    let binner = item.time_binner_new(self.edges.clone(), self.do_time_weight);
+                    let binner = item.time_binner_new(self.binrange.clone(), self.do_time_weight);
                     self.binner = Some(binner);
                 }
                 match self.binner.as_mut() {
@@ -690,14 +691,14 @@ impl crate::timebin::TimeBinner for ChannelEventsTimeBinner {
 impl crate::timebin::TimeBinnable for ChannelEvents {
     type TimeBinner = ChannelEventsTimeBinner;
 
-    fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Self::TimeBinner {
+    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Self::TimeBinner {
         // TODO probably wrong?
         let (binner, status) = match self {
             ChannelEvents::Events(_events) => (None, ConnStatus::Connect),
             ChannelEvents::Status(_status) => (None, ConnStatus::Connect),
         };
         ChannelEventsTimeBinner {
-            edges,
+            binrange,
             do_time_weight,
             conn_state: status,
             binner,
@@ -783,7 +784,7 @@ impl items_0::collect_c::Collector for ChannelEventsCollector {
 
     fn result(
         &mut self,
-        range: Option<NanoRange>,
+        range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         match self.coll.as_mut() {

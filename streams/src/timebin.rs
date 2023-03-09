@@ -91,7 +91,7 @@ where
         trace!("process_item {item:?}");
         if self.binner.is_none() {
             trace!("process_item call time_binner_new");
-            let binner = item.time_binner_new(self.edges.clone(), self.do_time_weight);
+            let binner = item.time_binner_new(todo!(), self.do_time_weight);
             self.binner = Some(binner);
         }
         let binner = self.binner.as_mut().unwrap();

@@ -7,9 +7,9 @@ use items_0::streamitem::Sitemty;
 use items_0::streamitem::StatsItem;
 use items_0::streamitem::StreamItem;
 use netpod::log::*;
-use netpod::BinnedRange;
+use netpod::BinnedRangeEnum;
 use netpod::DiskStats;
-use netpod::NanoRange;
+use netpod::SeriesRange;
 use std::fmt;
 use std::time::Duration;
 use std::time::Instant;
@@ -37,8 +37,8 @@ async fn collect_in_span<T, S>(
     stream: S,
     deadline: Instant,
     events_max: u64,
-    range: Option<NanoRange>,
-    binrange: Option<BinnedRange>,
+    range: Option<SeriesRange>,
+    binrange: Option<BinnedRangeEnum>,
 ) -> Result<Box<dyn items_0::collect_c::Collected>, Error>
 where
     S: Stream<Item = Sitemty<T>> + Unpin,
@@ -136,8 +136,8 @@ pub async fn collect<T, S>(
     stream: S,
     deadline: Instant,
     events_max: u64,
-    range: Option<NanoRange>,
-    binrange: Option<BinnedRange>,
+    range: Option<SeriesRange>,
+    binrange: Option<BinnedRangeEnum>,
 ) -> Result<Box<dyn items_0::collect_c::Collected>, Error>
 where
     S: Stream<Item = Sitemty<T>> + Unpin,

@@ -39,7 +39,6 @@ pub struct EventsDim0<NTY> {
     pub tss: VecDeque<u64>,
     pub pulses: VecDeque<u64>,
     pub values: VecDeque<NTY>,
-    pub dim0kind: Dim0Kind,
 }
 
 impl<NTY> EventsDim0<NTY> {
@@ -85,12 +84,11 @@ where
 }
 
 impl<NTY> Empty for EventsDim0<NTY> {
-    fn empty(dim0kind: Dim0Kind) -> Self {
+    fn empty() -> Self {
         Self {
             tss: VecDeque::new(),
             pulses: VecDeque::new(),
             values: VecDeque::new(),
-            dim0kind,
         }
     }
 }
@@ -223,7 +221,7 @@ impl<NTY> EventsDim0Collector<NTY> {
 
 impl<NTY> WithLen for EventsDim0Collector<NTY> {
     fn len(&self) -> usize {
-        self.vals.map_or(0, |x| x.tss.len())
+        self.vals.as_ref().map_or(0, |x| x.tss.len())
     }
 }
 
@@ -344,7 +342,7 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
 
     fn ingest(&mut self, src: &mut Self::Input) {
         if self.vals.is_none() {
-            self.vals = Some(EventsDim0::empty(src.dim0kind.clone()));
+            self.vals = Some(EventsDim0::empty());
         }
         let vals = self.vals.as_mut().unwrap();
         vals.tss.append(&mut src.tss);
@@ -360,7 +358,11 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
         self.timed_out = true;
     }
 
-    fn result(&mut self, range: Option<NanoRange>, _binrange: Option<BinnedRangeEnum>) -> Result<Self::Output, Error> {
+    fn result(
+        &mut self,
+        range: Option<SeriesRange>,
+        _binrange: Option<BinnedRangeEnum>,
+    ) -> Result<Self::Output, Error> {
         let self_name = any::type_name::<Self>();
         // If we timed out, we want to hint the client from where to continue.
         // This is tricky: currently, client can not request a left-exclusive range.
@@ -377,7 +379,13 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
                 Some(IsoDateTime::from_u64(*ts + netpod::timeunits::MS))
             } else {
                 if let Some(range) = &range {
-                    Some(IsoDateTime::from_u64(range.beg + netpod::timeunits::SEC))
+                    match range {
+                        SeriesRange::TimeRange(x) => Some(IsoDateTime::from_u64(x.beg + netpod::timeunits::SEC)),
+                        SeriesRange::PulseRange(x) => {
+                            error!("TODO emit create continueAt for pulse range");
+                            None
+                        }
+                    }
                 } else {
                     warn!("can not determine continue-at parameters");
                     None
@@ -428,7 +436,7 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectableType for EventsDim0<NTY> {
 
 impl<NTY: ScalarOps> items_0::collect_c::Collector for EventsDim0Collector<NTY> {
     fn len(&self) -> usize {
-        self.vals.map_or(0, |x| x.len())
+        self.vals.as_ref().map_or(0, |x| x.len())
     }
 
     fn ingest(&mut self, item: &mut dyn items_0::collect_c::Collectable) {
@@ -449,7 +457,7 @@ impl<NTY: ScalarOps> items_0::collect_c::Collector for EventsDim0Collector<NTY> 
 
     fn result(
         &mut self,
-        range: Option<NanoRange>,
+        range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         match items_0::collect_s::CollectorType::result(self, range, binrange) {
@@ -658,7 +666,7 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
                 mins: [min].into(),
                 maxs: [max].into(),
                 avgs: [avg].into(),
-                dim0kind: self.range.dim0kind(),
+                dim0kind: Some(self.range.dim0kind()),
             }
         } else {
             error!("TODO result_reset_unweight");
@@ -700,7 +708,7 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
                 mins: [min].into(),
                 maxs: [max].into(),
                 avgs: [avg].into(),
-                dim0kind: self.range.dim0kind(),
+                dim0kind: Some(self.range.dim0kind()),
             }
         } else {
             error!("TODO result_reset_time_weight");
@@ -841,17 +849,12 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
         let tss = self.tss.drain(..n1).collect();
         let pulses = self.pulses.drain(..n1).collect();
         let values = self.values.drain(..n1).collect();
-        let ret = Self {
-            tss,
-            pulses,
-            values,
-            dim0kind: self.dim0kind.clone(),
-        };
+        let ret = Self { tss, pulses, values };
         Box::new(ret)
     }
 
     fn new_empty(&self) -> Box<dyn Events> {
-        Box::new(Self::empty(self.dim0kind.clone()))
+        Box::new(Self::empty())
     }
 
     fn drain_into(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), items_0::MergeError> {
@@ -939,7 +942,7 @@ pub struct EventsDim0TimeBinner<NTY: ScalarOps> {
     rng: Option<SeriesRange>,
     agg: EventsDim0Aggregator<NTY>,
     ready: Option<<EventsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output>,
-    range_complete: bool,
+    range_final: bool,
 }
 
 impl<NTY: ScalarOps> EventsDim0TimeBinner<NTY> {
@@ -959,7 +962,7 @@ impl<NTY: ScalarOps> EventsDim0TimeBinner<NTY> {
             rng: Some(agg.range.clone()),
             agg,
             ready: None,
-            range_complete: false,
+            range_final: false,
         };
         Ok(ret)
     }
@@ -1096,7 +1099,7 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
             let range_next = self.next_bin_range();
             self.rng = range_next.clone();
             if let Some(range) = range_next {
-                let mut bins = BinsDim0::empty(self.binrange.dim0kind());
+                let mut bins = BinsDim0::empty();
                 if range.is_time() {
                     bins.append_zero(range.beg_u64(), range.end_u64());
                 } else {
@@ -1120,11 +1123,11 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
     }
 
     fn set_range_complete(&mut self) {
-        self.range_complete = true;
+        self.range_final = true;
     }
 
     fn empty(&self) -> Box<dyn items_0::TimeBinned> {
-        let ret = <EventsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output::empty(self.binrange.dim0kind());
+        let ret = <EventsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output::empty();
         Box::new(ret)
     }
 }
@@ -1158,7 +1161,7 @@ impl items_0::collect_c::CollectorDyn for EventsDim0CollectorDyn {
 
     fn result(
         &mut self,
-        _range: Option<NanoRange>,
+        _range: Option<SeriesRange>,
         _binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         todo!()
@@ -1190,7 +1193,7 @@ impl<NTY: ScalarOps> items_0::collect_c::CollectorDyn for EventsDim0Collector<NT
 
     fn result(
         &mut self,
-        range: Option<NanoRange>,
+        range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         items_0::collect_s::CollectorType::result(self, range, binrange)
@@ -1236,8 +1239,7 @@ mod test_frame {
     #[test]
     fn events_bincode() {
         taskrun::tracing_init().unwrap();
-        // core::result::Result<items::StreamItem<items::RangeCompletableItem<items_2::channelevents::ChannelEvents>>, err::Error>
-        let mut events = EventsDim0::empty(Dim0Kind::Time);
+        let mut events = EventsDim0::empty();
         events.push(123, 234, 55f32);
         let events = events;
         let events: Box<dyn Events> = Box::new(events);

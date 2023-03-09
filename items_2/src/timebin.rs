@@ -1,3 +1,4 @@
+use netpod::BinnedRangeEnum;
 use std::fmt;
 
 pub trait TimeBinner: fmt::Debug + Unpin {
@@ -27,5 +28,5 @@ pub trait TimeBinner: fmt::Debug + Unpin {
 pub trait TimeBinnable: fmt::Debug + Sized {
     type TimeBinner: TimeBinner<Input = Self>;
 
-    fn time_binner_new(&self, edges: Vec<u64>, do_time_weight: bool) -> Self::TimeBinner;
+    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Self::TimeBinner;
 }

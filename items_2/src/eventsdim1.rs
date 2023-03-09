@@ -18,7 +18,7 @@ use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
-use netpod::NanoRange;
+use netpod::SeriesRange;
 use serde::Deserialize;
 use serde::Serialize;
 use std::any::Any;
@@ -125,28 +125,16 @@ impl<NTY> WithLen for EventsDim1<NTY> {
 }
 
 impl<NTY: ScalarOps> RangeOverlapInfo for EventsDim1<NTY> {
-    fn ends_before(&self, range: NanoRange) -> bool {
-        if let Some(&max) = self.tss.back() {
-            max < range.beg
-        } else {
-            true
-        }
+    fn ends_before(&self, range: &SeriesRange) -> bool {
+        todo!()
     }
 
-    fn ends_after(&self, range: NanoRange) -> bool {
-        if let Some(&max) = self.tss.back() {
-            max >= range.end
-        } else {
-            true
-        }
+    fn ends_after(&self, range: &SeriesRange) -> bool {
+        todo!()
     }
 
-    fn starts_after(&self, range: NanoRange) -> bool {
-        if let Some(&min) = self.tss.front() {
-            min >= range.end
-        } else {
-            true
-        }
+    fn starts_after(&self, range: &SeriesRange) -> bool {
+        todo!()
     }
 }
 
@@ -158,7 +146,7 @@ where
     type Output = BinsDim0<NTY>;
     type Aggregator = EventsDim1Aggregator<NTY>;
 
-    fn aggregator(range: NanoRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+    fn aggregator(range: SeriesRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
         let self_name = std::any::type_name::<Self>();
         debug!(
             "TimeBinnableType for {self_name}  aggregator()  range {:?}  x_bin_count {}  do_time_weight {}",
@@ -296,13 +284,17 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim1Collector<N
         self.timed_out = true;
     }
 
-    fn result(&mut self, range: Option<NanoRange>, _binrange: Option<BinnedRangeEnum>) -> Result<Self::Output, Error> {
+    fn result(
+        &mut self,
+        range: Option<SeriesRange>,
+        _binrange: Option<BinnedRangeEnum>,
+    ) -> Result<Self::Output, Error> {
         // If we timed out, we want to hint the client from where to continue.
         // This is tricky: currently, client can not request a left-exclusive range.
         // We currently give the timestamp of the last event plus a small delta.
         // The amount of the delta must take into account what kind of timestamp precision the client
         // can parse and handle.
-        let continue_at = if self.timed_out {
+        /*let continue_at = if self.timed_out {
             if let Some(ts) = self.vals.tss.back() {
                 Some(IsoDateTime::from_u64(*ts + netpod::timeunits::MS))
             } else {
@@ -331,7 +323,8 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim1Collector<N
             timed_out: self.timed_out,
             continue_at,
         };
-        Ok(ret)
+        Ok(ret)*/
+        todo!()
     }
 }
 
@@ -366,7 +359,7 @@ impl<NTY: ScalarOps> items_0::collect_c::Collector for EventsDim1Collector<NTY> 
 
     fn result(
         &mut self,
-        range: Option<NanoRange>,
+        range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         match items_0::collect_s::CollectorType::result(self, range, binrange) {
@@ -377,7 +370,7 @@ impl<NTY: ScalarOps> items_0::collect_c::Collector for EventsDim1Collector<NTY> 
 }
 
 pub struct EventsDim1Aggregator<NTY> {
-    range: NanoRange,
+    range: SeriesRange,
     count: u64,
     min: NTY,
     max: NTY,
@@ -404,8 +397,8 @@ impl<NTY> Drop for EventsDim1Aggregator<NTY> {
 }
 
 impl<NTY: ScalarOps> EventsDim1Aggregator<NTY> {
-    pub fn new(range: NanoRange, do_time_weight: bool) -> Self {
-        let int_ts = range.beg;
+    pub fn new(range: SeriesRange, do_time_weight: bool) -> Self {
+        /*let int_ts = range.beg;
         Self {
             range,
             count: 0,
@@ -420,7 +413,8 @@ impl<NTY: ScalarOps> EventsDim1Aggregator<NTY> {
             do_time_weight,
             events_taken_count: 0,
             events_ignored_count: 0,
-        }
+        }*/
+        todo!()
     }
 
     // TODO reduce clone.. optimize via more traits to factor the trade-offs?
@@ -461,7 +455,7 @@ impl<NTY: ScalarOps> EventsDim1Aggregator<NTY> {
     }
 
     fn apply_event_time_weight(&mut self, ts: u64) {
-        if let Some(v) = &self.last_seen_val {
+        /*if let Some(v) = &self.last_seen_val {
             let vf = v.as_prim_f32_b();
             let v2 = v.clone();
             if ts > self.range.beg {
@@ -483,11 +477,12 @@ impl<NTY: ScalarOps> EventsDim1Aggregator<NTY> {
                 "apply_event_time_weight NO VALUE  {}",
                 ts as i64 - self.range.beg as i64
             );
-        }
+        }*/
+        todo!()
     }
 
     fn ingest_unweight(&mut self, item: &<Self as TimeBinnableTypeAggregator>::Input) {
-        trace!("TODO check again result_reset_unweight");
+        /*trace!("TODO check again result_reset_unweight");
         err::todo();
         for i1 in 0..item.tss.len() {
             let ts = item.tss[i1];
@@ -504,11 +499,12 @@ impl<NTY: ScalarOps> EventsDim1Aggregator<NTY> {
                 self.count += 1;
                 self.events_taken_count += 1;
             }
-        }
+        }*/
+        todo!()
     }
 
     fn ingest_time_weight(&mut self, item: &<Self as TimeBinnableTypeAggregator>::Input) {
-        let self_name = std::any::type_name::<Self>();
+        /*let self_name = std::any::type_name::<Self>();
         trace!("{self_name}::ingest_time_weight  item len {}", item.len());
         for i1 in 0..item.tss.len() {
             let ts = item.tss[i1];
@@ -546,11 +542,12 @@ impl<NTY: ScalarOps> EventsDim1Aggregator<NTY> {
                 //self.last_seen_val = Some(val);
                 self.events_taken_count += 1;
             }
-        }
+        }*/
+        todo!()
     }
 
-    fn result_reset_unweight(&mut self, range: NanoRange, _expand: bool) -> BinsDim0<NTY> {
-        trace!("TODO check again result_reset_unweight");
+    fn result_reset_unweight(&mut self, range: SeriesRange, _expand: bool) -> BinsDim0<NTY> {
+        /*trace!("TODO check again result_reset_unweight");
         err::todo();
         let (min, max, avg) = if self.sumc > 0 {
             let avg = self.sum / self.sumc as f32;
@@ -576,12 +573,13 @@ impl<NTY: ScalarOps> EventsDim1Aggregator<NTY> {
         self.sum = 0f32;
         self.sumc = 0;
         self.did_min_max = false;
-        ret
+        ret*/
+        todo!()
     }
 
-    fn result_reset_time_weight(&mut self, range: NanoRange, expand: bool) -> BinsDim0<NTY> {
+    fn result_reset_time_weight(&mut self, range: SeriesRange, expand: bool) -> BinsDim0<NTY> {
         // TODO check callsite for correct expand status.
-        if expand {
+        /*if expand {
             debug!("result_reset_time_weight calls apply_event_time_weight");
             self.apply_event_time_weight(self.range.end);
         } else {
@@ -613,7 +611,8 @@ impl<NTY: ScalarOps> EventsDim1Aggregator<NTY> {
         self.did_min_max = false;
         self.min = NTY::zero_b();
         self.max = NTY::zero_b();
-        ret
+        ret*/
+        todo!()
     }
 }
 
@@ -621,7 +620,7 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for EventsDim1Aggregator<NTY> {
     type Input = EventsDim1<NTY>;
     type Output = BinsDim0<NTY>;
 
-    fn range(&self) -> &NanoRange {
+    fn range(&self) -> &SeriesRange {
         &self.range
     }
 
@@ -641,13 +640,14 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for EventsDim1Aggregator<NTY> {
         }
     }
 
-    fn result_reset(&mut self, range: NanoRange, expand: bool) -> Self::Output {
-        trace!("result_reset  {}  {}", range.beg, range.end);
+    fn result_reset(&mut self, range: SeriesRange, expand: bool) -> Self::Output {
+        /*trace!("result_reset  {}  {}", range.beg, range.end);
         if self.do_time_weight {
             self.result_reset_time_weight(range, expand)
         } else {
             self.result_reset_unweight(range, expand)
-        }
+        }*/
+        todo!()
     }
 }
 
@@ -836,7 +836,7 @@ pub struct EventsDim1TimeBinner<NTY: ScalarOps> {
 
 impl<NTY: ScalarOps> EventsDim1TimeBinner<NTY> {
     fn new(binrange: BinnedRangeEnum, do_time_weight: bool) -> Result<Self, Error> {
-        if edges.len() < 2 {
+        /*if edges.len() < 2 {
             return Err(Error::with_msg_no_trace(format!("need at least 2 edges")));
         }
         let self_name = std::any::type_name::<Self>();
@@ -854,11 +854,12 @@ impl<NTY: ScalarOps> EventsDim1TimeBinner<NTY> {
             ready: None,
             range_complete: false,
         };
-        Ok(ret)
+        Ok(ret)*/
+        todo!()
     }
 
-    fn next_bin_range(&mut self) -> Option<NanoRange> {
-        let self_name = std::any::type_name::<Self>();
+    fn next_bin_range(&mut self) -> Option<SeriesRange> {
+        /*let self_name = std::any::type_name::<Self>();
         if self.edges.len() >= 3 {
             self.edges.pop_front();
             let ret = NanoRange {
@@ -871,7 +872,8 @@ impl<NTY: ScalarOps> EventsDim1TimeBinner<NTY> {
             self.edges.clear();
             trace!("{self_name}  next_bin_range None");
             None
-        }
+        }*/
+        todo!()
     }
 }
 
@@ -891,7 +893,7 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim1TimeBinner<NTY> {
     }
 
     fn ingest(&mut self, item: &dyn TimeBinnable) {
-        let self_name = std::any::type_name::<Self>();
+        /*let self_name = std::any::type_name::<Self>();
         trace2!(
             "TimeBinner for EventsDim1TimeBinner   {:?}\n{:?}\n------------------------------------",
             self.edges.iter().take(2).collect::<Vec<_>>(),
@@ -950,11 +952,12 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim1TimeBinner<NTY> {
                     };
                 }
             }
-        }
+        }*/
+        todo!()
     }
 
     fn push_in_progress(&mut self, push_empty: bool) {
-        let self_name = std::any::type_name::<Self>();
+        /*let self_name = std::any::type_name::<Self>();
         trace!("{self_name}::push_in_progress");
         // TODO expand should be derived from AggKind. Is it still required after all?
         // TODO here, the expand means that agg will assume that the current value is kept constant during
@@ -986,11 +989,12 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim1TimeBinner<NTY> {
                     }
                 }
             }
-        }
+        }*/
+        todo!()
     }
 
     fn cycle(&mut self) {
-        let self_name = std::any::type_name::<Self>();
+        /*let self_name = std::any::type_name::<Self>();
         trace!("{self_name}::cycle");
         // TODO refactor this logic.
         let n = self.bins_ready_count();
@@ -1013,7 +1017,8 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim1TimeBinner<NTY> {
             } else {
                 warn!("cycle: no in-progress bin pushed, but also no more bin to add as zero-bin");
             }
-        }
+        }*/
+        todo!()
     }
 
     fn set_range_complete(&mut self) {
@@ -1055,7 +1060,7 @@ impl items_0::collect_c::CollectorDyn for EventsDim1CollectorDyn {
 
     fn result(
         &mut self,
-        _range: Option<NanoRange>,
+        _range: Option<SeriesRange>,
         _binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         todo!()
@@ -1087,7 +1092,7 @@ impl<NTY: ScalarOps> items_0::collect_c::CollectorDyn for EventsDim1Collector<NT
 
     fn result(
         &mut self,
-        range: Option<NanoRange>,
+        range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
         items_0::collect_s::CollectorType::result(self, range, binrange)

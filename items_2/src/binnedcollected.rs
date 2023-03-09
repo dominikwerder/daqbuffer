@@ -107,7 +107,7 @@ pub struct BinnedCollected {
 }
 
 impl BinnedCollected {
-    fn self_name() -> &'static str {
+    const fn self_name() -> &'static str {
         "BinnedCollected"
     }
 
@@ -217,7 +217,7 @@ impl BinnedCollected {
 impl Future for BinnedCollected {
     type Output = Result<BinnedCollectedResult, Error>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         let span = span!(Level::INFO, BinnedCollected::self_name());
         let _spg = span.enter();
         use Poll::*;

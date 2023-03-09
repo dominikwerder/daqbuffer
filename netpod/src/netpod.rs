@@ -1490,6 +1490,12 @@ pub enum PreBinnedPatchCoordEnum {
     Pulse(PreBinnedPatchCoord<PulseId>),
 }
 
+impl PreBinnedPatchCoordEnum {
+    pub fn bin_count(&self) -> u64 {
+        todo!()
+    }
+}
+
 impl FromUrl for PreBinnedPatchCoordEnum {
     fn from_url(url: &Url) -> Result<Self, Error> {
         todo!()

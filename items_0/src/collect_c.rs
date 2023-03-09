@@ -6,7 +6,7 @@ use crate::Events;
 use crate::WithLen;
 use err::Error;
 use netpod::BinnedRangeEnum;
-use netpod::NanoRange;
+use netpod::SeriesRange;
 use std::fmt;
 
 pub trait Collector: fmt::Debug + Send {
@@ -16,7 +16,7 @@ pub trait Collector: fmt::Debug + Send {
     fn set_timed_out(&mut self);
     fn result(
         &mut self,
-        range: Option<NanoRange>,
+        range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn Collected>, Error>;
 }
@@ -52,7 +52,7 @@ pub trait CollectorDyn: fmt::Debug + Send {
 
     fn result(
         &mut self,
-        range: Option<NanoRange>,
+        range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn Collected>, Error>;
 }
@@ -95,7 +95,7 @@ impl Collector for TimeBinnedCollector {
 
     fn result(
         &mut self,
-        _range: Option<NanoRange>,
+        _range: Option<SeriesRange>,
         _binrange: Option<BinnedRangeEnum>,
     ) -> Result<Box<dyn Collected>, Error> {
         todo!()

@@ -60,7 +60,7 @@ pub trait EmptyForShape {
 }
 
 pub trait Empty {
-    fn empty(dim0kind: Dim0Kind) -> Self;
+    fn empty() -> Self;
 }
 
 pub trait Appendable<STY>: Empty + WithLen {

@@ -50,19 +50,22 @@ impl<T> Transformer for Enumerate2<T> {
 }
 
 pub struct Then2<T, F, Fut> {
-    inp: T,
-    f: F,
+    inp: Pin<Box<T>>,
+    f: Pin<Box<F>>,
     fut: Option<Pin<Box<Fut>>>,
 }
 
 impl<T, F, Fut> Then2<T, F, Fut>
 where
     T: Stream,
-    F: FnMut(<T as Stream>::Item) -> Fut,
-    Fut: Future,
+    F: Fn(<T as Stream>::Item) -> Fut,
 {
     pub fn new(inp: T, f: F) -> Self {
-        Self { inp, f, fut: None }
+        Self {
+            inp: Box::pin(inp),
+            f: Box::pin(f),
+            fut: None,
+        }
     }
 
     fn prepare_fut(&mut self, item: <T as Stream>::Item) {
@@ -70,9 +73,18 @@ where
     }
 }
 
+/*impl<T, F, Fut> Unpin for Then2<T, F, Fut>
+where
+    T: Unpin,
+    F: Unpin,
+    Fut: Unpin,
+{
+}*/
+
 impl<T, F, Fut> Stream for Then2<T, F, Fut>
 where
-    T: Stream + Unpin,
+    T: Stream,
+    F: Fn(<T as Stream>::Item) -> Fut,
     Fut: Future,
 {
     type Item = <Fut as Future>::Output;
@@ -80,7 +92,7 @@ where
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         loop {
-            break if let Some(fut) = &mut self.fut {
+            break if let Some(fut) = self.fut.as_mut() {
                 match fut.poll_unpin(cx) {
                     Ready(item) => {
                         self.fut = None;
@@ -91,6 +103,7 @@ where
             } else {
                 match self.inp.poll_next_unpin(cx) {
                     Ready(Some(item)) => {
+                        self.prepare_fut(item);
                         continue;
                     }
                     Ready(None) => Ready(None),
@@ -115,7 +128,7 @@ pub trait TransformerExt {
     fn then2<F, Fut>(self, f: F) -> Then2<Self, F, Fut>
     where
         Self: Transformer + Stream + Sized,
-        F: FnMut(<Self as Stream>::Item) -> Fut,
+        F: Fn(<Self as Stream>::Item) -> Fut,
         Fut: Future;
 }
 
@@ -130,7 +143,7 @@ impl<T> TransformerExt for T {
     fn then2<F, Fut>(self, f: F) -> Then2<Self, F, Fut>
     where
         Self: Transformer + Stream + Sized,
-        F: FnMut(<Self as Stream>::Item) -> Fut,
+        F: Fn(<Self as Stream>::Item) -> Fut,
         Fut: Future,
     {
         Then2::new(self, f)
@@ -147,10 +160,15 @@ impl<T> VecStream<T> {
     }
 }
 
-impl<T> Stream for VecStream<T> {
+/*impl<T> Unpin for VecStream<T> where T: Unpin {}*/
+
+impl<T> Stream for VecStream<T>
+where
+    T: Unpin,
+{
     type Item = T;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         if let Some(item) = self.inp.pop_front() {
             Ready(Some(item))

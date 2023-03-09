@@ -35,9 +35,10 @@ pub async fn plain_events_json(
     let events_max = query.events_max();
     let evquery = query.clone();
     info!("plain_events_json  evquery {:?}", evquery);
-    let ev_agg_kind = evquery.agg_kind().as_ref().map_or(AggKind::Plain, |x| x.clone());
-    info!("plain_events_json  ev_agg_kind {:?}", ev_agg_kind);
-    let empty = items_2::empty_events_dyn_ev(&chconf.scalar_type, &chconf.shape, &ev_agg_kind)?;
+    //let ev_agg_kind = evquery.agg_kind().as_ref().map_or(AggKind::Plain, |x| x.clone());
+    //info!("plain_events_json  ev_agg_kind {:?}", ev_agg_kind);
+    error!("TODO feed through transform chain");
+    let empty = items_2::empty::empty_events_dyn_ev(&chconf.scalar_type, &chconf.shape)?;
     info!("plain_events_json  with empty item {}", empty.type_name());
     let empty = ChannelEvents::Events(empty);
     let empty = sitem_data(empty);
@@ -50,7 +51,7 @@ pub async fn plain_events_json(
         info!("item after merge: {item:?}");
         item
     });
-    let stream = RangeFilter2::new(stream, query.range().clone(), evquery.one_before_range());
+    let stream = RangeFilter2::new(stream, todo!(), evquery.one_before_range());
     let stream = stream.map(|item| {
         info!("item after rangefilter: {item:?}");
         item
