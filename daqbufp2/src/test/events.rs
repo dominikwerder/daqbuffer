@@ -12,7 +12,6 @@ use hyper::Body;
 use items_0::streamitem::StreamItem;
 use netpod::log::*;
 use netpod::query::PlainEventsQuery;
-use netpod::AggKind;
 use netpod::AppendToUrl;
 use netpod::Channel;
 use netpod::Cluster;
@@ -87,7 +86,7 @@ async fn get_plain_events_binary(
         series: None,
     };
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let query = PlainEventsQuery::new(channel, range, Some(AggKind::TimeWeightedScalar), None, None);
+    let query = PlainEventsQuery::new(channel, range).for_time_weighted_scalar();
     let hp = HostPort::from_node(node0);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
     query.append_to_url(&mut url);
@@ -260,7 +259,7 @@ pub async fn get_plain_events_json(
     let beg_date: DateTime<Utc> = beg_date.parse()?;
     let end_date: DateTime<Utc> = end_date.parse()?;
     let range = NanoRange::from_date_time(beg_date, end_date);
-    let query = PlainEventsQuery::new(channel, range, Some(AggKind::TimeWeightedScalar), None, None);
+    let query = PlainEventsQuery::new(channel, range);
     let hp = HostPort::from_node(node0);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
     query.append_to_url(&mut url);

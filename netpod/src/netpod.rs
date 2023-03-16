@@ -7,20 +7,26 @@ pub mod transform;
 
 use crate::log::*;
 use bytes::Bytes;
-use chrono::{DateTime, TimeZone, Utc};
+use chrono::DateTime;
+use chrono::TimeZone;
+use chrono::Utc;
 use err::Error;
-use futures_util::{Stream, StreamExt};
-use serde::{Deserialize, Serialize};
+use futures_util::Stream;
+use futures_util::StreamExt;
+use serde::Deserialize;
+use serde::Serialize;
 use serde_json::Value as JsVal;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
+use std::collections::VecDeque;
+use std::fmt;
 use std::iter::FromIterator;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::str::FromStr;
-use std::task::{Context, Poll};
+use std::task::Context;
+use std::task::Poll;
 use std::time::Duration;
-use std::{fmt, ops};
 use timeunits::*;
 use url::Url;
 
@@ -757,6 +763,17 @@ impl NanoRange {
     }
 }
 
+impl TryFrom<&SeriesRange> for NanoRange {
+    type Error = Error;
+
+    fn try_from(val: &SeriesRange) -> Result<NanoRange, Self::Error> {
+        match val {
+            SeriesRange::TimeRange(x) => Ok(x.clone()),
+            SeriesRange::PulseRange(_) => Err(Error::with_msg_no_trace("not a Time range")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PulseRange {
     pub beg: u64,
@@ -809,17 +826,6 @@ impl SeriesRange {
         match self {
             SeriesRange::TimeRange(x) => x.end - x.beg,
             SeriesRange::PulseRange(x) => x.end - x.beg,
-        }
-    }
-}
-
-impl TryFrom<&SeriesRange> for NanoRange {
-    type Error = Error;
-
-    fn try_from(val: &SeriesRange) -> Result<NanoRange, Self::Error> {
-        match val {
-            SeriesRange::TimeRange(x) => Ok(x.clone()),
-            SeriesRange::PulseRange(_) => Err(Error::with_msg_no_trace("not a Time range")),
         }
     }
 }
@@ -1504,6 +1510,17 @@ pub enum PreBinnedPatchCoordEnum {
 impl PreBinnedPatchCoordEnum {
     pub fn bin_count(&self) -> u64 {
         todo!()
+    }
+
+    pub fn span_desc(&self) -> String {
+        match self {
+            PreBinnedPatchCoordEnum::Time(k) => {
+                format!("pre-W-{}-B-{}", k.bin_len.0 * k.bin_count / SEC, k.patch_offset / SEC)
+            }
+            PreBinnedPatchCoordEnum::Pulse(k) => {
+                format!("pre-W-{}-B-{}", k.bin_len.0 * k.bin_count / SEC, k.patch_offset / SEC)
+            }
+        }
     }
 }
 

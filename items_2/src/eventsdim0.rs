@@ -4,6 +4,12 @@ use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
 use err::Error;
+use items_0::collect_s::Collectable;
+use items_0::collect_s::Collected;
+use items_0::collect_s::Collector;
+use items_0::collect_s::CollectorType;
+use items_0::collect_s::ToJsonBytes;
+use items_0::collect_s::ToJsonResult;
 use items_0::scalar_ops::ScalarOps;
 use items_0::Appendable;
 use items_0::AsAnyMut;
@@ -11,13 +17,14 @@ use items_0::AsAnyRef;
 use items_0::Empty;
 use items_0::Events;
 use items_0::EventsNonObj;
+use items_0::MergeError;
 use items_0::TimeBinnable;
 use items_0::TimeBinner;
 use items_0::WithLen;
 use netpod::log::*;
+use netpod::timeunits::MS;
 use netpod::timeunits::SEC;
 use netpod::BinnedRangeEnum;
-use netpod::Dim0Kind;
 use netpod::NanoRange;
 use netpod::SeriesRange;
 use serde::Deserialize;
@@ -42,14 +49,6 @@ pub struct EventsDim0<NTY> {
 }
 
 impl<NTY> EventsDim0<NTY> {
-    #[inline(always)]
-    pub fn push(&mut self, ts: u64, pulse: u64, value: NTY) {
-        self.tss.push_back(ts);
-        self.pulses.push_back(pulse);
-        self.values.push_back(value);
-    }
-
-    #[inline(always)]
     pub fn push_front(&mut self, ts: u64, pulse: u64, value: NTY) {
         self.tss.push_front(ts);
         self.pulses.push_front(pulse);
@@ -327,16 +326,16 @@ where
     }
 }
 
-impl<NTY: ScalarOps> items_0::collect_s::ToJsonResult for EventsDim0CollectorOutput<NTY> {
-    fn to_json_result(&self) -> Result<Box<dyn items_0::collect_s::ToJsonBytes>, Error> {
+impl<NTY: ScalarOps> ToJsonResult for EventsDim0CollectorOutput<NTY> {
+    fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error> {
         let k = serde_json::to_value(self)?;
         Ok(Box::new(k))
     }
 }
 
-impl<NTY: ScalarOps> items_0::collect_c::Collected for EventsDim0CollectorOutput<NTY> {}
+impl<NTY: ScalarOps> Collected for EventsDim0CollectorOutput<NTY> {}
 
-impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<NTY> {
+impl<NTY: ScalarOps> CollectorType for EventsDim0Collector<NTY> {
     type Input = EventsDim0<NTY>;
     type Output = EventsDim0CollectorOutput<NTY>;
 
@@ -376,11 +375,11 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim0Collector<N
         };
         let continue_at = if self.timed_out {
             if let Some(ts) = vals.tss.back() {
-                Some(IsoDateTime::from_u64(*ts + netpod::timeunits::MS))
+                Some(IsoDateTime::from_u64(*ts + MS))
             } else {
                 if let Some(range) = &range {
                     match range {
-                        SeriesRange::TimeRange(x) => Some(IsoDateTime::from_u64(x.beg + netpod::timeunits::SEC)),
+                        SeriesRange::TimeRange(x) => Some(IsoDateTime::from_u64(x.beg + SEC)),
                         SeriesRange::PulseRange(x) => {
                             error!("TODO emit create continueAt for pulse range");
                             None
@@ -431,39 +430,6 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectableType for EventsDim0<NTY> {
 
     fn new_collector() -> Self::Collector {
         Self::Collector::new()
-    }
-}
-
-impl<NTY: ScalarOps> items_0::collect_c::Collector for EventsDim0Collector<NTY> {
-    fn len(&self) -> usize {
-        self.vals.as_ref().map_or(0, |x| x.len())
-    }
-
-    fn ingest(&mut self, item: &mut dyn items_0::collect_c::Collectable) {
-        if let Some(item) = item.as_any_mut().downcast_mut::<EventsDim0<NTY>>() {
-            items_0::collect_s::CollectorType::ingest(self, item)
-        } else {
-            error!("EventsDim0Collector::ingest unexpected item {:?}", item);
-        }
-    }
-
-    fn set_range_complete(&mut self) {
-        items_0::collect_s::CollectorType::set_range_complete(self)
-    }
-
-    fn set_timed_out(&mut self) {
-        items_0::collect_s::CollectorType::set_timed_out(self)
-    }
-
-    fn result(
-        &mut self,
-        range: Option<SeriesRange>,
-        binrange: Option<BinnedRangeEnum>,
-    ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
-        match items_0::collect_s::CollectorType::result(self, range, binrange) {
-            Ok(x) => Ok(Box::new(x)),
-            Err(e) => Err(e.into()),
-        }
     }
 }
 
@@ -831,15 +797,15 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
         }
     }
 
-    fn as_collectable_mut(&mut self) -> &mut dyn items_0::collect_s::Collectable {
+    fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
         self
     }
 
-    fn as_collectable_with_default_ref(&self) -> &dyn items_0::collect_c::CollectableWithDefault {
+    fn as_collectable_with_default_ref(&self) -> &dyn Collectable {
         self
     }
 
-    fn as_collectable_with_default_mut(&mut self) -> &mut dyn items_0::collect_c::CollectableWithDefault {
+    fn as_collectable_with_default_mut(&mut self) -> &mut dyn Collectable {
         self
     }
 
@@ -857,7 +823,7 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
         Box::new(Self::empty())
     }
 
-    fn drain_into(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), items_0::MergeError> {
+    fn drain_into(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), MergeError> {
         // TODO as_any and as_any_mut are declared on unrelated traits. Simplify.
         if let Some(dst) = dst.as_mut().as_any_mut().downcast_mut::<Self>() {
             // TODO make it harder to forget new members when the struct may get modified in the future
@@ -868,7 +834,7 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
             Ok(())
         } else {
             error!("downcast to EventsDim0 FAILED");
-            Err(items_0::MergeError::NotCompatible)
+            Err(MergeError::NotCompatible)
         }
     }
 
@@ -1132,95 +1098,14 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
     }
 }
 
-// TODO remove this struct?
-#[derive(Debug)]
-pub struct EventsDim0CollectorDyn {}
-
-impl EventsDim0CollectorDyn {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-impl items_0::collect_c::CollectorDyn for EventsDim0CollectorDyn {
-    fn len(&self) -> usize {
-        todo!()
-    }
-
-    fn ingest(&mut self, _item: &mut dyn items_0::collect_c::CollectableWithDefault) {
-        todo!()
-    }
-
-    fn set_range_complete(&mut self) {
-        todo!()
-    }
-
-    fn set_timed_out(&mut self) {
-        todo!()
-    }
-
-    fn result(
-        &mut self,
-        _range: Option<SeriesRange>,
-        _binrange: Option<BinnedRangeEnum>,
-    ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
-        todo!()
-    }
-}
-
-impl<NTY: ScalarOps> items_0::collect_c::CollectorDyn for EventsDim0Collector<NTY> {
-    fn len(&self) -> usize {
-        WithLen::len(self)
-    }
-
-    fn ingest(&mut self, item: &mut dyn items_0::collect_c::CollectableWithDefault) {
-        let x = item.as_any_mut();
-        if let Some(item) = x.downcast_mut::<EventsDim0<NTY>>() {
-            items_0::collect_s::CollectorType::ingest(self, item)
-        } else {
-            // TODO need possibility to return error
-            ()
-        }
-    }
-
-    fn set_range_complete(&mut self) {
-        items_0::collect_s::CollectorType::set_range_complete(self);
-    }
-
-    fn set_timed_out(&mut self) {
-        items_0::collect_s::CollectorType::set_timed_out(self);
-    }
-
-    fn result(
-        &mut self,
-        range: Option<SeriesRange>,
-        binrange: Option<BinnedRangeEnum>,
-    ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
-        items_0::collect_s::CollectorType::result(self, range, binrange)
-            .map(|x| Box::new(x) as _)
-            .map_err(|e| e.into())
-    }
-}
-
-impl<NTY: ScalarOps> items_0::collect_c::CollectableWithDefault for EventsDim0<NTY> {
-    fn new_collector(&self) -> Box<dyn items_0::collect_c::CollectorDyn> {
-        let coll = EventsDim0Collector::<NTY>::new();
-        Box::new(coll)
-    }
-}
-
-impl<NTY: ScalarOps> items_0::collect_c::Collectable for EventsDim0<NTY> {
-    fn new_collector(&self) -> Box<dyn items_0::collect_c::Collector> {
-        Box::new(EventsDim0Collector::<NTY>::new())
-    }
-}
-
 impl<STY> Appendable<STY> for EventsDim0<STY>
 where
     STY: ScalarOps,
 {
     fn push(&mut self, ts: u64, pulse: u64, value: STY) {
-        Self::push(self, ts, pulse, value)
+        self.tss.push_back(ts);
+        self.pulses.push_back(pulse);
+        self.values.push_back(value);
     }
 }
 

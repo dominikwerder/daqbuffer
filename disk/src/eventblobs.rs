@@ -1,7 +1,6 @@
 use crate::dataopen::open_expanded_files;
 use crate::dataopen::open_files;
 use crate::dataopen::OpenedFileSet;
-use crate::merge::MergedStream;
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
@@ -10,6 +9,7 @@ use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_2::eventfull::EventFull;
+use items_2::merger::Merger;
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::ChannelConfig;
@@ -21,7 +21,7 @@ use std::task::Context;
 use std::task::Poll;
 use streams::eventchunker::EventChunker;
 use streams::eventchunker::EventChunkerConf;
-use streams::rangefilter::RangeFilter;
+use streams::rangefilter2::RangeFilter2;
 
 pub trait InputTraits: Stream<Item = Sitemty<EventFull>> {}
 
@@ -39,6 +39,7 @@ pub struct EventChunkerMultifile {
     expand: bool,
     do_decompress: bool,
     max_ts: u64,
+    out_max_len: usize,
     emit_count: usize,
     do_emit_err_after: Option<usize>,
     range_final: bool,
@@ -57,6 +58,7 @@ impl EventChunkerMultifile {
         event_chunker_conf: EventChunkerConf,
         expand: bool,
         do_decompress: bool,
+        out_max_len: usize,
     ) -> Self {
         info!("EventChunkerMultifile  expand {expand}  do_decompress {do_decompress}");
         let file_chan = if expand {
@@ -76,6 +78,7 @@ impl EventChunkerMultifile {
             expand,
             do_decompress,
             max_ts: 0,
+            out_max_len,
             emit_count: 0,
             do_emit_err_after: None,
             range_final: false,
@@ -91,7 +94,7 @@ impl Stream for EventChunkerMultifile {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         //tracing::field::DebugValue;
-        let span1 = span!(Level::INFO, "EventChunkerMultifile", node_ix = self.node_ix);
+        let span1 = span!(Level::INFO, "EvChMul", node_ix = self.node_ix);
         //span1.record("node_ix", &self.node_ix);
         let _spg = span1.enter();
         use Poll::*;
@@ -186,7 +189,7 @@ impl Stream for EventChunkerMultifile {
                                                 self.expand,
                                                 self.do_decompress,
                                             );
-                                            let filtered = RangeFilter::new(chunker, self.range.clone(), self.expand);
+                                            let filtered = RangeFilter2::new(chunker, self.range.clone(), self.expand);
                                             self.evs = Some(Box::pin(filtered));
                                         }
                                         None => {}
@@ -221,11 +224,14 @@ impl Stream for EventChunkerMultifile {
                                                 self.expand,
                                                 self.do_decompress,
                                             );
-                                            chunkers.push(chunker);
+                                            let chunker = chunker
+                                                //.map(|x| Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))))
+                                                ;
+                                            chunkers.push(Box::pin(chunker) as _);
                                         }
                                     }
-                                    let merged = MergedStream::new(chunkers);
-                                    let filtered = RangeFilter::new(merged, self.range.clone(), self.expand);
+                                    let merged = Merger::new(chunkers, self.out_max_len);
+                                    let filtered = RangeFilter2::new(merged, self.range.clone(), self.expand);
                                     self.evs = Some(Box::pin(filtered));
                                     Ready(Some(Ok(StreamItem::Log(item))))
                                 }
@@ -272,7 +278,7 @@ mod test {
     use netpod::DiskIoTune;
     use netpod::Nanos;
     use streams::eventchunker::EventChunkerConf;
-    use streams::rangefilter::RangeFilter;
+    use streams::rangefilter2::RangeFilter2;
 
     fn read_expanded_for_range(range: netpod::NanoRange, nodeix: usize) -> Result<(usize, Vec<u64>), Error> {
         let chn = netpod::Channel {
@@ -308,10 +314,12 @@ mod test {
                 event_chunker_conf,
                 true,
                 true,
+                // TODO do asserts depend on this?
+                32,
             );
             //let mut events = MergedStream::new(vec![events], range.clone(), true);
-            let mut events = RangeFilter::new(events, range.clone(), true);
-            let mut tss = vec![];
+            let mut events = RangeFilter2::new(events, range.clone(), true);
+            let mut tss = Vec::new();
             while let Some(item) = events.next().await {
                 match item {
                     Ok(item) => match item {

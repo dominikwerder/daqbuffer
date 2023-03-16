@@ -11,7 +11,6 @@ use items_0::streamitem::StreamItem;
 use netpod::log::*;
 use netpod::query::BinnedQuery;
 use netpod::query::CacheUsage;
-use netpod::AggKind;
 use netpod::AppendToUrl;
 use netpod::ByteSize;
 use netpod::Channel;
@@ -67,9 +66,9 @@ pub async fn get_binned(
         name: channel_name.into(),
         series: None,
     };
-    let agg_kind = AggKind::DimXBins1;
-    let range = NanoRange::from_date_time(beg_date, end_date);
-    let mut query = BinnedQuery::new(channel, range, bin_count);
+    let range = NanoRange::from_date_time(beg_date, end_date).into();
+    // TODO this was before fixed using AggKind::DimXBins1
+    let mut query = BinnedQuery::new(channel, range, bin_count).for_time_weighted_scalar();
     query.set_cache_usage(cache_usage);
     query.set_disk_stats_every(ByteSize(1024 * disk_stats_every_kb));
     let hp = HostPort { host: host, port: port };

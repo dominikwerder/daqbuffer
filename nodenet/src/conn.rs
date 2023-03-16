@@ -5,6 +5,7 @@ use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::streamitem::EVENT_QUERY_JSON_STRING_FRAME;
+use items_0::Appendable;
 use items_0::Empty;
 use items_2::channelevents::ChannelEvents;
 use items_2::framable::EventQueryJsonStringFrame;
@@ -117,7 +118,7 @@ async fn make_channel_events_stream(
         debug!("Make EventsStreamScylla for {series} {scalar_type:?} {shape:?}");
         let stream = scyllaconn::events::EventsStreamScylla::new(
             series,
-            evq.range().clone(),
+            evq.range().into(),
             do_one_before_range,
             scalar_type,
             shape,
@@ -127,11 +128,11 @@ async fn make_channel_events_stream(
         );
         let stream = stream
             .map({
-                let agg_kind = evq.agg_kind_value();
                 let mut pulse_last = None;
                 move |item| match item {
                     Ok(item) => {
-                        let x = if let AggKind::PulseIdDiff = agg_kind {
+                        // TODO support pulseid extract
+                        let x = if false {
                             let x = match item {
                                 ChannelEvents::Events(item) => {
                                     let (tss, pulses) = items_0::EventsNonObj::into_tss_pulses(item);
@@ -276,51 +277,55 @@ async fn events_conn_handler_inner_try(
         return Err((e, netout).into());
     }
 
-    let mut stream: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> =
-        if let AggKind::EventBlobs = evq.agg_kind_value() {
-            match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
-                Ok(stream) => {
-                    let stream = stream.map(|x| Box::new(x) as _);
-                    Box::pin(stream)
-                }
-                Err(e) => {
-                    return Err((e, netout).into());
-                }
+    let mut stream: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> = if false {
+        if true {
+            error!("TODO support event blob transform");
+            let e = Error::with_msg(format!("TODO support event blob transform"));
+            return Err((e, netout).into());
+        }
+        match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
+            Ok(stream) => {
+                let stream = stream.map(|x| Box::new(x) as _);
+                Box::pin(stream)
             }
-        } else {
-            match make_channel_events_stream(evq, node_config).await {
-                Ok(stream) => {
-                    let stream = stream
-                        .map({
-                            use items_2::eventtransform::EventTransform;
-                            let mut tf = items_2::eventtransform::IdentityTransform::default();
-                            move |item| match item {
-                                Ok(item2) => match item2 {
-                                    StreamItem::DataItem(item3) => match item3 {
-                                        RangeCompletableItem::Data(item4) => match item4 {
-                                            ChannelEvents::Events(item5) => {
-                                                let a = tf.transform(item5);
-                                                Ok(StreamItem::DataItem(RangeCompletableItem::Data(
-                                                    ChannelEvents::Events(a),
-                                                )))
-                                            }
-                                            x => Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))),
-                                        },
-                                        x => Ok(StreamItem::DataItem(x)),
+            Err(e) => {
+                return Err((e, netout).into());
+            }
+        }
+    } else {
+        match make_channel_events_stream(evq, node_config).await {
+            Ok(stream) => {
+                let stream = stream
+                    .map({
+                        use items_2::eventtransform::EventTransform;
+                        let mut tf = items_2::eventtransform::IdentityTransform::default();
+                        move |item| match item {
+                            Ok(item2) => match item2 {
+                                StreamItem::DataItem(item3) => match item3 {
+                                    RangeCompletableItem::Data(item4) => match item4 {
+                                        ChannelEvents::Events(item5) => {
+                                            let a = tf.transform(item5);
+                                            Ok(StreamItem::DataItem(RangeCompletableItem::Data(ChannelEvents::Events(
+                                                a,
+                                            ))))
+                                        }
+                                        x => Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))),
                                     },
-                                    x => Ok(x),
+                                    x => Ok(StreamItem::DataItem(x)),
                                 },
-                                _ => item,
-                            }
-                        })
-                        .map(|x| Box::new(x) as _);
-                    Box::pin(stream)
-                }
-                Err(e) => {
-                    return Err((e, netout).into());
-                }
+                                x => Ok(x),
+                            },
+                            _ => item,
+                        }
+                    })
+                    .map(|x| Box::new(x) as _);
+                Box::pin(stream)
             }
-        };
+            Err(e) => {
+                return Err((e, netout).into());
+            }
+        }
+    };
 
     let mut buf_len_histo = HistoLog2::new(5);
     while let Some(item) = stream.next().await {

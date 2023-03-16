@@ -7,6 +7,7 @@ pub mod status;
 use err::Error;
 use errconv::ErrConv;
 use netpod::ScyllaConfig;
+use netpod::SeriesRange;
 use scylla::statement::Consistency;
 use scylla::Session as ScySession;
 use std::sync::Arc;
@@ -15,6 +16,15 @@ use std::sync::Arc;
 pub struct ScyllaSeriesRange {
     beg: u64,
     end: u64,
+}
+
+impl From<&SeriesRange> for ScyllaSeriesRange {
+    fn from(value: &SeriesRange) -> Self {
+        match value {
+            SeriesRange::TimeRange(k) => Self { beg: k.beg, end: k.end },
+            SeriesRange::PulseRange(k) => Self { beg: k.beg, end: k.end },
+        }
+    }
 }
 
 pub async fn create_scy_session(scyconf: &ScyllaConfig) -> Result<Arc<ScySession>, Error> {

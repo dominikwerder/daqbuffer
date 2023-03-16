@@ -1,14 +1,11 @@
-use crate::ts_offs_from_abs;
-use crate::ts_offs_from_abs_with_anchor;
 use crate::IsoDateTime;
 use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
-use chrono::TimeZone;
-use chrono::Utc;
 use err::Error;
 use items_0::collect_s::Collectable;
 use items_0::collect_s::CollectableType;
+use items_0::collect_s::Collected;
 use items_0::collect_s::CollectorType;
 use items_0::collect_s::ToJsonResult;
 use items_0::scalar_ops::ScalarOps;
@@ -23,7 +20,6 @@ use items_0::TimeBins;
 use items_0::WithLen;
 use netpod::log::*;
 use netpod::timeunits::SEC;
-use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
 use netpod::Dim0Kind;
 use netpod::SeriesRange;
@@ -33,7 +29,6 @@ use std::any;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
-use std::mem;
 
 #[allow(unused)]
 macro_rules! trace4 {
@@ -338,7 +333,7 @@ where
     }
 }
 
-impl<NTY: ScalarOps> items_0::collect_c::Collected for BinsDim0CollectedResult<NTY> {}
+impl<NTY: ScalarOps> Collected for BinsDim0CollectedResult<NTY> {}
 
 impl<NTY> BinsDim0CollectedResult<NTY> {
     pub fn len(&self) -> usize {
@@ -510,77 +505,6 @@ impl<NTY: ScalarOps> CollectableType for BinsDim0<NTY> {
 
     fn new_collector() -> Self::Collector {
         Self::Collector::new()
-    }
-}
-
-impl<NTY> items_0::collect_c::Collector for BinsDim0Collector<NTY>
-where
-    NTY: ScalarOps,
-{
-    fn len(&self) -> usize {
-        self.vals.as_ref().map_or(0, |x| x.len())
-    }
-
-    fn ingest(&mut self, item: &mut dyn items_0::collect_c::Collectable) {
-        trace4!("\n\n••••••••••••••••••••••••••••\nINGEST\n{:?}\n\n", item);
-        {
-            {
-                //let tyid = item.type_id();
-                //let tyid = item.as_any_mut().type_id();
-                //let tyid = format!("{:?}", item.type_id().to_owned());
-                trace4!("ty  0: {:40?}", (item.as_any_mut() as &dyn Any).type_id());
-            }
-            trace4!("ty  1: {:40?}", std::any::TypeId::of::<BinsDim0<NTY>>());
-            trace4!("ty  2: {:40?}", std::any::TypeId::of::<BinsDim0<i32>>());
-            trace4!("ty  3: {:40?}", std::any::TypeId::of::<Box<BinsDim0<i32>>>());
-            trace4!(
-                "ty  4: {:?}",
-                std::any::TypeId::of::<Box<dyn items_0::collect_c::Collectable>>()
-            );
-            trace4!(
-                "ty  5: {:?}",
-                std::any::TypeId::of::<&mut dyn items_0::collect_c::Collectable>()
-            );
-            trace4!("ty  6: {:?}", std::any::TypeId::of::<Box<dyn items_0::TimeBinned>>());
-        }
-        if let Some(item) = item.as_any_mut().downcast_mut::<BinsDim0<NTY>>() {
-            trace4!("ingest plain");
-            CollectorType::ingest(self, item)
-        } else if let Some(item) = item.as_any_mut().downcast_mut::<Box<BinsDim0<NTY>>>() {
-            trace4!("ingest boxed");
-            CollectorType::ingest(self, item)
-        } else if let Some(item) = item.as_any_mut().downcast_mut::<Box<dyn items_0::TimeBinned>>() {
-            trace4!("ingest boxed dyn TimeBinned");
-            if let Some(item) = item.as_any_mut().downcast_mut::<BinsDim0<NTY>>() {
-                trace4!("ingest boxed dyn TimeBinned  match");
-                CollectorType::ingest(self, item)
-            } else {
-                warn!("BinsDim0Collector::ingest unexpected inner item");
-                trace!("BinsDim0Collector::ingest unexpected inner item {:?}", item);
-            }
-        } else {
-            warn!("BinsDim0Collector::ingest unexpected item");
-            trace!("BinsDim0Collector::ingest unexpected item {:?}", item);
-        }
-    }
-
-    fn set_range_complete(&mut self) {
-        CollectorType::set_range_complete(self)
-    }
-
-    fn set_timed_out(&mut self) {
-        CollectorType::set_timed_out(self)
-    }
-
-    fn result(
-        &mut self,
-        range: Option<SeriesRange>,
-        binrange: Option<BinnedRangeEnum>,
-    ) -> Result<Box<dyn items_0::collect_c::Collected>, Error> {
-        match CollectorType::result(self, range, binrange) {
-            Ok(res) => Ok(Box::new(res)),
-            Err(e) => Err(e.into()),
-        }
     }
 }
 
@@ -907,14 +831,5 @@ impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
 
     fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
         self
-    }
-}
-
-impl<NTY> items_0::collect_c::Collectable for BinsDim0<NTY>
-where
-    NTY: ScalarOps,
-{
-    fn new_collector(&self) -> Box<dyn items_0::collect_c::Collector> {
-        Box::new(BinsDim0Collector::<NTY>::new())
     }
 }

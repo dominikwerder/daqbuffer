@@ -1,14 +1,18 @@
 use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
 use crate::test::f32_cmp_near;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use err::Error;
 use http::StatusCode;
 use hyper::Body;
+use netpod::log::*;
 use netpod::query::BinnedQuery;
+use netpod::AppendToUrl;
+use netpod::Channel;
+use netpod::Cluster;
+use netpod::HostPort;
+use netpod::NanoRange;
 use netpod::APP_JSON;
-use netpod::{log::*, AggKind};
-use netpod::{AppendToUrl, Channel, Cluster, HostPort, NanoRange};
 use serde_json::Value as JsonValue;
 use url::Url;
 
@@ -267,10 +271,10 @@ async fn get_binned_json(
 ) -> Result<JsonValue, Error> {
     let t1 = Utc::now();
     let node0 = &cluster.nodes[0];
-    let beg_date: DateTime<Utc> = beg_date.parse()?;
-    let end_date: DateTime<Utc> = end_date.parse()?;
-    let range = NanoRange::from_date_time(beg_date, end_date);
-    let query = BinnedQuery::new(channel, range, bin_count, Some(AggKind::TimeWeightedScalar));
+    let beg_date = beg_date.parse()?;
+    let end_date = end_date.parse()?;
+    let range = NanoRange::from_date_time(beg_date, end_date).into();
+    let query = BinnedQuery::new(channel, range, bin_count).for_time_weighted_scalar();
     let hp = HostPort::from_node(node0);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", hp.host, hp.port))?;
     query.append_to_url(&mut url);

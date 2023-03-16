@@ -1,4 +1,3 @@
-pub mod collect_c;
 pub mod collect_s;
 pub mod framable;
 pub mod isodate;
@@ -11,12 +10,9 @@ pub mod bincode {
     pub use bincode::*;
 }
 
-use collect_c::CollectableWithDefault;
 use collect_s::Collectable;
 use collect_s::ToJsonResult;
 use netpod::BinnedRangeEnum;
-use netpod::Dim0Kind;
-use netpod::NanoRange;
 use netpod::ScalarType;
 use netpod::SeriesRange;
 use netpod::Shape;
@@ -102,7 +98,7 @@ where
 }
 
 /// Data in time-binned form.
-pub trait TimeBinned: Any + TimeBinnable + crate::collect_c::Collectable + erased_serde::Serialize {
+pub trait TimeBinned: Any + TimeBinnable + Collectable + erased_serde::Serialize {
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnable;
     fn as_collectable_mut(&mut self) -> &mut dyn Collectable;
     fn edges_slice(&self) -> (&[u64], &[u64]);
@@ -159,23 +155,14 @@ impl From<MergeError> for err::Error {
 
 /// Container of some form of events, for use as trait object.
 pub trait Events:
-    fmt::Debug
-    + TypeName
-    + Any
-    + Collectable
-    + CollectableWithDefault
-    + TimeBinnable
-    + WithLen
-    + Send
-    + erased_serde::Serialize
-    + EventsNonObj
+    fmt::Debug + TypeName + Any + Collectable + TimeBinnable + WithLen + Send + erased_serde::Serialize + EventsNonObj
 {
     fn as_time_binnable(&self) -> &dyn TimeBinnable;
     fn verify(&self) -> bool;
     fn output_info(&self);
     fn as_collectable_mut(&mut self) -> &mut dyn Collectable;
-    fn as_collectable_with_default_ref(&self) -> &dyn CollectableWithDefault;
-    fn as_collectable_with_default_mut(&mut self) -> &mut dyn CollectableWithDefault;
+    fn as_collectable_with_default_ref(&self) -> &dyn Collectable;
+    fn as_collectable_with_default_mut(&mut self) -> &mut dyn Collectable;
     fn ts_min(&self) -> Option<u64>;
     fn ts_max(&self) -> Option<u64>;
     // TODO is this used?
@@ -191,6 +178,12 @@ pub trait Events:
     fn nty_id(&self) -> u32;
     fn tss(&self) -> &VecDeque<u64>;
     fn pulses(&self) -> &VecDeque<u64>;
+}
+
+impl WithLen for Box<dyn Events> {
+    fn len(&self) -> usize {
+        self.as_ref().len()
+    }
 }
 
 pub trait EventsNonObj {

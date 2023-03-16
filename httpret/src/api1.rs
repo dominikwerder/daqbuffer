@@ -6,6 +6,8 @@ use crate::BodyStream;
 use crate::ReqCtx;
 use bytes::BufMut;
 use bytes::BytesMut;
+use disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes;
+use disk::raw::conn::make_local_event_blobs_stream;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
@@ -820,13 +822,7 @@ impl Stream for DataApiPython3DataStream {
                             };
                             let channel = self.channels[self.chan_ix - 1].clone();
                             debug!("found channel_config for {}: {:?}", channel.name, entry);
-                            let evq = PlainEventsQuery::new(
-                                channel,
-                                self.range.clone(),
-                                Some(netpod::AggKind::EventBlobs),
-                                Some(Duration::from_millis(600000)),
-                                None,
-                            );
+                            let evq = PlainEventsQuery::new(channel, self.range.clone()).for_event_blobs();
                             info!("query for event blobs retrieval: evq {evq:?}");
                             warn!("fix magic inmem_bufcap");
                             let perf_opts = PerfOpts::default();
@@ -835,8 +831,8 @@ impl Stream for DataApiPython3DataStream {
                                 info!("Set up central storage stream");
                                 // TODO pull up this config
                                 let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
-                                let s = disk::raw::conn::make_local_event_blobs_stream(
-                                    evq.range().clone(),
+                                let s = make_local_event_blobs_stream(
+                                    evq.range().try_into()?,
                                     evq.channel().clone(),
                                     &entry,
                                     evq.one_before_range(),
@@ -853,7 +849,7 @@ impl Stream for DataApiPython3DataStream {
                                     }
                                 }
                                 debug!("Set up merged remote stream");
-                                let s = disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes::new(
+                                let s = MergedBlobsFromRemotes::new(
                                     evq,
                                     perf_opts,
                                     self.node_config.node_config.cluster.clone(),

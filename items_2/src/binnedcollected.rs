@@ -5,6 +5,7 @@ use crate::Error;
 use futures_util::Future;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items_0::collect_s::Collected;
 use items_0::collect_s::Collector;
 use items_0::collect_s::ToJsonResult;
 use items_0::streamitem::RangeCompletableItem;
@@ -62,7 +63,7 @@ fn flush_binned(
 pub struct BinnedCollectedResult {
     pub range_final: bool,
     pub did_timeout: bool,
-    pub result: Box<dyn ToJsonResult>,
+    pub result: Box<dyn Collected>,
 }
 
 fn _old_binned_collected(

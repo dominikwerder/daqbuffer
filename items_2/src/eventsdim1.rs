@@ -4,6 +4,12 @@ use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
 use err::Error;
+use items_0::collect_s::Collectable;
+use items_0::collect_s::CollectableType;
+use items_0::collect_s::Collected;
+use items_0::collect_s::CollectorType;
+use items_0::collect_s::ToJsonBytes;
+use items_0::collect_s::ToJsonResult;
 use items_0::scalar_ops::ScalarOps;
 use items_0::Appendable;
 use items_0::AsAnyMut;
@@ -11,20 +17,20 @@ use items_0::AsAnyRef;
 use items_0::Empty;
 use items_0::Events;
 use items_0::EventsNonObj;
+use items_0::MergeError;
 use items_0::TimeBinnable;
 use items_0::TimeBinner;
 use items_0::WithLen;
 use netpod::log::*;
 use netpod::timeunits::SEC;
-use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
 use netpod::SeriesRange;
 use serde::Deserialize;
 use serde::Serialize;
+use std::any;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
-use std::mem;
 
 #[allow(unused)]
 macro_rules! trace2 {
@@ -257,16 +263,16 @@ where
     }
 }
 
-impl<NTY: ScalarOps> items_0::collect_s::ToJsonResult for EventsDim1CollectorOutput<NTY> {
-    fn to_json_result(&self) -> Result<Box<dyn items_0::collect_s::ToJsonBytes>, Error> {
+impl<NTY: ScalarOps> ToJsonResult for EventsDim1CollectorOutput<NTY> {
+    fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error> {
         let k = serde_json::to_value(self)?;
         Ok(Box::new(k))
     }
 }
 
-impl<NTY: ScalarOps> items_0::collect_c::Collected for EventsDim1CollectorOutput<NTY> {}
+impl<NTY: ScalarOps> Collected for EventsDim1CollectorOutput<NTY> {}
 
-impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim1Collector<NTY> {
+impl<NTY: ScalarOps> CollectorType for EventsDim1Collector<NTY> {
     type Input = EventsDim1<NTY>;
     type Output = EventsDim1CollectorOutput<NTY>;
 
@@ -328,44 +334,11 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectorType for EventsDim1Collector<N
     }
 }
 
-impl<NTY: ScalarOps> items_0::collect_s::CollectableType for EventsDim1<NTY> {
+impl<NTY: ScalarOps> CollectableType for EventsDim1<NTY> {
     type Collector = EventsDim1Collector<NTY>;
 
     fn new_collector() -> Self::Collector {
         Self::Collector::new()
-    }
-}
-
-impl<NTY: ScalarOps> items_0::collect_c::Collector for EventsDim1Collector<NTY> {
-    fn len(&self) -> usize {
-        self.vals.len()
-    }
-
-    fn ingest(&mut self, item: &mut dyn items_0::collect_c::Collectable) {
-        if let Some(item) = item.as_any_mut().downcast_mut::<EventsDim1<NTY>>() {
-            items_0::collect_s::CollectorType::ingest(self, item)
-        } else {
-            error!("EventsDim0Collector::ingest unexpected item {:?}", item);
-        }
-    }
-
-    fn set_range_complete(&mut self) {
-        items_0::collect_s::CollectorType::set_range_complete(self)
-    }
-
-    fn set_timed_out(&mut self) {
-        items_0::collect_s::CollectorType::set_timed_out(self)
-    }
-
-    fn result(
-        &mut self,
-        range: Option<SeriesRange>,
-        binrange: Option<BinnedRangeEnum>,
-    ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
-        match items_0::collect_s::CollectorType::result(self, range, binrange) {
-            Ok(x) => Ok(Box::new(x)),
-            Err(e) => Err(e.into()),
-        }
     }
 }
 
@@ -626,11 +599,11 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for EventsDim1Aggregator<NTY> {
 
     fn ingest(&mut self, item: &Self::Input) {
         if true {
-            trace!("{} ingest {} events", std::any::type_name::<Self>(), item.len());
+            trace!("{} ingest {} events", any::type_name::<Self>(), item.len());
         }
         if false {
             for (i, &ts) in item.tss.iter().enumerate() {
-                trace!("{} ingest  {:6}  {:20}", std::any::type_name::<Self>(), i, ts);
+                trace!("{} ingest  {:6}  {:20}", any::type_name::<Self>(), i, ts);
             }
         }
         if self.do_time_weight {
@@ -657,7 +630,7 @@ impl<NTY: ScalarOps> TimeBinnable for EventsDim1<NTY> {
         Box::new(ret)
     }
 
-    fn to_box_to_json_result(&self) -> Box<dyn items_0::collect_s::ToJsonResult> {
+    fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
         let k = serde_json::to_value(self).unwrap();
         Box::new(k) as _
     }
@@ -722,15 +695,15 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
         }
     }
 
-    fn as_collectable_mut(&mut self) -> &mut dyn items_0::collect_s::Collectable {
+    fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
         self
     }
 
-    fn as_collectable_with_default_ref(&self) -> &dyn items_0::collect_c::CollectableWithDefault {
+    fn as_collectable_with_default_ref(&self) -> &dyn Collectable {
         self
     }
 
-    fn as_collectable_with_default_mut(&mut self) -> &mut dyn items_0::collect_c::CollectableWithDefault {
+    fn as_collectable_with_default_mut(&mut self) -> &mut dyn Collectable {
         self
     }
 
@@ -748,7 +721,7 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
         Box::new(Self::empty())
     }
 
-    fn drain_into(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), items_0::MergeError> {
+    fn drain_into(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), MergeError> {
         // TODO as_any and as_any_mut are declared on unrelated traits. Simplify.
         if let Some(dst) = dst.as_mut().as_any_mut().downcast_mut::<Self>() {
             // TODO make it harder to forget new members when the struct may get modified in the future
@@ -759,7 +732,7 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
             Ok(())
         } else {
             error!("downcast to EventsDim0 FAILED");
-            Err(items_0::MergeError::NotCompatible)
+            Err(MergeError::NotCompatible)
         }
     }
 
@@ -1028,89 +1001,6 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim1TimeBinner<NTY> {
     fn empty(&self) -> Box<dyn items_0::TimeBinned> {
         let ret = <EventsDim1Aggregator<NTY> as TimeBinnableTypeAggregator>::Output::empty();
         Box::new(ret)
-    }
-}
-
-// TODO remove this struct?
-#[derive(Debug)]
-pub struct EventsDim1CollectorDyn {}
-
-impl EventsDim1CollectorDyn {
-    pub fn new() -> Self {
-        Self {}
-    }
-}
-
-impl items_0::collect_c::CollectorDyn for EventsDim1CollectorDyn {
-    fn len(&self) -> usize {
-        todo!()
-    }
-
-    fn ingest(&mut self, _item: &mut dyn items_0::collect_c::CollectableWithDefault) {
-        todo!()
-    }
-
-    fn set_range_complete(&mut self) {
-        todo!()
-    }
-
-    fn set_timed_out(&mut self) {
-        todo!()
-    }
-
-    fn result(
-        &mut self,
-        _range: Option<SeriesRange>,
-        _binrange: Option<BinnedRangeEnum>,
-    ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
-        todo!()
-    }
-}
-
-impl<NTY: ScalarOps> items_0::collect_c::CollectorDyn for EventsDim1Collector<NTY> {
-    fn len(&self) -> usize {
-        WithLen::len(self)
-    }
-
-    fn ingest(&mut self, item: &mut dyn items_0::collect_c::CollectableWithDefault) {
-        let x = item.as_any_mut();
-        if let Some(item) = x.downcast_mut::<EventsDim1<NTY>>() {
-            items_0::collect_s::CollectorType::ingest(self, item)
-        } else {
-            // TODO need possibility to return error
-            ()
-        }
-    }
-
-    fn set_range_complete(&mut self) {
-        items_0::collect_s::CollectorType::set_range_complete(self);
-    }
-
-    fn set_timed_out(&mut self) {
-        items_0::collect_s::CollectorType::set_timed_out(self);
-    }
-
-    fn result(
-        &mut self,
-        range: Option<SeriesRange>,
-        binrange: Option<BinnedRangeEnum>,
-    ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
-        items_0::collect_s::CollectorType::result(self, range, binrange)
-            .map(|x| Box::new(x) as _)
-            .map_err(|e| e.into())
-    }
-}
-
-impl<NTY: ScalarOps> items_0::collect_c::CollectableWithDefault for EventsDim1<NTY> {
-    fn new_collector(&self) -> Box<dyn items_0::collect_c::CollectorDyn> {
-        let coll = EventsDim1Collector::<NTY>::new();
-        Box::new(coll)
-    }
-}
-
-impl<NTY: ScalarOps> items_0::collect_c::Collectable for EventsDim1<NTY> {
-    fn new_collector(&self) -> Box<dyn items_0::collect_c::Collector> {
-        Box::new(EventsDim1Collector::<NTY>::new())
     }
 }
 

@@ -1,11 +1,14 @@
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use items_0::collect_c::Collectable;
+use items_0::collect_s::Collectable;
+use items_0::collect_s::Collected;
+use items_0::collect_s::Collector;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StatsItem;
 use items_0::streamitem::StreamItem;
+use items_0::WithLen;
 use netpod::log::*;
 use netpod::BinnedRangeEnum;
 use netpod::DiskStats;
@@ -39,12 +42,12 @@ async fn collect_in_span<T, S>(
     events_max: u64,
     range: Option<SeriesRange>,
     binrange: Option<BinnedRangeEnum>,
-) -> Result<Box<dyn items_0::collect_c::Collected>, Error>
+) -> Result<Box<dyn Collected>, Error>
 where
     S: Stream<Item = Sitemty<T>> + Unpin,
-    T: Collectable + items_0::WithLen + fmt::Debug,
+    T: Collectable + WithLen + fmt::Debug,
 {
-    let mut collector: Option<Box<dyn items_0::collect_c::Collector>> = None;
+    let mut collector: Option<Box<dyn Collector>> = None;
     let mut stream = stream;
     let deadline = deadline.into();
     let mut range_complete = false;
@@ -138,12 +141,12 @@ pub async fn collect<T, S>(
     events_max: u64,
     range: Option<SeriesRange>,
     binrange: Option<BinnedRangeEnum>,
-) -> Result<Box<dyn items_0::collect_c::Collected>, Error>
+) -> Result<Box<dyn Collected>, Error>
 where
     S: Stream<Item = Sitemty<T>> + Unpin,
-    T: Collectable + items_0::WithLen + fmt::Debug,
+    T: Collectable + WithLen + fmt::Debug,
 {
-    let span = tracing::span!(tracing::Level::TRACE, "collect");
+    let span = span!(Level::INFO, "collect");
     collect_in_span(stream, deadline, events_max, range, binrange)
         .instrument(span)
         .await

@@ -1,81 +1,14 @@
-use super::collect_c::Collected;
 use crate::AsAnyMut;
 use crate::AsAnyRef;
+use crate::Events;
 use crate::WithLen;
 use err::Error;
+use netpod::log::*;
 use netpod::BinnedRangeEnum;
 use netpod::SeriesRange;
 use serde::Serialize;
 use std::any::Any;
 use std::fmt;
-
-// TODO rename to `Typed`
-pub trait CollectorType: Send + Unpin + WithLen {
-    type Input: Collectable;
-    type Output: Collected + ToJsonResult + Serialize;
-
-    fn ingest(&mut self, src: &mut Self::Input);
-    fn set_range_complete(&mut self);
-    fn set_timed_out(&mut self);
-
-    // TODO use this crate's Error instead:
-    fn result(&mut self, range: Option<SeriesRange>, binrange: Option<BinnedRangeEnum>) -> Result<Self::Output, Error>;
-}
-
-pub trait Collector: Send + Unpin + WithLen {
-    fn ingest(&mut self, src: &mut dyn Collectable);
-    fn set_range_complete(&mut self);
-    fn set_timed_out(&mut self);
-    // TODO factor the required parameters into new struct? Generic over events or binned?
-    fn result(
-        &mut self,
-        range: Option<SeriesRange>,
-        binrange: Option<BinnedRangeEnum>,
-    ) -> Result<Box<dyn ToJsonResult>, Error>;
-}
-
-// TODO rename to `Typed`
-pub trait CollectableType: AsAnyRef + AsAnyMut {
-    type Collector: CollectorType<Input = Self>;
-    fn new_collector() -> Self::Collector;
-}
-
-pub trait Collectable: AsAnyRef + AsAnyMut + Any {
-    fn new_collector(&self) -> Box<dyn Collector>;
-}
-
-impl<T: CollectorType + 'static> Collector for T {
-    fn ingest(&mut self, src: &mut dyn Collectable) {
-        let src: &mut <T as CollectorType>::Input = src.as_any_mut().downcast_mut().expect("can not downcast");
-        T::ingest(self, src)
-    }
-
-    fn set_range_complete(&mut self) {
-        T::set_range_complete(self)
-    }
-
-    fn set_timed_out(&mut self) {
-        T::set_timed_out(self)
-    }
-
-    fn result(
-        &mut self,
-        range: Option<SeriesRange>,
-        binrange: Option<BinnedRangeEnum>,
-    ) -> Result<Box<dyn ToJsonResult>, Error> {
-        let ret = T::result(self, range, binrange)?;
-        Ok(Box::new(ret) as _)
-    }
-}
-
-impl<T> Collectable for T
-where
-    T: CollectableType + 'static,
-{
-    fn new_collector(&self) -> Box<dyn Collector> {
-        Box::new(T::new_collector()) as _
-    }
-}
 
 // TODO check usage of this trait
 pub trait ToJsonBytes {
@@ -113,9 +46,114 @@ impl ToJsonBytes for serde_json::Value {
     }
 }
 
+pub trait Collected: fmt::Debug + ToJsonResult + AsAnyRef + Send {}
+
+erased_serde::serialize_trait_object!(Collected);
+
+impl ToJsonResult for Box<dyn Collected> {
+    fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error> {
+        self.as_ref().to_json_result()
+    }
+}
+
+impl Collected for Box<dyn Collected> {}
+
+// TODO rename to `Typed`
+pub trait CollectorType: fmt::Debug + Send + Unpin + WithLen {
+    type Input: Collectable;
+    type Output: Collected + ToJsonResult + Serialize;
+
+    fn ingest(&mut self, src: &mut Self::Input);
+    fn set_range_complete(&mut self);
+    fn set_timed_out(&mut self);
+
+    // TODO use this crate's Error instead:
+    fn result(&mut self, range: Option<SeriesRange>, binrange: Option<BinnedRangeEnum>) -> Result<Self::Output, Error>;
+}
+
+pub trait Collector: fmt::Debug + Send + Unpin + WithLen {
+    fn ingest(&mut self, src: &mut dyn Collectable);
+    fn set_range_complete(&mut self);
+    fn set_timed_out(&mut self);
+    // TODO factor the required parameters into new struct? Generic over events or binned?
+    fn result(
+        &mut self,
+        range: Option<SeriesRange>,
+        binrange: Option<BinnedRangeEnum>,
+    ) -> Result<Box<dyn Collected>, Error>;
+}
+
+impl<T> Collector for T
+where
+    T: fmt::Debug + CollectorType + 'static,
+{
+    fn ingest(&mut self, src: &mut dyn Collectable) {
+        let x = src.as_any_mut().downcast_mut();
+        if x.is_none() {
+            warn!("TODO handle the case of incoming Box");
+        }
+        let src: &mut <T as CollectorType>::Input = x.expect("can not downcast");
+        T::ingest(self, src)
+    }
+
+    fn set_range_complete(&mut self) {
+        T::set_range_complete(self)
+    }
+
+    fn set_timed_out(&mut self) {
+        T::set_timed_out(self)
+    }
+
+    fn result(
+        &mut self,
+        range: Option<SeriesRange>,
+        binrange: Option<BinnedRangeEnum>,
+    ) -> Result<Box<dyn Collected>, Error> {
+        let ret = T::result(self, range, binrange)?;
+        Ok(Box::new(ret))
+    }
+}
+
+// TODO rename to `Typed`
+pub trait CollectableType: fmt::Debug + AsAnyRef + AsAnyMut {
+    type Collector: CollectorType<Input = Self>;
+    fn new_collector() -> Self::Collector;
+}
+
+pub trait Collectable: fmt::Debug + AsAnyRef + AsAnyMut {
+    fn new_collector(&self) -> Box<dyn Collector>;
+}
+
+impl Collectable for Box<dyn Events> {
+    fn new_collector(&self) -> Box<dyn Collector> {
+        self.as_ref().new_collector()
+    }
+}
+
+impl<T> Collectable for T
+where
+    T: CollectableType + 'static,
+{
+    fn new_collector(&self) -> Box<dyn Collector> {
+        Box::new(T::new_collector())
+    }
+}
+
 // TODO do this with some blanket impl:
 impl Collectable for Box<dyn Collectable> {
     fn new_collector(&self) -> Box<dyn Collector> {
         Collectable::new_collector(self.as_ref())
+    }
+}
+
+impl WithLen for Box<dyn crate::TimeBinned> {
+    fn len(&self) -> usize {
+        self.as_ref().len()
+    }
+}
+
+impl Collectable for Box<dyn crate::TimeBinned> {
+    fn new_collector(&self) -> Box<dyn Collector> {
+        self.as_ref().new_collector()
     }
 }

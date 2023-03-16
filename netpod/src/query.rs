@@ -298,6 +298,18 @@ impl PlainEventsQuery {
     pub fn set_do_test_stream_error(&mut self, k: bool) {
         self.do_test_stream_error = k;
     }
+
+    pub fn for_event_blobs(self) -> Self {
+        error!("set transform to event blobs");
+        err::todo();
+        self
+    }
+
+    pub fn for_time_weighted_scalar(self) -> Self {
+        error!("set transform to event blobs");
+        err::todo();
+        self
+    }
 }
 
 impl HasBackend for PlainEventsQuery {
@@ -509,6 +521,11 @@ impl BinnedQuery {
 
     pub fn set_buf_len_disk_io(&mut self, k: usize) {
         self.buf_len_disk_io = Some(k);
+    }
+
+    pub fn for_time_weighted_scalar(self) -> Self {
+        err::todo();
+        self
     }
 }
 

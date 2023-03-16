@@ -1,10 +1,13 @@
-use crate::Error;
+pub use crate::Error;
+
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::streamitem::sitem_data;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
+use items_0::MergeError;
+use items_0::WithLen;
 use netpod::log::*;
 use std::collections::VecDeque;
 use std::fmt;
@@ -31,11 +34,7 @@ macro_rules! trace4 {
     ($($arg:tt)*) => (trace!($($arg)*));
 }
 
-// TODO
-pub use items_0::MergeError;
-
-pub trait Mergeable<Rhs = Self>: fmt::Debug + Unpin {
-    fn len(&self) -> usize;
+pub trait Mergeable<Rhs = Self>: fmt::Debug + WithLen + Unpin {
     fn ts_min(&self) -> Option<u64>;
     fn ts_max(&self) -> Option<u64>;
     fn new_empty(&self) -> Self;

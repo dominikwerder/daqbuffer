@@ -104,6 +104,13 @@ pub async fn make_event_pipe(
         need_expand = evq.one_before_range()
     );
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
+    // TODO should not need this for correctness.
+    // Should limit based on return size and latency.
+    let out_max_len = if node_config.node_config.cluster.is_central_storage {
+        1
+    } else {
+        128
+    };
     let event_blobs = EventChunkerMultifile::new(
         (&range).try_into()?,
         channel_config.clone(),
@@ -113,6 +120,7 @@ pub async fn make_event_pipe(
         event_chunker_conf,
         evq.one_before_range(),
         true,
+        out_max_len,
     );
     let shape = entry.to_shape()?;
     error!("TODO replace AggKind in the called code");
@@ -171,6 +179,13 @@ pub fn make_local_event_blobs_stream(
         array: entry.is_array,
         compression: entry.is_compressed,
     };
+    // TODO should not need this for correctness.
+    // Should limit based on return size and latency.
+    let out_max_len = if node_config.node_config.cluster.is_central_storage {
+        1
+    } else {
+        128
+    };
     let event_blobs = EventChunkerMultifile::new(
         range,
         channel_config.clone(),
@@ -180,6 +195,7 @@ pub fn make_local_event_blobs_stream(
         event_chunker_conf,
         expand,
         do_decompress,
+        out_max_len,
     );
     Ok(event_blobs)
 }
@@ -209,6 +225,13 @@ pub fn make_remote_event_blobs_stream(
         array: entry.is_array,
         compression: entry.is_compressed,
     };
+    // TODO should not need this for correctness.
+    // Should limit based on return size and latency.
+    let out_max_len = if node_config.node_config.cluster.is_central_storage {
+        1
+    } else {
+        128
+    };
     let event_blobs = EventChunkerMultifile::new(
         range,
         channel_config.clone(),
@@ -218,6 +241,7 @@ pub fn make_remote_event_blobs_stream(
         event_chunker_conf,
         expand,
         do_decompress,
+        out_max_len,
     );
     Ok(event_blobs)
 }

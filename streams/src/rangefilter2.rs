@@ -5,7 +5,7 @@ use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StatsItem;
 use items_0::streamitem::StreamItem;
-use items_2::merger::MergeError;
+use items_0::MergeError;
 use items_2::merger::Mergeable;
 use netpod::log::*;
 use netpod::NanoRange;
@@ -152,7 +152,7 @@ where
         use Poll::*;
         loop {
             break if self.complete {
-                panic!("poll_next on complete");
+                Ready(Some(Err(Error::with_msg_no_trace("poll_next on complete"))))
             } else if self.done {
                 self.complete = true;
                 Ready(None)

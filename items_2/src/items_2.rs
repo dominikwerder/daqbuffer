@@ -22,19 +22,15 @@ use channelevents::ChannelEvents;
 use chrono::DateTime;
 use chrono::TimeZone;
 use chrono::Utc;
-use futures_util::FutureExt;
 use futures_util::Stream;
-use futures_util::StreamExt;
 use items_0::streamitem::Sitemty;
 use items_0::Empty;
 use items_0::Events;
+use items_0::MergeError;
 use items_0::RangeOverlapInfo;
-use netpod::log::*;
+use merger::Mergeable;
 use netpod::timeunits::*;
-use netpod::NanoRange;
-use netpod::ScalarType;
 use netpod::SeriesRange;
-use netpod::Shape;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::Serializer;
@@ -77,9 +73,6 @@ pub fn pulse_offs_from_abs(pulse: &[u64]) -> (u64, VecDeque<u64>) {
     let pulse_off = pulse.iter().map(|&k| k - pulse_anchor).collect();
     (pulse_anchor, pulse_off)
 }
-
-#[allow(unused)]
-struct Ts(u64);
 
 #[derive(Debug, PartialEq)]
 pub enum ErrorKind {
@@ -169,11 +162,7 @@ pub fn make_iso_ts(tss: &[u64]) -> Vec<IsoDateTime> {
         .collect()
 }
 
-impl crate::merger::Mergeable for Box<dyn Events> {
-    fn len(&self) -> usize {
-        self.as_ref().len()
-    }
-
+impl Mergeable for Box<dyn Events> {
     fn ts_min(&self) -> Option<u64> {
         self.as_ref().ts_min()
     }
@@ -186,7 +175,7 @@ impl crate::merger::Mergeable for Box<dyn Events> {
         self.as_ref().new_empty()
     }
 
-    fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), merger::MergeError> {
+    fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), MergeError> {
         self.as_mut().drain_into(dst, range)
     }
 

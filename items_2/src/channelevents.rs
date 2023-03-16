@@ -1,12 +1,16 @@
 use crate::framable::FrameType;
 use crate::merger;
+use crate::merger::Mergeable;
 use crate::Events;
 use items_0::collect_s::Collectable;
+use items_0::collect_s::Collected;
 use items_0::collect_s::Collector;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::streamitem::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
+use items_0::MergeError;
+use items_0::WithLen;
 use netpod::log::*;
 use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
@@ -378,6 +382,7 @@ mod test_channel_events_serde {
     use bincode::config::WithOtherTrailing;
     use bincode::DefaultOptions;
     use items_0::bincode;
+    use items_0::Appendable;
     use items_0::Empty;
     use serde::Deserialize;
     use serde::Serialize;
@@ -473,17 +478,19 @@ impl PartialEq for ChannelEvents {
     }
 }
 
-impl crate::merger::Mergeable for ChannelEvents {
+impl WithLen for ChannelEvents {
     fn len(&self) -> usize {
         match self {
-            ChannelEvents::Events(k) => k.len(),
+            ChannelEvents::Events(k) => k.as_ref().len(),
             ChannelEvents::Status(k) => match k {
                 Some(_) => 1,
                 None => 0,
             },
         }
     }
+}
 
+impl Mergeable for ChannelEvents {
     fn ts_min(&self) -> Option<u64> {
         match self {
             ChannelEvents::Events(k) => k.ts_min(),
@@ -511,18 +518,18 @@ impl crate::merger::Mergeable for ChannelEvents {
         }
     }
 
-    fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), merger::MergeError> {
+    fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), MergeError> {
         match self {
             ChannelEvents::Events(k) => match dst {
                 ChannelEvents::Events(j) => k.drain_into(j, range),
-                ChannelEvents::Status(_) => Err(merger::MergeError::NotCompatible),
+                ChannelEvents::Status(_) => Err(MergeError::NotCompatible),
             },
             ChannelEvents::Status(k) => match dst {
-                ChannelEvents::Events(_) => Err(merger::MergeError::NotCompatible),
+                ChannelEvents::Events(_) => Err(MergeError::NotCompatible),
                 ChannelEvents::Status(j) => match j {
                     Some(_) => {
                         trace!("drain_into  merger::MergeError::Full");
-                        Err(merger::MergeError::Full)
+                        Err(MergeError::Full)
                     }
                     None => {
                         if range.0 > 0 {
@@ -596,10 +603,7 @@ impl crate::merger::Mergeable for ChannelEvents {
 
 impl Collectable for ChannelEvents {
     fn new_collector(&self) -> Box<dyn Collector> {
-        match self {
-            ChannelEvents::Events(_item) => todo!(),
-            ChannelEvents::Status(_) => todo!(),
-        }
+        Box::new(ChannelEventsCollector::new())
     }
 }
 
@@ -727,11 +731,11 @@ impl items_0::collect_s::ToJsonResult for ChannelEventsCollectorOutput {
     }
 }
 
-impl items_0::collect_c::Collected for ChannelEventsCollectorOutput {}
+impl Collected for ChannelEventsCollectorOutput {}
 
 #[derive(Debug)]
 pub struct ChannelEventsCollector {
-    coll: Option<Box<dyn items_0::collect_c::CollectorDyn>>,
+    coll: Option<Box<dyn Collector>>,
     range_complete: bool,
     timed_out: bool,
 }
@@ -746,15 +750,14 @@ impl ChannelEventsCollector {
     }
 }
 
-impl items_0::collect_c::Collector for ChannelEventsCollector {
+impl WithLen for ChannelEventsCollector {
     fn len(&self) -> usize {
-        match &self.coll {
-            Some(coll) => coll.len(),
-            None => 0,
-        }
+        self.coll.as_ref().map_or(0, |x| x.len())
     }
+}
 
-    fn ingest(&mut self, item: &mut dyn items_0::collect_c::Collectable) {
+impl Collector for ChannelEventsCollector {
+    fn ingest(&mut self, item: &mut dyn Collectable) {
         if let Some(item) = item.as_any_mut().downcast_mut::<ChannelEvents>() {
             match item {
                 ChannelEvents::Events(item) => {
@@ -786,7 +789,7 @@ impl items_0::collect_c::Collector for ChannelEventsCollector {
         &mut self,
         range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
-    ) -> Result<Box<dyn items_0::collect_c::Collected>, err::Error> {
+    ) -> Result<Box<dyn Collected>, err::Error> {
         match self.coll.as_mut() {
             Some(coll) => {
                 if self.range_complete {
@@ -803,19 +806,5 @@ impl items_0::collect_c::Collector for ChannelEventsCollector {
                 Err(err::Error::with_public_msg_no_trace("nothing collected [caa8d2565]"))
             }
         }
-    }
-}
-
-impl items_0::WithLen for ChannelEvents {
-    fn len(&self) -> usize {
-        match self {
-            ChannelEvents::Events(k) => k.len(),
-            ChannelEvents::Status(_) => 1,
-        }
-    }
-}
-impl items_0::collect_c::Collectable for ChannelEvents {
-    fn new_collector(&self) -> Box<dyn items_0::collect_c::Collector> {
-        Box::new(ChannelEventsCollector::new())
     }
 }

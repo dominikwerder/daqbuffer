@@ -1,12 +1,18 @@
 use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
+use chrono::Utc;
 use err::Error;
 use http::StatusCode;
 use hyper::Body;
-use netpod::query::{BinnedQuery, CacheUsage};
-use netpod::{log::*, AppendToUrl};
-use netpod::{AggKind, Channel, Cluster, NanoRange, APP_JSON};
+use netpod::log::*;
+use netpod::query::BinnedQuery;
+use netpod::query::CacheUsage;
+use netpod::AppendToUrl;
+use netpod::Channel;
+use netpod::Cluster;
+use netpod::NanoRange;
+use netpod::APP_JSON;
 use std::time::Duration;
 use url::Url;
 
@@ -20,7 +26,7 @@ fn time_weighted_json_03() -> Result<(), Error> {
             "1970-01-01T00:20:11.000Z",
             "1970-01-01T00:30:20.000Z",
             10,
-            AggKind::TimeWeightedScalar,
+            //AggKind::TimeWeightedScalar,
             cluster,
             11,
             true,
@@ -36,6 +42,7 @@ fn time_weighted_json_03() -> Result<(), Error> {
 #[test]
 fn time_weighted_json_10() -> Result<(), Error> {
     async fn inner() -> Result<(), Error> {
+        error!("TODO this test asked for DimXBins1");
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         get_json_common(
@@ -43,7 +50,7 @@ fn time_weighted_json_10() -> Result<(), Error> {
             "1970-01-01T00:20:10.000Z",
             "1970-01-01T01:20:30.000Z",
             10,
-            AggKind::DimXBins1,
+            //AggKind::DimXBins1,
             cluster,
             13,
             true,
@@ -64,7 +71,7 @@ fn time_weighted_json_20() -> Result<(), Error> {
             "1970-01-01T00:20:10.000Z",
             "1970-01-01T01:20:45.000Z",
             10,
-            AggKind::TimeWeightedScalar,
+            //AggKind::TimeWeightedScalar,
             cluster,
             13,
             true,
@@ -86,7 +93,8 @@ async fn get_json_common(
     beg_date: &str,
     end_date: &str,
     bin_count: u32,
-    agg_kind: AggKind,
+    // TODO refactor for Transform
+    //agg_kind: AggKind,
     cluster: &Cluster,
     expect_bin_count: u32,
     expect_finalised_range: bool,
@@ -101,8 +109,8 @@ async fn get_json_common(
         name: channel_name.into(),
         series: None,
     };
-    let range = NanoRange::from_date_time(beg_date, end_date);
-    let mut query = BinnedQuery::new(channel, range, bin_count, Some(agg_kind));
+    let range = NanoRange::from_date_time(beg_date, end_date).into();
+    let mut query = BinnedQuery::new(channel, range, bin_count).for_time_weighted_scalar();
     query.set_timeout(Duration::from_millis(40000));
     query.set_cache_usage(CacheUsage::Ignore);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", node0.host, node0.port))?;

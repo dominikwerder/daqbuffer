@@ -1,3 +1,6 @@
+#[cfg(test)]
+pub mod eventsdim0;
+
 use crate::binnedcollected::BinnedCollected;
 use crate::binsdim0::BinsDim0CollectedResult;
 use crate::channelevents::ConnStatus;
@@ -21,7 +24,9 @@ use items_0::streamitem::sitem_data;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
+use items_0::Appendable;
 use items_0::Empty;
+use items_0::WithLen;
 use netpod::log::*;
 use netpod::timeunits::*;
 use netpod::AggKind;

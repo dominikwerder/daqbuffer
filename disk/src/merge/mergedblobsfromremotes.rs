@@ -1,10 +1,10 @@
-use crate::merge::MergedStream;
 use err::Error;
 use futures_util::pin_mut;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::streamitem::Sitemty;
 use items_2::eventfull::EventFull;
+use items_2::merger::Merger;
 use netpod::log::*;
 use netpod::query::PlainEventsQuery;
 use netpod::Cluster;
@@ -29,7 +29,7 @@ pub struct MergedBlobsFromRemotes {
 impl MergedBlobsFromRemotes {
     pub fn new(evq: PlainEventsQuery, perf_opts: PerfOpts, cluster: Cluster) -> Self {
         debug!("MergedBlobsFromRemotes  evq {:?}", evq);
-        let mut tcp_establish_futs = vec![];
+        let mut tcp_establish_futs = Vec::new();
         for node in &cluster.nodes {
             let f = x_processed_event_blobs_stream_from_node(evq.clone(), perf_opts.clone(), node.clone());
             let f: T002<EventFull> = Box::pin(f);
@@ -97,8 +97,9 @@ impl Stream for MergedBlobsFromRemotes {
                     Pending
                 } else {
                     if c1 == self.tcp_establish_futs.len() {
-                        let inps: Vec<_> = self.nodein.iter_mut().map(|k| k.take().unwrap()).collect();
-                        let s1 = MergedStream::new(inps);
+                        let inps = self.nodein.iter_mut().map(|k| k.take().unwrap()).collect();
+                        // TODO set out_max_len dynamically
+                        let s1 = Merger::new(inps, 128);
                         self.merged = Some(Box::pin(s1));
                     }
                     continue 'outer;

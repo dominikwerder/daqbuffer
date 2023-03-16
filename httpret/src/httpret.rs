@@ -32,7 +32,6 @@ use hyper::Response;
 use net::SocketAddr;
 use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
-use netpod::timeunits::SEC;
 use netpod::NodeConfigCached;
 use netpod::ProxyConfig;
 use netpod::APP_JSON;
@@ -464,15 +463,11 @@ async fn prebinned_inner(
     let (head, _body) = req.into_parts();
     let url: url::Url = format!("dummy://{}", head.uri).parse()?;
     let query = PreBinnedQuery::from_url(&url)?;
-    let desc = format!(
-        "pre-W-{}-B-{}",
-        query.patch().bin_t_len() / SEC,
-        query.patch().patch_beg() / SEC
-    );
-    let span1 = span!(Level::INFO, "httpret::prebinned", desc = &desc.as_str());
+    let span1 = span!(Level::INFO, "httpret::prebinned", desc = &query.patch().span_desc());
     span1.in_scope(|| {
         debug!("begin");
     });
+    error!("TODO hhtpret prebinned_inner");
     //let fut = disk::binned::prebinned::pre_binned_bytes_for_http(node_config, &query).instrument(span1);
     todo!()
 }

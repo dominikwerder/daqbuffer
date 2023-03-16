@@ -4,13 +4,17 @@ use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
 use err::Error;
+use items_0::collect_s::CollectableType;
+use items_0::collect_s::Collected;
+use items_0::collect_s::CollectorType;
+use items_0::collect_s::ToJsonBytes;
+use items_0::collect_s::ToJsonResult;
 use items_0::scalar_ops::ScalarOps;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use items_0::Empty;
 use items_0::WithLen;
 use netpod::log::*;
-use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
 use netpod::SeriesRange;
 use serde::Deserialize;
@@ -387,17 +391,17 @@ where
     }
 }
 
-impl<NTY> items_0::collect_s::ToJsonResult for EventsXbinDim0CollectorOutput<NTY>
+impl<NTY> ToJsonResult for EventsXbinDim0CollectorOutput<NTY>
 where
     NTY: ScalarOps,
 {
-    fn to_json_result(&self) -> Result<Box<dyn items_0::collect_s::ToJsonBytes>, Error> {
+    fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error> {
         let k = serde_json::to_value(self)?;
         Ok(Box::new(k))
     }
 }
 
-impl<NTY> items_0::collect_c::Collected for EventsXbinDim0CollectorOutput<NTY> where NTY: ScalarOps {}
+impl<NTY> Collected for EventsXbinDim0CollectorOutput<NTY> where NTY: ScalarOps {}
 
 #[derive(Debug)]
 pub struct EventsXbinDim0Collector<NTY> {
@@ -422,7 +426,7 @@ impl<NTY> WithLen for EventsXbinDim0Collector<NTY> {
     }
 }
 
-impl<NTY> items_0::collect_s::CollectorType for EventsXbinDim0Collector<NTY>
+impl<NTY> CollectorType for EventsXbinDim0Collector<NTY>
 where
     NTY: ScalarOps,
 {
@@ -490,7 +494,7 @@ where
     }
 }
 
-impl<NTY> items_0::collect_s::CollectableType for EventsXbinDim0<NTY>
+impl<NTY> CollectableType for EventsXbinDim0<NTY>
 where
     NTY: ScalarOps,
 {
@@ -498,43 +502,5 @@ where
 
     fn new_collector() -> Self::Collector {
         Self::Collector::new()
-    }
-}
-
-impl<NTY> items_0::collect_c::Collector for EventsXbinDim0Collector<NTY>
-where
-    NTY: ScalarOps,
-{
-    fn len(&self) -> usize {
-        todo!()
-    }
-
-    fn ingest(&mut self, _item: &mut dyn items_0::collect_c::Collectable) {
-        todo!()
-    }
-
-    fn set_range_complete(&mut self) {
-        todo!()
-    }
-
-    fn set_timed_out(&mut self) {
-        todo!()
-    }
-
-    fn result(
-        &mut self,
-        _range: Option<SeriesRange>,
-        _binrange: Option<BinnedRangeEnum>,
-    ) -> Result<Box<dyn items_0::collect_c::Collected>, Error> {
-        todo!()
-    }
-}
-
-impl<NTY> items_0::collect_c::Collectable for EventsXbinDim0<NTY>
-where
-    NTY: ScalarOps,
-{
-    fn new_collector(&self) -> Box<dyn items_0::collect_c::Collector> {
-        Box::new(<Self as items_0::collect_s::CollectableType>::new_collector())
     }
 }

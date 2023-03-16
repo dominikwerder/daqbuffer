@@ -1,6 +1,5 @@
 use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
-use chrono::DateTime;
 use chrono::Utc;
 use disk::streamlog::Streamlog;
 use err::Error;
@@ -14,7 +13,6 @@ use items_0::subfr::SubFrId;
 use netpod::log::*;
 use netpod::query::BinnedQuery;
 use netpod::query::CacheUsage;
-use netpod::AggKind;
 use netpod::AppendToUrl;
 use netpod::Channel;
 use netpod::Cluster;
@@ -104,10 +102,9 @@ where
     NTY: fmt::Debug + SubFrId + DeserializeOwned,
 {
     let t1 = Utc::now();
-    let agg_kind = AggKind::DimXBins1;
     let node0 = &cluster.nodes[0];
-    let beg_date: DateTime<Utc> = beg_date.parse()?;
-    let end_date: DateTime<Utc> = end_date.parse()?;
+    let beg_date = beg_date.parse()?;
+    let end_date = end_date.parse()?;
     let channel_backend = "testbackend";
     let perf_opts = PerfOpts::default();
     let channel = Channel {
@@ -115,8 +112,9 @@ where
         name: channel_name.into(),
         series: None,
     };
-    let range = NanoRange::from_date_time(beg_date, end_date);
-    let mut query = BinnedQuery::new(channel, range, bin_count, Some(agg_kind));
+    let range = NanoRange::from_date_time(beg_date, end_date).into();
+    // TODO before, these tests were all fixed using AggKind::DimXBins1
+    let mut query = BinnedQuery::new(channel, range, bin_count).for_time_weighted_scalar();
     query.set_cache_usage(CacheUsage::Ignore);
     query.set_buf_len_disk_io(1024 * 16);
     let hp = HostPort::from_node(node0);

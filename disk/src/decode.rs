@@ -7,6 +7,7 @@ use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::Events;
+use items_0::WithLen;
 use items_2::eventfull::EventFull;
 use items_2::eventsdim0::EventsDim0;
 use items_2::eventsdim1::EventsDim1;
@@ -345,7 +346,6 @@ impl EventsDynStream {
     }
 
     fn handle_event_full(&mut self, item: EventFull) -> Result<(), Error> {
-        use items::WithLen;
         if item.len() >= self.emit_threshold {
             info!("handle_event_full  item len {}", item.len());
         }

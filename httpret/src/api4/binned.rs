@@ -31,8 +31,8 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
     let span1 = span!(
         Level::INFO,
         "httpret::binned",
-        beg = query.range().beg / SEC,
-        end = query.range().end / SEC,
+        beg = query.range().beg_u64() / SEC,
+        end = query.range().end_u64() / SEC,
         ch = query.channel().name(),
     );
     span1.in_scope(|| {

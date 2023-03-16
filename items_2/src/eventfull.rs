@@ -1,11 +1,12 @@
 use crate::framable::FrameType;
+use crate::merger::Mergeable;
 use bytes::BytesMut;
 use items::ByteEstimate;
-use items::Clearable;
-use items::PushableIndex;
 use items::WithTimestamps;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::streamitem::EVENT_FULL_FRAME_TYPE_ID;
+use items_0::Empty;
+use items_0::MergeError;
 use items_0::WithLen;
 use netpod::ScalarType;
 use netpod::Shape;
@@ -69,19 +70,6 @@ mod decomps_serde {
 }
 
 impl EventFull {
-    pub fn empty() -> Self {
-        Self {
-            tss: VecDeque::new(),
-            pulses: VecDeque::new(),
-            blobs: VecDeque::new(),
-            decomps: VecDeque::new(),
-            scalar_types: VecDeque::new(),
-            be: VecDeque::new(),
-            shapes: VecDeque::new(),
-            comps: VecDeque::new(),
-        }
-    }
-
     pub fn add_event(
         &mut self,
         ts: u64,
@@ -132,51 +120,24 @@ impl FrameType for EventFull {
     }
 }
 
+impl Empty for EventFull {
+    fn empty() -> Self {
+        Self {
+            tss: VecDeque::new(),
+            pulses: VecDeque::new(),
+            blobs: VecDeque::new(),
+            decomps: VecDeque::new(),
+            scalar_types: VecDeque::new(),
+            be: VecDeque::new(),
+            shapes: VecDeque::new(),
+            comps: VecDeque::new(),
+        }
+    }
+}
+
 impl WithLen for EventFull {
     fn len(&self) -> usize {
         self.tss.len()
-    }
-}
-
-impl items::WithLen for EventFull {
-    fn len(&self) -> usize {
-        self.tss.len()
-    }
-}
-
-impl items::Appendable for EventFull {
-    fn empty_like_self(&self) -> Self {
-        Self::empty()
-    }
-
-    // TODO expensive, get rid of it.
-    fn append(&mut self, src: &Self) {
-        self.tss.extend(&src.tss);
-        self.pulses.extend(&src.pulses);
-        self.blobs.extend(src.blobs.iter().map(Clone::clone));
-        self.decomps.extend(src.decomps.iter().map(Clone::clone));
-        self.scalar_types.extend(src.scalar_types.iter().map(Clone::clone));
-        self.be.extend(&src.be);
-        self.shapes.extend(src.shapes.iter().map(Clone::clone));
-        self.comps.extend(src.comps.iter().map(Clone::clone));
-    }
-
-    fn append_zero(&mut self, _ts1: u64, _ts2: u64) {
-        // TODO do we still need this type?
-        todo!()
-    }
-}
-
-impl Clearable for EventFull {
-    fn clear(&mut self) {
-        self.tss.clear();
-        self.pulses.clear();
-        self.blobs.clear();
-        self.decomps.clear();
-        self.scalar_types.clear();
-        self.be.clear();
-        self.shapes.clear();
-        self.comps.clear();
     }
 }
 
@@ -199,16 +160,57 @@ impl ByteEstimate for EventFull {
     }
 }
 
-impl PushableIndex for EventFull {
-    // TODO check all use cases, can't we move?
-    fn push_index(&mut self, src: &Self, ix: usize) {
-        self.tss.push_back(src.tss[ix]);
-        self.pulses.push_back(src.pulses[ix]);
-        self.blobs.push_back(src.blobs[ix].clone());
-        self.decomps.push_back(src.decomps[ix].clone());
-        self.scalar_types.push_back(src.scalar_types[ix].clone());
-        self.be.push_back(src.be[ix]);
-        self.shapes.push_back(src.shapes[ix].clone());
-        self.comps.push_back(src.comps[ix].clone());
+impl Mergeable for EventFull {
+    fn ts_min(&self) -> Option<u64> {
+        self.tss.front().map(|&x| x)
+    }
+
+    fn ts_max(&self) -> Option<u64> {
+        self.tss.back().map(|&x| x)
+    }
+
+    fn new_empty(&self) -> Self {
+        Empty::empty()
+    }
+
+    fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), MergeError> {
+        // TODO make it harder to forget new members when the struct may get modified in the future
+        let r = range.0..range.1;
+        dst.tss.extend(self.tss.drain(r.clone()));
+        dst.pulses.extend(self.pulses.drain(r.clone()));
+        dst.blobs.extend(self.blobs.drain(r.clone()));
+        dst.decomps.extend(self.decomps.drain(r.clone()));
+        dst.scalar_types.extend(self.scalar_types.drain(r.clone()));
+        dst.be.extend(self.be.drain(r.clone()));
+        dst.shapes.extend(self.shapes.drain(r.clone()));
+        dst.comps.extend(self.comps.drain(r.clone()));
+        Ok(())
+    }
+
+    fn find_lowest_index_gt(&self, ts: u64) -> Option<usize> {
+        for (i, &m) in self.tss.iter().enumerate() {
+            if m > ts {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    fn find_lowest_index_ge(&self, ts: u64) -> Option<usize> {
+        for (i, &m) in self.tss.iter().enumerate() {
+            if m >= ts {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    fn find_highest_index_lt(&self, ts: u64) -> Option<usize> {
+        for (i, &m) in self.tss.iter().enumerate().rev() {
+            if m < ts {
+                return Some(i);
+            }
+        }
+        None
     }
 }
