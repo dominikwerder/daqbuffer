@@ -8,7 +8,7 @@ use items_0::streamitem::StreamItem;
 use items_0::MergeError;
 use items_2::merger::Mergeable;
 use netpod::log::*;
-use netpod::NanoRange;
+use netpod::range::evrange::NanoRange;
 use netpod::RangeFilterStats;
 use std::fmt;
 use std::pin::Pin;

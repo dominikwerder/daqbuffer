@@ -1,10 +1,17 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::DateTime;
+use chrono::Duration;
+use chrono::Utc;
 use clap::Parser;
-use daqbuffer::cli::{ClientType, Opts, SubCmd};
+use daqbuffer::cli::ClientType;
+use daqbuffer::cli::Opts;
+use daqbuffer::cli::SubCmd;
 use err::Error;
 use netpod::log::*;
 use netpod::query::CacheUsage;
-use netpod::{NodeConfig, NodeConfigCached, ProxyConfig};
+use netpod::NodeConfig;
+use netpod::NodeConfigCached;
+use netpod::ProxyConfig;
+use netpod::TsNano;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -122,8 +129,12 @@ async fn go() -> Result<(), Error> {
 #[allow(unused)]
 fn simple_fetch() {
     use daqbuffer::err::ErrConv;
-    use netpod::Nanos;
-    use netpod::{timeunits::*, ByteOrder, Channel, ChannelConfig, ScalarType, Shape};
+    use netpod::timeunits::*;
+    use netpod::ByteOrder;
+    use netpod::Channel;
+    use netpod::ChannelConfig;
+    use netpod::ScalarType;
+    use netpod::Shape;
     taskrun::run(async {
         let _rh = daqbufp2::nodes::require_test_hosts_running()?;
         let t1 = chrono::Utc::now();
@@ -135,7 +146,7 @@ fn simple_fetch() {
                     series: None,
                 },
                 keyspace: 3,
-                time_bin_size: Nanos { ns: DAY },
+                time_bin_size: TsNano(DAY),
                 array: true,
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(42),

@@ -1,9 +1,17 @@
 use crate::eventblobs::EventChunkerMultifile;
-use netpod::{test_data_base_path_databuffer, timeunits::*, SfDatabuffer};
-use netpod::{ByteOrder, ByteSize, Channel, ChannelConfig, NanoRange, Nanos, Node, ScalarType, Shape};
+use netpod::range::evrange::NanoRange;
+use netpod::test_data_base_path_databuffer;
+use netpod::timeunits::*;
+use netpod::ByteOrder;
+use netpod::ByteSize;
+use netpod::Channel;
+use netpod::ChannelConfig;
+use netpod::Node;
+use netpod::ScalarType;
+use netpod::SfDatabuffer;
+use netpod::Shape;
+use netpod::TsNano;
 use streams::eventchunker::EventChunkerConf;
-#[allow(unused_imports)]
-use tracing::{debug, error, info, trace, warn};
 
 pub fn make_test_node(id: u32) -> Node {
     Node {
@@ -43,7 +51,7 @@ async fn agg_x_dim_0_inner() {
                 series: None,
             },
             keyspace: 2,
-            time_bin_size: Nanos { ns: DAY },
+            time_bin_size: TsNano(DAY),
             array: false,
             shape: Shape::Scalar,
             scalar_type: ScalarType::F64,
@@ -55,7 +63,7 @@ async fn agg_x_dim_0_inner() {
         buffer_size: 1024 * 4,
     };
     let _bin_count = 20;
-    let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.ns;
+    let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.0;
     let ts2 = ts1 + HOUR * 24;
     let range = NanoRange { beg: ts1, end: ts2 };
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
@@ -100,7 +108,7 @@ async fn agg_x_dim_1_inner() {
                 series: None,
             },
             keyspace: 3,
-            time_bin_size: Nanos { ns: DAY },
+            time_bin_size: TsNano(DAY),
             array: true,
             shape: Shape::Wave(1024),
             scalar_type: ScalarType::F64,
@@ -112,7 +120,7 @@ async fn agg_x_dim_1_inner() {
         buffer_size: 17,
     };
     let _bin_count = 10;
-    let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.ns;
+    let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.0;
     let ts2 = ts1 + HOUR * 24;
     let range = NanoRange { beg: ts1, end: ts2 };
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));

@@ -1,14 +1,22 @@
 use super::paths;
 use bytes::BytesMut;
-use err::{ErrStr, Error};
+use err::ErrStr;
+use err::Error;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::{ChannelConfig, NanoRange, Nanos, Node};
+use netpod::range::evrange::NanoRange;
+use netpod::ChannelConfig;
+use netpod::Node;
+use netpod::TsNano;
 use std::fmt;
 use std::path::PathBuf;
 use std::time::Instant;
-use tokio::fs::{File, OpenOptions};
-use tokio::io::{AsyncReadExt, AsyncSeekExt, ErrorKind, SeekFrom};
+use tokio::fs::File;
+use tokio::fs::OpenOptions;
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncSeekExt;
+use tokio::io::ErrorKind;
+use tokio::io::SeekFrom;
 
 pub struct Positioned {
     pub file: OpenedFile,
@@ -237,13 +245,11 @@ async fn open_files_inner(
         return Ok(());
     }
     for &tb in &timebins {
-        let ts_bin = Nanos {
-            ns: tb * channel_config.time_bin_size.ns,
-        };
-        if ts_bin.ns >= range.end {
+        let ts_bin = TsNano(tb * channel_config.time_bin_size.0);
+        if ts_bin.ns() >= range.end {
             continue;
         }
-        if ts_bin.ns + channel_config.time_bin_size.ns <= range.beg {
+        if ts_bin.ns() + channel_config.time_bin_size.ns() <= range.beg {
             continue;
         }
         let mut a = Vec::new();
@@ -337,10 +343,8 @@ async fn open_expanded_files_inner(
     }
     let mut p1 = None;
     for (i1, tb) in timebins.iter().enumerate().rev() {
-        let ts_bin = Nanos {
-            ns: tb * channel_config.time_bin_size.ns,
-        };
-        if ts_bin.ns <= range.beg {
+        let ts_bin = TsNano(tb * channel_config.time_bin_size.ns());
+        if ts_bin.ns() <= range.beg {
             p1 = Some(i1);
             break;
         }
@@ -407,8 +411,10 @@ async fn open_expanded_files_inner(
 mod test {
     use super::*;
     use err::Error;
+    use netpod::range::evrange::NanoRange;
+    use netpod::test_data_base_path_databuffer;
     use netpod::timeunits::*;
-    use netpod::{test_data_base_path_databuffer, ChannelConfig, NanoRange, Nanos};
+    use netpod::ChannelConfig;
     use std::path::PathBuf;
     use tokio::fs::OpenOptions;
 
@@ -810,7 +816,7 @@ mod test {
 
     #[test]
     fn expanded_file_list() {
-        let range = netpod::NanoRange {
+        let range = NanoRange {
             beg: DAY + HOUR * 5,
             end: DAY + HOUR * 8,
         };
@@ -823,7 +829,7 @@ mod test {
         let channel_config = ChannelConfig {
             channel: chn,
             keyspace: 2,
-            time_bin_size: Nanos { ns: DAY },
+            time_bin_size: TsNano(DAY),
             scalar_type: netpod::ScalarType::I32,
             byte_order: netpod::ByteOrder::Big,
             shape: netpod::Shape::Scalar,

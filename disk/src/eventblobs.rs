@@ -11,10 +11,10 @@ use items_0::streamitem::StreamItem;
 use items_2::eventfull::EventFull;
 use items_2::merger::Merger;
 use netpod::log::*;
+use netpod::range::evrange::NanoRange;
 use netpod::timeunits::SEC;
 use netpod::ChannelConfig;
 use netpod::DiskIoTune;
-use netpod::NanoRange;
 use netpod::Node;
 use std::pin::Pin;
 use std::task::Context;
@@ -271,16 +271,17 @@ mod test {
     use items_0::streamitem::RangeCompletableItem;
     use items_0::streamitem::StreamItem;
     use netpod::log::*;
+    use netpod::range::evrange::NanoRange;
     use netpod::timeunits::DAY;
     use netpod::timeunits::MS;
     use netpod::ByteSize;
     use netpod::ChannelConfig;
     use netpod::DiskIoTune;
-    use netpod::Nanos;
+    use netpod::TsNano;
     use streams::eventchunker::EventChunkerConf;
     use streams::rangefilter2::RangeFilter2;
 
-    fn read_expanded_for_range(range: netpod::NanoRange, nodeix: usize) -> Result<(usize, Vec<u64>), Error> {
+    fn read_expanded_for_range(range: NanoRange, nodeix: usize) -> Result<(usize, Vec<u64>), Error> {
         let chn = netpod::Channel {
             backend: "test-disk-databuffer".into(),
             name: "scalar-i32-be".into(),
@@ -290,7 +291,7 @@ mod test {
         let channel_config = ChannelConfig {
             channel: chn,
             keyspace: 2,
-            time_bin_size: Nanos { ns: DAY },
+            time_bin_size: TsNano(DAY),
             scalar_type: netpod::ScalarType::I32,
             byte_order: netpod::ByteOrder::Big,
             shape: netpod::Shape::Scalar,
@@ -346,7 +347,7 @@ mod test {
 
     #[test]
     fn read_expanded_0() -> Result<(), Error> {
-        let range = netpod::NanoRange {
+        let range = NanoRange {
             beg: DAY + MS * 0,
             end: DAY + MS * 100,
         };
@@ -362,7 +363,7 @@ mod test {
 
     #[test]
     fn read_expanded_1() -> Result<(), Error> {
-        let range = netpod::NanoRange {
+        let range = NanoRange {
             beg: DAY + MS * 0,
             end: DAY + MS * 1501,
         };
@@ -376,7 +377,7 @@ mod test {
 
     #[test]
     fn read_expanded_2() -> Result<(), Error> {
-        let range = netpod::NanoRange {
+        let range = NanoRange {
             beg: DAY - MS * 100,
             end: DAY + MS * 1501,
         };
@@ -388,7 +389,7 @@ mod test {
     #[test]
     fn read_expanded_3() -> Result<(), Error> {
         use netpod::timeunits::*;
-        let range = netpod::NanoRange {
+        let range = NanoRange {
             beg: DAY - MS * 1500,
             end: DAY + MS * 1501,
         };

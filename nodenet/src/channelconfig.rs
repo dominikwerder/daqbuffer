@@ -1,8 +1,8 @@
 use err::Error;
 use netpod::log::*;
+use netpod::range::evrange::NanoRange;
 use netpod::ChConf;
 use netpod::Channel;
-use netpod::NanoRange;
 use netpod::NodeConfigCached;
 use netpod::ScalarType;
 use netpod::Shape;

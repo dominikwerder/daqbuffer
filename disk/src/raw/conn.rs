@@ -10,11 +10,11 @@ use items_2::channelevents::ChannelEvents;
 use items_2::eventfull::EventFull;
 use netpod::log::*;
 use netpod::query::PlainEventsQuery;
+use netpod::range::evrange::NanoRange;
 use netpod::AggKind;
 use netpod::ByteSize;
 use netpod::Channel;
 use netpod::DiskIoTune;
-use netpod::NanoRange;
 use netpod::NodeConfigCached;
 use netpod::ScalarType;
 use netpod::Shape;
@@ -92,7 +92,7 @@ pub async fn make_event_pipe(
     let channel_config = netpod::ChannelConfig {
         channel: evq.channel().clone(),
         keyspace: entry.ks as u8,
-        time_bin_size: entry.bs,
+        time_bin_size: entry.bs.clone(),
         shape,
         scalar_type: entry.scalar_type.clone(),
         byte_order: entry.byte_order.clone(),
@@ -172,8 +172,8 @@ pub fn make_local_event_blobs_stream(
     let channel_config = netpod::ChannelConfig {
         channel,
         keyspace: entry.ks as u8,
-        time_bin_size: entry.bs,
-        shape: shape,
+        time_bin_size: entry.bs.clone(),
+        shape,
         scalar_type: entry.scalar_type.clone(),
         byte_order: entry.byte_order.clone(),
         array: entry.is_array,
@@ -218,7 +218,7 @@ pub fn make_remote_event_blobs_stream(
     let channel_config = netpod::ChannelConfig {
         channel,
         keyspace: entry.ks as u8,
-        time_bin_size: entry.bs,
+        time_bin_size: entry.bs.clone(),
         shape: shape,
         scalar_type: entry.scalar_type.clone(),
         byte_order: entry.byte_order.clone(),

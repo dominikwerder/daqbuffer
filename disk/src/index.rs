@@ -1,11 +1,13 @@
 use arrayref::array_ref;
 use err::Error;
 use netpod::log::*;
-use netpod::NanoRange;
-use netpod::Nanos;
+use netpod::range::evrange::NanoRange;
+use netpod::TsNano;
 use std::mem::size_of;
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, SeekFrom};
+use tokio::io::AsyncReadExt;
+use tokio::io::AsyncSeekExt;
+use tokio::io::SeekFrom;
 
 pub fn find_ge(range: NanoRange, expand_right: bool, buf: &[u8]) -> Result<Option<(u64, u64)>, Error> {
     type VT = u64;
@@ -174,7 +176,7 @@ pub fn parse_channel_header(buf: &[u8]) -> Result<(u32,), Error> {
     Ok((len1 as u32,))
 }
 
-pub fn parse_event(buf: &[u8]) -> Result<(u32, Nanos), Error> {
+pub fn parse_event(buf: &[u8]) -> Result<(u32, TsNano), Error> {
     if buf.len() < 4 {
         return Err(Error::with_msg(format!("parse_event  buf len: {}", buf.len())));
     }
@@ -194,10 +196,10 @@ pub fn parse_event(buf: &[u8]) -> Result<(u32, Nanos), Error> {
         return Err(Error::with_msg(format!("len mismatch  len1: {}  len2: {}", len1, len2)));
     }
     let ts = u64::from_be_bytes(*array_ref![buf, 12, 8]);
-    Ok((len1 as u32, Nanos { ns: ts }))
+    Ok((len1 as u32, TsNano(ts)))
 }
 
-pub async fn read_event_at(pos: u64, file: &mut File) -> Result<(u32, Nanos), Error> {
+pub async fn read_event_at(pos: u64, file: &mut File) -> Result<(u32, TsNano), Error> {
     file.seek(SeekFrom::Start(pos)).await?;
     let mut buf = vec![0; 1024];
     let _n1 = read(&mut buf, file).await?;
@@ -220,7 +222,7 @@ pub async fn position_static_len_datafile(
     let evlen = ev.0 as u64;
     let mut j = headoff;
     let mut k = ((flen - headoff) / evlen - 1) * evlen + headoff;
-    let x = ev.1.ns;
+    let x = ev.1.ns();
     let t = read_event_at(k, &mut file).await?;
     if t.0 != evlen as u32 {
         Err(Error::with_msg(format!(
@@ -228,7 +230,7 @@ pub async fn position_static_len_datafile(
             t.0, evlen
         )))?;
     }
-    let y = t.1.ns;
+    let y = t.1.ns();
     let mut nreads = 2;
     if x >= range.end {
         if expand_right {
@@ -275,7 +277,7 @@ pub async fn position_static_len_datafile(
             )))?;
         }
         nreads += 1;
-        let e = t.1.ns;
+        let e = t.1.ns();
         if e < range.beg {
             x = e;
             j = m;
@@ -301,7 +303,7 @@ pub async fn position_static_len_datafile_at_largest_smaller_than(
     let evlen = ev.0 as u64;
     let mut j = headoff;
     let mut k = ((flen - headoff) / evlen - 1) * evlen + headoff;
-    let x = ev.1.ns;
+    let x = ev.1.ns();
     let t = read_event_at(k, &mut file).await?;
     if t.0 != evlen as u32 {
         Err(Error::with_msg(format!(
@@ -309,7 +311,7 @@ pub async fn position_static_len_datafile_at_largest_smaller_than(
             t.0, evlen
         )))?;
     }
-    let y = t.1.ns;
+    let y = t.1.ns();
     let mut nreads = 2;
     if x >= range.beg {
         file.seek(SeekFrom::Start(j)).await?;
@@ -333,7 +335,7 @@ pub async fn position_static_len_datafile_at_largest_smaller_than(
             )))?;
         }
         nreads += 1;
-        let x = t.1.ns;
+        let x = t.1.ns();
         if x < range.beg {
             j = m;
         } else {

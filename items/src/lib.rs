@@ -1,7 +1,7 @@
 use err::Error;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::StreamItem;
-use netpod::NanoRange;
+use netpod::range::evrange::NanoRange;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -60,7 +60,7 @@ where
         Self {
             // TODO make buffer size a parameter:
             buf: vec![0; 1024 * 32],
-            all: vec![],
+            all: Vec::new(),
             file: Some(file),
             _m1: PhantomData,
         }

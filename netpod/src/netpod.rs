@@ -1,6 +1,7 @@
 pub mod api4;
 pub mod histo;
 pub mod query;
+pub mod range;
 pub mod status;
 pub mod streamext;
 pub mod transform;
@@ -13,6 +14,9 @@ use chrono::Utc;
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use range::evrange::NanoRange;
+use range::evrange::PulseRange;
+use range::evrange::SeriesRange;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsVal;
@@ -701,148 +705,6 @@ impl From<FilePos> for u64 {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum TimeRange {
-    Time { beg: DateTime<Utc>, end: DateTime<Utc> },
-    Pulse { beg: u64, end: u64 },
-    Nano { beg: u64, end: u64 },
-}
-
-#[derive(Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize)]
-pub struct Nanos {
-    pub ns: u64,
-}
-
-impl Nanos {
-    pub fn from_ns(ns: u64) -> Self {
-        Self { ns }
-    }
-}
-
-impl fmt::Debug for Nanos {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let ts = chrono::Utc.timestamp_opt((self.ns / SEC) as i64, (self.ns % SEC) as u32);
-        f.debug_struct("Nanos").field("ns", &ts).finish()
-    }
-}
-
-#[derive(Clone, Serialize, Deserialize, PartialEq)]
-pub struct NanoRange {
-    pub beg: u64,
-    pub end: u64,
-}
-
-impl fmt::Debug for NanoRange {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let beg = chrono::Utc
-            .timestamp_opt((self.beg / SEC) as i64, (self.beg % SEC) as u32)
-            .earliest();
-        let end = chrono::Utc
-            .timestamp_opt((self.end / SEC) as i64, (self.end % SEC) as u32)
-            .earliest();
-        if let (Some(a), Some(b)) = (beg, end) {
-            f.debug_struct("NanoRange").field("beg", &a).field("end", &b).finish()
-        } else {
-            f.debug_struct("NanoRange")
-                .field("beg", &beg)
-                .field("end", &end)
-                .finish()
-        }
-    }
-}
-
-impl NanoRange {
-    pub fn from_date_time(beg: DateTime<Utc>, end: DateTime<Utc>) -> Self {
-        Self {
-            beg: beg.timestamp_nanos() as u64,
-            end: end.timestamp_nanos() as u64,
-        }
-    }
-
-    pub fn delta(&self) -> u64 {
-        self.end - self.beg
-    }
-}
-
-impl TryFrom<&SeriesRange> for NanoRange {
-    type Error = Error;
-
-    fn try_from(val: &SeriesRange) -> Result<NanoRange, Self::Error> {
-        match val {
-            SeriesRange::TimeRange(x) => Ok(x.clone()),
-            SeriesRange::PulseRange(_) => Err(Error::with_msg_no_trace("not a Time range")),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct PulseRange {
-    pub beg: u64,
-    pub end: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum SeriesRange {
-    TimeRange(NanoRange),
-    PulseRange(PulseRange),
-}
-
-impl SeriesRange {
-    pub fn dim0kind(&self) -> Dim0Kind {
-        match self {
-            SeriesRange::TimeRange(_) => Dim0Kind::Time,
-            SeriesRange::PulseRange(_) => Dim0Kind::Pulse,
-        }
-    }
-
-    pub fn is_time(&self) -> bool {
-        match self {
-            SeriesRange::TimeRange(_) => true,
-            SeriesRange::PulseRange(_) => false,
-        }
-    }
-
-    pub fn is_pulse(&self) -> bool {
-        match self {
-            SeriesRange::TimeRange(_) => false,
-            SeriesRange::PulseRange(_) => true,
-        }
-    }
-
-    pub fn beg_u64(&self) -> u64 {
-        match self {
-            SeriesRange::TimeRange(x) => x.beg,
-            SeriesRange::PulseRange(x) => x.beg,
-        }
-    }
-
-    pub fn end_u64(&self) -> u64 {
-        match self {
-            SeriesRange::TimeRange(x) => x.beg,
-            SeriesRange::PulseRange(x) => x.beg,
-        }
-    }
-
-    pub fn delta_u64(&self) -> u64 {
-        match self {
-            SeriesRange::TimeRange(x) => x.end - x.beg,
-            SeriesRange::PulseRange(x) => x.end - x.beg,
-        }
-    }
-}
-
-impl From<NanoRange> for SeriesRange {
-    fn from(k: NanoRange) -> Self {
-        Self::TimeRange(k)
-    }
-}
-
-impl From<PulseRange> for SeriesRange {
-    fn from(k: PulseRange) -> Self {
-        Self::PulseRange(k)
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum ByteOrder {
     Little,
     Big,
@@ -897,7 +759,7 @@ pub enum GenVar {
 pub struct ChannelConfig {
     pub channel: Channel,
     pub keyspace: u8,
-    pub time_bin_size: Nanos,
+    pub time_bin_size: TsNano,
     pub scalar_type: ScalarType,
     pub compression: bool,
     pub shape: Shape,
@@ -1159,10 +1021,6 @@ fn test_shape_serde() {
     assert_eq!(s, Shape::Image(12, 13));
 }
 
-pub trait HasShape {
-    fn shape(&self) -> Shape;
-}
-
 pub mod timeunits {
     pub const MU: u64 = 1000;
     pub const MS: u64 = MU * 1000;
@@ -1199,11 +1057,34 @@ pub trait Dim0Index: Clone + fmt::Debug + PartialOrd {
     fn to_binned_range_enum(&self, bin_off: u64, bin_cnt: u64) -> BinnedRangeEnum;
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
-pub struct TsNano(u64);
+#[derive(Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
+pub struct TsNano(pub u64);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub struct PulseId(u64);
+
+impl TsNano {
+    pub fn from_ns(ns: u64) -> Self {
+        Self(ns)
+    }
+
+    pub fn ns(&self) -> u64 {
+        self.0
+    }
+}
+
+impl fmt::Debug for TsNano {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let ts = Utc.timestamp_opt((self.0 / SEC) as i64, (self.0 % SEC) as u32);
+        f.debug_struct("TsNano").field("ns", &ts).finish()
+    }
+}
+
+impl PulseId {
+    pub fn from_id(id: u64) -> Self {
+        Self(id)
+    }
+}
 
 impl Dim0Index for TsNano {
     fn add(&self, v: &Self) -> Self {
@@ -1235,7 +1116,7 @@ impl Dim0Index for TsNano {
     }
 
     fn series_range(a: Self, b: Self) -> SeriesRange {
-        todo!()
+        SeriesRange::TimeRange(NanoRange { beg: a.0, end: b.0 })
     }
 
     fn prebin_bin_len_opts() -> Vec<Self> {
@@ -1305,7 +1186,7 @@ impl Dim0Index for PulseId {
     }
 
     fn series_range(a: Self, b: Self) -> SeriesRange {
-        todo!()
+        SeriesRange::PulseRange(PulseRange { beg: a.0, end: b.0 })
     }
 
     fn prebin_bin_len_opts() -> Vec<Self> {
@@ -1723,7 +1604,32 @@ impl BinnedRangeEnum {
     }
 
     pub fn range_at(&self, i: usize) -> Option<SeriesRange> {
-        err::todoval()
+        match self {
+            BinnedRangeEnum::Time(k) => {
+                if (i as u64) < k.bin_cnt {
+                    let beg = k.bin_off + k.bin_len.0 * i as u64;
+                    let x = SeriesRange::TimeRange(NanoRange {
+                        beg,
+                        end: beg + k.bin_len.0,
+                    });
+                    Some(x)
+                } else {
+                    None
+                }
+            }
+            BinnedRangeEnum::Pulse(k) => {
+                if (i as u64) < k.bin_cnt {
+                    let beg = k.bin_off + k.bin_len.0 * i as u64;
+                    let x = SeriesRange::PulseRange(PulseRange {
+                        beg,
+                        end: beg + k.bin_len.0,
+                    });
+                    Some(x)
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     pub fn dim0kind(&self) -> Dim0Kind {

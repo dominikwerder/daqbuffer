@@ -1,7 +1,7 @@
 use err::Error;
+use netpod::range::evrange::NanoRange;
 use netpod::Channel;
 use netpod::ChannelConfig;
-use netpod::NanoRange;
 use netpod::NodeConfigCached;
 use parse::channelconfig::extract_matching_config_entry;
 use parse::channelconfig::read_local_config;
@@ -29,7 +29,7 @@ pub async fn config(
     let channel_config = ChannelConfig {
         channel: channel.clone(),
         keyspace: entry.ks as u8,
-        time_bin_size: entry.bs,
+        time_bin_size: entry.bs.clone(),
         shape: shape,
         scalar_type: entry.scalar_type.clone(),
         byte_order: entry.byte_order.clone(),

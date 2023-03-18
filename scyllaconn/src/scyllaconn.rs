@@ -6,8 +6,9 @@ pub mod status;
 
 use err::Error;
 use errconv::ErrConv;
+use netpod::range::evrange::NanoRange;
+use netpod::range::evrange::SeriesRange;
 use netpod::ScyllaConfig;
-use netpod::SeriesRange;
 use scylla::statement::Consistency;
 use scylla::Session as ScySession;
 use std::sync::Arc;

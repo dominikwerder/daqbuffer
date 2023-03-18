@@ -3,11 +3,11 @@ use clap::Parser;
 use err::Error;
 #[allow(unused)]
 use netpod::log::*;
+use netpod::range::evrange::NanoRange;
 use netpod::ByteOrder;
 use netpod::ByteSize;
 use netpod::Channel;
 use netpod::ChannelConfig;
-use netpod::NanoRange;
 use netpod::Shape;
 use std::path::PathBuf;
 use streams::eventchunker::EventChunker;
@@ -87,7 +87,7 @@ pub fn main() -> Result<(), Error> {
                         series: None,
                     },
                     keyspace: ce.ks as u8,
-                    time_bin_size: ce.bs,
+                    time_bin_size: ce.bs.clone(),
                     scalar_type: ce.scalar_type.clone(),
                     compression: false,
                     shape: Shape::Scalar,

@@ -1,13 +1,26 @@
 use err::Error;
+use netpod::range::evrange::NanoRange;
 use netpod::timeunits::MS;
-use netpod::{ByteOrder, Channel, NanoRange, Nanos, Node, ScalarType, Shape};
-use netpod::{ChannelConfigQuery, ChannelConfigResponse};
+use netpod::ByteOrder;
+use netpod::Channel;
+use netpod::ChannelConfigQuery;
+use netpod::ChannelConfigResponse;
+use netpod::Node;
+use netpod::ScalarType;
+use netpod::Shape;
+use netpod::TsNano;
 use nom::bytes::complete::take;
-use nom::number::complete::{be_i16, be_i32, be_i64, be_i8, be_u8};
+use nom::number::complete::be_i16;
+use nom::number::complete::be_i32;
+use nom::number::complete::be_i64;
+use nom::number::complete::be_i8;
+use nom::number::complete::be_u8;
 use nom::Needed;
-use num_derive::{FromPrimitive, ToPrimitive};
+use num_derive::FromPrimitive;
+use num_derive::ToPrimitive;
 use num_traits::ToPrimitive;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::fmt;
 use tokio::io::ErrorKind;
 
@@ -70,7 +83,7 @@ pub struct ConfigEntry {
     pub ts: u64,
     pub pulse: i64,
     pub ks: i32,
-    pub bs: Nanos,
+    pub bs: TsNano,
     pub split_count: i32,
     pub status: i32,
     pub bb: i8,
@@ -158,7 +171,7 @@ pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
     let (inp, pulse) = be_i64(inp)?;
     let (inp, ks) = be_i32(inp)?;
     let (inp, bs) = be_i64(inp)?;
-    let bs = Nanos { ns: bs as u64 * MS };
+    let bs = TsNano(bs as u64 * MS);
     let (inp, split_count) = be_i32(inp)?;
     let (inp, status) = be_i32(inp)?;
     let (inp, bb) = be_i8(inp)?;

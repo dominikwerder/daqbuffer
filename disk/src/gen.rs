@@ -1,12 +1,23 @@
 use crate::ChannelConfigExt;
 use bitshuffle::bitshuffle_compress;
-use bytes::{BufMut, BytesMut};
+use bytes::BufMut;
+use bytes::BytesMut;
 use err::Error;
 use netpod::log::*;
 use netpod::timeunits::*;
-use netpod::{ByteOrder, Channel, ChannelConfig, GenVar, Nanos, Node, ScalarType, SfDatabuffer, Shape};
-use std::path::{Path, PathBuf};
-use tokio::fs::{File, OpenOptions};
+use netpod::ByteOrder;
+use netpod::Channel;
+use netpod::ChannelConfig;
+use netpod::GenVar;
+use netpod::Node;
+use netpod::ScalarType;
+use netpod::SfDatabuffer;
+use netpod::Shape;
+use netpod::TsNano;
+use std::path::Path;
+use std::path::PathBuf;
+use tokio::fs::File;
+use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 
 pub async fn gen_test_data() -> Result<(), Error> {
@@ -27,7 +38,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                     series: None,
                 },
                 keyspace: 2,
-                time_bin_size: Nanos { ns: DAY },
+                time_bin_size: TsNano(DAY),
                 scalar_type: ScalarType::I32,
                 byte_order: ByteOrder::Big,
                 shape: Shape::Scalar,
@@ -46,7 +57,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                     series: None,
                 },
                 keyspace: 3,
-                time_bin_size: Nanos { ns: DAY },
+                time_bin_size: TsNano(DAY),
                 array: true,
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(21),
@@ -65,7 +76,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                     series: None,
                 },
                 keyspace: 3,
-                time_bin_size: Nanos { ns: DAY },
+                time_bin_size: TsNano(DAY),
                 scalar_type: ScalarType::U16,
                 byte_order: ByteOrder::Little,
                 shape: Shape::Wave(77),
@@ -84,7 +95,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                     series: None,
                 },
                 keyspace: 2,
-                time_bin_size: Nanos { ns: DAY },
+                time_bin_size: TsNano(DAY),
                 scalar_type: ScalarType::I32,
                 byte_order: ByteOrder::Little,
                 shape: Shape::Scalar,
@@ -103,7 +114,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
                     series: None,
                 },
                 keyspace: 2,
-                time_bin_size: Nanos { ns: DAY },
+                time_bin_size: TsNano(DAY),
                 scalar_type: ScalarType::I32,
                 byte_order: ByteOrder::Little,
                 shape: Shape::Scalar,
@@ -170,9 +181,9 @@ async fn gen_channel(chn: &ChannelGenProps, split: u32, node: &Node, ensemble: &
         .await
         .map_err(|k| Error::with_msg(format!("can not generate config {:?}", k)))?;
     let mut evix = 0;
-    let mut ts = Nanos { ns: 0 };
+    let mut ts = TsNano(0);
     let mut pulse = 0;
-    while ts.ns < DAY * 3 {
+    while ts.ns() < DAY * 3 {
         let res = gen_timebin(
             evix,
             ts,
@@ -187,7 +198,7 @@ async fn gen_channel(chn: &ChannelGenProps, split: u32, node: &Node, ensemble: &
         )
         .await?;
         evix = res.evix;
-        ts.ns = res.ts.ns;
+        ts = res.ts;
         pulse = res.pulse;
     }
     Ok(())
@@ -231,7 +242,7 @@ async fn gen_config(
     buf.put_i64(ts);
     buf.put_i64(pulse);
     buf.put_u32(config.keyspace as u32);
-    buf.put_u64(config.time_bin_size.ns / MS);
+    buf.put_u64(config.time_bin_size.ns() / MS);
     buf.put_i32(sc);
     buf.put_i32(status);
     buf.put_i8(bb);
@@ -316,13 +327,13 @@ impl CountedFile {
 
 struct GenTimebinRes {
     evix: u64,
-    ts: Nanos,
+    ts: TsNano,
     pulse: u64,
 }
 
 async fn gen_timebin(
     evix: u64,
-    ts: Nanos,
+    ts: TsNano,
     pulse: u64,
     ts_spacing: u64,
     channel_path: &Path,
@@ -332,11 +343,11 @@ async fn gen_timebin(
     ensemble: &Ensemble,
     gen_var: &GenVar,
 ) -> Result<GenTimebinRes, Error> {
-    let tb = ts.ns / config.time_bin_size.ns;
+    let tb = ts.ns() / config.time_bin_size.ns();
     let path = channel_path.join(format!("{:019}", tb)).join(format!("{:010}", split));
     tokio::fs::create_dir_all(&path).await?;
-    let data_path = path.join(format!("{:019}_{:05}_Data", config.time_bin_size.ns / MS, 0));
-    let index_path = path.join(format!("{:019}_{:05}_Data_Index", config.time_bin_size.ns / MS, 0));
+    let data_path = path.join(format!("{:019}_{:05}_Data", config.time_bin_size.ns() / MS, 0));
+    let index_path = path.join(format!("{:019}_{:05}_Data_Index", config.time_bin_size.ns() / MS, 0));
     info!("open data file {:?}", data_path);
     let file = OpenOptions::new()
         .write(true)
@@ -363,34 +374,32 @@ async fn gen_timebin(
     let mut evix = evix;
     let mut ts = ts;
     let mut pulse = pulse;
-    let tsmax = Nanos {
-        ns: (tb + 1) * config.time_bin_size.ns,
-    };
-    while ts.ns < tsmax.ns {
+    let tsmax = TsNano((tb + 1) * config.time_bin_size.ns());
+    while ts.ns() < tsmax.ns() {
         match gen_var {
             // TODO
             // Splits and nodes are not in 1-to-1 correspondence.
             GenVar::Default => {
                 if evix % ensemble.nodes.len() as u64 == split as u64 {
-                    gen_event(&mut file, index_file.as_mut(), evix, ts, pulse, config, gen_var).await?;
+                    gen_event(&mut file, index_file.as_mut(), evix, ts.clone(), pulse, config, gen_var).await?;
                 }
             }
             GenVar::ConstRegular => {
                 if evix % ensemble.nodes.len() as u64 == split as u64 {
-                    gen_event(&mut file, index_file.as_mut(), evix, ts, pulse, config, gen_var).await?;
+                    gen_event(&mut file, index_file.as_mut(), evix, ts.clone(), pulse, config, gen_var).await?;
                 }
             }
             GenVar::TimeWeight => {
                 let m = evix % 20;
                 if m == 0 || m == 1 {
                     if evix % ensemble.nodes.len() as u64 == split as u64 {
-                        gen_event(&mut file, index_file.as_mut(), evix, ts, pulse, config, gen_var).await?;
+                        gen_event(&mut file, index_file.as_mut(), evix, ts.clone(), pulse, config, gen_var).await?;
                     }
                 }
             }
         }
         evix += 1;
-        ts.ns += ts_spacing;
+        ts.0 += ts_spacing;
         pulse += 1;
     }
     let ret = GenTimebinRes { evix, ts, pulse };
@@ -413,7 +422,7 @@ async fn gen_event(
     file: &mut CountedFile,
     index_file: Option<&mut CountedFile>,
     evix: u64,
-    ts: Nanos,
+    ts: TsNano,
     pulse: u64,
     config: &ChannelConfig,
     gen_var: &GenVar,
@@ -423,7 +432,7 @@ async fn gen_event(
     let mut buf = BytesMut::with_capacity(1024 * 16);
     buf.put_i32(0xcafecafe as u32 as i32);
     buf.put_u64(ttl);
-    buf.put_u64(ts.ns);
+    buf.put_u64(ts.ns());
     buf.put_u64(pulse);
     buf.put_u64(ioc_ts);
     buf.put_u8(0);
@@ -541,7 +550,7 @@ async fn gen_event(
     file.write_all(buf.as_ref()).await?;
     if let Some(f) = index_file {
         let mut buf = BytesMut::with_capacity(16);
-        buf.put_u64(ts.ns);
+        buf.put_u64(ts.ns());
         buf.put_u64(z);
         f.write_all(&buf).await?;
     }

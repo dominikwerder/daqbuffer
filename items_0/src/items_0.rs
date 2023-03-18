@@ -12,10 +12,8 @@ pub mod bincode {
 
 use collect_s::Collectable;
 use collect_s::ToJsonResult;
+use netpod::range::evrange::SeriesRange;
 use netpod::BinnedRangeEnum;
-use netpod::ScalarType;
-use netpod::SeriesRange;
-use netpod::Shape;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
@@ -31,28 +29,10 @@ pub trait TimeBins {
     fn ts_min_max(&self) -> Option<(u64, u64)>;
 }
 
-pub enum Fits {
-    Empty,
-    Lower,
-    Greater,
-    Inside,
-    PartlyLower,
-    PartlyGreater,
-    PartlyLowerAndGreater,
-}
-
 pub trait RangeOverlapInfo {
     fn ends_before(&self, range: &SeriesRange) -> bool;
     fn ends_after(&self, range: &SeriesRange) -> bool;
     fn starts_after(&self, range: &SeriesRange) -> bool;
-}
-
-pub trait EmptyForScalarTypeShape {
-    fn empty(scalar_type: ScalarType, shape: Shape) -> Self;
-}
-
-pub trait EmptyForShape {
-    fn empty(shape: Shape) -> Self;
 }
 
 pub trait Empty {
