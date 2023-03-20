@@ -9,7 +9,6 @@ use items_0::streamitem::StreamItem;
 use items_2::channelevents::ChannelEvents;
 use items_2::eventfull::EventFull;
 use netpod::log::*;
-use netpod::query::PlainEventsQuery;
 use netpod::range::evrange::NanoRange;
 use netpod::AggKind;
 use netpod::ByteSize;
@@ -22,6 +21,7 @@ use parse::channelconfig::extract_matching_config_entry;
 use parse::channelconfig::read_local_config;
 use parse::channelconfig::ConfigEntry;
 use parse::channelconfig::MatchingConfigEntry;
+use query::api4::events::PlainEventsQuery;
 use std::pin::Pin;
 use streams::eventchunker::EventChunkerConf;
 
@@ -109,7 +109,7 @@ pub async fn make_event_pipe(
     let out_max_len = if node_config.node_config.cluster.is_central_storage {
         1
     } else {
-        128
+        1
     };
     let event_blobs = EventChunkerMultifile::new(
         (&range).try_into()?,
@@ -184,7 +184,7 @@ pub fn make_local_event_blobs_stream(
     let out_max_len = if node_config.node_config.cluster.is_central_storage {
         1
     } else {
-        128
+        1
     };
     let event_blobs = EventChunkerMultifile::new(
         range,
@@ -230,7 +230,7 @@ pub fn make_remote_event_blobs_stream(
     let out_max_len = if node_config.node_config.cluster.is_central_storage {
         1
     } else {
-        128
+        1
     };
     let event_blobs = EventChunkerMultifile::new(
         range,
@@ -263,13 +263,14 @@ pub async fn make_event_blobs_pipe(
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     type ItemType = Sitemty<EventFull>;
     // TODO should depend on host config
-    let pipe = if true {
-        let event_blobs = make_remote_event_blobs_stream(
+    let do_local = node_config.node_config.cluster.is_central_storage;
+    let pipe = if do_local {
+        let event_blobs = make_local_event_blobs_stream(
             range.try_into()?,
             evq.channel().clone(),
             &entry,
             expand,
-            true,
+            false,
             event_chunker_conf,
             DiskIoTune::default(),
             node_config,
@@ -281,7 +282,7 @@ pub async fn make_event_blobs_pipe(
         pipe*/
         Box::pin(event_blobs) as _
     } else {
-        let event_blobs = make_local_event_blobs_stream(
+        let event_blobs = make_remote_event_blobs_stream(
             range.try_into()?,
             evq.channel().clone(),
             &entry,

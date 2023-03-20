@@ -9,9 +9,7 @@ use items_2::binsdim0::BinsDim0;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
 use netpod::query::CacheUsage;
-use netpod::query::PlainEventsQuery;
 use netpod::timeunits::*;
-use netpod::transform::Transform;
 use netpod::AggKind;
 use netpod::ChannelTyped;
 use netpod::Dim0Kind;
@@ -21,6 +19,7 @@ use netpod::PreBinnedPatchRange;
 use netpod::PreBinnedPatchRangeEnum;
 use netpod::ScalarType;
 use netpod::Shape;
+use query::transform::TransformQuery;
 use scylla::Session as ScySession;
 use std::collections::VecDeque;
 use std::pin::Pin;
@@ -216,7 +215,7 @@ pub async fn fetch_uncached_data(
     chn: ChannelTyped,
     coord: PreBinnedPatchCoordEnum,
     one_before_range: bool,
-    transform: Transform,
+    transform: TransformQuery,
     cache_usage: CacheUsage,
     scy: Arc<ScySession>,
 ) -> Result<Option<(Box<dyn TimeBinned>, bool)>, Error> {
@@ -280,7 +279,7 @@ pub fn fetch_uncached_data_box(
     chn: &ChannelTyped,
     coord: &PreBinnedPatchCoordEnum,
     one_before_range: bool,
-    transform: Transform,
+    transform: TransformQuery,
     cache_usage: CacheUsage,
     scy: Arc<ScySession>,
 ) -> Pin<Box<dyn Future<Output = Result<Option<(Box<dyn TimeBinned>, bool)>, Error>> + Send>> {
@@ -301,7 +300,7 @@ pub async fn fetch_uncached_higher_res_prebinned(
     coord: PreBinnedPatchCoordEnum,
     range: PreBinnedPatchRangeEnum,
     one_before_range: bool,
-    transform: Transform,
+    transform: TransformQuery,
     cache_usage: CacheUsage,
     scy: Arc<ScySession>,
 ) -> Result<(Box<dyn TimeBinned>, bool), Error> {
@@ -381,7 +380,7 @@ pub async fn fetch_uncached_binned_events(
     chn: &ChannelTyped,
     coord: PreBinnedPatchCoordEnum,
     one_before_range: bool,
-    transform: Transform,
+    transform: TransformQuery,
     scy: Arc<ScySession>,
 ) -> Result<(Box<dyn TimeBinned>, bool), Error> {
     /*let edges = coord.edges();
@@ -483,7 +482,7 @@ pub async fn pre_binned_value_stream_with_scy(
     chn: &ChannelTyped,
     coord: &PreBinnedPatchCoordEnum,
     one_before_range: bool,
-    transform: Transform,
+    transform: TransformQuery,
     cache_usage: CacheUsage,
     scy: Arc<ScySession>,
 ) -> Result<(Box<dyn TimeBinned>, bool), Error> {
@@ -507,7 +506,7 @@ pub async fn pre_binned_value_stream(
     chn: &ChannelTyped,
     coord: &PreBinnedPatchCoordEnum,
     one_before_range: bool,
-    transform: Transform,
+    transform: TransformQuery,
     agg_kind: AggKind,
     cache_usage: CacheUsage,
     scy: Arc<ScySession>,

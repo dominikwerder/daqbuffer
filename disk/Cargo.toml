@@ -36,6 +36,7 @@ tiny-keccak = { version = "2.0", features = ["sha3"] }
 err = { path = "../err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }
+query = { path = "../query" }
 bitshuffle = { path = "../bitshuffle" }
 dbconn = { path = "../dbconn" }
 parse = { path = "../parse" }

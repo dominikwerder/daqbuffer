@@ -9,7 +9,6 @@ use httpclient::HttpBodyAsAsyncRead;
 use hyper::Body;
 use items_0::streamitem::StreamItem;
 use netpod::log::*;
-use netpod::query::BinnedQuery;
 use netpod::query::CacheUsage;
 use netpod::range::evrange::NanoRange;
 use netpod::AppendToUrl;
@@ -18,6 +17,7 @@ use netpod::Channel;
 use netpod::HostPort;
 use netpod::PerfOpts;
 use netpod::APP_OCTET;
+use query::api4::binned::BinnedQuery;
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
 use url::Url;
 

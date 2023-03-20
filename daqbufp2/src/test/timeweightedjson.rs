@@ -6,13 +6,13 @@ use err::Error;
 use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
-use netpod::query::BinnedQuery;
 use netpod::query::CacheUsage;
 use netpod::range::evrange::NanoRange;
 use netpod::AppendToUrl;
 use netpod::Channel;
 use netpod::Cluster;
 use netpod::APP_JSON;
+use query::api4::binned::BinnedQuery;
 use std::time::Duration;
 use url::Url;
 

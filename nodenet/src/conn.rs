@@ -15,10 +15,10 @@ use items_2::frame::make_error_frame;
 use items_2::frame::make_term_frame;
 use netpod::histo::HistoLog2;
 use netpod::log::*;
-use netpod::query::PlainEventsQuery;
 use netpod::AggKind;
 use netpod::NodeConfigCached;
 use netpod::PerfOpts;
+use query::api4::events::PlainEventsQuery;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
@@ -277,8 +277,8 @@ async fn events_conn_handler_inner_try(
         return Err((e, netout).into());
     }
 
-    let mut stream: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> = if false {
-        if true {
+    let mut stream: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> = if evq.is_event_blobs() {
+        if false {
             error!("TODO support event blob transform");
             let e = Error::with_msg(format!("TODO support event blob transform"));
             return Err((e, netout).into());
@@ -327,15 +327,17 @@ async fn events_conn_handler_inner_try(
         }
     };
 
+    let mut buf_len_cnt = 0;
+    let mut buf_len_sum = 0;
     let mut buf_len_histo = HistoLog2::new(5);
     while let Some(item) = stream.next().await {
         let item = item.make_frame();
         match item {
             Ok(buf) => {
-                if buf.len() > 1024 * 64 {
+                buf_len_cnt += 1;
+                buf_len_sum += buf.len();
+                if buf.len() > 1024 * 128 {
                     warn!("emit buf len {}", buf.len());
-                } else {
-                    info!("emit buf len {}", buf.len());
                 }
                 buf_len_histo.ingest(buf.len() as u32);
                 match netout.write_all(&buf).await {
@@ -349,6 +351,7 @@ async fn events_conn_handler_inner_try(
             }
         }
     }
+    info!("buf_len_cnt {}  buf_len_avg {}", buf_len_cnt, buf_len_sum / buf_len_cnt);
     let buf = match make_term_frame() {
         Ok(k) => k,
         Err(e) => return Err((e, netout))?,

@@ -1,16 +1,21 @@
-use crate::bodystream::{response, ToPublicResponse};
+use crate::bodystream::response;
+use crate::bodystream::ToPublicResponse;
 use crate::channelconfig::chconf_from_binned;
 use crate::err::Error;
 use crate::response_err;
-use http::{Method, StatusCode};
-use http::{Request, Response};
+use http::Method;
+use http::Request;
+use http::Response;
+use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
-use netpod::query::BinnedQuery;
 use netpod::timeunits::SEC;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
-use netpod::{ACCEPT_ALL, APP_JSON, APP_OCTET};
+use netpod::ACCEPT_ALL;
+use netpod::APP_JSON;
+use netpod::APP_OCTET;
+use query::api4::binned::BinnedQuery;
 use tracing::Instrument;
 use url::Url;
 

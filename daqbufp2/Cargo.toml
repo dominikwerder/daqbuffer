@@ -25,6 +25,7 @@ lazy_static = "1.4.0"
 err = { path = "../err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }
+query = { path = "../query" }
 httpret = { path = "../httpret" }
 httpclient = { path = "../httpclient" }
 disk = { path = "../disk" }

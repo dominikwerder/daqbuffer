@@ -26,6 +26,7 @@ md-5 = "0.10"
 regex = "1.7"
 err = { path = "../err" }
 netpod = { path = "../netpod" }
+query = { path = "../query" }
 dbconn = { path = "../dbconn" }
 disk = { path = "../disk" }
 items = { path = "../items" }

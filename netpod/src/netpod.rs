@@ -1,10 +1,8 @@
-pub mod api4;
 pub mod histo;
 pub mod query;
 pub mod range;
 pub mod status;
 pub mod streamext;
-pub mod transform;
 
 use crate::log::*;
 use bytes::Bytes;
@@ -42,6 +40,13 @@ pub const ACCEPT_ALL: &'static str = "*/*";
 pub const CONNECTION_STATUS_DIV: u64 = timeunits::DAY;
 pub const TS_MSP_GRID_UNIT: u64 = timeunits::SEC * 10;
 pub const TS_MSP_GRID_SPACING: u64 = 6 * 2;
+
+pub fn is_false<T>(x: T) -> bool
+where
+    T: std::borrow::Borrow<bool>,
+{
+    *x.borrow() == false
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AggQuerySingleChannel {
@@ -558,13 +563,6 @@ pub struct TableSizes {
 pub struct NodeStatusSub {
     pub url: String,
     pub status: Result<NodeStatus, Error>,
-}
-
-fn is_false<T>(x: T) -> bool
-where
-    T: std::borrow::Borrow<bool>,
-{
-    *x.borrow() == false
 }
 
 #[derive(Debug, Serialize, Deserialize)]

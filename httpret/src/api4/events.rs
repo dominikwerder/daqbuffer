@@ -12,12 +12,12 @@ use http::Response;
 use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
-use netpod::query::PlainEventsQuery;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
 use netpod::APP_OCTET;
+use query::api4::events::PlainEventsQuery;
 use url::Url;
 
 pub struct EventsHandler {}

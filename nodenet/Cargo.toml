@@ -26,6 +26,7 @@ scylla = "0.7"
 tokio-postgres = "0.7.7"
 err = { path = "../err" }
 netpod = { path = "../netpod" }
+query = { path = "../query" }
 disk = { path = "../disk" }
 #parse = { path = "../parse" }
 items = { path = "../items" }

@@ -8,13 +8,12 @@ use items_0::streamitem::sitem_data;
 use items_0::streamitem::Sitemty;
 use items_2::channelevents::ChannelEvents;
 use items_2::merger::Merger;
-#[allow(unused)]
 use netpod::log::*;
-use netpod::query::BinnedQuery;
-use netpod::query::PlainEventsQuery;
 use netpod::BinnedRangeEnum;
 use netpod::ChConf;
 use netpod::Cluster;
+use query::api4::binned::BinnedQuery;
+use query::api4::events::PlainEventsQuery;
 use serde_json::Value as JsonValue;
 use std::time::Instant;
 

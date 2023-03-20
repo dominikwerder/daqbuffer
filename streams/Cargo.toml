@@ -20,6 +20,7 @@ chrono = { version = "0.4.19", features = ["serde"] }
 wasmer = { version = "3.1.1", default-features = false, features = ["sys", "cranelift"] }
 err = { path = "../err" }
 netpod = { path = "../netpod" }
+query = { path = "../query" }
 items = { path = "../items" }
 items_0 = { path = "../items_0" }
 items_2 = { path = "../items_2" }

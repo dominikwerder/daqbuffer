@@ -96,7 +96,7 @@ impl EventChunker {
         expand: bool,
         do_decompress: bool,
     ) -> Self {
-        trace!("EventChunker::from_start");
+        info!("EventChunker::{}  do_decompress {}", "from_start", do_decompress);
         let mut inp = NeedMinBuffer::new(inp);
         inp.set_need_min(6);
         Self {
@@ -136,6 +136,10 @@ impl EventChunker {
         expand: bool,
         do_decompress: bool,
     ) -> Self {
+        info!(
+            "EventChunker::{}  do_decompress {}",
+            "from_event_boundary", do_decompress
+        );
         let mut ret = Self::from_start(inp, channel_config, range, stats_conf, dbg_path, expand, do_decompress);
         ret.state = DataFileState::Event;
         ret.need_min = 4;

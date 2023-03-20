@@ -15,7 +15,6 @@ use items_0::TimeBinnable;
 use items_0::TimeBinner;
 use items_0::Transformer;
 use netpod::log::*;
-use netpod::transform::Transform;
 use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
 use netpod::ScalarType;

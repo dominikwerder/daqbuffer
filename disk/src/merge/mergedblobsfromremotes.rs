@@ -6,9 +6,9 @@ use items_0::streamitem::Sitemty;
 use items_2::eventfull::EventFull;
 use items_2::merger::Merger;
 use netpod::log::*;
-use netpod::query::PlainEventsQuery;
 use netpod::Cluster;
 use netpod::PerfOpts;
+use query::api4::events::PlainEventsQuery;
 use std::future::Future;
 use std::pin::Pin;
 use std::task::Context;
@@ -99,7 +99,7 @@ impl Stream for MergedBlobsFromRemotes {
                     if c1 == self.tcp_establish_futs.len() {
                         let inps = self.nodein.iter_mut().map(|k| k.take().unwrap()).collect();
                         // TODO set out_max_len dynamically
-                        let s1 = Merger::new(inps, 128);
+                        let s1 = Merger::new(inps, 1);
                         self.merged = Some(Box::pin(s1));
                     }
                     continue 'outer;

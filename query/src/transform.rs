@@ -1,8 +1,8 @@
-use crate::get_url_query_pairs;
-use crate::log::*;
-use crate::AppendToUrl;
-use crate::FromUrl;
 use err::Error;
+use netpod::get_url_query_pairs;
+use netpod::log::*;
+use netpod::AppendToUrl;
+use netpod::FromUrl;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -14,6 +14,7 @@ pub enum EventTransform {
     EventBlobsUncompressed,
     ValueFull,
     ArrayPick(usize),
+    // TODO should rename to scalar? dim0 will only stay a scalar.
     MinMaxAvgDev,
     PulseIdDiff,
 }
@@ -26,12 +27,12 @@ pub enum TimeBinningTransform {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Transform {
+pub struct TransformQuery {
     event: EventTransform,
     time_binning: TimeBinningTransform,
 }
 
-impl Transform {
+impl TransformQuery {
     fn url_prefix() -> &'static str {
         "transform"
     }
@@ -57,9 +58,34 @@ impl Transform {
     pub fn is_default_time_binned(&self) -> bool {
         self == &Self::default_time_binned()
     }
+
+    pub fn for_event_blobs() -> Self {
+        Self {
+            event: EventTransform::EventBlobsVerbatim,
+            time_binning: TimeBinningTransform::None,
+        }
+    }
+
+    pub fn for_time_weighted_scalar() -> Self {
+        Self {
+            event: EventTransform::MinMaxAvgDev,
+            time_binning: TimeBinningTransform::TimeWeighted,
+        }
+    }
+
+    pub fn is_event_blobs(&self) -> bool {
+        match &self.event {
+            EventTransform::EventBlobsVerbatim => true,
+            EventTransform::EventBlobsUncompressed => {
+                error!("TODO decide on uncompressed event blobs");
+                panic!()
+            }
+            _ => false,
+        }
+    }
 }
 
-impl FromUrl for Transform {
+impl FromUrl for TransformQuery {
     fn from_url(url: &Url) -> Result<Self, Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
@@ -70,34 +96,34 @@ impl FromUrl for Transform {
         let key = "binningScheme";
         if let Some(s) = pairs.get(key) {
             let ret = if s == "eventBlobs" {
-                Transform {
+                TransformQuery {
                     event: EventTransform::EventBlobsVerbatim,
                     time_binning: TimeBinningTransform::None,
                 }
             } else if s == "fullValue" {
-                Transform {
+                TransformQuery {
                     event: EventTransform::ValueFull,
                     time_binning: TimeBinningTransform::None,
                 }
             } else if s == "timeWeightedScalar" {
-                Transform {
+                TransformQuery {
                     event: EventTransform::MinMaxAvgDev,
                     time_binning: TimeBinningTransform::TimeWeighted,
                 }
             } else if s == "unweightedScalar" {
-                Transform {
+                TransformQuery {
                     event: EventTransform::EventBlobsVerbatim,
                     time_binning: TimeBinningTransform::None,
                 }
             } else if s == "binnedX" {
                 let _u: usize = pairs.get("binnedXcount").map_or("1", |k| k).parse()?;
                 warn!("TODO binnedXcount");
-                Transform {
+                TransformQuery {
                     event: EventTransform::MinMaxAvgDev,
                     time_binning: TimeBinningTransform::None,
                 }
             } else if s == "pulseIdDiff" {
-                Transform {
+                TransformQuery {
                     event: EventTransform::PulseIdDiff,
                     time_binning: TimeBinningTransform::None,
                 }
@@ -114,7 +140,7 @@ impl FromUrl for Transform {
                     Err(_) => None,
                 })
                 .unwrap_or(None);
-            let ret = Transform {
+            let ret = TransformQuery {
                 event: EventTransform::EventBlobsVerbatim,
                 time_binning: TimeBinningTransform::None,
             };
@@ -123,7 +149,7 @@ impl FromUrl for Transform {
     }
 }
 
-impl AppendToUrl for Transform {
+impl AppendToUrl for TransformQuery {
     fn append_to_url(&self, url: &mut Url) {
         warn!("TODO AppendToUrl for Transform");
         let upre = Self::url_prefix();
