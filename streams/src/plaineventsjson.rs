@@ -5,7 +5,6 @@ use futures_util::stream;
 use futures_util::StreamExt;
 use items_0::on_sitemty_data;
 use items_0::streamitem::sitem_data;
-use items_0::Empty;
 use items_2::channelevents::ChannelEvents;
 use items_2::merger::Merger;
 use netpod::log::*;
@@ -16,14 +15,10 @@ use serde_json::Value as JsonValue;
 use std::time::Duration;
 use std::time::Instant;
 
-pub async fn plain_events_json(
-    query: &PlainEventsQuery,
-    chconf: &ChConf,
-    cluster: &Cluster,
-) -> Result<JsonValue, Error> {
-    if query.channel().name() == "wasm-test-01" {
+pub async fn plain_events_json(evq: &PlainEventsQuery, chconf: &ChConf, cluster: &Cluster) -> Result<JsonValue, Error> {
+    if evq.channel().name() == "wasm-test-01" {
         use wasmer::Value;
-        let wasm = query.channel().name().as_bytes();
+        let wasm = evq.channel().name().as_bytes();
         let mut store = wasmer::Store::default();
         let module = wasmer::Module::new(&store, wasm).unwrap();
         let import_object = wasmer::imports! {};
@@ -33,14 +28,14 @@ pub async fn plain_events_json(
         assert_eq!(result[0], Value::I32(43));
     }
     // TODO remove magic constant
-    let deadline = Instant::now() + query.timeout() + Duration::from_millis(1000);
-    let events_max = query.events_max();
-    let evquery = query.clone();
+    let deadline = Instant::now() + evq.timeout() + Duration::from_millis(1000);
+    let events_max = evq.events_max();
+    let evquery = evq.clone();
     info!("plain_events_json  evquery {:?}", evquery);
     //let ev_agg_kind = evquery.agg_kind().as_ref().map_or(AggKind::Plain, |x| x.clone());
     //info!("plain_events_json  ev_agg_kind {:?}", ev_agg_kind);
     warn!("TODO feed through transform chain");
-    let empty = if query.transform().is_pulse_id_diff() {
+    let empty = if evq.transform().is_pulse_id_diff() {
         use items_0::Empty;
         Box::new(items_2::eventsdim0::EventsDim0::<i64>::empty())
     } else {
@@ -60,13 +55,14 @@ pub async fn plain_events_json(
     use futures_util::Stream;
     use items_0::streamitem::Sitemty;
     use std::pin::Pin;
-    let stream: Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>> = if query.transform().is_pulse_id_diff() {
+    let stream: Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>> = if evq.transform().is_pulse_id_diff() {
         Box::pin(stream.map(|item| {
             let mut pulse_last = None;
             on_sitemty_data!(item, move |item| {
                 use items_0::streamitem::RangeCompletableItem;
                 use items_0::streamitem::StreamItem;
                 use items_0::Appendable;
+                use items_0::Empty;
                 let x = match item {
                     ChannelEvents::Events(item) => {
                         let (tss, pulses) = items_0::EventsNonObj::into_tss_pulses(item);
@@ -95,13 +91,13 @@ pub async fn plain_events_json(
         //info!("item after merge: {item:?}");
         item
     });
-    let stream = RangeFilter2::new(stream, query.range().try_into()?, evquery.one_before_range());
+    let stream = RangeFilter2::new(stream, evq.range().try_into()?, evquery.one_before_range());
     let stream = stream.map(|item| {
         //info!("item after rangefilter: {item:?}");
         item
     });
     let stream = stream::iter([empty]).chain(stream);
-    let collected = crate::collect::collect(stream, deadline, events_max, Some(query.range().clone()), None).await?;
+    let collected = crate::collect::collect(stream, deadline, events_max, Some(evq.range().clone()), None).await?;
     let jsval = serde_json::to_value(&collected)?;
     Ok(jsval)
 }

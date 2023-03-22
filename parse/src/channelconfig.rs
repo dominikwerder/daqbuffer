@@ -335,9 +335,11 @@ pub async fn read_local_config(channel: Channel, node: Node) -> Result<ChannelCo
         Ok(k) => k,
         Err(e) => match e.kind() {
             ErrorKind::NotFound => {
+                let bt = err::bt::Backtrace::new();
+                netpod::log::error!("{bt:?}");
                 return Err(Error::with_public_msg(format!(
                     "databuffer channel config file not found for channel {channel:?} at {path:?}"
-                )))
+                )));
             }
             ErrorKind::PermissionDenied => {
                 return Err(Error::with_public_msg(format!(

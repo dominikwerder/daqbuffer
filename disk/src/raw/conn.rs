@@ -70,6 +70,7 @@ pub async fn make_event_pipe(
     let channel_config = match channel_config {
         Ok(x) => x,
         Err(e) => {
+            error!("make_event_pipe  can not find config");
             if e.msg().contains("ErrorKind::NotFound") {
                 warn!("{e}");
                 let s = futures_util::stream::empty();

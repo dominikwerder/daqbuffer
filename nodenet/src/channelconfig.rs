@@ -1,3 +1,4 @@
+use dbconn::query::sf_databuffer_fetch_channel_by_series;
 use err::Error;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
@@ -69,6 +70,7 @@ pub async fn channel_config(range: NanoRange, channel: Channel, ncc: &NodeConfig
         Ok(ret)
     } else if ncc.node.sf_databuffer.is_some() {
         info!("try to get ChConf for sf-databuffer type backend");
+        let channel = sf_databuffer_fetch_channel_by_series(channel, ncc).await?;
         let c1 = disk::channelconfig::config(range, channel, ncc).await?;
         let ret = ChConf {
             backend: c1.channel.backend,

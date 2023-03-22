@@ -1,4 +1,5 @@
 pub mod channelconfig;
+pub mod query;
 pub mod scan;
 pub mod search;
 
