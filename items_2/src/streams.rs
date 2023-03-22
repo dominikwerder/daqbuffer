@@ -2,8 +2,8 @@ use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items_0::EventTransform;
 use items_0::TransformProperties;
-use items_0::Transformer;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::Context;
@@ -17,7 +17,7 @@ pub struct Enumerate2<T> {
 impl<T> Enumerate2<T> {
     pub fn new(inp: T) -> Self
     where
-        T: Transformer,
+        T: EventTransform,
     {
         Self { inp, cnt: 0 }
     }
@@ -43,7 +43,7 @@ where
     }
 }
 
-impl<T> Transformer for Enumerate2<T> {
+impl<T> EventTransform for Enumerate2<T> {
     fn query_transform_properties(&self) -> TransformProperties {
         todo!()
     }
@@ -114,7 +114,7 @@ where
     }
 }
 
-impl<T, F, Fut> Transformer for Then2<T, F, Fut> {
+impl<T, F, Fut> EventTransform for Then2<T, F, Fut> {
     fn query_transform_properties(&self) -> TransformProperties {
         todo!()
     }
@@ -123,11 +123,11 @@ impl<T, F, Fut> Transformer for Then2<T, F, Fut> {
 pub trait TransformerExt {
     fn enumerate2(self) -> Enumerate2<Self>
     where
-        Self: Transformer + Sized;
+        Self: EventTransform + Sized;
 
     fn then2<F, Fut>(self, f: F) -> Then2<Self, F, Fut>
     where
-        Self: Transformer + Stream + Sized,
+        Self: EventTransform + Stream + Sized,
         F: Fn(<Self as Stream>::Item) -> Fut,
         Fut: Future;
 }
@@ -135,14 +135,14 @@ pub trait TransformerExt {
 impl<T> TransformerExt for T {
     fn enumerate2(self) -> Enumerate2<Self>
     where
-        Self: Transformer + Sized,
+        Self: EventTransform + Sized,
     {
         Enumerate2::new(self)
     }
 
     fn then2<F, Fut>(self, f: F) -> Then2<Self, F, Fut>
     where
-        Self: Transformer + Stream + Sized,
+        Self: EventTransform + Stream + Sized,
         F: Fn(<Self as Stream>::Item) -> Fut,
         Fut: Future,
     {
@@ -178,7 +178,7 @@ where
     }
 }
 
-impl<T> Transformer for VecStream<T> {
+impl<T> EventTransform for VecStream<T> {
     fn query_transform_properties(&self) -> TransformProperties {
         todo!()
     }

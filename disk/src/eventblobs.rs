@@ -8,6 +8,7 @@ use items_0::streamitem::LogItem;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
+use items_0::WithLen;
 use items_2::eventfull::EventFull;
 use items_2::merger::Merger;
 use netpod::log::*;
@@ -93,9 +94,7 @@ impl Stream for EventChunkerMultifile {
     type Item = Result<StreamItem<RangeCompletableItem<EventFull>>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        //tracing::field::DebugValue;
         let span1 = span!(Level::INFO, "EvChMul", node_ix = self.node_ix);
-        //span1.record("node_ix", &self.node_ix);
         let _spg = span1.enter();
         use Poll::*;
         'outer: loop {
@@ -117,7 +116,7 @@ impl Stream for EventChunkerMultifile {
                         Ready(Some(Ok(k))) => {
                             let k = if let StreamItem::DataItem(RangeCompletableItem::Data(h)) = k {
                                 let mut h: EventFull = h;
-                                if h.tss.len() > 0 {
+                                if h.len() > 0 {
                                     let min = h.tss.iter().fold(u64::MAX, |a, &x| a.min(x));
                                     let max = h.tss.iter().fold(u64::MIN, |a, &x| a.max(x));
                                     if min <= self.max_ts {
@@ -131,7 +130,7 @@ impl Stream for EventChunkerMultifile {
                                                 "EventChunkerMultifile  emit {}/{}  events {}",
                                                 self.emit_count,
                                                 after,
-                                                h.tss.len()
+                                                h.len()
                                             );
                                             self.emit_count += 1;
                                         }
@@ -224,9 +223,6 @@ impl Stream for EventChunkerMultifile {
                                                 self.expand,
                                                 self.do_decompress,
                                             );
-                                            let chunker = chunker
-                                                //.map(|x| Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))))
-                                                ;
                                             chunkers.push(Box::pin(chunker) as _);
                                         }
                                     }
@@ -270,6 +266,7 @@ mod test {
     use futures_util::StreamExt;
     use items_0::streamitem::RangeCompletableItem;
     use items_0::streamitem::StreamItem;
+    use items_0::WithLen;
     use netpod::log::*;
     use netpod::range::evrange::NanoRange;
     use netpod::timeunits::DAY;
@@ -328,7 +325,7 @@ mod test {
                             RangeCompletableItem::Data(item) => {
                                 // TODO assert more
                                 debug!("item: {:?}", item.tss.iter().map(|x| x / MS).collect::<Vec<_>>());
-                                event_count += item.tss.len();
+                                event_count += item.len();
                                 for ts in item.tss {
                                     tss.push(ts);
                                 }

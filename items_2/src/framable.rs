@@ -90,7 +90,7 @@ where
 }
 
 pub trait FrameDecodable: FrameTypeStatic + DeserializeOwned {
-    fn from_error(e: ::err::Error) -> Self;
+    fn from_error(e: err::Error) -> Self;
     fn from_log(item: LogItem) -> Self;
     fn from_stats(item: StatsItem) -> Self;
     fn from_range_complete() -> Self;
@@ -147,4 +147,35 @@ where
             Err(_) => ERROR_FRAME_TYPE_ID,
         }
     }
+}
+
+#[test]
+fn test_frame_log() {
+    use crate::channelevents::ChannelEvents;
+    use crate::frame::decode_from_slice;
+    use netpod::log::Level;
+    let item = LogItem {
+        node_ix: 123,
+        level: Level::TRACE,
+        msg: format!("test-log-message"),
+    };
+    let item: Sitemty<ChannelEvents> = Ok(StreamItem::Log(item));
+    let buf = Framable::make_frame(&item).unwrap();
+    let len = u32::from_le_bytes(buf[12..16].try_into().unwrap());
+    let item2: LogItem = decode_from_slice(&buf[20..20 + len as usize]).unwrap();
+}
+
+#[test]
+fn test_frame_error() {
+    use crate::channelevents::ChannelEvents;
+    use crate::frame::decode_from_slice;
+    let item: Sitemty<ChannelEvents> = Err(Error::with_msg_no_trace(format!("dummy-error-message")));
+    let buf = Framable::make_frame(&item).unwrap();
+    let len = u32::from_le_bytes(buf[12..16].try_into().unwrap());
+    let tyid = u32::from_le_bytes(buf[8..12].try_into().unwrap());
+    if tyid != ERROR_FRAME_TYPE_ID {
+        panic!("bad tyid");
+    }
+    eprintln!("buf len {}  len {}", buf.len(), len);
+    let item2: Error = decode_from_slice(&buf[20..20 + len as usize]).unwrap();
 }

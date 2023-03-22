@@ -10,6 +10,7 @@ use items_0::collect_s::Collected;
 use items_0::collect_s::CollectorType;
 use items_0::collect_s::ToJsonBytes;
 use items_0::collect_s::ToJsonResult;
+use items_0::container::ByteEstimate;
 use items_0::scalar_ops::ScalarOps;
 use items_0::Appendable;
 use items_0::AsAnyMut;
@@ -21,6 +22,7 @@ use items_0::MergeError;
 use items_0::TimeBinnable;
 use items_0::TimeBinner;
 use items_0::WithLen;
+use netpod::is_false;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::SEC;
@@ -31,6 +33,7 @@ use std::any;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
+use std::mem;
 
 #[allow(unused)]
 macro_rules! trace2 {
@@ -130,6 +133,14 @@ impl<NTY> WithLen for EventsDim1<NTY> {
     }
 }
 
+impl<STY> ByteEstimate for EventsDim1<STY> {
+    fn byte_estimate(&self) -> u64 {
+        let stylen = mem::size_of::<STY>();
+        let n = self.values.front().map_or(0, Vec::len);
+        (self.len() * (8 + 8 + n * stylen)) as u64
+    }
+}
+
 impl<NTY: ScalarOps> RangeOverlapInfo for EventsDim1<NTY> {
     fn ends_before(&self, range: &SeriesRange) -> bool {
         todo!()
@@ -199,9 +210,9 @@ pub struct EventsDim1CollectorOutput<NTY> {
     pulse_off: VecDeque<u64>,
     #[serde(rename = "values")]
     values: VecDeque<Vec<NTY>>,
-    #[serde(rename = "rangeFinal", default, skip_serializing_if = "crate::bool_is_false")]
+    #[serde(rename = "rangeFinal", default, skip_serializing_if = "is_false")]
     range_final: bool,
-    #[serde(rename = "timedOut", default, skip_serializing_if = "crate::bool_is_false")]
+    #[serde(rename = "timedOut", default, skip_serializing_if = "is_false")]
     timed_out: bool,
     #[serde(rename = "continueAt", default, skip_serializing_if = "Option::is_none")]
     continue_at: Option<IsoDateTime>,

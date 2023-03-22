@@ -60,7 +60,7 @@ impl AsPrimF32 for String {
 }
 
 pub trait ScalarOps:
-    fmt::Debug + Clone + PartialOrd + SubFrId + AsPrimF32 + Serialize + Unpin + Send + 'static
+    fmt::Debug + Clone + PartialOrd + PartialEq + SubFrId + AsPrimF32 + Serialize + Unpin + Send + 'static
 {
     fn zero_b() -> Self;
     fn equal_slack(&self, rhs: &Self) -> bool;

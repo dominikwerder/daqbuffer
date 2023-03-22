@@ -4,6 +4,10 @@ pub mod range;
 pub mod status;
 pub mod streamext;
 
+pub mod log {
+    pub use tracing::{self, debug, error, event, info, span, trace, warn, Level};
+}
+
 use crate::log::*;
 use bytes::Bytes;
 use chrono::DateTime;
@@ -46,6 +50,16 @@ where
     T: std::borrow::Borrow<bool>,
 {
     *x.borrow() == false
+}
+
+pub trait CmpZero {
+    fn is_zero(&self) -> bool;
+}
+
+impl CmpZero for u32 {
+    fn is_zero(&self) -> bool {
+        *self == 0
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1055,8 +1069,27 @@ pub trait Dim0Index: Clone + fmt::Debug + PartialOrd {
     fn to_binned_range_enum(&self, bin_off: u64, bin_cnt: u64) -> BinnedRangeEnum;
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
+#[derive(Clone, Deserialize, PartialEq, PartialOrd)]
 pub struct TsNano(pub u64);
+
+mod ts_nano_ser {
+    use super::TsNano;
+    use crate::timeunits::SEC;
+    use chrono::TimeZone;
+    use chrono::Utc;
+    use serde::Serialize;
+
+    impl Serialize for TsNano {
+        fn serialize<S>(&self, ser: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            let ts = Utc.timestamp_opt((self.0 / SEC) as i64, (self.0 % SEC) as u32);
+            let value = format!("{}", ts.earliest().unwrap());
+            ser.serialize_newtype_struct("TsNano", &value)
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
 pub struct PulseId(u64);
@@ -1074,7 +1107,9 @@ impl TsNano {
 impl fmt::Debug for TsNano {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let ts = Utc.timestamp_opt((self.0 / SEC) as i64, (self.0 % SEC) as u32);
-        f.debug_struct("TsNano").field("ns", &ts).finish()
+        f.debug_struct("TsNano")
+            .field("ts", &ts.earliest().unwrap_or(Default::default()))
+            .finish()
     }
 }
 
@@ -1853,11 +1888,6 @@ where
             completed: false,
         }
     }
-}
-
-pub mod log {
-    #[allow(unused_imports)]
-    pub use tracing::{self, debug, error, event, info, span, trace, warn, Level};
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

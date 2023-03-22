@@ -1,12 +1,17 @@
-use crate::bodystream::{response, ToPublicResponse};
+use crate::bodystream::response;
+use crate::bodystream::ToPublicResponse;
 use crate::Error;
+use http::Method;
+use http::Request;
+use http::Response;
 use http::StatusCode;
-use http::{Method, Request, Response};
 use hyper::Body;
 use netpod::log::*;
+use netpod::ChannelSearchQuery;
 use netpod::ChannelSearchResult;
-use netpod::{ChannelSearchQuery, NodeConfigCached};
-use netpod::{ACCEPT_ALL, APP_JSON};
+use netpod::NodeConfigCached;
+use netpod::ACCEPT_ALL;
+use netpod::APP_JSON;
 use url::Url;
 
 pub async fn channel_search(req: Request<Body>, node_config: &NodeConfigCached) -> Result<ChannelSearchResult, Error> {

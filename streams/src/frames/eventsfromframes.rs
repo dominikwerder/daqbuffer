@@ -15,15 +15,20 @@ use std::task::Poll;
 
 pub struct EventsFromFrames<O> {
     inp: Pin<Box<dyn Stream<Item = Result<StreamItem<InMemoryFrame>, Error>> + Send>>,
+    dbgdesc: String,
     errored: bool,
     completed: bool,
     _m1: PhantomData<O>,
 }
 
 impl<O> EventsFromFrames<O> {
-    pub fn new(inp: Pin<Box<dyn Stream<Item = Result<StreamItem<InMemoryFrame>, Error>> + Send>>) -> Self {
+    pub fn new(
+        inp: Pin<Box<dyn Stream<Item = Result<StreamItem<InMemoryFrame>, Error>> + Send>>,
+        dbgdesc: String,
+    ) -> Self {
         Self {
             inp,
+            dbgdesc,
             errored: false,
             completed: false,
             _m1: PhantomData,
@@ -39,7 +44,8 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        let span = netpod::log::span!(netpod::log::Level::INFO, "EvFrFr");
+        let span = span!(Level::INFO, "EvFrFr", id = tracing::field::Empty);
+        span.record("id", &self.dbgdesc);
         let _spg = span.enter();
         loop {
             break if self.completed {
@@ -50,12 +56,22 @@ where
             } else {
                 match self.inp.poll_next_unpin(cx) {
                     Ready(Some(Ok(item))) => match item {
-                        StreamItem::Log(item) => Ready(Some(Ok(StreamItem::Log(item)))),
+                        StreamItem::Log(item) => {
+                            info!("{}  {:?}  {}", item.node_ix, item.level, item.msg);
+                            Ready(Some(Ok(StreamItem::Log(item))))
+                        }
                         StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
                         StreamItem::DataItem(frame) => match decode_frame::<Sitemty<O>>(&frame) {
                             Ok(item) => match item {
-                                Ok(item) => Ready(Some(Ok(item))),
+                                Ok(item) => match item {
+                                    StreamItem::Log(k) => {
+                                        info!("rcvd log: {}  {:?}  {}", k.node_ix, k.level, k.msg);
+                                        Ready(Some(Ok(StreamItem::Log(k))))
+                                    }
+                                    item => Ready(Some(Ok(item))),
+                                },
                                 Err(e) => {
+                                    error!("rcvd err: {}", e);
                                     self.errored = true;
                                     Ready(Some(Err(e)))
                                 }

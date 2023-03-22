@@ -6,7 +6,6 @@ edition = "2021"
 
 [dependencies]
 tokio = { version = "1.21.2", features = ["io-util", "net", "time", "sync", "fs"] }
-tracing = "0.1.26"
 futures-util = "0.3.15"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -21,7 +20,6 @@ wasmer = { version = "3.1.1", default-features = false, features = ["sys", "cran
 err = { path = "../err" }
 netpod = { path = "../netpod" }
 query = { path = "../query" }
-items = { path = "../items" }
 items_0 = { path = "../items_0" }
 items_2 = { path = "../items_2" }
 parse = { path = "../parse" }

@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum EventTransform {
+enum EventTransformQuery {
     EventBlobsVerbatim,
     EventBlobsUncompressed,
     ValueFull,
@@ -20,7 +20,7 @@ pub enum EventTransform {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum TimeBinningTransform {
+enum TimeBinningTransformQuery {
     None,
     TimeWeighted,
     Unweighted,
@@ -28,8 +28,8 @@ pub enum TimeBinningTransform {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TransformQuery {
-    event: EventTransform,
-    time_binning: TimeBinningTransform,
+    event: EventTransformQuery,
+    time_binning: TimeBinningTransformQuery,
 }
 
 impl TransformQuery {
@@ -39,15 +39,15 @@ impl TransformQuery {
 
     pub fn default_events() -> Self {
         Self {
-            event: EventTransform::ValueFull,
-            time_binning: TimeBinningTransform::None,
+            event: EventTransformQuery::ValueFull,
+            time_binning: TimeBinningTransformQuery::None,
         }
     }
 
     pub fn default_time_binned() -> Self {
         Self {
-            event: EventTransform::MinMaxAvgDev,
-            time_binning: TimeBinningTransform::TimeWeighted,
+            event: EventTransformQuery::MinMaxAvgDev,
+            time_binning: TimeBinningTransformQuery::TimeWeighted,
         }
     }
 
@@ -61,28 +61,30 @@ impl TransformQuery {
 
     pub fn for_event_blobs() -> Self {
         Self {
-            event: EventTransform::EventBlobsVerbatim,
-            time_binning: TimeBinningTransform::None,
+            event: EventTransformQuery::EventBlobsVerbatim,
+            time_binning: TimeBinningTransformQuery::None,
         }
     }
 
     pub fn for_time_weighted_scalar() -> Self {
         Self {
-            event: EventTransform::MinMaxAvgDev,
-            time_binning: TimeBinningTransform::TimeWeighted,
+            event: EventTransformQuery::MinMaxAvgDev,
+            time_binning: TimeBinningTransformQuery::TimeWeighted,
         }
     }
 
     pub fn is_event_blobs(&self) -> bool {
         match &self.event {
-            EventTransform::EventBlobsVerbatim => true,
-            EventTransform::EventBlobsUncompressed => {
+            EventTransformQuery::EventBlobsVerbatim => true,
+            EventTransformQuery::EventBlobsUncompressed => {
                 error!("TODO decide on uncompressed event blobs");
                 panic!()
             }
             _ => false,
         }
     }
+
+    pub fn build_event_transform(&self) -> () {}
 }
 
 impl FromUrl for TransformQuery {
@@ -97,35 +99,35 @@ impl FromUrl for TransformQuery {
         if let Some(s) = pairs.get(key) {
             let ret = if s == "eventBlobs" {
                 TransformQuery {
-                    event: EventTransform::EventBlobsVerbatim,
-                    time_binning: TimeBinningTransform::None,
+                    event: EventTransformQuery::EventBlobsVerbatim,
+                    time_binning: TimeBinningTransformQuery::None,
                 }
             } else if s == "fullValue" {
                 TransformQuery {
-                    event: EventTransform::ValueFull,
-                    time_binning: TimeBinningTransform::None,
+                    event: EventTransformQuery::ValueFull,
+                    time_binning: TimeBinningTransformQuery::None,
                 }
             } else if s == "timeWeightedScalar" {
                 TransformQuery {
-                    event: EventTransform::MinMaxAvgDev,
-                    time_binning: TimeBinningTransform::TimeWeighted,
+                    event: EventTransformQuery::MinMaxAvgDev,
+                    time_binning: TimeBinningTransformQuery::TimeWeighted,
                 }
             } else if s == "unweightedScalar" {
                 TransformQuery {
-                    event: EventTransform::EventBlobsVerbatim,
-                    time_binning: TimeBinningTransform::None,
+                    event: EventTransformQuery::EventBlobsVerbatim,
+                    time_binning: TimeBinningTransformQuery::None,
                 }
             } else if s == "binnedX" {
                 let _u: usize = pairs.get("binnedXcount").map_or("1", |k| k).parse()?;
                 warn!("TODO binnedXcount");
                 TransformQuery {
-                    event: EventTransform::MinMaxAvgDev,
-                    time_binning: TimeBinningTransform::None,
+                    event: EventTransformQuery::MinMaxAvgDev,
+                    time_binning: TimeBinningTransformQuery::None,
                 }
             } else if s == "pulseIdDiff" {
                 TransformQuery {
-                    event: EventTransform::PulseIdDiff,
-                    time_binning: TimeBinningTransform::None,
+                    event: EventTransformQuery::PulseIdDiff,
+                    time_binning: TimeBinningTransformQuery::None,
                 }
             } else {
                 return Err(Error::with_msg("can not extract binningScheme"));
@@ -141,8 +143,8 @@ impl FromUrl for TransformQuery {
                 })
                 .unwrap_or(None);
             let ret = TransformQuery {
-                event: EventTransform::EventBlobsVerbatim,
-                time_binning: TimeBinningTransform::None,
+                event: EventTransformQuery::EventBlobsVerbatim,
+                time_binning: TimeBinningTransformQuery::None,
             };
             Ok(ret)
         }

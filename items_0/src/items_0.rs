@@ -1,10 +1,10 @@
 pub mod collect_s;
+pub mod container;
 pub mod framable;
 pub mod isodate;
 pub mod scalar_ops;
 pub mod streamitem;
 pub mod subfr;
-pub mod transform;
 
 pub mod bincode {
     pub use bincode::*;
@@ -12,6 +12,7 @@ pub mod bincode {
 
 use collect_s::Collectable;
 use collect_s::ToJsonResult;
+use container::ByteEstimate;
 use netpod::range::evrange::SeriesRange;
 use netpod::BinnedRangeEnum;
 use std::any::Any;
@@ -135,7 +136,16 @@ impl From<MergeError> for err::Error {
 
 /// Container of some form of events, for use as trait object.
 pub trait Events:
-    fmt::Debug + TypeName + Any + Collectable + TimeBinnable + WithLen + Send + erased_serde::Serialize + EventsNonObj
+    fmt::Debug
+    + TypeName
+    + Any
+    + Collectable
+    + TimeBinnable
+    + WithLen
+    + ByteEstimate
+    + Send
+    + erased_serde::Serialize
+    + EventsNonObj
 {
     fn as_time_binnable(&self) -> &dyn TimeBinnable;
     fn verify(&self) -> bool;
@@ -183,22 +193,22 @@ pub struct TransformProperties {
     pub needs_value: bool,
 }
 
-pub trait Transformer {
+pub trait EventTransform {
     fn query_transform_properties(&self) -> TransformProperties;
 }
 
-impl<T> Transformer for Box<T>
+impl<T> EventTransform for Box<T>
 where
-    T: Transformer,
+    T: EventTransform,
 {
     fn query_transform_properties(&self) -> TransformProperties {
         self.as_ref().query_transform_properties()
     }
 }
 
-impl<T> Transformer for std::pin::Pin<Box<T>>
+impl<T> EventTransform for std::pin::Pin<Box<T>>
 where
-    T: Transformer,
+    T: EventTransform,
 {
     fn query_transform_properties(&self) -> TransformProperties {
         self.as_ref().query_transform_properties()

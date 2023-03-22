@@ -142,38 +142,4 @@ mod levelserde {
     }
 }
 
-pub trait ContainsError {
-    fn is_err(&self) -> bool;
-    fn err(&self) -> Option<&::err::Error>;
-}
-
-impl<T> ContainsError for Box<T>
-where
-    T: ContainsError,
-{
-    fn is_err(&self) -> bool {
-        self.as_ref().is_err()
-    }
-
-    fn err(&self) -> Option<&::err::Error> {
-        self.as_ref().err()
-    }
-}
-
-impl<T> ContainsError for Sitemty<T> {
-    fn is_err(&self) -> bool {
-        match self {
-            Ok(_) => false,
-            Err(_) => true,
-        }
-    }
-
-    fn err(&self) -> Option<&::err::Error> {
-        match self {
-            Ok(_) => None,
-            Err(e) => Some(e),
-        }
-    }
-}
-
 erased_serde::serialize_trait_object!(TimeBinned);

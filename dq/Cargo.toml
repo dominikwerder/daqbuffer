@@ -16,7 +16,6 @@ bytes = "1.0.1"
 err = { path = "../err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }
-items = { path = "../items" }
 parse = { path = "../parse" }
 disk = { path = "../disk" }
 streams = { path = "../streams" }

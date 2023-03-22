@@ -1,24 +1,25 @@
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::fmt;
 
 #[derive(Serialize, Deserialize)]
-pub struct Error(pub ::err::Error);
+pub struct Error(pub err::Error);
 
 impl Error {
     pub fn with_msg<S: Into<String>>(s: S) -> Self {
-        Self(::err::Error::with_msg(s))
+        Self(err::Error::with_msg(s))
     }
 
     pub fn with_msg_no_trace<S: Into<String>>(s: S) -> Self {
-        Self(::err::Error::with_msg_no_trace(s))
+        Self(err::Error::with_msg_no_trace(s))
     }
 
     pub fn with_public_msg<S: Into<String>>(s: S) -> Self {
-        Self(::err::Error::with_public_msg(s))
+        Self(err::Error::with_public_msg(s))
     }
 
     pub fn with_public_msg_no_trace<S: Into<String>>(s: S) -> Self {
-        Self(::err::Error::with_public_msg_no_trace(s))
+        Self(err::Error::with_public_msg_no_trace(s))
     }
 
     pub fn msg(&self) -> &str {
@@ -52,13 +53,13 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-impl From<::err::Error> for Error {
-    fn from(x: ::err::Error) -> Self {
+impl From<err::Error> for Error {
+    fn from(x: err::Error) -> Self {
         Self(x)
     }
 }
 
-impl From<Error> for ::err::Error {
+impl From<Error> for err::Error {
     fn from(x: Error) -> Self {
         x.0
     }

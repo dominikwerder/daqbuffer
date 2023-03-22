@@ -1,6 +1,6 @@
 use crate::conn::events_conn_handler;
 use futures_util::StreamExt;
-use items_0::streamitem::RangeCompletableItem;
+use items_0::streamitem::sitem_data;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::streamitem::ERROR_FRAME_TYPE_ID;
@@ -9,11 +9,10 @@ use items_0::streamitem::LOG_FRAME_TYPE_ID;
 use items_0::streamitem::STATS_FRAME_TYPE_ID;
 use items_2::channelevents::ChannelEvents;
 use items_2::framable::EventQueryJsonStringFrame;
+use items_2::framable::Framable;
 use items_2::frame::decode_frame;
-use items_2::frame::make_frame;
 use netpod::range::evrange::NanoRange;
 use netpod::timeunits::SEC;
-use netpod::AggKind;
 use netpod::Channel;
 use netpod::Cluster;
 use netpod::Database;
@@ -21,9 +20,9 @@ use netpod::FileIoBufferSize;
 use netpod::Node;
 use netpod::NodeConfig;
 use netpod::NodeConfigCached;
+use netpod::PerfOpts;
 use netpod::SfDatabuffer;
 use query::api4::events::PlainEventsQuery;
-use std::time::Duration;
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
@@ -83,15 +82,15 @@ fn raw_data_00() {
         };
         let qu = PlainEventsQuery::new(channel, range);
         let query = EventQueryJsonStringFrame(serde_json::to_string(&qu).unwrap());
-        let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(query)));
-        let frame = make_frame(&item).unwrap();
+        let frame = sitem_data(query).make_frame()?;
         let jh = taskrun::spawn(events_conn_handler(client, addr, cfg));
         con.write_all(&frame).await.unwrap();
         eprintln!("written");
         con.shutdown().await.unwrap();
         eprintln!("shut down");
 
-        let mut frames = InMemoryFrameAsyncReadStream::new(con, 1024 * 128);
+        let perf_opts = PerfOpts::default();
+        let mut frames = InMemoryFrameAsyncReadStream::new(con, perf_opts.inmem_bufcap);
         while let Some(frame) = frames.next().await {
             match frame {
                 Ok(frame) => match frame {

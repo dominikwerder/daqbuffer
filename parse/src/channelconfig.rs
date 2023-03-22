@@ -80,7 +80,7 @@ impl CompressionMethod {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConfigEntry {
-    pub ts: u64,
+    pub ts: TsNano,
     pub pulse: i64,
     pub ks: i32,
     pub bs: TsNano,
@@ -130,8 +130,8 @@ impl ConfigEntry {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Config {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChannelConfigs {
     pub format_version: i16,
     pub channel_name: String,
     pub entries: Vec<ConfigEntry>,
@@ -238,7 +238,7 @@ pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
     Ok((
         inp_e,
         Some(ConfigEntry {
-            ts: ts as u64,
+            ts: TsNano::from_ns(ts as u64),
             pulse,
             ks,
             bs,
@@ -267,7 +267,7 @@ pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
 /**
 Parse a complete configuration file from given in-memory input buffer.
 */
-pub fn parse_config(inp: &[u8]) -> NRes<Config> {
+pub fn parse_config(inp: &[u8]) -> NRes<ChannelConfigs> {
     let (inp, ver) = be_i16(inp)?;
     let (inp, len1) = be_i32(inp)?;
     if len1 <= 8 || len1 > 500 {
@@ -294,7 +294,7 @@ pub fn parse_config(inp: &[u8]) -> NRes<Config> {
             return mkerr(format!("channelName utf8 error {:?}", e));
         }
     };
-    let ret = Config {
+    let ret = ChannelConfigs {
         format_version: ver,
         channel_name: channel_name,
         entries: entries,
@@ -320,7 +320,7 @@ pub async fn channel_config(q: &ChannelConfigQuery, node: &Node) -> Result<Chann
 }
 
 // TODO can I take parameters as ref, even when used in custom streams?
-pub async fn read_local_config(channel: Channel, node: Node) -> Result<Config, Error> {
+pub async fn read_local_config(channel: Channel, node: Node) -> Result<ChannelConfigs, Error> {
     let path = node
         .sf_databuffer
         .as_ref()
@@ -360,18 +360,18 @@ pub enum MatchingConfigEntry<'a> {
 
 pub fn extract_matching_config_entry<'a>(
     range: &NanoRange,
-    channel_config: &'a Config,
+    channel_config: &'a ChannelConfigs,
 ) -> Result<MatchingConfigEntry<'a>, Error> {
-    let mut ixs = vec![];
+    let mut ixs = Vec::new();
     for i1 in 0..channel_config.entries.len() {
         let e1 = &channel_config.entries[i1];
         if i1 + 1 < channel_config.entries.len() {
             let e2 = &channel_config.entries[i1 + 1];
-            if e1.ts < range.end && e2.ts >= range.beg {
+            if e1.ts.ns() < range.end && e2.ts.ns() >= range.beg {
                 ixs.push(i1);
             }
         } else {
-            if e1.ts < range.end {
+            if e1.ts.ns() < range.end {
                 ixs.push(i1);
             }
         }
@@ -397,7 +397,7 @@ mod test {
         let path = "../resources/sf-daqbuf-33-S10CB01-RLOD100-PUP10:SIG-AMPLT-latest-00000_Config";
         //let path = "../resources/sf-daqbuf-21-S10CB01-RLOD100-PUP10:SIG-AMPLT-latest-00000_Config";
         let mut f1 = std::fs::File::open(path).unwrap();
-        let mut buf = vec![];
+        let mut buf = Vec::new();
         f1.read_to_end(&mut buf).unwrap();
         buf
     }
@@ -415,8 +415,8 @@ mod test {
         assert_eq!(config.format_version, 0);
         assert_eq!(config.entries.len(), 18);
         for e in &config.entries {
-            assert!(e.ts >= 631152000000000000);
-            assert!(e.ts <= 1613640673424172164);
+            assert!(e.ts.ns() >= 631152000000000000);
+            assert!(e.ts.ns() <= 1613640673424172164);
             assert!(e.shape.is_some());
         }
     }

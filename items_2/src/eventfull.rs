@@ -1,8 +1,7 @@
 use crate::framable::FrameType;
 use crate::merger::Mergeable;
 use bytes::BytesMut;
-use items::ByteEstimate;
-use items::WithTimestamps;
+use items_0::container::ByteEstimate;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::streamitem::EVENT_FULL_FRAME_TYPE_ID;
 use items_0::Empty;
@@ -29,6 +28,7 @@ pub struct EventFull {
     pub be: VecDeque<bool>,
     pub shapes: VecDeque<Shape>,
     pub comps: VecDeque<Option<CompressionMethod>>,
+    pub entry_payload_max: u64,
 }
 
 #[allow(unused)]
@@ -81,6 +81,9 @@ impl EventFull {
         shape: Shape,
         comp: Option<CompressionMethod>,
     ) {
+        let m1 = blob.as_ref().map_or(0, |x| x.len());
+        let m2 = decomp.as_ref().map_or(0, |x| x.len());
+        self.entry_payload_max = self.entry_payload_max.max(m1 as u64 + m2 as u64);
         self.tss.push_back(ts);
         self.pulses.push_back(pulse);
         self.blobs.push_back(blob);
@@ -91,6 +94,7 @@ impl EventFull {
         self.comps.push_back(comp);
     }
 
+    // TODO possible to get rid of this?
     pub fn truncate_ts(&mut self, end: u64) {
         let mut nkeep = usize::MAX;
         for (i, &ts) in self.tss.iter().enumerate() {
@@ -131,6 +135,7 @@ impl Empty for EventFull {
             be: VecDeque::new(),
             shapes: VecDeque::new(),
             comps: VecDeque::new(),
+            entry_payload_max: 0,
         }
     }
 }
@@ -141,22 +146,9 @@ impl WithLen for EventFull {
     }
 }
 
-impl WithTimestamps for EventFull {
-    fn ts(&self, ix: usize) -> u64 {
-        self.tss[ix]
-    }
-}
-
 impl ByteEstimate for EventFull {
     fn byte_estimate(&self) -> u64 {
-        if self.len() == 0 {
-            0
-        } else {
-            // TODO that is clumsy... it assumes homogenous types.
-            // TODO improve via a const fn on NTY
-            let decomp_len = self.decomps[0].as_ref().map_or(0, |h| h.len());
-            self.tss.len() as u64 * (40 + self.blobs[0].as_ref().map_or(0, |x| x.len()) as u64 + decomp_len as u64)
-        }
+        self.len() as u64 * (64 + self.entry_payload_max)
     }
 }
 
@@ -176,6 +168,13 @@ impl Mergeable for EventFull {
     fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), MergeError> {
         // TODO make it harder to forget new members when the struct may get modified in the future
         let r = range.0..range.1;
+        let mut max = dst.entry_payload_max;
+        for i in r.clone() {
+            let m1 = self.blobs[i].as_ref().map_or(0, |x| x.len());
+            let m2 = self.decomps[i].as_ref().map_or(0, |x| x.len());
+            max = max.max(m1 as u64 + m2 as u64);
+        }
+        dst.entry_payload_max = max;
         dst.tss.extend(self.tss.drain(r.clone()));
         dst.pulses.extend(self.pulses.drain(r.clone()));
         dst.blobs.extend(self.blobs.drain(r.clone()));

@@ -31,7 +31,6 @@ httpclient = { path = "../httpclient" }
 disk = { path = "../disk" }
 items_0 = { path = "../items_0" }
 items_2 = { path = "../items_2" }
-items = { path = "../items" }
 streams = { path = "../streams" }
 
 [dev-dependencies]

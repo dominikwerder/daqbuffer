@@ -1,4 +1,5 @@
 use crate::binsxbindim0::BinsXbinDim0;
+use items_0::container::ByteEstimate;
 use crate::IsoDateTime;
 use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
@@ -14,6 +15,7 @@ use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use items_0::Empty;
 use items_0::WithLen;
+use netpod::is_false;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 use netpod::BinnedRangeEnum;
@@ -69,7 +71,7 @@ where
     }
 }
 
-impl<NTY> items::ByteEstimate for EventsXbinDim0<NTY> {
+impl<NTY> ByteEstimate for EventsXbinDim0<NTY> {
     fn byte_estimate(&self) -> u64 {
         todo!("byte_estimate")
     }
@@ -365,9 +367,9 @@ pub struct EventsXbinDim0CollectorOutput<NTY> {
     maxs: VecDeque<NTY>,
     #[serde(rename = "avgs")]
     avgs: VecDeque<f32>,
-    #[serde(rename = "rangeFinal", default, skip_serializing_if = "crate::bool_is_false")]
+    #[serde(rename = "rangeFinal", default, skip_serializing_if = "is_false")]
     range_final: bool,
-    #[serde(rename = "timedOut", default, skip_serializing_if = "crate::bool_is_false")]
+    #[serde(rename = "timedOut", default, skip_serializing_if = "is_false")]
     timed_out: bool,
     #[serde(rename = "continueAt", default, skip_serializing_if = "Option::is_none")]
     continue_at: Option<IsoDateTime>,

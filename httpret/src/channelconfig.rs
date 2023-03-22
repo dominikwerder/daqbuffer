@@ -127,6 +127,65 @@ impl ChannelConfigHandler {
     }
 }
 
+pub struct ChannelConfigsHandler {}
+
+impl ChannelConfigsHandler {
+    pub fn handler(req: &Request<Body>) -> Option<Self> {
+        if req.uri().path() == "/api/4/channel/configs" {
+            Some(Self {})
+        } else {
+            None
+        }
+    }
+
+    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+        if req.method() == Method::GET {
+            let accept_def = APP_JSON;
+            let accept = req
+                .headers()
+                .get(http::header::ACCEPT)
+                .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
+            if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
+                match self.channel_configs(req, &node_config).await {
+                    Ok(k) => Ok(k),
+                    Err(e) => {
+                        warn!("ChannelConfigHandler::handle: got error from channel_config: {e:?}");
+                        Ok(e.to_public_response())
+                    }
+                }
+            } else {
+                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+            }
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    }
+
+    async fn channel_configs(
+        &self,
+        req: Request<Body>,
+        node_config: &NodeConfigCached,
+    ) -> Result<Response<Body>, Error> {
+        info!("channel_configs");
+        let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+        let q = ChannelConfigQuery::from_url(&url)?;
+        info!("channel_configs  for q {q:?}");
+        let conf = if let Some(_) = &node_config.node_config.cluster.scylla {
+            return Err(Error::with_msg_no_trace("TODO"));
+        } else if let Some(_) = &node_config.node.channel_archiver {
+            return Err(Error::with_msg_no_trace("TODO"));
+        } else if let Some(_) = &node_config.node.archiver_appliance {
+            return Err(Error::with_msg_no_trace("TODO"));
+        } else {
+            disk::channelconfig::configs(q.channel, node_config).await?
+        };
+        let ret = response(StatusCode::OK)
+            .header(http::header::CONTENT_TYPE, APP_JSON)
+            .body(Body::from(serde_json::to_string(&conf)?))?;
+        Ok(ret)
+    }
+}
+
 trait ErrConv<T> {
     fn err_conv(self) -> Result<T, Error>;
 }

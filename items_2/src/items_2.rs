@@ -29,7 +29,6 @@ use items_0::Events;
 use items_0::MergeError;
 use items_0::RangeOverlapInfo;
 use merger::Mergeable;
-use netpod::range::evrange::NanoRange;
 use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::*;
 use serde::Deserialize;
@@ -37,14 +36,6 @@ use serde::Serialize;
 use serde::Serializer;
 use std::collections::VecDeque;
 use std::fmt;
-
-pub fn bool_is_false(x: &bool) -> bool {
-    *x == false
-}
-
-pub fn is_zero_u32(x: &u32) -> bool {
-    *x == 0
-}
 
 pub fn ts_offs_from_abs(tss: &[u64]) -> (u64, VecDeque<u64>, VecDeque<u64>) {
     let ts_anchor_sec = tss.first().map_or(0, |&k| k) / SEC;
@@ -208,9 +199,9 @@ pub trait TimeBinnableTypeAggregator: Send {
     fn result_reset(&mut self, range: SeriesRange, expand: bool) -> Self::Output;
 }
 
-pub trait ChannelEventsInput: Stream<Item = Sitemty<ChannelEvents>> + items_0::Transformer + Send {}
+pub trait ChannelEventsInput: Stream<Item = Sitemty<ChannelEvents>> + items_0::EventTransform + Send {}
 
-impl<T> ChannelEventsInput for T where T: Stream<Item = Sitemty<ChannelEvents>> + items_0::Transformer + Send {}
+impl<T> ChannelEventsInput for T where T: Stream<Item = Sitemty<ChannelEvents>> + items_0::EventTransform + Send {}
 
 pub fn runfut<T, F>(fut: F) -> Result<T, err::Error>
 where

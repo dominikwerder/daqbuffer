@@ -376,14 +376,9 @@ async fn events_conn_handler_inner(
     match events_conn_handler_inner_try(stream, addr, node_config).await {
         Ok(_) => (),
         Err(ce) => {
-            error!("events_conn_handler_inner sees error {:?}", ce.err);
-            // Try to pass the error over the network.
-            // If that fails, give error to the caller.
             let mut out = ce.netout;
-            let e = ce.err;
-            let buf = make_error_frame(&e)?;
-            //type T = StreamItem<items::RangeCompletableItem<items::scalarevents::ScalarEvents<u32>>>;
-            //let buf = Err::<T, _>(e).make_frame()?;
+            let item: Sitemty<ChannelEvents> = Err(ce.err);
+            let buf = Framable::make_frame(&item)?;
             out.write_all(&buf).await?;
         }
     }

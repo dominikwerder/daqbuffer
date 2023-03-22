@@ -10,6 +10,7 @@ use items_0::collect_s::Collector;
 use items_0::collect_s::CollectorType;
 use items_0::collect_s::ToJsonBytes;
 use items_0::collect_s::ToJsonResult;
+use items_0::container::ByteEstimate;
 use items_0::scalar_ops::ScalarOps;
 use items_0::Appendable;
 use items_0::AsAnyMut;
@@ -21,6 +22,7 @@ use items_0::MergeError;
 use items_0::TimeBinnable;
 use items_0::TimeBinner;
 use items_0::WithLen;
+use netpod::is_false;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::range::evrange::SeriesRange;
@@ -122,6 +124,13 @@ where
 impl<NTY> WithLen for EventsDim0<NTY> {
     fn len(&self) -> usize {
         self.tss.len()
+    }
+}
+
+impl<STY> ByteEstimate for EventsDim0<STY> {
+    fn byte_estimate(&self) -> u64 {
+        let stylen = mem::size_of::<STY>();
+        (self.len() * (8 + 8 + stylen)) as u64
     }
 }
 
@@ -238,9 +247,9 @@ pub struct EventsDim0CollectorOutput<NTY> {
     pulse_off: VecDeque<u64>,
     #[serde(rename = "values")]
     values: VecDeque<NTY>,
-    #[serde(rename = "rangeFinal", default, skip_serializing_if = "crate::bool_is_false")]
+    #[serde(rename = "rangeFinal", default, skip_serializing_if = "is_false")]
     range_final: bool,
-    #[serde(rename = "timedOut", default, skip_serializing_if = "crate::bool_is_false")]
+    #[serde(rename = "timedOut", default, skip_serializing_if = "is_false")]
     timed_out: bool,
     #[serde(rename = "continueAt", default, skip_serializing_if = "Option::is_none")]
     continue_at: Option<IsoDateTime>,
@@ -1122,7 +1131,7 @@ mod test_frame {
     use items_0::streamitem::StreamItem;
 
     #[test]
-    fn events_bincode() {
+    fn events_serialize() {
         taskrun::tracing_init().unwrap();
         let mut events = EventsDim0::empty();
         events.push(123, 234, 55f32);

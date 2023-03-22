@@ -21,13 +21,14 @@ use items_0::TimeBinned;
 use items_0::TimeBinner;
 use items_0::TimeBins;
 use items_0::WithLen;
+use netpod::is_false;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::SEC;
 use netpod::BinnedRangeEnum;
 use netpod::Dim0Kind;
-use num_traits::Zero;
+use netpod::CmpZero;
 use serde::Deserialize;
 use serde::Serialize;
 use std::any;
@@ -269,11 +270,11 @@ pub struct BinsXbinDim0CollectedResult<NTY> {
     maxs: VecDeque<NTY>,
     #[serde(rename = "avgs")]
     avgs: VecDeque<f32>,
-    #[serde(rename = "rangeFinal", default, skip_serializing_if = "crate::bool_is_false")]
+    #[serde(rename = "rangeFinal", default, skip_serializing_if = "is_false")]
     range_final: bool,
-    #[serde(rename = "timedOut", default, skip_serializing_if = "crate::bool_is_false")]
+    #[serde(rename = "timedOut", default, skip_serializing_if = "is_false")]
     timed_out: bool,
-    #[serde(rename = "missingBins", default, skip_serializing_if = "Zero::is_zero")]
+    #[serde(rename = "missingBins", default, skip_serializing_if = "CmpZero::is_zero")]
     missing_bins: u32,
     #[serde(rename = "continueAt", default, skip_serializing_if = "Option::is_none")]
     continue_at: Option<IsoDateTime>,

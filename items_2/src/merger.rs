@@ -2,6 +2,7 @@ pub use crate::Error;
 
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items_0::container::ByteEstimate;
 use items_0::streamitem::sitem_data;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
@@ -15,6 +16,8 @@ use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
+
+const OUT_MAX_BYTES: u64 = 1024 * 200;
 
 #[allow(unused)]
 macro_rules! trace2 {
@@ -34,7 +37,7 @@ macro_rules! trace4 {
     ($($arg:tt)*) => (trace!($($arg)*));
 }
 
-pub trait Mergeable<Rhs = Self>: fmt::Debug + WithLen + Unpin {
+pub trait Mergeable<Rhs = Self>: fmt::Debug + WithLen + ByteEstimate + Unpin {
     fn ts_min(&self) -> Option<u64>;
     fn ts_max(&self) -> Option<u64>;
     fn new_empty(&self) -> Self;
@@ -316,7 +319,7 @@ where
                     if let Some(o) = self.out.as_ref() {
                         // A good threshold varies according to scalar type and shape.
                         // TODO replace this magic number by a bound on the bytes estimate.
-                        if o.len() >= self.out_max_len || self.do_clear_out {
+                        if o.len() >= self.out_max_len || o.byte_estimate() >= OUT_MAX_BYTES || self.do_clear_out {
                             trace3!("decide to output");
                             self.do_clear_out = false;
                             Break(Ready(Some(Ok(self.out.take().unwrap()))))
@@ -409,7 +412,7 @@ where
     }
 }
 
-impl<T> items_0::Transformer for Merger<T> {
+impl<T> items_0::EventTransform for Merger<T> {
     fn query_transform_properties(&self) -> items_0::TransformProperties {
         todo!()
     }

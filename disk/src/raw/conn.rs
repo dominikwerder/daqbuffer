@@ -64,40 +64,19 @@ pub async fn make_event_pipe(
         }
     }
     let range = evq.range().clone();
-    let channel_config = match read_local_config(evq.channel().clone(), node_config.node.clone()).await {
-        Ok(k) => k,
+    let channel_config =
+        crate::channelconfig::config(evq.range().try_into()?, evq.channel().clone(), node_config).await;
+    let channel_config = match channel_config {
+        Ok(x) => x,
         Err(e) => {
-            // TODO introduce detailed error type
             if e.msg().contains("ErrorKind::NotFound") {
+                warn!("{e}");
                 let s = futures_util::stream::empty();
                 return Ok(Box::pin(s));
             } else {
                 return Err(e)?;
             }
         }
-    };
-    let entry_res = match extract_matching_config_entry(&(&range).try_into()?, &channel_config) {
-        Ok(k) => k,
-        Err(e) => return Err(e)?,
-    };
-    let entry = match entry_res {
-        MatchingConfigEntry::None => return Err(Error::with_public_msg("no config entry found"))?,
-        MatchingConfigEntry::Multiple => return Err(Error::with_public_msg("multiple config entries found"))?,
-        MatchingConfigEntry::Entry(entry) => entry,
-    };
-    let shape = match entry.to_shape() {
-        Ok(k) => k,
-        Err(e) => return Err(e)?,
-    };
-    let channel_config = netpod::ChannelConfig {
-        channel: evq.channel().clone(),
-        keyspace: entry.ks as u8,
-        time_bin_size: entry.bs.clone(),
-        shape,
-        scalar_type: entry.scalar_type.clone(),
-        byte_order: entry.byte_order.clone(),
-        array: entry.is_array,
-        compression: entry.is_compressed,
     };
     trace!(
         "make_event_pipe  need_expand {need_expand}  {evq:?}",
@@ -122,14 +101,10 @@ pub async fn make_event_pipe(
         true,
         out_max_len,
     );
-    let shape = entry.to_shape()?;
+    let scalar_type = channel_config.scalar_type.clone();
+    let shape = channel_config.shape.clone();
     error!("TODO replace AggKind in the called code");
-    let pipe = make_num_pipeline_stream_evs(
-        entry.scalar_type.clone(),
-        shape.clone(),
-        AggKind::TimeWeightedScalar,
-        event_blobs,
-    );
+    let pipe = make_num_pipeline_stream_evs(scalar_type, shape.clone(), AggKind::TimeWeightedScalar, event_blobs);
     Ok(pipe)
 }
 
@@ -138,14 +113,24 @@ pub async fn get_applicable_entry(
     channel: Channel,
     node_config: &NodeConfigCached,
 ) -> Result<ConfigEntry, Error> {
-    let channel_config = read_local_config(channel, node_config.node.clone()).await?;
+    let channel_config = read_local_config(channel.clone(), node_config.node.clone()).await?;
     let entry_res = match extract_matching_config_entry(range, &channel_config) {
         Ok(k) => k,
         Err(e) => return Err(e)?,
     };
     let entry = match entry_res {
-        MatchingConfigEntry::None => return Err(Error::with_public_msg("no config entry found"))?,
-        MatchingConfigEntry::Multiple => return Err(Error::with_public_msg("multiple config entries found"))?,
+        MatchingConfigEntry::None => {
+            return Err(Error::with_public_msg(format!(
+                "get_applicable_entry no config entry found {:?}",
+                channel
+            )))?
+        }
+        MatchingConfigEntry::Multiple => {
+            return Err(Error::with_public_msg(format!(
+                "get_applicable_entry multiple config entries found for {:?}",
+                channel
+            )))?
+        }
         MatchingConfigEntry::Entry(entry) => entry,
     };
     Ok(entry.clone())
@@ -259,7 +244,21 @@ pub async fn make_event_blobs_pipe(
     }
     let expand = evq.one_before_range();
     let range = evq.range();
-    let entry = get_applicable_entry(&evq.range().try_into()?, evq.channel().clone(), node_config).await?;
+    let entry = match get_applicable_entry(&evq.range().try_into()?, evq.channel().clone(), node_config).await {
+        Ok(x) => x,
+        Err(e) => {
+            if e.to_public_error().msg().contains("no config entry found") {
+                let item = items_0::streamitem::LogItem {
+                    node_ix: node_config.ix as _,
+                    level: Level::WARN,
+                    msg: format!("{} {}", node_config.node.host, e),
+                };
+                return Ok(Box::pin(stream::iter([Ok(StreamItem::Log(item))])));
+            } else {
+                return Err(e);
+            }
+        }
+    };
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     type ItemType = Sitemty<EventFull>;
     // TODO should depend on host config

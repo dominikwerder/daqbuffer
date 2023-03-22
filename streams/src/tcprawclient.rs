@@ -12,12 +12,10 @@ use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::streamitem::sitem_data;
-use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
-use items_0::streamitem::StreamItem;
 use items_2::eventfull::EventFull;
 use items_2::framable::EventQueryJsonStringFrame;
-use items_2::frame::make_frame;
+use items_2::framable::Framable;
 use items_2::frame::make_term_frame;
 use netpod::log::*;
 use netpod::Cluster;
@@ -36,25 +34,21 @@ pub async fn x_processed_event_blobs_stream_from_node(
     perf_opts: PerfOpts,
     node: Node,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
-    debug!(
-        "x_processed_event_blobs_stream_from_node  to: {}:{}",
-        node.host, node.port_raw
-    );
-    let net = TcpStream::connect(format!("{}:{}", node.host, node.port_raw)).await?;
+    let addr = format!("{}:{}", node.host, node.port_raw);
+    debug!("x_processed_event_blobs_stream_from_node  to: {addr}",);
+    let net = TcpStream::connect(addr.clone()).await?;
     let qjs = serde_json::to_string(&query)?;
     let (netin, mut netout) = net.into_split();
-    let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(
-        EventQueryJsonStringFrame(qjs),
-    )));
-    let buf = make_frame(&item)?;
+    let item = sitem_data(EventQueryJsonStringFrame(qjs));
+    let buf = item.make_frame()?;
     netout.write_all(&buf).await?;
     let buf = make_term_frame()?;
     netout.write_all(&buf).await?;
     netout.flush().await?;
     netout.forget();
     let frames = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
-    let frames = Box::pin(frames) as _;
-    let items = EventsFromFrames::new(frames);
+    let frames = Box::pin(frames);
+    let items = EventsFromFrames::new(frames, addr);
     Ok(Box::pin(items))
 }
 
@@ -69,22 +63,23 @@ where
     // TODO when unit tests established, change to async connect:
     let mut streams = Vec::new();
     for node in &cluster.nodes {
-        debug!("open_tcp_streams  to: {}:{}", node.host, node.port_raw);
-        let net = TcpStream::connect(format!("{}:{}", node.host, node.port_raw)).await?;
+        let addr = format!("{}:{}", node.host, node.port_raw);
+        debug!("open_tcp_streams  to: {addr}");
+        let net = TcpStream::connect(addr.clone()).await?;
         let qjs = serde_json::to_string(&query)?;
         let (netin, mut netout) = net.into_split();
-        let item = EventQueryJsonStringFrame(qjs);
-        let item = sitem_data(item);
-        let buf = make_frame(&item)?;
+        let item = sitem_data(EventQueryJsonStringFrame(qjs));
+        let buf = item.make_frame()?;
         netout.write_all(&buf).await?;
         let buf = make_term_frame()?;
         netout.write_all(&buf).await?;
         netout.flush().await?;
         netout.forget();
         // TODO for images, we need larger buffer capacity
-        let frames = InMemoryFrameAsyncReadStream::new(netin, 1024 * 1024 * 2);
-        let frames = Box::pin(frames) as _;
-        let stream = EventsFromFrames::<T>::new(frames);
+        let perf_opts = PerfOpts::default();
+        let frames = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
+        let frames = Box::pin(frames);
+        let stream = EventsFromFrames::<T>::new(frames, addr);
         let stream = stream.map(|x| {
             info!("tcp stream recv sees item {x:?}");
             x

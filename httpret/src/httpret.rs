@@ -30,6 +30,7 @@ use hyper::Body;
 use hyper::Request;
 use hyper::Response;
 use net::SocketAddr;
+use netpod::is_false;
 use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
 use netpod::NodeConfigCached;
@@ -296,6 +297,8 @@ async fn http_service_inner(
     } else if let Some(h) = api4::search::ChannelSearchHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = api4::binned::BinnedHandler::handler(&req) {
+        h.handle(req, &node_config).await
+    } else if let Some(h) = channelconfig::ChannelConfigsHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = channelconfig::ChannelConfigHandler::handler(&req) {
         h.handle(req, &node_config).await
@@ -607,9 +610,9 @@ pub struct StatusBoardEntry {
     ts_created: SystemTime,
     #[serde(serialize_with = "instant_serde::ser")]
     ts_updated: SystemTime,
-    #[serde(skip_serializing_if = "items_2::bool_is_false")]
+    #[serde(skip_serializing_if = "is_false")]
     is_error: bool,
-    #[serde(skip_serializing_if = "items_2::bool_is_false")]
+    #[serde(skip_serializing_if = "is_false")]
     is_ok: bool,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     errors: Vec<Error>,

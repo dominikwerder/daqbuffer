@@ -112,7 +112,7 @@ impl Error {
             reason: self.reason(),
             msg: self
                 .public_msg()
-                .map(|k| k.join("\n"))
+                .map(|k| k.join("; "))
                 .unwrap_or("No error message".into()),
         }
     }
@@ -167,8 +167,8 @@ impl fmt::Debug for Error {
         };
         write!(fmt, "msg: {}", self.msg)?;
         if let Some(msgs) = self.public_msg() {
-            for msg in msgs {
-                write!(fmt, "\npublic: {}", msg)?;
+            for (i, msg) in msgs.iter().enumerate() {
+                write!(fmt, "; pub({i}): {msg}")?;
             }
         }
         if !trace_str.is_empty() {

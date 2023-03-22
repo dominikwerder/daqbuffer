@@ -28,4 +28,3 @@ err = { path = "../err" }
 netpod = { path = "../netpod" }
 parse = { path = "../parse" }
 taskrun = { path = "../taskrun" }
-items = { path = "../items" }

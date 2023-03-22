@@ -1,10 +1,10 @@
 use crate::framable::FrameType;
-use crate::merger;
 use crate::merger::Mergeable;
 use crate::Events;
 use items_0::collect_s::Collectable;
 use items_0::collect_s::Collected;
 use items_0::collect_s::Collector;
+use items_0::container::ByteEstimate;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::streamitem::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID;
 use items_0::AsAnyMut;
@@ -12,9 +12,7 @@ use items_0::AsAnyRef;
 use items_0::MergeError;
 use items_0::WithLen;
 use netpod::log::*;
-use netpod::range::evrange::NanoRange;
 use netpod::range::evrange::SeriesRange;
-use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
 use serde::Deserialize;
 use serde::Serialize;
@@ -55,6 +53,13 @@ impl ConnStatusEvent {
     }
 }
 
+impl ByteEstimate for ConnStatusEvent {
+    fn byte_estimate(&self) -> u64 {
+        // TODO magic number, but maybe good enough
+        32
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ChannelStatus {
     Connect,
@@ -83,6 +88,13 @@ impl ChannelStatusEvent {
     pub fn new(ts: u64, status: ChannelStatus) -> Self {
         let datetime = SystemTime::UNIX_EPOCH + Duration::from_millis(ts / 1000000);
         Self { ts, datetime, status }
+    }
+}
+
+impl ByteEstimate for ChannelStatusEvent {
+    fn byte_estimate(&self) -> u64 {
+        // TODO magic number, but maybe good enough
+        32
     }
 }
 
@@ -484,6 +496,18 @@ impl WithLen for ChannelEvents {
             ChannelEvents::Events(k) => k.as_ref().len(),
             ChannelEvents::Status(k) => match k {
                 Some(_) => 1,
+                None => 0,
+            },
+        }
+    }
+}
+
+impl ByteEstimate for ChannelEvents {
+    fn byte_estimate(&self) -> u64 {
+        match self {
+            ChannelEvents::Events(k) => k.byte_estimate(),
+            ChannelEvents::Status(k) => match k {
+                Some(k) => k.byte_estimate(),
                 None => 0,
             },
         }
