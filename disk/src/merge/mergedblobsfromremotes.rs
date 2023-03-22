@@ -99,7 +99,7 @@ impl Stream for MergedBlobsFromRemotes {
                     if c1 == self.tcp_establish_futs.len() {
                         let inps = self.nodein.iter_mut().map(|k| k.take().unwrap()).collect();
                         // TODO set out_max_len dynamically
-                        let s1 = Merger::new(inps, 1);
+                        let s1 = Merger::new(inps, 128);
                         self.merged = Some(Box::pin(s1));
                     }
                     continue 'outer;

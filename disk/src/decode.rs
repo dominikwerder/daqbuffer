@@ -310,7 +310,7 @@ impl EventsDynStream {
         let st = &scalar_type;
         let sh = &shape;
         let ag = &agg_kind;
-        error!("TODO feed through transform?");
+        warn!("TODO EventsDynStream::new feed through transform");
         // TODO do we need/want the empty item from here?
         let events_out = items_2::empty::empty_events_dyn_ev(st, sh)?;
         let scalar_conv = make_scalar_conv(st, sh, ag)?;
@@ -336,7 +336,7 @@ impl EventsDynStream {
     fn replace_events_out(&mut self) -> Result<Box<dyn Events>, Error> {
         let st = &self.scalar_type;
         let sh = &self.shape;
-        error!("TODO feed through transform?");
+        error!("TODO replace_events_out feed through transform");
         // TODO do we need/want the empty item from here?
         let empty = items_2::empty::empty_events_dyn_ev(st, sh)?;
         let evs = mem::replace(&mut self.events_out, empty);

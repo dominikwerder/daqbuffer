@@ -7,7 +7,6 @@ pub mod eventfull;
 pub mod eventsdim0;
 pub mod eventsdim1;
 pub mod eventsxbindim0;
-pub mod eventtransform;
 pub mod framable;
 pub mod frame;
 pub mod inmem;
@@ -24,6 +23,7 @@ use chrono::TimeZone;
 use chrono::Utc;
 use futures_util::Stream;
 use items_0::streamitem::Sitemty;
+use items_0::transform::EventTransform;
 use items_0::Empty;
 use items_0::Events;
 use items_0::MergeError;
@@ -199,9 +199,9 @@ pub trait TimeBinnableTypeAggregator: Send {
     fn result_reset(&mut self, range: SeriesRange, expand: bool) -> Self::Output;
 }
 
-pub trait ChannelEventsInput: Stream<Item = Sitemty<ChannelEvents>> + items_0::EventTransform + Send {}
+pub trait ChannelEventsInput: Stream<Item = Sitemty<ChannelEvents>> + EventTransform + Send {}
 
-impl<T> ChannelEventsInput for T where T: Stream<Item = Sitemty<ChannelEvents>> + items_0::EventTransform + Send {}
+impl<T> ChannelEventsInput for T where T: Stream<Item = Sitemty<ChannelEvents>> + EventTransform + Send {}
 
 pub fn runfut<T, F>(fut: F) -> Result<T, err::Error>
 where

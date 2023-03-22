@@ -17,6 +17,7 @@ use items_0::TimeBinnable;
 use items_0::TimeBinned;
 use items_0::TimeBinner;
 use items_0::TimeBins;
+use items_0::TypeName;
 use items_0::WithLen;
 use netpod::is_false;
 use netpod::log::*;
@@ -48,6 +49,12 @@ pub struct BinsDim0<NTY> {
     pub maxs: VecDeque<NTY>,
     pub avgs: VecDeque<f32>,
     pub dim0kind: Option<Dim0Kind>,
+}
+
+impl<STY> TypeName for BinsDim0<STY> {
+    fn type_name(&self) -> String {
+        any::type_name::<Self>().into()
+    }
 }
 
 impl<NTY> fmt::Debug for BinsDim0<NTY>

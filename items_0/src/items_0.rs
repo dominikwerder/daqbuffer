@@ -5,6 +5,7 @@ pub mod isodate;
 pub mod scalar_ops;
 pub mod streamitem;
 pub mod subfr;
+pub mod transform;
 
 pub mod bincode {
     pub use bincode::*;
@@ -79,7 +80,7 @@ where
 }
 
 /// Data in time-binned form.
-pub trait TimeBinned: Any + TimeBinnable + Collectable + erased_serde::Serialize {
+pub trait TimeBinned: Any + TypeName + TimeBinnable + Collectable + erased_serde::Serialize {
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnable;
     fn as_collectable_mut(&mut self) -> &mut dyn Collectable;
     fn edges_slice(&self) -> (&[u64], &[u64]);
@@ -185,32 +186,5 @@ erased_serde::serialize_trait_object!(Events);
 impl PartialEq for Box<dyn Events> {
     fn eq(&self, other: &Self) -> bool {
         Events::partial_eq_dyn(self.as_ref(), other.as_ref())
-    }
-}
-
-pub struct TransformProperties {
-    pub needs_one_before_range: bool,
-    pub needs_value: bool,
-}
-
-pub trait EventTransform {
-    fn query_transform_properties(&self) -> TransformProperties;
-}
-
-impl<T> EventTransform for Box<T>
-where
-    T: EventTransform,
-{
-    fn query_transform_properties(&self) -> TransformProperties {
-        self.as_ref().query_transform_properties()
-    }
-}
-
-impl<T> EventTransform for std::pin::Pin<Box<T>>
-where
-    T: EventTransform,
-{
-    fn query_transform_properties(&self) -> TransformProperties {
-        self.as_ref().query_transform_properties()
     }
 }

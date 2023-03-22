@@ -1,12 +1,15 @@
 use crate::AsAnyMut;
 use crate::AsAnyRef;
 use crate::Events;
+use crate::TimeBinned;
+use crate::TypeName;
 use crate::WithLen;
 use err::Error;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 use netpod::BinnedRangeEnum;
 use serde::Serialize;
+use std::any;
 use std::any::Any;
 use std::fmt;
 
@@ -88,12 +91,23 @@ where
     T: fmt::Debug + CollectorType + 'static,
 {
     fn ingest(&mut self, src: &mut dyn Collectable) {
-        let x = src.as_any_mut().downcast_mut();
-        if x.is_none() {
-            warn!("TODO handle the case of incoming Box");
+        if let Some(src) = src.as_any_mut().downcast_mut::<<T as CollectorType>::Input>() {
+            info!("sees incoming &mut ref");
+            T::ingest(self, src)
+        } else {
+            if let Some(src) = src.as_any_mut().downcast_mut::<Box<<T as CollectorType>::Input>>() {
+                info!("sees incoming &mut Box");
+                T::ingest(self, src)
+            } else {
+                error!(
+                    "No idea what this is. Expect: {}  input {}  got: {} {:?}",
+                    any::type_name::<T>(),
+                    any::type_name::<<T as CollectorType>::Input>(),
+                    src.type_name(),
+                    src
+                );
+            }
         }
-        let src: &mut <T as CollectorType>::Input = x.expect("can not downcast");
-        T::ingest(self, src)
     }
 
     fn set_range_complete(&mut self) {
@@ -115,13 +129,19 @@ where
 }
 
 // TODO rename to `Typed`
-pub trait CollectableType: fmt::Debug + AsAnyRef + AsAnyMut {
+pub trait CollectableType: fmt::Debug + AsAnyRef + AsAnyMut + TypeName {
     type Collector: CollectorType<Input = Self>;
     fn new_collector() -> Self::Collector;
 }
 
-pub trait Collectable: fmt::Debug + AsAnyRef + AsAnyMut {
+pub trait Collectable: fmt::Debug + AsAnyRef + AsAnyMut + TypeName {
     fn new_collector(&self) -> Box<dyn Collector>;
+}
+
+impl TypeName for Box<dyn Events> {
+    fn type_name(&self) -> String {
+        self.as_ref().type_name()
+    }
 }
 
 impl Collectable for Box<dyn Events> {
@@ -139,6 +159,12 @@ where
     }
 }
 
+impl TypeName for Box<dyn Collectable> {
+    fn type_name(&self) -> String {
+        self.as_ref().type_name()
+    }
+}
+
 // TODO do this with some blanket impl:
 impl Collectable for Box<dyn Collectable> {
     fn new_collector(&self) -> Box<dyn Collector> {
@@ -146,13 +172,19 @@ impl Collectable for Box<dyn Collectable> {
     }
 }
 
-impl WithLen for Box<dyn crate::TimeBinned> {
+impl WithLen for Box<dyn TimeBinned> {
     fn len(&self) -> usize {
         self.as_ref().len()
     }
 }
 
-impl Collectable for Box<dyn crate::TimeBinned> {
+impl TypeName for Box<dyn TimeBinned> {
+    fn type_name(&self) -> String {
+        self.as_ref().type_name()
+    }
+}
+
+impl Collectable for Box<dyn TimeBinned> {
     fn new_collector(&self) -> Box<dyn Collector> {
         self.as_ref().new_collector()
     }

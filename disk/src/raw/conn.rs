@@ -57,6 +57,7 @@ pub async fn make_event_pipe(
     evq: &PlainEventsQuery,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
+    info!("----------  disk::raw::conn::make_event_pipe");
     if false {
         match dbconn::channel_exists(&evq.channel(), &node_config).await {
             Ok(_) => (),
@@ -86,9 +87,9 @@ pub async fn make_event_pipe(
     // TODO should not need this for correctness.
     // Should limit based on return size and latency.
     let out_max_len = if node_config.node_config.cluster.is_central_storage {
-        1
+        128
     } else {
-        1
+        128
     };
     let event_blobs = EventChunkerMultifile::new(
         (&range).try_into()?,
@@ -167,9 +168,9 @@ pub fn make_local_event_blobs_stream(
     // TODO should not need this for correctness.
     // Should limit based on return size and latency.
     let out_max_len = if node_config.node_config.cluster.is_central_storage {
-        1
+        128
     } else {
-        1
+        128
     };
     let event_blobs = EventChunkerMultifile::new(
         range,
@@ -213,9 +214,9 @@ pub fn make_remote_event_blobs_stream(
     // TODO should not need this for correctness.
     // Should limit based on return size and latency.
     let out_max_len = if node_config.node_config.cluster.is_central_storage {
-        1
+        128
     } else {
-        1
+        128
     };
     let event_blobs = EventChunkerMultifile::new(
         range,
@@ -274,11 +275,6 @@ pub async fn make_event_blobs_pipe(
             DiskIoTune::default(),
             node_config,
         )?;
-        /*let s = event_blobs.map(|item: ItemType| Box::new(item) as Box<dyn Framable + Send>);
-        //let s = tracing_futures::Instrumented::instrument(s, tracing::info_span!("make_event_blobs_pipe"));
-        let pipe: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>;
-        pipe = Box::pin(s);
-        pipe*/
         Box::pin(event_blobs) as _
     } else {
         let event_blobs = make_remote_event_blobs_stream(

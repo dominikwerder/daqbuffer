@@ -131,6 +131,10 @@ impl PlainEventsQuery {
     pub fn is_event_blobs(&self) -> bool {
         self.transform.is_event_blobs()
     }
+
+    pub fn need_value_data(&self) -> bool {
+        self.transform.need_value_data()
+    }
 }
 
 impl HasBackend for PlainEventsQuery {

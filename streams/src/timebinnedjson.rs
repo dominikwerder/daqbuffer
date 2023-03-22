@@ -32,7 +32,7 @@ pub async fn timebinned_json(query: &BinnedQuery, chconf: &ChConf, cluster: &Clu
     let inps = open_tcp_streams::<_, items_2::channelevents::ChannelEvents>(&evquery, cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader:
     info!("timebinned_json with empty item {empty:?}");
-    let stream = Merger::new(inps, 128);
+    let stream = Merger::new(inps, 1024);
     let stream = stream::iter([empty]).chain(stream);
     let stream = RangeFilter2::new(stream, todo!(), evquery.one_before_range());
     let stream = Box::pin(stream);

@@ -19,6 +19,19 @@ enum EventTransformQuery {
     PulseIdDiff,
 }
 
+impl EventTransformQuery {
+    pub fn need_value_data(&self) -> bool {
+        match self {
+            EventTransformQuery::EventBlobsVerbatim => true,
+            EventTransformQuery::EventBlobsUncompressed => true,
+            EventTransformQuery::ValueFull => true,
+            EventTransformQuery::ArrayPick(_) => true,
+            EventTransformQuery::MinMaxAvgDev => true,
+            EventTransformQuery::PulseIdDiff => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 enum TimeBinningTransformQuery {
     None,
@@ -84,6 +97,17 @@ impl TransformQuery {
         }
     }
 
+    pub fn need_value_data(&self) -> bool {
+        self.event.need_value_data()
+    }
+
+    pub fn is_pulse_id_diff(&self) -> bool {
+        match &self.event {
+            EventTransformQuery::PulseIdDiff => true,
+            _ => false,
+        }
+    }
+
     pub fn build_event_transform(&self) -> () {}
 }
 
@@ -114,7 +138,7 @@ impl FromUrl for TransformQuery {
                 }
             } else if s == "unweightedScalar" {
                 TransformQuery {
-                    event: EventTransformQuery::EventBlobsVerbatim,
+                    event: EventTransformQuery::ValueFull,
                     time_binning: TimeBinningTransformQuery::None,
                 }
             } else if s == "binnedX" {
@@ -143,7 +167,7 @@ impl FromUrl for TransformQuery {
                 })
                 .unwrap_or(None);
             let ret = TransformQuery {
-                event: EventTransformQuery::EventBlobsVerbatim,
+                event: EventTransformQuery::ValueFull,
                 time_binning: TimeBinningTransformQuery::None,
             };
             Ok(ret)

@@ -1,6 +1,7 @@
 use crate::framable::FrameType;
 use crate::merger::Mergeable;
 use crate::Events;
+use items_0::TypeName;
 use items_0::collect_s::Collectable;
 use items_0::collect_s::Collected;
 use items_0::collect_s::Collector;
@@ -16,6 +17,7 @@ use netpod::range::evrange::SeriesRange;
 use netpod::BinnedRangeEnum;
 use serde::Deserialize;
 use serde::Serialize;
+use std::any;
 use std::any::Any;
 use std::fmt;
 use std::time::Duration;
@@ -104,6 +106,12 @@ impl ByteEstimate for ChannelStatusEvent {
 pub enum ChannelEvents {
     Events(Box<dyn Events>),
     Status(Option<ConnStatusEvent>),
+}
+
+impl TypeName for ChannelEvents {
+    fn type_name(&self) -> String {
+        any::type_name::<Self>().into()
+    }
 }
 
 impl FrameTypeInnerStatic for ChannelEvents {

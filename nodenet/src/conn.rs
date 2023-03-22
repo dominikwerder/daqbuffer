@@ -1,6 +1,8 @@
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items_0::on_sitemty_data;
+use items_0::streamitem::LogItem;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
@@ -11,7 +13,6 @@ use items_2::channelevents::ChannelEvents;
 use items_2::framable::EventQueryJsonStringFrame;
 use items_2::framable::Framable;
 use items_2::frame::decode_frame;
-use items_2::frame::make_error_frame;
 use items_2::frame::make_term_frame;
 use netpod::histo::HistoLog2;
 use netpod::log::*;
@@ -26,6 +27,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
 use tracing::Instrument;
+
+use crate::scylla::scylla_channel_event_stream;
 
 #[cfg(test)]
 mod test;
@@ -62,6 +65,7 @@ async fn make_channel_events_stream(
     evq: PlainEventsQuery,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
+    info!("nodenet::conn::make_channel_events_stream");
     if evq.channel().backend() == "test-inmem" {
         warn!("TEST BACKEND DATA");
         use netpod::timeunits::MS;
@@ -95,107 +99,8 @@ async fn make_channel_events_stream(
             let stream = futures_util::stream::empty();
             Ok(Box::pin(stream))
         }
-    } else if let Some(conf) = &node_config.node_config.cluster.scylla {
-        // TODO depends in general on the query
-        // TODO why both in PlainEventsQuery and as separate parameter? Check other usages.
-        let do_one_before_range = false;
-        // TODO use better builder pattern with shortcuts for production and dev defaults
-        let f = crate::channelconfig::channel_config(evq.range().try_into()?, evq.channel().clone(), node_config)
-            .await
-            .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?;
-        let scyco = conf;
-        let scy = scyllaconn::create_scy_session(scyco).await?;
-        let series = f.series;
-        let scalar_type = f.scalar_type;
-        let shape = f.shape;
-        let do_test_stream_error = false;
-        error!("TODO derive AggKind from Transformed empty [846397]");
-        let with_values = if let AggKind::PulseIdDiff = AggKind::TimeWeightedScalar {
-            false
-        } else {
-            true
-        };
-        debug!("Make EventsStreamScylla for {series} {scalar_type:?} {shape:?}");
-        let stream = scyllaconn::events::EventsStreamScylla::new(
-            series,
-            evq.range().into(),
-            do_one_before_range,
-            scalar_type,
-            shape,
-            with_values,
-            scy,
-            do_test_stream_error,
-        );
-        let stream = stream
-            .map({
-                let mut pulse_last = None;
-                move |item| match item {
-                    Ok(item) => {
-                        // TODO support pulseid extract
-                        let x = if false {
-                            let x = match item {
-                                ChannelEvents::Events(item) => {
-                                    let (tss, pulses) = items_0::EventsNonObj::into_tss_pulses(item);
-                                    let mut item = items_2::eventsdim0::EventsDim0::empty();
-                                    for (ts, pulse) in tss.into_iter().zip(pulses) {
-                                        let value = if let Some(last) = pulse_last {
-                                            pulse as i64 - last as i64
-                                        } else {
-                                            0
-                                        };
-                                        item.push(ts, pulse, value);
-                                        pulse_last = Some(pulse);
-                                    }
-                                    ChannelEvents::Events(Box::new(item))
-                                }
-                                ChannelEvents::Status(x) => ChannelEvents::Status(x),
-                            };
-                            x
-                        } else {
-                            item
-                        };
-                        Ok(x)
-                    }
-                    Err(e) => Err(e),
-                }
-            })
-            .map(move |item| match &item {
-                Ok(k) => match k {
-                    ChannelEvents::Events(k) => {
-                        let n = k.len();
-                        let d = evq.event_delay();
-                        (item, n, d.clone())
-                    }
-                    ChannelEvents::Status(_) => (item, 1, None),
-                },
-                Err(_) => (item, 1, None),
-            })
-            .then(|(item, n, d)| async move {
-                if let Some(d) = d {
-                    warn!("sleep {} times {:?}", n, d);
-                    tokio::time::sleep(d).await;
-                }
-                item
-            })
-            .map(|item| {
-                let item = match item {
-                    Ok(item) => match item {
-                        ChannelEvents::Events(item) => {
-                            let item = ChannelEvents::Events(item);
-                            let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
-                            item
-                        }
-                        ChannelEvents::Status(item) => {
-                            let item = ChannelEvents::Status(item);
-                            let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
-                            item
-                        }
-                    },
-                    Err(e) => Err(e),
-                };
-                item
-            });
-        Ok(Box::pin(stream))
+    } else if let Some(scyconf) = &node_config.node_config.cluster.scylla {
+        scylla_channel_event_stream(evq, scyconf, node_config).await
     } else if let Some(_) = &node_config.node.channel_archiver {
         let e = Error::with_msg_no_trace("archapp not built");
         Err(e)
@@ -278,11 +183,7 @@ async fn events_conn_handler_inner_try(
     }
 
     let mut stream: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> = if evq.is_event_blobs() {
-        if false {
-            error!("TODO support event blob transform");
-            let e = Error::with_msg(format!("TODO support event blob transform"));
-            return Err((e, netout).into());
-        }
+        // TODO support event blobs as transform
         match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
             Ok(stream) => {
                 let stream = stream.map(|x| Box::new(x) as _);
@@ -293,29 +194,27 @@ async fn events_conn_handler_inner_try(
             }
         }
     } else {
-        match make_channel_events_stream(evq, node_config).await {
+        match make_channel_events_stream(evq.clone(), node_config).await {
             Ok(stream) => {
                 let stream = stream
                     .map({
-                        use items_2::eventtransform::EventTransform;
-                        let mut tf = items_2::eventtransform::IdentityTransform::default();
-                        move |item| match item {
-                            Ok(item2) => match item2 {
-                                StreamItem::DataItem(item3) => match item3 {
-                                    RangeCompletableItem::Data(item4) => match item4 {
+                        use items_0::transform::EventTransform;
+                        let mut tf = items_0::transform::IdentityTransform::default();
+                        move |item| {
+                            if false {
+                                on_sitemty_data!(item, |item4| {
+                                    match item4 {
                                         ChannelEvents::Events(item5) => {
                                             let a = tf.transform(item5);
-                                            Ok(StreamItem::DataItem(RangeCompletableItem::Data(ChannelEvents::Events(
-                                                a,
-                                            ))))
+                                            let x = ChannelEvents::Events(a);
+                                            Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
                                         }
                                         x => Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))),
-                                    },
-                                    x => Ok(StreamItem::DataItem(x)),
-                                },
-                                x => Ok(x),
-                            },
-                            _ => item,
+                                    }
+                                })
+                            } else {
+                                item
+                            }
                         }
                     })
                     .map(|x| Box::new(x) as _);
@@ -327,18 +226,11 @@ async fn events_conn_handler_inner_try(
         }
     };
 
-    let mut buf_len_cnt = 0;
-    let mut buf_len_sum = 0;
     let mut buf_len_histo = HistoLog2::new(5);
     while let Some(item) = stream.next().await {
         let item = item.make_frame();
         match item {
             Ok(buf) => {
-                buf_len_cnt += 1;
-                buf_len_sum += buf.len();
-                if buf.len() > 1024 * 128 {
-                    warn!("emit buf len {}", buf.len());
-                }
                 buf_len_histo.ingest(buf.len() as u32);
                 match netout.write_all(&buf).await {
                     Ok(_) => {}
@@ -351,7 +243,22 @@ async fn events_conn_handler_inner_try(
             }
         }
     }
-    info!("buf_len_cnt {}  buf_len_avg {}", buf_len_cnt, buf_len_sum / buf_len_cnt);
+    {
+        let item = LogItem {
+            node_ix: node_config.ix as _,
+            level: Level::INFO,
+            msg: format!("buf_len_histo: {:?}", buf_len_histo),
+        };
+        let item: Sitemty<ChannelEvents> = Ok(StreamItem::Log(item));
+        let buf = match item.make_frame() {
+            Ok(k) => k,
+            Err(e) => return Err((e, netout))?,
+        };
+        match netout.write_all(&buf).await {
+            Ok(_) => (),
+            Err(e) => return Err((e, netout))?,
+        }
+    }
     let buf = match make_term_frame() {
         Ok(k) => k,
         Err(e) => return Err((e, netout))?,
@@ -364,7 +271,6 @@ async fn events_conn_handler_inner_try(
         Ok(_) => (),
         Err(e) => return Err((e, netout))?,
     }
-    debug!("events_conn_handler_inner_try  buf_len_histo: {:?}", buf_len_histo);
     Ok(())
 }
 

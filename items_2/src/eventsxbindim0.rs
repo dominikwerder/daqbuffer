@@ -1,5 +1,4 @@
 use crate::binsxbindim0::BinsXbinDim0;
-use items_0::container::ByteEstimate;
 use crate::IsoDateTime;
 use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
@@ -10,10 +9,12 @@ use items_0::collect_s::Collected;
 use items_0::collect_s::CollectorType;
 use items_0::collect_s::ToJsonBytes;
 use items_0::collect_s::ToJsonResult;
+use items_0::container::ByteEstimate;
 use items_0::scalar_ops::ScalarOps;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use items_0::Empty;
+use items_0::TypeName;
 use items_0::WithLen;
 use netpod::is_false;
 use netpod::log::*;
@@ -53,6 +54,12 @@ impl<NTY> EventsXbinDim0<NTY> {
         self.mins.push_front(min);
         self.maxs.push_front(max);
         self.avgs.push_front(avg);
+    }
+}
+
+impl<STY> TypeName for EventsXbinDim0<STY> {
+    fn type_name(&self) -> String {
+        any::type_name::<Self>().into()
     }
 }
 

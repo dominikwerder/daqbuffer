@@ -80,6 +80,19 @@ macro_rules! on_sitemty_range_complete {
     };
 }
 
+#[macro_export]
+macro_rules! on_sitemty_data {
+    ($item:expr, $ex:expr) => {
+        if let Ok($crate::streamitem::StreamItem::DataItem($crate::streamitem::RangeCompletableItem::Data(item))) =
+            $item
+        {
+            $ex(item)
+        } else {
+            $item
+        }
+    };
+}
+
 pub fn sitem_data<X>(x: X) -> Sitemty<X> {
     Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
 }

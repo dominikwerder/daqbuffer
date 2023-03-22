@@ -20,6 +20,7 @@ use items_0::TimeBinnable;
 use items_0::TimeBinned;
 use items_0::TimeBinner;
 use items_0::TimeBins;
+use items_0::TypeName;
 use items_0::WithLen;
 use netpod::is_false;
 use netpod::log::*;
@@ -27,8 +28,8 @@ use netpod::range::evrange::NanoRange;
 use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::SEC;
 use netpod::BinnedRangeEnum;
-use netpod::Dim0Kind;
 use netpod::CmpZero;
+use netpod::Dim0Kind;
 use serde::Deserialize;
 use serde::Serialize;
 use std::any;
@@ -54,6 +55,12 @@ pub struct BinsXbinDim0<NTY> {
     // TODO could consider more variables:
     // ts min/max, pulse min/max, avg of mins, avg of maxs, variances, etc...
     dim0kind: Option<Dim0Kind>,
+}
+
+impl<STY> TypeName for BinsXbinDim0<STY> {
+    fn type_name(&self) -> String {
+        any::type_name::<Self>().into()
+    }
 }
 
 impl<NTY> fmt::Debug for BinsXbinDim0<NTY>

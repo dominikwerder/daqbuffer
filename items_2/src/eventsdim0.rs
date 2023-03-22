@@ -21,6 +21,7 @@ use items_0::EventsNonObj;
 use items_0::MergeError;
 use items_0::TimeBinnable;
 use items_0::TimeBinner;
+use items_0::TypeName;
 use items_0::WithLen;
 use netpod::is_false;
 use netpod::log::*;
@@ -747,10 +748,11 @@ impl<NTY: ScalarOps> TimeBinnable for EventsDim0<NTY> {
     }
 }
 
-impl<STY> items_0::TypeName for EventsDim0<STY> {
+impl<STY> TypeName for EventsDim0<STY> {
     fn type_name(&self) -> String {
-        let sty = std::any::type_name::<STY>();
-        format!("EventsDim0<{sty}>")
+        let self_name = any::type_name::<Self>();
+        let sty = any::type_name::<STY>();
+        format!("EventsDim0<{sty}> aka {self_name}<{sty}>")
     }
 }
 

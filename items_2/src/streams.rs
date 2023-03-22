@@ -2,8 +2,8 @@ use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use items_0::EventTransform;
-use items_0::TransformProperties;
+use items_0::transform::EventTransform;
+use items_0::transform::TransformProperties;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::Context;
@@ -45,6 +45,10 @@ where
 
 impl<T> EventTransform for Enumerate2<T> {
     fn query_transform_properties(&self) -> TransformProperties {
+        todo!()
+    }
+
+    fn transform(&mut self, src: Box<dyn items_0::Events>) -> Box<dyn items_0::Events> {
         todo!()
     }
 }
@@ -118,6 +122,10 @@ impl<T, F, Fut> EventTransform for Then2<T, F, Fut> {
     fn query_transform_properties(&self) -> TransformProperties {
         todo!()
     }
+
+    fn transform(&mut self, src: Box<dyn items_0::Events>) -> Box<dyn items_0::Events> {
+        todo!()
+    }
 }
 
 pub trait TransformerExt {
@@ -180,6 +188,10 @@ where
 
 impl<T> EventTransform for VecStream<T> {
     fn query_transform_properties(&self) -> TransformProperties {
+        todo!()
+    }
+
+    fn transform(&mut self, src: Box<dyn items_0::Events>) -> Box<dyn items_0::Events> {
         todo!()
     }
 }
