@@ -14,9 +14,11 @@ use items_2::framable::EventQueryJsonStringFrame;
 use items_2::framable::Framable;
 use items_2::frame::decode_frame;
 use items_2::frame::make_term_frame;
+use items_2::inmem::InMemoryFrame;
 use netpod::histo::HistoLog2;
 use netpod::log::*;
 use netpod::AggKind;
+use netpod::ChConf;
 use netpod::NodeConfigCached;
 use netpod::PerfOpts;
 use query::api4::events::PlainEventsQuery;
@@ -24,6 +26,7 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
 use tokio::io::AsyncWriteExt;
+use tokio::net::tcp::OwnedReadHalf;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
 use tracing::Instrument;
@@ -63,6 +66,7 @@ impl<E: Into<Error>> From<(E, OwnedWriteHalf)> for ConnErr {
 
 async fn make_channel_events_stream(
     evq: PlainEventsQuery,
+    chconf: ChConf,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     info!("nodenet::conn::make_channel_events_stream");
@@ -100,7 +104,7 @@ async fn make_channel_events_stream(
             Ok(Box::pin(stream))
         }
     } else if let Some(scyconf) = &node_config.node_config.cluster.scylla {
-        scylla_channel_event_stream(evq, scyconf, node_config).await
+        scylla_channel_event_stream(evq, chconf, scyconf, node_config).await
     } else if let Some(_) = &node_config.node.channel_archiver {
         let e = Error::with_msg_no_trace("archapp not built");
         Err(e)
@@ -108,17 +112,11 @@ async fn make_channel_events_stream(
         let e = Error::with_msg_no_trace("archapp not built");
         Err(e)
     } else {
-        Ok(disk::raw::conn::make_event_pipe(&evq, node_config).await?)
+        Ok(disk::raw::conn::make_event_pipe(&evq, chconf, node_config).await?)
     }
 }
 
-async fn events_conn_handler_inner_try(
-    stream: TcpStream,
-    addr: SocketAddr,
-    node_config: &NodeConfigCached,
-) -> Result<(), ConnErr> {
-    let _ = addr;
-    let (netin, mut netout) = stream.into_split();
+async fn events_get_input_frames(netin: OwnedReadHalf) -> Result<Vec<InMemoryFrame>, Error> {
     warn!("fix magic inmem_bufcap option");
     let perf_opts = PerfOpts::default();
     let mut h = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
@@ -136,19 +134,26 @@ async fn events_conn_handler_inner_try(
                 debug!("ignored incoming frame {:?}", item);
             }
             Err(e) => {
-                return Err((e, netout).into());
+                return Err(e);
             }
         }
     }
-    debug!("events_conn_handler input frames received");
+    Ok(frames)
+}
+
+async fn events_parse_input_query(
+    frames: Vec<InMemoryFrame>,
+    ncc: &NodeConfigCached,
+) -> Result<(PlainEventsQuery, ChConf), Error> {
     if frames.len() != 1 {
         error!("{:?}", frames);
         error!("missing command frame  len {}", frames.len());
-        return Err((Error::with_msg("missing command frame"), netout).into());
+        let e = Error::with_msg("missing command frame");
+        return Err(e);
     }
     let query_frame = &frames[0];
     if query_frame.tyid() != EVENT_QUERY_JSON_STRING_FRAME {
-        return Err((Error::with_msg("query frame wrong type"), netout).into());
+        return Err(Error::with_msg("query frame wrong type"));
     }
     // TODO this does not need all variants of Sitemty.
     let qitem = match decode_frame::<Sitemty<EventQueryJsonStringFrame>>(query_frame) {
@@ -156,32 +161,46 @@ async fn events_conn_handler_inner_try(
             Ok(k) => match k {
                 StreamItem::DataItem(k) => match k {
                     RangeCompletableItem::Data(k) => k,
-                    RangeCompletableItem::RangeComplete => {
-                        return Err((Error::with_msg("bad query item"), netout).into())
-                    }
+                    RangeCompletableItem::RangeComplete => return Err(Error::with_msg("bad query item")),
                 },
-                _ => return Err((Error::with_msg("bad query item"), netout).into()),
+                _ => return Err(Error::with_msg("bad query item")),
             },
-            Err(e) => return Err((e, netout).into()),
+            Err(e) => return Err(e),
         },
-        Err(e) => return Err((e, netout).into()),
+        Err(e) => return Err(e),
     };
     let res: Result<PlainEventsQuery, _> = serde_json::from_str(&qitem.0);
     let evq = match res {
         Ok(k) => k,
         Err(e) => {
-            error!("json parse error: {:?}", e);
-            return Err((Error::with_msg("json parse error"), netout).into());
+            let e = Error::with_msg_no_trace(format!("json parse error: {e}"));
+            error!("{e}");
+            return Err(e);
         }
     };
     info!("events_conn_handler_inner_try  evq {:?}", evq);
+    let chconf = crate::channelconfig::channel_config(evq.range().try_into()?, evq.channel().clone(), ncc)
+        .await
+        .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?;
+    Ok((evq, chconf))
+}
 
-    if evq.channel().name() == "test-do-trigger-main-error" {
-        let e = Error::with_msg(format!("Test error private message."))
-            .add_public_msg(format!("Test error PUBLIC message."));
-        return Err((e, netout).into());
-    }
-
+async fn events_conn_handler_inner_try(
+    stream: TcpStream,
+    addr: SocketAddr,
+    node_config: &NodeConfigCached,
+) -> Result<(), ConnErr> {
+    let _ = addr;
+    let (netin, mut netout) = stream.into_split();
+    let frames = match events_get_input_frames(netin).await {
+        Ok(x) => x,
+        Err(e) => return Err((e, netout).into()),
+    };
+    debug!("events_conn_handler input frames received");
+    let (evq, chconf) = match events_parse_input_query(frames, node_config).await {
+        Ok(x) => x,
+        Err(e) => return Err((e, netout).into()),
+    };
     let mut stream: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> = if evq.is_event_blobs() {
         // TODO support event blobs as transform
         match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
@@ -194,7 +213,7 @@ async fn events_conn_handler_inner_try(
             }
         }
     } else {
-        match make_channel_events_stream(evq.clone(), node_config).await {
+        match make_channel_events_stream(evq.clone(), chconf, node_config).await {
             Ok(stream) => {
                 let stream = stream
                     .map({

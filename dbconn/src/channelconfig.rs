@@ -45,7 +45,7 @@ pub async fn chconf_from_scylla_type_backend(channel: &Channel, ncc: &NodeConfig
             let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(2))?;
             let ret = ChConf {
                 backend,
-                series,
+                series: Some(series),
                 name,
                 scalar_type,
                 shape,
@@ -78,7 +78,7 @@ pub async fn chconf_from_scylla_type_backend(channel: &Channel, ncc: &NodeConfig
                 let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(3))?;
                 let ret = ChConf {
                     backend,
-                    series,
+                    series: Some(series),
                     name,
                     scalar_type,
                     shape,

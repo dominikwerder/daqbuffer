@@ -15,7 +15,7 @@ pub async fn channel_config(range: NanoRange, channel: Channel, ncc: &NodeConfig
         let ret = if channel.name() == "scalar-i32-be" {
             let ret = ChConf {
                 backend,
-                series: 1,
+                series: Some(1),
                 name: channel.name().into(),
                 scalar_type: ScalarType::I32,
                 shape: Shape::Scalar,
@@ -24,7 +24,7 @@ pub async fn channel_config(range: NanoRange, channel: Channel, ncc: &NodeConfig
         } else if channel.name() == "wave-f64-be-n21" {
             let ret = ChConf {
                 backend,
-                series: 2,
+                series: Some(2),
                 name: channel.name().into(),
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(21),
@@ -33,7 +33,7 @@ pub async fn channel_config(range: NanoRange, channel: Channel, ncc: &NodeConfig
         } else if channel.name() == "const-regular-scalar-i32-be" {
             let ret = ChConf {
                 backend,
-                series: 3,
+                series: Some(3),
                 name: channel.name().into(),
                 scalar_type: ScalarType::I32,
                 shape: Shape::Scalar,
@@ -50,7 +50,7 @@ pub async fn channel_config(range: NanoRange, channel: Channel, ncc: &NodeConfig
         let ret = if channel.name() == "inmem-d0-i32" {
             let ret = ChConf {
                 backend,
-                series: 1,
+                series: Some(1),
                 name: channel.name().into(),
                 scalar_type: ScalarType::I32,
                 shape: Shape::Scalar,
@@ -69,12 +69,16 @@ pub async fn channel_config(range: NanoRange, channel: Channel, ncc: &NodeConfig
             .map_err(Error::from)?;
         Ok(ret)
     } else if ncc.node.sf_databuffer.is_some() {
+        info!("channel_config  BEFORE  {channel:?}");
         info!("try to get ChConf for sf-databuffer type backend");
+        // TODO in the future we should not need this:
         let channel = sf_databuffer_fetch_channel_by_series(channel, ncc).await?;
-        let c1 = disk::channelconfig::config(range, channel, ncc).await?;
+        info!("channel_config  AFTER  {channel:?}");
+        let c1 = disk::channelconfig::config(range, channel.clone(), ncc).await?;
+        info!("channel_config  THEN  {c1:?}");
         let ret = ChConf {
             backend: c1.channel.backend,
-            series: 0,
+            series: channel.series,
             name: c1.channel.name,
             scalar_type: c1.scalar_type,
             shape: c1.shape,

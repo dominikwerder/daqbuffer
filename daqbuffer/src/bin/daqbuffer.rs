@@ -5,6 +5,8 @@ use clap::Parser;
 use daqbuffer::cli::ClientType;
 use daqbuffer::cli::Opts;
 use daqbuffer::cli::SubCmd;
+use disk::AggQuerySingleChannel;
+use disk::SfDbChConf;
 use err::Error;
 use netpod::log::*;
 use netpod::query::CacheUsage;
@@ -132,14 +134,13 @@ fn simple_fetch() {
     use netpod::timeunits::*;
     use netpod::ByteOrder;
     use netpod::Channel;
-    use netpod::ChannelConfig;
     use netpod::ScalarType;
     use netpod::Shape;
     taskrun::run(async {
         let _rh = daqbufp2::nodes::require_test_hosts_running()?;
         let t1 = chrono::Utc::now();
-        let query = netpod::AggQuerySingleChannel {
-            channel_config: ChannelConfig {
+        let query = AggQuerySingleChannel {
+            channel_config: SfDbChConf {
                 channel: Channel {
                     backend: "sf-databuffer".into(),
                     name: "S10BC01-DBAM070:BAM_CH1_NORM".into(),

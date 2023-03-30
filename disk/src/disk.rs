@@ -26,11 +26,16 @@ use futures_util::Stream;
 use futures_util::StreamExt;
 use futures_util::TryFutureExt;
 use netpod::log::*;
-use netpod::ChannelConfig;
+use netpod::ByteOrder;
+use netpod::Channel;
 use netpod::DiskIoTune;
 use netpod::Node;
 use netpod::ReadSys;
+use netpod::ScalarType;
 use netpod::Shape;
+use netpod::TsNano;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::io::SeekFrom;
@@ -55,8 +60,29 @@ use tokio::io::AsyncSeekExt;
 use tokio::io::ReadBuf;
 use tokio::sync::mpsc;
 
+// TODO move to databuffer-specific crate
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SfDbChConf {
+    pub channel: Channel,
+    pub keyspace: u8,
+    pub time_bin_size: TsNano,
+    pub scalar_type: ScalarType,
+    pub compression: bool,
+    pub shape: Shape,
+    pub array: bool,
+    pub byte_order: ByteOrder,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AggQuerySingleChannel {
+    pub channel_config: SfDbChConf,
+    pub timebin: u32,
+    pub tb_file_count: u32,
+    pub buffer_size: u32,
+}
+
 // TODO transform this into a self-test or remove.
-pub async fn read_test_1(query: &netpod::AggQuerySingleChannel, node: Node) -> Result<netpod::BodyStream, Error> {
+pub async fn read_test_1(query: &AggQuerySingleChannel, node: Node) -> Result<netpod::BodyStream, Error> {
     let path = paths::datapath(query.timebin as u64, &query.channel_config, 0, &node);
     debug!("try path: {:?}", path);
     let fin = OpenOptions::new().read(true).open(path).await?;
@@ -744,7 +770,7 @@ trait ChannelConfigExt {
     fn dtflags(&self) -> u8;
 }
 
-impl ChannelConfigExt for ChannelConfig {
+impl ChannelConfigExt for SfDbChConf {
     fn dtflags(&self) -> u8 {
         let mut ret = 0;
         if self.compression {

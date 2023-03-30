@@ -1,9 +1,9 @@
-pub use crate::Error;
-
+use crate::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::container::ByteEstimate;
 use items_0::streamitem::sitem_data;
+use items_0::streamitem::LogItem;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
@@ -20,6 +20,7 @@ use std::task::Context;
 use std::task::Poll;
 
 const OUT_MAX_BYTES: u64 = 1024 * 200;
+const DO_DETECT_NON_MONO: bool = true;
 
 #[allow(unused)]
 macro_rules! trace2 {
@@ -60,6 +61,8 @@ pub struct Merger<T> {
     out_max_len: usize,
     range_complete: Vec<bool>,
     out_of_band_queue: VecDeque<Sitemty<T>>,
+    log_queue: VecDeque<LogItem>,
+    dim0ix_max: u64,
     done_data: bool,
     done_buffered: bool,
     done_range_complete: bool,
@@ -100,6 +103,8 @@ where
             out_max_len,
             range_complete: vec![false; n],
             out_of_band_queue: VecDeque::new(),
+            log_queue: VecDeque::new(),
+            dim0ix_max: 0,
             done_data: false,
             done_buffered: false,
             done_range_complete: false,
@@ -144,6 +149,7 @@ where
     fn process(mut self: Pin<&mut Self>, _cx: &mut Context) -> Result<ControlFlow<()>, Error> {
         use ControlFlow::*;
         trace4!("process");
+        let mut log_items = Vec::new();
         let mut tslows = [None, None];
         for (i1, itemopt) in self.items.iter_mut().enumerate() {
             if let Some(item) = itemopt {
@@ -168,9 +174,28 @@ where
                     }
                 } else {
                     // the item seems empty.
+                    // TODO count for stats.
                     trace2!("empty item, something to do here?");
                     *itemopt = None;
                     return Ok(Continue(()));
+                }
+            }
+        }
+        if DO_DETECT_NON_MONO {
+            if let Some((i1, t1)) = tslows[0].as_ref() {
+                if *t1 <= self.dim0ix_max {
+                    self.dim0ix_max = *t1;
+                    let item = LogItem {
+                        node_ix: *i1 as _,
+                        level: Level::INFO,
+                        msg: format!(
+                            "dim0ix_max  {} vs {}   diff {}",
+                            self.dim0ix_max,
+                            t1,
+                            self.dim0ix_max - t1
+                        ),
+                    };
+                    log_items.push(item);
                 }
             }
         }
@@ -367,7 +392,9 @@ where
         let _spg = span1.enter();
         loop {
             trace3!("poll");
-            break if self.poll_count == usize::MAX {
+            break if let Some(item) = self.log_queue.pop_front() {
+                Ready(Some(Ok(StreamItem::Log(item))))
+            } else if self.poll_count == usize::MAX {
                 self.done_range_complete = true;
                 continue;
             } else if self.complete {

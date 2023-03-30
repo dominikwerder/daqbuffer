@@ -177,11 +177,35 @@ impl FromUrl for TransformQuery {
 
 impl AppendToUrl for TransformQuery {
     fn append_to_url(&self, url: &mut Url) {
-        warn!("TODO AppendToUrl for Transform");
-        let upre = Self::url_prefix();
         let mut g = url.query_pairs_mut();
-        if let Some(x) = &Some(123) {
-            g.append_pair(&format!("{}ArrayPick", upre), &format!("{}", x));
+        if false {
+            let upre = Self::url_prefix();
+            if let Some(x) = &Some(123) {
+                g.append_pair(&format!("{}ArrayPick", upre), &format!("{}", x));
+            }
+        }
+        let key = "binningScheme";
+        match &self.event {
+            EventTransformQuery::EventBlobsVerbatim => {
+                g.append_pair(key, &format!("{}", "eventBlobs"));
+            }
+            EventTransformQuery::EventBlobsUncompressed => {
+                // TODO
+                g.append_pair(key, &format!("{}", "eventBlobs"));
+            }
+            EventTransformQuery::ValueFull => {
+                g.append_pair(key, &format!("{}", "fullValue"));
+            }
+            EventTransformQuery::ArrayPick(_) => {
+                // TODO
+                g.append_pair(key, &format!("{}", "fullValue"));
+            }
+            EventTransformQuery::MinMaxAvgDev => {
+                g.append_pair(key, &format!("{}", "timeWeightedScalar"));
+            }
+            EventTransformQuery::PulseIdDiff => {
+                g.append_pair(key, &format!("{}", "pulseIdDiff"));
+            }
         }
     }
 }

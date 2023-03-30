@@ -11,7 +11,6 @@ use items_0::WithLen;
 use items_2::eventfull::EventFull;
 use items_2::eventsdim0::EventsDim0;
 use items_2::eventsdim1::EventsDim1;
-#[allow(unused)]
 use netpod::log::*;
 use netpod::AggKind;
 use netpod::ScalarType;
@@ -25,13 +24,17 @@ use std::task::Poll;
 pub trait Endianness: Send + Unpin {
     fn is_big() -> bool;
 }
+
 pub struct LittleEndian {}
+
 pub struct BigEndian {}
+
 impl Endianness for LittleEndian {
     fn is_big() -> bool {
         false
     }
 }
+
 impl Endianness for BigEndian {
     fn is_big() -> bool {
         true
@@ -369,7 +372,7 @@ impl EventsDynStream {
     fn handle_stream_item(
         &mut self,
         item: StreamItem<RangeCompletableItem<EventFull>>,
-    ) -> Result<Option<Sitemty<Box<dyn items_0::Events>>>, Error> {
+    ) -> Result<Option<Sitemty<Box<dyn Events>>>, Error> {
         let ret = match item {
             StreamItem::DataItem(item) => match item {
                 RangeCompletableItem::RangeComplete => {
@@ -396,7 +399,7 @@ impl EventsDynStream {
 }
 
 impl Stream for EventsDynStream {
-    type Item = Sitemty<Box<dyn items_0::Events>>;
+    type Item = Sitemty<Box<dyn Events>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;

@@ -1,17 +1,19 @@
 use crate::eventblobs::EventChunkerMultifile;
+use crate::eventchunker::EventChunkerConf;
+use crate::AggQuerySingleChannel;
+use crate::SfDbChConf;
 use netpod::range::evrange::NanoRange;
 use netpod::test_data_base_path_databuffer;
 use netpod::timeunits::*;
 use netpod::ByteOrder;
 use netpod::ByteSize;
 use netpod::Channel;
-use netpod::ChannelConfig;
+use netpod::DiskIoTune;
 use netpod::Node;
 use netpod::ScalarType;
 use netpod::SfDatabuffer;
 use netpod::Shape;
 use netpod::TsNano;
-use streams::eventchunker::EventChunkerConf;
 
 pub fn make_test_node(id: u32) -> Node {
     Node {
@@ -43,8 +45,8 @@ fn agg_x_dim_0() {
 
 async fn agg_x_dim_0_inner() {
     let node = make_test_node(0);
-    let query = netpod::AggQuerySingleChannel {
-        channel_config: ChannelConfig {
+    let query = AggQuerySingleChannel {
+        channel_config: SfDbChConf {
             channel: Channel {
                 backend: "sf-databuffer".into(),
                 name: "S10BC01-DBAM070:EOM1_T1".into(),
@@ -68,7 +70,7 @@ async fn agg_x_dim_0_inner() {
     let range = NanoRange { beg: ts1, end: ts2 };
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     // TODO let upstream already provide DiskIoTune:
-    let mut disk_io_tune = netpod::DiskIoTune::default_for_testing();
+    let mut disk_io_tune = DiskIoTune::default_for_testing();
     disk_io_tune.read_buffer_len = query.buffer_size as usize;
     let fut1 = EventChunkerMultifile::new(
         range.clone(),
@@ -100,8 +102,8 @@ async fn agg_x_dim_1_inner() {
     // /data/sf-databuffer/daq_swissfel/daq_swissfel_3/byTime/S10BC01-DBAM070\:BAM_CH1_NORM/*
     // S10BC01-DBAM070:BAM_CH1_NORM
     let node = make_test_node(0);
-    let query = netpod::AggQuerySingleChannel {
-        channel_config: ChannelConfig {
+    let query = AggQuerySingleChannel {
+        channel_config: SfDbChConf {
             channel: Channel {
                 backend: "ks".into(),
                 name: "wave1".into(),
@@ -125,7 +127,7 @@ async fn agg_x_dim_1_inner() {
     let range = NanoRange { beg: ts1, end: ts2 };
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     // TODO let upstream already provide DiskIoTune:
-    let mut disk_io_tune = netpod::DiskIoTune::default_for_testing();
+    let mut disk_io_tune = DiskIoTune::default_for_testing();
     disk_io_tune.read_buffer_len = query.buffer_size as usize;
     let fut1 = super::eventblobs::EventChunkerMultifile::new(
         range.clone(),

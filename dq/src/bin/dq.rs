@@ -1,5 +1,8 @@
 use clap::ArgAction;
 use clap::Parser;
+use disk::eventchunker::EventChunker;
+use disk::eventchunker::EventChunkerConf;
+use disk::SfDbChConf;
 use err::Error;
 #[allow(unused)]
 use netpod::log::*;
@@ -7,11 +10,8 @@ use netpod::range::evrange::NanoRange;
 use netpod::ByteOrder;
 use netpod::ByteSize;
 use netpod::Channel;
-use netpod::ChannelConfig;
 use netpod::Shape;
 use std::path::PathBuf;
-use streams::eventchunker::EventChunker;
-use streams::eventchunker::EventChunkerConf;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -80,7 +80,7 @@ pub fn main() -> Result<(), Error> {
                 let disk_io_tune = netpod::DiskIoTune::default();
                 let inp = Box::pin(disk::file_content_stream(path.clone(), file, disk_io_tune));
                 let ce = &config.entries[0];
-                let channel_config = ChannelConfig {
+                let channel_config = SfDbChConf {
                     channel: Channel {
                         backend: String::new(),
                         name: config.channel_name.clone(),

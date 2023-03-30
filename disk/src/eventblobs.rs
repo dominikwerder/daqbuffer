@@ -1,6 +1,9 @@
 use crate::dataopen::open_expanded_files;
 use crate::dataopen::open_files;
 use crate::dataopen::OpenedFileSet;
+use crate::eventchunker::EventChunker;
+use crate::eventchunker::EventChunkerConf;
+use crate::SfDbChConf;
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
@@ -14,14 +17,12 @@ use items_2::merger::Merger;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::timeunits::SEC;
-use netpod::ChannelConfig;
 use netpod::DiskIoTune;
 use netpod::Node;
+use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
-use streams::eventchunker::EventChunker;
-use streams::eventchunker::EventChunkerConf;
 use streams::rangefilter2::RangeFilter2;
 
 pub trait InputTraits: Stream<Item = Sitemty<EventFull>> {}
@@ -29,7 +30,7 @@ pub trait InputTraits: Stream<Item = Sitemty<EventFull>> {}
 impl<T> InputTraits for T where T: Stream<Item = Sitemty<EventFull>> {}
 
 pub struct EventChunkerMultifile {
-    channel_config: ChannelConfig,
+    channel_config: SfDbChConf,
     file_chan: async_channel::Receiver<Result<OpenedFileSet, Error>>,
     evs: Option<Pin<Box<dyn InputTraits + Send>>>,
     disk_io_tune: DiskIoTune,
@@ -44,6 +45,7 @@ pub struct EventChunkerMultifile {
     emit_count: usize,
     do_emit_err_after: Option<usize>,
     range_final: bool,
+    log_queue: VecDeque<LogItem>,
     done: bool,
     done_emit_range_final: bool,
     complete: bool,
@@ -52,7 +54,7 @@ pub struct EventChunkerMultifile {
 impl EventChunkerMultifile {
     pub fn new(
         range: NanoRange,
-        channel_config: ChannelConfig,
+        channel_config: SfDbChConf,
         node: Node,
         node_ix: usize,
         disk_io_tune: DiskIoTune,
@@ -83,6 +85,7 @@ impl EventChunkerMultifile {
             emit_count: 0,
             do_emit_err_after: None,
             range_final: false,
+            log_queue: VecDeque::new(),
             done: false,
             done_emit_range_final: false,
             complete: false,
@@ -98,7 +101,9 @@ impl Stream for EventChunkerMultifile {
         let _spg = span1.enter();
         use Poll::*;
         'outer: loop {
-            break if self.complete {
+            break if let Some(item) = self.log_queue.pop_front() {
+                Ready(Some(Ok(StreamItem::Log(item))))
+            } else if self.complete {
                 panic!("EventChunkerMultifile  poll_next on complete");
             } else if self.done_emit_range_final {
                 self.complete = true;
@@ -122,6 +127,12 @@ impl Stream for EventChunkerMultifile {
                                     if min <= self.max_ts {
                                         let msg = format!("EventChunkerMultifile  repeated or unordered ts {}", min);
                                         error!("{}", msg);
+                                        let item = LogItem {
+                                            node_ix: self.node_ix as _,
+                                            level: Level::INFO,
+                                            msg,
+                                        };
+                                        self.log_queue.push_back(item);
                                     }
                                     self.max_ts = max;
                                     if let Some(after) = self.do_emit_err_after {
@@ -262,6 +273,8 @@ impl Stream for EventChunkerMultifile {
 #[cfg(test)]
 mod test {
     use crate::eventblobs::EventChunkerMultifile;
+    use crate::eventchunker::EventChunkerConf;
+    use crate::SfDbChConf;
     use err::Error;
     use futures_util::StreamExt;
     use items_0::streamitem::RangeCompletableItem;
@@ -272,10 +285,8 @@ mod test {
     use netpod::timeunits::DAY;
     use netpod::timeunits::MS;
     use netpod::ByteSize;
-    use netpod::ChannelConfig;
     use netpod::DiskIoTune;
     use netpod::TsNano;
-    use streams::eventchunker::EventChunkerConf;
     use streams::rangefilter2::RangeFilter2;
 
     fn read_expanded_for_range(range: NanoRange, nodeix: usize) -> Result<(usize, Vec<u64>), Error> {
@@ -285,7 +296,7 @@ mod test {
             series: None,
         };
         // TODO read config from disk.
-        let channel_config = ChannelConfig {
+        let channel_config = SfDbChConf {
             channel: chn,
             keyspace: 2,
             time_bin_size: TsNano(DAY),

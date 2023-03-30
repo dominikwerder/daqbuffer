@@ -56,9 +56,9 @@ pub async fn plain_events_json(evq: &PlainEventsQuery, chconf: &ChConf, cluster:
     use items_0::streamitem::Sitemty;
     use std::pin::Pin;
     let stream: Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>> = if evq.transform().is_pulse_id_diff() {
-        Box::pin(stream.map(|item| {
-            let mut pulse_last = None;
-            on_sitemty_data!(item, move |item| {
+        let mut pulse_last = None;
+        Box::pin(stream.map(move |item| {
+            on_sitemty_data!(item, |item| {
                 use items_0::streamitem::RangeCompletableItem;
                 use items_0::streamitem::StreamItem;
                 use items_0::Appendable;

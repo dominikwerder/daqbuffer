@@ -1,4 +1,5 @@
 use crate::ChannelConfigExt;
+use crate::SfDbChConf;
 use bitshuffle::bitshuffle_compress;
 use bytes::BufMut;
 use bytes::BytesMut;
@@ -7,7 +8,6 @@ use netpod::log::*;
 use netpod::timeunits::*;
 use netpod::ByteOrder;
 use netpod::Channel;
-use netpod::ChannelConfig;
 use netpod::GenVar;
 use netpod::Node;
 use netpod::ScalarType;
@@ -31,7 +31,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
     };
     {
         let chn = ChannelGenProps {
-            config: ChannelConfig {
+            config: SfDbChConf {
                 channel: Channel {
                     backend: backend.clone(),
                     name: "scalar-i32-be".into(),
@@ -50,7 +50,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         };
         ensemble.channels.push(chn);
         let chn = ChannelGenProps {
-            config: ChannelConfig {
+            config: SfDbChConf {
                 channel: Channel {
                     backend: backend.clone(),
                     name: "wave-f64-be-n21".into(),
@@ -69,7 +69,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         };
         ensemble.channels.push(chn);
         let chn = ChannelGenProps {
-            config: ChannelConfig {
+            config: SfDbChConf {
                 channel: Channel {
                     backend: backend.clone(),
                     name: "wave-u16-le-n77".into(),
@@ -88,7 +88,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         };
         ensemble.channels.push(chn);
         let chn = ChannelGenProps {
-            config: ChannelConfig {
+            config: SfDbChConf {
                 channel: Channel {
                     backend: backend.clone(),
                     name: "tw-scalar-i32-be".into(),
@@ -107,7 +107,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         };
         ensemble.channels.push(chn);
         let chn = ChannelGenProps {
-            config: ChannelConfig {
+            config: SfDbChConf {
                 channel: Channel {
                     backend: backend.clone(),
                     name: "const-regular-scalar-i32-be".into(),
@@ -156,7 +156,7 @@ struct Ensemble {
 }
 
 pub struct ChannelGenProps {
-    config: ChannelConfig,
+    config: SfDbChConf,
     time_spacing: u64,
     gen_var: GenVar,
 }
@@ -204,12 +204,7 @@ async fn gen_channel(chn: &ChannelGenProps, split: u32, node: &Node, ensemble: &
     Ok(())
 }
 
-async fn gen_config(
-    config_path: &Path,
-    config: &ChannelConfig,
-    _node: &Node,
-    _ensemble: &Ensemble,
-) -> Result<(), Error> {
+async fn gen_config(config_path: &Path, config: &SfDbChConf, _node: &Node, _ensemble: &Ensemble) -> Result<(), Error> {
     let path = config_path.join("latest");
     tokio::fs::create_dir_all(&path).await?;
     let path = path.join("00000_Config");
@@ -337,7 +332,7 @@ async fn gen_timebin(
     pulse: u64,
     ts_spacing: u64,
     channel_path: &Path,
-    config: &ChannelConfig,
+    config: &SfDbChConf,
     split: u32,
     _node: &Node,
     ensemble: &Ensemble,
@@ -406,7 +401,7 @@ async fn gen_timebin(
     Ok(ret)
 }
 
-async fn gen_datafile_header(file: &mut CountedFile, config: &ChannelConfig) -> Result<(), Error> {
+async fn gen_datafile_header(file: &mut CountedFile, config: &SfDbChConf) -> Result<(), Error> {
     let mut buf = BytesMut::with_capacity(1024);
     let cnenc = config.channel.name.as_bytes();
     let len1 = cnenc.len() + 8;
@@ -424,7 +419,7 @@ async fn gen_event(
     evix: u64,
     ts: TsNano,
     pulse: u64,
-    config: &ChannelConfig,
+    config: &SfDbChConf,
     gen_var: &GenVar,
 ) -> Result<(), Error> {
     let ttl = 0xcafecafe;

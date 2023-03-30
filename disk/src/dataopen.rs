@@ -1,3 +1,5 @@
+use crate::SfDbChConf;
+
 use super::paths;
 use bytes::BytesMut;
 use err::ErrStr;
@@ -5,7 +7,6 @@ use err::Error;
 use futures_util::StreamExt;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
-use netpod::ChannelConfig;
 use netpod::Node;
 use netpod::TsNano;
 use std::fmt;
@@ -207,7 +208,7 @@ impl fmt::Debug for OpenedFile {
 
 pub fn open_files(
     range: &NanoRange,
-    channel_config: &ChannelConfig,
+    channel_config: &SfDbChConf,
     node: Node,
 ) -> async_channel::Receiver<Result<OpenedFileSet, Error>> {
     let (chtx, chrx) = async_channel::bounded(2);
@@ -236,7 +237,7 @@ pub fn open_files(
 async fn open_files_inner(
     chtx: &async_channel::Sender<Result<OpenedFileSet, Error>>,
     range: &NanoRange,
-    channel_config: &ChannelConfig,
+    channel_config: &SfDbChConf,
     node: Node,
 ) -> Result<(), Error> {
     let channel_config = channel_config.clone();
@@ -276,7 +277,7 @@ Expanded to one event before and after the requested range, if exists.
 */
 pub fn open_expanded_files(
     range: &NanoRange,
-    channel_config: &ChannelConfig,
+    channel_config: &SfDbChConf,
     node: Node,
 ) -> async_channel::Receiver<Result<OpenedFileSet, Error>> {
     let (chtx, chrx) = async_channel::bounded(2);
@@ -297,7 +298,7 @@ pub fn open_expanded_files(
     chrx
 }
 
-async fn get_timebins(channel_config: &ChannelConfig, node: Node) -> Result<Vec<u64>, Error> {
+async fn get_timebins(channel_config: &SfDbChConf, node: Node) -> Result<Vec<u64>, Error> {
     let mut timebins = Vec::new();
     let p0 = paths::channel_timebins_dir_path(&channel_config, &node)?;
     match tokio::fs::read_dir(&p0).await {
@@ -333,7 +334,7 @@ async fn get_timebins(channel_config: &ChannelConfig, node: Node) -> Result<Vec<
 async fn open_expanded_files_inner(
     chtx: &async_channel::Sender<Result<OpenedFileSet, Error>>,
     range: &NanoRange,
-    channel_config: &ChannelConfig,
+    channel_config: &SfDbChConf,
     node: Node,
 ) -> Result<(), Error> {
     let channel_config = channel_config.clone();
@@ -414,7 +415,6 @@ mod test {
     use netpod::range::evrange::NanoRange;
     use netpod::test_data_base_path_databuffer;
     use netpod::timeunits::*;
-    use netpod::ChannelConfig;
     use std::path::PathBuf;
     use tokio::fs::OpenOptions;
 
@@ -826,7 +826,7 @@ mod test {
             series: None,
         };
         // TODO read config from disk? Or expose the config from data generator?
-        let channel_config = ChannelConfig {
+        let channel_config = SfDbChConf {
             channel: chn,
             keyspace: 2,
             time_bin_size: TsNano(DAY),

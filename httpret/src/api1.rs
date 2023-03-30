@@ -6,6 +6,7 @@ use crate::BodyStream;
 use crate::ReqCtx;
 use bytes::BufMut;
 use bytes::BytesMut;
+use disk::eventchunker::EventChunkerConf;
 use disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes;
 use disk::raw::conn::make_local_event_blobs_stream;
 use futures_util::stream;
@@ -59,7 +60,6 @@ use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
 use std::time::Instant;
-use streams::eventchunker::EventChunkerConf;
 use tracing_futures::Instrument;
 use url::Url;
 

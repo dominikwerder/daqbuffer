@@ -751,8 +751,7 @@ impl<NTY: ScalarOps> TimeBinnable for EventsDim0<NTY> {
 impl<STY> TypeName for EventsDim0<STY> {
     fn type_name(&self) -> String {
         let self_name = any::type_name::<Self>();
-        let sty = any::type_name::<STY>();
-        format!("EventsDim0<{sty}> aka {self_name}<{sty}>")
+        format!("{self_name}")
     }
 }
 

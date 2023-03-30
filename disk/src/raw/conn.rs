@@ -1,4 +1,6 @@
 use crate::eventblobs::EventChunkerMultifile;
+use crate::eventchunker::EventChunkerConf;
+use crate::SfDbChConf;
 use err::Error;
 use futures_util::stream;
 use futures_util::Stream;
@@ -12,25 +14,24 @@ use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::AggKind;
 use netpod::ByteSize;
+use netpod::ChConf;
 use netpod::Channel;
 use netpod::DiskIoTune;
 use netpod::NodeConfigCached;
-use netpod::ScalarType;
-use netpod::Shape;
 use parse::channelconfig::extract_matching_config_entry;
 use parse::channelconfig::read_local_config;
 use parse::channelconfig::ConfigEntry;
 use parse::channelconfig::MatchingConfigEntry;
 use query::api4::events::PlainEventsQuery;
 use std::pin::Pin;
-use streams::eventchunker::EventChunkerConf;
 
 fn make_num_pipeline_stream_evs(
-    scalar_type: ScalarType,
-    shape: Shape,
+    chconf: ChConf,
     agg_kind: AggKind,
     event_blobs: EventChunkerMultifile,
 ) -> Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>> {
+    let scalar_type = chconf.scalar_type.clone();
+    let shape = chconf.shape.clone();
     let event_stream = match crate::decode::EventsDynStream::new(scalar_type, shape, agg_kind, event_blobs) {
         Ok(k) => k,
         Err(e) => {
@@ -55,18 +56,33 @@ fn make_num_pipeline_stream_evs(
 
 pub async fn make_event_pipe(
     evq: &PlainEventsQuery,
-    node_config: &NodeConfigCached,
+    chconf: ChConf,
+    ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     info!("----------  disk::raw::conn::make_event_pipe");
     if false {
-        match dbconn::channel_exists(&evq.channel(), &node_config).await {
+        match dbconn::channel_exists(&evq.channel(), &ncc).await {
             Ok(_) => (),
             Err(e) => return Err(e)?,
         }
     }
+    let chn = evq.channel().clone();
+    let chn = if chn.name().is_empty() {
+        if let Some(series) = chn.series() {
+            if series < 1 {
+                error!("BAD QUERY: {evq:?}");
+                return Err(Error::with_msg_no_trace(format!("BAD QUERY: {evq:?}")));
+            } else {
+                dbconn::query::sf_databuffer_fetch_channel_by_series(chn, ncc).await?
+            }
+        } else {
+            chn
+        }
+    } else {
+        chn
+    };
     let range = evq.range().clone();
-    let channel_config =
-        crate::channelconfig::config(evq.range().try_into()?, evq.channel().clone(), node_config).await;
+    let channel_config = crate::channelconfig::config(evq.range().try_into()?, chn, ncc).await;
     let channel_config = match channel_config {
         Ok(x) => x,
         Err(e) => {
@@ -80,14 +96,14 @@ pub async fn make_event_pipe(
             }
         }
     };
-    trace!(
+    info!(
         "make_event_pipe  need_expand {need_expand}  {evq:?}",
         need_expand = evq.one_before_range()
     );
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     // TODO should not need this for correctness.
     // Should limit based on return size and latency.
-    let out_max_len = if node_config.node_config.cluster.is_central_storage {
+    let out_max_len = if ncc.node_config.cluster.is_central_storage {
         128
     } else {
         128
@@ -95,18 +111,16 @@ pub async fn make_event_pipe(
     let event_blobs = EventChunkerMultifile::new(
         (&range).try_into()?,
         channel_config.clone(),
-        node_config.node.clone(),
-        node_config.ix,
+        ncc.node.clone(),
+        ncc.ix,
         DiskIoTune::default(),
         event_chunker_conf,
         evq.one_before_range(),
         true,
         out_max_len,
     );
-    let scalar_type = channel_config.scalar_type.clone();
-    let shape = channel_config.shape.clone();
     error!("TODO replace AggKind in the called code");
-    let pipe = make_num_pipeline_stream_evs(scalar_type, shape.clone(), AggKind::TimeWeightedScalar, event_blobs);
+    let pipe = make_num_pipeline_stream_evs(chconf, AggKind::TimeWeightedScalar, event_blobs);
     Ok(pipe)
 }
 
@@ -115,6 +129,7 @@ pub async fn get_applicable_entry(
     channel: Channel,
     node_config: &NodeConfigCached,
 ) -> Result<ConfigEntry, Error> {
+    info!("----------  disk::raw::conn::get_applicable_entry");
     let channel_config = read_local_config(channel.clone(), node_config.node.clone()).await?;
     let entry_res = match extract_matching_config_entry(range, &channel_config) {
         Ok(k) => k,
@@ -156,7 +171,7 @@ pub fn make_local_event_blobs_stream(
         Ok(k) => k,
         Err(e) => return Err(e)?,
     };
-    let channel_config = netpod::ChannelConfig {
+    let channel_config = SfDbChConf {
         channel,
         keyspace: entry.ks as u8,
         time_bin_size: entry.bs.clone(),
@@ -202,7 +217,7 @@ pub fn make_remote_event_blobs_stream(
         Ok(k) => k,
         Err(e) => return Err(e)?,
     };
-    let channel_config = netpod::ChannelConfig {
+    let channel_config = SfDbChConf {
         channel,
         keyspace: entry.ks as u8,
         time_bin_size: entry.bs.clone(),

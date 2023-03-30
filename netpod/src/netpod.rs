@@ -62,14 +62,6 @@ impl CmpZero for u32 {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AggQuerySingleChannel {
-    pub channel_config: ChannelConfig,
-    pub timebin: u32,
-    pub tb_file_count: u32,
-    pub buffer_size: u32,
-}
-
 pub struct BodyStream {
     //pub receiver: async_channel::Receiver<Result<Bytes, Error>>,
     pub inner: Box<dyn Stream<Item = Result<Bytes, Error>> + Send + Unpin>,
@@ -764,19 +756,6 @@ pub enum GenVar {
     Default,
     TimeWeight,
     ConstRegular,
-}
-
-// TODO move to databuffer-specific crate
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ChannelConfig {
-    pub channel: Channel,
-    pub keyspace: u8,
-    pub time_bin_size: TsNano,
-    pub scalar_type: ScalarType,
-    pub compression: bool,
-    pub shape: Shape,
-    pub array: bool,
-    pub byte_order: ByteOrder,
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
@@ -2293,10 +2272,17 @@ pub struct ChannelInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChConf {
     pub backend: String,
-    pub series: u64,
+    pub series: Option<u64>,
     pub name: String,
     pub scalar_type: ScalarType,
     pub shape: Shape,
+}
+
+impl ChConf {
+    pub fn try_series(&self) -> Result<u64, Error> {
+        self.series
+            .ok_or_else(|| Error::with_msg_no_trace("ChConf without SeriesId"))
+    }
 }
 
 pub fn f32_close(a: f32, b: f32) -> bool {

@@ -42,10 +42,7 @@ pub async fn chconf_from_events_v1(q: &PlainEventsQuery, ncc: &NodeConfigCached)
 pub async fn chconf_from_prebinned(q: &PreBinnedQuery, _ncc: &NodeConfigCached) -> Result<ChConf, Error> {
     let ret = ChConf {
         backend: q.channel().backend().into(),
-        series: q
-            .channel()
-            .series()
-            .expect("PreBinnedQuery is expected to contain the series id"),
+        series: q.channel().series().clone(),
         name: q.channel().name().into(),
         scalar_type: q.scalar_type().clone(),
         shape: q.shape().clone(),
@@ -105,7 +102,7 @@ impl ChannelConfigHandler {
             let c = nodenet::channelconfig::channel_config(q.range.clone(), q.channel.clone(), node_config).await?;
             ChannelConfigResponse {
                 channel: Channel {
-                    series: Some(c.series),
+                    series: c.series.clone(),
                     backend: q.channel.backend().into(),
                     name: c.name,
                 },
