@@ -1,6 +1,7 @@
 use crate::bodystream::response;
 use crate::err::Error;
 use crate::ReqCtx;
+use err::anyhow::Context;
 use futures_util::StreamExt;
 use http::Method;
 use http::Request;
@@ -153,7 +154,7 @@ impl ChannelStatusEvents {
             nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), node_config).await?;
         let do_one_before_range = true;
         let mut stream = scyllaconn::status::StatusStreamScylla::new(
-            chconf.try_series()?,
+            chconf.try_series().context("channel_status")?,
             q.range().clone(),
             do_one_before_range,
             scy,

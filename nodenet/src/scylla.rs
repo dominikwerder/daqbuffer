@@ -1,3 +1,4 @@
+use err::anyhow::Context;
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
@@ -28,7 +29,7 @@ pub async fn scylla_channel_event_stream(
         .await
         .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?;
     let scy = scyllaconn::create_scy_session(scyco).await?;
-    let series = f.try_series()?;
+    let series = f.try_series().context("scylla_channel_event_stream")?;
     let scalar_type = f.scalar_type;
     let shape = f.shape;
     let do_test_stream_error = false;

@@ -92,3 +92,4 @@ impl Convable for http::Error {}
 impl Convable for http::header::ToStrError {}
 impl Convable for hyper::Error {}
 impl Convable for std::array::TryFromSliceError {}
+impl Convable for err::anyhow::Error {}

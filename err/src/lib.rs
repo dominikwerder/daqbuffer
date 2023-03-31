@@ -1,16 +1,60 @@
 //! Error handling and reporting.
 
-use serde::{Deserialize, Serialize};
+pub use anyhow;
+pub use thiserror;
+
+pub mod bt {
+    pub use backtrace::Backtrace;
+}
+
+use serde::Deserialize;
+use serde::Serialize;
 use std::array::TryFromSliceError;
 use std::convert::Infallible;
 use std::fmt;
 use std::net::AddrParseError;
-use std::num::{ParseFloatError, ParseIntError};
+use std::num::ParseFloatError;
+use std::num::ParseIntError;
 use std::string::FromUtf8Error;
 use std::sync::PoisonError;
 
-pub mod bt {
-    pub use backtrace::Backtrace;
+pub type Res2<T> = anyhow::Result<T>;
+
+#[derive(Debug, thiserror::Error)]
+pub enum ErrA {
+    #[error("bad-A")]
+    Bad,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ErrB {
+    #[error("worse-B")]
+    Worse,
+    #[error("FromArrA")]
+    ErrA(#[from] ErrA),
+}
+
+fn f_a() -> Result<u32, ErrA> {
+    Err(ErrA::Bad)
+}
+
+fn f_b() -> Result<u32, ErrB> {
+    if true {
+        let res = f_a()?;
+        Ok(res)
+    } else {
+        Err(ErrB::Worse)
+    }
+}
+
+#[allow(unused)]
+fn f_c() -> Result<u32, anyhow::Error> {
+    return Ok(f_b()?);
+}
+
+#[test]
+fn test_fc() {
+    assert_eq!(f_c().is_ok(), true);
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -375,6 +419,12 @@ impl From<rmp_serde::decode::Error> for Error {
 impl From<http::header::ToStrError> for Error {
     fn from(k: http::header::ToStrError) -> Self {
         Self::with_msg(format!("{:?}", k))
+    }
+}
+
+impl From<anyhow::Error> for Error {
+    fn from(k: anyhow::Error) -> Self {
+        Self::with_msg(format!("{k}"))
     }
 }
 

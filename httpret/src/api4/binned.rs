@@ -3,6 +3,7 @@ use crate::bodystream::ToPublicResponse;
 use crate::channelconfig::chconf_from_binned;
 use crate::err::Error;
 use crate::response_err;
+use err::anyhow::Context;
 use http::Method;
 use http::Request;
 use http::Response;
@@ -30,7 +31,7 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
     let chconf = chconf_from_binned(&query, node_config).await?;
     // Update the series id since we don't require some unique identifier yet.
     let mut query = query;
-    query.set_series_id(chconf.try_series()?);
+    query.set_series_id(chconf.try_series().context("binned_json")?);
     let query = query;
     // ---
     let span1 = span!(

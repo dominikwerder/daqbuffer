@@ -13,7 +13,9 @@ use bytes::Bytes;
 use chrono::DateTime;
 use chrono::TimeZone;
 use chrono::Utc;
+use err::anyhow;
 use err::Error;
+use err::Res2;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use range::evrange::NanoRange;
@@ -2279,9 +2281,9 @@ pub struct ChConf {
 }
 
 impl ChConf {
-    pub fn try_series(&self) -> Result<u64, Error> {
+    pub fn try_series(&self) -> Res2<u64> {
         self.series
-            .ok_or_else(|| Error::with_msg_no_trace("ChConf without SeriesId"))
+            .ok_or_else(|| anyhow::anyhow!("ChConf without SeriesId {self:?}"))
     }
 }
 
