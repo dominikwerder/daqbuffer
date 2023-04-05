@@ -99,7 +99,7 @@ pub trait Events:
     + erased_serde::Serialize
     + EventsNonObj
 {
-    fn as_time_binnable(&self) -> &dyn TimeBinnable;
+    fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable;
     fn verify(&self) -> bool;
     fn output_info(&self);
     fn as_collectable_mut(&mut self) -> &mut dyn Collectable;

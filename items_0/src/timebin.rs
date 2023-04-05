@@ -5,6 +5,7 @@ use crate::AsAnyRef;
 use crate::RangeOverlapInfo;
 use crate::TypeName;
 use crate::WithLen;
+use netpod::log::*;
 use netpod::BinnedRangeEnum;
 use std::any::Any;
 use std::fmt;
@@ -58,8 +59,8 @@ pub trait TimeBinned: Any + TypeName + TimeBinnable + Collectable + erased_serde
     fn validate(&self) -> Result<(), String>;
 }
 
-pub trait TimeBinner: Send {
-    fn ingest(&mut self, item: &dyn TimeBinnable);
+pub trait TimeBinner: fmt::Debug + Send {
+    fn ingest(&mut self, item: &mut dyn TimeBinnable);
     fn bins_ready_count(&self) -> usize;
     fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>>;
 
@@ -89,17 +90,81 @@ pub trait TimeBinnable: fmt::Debug + WithLen + RangeOverlapInfo + Any + AsAnyRef
 }
 
 #[derive(Debug)]
-pub struct TimeBinnerDyn {}
+pub struct TimeBinnerDynStruct {
+    binrange: BinnedRangeEnum,
+    do_time_weight: bool,
+    binner: Option<Box<dyn TimeBinner>>,
+}
 
-impl TimeBinnerTy for TimeBinnerDyn {
+impl TimeBinnerDynStruct {
+    pub fn new(binrange: BinnedRangeEnum, do_time_weight: bool, binner: Box<dyn TimeBinner>) -> Self {
+        Self {
+            binrange,
+            do_time_weight,
+            binner: Some(binner),
+        }
+    }
+}
+
+impl TimeBinnerTy for TimeBinnerDynStruct {
     type Input = Box<dyn TimeBinnable>;
     type Output = Box<dyn TimeBinned>;
 
     fn ingest(&mut self, item: &mut Self::Input) {
-        todo!()
+        if self.binner.is_none() {
+            self.binner = Some(Box::new(
+                item.time_binner_new(self.binrange.clone(), self.do_time_weight),
+            ));
+        }
+        self.binner.as_mut().unwrap().as_mut().ingest(item.as_mut())
     }
 
     fn set_range_complete(&mut self) {
+        if let Some(k) = self.binner.as_mut() {
+            k.set_range_complete()
+        }
+    }
+
+    fn bins_ready_count(&self) -> usize {
+        if let Some(k) = self.binner.as_ref() {
+            k.bins_ready_count()
+        } else {
+            0
+        }
+    }
+
+    fn bins_ready(&mut self) -> Option<Self::Output> {
+        if let Some(k) = self.binner.as_mut() {
+            k.bins_ready()
+        } else {
+            None
+        }
+    }
+
+    fn push_in_progress(&mut self, push_empty: bool) {
+        if let Some(k) = self.binner.as_mut() {
+            k.push_in_progress(push_empty)
+        }
+    }
+
+    fn cycle(&mut self) {
+        if let Some(k) = self.binner.as_mut() {
+            k.cycle()
+        }
+    }
+
+    fn empty(&self) -> Option<Self::Output> {
+        if let Some(k) = self.binner.as_ref() {
+            Some(k.empty())
+        } else {
+            warn!("TimeBinnerDynStruct::empty called with binner None");
+            None
+        }
+    }
+}
+
+impl TimeBinner for TimeBinnerDynStruct {
+    fn ingest(&mut self, item: &mut dyn TimeBinnable) {
         todo!()
     }
 
@@ -107,7 +172,7 @@ impl TimeBinnerTy for TimeBinnerDyn {
         todo!()
     }
 
-    fn bins_ready(&mut self) -> Option<Self::Output> {
+    fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>> {
         todo!()
     }
 
@@ -119,15 +184,20 @@ impl TimeBinnerTy for TimeBinnerDyn {
         todo!()
     }
 
-    fn empty(&self) -> Option<Self::Output> {
+    fn set_range_complete(&mut self) {
+        todo!()
+    }
+
+    fn empty(&self) -> Box<dyn TimeBinned> {
         todo!()
     }
 }
 
 impl TimeBinnableTy for Box<dyn TimeBinnable> {
-    type TimeBinner = TimeBinnerDyn;
+    type TimeBinner = TimeBinnerDynStruct;
 
     fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Self::TimeBinner {
-        todo!()
+        let binner = self.as_ref().time_binner_new(binrange.clone(), do_time_weight);
+        TimeBinnerDynStruct::new(binrange, do_time_weight, binner)
     }
 }

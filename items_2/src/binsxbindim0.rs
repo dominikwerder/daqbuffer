@@ -476,6 +476,7 @@ impl<NTY: ScalarOps> CollectableType for BinsXbinDim0<NTY> {
     }
 }
 
+#[derive(Debug)]
 pub struct BinsXbinDim0Aggregator<NTY> {
     range: SeriesRange,
     count: u64,
@@ -567,6 +568,7 @@ impl<NTY: ScalarOps> TimeBinnable for BinsXbinDim0<NTY> {
     }
 }
 
+#[derive(Debug)]
 pub struct BinsXbinDim0TimeBinner<NTY: ScalarOps> {
     binrange: BinnedRangeEnum,
     do_time_weight: bool,
@@ -601,7 +603,7 @@ impl<NTY: ScalarOps> BinsXbinDim0TimeBinner<NTY> {
 }
 
 impl<NTY: ScalarOps> TimeBinner for BinsXbinDim0TimeBinner<NTY> {
-    fn ingest(&mut self, item: &dyn TimeBinnable) {
+    fn ingest(&mut self, item: &mut dyn TimeBinnable) {
         /*let self_name = std::any::type_name::<Self>();
         if item.len() == 0 {
             // Return already here, RangeOverlapInfo would not give much sense.

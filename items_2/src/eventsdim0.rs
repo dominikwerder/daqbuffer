@@ -444,6 +444,7 @@ impl<NTY: ScalarOps> items_0::collect_s::CollectableType for EventsDim0<NTY> {
     }
 }
 
+#[derive(Debug)]
 pub struct EventsDim0Aggregator<NTY> {
     range: SeriesRange,
     count: u64,
@@ -768,8 +769,8 @@ impl<STY: ScalarOps> EventsNonObj for EventsDim0<STY> {
 }
 
 impl<STY: ScalarOps> Events for EventsDim0<STY> {
-    fn as_time_binnable(&self) -> &dyn TimeBinnable {
-        self as &dyn TimeBinnable
+    fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable {
+        self as &mut dyn TimeBinnable
     }
 
     fn verify(&self) -> bool {
@@ -913,6 +914,7 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
     }
 }
 
+#[derive(Debug)]
 pub struct EventsDim0TimeBinner<NTY: ScalarOps> {
     binrange: BinnedRangeEnum,
     rix: usize,
@@ -972,7 +974,7 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
         }
     }
 
-    fn ingest(&mut self, item: &dyn TimeBinnable) {
+    fn ingest(&mut self, item: &mut dyn TimeBinnable) {
         let self_name = any::type_name::<Self>();
         trace2!(
             "TimeBinner for {self_name} ingest  agg.range {:?}  item {:?}",

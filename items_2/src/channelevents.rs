@@ -656,7 +656,8 @@ impl RangeOverlapInfo for ChannelEvents {
 
 impl TimeBinnable for ChannelEvents {
     fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
-        todo!()
+        let ret = <ChannelEvents as TimeBinnableTy>::time_binner_new(&self, binrange, do_time_weight);
+        Box::new(ret)
     }
 
     fn to_box_to_json_result(&self) -> Box<dyn items_0::collect_s::ToJsonResult> {
@@ -671,7 +672,7 @@ impl EventsNonObj for ChannelEvents {
 }
 
 impl Events for ChannelEvents {
-    fn as_time_binnable(&self) -> &dyn TimeBinnable {
+    fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable {
         todo!()
     }
 
@@ -787,7 +788,7 @@ impl TimeBinnerTy for ChannelEventsTimeBinner {
                     self.binner = Some(binner);
                 }
                 match self.binner.as_mut() {
-                    Some(binner) => binner.ingest(item.as_time_binnable()),
+                    Some(binner) => binner.ingest(item.as_time_binnable_mut()),
                     None => {
                         error!("ingest without active binner item {item:?}");
                         ()
@@ -839,6 +840,40 @@ impl TimeBinnerTy for ChannelEventsTimeBinner {
             Some(binner) => Some(binner.empty()),
             None => None,
         }
+    }
+}
+
+impl TimeBinner for ChannelEventsTimeBinner {
+    fn ingest(&mut self, item: &mut dyn TimeBinnable) {
+        if let Some(item) = item.as_any_mut().downcast_mut::<ChannelEvents>() {
+            TimeBinnerTy::ingest(self, item)
+        } else {
+            panic!()
+        }
+    }
+
+    fn bins_ready_count(&self) -> usize {
+        todo!()
+    }
+
+    fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>> {
+        todo!()
+    }
+
+    fn push_in_progress(&mut self, push_empty: bool) {
+        todo!()
+    }
+
+    fn cycle(&mut self) {
+        todo!()
+    }
+
+    fn set_range_complete(&mut self) {
+        todo!()
+    }
+
+    fn empty(&self) -> Box<dyn TimeBinned> {
+        todo!()
     }
 }
 

@@ -10,6 +10,7 @@ use items_0::collect_s::CollectorType;
 use items_0::collect_s::ToJsonResult;
 use items_0::scalar_ops::ScalarOps;
 use items_0::timebin::TimeBinnable;
+use items_0::timebin::TimeBinned;
 use items_0::timebin::TimeBinner;
 use items_0::timebin::TimeBins;
 use items_0::AppendEmptyBin;
@@ -31,7 +32,6 @@ use std::any;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
-use items_0::timebin::TimeBinned;
 
 #[allow(unused)]
 macro_rules! trace4 {
@@ -520,6 +520,7 @@ impl<NTY: ScalarOps> CollectableType for BinsDim0<NTY> {
     }
 }
 
+#[derive(Debug)]
 pub struct BinsDim0Aggregator<NTY> {
     range: SeriesRange,
     count: u64,
@@ -611,6 +612,7 @@ impl<NTY: ScalarOps> TimeBinnable for BinsDim0<NTY> {
     }
 }
 
+#[derive(Debug)]
 pub struct BinsDim0TimeBinner<NTY: ScalarOps> {
     binrange: BinnedRangeEnum,
     do_time_weight: bool,
@@ -646,7 +648,7 @@ impl<NTY: ScalarOps> BinsDim0TimeBinner<NTY> {
 }
 
 impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
-    fn ingest(&mut self, item: &dyn TimeBinnable) {
+    fn ingest(&mut self, item: &mut dyn TimeBinnable) {
         /*let self_name = any::type_name::<Self>();
         if item.len() == 0 {
             // Return already here, RangeOverlapInfo would not give much sense.

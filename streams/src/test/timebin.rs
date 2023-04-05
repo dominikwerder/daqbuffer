@@ -178,10 +178,10 @@ fn time_bin_02() -> Result<(), Error> {
         // Then the Merge will happen always by default for backends where this is needed.
         // TODO then apply the transform chain for the after-merged-stream.
         let stream = stream.map(|x| {
-            //
-            on_sitemty_data!(x, |x| Ok(StreamItem::DataItem(RangeCompletableItem::Data(
+            let x = on_sitemty_data!(x, |x| Ok(StreamItem::DataItem(RangeCompletableItem::Data(
                 Box::new(x) as Box<dyn TimeBinnable>
-            ))))
+            ))));
+            x
         });
         let stream = Box::pin(stream);
         let mut binned_stream =

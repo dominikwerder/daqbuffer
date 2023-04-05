@@ -1576,6 +1576,17 @@ where
         }
         ret
     }
+
+    pub fn edges(&self) -> Vec<T> {
+        let mut ret = Vec::new();
+        let mut t = self.bin_len.times(self.bin_off);
+        let end = self.bin_len.times(self.bin_off + self.bin_cnt);
+        while t <= end {
+            ret.push(t.clone());
+            t = t.add(&self.bin_len);
+        }
+        ret
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1659,6 +1670,13 @@ impl BinnedRangeEnum {
         match self {
             BinnedRangeEnum::Time(_) => Dim0Kind::Time,
             BinnedRangeEnum::Pulse(_) => Dim0Kind::Pulse,
+        }
+    }
+
+    pub fn binned_range_time(&self) -> BinnedRange<TsNano> {
+        match self {
+            BinnedRangeEnum::Time(x) => x.clone(),
+            BinnedRangeEnum::Pulse(_) => panic!(),
         }
     }
 }

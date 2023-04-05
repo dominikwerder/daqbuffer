@@ -141,16 +141,16 @@ impl BinnedCollected {
                     self.range_final = true;
                 }
                 RangeCompletableItem::Data(k) => match k {
-                    ChannelEvents::Events(events) => {
+                    ChannelEvents::Events(mut events) => {
                         if self.binner.is_none() {
                             let bb = events
-                                .as_time_binnable()
+                                .as_time_binnable_mut()
                                 .time_binner_new(self.binrange.clone(), self.do_time_weight);
                             self.binner = Some(bb);
                         }
                         let binner = self.binner.as_mut().unwrap();
                         trace!("handle_item call binner.ingest");
-                        binner.ingest(events.as_time_binnable());
+                        binner.ingest(events.as_time_binnable_mut());
                         flush_binned(binner, &mut self.coll, false)?;
                     }
                     ChannelEvents::Status(item) => {
