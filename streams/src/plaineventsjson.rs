@@ -12,7 +12,6 @@ use netpod::ChConf;
 use netpod::Cluster;
 use query::api4::events::PlainEventsQuery;
 use serde_json::Value as JsonValue;
-use std::time::Duration;
 use std::time::Instant;
 
 pub async fn plain_events_json(evq: &PlainEventsQuery, chconf: &ChConf, cluster: &Cluster) -> Result<JsonValue, Error> {
@@ -28,7 +27,7 @@ pub async fn plain_events_json(evq: &PlainEventsQuery, chconf: &ChConf, cluster:
         assert_eq!(result[0], Value::I32(43));
     }
     // TODO remove magic constant
-    let deadline = Instant::now() + evq.timeout() + Duration::from_millis(1000);
+    let deadline = Instant::now() + evq.timeout();
     let events_max = evq.events_max();
     let evquery = evq.clone();
     info!("plain_events_json  evquery {:?}", evquery);
@@ -87,13 +86,15 @@ pub async fn plain_events_json(evq: &PlainEventsQuery, chconf: &ChConf, cluster:
         Box::pin(stream)
     };
 
+    #[cfg(DISABLED)]
     let stream = stream.map(|item| {
-        //info!("item after merge: {item:?}");
+        info!("item after merge: {item:?}");
         item
     });
     let stream = RangeFilter2::new(stream, evq.range().try_into()?, evquery.one_before_range());
+    #[cfg(DISABLED)]
     let stream = stream.map(|item| {
-        //info!("item after rangefilter: {item:?}");
+        info!("item after rangefilter: {item:?}");
         item
     });
     let stream = stream::iter([empty]).chain(stream);

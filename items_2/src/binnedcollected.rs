@@ -11,9 +11,9 @@ use items_0::collect_s::ToJsonResult;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
+use items_0::timebin::TimeBinnable;
+use items_0::timebin::TimeBinner;
 use items_0::transform::EventTransform;
-use items_0::TimeBinnable;
-use items_0::TimeBinner;
 use netpod::log::*;
 use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
@@ -149,6 +149,7 @@ impl BinnedCollected {
                             self.binner = Some(bb);
                         }
                         let binner = self.binner.as_mut().unwrap();
+                        trace!("handle_item call binner.ingest");
                         binner.ingest(events.as_time_binnable());
                         flush_binned(binner, &mut self.coll, false)?;
                     }

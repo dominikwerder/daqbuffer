@@ -1,4 +1,4 @@
-use crate::TimeBinned;
+use crate::timebin::TimeBinned;
 use err::Error;
 use netpod::log::Level;
 use netpod::DiskStats;
@@ -81,7 +81,7 @@ macro_rules! on_sitemty_range_complete {
 }
 
 #[macro_export]
-macro_rules! on_sitemty_data {
+macro_rules! on_sitemty_data_old {
     ($item:expr, $ex:expr) => {
         if let Ok($crate::streamitem::StreamItem::DataItem($crate::streamitem::RangeCompletableItem::Data(item))) =
             $item
@@ -91,6 +91,27 @@ macro_rules! on_sitemty_data {
             $item
         }
     };
+}
+
+#[macro_export]
+macro_rules! on_sitemty_data {
+    ($item:expr, $ex:expr) => {{
+        use $crate::streamitem::RangeCompletableItem;
+        use $crate::streamitem::StreamItem;
+        match $item {
+            Ok(x) => match x {
+                StreamItem::DataItem(x) => match x {
+                    RangeCompletableItem::Data(x) => $ex(x),
+                    RangeCompletableItem::RangeComplete => {
+                        Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
+                    }
+                },
+                StreamItem::Log(x) => Ok(StreamItem::Log(x)),
+                StreamItem::Stats(x) => Ok(StreamItem::Stats(x)),
+            },
+            Err(x) => Err(x),
+        }
+    }};
 }
 
 pub fn sitem_data<X>(x: X) -> Sitemty<X> {

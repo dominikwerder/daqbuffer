@@ -96,12 +96,12 @@ impl BinnedQuery {
     pub fn timeout_value(&self) -> Duration {
         match &self.timeout {
             Some(x) => x.clone(),
-            None => Duration::from_millis(10000),
+            None => Duration::from_millis(6000),
         }
     }
 
     pub fn bins_max(&self) -> u32 {
-        self.bins_max.unwrap_or(1024)
+        self.bins_max.unwrap_or(2000)
     }
 
     pub fn set_series_id(&mut self, series: u64) {
@@ -129,8 +129,9 @@ impl BinnedQuery {
     }
 
     pub fn for_time_weighted_scalar(self) -> Self {
-        err::todo();
-        self
+        let mut v = self;
+        v.transform = TransformQuery::for_time_weighted_scalar();
+        v
     }
 }
 

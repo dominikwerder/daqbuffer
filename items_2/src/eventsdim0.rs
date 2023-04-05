@@ -12,6 +12,9 @@ use items_0::collect_s::ToJsonBytes;
 use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
 use items_0::scalar_ops::ScalarOps;
+use items_0::timebin::TimeBinnable;
+use items_0::timebin::TimeBinned;
+use items_0::timebin::TimeBinner;
 use items_0::Appendable;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
@@ -19,8 +22,6 @@ use items_0::Empty;
 use items_0::Events;
 use items_0::EventsNonObj;
 use items_0::MergeError;
-use items_0::TimeBinnable;
-use items_0::TimeBinner;
 use items_0::TypeName;
 use items_0::WithLen;
 use netpod::is_false;
@@ -829,11 +830,11 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
         Box::new(ret)
     }
 
-    fn new_empty(&self) -> Box<dyn Events> {
+    fn new_empty_evs(&self) -> Box<dyn Events> {
         Box::new(Self::empty())
     }
 
-    fn drain_into(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), MergeError> {
+    fn drain_into_evs(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), MergeError> {
         // TODO as_any and as_any_mut are declared on unrelated traits. Simplify.
         if let Some(dst) = dst.as_mut().as_any_mut().downcast_mut::<Self>() {
             // TODO make it harder to forget new members when the struct may get modified in the future
@@ -848,7 +849,7 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
         }
     }
 
-    fn find_lowest_index_gt(&self, ts: u64) -> Option<usize> {
+    fn find_lowest_index_gt_evs(&self, ts: u64) -> Option<usize> {
         for (i, &m) in self.tss.iter().enumerate() {
             if m > ts {
                 return Some(i);
@@ -857,7 +858,7 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
         None
     }
 
-    fn find_lowest_index_ge(&self, ts: u64) -> Option<usize> {
+    fn find_lowest_index_ge_evs(&self, ts: u64) -> Option<usize> {
         for (i, &m) in self.tss.iter().enumerate() {
             if m >= ts {
                 return Some(i);
@@ -866,7 +867,7 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
         None
     }
 
-    fn find_highest_index_lt(&self, ts: u64) -> Option<usize> {
+    fn find_highest_index_lt_evs(&self, ts: u64) -> Option<usize> {
         for (i, &m) in self.tss.iter().enumerate().rev() {
             if m < ts {
                 return Some(i);
@@ -964,7 +965,7 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
         }
     }
 
-    fn bins_ready(&mut self) -> Option<Box<dyn items_0::TimeBinned>> {
+    fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>> {
         match self.ready.take() {
             Some(k) => Some(Box::new(k)),
             None => None,
@@ -973,7 +974,11 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
 
     fn ingest(&mut self, item: &dyn TimeBinnable) {
         let self_name = any::type_name::<Self>();
-        trace2!("TimeBinner for {self_name}  {:?}", item);
+        trace2!(
+            "TimeBinner for {self_name} ingest  agg.range {:?}  item {:?}",
+            self.agg.range(),
+            item
+        );
         if item.len() == 0 {
             // Return already here, RangeOverlapInfo would not give much sense.
             return;
@@ -1028,7 +1033,7 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
 
     fn push_in_progress(&mut self, push_empty: bool) {
         let self_name = any::type_name::<Self>();
-        trace!("{self_name}::push_in_progress");
+        trace!("{self_name}::push_in_progress  push_empty {push_empty}");
         // TODO expand should be derived from AggKind. Is it still required after all?
         // TODO here, the expand means that agg will assume that the current value is kept constant during
         // the rest of the time range.
@@ -1102,7 +1107,7 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
         self.range_final = true;
     }
 
-    fn empty(&self) -> Box<dyn items_0::TimeBinned> {
+    fn empty(&self) -> Box<dyn TimeBinned> {
         let ret = <EventsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output::empty();
         Box::new(ret)
     }

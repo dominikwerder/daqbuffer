@@ -1,3 +1,5 @@
+pub mod generator;
+
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
@@ -7,8 +9,6 @@ use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::streamitem::EVENT_QUERY_JSON_STRING_FRAME;
-use items_0::Appendable;
-use items_0::Empty;
 use items_2::channelevents::ChannelEvents;
 use items_2::framable::EventQueryJsonStringFrame;
 use items_2::framable::Framable;
@@ -17,7 +17,6 @@ use items_2::frame::make_term_frame;
 use items_2::inmem::InMemoryFrame;
 use netpod::histo::HistoLog2;
 use netpod::log::*;
-use netpod::AggKind;
 use netpod::ChConf;
 use netpod::NodeConfigCached;
 use netpod::PerfOpts;
@@ -72,36 +71,37 @@ async fn make_channel_events_stream(
     info!("nodenet::conn::make_channel_events_stream");
     if evq.channel().backend() == "test-inmem" {
         warn!("TEST BACKEND DATA");
-        use netpod::timeunits::MS;
-        let node_count = node_config.node_config.cluster.nodes.len();
-        let node_ix = node_config.ix;
-        if evq.channel().name() == "inmem-d0-i32" {
-            let mut item = items_2::eventsdim0::EventsDim0::<i32>::empty();
-            let td = MS * 10;
-            for i in 0..20 {
-                let ts = MS * 17 + td * node_ix as u64 + td * node_count as u64 * i;
-                let pulse = 1 + node_ix as u64 + node_count as u64 * i;
-                item.push(ts, pulse, pulse as _);
-            }
-            let item = ChannelEvents::Events(Box::new(item) as _);
-            let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
-            let stream = futures_util::stream::iter([item]);
-            Ok(Box::pin(stream))
-        } else if evq.channel().name() == "inmem-d0-f32" {
-            let mut item = items_2::eventsdim0::EventsDim0::<f32>::empty();
-            let td = MS * 10;
-            for i in 0..20 {
-                let ts = MS * 17 + td * node_ix as u64 + td * node_count as u64 * i;
-                let pulse = 1 + node_ix as u64 + node_count as u64 * i;
-                item.push(ts, pulse, ts as _);
-            }
-            let item = ChannelEvents::Events(Box::new(item) as _);
-            let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)));
-            let stream = futures_util::stream::iter([item]);
-            Ok(Box::pin(stream))
+        let node_count = node_config.node_config.cluster.nodes.len() as u64;
+        let node_ix = node_config.ix as u64;
+        let chn = evq.channel().name();
+        let na: Vec<_> = chn.split("-").collect();
+        if na.len() != 3 {
+            Err(Error::with_msg_no_trace(format!(
+                "can not understand test channel name: {chn:?}"
+            )))
         } else {
-            let stream = futures_util::stream::empty();
-            Ok(Box::pin(stream))
+            if na[0] != "inmem" {
+                Err(Error::with_msg_no_trace(format!(
+                    "can not understand test channel name: {chn:?}"
+                )))
+            } else {
+                let range = evq.range().clone();
+                if na[1] == "d0" {
+                    if na[2] == "i32" {
+                        generator::generate_i32(node_ix, node_count, range)
+                    } else if na[2] == "f32" {
+                        generator::generate_f32(node_ix, node_count, range)
+                    } else {
+                        Err(Error::with_msg_no_trace(format!(
+                            "can not understand test channel name: {chn:?}"
+                        )))
+                    }
+                } else {
+                    Err(Error::with_msg_no_trace(format!(
+                        "can not understand test channel name: {chn:?}"
+                    )))
+                }
+            }
         }
     } else if let Some(scyconf) = &node_config.node_config.cluster.scylla {
         scylla_channel_event_stream(evq, chconf, scyconf, node_config).await

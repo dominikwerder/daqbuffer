@@ -12,6 +12,9 @@ use items_0::collect_s::ToJsonBytes;
 use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
 use items_0::scalar_ops::ScalarOps;
+use items_0::timebin::TimeBinnable;
+use items_0::timebin::TimeBinned;
+use items_0::timebin::TimeBinner;
 use items_0::Appendable;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
@@ -19,8 +22,6 @@ use items_0::Empty;
 use items_0::Events;
 use items_0::EventsNonObj;
 use items_0::MergeError;
-use items_0::TimeBinnable;
-use items_0::TimeBinner;
 use items_0::WithLen;
 use netpod::is_false;
 use netpod::log::*;
@@ -728,11 +729,11 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
         Box::new(ret)
     }
 
-    fn new_empty(&self) -> Box<dyn Events> {
+    fn new_empty_evs(&self) -> Box<dyn Events> {
         Box::new(Self::empty())
     }
 
-    fn drain_into(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), MergeError> {
+    fn drain_into_evs(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), MergeError> {
         // TODO as_any and as_any_mut are declared on unrelated traits. Simplify.
         if let Some(dst) = dst.as_mut().as_any_mut().downcast_mut::<Self>() {
             // TODO make it harder to forget new members when the struct may get modified in the future
@@ -747,7 +748,7 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
         }
     }
 
-    fn find_lowest_index_gt(&self, ts: u64) -> Option<usize> {
+    fn find_lowest_index_gt_evs(&self, ts: u64) -> Option<usize> {
         for (i, &m) in self.tss.iter().enumerate() {
             if m > ts {
                 return Some(i);
@@ -756,7 +757,7 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
         None
     }
 
-    fn find_lowest_index_ge(&self, ts: u64) -> Option<usize> {
+    fn find_lowest_index_ge_evs(&self, ts: u64) -> Option<usize> {
         for (i, &m) in self.tss.iter().enumerate() {
             if m >= ts {
                 return Some(i);
@@ -765,7 +766,7 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
         None
     }
 
-    fn find_highest_index_lt(&self, ts: u64) -> Option<usize> {
+    fn find_highest_index_lt_evs(&self, ts: u64) -> Option<usize> {
         for (i, &m) in self.tss.iter().enumerate().rev() {
             if m < ts {
                 return Some(i);
@@ -869,7 +870,7 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim1TimeBinner<NTY> {
         }
     }
 
-    fn bins_ready(&mut self) -> Option<Box<dyn items_0::TimeBinned>> {
+    fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>> {
         match self.ready.take() {
             Some(k) => Some(Box::new(k)),
             None => None,
@@ -1009,7 +1010,7 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim1TimeBinner<NTY> {
         self.range_complete = true;
     }
 
-    fn empty(&self) -> Box<dyn items_0::TimeBinned> {
+    fn empty(&self) -> Box<dyn TimeBinned> {
         let ret = <EventsDim1Aggregator<NTY> as TimeBinnableTypeAggregator>::Output::empty();
         Box::new(ret)
     }

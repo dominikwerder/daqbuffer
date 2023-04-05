@@ -1,18 +1,27 @@
+use crate::collect::collect;
+use crate::generators::GenerateI32;
 use crate::test::runfut;
+use chrono::DateTime;
+use chrono::Utc;
 use err::Error;
 use futures_util::stream;
 use futures_util::StreamExt;
+use items_0::on_sitemty_data;
 use items_0::streamitem::sitem_data;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::StreamItem;
+use items_0::timebin::TimeBinnable;
 use items_0::Empty;
 use items_2::binsdim0::BinsDim0;
 use items_2::channelevents::ChannelEvents;
 use items_2::channelevents::ConnStatus;
 use items_2::channelevents::ConnStatusEvent;
 use items_2::testgen::make_some_boxed_d0_f32;
+use netpod::range::evrange::NanoRange;
+use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::MS;
 use netpod::timeunits::SEC;
+use netpod::BinnedRangeEnum;
 use std::collections::VecDeque;
 use std::time::Duration;
 use std::time::Instant;
@@ -20,7 +29,10 @@ use std::time::Instant;
 #[test]
 fn time_bin_00() {
     let fut = async {
-        let edges = [0, 1, 2, 3, 4, 5, 6, 7, 8].into_iter().map(|x| SEC * x).collect();
+        let range = nano_range_from_str("1970-01-01T00:00:00Z", "1970-01-01T00:00:08Z")?;
+        let range = SeriesRange::TimeRange(range);
+        let min_bin_count = 8;
+        let binned_range = BinnedRangeEnum::covering_range(range, min_bin_count)?;
         let evs0 = make_some_boxed_d0_f32(10, SEC * 1, MS * 500, 0, 1846713782);
         let v0 = ChannelEvents::Events(evs0);
         let v2 = ChannelEvents::Status(Some(ConnStatusEvent::new(MS * 100, ConnStatus::Connect)));
@@ -46,7 +58,7 @@ fn time_bin_00() {
             d
         };
         let deadline = Instant::now() + Duration::from_millis(2000000);
-        let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream0, edges, true, deadline);
+        let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream0, binned_range, true, deadline);
         while let Some(item) = binned_stream.next().await {
             //eprintln!("{item:?}");
             match item {
@@ -78,7 +90,10 @@ fn time_bin_00() {
 #[test]
 fn time_bin_01() {
     let fut = async {
-        let edges = [0, 1, 2, 3, 4, 5, 6, 7, 8].into_iter().map(|x| SEC * x).collect();
+        let range = nano_range_from_str("1970-01-01T00:00:00Z", "1970-01-01T00:00:08Z")?;
+        let range = SeriesRange::TimeRange(range);
+        let min_bin_count = 8;
+        let binned_range = BinnedRangeEnum::covering_range(range, min_bin_count)?;
         let evs0 = make_some_boxed_d0_f32(10, SEC * 1, MS * 500, 0, 1846713782);
         let evs1 = make_some_boxed_d0_f32(10, SEC * 6, MS * 500, 0, 1846713781);
         let v0 = ChannelEvents::Events(evs0);
@@ -102,7 +117,7 @@ fn time_bin_01() {
         });
         let stream0 = Box::pin(stream0);
         let deadline = Instant::now() + Duration::from_millis(200);
-        let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream0, edges, true, deadline);
+        let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream0, binned_range, true, deadline);
         while let Some(item) = binned_stream.next().await {
             if true {
                 eprintln!("{item:?}");
@@ -131,6 +146,63 @@ fn time_bin_01() {
         Ok(())
     };
     runfut(fut).unwrap()
+}
+
+fn nano_range_from_str(beg_date: &str, end_date: &str) -> Result<NanoRange, Error> {
+    let beg_date = beg_date.parse()?;
+    let end_date = end_date.parse()?;
+    let range = NanoRange::from_date_time(beg_date, end_date);
+    Ok(range)
+}
+
+#[test]
+fn time_bin_02() -> Result<(), Error> {
+    let fut = async {
+        let do_time_weight = true;
+        let deadline = Instant::now() + Duration::from_millis(4000);
+        let range = nano_range_from_str("1970-01-01T00:20:04Z", "1970-01-01T00:21:10Z")?;
+        let range = SeriesRange::TimeRange(range);
+        let min_bin_count = 10;
+        let binned_range = BinnedRangeEnum::covering_range(range.clone(), min_bin_count)?;
+        eprintln!("binned_range: {:?}", binned_range);
+        for i in 0.. {
+            if let Some(r) = binned_range.range_at(i) {
+                eprintln!("Series Range to cover: {r:?}");
+            } else {
+                break;
+            }
+        }
+        // TODO the test stream must be able to generate also one-before (on demand) and RangeComplete (by default).
+        let stream = GenerateI32::new(0, 1, range);
+        // TODO apply first some box dyn EventTransform which later is provided by TransformQuery.
+        // Then the Merge will happen always by default for backends where this is needed.
+        // TODO then apply the transform chain for the after-merged-stream.
+        let stream = stream.map(|x| {
+            //
+            on_sitemty_data!(x, |x| Ok(StreamItem::DataItem(RangeCompletableItem::Data(
+                Box::new(x) as Box<dyn TimeBinnable>
+            ))))
+        });
+        let stream = Box::pin(stream);
+        let mut binned_stream =
+            crate::timebin::TimeBinnedStream::new(stream, binned_range.clone(), do_time_weight, deadline);
+        // From there on it should no longer be neccessary to distinguish whether its still events or time bins.
+        // Then, optionally collect for output type like json, or stream as batches.
+        // TODO the timebinner should already provide batches to make this efficient.
+        while let Some(e) = binned_stream.next().await {
+            eprintln!("see item {e:?}");
+            let x = on_sitemty_data!(e, |e| {
+                //
+                Ok(StreamItem::DataItem(RangeCompletableItem::Data(e)))
+            });
+        }
+        /*let res = collect(binned_stream, deadline, 200, None, Some(binned_range)).await?;
+        let d = res.to_json_result()?.to_json_bytes()?;
+        let s = String::from_utf8_lossy(&d);
+        eprintln!("{s}");*/
+        Ok(())
+    };
+    runfut(fut)
 }
 
 // TODO add test case to observe RangeComplete after binning.

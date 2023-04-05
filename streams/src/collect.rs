@@ -47,6 +47,7 @@ where
     S: Stream<Item = Sitemty<T>> + Unpin,
     T: Collectable + WithLen + fmt::Debug,
 {
+    info!("collect  events_max {events_max}  deadline {deadline:?}");
     let mut collector: Option<Box<dyn Collector>> = None;
     let mut stream = stream;
     let deadline = deadline.into();
@@ -58,17 +59,16 @@ where
             Ok(Some(k)) => k,
             Ok(None) => break,
             Err(_e) => {
-                warn!("collect_in_span time out");
+                warn!("collect timeout");
                 timed_out = true;
                 if let Some(coll) = collector.as_mut() {
                     coll.set_timed_out();
                 } else {
-                    warn!("Timeout but no collector yet");
+                    warn!("collect timeout but no collector yet");
                 }
                 break;
             }
         };
-        trace!("collect_in_span see item {item:?}");
         match item {
             Ok(item) => match item {
                 StreamItem::DataItem(item) => match item {
@@ -77,11 +77,11 @@ where
                         if let Some(coll) = collector.as_mut() {
                             coll.set_range_complete();
                         } else {
-                            warn!("Received RangeComplete but no collector yet");
+                            warn!("collect received RangeComplete but no collector yet");
                         }
                     }
                     RangeCompletableItem::Data(mut item) => {
-                        debug!("collect_in_span sees len {}", item.len());
+                        info!("collect sees len {}", item.len());
                         if collector.is_none() {
                             let c = item.new_collector();
                             collector = Some(c);
@@ -95,10 +95,10 @@ where
                     }
                 },
                 StreamItem::Log(item) => {
-                    trace!("Log {:?}", item);
+                    trace!("collect log {:?}", item);
                 }
                 StreamItem::Stats(item) => {
-                    trace!("Stats {:?}", item);
+                    trace!("collect stats {:?}", item);
                     match item {
                         // TODO factor and simplify the stats collection:
                         StatsItem::EventDataReadStats(_) => {}
@@ -131,7 +131,7 @@ where
     let res = collector
         .ok_or_else(|| Error::with_msg_no_trace(format!("no result because no collector was created")))?
         .result(range, binrange)?;
-    debug!("Total duration: {:?}", total_duration);
+    info!("collect stats total duration: {:?}", total_duration);
     Ok(res)
 }
 

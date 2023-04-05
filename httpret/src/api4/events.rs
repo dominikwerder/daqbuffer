@@ -104,7 +104,14 @@ async fn plain_events_json(
     info!("plain_events_json  chconf_from_events_v1: {chconf:?}");
     // Update the series id since we don't require some unique identifier yet.
     let mut query = query;
-    query.set_series_id(chconf.try_series().context("plain_events_json")?);
+    let kk = chconf.try_series();
+    info!("kk debug {kk:?}");
+    let kk = kk.context("plain_events_json");
+    if let Err(e) = &kk {
+        info!("kk ctx debug {kk:?}");
+        info!("kk e ctx display {e}");
+    }
+    query.set_series_id(kk?);
     let query = query;
     // ---
     //let query = RawEventsQuery::new(query.channel().clone(), query.range().clone(), AggKind::Plain);

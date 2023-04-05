@@ -7,7 +7,9 @@ pub mod pg {
     pub use tokio_postgres::{Client, Error, NoTls};
 }
 
+use err::anyhow;
 use err::Error;
+use err::Res2;
 use netpod::log::*;
 use netpod::TableSizes;
 use netpod::{Channel, Database, NodeConfigCached};
@@ -152,6 +154,7 @@ pub async fn insert_channel(name: String, facility: i64, dbc: &PgClient) -> Resu
     Ok(())
 }
 
+// Currently only for scylla type backends
 pub async fn find_series(channel: &Channel, pgclient: Arc<PgClient>) -> Result<(u64, ScalarType, Shape), Error> {
     info!("find_series  channel {:?}", channel);
     let rows = if let Some(series) = channel.series() {
@@ -187,4 +190,31 @@ pub async fn find_series(channel: &Channel, pgclient: Arc<PgClient>) -> Result<(
     let a: Vec<i32> = row.get(4);
     let shape = Shape::from_scylla_shape_dims(&a)?;
     Ok((series, scalar_type, shape))
+}
+
+// Currently only for sf-databuffer type backends
+// Note: we currently treat the channels primary key as series-id for sf-databuffer type backends.
+pub async fn find_series_sf_databuffer(channel: &Channel, pgclient: Arc<PgClient>) -> Res2<u64> {
+    info!("find_series  channel {:?}", channel);
+    let sql = "select rowid from facilities where name = $1";
+    let rows = pgclient.query(sql, &[&channel.backend()]).await.err_conv()?;
+    let row = rows
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("no backend for {channel:?}"))?;
+    let backend_id: i64 = row.get(0);
+    let sql = "select rowid from channels where facility = $1 and name = $2";
+    let rows = pgclient.query(sql, &[&backend_id, &channel.name()]).await.err_conv()?;
+    if rows.len() < 1 {
+        return Err(anyhow::anyhow!("No series found for {channel:?}"));
+    }
+    if rows.len() > 1 {
+        return Err(anyhow::anyhow!("Multiple series found for {channel:?}"));
+    }
+    let row = rows
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("No series found for {channel:?}"))?;
+    let series = row.get::<_, i64>(0) as u64;
+    Ok(series)
 }

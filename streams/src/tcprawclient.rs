@@ -9,7 +9,6 @@ use crate::frames::eventsfromframes::EventsFromFrames;
 use crate::frames::inmem::InMemoryFrameAsyncReadStream;
 use err::Error;
 use futures_util::Stream;
-use futures_util::StreamExt;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::streamitem::sitem_data;
 use items_0::streamitem::Sitemty;
@@ -80,10 +79,6 @@ where
         let frames = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
         let frames = Box::pin(frames);
         let stream = EventsFromFrames::<T>::new(frames, addr);
-        let stream = stream.map(|x| {
-            info!("tcp stream recv sees item {x:?}");
-            x
-        });
         streams.push(Box::pin(stream) as _);
     }
     Ok(streams)

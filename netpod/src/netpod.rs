@@ -1050,6 +1050,15 @@ pub trait Dim0Index: Clone + fmt::Debug + PartialOrd {
     fn to_binned_range_enum(&self, bin_off: u64, bin_cnt: u64) -> BinnedRangeEnum;
 }
 
+pub trait Dim0Range: Clone + fmt::Debug + PartialOrd {}
+
+pub struct Dim0RangeValue<T>
+where
+    T: Dim0Index,
+{
+    pub ix: [T; 2],
+}
+
 #[derive(Clone, Deserialize, PartialEq, PartialOrd)]
 pub struct TsNano(pub u64);
 

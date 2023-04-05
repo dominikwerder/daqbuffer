@@ -1,6 +1,5 @@
-use std::pin;
-
 use crate::Events;
+use std::pin::Pin;
 
 pub struct TransformProperties {
     pub needs_one_before_range: bool,
@@ -25,7 +24,7 @@ where
     }
 }
 
-impl<T> EventTransform for pin::Pin<Box<T>>
+impl<T> EventTransform for Pin<Box<T>>
 where
     T: EventTransform,
 {

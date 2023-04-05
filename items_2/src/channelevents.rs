@@ -1,16 +1,23 @@
 use crate::framable::FrameType;
 use crate::merger::Mergeable;
 use crate::Events;
-use items_0::TypeName;
 use items_0::collect_s::Collectable;
 use items_0::collect_s::Collected;
 use items_0::collect_s::Collector;
 use items_0::container::ByteEstimate;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::streamitem::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID;
+use items_0::timebin::TimeBinnable;
+use items_0::timebin::TimeBinnableTy;
+use items_0::timebin::TimeBinned;
+use items_0::timebin::TimeBinner;
+use items_0::timebin::TimeBinnerTy;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
+use items_0::EventsNonObj;
 use items_0::MergeError;
+use items_0::RangeOverlapInfo;
+use items_0::TypeName;
 use items_0::WithLen;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
@@ -633,6 +640,118 @@ impl Mergeable for ChannelEvents {
     }
 }
 
+impl RangeOverlapInfo for ChannelEvents {
+    fn ends_before(&self, range: &SeriesRange) -> bool {
+        todo!()
+    }
+
+    fn ends_after(&self, range: &SeriesRange) -> bool {
+        todo!()
+    }
+
+    fn starts_after(&self, range: &SeriesRange) -> bool {
+        todo!()
+    }
+}
+
+impl TimeBinnable for ChannelEvents {
+    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
+        todo!()
+    }
+
+    fn to_box_to_json_result(&self) -> Box<dyn items_0::collect_s::ToJsonResult> {
+        todo!()
+    }
+}
+
+impl EventsNonObj for ChannelEvents {
+    fn into_tss_pulses(self: Box<Self>) -> (std::collections::VecDeque<u64>, std::collections::VecDeque<u64>) {
+        todo!()
+    }
+}
+
+impl Events for ChannelEvents {
+    fn as_time_binnable(&self) -> &dyn TimeBinnable {
+        todo!()
+    }
+
+    fn verify(&self) -> bool {
+        todo!()
+    }
+
+    fn output_info(&self) {
+        todo!()
+    }
+
+    fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
+        todo!()
+    }
+
+    fn as_collectable_with_default_ref(&self) -> &dyn Collectable {
+        todo!()
+    }
+
+    fn as_collectable_with_default_mut(&mut self) -> &mut dyn Collectable {
+        todo!()
+    }
+
+    fn ts_min(&self) -> Option<u64> {
+        todo!()
+    }
+
+    fn ts_max(&self) -> Option<u64> {
+        todo!()
+    }
+
+    fn take_new_events_until_ts(&mut self, ts_end: u64) -> Box<dyn Events> {
+        todo!()
+    }
+
+    fn new_empty_evs(&self) -> Box<dyn Events> {
+        todo!()
+    }
+
+    fn drain_into_evs(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), MergeError> {
+        todo!()
+    }
+
+    fn find_lowest_index_gt_evs(&self, ts: u64) -> Option<usize> {
+        todo!()
+    }
+
+    fn find_lowest_index_ge_evs(&self, ts: u64) -> Option<usize> {
+        todo!()
+    }
+
+    fn find_highest_index_lt_evs(&self, ts: u64) -> Option<usize> {
+        todo!()
+    }
+
+    fn clone_dyn(&self) -> Box<dyn Events> {
+        todo!()
+    }
+
+    fn partial_eq_dyn(&self, other: &dyn Events) -> bool {
+        todo!()
+    }
+
+    fn serde_id(&self) -> &'static str {
+        todo!()
+    }
+
+    fn nty_id(&self) -> u32 {
+        todo!()
+    }
+
+    fn tss(&self) -> &std::collections::VecDeque<u64> {
+        todo!()
+    }
+
+    fn pulses(&self) -> &std::collections::VecDeque<u64> {
+        todo!()
+    }
+}
+
 impl Collectable for ChannelEvents {
     fn new_collector(&self) -> Box<dyn Collector> {
         Box::new(ChannelEventsCollector::new())
@@ -645,7 +764,7 @@ pub struct ChannelEventsTimeBinner {
     binrange: BinnedRangeEnum,
     do_time_weight: bool,
     conn_state: ConnStatus,
-    binner: Option<Box<dyn items_0::TimeBinner>>,
+    binner: Option<Box<dyn TimeBinner>>,
 }
 
 impl fmt::Debug for ChannelEventsTimeBinner {
@@ -656,9 +775,9 @@ impl fmt::Debug for ChannelEventsTimeBinner {
     }
 }
 
-impl crate::timebin::TimeBinner for ChannelEventsTimeBinner {
+impl TimeBinnerTy for ChannelEventsTimeBinner {
     type Input = ChannelEvents;
-    type Output = Box<dyn items_0::TimeBinned>;
+    type Output = Box<dyn TimeBinned>;
 
     fn ingest(&mut self, item: &mut Self::Input) {
         match item {
@@ -680,14 +799,6 @@ impl crate::timebin::TimeBinner for ChannelEventsTimeBinner {
             }
         }
     }
-
-    fn set_range_complete(&mut self) {
-        match self.binner.as_mut() {
-            Some(binner) => binner.set_range_complete(),
-            None => (),
-        }
-    }
-
     fn bins_ready_count(&self) -> usize {
         match &self.binner {
             Some(binner) => binner.bins_ready_count(),
@@ -716,6 +827,13 @@ impl crate::timebin::TimeBinner for ChannelEventsTimeBinner {
         }
     }
 
+    fn set_range_complete(&mut self) {
+        match self.binner.as_mut() {
+            Some(binner) => binner.set_range_complete(),
+            None => (),
+        }
+    }
+
     fn empty(&self) -> Option<Self::Output> {
         match self.binner.as_ref() {
             Some(binner) => Some(binner.empty()),
@@ -724,7 +842,7 @@ impl crate::timebin::TimeBinner for ChannelEventsTimeBinner {
     }
 }
 
-impl crate::timebin::TimeBinnable for ChannelEvents {
+impl TimeBinnableTy for ChannelEvents {
     type TimeBinner = ChannelEventsTimeBinner;
 
     fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Self::TimeBinner {

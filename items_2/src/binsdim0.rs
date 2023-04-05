@@ -9,14 +9,13 @@ use items_0::collect_s::Collected;
 use items_0::collect_s::CollectorType;
 use items_0::collect_s::ToJsonResult;
 use items_0::scalar_ops::ScalarOps;
+use items_0::timebin::TimeBinnable;
+use items_0::timebin::TimeBinner;
+use items_0::timebin::TimeBins;
 use items_0::AppendEmptyBin;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use items_0::Empty;
-use items_0::TimeBinnable;
-use items_0::TimeBinned;
-use items_0::TimeBinner;
-use items_0::TimeBins;
 use items_0::TypeName;
 use items_0::WithLen;
 use netpod::is_false;
@@ -32,6 +31,7 @@ use std::any;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
+use items_0::timebin::TimeBinned;
 
 #[allow(unused)]
 macro_rules! trace4 {
@@ -425,14 +425,16 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
     type Output = BinsDim0CollectedResult<NTY>;
 
     fn ingest(&mut self, src: &mut Self::Input) {
-        // TODO could be optimized by non-contiguous container.
-        /*self.vals.ts1s.append(&mut src.ts1s);
-        self.vals.ts2s.append(&mut src.ts2s);
-        self.vals.counts.append(&mut src.counts);
-        self.vals.mins.append(&mut src.mins);
-        self.vals.maxs.append(&mut src.maxs);
-        self.vals.avgs.append(&mut src.avgs);*/
-        todo!()
+        if self.vals.is_none() {
+            self.vals = Some(Self::Input::empty());
+        }
+        let vals = self.vals.as_mut().unwrap();
+        vals.ts1s.append(&mut src.ts1s);
+        vals.ts2s.append(&mut src.ts2s);
+        vals.counts.append(&mut src.counts);
+        vals.mins.append(&mut src.mins);
+        vals.maxs.append(&mut src.maxs);
+        vals.avgs.append(&mut src.avgs);
     }
 
     fn set_range_complete(&mut self) {
@@ -448,6 +450,7 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
         _range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
     ) -> Result<Self::Output, Error> {
+        eprintln!("trying to make a result from {self:?}");
         /*let bin_count_exp = if let Some(r) = &binrange {
             r.bin_count() as u32
         } else {
@@ -719,7 +722,7 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
         }
     }
 
-    fn bins_ready(&mut self) -> Option<Box<dyn items_0::TimeBinned>> {
+    fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>> {
         match self.ready.take() {
             Some(k) => Some(Box::new(k)),
             None => None,
@@ -779,7 +782,7 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
         self.range_final = true;
     }
 
-    fn empty(&self) -> Box<dyn items_0::TimeBinned> {
+    fn empty(&self) -> Box<dyn TimeBinned> {
         let ret = <BinsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output::empty();
         Box::new(ret)
     }

@@ -24,19 +24,19 @@ const DO_DETECT_NON_MONO: bool = true;
 
 #[allow(unused)]
 macro_rules! trace2 {
-    (__$($arg:tt)*) => ();
+    ($($arg:tt)*) => ();
     ($($arg:tt)*) => (trace!($($arg)*));
 }
 
 #[allow(unused)]
 macro_rules! trace3 {
-    (__$($arg:tt)*) => ();
+    ($($arg:tt)*) => ();
     ($($arg:tt)*) => (trace!($($arg)*));
 }
 
 #[allow(unused)]
 macro_rules! trace4 {
-    (__$($arg:tt)*) => ();
+    ($($arg:tt)*) => ();
     ($($arg:tt)*) => (trace!($($arg)*));
 }
 
@@ -337,33 +337,31 @@ where
         trace3!("ninps {ninps}  nitems {nitems}  nitemsmissing {nitemsmissing}");
         if nitemsmissing != 0 {
             let e = Error::from(format!("missing but no pending"));
-            Break(Ready(Some(Err(e))))
-        } else if nitems == 0 {
-            Break(Ready(None))
-        } else {
+            return Break(Ready(Some(Err(e))));
+        }
+        let last_emit = nitems == 0;
+        if nitems != 0 {
             match Self::process(Pin::new(&mut self), cx) {
-                Ok(Break(())) => {
-                    if let Some(o) = self.out.as_ref() {
-                        // A good threshold varies according to scalar type and shape.
-                        // TODO replace this magic number by a bound on the bytes estimate.
-                        if o.len() >= self.out_max_len || o.byte_estimate() >= OUT_MAX_BYTES || self.do_clear_out {
-                            trace3!("decide to output");
-                            self.do_clear_out = false;
-                            Break(Ready(Some(Ok(self.out.take().unwrap()))))
-                        } else {
-                            trace4!("output not yet");
-                            Continue(())
-                        }
-                    } else {
-                        trace3!("no output candidate");
-                        Continue(())
-                    }
-                }
-                Ok(Continue(())) => {
-                    trace2!("process returned with Continue");
-                    Continue(())
-                }
-                Err(e) => Break(Ready(Some(Err(e)))),
+                Ok(Break(())) => {}
+                Ok(Continue(())) => {}
+                Err(e) => return Break(Ready(Some(Err(e)))),
+            }
+        }
+        if let Some(o) = self.out.as_ref() {
+            if o.len() >= self.out_max_len || o.byte_estimate() >= OUT_MAX_BYTES || self.do_clear_out || last_emit {
+                trace3!("decide to output");
+                self.do_clear_out = false;
+                Break(Ready(Some(Ok(self.out.take().unwrap()))))
+            } else {
+                trace4!("output not yet");
+                Continue(())
+            }
+        } else {
+            trace!("no output candidate");
+            if last_emit {
+                Break(Ready(None))
+            } else {
+                Continue(())
             }
         }
     }
@@ -411,20 +409,25 @@ where
                     continue;
                 }
             } else if self.done_data {
+                trace!("done_data");
                 self.done_buffered = true;
                 if let Some(out) = self.out.take() {
+                    trace!("done_data emit buffered  len {}", out.len());
                     Ready(Some(sitem_data(out)))
                 } else {
                     continue;
                 }
             } else if let Some(item) = self.out_of_band_queue.pop_front() {
-                trace4!("emit out-of-band");
+                trace!("emit out-of-band");
                 Ready(Some(item))
             } else {
                 match Self::poll2(self.as_mut(), cx) {
                     ControlFlow::Continue(()) => continue,
                     ControlFlow::Break(k) => match k {
-                        Ready(Some(Ok(item))) => Ready(Some(sitem_data(item))),
+                        Ready(Some(Ok(out))) => {
+                            trace!("emit buffered  len {}", out.len());
+                            Ready(Some(sitem_data(out)))
+                        }
                         Ready(Some(Err(e))) => {
                             self.done_data = true;
                             Ready(Some(Err(e.into())))

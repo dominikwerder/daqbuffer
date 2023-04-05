@@ -30,16 +30,17 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
     })?;
     let chconf = chconf_from_binned(&query, node_config).await?;
     // Update the series id since we don't require some unique identifier yet.
-    let mut query = query;
-    query.set_series_id(chconf.try_series().context("binned_json")?);
-    let query = query;
-    // ---
+    let query = {
+        let mut query = query;
+        query.set_series_id(chconf.try_series().context("binned_json")?);
+        query
+    };
     let span1 = span!(
         Level::INFO,
         "httpret::binned",
         beg = query.range().beg_u64() / SEC,
         end = query.range().end_u64() / SEC,
-        ch = query.channel().name(),
+        ch = query.channel().name().clone(),
     );
     span1.in_scope(|| {
         debug!("begin");

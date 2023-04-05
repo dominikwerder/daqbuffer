@@ -1,8 +1,8 @@
 pub mod collect;
 pub mod dtflags;
-pub mod eventchunker;
 pub mod filechunkread;
 pub mod frames;
+pub mod generators;
 pub mod needminbuffer;
 pub mod plaineventsjson;
 pub mod rangefilter2;

@@ -57,7 +57,7 @@ where
                 match self.inp.poll_next_unpin(cx) {
                     Ready(Some(Ok(item))) => match item {
                         StreamItem::Log(item) => {
-                            info!("{}  {:?}  {}", item.node_ix, item.level, item.msg);
+                            //info!("{}  {:?}  {}", item.node_ix, item.level, item.msg);
                             Ready(Some(Ok(StreamItem::Log(item))))
                         }
                         StreamItem::Stats(item) => Ready(Some(Ok(StreamItem::Stats(item)))),
@@ -65,7 +65,7 @@ where
                             Ok(item) => match item {
                                 Ok(item) => match item {
                                     StreamItem::Log(k) => {
-                                        info!("rcvd log: {}  {:?}  {}", k.node_ix, k.level, k.msg);
+                                        //info!("rcvd log: {}  {:?}  {}", k.node_ix, k.level, k.msg);
                                         Ready(Some(Ok(StreamItem::Log(k))))
                                     }
                                     item => Ready(Some(Ok(item))),

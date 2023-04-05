@@ -149,6 +149,8 @@ async fn proxy_http_service_inner(
         Ok(proxy_single_backend_query::<ChannelStateEventsQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/status/channel/events" {
         Ok(proxy_single_backend_query::<ChannelStateEventsQuery>(req, ctx, proxy_config).await?)
+    } else if path.starts_with("/api/4/map/pulse-v2/") {
+        Ok(proxy_single_backend_query::<MapPulseQuery>(req, ctx, proxy_config).await?)
     } else if path.starts_with("/api/4/map/pulse/") {
         Ok(proxy_single_backend_query::<MapPulseQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/binned" {

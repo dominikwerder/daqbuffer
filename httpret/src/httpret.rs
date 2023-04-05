@@ -378,6 +378,8 @@ async fn http_service_inner(
         h.handle(req, &node_config).await
     } else if let Some(h) = pulsemap::MapPulseHttpFunction::handler(&req) {
         h.handle(req, &node_config).await
+    } else if let Some(h) = pulsemap::Api4MapPulse2HttpFunction::handler(&req) {
+        h.handle(req, &node_config).await
     } else if let Some(h) = pulsemap::Api4MapPulseHttpFunction::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = api1::RequestStatusHandler::handler(&req) {

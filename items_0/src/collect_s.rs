@@ -1,7 +1,7 @@
+use crate::timebin::TimeBinned;
 use crate::AsAnyMut;
 use crate::AsAnyRef;
 use crate::Events;
-use crate::TimeBinned;
 use crate::TypeName;
 use crate::WithLen;
 use err::Error;
@@ -92,11 +92,11 @@ where
 {
     fn ingest(&mut self, src: &mut dyn Collectable) {
         if let Some(src) = src.as_any_mut().downcast_mut::<<T as CollectorType>::Input>() {
-            info!("sees incoming &mut ref");
+            trace!("sees incoming &mut ref");
             T::ingest(self, src)
         } else {
             if let Some(src) = src.as_any_mut().downcast_mut::<Box<<T as CollectorType>::Input>>() {
-                info!("sees incoming &mut Box");
+                trace!("sees incoming &mut Box");
                 T::ingest(self, src)
             } else {
                 error!(

@@ -12,14 +12,14 @@ use items_0::collect_s::Collected;
 use items_0::collect_s::CollectorType;
 use items_0::collect_s::ToJsonResult;
 use items_0::scalar_ops::ScalarOps;
+use items_0::timebin::TimeBinnable;
+use items_0::timebin::TimeBinned;
+use items_0::timebin::TimeBinner;
+use items_0::timebin::TimeBins;
 use items_0::AppendEmptyBin;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use items_0::Empty;
-use items_0::TimeBinnable;
-use items_0::TimeBinned;
-use items_0::TimeBinner;
-use items_0::TimeBins;
 use items_0::TypeName;
 use items_0::WithLen;
 use netpod::is_false;
@@ -677,7 +677,7 @@ impl<NTY: ScalarOps> TimeBinner for BinsXbinDim0TimeBinner<NTY> {
         }
     }
 
-    fn bins_ready(&mut self) -> Option<Box<dyn items_0::TimeBinned>> {
+    fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>> {
         match self.ready.take() {
             Some(k) => Some(Box::new(k)),
             None => None,

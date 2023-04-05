@@ -7,9 +7,14 @@ use items_0::streamitem::sitem_data;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
-use items_2::timebin::TimeBinnable;
-use items_2::timebin::TimeBinner;
+use items_0::timebin::TimeBinnableTy;
+use items_0::timebin::TimeBinner;
+use items_0::timebin::TimeBinnerTy;
 use netpod::log::*;
+use netpod::BinnedRange;
+use netpod::BinnedRangeEnum;
+use netpod::Dim0Index;
+use std::any;
 use std::fmt;
 use std::pin::Pin;
 use std::task::Context;
@@ -18,19 +23,19 @@ use std::time::Instant;
 
 #[allow(unused)]
 macro_rules! trace2 {
-    (D$($arg:tt)*) => ();
+    (__$($arg:tt)*) => ();
     ($($arg:tt)*) => (trace!($($arg)*));
 }
 
 #[allow(unused)]
 macro_rules! trace3 {
-    (D$($arg:tt)*) => ();
+    (__$($arg:tt)*) => ();
     ($($arg:tt)*) => (trace!($($arg)*));
 }
 
 #[allow(unused)]
 macro_rules! trace4 {
-    (D$($arg:tt)*) => ();
+    (__$($arg:tt)*) => ();
     ($($arg:tt)*) => (trace!($($arg)*));
 }
 
@@ -38,15 +43,15 @@ type MergeInp<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;
 
 pub struct TimeBinnedStream<T>
 where
-    T: TimeBinnable,
+    T: TimeBinnableTy,
 {
     inp: MergeInp<T>,
-    edges: Vec<u64>,
+    range: BinnedRangeEnum,
     do_time_weight: bool,
     deadline: Instant,
     deadline_fut: Pin<Box<dyn Future<Output = ()> + Send>>,
     range_complete: bool,
-    binner: Option<<T as TimeBinnable>::TimeBinner>,
+    binner: Option<<T as TimeBinnableTy>::TimeBinner>,
     done_data: bool,
     done: bool,
     complete: bool,
@@ -54,11 +59,11 @@ where
 
 impl<T> fmt::Debug for TimeBinnedStream<T>
 where
-    T: TimeBinnable,
+    T: TimeBinnableTy,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("TimeBinnedStream")
-            .field("edges", &self.edges)
+        fmt.debug_struct(any::type_name::<Self>())
+            .field("range", &self.range)
             .field("deadline", &self.deadline)
             .field("range_complete", &self.range_complete)
             .field("binner", &self.binner)
@@ -68,14 +73,14 @@ where
 
 impl<T> TimeBinnedStream<T>
 where
-    T: TimeBinnable,
+    T: TimeBinnableTy,
 {
-    pub fn new(inp: MergeInp<T>, edges: Vec<u64>, do_time_weight: bool, deadline: Instant) -> Self {
+    pub fn new(inp: MergeInp<T>, range: BinnedRangeEnum, do_time_weight: bool, deadline: Instant) -> Self {
         let deadline_fut = tokio::time::sleep_until(deadline.into());
         let deadline_fut = Box::pin(deadline_fut);
         Self {
             inp,
-            edges,
+            range,
             do_time_weight,
             deadline,
             deadline_fut,
@@ -91,7 +96,7 @@ where
         trace!("process_item {item:?}");
         if self.binner.is_none() {
             trace!("process_item call time_binner_new");
-            let binner = item.time_binner_new(todo!(), self.do_time_weight);
+            let binner = item.time_binner_new(self.range.clone(), self.do_time_weight);
             self.binner = Some(binner);
         }
         let binner = self.binner.as_mut().unwrap();
@@ -102,13 +107,13 @@ where
 
 impl<T> Stream for TimeBinnedStream<T>
 where
-    T: TimeBinnable + Unpin,
+    T: TimeBinnableTy + Unpin,
 {
-    type Item = Sitemty<<<T as TimeBinnable>::TimeBinner as TimeBinner>::Output>;
+    type Item = Sitemty<<<T as TimeBinnableTy>::TimeBinner as TimeBinnerTy>::Output>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        let span = tracing::span!(tracing::Level::TRACE, "poll");
+        let span = span!(Level::INFO, "poll");
         let _spg = span.enter();
         loop {
             break if self.complete {

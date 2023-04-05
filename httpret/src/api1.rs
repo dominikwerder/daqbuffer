@@ -833,7 +833,8 @@ impl Stream for DataApiPython3DataStream {
                                     debug!("found channel_config for {}: {:?}", channel.name, entry);
                                     let evq = PlainEventsQuery::new(channel, self.range.clone()).for_event_blobs();
                                     info!("query for event blobs retrieval: evq {evq:?}");
-                                    warn!("fix magic inmem_bufcap");
+                                    warn!("TODO fix magic inmem_bufcap");
+                                    warn!("TODO add timeout option to data api3 download");
                                     let perf_opts = PerfOpts::default();
                                     // TODO is this a good to place decide this?
                                     let s = if self.node_config.node_config.cluster.is_central_storage {

@@ -15,7 +15,6 @@ pub mod streams;
 #[cfg(test)]
 pub mod test;
 pub mod testgen;
-pub mod timebin;
 
 use channelevents::ChannelEvents;
 use chrono::DateTime;
@@ -164,23 +163,23 @@ impl Mergeable for Box<dyn Events> {
     }
 
     fn new_empty(&self) -> Self {
-        self.as_ref().new_empty()
+        self.as_ref().new_empty_evs()
     }
 
     fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), MergeError> {
-        self.as_mut().drain_into(dst, range)
+        self.as_mut().drain_into_evs(dst, range)
     }
 
     fn find_lowest_index_gt(&self, ts: u64) -> Option<usize> {
-        self.as_ref().find_lowest_index_gt(ts)
+        self.as_ref().find_lowest_index_gt_evs(ts)
     }
 
     fn find_lowest_index_ge(&self, ts: u64) -> Option<usize> {
-        self.as_ref().find_lowest_index_ge(ts)
+        self.as_ref().find_lowest_index_ge_evs(ts)
     }
 
     fn find_highest_index_lt(&self, ts: u64) -> Option<usize> {
-        self.as_ref().find_highest_index_lt(ts)
+        self.as_ref().find_highest_index_lt_evs(ts)
     }
 }
 

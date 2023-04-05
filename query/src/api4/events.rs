@@ -91,6 +91,12 @@ impl PlainEventsQuery {
     }
 
     pub fn events_max(&self) -> u64 {
+        self.events_max.unwrap_or(1024 * 128)
+    }
+
+    // A rough indication on how many bytes this request is allowed to return. Otherwise, the result should
+    // be a partial result.
+    pub fn bytes_max(&self) -> u64 {
         self.events_max.unwrap_or(1024 * 512)
     }
 

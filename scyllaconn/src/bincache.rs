@@ -4,7 +4,7 @@ use err::Error;
 use futures_util::Future;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use items_0::TimeBinned;
+use items_0::timebin::TimeBinned;
 use items_2::binsdim0::BinsDim0;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
