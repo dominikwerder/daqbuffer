@@ -107,8 +107,8 @@ impl SeriesRange {
 
     pub fn end_u64(&self) -> u64 {
         match self {
-            SeriesRange::TimeRange(x) => x.beg,
-            SeriesRange::PulseRange(x) => x.beg,
+            SeriesRange::TimeRange(x) => x.end,
+            SeriesRange::PulseRange(x) => x.end,
         }
     }
 

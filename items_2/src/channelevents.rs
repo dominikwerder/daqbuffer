@@ -776,6 +776,8 @@ impl fmt::Debug for ChannelEventsTimeBinner {
     }
 }
 
+impl ChannelEventsTimeBinner {}
+
 impl TimeBinnerTy for ChannelEventsTimeBinner {
     type Input = ChannelEvents;
     type Output = Box<dyn TimeBinned>;
@@ -853,27 +855,30 @@ impl TimeBinner for ChannelEventsTimeBinner {
     }
 
     fn bins_ready_count(&self) -> usize {
-        todo!()
+        TimeBinnerTy::bins_ready_count(self)
     }
 
     fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>> {
-        todo!()
+        TimeBinnerTy::bins_ready(self)
     }
 
     fn push_in_progress(&mut self, push_empty: bool) {
-        todo!()
+        TimeBinnerTy::push_in_progress(self, push_empty)
     }
 
     fn cycle(&mut self) {
-        todo!()
+        TimeBinnerTy::cycle(self)
     }
 
     fn set_range_complete(&mut self) {
-        todo!()
+        TimeBinnerTy::set_range_complete(self)
     }
 
     fn empty(&self) -> Box<dyn TimeBinned> {
-        todo!()
+        match TimeBinnerTy::empty(self) {
+            Some(x) => x,
+            None => panic!("TODO TimeBinner::empty for ChannelEventsTimeBinner"),
+        }
     }
 }
 

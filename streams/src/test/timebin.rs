@@ -172,8 +172,10 @@ fn time_bin_02() -> Result<(), Error> {
                 break;
             }
         }
+        let event_range = binned_range.binned_range_time().full_range();
+        let series_range = SeriesRange::TimeRange(event_range);
         // TODO the test stream must be able to generate also one-before (on demand) and RangeComplete (by default).
-        let stream = GenerateI32::new(0, 1, range);
+        let stream = GenerateI32::new(0, 1, series_range);
         // TODO apply first some box dyn EventTransform which later is provided by TransformQuery.
         // Then the Merge will happen always by default for backends where this is needed.
         // TODO then apply the transform chain for the after-merged-stream.
@@ -189,17 +191,20 @@ fn time_bin_02() -> Result<(), Error> {
         // From there on it should no longer be neccessary to distinguish whether its still events or time bins.
         // Then, optionally collect for output type like json, or stream as batches.
         // TODO the timebinner should already provide batches to make this efficient.
-        while let Some(e) = binned_stream.next().await {
-            eprintln!("see item {e:?}");
-            let x = on_sitemty_data!(e, |e| {
-                //
-                Ok(StreamItem::DataItem(RangeCompletableItem::Data(e)))
-            });
+        if false {
+            while let Some(e) = binned_stream.next().await {
+                eprintln!("see item {e:?}");
+                let x = on_sitemty_data!(e, |e| {
+                    //
+                    Ok(StreamItem::DataItem(RangeCompletableItem::Data(e)))
+                });
+            }
+        } else {
+            let res = collect(binned_stream, deadline, 200, None, Some(binned_range)).await?;
+            let d = res.to_json_result()?.to_json_bytes()?;
+            let s = String::from_utf8_lossy(&d);
+            eprintln!("{s}");
         }
-        /*let res = collect(binned_stream, deadline, 200, None, Some(binned_range)).await?;
-        let d = res.to_json_result()?.to_json_bytes()?;
-        let s = String::from_utf8_lossy(&d);
-        eprintln!("{s}");*/
         Ok(())
     };
     runfut(fut)

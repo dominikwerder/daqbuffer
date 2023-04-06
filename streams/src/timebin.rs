@@ -192,16 +192,16 @@ where
                         }
                     },
                     Ready(None) => {
-                        trace2!("finish up");
+                        trace!("finish up");
                         let self_range_complete = self.range_complete;
                         if let Some(binner) = self.binner.as_mut() {
-                            trace2!("bins ready count before finish {}", binner.bins_ready_count());
+                            trace!("bins ready count before finish {}", binner.bins_ready_count());
                             // TODO rework the finish logic
                             if self_range_complete {
                                 binner.set_range_complete();
                             }
                             binner.push_in_progress(false);
-                            trace2!("bins ready count after finish  {}", binner.bins_ready_count());
+                            trace!("bins ready count after finish  {}", binner.bins_ready_count());
                             if binner.bins_ready_count() > 0 {
                                 if let Some(bins) = binner.bins_ready() {
                                     self.done_data = true;
@@ -226,7 +226,7 @@ where
                                 }
                             }
                         } else {
-                            trace2!("input stream finished, still no binner");
+                            trace!("input stream finished, still no binner");
                             self.done_data = true;
                             continue;
                         }

@@ -22,6 +22,8 @@ pub struct GenerateI32 {
     ts: u64,
     dts: u64,
     tsend: u64,
+    #[allow(unused)]
+    c1: u64,
     timeout: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
 
@@ -38,6 +40,7 @@ impl GenerateI32 {
             ts,
             dts,
             tsend,
+            c1: 0,
             timeout: None,
         }
     }
@@ -51,12 +54,14 @@ impl GenerateI32 {
                 break;
             }
             let pulse = ts;
-            item.push(ts, pulse, pulse as T);
+            let value = (ts / (MS * 100) % 1000) as T;
+            item.push(ts, pulse, value);
             ts += self.dts;
         }
         self.ts = ts;
         let w = ChannelEvents::Events(Box::new(item) as _);
         let w = sitem_data(w);
+        eprintln!("make_batch {w:?}");
         w
     }
 }

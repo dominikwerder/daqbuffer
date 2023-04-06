@@ -1563,7 +1563,10 @@ where
             beg: self.offset * self.grid_spec.bin_t_len,
             end: (self.offset + self.bin_count) * self.grid_spec.bin_t_len,
         }*/
-        err::todoval()
+        let beg = self.bin_len.times(self.bin_off).as_u64();
+        let end = self.bin_len.times(self.bin_off + self.bin_cnt).as_u64();
+        warn!("TODO make generic for pulse");
+        NanoRange { beg, end }
     }
 
     pub fn edges_u64(&self) -> Vec<u64> {
@@ -1641,7 +1644,7 @@ impl BinnedRangeEnum {
         match self {
             BinnedRangeEnum::Time(k) => {
                 if (i as u64) < k.bin_cnt {
-                    let beg = k.bin_off + k.bin_len.0 * i as u64;
+                    let beg = k.bin_len.0 * (k.bin_off + i as u64);
                     let x = SeriesRange::TimeRange(NanoRange {
                         beg,
                         end: beg + k.bin_len.0,
@@ -1653,7 +1656,7 @@ impl BinnedRangeEnum {
             }
             BinnedRangeEnum::Pulse(k) => {
                 if (i as u64) < k.bin_cnt {
-                    let beg = k.bin_off + k.bin_len.0 * i as u64;
+                    let beg = k.bin_len.0 * (k.bin_off + i as u64);
                     let x = SeriesRange::PulseRange(PulseRange {
                         beg,
                         end: beg + k.bin_len.0,

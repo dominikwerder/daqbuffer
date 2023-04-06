@@ -535,6 +535,7 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
 
     fn apply_event_time_weight(&mut self, px: u64, pxbeg: u64) {
         if let Some(v) = &self.last_seen_val {
+            trace!("apply_event_time_weight with v {v:?}");
             let vf = v.as_prim_f32_b();
             let v2 = v.clone();
             if px > pxbeg {
@@ -587,26 +588,23 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
             for i1 in 0..item.tss.len() {
                 let ts = item.tss[i1];
                 let val = item.values[i1].clone();
-                trace!("{self_name} ingest  {:6}  {:20}  {:10?}", i1, ts, val);
                 if ts < self.int_ts {
-                    if self.last_seen_val.is_none() {
-                        info!(
-                            "ingest_time_weight event before range, only set last  ts {}  val {:?}",
-                            ts, val
-                        );
-                    }
+                    trace!("{self_name} ingest  {:6}  {:20}  {:10?}  BEFORE", i1, ts, val);
                     self.events_ignored_count += 1;
                     self.last_seen_ts = ts;
                     self.last_seen_val = Some(val);
                 } else if ts >= self.range.end_u64() {
+                    trace!("{self_name} ingest  {:6}  {:20}  {:10?}  AFTER", i1, ts, val);
                     self.events_ignored_count += 1;
                     return;
                 } else {
+                    trace!("{self_name} ingest  {:6}  {:20}  {:10?}  IN", i1, ts, val);
                     if false && self.last_seen_val.is_none() {
                         // TODO no longer needed or?
-                        info!(
+                        trace!(
                             "call apply_min_max without last val, use current instead  {}  {:?}",
-                            ts, val
+                            ts,
+                            val
                         );
                         self.apply_min_max(val.clone());
                     }
@@ -915,16 +913,16 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
 }
 
 #[derive(Debug)]
-pub struct EventsDim0TimeBinner<NTY: ScalarOps> {
+pub struct EventsDim0TimeBinner<STY: ScalarOps> {
     binrange: BinnedRangeEnum,
     rix: usize,
     rng: Option<SeriesRange>,
-    agg: EventsDim0Aggregator<NTY>,
-    ready: Option<<EventsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output>,
+    agg: EventsDim0Aggregator<STY>,
+    ready: Option<<EventsDim0Aggregator<STY> as TimeBinnableTypeAggregator>::Output>,
     range_final: bool,
 }
 
-impl<NTY: ScalarOps> EventsDim0TimeBinner<NTY> {
+impl<STY: ScalarOps> EventsDim0TimeBinner<STY> {
     fn self_name() -> &'static str {
         any::type_name::<Self>()
     }
@@ -959,7 +957,7 @@ impl<NTY: ScalarOps> EventsDim0TimeBinner<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
+impl<STY: ScalarOps> TimeBinner for EventsDim0TimeBinner<STY> {
     fn bins_ready_count(&self) -> usize {
         match &self.ready {
             Some(k) => k.len(),
@@ -1007,7 +1005,7 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
                     if let Some(item) = item
                         .as_any_ref()
                         // TODO make statically sure that we attempt to cast to the correct type here:
-                        .downcast_ref::<<EventsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Input>()
+                        .downcast_ref::<<EventsDim0Aggregator<STY> as TimeBinnableTypeAggregator>::Input>()
                     {
                         // TODO collect statistics associated with this request:
                         trace!("{self_name}  FEED THE ITEM...");
@@ -1110,7 +1108,7 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim0TimeBinner<NTY> {
     }
 
     fn empty(&self) -> Box<dyn TimeBinned> {
-        let ret = <EventsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output::empty();
+        let ret = <EventsDim0Aggregator<STY> as TimeBinnableTypeAggregator>::Output::empty();
         Box::new(ret)
     }
 }
