@@ -915,6 +915,12 @@ impl AsAnyMut for ChannelEventsCollectorOutput {
     }
 }
 
+impl WithLen for ChannelEventsCollectorOutput {
+    fn len(&self) -> usize {
+        todo!()
+    }
+}
+
 impl items_0::collect_s::ToJsonResult for ChannelEventsCollectorOutput {
     fn to_json_result(&self) -> Result<Box<dyn items_0::collect_s::ToJsonBytes>, err::Error> {
         todo!()

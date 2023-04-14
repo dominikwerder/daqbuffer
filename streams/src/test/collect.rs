@@ -2,6 +2,7 @@ use crate::test::runfut;
 use err::Error;
 use futures_util::stream;
 use items_0::streamitem::sitem_data;
+use items_0::WithLen;
 use items_2::eventsdim0::EventsDim0CollectorOutput;
 use items_2::testgen::make_some_boxed_d0_f32;
 use netpod::timeunits::SEC;

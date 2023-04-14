@@ -22,6 +22,7 @@ use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::MS;
 use netpod::timeunits::SEC;
 use netpod::BinnedRangeEnum;
+use serde_json::Value as JsValue;
 use std::collections::VecDeque;
 use std::time::Duration;
 use std::time::Instant;
@@ -160,9 +161,11 @@ fn time_bin_02() -> Result<(), Error> {
     let fut = async {
         let do_time_weight = true;
         let deadline = Instant::now() + Duration::from_millis(4000);
-        let range = nano_range_from_str("1970-01-01T00:20:04Z", "1970-01-01T00:21:10Z")?;
+        let range = nano_range_from_str("1970-01-01T00:20:04Z", "1970-01-01T00:22:10Z")?;
         let range = SeriesRange::TimeRange(range);
-        let min_bin_count = 10;
+        // TODO add test: 26 bins should result in next higher resolution.
+        let min_bin_count = 25;
+        let expected_bin_count = 26;
         let binned_range = BinnedRangeEnum::covering_range(range.clone(), min_bin_count)?;
         eprintln!("binned_range: {:?}", binned_range);
         for i in 0.. {
@@ -194,16 +197,41 @@ fn time_bin_02() -> Result<(), Error> {
         if false {
             while let Some(e) = binned_stream.next().await {
                 eprintln!("see item {e:?}");
-                let x = on_sitemty_data!(e, |e| {
+                let _x = on_sitemty_data!(e, |e| {
                     //
                     Ok(StreamItem::DataItem(RangeCompletableItem::Data(e)))
                 });
             }
         } else {
             let res = collect(binned_stream, deadline, 200, None, Some(binned_range)).await?;
+            assert_eq!(res.len(), expected_bin_count);
             let d = res.to_json_result()?.to_json_bytes()?;
             let s = String::from_utf8_lossy(&d);
             eprintln!("{s}");
+            let jsval: JsValue = serde_json::from_slice(&d)?;
+            {
+                let counts = jsval.get("counts").unwrap().as_array().unwrap();
+                assert_eq!(counts.len(), expected_bin_count);
+                for v in counts {
+                    assert_eq!(v.as_u64().unwrap(), 5);
+                }
+            }
+            {
+                let ts1ms = jsval.get("ts1Ms").unwrap().as_array().unwrap();
+                let mins = jsval.get("mins").unwrap().as_array().unwrap();
+                assert_eq!(mins.len(), expected_bin_count);
+                for (ts1ms, min) in ts1ms.iter().zip(mins) {
+                    assert_eq!((ts1ms.as_u64().unwrap() / 100) % 1000, min.as_u64().unwrap());
+                }
+            }
+            {
+                let ts1ms = jsval.get("ts1Ms").unwrap().as_array().unwrap();
+                let maxs = jsval.get("maxs").unwrap().as_array().unwrap();
+                assert_eq!(maxs.len(), expected_bin_count);
+                for (ts1ms, max) in ts1ms.iter().zip(maxs) {
+                    assert_eq!((40 + ts1ms.as_u64().unwrap() / 100) % 1000, max.as_u64().unwrap());
+                }
+            }
         }
         Ok(())
     };

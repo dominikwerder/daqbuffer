@@ -49,13 +49,19 @@ impl ToJsonBytes for serde_json::Value {
     }
 }
 
-pub trait Collected: fmt::Debug + ToJsonResult + AsAnyRef + Send {}
+pub trait Collected: fmt::Debug + Send + AsAnyRef + WithLen + ToJsonResult {}
 
 erased_serde::serialize_trait_object!(Collected);
 
 impl ToJsonResult for Box<dyn Collected> {
     fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error> {
         self.as_ref().to_json_result()
+    }
+}
+
+impl WithLen for Box<dyn Collected> {
+    fn len(&self) -> usize {
+        self.as_ref().len()
     }
 }
 

@@ -40,9 +40,19 @@ use std::fmt;
 use std::mem;
 
 #[allow(unused)]
+macro_rules! trace_ingest {
+    ($($arg:tt)*) => {
+        //let _ = ($($arg)*);
+        //trace!($($arg)*);
+    };
+}
+
+#[allow(unused)]
 macro_rules! trace2 {
-    (EN$($arg:tt)*) => ();
-    ($($arg:tt)*) => (trace!($($arg)*));
+    ($($arg:tt)*) => {
+        //let _ = ($($arg)*,);
+        //trace!($($arg)*);
+    };
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -258,10 +268,6 @@ pub struct EventsDim0CollectorOutput<NTY> {
 }
 
 impl<NTY: ScalarOps> EventsDim0CollectorOutput<NTY> {
-    pub fn len(&self) -> usize {
-        self.values.len()
-    }
-
     pub fn ts_anchor_sec(&self) -> u64 {
         self.ts_anchor_sec
     }
@@ -334,6 +340,12 @@ where
 {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+impl<NTY: ScalarOps> WithLen for EventsDim0CollectorOutput<NTY> {
+    fn len(&self) -> usize {
+        self.values.len()
     }
 }
 
@@ -498,7 +510,7 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
 
     // TODO reduce clone.. optimize via more traits to factor the trade-offs?
     fn apply_min_max(&mut self, val: NTY) {
-        trace!(
+        trace_ingest!(
             "apply_min_max  val {:?}  last_val {:?}  count {}  sumc {:?}  min {:?}  max {:?}",
             val,
             self.last_seen_val,
@@ -522,7 +534,7 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
     }
 
     fn apply_event_unweight(&mut self, val: NTY) {
-        trace!("TODO check again result_reset_unweight");
+        error!("TODO check again result_reset_unweight");
         err::todo();
         let vf = val.as_prim_f32_b();
         self.apply_min_max(val);
@@ -535,7 +547,7 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
 
     fn apply_event_time_weight(&mut self, px: u64, pxbeg: u64) {
         if let Some(v) = &self.last_seen_val {
-            trace!("apply_event_time_weight with v {v:?}");
+            trace_ingest!("apply_event_time_weight with v {v:?}");
             let vf = v.as_prim_f32_b();
             let v2 = v.clone();
             if px > pxbeg {
@@ -558,7 +570,7 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
     }
 
     fn ingest_unweight(&mut self, item: &<Self as TimeBinnableTypeAggregator>::Input) {
-        trace!("TODO check again result_reset_unweight");
+        error!("TODO check again result_reset_unweight");
         err::todo();
         if self.range.is_time() {
             for i1 in 0..item.tss.len() {
@@ -583,25 +595,25 @@ impl<NTY: ScalarOps> EventsDim0Aggregator<NTY> {
 
     fn ingest_time_weight(&mut self, item: &<Self as TimeBinnableTypeAggregator>::Input) {
         let self_name = any::type_name::<Self>();
-        trace!("{self_name}::ingest_time_weight  item len {}", item.len());
+        trace_ingest!("{self_name}::ingest_time_weight  item len {}", item.len());
         if self.range.is_time() {
             for i1 in 0..item.tss.len() {
                 let ts = item.tss[i1];
                 let val = item.values[i1].clone();
                 if ts < self.int_ts {
-                    trace!("{self_name} ingest  {:6}  {:20}  {:10?}  BEFORE", i1, ts, val);
+                    trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  BEFORE", i1, ts, val);
                     self.events_ignored_count += 1;
                     self.last_seen_ts = ts;
                     self.last_seen_val = Some(val);
                 } else if ts >= self.range.end_u64() {
-                    trace!("{self_name} ingest  {:6}  {:20}  {:10?}  AFTER", i1, ts, val);
+                    trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  AFTER", i1, ts, val);
                     self.events_ignored_count += 1;
                     return;
                 } else {
-                    trace!("{self_name} ingest  {:6}  {:20}  {:10?}  IN", i1, ts, val);
+                    trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  IN", i1, ts, val);
                     if false && self.last_seen_val.is_none() {
                         // TODO no longer needed or?
-                        trace!(
+                        trace_ingest!(
                             "call apply_min_max without last val, use current instead  {}  {:?}",
                             ts,
                             val
@@ -712,11 +724,11 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for EventsDim0Aggregator<NTY> {
 
     fn ingest(&mut self, item: &Self::Input) {
         if true {
-            trace!("{} ingest {} events", std::any::type_name::<Self>(), item.len());
+            trace_ingest!("{} ingest {} events", std::any::type_name::<Self>(), item.len());
         }
         if false {
             for (i, &ts) in item.tss.iter().enumerate() {
-                trace!("{} ingest  {:6}  {:20}", std::any::type_name::<Self>(), i, ts);
+                trace_ingest!("{} ingest  {:6}  {:20}", std::any::type_name::<Self>(), i, ts);
             }
         }
         if self.do_time_weight {
@@ -1008,19 +1020,19 @@ impl<STY: ScalarOps> TimeBinner for EventsDim0TimeBinner<STY> {
                         .downcast_ref::<<EventsDim0Aggregator<STY> as TimeBinnableTypeAggregator>::Input>()
                     {
                         // TODO collect statistics associated with this request:
-                        trace!("{self_name}  FEED THE ITEM...");
+                        trace_ingest!("{self_name}  FEED THE ITEM...");
                         self.agg.ingest(item);
                         if item.ends_after(self.agg.range()) {
-                            trace!("{self_name}  FED ITEM, ENDS AFTER.");
+                            trace_ingest!("{self_name}  FED ITEM, ENDS AFTER.");
                             self.cycle();
                             if self.rng.is_none() {
                                 warn!("{self_name}  no more bin in edges C");
                                 return;
                             } else {
-                                trace!("{self_name}  FED ITEM, CYCLED, CONTINUE.");
+                                trace_ingest!("{self_name}  FED ITEM, CYCLED, CONTINUE.");
                             }
                         } else {
-                            trace!("{self_name}  FED ITEM.");
+                            trace_ingest!("{self_name}  FED ITEM.");
                             break;
                         }
                     } else {

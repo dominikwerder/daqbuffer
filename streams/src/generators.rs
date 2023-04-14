@@ -1,16 +1,12 @@
-use err::Error;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use items_0::container::ByteEstimate;
 use items_0::streamitem::sitem_data;
-use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
-use items_0::streamitem::StreamItem;
 use items_0::Appendable;
 use items_0::Empty;
 use items_2::channelevents::ChannelEvents;
-use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::MS;
 use std::pin::Pin;
@@ -61,7 +57,6 @@ impl GenerateI32 {
         self.ts = ts;
         let w = ChannelEvents::Events(Box::new(item) as _);
         let w = sitem_data(w);
-        eprintln!("make_batch {w:?}");
         w
     }
 }
@@ -74,6 +69,9 @@ impl Stream for GenerateI32 {
         loop {
             break if self.ts >= self.tsend {
                 Ready(None)
+            } else if false {
+                // To use the generator without throttling, use this scope
+                Ready(Some(self.make_batch()))
             } else if let Some(fut) = self.timeout.as_mut() {
                 match fut.poll_unpin(cx) {
                     Ready(()) => {
@@ -83,7 +81,7 @@ impl Stream for GenerateI32 {
                     Pending => Pending,
                 }
             } else {
-                self.timeout = Some(Box::pin(tokio::time::sleep(Duration::from_millis(500))));
+                self.timeout = Some(Box::pin(tokio::time::sleep(Duration::from_millis(2))));
                 continue;
             };
         }

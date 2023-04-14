@@ -220,10 +220,6 @@ pub struct EventsDim1CollectorOutput<NTY> {
 }
 
 impl<NTY: ScalarOps> EventsDim1CollectorOutput<NTY> {
-    pub fn len(&self) -> usize {
-        self.values.len()
-    }
-
     pub fn ts_anchor_sec(&self) -> u64 {
         self.ts_anchor_sec
     }
@@ -272,6 +268,12 @@ where
 {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+impl<NTY: ScalarOps> WithLen for EventsDim1CollectorOutput<NTY> {
+    fn len(&self) -> usize {
+        self.values.len()
     }
 }
 

@@ -1,7 +1,11 @@
+use crate::ts_offs_from_abs;
+use crate::ts_offs_from_abs_with_anchor;
 use crate::IsoDateTime;
 use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
+use chrono::TimeZone;
+use chrono::Utc;
 use err::Error;
 use items_0::collect_s::Collectable;
 use items_0::collect_s::CollectableType;
@@ -342,13 +346,15 @@ where
     }
 }
 
+impl<NTY: ScalarOps> WithLen for BinsDim0CollectedResult<NTY> {
+    fn len(&self) -> usize {
+        self.mins.len()
+    }
+}
+
 impl<NTY: ScalarOps> Collected for BinsDim0CollectedResult<NTY> {}
 
 impl<NTY> BinsDim0CollectedResult<NTY> {
-    pub fn len(&self) -> usize {
-        self.ts1_off_ms.len()
-    }
-
     pub fn ts_anchor_sec(&self) -> u64 {
         self.ts_anchor_sec
     }
@@ -450,24 +456,29 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
         _range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
     ) -> Result<Self::Output, Error> {
-        eprintln!("trying to make a result from {self:?}");
-        /*let bin_count_exp = if let Some(r) = &binrange {
+        trace!("trying to make a result from {self:?}");
+        let bin_count_exp = if let Some(r) = &binrange {
             r.bin_count() as u32
         } else {
-            eprintln!("no binrange given");
+            warn!("no binrange given");
             0
         };
-        let bin_count = self.vals.ts1s.len() as u32;
+        let mut vals = if let Some(x) = self.vals.take() {
+            x
+        } else {
+            return Err(Error::with_msg_no_trace("BinsDim0Collector without vals"));
+        };
+        let bin_count = vals.ts1s.len() as u32;
         eprintln!(
             "--------------  MAKE MISSING BINS  bin_count_exp {}  bin_count {}",
             bin_count_exp, bin_count
         );
         let (missing_bins, continue_at, finished_at) = if bin_count < bin_count_exp {
-            match self.vals.ts2s.back() {
+            match vals.ts2s.back() {
                 Some(&k) => {
                     let missing_bins = bin_count_exp - bin_count;
                     let continue_at = IsoDateTime(Utc.timestamp_nanos(k as i64));
-                    let u = k + (k - self.vals.ts1s.back().unwrap()) * missing_bins as u64;
+                    let u = k + (k - vals.ts1s.back().unwrap()) * missing_bins as u64;
                     let finished_at = IsoDateTime(Utc.timestamp_nanos(u as i64));
                     (missing_bins, Some(continue_at), Some(finished_at))
                 }
@@ -479,24 +490,26 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
         } else {
             (0, None, None)
         };
-        if self.vals.ts1s.as_slices().1.len() != 0 {
-            panic!();
+        if vals.ts1s.as_slices().1.len() != 0 {
+            warn!("ts1s non-contiguous");
         }
-        if self.vals.ts2s.as_slices().1.len() != 0 {
-            panic!();
+        if vals.ts2s.as_slices().1.len() != 0 {
+            warn!("ts2s non-contiguous");
         }
-        let tst1 = ts_offs_from_abs(self.vals.ts1s.as_slices().0);
-        let tst2 = ts_offs_from_abs_with_anchor(tst1.0, self.vals.ts2s.as_slices().0);
-        let counts = mem::replace(&mut self.vals.counts, VecDeque::new());
-        let mins = mem::replace(&mut self.vals.mins, VecDeque::new());
-        let maxs = mem::replace(&mut self.vals.maxs, VecDeque::new());
-        let avgs = mem::replace(&mut self.vals.avgs, VecDeque::new());
+        let ts1s = vals.ts1s.make_contiguous();
+        let ts2s = vals.ts2s.make_contiguous();
+        let (ts_anch, ts1ms, ts1ns) = ts_offs_from_abs(ts1s);
+        let (ts2ms, ts2ns) = ts_offs_from_abs_with_anchor(ts_anch, ts2s);
+        let counts = vals.counts;
+        let mins = vals.mins;
+        let maxs = vals.maxs;
+        let avgs = vals.avgs;
         let ret = BinsDim0CollectedResult::<NTY> {
-            ts_anchor_sec: tst1.0,
-            ts1_off_ms: tst1.1,
-            ts1_off_ns: tst1.2,
-            ts2_off_ms: tst2.0,
-            ts2_off_ns: tst2.1,
+            ts_anchor_sec: ts_anch,
+            ts1_off_ms: ts1ms,
+            ts1_off_ns: ts1ns,
+            ts2_off_ms: ts2ms,
+            ts2_off_ns: ts2ns,
             counts,
             mins,
             maxs,
@@ -507,8 +520,7 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
             continue_at,
             finished_at,
         };
-        Ok(ret)*/
-        todo!()
+        Ok(ret)
     }
 }
 

@@ -400,6 +400,12 @@ where
     }
 }
 
+impl<NTY: ScalarOps> WithLen for EventsXbinDim0CollectorOutput<NTY> {
+    fn len(&self) -> usize {
+        self.mins.len()
+    }
+}
+
 impl<NTY> ToJsonResult for EventsXbinDim0CollectorOutput<NTY>
 where
     NTY: ScalarOps,

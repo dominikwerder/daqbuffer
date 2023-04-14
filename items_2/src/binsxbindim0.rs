@@ -307,13 +307,15 @@ where
     }
 }
 
+impl<NTY: ScalarOps> WithLen for BinsXbinDim0CollectedResult<NTY> {
+    fn len(&self) -> usize {
+        self.mins.len()
+    }
+}
+
 impl<NTY: ScalarOps> Collected for BinsXbinDim0CollectedResult<NTY> {}
 
 impl<NTY> BinsXbinDim0CollectedResult<NTY> {
-    pub fn len(&self) -> usize {
-        self.ts1_off_ms.len()
-    }
-
     pub fn ts_anchor_sec(&self) -> u64 {
         self.ts_anchor_sec
     }
