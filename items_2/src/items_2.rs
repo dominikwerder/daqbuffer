@@ -15,6 +15,7 @@ pub mod streams;
 #[cfg(test)]
 pub mod test;
 pub mod testgen;
+pub mod transform;
 
 use channelevents::ChannelEvents;
 use chrono::DateTime;

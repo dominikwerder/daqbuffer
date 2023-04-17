@@ -9,6 +9,7 @@ use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::transform::EventTransform;
 use items_0::transform::TransformProperties;
+use items_0::transform::WithTransformProperties;
 use items_0::MergeError;
 use items_0::WithLen;
 use netpod::log::*;
@@ -444,11 +445,13 @@ where
     }
 }
 
-impl<T> EventTransform for Merger<T> {
+impl<T> WithTransformProperties for Merger<T> {
     fn query_transform_properties(&self) -> TransformProperties {
         todo!()
     }
+}
 
+impl<T> EventTransform for Merger<T> {
     fn transform(&mut self, src: Box<dyn items_0::Events>) -> Box<dyn items_0::Events> {
         todo!()
     }

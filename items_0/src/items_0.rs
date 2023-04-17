@@ -12,6 +12,8 @@ pub mod bincode {
     pub use bincode::*;
 }
 
+pub use futures_util;
+
 use collect_s::Collectable;
 use container::ByteEstimate;
 use netpod::range::evrange::SeriesRange;

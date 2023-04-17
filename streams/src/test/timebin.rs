@@ -16,12 +16,14 @@ use items_2::binsdim0::BinsDim0;
 use items_2::channelevents::ChannelEvents;
 use items_2::channelevents::ConnStatus;
 use items_2::channelevents::ConnStatusEvent;
+use items_2::eventsdim0::EventsDim0;
 use items_2::testgen::make_some_boxed_d0_f32;
 use netpod::range::evrange::NanoRange;
 use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::MS;
 use netpod::timeunits::SEC;
 use netpod::BinnedRangeEnum;
+use query::transform::TransformQuery;
 use serde_json::Value as JsValue;
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -210,6 +212,10 @@ fn time_bin_02() -> Result<(), Error> {
             eprintln!("{s}");
             let jsval: JsValue = serde_json::from_slice(&d)?;
             {
+                let ts_anchor = jsval.get("tsAnchor").unwrap().as_u64().unwrap();
+                assert_eq!(ts_anchor, 1200);
+            }
+            {
                 let counts = jsval.get("counts").unwrap().as_array().unwrap();
                 assert_eq!(counts.len(), expected_bin_count);
                 for v in counts {
@@ -232,6 +238,10 @@ fn time_bin_02() -> Result<(), Error> {
                     assert_eq!((40 + ts1ms.as_u64().unwrap() / 100) % 1000, max.as_u64().unwrap());
                 }
             }
+            {
+                let range_final = jsval.get("rangeFinal").unwrap().as_bool().unwrap();
+                assert_eq!(range_final, true);
+            }
         }
         Ok(())
     };
@@ -239,3 +249,12 @@ fn time_bin_02() -> Result<(), Error> {
 }
 
 // TODO add test case to observe RangeComplete after binning.
+
+#[test]
+fn transform_chain_correctness_01() -> Result<(), Error> {
+    type STY = f32;
+    let tq = TransformQuery::default_time_binned();
+    let empty = EventsDim0::<STY>::empty();
+    tq.build_event_transform(empty.into())?;
+    Ok(())
+}

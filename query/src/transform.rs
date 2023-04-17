@@ -1,4 +1,10 @@
 use err::Error;
+use items_0::transform::EventStream;
+use items_0::transform::TransformEvent;
+use items_0::transform::TransformedCollectedStream;
+use items_2::transform::make_transform_identity;
+use items_2::transform::make_transform_min_max_avg;
+use items_2::transform::make_transform_pulse_id_diff;
 use netpod::get_url_query_pairs;
 use netpod::log::*;
 use netpod::AppendToUrl;
@@ -108,7 +114,31 @@ impl TransformQuery {
         }
     }
 
-    pub fn build_event_transform(&self) -> () {}
+    pub fn build_event_transform(&self, inp: EventStream) -> Result<TransformEvent, Error> {
+        match &self.event {
+            EventTransformQuery::ValueFull => Ok(make_transform_identity()),
+            EventTransformQuery::MinMaxAvgDev => Ok(make_transform_min_max_avg()),
+            EventTransformQuery::ArrayPick(..) => Err(Error::with_msg_no_trace(format!(
+                "build_event_transform don't know what to do {self:?}"
+            ))),
+            EventTransformQuery::PulseIdDiff => Ok(make_transform_pulse_id_diff()),
+            EventTransformQuery::EventBlobsVerbatim => Err(Error::with_msg_no_trace(format!(
+                "build_event_transform don't know what to do {self:?}"
+            ))),
+            EventTransformQuery::EventBlobsUncompressed => Err(Error::with_msg_no_trace(format!(
+                "build_event_transform don't know what to do {self:?}"
+            ))),
+        }
+    }
+
+    pub fn build_full_transform_collected(&self, inp: EventStream) -> Result<TransformedCollectedStream, Error> {
+        let evs = self.build_event_transform(inp)?;
+        match &self.time_binning {
+            TimeBinningTransformQuery::None => todo!(),
+            TimeBinningTransformQuery::TimeWeighted => todo!(),
+            TimeBinningTransformQuery::Unweighted => todo!(),
+        }
+    }
 }
 
 impl FromUrl for TransformQuery {

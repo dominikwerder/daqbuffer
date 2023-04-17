@@ -3,7 +3,9 @@ use futures_util::FutureExt;
 use futures_util::Stream;
 use items_0::container::ByteEstimate;
 use items_0::streamitem::sitem_data;
+use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
+use items_0::streamitem::StreamItem;
 use items_0::Appendable;
 use items_0::Empty;
 use items_2::channelevents::ChannelEvents;
@@ -21,6 +23,8 @@ pub struct GenerateI32 {
     #[allow(unused)]
     c1: u64,
     timeout: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
+    done: bool,
+    done_range_final: bool,
 }
 
 impl GenerateI32 {
@@ -38,6 +42,8 @@ impl GenerateI32 {
             tsend,
             c1: 0,
             timeout: None,
+            done: false,
+            done_range_final: false,
         }
     }
 
@@ -67,8 +73,12 @@ impl Stream for GenerateI32 {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         loop {
-            break if self.ts >= self.tsend {
+            break if self.done_range_final {
                 Ready(None)
+            } else if self.ts >= self.tsend {
+                self.done = true;
+                self.done_range_final = true;
+                Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
             } else if false {
                 // To use the generator without throttling, use this scope
                 Ready(Some(self.make_batch()))

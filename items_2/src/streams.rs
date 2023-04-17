@@ -4,6 +4,7 @@ use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::transform::EventTransform;
 use items_0::transform::TransformProperties;
+use items_0::transform::WithTransformProperties;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::Context;
@@ -43,11 +44,19 @@ where
     }
 }
 
-impl<T> EventTransform for Enumerate2<T> {
+impl<T> WithTransformProperties for Enumerate2<T>
+where
+    T: WithTransformProperties,
+{
     fn query_transform_properties(&self) -> TransformProperties {
-        todo!()
+        self.inp.query_transform_properties()
     }
+}
 
+impl<T> EventTransform for Enumerate2<T>
+where
+    T: WithTransformProperties,
+{
     fn transform(&mut self, src: Box<dyn items_0::Events>) -> Box<dyn items_0::Events> {
         todo!()
     }
@@ -64,7 +73,10 @@ where
     T: Stream,
     F: Fn(<T as Stream>::Item) -> Fut,
 {
-    pub fn new(inp: T, f: F) -> Self {
+    pub fn new(inp: T, f: F) -> Self
+    where
+        T: EventTransform,
+    {
         Self {
             inp: Box::pin(inp),
             f: Box::pin(f),
@@ -118,11 +130,19 @@ where
     }
 }
 
-impl<T, F, Fut> EventTransform for Then2<T, F, Fut> {
+impl<T, F, Fut> WithTransformProperties for Then2<T, F, Fut>
+where
+    T: EventTransform,
+{
     fn query_transform_properties(&self) -> TransformProperties {
-        todo!()
+        self.inp.query_transform_properties()
     }
+}
 
+impl<T, F, Fut> EventTransform for Then2<T, F, Fut>
+where
+    T: EventTransform,
+{
     fn transform(&mut self, src: Box<dyn items_0::Events>) -> Box<dyn items_0::Events> {
         todo!()
     }
@@ -186,11 +206,13 @@ where
     }
 }
 
-impl<T> EventTransform for VecStream<T> {
+impl<T> WithTransformProperties for VecStream<T> {
     fn query_transform_properties(&self) -> TransformProperties {
         todo!()
     }
+}
 
+impl<T> EventTransform for VecStream<T> {
     fn transform(&mut self, src: Box<dyn items_0::Events>) -> Box<dyn items_0::Events> {
         todo!()
     }
