@@ -13,3 +13,4 @@ pub mod tcprawclient;
 pub mod test;
 pub mod timebin;
 pub mod timebinnedjson;
+pub mod transform;

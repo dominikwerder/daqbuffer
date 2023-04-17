@@ -8,6 +8,7 @@ use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StatsItem;
 use items_0::streamitem::StreamItem;
+use items_0::transform::EventStream;
 use items_0::WithLen;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
@@ -34,6 +35,10 @@ macro_rules! trace3 {
 macro_rules! trace4 {
     (D$($arg:tt)*) => ();
     ($($arg:tt)*) => (eprintln!($($arg)*));
+}
+
+pub struct Collect {
+    inp: EventStream,
 }
 
 async fn collect_in_span<T, S>(

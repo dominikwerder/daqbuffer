@@ -1,10 +1,4 @@
 use err::Error;
-use items_0::transform::EventStream;
-use items_0::transform::TransformEvent;
-use items_0::transform::TransformedCollectedStream;
-use items_2::transform::make_transform_identity;
-use items_2::transform::make_transform_min_max_avg;
-use items_2::transform::make_transform_pulse_id_diff;
 use netpod::get_url_query_pairs;
 use netpod::log::*;
 use netpod::AppendToUrl;
@@ -15,7 +9,7 @@ use std::collections::BTreeMap;
 use url::Url;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-enum EventTransformQuery {
+pub enum EventTransformQuery {
     EventBlobsVerbatim,
     EventBlobsUncompressed,
     ValueFull,
@@ -39,7 +33,7 @@ impl EventTransformQuery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-enum TimeBinningTransformQuery {
+pub enum TimeBinningTransformQuery {
     None,
     TimeWeighted,
     Unweighted,
@@ -114,30 +108,12 @@ impl TransformQuery {
         }
     }
 
-    pub fn build_event_transform(&self, inp: EventStream) -> Result<TransformEvent, Error> {
-        match &self.event {
-            EventTransformQuery::ValueFull => Ok(make_transform_identity()),
-            EventTransformQuery::MinMaxAvgDev => Ok(make_transform_min_max_avg()),
-            EventTransformQuery::ArrayPick(..) => Err(Error::with_msg_no_trace(format!(
-                "build_event_transform don't know what to do {self:?}"
-            ))),
-            EventTransformQuery::PulseIdDiff => Ok(make_transform_pulse_id_diff()),
-            EventTransformQuery::EventBlobsVerbatim => Err(Error::with_msg_no_trace(format!(
-                "build_event_transform don't know what to do {self:?}"
-            ))),
-            EventTransformQuery::EventBlobsUncompressed => Err(Error::with_msg_no_trace(format!(
-                "build_event_transform don't know what to do {self:?}"
-            ))),
-        }
+    pub fn get_tr_event(&self) -> &EventTransformQuery {
+        &self.event
     }
 
-    pub fn build_full_transform_collected(&self, inp: EventStream) -> Result<TransformedCollectedStream, Error> {
-        let evs = self.build_event_transform(inp)?;
-        match &self.time_binning {
-            TimeBinningTransformQuery::None => todo!(),
-            TimeBinningTransformQuery::TimeWeighted => todo!(),
-            TimeBinningTransformQuery::Unweighted => todo!(),
-        }
+    pub fn get_tr_time_binning(&self) -> &TimeBinningTransformQuery {
+        &self.time_binning
     }
 }
 

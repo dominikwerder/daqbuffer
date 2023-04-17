@@ -1,6 +1,7 @@
 use crate::collect::collect;
 use crate::generators::GenerateI32;
 use crate::test::runfut;
+use crate::transform::build_event_transform;
 use chrono::DateTime;
 use chrono::Utc;
 use err::Error;
@@ -255,6 +256,6 @@ fn transform_chain_correctness_01() -> Result<(), Error> {
     type STY = f32;
     let tq = TransformQuery::default_time_binned();
     let empty = EventsDim0::<STY>::empty();
-    tq.build_event_transform(empty.into())?;
+    build_event_transform(&tq, empty.into())?;
     Ok(())
 }

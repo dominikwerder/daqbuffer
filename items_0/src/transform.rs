@@ -1,3 +1,4 @@
+use crate::collect_s::Collectable;
 use crate::collect_s::Collected;
 use crate::streamitem::RangeCompletableItem;
 use crate::streamitem::Sitemty;
@@ -105,18 +106,4 @@ where
     }
 }
 
-// TODO these must return type which can take events as input.
-
-pub struct TransformedCollectedStream(pub Pin<Box<dyn Future<Output = Result<Box<dyn Collected>, Error>>>>);
-
-impl WithTransformProperties for TransformedCollectedStream {
-    fn query_transform_properties(&self) -> TransformProperties {
-        todo!()
-    }
-}
-
-impl EventTransform for TransformedCollectedStream {
-    fn transform(&mut self, src: Box<dyn Events>) -> Box<dyn Events> {
-        todo!()
-    }
-}
+pub struct CollectableStream(pub Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>>);

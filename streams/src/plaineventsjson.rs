@@ -91,7 +91,7 @@ pub async fn plain_events_json(evq: &PlainEventsQuery, chconf: &ChConf, cluster:
         info!("item after merge: {item:?}");
         item
     });
-    let stream = RangeFilter2::new(stream, evq.range().try_into()?, evquery.one_before_range());
+    //let stream = RangeFilter2::new(stream, evq.range().try_into()?, evquery.one_before_range());
     #[cfg(DISABLED)]
     let stream = stream.map(|item| {
         info!("item after rangefilter: {item:?}");

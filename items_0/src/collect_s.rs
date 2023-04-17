@@ -135,12 +135,12 @@ where
 }
 
 // TODO rename to `Typed`
-pub trait CollectableType: fmt::Debug + AsAnyRef + AsAnyMut + TypeName {
+pub trait CollectableType: fmt::Debug + AsAnyRef + AsAnyMut + TypeName + Send {
     type Collector: CollectorType<Input = Self>;
     fn new_collector() -> Self::Collector;
 }
 
-pub trait Collectable: fmt::Debug + AsAnyRef + AsAnyMut + TypeName {
+pub trait Collectable: fmt::Debug + AsAnyRef + AsAnyMut + TypeName + Send {
     fn new_collector(&self) -> Box<dyn Collector>;
 }
 
