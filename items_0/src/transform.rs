@@ -3,12 +3,25 @@ use crate::collect_s::Collected;
 use crate::streamitem::RangeCompletableItem;
 use crate::streamitem::Sitemty;
 use crate::streamitem::StreamItem;
+use crate::timebin::TimeBinnable;
 use crate::Events;
 use err::Error;
 use futures_util::stream;
 use futures_util::Future;
 use futures_util::Stream;
 use std::pin::Pin;
+
+pub trait EventStreamTrait: Stream<Item = Sitemty<Box<dyn Events>>> + WithTransformProperties + Send {}
+
+pub trait TimeBinnableStreamTrait:
+    Stream<Item = Sitemty<Box<dyn TimeBinnable>>> + WithTransformProperties + Send
+{
+}
+
+pub trait CollectableStreamTrait:
+    Stream<Item = Sitemty<Box<dyn Collectable>>> + WithTransformProperties + Send
+{
+}
 
 pub struct TransformProperties {
     pub needs_one_before_range: bool,

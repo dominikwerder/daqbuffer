@@ -2,10 +2,12 @@ use crate::collect_s::Collectable;
 use crate::collect_s::ToJsonResult;
 use crate::AsAnyMut;
 use crate::AsAnyRef;
+use crate::Events;
 use crate::RangeOverlapInfo;
 use crate::TypeName;
 use crate::WithLen;
 use netpod::log::*;
+use netpod::range::evrange::SeriesRange;
 use netpod::BinnedRangeEnum;
 use std::any::Any;
 use std::fmt;
@@ -89,6 +91,60 @@ pub trait TimeBinnable: fmt::Debug + WithLen + RangeOverlapInfo + Any + AsAnyRef
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult>;
 }
 
+impl WithLen for Box<dyn TimeBinnable> {
+    fn len(&self) -> usize {
+        todo!()
+    }
+}
+
+impl RangeOverlapInfo for Box<dyn TimeBinnable> {
+    fn ends_before(&self, range: &SeriesRange) -> bool {
+        todo!()
+    }
+
+    fn ends_after(&self, range: &SeriesRange) -> bool {
+        todo!()
+    }
+
+    fn starts_after(&self, range: &SeriesRange) -> bool {
+        todo!()
+    }
+}
+
+impl TimeBinnable for Box<dyn TimeBinnable> {
+    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
+        todo!()
+    }
+
+    fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
+        todo!()
+    }
+}
+
+impl RangeOverlapInfo for Box<dyn Events> {
+    fn ends_before(&self, range: &SeriesRange) -> bool {
+        todo!()
+    }
+
+    fn ends_after(&self, range: &SeriesRange) -> bool {
+        todo!()
+    }
+
+    fn starts_after(&self, range: &SeriesRange) -> bool {
+        todo!()
+    }
+}
+
+impl TimeBinnable for Box<dyn Events> {
+    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
+        todo!()
+    }
+
+    fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
+        todo!()
+    }
+}
+
 #[derive(Debug)]
 pub struct TimeBinnerDynStruct {
     binrange: BinnedRangeEnum,
@@ -112,9 +168,11 @@ impl TimeBinnerTy for TimeBinnerDynStruct {
 
     fn ingest(&mut self, item: &mut Self::Input) {
         if self.binner.is_none() {
-            self.binner = Some(Box::new(
-                item.time_binner_new(self.binrange.clone(), self.do_time_weight),
-            ));
+            self.binner = Some(Box::new(TimeBinnableTy::time_binner_new(
+                item,
+                self.binrange.clone(),
+                self.do_time_weight,
+            )));
         }
         self.binner.as_mut().unwrap().as_mut().ingest(item.as_mut())
     }
