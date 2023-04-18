@@ -1,4 +1,5 @@
 use err::Error;
+use futures_util::Future;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::collect_s::Collectable;
@@ -8,13 +9,18 @@ use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StatsItem;
 use items_0::streamitem::StreamItem;
-use items_0::transform::EventStream;
+use items_0::transform::CollectableStreamBox;
+use items_0::transform::CollectableStreamTrait;
+use items_0::transform::EventStreamTrait;
 use items_0::WithLen;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 use netpod::BinnedRangeEnum;
 use netpod::DiskStats;
 use std::fmt;
+use std::pin::Pin;
+use std::task::Context;
+use std::task::Poll;
 use std::time::Duration;
 use std::time::Instant;
 use tracing::Instrument;
@@ -38,7 +44,31 @@ macro_rules! trace4 {
 }
 
 pub struct Collect {
-    inp: EventStream,
+    inp: CollectableStreamBox,
+    deadline: Instant,
+}
+
+impl Collect {
+    pub fn new<INP>(inp: INP, deadline: Instant) -> Self
+    where
+        INP: CollectableStreamTrait + 'static,
+    {
+        Self {
+            inp: CollectableStreamBox(Box::pin(inp)),
+            deadline,
+        }
+    }
+}
+
+impl Future for Collect {
+    type Output = Sitemty<Box<dyn Collected>>;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        use Poll::*;
+        let span = tracing::span!(Level::INFO, "Collect");
+        let _spg = span.enter();
+        todo!()
+    }
 }
 
 async fn collect_in_span<T, S>(

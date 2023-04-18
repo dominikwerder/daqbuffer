@@ -106,17 +106,41 @@ impl EventTransform for TransformEvent {
     }
 }
 
-pub struct EventStream(pub Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Events>>> + Send>>);
+impl<T> WithTransformProperties for stream::Iter<T> {
+    fn query_transform_properties(&self) -> TransformProperties {
+        todo!()
+    }
+}
 
-impl<T> From<T> for EventStream
+impl<T> EventStreamTrait for stream::Iter<T> where
+    T: core::iter::Iterator<Item = Sitemty<Box<(dyn Events + 'static)>>> + Send
+{
+}
+
+pub struct EventStreamBox(pub Pin<Box<dyn EventStreamTrait>>);
+
+impl<T> From<T> for EventStreamBox
 where
     T: Events,
 {
     fn from(value: T) -> Self {
         let item = Ok(StreamItem::DataItem(RangeCompletableItem::Data(Box::new(value) as _)));
         let x = stream::iter(vec![item]);
-        EventStream(Box::pin(x))
+        Self(Box::pin(x))
     }
 }
 
-pub struct CollectableStream(pub Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>>);
+pub struct CollectableStreamBox(pub Pin<Box<dyn CollectableStreamTrait>>);
+
+impl<T> WithTransformProperties for stream::Empty<T> {
+    fn query_transform_properties(&self) -> TransformProperties {
+        todo!()
+    }
+}
+
+impl<T> CollectableStreamTrait for stream::Empty<T>
+where
+    T: Send,
+    stream::Empty<T>: Stream<Item = Sitemty<Box<dyn Collectable>>>,
+{
+}

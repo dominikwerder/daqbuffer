@@ -3,7 +3,6 @@
 
 use crate::channelevents::ChannelEvents;
 use crate::eventsdim0::EventsDim0;
-use items_0::transform::EventStream;
 use items_0::transform::EventTransform;
 use items_0::transform::TransformEvent;
 use items_0::transform::TransformProperties;

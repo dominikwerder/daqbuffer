@@ -145,6 +145,18 @@ impl TimeBinnable for Box<dyn Events> {
     }
 }
 
+impl TypeName for Box<dyn TimeBinnable> {
+    fn type_name(&self) -> String {
+        format!("Box<dyn TimeBinnable> TODO TypeName for Box<dyn TimeBinnable>")
+    }
+}
+
+impl Collectable for Box<dyn TimeBinnable> {
+    fn new_collector(&self) -> Box<dyn crate::collect_s::Collector> {
+        todo!()
+    }
+}
+
 #[derive(Debug)]
 pub struct TimeBinnerDynStruct {
     binrange: BinnedRangeEnum,

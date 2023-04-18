@@ -2,9 +2,14 @@ use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items_0::collect_s::Collectable;
+use items_0::streamitem::Sitemty;
+use items_0::transform::CollectableStreamTrait;
+use items_0::transform::EventStreamTrait;
 use items_0::transform::EventTransform;
 use items_0::transform::TransformProperties;
 use items_0::transform::WithTransformProperties;
+use items_0::Events;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::Context;
@@ -216,4 +221,53 @@ impl<T> EventTransform for VecStream<T> {
     fn transform(&mut self, src: Box<dyn items_0::Events>) -> Box<dyn items_0::Events> {
         todo!()
     }
+}
+
+/// Wrap any event stream and provide transformation properties.
+pub struct PlainEventStream<INP, T>
+where
+    T: Events,
+    INP: Stream<Item = Sitemty<T>>,
+{
+    inp: Pin<Box<INP>>,
+}
+
+impl<INP, T> PlainEventStream<INP, T>
+where
+    T: Events,
+    INP: Stream<Item = Sitemty<T>>,
+{
+    pub fn new(inp: INP) -> Self {
+        Self { inp: Box::pin(inp) }
+    }
+}
+
+impl<INP, T> Stream for PlainEventStream<INP, T>
+where
+    T: Events,
+    INP: Stream<Item = Sitemty<T>>,
+{
+    type Item = Sitemty<Box<dyn Events>>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        todo!()
+    }
+}
+
+impl<INP, T> WithTransformProperties for PlainEventStream<INP, T>
+where
+    T: Events,
+    INP: Stream<Item = Sitemty<T>>,
+{
+    fn query_transform_properties(&self) -> TransformProperties {
+        todo!()
+    }
+}
+
+impl<INP, T> EventStreamTrait for PlainEventStream<INP, T>
+where
+    T: Events,
+    INP: Stream<Item = Sitemty<T>> + Send,
+{
 }

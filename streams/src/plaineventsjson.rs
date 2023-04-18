@@ -1,5 +1,8 @@
+use crate::collect::Collect;
 use crate::rangefilter2::RangeFilter2;
 use crate::tcprawclient::open_tcp_streams;
+use crate::transform::EventsToTimeBinnable;
+use crate::transform::TimeBinnableToCollectable;
 use err::Error;
 use futures_util::stream;
 use futures_util::StreamExt;
@@ -7,6 +10,7 @@ use items_0::on_sitemty_data;
 use items_0::streamitem::sitem_data;
 use items_2::channelevents::ChannelEvents;
 use items_2::merger::Merger;
+use items_2::streams::PlainEventStream;
 use netpod::log::*;
 use netpod::ChConf;
 use netpod::Cluster;
@@ -98,7 +102,13 @@ pub async fn plain_events_json(evq: &PlainEventsQuery, chconf: &ChConf, cluster:
         item
     });
     let stream = stream::iter([empty]).chain(stream);
-    let collected = crate::collect::collect(stream, deadline, events_max, Some(evq.range().clone()), None).await?;
+    let stream = PlainEventStream::new(stream);
+    let stream = EventsToTimeBinnable::new(stream);
+    let stream = TimeBinnableToCollectable::new(stream);
+
+    // TODO allow Collect to respect events_max and give range to compute continue-at.
+    //let collected = crate::collect::collect(stream, deadline, events_max, Some(evq.range().clone()), None).await?;
+    let collected = Collect::new(stream, deadline).await;
     let jsval = serde_json::to_value(&collected)?;
     Ok(jsval)
 }
