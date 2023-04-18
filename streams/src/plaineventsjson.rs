@@ -105,10 +105,9 @@ pub async fn plain_events_json(evq: &PlainEventsQuery, chconf: &ChConf, cluster:
     let stream = PlainEventStream::new(stream);
     let stream = EventsToTimeBinnable::new(stream);
     let stream = TimeBinnableToCollectable::new(stream);
+    let collected = Collect::new(stream, deadline, events_max, Some(evq.range().clone()), None).await;
 
-    // TODO allow Collect to respect events_max and give range to compute continue-at.
     //let collected = crate::collect::collect(stream, deadline, events_max, Some(evq.range().clone()), None).await?;
-    let collected = Collect::new(stream, deadline).await;
     let jsval = serde_json::to_value(&collected)?;
     Ok(jsval)
 }

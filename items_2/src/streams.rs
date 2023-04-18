@@ -3,7 +3,9 @@ use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::collect_s::Collectable;
+use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
+use items_0::streamitem::StreamItem;
 use items_0::transform::CollectableStreamTrait;
 use items_0::transform::EventStreamTrait;
 use items_0::transform::EventTransform;
@@ -249,9 +251,23 @@ where
 {
     type Item = Sitemty<Box<dyn Events>>;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        todo!()
+        match self.inp.poll_next_unpin(cx) {
+            Ready(Some(item)) => Ready(Some(match item {
+                Ok(item) => Ok(match item {
+                    StreamItem::DataItem(item) => StreamItem::DataItem(match item {
+                        RangeCompletableItem::RangeComplete => RangeCompletableItem::RangeComplete,
+                        RangeCompletableItem::Data(item) => RangeCompletableItem::Data(Box::new(item)),
+                    }),
+                    StreamItem::Log(item) => StreamItem::Log(item),
+                    StreamItem::Stats(item) => StreamItem::Stats(item),
+                }),
+                Err(e) => Err(e),
+            })),
+            Ready(None) => Ready(None),
+            Pending => Pending,
+        }
     }
 }
 

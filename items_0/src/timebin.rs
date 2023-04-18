@@ -1,4 +1,5 @@
 use crate::collect_s::Collectable;
+use crate::collect_s::Collector;
 use crate::collect_s::ToJsonResult;
 use crate::AsAnyMut;
 use crate::AsAnyRef;
@@ -84,7 +85,9 @@ pub trait TimeBinner: fmt::Debug + Send {
 
 /// Provides a time-binned representation of the implementing type.
 /// In contrast to `TimeBinnableType` this is meant for trait objects.
-pub trait TimeBinnable: fmt::Debug + WithLen + RangeOverlapInfo + Any + AsAnyRef + AsAnyMut + Send {
+pub trait TimeBinnable:
+    fmt::Debug + WithLen + RangeOverlapInfo + Collectable + Any + AsAnyRef + AsAnyMut + Send
+{
     // TODO implementors may fail if edges contain not at least 2 entries.
     fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner>;
     // TODO just a helper for the empty result.
@@ -93,7 +96,7 @@ pub trait TimeBinnable: fmt::Debug + WithLen + RangeOverlapInfo + Any + AsAnyRef
 
 impl WithLen for Box<dyn TimeBinnable> {
     fn len(&self) -> usize {
-        todo!()
+        WithLen::len(self.as_ref())
     }
 }
 
@@ -152,8 +155,8 @@ impl TypeName for Box<dyn TimeBinnable> {
 }
 
 impl Collectable for Box<dyn TimeBinnable> {
-    fn new_collector(&self) -> Box<dyn crate::collect_s::Collector> {
-        todo!()
+    fn new_collector(&self) -> Box<dyn Collector> {
+        self.as_ref().new_collector()
     }
 }
 

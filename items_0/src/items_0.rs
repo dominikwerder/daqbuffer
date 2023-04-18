@@ -141,3 +141,91 @@ impl PartialEq for Box<dyn Events> {
         Events::partial_eq_dyn(self.as_ref(), other.as_ref())
     }
 }
+
+impl EventsNonObj for Box<dyn Events> {
+    fn into_tss_pulses(self: Box<Self>) -> (VecDeque<u64>, VecDeque<u64>) {
+        todo!()
+    }
+}
+
+impl Events for Box<dyn Events> {
+    fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable {
+        todo!()
+    }
+
+    fn verify(&self) -> bool {
+        todo!()
+    }
+
+    fn output_info(&self) {
+        todo!()
+    }
+
+    fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
+        todo!()
+    }
+
+    fn as_collectable_with_default_ref(&self) -> &dyn Collectable {
+        todo!()
+    }
+
+    fn as_collectable_with_default_mut(&mut self) -> &mut dyn Collectable {
+        todo!()
+    }
+
+    fn ts_min(&self) -> Option<u64> {
+        todo!()
+    }
+
+    fn ts_max(&self) -> Option<u64> {
+        todo!()
+    }
+
+    fn take_new_events_until_ts(&mut self, ts_end: u64) -> Box<dyn Events> {
+        todo!()
+    }
+
+    fn new_empty_evs(&self) -> Box<dyn Events> {
+        todo!()
+    }
+
+    fn drain_into_evs(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), MergeError> {
+        todo!()
+    }
+
+    fn find_lowest_index_gt_evs(&self, ts: u64) -> Option<usize> {
+        todo!()
+    }
+
+    fn find_lowest_index_ge_evs(&self, ts: u64) -> Option<usize> {
+        todo!()
+    }
+
+    fn find_highest_index_lt_evs(&self, ts: u64) -> Option<usize> {
+        todo!()
+    }
+
+    fn clone_dyn(&self) -> Box<dyn Events> {
+        todo!()
+    }
+
+    fn partial_eq_dyn(&self, other: &dyn Events) -> bool {
+        todo!()
+    }
+
+    fn serde_id(&self) -> &'static str {
+        todo!()
+    }
+
+    fn nty_id(&self) -> u32 {
+        todo!()
+    }
+
+    fn tss(&self) -> &VecDeque<u64> {
+        todo!()
+    }
+
+    fn pulses(&self) -> &VecDeque<u64> {
+        todo!()
+    }
+}

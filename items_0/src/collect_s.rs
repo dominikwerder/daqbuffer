@@ -135,12 +135,12 @@ where
 }
 
 // TODO rename to `Typed`
-pub trait CollectableType: fmt::Debug + AsAnyRef + AsAnyMut + TypeName + Send {
+pub trait CollectableType: fmt::Debug + WithLen + AsAnyRef + AsAnyMut + TypeName + Send {
     type Collector: CollectorType<Input = Self>;
     fn new_collector() -> Self::Collector;
 }
 
-pub trait Collectable: fmt::Debug + AsAnyRef + AsAnyMut + TypeName + Send {
+pub trait Collectable: fmt::Debug + WithLen + AsAnyRef + AsAnyMut + TypeName + Send {
     fn new_collector(&self) -> Box<dyn Collector>;
 }
 
@@ -172,6 +172,13 @@ impl TypeName for Box<dyn Collectable> {
 }
 
 // TODO do this with some blanket impl:
+impl WithLen for Box<dyn Collectable> {
+    fn len(&self) -> usize {
+        WithLen::len(self.as_ref())
+    }
+}
+
+// TODO do this with some blanket impl:
 impl Collectable for Box<dyn Collectable> {
     fn new_collector(&self) -> Box<dyn Collector> {
         Collectable::new_collector(self.as_ref())
@@ -180,7 +187,7 @@ impl Collectable for Box<dyn Collectable> {
 
 impl WithLen for Box<dyn TimeBinned> {
     fn len(&self) -> usize {
-        self.as_ref().len()
+        WithLen::len(self.as_ref())
     }
 }
 

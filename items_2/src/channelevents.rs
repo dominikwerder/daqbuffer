@@ -532,7 +532,7 @@ impl ByteEstimate for ChannelEvents {
 impl Mergeable for ChannelEvents {
     fn ts_min(&self) -> Option<u64> {
         match self {
-            ChannelEvents::Events(k) => k.ts_min(),
+            ChannelEvents::Events(k) => Mergeable::ts_min(k),
             ChannelEvents::Status(k) => match k {
                 Some(k) => Some(k.ts),
                 None => None,
@@ -542,7 +542,7 @@ impl Mergeable for ChannelEvents {
 
     fn ts_max(&self) -> Option<u64> {
         match self {
-            ChannelEvents::Events(k) => k.ts_max(),
+            ChannelEvents::Events(k) => Mergeable::ts_max(k),
             ChannelEvents::Status(k) => match k {
                 Some(k) => Some(k.ts),
                 None => None,
