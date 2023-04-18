@@ -46,12 +46,11 @@ macro_rules! trace4 {
 
 pub struct Collect {
     inp: CollectableStreamBox,
-    deadline: Instant,
     events_max: u64,
     range: Option<SeriesRange>,
     binrange: Option<BinnedRangeEnum>,
     collector: Option<Box<dyn Collector>>,
-    range_complete: bool,
+    range_final: bool,
     timeout: bool,
     timer: Pin<Box<dyn Future<Output = ()> + Send>>,
     done_input: bool,
@@ -71,12 +70,11 @@ impl Collect {
         let timer = tokio::time::sleep_until(deadline.into());
         Self {
             inp: CollectableStreamBox(Box::pin(inp)),
-            deadline,
             events_max,
             range,
             binrange,
             collector: None,
-            range_complete: false,
+            range_final: false,
             timeout: false,
             timer: Box::pin(timer),
             done_input: false,
@@ -88,7 +86,7 @@ impl Collect {
             Ok(item) => match item {
                 StreamItem::DataItem(item) => match item {
                     RangeCompletableItem::RangeComplete => {
-                        self.range_complete = true;
+                        self.range_final = true;
                         if let Some(coll) = self.collector.as_mut() {
                             coll.set_range_complete();
                         } else {
