@@ -263,6 +263,36 @@ fn binned_d0_json_07() -> Result<(), Error> {
     taskrun::run(fut)
 }
 
+#[test]
+fn binned_inmem_d0_json_00() -> Result<(), Error> {
+    let fut = async {
+        let rh = require_test_hosts_running()?;
+        let cluster = &rh.cluster;
+        let jsv = get_binned_json(
+            Channel {
+                backend: "test-disk-databuffer".into(),
+                name: "const-regular-scalar-i32-be".into(),
+                series: None,
+            },
+            "1970-01-01T00:20:11.000Z",
+            "1970-01-01T00:30:20.000Z",
+            // TODO must use AggKind::TimeWeightedScalar
+            10,
+            cluster,
+        )
+        .await?;
+        debug!("Receveided a response json value: {jsv:?}");
+        let res: items_2::binsdim0::BinsDim0CollectedResult<i32> = serde_json::from_value(jsv)?;
+        // inmem was meant just for functional test, ignores the requested time range
+        assert_eq!(res.ts_anchor_sec(), 1200);
+        assert_eq!(res.len(), 11);
+        assert_eq!(res.range_final(), true);
+        assert_eq!(f32_cmp_near(res.avgs()[0], 42.0), true);
+        Ok(())
+    };
+    taskrun::run(fut)
+}
+
 async fn get_binned_json(
     channel: Channel,
     beg_date: &str,
