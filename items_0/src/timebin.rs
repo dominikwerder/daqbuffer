@@ -62,6 +62,30 @@ pub trait TimeBinned: Any + TypeName + TimeBinnable + Collectable + erased_serde
     fn validate(&self) -> Result<(), String>;
 }
 
+impl RangeOverlapInfo for Box<dyn TimeBinned> {
+    fn ends_before(&self, range: &SeriesRange) -> bool {
+        todo!()
+    }
+
+    fn ends_after(&self, range: &SeriesRange) -> bool {
+        todo!()
+    }
+
+    fn starts_after(&self, range: &SeriesRange) -> bool {
+        todo!()
+    }
+}
+
+impl TimeBinnable for Box<dyn TimeBinned> {
+    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
+        todo!()
+    }
+
+    fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
+        todo!()
+    }
+}
+
 pub trait TimeBinner: fmt::Debug + Send {
     fn ingest(&mut self, item: &mut dyn TimeBinnable);
     fn bins_ready_count(&self) -> usize;

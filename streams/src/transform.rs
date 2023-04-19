@@ -139,6 +139,8 @@ impl WithTransformProperties for TimeBinnableToCollectable {
 
 impl CollectableStreamTrait for TimeBinnableToCollectable {}
 
+impl CollectableStreamTrait for Pin<Box<TimeBinnableToCollectable>> {}
+
 pub fn build_time_binning_transform(
     tr: &TransformQuery,
     inp: Pin<Box<dyn TimeBinnableStreamTrait>>,

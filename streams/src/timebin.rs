@@ -10,6 +10,8 @@ use items_0::streamitem::StreamItem;
 use items_0::timebin::TimeBinnableTy;
 use items_0::timebin::TimeBinner;
 use items_0::timebin::TimeBinnerTy;
+use items_0::transform::TimeBinnableStreamTrait;
+use items_0::transform::WithTransformProperties;
 use netpod::log::*;
 use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
@@ -237,3 +239,7 @@ where
         }
     }
 }
+
+//impl<T> WithTransformProperties for TimeBinnedStream<T> where T: TimeBinnableTy {}
+
+//impl<T> TimeBinnableStreamTrait for TimeBinnedStream<T> where T: TimeBinnableTy {}
