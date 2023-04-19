@@ -6,6 +6,7 @@ use err::Error;
 use http::StatusCode;
 use hyper::Body;
 use items_0::WithLen;
+use items_2::eventsdim0::EventsDim0CollectorOutput;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::AppendToUrl;
@@ -33,7 +34,7 @@ fn events_plain_json_00() -> Result<(), Error> {
             cluster,
         )
         .await?;
-        let res: items_2::eventsdim0::EventsDim0CollectorOutput<i32> = serde_json::from_value(jsv)?;
+        let res: EventsDim0CollectorOutput<i32> = serde_json::from_value(jsv)?;
         // inmem was meant just for functional test, ignores the requested time range
         assert_eq!(res.ts_anchor_sec(), 1204);
         assert_eq!(res.len(), 66);
@@ -63,7 +64,7 @@ fn events_plain_json_01() -> Result<(), Error> {
             cluster,
         )
         .await?;
-        let res: items_2::eventsdim0::EventsDim0CollectorOutput<i32> = serde_json::from_value(jsv)?;
+        let res: EventsDim0CollectorOutput<i32> = serde_json::from_value(jsv)?;
         assert_eq!(res.ts_anchor_sec(), 1210);
         assert_eq!(res.pulse_anchor(), 2420);
         let exp = [2420., 2421., 2422., 2423., 2424., 2425.];
@@ -91,7 +92,7 @@ fn events_plain_json_02_range_incomplete() -> Result<(), Error> {
             cluster,
         )
         .await?;
-        let res: items_2::eventsdim0::EventsDim0CollectorOutput<i32> = serde_json::from_value(jsv).unwrap();
+        let res: EventsDim0CollectorOutput<i32> = serde_json::from_value(jsv).unwrap();
         assert_eq!(res.range_complete(), false);
         assert_eq!(res.timed_out(), false);
         Ok(())
@@ -131,6 +132,7 @@ async fn events_plain_json(
     }
     let buf = hyper::body::to_bytes(res.into_body()).await.ec()?;
     let s = String::from_utf8_lossy(&buf);
+    //info!("received from server: {s}");
     let res: JsonValue = serde_json::from_str(&s)?;
     let pretty = serde_json::to_string_pretty(&res)?;
     info!("{pretty}");

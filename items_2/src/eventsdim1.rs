@@ -1,4 +1,5 @@
 use crate::binsdim0::BinsDim0;
+use crate::framable::FrameType;
 use crate::IsoDateTime;
 use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
@@ -812,6 +813,15 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
 
     fn pulses(&self) -> &VecDeque<u64> {
         &self.pulses
+    }
+
+    fn frame_type_id(&self) -> u32 {
+        // TODO make more nice
+        panic!()
+    }
+
+    fn to_min_max_avg(&mut self) -> Box<dyn Events> {
+        todo!()
     }
 }
 

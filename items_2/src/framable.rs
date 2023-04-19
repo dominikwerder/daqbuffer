@@ -15,6 +15,7 @@ use items_0::streamitem::StreamItem;
 use items_0::streamitem::ERROR_FRAME_TYPE_ID;
 use items_0::streamitem::EVENT_QUERY_JSON_STRING_FRAME;
 use items_0::streamitem::SITEMTY_NONSPEC_FRAME_TYPE_ID;
+use items_0::Events;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
@@ -45,6 +46,12 @@ impl<T> FrameType for Box<T>
 where
     T: FrameType,
 {
+    fn frame_type_id(&self) -> u32 {
+        self.as_ref().frame_type_id()
+    }
+}
+
+impl FrameType for Box<dyn Events> {
     fn frame_type_id(&self) -> u32 {
         self.as_ref().frame_type_id()
     }

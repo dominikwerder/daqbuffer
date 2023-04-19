@@ -32,8 +32,6 @@ pub async fn timebinned_json(query: &BinnedQuery, chconf: &ChConf, cluster: &Clu
     //crate::transform::build_event_transform(tr, inp);
     query.transform();
 
-    crate::transform::build_event_transform;
-
     // TODO
     let evquery = PlainEventsQuery::new(query.channel().clone(), query.range().clone()).for_time_weighted_scalar();
     let inps = open_tcp_streams::<_, items_2::channelevents::ChannelEvents>(&evquery, cluster).await?;

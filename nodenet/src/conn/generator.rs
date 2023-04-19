@@ -1,6 +1,7 @@
 use err::Error;
 use futures_util::Stream;
 use items_0::container::ByteEstimate;
+use items_0::streamitem::sitem_data;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
@@ -18,6 +19,7 @@ pub fn generate_i32(
     node_count: u64,
     range: SeriesRange,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
+    info!("generate_i32  {node_ix}  {node_count}");
     type T = i32;
     let mut items = Vec::new();
     match range {
@@ -29,21 +31,23 @@ pub fn generate_i32(
                 if ts >= range.end {
                     break;
                 }
-                let pulse = ts;
-                item.push(ts, pulse, pulse as T);
+                let pulse = ts / td;
+                let value = pulse as T;
+                item.push(ts, pulse, value);
                 ts += td * node_count as u64;
                 if item.byte_estimate() > 200 {
                     let w = ChannelEvents::Events(Box::new(item) as _);
-                    let w = Ok::<_, Error>(StreamItem::DataItem(RangeCompletableItem::Data(w)));
+                    let w = sitem_data(w);
                     items.push(w);
                     item = items_2::eventsdim0::EventsDim0::empty();
                 }
             }
             if item.len() != 0 {
                 let w = ChannelEvents::Events(Box::new(item) as _);
-                let w = Ok::<_, Error>(StreamItem::DataItem(RangeCompletableItem::Data(w)));
+                let w = sitem_data(w);
                 items.push(w);
             }
+            items.push(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)))
         }
         SeriesRange::PulseRange(_) => {
             error!("TODO generate test data by pulse id range");

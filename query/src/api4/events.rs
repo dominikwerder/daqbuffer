@@ -44,6 +44,8 @@ pub struct PlainEventsQuery {
     do_test_main_error: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     do_test_stream_error: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    test_do_wasm: bool,
 }
 
 impl PlainEventsQuery {
@@ -63,6 +65,7 @@ impl PlainEventsQuery {
             buf_len_disk_io: None,
             do_test_main_error: false,
             do_test_stream_error: false,
+            test_do_wasm: false,
         }
     }
 
@@ -104,12 +107,20 @@ impl PlainEventsQuery {
         &self.event_delay
     }
 
+    pub fn merger_out_len_max(&self) -> usize {
+        1024
+    }
+
     pub fn do_test_main_error(&self) -> bool {
         self.do_test_main_error
     }
 
     pub fn do_test_stream_error(&self) -> bool {
         self.do_test_stream_error
+    }
+
+    pub fn test_do_wasm(&self) -> bool {
+        self.test_do_wasm
     }
 
     pub fn set_series_id(&mut self, series: u64) {
@@ -131,6 +142,11 @@ impl PlainEventsQuery {
 
     pub fn for_time_weighted_scalar(mut self) -> Self {
         self.transform = TransformQuery::for_time_weighted_scalar();
+        self
+    }
+
+    pub fn for_pulse_id_diff(mut self) -> Self {
+        self.transform = TransformQuery::for_pulse_id_diff();
         self
     }
 
@@ -200,6 +216,11 @@ impl FromUrl for PlainEventsQuery {
                 .map_or("false", |k| k)
                 .parse()
                 .map_err(|e| Error::with_public_msg(format!("can not parse doTestStreamError: {}", e)))?,
+            test_do_wasm: pairs
+                .get("testDoWasm")
+                .map(|x| x.parse::<bool>().ok())
+                .unwrap_or(None)
+                .unwrap_or(false),
         };
         Ok(ret)
     }
@@ -240,6 +261,9 @@ impl AppendToUrl for PlainEventsQuery {
         }
         if self.do_test_stream_error {
             g.append_pair("doTestStreamError", "true");
+        }
+        if self.test_do_wasm {
+            g.append_pair("testDoWasm", "true");
         }
     }
 }

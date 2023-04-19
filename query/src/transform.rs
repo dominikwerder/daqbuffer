@@ -86,6 +86,14 @@ impl TransformQuery {
         }
     }
 
+    pub fn for_pulse_id_diff() -> Self {
+        Self {
+            event: EventTransformQuery::PulseIdDiff,
+            // TODO probably we want unweighted binning here.
+            time_binning: TimeBinningTransformQuery::TimeWeighted,
+        }
+    }
+
     pub fn is_event_blobs(&self) -> bool {
         match &self.event {
             EventTransformQuery::EventBlobsVerbatim => true,

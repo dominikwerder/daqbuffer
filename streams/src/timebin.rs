@@ -50,7 +50,7 @@ where
     do_time_weight: bool,
     deadline: Instant,
     deadline_fut: Pin<Box<dyn Future<Output = ()> + Send>>,
-    range_complete: bool,
+    range_final: bool,
     binner: Option<<T as TimeBinnableTy>::TimeBinner>,
     done_data: bool,
     done: bool,
@@ -65,7 +65,7 @@ where
         fmt.debug_struct(any::type_name::<Self>())
             .field("range", &self.range)
             .field("deadline", &self.deadline)
-            .field("range_complete", &self.range_complete)
+            .field("range_final", &self.range_final)
             .field("binner", &self.binner)
             .finish()
     }
@@ -84,7 +84,7 @@ where
             do_time_weight,
             deadline,
             deadline_fut,
-            range_complete: false,
+            range_final: false,
             binner: None,
             done_data: false,
             done: false,
@@ -123,7 +123,7 @@ where
                 Ready(None)
             } else if self.done_data {
                 self.done = true;
-                if self.range_complete {
+                if self.range_final {
                     Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
                 } else {
                     continue;
@@ -132,7 +132,7 @@ where
                 match self.deadline_fut.poll_unpin(cx) {
                     Ready(()) => {
                         trace2!("timeout");
-                        let self_range_complete = self.range_complete;
+                        let self_range_complete = self.range_final;
                         if let Some(binner) = self.binner.as_mut() {
                             trace2!("bins ready count before finish {}", binner.bins_ready_count());
                             // TODO rework the finish logic
@@ -159,7 +159,7 @@ where
                             StreamItem::DataItem(item) => match item {
                                 RangeCompletableItem::RangeComplete => {
                                     debug!("see RangeComplete");
-                                    self.range_complete = true;
+                                    self.range_final = true;
                                     continue;
                                 }
                                 RangeCompletableItem::Data(item) => {
@@ -193,7 +193,7 @@ where
                     },
                     Ready(None) => {
                         trace!("finish up");
-                        let self_range_complete = self.range_complete;
+                        let self_range_complete = self.range_final;
                         if let Some(binner) = self.binner.as_mut() {
                             trace!("bins ready count before finish {}", binner.bins_ready_count());
                             // TODO rework the finish logic

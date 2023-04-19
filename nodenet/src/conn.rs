@@ -1,15 +1,19 @@
 pub mod generator;
 
+use crate::scylla::scylla_channel_event_stream;
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::on_sitemty_data;
+use items_0::streamitem::sitem_data;
 use items_0::streamitem::LogItem;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::streamitem::EVENT_QUERY_JSON_STRING_FRAME;
+use items_0::Events;
 use items_2::channelevents::ChannelEvents;
+use items_2::empty::empty_events_dyn_ev;
 use items_2::framable::EventQueryJsonStringFrame;
 use items_2::framable::Framable;
 use items_2::frame::decode_frame;
@@ -24,13 +28,12 @@ use query::api4::events::PlainEventsQuery;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
+use streams::transform::build_event_transform;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedReadHalf;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
 use tracing::Instrument;
-
-use crate::scylla::scylla_channel_event_stream;
 
 #[cfg(test)]
 mod test;
@@ -63,14 +66,14 @@ impl<E: Into<Error>> From<(E, OwnedWriteHalf)> for ConnErr {
     }
 }
 
-async fn make_channel_events_stream(
+async fn make_channel_events_stream_data(
     evq: PlainEventsQuery,
     chconf: ChConf,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     info!("nodenet::conn::make_channel_events_stream");
     if evq.channel().backend() == "test-inmem" {
-        warn!("TEST BACKEND DATA");
+        warn!("GENERATE INMEM TEST DATA");
         let node_count = node_config.node_config.cluster.nodes.len() as u64;
         let node_ix = node_config.ix as u64;
         let chn = evq.channel().name();
@@ -114,6 +117,19 @@ async fn make_channel_events_stream(
     } else {
         Ok(disk::raw::conn::make_event_pipe(&evq, chconf, node_config).await?)
     }
+}
+
+async fn make_channel_events_stream(
+    evq: PlainEventsQuery,
+    chconf: ChConf,
+    node_config: &NodeConfigCached,
+) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
+    let empty = empty_events_dyn_ev(&chconf.scalar_type, &chconf.shape)?;
+    let empty = sitem_data(ChannelEvents::Events(empty));
+    let stream = make_channel_events_stream_data(evq, chconf, node_config).await?;
+    let ret = futures_util::stream::iter([empty]).chain(stream);
+    let ret = Box::pin(ret);
+    Ok(ret)
 }
 
 async fn events_get_input_frames(netin: OwnedReadHalf) -> Result<Vec<InMemoryFrame>, Error> {
@@ -215,28 +231,32 @@ async fn events_conn_handler_inner_try(
     } else {
         match make_channel_events_stream(evq.clone(), chconf, node_config).await {
             Ok(stream) => {
-                let stream = stream
-                    .map({
-                        use items_0::transform::EventTransform;
-                        let mut tf = items_0::transform::IdentityTransform::default();
-                        move |item| {
-                            if false {
-                                on_sitemty_data!(item, |item4| {
-                                    match item4 {
-                                        ChannelEvents::Events(item5) => {
-                                            let a = tf.transform(item5);
-                                            let x = ChannelEvents::Events(a);
-                                            Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
-                                        }
-                                        x => Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))),
-                                    }
-                                })
-                            } else {
-                                item
-                            }
-                        }
-                    })
-                    .map(|x| Box::new(x) as _);
+                if false {
+                    // TODO wasm example
+                    use wasmer::Value;
+                    let wasm = b"";
+                    let mut store = wasmer::Store::default();
+                    let module = wasmer::Module::new(&store, wasm).unwrap();
+                    let import_object = wasmer::imports! {};
+                    let instance = wasmer::Instance::new(&mut store, &module, &import_object).unwrap();
+                    let add_one = instance.exports.get_function("event_transform").unwrap();
+                    let result = add_one.call(&mut store, &[Value::I32(42)]).unwrap();
+                    assert_eq!(result[0], Value::I32(43));
+                }
+                let mut tr = match build_event_transform(evq.transform()) {
+                    Ok(x) => x,
+                    Err(e) => {
+                        return Err((e, netout).into());
+                    }
+                };
+                let stream = stream.map(move |x| {
+                    let item = on_sitemty_data!(x, |x| {
+                        let x: Box<dyn Events> = Box::new(x);
+                        let x = tr.0.transform(x);
+                        Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
+                    });
+                    Box::new(item) as Box<dyn Framable + Send>
+                });
                 Box::pin(stream)
             }
             Err(e) => {

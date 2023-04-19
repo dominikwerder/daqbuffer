@@ -42,8 +42,8 @@ impl WithTransformProperties for TransformEventMinMaxAvg {
 }
 
 impl EventTransform for TransformEventMinMaxAvg {
-    fn transform(&mut self, src: Box<dyn Events>) -> Box<dyn Events> {
-        todo!()
+    fn transform(&mut self, mut src: Box<dyn Events>) -> Box<dyn Events> {
+        src.to_min_max_avg()
     }
 }
 
@@ -51,7 +51,9 @@ pub fn make_transform_min_max_avg() -> TransformEvent {
     TransformEvent(Box::new(TransformEventMinMaxAvg {}))
 }
 
-struct TransformEventPulseIdDiff {}
+struct TransformEventPulseIdDiff {
+    pulse_last: Option<u64>,
+}
 
 impl WithTransformProperties for TransformEventPulseIdDiff {
     fn query_transform_properties(&self) -> TransformProperties {
@@ -61,36 +63,22 @@ impl WithTransformProperties for TransformEventPulseIdDiff {
 
 impl EventTransform for TransformEventPulseIdDiff {
     fn transform(&mut self, src: Box<dyn Events>) -> Box<dyn Events> {
-        let mut src = src;
-        if let Some(chevs) = src.as_any_mut().downcast_mut::<ChannelEvents>() {
-            let chevs2 = chevs;
-            let chevs = mem::replace(chevs2, ChannelEvents::Status(None));
-            let mut pulse_last = None;
-            match chevs {
-                ChannelEvents::Events(item) => {
-                    let (tss, pulses) = EventsNonObj::into_tss_pulses(item);
-                    let mut item = EventsDim0::empty();
-                    for (ts, pulse) in tss.into_iter().zip(pulses) {
-                        let value = if let Some(last) = pulse_last {
-                            pulse as i64 - last as i64
-                        } else {
-                            0
-                        };
-                        item.push(ts, pulse, value);
-                        pulse_last = Some(pulse);
-                    }
-                    *chevs2 = ChannelEvents::Events(Box::new(item));
-                }
-                ChannelEvents::Status(_) => {}
-            }
-            src
-        } else {
-            warn!("make_transform_pulse_id_diff item is not ChannelEvents");
-            src
+        let (tss, pulses) = EventsNonObj::into_tss_pulses(src);
+        let mut item = EventsDim0::empty();
+        let pulse_last = &mut self.pulse_last;
+        for (ts, pulse) in tss.into_iter().zip(pulses) {
+            let value = if let Some(last) = pulse_last {
+                pulse as i64 - *last as i64
+            } else {
+                0
+            };
+            item.push(ts, pulse, value);
+            *pulse_last = Some(pulse);
         }
+        Box::new(ChannelEvents::Events(Box::new(item)))
     }
 }
 
 pub fn make_transform_pulse_id_diff() -> TransformEvent {
-    TransformEvent(Box::new(TransformEventPulseIdDiff {}))
+    TransformEvent(Box::new(TransformEventPulseIdDiff { pulse_last: None }))
 }

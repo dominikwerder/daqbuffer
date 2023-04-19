@@ -1,4 +1,6 @@
 use crate::binsdim0::BinsDim0;
+use crate::framable::FrameType;
+use crate::framable::FrameTypeStatic;
 use crate::IsoDateTime;
 use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
@@ -11,6 +13,7 @@ use items_0::collect_s::CollectorType;
 use items_0::collect_s::ToJsonBytes;
 use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
+use items_0::framable::FrameTypeInnerStatic;
 use items_0::scalar_ops::ScalarOps;
 use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinned;
@@ -921,6 +924,21 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
 
     fn pulses(&self) -> &VecDeque<u64> {
         &self.pulses
+    }
+
+    fn frame_type_id(&self) -> u32 {
+        error!("TODO frame_type_id should not be called");
+        // TODO make more nice
+        panic!()
+    }
+
+    fn to_min_max_avg(&mut self) -> Box<dyn Events> {
+        let dst = Self {
+            tss: mem::replace(&mut self.tss, Default::default()),
+            pulses: mem::replace(&mut self.pulses, Default::default()),
+            values: mem::replace(&mut self.values, Default::default()),
+        };
+        Box::new(dst)
     }
 }
 

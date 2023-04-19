@@ -26,6 +26,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::any;
 use std::any::Any;
+use std::collections::VecDeque;
 use std::fmt;
 use std::time::Duration;
 use std::time::SystemTime;
@@ -666,8 +667,11 @@ impl TimeBinnable for ChannelEvents {
 }
 
 impl EventsNonObj for ChannelEvents {
-    fn into_tss_pulses(self: Box<Self>) -> (std::collections::VecDeque<u64>, std::collections::VecDeque<u64>) {
-        todo!()
+    fn into_tss_pulses(self: Box<Self>) -> (VecDeque<u64>, VecDeque<u64>) {
+        match *self {
+            ChannelEvents::Events(k) => k.into_tss_pulses(),
+            ChannelEvents::Status(k) => (VecDeque::new(), VecDeque::new()),
+        }
     }
 }
 
@@ -751,6 +755,17 @@ impl Events for ChannelEvents {
     fn pulses(&self) -> &std::collections::VecDeque<u64> {
         todo!()
     }
+
+    fn frame_type_id(&self) -> u32 {
+        <Self as FrameTypeInnerStatic>::FRAME_TYPE_ID
+    }
+
+    fn to_min_max_avg(&mut self) -> Box<dyn Events> {
+        match self {
+            ChannelEvents::Events(item) => Box::new(ChannelEvents::Events(Events::to_min_max_avg(item))),
+            ChannelEvents::Status(item) => Box::new(ChannelEvents::Status(item.take())),
+        }
+    }
 }
 
 impl Collectable for ChannelEvents {
@@ -771,6 +786,8 @@ pub struct ChannelEventsTimeBinner {
 impl fmt::Debug for ChannelEventsTimeBinner {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt.debug_struct("ChannelEventsTimeBinner")
+            .field("binrange", &self.binrange)
+            .field("do_time_weight", &self.do_time_weight)
             .field("conn_state", &self.conn_state)
             .finish()
     }

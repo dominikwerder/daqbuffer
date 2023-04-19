@@ -10,6 +10,7 @@ use items_0::transform::CollectableStreamBox;
 use items_0::transform::CollectableStreamTrait;
 use items_0::transform::EventStreamBox;
 use items_0::transform::EventStreamTrait;
+use items_0::transform::TimeBinnableStreamBox;
 use items_0::transform::TimeBinnableStreamTrait;
 use items_0::transform::TransformEvent;
 use items_0::transform::TransformProperties;
@@ -24,7 +25,7 @@ use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 
-pub fn build_event_transform(tr: &TransformQuery, inp: EventStreamBox) -> Result<TransformEvent, Error> {
+pub fn build_event_transform(tr: &TransformQuery) -> Result<TransformEvent, Error> {
     let trev = tr.get_tr_event();
     match trev {
         EventTransformQuery::ValueFull => Ok(make_transform_identity()),
@@ -39,6 +40,14 @@ pub fn build_event_transform(tr: &TransformQuery, inp: EventStreamBox) -> Result
         EventTransformQuery::EventBlobsUncompressed => Err(Error::with_msg_no_trace(format!(
             "build_event_transform don't know what to do {trev:?}"
         ))),
+    }
+}
+
+pub fn build_merged_event_transform(tr: &TransformQuery) -> Result<TransformEvent, Error> {
+    let trev = tr.get_tr_event();
+    match trev {
+        EventTransformQuery::PulseIdDiff => Ok(make_transform_pulse_id_diff()),
+        _ => Ok(make_transform_identity()),
     }
 }
 
@@ -133,22 +142,16 @@ impl CollectableStreamTrait for TimeBinnableToCollectable {}
 pub fn build_time_binning_transform(
     tr: &TransformQuery,
     inp: Pin<Box<dyn TimeBinnableStreamTrait>>,
-) -> Result<TransformEvent, Error> {
-    let trev = tr.get_tr_event();
-    match trev {
-        EventTransformQuery::ValueFull => Ok(make_transform_identity()),
-        EventTransformQuery::MinMaxAvgDev => Ok(make_transform_min_max_avg()),
-        EventTransformQuery::ArrayPick(..) => Err(Error::with_msg_no_trace(format!(
-            "build_event_transform don't know what to do {trev:?}"
-        ))),
-        EventTransformQuery::PulseIdDiff => Ok(make_transform_pulse_id_diff()),
-        EventTransformQuery::EventBlobsVerbatim => Err(Error::with_msg_no_trace(format!(
-            "build_event_transform don't know what to do {trev:?}"
-        ))),
-        EventTransformQuery::EventBlobsUncompressed => Err(Error::with_msg_no_trace(format!(
-            "build_event_transform don't know what to do {trev:?}"
-        ))),
-    }
+) -> Result<TimeBinnableStreamBox, Error> {
+    let trev = tr.get_tr_time_binning();
+    let res = match trev {
+        TimeBinningTransformQuery::None => TimeBinnableStreamBox(inp),
+        _ => {
+            // TODO apply the desired transformations.
+            todo!()
+        }
+    };
+    Ok(res)
 }
 
 pub fn build_full_transform_collectable(

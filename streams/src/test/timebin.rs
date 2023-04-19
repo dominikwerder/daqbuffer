@@ -256,6 +256,7 @@ fn transform_chain_correctness_01() -> Result<(), Error> {
     type STY = f32;
     let tq = TransformQuery::default_time_binned();
     let empty = EventsDim0::<STY>::empty();
-    build_event_transform(&tq, empty.into())?;
+    build_event_transform(&tq)?;
+    todo!();
     Ok(())
 }

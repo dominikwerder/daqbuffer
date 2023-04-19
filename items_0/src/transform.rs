@@ -9,7 +9,10 @@ use err::Error;
 use futures_util::stream;
 use futures_util::Future;
 use futures_util::Stream;
+use futures_util::StreamExt;
 use std::pin::Pin;
+use std::task::Context;
+use std::task::Poll;
 
 pub trait EventStreamTrait: Stream<Item = Sitemty<Box<dyn Events>>> + WithTransformProperties + Send {}
 
@@ -21,6 +24,10 @@ pub trait TimeBinnableStreamTrait:
 pub trait CollectableStreamTrait:
     Stream<Item = Sitemty<Box<dyn Collectable>>> + WithTransformProperties + Send
 {
+}
+
+pub struct EventTransformProperties {
+    pub needs_value: bool,
 }
 
 pub struct TransformProperties {
@@ -50,7 +57,7 @@ where
     }
 }
 
-pub trait EventTransform: WithTransformProperties {
+pub trait EventTransform: WithTransformProperties + Send {
     fn transform(&mut self, src: Box<dyn Events>) -> Box<dyn Events>;
 }
 
@@ -129,6 +136,24 @@ where
         Self(Box::pin(x))
     }
 }
+
+pub struct TimeBinnableStreamBox(pub Pin<Box<dyn TimeBinnableStreamTrait>>);
+
+impl WithTransformProperties for TimeBinnableStreamBox {
+    fn query_transform_properties(&self) -> TransformProperties {
+        self.0.query_transform_properties()
+    }
+}
+
+impl Stream for TimeBinnableStreamBox {
+    type Item = <dyn TimeBinnableStreamTrait as Stream>::Item;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        self.0.poll_next_unpin(cx)
+    }
+}
+
+impl TimeBinnableStreamTrait for TimeBinnableStreamBox {}
 
 pub struct CollectableStreamBox(pub Pin<Box<dyn CollectableStreamTrait>>);
 

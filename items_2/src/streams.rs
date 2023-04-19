@@ -62,9 +62,9 @@ where
 
 impl<T> EventTransform for Enumerate2<T>
 where
-    T: WithTransformProperties,
+    T: WithTransformProperties + Send,
 {
-    fn transform(&mut self, src: Box<dyn items_0::Events>) -> Box<dyn items_0::Events> {
+    fn transform(&mut self, src: Box<dyn Events>) -> Box<dyn Events> {
         todo!()
     }
 }
@@ -148,9 +148,11 @@ where
 
 impl<T, F, Fut> EventTransform for Then2<T, F, Fut>
 where
-    T: EventTransform,
+    T: EventTransform + Send,
+    F: Send,
+    Fut: Send,
 {
-    fn transform(&mut self, src: Box<dyn items_0::Events>) -> Box<dyn items_0::Events> {
+    fn transform(&mut self, src: Box<dyn Events>) -> Box<dyn Events> {
         todo!()
     }
 }
@@ -219,8 +221,11 @@ impl<T> WithTransformProperties for VecStream<T> {
     }
 }
 
-impl<T> EventTransform for VecStream<T> {
-    fn transform(&mut self, src: Box<dyn items_0::Events>) -> Box<dyn items_0::Events> {
+impl<T> EventTransform for VecStream<T>
+where
+    T: Send,
+{
+    fn transform(&mut self, src: Box<dyn Events>) -> Box<dyn Events> {
         todo!()
     }
 }
