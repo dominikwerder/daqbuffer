@@ -5,6 +5,7 @@ use crate::transform::EventsToTimeBinnable;
 use crate::transform::TimeBinnableToCollectable;
 use err::Error;
 use futures_util::StreamExt;
+use items_0::collect_s::Collectable;
 use items_0::on_sitemty_data;
 use items_0::Events;
 use items_2::channelevents::ChannelEvents;
@@ -48,12 +49,14 @@ pub async fn plain_events_json(
             let k: Box<dyn Events> = Box::new(k);
             info!("-------------------------\ngot len {}", k.len());
             let k = tr.0.transform(k);
+            let k: Box<dyn Collectable> = Box::new(k);
             Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
         })
     });
-    let stream = PlainEventStream::new(stream);
-    let stream = EventsToTimeBinnable::new(stream);
-    let stream = TimeBinnableToCollectable::new(stream);
+    //let stream = PlainEventStream::new(stream);
+    //let stream = EventsToTimeBinnable::new(stream);
+    //let stream = TimeBinnableToCollectable::new(stream);
+    let stream = Box::pin(stream);
     let collected = Collect::new(stream, deadline, evq.events_max(), Some(evq.range().clone()), None).await?;
     let jsval = serde_json::to_value(&collected)?;
     Ok(jsval)

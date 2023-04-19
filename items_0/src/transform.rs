@@ -157,6 +157,22 @@ impl TimeBinnableStreamTrait for TimeBinnableStreamBox {}
 
 pub struct CollectableStreamBox(pub Pin<Box<dyn CollectableStreamTrait>>);
 
+impl Stream for CollectableStreamBox {
+    type Item = Sitemty<Box<dyn Collectable>>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        self.0.poll_next_unpin(cx)
+    }
+}
+
+impl WithTransformProperties for CollectableStreamBox {
+    fn query_transform_properties(&self) -> TransformProperties {
+        todo!()
+    }
+}
+
+impl CollectableStreamTrait for CollectableStreamBox {}
+
 impl<T> WithTransformProperties for stream::Empty<T> {
     fn query_transform_properties(&self) -> TransformProperties {
         todo!()
@@ -169,3 +185,5 @@ where
     stream::Empty<T>: Stream<Item = Sitemty<Box<dyn Collectable>>>,
 {
 }
+
+impl<T> CollectableStreamTrait for Pin<Box<T>> where T: CollectableStreamTrait {}

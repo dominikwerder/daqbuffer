@@ -20,7 +20,7 @@ pub trait TimeBins {
     fn ts_min_max(&self) -> Option<(u64, u64)>;
 }
 
-pub trait TimeBinnerTy: fmt::Debug + Unpin {
+pub trait TimeBinnerTy: fmt::Debug + Send + Unpin {
     type Input: fmt::Debug;
     type Output: fmt::Debug;
 
@@ -44,7 +44,7 @@ pub trait TimeBinnerTy: fmt::Debug + Unpin {
     fn empty(&self) -> Option<Self::Output>;
 }
 
-pub trait TimeBinnableTy: fmt::Debug + Sized {
+pub trait TimeBinnableTy: fmt::Debug + Send + Sized {
     type TimeBinner: TimeBinnerTy<Input = Self>;
 
     fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Self::TimeBinner;

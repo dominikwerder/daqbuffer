@@ -45,7 +45,7 @@ macro_rules! trace4 {
 }
 
 pub struct Collect {
-    inp: CollectableStreamBox,
+    inp: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>>,
     events_max: u64,
     range: Option<SeriesRange>,
     binrange: Option<BinnedRangeEnum>,
@@ -57,19 +57,16 @@ pub struct Collect {
 }
 
 impl Collect {
-    pub fn new<INP>(
-        inp: INP,
+    pub fn new(
+        inp: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>>,
         deadline: Instant,
         events_max: u64,
         range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
-    ) -> Self
-    where
-        INP: CollectableStreamTrait + 'static,
-    {
+    ) -> Self {
         let timer = tokio::time::sleep_until(deadline.into());
         Self {
-            inp: CollectableStreamBox(Box::pin(inp)),
+            inp,
             events_max,
             range,
             binrange,
@@ -181,7 +178,7 @@ impl Future for Collect {
                         self.done_input = true;
                         continue;
                     }
-                    Pending => match self.inp.0.poll_next_unpin(cx) {
+                    Pending => match self.inp.poll_next_unpin(cx) {
                         Ready(Some(item)) => match self.handle_item(item) {
                             Ok(()) => {
                                 continue;

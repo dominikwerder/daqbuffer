@@ -45,7 +45,7 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
     span1.in_scope(|| {
         debug!("begin");
     });
-    let item = streams::timebinnedjson::timebinned_json(&query, &chconf, &node_config.node_config.cluster)
+    let item = streams::timebinnedjson::timebinned_json(query, chconf, node_config.node_config.cluster.clone())
         .instrument(span1)
         .await?;
     let buf = serde_json::to_vec(&item)?;

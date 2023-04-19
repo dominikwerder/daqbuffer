@@ -66,6 +66,7 @@ fn collect_channel_events_01() -> Result<(), Error> {
         let stream = PlainEventStream::new(stream);
         let stream = EventsToTimeBinnable::new(stream);
         let stream = TimeBinnableToCollectable::new(stream);
+        let stream = Box::pin(stream);
         let res = Collect::new(stream, deadline, events_max, None, None).await?;
         if let Some(res) = res.as_any_ref().downcast_ref::<EventsDim0CollectorOutput<f32>>() {
             eprintln!("Great, a match");
@@ -105,6 +106,7 @@ fn collect_channel_events_pulse_id_diff() -> Result<(), Error> {
         let stream = Box::pin(stream);
         let stream = build_time_binning_transform(&trqu, stream)?;
         let stream = TimeBinnableToCollectable::new(stream);
+        let stream = Box::pin(stream);
         let res = Collect::new(stream, deadline, events_max, None, None).await?;
         if let Some(res) = res.as_any_ref().downcast_ref::<EventsDim0CollectorOutput<i64>>() {
             eprintln!("Great, a match");
