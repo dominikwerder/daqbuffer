@@ -44,7 +44,7 @@ pub trait TimeBinnerTy: fmt::Debug + Send + Unpin {
     fn empty(&self) -> Option<Self::Output>;
 }
 
-pub trait TimeBinnableTy: fmt::Debug + Send + Sized {
+pub trait TimeBinnableTy: fmt::Debug + WithLen + Send + Sized {
     type TimeBinner: TimeBinnerTy<Input = Self>;
 
     fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Self::TimeBinner;
@@ -164,11 +164,11 @@ impl RangeOverlapInfo for Box<dyn Events> {
 
 impl TimeBinnable for Box<dyn Events> {
     fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
-        todo!()
+        TimeBinnable::time_binner_new(self.as_ref(), binrange, do_time_weight)
     }
 
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
-        todo!()
+        TimeBinnable::to_box_to_json_result(self.as_ref())
     }
 }
 

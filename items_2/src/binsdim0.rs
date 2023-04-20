@@ -726,6 +726,7 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
                 }
             }
         }*/
+        error!("!!!!!!!!!!!!!!!!   TODO actually do something");
         todo!()
     }
 

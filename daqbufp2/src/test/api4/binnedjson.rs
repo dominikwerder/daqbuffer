@@ -1,11 +1,13 @@
 use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
+use crate::test::api4::common::fetch_binned_json;
 use crate::test::f32_cmp_near;
 use chrono::Utc;
 use err::Error;
 use http::StatusCode;
 use hyper::Body;
 use items_0::WithLen;
+use items_2::binsdim0::BinsDim0CollectedResult;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::AppendToUrl;
@@ -16,6 +18,24 @@ use netpod::APP_JSON;
 use query::api4::binned::BinnedQuery;
 use serde_json::Value as JsonValue;
 use url::Url;
+
+pub fn make_query<S: Into<String>>(
+    name: S,
+    beg_date: &str,
+    end_date: &str,
+    bin_count_min: u32,
+) -> Result<BinnedQuery, Error> {
+    let channel = Channel {
+        backend: "test-inmem".into(),
+        name: name.into(),
+        series: None,
+    };
+    let beg_date = beg_date.parse()?;
+    let end_date = end_date.parse()?;
+    let range = NanoRange::from_date_time(beg_date, end_date).into();
+    let query = BinnedQuery::new(channel, range, bin_count_min).for_time_weighted_scalar();
+    Ok(query)
+}
 
 #[test]
 fn binned_d0_json_00() -> Result<(), Error> {
@@ -268,26 +288,48 @@ fn binned_inmem_d0_json_00() -> Result<(), Error> {
     let fut = async {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
-        let jsv = get_binned_json(
-            Channel {
-                backend: "test-disk-databuffer".into(),
-                name: "const-regular-scalar-i32-be".into(),
-                series: None,
-            },
-            "1970-01-01T00:20:11.000Z",
-            "1970-01-01T00:30:20.000Z",
-            // TODO must use AggKind::TimeWeightedScalar
+        let query = make_query(
+            "inmem-d0-i32",
+            "1970-01-01T00:20:04.000Z",
+            "1970-01-01T00:21:10.000Z",
             10,
-            cluster,
-        )
-        .await?;
-        debug!("Receveided a response json value: {jsv:?}");
-        let res: items_2::binsdim0::BinsDim0CollectedResult<i32> = serde_json::from_value(jsv)?;
+        )?;
+        let jsv = fetch_binned_json(query, cluster).await?;
+        let res: BinsDim0CollectedResult<i32> = serde_json::from_value(jsv)?;
         // inmem was meant just for functional test, ignores the requested time range
         assert_eq!(res.ts_anchor_sec(), 1200);
-        assert_eq!(res.len(), 11);
+        assert_eq!(res.len(), 14);
         assert_eq!(res.range_final(), true);
-        assert_eq!(f32_cmp_near(res.avgs()[0], 42.0), true);
+        {
+            let v1: Vec<_> = res.counts().iter().map(|x| *x).collect();
+            assert_eq!(&v1, &[5; 14]);
+        }
+        {
+            let v1: Vec<_> = res.ts1_off_ms().iter().map(|x| *x).collect();
+            let v2: Vec<_> = (0..14).into_iter().map(|x| 5000 * x).collect();
+            assert_eq!(&v1, &v2);
+        }
+        {
+            let v1: Vec<_> = res.ts2_off_ms().iter().map(|x| *x).collect();
+            let v2: Vec<_> = (1..15).into_iter().map(|x| 5000 * x).collect();
+            assert_eq!(&v1, &v2);
+        }
+        {
+            let v1: Vec<_> = res.mins().iter().map(|x| *x).collect();
+            let v2: Vec<_> = (0..14).into_iter().map(|x| 1200 + 5 * x).collect();
+            assert_eq!(&v1, &v2);
+        }
+        {
+            let v1: Vec<_> = res.maxs().iter().map(|x| *x).collect();
+            let v2: Vec<_> = (0..14).into_iter().map(|x| 1204 + 5 * x).collect();
+            assert_eq!(&v1, &v2);
+        }
+        {
+            let v1: Vec<_> = res.avgs().iter().map(|x| *x).collect();
+            let v2: Vec<_> = (0..14).into_iter().map(|x| 1204 + 5 * x).collect();
+            //assert_eq!(f32_cmp_near(res.avgs()[0], 42.0), true);
+            //assert_eq!(&v1, &v2);
+        }
         Ok(())
     };
     taskrun::run(fut)

@@ -25,7 +25,7 @@ impl WithTransformProperties for TransformEventIdentity {
 
 impl EventTransform for TransformEventIdentity {
     fn transform(&mut self, src: Box<dyn Events>) -> Box<dyn Events> {
-        todo!()
+        src
     }
 }
 

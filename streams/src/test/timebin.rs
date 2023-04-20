@@ -62,7 +62,7 @@ fn time_bin_00() {
             d
         };
         let deadline = Instant::now() + Duration::from_millis(2000000);
-        let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream0, binned_range, true, deadline);
+        let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream0, binned_range, true);
         while let Some(item) = binned_stream.next().await {
             //eprintln!("{item:?}");
             match item {
@@ -121,7 +121,7 @@ fn time_bin_01() {
         });
         let stream0 = Box::pin(stream0);
         let deadline = Instant::now() + Duration::from_millis(200);
-        let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream0, binned_range, true, deadline);
+        let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream0, binned_range, true);
         while let Some(item) = binned_stream.next().await {
             if true {
                 eprintln!("{item:?}");
@@ -192,8 +192,7 @@ fn time_bin_02() -> Result<(), Error> {
             x
         });
         let stream = Box::pin(stream);
-        let mut binned_stream =
-            crate::timebin::TimeBinnedStream::new(stream, binned_range.clone(), do_time_weight, deadline);
+        let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream, binned_range.clone(), do_time_weight);
         // From there on it should no longer be neccessary to distinguish whether its still events or time bins.
         // Then, optionally collect for output type like json, or stream as batches.
         // TODO the timebinner should already provide batches to make this efficient.

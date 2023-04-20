@@ -2,6 +2,7 @@ use crate::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::container::ByteEstimate;
+use items_0::on_sitemty_data;
 use items_0::streamitem::sitem_data;
 use items_0::streamitem::LogItem;
 use items_0::streamitem::RangeCompletableItem;
@@ -65,6 +66,7 @@ pub struct Merger<T> {
     out_of_band_queue: VecDeque<Sitemty<T>>,
     log_queue: VecDeque<LogItem>,
     dim0ix_max: u64,
+    done_emit_first_empty: bool,
     done_data: bool,
     done_buffered: bool,
     done_range_complete: bool,
@@ -107,6 +109,7 @@ where
             out_of_band_queue: VecDeque::new(),
             log_queue: VecDeque::new(),
             dim0ix_max: 0,
+            done_emit_first_empty: false,
             done_data: false,
             done_buffered: false,
             done_range_complete: false,
@@ -281,6 +284,13 @@ where
                         Ready(Some(Ok(k))) => match k {
                             StreamItem::DataItem(k) => match k {
                                 RangeCompletableItem::Data(k) => {
+                                    if self.done_emit_first_empty == false {
+                                        info!("++++++++++++++++++++++     LET MERGER EMIT THE FIRST EMPTY MARKER ITEM");
+                                        self.done_emit_first_empty = true;
+                                        let item = k.new_empty();
+                                        let item = sitem_data(item);
+                                        self.out_of_band_queue.push_back(item);
+                                    }
                                     self.items[i] = Some(k);
                                     trace4!("refilled {}", i);
                                 }
@@ -353,9 +363,12 @@ where
             if o.len() >= self.out_max_len || o.byte_estimate() >= OUT_MAX_BYTES || self.do_clear_out || last_emit {
                 trace3!("decide to output");
                 self.do_clear_out = false;
-                Break(Ready(Some(Ok(self.out.take().unwrap()))))
+                //Break(Ready(Some(Ok(self.out.take().unwrap()))))
+                let item = sitem_data(self.out.take().unwrap());
+                self.out_of_band_queue.push_back(item);
+                Continue(())
             } else {
-                trace4!("output not yet");
+                trace4!("not enough output yet");
                 Continue(())
             }
         } else {
@@ -420,6 +433,10 @@ where
                     continue;
                 }
             } else if let Some(item) = self.out_of_band_queue.pop_front() {
+                let item = on_sitemty_data!(item, |k: T| {
+                    info!("++++++++++++   EMIT OUT OF BAND DATA  len {}", k.len());
+                    sitem_data(k)
+                });
                 trace!("emit out-of-band");
                 Ready(Some(item))
             } else {
@@ -427,6 +444,12 @@ where
                     ControlFlow::Continue(()) => continue,
                     ControlFlow::Break(k) => match k {
                         Ready(Some(Ok(out))) => {
+                            if true {
+                                error!("THIS BRANCH SHOULD NO LONGER OCCUR, REFACTOR");
+                                self.done_data = true;
+                                let e = Error::from(format!("TODO refactor direct emit in merger"));
+                                return Ready(Some(Err(e.into())));
+                            }
                             trace!("emit buffered  len {}", out.len());
                             Ready(Some(sitem_data(out)))
                         }

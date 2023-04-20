@@ -1542,6 +1542,12 @@ where
     }
 }
 
+impl BinnedRange<TsNano> {
+    pub fn to_nano_range(&self) -> NanoRange {
+        self.full_range()
+    }
+}
+
 impl<T> BinnedRange<T>
 where
     T: Dim0Index,
