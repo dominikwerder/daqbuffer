@@ -1863,7 +1863,13 @@ pub trait RetStreamExt: Stream {
 pub struct OnlyFirstError<T> {
     inp: T,
     errored: bool,
-    completed: bool,
+    complete: bool,
+}
+
+impl<T> OnlyFirstError<T> {
+    pub fn type_name() -> &'static str {
+        std::any::type_name::<Self>()
+    }
 }
 
 impl<T, I, E> Stream for OnlyFirstError<T>
@@ -1874,11 +1880,11 @@ where
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        if self.completed {
-            panic!("poll_next on completed");
+        if self.complete {
+            panic!("{} poll_next on complete", Self::type_name())
         }
         if self.errored {
-            self.completed = true;
+            self.complete = true;
             return Ready(None);
         }
         match self.inp.poll_next_unpin(cx) {
@@ -1888,7 +1894,7 @@ where
                 Ready(Some(Err(e)))
             }
             Ready(None) => {
-                self.completed = true;
+                self.complete = true;
                 Ready(None)
             }
             Pending => Pending,
@@ -1904,7 +1910,7 @@ where
         OnlyFirstError {
             inp: self,
             errored: false,
-            completed: false,
+            complete: false,
         }
     }
 }

@@ -8,6 +8,7 @@ use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::Appendable;
 use items_0::Empty;
+use items_0::WithLen;
 use items_2::channelevents::ChannelEvents;
 use items_2::eventsdim0::EventsDim0;
 use items_2::eventsdim1::EventsDim1;
@@ -243,10 +244,10 @@ impl GenerateF64V00 {
             let mut value = Vec::new();
             let pi = PI;
             for i in 0..21 {
-                let x = ((-pi + (2. * pi / 20.) * i as f64).cos() + 1.) * ampl;
+                let x = ((-pi + (2. * pi / 20.) * i as f64).cos() + 1.1) * ampl;
                 value.push(x);
             }
-            if true {
+            if false {
                 info!(
                     "v01  node {}  made event  ts {}  pulse {}  value {:?}",
                     self.node_ix, ts, pulse, value
@@ -256,6 +257,7 @@ impl GenerateF64V00 {
             ts += self.dts;
         }
         self.ts = ts;
+        info!("generated  len {}", item.len());
         let w = ChannelEvents::Events(Box::new(item) as _);
         let w = sitem_data(w);
         w

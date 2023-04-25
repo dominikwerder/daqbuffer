@@ -47,6 +47,10 @@ impl<T> InMemoryFrameAsyncReadStream<T>
 where
     T: AsyncRead + Unpin,
 {
+    pub fn type_name() -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
     pub fn new(inp: T, bufcap: usize) -> Self {
         Self {
             inp,
@@ -162,7 +166,7 @@ where
         let _spanguard = span.enter();
         loop {
             break if self.complete {
-                panic!("poll_next on complete")
+                panic!("{} poll_next on complete", Self::type_name())
             } else if self.done {
                 self.complete = true;
                 Ready(None)

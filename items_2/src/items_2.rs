@@ -15,6 +15,7 @@ pub mod streams;
 #[cfg(test)]
 pub mod test;
 pub mod testgen;
+pub mod timebin;
 pub mod transform;
 
 use channelevents::ChannelEvents;
@@ -22,12 +23,12 @@ use chrono::DateTime;
 use chrono::TimeZone;
 use chrono::Utc;
 use futures_util::Stream;
+use items_0::overlap::RangeOverlapInfo;
 use items_0::streamitem::Sitemty;
 use items_0::transform::EventTransform;
 use items_0::Empty;
 use items_0::Events;
 use items_0::MergeError;
-use items_0::overlap::RangeOverlapInfo;
 use merger::Mergeable;
 use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::*;

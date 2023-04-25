@@ -39,14 +39,14 @@ where
     S: Stream<Item = Sitemty<ITY>> + Unpin,
     ITY: Mergeable,
 {
-    const fn selfname() -> &'static str {
-        "RangeFilter2"
+    pub fn type_name() -> &'static str {
+        std::any::type_name::<Self>()
     }
 
     pub fn new(inp: S, range: NanoRange, one_before_range: bool) -> Self {
-        trace!(
-            "{}::new  range: {:?}  one_before_range: {:?}",
-            Self::selfname(),
+        info!(
+            "----------------------------\n------------------------\n------------------------\n{}::new  range: {:?}  one_before_range: {:?}",
+            Self::type_name(),
             range,
             one_before_range
         );
@@ -152,7 +152,11 @@ where
         use Poll::*;
         loop {
             break if self.complete {
-                Ready(Some(Err(Error::with_msg_no_trace("poll_next on complete"))))
+                error!("{} poll_next on complete", Self::type_name());
+                Ready(Some(Err(Error::with_msg_no_trace(format!(
+                    "{} poll_next on complete",
+                    Self::type_name()
+                )))))
             } else if self.done {
                 self.complete = true;
                 Ready(None)
@@ -219,7 +223,7 @@ where
     ITY: Mergeable,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct(Self::selfname()).finish()
+        f.debug_struct(Self::type_name()).finish()
     }
 }
 
@@ -229,6 +233,6 @@ where
     ITY: Mergeable,
 {
     fn drop(&mut self) {
-        debug!("drop {} {:?}", Self::selfname(), self);
+        debug!("drop {} {:?}", Self::type_name(), self);
     }
 }

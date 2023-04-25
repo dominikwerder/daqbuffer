@@ -31,7 +31,6 @@ macro_rules! impl_range_overlap_info_events {
                 if range.is_time() {
                     if let Some(max) = HasTimestampDeque::timestamp_max(self) {
                         max < range.beg_u64()
-                        //<Self as RangeOverlapCmp>::range_overlap_cmp_beg(max, range.beg_u64())
                     } else {
                         true
                     }

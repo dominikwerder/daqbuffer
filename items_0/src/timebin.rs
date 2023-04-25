@@ -1,3 +1,5 @@
+pub mod timebinimpl;
+
 use crate::collect_s::Collectable;
 use crate::collect_s::Collector;
 use crate::collect_s::ToJsonResult;
@@ -7,6 +9,7 @@ use crate::AsAnyRef;
 use crate::Events;
 use crate::TypeName;
 use crate::WithLen;
+use err::Error;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 use netpod::BinnedRangeEnum;
@@ -297,4 +300,8 @@ impl TimeBinnableTy for Box<dyn TimeBinnable> {
         let binner = self.as_ref().time_binner_new(binrange.clone(), do_time_weight);
         TimeBinnerDynStruct::new(binrange, do_time_weight, binner)
     }
+}
+
+pub trait TimeBinnerIngest: fmt::Debug + TypeName + Send {
+    fn ingest_inrange(&mut self, item: &mut dyn TimeBinnable) -> Result<(), Error>;
 }

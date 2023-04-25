@@ -257,7 +257,7 @@ impl<STY: ScalarOps> EventsDim0CollectorOutput<STY> {
         self.values.iter().map(|x| x.as_prim_f32_b()).collect()
     }
 
-    pub fn range_complete(&self) -> bool {
+    pub fn range_final(&self) -> bool {
         self.range_final
     }
 
@@ -457,10 +457,10 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
         format!("{}<{}>", any::type_name::<Self>(), any::type_name::<STY>())
     }
 
-    pub fn new(binrange: SeriesRange, do_time_weight: bool) -> Self {
-        let int_ts = binrange.beg_u64();
+    pub fn new(range: SeriesRange, do_time_weight: bool) -> Self {
+        let int_ts = range.beg_u64();
         Self {
-            range: binrange,
+            range,
             count: 0,
             min: STY::zero_b(),
             max: STY::zero_b(),
@@ -521,11 +521,7 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
             if px > pxbeg {
                 self.apply_min_max(v2);
             }
-            let w = if self.do_time_weight {
-                (px - self.int_ts) as f32 * 1e-9
-            } else {
-                1.
-            };
+            let w = (px - self.int_ts) as f32 * 1e-9;
             if vf.is_nan() {
             } else {
                 self.sum += vf * w;
@@ -570,9 +566,9 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
                 let val = item.values[i1].clone();
                 if ts < self.int_ts {
                     trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  BEFORE", i1, ts, val);
-                    self.events_ignored_count += 1;
                     self.last_seen_ts = ts;
                     self.last_seen_val = Some(val);
+                    self.events_ignored_count += 1;
                 } else if ts >= self.range.end_u64() {
                     trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  AFTER", i1, ts, val);
                     self.events_ignored_count += 1;
@@ -640,8 +636,10 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
     fn result_reset_time_weight(&mut self, range: SeriesRange) -> BinsDim0<STY> {
         // TODO check callsite for correct expand status.
         debug!("result_reset_time_weight calls apply_event_time_weight");
+        let range_beg = self.range.beg_u64();
+        let range_end = self.range.end_u64();
         if self.range.is_time() {
-            self.apply_event_time_weight(self.range.end_u64(), self.range.beg_u64());
+            self.apply_event_time_weight(range_end, range_beg);
         } else {
             error!("TODO result_reset_time_weight");
             err::todoval()
@@ -658,8 +656,8 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
         };
         let ret = if self.range.is_time() {
             BinsDim0 {
-                ts1s: [self.range.beg_u64()].into(),
-                ts2s: [self.range.end_u64()].into(),
+                ts1s: [range_beg].into(),
+                ts2s: [range_end].into(),
                 counts: [self.count].into(),
                 mins: [min].into(),
                 maxs: [max].into(),
@@ -670,7 +668,7 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
             error!("TODO result_reset_time_weight");
             err::todoval()
         };
-        self.int_ts = range.beg_u64();
+        self.int_ts = range_beg;
         self.range = range;
         self.count = 0;
         self.sum = 0.;

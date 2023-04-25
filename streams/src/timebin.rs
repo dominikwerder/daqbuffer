@@ -167,6 +167,7 @@ where
                 StreamItem::Stats(item) => Ok(Break(Ready(Ok(StreamItem::Stats(item))))),
             },
             Err(e) => {
+                error!("received error item: {e}");
                 self.done = true;
                 Err(e)
             }
@@ -179,11 +180,11 @@ where
         use ControlFlow::*;
         use Poll::*;
         trace2!("=================   handle_none");
-        let self_range_complete = self.range_final;
+        let self_range_final = self.range_final;
         if let Some(binner) = self.binner.as_mut() {
             trace!("bins ready count before finish {}", binner.bins_ready_count());
             // TODO rework the finish logic
-            if self_range_complete {
+            if self_range_final {
                 binner.set_range_complete();
             }
             binner.push_in_progress(false);
@@ -194,6 +195,7 @@ where
             } else {
                 warn!("bins ready but got nothing");
                 if let Some(bins) = binner.empty() {
+                    self.done_data = true;
                     Ok(Break(Ready(sitem_data(bins))))
                 } else {
                     let e = Error::with_msg_no_trace("bins ready, but nothing, can not even create empty B");
@@ -242,7 +244,7 @@ where
         trace2!("=================   POLL");
         loop {
             break if self.complete {
-                panic!("poll on complete")
+                panic!("TimeBinnedStream poll on complete")
             } else if self.done {
                 self.complete = true;
                 Ready(None)

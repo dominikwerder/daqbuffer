@@ -52,6 +52,10 @@ pub struct EventChunkerMultifile {
 }
 
 impl EventChunkerMultifile {
+    pub fn type_name() -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
     pub fn new(
         range: NanoRange,
         channel_config: SfDbChConf,
@@ -104,7 +108,7 @@ impl Stream for EventChunkerMultifile {
             break if let Some(item) = self.log_queue.pop_front() {
                 Ready(Some(Ok(StreamItem::Log(item))))
             } else if self.complete {
-                panic!("EventChunkerMultifile  poll_next on complete");
+                panic!("{} poll_next on complete", Self::type_name());
             } else if self.done_emit_range_final {
                 self.complete = true;
                 Ready(None)

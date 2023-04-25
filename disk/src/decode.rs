@@ -304,6 +304,10 @@ pub struct EventsDynStream {
 }
 
 impl EventsDynStream {
+    pub fn type_name() -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
     pub fn new(
         scalar_type: ScalarType,
         shape: Shape,
@@ -405,7 +409,7 @@ impl Stream for EventsDynStream {
         use Poll::*;
         loop {
             break if self.complete {
-                panic!("poll_next on complete")
+                panic!("{} poll_next on complete", Self::type_name())
             } else if self.done {
                 self.complete = true;
                 Ready(None)

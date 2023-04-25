@@ -202,6 +202,10 @@ pub struct FileContentStream {
 }
 
 impl FileContentStream {
+    pub fn type_name() -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
     pub fn new(file: File, disk_io_tune: DiskIoTune) -> Self {
         Self {
             file,
@@ -223,7 +227,7 @@ impl Stream for FileContentStream {
         use Poll::*;
         loop {
             break if self.complete {
-                panic!("poll_next on complete")
+                panic!("{} poll_next on complete", Self::type_name())
             } else if self.done {
                 self.complete = true;
                 Ready(None)
@@ -385,6 +389,10 @@ pub struct FileContentStream2 {
 }
 
 impl FileContentStream2 {
+    pub fn type_name() -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
     pub fn new(file: File, disk_io_tune: DiskIoTune) -> Self {
         let file = Box::pin(file);
         Self {
@@ -412,7 +420,7 @@ impl Stream for FileContentStream2 {
         use Poll::*;
         loop {
             break if self.complete {
-                panic!("poll_next on complete")
+                panic!("{} poll_next on complete", Self::type_name())
             } else if self.done {
                 self.complete = true;
                 Ready(None)

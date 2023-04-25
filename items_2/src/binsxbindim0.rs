@@ -48,7 +48,7 @@ macro_rules! trace4 {
 pub struct BinsXbinDim0<NTY> {
     ts1s: VecDeque<u64>,
     ts2s: VecDeque<u64>,
-    counts: VecDeque<u64>,
+    pub counts: VecDeque<u64>,
     mins: VecDeque<NTY>,
     maxs: VecDeque<NTY>,
     avgs: VecDeque<f32>,

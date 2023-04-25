@@ -33,7 +33,7 @@ where
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         if self.completed {
-            panic!("poll_next on completed");
+            panic!("SCC poll_next on completed");
         } else if self.errored {
             self.completed = true;
             Ready(None)

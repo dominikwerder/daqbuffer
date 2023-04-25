@@ -71,7 +71,7 @@ fn events_plain_json_01() -> Result<(), Error> {
         assert_eq!(res.pulse_anchor(), 2420);
         let exp = [2420., 2421., 2422., 2423., 2424., 2425.];
         assert_eq!(f32_iter_cmp_near(res.values_to_f32(), exp), true);
-        assert_eq!(res.range_complete(), true);
+        assert_eq!(res.range_final(), true);
         assert_eq!(res.timed_out(), false);
         Ok(())
     };
@@ -95,7 +95,7 @@ fn events_plain_json_02_range_incomplete() -> Result<(), Error> {
         )
         .await?;
         let res: EventsDim0CollectorOutput<i32> = serde_json::from_value(jsv).unwrap();
-        assert_eq!(res.range_complete(), false);
+        assert_eq!(res.range_final(), false);
         assert_eq!(res.timed_out(), false);
         Ok(())
     };

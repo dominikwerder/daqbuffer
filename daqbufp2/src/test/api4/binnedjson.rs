@@ -2,6 +2,8 @@ use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
 use crate::test::api4::common::fetch_binned_json;
 use crate::test::f32_cmp_near;
+use crate::test::f32_iter_cmp_near;
+use crate::test::f64_iter_cmp_near;
 use chrono::Utc;
 use err::Error;
 use http::StatusCode;
@@ -158,8 +160,9 @@ fn binned_d0_json_02() -> Result<(), Error> {
                 name: "test-gen-f64-dim1-v00".into(),
                 series: None,
             },
-            "1970-01-01T00:20:10.000Z",
-            "1970-01-01T01:20:45.000Z",
+            "1970-01-01T00:20:00Z",
+            "1970-01-01T00:20:10Z",
+            //"1970-01-01T01:20:45.000Z",
             10,
             cluster,
         )
@@ -167,9 +170,30 @@ fn binned_d0_json_02() -> Result<(), Error> {
         debug!("Receveided a response json value: {jsv:?}");
         let res: BinsDim0CollectedResult<f64> = serde_json::from_value(jsv)?;
         // inmem was meant just for functional test, ignores the requested time range
-        assert_eq!(res.ts_anchor_sec(), 1200);
-        assert_eq!(res.len(), 13);
         assert_eq!(res.range_final(), true);
+        assert_eq!(res.len(), 10);
+        assert_eq!(res.ts_anchor_sec(), 1200);
+        let nb = res.len();
+        {
+            let a1: Vec<_> = res.ts1_off_ms().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 300 * 1000 * x).collect();
+            assert_eq!(a1, a2);
+        }
+        {
+            let a1: Vec<_> = res.ts2_off_ms().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 300 * 1000 * (1 + x)).collect();
+            assert_eq!(a1, a2);
+        }
+        {
+            let a1: Vec<_> = res.counts().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|_| 1024).collect();
+            assert_eq!(a1, a2);
+        }
+        {
+            let a1: Vec<_> = res.mins().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|_| 0.1).collect();
+            assert_eq!(f64_iter_cmp_near(a1, a2), true);
+        }
         Ok(())
     };
     taskrun::run(fut)
@@ -420,7 +444,7 @@ async fn get_binned_json(
     let s = String::from_utf8_lossy(&buf);
     let res: JsonValue = serde_json::from_str(&s)?;
     let pretty = serde_json::to_string_pretty(&res)?;
-    trace!("{pretty}");
+    info!("Received from remote:\n{pretty}");
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     // TODO add timeout
