@@ -375,6 +375,10 @@ impl<NTY> BinsDim0CollectedResult<NTY> {
         self.range_final
     }
 
+    pub fn timed_out(&self) -> bool {
+        self.timed_out
+    }
+
     pub fn missing_bins(&self) -> u32 {
         self.missing_bins
     }

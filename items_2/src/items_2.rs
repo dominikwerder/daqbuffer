@@ -27,7 +27,7 @@ use items_0::transform::EventTransform;
 use items_0::Empty;
 use items_0::Events;
 use items_0::MergeError;
-use items_0::RangeOverlapInfo;
+use items_0::overlap::RangeOverlapInfo;
 use merger::Mergeable;
 use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::*;

@@ -28,6 +28,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 
+const TEST_BACKEND: &str = "testbackend-00";
+
 #[test]
 fn raw_data_00() {
     let fut = async {
@@ -38,8 +40,8 @@ fn raw_data_00() {
             node_config: NodeConfig {
                 name: "node_name_dummy".into(),
                 cluster: Cluster {
-                    backend: "testbackend".into(),
-                    nodes: vec![],
+                    backend: TEST_BACKEND.into(),
+                    nodes: Vec::new(),
                     database: Database {
                         name: "".into(),
                         host: "".into(),
@@ -73,7 +75,7 @@ fn raw_data_00() {
         };
         let channel = Channel {
             series: None,
-            backend: "test-adhoc-dyn".into(),
+            backend: TEST_BACKEND.into(),
             name: "scalar-i32".into(),
         };
         let range = NanoRange {

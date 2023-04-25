@@ -8,14 +8,25 @@ use netpod::NodeConfigCached;
 use netpod::ScalarType;
 use netpod::Shape;
 
+const TEST_BACKEND: &str = "testbackend-00";
+
 pub async fn channel_config(range: NanoRange, channel: Channel, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
-    if channel.backend() == "test-disk-databuffer" {
+    if channel.backend() == TEST_BACKEND {
         let backend = channel.backend().into();
         // TODO the series-ids here are just random. Need to integrate with better test setup.
-        let ret = if channel.name() == "scalar-i32-be" {
+        let ret = if channel.name() == "inmem-d0-i32" {
             let ret = ChConf {
                 backend,
                 series: Some(1),
+                name: channel.name().into(),
+                scalar_type: ScalarType::I32,
+                shape: Shape::Scalar,
+            };
+            Ok(ret)
+        } else if channel.name() == "scalar-i32-be" {
+            let ret = ChConf {
+                backend,
+                series: Some(2),
                 name: channel.name().into(),
                 scalar_type: ScalarType::I32,
                 shape: Shape::Scalar,
@@ -24,7 +35,7 @@ pub async fn channel_config(range: NanoRange, channel: Channel, ncc: &NodeConfig
         } else if channel.name() == "wave-f64-be-n21" {
             let ret = ChConf {
                 backend,
-                series: Some(2),
+                series: Some(3),
                 name: channel.name().into(),
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(21),
@@ -33,27 +44,37 @@ pub async fn channel_config(range: NanoRange, channel: Channel, ncc: &NodeConfig
         } else if channel.name() == "const-regular-scalar-i32-be" {
             let ret = ChConf {
                 backend,
-                series: Some(3),
+                series: Some(4),
                 name: channel.name().into(),
                 scalar_type: ScalarType::I32,
                 shape: Shape::Scalar,
             };
             Ok(ret)
-        } else {
-            error!("no test information");
-            Err(Error::with_msg_no_trace(format!("no test information"))
-                .add_public_msg("No channel config for test channel {:?}"))
-        };
-        ret
-    } else if channel.backend() == "test-inmem" {
-        let backend = channel.backend().into();
-        let ret = if channel.name() == "inmem-d0-i32" {
+        } else if channel.name() == "test-gen-i32-dim0-v00" {
             let ret = ChConf {
                 backend,
-                series: Some(1),
+                series: Some(5),
                 name: channel.name().into(),
                 scalar_type: ScalarType::I32,
                 shape: Shape::Scalar,
+            };
+            Ok(ret)
+        } else if channel.name() == "test-gen-i32-dim0-v01" {
+            let ret = ChConf {
+                backend,
+                series: Some(6),
+                name: channel.name().into(),
+                scalar_type: ScalarType::I32,
+                shape: Shape::Scalar,
+            };
+            Ok(ret)
+        } else if channel.name() == "test-gen-f64-dim1-v00" {
+            let ret = ChConf {
+                backend,
+                series: Some(7),
+                name: channel.name().into(),
+                scalar_type: ScalarType::F64,
+                shape: Shape::Wave(21),
             };
             Ok(ret)
         } else {

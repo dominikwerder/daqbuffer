@@ -1,10 +1,10 @@
 use crate::collect_s::Collectable;
 use crate::collect_s::Collector;
 use crate::collect_s::ToJsonResult;
+use crate::overlap::RangeOverlapInfo;
 use crate::AsAnyMut;
 use crate::AsAnyRef;
 use crate::Events;
-use crate::RangeOverlapInfo;
 use crate::TypeName;
 use crate::WithLen;
 use netpod::log::*;

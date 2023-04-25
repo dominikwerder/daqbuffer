@@ -2,6 +2,7 @@ pub mod collect_s;
 pub mod container;
 pub mod framable;
 pub mod isodate;
+pub mod overlap;
 pub mod scalar_ops;
 pub mod streamitem;
 pub mod subfr;
@@ -24,12 +25,6 @@ use timebin::TimeBinnable;
 
 pub trait WithLen {
     fn len(&self) -> usize;
-}
-
-pub trait RangeOverlapInfo {
-    fn ends_before(&self, range: &SeriesRange) -> bool;
-    fn ends_after(&self, range: &SeriesRange) -> bool;
-    fn starts_after(&self, range: &SeriesRange) -> bool;
 }
 
 pub trait Empty {

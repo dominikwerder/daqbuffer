@@ -16,6 +16,8 @@ use query::api4::binned::BinnedQuery;
 use std::time::Duration;
 use url::Url;
 
+const TEST_BACKEND: &str = "testbackend-00";
+
 #[test]
 fn time_weighted_json_03() -> Result<(), Error> {
     async fn inner() -> Result<(), Error> {
@@ -103,7 +105,7 @@ async fn get_json_common(
     let node0 = &cluster.nodes[0];
     let beg_date: DateTime<Utc> = beg_date.parse()?;
     let end_date: DateTime<Utc> = end_date.parse()?;
-    let channel_backend = "testbackend";
+    let channel_backend = TEST_BACKEND;
     let channel = Channel {
         backend: channel_backend.into(),
         name: channel_name.into(),

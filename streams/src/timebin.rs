@@ -18,19 +18,19 @@ use std::task::Poll;
 
 #[allow(unused)]
 macro_rules! trace2 {
-    (__$($arg:tt)*) => ();
+    ($($arg:tt)*) => ();
     ($($arg:tt)*) => (trace!($($arg)*));
 }
 
 #[allow(unused)]
 macro_rules! trace3 {
-    (__$($arg:tt)*) => ();
+    ($($arg:tt)*) => ();
     ($($arg:tt)*) => (trace!($($arg)*));
 }
 
 #[allow(unused)]
 macro_rules! trace4 {
-    (__$($arg:tt)*) => ();
+    ($($arg:tt)*) => ();
     ($($arg:tt)*) => (trace!($($arg)*));
 }
 
@@ -178,7 +178,7 @@ where
     ) -> Result<ControlFlow<Poll<Sitemty<<<T as TimeBinnableTy>::TimeBinner as TimeBinnerTy>::Output>>>, Error> {
         use ControlFlow::*;
         use Poll::*;
-        info!("=================   handle_none");
+        trace2!("=================   handle_none");
         let self_range_complete = self.range_final;
         if let Some(binner) = self.binner.as_mut() {
             trace!("bins ready count before finish {}", binner.bins_ready_count());
@@ -220,7 +220,7 @@ where
     ) -> Result<ControlFlow<Poll<Sitemty<<<T as TimeBinnableTy>::TimeBinner as TimeBinnerTy>::Output>>>, Error> {
         use ControlFlow::*;
         use Poll::*;
-        info!("=================   poll_input");
+        trace2!("=================   poll_input");
         match self.inp.poll_next_unpin(cx) {
             Ready(Some(item)) => self.handle_item(item),
             Ready(None) => self.handle_none(),
@@ -239,7 +239,7 @@ where
         use Poll::*;
         let span = span!(Level::INFO, "TimeBinner");
         let _spg = span.enter();
-        info!("=================   POLL");
+        trace2!("=================   POLL");
         loop {
             break if self.complete {
                 panic!("poll on complete")

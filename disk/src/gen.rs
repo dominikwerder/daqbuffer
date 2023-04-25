@@ -20,8 +20,10 @@ use tokio::fs::File;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 
+const BACKEND: &str = "testbackend-00";
+
 pub async fn gen_test_data() -> Result<(), Error> {
-    let backend = String::from("test-disk-databuffer");
+    let backend = String::from(BACKEND);
     let homedir = std::env::var("HOME").unwrap();
     let data_base_path = PathBuf::from(homedir).join("daqbuffer-testdata").join("databuffer");
     let ksprefix = String::from("ks");

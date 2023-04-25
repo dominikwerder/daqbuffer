@@ -18,6 +18,8 @@ use query::api4::events::PlainEventsQuery;
 use serde_json::Value as JsonValue;
 use url::Url;
 
+const BACKEND: &str = "testbackend-00";
+
 #[test]
 fn events_plain_json_00() -> Result<(), Error> {
     let fut = async {
@@ -25,7 +27,7 @@ fn events_plain_json_00() -> Result<(), Error> {
         let cluster = &rh.cluster;
         let jsv = events_plain_json(
             Channel {
-                backend: "test-inmem".into(),
+                backend: BACKEND.into(),
                 name: "inmem-d0-i32".into(),
                 series: None,
             },
@@ -55,7 +57,7 @@ fn events_plain_json_01() -> Result<(), Error> {
         let cluster = &rh.cluster;
         let jsv = events_plain_json(
             Channel {
-                backend: "test-disk-databuffer".into(),
+                backend: BACKEND.into(),
                 name: "scalar-i32-be".into(),
                 series: None,
             },
@@ -83,7 +85,7 @@ fn events_plain_json_02_range_incomplete() -> Result<(), Error> {
         let cluster = &rh.cluster;
         let jsv = events_plain_json(
             Channel {
-                backend: "test-disk-databuffer".into(),
+                backend: BACKEND.into(),
                 name: "scalar-i32-be".into(),
                 series: None,
             },

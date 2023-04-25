@@ -1,6 +1,7 @@
 use crate::subfr::SubFrId;
 use serde::Serialize;
 use std::fmt;
+use std::ops;
 
 #[allow(unused)]
 const fn is_nan_int<T>(_x: &T) -> bool {
@@ -64,10 +65,15 @@ pub trait ScalarOps:
 {
     fn zero_b() -> Self;
     fn equal_slack(&self, rhs: &Self) -> bool;
+    fn add(&mut self, rhs: &Self);
+    fn div(&mut self, n: usize);
+    fn find_vec_min(a: &Vec<Self>) -> Option<Self>;
+    fn find_vec_max(a: &Vec<Self>) -> Option<Self>;
+    fn avg_vec(a: &Vec<Self>) -> Option<Self>;
 }
 
 macro_rules! impl_scalar_ops {
-    ($ty:ident, $zero:expr, $equal_slack:ident) => {
+    ($ty:ident, $zero:expr, $equal_slack:ident, $mac_add:ident, $mac_div:ident) => {
         impl ScalarOps for $ty {
             fn zero_b() -> Self {
                 $zero
@@ -75,6 +81,57 @@ macro_rules! impl_scalar_ops {
 
             fn equal_slack(&self, rhs: &Self) -> bool {
                 $equal_slack(self, rhs)
+            }
+
+            fn add(&mut self, rhs: &Self) {
+                $mac_add!(self, rhs);
+            }
+
+            fn div(&mut self, n: usize) {
+                $mac_div!(self, n);
+            }
+
+            fn find_vec_min(a: &Vec<Self>) -> Option<Self> {
+                if a.len() == 0 {
+                    None
+                } else {
+                    let mut k = &a[0];
+                    for (i, v) in a.iter().enumerate() {
+                        if *v < *k {
+                            k = &a[i];
+                        }
+                    }
+                    Some(k.clone())
+                }
+            }
+
+            fn find_vec_max(a: &Vec<Self>) -> Option<Self> {
+                if a.len() == 0 {
+                    None
+                } else {
+                    let mut k = &a[0];
+                    for (i, v) in a.iter().enumerate() {
+                        if *v > *k {
+                            k = &a[i];
+                        }
+                    }
+                    Some(k.clone())
+                }
+            }
+
+            fn avg_vec(a: &Vec<Self>) -> Option<Self> {
+                if a.len() == 0 {
+                    None
+                } else {
+                    let mut sum = Self::zero_b();
+                    let mut c = 0;
+                    for v in a.iter() {
+                        sum.add(v);
+                        c += 1;
+                    }
+                    ScalarOps::div(&mut sum, c);
+                    Some(sum)
+                }
             }
         }
     };
@@ -100,15 +157,58 @@ fn equal_string(a: &String, b: &String) -> bool {
     a == b
 }
 
-impl_scalar_ops!(u8, 0, equal_int);
-impl_scalar_ops!(u16, 0, equal_int);
-impl_scalar_ops!(u32, 0, equal_int);
-impl_scalar_ops!(u64, 0, equal_int);
-impl_scalar_ops!(i8, 0, equal_int);
-impl_scalar_ops!(i16, 0, equal_int);
-impl_scalar_ops!(i32, 0, equal_int);
-impl_scalar_ops!(i64, 0, equal_int);
-impl_scalar_ops!(f32, 0., equal_f32);
-impl_scalar_ops!(f64, 0., equal_f64);
-impl_scalar_ops!(bool, false, equal_bool);
-impl_scalar_ops!(String, String::new(), equal_string);
+fn add_int<T: ops::AddAssign>(a: &mut T, b: &T) {
+    ops::AddAssign::add_assign(a, todo!());
+}
+
+macro_rules! add_int {
+    ($a:expr, $b:expr) => {
+        *$a += $b;
+    };
+}
+
+macro_rules! add_bool {
+    ($a:expr, $b:expr) => {
+        *$a |= $b;
+    };
+}
+
+macro_rules! add_string {
+    ($a:expr, $b:expr) => {
+        $a.push_str($b);
+    };
+}
+
+macro_rules! div_int {
+    ($a:expr, $b:expr) => {
+        // TODO for average calculation, the accumulator must be large enough!
+        // Use u64 for all ints, and f32 for all floats.
+        // Therefore, the name "add" is too general.
+        //*$a /= $b;
+    };
+}
+
+macro_rules! div_bool {
+    ($a:expr, $b:expr) => {
+        //
+    };
+}
+
+macro_rules! div_string {
+    ($a:expr, $b:expr) => {
+        //
+    };
+}
+
+impl_scalar_ops!(u8, 0, equal_int, add_int, div_int);
+impl_scalar_ops!(u16, 0, equal_int, add_int, div_int);
+impl_scalar_ops!(u32, 0, equal_int, add_int, div_int);
+impl_scalar_ops!(u64, 0, equal_int, add_int, div_int);
+impl_scalar_ops!(i8, 0, equal_int, add_int, div_int);
+impl_scalar_ops!(i16, 0, equal_int, add_int, div_int);
+impl_scalar_ops!(i32, 0, equal_int, add_int, div_int);
+impl_scalar_ops!(i64, 0, equal_int, add_int, div_int);
+impl_scalar_ops!(f32, 0., equal_f32, add_int, div_int);
+impl_scalar_ops!(f64, 0., equal_f64, add_int, div_int);
+impl_scalar_ops!(bool, false, equal_bool, add_bool, div_bool);
+impl_scalar_ops!(String, String::new(), equal_string, add_string, div_string);

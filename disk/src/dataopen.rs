@@ -19,6 +19,8 @@ use tokio::io::AsyncSeekExt;
 use tokio::io::ErrorKind;
 use tokio::io::SeekFrom;
 
+const BACKEND: &str = "testbackend-00";
+
 pub struct Positioned {
     pub file: OpenedFile,
     pub found: bool,
@@ -821,7 +823,7 @@ mod test {
             end: DAY + HOUR * 8,
         };
         let chn = netpod::Channel {
-            backend: "test-disk-databuffer".into(),
+            backend: BACKEND.into(),
             name: "scalar-i32-be".into(),
             series: None,
         };

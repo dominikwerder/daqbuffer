@@ -1,11 +1,12 @@
 use err::Error;
 use netpod::range::evrange::NanoRange;
+use netpod::timeunits::DAY;
 use netpod::timeunits::MS;
 use netpod::ByteOrder;
 use netpod::Channel;
 use netpod::ChannelConfigQuery;
 use netpod::ChannelConfigResponse;
-use netpod::Node;
+use netpod::NodeConfigCached;
 use netpod::ScalarType;
 use netpod::Shape;
 use netpod::TsNano;
@@ -23,6 +24,8 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
 use tokio::io::ErrorKind;
+
+const TEST_BACKEND: &str = "testbackend-00";
 
 #[derive(Debug)]
 pub struct NErr {
@@ -302,8 +305,8 @@ pub fn parse_config(inp: &[u8]) -> NRes<ChannelConfigs> {
     Ok((inp, ret))
 }
 
-pub async fn channel_config(q: &ChannelConfigQuery, node: &Node) -> Result<ChannelConfigResponse, Error> {
-    let conf = read_local_config(q.channel.clone(), node.clone()).await?;
+pub async fn channel_config(q: &ChannelConfigQuery, ncc: &NodeConfigCached) -> Result<ChannelConfigResponse, Error> {
+    let conf = read_local_config(q.channel.clone(), ncc.clone()).await?;
     let entry_res = extract_matching_config_entry(&q.range, &conf)?;
     let entry = match entry_res {
         MatchingConfigEntry::None => return Err(Error::with_public_msg("no config entry found")),
@@ -319,9 +322,9 @@ pub async fn channel_config(q: &ChannelConfigQuery, node: &Node) -> Result<Chann
     Ok(ret)
 }
 
-// TODO can I take parameters as ref, even when used in custom streams?
-pub async fn read_local_config(channel: Channel, node: Node) -> Result<ChannelConfigs, Error> {
-    let path = node
+async fn read_local_config_real(channel: Channel, ncc: &NodeConfigCached) -> Result<ChannelConfigs, Error> {
+    let path = ncc
+        .node
         .sf_databuffer
         .as_ref()
         .ok_or_else(|| Error::with_msg(format!("missing sf databuffer config in node")))?
@@ -351,6 +354,81 @@ pub async fn read_local_config(channel: Channel, node: Node) -> Result<ChannelCo
     };
     let config = parse_config(&buf).map_err(NErr::from)?;
     Ok(config.1)
+}
+
+async fn read_local_config_test(channel: Channel, ncc: &NodeConfigCached) -> Result<ChannelConfigs, Error> {
+    if channel.name() == "test-gen-i32-dim0-v00" {
+        let ret = ChannelConfigs {
+            format_version: 0,
+            channel_name: channel.name().into(),
+            entries: vec![ConfigEntry {
+                ts: TsNano(0),
+                pulse: 0,
+                ks: 2,
+                bs: TsNano(DAY),
+                split_count: ncc.node_config.cluster.nodes.len() as _,
+                status: -1,
+                bb: -1,
+                modulo: -1,
+                offset: -1,
+                precision: -1,
+                scalar_type: ScalarType::I32,
+                is_compressed: false,
+                is_shaped: false,
+                is_array: false,
+                byte_order: ByteOrder::Big,
+                compression_method: None,
+                shape: None,
+                source_name: None,
+                unit: None,
+                description: None,
+                optional_fields: None,
+                value_converter: None,
+            }],
+        };
+        Ok(ret)
+    } else if channel.name() == "test-gen-i32-dim0-v01" {
+        let ret = ChannelConfigs {
+            format_version: 0,
+            channel_name: channel.name().into(),
+            entries: vec![ConfigEntry {
+                ts: TsNano(0),
+                pulse: 0,
+                ks: 2,
+                bs: TsNano(DAY),
+                split_count: ncc.node_config.cluster.nodes.len() as _,
+                status: -1,
+                bb: -1,
+                modulo: -1,
+                offset: -1,
+                precision: -1,
+                scalar_type: ScalarType::I32,
+                is_compressed: false,
+                is_shaped: false,
+                is_array: false,
+                byte_order: ByteOrder::Big,
+                compression_method: None,
+                shape: None,
+                source_name: None,
+                unit: None,
+                description: None,
+                optional_fields: None,
+                value_converter: None,
+            }],
+        };
+        Ok(ret)
+    } else {
+        Err(Error::with_msg_no_trace(format!("unknown test channel {channel:?}")))
+    }
+}
+
+// TODO can I take parameters as ref, even when used in custom streams?
+pub async fn read_local_config(channel: Channel, ncc: NodeConfigCached) -> Result<ChannelConfigs, Error> {
+    if channel.backend() == TEST_BACKEND {
+        read_local_config_test(channel, &ncc).await
+    } else {
+        read_local_config_real(channel, &ncc).await
+    }
 }
 
 #[derive(Clone)]

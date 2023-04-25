@@ -47,6 +47,8 @@ pub const CONNECTION_STATUS_DIV: u64 = timeunits::DAY;
 pub const TS_MSP_GRID_UNIT: u64 = timeunits::SEC * 10;
 pub const TS_MSP_GRID_SPACING: u64 = 6 * 2;
 
+const TEST_BACKEND: &str = "testbackend-00";
+
 pub fn is_false<T>(x: T) -> bool
 where
     T: std::borrow::Borrow<bool>,
@@ -2359,7 +2361,7 @@ pub fn test_cluster() -> Cluster {
         })
         .collect();
     Cluster {
-        backend: "testbackend".into(),
+        backend: TEST_BACKEND.into(),
         nodes,
         database: Database {
             host: "127.0.0.1".into(),

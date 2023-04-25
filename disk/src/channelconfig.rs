@@ -1,3 +1,4 @@
+use crate::SfDbChConf;
 use err::Error;
 use netpod::range::evrange::NanoRange;
 use netpod::Channel;
@@ -7,10 +8,8 @@ use parse::channelconfig::read_local_config;
 use parse::channelconfig::ChannelConfigs;
 use parse::channelconfig::MatchingConfigEntry;
 
-use crate::SfDbChConf;
-
 pub async fn config(range: NanoRange, channel: Channel, node_config: &NodeConfigCached) -> Result<SfDbChConf, Error> {
-    let channel_configs = read_local_config(channel.clone(), node_config.node.clone()).await?;
+    let channel_configs = read_local_config(channel.clone(), node_config.clone()).await?;
     let entry_res = match extract_matching_config_entry(&range, &channel_configs) {
         Ok(k) => k,
         Err(e) => return Err(e)?,
@@ -48,5 +47,5 @@ pub async fn config(range: NanoRange, channel: Channel, node_config: &NodeConfig
 }
 
 pub async fn configs(channel: Channel, node_config: &NodeConfigCached) -> Result<ChannelConfigs, Error> {
-    read_local_config(channel.clone(), node_config.node.clone()).await
+    read_local_config(channel.clone(), node_config.clone()).await
 }

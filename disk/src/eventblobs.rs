@@ -289,9 +289,11 @@ mod test {
     use netpod::TsNano;
     use streams::rangefilter2::RangeFilter2;
 
+    const BACKEND: &str = "testbackend-00";
+
     fn read_expanded_for_range(range: NanoRange, nodeix: usize) -> Result<(usize, Vec<u64>), Error> {
         let chn = netpod::Channel {
-            backend: "test-disk-databuffer".into(),
+            backend: BACKEND.into(),
             name: "scalar-i32-be".into(),
             series: None,
         };

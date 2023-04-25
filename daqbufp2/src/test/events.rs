@@ -27,10 +27,12 @@ use streams::frames::inmem::InMemoryFrameAsyncReadStream;
 use tokio::io::AsyncRead;
 use url::Url;
 
+const TEST_BACKEND: &str = "testbackend-00";
+
 fn ch_adhoc(name: &str) -> Channel {
     Channel {
         series: None,
-        backend: "test-disk-databuffer".into(),
+        backend: TEST_BACKEND.into(),
         name: name.into(),
     }
 }
@@ -38,7 +40,7 @@ fn ch_adhoc(name: &str) -> Channel {
 pub fn ch_gen(name: &str) -> Channel {
     Channel {
         series: None,
-        backend: "test-disk-databuffer".into(),
+        backend: TEST_BACKEND.into(),
         name: name.into(),
     }
 }
@@ -78,7 +80,7 @@ async fn get_plain_events_binary(
     let node0 = &cluster.nodes[0];
     let beg_date: DateTime<Utc> = beg_date.parse()?;
     let end_date: DateTime<Utc> = end_date.parse()?;
-    let channel_backend = "testbackend";
+    let channel_backend = TEST_BACKEND;
     let perf_opts = PerfOpts::default();
     let channel = Channel {
         backend: channel_backend.into(),

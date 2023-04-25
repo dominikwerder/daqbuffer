@@ -575,11 +575,13 @@ mod test {
     //use netpod::timeunits::*;
     //use netpod::{ByteSize, Nanos};
 
+    //const TEST_BACKEND: &str = "testbackend-00";
+
     /*
     #[test]
     fn read_expanded_for_range(range: netpod::NanoRange, nodeix: usize) -> Result<(usize, usize), Error> {
         let chn = netpod::Channel {
-            backend: "testbackend".into(),
+            backend: TEST_BACKEND.into(),
             name: "scalar-i32-be".into(),
         };
         // TODO read config from disk.

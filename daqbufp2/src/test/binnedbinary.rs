@@ -27,6 +27,8 @@ use streams::frames::inmem::InMemoryFrameAsyncReadStream;
 use tokio::io::AsyncRead;
 use url::Url;
 
+const TEST_BACKEND: &str = "testbackend-00";
+
 #[test]
 fn get_binned_binary() {
     taskrun::run(get_binned_binary_inner()).unwrap();
@@ -105,7 +107,7 @@ where
     let node0 = &cluster.nodes[0];
     let beg_date = beg_date.parse()?;
     let end_date = end_date.parse()?;
-    let channel_backend = "testbackend";
+    let channel_backend = TEST_BACKEND;
     let perf_opts = PerfOpts::default();
     let channel = Channel {
         backend: channel_backend.into(),

@@ -6,6 +6,7 @@ use items_0::collect_s::Collected;
 use items_0::collect_s::Collector;
 use items_0::container::ByteEstimate;
 use items_0::framable::FrameTypeInnerStatic;
+use items_0::overlap::RangeOverlapInfo;
 use items_0::streamitem::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID;
 use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinnableTy;
@@ -16,7 +17,6 @@ use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use items_0::EventsNonObj;
 use items_0::MergeError;
-use items_0::RangeOverlapInfo;
 use items_0::TypeName;
 use items_0::WithLen;
 use netpod::log::*;
@@ -159,6 +159,7 @@ mod serde_channel_events {
     use crate::channelevents::ConnStatusEvent;
     use crate::eventsdim0::EventsDim0;
     use crate::eventsdim1::EventsDim1;
+    use crate::eventsxbindim0::EventsXbinDim0;
     use items_0::subfr::SubFrId;
     use serde::de::{self, EnumAccess, VariantAccess, Visitor};
     use serde::ser::SerializeSeq;
@@ -257,8 +258,31 @@ mod serde_channel_events {
                         let obj: EventsDim1<f32> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
+                    f64::SUB => {
+                        let obj: EventsDim1<f64> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
                     bool::SUB => {
                         let obj: EventsDim1<bool> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    _ => Err(de::Error::custom(&format!("unknown nty {e1}"))),
+                }
+            } else if e0 == EventsXbinDim0::<u8>::serde_id() {
+                match e1 {
+                    f32::SUB => {
+                        let obj: EventsXbinDim0<f32> =
+                            seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    f64::SUB => {
+                        let obj: EventsXbinDim0<f64> =
+                            seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    bool::SUB => {
+                        let obj: EventsXbinDim0<bool> =
+                            seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     _ => Err(de::Error::custom(&format!("unknown nty {e1}"))),

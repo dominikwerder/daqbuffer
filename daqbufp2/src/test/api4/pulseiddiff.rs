@@ -9,9 +9,11 @@ use netpod::range::evrange::NanoRange;
 use netpod::Channel;
 use query::api4::events::PlainEventsQuery;
 
+const BACKEND: &str = "testbackend-00";
+
 pub fn make_query<S: Into<String>>(name: S, beg_date: &str, end_date: &str) -> Result<PlainEventsQuery, Error> {
     let channel = Channel {
-        backend: "test-inmem".into(),
+        backend: BACKEND.into(),
         name: name.into(),
         series: None,
     };

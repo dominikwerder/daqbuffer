@@ -28,12 +28,16 @@ use query::api4::events::PlainEventsQuery;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
+use streams::generators::GenerateF64V00;
+use streams::generators::GenerateI32V01;
 use streams::transform::build_event_transform;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedReadHalf;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
 use tracing::Instrument;
+
+const TEST_BACKEND: &str = "testbackend-00";
 
 #[cfg(test)]
 mod test;
@@ -72,37 +76,44 @@ async fn make_channel_events_stream_data(
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     info!("nodenet::conn::make_channel_events_stream");
-    if evq.channel().backend() == "test-inmem" {
+    if evq.channel().backend() == TEST_BACKEND {
         warn!("GENERATE INMEM TEST DATA");
         let node_count = node_config.node_config.cluster.nodes.len() as u64;
         let node_ix = node_config.ix as u64;
         let chn = evq.channel().name();
-        let na: Vec<_> = chn.split("-").collect();
-        if na.len() != 3 {
-            Err(Error::with_msg_no_trace(format!(
-                "can not understand test channel name: {chn:?}"
-            )))
+        let range = evq.range().clone();
+        if chn == "test-gen-i32-dim0-v01" {
+            Ok(Box::pin(GenerateI32V01::new(node_ix, node_count, range)))
+        } else if chn == "test-gen-f64-dim1-v00" {
+            Ok(Box::pin(GenerateF64V00::new(node_ix, node_count, range)))
         } else {
-            if na[0] != "inmem" {
+            let na: Vec<_> = chn.split("-").collect();
+            if na.len() != 3 {
                 Err(Error::with_msg_no_trace(format!(
                     "can not understand test channel name: {chn:?}"
                 )))
             } else {
-                let range = evq.range().clone();
-                if na[1] == "d0" {
-                    if na[2] == "i32" {
-                        generator::generate_i32(node_ix, node_count, range)
-                    } else if na[2] == "f32" {
-                        generator::generate_f32(node_ix, node_count, range)
+                if na[0] != "inmem" {
+                    Err(Error::with_msg_no_trace(format!(
+                        "can not understand test channel name: {chn:?}"
+                    )))
+                } else {
+                    let range = evq.range().clone();
+                    if na[1] == "d0" {
+                        if na[2] == "i32" {
+                            generator::generate_i32(node_ix, node_count, range)
+                        } else if na[2] == "f32" {
+                            generator::generate_f32(node_ix, node_count, range)
+                        } else {
+                            Err(Error::with_msg_no_trace(format!(
+                                "can not understand test channel name: {chn:?}"
+                            )))
+                        }
                     } else {
                         Err(Error::with_msg_no_trace(format!(
                             "can not understand test channel name: {chn:?}"
                         )))
                     }
-                } else {
-                    Err(Error::with_msg_no_trace(format!(
-                        "can not understand test channel name: {chn:?}"
-                    )))
                 }
             }
         }

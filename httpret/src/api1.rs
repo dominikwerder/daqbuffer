@@ -925,9 +925,8 @@ impl Stream for DataApiPython3DataStream {
                     } else {
                         let channel = self.channels[self.chan_ix].clone();
                         self.chan_ix += 1;
-                        self.config_fut = Some(Box::pin(
-                            read_local_config(channel.clone(), self.node_config.node.clone()).map_err(Error::from),
-                        ));
+                        let fut = read_local_config(channel.clone(), self.node_config.clone()).map_err(Error::from);
+                        self.config_fut = Some(Box::pin(fut));
                         continue;
                     }
                 }

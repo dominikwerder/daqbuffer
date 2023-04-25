@@ -1,4 +1,5 @@
 use crate::binsdim0::BinsDim0;
+use crate::eventsxbindim0::EventsXbinDim0;
 use crate::framable::FrameType;
 use crate::IsoDateTime;
 use crate::RangeOverlapInfo;
@@ -12,6 +13,8 @@ use items_0::collect_s::CollectorType;
 use items_0::collect_s::ToJsonBytes;
 use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
+use items_0::overlap::HasTimestampDeque;
+use items_0::overlap::RangeOverlapCmp;
 use items_0::scalar_ops::ScalarOps;
 use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinned;
@@ -143,19 +146,25 @@ impl<STY> ByteEstimate for EventsDim1<STY> {
     }
 }
 
-impl<NTY: ScalarOps> RangeOverlapInfo for EventsDim1<NTY> {
-    fn ends_before(&self, range: &SeriesRange) -> bool {
-        todo!()
+impl<STY: ScalarOps> HasTimestampDeque for EventsDim1<STY> {
+    fn timestamp_min(&self) -> Option<u64> {
+        self.tss.front().map(|x| *x)
     }
 
-    fn ends_after(&self, range: &SeriesRange) -> bool {
-        todo!()
+    fn timestamp_max(&self) -> Option<u64> {
+        self.tss.back().map(|x| *x)
     }
 
-    fn starts_after(&self, range: &SeriesRange) -> bool {
-        todo!()
+    fn pulse_min(&self) -> Option<u64> {
+        self.pulses.front().map(|x| *x)
+    }
+
+    fn pulse_max(&self) -> Option<u64> {
+        self.pulses.back().map(|x| *x)
     }
 }
+
+items_0::impl_range_overlap_info_events!(EventsDim1);
 
 impl<NTY> TimeBinnableType for EventsDim1<NTY>
 where
@@ -821,7 +830,33 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
     }
 
     fn to_min_max_avg(&mut self) -> Box<dyn Events> {
-        todo!()
+        let mins = self
+            .values
+            .iter()
+            .map(|x| STY::find_vec_min(x))
+            .map(|x| x.unwrap_or_else(|| STY::zero_b()))
+            .collect();
+        let maxs = self
+            .values
+            .iter()
+            .map(|x| STY::find_vec_max(x))
+            .map(|x| x.unwrap_or_else(|| STY::zero_b()))
+            .collect();
+        let avgs = self
+            .values
+            .iter()
+            .map(|x| STY::avg_vec(x))
+            .map(|x| x.unwrap_or_else(|| STY::zero_b()))
+            .map(|x| x.as_prim_f32_b())
+            .collect();
+        let item = EventsXbinDim0 {
+            tss: mem::replace(&mut self.tss, VecDeque::new()),
+            pulses: mem::replace(&mut self.pulses, VecDeque::new()),
+            mins,
+            maxs,
+            avgs,
+        };
+        Box::new(item)
     }
 }
 

@@ -630,11 +630,11 @@ mod instant_serde {
         match res {
             LocalResult::None => Err(serde::ser::Error::custom(format!("Bad local instant conversion"))),
             LocalResult::Single(dt) => {
-                let s = dt.format("%Y-%m-%dT%H:%M:%S%.3f").to_string();
+                let s = dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
                 ser.serialize_str(&s)
             }
             LocalResult::Ambiguous(dt, _dt2) => {
-                let s = dt.format("%Y-%m-%dT%H:%M:%S%.3f").to_string();
+                let s = dt.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
                 ser.serialize_str(&s)
             }
         }

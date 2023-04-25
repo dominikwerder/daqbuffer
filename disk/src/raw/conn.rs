@@ -1,5 +1,7 @@
 use crate::eventblobs::EventChunkerMultifile;
 use crate::eventchunker::EventChunkerConf;
+use crate::raw::generated::EventBlobsGeneratorI32Test00;
+use crate::raw::generated::EventBlobsGeneratorI32Test01;
 use crate::SfDbChConf;
 use err::Error;
 use futures_util::stream;
@@ -24,6 +26,8 @@ use parse::channelconfig::ConfigEntry;
 use parse::channelconfig::MatchingConfigEntry;
 use query::api4::events::PlainEventsQuery;
 use std::pin::Pin;
+
+const TEST_BACKEND: &str = "testbackend-00";
 
 fn make_num_pipeline_stream_evs(
     chconf: ChConf,
@@ -130,7 +134,7 @@ pub async fn get_applicable_entry(
     node_config: &NodeConfigCached,
 ) -> Result<ConfigEntry, Error> {
     info!("----------  disk::raw::conn::get_applicable_entry");
-    let channel_config = read_local_config(channel.clone(), node_config.node.clone()).await?;
+    let channel_config = read_local_config(channel.clone(), node_config.clone()).await?;
     let entry_res = match extract_matching_config_entry(range, &channel_config) {
         Ok(k) => k,
         Err(e) => return Err(e)?,
@@ -248,11 +252,10 @@ pub fn make_remote_event_blobs_stream(
     Ok(event_blobs)
 }
 
-pub async fn make_event_blobs_pipe(
+pub async fn make_event_blobs_pipe_real(
     evq: &PlainEventsQuery,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
-    info!("make_event_blobs_pipe {evq:?}");
     if false {
         match dbconn::channel_exists(evq.channel(), &node_config).await {
             Ok(_) => (),
@@ -311,4 +314,59 @@ pub async fn make_event_blobs_pipe(
         Box::pin(event_blobs) as _
     };
     Ok(pipe)
+}
+
+pub async fn make_event_blobs_pipe_test(
+    evq: &PlainEventsQuery,
+    node_config: &NodeConfigCached,
+) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
+    warn!("GENERATE INMEM TEST DATA");
+    let node_count = node_config.node_config.cluster.nodes.len() as u64;
+    let node_ix = node_config.ix as u64;
+    let chn = evq.channel().name();
+    let range = evq.range().clone();
+    if chn == "test-gen-i32-dim0-v00" {
+        Ok(Box::pin(EventBlobsGeneratorI32Test00::new(node_ix, node_count, range)))
+    } else if chn == "test-gen-i32-dim0-v01" {
+        Ok(Box::pin(EventBlobsGeneratorI32Test01::new(node_ix, node_count, range)))
+    } else {
+        let na: Vec<_> = chn.split("-").collect();
+        if na.len() != 3 {
+            Err(Error::with_msg_no_trace(format!(
+                "can not understand test channel name: {chn:?}"
+            )))
+        } else {
+            if na[0] != "inmem" {
+                Err(Error::with_msg_no_trace(format!(
+                    "can not understand test channel name: {chn:?}"
+                )))
+            } else {
+                if na[1] == "d0" {
+                    if na[2] == "i32" {
+                        Ok(Box::pin(EventBlobsGeneratorI32Test00::new(node_ix, node_count, range)))
+                    } else {
+                        Err(Error::with_msg_no_trace(format!(
+                            "can not understand test channel name: {chn:?}"
+                        )))
+                    }
+                } else {
+                    Err(Error::with_msg_no_trace(format!(
+                        "can not understand test channel name: {chn:?}"
+                    )))
+                }
+            }
+        }
+    }
+}
+
+pub async fn make_event_blobs_pipe(
+    evq: &PlainEventsQuery,
+    node_config: &NodeConfigCached,
+) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
+    info!("make_event_blobs_pipe {evq:?}");
+    if evq.channel().backend() == TEST_BACKEND {
+        make_event_blobs_pipe_test(evq, node_config).await
+    } else {
+        make_event_blobs_pipe_real(evq, node_config).await
+    }
 }

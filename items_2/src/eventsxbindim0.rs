@@ -4,16 +4,23 @@ use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
 use err::Error;
+use items_0::collect_s::Collectable;
 use items_0::collect_s::CollectableType;
 use items_0::collect_s::Collected;
 use items_0::collect_s::CollectorType;
 use items_0::collect_s::ToJsonBytes;
 use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
+use items_0::overlap::HasTimestampDeque;
+use items_0::overlap::RangeOverlapCmp;
 use items_0::scalar_ops::ScalarOps;
+use items_0::timebin::TimeBinnable;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use items_0::Empty;
+use items_0::Events;
+use items_0::EventsNonObj;
+use items_0::MergeError;
 use items_0::TypeName;
 use items_0::WithLen;
 use netpod::is_false;
@@ -26,6 +33,7 @@ use std::any;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
+use std::mem;
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventsXbinDim0<NTY> {
@@ -54,6 +62,10 @@ impl<NTY> EventsXbinDim0<NTY> {
         self.mins.push_front(min);
         self.maxs.push_front(max);
         self.avgs.push_front(avg);
+    }
+
+    pub fn serde_id() -> &'static str {
+        "EventsXbinDim0"
     }
 }
 
@@ -120,17 +132,207 @@ impl<NTY> WithLen for EventsXbinDim0<NTY> {
     }
 }
 
-impl<NTY> RangeOverlapInfo for EventsXbinDim0<NTY> {
-    fn ends_before(&self, range: &SeriesRange) -> bool {
-        todo!()
+impl<STY: ScalarOps> HasTimestampDeque for EventsXbinDim0<STY> {
+    fn timestamp_min(&self) -> Option<u64> {
+        self.tss.front().map(|x| *x)
     }
 
-    fn ends_after(&self, range: &SeriesRange) -> bool {
-        todo!()
+    fn timestamp_max(&self) -> Option<u64> {
+        self.tss.back().map(|x| *x)
     }
 
-    fn starts_after(&self, range: &SeriesRange) -> bool {
-        todo!()
+    fn pulse_min(&self) -> Option<u64> {
+        self.pulses.front().map(|x| *x)
+    }
+
+    fn pulse_max(&self) -> Option<u64> {
+        self.pulses.back().map(|x| *x)
+    }
+}
+
+items_0::impl_range_overlap_info_events!(EventsXbinDim0);
+
+impl<STY: ScalarOps> EventsNonObj for EventsXbinDim0<STY> {
+    fn into_tss_pulses(self: Box<Self>) -> (VecDeque<u64>, VecDeque<u64>) {
+        info!(
+            "EventsXbinDim0::into_tss_pulses  len {}  len {}",
+            self.tss.len(),
+            self.pulses.len()
+        );
+        (self.tss, self.pulses)
+    }
+}
+
+impl<STY: ScalarOps> Events for EventsXbinDim0<STY> {
+    fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable {
+        self as &mut dyn TimeBinnable
+    }
+
+    fn verify(&self) -> bool {
+        let mut good = true;
+        let mut ts_max = 0;
+        for ts in &self.tss {
+            let ts = *ts;
+            if ts < ts_max {
+                good = false;
+                error!("unordered event data  ts {}  ts_max {}", ts, ts_max);
+            }
+            ts_max = ts_max.max(ts);
+        }
+        good
+    }
+
+    fn output_info(&self) {
+        if false {
+            info!("output_info  len {}", self.tss.len());
+            if self.tss.len() == 1 {
+                info!(
+                    "  only:  ts {}  pulse {}  value {:?}",
+                    self.tss[0], self.pulses[0], self.avgs[0]
+                );
+            } else if self.tss.len() > 1 {
+                info!(
+                    "  first: ts {}  pulse {}  value {:?}",
+                    self.tss[0], self.pulses[0], self.avgs[0]
+                );
+                let n = self.tss.len() - 1;
+                info!(
+                    "  last:  ts {}  pulse {}  value {:?}",
+                    self.tss[n], self.pulses[n], self.avgs[n]
+                );
+            }
+        }
+    }
+
+    fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
+        self
+    }
+
+    fn as_collectable_with_default_ref(&self) -> &dyn Collectable {
+        self
+    }
+
+    fn as_collectable_with_default_mut(&mut self) -> &mut dyn Collectable {
+        self
+    }
+
+    fn take_new_events_until_ts(&mut self, ts_end: u64) -> Box<dyn Events> {
+        // TODO improve the search
+        let n1 = self.tss.iter().take_while(|&&x| x <= ts_end).count();
+        let tss = self.tss.drain(..n1).collect();
+        let pulses = self.pulses.drain(..n1).collect();
+        let mins = self.mins.drain(..n1).collect();
+        let maxs = self.maxs.drain(..n1).collect();
+        let avgs = self.avgs.drain(..n1).collect();
+        let ret = Self {
+            tss,
+            pulses,
+            mins,
+            maxs,
+            avgs,
+        };
+        Box::new(ret)
+    }
+
+    fn new_empty_evs(&self) -> Box<dyn Events> {
+        Box::new(Self::empty())
+    }
+
+    fn drain_into_evs(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), MergeError> {
+        // TODO as_any and as_any_mut are declared on unrelated traits. Simplify.
+        if let Some(dst) = dst.as_mut().as_any_mut().downcast_mut::<Self>() {
+            // TODO make it harder to forget new members when the struct may get modified in the future
+            let r = range.0..range.1;
+            dst.tss.extend(self.tss.drain(r.clone()));
+            dst.pulses.extend(self.pulses.drain(r.clone()));
+            dst.mins.extend(self.mins.drain(r.clone()));
+            dst.maxs.extend(self.maxs.drain(r.clone()));
+            dst.avgs.extend(self.avgs.drain(r.clone()));
+            Ok(())
+        } else {
+            error!("downcast to {} FAILED", self.type_name());
+            Err(MergeError::NotCompatible)
+        }
+    }
+
+    fn find_lowest_index_gt_evs(&self, ts: u64) -> Option<usize> {
+        for (i, &m) in self.tss.iter().enumerate() {
+            if m > ts {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    fn find_lowest_index_ge_evs(&self, ts: u64) -> Option<usize> {
+        for (i, &m) in self.tss.iter().enumerate() {
+            if m >= ts {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    fn find_highest_index_lt_evs(&self, ts: u64) -> Option<usize> {
+        for (i, &m) in self.tss.iter().enumerate().rev() {
+            if m < ts {
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    fn ts_min(&self) -> Option<u64> {
+        self.tss.front().map(|&x| x)
+    }
+
+    fn ts_max(&self) -> Option<u64> {
+        self.tss.back().map(|&x| x)
+    }
+
+    fn partial_eq_dyn(&self, other: &dyn Events) -> bool {
+        if let Some(other) = other.as_any_ref().downcast_ref::<Self>() {
+            self == other
+        } else {
+            false
+        }
+    }
+
+    fn serde_id(&self) -> &'static str {
+        Self::serde_id()
+    }
+
+    fn nty_id(&self) -> u32 {
+        STY::SUB
+    }
+
+    fn clone_dyn(&self) -> Box<dyn Events> {
+        Box::new(self.clone())
+    }
+
+    fn tss(&self) -> &VecDeque<u64> {
+        &self.tss
+    }
+
+    fn pulses(&self) -> &VecDeque<u64> {
+        &self.pulses
+    }
+
+    fn frame_type_id(&self) -> u32 {
+        error!("TODO frame_type_id should not be called");
+        // TODO make more nice
+        panic!()
+    }
+
+    fn to_min_max_avg(&mut self) -> Box<dyn Events> {
+        let dst = Self {
+            tss: mem::replace(&mut self.tss, Default::default()),
+            pulses: mem::replace(&mut self.pulses, Default::default()),
+            mins: mem::replace(&mut self.mins, Default::default()),
+            maxs: mem::replace(&mut self.maxs, Default::default()),
+            avgs: mem::replace(&mut self.avgs, Default::default()),
+        };
+        Box::new(dst)
     }
 }
 
@@ -148,6 +350,23 @@ where
             name, range, x_bin_count, do_time_weight
         );
         Self::Aggregator::new(range, do_time_weight)
+    }
+}
+
+impl<NTY> TimeBinnable for EventsXbinDim0<NTY>
+where
+    NTY: ScalarOps,
+{
+    fn time_binner_new(
+        &self,
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+    ) -> Box<dyn items_0::timebin::TimeBinner> {
+        todo!()
+    }
+
+    fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
+        todo!()
     }
 }
 

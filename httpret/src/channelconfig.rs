@@ -115,7 +115,7 @@ impl ChannelConfigHandler {
         } else if let Some(_) = &node_config.node.archiver_appliance {
             return Err(Error::with_msg_no_trace("no archapp"));
         } else {
-            parse::channelconfig::channel_config(&q, &node_config.node).await?
+            parse::channelconfig::channel_config(&q, node_config).await?
         };
         let ret = response(StatusCode::OK)
             .header(http::header::CONTENT_TYPE, APP_JSON)
