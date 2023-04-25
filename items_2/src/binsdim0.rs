@@ -12,6 +12,7 @@ use items_0::collect_s::CollectableType;
 use items_0::collect_s::Collected;
 use items_0::collect_s::CollectorType;
 use items_0::collect_s::ToJsonResult;
+use items_0::overlap::HasTimestampDeque;
 use items_0::scalar_ops::ScalarOps;
 use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinned;
@@ -191,65 +192,25 @@ impl<NTY> WithLen for BinsDim0<NTY> {
     }
 }
 
-impl<NTY> RangeOverlapInfo for BinsDim0<NTY> {
-    fn ends_before(&self, range: &SeriesRange) -> bool {
-        if range.is_time() {
-            if let Some(&max) = self.ts2s.back() {
-                max <= range.beg_u64()
-            } else {
-                true
-            }
-        } else if range.is_pulse() {
-            // TODO for the time being, the ts represent either ts or pulse
-            if let Some(&max) = self.ts2s.back() {
-                max <= range.beg_u64()
-            } else {
-                true
-            }
-        } else {
-            error!("unexpected");
-            true
-        }
+impl<STY: ScalarOps> HasTimestampDeque for BinsDim0<STY> {
+    fn timestamp_min(&self) -> Option<u64> {
+        self.ts1s.front().map(|x| *x)
     }
 
-    fn ends_after(&self, range: &SeriesRange) -> bool {
-        if range.is_time() {
-            if let Some(&max) = self.ts2s.back() {
-                max > range.end_u64()
-            } else {
-                true
-            }
-        } else if range.is_pulse() {
-            if let Some(&max) = self.ts2s.back() {
-                max > range.end_u64()
-            } else {
-                true
-            }
-        } else {
-            error!("unexpected");
-            false
-        }
+    fn timestamp_max(&self) -> Option<u64> {
+        self.ts2s.back().map(|x| *x)
     }
 
-    fn starts_after(&self, range: &SeriesRange) -> bool {
-        if range.is_time() {
-            if let Some(&min) = self.ts1s.front() {
-                min >= range.end_u64()
-            } else {
-                true
-            }
-        } else if range.is_pulse() {
-            if let Some(&min) = self.ts1s.front() {
-                min >= range.end_u64()
-            } else {
-                true
-            }
-        } else {
-            error!("unexpected");
-            true
-        }
+    fn pulse_min(&self) -> Option<u64> {
+        todo!()
+    }
+
+    fn pulse_max(&self) -> Option<u64> {
+        todo!()
     }
 }
+
+items_0::impl_range_overlap_info_bins!(BinsDim0);
 
 impl<NTY: ScalarOps> AppendEmptyBin for BinsDim0<NTY> {
     fn append_empty_bin(&mut self, ts1: u64, ts2: u64) {

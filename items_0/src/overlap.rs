@@ -1,6 +1,7 @@
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 
+// TODO rename, no more deque involved
 pub trait HasTimestampDeque {
     fn timestamp_min(&self) -> Option<u64>;
     fn timestamp_max(&self) -> Option<u64>;
@@ -96,14 +97,14 @@ macro_rules! impl_range_overlap_info_bins {
         {
             fn ends_before(&self, range: &SeriesRange) -> bool {
                 if range.is_time() {
-                    if let Some(&max) = self.ts2s.back() {
+                    if let Some(max) = HasTimestampDeque::timestamp_max(self) {
                         max <= range.beg_u64()
                     } else {
                         true
                     }
                 } else if range.is_pulse() {
                     // TODO for the time being, the ts represent either ts or pulse
-                    if let Some(&max) = self.ts2s.back() {
+                    if let Some(max) = HasTimestampDeque::timestamp_max(self) {
                         max <= range.beg_u64()
                     } else {
                         true
@@ -116,13 +117,13 @@ macro_rules! impl_range_overlap_info_bins {
 
             fn ends_after(&self, range: &SeriesRange) -> bool {
                 if range.is_time() {
-                    if let Some(&max) = self.ts2s.back() {
+                    if let Some(max) = HasTimestampDeque::timestamp_max(self) {
                         max > range.end_u64()
                     } else {
                         true
                     }
                 } else if range.is_pulse() {
-                    if let Some(&max) = self.ts2s.back() {
+                    if let Some(max) = HasTimestampDeque::timestamp_max(self) {
                         max > range.end_u64()
                     } else {
                         true
@@ -135,13 +136,13 @@ macro_rules! impl_range_overlap_info_bins {
 
             fn starts_after(&self, range: &SeriesRange) -> bool {
                 if range.is_time() {
-                    if let Some(&min) = self.ts1s.front() {
+                    if let Some(min) = HasTimestampDeque::timestamp_min(self) {
                         min >= range.end_u64()
                     } else {
                         true
                     }
                 } else if range.is_pulse() {
-                    if let Some(&min) = self.ts1s.front() {
+                    if let Some(min) = HasTimestampDeque::timestamp_min(self) {
                         min >= range.end_u64()
                     } else {
                         true
