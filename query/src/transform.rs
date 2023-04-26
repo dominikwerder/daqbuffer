@@ -39,6 +39,16 @@ pub enum TimeBinningTransformQuery {
     Unweighted,
 }
 
+impl TimeBinningTransformQuery {
+    pub fn need_one_before_range(&self) -> bool {
+        match self {
+            TimeBinningTransformQuery::None => false,
+            TimeBinningTransformQuery::TimeWeighted => true,
+            TimeBinningTransformQuery::Unweighted => false,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TransformQuery {
     event: EventTransformQuery,
@@ -107,6 +117,10 @@ impl TransformQuery {
 
     pub fn need_value_data(&self) -> bool {
         self.event.need_value_data()
+    }
+
+    pub fn need_one_before_range(&self) -> bool {
+        self.time_binning.need_one_before_range()
     }
 
     pub fn is_pulse_id_diff(&self) -> bool {

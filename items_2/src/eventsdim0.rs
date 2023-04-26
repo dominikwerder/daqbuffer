@@ -433,28 +433,23 @@ pub struct EventsDim0Aggregator<STY> {
     sumc: u64,
     sum: f32,
     int_ts: u64,
-    last_seen_ts: u64,
-    last_seen_val: Option<STY>,
+    last_ts: u64,
+    last_val: Option<STY>,
     did_min_max: bool,
     do_time_weight: bool,
-    events_taken_count: u64,
     events_ignored_count: u64,
 }
 
 impl<STY> Drop for EventsDim0Aggregator<STY> {
     fn drop(&mut self) {
         // TODO collect as stats for the request context:
-        trace!(
-            "taken {}  ignored {}",
-            self.events_taken_count,
-            self.events_ignored_count
-        );
+        trace!("count {}  ignored {}", self.count, self.events_ignored_count);
     }
 }
 
 impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
     fn self_name() -> String {
-        format!("{}<{}>", any::type_name::<Self>(), any::type_name::<STY>())
+        any::type_name::<Self>().to_string()
     }
 
     pub fn new(range: SeriesRange, do_time_weight: bool) -> Self {
@@ -464,14 +459,13 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
             count: 0,
             min: STY::zero_b(),
             max: STY::zero_b(),
-            sum: 0.,
             sumc: 0,
+            sum: 0.,
             int_ts,
-            last_seen_ts: 0,
-            last_seen_val: None,
+            last_ts: 0,
+            last_val: None,
             did_min_max: false,
             do_time_weight,
-            events_taken_count: 0,
             events_ignored_count: 0,
         }
     }
@@ -513,19 +507,19 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
         }
     }
 
-    fn apply_event_time_weight(&mut self, px: u64, pxbeg: u64) {
-        if let Some(v) = &self.last_seen_val {
+    fn apply_event_time_weight(&mut self, px: u64) {
+        if let Some(v) = &self.last_val {
             trace_ingest!("apply_event_time_weight with v {v:?}");
             let vf = v.as_prim_f32_b();
-            let v2 = v.clone();
-            if px > pxbeg {
+            if px > self.range.beg_u64() {
+                let v2 = v.clone();
                 self.apply_min_max(v2);
             }
+            self.sumc += 1;
             let w = (px - self.int_ts) as f32 * 1e-9;
             if vf.is_nan() {
             } else {
                 self.sum += vf * w;
-                self.sumc += 1;
             }
             self.int_ts = px;
         } else {
@@ -548,7 +542,6 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
                 } else {
                     self.apply_event_unweight(val);
                     self.count += 1;
-                    self.events_taken_count += 1;
                 }
             }
         } else {
@@ -561,34 +554,25 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
         let self_name = any::type_name::<Self>();
         trace_ingest!("{self_name}::ingest_time_weight  item len {}", item.len());
         if self.range.is_time() {
-            for i1 in 0..item.tss.len() {
-                let ts = item.tss[i1];
-                let val = item.values[i1].clone();
-                if ts < self.int_ts {
-                    trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  BEFORE", i1, ts, val);
-                    self.last_seen_ts = ts;
-                    self.last_seen_val = Some(val);
-                    self.events_ignored_count += 1;
-                } else if ts >= self.range.end_u64() {
+            let range_beg = self.range.beg_u64();
+            let range_end = self.range.end_u64();
+            for (&ts, val) in item.tss.iter().zip(item.values.iter()) {
+                if ts >= range_end {
                     trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  AFTER", i1, ts, val);
                     self.events_ignored_count += 1;
-                    return;
-                } else {
-                    trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  IN", i1, ts, val);
-                    if false && self.last_seen_val.is_none() {
-                        // TODO no longer needed or?
-                        trace_ingest!(
-                            "call apply_min_max without last val, use current instead  {}  {:?}",
-                            ts,
-                            val
-                        );
-                        self.apply_min_max(val.clone());
-                    }
-                    self.apply_event_time_weight(ts, self.range.beg_u64());
+                    // TODO count all the ignored events for stats
+                    break;
+                } else if ts >= range_beg {
+                    trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  INSIDE", i1, ts, val);
+                    self.apply_event_time_weight(ts);
                     self.count += 1;
-                    self.last_seen_ts = ts;
-                    self.last_seen_val = Some(val);
-                    self.events_taken_count += 1;
+                    self.last_ts = ts;
+                    self.last_val = Some(val.clone());
+                } else {
+                    trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  BEFORE", i1, ts, val);
+                    self.events_ignored_count += 1;
+                    self.last_ts = ts;
+                    self.last_val = Some(val.clone());
                 }
             }
         } else {
@@ -604,7 +588,7 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
             let avg = self.sum / self.sumc as f32;
             (self.min.clone(), self.max.clone(), avg)
         } else {
-            let g = match &self.last_seen_val {
+            let g = match &self.last_val {
                 Some(x) => x.clone(),
                 None => STY::zero_b(),
             };
@@ -627,8 +611,10 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
         self.int_ts = range.beg_u64();
         self.range = range;
         self.count = 0;
-        self.sum = 0f32;
+        self.sum = 0.;
         self.sumc = 0;
+        self.min = STY::zero_b();
+        self.max = STY::zero_b();
         self.did_min_max = false;
         ret
     }
@@ -639,7 +625,7 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
         let range_beg = self.range.beg_u64();
         let range_end = self.range.end_u64();
         if self.range.is_time() {
-            self.apply_event_time_weight(range_end, range_beg);
+            self.apply_event_time_weight(range_end);
         } else {
             error!("TODO result_reset_time_weight");
             err::todoval()
@@ -648,7 +634,7 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
             let avg = self.sum / (self.range.delta_u64() as f32 * 1e-9);
             (self.min.clone(), self.max.clone(), avg)
         } else {
-            let g = match &self.last_seen_val {
+            let g = match &self.last_val {
                 Some(x) => x.clone(),
                 None => STY::zero_b(),
             };
@@ -671,11 +657,11 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
         self.int_ts = range_beg;
         self.range = range;
         self.count = 0;
-        self.sum = 0.;
         self.sumc = 0;
-        self.did_min_max = false;
+        self.sum = 0.;
         self.min = STY::zero_b();
         self.max = STY::zero_b();
+        self.did_min_max = false;
         ret
     }
 }

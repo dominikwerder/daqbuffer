@@ -14,8 +14,8 @@ use bytes::BytesMut;
 use err::Error;
 use std::future::Future;
 
-fn f32_cmp_near(x: f32, y: f32) -> bool {
-    let x = {
+fn f32_cmp_near(x: f32, y: f32, abs: f32, rel: f32) -> bool {
+    /*let x = {
         let mut a = x.to_le_bytes();
         a[0] &= 0xf0;
         f32::from_ne_bytes(a)
@@ -25,11 +25,13 @@ fn f32_cmp_near(x: f32, y: f32) -> bool {
         a[0] &= 0xf0;
         f32::from_ne_bytes(a)
     };
-    x == y
+    x == y*/
+    let ad = (x - y).abs();
+    ad <= abs || (ad / y).abs() <= rel
 }
 
-fn f64_cmp_near(x: f64, y: f64) -> bool {
-    let x = {
+fn f64_cmp_near(x: f64, y: f64, abs: f64, rel: f64) -> bool {
+    /*let x = {
         let mut a = x.to_le_bytes();
         a[0] &= 0x00;
         a[1] &= 0x00;
@@ -41,10 +43,12 @@ fn f64_cmp_near(x: f64, y: f64) -> bool {
         a[1] &= 0x00;
         f64::from_ne_bytes(a)
     };
-    x == y
+    x == y*/
+    let ad = (x - y).abs();
+    ad <= abs || (ad / y).abs() <= rel
 }
 
-fn f32_iter_cmp_near<A, B>(a: A, b: B) -> bool
+fn f32_iter_cmp_near<A, B>(a: A, b: B, abs: f32, rel: f32) -> bool
 where
     A: IntoIterator<Item = f32>,
     B: IntoIterator<Item = f32>,
@@ -55,7 +59,7 @@ where
         let x = a.next();
         let y = b.next();
         if let (Some(x), Some(y)) = (x, y) {
-            if !f32_cmp_near(x, y) {
+            if !f32_cmp_near(x, y, abs, rel) {
                 return false;
             }
         } else if x.is_some() || y.is_some() {
@@ -66,7 +70,7 @@ where
     }
 }
 
-fn f64_iter_cmp_near<A, B>(a: A, b: B) -> bool
+fn f64_iter_cmp_near<A, B>(a: A, b: B, abs: f64, rel: f64) -> bool
 where
     A: IntoIterator<Item = f64>,
     B: IntoIterator<Item = f64>,
@@ -77,7 +81,7 @@ where
         let x = a.next();
         let y = b.next();
         if let (Some(x), Some(y)) = (x, y) {
-            if !f64_cmp_near(x, y) {
+            if !f64_cmp_near(x, y, abs, rel) {
                 return false;
             }
         } else if x.is_some() || y.is_some() {
@@ -92,10 +96,10 @@ where
 fn test_f32_iter_cmp_near() {
     let a = [-127.553e17];
     let b = [-127.554e17];
-    assert_eq!(f32_iter_cmp_near(a, b), false);
+    assert_eq!(f32_iter_cmp_near(a, b, 0.001, 0.001), false);
     let a = [-127.55300e17];
     let b = [-127.55301e17];
-    assert_eq!(f32_iter_cmp_near(a, b), true);
+    assert_eq!(f32_iter_cmp_near(a, b, 0.001, 0.001), true);
 }
 
 fn run_test<F>(f: F) -> Result<(), Error>

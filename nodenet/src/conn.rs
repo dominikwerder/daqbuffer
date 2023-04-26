@@ -83,9 +83,19 @@ async fn make_channel_events_stream_data(
         let chn = evq.channel().name();
         let range = evq.range().clone();
         if chn == "test-gen-i32-dim0-v01" {
-            Ok(Box::pin(GenerateI32V01::new(node_ix, node_count, range)))
+            Ok(Box::pin(GenerateI32V01::new(
+                node_ix,
+                node_count,
+                range,
+                evq.one_before_range(),
+            )))
         } else if chn == "test-gen-f64-dim1-v00" {
-            Ok(Box::pin(GenerateF64V00::new(node_ix, node_count, range)))
+            Ok(Box::pin(GenerateF64V00::new(
+                node_ix,
+                node_count,
+                range,
+                evq.one_before_range(),
+            )))
         } else {
             let na: Vec<_> = chn.split("-").collect();
             if na.len() != 3 {

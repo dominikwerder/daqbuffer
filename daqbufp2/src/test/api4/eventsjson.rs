@@ -70,7 +70,7 @@ fn events_plain_json_01() -> Result<(), Error> {
         assert_eq!(res.ts_anchor_sec(), 1210);
         assert_eq!(res.pulse_anchor(), 2420);
         let exp = [2420., 2421., 2422., 2423., 2424., 2425.];
-        assert_eq!(f32_iter_cmp_near(res.values_to_f32(), exp), true);
+        assert_eq!(f32_iter_cmp_near(res.values_to_f32(), exp, 0.01, 0.01), true);
         assert_eq!(res.range_final(), true);
         assert_eq!(res.timed_out(), false);
         Ok(())

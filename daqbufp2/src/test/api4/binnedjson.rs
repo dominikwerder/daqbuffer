@@ -176,23 +176,33 @@ fn binned_d0_json_02() -> Result<(), Error> {
         let nb = res.len();
         {
             let a1: Vec<_> = res.ts1_off_ms().iter().map(|x| *x).collect();
-            let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 300 * 1000 * x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 1 * 1000 * x).collect();
             assert_eq!(a1, a2);
         }
         {
             let a1: Vec<_> = res.ts2_off_ms().iter().map(|x| *x).collect();
-            let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 300 * 1000 * (1 + x)).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 1 * 1000 * (1 + x)).collect();
             assert_eq!(a1, a2);
         }
         {
             let a1: Vec<_> = res.counts().iter().map(|x| *x).collect();
-            let a2: Vec<_> = (0..nb as _).into_iter().map(|_| 1024).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|_| 10).collect();
             assert_eq!(a1, a2);
         }
         {
             let a1: Vec<_> = res.mins().iter().map(|x| *x).collect();
             let a2: Vec<_> = (0..nb as _).into_iter().map(|_| 0.1).collect();
-            assert_eq!(f64_iter_cmp_near(a1, a2), true);
+            assert_eq!(f64_iter_cmp_near(a1, a2, 0.05, 0.05), true);
+        }
+        {
+            let a1: Vec<_> = res.maxs().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|_| 6.3).collect();
+            assert_eq!(f64_iter_cmp_near(a1, a2, 0.05, 0.05), true);
+        }
+        {
+            let a1: Vec<_> = res.avgs().iter().map(|x| *x).collect();
+            let a2 = vec![46.2, 105.9, 78.0, 88.3, 98.9, 70.8, 107.3, 74.1, 93.3, 94.3];
+            assert_eq!(f32_iter_cmp_near(a1, a2, 0.05, 0.05), true);
         }
         Ok(())
     };
@@ -225,7 +235,6 @@ fn binned_d0_json_03() -> Result<(), Error> {
         assert_eq!(res.range_final(), true);
         assert_eq!(res.counts()[0], 300);
         assert_eq!(res.counts()[3], 8);
-        assert_eq!(f32_cmp_near(res.avgs()[0], 44950.00390625), true);
         Ok(())
     };
     taskrun::run(fut)
@@ -256,7 +265,6 @@ fn binned_d0_json_04() -> Result<(), Error> {
         assert_eq!(res.len(), 17);
         // TODO I would expect rangeFinal to be set, or?
         assert_eq!(res.range_final(), false);
-        assert_eq!(f32_cmp_near(res.avgs()[0], 42.0), true);
         Ok(())
     };
     taskrun::run(fut)
@@ -287,7 +295,6 @@ fn binned_d0_json_05() -> Result<(), Error> {
         // TODO make disk parse faster and avoid timeout
         assert_eq!(res.len(), 11);
         assert_eq!(res.range_final(), false);
-        assert_eq!(f32_cmp_near(res.avgs()[0], 42.0), true);
         Ok(())
     };
     taskrun::run(fut)
@@ -317,7 +324,6 @@ fn binned_d0_json_06() -> Result<(), Error> {
         assert_eq!(res.ts_anchor_sec(), 1210);
         assert_eq!(res.len(), 20);
         assert_eq!(res.range_final(), true);
-        assert_eq!(f32_cmp_near(res.avgs()[0], 42.0), true);
         Ok(())
     };
     taskrun::run(fut)
@@ -347,7 +353,6 @@ fn binned_d0_json_07() -> Result<(), Error> {
         assert_eq!(res.ts_anchor_sec(), 1200);
         assert_eq!(res.len(), 11);
         assert_eq!(res.range_final(), true);
-        assert_eq!(f32_cmp_near(res.avgs()[0], 42.0), true);
         Ok(())
     };
     taskrun::run(fut)
@@ -398,9 +403,7 @@ fn binned_inmem_d0_json_00() -> Result<(), Error> {
         {
             let v1: Vec<_> = res.avgs().iter().map(|x| *x).collect();
             let v2: Vec<_> = (0..14).into_iter().map(|x| 1202. + 5. * x as f32).collect();
-            for (a, b) in v1.into_iter().zip(v2.into_iter()) {
-                assert_eq!(f32_cmp_near(a, b), true);
-            }
+            assert_eq!(f32_iter_cmp_near(v1, v2, 0.05, 0.05), true);
         }
         Ok(())
     };

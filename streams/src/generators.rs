@@ -117,16 +117,19 @@ pub struct GenerateI32V01 {
 }
 
 impl GenerateI32V01 {
-    pub fn new(node_ix: u64, node_count: u64, range: SeriesRange) -> Self {
+    pub fn new(node_ix: u64, node_count: u64, range: SeriesRange, one_before_range: bool) -> Self {
         let range = match range {
             SeriesRange::TimeRange(k) => k,
             SeriesRange::PulseRange(_) => todo!(),
         };
         let ivl = MS * 500;
         let dts = ivl * node_count as u64;
-        let ts = (range.beg / ivl + node_ix) * ivl;
+        let ts = (range.beg / ivl + node_ix - if one_before_range { 1 } else { 0 }) * ivl;
         let tsend = range.end;
-        info!("START GENERATOR GenerateI32V01  ivl {}  dts {}  ts {}", ivl, dts, ts);
+        info!(
+            "START GENERATOR GenerateI32V01  ivl {}  dts {}  ts {}  one_before_range {}",
+            ivl, dts, ts, one_before_range
+        );
         Self {
             ivl,
             ts,
@@ -150,7 +153,7 @@ impl GenerateI32V01 {
             }
             let pulse = ts;
             let value = (ts / self.ivl) as T;
-            if false {
+            if true {
                 info!(
                     "v01  node {}  made event  ts {}  pulse {}  value {}",
                     self.node_ix, ts, pulse, value
@@ -209,16 +212,19 @@ pub struct GenerateF64V00 {
 }
 
 impl GenerateF64V00 {
-    pub fn new(node_ix: u64, node_count: u64, range: SeriesRange) -> Self {
+    pub fn new(node_ix: u64, node_count: u64, range: SeriesRange, one_before_range: bool) -> Self {
         let range = match range {
             SeriesRange::TimeRange(k) => k,
             SeriesRange::PulseRange(_) => todo!(),
         };
         let ivl = MS * 100;
         let dts = ivl * node_count as u64;
-        let ts = (range.beg / ivl + node_ix) * ivl;
+        let ts = (range.beg / ivl + node_ix - if one_before_range { 1 } else { 0 }) * ivl;
         let tsend = range.end;
-        info!("START GENERATOR GenerateF64V00  ivl {}  dts {}  ts {}", ivl, dts, ts);
+        info!(
+            "START GENERATOR GenerateF64V00  ivl {}  dts {}  ts {}  one_before_range {}",
+            ivl, dts, ts, one_before_range
+        );
         Self {
             ivl,
             ts,

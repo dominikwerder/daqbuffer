@@ -78,7 +78,7 @@ impl PlainEventsQuery {
     }
 
     pub fn one_before_range(&self) -> bool {
-        self.one_before_range
+        self.transform.need_one_before_range()
     }
 
     pub fn transform(&self) -> &TransformQuery {
