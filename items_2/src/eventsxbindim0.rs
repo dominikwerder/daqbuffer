@@ -823,7 +823,7 @@ where
             [max.clone()].into(),
             [avg].into(),
         );
-        self.int_ts = range_beg;
+        self.int_ts = range.beg_u64();
         self.range = range;
         self.count = 0;
         self.sumc = 0;

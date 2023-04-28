@@ -195,6 +195,10 @@ pub struct TimeBinnerDynStruct {
 }
 
 impl TimeBinnerDynStruct {
+    pub fn type_name() -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
     pub fn new(binrange: BinnedRangeEnum, do_time_weight: bool, binner: Box<dyn TimeBinner>) -> Self {
         Self {
             binrange,
@@ -209,6 +213,7 @@ impl TimeBinnerTy for TimeBinnerDynStruct {
     type Output = Box<dyn TimeBinned>;
 
     fn ingest(&mut self, item: &mut Self::Input) {
+        info!("{}  INGEST", Self::type_name());
         if self.binner.is_none() {
             self.binner = Some(Box::new(TimeBinnableTy::time_binner_new(
                 item,

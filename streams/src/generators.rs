@@ -148,12 +148,12 @@ impl GenerateI32V01 {
         let mut item = EventsDim0::empty();
         let mut ts = self.ts;
         loop {
-            if self.ts >= self.tsend || item.byte_estimate() > 400 {
+            if self.ts >= self.tsend || item.byte_estimate() > 40 {
                 break;
             }
             let pulse = ts;
             let value = (ts / self.ivl) as T;
-            if true {
+            if false {
                 info!(
                     "v01  node {}  made event  ts {}  pulse {}  value {}",
                     self.node_ix, ts, pulse, value

@@ -807,9 +807,15 @@ pub struct ChannelEventsTimeBinner {
     binner: Option<Box<dyn TimeBinner>>,
 }
 
+impl ChannelEventsTimeBinner {
+    pub fn type_name() -> &'static str {
+        std::any::type_name::<Self>()
+    }
+}
+
 impl fmt::Debug for ChannelEventsTimeBinner {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("ChannelEventsTimeBinner")
+        fmt.debug_struct(Self::type_name())
             .field("binrange", &self.binrange)
             .field("do_time_weight", &self.do_time_weight)
             .field("conn_state", &self.conn_state)
@@ -824,6 +830,7 @@ impl TimeBinnerTy for ChannelEventsTimeBinner {
     type Output = Box<dyn TimeBinned>;
 
     fn ingest(&mut self, item: &mut Self::Input) {
+        info!("{}  INGEST", Self::type_name());
         match item {
             ChannelEvents::Events(item) => {
                 if self.binner.is_none() {

@@ -49,13 +49,13 @@ macro_rules! impl_range_overlap_info_events {
             fn ends_after(&self, range: &SeriesRange) -> bool {
                 if range.is_time() {
                     if let Some(max) = HasTimestampDeque::timestamp_max(self) {
-                        max >= range.beg_u64()
+                        max >= range.end_u64()
                     } else {
                         true
                     }
                 } else if range.is_pulse() {
                     if let Some(max) = HasTimestampDeque::pulse_max(self) {
-                        max >= range.beg_u64()
+                        max >= range.end_u64()
                     } else {
                         true
                     }

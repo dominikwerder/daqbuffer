@@ -361,6 +361,9 @@ where
         }
         if let Some(o) = self.out.as_ref() {
             if o.len() >= self.out_max_len || o.byte_estimate() >= OUT_MAX_BYTES || self.do_clear_out || last_emit {
+                if o.len() > self.out_max_len {
+                    info!("MERGER OVERWEIGHT ITEM  {} vs {}", o.len(), self.out_max_len);
+                }
                 trace3!("decide to output");
                 self.do_clear_out = false;
                 //Break(Ready(Some(Ok(self.out.take().unwrap()))))

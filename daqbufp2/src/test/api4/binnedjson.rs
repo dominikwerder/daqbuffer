@@ -90,13 +90,77 @@ fn binned_d0_json_00() -> Result<(), Error> {
             let a2: Vec<_> = (0..8).into_iter().map(|x| 2409 + 10 * x).collect();
             assert_eq!(a1, a2);
         }
+        {
+            let a1: Vec<_> = res.avgs().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..8).into_iter().map(|x| 2404.5 + 10. * x as f32).collect();
+            assert_eq!(f32_iter_cmp_near(a1, a2, 0.01, 0.01), true);
+        }
         Ok(())
     };
     taskrun::run(fut)
 }
 
 #[test]
-fn binned_d0_json_01() -> Result<(), Error> {
+fn binned_d0_json_01a() -> Result<(), Error> {
+    let fut = async {
+        let rh = require_test_hosts_running()?;
+        let cluster = &rh.cluster;
+        let jsv = get_binned_json(
+            Channel {
+                backend: TEST_BACKEND.into(),
+                name: "test-gen-i32-dim0-v01".into(),
+                series: None,
+            },
+            "1970-01-01T00:20:10.000Z",
+            "1970-01-01T00:40:30.000Z",
+            10,
+            cluster,
+        )
+        .await?;
+        debug!("Receveided a response json value: {jsv:?}");
+        let res: BinsDim0CollectedResult<i32> = serde_json::from_value(jsv)?;
+        // inmem was meant just for functional test, ignores the requested time range
+        assert_eq!(res.range_final(), true);
+        assert_eq!(res.len(), 11);
+        assert_eq!(res.ts_anchor_sec(), 1200);
+        let nb = res.len();
+        {
+            let a1: Vec<_> = res.ts1_off_ms().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 120 * 1000 * x).collect();
+            assert_eq!(a1, a2);
+        }
+        {
+            let a1: Vec<_> = res.ts2_off_ms().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 120 * 1000 * (1 + x)).collect();
+            assert_eq!(a1, a2);
+        }
+        {
+            let a1: Vec<_> = res.counts().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|_| 240).collect();
+            assert_eq!(a1, a2);
+        }
+        {
+            let a1: Vec<_> = res.mins().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 2400 + 240 * x).collect();
+            assert_eq!(a1, a2);
+        }
+        {
+            let a1: Vec<_> = res.maxs().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 2639 + 240 * x).collect();
+            assert_eq!(a1, a2);
+        }
+        {
+            let a1: Vec<_> = res.avgs().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb).into_iter().map(|x| 2520. + 240. * x as f32).collect();
+            assert_eq!(f32_iter_cmp_near(a1, a2, 0.001, 0.001), true);
+        }
+        Ok(())
+    };
+    taskrun::run(fut)
+}
+
+#[test]
+fn binned_d0_json_01b() -> Result<(), Error> {
     let fut = async {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
@@ -143,6 +207,11 @@ fn binned_d0_json_01() -> Result<(), Error> {
             let a1: Vec<_> = res.maxs().iter().map(|x| *x).collect();
             let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 2999 + 600 * x).collect();
             assert_eq!(a1, a2);
+        }
+        {
+            let a1: Vec<_> = res.avgs().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb).into_iter().map(|x| 2700. + 600. * x as f32).collect();
+            assert_eq!(f32_iter_cmp_near(a1, a2, 0.001, 0.001), true);
         }
         Ok(())
     };
@@ -422,7 +491,8 @@ async fn get_binned_json(
     let beg_date = beg_date.parse()?;
     let end_date = end_date.parse()?;
     let range = NanoRange::from_date_time(beg_date, end_date).into();
-    let query = BinnedQuery::new(channel, range, bin_count).for_time_weighted_scalar();
+    let mut query = BinnedQuery::new(channel, range, bin_count).for_time_weighted_scalar();
+    query.merger_out_len_max = Some(240);
     let hp = HostPort::from_node(node0);
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", hp.host, hp.port))?;
     query.append_to_url(&mut url);

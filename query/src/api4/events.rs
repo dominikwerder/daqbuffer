@@ -46,6 +46,8 @@ pub struct PlainEventsQuery {
     do_test_stream_error: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     test_do_wasm: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    merger_out_len_max: Option<usize>,
 }
 
 impl PlainEventsQuery {
@@ -66,6 +68,7 @@ impl PlainEventsQuery {
             do_test_main_error: false,
             do_test_stream_error: false,
             test_do_wasm: false,
+            merger_out_len_max: None,
         }
     }
 
@@ -108,7 +111,7 @@ impl PlainEventsQuery {
     }
 
     pub fn merger_out_len_max(&self) -> usize {
-        1024
+        self.merger_out_len_max.unwrap_or(1024)
     }
 
     pub fn do_test_main_error(&self) -> bool {
@@ -221,6 +224,9 @@ impl FromUrl for PlainEventsQuery {
                 .map(|x| x.parse::<bool>().ok())
                 .unwrap_or(None)
                 .unwrap_or(false),
+            merger_out_len_max: pairs
+                .get("mergerOutLenMax")
+                .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
         };
         Ok(ret)
     }
@@ -264,6 +270,9 @@ impl AppendToUrl for PlainEventsQuery {
         }
         if self.test_do_wasm {
             g.append_pair("testDoWasm", "true");
+        }
+        if let Some(x) = self.merger_out_len_max.as_ref() {
+            g.append_pair("mergerOutLenMax", &format!("{}", x));
         }
     }
 }

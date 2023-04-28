@@ -38,6 +38,8 @@ pub struct BinnedQuery {
     buf_len_disk_io: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     disk_stats_every: Option<ByteSize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merger_out_len_max: Option<usize>,
 }
 
 impl BinnedQuery {
@@ -52,6 +54,7 @@ impl BinnedQuery {
             buf_len_disk_io: None,
             disk_stats_every: None,
             timeout: None,
+            merger_out_len_max: None,
         }
     }
 
@@ -102,6 +105,10 @@ impl BinnedQuery {
 
     pub fn bins_max(&self) -> u32 {
         self.bins_max.unwrap_or(2000)
+    }
+
+    pub fn merger_out_len_max(&self) -> usize {
+        self.merger_out_len_max.unwrap_or(1024)
     }
 
     pub fn set_series_id(&mut self, series: u64) {
@@ -189,6 +196,9 @@ impl FromUrl for BinnedQuery {
                 .map(|x| x.parse::<u64>().map(Duration::from_millis).ok())
                 .unwrap_or(None),
             bins_max: pairs.get("binsMax").map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
+            merger_out_len_max: pairs
+                .get("mergerOutLenMax")
+                .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
         };
         debug!("BinnedQuery::from_url  {:?}", ret);
         Ok(ret)
@@ -222,6 +232,9 @@ impl AppendToUrl for BinnedQuery {
         }
         if let Some(x) = &self.disk_stats_every {
             g.append_pair("diskStatsEveryKb", &format!("{}", x.bytes() / 1024));
+        }
+        if let Some(x) = self.merger_out_len_max.as_ref() {
+            g.append_pair("mergerOutLenMax", &format!("{}", x));
         }
     }
 }

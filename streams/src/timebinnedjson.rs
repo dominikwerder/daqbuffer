@@ -46,7 +46,7 @@ async fn timebinnable_stream(
     let inps = open_tcp_streams::<_, ChannelEvents>(&evq, &cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader.
     // TODO use a mixture of count and byte-size as threshold.
-    let stream = Merger::new(inps, evq.merger_out_len_max());
+    let stream = Merger::new(inps, query.merger_out_len_max());
 
     let stream = RangeFilter2::new(stream, range, one_before_range);
 

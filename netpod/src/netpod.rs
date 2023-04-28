@@ -1690,6 +1690,16 @@ impl BinnedRangeEnum {
             BinnedRangeEnum::Pulse(_) => panic!(),
         }
     }
+
+    // Only a helper for unit tests.
+    pub fn from_custom(len: TsNano, off: u64, cnt: u64) -> BinnedRangeEnum {
+        let rng = BinnedRange {
+            bin_len: len,
+            bin_off: off,
+            bin_cnt: cnt,
+        };
+        BinnedRangeEnum::Time(rng)
+    }
 }
 
 #[cfg(test)]
