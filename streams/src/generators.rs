@@ -14,6 +14,7 @@ use items_2::eventsdim0::EventsDim0;
 use items_2::eventsdim1::EventsDim1;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
+use netpod::timeunits::DAY;
 use netpod::timeunits::MS;
 use std::f64::consts::PI;
 use std::pin::Pin;
@@ -21,25 +22,27 @@ use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
 
-pub struct GenerateI32 {
+pub struct GenerateI32V00 {
     ts: u64,
     dts: u64,
     tsend: u64,
     #[allow(unused)]
     c1: u64,
     timeout: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
+    do_throttle: bool,
     done: bool,
     done_range_final: bool,
 }
 
-impl GenerateI32 {
-    pub fn new(node_ix: u64, node_count: u64, range: SeriesRange) -> Self {
+impl GenerateI32V00 {
+    pub fn new(node_ix: u64, node_count: u64, range: SeriesRange, one_before_range: bool) -> Self {
         let range = match range {
             SeriesRange::TimeRange(k) => k,
             SeriesRange::PulseRange(_) => todo!(),
         };
-        let dts = MS * 1000 * node_count as u64;
-        let ts = (range.beg / dts + node_ix) * dts;
+        let ivl = MS * 1000;
+        let dts = ivl * node_count as u64;
+        let ts = (range.beg / ivl + node_ix - if one_before_range { 1 } else { 0 }) * ivl;
         let tsend = range.end;
         Self {
             ts,
@@ -47,6 +50,7 @@ impl GenerateI32 {
             tsend,
             c1: 0,
             timeout: None,
+            do_throttle: false,
             done: false,
             done_range_final: false,
         }
@@ -72,19 +76,19 @@ impl GenerateI32 {
     }
 }
 
-impl Stream for GenerateI32 {
+impl Stream for GenerateI32V00 {
     type Item = Sitemty<ChannelEvents>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         loop {
-            break if self.done_range_final {
+            break if self.done {
                 Ready(None)
             } else if self.ts >= self.tsend {
                 self.done = true;
                 self.done_range_final = true;
                 Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
-            } else if false {
+            } else if !self.do_throttle {
                 // To use the generator without throttling, use this scope
                 Ready(Some(self.make_batch()))
             } else if let Some(fut) = self.timeout.as_mut() {
@@ -112,6 +116,8 @@ pub struct GenerateI32V01 {
     c1: u64,
     node_ix: u64,
     timeout: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
+    do_throttle: bool,
+    have_range_final: bool,
     done: bool,
     done_range_final: bool,
 }
@@ -125,7 +131,8 @@ impl GenerateI32V01 {
         let ivl = MS * 500;
         let dts = ivl * node_count as u64;
         let ts = (range.beg / ivl + node_ix - if one_before_range { 1 } else { 0 }) * ivl;
-        let tsend = range.end;
+        let tsend = range.end.min(DAY);
+        let have_range_final = range.end < (DAY - ivl);
         info!(
             "START GENERATOR GenerateI32V01  ivl {}  dts {}  ts {}  one_before_range {}",
             ivl, dts, ts, one_before_range
@@ -138,6 +145,8 @@ impl GenerateI32V01 {
             c1: 0,
             node_ix,
             timeout: None,
+            do_throttle: false,
+            have_range_final,
             done: false,
             done_range_final: false,
         }
@@ -148,7 +157,7 @@ impl GenerateI32V01 {
         let mut item = EventsDim0::empty();
         let mut ts = self.ts;
         loop {
-            if self.ts >= self.tsend || item.byte_estimate() > 40 {
+            if self.ts >= self.tsend || item.byte_estimate() > 200 {
                 break;
             }
             let pulse = ts;
@@ -175,13 +184,17 @@ impl Stream for GenerateI32V01 {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         loop {
-            break if self.done_range_final {
+            break if self.done {
                 Ready(None)
             } else if self.ts >= self.tsend {
                 self.done = true;
                 self.done_range_final = true;
-                Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
-            } else if false {
+                if self.have_range_final {
+                    Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
+                } else {
+                    continue;
+                }
+            } else if !self.do_throttle {
                 // To use the generator without throttling, use this scope
                 Ready(Some(self.make_batch()))
             } else if let Some(fut) = self.timeout.as_mut() {
@@ -207,6 +220,7 @@ pub struct GenerateF64V00 {
     tsend: u64,
     node_ix: u64,
     timeout: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
+    do_throttle: bool,
     done: bool,
     done_range_final: bool,
 }
@@ -232,6 +246,7 @@ impl GenerateF64V00 {
             tsend,
             node_ix,
             timeout: None,
+            do_throttle: false,
             done: false,
             done_range_final: false,
         }
@@ -276,13 +291,13 @@ impl Stream for GenerateF64V00 {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         loop {
-            break if self.done_range_final {
+            break if self.done {
                 Ready(None)
             } else if self.ts >= self.tsend {
                 self.done = true;
                 self.done_range_final = true;
                 Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
-            } else if false {
+            } else if !self.do_throttle {
                 // To use the generator without throttling, use this scope
                 Ready(Some(self.make_batch()))
             } else if let Some(fut) = self.timeout.as_mut() {

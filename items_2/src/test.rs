@@ -165,7 +165,7 @@ fn items_merge_02() {
 }
 
 #[test]
-fn merge01() {
+fn merge_00() {
     let fut = async {
         let mut events_vec1: Vec<Sitemty<ChannelEvents>> = Vec::new();
         let mut events_vec2: Vec<Sitemty<ChannelEvents>> = Vec::new();
@@ -186,6 +186,15 @@ fn merge01() {
         let inp2 = futures_util::stream::iter(inp2);
         let inp2 = Box::pin(inp2);
         let mut merger = crate::merger::Merger::new(vec![inp1, inp2], 32);
+
+        // Expect an empty first item.
+        let item = merger.next().await;
+        let item = match item {
+            Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))) => item,
+            _ => panic!(),
+        };
+        assert_eq!(item.len(), 0);
+
         let item = merger.next().await;
         assert_eq!(item.as_ref(), events_vec2.get(0));
         let item = merger.next().await;
@@ -196,7 +205,7 @@ fn merge01() {
 }
 
 #[test]
-fn merge02() {
+fn merge_01() {
     let fut = async {
         let events_vec1 = {
             let mut vec = Vec::new();
@@ -220,6 +229,15 @@ fn merge02() {
         let inp2 = futures_util::stream::iter(inp2);
         let inp2 = Box::pin(inp2);
         let mut merger = crate::merger::Merger::new(vec![inp1, inp2], 10);
+
+        // Expect an empty first item.
+        let item = merger.next().await;
+        let item = match item {
+            Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))) => item,
+            _ => panic!(),
+        };
+        assert_eq!(item.len(), 0);
+
         let item = merger.next().await;
         assert_eq!(item.as_ref(), exp.get(0));
         let item = merger.next().await;
@@ -237,7 +255,7 @@ fn push_evd0(vec: &mut Vec<Sitemty<ChannelEvents>>, events: Box<dyn Events>) {
 }
 
 #[test]
-fn merge03() {
+fn merge_02() {
     let fut = async {
         let events_vec1 = {
             let mut vec = Vec::new();
@@ -304,6 +322,15 @@ fn merge03() {
         let inp2 = futures_util::stream::iter(inp2);
         let inp2 = Box::pin(inp2);
         let mut merger = crate::merger::Merger::new(vec![inp1, inp2], 10);
+
+        // Expect an empty first item.
+        let item = merger.next().await;
+        let item = match item {
+            Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))) => item,
+            _ => panic!(),
+        };
+        assert_eq!(item.len(), 0);
+
         let item = merger.next().await;
         assert_eq!(item.as_ref(), events_vec2.get(0));
         let item = merger.next().await;
@@ -320,7 +347,7 @@ fn merge03() {
 }
 
 #[test]
-fn bin01() {
+fn bin_00() {
     let fut = async {
         let inp1 = {
             let mut vec = Vec::new();
@@ -360,7 +387,7 @@ fn bin01() {
 }
 
 #[test]
-fn bin02() {
+fn bin_01() {
     const TSBASE: u64 = SEC * 1600000000;
     fn val(ts: u64) -> f32 {
         2f32 + ((ts / SEC) % 2) as f32 + 0.2 * ((ts / (MS * 100)) % 2) as f32
@@ -408,7 +435,11 @@ fn bin02() {
 }
 
 #[test]
-fn binned_timeout_01() {
+fn binned_timeout_00() {
+    if true {
+        return;
+    }
+    // TODO items_2::binnedcollected::BinnedCollected is currently not used.
     trace!("binned_timeout_01 uses a delay");
     const TSBASE: u64 = SEC * 1600000000;
     fn val(ts: u64) -> f32 {
@@ -446,7 +477,7 @@ fn binned_timeout_01() {
         //eprintln!("edges2: {:?}", binrange.edges());
         let inp1 = Box::pin(inp1);
         let timeout = Duration::from_millis(400);
-        let deadline = Instant::now() + Duration::from_millis(4000);
+        let deadline = Instant::now() + timeout;
         let do_time_weight = true;
         let res =
             BinnedCollected::new(binrange, ScalarType::F32, Shape::Scalar, do_time_weight, deadline, inp1).await?;

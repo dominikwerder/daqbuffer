@@ -285,7 +285,7 @@ where
                             StreamItem::DataItem(k) => match k {
                                 RangeCompletableItem::Data(k) => {
                                     if self.done_emit_first_empty == false {
-                                        info!("++++++++++++++++++++++     LET MERGER EMIT THE FIRST EMPTY MARKER ITEM");
+                                        trace!("emit first empty marker item");
                                         self.done_emit_first_empty = true;
                                         let item = k.new_empty();
                                         let item = sitem_data(item);

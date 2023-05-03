@@ -21,5 +21,5 @@ pub fn make_some_boxed_d0_f32(n: usize, t0: u64, tstep: u64, tmask: u64, seed: u
         let value = i as f32 * 100. + vstate as f32 / u32::MAX as f32 / 10.;
         events.push(ts, ts, value);
     }
-    Box::new(events.clone())
+    Box::new(events)
 }

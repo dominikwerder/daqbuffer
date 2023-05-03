@@ -1,5 +1,3 @@
-pub mod generator;
-
 use crate::scylla::scylla_channel_event_stream;
 use err::Error;
 use futures_util::Stream;
@@ -29,6 +27,7 @@ use std::net::SocketAddr;
 use std::pin::Pin;
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
 use streams::generators::GenerateF64V00;
+use streams::generators::GenerateI32V00;
 use streams::generators::GenerateI32V01;
 use streams::transform::build_event_transform;
 use tokio::io::AsyncWriteExt;
@@ -82,7 +81,14 @@ async fn make_channel_events_stream_data(
         let node_ix = node_config.ix as u64;
         let chn = evq.channel().name();
         let range = evq.range().clone();
-        if chn == "test-gen-i32-dim0-v01" {
+        if chn == "test-gen-i32-dim0-v00" {
+            Ok(Box::pin(GenerateI32V00::new(
+                node_ix,
+                node_count,
+                range,
+                evq.one_before_range(),
+            )))
+        } else if chn == "test-gen-i32-dim0-v01" {
             Ok(Box::pin(GenerateI32V01::new(
                 node_ix,
                 node_count,
@@ -100,28 +106,30 @@ async fn make_channel_events_stream_data(
             let na: Vec<_> = chn.split("-").collect();
             if na.len() != 3 {
                 Err(Error::with_msg_no_trace(format!(
-                    "can not understand test channel name: {chn:?}"
+                    "make_channel_events_stream_data can not understand test channel name: {chn:?}"
                 )))
             } else {
                 if na[0] != "inmem" {
                     Err(Error::with_msg_no_trace(format!(
-                        "can not understand test channel name: {chn:?}"
+                        "make_channel_events_stream_data can not understand test channel name: {chn:?}"
                     )))
                 } else {
                     let range = evq.range().clone();
                     if na[1] == "d0" {
                         if na[2] == "i32" {
-                            generator::generate_i32(node_ix, node_count, range)
+                            //generator::generate_i32(node_ix, node_count, range)
+                            panic!()
                         } else if na[2] == "f32" {
-                            generator::generate_f32(node_ix, node_count, range)
+                            //generator::generate_f32(node_ix, node_count, range)
+                            panic!()
                         } else {
                             Err(Error::with_msg_no_trace(format!(
-                                "can not understand test channel name: {chn:?}"
+                                "make_channel_events_stream_data can not understand test channel name: {chn:?}"
                             )))
                         }
                     } else {
                         Err(Error::with_msg_no_trace(format!(
-                            "can not understand test channel name: {chn:?}"
+                            "make_channel_events_stream_data can not understand test channel name: {chn:?}"
                         )))
                     }
                 }

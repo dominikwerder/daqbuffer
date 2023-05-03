@@ -274,6 +274,8 @@ impl Stream for EventChunkerMultifile {
     }
 }
 
+// TODO re-enable tests generate data on the fly.
+#[cfg(DISABLED)]
 #[cfg(test)]
 mod test {
     use crate::eventblobs::EventChunkerMultifile;

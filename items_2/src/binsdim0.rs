@@ -125,6 +125,9 @@ impl<NTY: ScalarOps> BinsDim0<NTY> {
     }
 
     pub fn equal_slack(&self, other: &Self) -> bool {
+        if self.len() != other.len() {
+            return false;
+        }
         for (&a, &b) in self.ts1s.iter().zip(other.ts1s.iter()) {
             if a != b {
                 return false;

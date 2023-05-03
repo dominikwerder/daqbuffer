@@ -1,13 +1,13 @@
 use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
 use crate::test::api4::common::fetch_binned_json;
-use crate::test::f32_cmp_near;
-use crate::test::f32_iter_cmp_near;
-use crate::test::f64_iter_cmp_near;
 use chrono::Utc;
 use err::Error;
 use http::StatusCode;
 use hyper::Body;
+use items_0::test::f32_cmp_near;
+use items_0::test::f32_iter_cmp_near;
+use items_0::test::f64_iter_cmp_near;
 use items_0::WithLen;
 use items_2::binsdim0::BinsDim0CollectedResult;
 use netpod::log::*;
@@ -23,7 +23,7 @@ use url::Url;
 
 const TEST_BACKEND: &str = "testbackend-00";
 
-pub fn make_query<S: Into<String>>(
+fn make_query<S: Into<String>>(
     name: S,
     beg_date: &str,
     end_date: &str,
@@ -49,7 +49,6 @@ fn binned_d0_json_00() -> Result<(), Error> {
         let jsv = get_binned_json(
             Channel {
                 backend: TEST_BACKEND.into(),
-                //name: "scalar-i32-be".into(),
                 name: "test-gen-i32-dim0-v01".into(),
                 series: None,
             },
@@ -61,7 +60,6 @@ fn binned_d0_json_00() -> Result<(), Error> {
         .await?;
         debug!("Receveided a response json value: {jsv:?}");
         let res: BinsDim0CollectedResult<i32> = serde_json::from_value(jsv)?;
-        // inmem was meant just for functional test, ignores the requested time range
         assert_eq!(res.range_final(), true);
         assert_eq!(res.len(), 8);
         assert_eq!(res.ts_anchor_sec(), 1200);
@@ -119,7 +117,6 @@ fn binned_d0_json_01a() -> Result<(), Error> {
         .await?;
         debug!("Receveided a response json value: {jsv:?}");
         let res: BinsDim0CollectedResult<i32> = serde_json::from_value(jsv)?;
-        // inmem was meant just for functional test, ignores the requested time range
         assert_eq!(res.range_final(), true);
         assert_eq!(res.len(), 11);
         assert_eq!(res.ts_anchor_sec(), 1200);
@@ -178,7 +175,6 @@ fn binned_d0_json_01b() -> Result<(), Error> {
         .await?;
         debug!("Receveided a response json value: {jsv:?}");
         let res: BinsDim0CollectedResult<i32> = serde_json::from_value(jsv)?;
-        // inmem was meant just for functional test, ignores the requested time range
         assert_eq!(res.range_final(), true);
         assert_eq!(res.len(), 13);
         assert_eq!(res.ts_anchor_sec(), 1200);
@@ -238,7 +234,6 @@ fn binned_d0_json_02() -> Result<(), Error> {
         .await?;
         debug!("Receveided a response json value: {jsv:?}");
         let res: BinsDim0CollectedResult<f64> = serde_json::from_value(jsv)?;
-        // inmem was meant just for functional test, ignores the requested time range
         assert_eq!(res.range_final(), true);
         assert_eq!(res.len(), 10);
         assert_eq!(res.ts_anchor_sec(), 1200);
@@ -270,7 +265,7 @@ fn binned_d0_json_02() -> Result<(), Error> {
         }
         {
             let a1: Vec<_> = res.avgs().iter().map(|x| *x).collect();
-            let a2 = vec![46.2, 105.9, 78.0, 88.3, 98.9, 70.8, 107.3, 74.1, 93.3, 94.3];
+            let a2 = vec![46.2, 40.4, 48.6, 40.6, 45.8, 45.1, 41.1, 48.5, 40.1, 46.8];
             assert_eq!(f32_iter_cmp_near(a1, a2, 0.05, 0.05), true);
         }
         Ok(())
@@ -286,10 +281,9 @@ fn binned_d0_json_03() -> Result<(), Error> {
         let jsv = get_binned_json(
             Channel {
                 backend: TEST_BACKEND.into(),
-                name: "wave-f64-be-n21".into(),
+                name: "test-gen-f64-dim1-v00".into(),
                 series: None,
             },
-            // TODO This test was meant to ask `AggKind::DimXBinsN(3)`
             "1970-01-01T00:20:10.000Z",
             "1970-01-01T01:20:20.000Z",
             2,
@@ -298,12 +292,15 @@ fn binned_d0_json_03() -> Result<(), Error> {
         .await?;
         debug!("Receveided a response json value: {jsv:?}");
         let res: BinsDim0CollectedResult<f64> = serde_json::from_value(jsv)?;
-        // inmem was meant just for functional test, ignores the requested time range
-        assert_eq!(res.ts_anchor_sec(), 1200);
-        assert_eq!(res.len(), 4);
         assert_eq!(res.range_final(), true);
-        assert_eq!(res.counts()[0], 300);
-        assert_eq!(res.counts()[3], 8);
+        assert_eq!(res.len(), 4);
+        assert_eq!(res.ts_anchor_sec(), 1200);
+        let nb = res.len();
+        {
+            let a1: Vec<_> = res.counts().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|_| 12000).collect();
+            assert_eq!(a1, a2);
+        }
         Ok(())
     };
     taskrun::run(fut)
@@ -317,111 +314,51 @@ fn binned_d0_json_04() -> Result<(), Error> {
         let jsv = get_binned_json(
             Channel {
                 backend: TEST_BACKEND.into(),
-                name: "const-regular-scalar-i32-be".into(),
+                name: "test-gen-i32-dim0-v01".into(),
                 series: None,
             },
             "1970-01-01T00:20:10.000Z",
             "1970-01-01T04:20:30.000Z",
-            // TODO must use AggKind::DimXBins1
             20,
             cluster,
         )
         .await?;
         debug!("Receveided a response json value: {jsv:?}");
         let res: BinsDim0CollectedResult<i32> = serde_json::from_value(jsv)?;
-        // inmem was meant just for functional test, ignores the requested time range
-        assert_eq!(res.ts_anchor_sec(), 1200);
-        assert_eq!(res.len(), 17);
-        // TODO I would expect rangeFinal to be set, or?
-        assert_eq!(res.range_final(), false);
-        Ok(())
-    };
-    taskrun::run(fut)
-}
-
-#[test]
-fn binned_d0_json_05() -> Result<(), Error> {
-    let fut = async {
-        let rh = require_test_hosts_running()?;
-        let cluster = &rh.cluster;
-        let jsv = get_binned_json(
-            Channel {
-                backend: TEST_BACKEND.into(),
-                name: "const-regular-scalar-i32-be".into(),
-                series: None,
-            },
-            "1970-01-01T00:20:10.000Z",
-            "1970-01-01T10:20:30.000Z",
-            // TODO must use AggKind::DimXBins1
-            10,
-            cluster,
-        )
-        .await?;
-        debug!("Receveided a response json value: {jsv:?}");
-        let res: BinsDim0CollectedResult<i32> = serde_json::from_value(jsv)?;
-        // inmem was meant just for functional test, ignores the requested time range
-        assert_eq!(res.ts_anchor_sec(), 0);
-        // TODO make disk parse faster and avoid timeout
-        assert_eq!(res.len(), 11);
-        assert_eq!(res.range_final(), false);
-        Ok(())
-    };
-    taskrun::run(fut)
-}
-
-#[test]
-fn binned_d0_json_06() -> Result<(), Error> {
-    let fut = async {
-        let rh = require_test_hosts_running()?;
-        let cluster = &rh.cluster;
-        let jsv = get_binned_json(
-            Channel {
-                backend: TEST_BACKEND.into(),
-                name: "const-regular-scalar-i32-be".into(),
-                series: None,
-            },
-            "1970-01-01T00:20:10.000Z",
-            "1970-01-01T00:20:20.000Z",
-            // TODO must use AggKind::TimeWeightedScalar
-            20,
-            cluster,
-        )
-        .await?;
-        debug!("Receveided a response json value: {jsv:?}");
-        let res: BinsDim0CollectedResult<i32> = serde_json::from_value(jsv)?;
-        // inmem was meant just for functional test, ignores the requested time range
-        assert_eq!(res.ts_anchor_sec(), 1210);
-        assert_eq!(res.len(), 20);
         assert_eq!(res.range_final(), true);
-        Ok(())
-    };
-    taskrun::run(fut)
-}
-
-#[test]
-fn binned_d0_json_07() -> Result<(), Error> {
-    let fut = async {
-        let rh = require_test_hosts_running()?;
-        let cluster = &rh.cluster;
-        let jsv = get_binned_json(
-            Channel {
-                backend: TEST_BACKEND.into(),
-                name: "const-regular-scalar-i32-be".into(),
-                series: None,
-            },
-            "1970-01-01T00:20:11.000Z",
-            "1970-01-01T00:30:20.000Z",
-            // TODO must use AggKind::TimeWeightedScalar
-            10,
-            cluster,
-        )
-        .await?;
-        debug!("Receveided a response json value: {jsv:?}");
-        let res: BinsDim0CollectedResult<i32> = serde_json::from_value(jsv)?;
-        // inmem was meant just for functional test, ignores the requested time range
+        assert_eq!(res.len(), 25);
         assert_eq!(res.ts_anchor_sec(), 1200);
-        assert_eq!(res.len(), 11);
-        assert_eq!(res.range_final(), true);
+        let nb = res.len();
+        {
+            let a1: Vec<_> = res.ts1_off_ms().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 600 * 1000 * x).collect();
+            assert_eq!(a1, a2);
+        }
+        {
+            let a1: Vec<_> = res.ts2_off_ms().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 600 * 1000 * (1 + x)).collect();
+            assert_eq!(a1, a2);
+        }
+        {
+            let a1: Vec<_> = res.counts().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|_| 1200).collect();
+            assert_eq!(a1, a2);
+        }
+        {
+            let a1: Vec<_> = res.mins().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 2400 + 1200 * x).collect();
+            assert_eq!(a1, a2);
+        }
+        {
+            let a1: Vec<_> = res.maxs().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 2399 + 1200 * (1 + x)).collect();
+            assert_eq!(a1, a2);
+        }
+        {
+            let a1: Vec<_> = res.avgs().iter().map(|x| *x).collect();
+            let a2: Vec<_> = (0..nb as _).into_iter().map(|x| 3000. + 1200. * x as f32).collect();
+            assert_eq!(f32_iter_cmp_near(a1, a2, 0.001, 0.001), true);
+        }
         Ok(())
     };
     taskrun::run(fut)
@@ -440,11 +377,10 @@ fn binned_inmem_d0_json_00() -> Result<(), Error> {
         )?;
         let jsv = fetch_binned_json(query, cluster).await?;
         let res: BinsDim0CollectedResult<i32> = serde_json::from_value(jsv)?;
-        // inmem was meant just for functional test, ignores the requested time range
-        assert_eq!(res.ts_anchor_sec(), 1200);
-        assert_eq!(res.len(), 14);
         assert_eq!(res.range_final(), true);
         assert_eq!(res.timed_out(), false);
+        assert_eq!(res.len(), 14);
+        assert_eq!(res.ts_anchor_sec(), 1200);
         {
             let v1: Vec<_> = res.counts().iter().map(|x| *x).collect();
             assert_eq!(&v1, &[5; 14]);

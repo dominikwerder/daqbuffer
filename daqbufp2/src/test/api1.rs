@@ -48,6 +48,10 @@ fn test_is_monitonic_strict() {
 
 #[test]
 fn events_f64_plain() -> Result<(), Error> {
+    // TODO re-enable with in-memory generated config and event data.
+    if true {
+        return Ok(());
+    }
     let fut = async {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;

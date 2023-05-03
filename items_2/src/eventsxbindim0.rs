@@ -42,13 +42,13 @@ use std::mem;
 
 #[allow(unused)]
 macro_rules! trace_ingest {
-    (e$($arg:tt)*) => {};
+    ($($arg:tt)*) => {};
     ($($arg:tt)*) => { trace!($($arg)*) };
 }
 
 #[allow(unused)]
 macro_rules! trace2 {
-    (e$($arg:tt)*) => {};
+    ($($arg:tt)*) => {};
     ($($arg:tt)*) => { trace!($($arg)*) };
 }
 

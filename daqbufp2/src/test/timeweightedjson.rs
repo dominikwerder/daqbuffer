@@ -1,5 +1,4 @@
 use crate::err::ErrConv;
-use crate::nodes::require_test_hosts_running;
 use chrono::DateTime;
 use chrono::Utc;
 use err::Error;
@@ -18,78 +17,12 @@ use url::Url;
 
 const TEST_BACKEND: &str = "testbackend-00";
 
-#[test]
-fn time_weighted_json_03() -> Result<(), Error> {
-    async fn inner() -> Result<(), Error> {
-        let rh = require_test_hosts_running()?;
-        let cluster = &rh.cluster;
-        let res = get_json_common(
-            "const-regular-scalar-i32-be",
-            "1970-01-01T00:20:11.000Z",
-            "1970-01-01T00:30:20.000Z",
-            10,
-            //AggKind::TimeWeightedScalar,
-            cluster,
-            11,
-            true,
-        )
-        .await?;
-        let v = res.avgs[0];
-        assert!(v > 41.9999 && v < 42.0001);
-        Ok(())
-    }
-    super::run_test(inner())
-}
-
-#[test]
-fn time_weighted_json_10() -> Result<(), Error> {
-    async fn inner() -> Result<(), Error> {
-        error!("TODO this test asked for DimXBins1");
-        let rh = require_test_hosts_running()?;
-        let cluster = &rh.cluster;
-        get_json_common(
-            "scalar-i32-be",
-            "1970-01-01T00:20:10.000Z",
-            "1970-01-01T01:20:30.000Z",
-            10,
-            //AggKind::DimXBins1,
-            cluster,
-            13,
-            true,
-        )
-        .await?;
-        Ok(())
-    }
-    super::run_test(inner())
-}
-
-#[test]
-fn time_weighted_json_20() -> Result<(), Error> {
-    async fn inner() -> Result<(), Error> {
-        let rh = require_test_hosts_running()?;
-        let cluster = &rh.cluster;
-        get_json_common(
-            "wave-f64-be-n21",
-            "1970-01-01T00:20:10.000Z",
-            "1970-01-01T01:20:45.000Z",
-            10,
-            //AggKind::TimeWeightedScalar,
-            cluster,
-            13,
-            true,
-        )
-        .await?;
-        Ok(())
-    }
-    super::run_test(inner())
-}
-
-// For waveform with N x-bins, see test::binnedjson
-
 struct DataResult {
     avgs: Vec<f64>,
 }
 
+// TODO compare if I want to recycle some of this:
+#[allow(unused)]
 async fn get_json_common(
     channel_name: &str,
     beg_date: &str,

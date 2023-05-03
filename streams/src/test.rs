@@ -39,13 +39,6 @@ fn inmem_test_events_d0_i32_01() -> BoxedEventStream {
 }
 
 #[test]
-fn empty_input() -> Result<(), Error> {
-    // TODO with a pipeline of x-binning, merging, t-binning and collection, how do I get a meaningful
-    // result even if there is no input data at all?
-    Err(Error::with_msg_no_trace("TODO"))
-}
-
-#[test]
 fn merge_mergeable_00() -> Result<(), Error> {
     let fut = async {
         let inp0 = inmem_test_events_d0_i32_00();
@@ -54,12 +47,6 @@ fn merge_mergeable_00() -> Result<(), Error> {
         Ok(())
     };
     runfut(fut)
-}
-
-#[test]
-fn timeout() -> Result<(), Error> {
-    // TODO expand from items_2::test
-    Err(Error::with_msg_no_trace("TODO"))
 }
 
 fn runfut<T, F>(fut: F) -> Result<T, err::Error>

@@ -1,6 +1,6 @@
 use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
-use crate::test::f32_iter_cmp_near;
+use crate::test::api4::common::fetch_events_json;
 use chrono::Utc;
 use err::Error;
 use http::StatusCode;
@@ -18,61 +18,41 @@ use query::api4::events::PlainEventsQuery;
 use serde_json::Value as JsonValue;
 use url::Url;
 
-const BACKEND: &str = "testbackend-00";
+const TEST_BACKEND: &str = "testbackend-00";
+
+fn make_query<S: Into<String>>(
+    name: S,
+    beg_date: &str,
+    end_date: &str,
+    //bin_count_min: u32,
+) -> Result<PlainEventsQuery, Error> {
+    let channel = Channel {
+        backend: TEST_BACKEND.into(),
+        name: name.into(),
+        series: None,
+    };
+    let beg_date = beg_date.parse()?;
+    let end_date = end_date.parse()?;
+    let range = NanoRange::from_date_time(beg_date, end_date);
+    let query = PlainEventsQuery::new(channel, range).for_time_weighted_scalar();
+    Ok(query)
+}
 
 #[test]
 fn events_plain_json_00() -> Result<(), Error> {
     let fut = async {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
-        let jsv = events_plain_json(
-            Channel {
-                backend: BACKEND.into(),
-                name: "inmem-d0-i32".into(),
-                series: None,
-            },
+        let query = make_query(
+            "test-gen-i32-dim0-v01",
             "1970-01-01T00:20:04.000Z",
             "1970-01-01T00:21:10.000Z",
-            cluster,
-        )
-        .await?;
+        )?;
+        let jsv = fetch_events_json(query, cluster).await?;
         let res: EventsDim0CollectorOutput<i32> = serde_json::from_value(jsv)?;
-        // inmem was meant just for functional test, ignores the requested time range
-        assert_eq!(res.ts_anchor_sec(), 1204);
-        assert_eq!(res.len(), 66);
-        Ok(())
-    };
-    taskrun::run(fut)
-}
-
-#[test]
-fn events_plain_json_01() -> Result<(), Error> {
-    // TODO
-    // not worth to re-enable, getting rid of databuffer.
-    if true {
-        return Ok(());
-    }
-    let fut = async {
-        let rh = require_test_hosts_running()?;
-        let cluster = &rh.cluster;
-        let jsv = events_plain_json(
-            Channel {
-                backend: BACKEND.into(),
-                name: "scalar-i32-be".into(),
-                series: None,
-            },
-            "1970-01-01T00:20:10.000Z",
-            "1970-01-01T00:20:13.000Z",
-            cluster,
-        )
-        .await?;
-        let res: EventsDim0CollectorOutput<i32> = serde_json::from_value(jsv)?;
-        assert_eq!(res.ts_anchor_sec(), 1210);
-        assert_eq!(res.pulse_anchor(), 2420);
-        let exp = [2420., 2421., 2422., 2423., 2424., 2425.];
-        assert_eq!(f32_iter_cmp_near(res.values_to_f32(), exp, 0.01, 0.01), true);
-        assert_eq!(res.range_final(), true);
-        assert_eq!(res.timed_out(), false);
+        // Tim-weighted will use one event before:
+        assert_eq!(res.len(), 133);
+        assert_eq!(res.ts_anchor_sec(), 1203);
         Ok(())
     };
     taskrun::run(fut)
@@ -85,8 +65,8 @@ fn events_plain_json_02_range_incomplete() -> Result<(), Error> {
         let cluster = &rh.cluster;
         let jsv = events_plain_json(
             Channel {
-                backend: BACKEND.into(),
-                name: "scalar-i32-be".into(),
+                backend: TEST_BACKEND.into(),
+                name: "test-gen-i32-dim0-v01".into(),
                 series: None,
             },
             "1970-01-03T23:59:55.000Z",

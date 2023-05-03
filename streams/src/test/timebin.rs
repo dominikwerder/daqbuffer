@@ -1,5 +1,6 @@
 use crate::collect::collect;
-use crate::generators::GenerateI32;
+use crate::generators::GenerateF64V00;
+use crate::generators::GenerateI32V00;
 use crate::test::runfut;
 use crate::transform::build_event_transform;
 use chrono::DateTime;
@@ -30,6 +31,13 @@ use std::collections::VecDeque;
 use std::time::Duration;
 use std::time::Instant;
 
+fn nano_range_from_str(beg_date: &str, end_date: &str) -> Result<NanoRange, Error> {
+    let beg_date = beg_date.parse()?;
+    let end_date = end_date.parse()?;
+    let range = NanoRange::from_date_time(beg_date, end_date);
+    Ok(range)
+}
+
 #[test]
 fn time_bin_00() {
     let fut = async {
@@ -38,17 +46,21 @@ fn time_bin_00() {
         let min_bin_count = 8;
         let binned_range = BinnedRangeEnum::covering_range(range, min_bin_count)?;
         let evs0 = make_some_boxed_d0_f32(10, SEC * 1, MS * 500, 0, 1846713782);
-        let v0 = ChannelEvents::Events(evs0);
-        let v2 = ChannelEvents::Status(Some(ConnStatusEvent::new(MS * 100, ConnStatus::Connect)));
-        let v4 = ChannelEvents::Status(Some(ConnStatusEvent::new(MS * 6000, ConnStatus::Disconnect)));
+        let v00 = ChannelEvents::Events(Box::new(EventsDim0::<f32>::empty()));
+        let v01 = ChannelEvents::Events(evs0);
+        let v02 = ChannelEvents::Status(Some(ConnStatusEvent::new(MS * 100, ConnStatus::Connect)));
+        let v03 = ChannelEvents::Status(Some(ConnStatusEvent::new(MS * 6000, ConnStatus::Disconnect)));
         let stream0 = Box::pin(stream::iter(vec![
             //
-            sitem_data(v2),
-            sitem_data(v0),
-            sitem_data(v4),
+            sitem_data(v00),
+            sitem_data(v02),
+            sitem_data(v01),
+            sitem_data(v03),
         ]));
         let mut exps = {
             let mut d = VecDeque::new();
+            let bins = BinsDim0::empty();
+            d.push_back(bins);
             let mut bins = BinsDim0::empty();
             bins.push(SEC * 0, SEC * 1, 0, 0.0, 0.0, 0.0);
             bins.push(SEC * 1, SEC * 2, 2, 0.0535830, 100.0589, 50.05624);
@@ -61,10 +73,9 @@ fn time_bin_00() {
             d.push_back(bins);
             d
         };
-        let deadline = Instant::now() + Duration::from_millis(2000000);
         let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream0, binned_range, true);
         while let Some(item) = binned_stream.next().await {
-            //eprintln!("{item:?}");
+            eprintln!("{item:?}");
             match item {
                 Ok(item) => match item {
                     StreamItem::DataItem(item) => match item {
@@ -72,6 +83,11 @@ fn time_bin_00() {
                             if let Some(item) = item.as_any_ref().downcast_ref::<BinsDim0<f32>>() {
                                 let exp = exps.pop_front().unwrap();
                                 if !item.equal_slack(&exp) {
+                                    eprintln!("-----------------------");
+                                    eprintln!("item {:?}", item);
+                                    eprintln!("-----------------------");
+                                    eprintln!("exp  {:?}", exp);
+                                    eprintln!("-----------------------");
                                     return Err(Error::with_msg_no_trace(format!("bad, content not equal")));
                                 }
                             } else {
@@ -98,14 +114,16 @@ fn time_bin_01() {
         let range = SeriesRange::TimeRange(range);
         let min_bin_count = 8;
         let binned_range = BinnedRangeEnum::covering_range(range, min_bin_count)?;
+        let v00 = ChannelEvents::Events(Box::new(EventsDim0::<f32>::empty()));
         let evs0 = make_some_boxed_d0_f32(10, SEC * 1, MS * 500, 0, 1846713782);
         let evs1 = make_some_boxed_d0_f32(10, SEC * 6, MS * 500, 0, 1846713781);
-        let v0 = ChannelEvents::Events(evs0);
-        let v1 = ChannelEvents::Events(evs1);
+        let v01 = ChannelEvents::Events(evs0);
+        let v02 = ChannelEvents::Events(evs1);
         let stream0 = stream::iter(vec![
             //
-            sitem_data(v0),
-            sitem_data(v1),
+            sitem_data(v00),
+            sitem_data(v01),
+            sitem_data(v02),
         ]);
         let stream0 = stream0.then({
             let mut i = 0;
@@ -152,13 +170,6 @@ fn time_bin_01() {
     runfut(fut).unwrap()
 }
 
-fn nano_range_from_str(beg_date: &str, end_date: &str) -> Result<NanoRange, Error> {
-    let beg_date = beg_date.parse()?;
-    let end_date = end_date.parse()?;
-    let range = NanoRange::from_date_time(beg_date, end_date);
-    Ok(range)
-}
-
 #[test]
 fn time_bin_02() -> Result<(), Error> {
     let fut = async {
@@ -181,7 +192,7 @@ fn time_bin_02() -> Result<(), Error> {
         let event_range = binned_range.binned_range_time().full_range();
         let series_range = SeriesRange::TimeRange(event_range);
         // TODO the test stream must be able to generate also one-before (on demand) and RangeComplete (by default).
-        let stream = GenerateI32::new(0, 1, series_range);
+        let stream = GenerateI32V00::new(0, 1, series_range, true);
         // TODO apply first some box dyn EventTransform which later is provided by TransformQuery.
         // Then the Merge will happen always by default for backends where this is needed.
         // TODO then apply the transform chain for the after-merged-stream.
@@ -248,14 +259,55 @@ fn time_bin_02() -> Result<(), Error> {
     runfut(fut)
 }
 
+//
+#[test]
+fn time_bin_03() {
+    let fut = async {
+        let range = nano_range_from_str("1970-01-01T00:00:00Z", "1970-01-01T00:00:08Z")?;
+        let range = SeriesRange::TimeRange(range);
+        let min_bin_count = 8;
+        let binned_range = BinnedRangeEnum::covering_range(range, min_bin_count)?;
+        let evs0 = make_some_boxed_d0_f32(10, SEC * 1, MS * 500, 0, 1846713782);
+        //let v00 = ChannelEvents::Events(Box::new(EventsDim0::<f32>::empty()));
+        let v01 = ChannelEvents::Events(evs0);
+        let v02 = ChannelEvents::Status(Some(ConnStatusEvent::new(MS * 100, ConnStatus::Connect)));
+        let v03 = ChannelEvents::Status(Some(ConnStatusEvent::new(MS * 6000, ConnStatus::Disconnect)));
+        let stream0 = Box::pin(stream::iter(vec![
+            //
+            //sitem_data(v00),
+            sitem_data(v02),
+            sitem_data(v01),
+            sitem_data(v03),
+        ]));
+        let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream0, binned_range, true);
+        while let Some(item) = binned_stream.next().await {
+            eprintln!("{item:?}");
+            match item {
+                Err(e) => {
+                    if e.to_string().contains("must emit but can not even create empty A") {
+                        return Ok(());
+                    } else {
+                        return Err(Error::with_msg_no_trace("should not succeed"));
+                    }
+                }
+                _ => {
+                    return Err(Error::with_msg_no_trace("should not succeed"));
+                }
+            }
+        }
+        return Err(Error::with_msg_no_trace("should not succeed"));
+    };
+    runfut(fut).unwrap()
+}
+
 // TODO add test case to observe RangeComplete after binning.
 
 #[test]
-fn transform_chain_correctness_01() -> Result<(), Error> {
-    type STY = f32;
+fn transform_chain_correctness_00() -> Result<(), Error> {
+    // TODO
+    //type STY = f32;
+    //let empty = EventsDim0::<STY>::empty();
     let tq = TransformQuery::default_time_binned();
-    let empty = EventsDim0::<STY>::empty();
     build_event_transform(&tq)?;
-    todo!();
     Ok(())
 }

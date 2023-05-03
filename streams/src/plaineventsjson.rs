@@ -37,8 +37,8 @@ pub async fn plain_events_json(
         info!("item after merge: {item:?}");
         item
     });
-    #[cfg(DISABLED)]
-    let stream = crate::rangefilter2::RangeFilter2::new(stream, evq.range().try_into()?, evquery.one_before_range());
+    //#[cfg(DISABLED)]
+    let stream = crate::rangefilter2::RangeFilter2::new(stream, evq.range().try_into()?, evq.one_before_range());
     #[cfg(DISABLED)]
     let stream = stream.map(|item| {
         info!("item after rangefilter: {item:?}");

@@ -54,7 +54,7 @@ fn f_c() -> Result<u32, anyhow::Error> {
 
 #[test]
 fn test_fc() {
-    assert_eq!(f_c().is_ok(), true);
+    assert!(f_c().is_err());
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

@@ -38,11 +38,11 @@ pub async fn fetch_events_json(query: PlainEventsQuery, cluster: &Cluster) -> Re
     let s = String::from_utf8_lossy(&buf);
     let res: JsonValue = serde_json::from_str(&s)?;
     let pretty = serde_json::to_string_pretty(&res)?;
-    info!("{pretty}");
+    debug!("fetch_binned_json pretty: {pretty}");
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     // TODO add timeout
-    info!("time {} ms", ms);
+    debug!("time {} ms", ms);
     Ok(res)
 }
 
@@ -71,10 +71,10 @@ pub async fn fetch_binned_json(query: BinnedQuery, cluster: &Cluster) -> Result<
     let s = String::from_utf8_lossy(&buf);
     let res: JsonValue = serde_json::from_str(&s)?;
     let pretty = serde_json::to_string_pretty(&res)?;
-    info!("{pretty}");
+    debug!("fetch_binned_json pretty: {pretty}");
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     // TODO add timeout
-    info!("time {} ms", ms);
+    debug!("time {} ms", ms);
     Ok(res)
 }

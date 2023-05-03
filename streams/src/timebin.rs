@@ -83,14 +83,14 @@ where
     }
 
     fn process_item(&mut self, mut item: T) -> () {
-        info!("process_item {item:?}");
+        trace2!("process_item {item:?}");
         if self.binner.is_none() {
             trace!("process_item call time_binner_new");
             let binner = item.time_binner_new(self.range.clone(), self.do_time_weight);
             self.binner = Some(binner);
         }
         let binner = self.binner.as_mut().unwrap();
-        trace!("process_item call binner ingest");
+        trace2!("process_item call binner ingest");
         binner.ingest(&mut item);
     }
 
@@ -100,7 +100,7 @@ where
     ) -> Result<ControlFlow<Poll<Sitemty<<<T as TimeBinnableTy>::TimeBinner as TimeBinnerTy>::Output>>>, Error> {
         use ControlFlow::*;
         use Poll::*;
-        info!("=================   handle_data_item");
+        trace2!("=================   handle_data_item");
         let item_len = item.len();
         self.process_item(item);
         let mut do_emit = false;
@@ -127,11 +127,11 @@ where
                 if let Some(bins) = binner.bins_ready() {
                     Ok(Break(Ready(sitem_data(bins))))
                 } else {
-                    warn!("bins ready but got nothing");
+                    warn!("must emit but got nothing");
                     if let Some(bins) = binner.empty() {
                         Ok(Break(Ready(sitem_data(bins))))
                     } else {
-                        let e = Error::with_msg_no_trace("bins ready, but nothing, can not even create empty A");
+                        let e = Error::with_msg_no_trace("must emit but can not even create empty A");
                         error!("{e}");
                         Err(e)
                     }
@@ -152,7 +152,7 @@ where
     ) -> Result<ControlFlow<Poll<Sitemty<<<T as TimeBinnableTy>::TimeBinner as TimeBinnerTy>::Output>>>, Error> {
         use ControlFlow::*;
         use Poll::*;
-        info!("=================   handle_item");
+        trace2!("=================   handle_item");
         match item {
             Ok(item) => match item {
                 StreamItem::DataItem(item) => match item {
@@ -193,12 +193,12 @@ where
                 self.done_data = true;
                 Ok(Break(Ready(sitem_data(bins))))
             } else {
-                warn!("bins ready but got nothing");
+                warn!("must emit but got nothing");
                 if let Some(bins) = binner.empty() {
                     self.done_data = true;
                     Ok(Break(Ready(sitem_data(bins))))
                 } else {
-                    let e = Error::with_msg_no_trace("bins ready, but nothing, can not even create empty B");
+                    let e = Error::with_msg_no_trace("must emit but can not even create empty B");
                     error!("{e}");
                     self.done_data = true;
                     Err(e)

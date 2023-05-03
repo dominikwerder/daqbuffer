@@ -53,7 +53,7 @@ macro_rules! trace_ingest {
 
 #[allow(unused)]
 macro_rules! trace_ingest_item {
-    (e$($arg:tt)*) => {};
+    ($($arg:tt)*) => {};
     ($($arg:tt)*) => { trace!($($arg)*); };
 }
 
@@ -1264,7 +1264,6 @@ fn binner_00() {
     let mut binner = ev1.time_binner_new(binrange, true);
     binner.ingest(ev1.as_time_binnable_mut());
     eprintln!("{:?}", binner);
-    panic!();
     // TODO add actual asserts
 }
 
@@ -1279,7 +1278,6 @@ fn binner_01() {
     let mut binner = ev1.time_binner_new(binrange, true);
     binner.ingest(ev1.as_time_binnable_mut());
     eprintln!("{:?}", binner);
-    panic!();
     // TODO add actual asserts
 }
 

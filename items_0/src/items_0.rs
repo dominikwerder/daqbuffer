@@ -6,6 +6,7 @@ pub mod overlap;
 pub mod scalar_ops;
 pub mod streamitem;
 pub mod subfr;
+pub mod test;
 pub mod timebin;
 pub mod transform;
 
