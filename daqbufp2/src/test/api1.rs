@@ -60,7 +60,7 @@ fn events_f64_plain() -> Result<(), Error> {
         let accept = "application/octet-stream";
         let range = Api1Range::new("1970-01-01T00:00:00Z".try_into()?, "1970-01-01T00:01:00Z".try_into()?)?;
         // TODO the channel list needs to get pre-processed to check for backend prefix!
-        let ch = ChannelTuple::new(TEST_BACKEND.into(), "scalar-i32-be".into());
+        let ch = ChannelTuple::new(TEST_BACKEND.into(), "test-gen-i32-dim0-v01".into());
         let qu = Api1Query::new(range, vec![ch]);
         let body = serde_json::to_string(&qu)?;
         let buf = http_post(url, accept, body.into()).await?;

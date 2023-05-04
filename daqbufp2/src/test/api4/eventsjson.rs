@@ -20,12 +20,7 @@ use url::Url;
 
 const TEST_BACKEND: &str = "testbackend-00";
 
-fn make_query<S: Into<String>>(
-    name: S,
-    beg_date: &str,
-    end_date: &str,
-    //bin_count_min: u32,
-) -> Result<PlainEventsQuery, Error> {
+fn make_query<S: Into<String>>(name: S, beg_date: &str, end_date: &str) -> Result<PlainEventsQuery, Error> {
     let channel = Channel {
         backend: TEST_BACKEND.into(),
         name: name.into(),
@@ -50,7 +45,7 @@ fn events_plain_json_00() -> Result<(), Error> {
         )?;
         let jsv = fetch_events_json(query, cluster).await?;
         let res: EventsDim0CollectorOutput<i32> = serde_json::from_value(jsv)?;
-        // Tim-weighted will use one event before:
+        // Tim-weighted uses one event before requested range:
         assert_eq!(res.len(), 133);
         assert_eq!(res.ts_anchor_sec(), 1203);
         Ok(())
@@ -114,7 +109,6 @@ async fn events_plain_json(
     }
     let buf = hyper::body::to_bytes(res.into_body()).await.ec()?;
     let s = String::from_utf8_lossy(&buf);
-    //info!("received from server: {s}");
     let res: JsonValue = serde_json::from_str(&s)?;
     let pretty = serde_json::to_string_pretty(&res)?;
     info!("{pretty}");

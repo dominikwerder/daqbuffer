@@ -830,7 +830,7 @@ impl TimeBinnerTy for ChannelEventsTimeBinner {
     type Output = Box<dyn TimeBinned>;
 
     fn ingest(&mut self, item: &mut Self::Input) {
-        info!("{}  INGEST", Self::type_name());
+        trace!("{}  INGEST", Self::type_name());
         match item {
             ChannelEvents::Events(item) => {
                 if self.binner.is_none() {

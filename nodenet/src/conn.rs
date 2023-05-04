@@ -74,9 +74,8 @@ async fn make_channel_events_stream_data(
     chconf: ChConf,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
-    info!("nodenet::conn::make_channel_events_stream");
     if evq.channel().backend() == TEST_BACKEND {
-        warn!("GENERATE INMEM TEST DATA");
+        debug!("use test backend data  {}", TEST_BACKEND);
         let node_count = node_config.node_config.cluster.nodes.len() as u64;
         let node_ix = node_config.ix as u64;
         let chn = evq.channel().name();
@@ -162,7 +161,6 @@ async fn make_channel_events_stream(
 }
 
 async fn events_get_input_frames(netin: OwnedReadHalf) -> Result<Vec<InMemoryFrame>, Error> {
-    warn!("fix magic inmem_bufcap option");
     let perf_opts = PerfOpts::default();
     let mut h = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
     let mut frames = Vec::new();
@@ -223,7 +221,7 @@ async fn events_parse_input_query(
             return Err(e);
         }
     };
-    info!("events_conn_handler_inner_try  evq {:?}", evq);
+    debug!("events_parse_input_query  {:?}", evq);
     let chconf = crate::channelconfig::channel_config(evq.range().try_into()?, evq.channel().clone(), ncc)
         .await
         .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?;
@@ -241,7 +239,6 @@ async fn events_conn_handler_inner_try(
         Ok(x) => x,
         Err(e) => return Err((e, netout).into()),
     };
-    debug!("events_conn_handler input frames received");
     let (evq, chconf) = match events_parse_input_query(frames, node_config).await {
         Ok(x) => x,
         Err(e) => return Err((e, netout).into()),

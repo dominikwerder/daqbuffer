@@ -21,7 +21,7 @@ pub async fn fetch_events_json(query: PlainEventsQuery, cluster: &Cluster) -> Re
     let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    info!("http get {}", url);
+    debug!("fetch_events_json  url {}", url);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(url.to_string())
@@ -54,7 +54,7 @@ pub async fn fetch_binned_json(query: BinnedQuery, cluster: &Cluster) -> Result<
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", hp.host, hp.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    info!("http get {}", url);
+    debug!("fetch_binned_json  url {}", url);
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(url.to_string())

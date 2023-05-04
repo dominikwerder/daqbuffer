@@ -105,7 +105,7 @@ where
         self.process_item(item);
         let mut do_emit = false;
         if self.done_first_input == false {
-            info!(
+            debug!(
                 "emit container after the first input  len {}  binner {}",
                 item_len,
                 self.binner.is_some()
@@ -127,7 +127,6 @@ where
                 if let Some(bins) = binner.bins_ready() {
                     Ok(Break(Ready(sitem_data(bins))))
                 } else {
-                    warn!("must emit but got nothing");
                     if let Some(bins) = binner.empty() {
                         Ok(Break(Ready(sitem_data(bins))))
                     } else {
@@ -193,7 +192,6 @@ where
                 self.done_data = true;
                 Ok(Break(Ready(sitem_data(bins))))
             } else {
-                warn!("must emit but got nothing");
                 if let Some(bins) = binner.empty() {
                     self.done_data = true;
                     Ok(Break(Ready(sitem_data(bins))))

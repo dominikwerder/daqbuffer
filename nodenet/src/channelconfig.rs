@@ -14,16 +14,7 @@ pub async fn channel_config(range: NanoRange, channel: Channel, ncc: &NodeConfig
     if channel.backend() == TEST_BACKEND {
         let backend = channel.backend().into();
         // TODO the series-ids here are just random. Need to integrate with better test setup.
-        let ret = if channel.name() == "inmem-d0-i32" {
-            let ret = ChConf {
-                backend,
-                series: Some(1),
-                name: channel.name().into(),
-                scalar_type: ScalarType::I32,
-                shape: Shape::Scalar,
-            };
-            Ok(ret)
-        } else if channel.name() == "scalar-i32-be" {
+        let ret = if channel.name() == "scalar-i32-be" {
             let ret = ChConf {
                 backend,
                 series: Some(2),

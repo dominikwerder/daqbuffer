@@ -61,7 +61,7 @@ impl GenerateI32V00 {
         let mut item = EventsDim0::empty();
         let mut ts = self.ts;
         loop {
-            if self.ts >= self.tsend || item.byte_estimate() > 200 {
+            if self.ts >= self.tsend || item.byte_estimate() > 100 {
                 break;
             }
             let pulse = ts;
@@ -133,8 +133,8 @@ impl GenerateI32V01 {
         let ts = (range.beg / ivl + node_ix - if one_before_range { 1 } else { 0 }) * ivl;
         let tsend = range.end.min(DAY);
         let have_range_final = range.end < (DAY - ivl);
-        info!(
-            "START GENERATOR GenerateI32V01  ivl {}  dts {}  ts {}  one_before_range {}",
+        debug!(
+            "GenerateI32V01::new  ivl {}  dts {}  ts {}  one_before_range {}",
             ivl, dts, ts, one_before_range
         );
         Self {
@@ -157,7 +157,7 @@ impl GenerateI32V01 {
         let mut item = EventsDim0::empty();
         let mut ts = self.ts;
         loop {
-            if self.ts >= self.tsend || item.byte_estimate() > 200 {
+            if self.ts >= self.tsend || item.byte_estimate() > 100 {
                 break;
             }
             let pulse = ts;
@@ -235,8 +235,8 @@ impl GenerateF64V00 {
         let dts = ivl * node_count as u64;
         let ts = (range.beg / ivl + node_ix - if one_before_range { 1 } else { 0 }) * ivl;
         let tsend = range.end;
-        info!(
-            "START GENERATOR GenerateF64V00  ivl {}  dts {}  ts {}  one_before_range {}",
+        debug!(
+            "GenerateF64V00::new  ivl {}  dts {}  ts {}  one_before_range {}",
             ivl, dts, ts, one_before_range
         );
         Self {
@@ -257,7 +257,7 @@ impl GenerateF64V00 {
         let mut item = EventsDim1::empty();
         let mut ts = self.ts;
         loop {
-            if self.ts >= self.tsend || item.byte_estimate() > 1024 * 4 {
+            if self.ts >= self.tsend || item.byte_estimate() > 400 {
                 break;
             }
             let pulse = ts;
@@ -278,7 +278,7 @@ impl GenerateF64V00 {
             ts += self.dts;
         }
         self.ts = ts;
-        info!("generated  len {}", item.len());
+        trace!("generated  len {}", item.len());
         let w = ChannelEvents::Events(Box::new(item) as _);
         let w = sitem_data(w);
         w

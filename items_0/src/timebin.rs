@@ -213,7 +213,7 @@ impl TimeBinnerTy for TimeBinnerDynStruct {
     type Output = Box<dyn TimeBinned>;
 
     fn ingest(&mut self, item: &mut Self::Input) {
-        info!("{}  INGEST", Self::type_name());
+        trace!("{}  INGEST", Self::type_name());
         if self.binner.is_none() {
             self.binner = Some(Box::new(TimeBinnableTy::time_binner_new(
                 item,

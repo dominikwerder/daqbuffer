@@ -105,11 +105,10 @@ async fn plain_events_json(
     // Update the series id since we don't require some unique identifier yet.
     let mut query = query;
     let kk = chconf.try_series();
-    info!("kk debug {kk:?}");
     let kk = kk.context("plain_events_json");
     if let Err(e) = &kk {
-        info!("kk ctx debug {kk:?}");
-        info!("kk e ctx display {e}");
+        warn!("kk ctx debug {kk:?}");
+        warn!("kk e ctx display {e}");
     }
     query.set_series_id(kk?);
     let query = query;

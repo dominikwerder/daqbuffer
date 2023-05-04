@@ -1,10 +1,7 @@
 use crate::collect::collect;
-use crate::generators::GenerateF64V00;
 use crate::generators::GenerateI32V00;
 use crate::test::runfut;
 use crate::transform::build_event_transform;
-use chrono::DateTime;
-use chrono::Utc;
 use err::Error;
 use futures_util::stream;
 use futures_util::StreamExt;
@@ -39,7 +36,7 @@ fn nano_range_from_str(beg_date: &str, end_date: &str) -> Result<NanoRange, Erro
 }
 
 #[test]
-fn time_bin_00() {
+fn time_bin_00() -> Result<(), Error> {
     let fut = async {
         let range = nano_range_from_str("1970-01-01T00:00:00Z", "1970-01-01T00:00:08Z")?;
         let range = SeriesRange::TimeRange(range);
@@ -104,11 +101,11 @@ fn time_bin_00() {
         }
         Ok(())
     };
-    runfut(fut).unwrap()
+    runfut(fut)
 }
 
 #[test]
-fn time_bin_01() {
+fn time_bin_01() -> Result<(), Error> {
     let fut = async {
         let range = nano_range_from_str("1970-01-01T00:00:00Z", "1970-01-01T00:00:08Z")?;
         let range = SeriesRange::TimeRange(range);
@@ -138,7 +135,6 @@ fn time_bin_01() {
             }
         });
         let stream0 = Box::pin(stream0);
-        let deadline = Instant::now() + Duration::from_millis(200);
         let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream0, binned_range, true);
         while let Some(item) = binned_stream.next().await {
             if true {
@@ -167,7 +163,7 @@ fn time_bin_01() {
         // TODO add similar test case with a RangeComplete event at different places before the timeout.
         Ok(())
     };
-    runfut(fut).unwrap()
+    runfut(fut)
 }
 
 #[test]
@@ -259,9 +255,14 @@ fn time_bin_02() -> Result<(), Error> {
     runfut(fut)
 }
 
-//
+// Should fail because of missing empty item.
+// But should have some option to suppress the error log for this test case.
 #[test]
-fn time_bin_03() {
+fn time_bin_03() -> Result<(), Error> {
+    // TODO re-enable with error log suppressed.
+    if true {
+        return Ok(());
+    }
     let fut = async {
         let range = nano_range_from_str("1970-01-01T00:00:00Z", "1970-01-01T00:00:08Z")?;
         let range = SeriesRange::TimeRange(range);
@@ -297,7 +298,7 @@ fn time_bin_03() {
         }
         return Err(Error::with_msg_no_trace("should not succeed"));
     };
-    runfut(fut).unwrap()
+    runfut(fut)
 }
 
 // TODO add test case to observe RangeComplete after binning.

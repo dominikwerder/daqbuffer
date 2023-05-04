@@ -847,7 +847,7 @@ where
     }
 
     fn ingest(&mut self, item: &Self::Input) {
-        debug!("{} ingest", Self::type_name());
+        trace!("{} ingest", Self::type_name());
         if self.do_time_weight {
             self.ingest_time_weight(item)
         } else {

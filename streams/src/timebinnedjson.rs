@@ -53,7 +53,7 @@ async fn timebinnable_stream(
     let stream = stream.map(move |k| {
         on_sitemty_data!(k, |k| {
             let k: Box<dyn Events> = Box::new(k);
-            info!("-------------------------\ngot len {}", k.len());
+            trace!("got len {}", k.len());
             let k = tr.0.transform(k);
             Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
         })
@@ -89,7 +89,7 @@ fn timebinned_to_collectable(
     let stream = stream.map(|k| {
         on_sitemty_data!(k, |k| {
             let k: Box<dyn Collectable> = Box::new(k);
-            info!("-------------------------\ngot len {}", k.len());
+            trace!("got len {}", k.len());
             Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
         })
     });
@@ -98,7 +98,6 @@ fn timebinned_to_collectable(
 }
 
 pub async fn timebinned_json(query: BinnedQuery, _chconf: ChConf, cluster: Cluster) -> Result<JsonValue, Error> {
-    info!("~~~~~~~~~~~ timebinned_json");
     let deadline = Instant::now().checked_add(query.timeout_value()).unwrap();
     let binned_range = BinnedRangeEnum::covering_range(query.range().clone(), query.bin_count())?;
     let collect_max = 10000;

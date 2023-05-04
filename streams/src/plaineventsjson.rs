@@ -47,7 +47,7 @@ pub async fn plain_events_json(
     let stream = stream.map(move |k| {
         on_sitemty_data!(k, |k| {
             let k: Box<dyn Events> = Box::new(k);
-            info!("-------------------------\ngot len {}", k.len());
+            trace!("got len {}", k.len());
             let k = tr.0.transform(k);
             let k: Box<dyn Collectable> = Box::new(k);
             Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))

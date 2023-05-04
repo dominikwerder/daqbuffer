@@ -5,8 +5,6 @@ mod api4;
 pub mod archapp;
 pub mod binnedjson;
 #[cfg(test)]
-mod events;
-#[cfg(test)]
 mod timeweightedjson;
 
 use bytes::BytesMut;

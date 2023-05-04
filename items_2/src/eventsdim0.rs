@@ -71,6 +71,10 @@ pub struct EventsDim0<STY> {
 }
 
 impl<STY> EventsDim0<STY> {
+    pub fn type_name() -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
     pub fn push_front(&mut self, ts: u64, pulse: u64, value: STY) {
         self.tss.push_front(ts);
         self.pulses.push_front(pulse);
@@ -740,8 +744,9 @@ impl<STY> TypeName for EventsDim0<STY> {
 
 impl<STY: ScalarOps> EventsNonObj for EventsDim0<STY> {
     fn into_tss_pulses(self: Box<Self>) -> (VecDeque<u64>, VecDeque<u64>) {
-        info!(
-            "EventsDim0::into_tss_pulses  len {}  len {}",
+        trace!(
+            "{}::into_tss_pulses  len {}  len {}",
+            Self::type_name(),
             self.tss.len(),
             self.pulses.len()
         );
@@ -985,19 +990,19 @@ impl<STY: ScalarOps> TimeBinner for EventsDim0TimeBinner<STY> {
         // That needs modified interfaces which can take and yield the start and latest index.
         loop {
             while item.starts_after(self.agg.range()) {
-                trace_ingest_item!("{self_name}  IGNORE ITEM  AND CYCLE  BECAUSE item.starts_after");
+                trace_ingest_item!("{self_name}  ignore item and cycle  starts_after");
                 self.cycle();
                 if self.rng.is_none() {
-                    warn!("{self_name}  no more bin in edges B");
+                    debug!("{self_name}  no more bin in edges after starts_after");
                     return;
                 }
             }
             if item.ends_before(self.agg.range()) {
-                trace_ingest_item!("{self_name}  IGNORE ITEM  BECAUSE ends_before");
+                trace_ingest_item!("{self_name}  ignore item  ends_before");
                 return;
             } else {
                 if self.rng.is_none() {
-                    trace_ingest_item!("{self_name}  no more bin in edges D");
+                    trace_ingest_item!("{self_name}  no more bin in edges");
                     return;
                 } else {
                     if let Some(item) = item
@@ -1012,13 +1017,13 @@ impl<STY: ScalarOps> TimeBinner for EventsDim0TimeBinner<STY> {
                             trace_ingest_item!("{self_name}  FED ITEM, ENDS AFTER  agg-range {:?}", self.agg.range());
                             self.cycle();
                             if self.rng.is_none() {
-                                warn!("{self_name}  no more bin in edges C");
+                                warn!("{self_name}  no more bin in edges after ingest and cycle");
                                 return;
                             } else {
-                                trace_ingest_item!("{self_name}  FED ITEM, CYCLED, CONTINUE.");
+                                trace_ingest_item!("{self_name}  item fed, cycled, continue");
                             }
                         } else {
-                            trace_ingest_item!("{self_name}  FED ITEM.");
+                            trace_ingest_item!("{self_name}  item fed, break");
                             break;
                         }
                     } else {

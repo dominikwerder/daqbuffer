@@ -92,7 +92,7 @@ impl Collect {
                         Ok(())
                     }
                     RangeCompletableItem::Data(mut item) => {
-                        info!("collect sees len {}", item.len());
+                        trace!("collect sees len {}", item.len());
                         let coll = self.collector.get_or_insert_with(|| item.new_collector());
                         coll.ingest(&mut item);
                         if coll.len() as u64 >= self.events_max {
@@ -245,7 +245,7 @@ where
                         }
                     }
                     RangeCompletableItem::Data(mut item) => {
-                        info!("collect sees len {}", item.len());
+                        trace!("collect sees len {}", item.len());
                         if collector.is_none() {
                             let c = item.new_collector();
                             collector = Some(c);

@@ -27,20 +27,20 @@ const DO_DETECT_NON_MONO: bool = true;
 
 #[allow(unused)]
 macro_rules! trace2 {
-    ($($arg:tt)*) => ();
-    ($($arg:tt)*) => (trace!($($arg)*));
+    ($($arg:tt)*) => {};
+    ($($arg:tt)*) => { trace!($($arg)*) };
 }
 
 #[allow(unused)]
 macro_rules! trace3 {
-    ($($arg:tt)*) => ();
-    ($($arg:tt)*) => (trace!($($arg)*));
+    ($($arg:tt)*) => {};
+    ($($arg:tt)*) => { trace!($($arg)*) };
 }
 
 #[allow(unused)]
 macro_rules! trace4 {
-    ($($arg:tt)*) => ();
-    ($($arg:tt)*) => (trace!($($arg)*));
+    ($($arg:tt)*) => {};
+    ($($arg:tt)*) => { trace!($($arg)*) };
 }
 
 pub trait Mergeable<Rhs = Self>: fmt::Debug + WithLen + ByteEstimate + Unpin {
@@ -296,7 +296,7 @@ where
                                 }
                                 RangeCompletableItem::RangeComplete => {
                                     self.range_complete[i] = true;
-                                    debug!("Merger  range_complete {:?}", self.range_complete);
+                                    trace!("range_complete {:?}", self.range_complete);
                                     continue;
                                 }
                             },
@@ -362,7 +362,7 @@ where
         if let Some(o) = self.out.as_ref() {
             if o.len() >= self.out_max_len || o.byte_estimate() >= OUT_MAX_BYTES || self.do_clear_out || last_emit {
                 if o.len() > self.out_max_len {
-                    info!("MERGER OVERWEIGHT ITEM  {} vs {}", o.len(), self.out_max_len);
+                    debug!("MERGER OVERWEIGHT ITEM  {} vs {}", o.len(), self.out_max_len);
                 }
                 trace3!("decide to output");
                 self.do_clear_out = false;
@@ -437,7 +437,7 @@ where
                 }
             } else if let Some(item) = self.out_of_band_queue.pop_front() {
                 let item = on_sitemty_data!(item, |k: T| {
-                    info!("++++++++++++   EMIT OUT OF BAND DATA  len {}", k.len());
+                    trace3!("emit out-of-band data  len {}", k.len());
                     sitem_data(k)
                 });
                 trace!("emit out-of-band");

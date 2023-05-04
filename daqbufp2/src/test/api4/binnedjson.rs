@@ -364,57 +364,6 @@ fn binned_d0_json_04() -> Result<(), Error> {
     taskrun::run(fut)
 }
 
-#[test]
-fn binned_inmem_d0_json_00() -> Result<(), Error> {
-    let fut = async {
-        let rh = require_test_hosts_running()?;
-        let cluster = &rh.cluster;
-        let query = make_query(
-            "inmem-d0-i32",
-            "1970-01-01T00:20:04.000Z",
-            "1970-01-01T00:21:10.000Z",
-            10,
-        )?;
-        let jsv = fetch_binned_json(query, cluster).await?;
-        let res: BinsDim0CollectedResult<i32> = serde_json::from_value(jsv)?;
-        assert_eq!(res.range_final(), true);
-        assert_eq!(res.timed_out(), false);
-        assert_eq!(res.len(), 14);
-        assert_eq!(res.ts_anchor_sec(), 1200);
-        {
-            let v1: Vec<_> = res.counts().iter().map(|x| *x).collect();
-            assert_eq!(&v1, &[5; 14]);
-        }
-        {
-            let v1: Vec<_> = res.ts1_off_ms().iter().map(|x| *x).collect();
-            let v2: Vec<_> = (0..14).into_iter().map(|x| 5000 * x).collect();
-            assert_eq!(&v1, &v2);
-        }
-        {
-            let v1: Vec<_> = res.ts2_off_ms().iter().map(|x| *x).collect();
-            let v2: Vec<_> = (1..15).into_iter().map(|x| 5000 * x).collect();
-            assert_eq!(&v1, &v2);
-        }
-        {
-            let v1: Vec<_> = res.mins().iter().map(|x| *x).collect();
-            let v2: Vec<_> = (0..14).into_iter().map(|x| 1200 + 5 * x).collect();
-            assert_eq!(&v1, &v2);
-        }
-        {
-            let v1: Vec<_> = res.maxs().iter().map(|x| *x).collect();
-            let v2: Vec<_> = (0..14).into_iter().map(|x| 1204 + 5 * x).collect();
-            assert_eq!(&v1, &v2);
-        }
-        {
-            let v1: Vec<_> = res.avgs().iter().map(|x| *x).collect();
-            let v2: Vec<_> = (0..14).into_iter().map(|x| 1202. + 5. * x as f32).collect();
-            assert_eq!(f32_iter_cmp_near(v1, v2, 0.05, 0.05), true);
-        }
-        Ok(())
-    };
-    taskrun::run(fut)
-}
-
 async fn get_binned_json(
     channel: Channel,
     beg_date: &str,
@@ -453,7 +402,7 @@ async fn get_binned_json(
     let s = String::from_utf8_lossy(&buf);
     let res: JsonValue = serde_json::from_str(&s)?;
     let pretty = serde_json::to_string_pretty(&res)?;
-    info!("Received from remote:\n{pretty}");
+    debug!("get_binned_json  pretty {pretty}");
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     // TODO add timeout

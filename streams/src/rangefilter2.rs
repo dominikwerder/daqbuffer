@@ -44,8 +44,8 @@ where
     }
 
     pub fn new(inp: S, range: NanoRange, one_before_range: bool) -> Self {
-        info!(
-            "----------------------------\n------------------------\n------------------------\n{}::new  range: {:?}  one_before_range: {:?}",
+        trace!(
+            "{}::new  range: {:?}  one_before_range: {:?}",
             Self::type_name(),
             range,
             one_before_range
