@@ -14,7 +14,6 @@ use items_0::collect_s::ToJsonBytes;
 use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
 use items_0::overlap::HasTimestampDeque;
-use items_0::overlap::RangeOverlapCmp;
 use items_0::scalar_ops::ScalarOps;
 use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinned;
@@ -638,7 +637,7 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for EventsDim1Aggregator<NTY> {
         }
     }
 
-    fn result_reset(&mut self, range: SeriesRange, expand: bool) -> Self::Output {
+    fn result_reset(&mut self, range: SeriesRange) -> Self::Output {
         /*trace!("result_reset  {}  {}", range.beg, range.end);
         if self.do_time_weight {
             self.result_reset_time_weight(range, expand)

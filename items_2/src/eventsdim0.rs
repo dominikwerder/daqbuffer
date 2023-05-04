@@ -1,6 +1,7 @@
 use crate::binsdim0::BinsDim0;
 use crate::framable::FrameType;
 use crate::framable::FrameTypeStatic;
+use crate::timebin::TimeBinnerCommonV0Trait;
 use crate::IsoDateTime;
 use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
@@ -15,11 +16,12 @@ use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::overlap::HasTimestampDeque;
-use items_0::overlap::RangeOverlapCmp;
 use items_0::scalar_ops::ScalarOps;
 use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinned;
 use items_0::timebin::TimeBinner;
+use items_0::AppendAllFrom;
+use items_0::AppendEmptyBin;
 use items_0::Appendable;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
@@ -713,7 +715,7 @@ impl<STY: ScalarOps> TimeBinnableTypeAggregator for EventsDim0Aggregator<STY> {
         }
     }
 
-    fn result_reset(&mut self, range: SeriesRange, _expand: bool) -> Self::Output {
+    fn result_reset(&mut self, range: SeriesRange) -> Self::Output {
         trace!("result_reset  {:?}", range);
         if self.do_time_weight {
             self.result_reset_time_weight(range)
@@ -959,6 +961,50 @@ impl<STY: ScalarOps> EventsDim0TimeBinner<STY> {
     }
 }
 
+impl<STY: ScalarOps> TimeBinnerCommonV0Trait for EventsDim0TimeBinner<STY> {
+    type Input = <EventsDim0Aggregator<STY> as TimeBinnableTypeAggregator>::Input;
+    type Output = <EventsDim0Aggregator<STY> as TimeBinnableTypeAggregator>::Output;
+
+    fn type_name() -> &'static str {
+        Self::type_name()
+    }
+
+    fn common_range_current(&self) -> &SeriesRange {
+        self.agg.range()
+    }
+
+    fn common_cycle(&mut self) {
+        todo!()
+    }
+
+    fn common_has_more_range(&self) -> bool {
+        todo!()
+    }
+
+    fn common_bins_ready_count(&self) -> usize {
+        todo!()
+    }
+
+    fn common_next_bin_range(&mut self) -> Option<SeriesRange> {
+        todo!()
+    }
+
+    fn common_take_or_append_all_from(&mut self, mut item: Self::Output) {
+        match self.ready.as_mut() {
+            Some(ready) => {
+                ready.append_all_from(&mut item);
+            }
+            None => {
+                self.ready = Some(item);
+            }
+        }
+    }
+
+    fn common_result_reset(&mut self, range: SeriesRange) -> Self::Output {
+        todo!()
+    }
+}
+
 impl<STY: ScalarOps> TimeBinner for EventsDim0TimeBinner<STY> {
     fn bins_ready_count(&self) -> usize {
         match &self.ready {
@@ -1042,18 +1088,18 @@ impl<STY: ScalarOps> TimeBinner for EventsDim0TimeBinner<STY> {
         // the rest of the time range.
         if self.rng.is_none() {
         } else {
-            let expand = true;
             let range_next = self.next_bin_range();
             self.rng = range_next.clone();
             let mut bins = if let Some(range_next) = range_next {
-                self.agg.result_reset(range_next, expand)
+                self.agg.result_reset(range_next)
             } else {
                 // Acts as placeholder
+                // TODO clean up
                 let range_next = NanoRange {
                     beg: u64::MAX - 1,
                     end: u64::MAX,
                 };
-                self.agg.result_reset(range_next.into(), expand)
+                self.agg.result_reset(range_next.into())
             };
             if bins.len() != 1 {
                 error!("{self_name}::push_in_progress  bins.len() {}", bins.len());
@@ -1085,7 +1131,7 @@ impl<STY: ScalarOps> TimeBinner for EventsDim0TimeBinner<STY> {
             if let Some(range) = range_next {
                 let mut bins = BinsDim0::empty();
                 if range.is_time() {
-                    bins.append_zero(range.beg_u64(), range.end_u64());
+                    bins.append_empty_bin(range.beg_u64(), range.end_u64());
                 } else {
                     error!("TODO  {self_name}::cycle  is_pulse");
                 }

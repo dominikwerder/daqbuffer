@@ -12,7 +12,6 @@ use items_0::collect_s::ToJsonBytes;
 use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
 use items_0::overlap::HasTimestampDeque;
-use items_0::overlap::RangeOverlapCmp;
 use items_0::scalar_ops::ScalarOps;
 use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinned;
@@ -508,14 +507,14 @@ impl<STY: ScalarOps> TimeBinner for EventsXbinDim0TimeBinner<STY> {
             trace!("\n+++++\n+++++\n{}  range_next {:?}", Self::type_name(), range_next);
             self.rng = range_next.clone();
             let mut bins = if let Some(range_next) = range_next {
-                self.agg.result_reset(range_next, expand)
+                self.agg.result_reset(range_next)
             } else {
                 // Acts as placeholder
                 let range_next = NanoRange {
                     beg: u64::MAX - 1,
                     end: u64::MAX,
                 };
-                self.agg.result_reset(range_next.into(), expand)
+                self.agg.result_reset(range_next.into())
             };
             if bins.len() != 1 {
                 error!("{}::push_in_progress  bins.len() {}", Self::type_name(), bins.len());
@@ -855,7 +854,7 @@ where
         }
     }
 
-    fn result_reset(&mut self, range: SeriesRange, expand: bool) -> Self::Output {
+    fn result_reset(&mut self, range: SeriesRange) -> Self::Output {
         if self.do_time_weight {
             self.result_reset_time_weight(range)
         } else {

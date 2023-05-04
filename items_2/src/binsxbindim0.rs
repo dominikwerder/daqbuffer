@@ -537,7 +537,7 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for BinsXbinDim0Aggregator<NTY> 
         todo!()
     }
 
-    fn result_reset(&mut self, range: SeriesRange, _expand: bool) -> Self::Output {
+    fn result_reset(&mut self, range: SeriesRange) -> Self::Output {
         /*if self.sumc > 0 {
             self.avg = self.sum / self.sumc as f32;
         }

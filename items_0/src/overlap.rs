@@ -9,11 +9,6 @@ pub trait HasTimestampDeque {
     fn pulse_max(&self) -> Option<u64>;
 }
 
-pub trait RangeOverlapCmp {
-    fn range_overlap_cmp_beg(a: u64, b: u64) -> bool;
-    fn range_overlap_cmp_end(a: u64, b: u64) -> bool;
-}
-
 pub trait RangeOverlapInfo {
     fn ends_before(&self, range: &SeriesRange) -> bool;
     fn ends_after(&self, range: &SeriesRange) -> bool;

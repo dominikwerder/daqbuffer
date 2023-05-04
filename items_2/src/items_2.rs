@@ -197,7 +197,7 @@ pub trait TimeBinnableTypeAggregator: Send {
     type Output: TimeBinnableType;
     fn range(&self) -> &SeriesRange;
     fn ingest(&mut self, item: &Self::Input);
-    fn result_reset(&mut self, range: SeriesRange, expand: bool) -> Self::Output;
+    fn result_reset(&mut self, range: SeriesRange) -> Self::Output;
 }
 
 pub trait ChannelEventsInput: Stream<Item = Sitemty<ChannelEvents>> + EventTransform + Send {}

@@ -44,6 +44,10 @@ pub trait AppendEmptyBin {
     fn append_empty_bin(&mut self, ts1: u64, ts2: u64);
 }
 
+pub trait AppendAllFrom {
+    fn append_all_from(&mut self, src: &mut Self);
+}
+
 pub trait AsAnyRef {
     fn as_any_ref(&self) -> &dyn Any;
 }

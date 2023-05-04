@@ -18,6 +18,7 @@ use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinned;
 use items_0::timebin::TimeBinner;
 use items_0::timebin::TimeBins;
+use items_0::AppendAllFrom;
 use items_0::AppendEmptyBin;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
@@ -104,24 +105,6 @@ impl<NTY: ScalarOps> BinsDim0<NTY> {
         self.mins.push_back(min);
         self.maxs.push_back(max);
         self.avgs.push_back(avg);
-    }
-
-    pub fn append_zero(&mut self, beg: u64, end: u64) {
-        self.ts1s.push_back(beg);
-        self.ts2s.push_back(end);
-        self.counts.push_back(0);
-        self.mins.push_back(NTY::zero_b());
-        self.maxs.push_back(NTY::zero_b());
-        self.avgs.push_back(0.);
-    }
-
-    pub fn append_all_from(&mut self, src: &mut Self) {
-        self.ts1s.extend(src.ts1s.drain(..));
-        self.ts2s.extend(src.ts2s.drain(..));
-        self.counts.extend(src.counts.drain(..));
-        self.mins.extend(src.mins.drain(..));
-        self.maxs.extend(src.maxs.drain(..));
-        self.avgs.extend(src.avgs.drain(..));
     }
 
     pub fn equal_slack(&self, other: &Self) -> bool {
@@ -223,6 +206,17 @@ impl<NTY: ScalarOps> AppendEmptyBin for BinsDim0<NTY> {
         self.mins.push_back(NTY::zero_b());
         self.maxs.push_back(NTY::zero_b());
         self.avgs.push_back(0.);
+    }
+}
+
+impl<NTY: ScalarOps> AppendAllFrom for BinsDim0<NTY> {
+    fn append_all_from(&mut self, src: &mut Self) {
+        self.ts1s.extend(src.ts1s.drain(..));
+        self.ts2s.extend(src.ts2s.drain(..));
+        self.counts.extend(src.counts.drain(..));
+        self.mins.extend(src.mins.drain(..));
+        self.maxs.extend(src.maxs.drain(..));
+        self.avgs.extend(src.avgs.drain(..));
     }
 }
 
@@ -559,7 +553,7 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for BinsDim0Aggregator<NTY> {
         todo!()
     }
 
-    fn result_reset(&mut self, range: SeriesRange, _expand: bool) -> Self::Output {
+    fn result_reset(&mut self, range: SeriesRange) -> Self::Output {
         /*if self.sumc > 0 {
             self.avg = self.sum / self.sumc as f32;
         }
