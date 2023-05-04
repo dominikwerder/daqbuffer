@@ -5,6 +5,7 @@ use items_0::timebin::TimeBinnable;
 use items_0::AppendEmptyBin;
 use items_0::Appendable;
 use items_0::Empty;
+use items_0::HasNonemptyFirstBin;
 use items_0::WithLen;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
@@ -31,15 +32,15 @@ macro_rules! trace2 {
 
 pub trait TimeBinnerCommonV0Trait {
     type Input: RangeOverlapInfo + 'static;
-    type Output: WithLen + Empty + AppendEmptyBin + 'static;
+    type Output: WithLen + Empty + AppendEmptyBin + HasNonemptyFirstBin + 'static;
     fn type_name() -> &'static str;
     fn common_bins_ready_count(&self) -> usize;
     fn common_range_current(&self) -> &SeriesRange;
     fn common_next_bin_range(&mut self) -> Option<SeriesRange>;
-    fn common_cycle(&mut self);
     fn common_has_more_range(&self) -> bool;
     fn common_take_or_append_all_from(&mut self, item: Self::Output);
     fn common_result_reset(&mut self, range: SeriesRange) -> Self::Output;
+    fn common_agg_ingest(&mut self, item: &mut Self::Input);
 }
 
 pub struct TimeBinnerCommonV0Func {}
@@ -50,7 +51,7 @@ impl TimeBinnerCommonV0Func {
         B: TimeBinnerCommonV0Trait,
     {
         //self.agg.ingest(item);
-        todo!()
+        <B as TimeBinnerCommonV0Trait>::common_agg_ingest(binner, item)
     }
 
     pub fn ingest<B>(binner: &mut B, item: &mut dyn TimeBinnable)
@@ -120,7 +121,7 @@ impl TimeBinnerCommonV0Func {
         }
     }
 
-    fn push_in_progress<B>(binner: &mut B, push_empty: bool)
+    pub fn push_in_progress<B>(binner: &mut B, push_empty: bool)
     where
         B: TimeBinnerCommonV0Trait,
     {
@@ -148,15 +149,14 @@ impl TimeBinnerCommonV0Func {
                 error!("{self_name}::push_in_progress  bins.len() {}", bins.len());
                 return;
             } else {
-                //if push_empty || bins.counts[0] != 0 {
-                if push_empty {
+                if push_empty || HasNonemptyFirstBin::has_nonempty_first_bin(&bins) {
                     TimeBinnerCommonV0Trait::common_take_or_append_all_from(binner, bins);
                 }
             }
         }
     }
 
-    fn cycle<B>(binner: &mut B)
+    pub fn cycle<B>(binner: &mut B)
     where
         B: TimeBinnerCommonV0Trait,
     {

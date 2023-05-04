@@ -48,6 +48,11 @@ pub trait AppendAllFrom {
     fn append_all_from(&mut self, src: &mut Self);
 }
 
+// TODO check usage, probably only for legacy
+pub trait HasNonemptyFirstBin {
+    fn has_nonempty_first_bin(&self) -> bool;
+}
+
 pub trait AsAnyRef {
     fn as_any_ref(&self) -> &dyn Any;
 }

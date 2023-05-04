@@ -23,6 +23,7 @@ use items_0::AppendEmptyBin;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use items_0::Empty;
+use items_0::HasNonemptyFirstBin;
 use items_0::TypeName;
 use items_0::WithLen;
 use netpod::is_false;
@@ -175,6 +176,12 @@ impl<NTY> Empty for BinsDim0<NTY> {
 impl<NTY> WithLen for BinsDim0<NTY> {
     fn len(&self) -> usize {
         self.ts1s.len()
+    }
+}
+
+impl<STY: ScalarOps> HasNonemptyFirstBin for BinsDim0<STY> {
+    fn has_nonempty_first_bin(&self) -> bool {
+        self.counts.front().map_or(false, |x| *x > 0)
     }
 }
 
