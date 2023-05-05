@@ -1,6 +1,10 @@
 use crate::binsdim0::BinsDim0;
 use crate::framable::FrameType;
 use crate::framable::FrameTypeStatic;
+use crate::timebin::ChooseIndicesForTimeBin;
+use crate::timebin::ChooseIndicesForTimeBinEvents;
+use crate::timebin::TimeAggregatorCommonV0Func;
+use crate::timebin::TimeAggregatorCommonV0Trait;
 use crate::timebin::TimeBinnerCommonV0Func;
 use crate::timebin::TimeBinnerCommonV0Trait;
 use crate::IsoDateTime;
@@ -183,6 +187,16 @@ impl<STY: ScalarOps> HasTimestampDeque for EventsDim0<STY> {
 }
 
 items_0::impl_range_overlap_info_events!(EventsDim0);
+
+impl<STY> ChooseIndicesForTimeBin for EventsDim0<STY> {
+    fn choose_indices_unweight(&self, beg: u64, end: u64) -> (Option<usize>, usize, usize) {
+        ChooseIndicesForTimeBinEvents::choose_unweight(beg, end, &self.tss)
+    }
+
+    fn choose_indices_timeweight(&self, beg: u64, end: u64) -> (Option<usize>, usize, usize) {
+        ChooseIndicesForTimeBinEvents::choose_timeweight(beg, end, &self.tss)
+    }
+}
 
 impl<STY> TimeBinnableType for EventsDim0<STY>
 where
@@ -457,6 +471,46 @@ impl<STY> Drop for EventsDim0Aggregator<STY> {
     }
 }
 
+impl<STY: ScalarOps> TimeAggregatorCommonV0Trait for EventsDim0Aggregator<STY> {
+    type Input = <Self as TimeBinnableTypeAggregator>::Input;
+    type Output = <Self as TimeBinnableTypeAggregator>::Output;
+
+    fn type_name() -> &'static str {
+        Self::type_name()
+    }
+
+    fn common_range_current(&self) -> &SeriesRange {
+        &self.range
+    }
+
+    fn common_ingest_unweight_range(&mut self, item: &Self::Input, r: std::ops::Range<usize>) {
+        for (&ts, val) in item.tss.range(r.clone()).zip(item.values.range(r)) {
+            self.apply_event_unweight(val.clone());
+            self.count += 1;
+            self.last_ts = ts;
+            self.last_val = Some(val.clone());
+        }
+    }
+
+    fn common_ingest_one_before(&mut self, item: &Self::Input, j: usize) {
+        //trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  BEFORE", i1, ts, val);
+        self.last_ts = item.tss[j];
+        self.last_val = Some(item.values[j].clone());
+    }
+
+    fn common_ingest_range(&mut self, item: &Self::Input, r: std::ops::Range<usize>) {
+        let beg = self.range.beg_u64();
+        for (&ts, val) in item.tss.range(r.clone()).zip(item.values.range(r)) {
+            if ts > beg {
+                self.apply_event_time_weight(ts);
+            }
+            self.count += 1;
+            self.last_ts = ts;
+            self.last_val = Some(val.clone());
+        }
+    }
+}
+
 impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
     fn type_name() -> &'static str {
         any::type_name::<Self>()
@@ -542,69 +596,25 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
     }
 
     fn ingest_unweight(&mut self, item: &<Self as TimeBinnableTypeAggregator>::Input) {
-        error!("TODO check again result_reset_unweight");
-        err::todo();
-        if self.range.is_time() {
-            for i1 in 0..item.tss.len() {
-                let ts = item.tss[i1];
-                let val = item.values[i1].clone();
-                if ts < self.range.beg_u64() {
-                    self.events_ignored_count += 1;
-                } else if ts >= self.range.end_u64() {
-                    self.events_ignored_count += 1;
-                    return;
-                } else {
-                    self.apply_event_unweight(val);
-                    self.count += 1;
-                }
-            }
-        } else {
-            error!("TODO ingest_unweight");
-            err::todo();
-        }
+        TimeAggregatorCommonV0Func::ingest_time_weight(self, item)
     }
 
     fn ingest_time_weight(&mut self, item: &<Self as TimeBinnableTypeAggregator>::Input) {
-        let self_name = any::type_name::<Self>();
-        trace_ingest!(
-            "{self_name}::ingest_time_weight  item len {}  items_seen {}",
-            item.len(),
-            self.items_seen
-        );
-        self.items_seen += 1;
-        if self.range.is_time() {
-            let range_beg = self.range.beg_u64();
-            let range_end = self.range.end_u64();
-            for (i1, (&ts, val)) in item.tss.iter().zip(item.values.iter()).enumerate() {
-                if ts >= range_end {
-                    trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  AFTER", i1, ts, val);
-                    self.events_ignored_count += 1;
-                    // TODO count all the ignored events for stats
-                    break;
-                } else if ts >= range_beg {
-                    trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  INSIDE", i1, ts, val);
-                    if ts > range_beg {
-                        self.apply_event_time_weight(ts);
-                    }
-                    self.count += 1;
-                    self.last_ts = ts;
-                    self.last_val = Some(val.clone());
-                } else {
-                    trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  BEFORE", i1, ts, val);
-                    self.events_ignored_count += 1;
-                    self.last_ts = ts;
-                    self.last_val = Some(val.clone());
-                }
-            }
-        } else {
-            error!("TODO ingest_unweight");
-            err::todo();
-        }
+        TimeAggregatorCommonV0Func::ingest_time_weight(self, item)
+    }
+
+    fn reset_values(&mut self, range: SeriesRange) {
+        self.int_ts = range.beg_u64();
+        trace!("ON RESET SET int_ts {:10}", self.int_ts);
+        self.range = range;
+        self.count = 0;
+        self.sum = 0.;
+        self.sumc = 0;
+        self.minmax = None;
+        self.items_seen = 0;
     }
 
     fn result_reset_unweight(&mut self, range: SeriesRange) -> BinsDim0<STY> {
-        trace!("TODO check again result_reset_unweight");
-        err::todo();
         let (min, max) = if let Some((min, max)) = self.minmax.take() {
             (min, max)
         } else {
@@ -629,14 +639,7 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
             error!("TODO result_reset_unweight");
             err::todoval()
         };
-        self.int_ts = range.beg_u64();
-        trace!("ON RESET SET int_ts {:10}", self.int_ts);
-        self.range = range;
-        self.count = 0;
-        self.sum = 0.;
-        self.sumc = 0;
-        self.minmax = None;
-        self.items_seen = 0;
+        self.reset_values(range);
         ret
     }
 
@@ -682,13 +685,7 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
             error!("TODO result_reset_time_weight");
             err::todoval()
         };
-        self.int_ts = range.beg_u64();
-        self.range = range;
-        self.count = 0;
-        self.sumc = 0;
-        self.sum = 0.;
-        self.minmax = None;
-        self.items_seen = 0;
+        self.reset_values(range);
         ret
     }
 }
