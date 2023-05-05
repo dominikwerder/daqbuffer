@@ -1062,6 +1062,10 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim1TimeBinner<NTY> {
         let ret = <EventsDim1Aggregator<NTY> as TimeBinnableTypeAggregator>::Output::empty();
         Box::new(ret)
     }
+
+    fn append_empty_until_end(&mut self) {
+        // nothing to do for events
+    }
 }
 
 impl<STY> Appendable<Vec<STY>> for EventsDim1<STY>

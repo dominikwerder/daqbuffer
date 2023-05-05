@@ -742,6 +742,14 @@ impl<NTY: ScalarOps> TimeBinner for BinsXbinDim0TimeBinner<NTY> {
         let ret = <BinsXbinDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output::empty();
         Box::new(ret)
     }
+
+    fn append_empty_until_end(&mut self) {
+        // TODO
+        todo!();
+        /*while self.rng.is_some() {
+            TimeBinnerCommonV0Func::push_in_progress(self, true);
+        }*/
+    }
 }
 
 impl<NTY: ScalarOps> TimeBinned for BinsXbinDim0<NTY> {

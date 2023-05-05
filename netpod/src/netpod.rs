@@ -1526,9 +1526,10 @@ pub struct BinnedRange<T>
 where
     T: Dim0Index,
 {
-    bin_len: T,
-    bin_off: u64,
-    bin_cnt: u64,
+    // TODO remove pub, which is currently used in tests
+    pub bin_len: T,
+    pub bin_off: u64,
+    pub bin_cnt: u64,
 }
 
 impl<T> fmt::Debug for BinnedRange<T>

@@ -45,6 +45,8 @@ pub trait TimeBinnerTy: fmt::Debug + Send + Unpin {
     fn cycle(&mut self);
 
     fn empty(&self) -> Option<Self::Output>;
+
+    fn append_empty_until_end(&mut self);
 }
 
 pub trait TimeBinnableTy: fmt::Debug + WithLen + Send + Sized {
@@ -91,7 +93,9 @@ impl TimeBinnable for Box<dyn TimeBinned> {
 
 pub trait TimeBinner: fmt::Debug + Send {
     fn ingest(&mut self, item: &mut dyn TimeBinnable);
+
     fn bins_ready_count(&self) -> usize;
+
     fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>>;
 
     /// If there is a bin in progress with non-zero count, push it to the result set.
@@ -106,6 +110,8 @@ pub trait TimeBinner: fmt::Debug + Send {
     fn set_range_complete(&mut self);
 
     fn empty(&self) -> Box<dyn TimeBinned>;
+
+    fn append_empty_until_end(&mut self);
 }
 
 // TODO remove the Any bound. Factor out into custom AsAny trait.
@@ -266,6 +272,10 @@ impl TimeBinnerTy for TimeBinnerDynStruct {
             None
         }
     }
+
+    fn append_empty_until_end(&mut self) {
+        todo!()
+    }
 }
 
 impl TimeBinner for TimeBinnerDynStruct {
@@ -294,6 +304,10 @@ impl TimeBinner for TimeBinnerDynStruct {
     }
 
     fn empty(&self) -> Box<dyn TimeBinned> {
+        todo!()
+    }
+
+    fn append_empty_until_end(&mut self) {
         todo!()
     }
 }

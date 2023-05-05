@@ -1,16 +1,10 @@
-use crate::eventsdim0::EventsDim0TimeBinner;
-use items_0::overlap::HasTimestampDeque;
 use items_0::overlap::RangeOverlapInfo;
-use items_0::scalar_ops::ScalarOps;
 use items_0::timebin::TimeBinnable;
 use items_0::AppendEmptyBin;
-use items_0::Appendable;
 use items_0::Empty;
-use items_0::Events;
 use items_0::HasNonemptyFirstBin;
 use items_0::WithLen;
 use netpod::log::*;
-use netpod::range::evrange::NanoRange;
 use netpod::range::evrange::SeriesRange;
 use std::any;
 use std::collections::VecDeque;
@@ -40,10 +34,11 @@ pub trait TimeBinnerCommonV0Trait {
     fn type_name() -> &'static str;
     fn common_bins_ready_count(&self) -> usize;
     fn common_range_current(&self) -> &SeriesRange;
-    fn common_next_bin_range(&mut self) -> Option<SeriesRange>;
     fn common_has_more_range(&self) -> bool;
+    fn common_next_bin_range(&mut self) -> Option<SeriesRange>;
+    fn common_set_current_range(&mut self, range: Option<SeriesRange>);
     fn common_take_or_append_all_from(&mut self, item: Self::Output);
-    fn common_result_reset(&mut self, range: SeriesRange) -> Self::Output;
+    fn common_result_reset(&mut self, range: Option<SeriesRange>) -> Self::Output;
     fn common_agg_ingest(&mut self, item: &mut Self::Input);
 }
 
@@ -136,19 +131,8 @@ impl TimeBinnerCommonV0Func {
         // the rest of the time range.
         if B::common_has_more_range(binner) {
             let range_next = TimeBinnerCommonV0Trait::common_next_bin_range(binner);
-            let bins = if let Some(range_next) = range_next {
-                TimeBinnerCommonV0Trait::common_result_reset(binner, range_next)
-                //self.agg.result_reset(range_next, expand)
-            } else {
-                // Acts as placeholder
-                // TODO clean up
-                let range_next = NanoRange {
-                    beg: u64::MAX - 1,
-                    end: u64::MAX,
-                };
-                TimeBinnerCommonV0Trait::common_result_reset(binner, range_next.into())
-                //self.agg.result_reset(range_next.into(), expand)
-            };
+            B::common_set_current_range(binner, range_next.clone());
+            let bins = TimeBinnerCommonV0Trait::common_result_reset(binner, range_next);
             if bins.len() != 1 {
                 error!("{self_name}::push_in_progress  bins.len() {}", bins.len());
                 return;
@@ -171,6 +155,7 @@ impl TimeBinnerCommonV0Func {
         TimeBinnerCommonV0Func::push_in_progress(binner, true);
         if TimeBinnerCommonV0Trait::common_bins_ready_count(binner) == n {
             let range_next = TimeBinnerCommonV0Trait::common_next_bin_range(binner);
+            B::common_set_current_range(binner, range_next.clone());
             if let Some(range) = range_next {
                 let mut bins = <B as TimeBinnerCommonV0Trait>::Output::empty();
                 if range.is_time() {

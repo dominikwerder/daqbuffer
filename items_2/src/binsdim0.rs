@@ -1,3 +1,5 @@
+use crate::timebin::TimeBinnerCommonV0Func;
+use crate::timebin::TimeBinnerCommonV0Trait;
 use crate::ts_offs_from_abs;
 use crate::ts_offs_from_abs_with_anchor;
 use crate::IsoDateTime;
@@ -30,9 +32,11 @@ use netpod::is_false;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::SEC;
+use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
 use netpod::CmpZero;
 use netpod::Dim0Kind;
+use netpod::TsNano;
 use serde::Deserialize;
 use serde::Serialize;
 use std::any;
@@ -505,10 +509,7 @@ impl<NTY: ScalarOps> CollectableType for BinsDim0<NTY> {
 pub struct BinsDim0Aggregator<NTY> {
     range: SeriesRange,
     count: u64,
-    min: NTY,
-    max: NTY,
-    // Carry over to next bin:
-    avg: f32,
+    minmax: Option<(NTY, NTY)>,
     sumc: u64,
     sum: f32,
 }
@@ -518,9 +519,7 @@ impl<NTY: ScalarOps> BinsDim0Aggregator<NTY> {
         Self {
             range,
             count: 0,
-            min: NTY::zero_b(),
-            max: NTY::zero_b(),
-            avg: 0.,
+            minmax: None,
             sumc: 0,
             sum: 0f32,
         }
@@ -536,54 +535,72 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for BinsDim0Aggregator<NTY> {
     }
 
     fn ingest(&mut self, item: &Self::Input) {
-        /*for i1 in 0..item.ts1s.len() {
-            if item.counts[i1] == 0 {
-            } else if item.ts2s[i1] <= self.range.beg {
-            } else if item.ts1s[i1] >= self.range.end {
+        let beg = self.range.beg_u64();
+        let end = self.range.end_u64();
+        for (((((&ts1, &ts2), &count), min), max), &avg) in item
+            .ts1s
+            .iter()
+            .zip(item.ts2s.iter())
+            .zip(item.counts.iter())
+            .zip(item.mins.iter())
+            .zip(item.maxs.iter())
+            .zip(item.avgs.iter())
+        {
+            if count == 0 {
+            } else if ts2 <= beg {
+            } else if ts1 >= end {
             } else {
-                if self.count == 0 {
-                    self.min = item.mins[i1].clone();
-                    self.max = item.maxs[i1].clone();
+                if let Some((cmin, cmax)) = self.minmax.as_mut() {
+                    if min < cmin {
+                        *cmin = min.clone();
+                    }
+                    if max > cmax {
+                        *cmax = max.clone();
+                    }
                 } else {
-                    if self.min > item.mins[i1] {
-                        self.min = item.mins[i1].clone();
-                    }
-                    if self.max < item.maxs[i1] {
-                        self.max = item.maxs[i1].clone();
-                    }
+                    self.minmax = Some((min.clone(), max.clone()));
                 }
-                self.count += item.counts[i1];
-                self.sum += item.avgs[i1];
+                self.count += count;
                 self.sumc += 1;
+                self.sum += avg;
             }
-        }*/
-        todo!()
+        }
     }
 
     fn result_reset(&mut self, range: SeriesRange) -> Self::Output {
-        /*if self.sumc > 0 {
-            self.avg = self.sum / self.sumc as f32;
-        }
+        let (min, max) = if let Some((min, max)) = self.minmax.take() {
+            (min, max)
+        } else {
+            (NTY::zero_b(), NTY::zero_b())
+        };
+        let avg = if self.sumc > 0 {
+            self.sum / self.sumc as f32
+        } else {
+            NTY::zero_b().as_prim_f32_b()
+        };
         let ret = Self::Output {
-            ts1s: [self.range.beg].into(),
-            ts2s: [self.range.end].into(),
+            ts1s: [self.range.beg_u64()].into(),
+            ts2s: [self.range.end_u64()].into(),
             counts: [self.count].into(),
-            mins: [self.min.clone()].into(),
-            maxs: [self.max.clone()].into(),
-            avgs: [self.avg].into(),
+            mins: [min].into(),
+            maxs: [max].into(),
+            avgs: [avg].into(),
+            // TODO
+            dim0kind: None,
         };
         self.range = range;
         self.count = 0;
-        self.sum = 0f32;
+        self.minmax = None;
         self.sumc = 0;
-        ret*/
-        todo!()
+        self.sum = 0.;
+        ret
     }
 }
 
 impl<NTY: ScalarOps> TimeBinnable for BinsDim0<NTY> {
     fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
-        let ret = BinsDim0TimeBinner::<NTY>::new(binrange, do_time_weight);
+        // TODO get rid of unwrap
+        let ret = BinsDim0TimeBinner::<NTY>::new(binrange, do_time_weight).unwrap();
         Box::new(ret)
     }
 
@@ -596,39 +613,115 @@ impl<NTY: ScalarOps> TimeBinnable for BinsDim0<NTY> {
 #[derive(Debug)]
 pub struct BinsDim0TimeBinner<NTY: ScalarOps> {
     binrange: BinnedRangeEnum,
-    do_time_weight: bool,
-    agg: Option<BinsDim0Aggregator<NTY>>,
+    rix: usize,
+    rng: Option<SeriesRange>,
+    agg: BinsDim0Aggregator<NTY>,
     ready: Option<<BinsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output>,
     range_final: bool,
 }
 
 impl<NTY: ScalarOps> BinsDim0TimeBinner<NTY> {
-    fn new(binrange: BinnedRangeEnum, do_time_weight: bool) -> Self {
-        Self {
+    fn type_name() -> &'static str {
+        any::type_name::<Self>()
+    }
+
+    fn new(binrange: BinnedRangeEnum, do_time_weight: bool) -> Result<Self, Error> {
+        let rng = binrange
+            .range_at(0)
+            .ok_or_else(|| Error::with_msg_no_trace("empty binrange"))?;
+        let agg = BinsDim0Aggregator::new(rng, do_time_weight);
+        let ret = Self {
             binrange,
-            do_time_weight,
-            agg: None,
+            rix: 0,
+            rng: Some(agg.range().clone()),
+            agg,
             ready: None,
             range_final: false,
-        }
+        };
+        Ok(ret)
     }
 
     fn next_bin_range(&mut self) -> Option<SeriesRange> {
-        /*if self.edges.len() >= 2 {
-            let ret = NanoRange {
-                beg: self.edges[0],
-                end: self.edges[1],
-            };
-            self.edges.pop_front();
-            Some(ret)
+        self.rix += 1;
+        if let Some(rng) = self.binrange.range_at(self.rix) {
+            trace!("{}  next_bin_range {:?}", Self::type_name(), rng);
+            Some(rng)
         } else {
+            trace!("{}  next_bin_range None", Self::type_name());
             None
-        }*/
-        todo!()
+        }
+    }
+}
+
+impl<STY: ScalarOps> TimeBinnerCommonV0Trait for BinsDim0TimeBinner<STY> {
+    type Input = <BinsDim0Aggregator<STY> as TimeBinnableTypeAggregator>::Input;
+    type Output = <BinsDim0Aggregator<STY> as TimeBinnableTypeAggregator>::Output;
+
+    fn type_name() -> &'static str {
+        Self::type_name()
+    }
+
+    fn common_bins_ready_count(&self) -> usize {
+        match &self.ready {
+            Some(k) => k.len(),
+            None => 0,
+        }
+    }
+
+    fn common_range_current(&self) -> &SeriesRange {
+        self.agg.range()
+    }
+
+    fn common_has_more_range(&self) -> bool {
+        self.rng.is_some()
+    }
+
+    fn common_next_bin_range(&mut self) -> Option<SeriesRange> {
+        self.next_bin_range()
+    }
+
+    fn common_set_current_range(&mut self, range: Option<SeriesRange>) {
+        self.rng = range;
+    }
+    fn common_take_or_append_all_from(&mut self, item: Self::Output) {
+        let mut item = item;
+        match self.ready.as_mut() {
+            Some(ready) => {
+                ready.append_all_from(&mut item);
+            }
+            None => {
+                self.ready = Some(item);
+            }
+        }
+    }
+
+    fn common_result_reset(&mut self, range: Option<SeriesRange>) -> Self::Output {
+        // TODO maybe better to wrap the aggregator in Option and remove the whole thing when no more bins?
+        self.agg.result_reset(range.unwrap_or_else(|| {
+            SeriesRange::TimeRange(netpod::range::evrange::NanoRange {
+                beg: u64::MAX,
+                end: u64::MAX,
+            })
+        }))
+    }
+
+    fn common_agg_ingest(&mut self, item: &mut Self::Input) {
+        self.agg.ingest(item)
     }
 }
 
 impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
+    fn bins_ready_count(&self) -> usize {
+        TimeBinnerCommonV0Trait::common_bins_ready_count(self)
+    }
+
+    fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>> {
+        match self.ready.take() {
+            Some(k) => Some(Box::new(k)),
+            None => None,
+        }
+    }
+
     fn ingest(&mut self, item: &mut dyn TimeBinnable) {
         /*let self_name = any::type_name::<Self>();
         if item.len() == 0 {
@@ -695,22 +788,7 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
                 }
             }
         }*/
-        error!("!!!!!!!!!!!!!!!!   TODO actually do something");
-        todo!()
-    }
-
-    fn bins_ready_count(&self) -> usize {
-        match &self.ready {
-            Some(k) => k.len(),
-            None => 0,
-        }
-    }
-
-    fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>> {
-        match self.ready.take() {
-            Some(k) => Some(Box::new(k)),
-            None => None,
-        }
+        TimeBinnerCommonV0Func::ingest(self, item)
     }
 
     // TODO there is too much common code between implementors:
@@ -733,7 +811,7 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
                 }
             }
         }*/
-        todo!()
+        TimeBinnerCommonV0Func::push_in_progress(self, push_empty)
     }
 
     // TODO there is too much common code between implementors:
@@ -759,7 +837,7 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
                 warn!("cycle: no in-progress bin pushed, but also no more bin to add as zero-bin");
             }
         }*/
-        todo!()
+        TimeBinnerCommonV0Func::cycle(self)
     }
 
     fn set_range_complete(&mut self) {
@@ -769,6 +847,12 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
     fn empty(&self) -> Box<dyn TimeBinned> {
         let ret = <BinsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Output::empty();
         Box::new(ret)
+    }
+
+    fn append_empty_until_end(&mut self) {
+        while self.common_has_more_range() {
+            TimeBinnerCommonV0Func::push_in_progress(self, true);
+        }
     }
 }
 
@@ -808,7 +892,7 @@ impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
     }
 
     fn validate(&self) -> Result<(), String> {
-        use std::fmt::Write;
+        use fmt::Write;
         let mut msg = String::new();
         if self.ts1s.len() != self.ts2s.len() {
             write!(&mut msg, "ts1s ≠ ts2s\n").unwrap();
@@ -828,4 +912,142 @@ impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
     fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
         self
     }
+}
+
+#[test]
+fn bins_timebin_fill_empty_00() {
+    let mut bins = BinsDim0::<u32>::empty();
+    let binrange = BinnedRangeEnum::Time(BinnedRange {
+        bin_len: TsNano(SEC * 2),
+        bin_off: 9,
+        bin_cnt: 5,
+    });
+    let do_time_weight = true;
+    let mut binner = bins.as_time_binnable_dyn().time_binner_new(binrange, do_time_weight);
+    binner.ingest(&mut bins);
+    binner.append_empty_until_end();
+    let ready = binner.bins_ready();
+    let got = ready.unwrap();
+    let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
+    let mut exp = BinsDim0::empty();
+    for i in 0..5 {
+        exp.push(SEC * 2 * (9 + i), SEC * 2 * (10 + i), 0, 0, 0, 0.);
+    }
+    assert_eq!(got, &exp);
+}
+
+#[test]
+fn bins_timebin_fill_empty_01() {
+    let mut bins = BinsDim0::<u32>::empty();
+    let binrange = BinnedRangeEnum::Time(BinnedRange {
+        bin_len: TsNano(SEC * 2),
+        bin_off: 9,
+        bin_cnt: 5,
+    });
+    let do_time_weight = true;
+    let mut binner = bins.as_time_binnable_dyn().time_binner_new(binrange, do_time_weight);
+    binner.ingest(&mut bins);
+    binner.push_in_progress(true);
+    binner.append_empty_until_end();
+    let ready = binner.bins_ready();
+    let got = ready.unwrap();
+    let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
+    let mut exp = BinsDim0::empty();
+    for i in 0..5 {
+        exp.push(SEC * 2 * (9 + i), SEC * 2 * (10 + i), 0, 0, 0, 0.);
+    }
+    assert_eq!(got, &exp);
+}
+
+#[test]
+fn bins_timebin_push_empty_00() {
+    let mut bins = BinsDim0::<u32>::empty();
+    let binrange = BinnedRangeEnum::Time(BinnedRange {
+        bin_len: TsNano(SEC * 2),
+        bin_off: 9,
+        bin_cnt: 5,
+    });
+    let do_time_weight = true;
+    let mut binner = bins.as_time_binnable_dyn().time_binner_new(binrange, do_time_weight);
+    binner.ingest(&mut bins);
+    binner.push_in_progress(true);
+    let ready = binner.bins_ready();
+    let got = ready.unwrap();
+    let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
+    let mut exp = BinsDim0::empty();
+    for i in 0..1 {
+        exp.push(SEC * 2 * (9 + i), SEC * 2 * (10 + i), 0, 0, 0, 0.);
+    }
+    assert_eq!(got, &exp);
+}
+
+#[test]
+fn bins_timebin_push_empty_01() {
+    let mut bins = BinsDim0::<u32>::empty();
+    let binrange = BinnedRangeEnum::Time(BinnedRange {
+        bin_len: TsNano(SEC * 2),
+        bin_off: 9,
+        bin_cnt: 5,
+    });
+    let do_time_weight = true;
+    let mut binner = bins.as_time_binnable_dyn().time_binner_new(binrange, do_time_weight);
+    binner.ingest(&mut bins);
+    binner.push_in_progress(true);
+    binner.push_in_progress(true);
+    binner.push_in_progress(true);
+    let ready = binner.bins_ready();
+    let got = ready.unwrap();
+    let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
+    let mut exp = BinsDim0::empty();
+    for i in 0..3 {
+        exp.push(SEC * 2 * (9 + i), SEC * 2 * (10 + i), 0, 0, 0, 0.);
+    }
+    assert_eq!(got, &exp);
+}
+
+#[test]
+fn bins_timebin_ingest_only_before() {
+    let mut bins = BinsDim0::<u32>::empty();
+    bins.push(SEC * 2, SEC * 4, 3, 7, 9, 8.1);
+    bins.push(SEC * 4, SEC * 6, 3, 6, 9, 8.2);
+    let binrange = BinnedRangeEnum::Time(BinnedRange {
+        bin_len: TsNano(SEC * 2),
+        bin_off: 9,
+        bin_cnt: 5,
+    });
+    let do_time_weight = true;
+    let mut binner = bins.as_time_binnable_dyn().time_binner_new(binrange, do_time_weight);
+    binner.ingest(&mut bins);
+    binner.push_in_progress(true);
+    let ready = binner.bins_ready();
+    let got = ready.unwrap();
+    let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
+    let mut exp = BinsDim0::empty();
+    exp.push(SEC * 18, SEC * 20, 0, 0, 0, 0.);
+    assert_eq!(got, &exp);
+}
+
+#[test]
+fn bins_timebin_ingest_00() {
+    let mut bins = BinsDim0::<u32>::empty();
+    bins.push(SEC * 20, SEC * 21, 3, 70, 94, 82.);
+    bins.push(SEC * 21, SEC * 22, 5, 71, 93, 86.);
+    bins.push(SEC * 23, SEC * 24, 6, 72, 92, 81.);
+    let binrange = BinnedRangeEnum::Time(BinnedRange {
+        bin_len: TsNano(SEC * 2),
+        bin_off: 9,
+        bin_cnt: 5,
+    });
+    let do_time_weight = true;
+    let mut binner = bins.as_time_binnable_dyn().time_binner_new(binrange, do_time_weight);
+    binner.ingest(&mut bins);
+    binner.push_in_progress(true);
+    let ready = binner.bins_ready();
+    let got = ready.unwrap();
+    let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
+    let mut exp = BinsDim0::empty();
+    exp.push(SEC * 18, SEC * 20, 0, 0, 0, 0.);
+    exp.push(SEC * 20, SEC * 22, 8, 70, 94, 84.);
+    exp.push(SEC * 22, SEC * 24, 6, 72, 92, 81.);
+    assert_eq!(got, &exp);
 }

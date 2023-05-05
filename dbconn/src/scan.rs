@@ -228,7 +228,7 @@ pub async fn update_db_with_channel_names(
             async move {
                 crate::delay_io_short().await;
                 dbc.query(
-                    "insert into channels (facility, name) values ($1, $2) on conflict do nothing",
+                    "insert into channels (facility, name) select facility, name from (values ($1, $2)) v1 (facility, name) where not exists (select 1 from channels t1 where t1.facility = v1.facility and t1.name = v1.name) on conflict do nothing",
                     &[&fac, &ch],
                 )
                 .await
@@ -408,10 +408,10 @@ pub async fn update_db_with_all_channel_configs(
     Ok(rx)
 }
 
-pub async fn update_search_cache(node_config: &NodeConfigCached) -> Result<(), Error> {
+pub async fn update_search_cache(node_config: &NodeConfigCached) -> Result<bool, Error> {
     let dbc = create_connection(&node_config.node_config.cluster.database).await?;
     dbc.query("select update_cache()", &[]).await.err_conv()?;
-    Ok(())
+    Ok(true)
 }
 
 pub enum UpdateChannelConfigResult {

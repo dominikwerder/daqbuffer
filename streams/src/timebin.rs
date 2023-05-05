@@ -18,20 +18,20 @@ use std::task::Poll;
 
 #[allow(unused)]
 macro_rules! trace2 {
-    ($($arg:tt)*) => ();
-    ($($arg:tt)*) => (trace!($($arg)*));
+    ($($arg:tt)*) => {};
+    ($($arg:tt)*) => { trace!($($arg)*) };
 }
 
 #[allow(unused)]
 macro_rules! trace3 {
-    ($($arg:tt)*) => ();
-    ($($arg:tt)*) => (trace!($($arg)*));
+    ($($arg:tt)*) => {};
+    ($($arg:tt)*) => { trace!($($arg)*) };
 }
 
 #[allow(unused)]
 macro_rules! trace4 {
-    ($($arg:tt)*) => ();
-    ($($arg:tt)*) => (trace!($($arg)*));
+    ($($arg:tt)*) => {};
+    ($($arg:tt)*) => { trace!($($arg)*) };
 }
 
 type MergeInp<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;

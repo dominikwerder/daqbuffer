@@ -574,6 +574,10 @@ impl<STY: ScalarOps> TimeBinner for EventsXbinDim0TimeBinner<STY> {
         let ret = <EventsXbinDim0Aggregator<STY> as TimeBinnableTypeAggregator>::Output::empty();
         Box::new(ret)
     }
+
+    fn append_empty_until_end(&mut self) {
+        // nothing to do for events
+    }
 }
 
 impl<STY> TimeBinnableType for EventsXbinDim0<STY>

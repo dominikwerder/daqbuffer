@@ -891,6 +891,13 @@ impl TimeBinnerTy for ChannelEventsTimeBinner {
             None => None,
         }
     }
+
+    fn append_empty_until_end(&mut self) {
+        match self.binner.as_mut() {
+            Some(binner) => binner.append_empty_until_end(),
+            None => panic!(),
+        }
+    }
 }
 
 impl TimeBinner for ChannelEventsTimeBinner {
@@ -926,6 +933,13 @@ impl TimeBinner for ChannelEventsTimeBinner {
         match TimeBinnerTy::empty(self) {
             Some(x) => x,
             None => panic!("TODO TimeBinner::empty for ChannelEventsTimeBinner"),
+        }
+    }
+
+    fn append_empty_until_end(&mut self) {
+        match self.binner.as_mut() {
+            Some(binner) => binner.append_empty_until_end(),
+            None => panic!(),
         }
     }
 }

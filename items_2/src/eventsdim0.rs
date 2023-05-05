@@ -726,6 +726,7 @@ impl<STY: ScalarOps> TimeBinnableTypeAggregator for EventsDim0Aggregator<STY> {
 
 impl<STY: ScalarOps> TimeBinnable for EventsDim0<STY> {
     fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
+        // TODO get rid of unwrap
         let ret = EventsDim0TimeBinner::<STY>::new(binrange, do_time_weight).unwrap();
         Box::new(ret)
     }
@@ -940,7 +941,7 @@ impl<STY: ScalarOps> EventsDim0TimeBinner<STY> {
         let ret = Self {
             binrange,
             rix: 0,
-            rng: Some(agg.range.clone()),
+            rng: Some(agg.range().clone()),
             agg,
             ready: None,
             range_final: false,
@@ -968,6 +969,13 @@ impl<STY: ScalarOps> TimeBinnerCommonV0Trait for EventsDim0TimeBinner<STY> {
         Self::type_name()
     }
 
+    fn common_bins_ready_count(&self) -> usize {
+        match &self.ready {
+            Some(k) => k.len(),
+            None => 0,
+        }
+    }
+
     fn common_range_current(&self) -> &SeriesRange {
         self.agg.range()
     }
@@ -976,18 +984,16 @@ impl<STY: ScalarOps> TimeBinnerCommonV0Trait for EventsDim0TimeBinner<STY> {
         self.rng.is_some()
     }
 
-    fn common_bins_ready_count(&self) -> usize {
-        match &self.ready {
-            Some(k) => k.len(),
-            None => 0,
-        }
-    }
-
     fn common_next_bin_range(&mut self) -> Option<SeriesRange> {
         self.next_bin_range()
     }
 
-    fn common_take_or_append_all_from(&mut self, mut item: Self::Output) {
+    fn common_set_current_range(&mut self, range: Option<SeriesRange>) {
+        self.rng = range;
+    }
+
+    fn common_take_or_append_all_from(&mut self, item: Self::Output) {
+        let mut item = item;
         match self.ready.as_mut() {
             Some(ready) => {
                 ready.append_all_from(&mut item);
@@ -998,8 +1004,13 @@ impl<STY: ScalarOps> TimeBinnerCommonV0Trait for EventsDim0TimeBinner<STY> {
         }
     }
 
-    fn common_result_reset(&mut self, range: SeriesRange) -> Self::Output {
-        self.agg.result_reset(range)
+    fn common_result_reset(&mut self, range: Option<SeriesRange>) -> Self::Output {
+        self.agg.result_reset(range.unwrap_or_else(|| {
+            SeriesRange::TimeRange(netpod::range::evrange::NanoRange {
+                beg: u64::MAX,
+                end: u64::MAX,
+            })
+        }))
     }
 
     fn common_agg_ingest(&mut self, item: &mut Self::Input) {
@@ -1038,6 +1049,10 @@ impl<STY: ScalarOps> TimeBinner for EventsDim0TimeBinner<STY> {
     fn empty(&self) -> Box<dyn TimeBinned> {
         let ret = <EventsDim0Aggregator<STY> as TimeBinnableTypeAggregator>::Output::empty();
         Box::new(ret)
+    }
+
+    fn append_empty_until_end(&mut self) {
+        // nothing to do for events
     }
 }
 
