@@ -1,6 +1,9 @@
 use crate::collect::collect;
 use crate::generators::GenerateI32V00;
+use crate::generators::GenerateI32V01;
+use crate::itemclone::Itemclone;
 use crate::test::runfut;
+use crate::timebin::TimeBinnedStream;
 use crate::transform::build_event_transform;
 use err::Error;
 use futures_util::stream;
@@ -8,8 +11,11 @@ use futures_util::StreamExt;
 use items_0::on_sitemty_data;
 use items_0::streamitem::sitem_data;
 use items_0::streamitem::RangeCompletableItem;
+use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::timebin::TimeBinnable;
+use items_0::timebin::TimeBinned;
+use items_0::AppendAllFrom;
 use items_0::Empty;
 use items_2::binsdim0::BinsDim0;
 use items_2::channelevents::ChannelEvents;
@@ -70,7 +76,7 @@ fn time_bin_00() -> Result<(), Error> {
             d.push_back(bins);
             d
         };
-        let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream0, binned_range, true);
+        let mut binned_stream = TimeBinnedStream::new(stream0, binned_range, true);
         while let Some(item) = binned_stream.next().await {
             eprintln!("{item:?}");
             match item {
@@ -135,7 +141,7 @@ fn time_bin_01() -> Result<(), Error> {
             }
         });
         let stream0 = Box::pin(stream0);
-        let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream0, binned_range, true);
+        let mut binned_stream = TimeBinnedStream::new(stream0, binned_range, true);
         while let Some(item) = binned_stream.next().await {
             if true {
                 eprintln!("{item:?}");
@@ -199,7 +205,7 @@ fn time_bin_02() -> Result<(), Error> {
             x
         });
         let stream = Box::pin(stream);
-        let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream, binned_range.clone(), do_time_weight);
+        let mut binned_stream = TimeBinnedStream::new(stream, binned_range.clone(), do_time_weight);
         // From there on it should no longer be neccessary to distinguish whether its still events or time bins.
         // Then, optionally collect for output type like json, or stream as batches.
         // TODO the timebinner should already provide batches to make this efficient.
@@ -280,7 +286,7 @@ fn time_bin_03() -> Result<(), Error> {
             sitem_data(v01),
             sitem_data(v03),
         ]));
-        let mut binned_stream = crate::timebin::TimeBinnedStream::new(stream0, binned_range, true);
+        let mut binned_stream = TimeBinnedStream::new(stream0, binned_range, true);
         while let Some(item) = binned_stream.next().await {
             eprintln!("{item:?}");
             match item {
@@ -311,4 +317,121 @@ fn transform_chain_correctness_00() -> Result<(), Error> {
     let tq = TransformQuery::default_time_binned();
     build_event_transform(&tq)?;
     Ok(())
+}
+
+#[test]
+fn timebin_multi_stage_00() -> Result<(), Error> {
+    // TODO chain two timebin stages with different binning grid.
+    let fut = async {
+        let do_time_weight = true;
+        let one_before_range = do_time_weight;
+        let range = nano_range_from_str("1970-01-01T00:00:10Z", "1970-01-01T00:01:03Z")?;
+        let range = SeriesRange::TimeRange(range);
+        let stream_evs = GenerateI32V01::new(0, 1, range.clone(), one_before_range);
+        let mut exp1 = {
+            let mut bins = BinsDim0::<i32>::empty();
+            for i in 0..53 {
+                bins.push(
+                    SEC * (10 + i),
+                    SEC * (11 + i),
+                    2,
+                    20 + 2 * i as i32,
+                    21 + 2 * i as i32,
+                    20.5 + 2. * i as f32,
+                );
+            }
+            bins
+        };
+        // NOTE:
+        // can store all bins in cache for which there is some non-empty bin following, or if the container has range-final.
+        let (q1tx, q1rx) = async_channel::bounded(128);
+        let (q2tx, q2rx) = async_channel::bounded(128);
+        let stream_evs = Box::pin(stream_evs);
+        let binned_stream = {
+            let binned_range = BinnedRangeEnum::covering_range(range.clone(), 48)?;
+            dbg!(&binned_range);
+            TimeBinnedStream::new(stream_evs, binned_range, do_time_weight).map(|x| {
+                //eprintln!("STAGE  1 -- {:?}", x);
+                x
+            })
+        };
+        let binned_stream = Itemclone::new(binned_stream, q1tx).map(|x| match x {
+            Ok(x) => x,
+            Err(e) => Err(e),
+        });
+        let binned_stream = {
+            let binned_range = BinnedRangeEnum::covering_range(range.clone(), 22)?;
+            dbg!(&binned_range);
+            TimeBinnedStream::new(Box::pin(binned_stream), binned_range, do_time_weight).map(|x| {
+                eprintln!("STAGE --  2 {:?}", x);
+                x
+            })
+        };
+        let binned_stream = Itemclone::new(binned_stream, q2tx).map(|x| match x {
+            Ok(x) => x,
+            Err(e) => Err(e),
+        });
+        let mut have_range_final = false;
+        let mut binned_stream = binned_stream;
+        while let Some(item) = binned_stream.next().await {
+            //eprintln!("{item:?}");
+            match item {
+                Ok(item) => match item {
+                    StreamItem::DataItem(item) => match item {
+                        RangeCompletableItem::Data(item) => {
+                            if let Some(item) = item.as_any_ref().downcast_ref::<BinsDim0<i32>>() {
+                                if false {
+                                    eprintln!("-----------------------");
+                                    eprintln!("item {:?}", item);
+                                    eprintln!("-----------------------");
+                                }
+                            } else {
+                                return Err(Error::with_msg_no_trace(format!("bad, got item with unexpected type")));
+                            }
+                        }
+                        RangeCompletableItem::RangeComplete => {
+                            have_range_final = true;
+                        }
+                    },
+                    StreamItem::Log(_) => {}
+                    StreamItem::Stats(_) => {}
+                },
+                Err(e) => Err(e).unwrap(),
+            }
+        }
+        assert!(have_range_final);
+        {
+            eprintln!("---------------------------------------------------------------------");
+            let mut coll = BinsDim0::empty();
+            let stream = q1rx;
+            while let Ok(item) = stream.recv().await {
+                //eprintln!("RECV [q1rx] {:?}", item);
+                on_sitemty_data!(item, |mut item: Box<dyn TimeBinned>| {
+                    if let Some(k) = item.as_any_mut().downcast_mut::<BinsDim0<i32>>() {
+                        coll.append_all_from(k);
+                    }
+                    sitem_data(item)
+                });
+            }
+            eprintln!("collected 1: {:?}", coll);
+            assert_eq!(coll, exp1);
+        }
+        {
+            eprintln!("---------------------------------------------------------------------");
+            let mut coll = BinsDim0::empty();
+            let stream = q2rx;
+            while let Ok(item) = stream.recv().await {
+                //eprintln!("RECV [q2rx] {:?}", item);
+                on_sitemty_data!(item, |mut item: Box<dyn TimeBinned>| {
+                    if let Some(k) = item.as_any_mut().downcast_mut::<BinsDim0<i32>>() {
+                        coll.append_all_from(k);
+                    }
+                    sitem_data(item)
+                });
+            }
+            eprintln!("collected 1: {:?}", coll);
+        }
+        Ok(())
+    };
+    runfut(fut)
 }

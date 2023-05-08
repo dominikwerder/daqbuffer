@@ -753,8 +753,16 @@ impl<NTY: ScalarOps> TimeBinner for BinsXbinDim0TimeBinner<NTY> {
 }
 
 impl<NTY: ScalarOps> TimeBinned for BinsXbinDim0<NTY> {
+    fn clone_box_time_binned(&self) -> Box<dyn TimeBinned> {
+        Box::new(self.clone())
+    }
+
     fn as_time_binnable_dyn(&self) -> &dyn TimeBinnable {
-        self as &dyn TimeBinnable
+        self
+    }
+
+    fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable {
+        self
     }
 
     fn edges_slice(&self) -> (&[u64], &[u64]) {

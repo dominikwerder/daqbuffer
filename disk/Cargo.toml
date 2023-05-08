@@ -16,7 +16,7 @@ chrono = { version = "0.4.19", features = ["serde"] }
 tokio = { version = "1.21.2", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
 tokio-stream = {version = "0.1.5", features = ["fs"]}
 hyper = { version = "0.14", features = ["http1", "http2", "client", "server", "tcp", "stream"] }
-async-channel = "1.6"
+async-channel = "1.8.0"
 crossbeam = "0.8"
 bytes = "1.0.1"
 crc32fast = "1.3.2"
