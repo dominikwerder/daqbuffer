@@ -327,10 +327,15 @@ fn timebin_multi_stage_00() -> Result<(), Error> {
         let one_before_range = do_time_weight;
         let range = nano_range_from_str("1970-01-01T00:00:10Z", "1970-01-01T00:01:03Z")?;
         let range = SeriesRange::TimeRange(range);
+        let binned_range_0 = BinnedRangeEnum::covering_range(range.clone(), 22)?;
+        dbg!(&binned_range_0);
+        let range: SeriesRange = binned_range_0.binned_range_time().to_nano_range().into();
+        let binned_range_1 = BinnedRangeEnum::covering_range(range.clone(), 48)?;
+        dbg!(&binned_range_1);
         let stream_evs = GenerateI32V01::new(0, 1, range.clone(), one_before_range);
-        let mut exp1 = {
+        let exp1 = {
             let mut bins = BinsDim0::<i32>::empty();
-            for i in 0..53 {
+            for i in 0..54 {
                 bins.push(
                     SEC * (10 + i),
                     SEC * (11 + i),
@@ -342,15 +347,27 @@ fn timebin_multi_stage_00() -> Result<(), Error> {
             }
             bins
         };
+        let exp2 = {
+            let mut bins = BinsDim0::<i32>::empty();
+            for i in 0..27 {
+                bins.push(
+                    SEC * (10 + 2 * i),
+                    SEC * (12 + 2 * i),
+                    4,
+                    20 + 4 * i as i32,
+                    23 + 4 * i as i32,
+                    21.5 + 4. * i as f32,
+                );
+            }
+            bins
+        };
         // NOTE:
         // can store all bins in cache for which there is some non-empty bin following, or if the container has range-final.
         let (q1tx, q1rx) = async_channel::bounded(128);
         let (q2tx, q2rx) = async_channel::bounded(128);
         let stream_evs = Box::pin(stream_evs);
         let binned_stream = {
-            let binned_range = BinnedRangeEnum::covering_range(range.clone(), 48)?;
-            dbg!(&binned_range);
-            TimeBinnedStream::new(stream_evs, binned_range, do_time_weight).map(|x| {
+            TimeBinnedStream::new(stream_evs, binned_range_1, do_time_weight).map(|x| {
                 //eprintln!("STAGE  1 -- {:?}", x);
                 x
             })
@@ -360,9 +377,7 @@ fn timebin_multi_stage_00() -> Result<(), Error> {
             Err(e) => Err(e),
         });
         let binned_stream = {
-            let binned_range = BinnedRangeEnum::covering_range(range.clone(), 22)?;
-            dbg!(&binned_range);
-            TimeBinnedStream::new(Box::pin(binned_stream), binned_range, do_time_weight).map(|x| {
+            TimeBinnedStream::new(Box::pin(binned_stream), binned_range_0, do_time_weight).map(|x| {
                 eprintln!("STAGE --  2 {:?}", x);
                 x
             })
@@ -430,6 +445,7 @@ fn timebin_multi_stage_00() -> Result<(), Error> {
                 });
             }
             eprintln!("collected 1: {:?}", coll);
+            assert_eq!(coll, exp2);
         }
         Ok(())
     };
