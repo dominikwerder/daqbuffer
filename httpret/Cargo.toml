@@ -21,7 +21,7 @@ tracing-futures = "0.2"
 async-channel = "1.8.0"
 itertools = "0.10.1"
 chrono = "0.4.23"
-scylla = "0.7"
+scylla = "0.8.1"
 md-5 = "0.10"
 regex = "1.7"
 err = { path = "../err" }

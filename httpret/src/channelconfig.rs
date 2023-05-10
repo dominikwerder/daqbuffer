@@ -24,7 +24,6 @@ use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
 use query::api4::binned::BinnedQuery;
 use query::api4::events::PlainEventsQuery;
-use scylla::batch::Consistency;
 use scylla::frame::response::cql_to_rust::FromRowError as ScyFromRowError;
 use scylla::transport::errors::NewSessionError as ScyNewSessionError;
 use scylla::transport::errors::QueryError as ScyQueryError;
@@ -267,13 +266,7 @@ impl ScyllaConfigsHisto {
             .scylla
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let scy = scylla::SessionBuilder::new()
-            .known_nodes(&scyco.hosts)
-            .use_keyspace(&scyco.keyspace, true)
-            .default_consistency(Consistency::One)
-            .build()
-            .await
-            .err_conv()?;
+        let scy = scyllaconn::create_scy_session(scyco).await?;
         let res = scy
             .query(
                 "select scalar_type, shape_dims, series from series_by_channel where facility = ? allow filtering",
@@ -388,13 +381,7 @@ impl ScyllaChannelsWithType {
             .scylla
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let scy = scylla::SessionBuilder::new()
-            .known_nodes(&scyco.hosts)
-            .use_keyspace(&scyco.keyspace, true)
-            .default_consistency(Consistency::One)
-            .build()
-            .await
-            .err_conv()?;
+        let scy = scyllaconn::create_scy_session(scyco).await?;
         let res = scy
             .query(
                 "select channel_name, series from series_by_channel where facility = ? and scalar_type = ? and shape_dims = ? allow filtering",
@@ -553,13 +540,7 @@ impl ScyllaChannelsActive {
             .scylla
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let scy = scylla::SessionBuilder::new()
-            .known_nodes(&scyco.hosts)
-            .use_keyspace(&scyco.keyspace, true)
-            .default_consistency(Consistency::One)
-            .build()
-            .await
-            .err_conv()?;
+        let scy = scyllaconn::create_scy_session(scyco).await?;
         // Database stores tsedge/ts_msp in units of (10 sec), and we additionally map to the grid.
         let tsedge = q.tsedge / 10 / (6 * 2) * (6 * 2);
         info!(
@@ -756,13 +737,7 @@ impl ScyllaSeriesTsMsp {
             .scylla
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let scy = scylla::SessionBuilder::new()
-            .known_nodes(&scyco.hosts)
-            .use_keyspace(&scyco.keyspace, true)
-            .default_consistency(Consistency::One)
-            .build()
-            .await
-            .err_conv()?;
+        let scy = scyllaconn::create_scy_session(scyco).await?;
         let mut ts_msps = Vec::new();
         let mut res = scy
             .query_iter("select ts_msp from ts_msp where series = ?", (q.series as i64,))
