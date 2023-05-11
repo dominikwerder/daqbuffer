@@ -22,6 +22,7 @@ use items_0::container::ByteEstimate;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::overlap::HasTimestampDeque;
 use items_0::scalar_ops::ScalarOps;
+use items_0::test::f32_iter_cmp_near;
 use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinned;
 use items_0::timebin::TimeBinner;
@@ -35,6 +36,7 @@ use items_0::Events;
 use items_0::EventsNonObj;
 use items_0::HasNonemptyFirstBin;
 use items_0::MergeError;
+use items_0::Resettable;
 use items_0::TypeName;
 use items_0::WithLen;
 use netpod::is_false;
@@ -43,6 +45,7 @@ use netpod::range::evrange::NanoRange;
 use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::MS;
 use netpod::timeunits::SEC;
+use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
 use netpod::TsNano;
 use serde::Deserialize;
@@ -165,6 +168,14 @@ impl<STY> ByteEstimate for EventsDim0<STY> {
     fn byte_estimate(&self) -> u64 {
         let stylen = mem::size_of::<STY>();
         (self.len() * (8 + 8 + stylen)) as u64
+    }
+}
+
+impl<STY> Resettable for EventsDim0<STY> {
+    fn reset(&mut self) {
+        self.tss.clear();
+        self.pulses.clear();
+        self.values.clear();
     }
 }
 
@@ -757,8 +768,12 @@ impl<STY: ScalarOps> EventsNonObj for EventsDim0<STY> {
 }
 
 impl<STY: ScalarOps> Events for EventsDim0<STY> {
+    fn as_time_binnable_ref(&self) -> &dyn TimeBinnable {
+        self
+    }
+
     fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable {
-        self as &mut dyn TimeBinnable
+        self
     }
 
     fn verify(&self) -> bool {
@@ -1295,3 +1310,26 @@ fn bin_binned_02() {
     assert_eq!(bins.avgs(), &[13. / 2.]);
 }
 */
+
+#[test]
+fn events_timebin_ingest_continuous_00() {
+    let binrange = BinnedRangeEnum::Time(BinnedRange {
+        bin_len: TsNano(SEC * 2),
+        bin_off: 9,
+        bin_cnt: 20,
+    });
+    let do_time_weight = true;
+    let mut bins = EventsDim0::<u32>::empty();
+    bins.push(SEC * 20, 1, 20);
+    bins.push(SEC * 23, 2, 23);
+    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
+    binner.ingest(&mut bins);
+    //binner.push_in_progress(true);
+    let ready = binner.bins_ready();
+    let got = ready.unwrap();
+    let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
+    let mut exp = BinsDim0::empty();
+    exp.push(SEC * 18, SEC * 20, 0, 0, 0, 0.);
+    exp.push(SEC * 20, SEC * 22, 1, 20, 20, 20.);
+    assert!(f32_iter_cmp_near(got.avgs.clone(), exp.avgs.clone(), 0.0001, 0.0001));
+}

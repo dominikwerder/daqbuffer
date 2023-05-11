@@ -32,6 +32,10 @@ pub trait Empty {
     fn empty() -> Self;
 }
 
+pub trait Resettable {
+    fn reset(&mut self);
+}
+
 pub trait Appendable<STY>: Empty + WithLen {
     fn push(&mut self, ts: u64, pulse: u64, value: STY);
 }
@@ -106,6 +110,7 @@ pub trait Events:
     + erased_serde::Serialize
     + EventsNonObj
 {
+    fn as_time_binnable_ref(&self) -> &dyn TimeBinnable;
     fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable;
     fn verify(&self) -> bool;
     fn output_info(&self);
@@ -156,6 +161,10 @@ impl EventsNonObj for Box<dyn Events> {
 }
 
 impl Events for Box<dyn Events> {
+    fn as_time_binnable_ref(&self) -> &dyn TimeBinnable {
+        Events::as_time_binnable_ref(self.as_ref())
+    }
+
     fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable {
         Events::as_time_binnable_mut(self.as_mut())
     }

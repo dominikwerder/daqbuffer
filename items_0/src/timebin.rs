@@ -7,6 +7,7 @@ use crate::overlap::RangeOverlapInfo;
 use crate::AsAnyMut;
 use crate::AsAnyRef;
 use crate::Events;
+use crate::Resettable;
 use crate::TypeName;
 use crate::WithLen;
 use err::Error;
@@ -15,6 +16,7 @@ use netpod::range::evrange::SeriesRange;
 use netpod::BinnedRangeEnum;
 use std::any::Any;
 use std::fmt;
+use std::ops::Range;
 
 // TODO can probably be removed.
 pub trait TimeBins {
@@ -56,9 +58,9 @@ pub trait TimeBinnableTy: fmt::Debug + WithLen + Send + Sized {
 }
 
 /// Data in time-binned form.
-pub trait TimeBinned: Any + TypeName + TimeBinnable + Collectable + erased_serde::Serialize {
+pub trait TimeBinned: Any + TypeName + TimeBinnable + Resettable + Collectable + erased_serde::Serialize {
     fn clone_box_time_binned(&self) -> Box<dyn TimeBinned>;
-    fn as_time_binnable_dyn(&self) -> &dyn TimeBinnable;
+    fn as_time_binnable_ref(&self) -> &dyn TimeBinnable;
     fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable;
     fn as_collectable_mut(&mut self) -> &mut dyn Collectable;
     fn edges_slice(&self) -> (&[u64], &[u64]);
@@ -67,6 +69,9 @@ pub trait TimeBinned: Any + TypeName + TimeBinnable + Collectable + erased_serde
     fn maxs(&self) -> Vec<f32>;
     fn avgs(&self) -> Vec<f32>;
     fn validate(&self) -> Result<(), String>;
+    fn empty_like_self_box_time_binned(&self) -> Box<dyn TimeBinned>;
+    fn to_simple_bins_f32(&mut self) -> Box<dyn TimeBinned>;
+    fn drain_into_tb(&mut self, dst: &mut dyn TimeBinned, range: Range<usize>) -> Result<(), Error>;
 }
 
 impl Clone for Box<dyn TimeBinned> {
@@ -457,7 +462,7 @@ impl TimeBinnableTy for Box<dyn TimeBinned> {
 
     fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Self::TimeBinner {
         let binner = self
-            .as_time_binnable_dyn()
+            .as_time_binnable_ref()
             .time_binner_new(binrange.clone(), do_time_weight);
         TimeBinnerDynStruct2::new(binrange, do_time_weight, binner)
     }

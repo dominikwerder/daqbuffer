@@ -679,8 +679,12 @@ impl<STY: ScalarOps> EventsNonObj for EventsDim1<STY> {
 }
 
 impl<STY: ScalarOps> Events for EventsDim1<STY> {
+    fn as_time_binnable_ref(&self) -> &dyn TimeBinnable {
+        self
+    }
+
     fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable {
-        self as &mut dyn TimeBinnable
+        self
     }
 
     fn verify(&self) -> bool {

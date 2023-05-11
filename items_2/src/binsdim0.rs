@@ -15,6 +15,7 @@ use items_0::collect_s::Collected;
 use items_0::collect_s::CollectorType;
 use items_0::collect_s::ToJsonResult;
 use items_0::overlap::HasTimestampDeque;
+use items_0::scalar_ops::AsPrimF32;
 use items_0::scalar_ops::ScalarOps;
 use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinned;
@@ -26,6 +27,7 @@ use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use items_0::Empty;
 use items_0::HasNonemptyFirstBin;
+use items_0::Resettable;
 use items_0::TypeName;
 use items_0::WithLen;
 use netpod::is_false;
@@ -43,6 +45,8 @@ use std::any;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
+use std::mem;
+use std::ops::Range;
 
 #[allow(unused)]
 macro_rules! trace4 {
@@ -154,16 +158,16 @@ where
     }
 }
 
-impl<NTY> AsAnyMut for BinsDim0<NTY>
+impl<STY> AsAnyMut for BinsDim0<STY>
 where
-    NTY: ScalarOps,
+    STY: ScalarOps,
 {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }
 
-impl<NTY> Empty for BinsDim0<NTY> {
+impl<STY> Empty for BinsDim0<STY> {
     fn empty() -> Self {
         Self {
             ts1s: VecDeque::new(),
@@ -177,9 +181,20 @@ impl<NTY> Empty for BinsDim0<NTY> {
     }
 }
 
-impl<NTY> WithLen for BinsDim0<NTY> {
+impl<STY> WithLen for BinsDim0<STY> {
     fn len(&self) -> usize {
         self.ts1s.len()
+    }
+}
+
+impl<STY> Resettable for BinsDim0<STY> {
+    fn reset(&mut self) {
+        self.ts1s.clear();
+        self.ts2s.clear();
+        self.counts.clear();
+        self.mins.clear();
+        self.maxs.clear();
+        self.avgs.clear();
     }
 }
 
@@ -861,7 +876,7 @@ impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
         Box::new(self.clone())
     }
 
-    fn as_time_binnable_dyn(&self) -> &dyn TimeBinnable {
+    fn as_time_binnable_ref(&self) -> &dyn TimeBinnable {
         self
     }
 
@@ -920,6 +935,42 @@ impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
     fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
         self
     }
+
+    fn empty_like_self_box_time_binned(&self) -> Box<dyn TimeBinned> {
+        Box::new(Self::empty())
+    }
+
+    fn to_simple_bins_f32(&mut self) -> Box<dyn TimeBinned> {
+        use mem::replace;
+        let ret = BinsDim0::<f32> {
+            ts1s: replace(&mut self.ts1s, VecDeque::new()),
+            ts2s: replace(&mut self.ts2s, VecDeque::new()),
+            counts: replace(&mut self.counts, VecDeque::new()),
+            mins: self.mins.iter().map(AsPrimF32::as_prim_f32_b).collect(),
+            maxs: self.mins.iter().map(AsPrimF32::as_prim_f32_b).collect(),
+            avgs: replace(&mut self.avgs, VecDeque::new()),
+            dim0kind: None,
+        };
+        Box::new(ret)
+    }
+
+    fn drain_into_tb(&mut self, dst: &mut dyn TimeBinned, range: Range<usize>) -> Result<(), Error> {
+        // TODO as_any and as_any_mut are declared on unrelated traits. Simplify.
+        if let Some(dst) = dst.as_any_mut().downcast_mut::<Self>() {
+            // TODO make it harder to forget new members when the struct may get modified in the future
+            dst.ts1s.extend(self.ts1s.drain(range.clone()));
+            dst.ts2s.extend(self.ts2s.drain(range.clone()));
+            dst.counts.extend(self.counts.drain(range.clone()));
+            dst.mins.extend(self.mins.drain(range.clone()));
+            dst.maxs.extend(self.maxs.drain(range.clone()));
+            dst.avgs.extend(self.avgs.drain(range.clone()));
+            Ok(())
+        } else {
+            let type_name = any::type_name::<Self>();
+            error!("downcast to {} FAILED", type_name);
+            Err(Error::with_msg_no_trace(format!("downcast to {} FAILED", type_name)))
+        }
+    }
 }
 
 #[test]
@@ -931,7 +982,7 @@ fn bins_timebin_fill_empty_00() {
         bin_cnt: 5,
     });
     let do_time_weight = true;
-    let mut binner = bins.as_time_binnable_dyn().time_binner_new(binrange, do_time_weight);
+    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
     binner.ingest(&mut bins);
     binner.append_empty_until_end();
     let ready = binner.bins_ready();
@@ -953,7 +1004,7 @@ fn bins_timebin_fill_empty_01() {
         bin_cnt: 5,
     });
     let do_time_weight = true;
-    let mut binner = bins.as_time_binnable_dyn().time_binner_new(binrange, do_time_weight);
+    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
     binner.ingest(&mut bins);
     binner.push_in_progress(true);
     binner.append_empty_until_end();
@@ -976,7 +1027,7 @@ fn bins_timebin_push_empty_00() {
         bin_cnt: 5,
     });
     let do_time_weight = true;
-    let mut binner = bins.as_time_binnable_dyn().time_binner_new(binrange, do_time_weight);
+    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
     binner.ingest(&mut bins);
     binner.push_in_progress(true);
     let ready = binner.bins_ready();
@@ -998,7 +1049,7 @@ fn bins_timebin_push_empty_01() {
         bin_cnt: 5,
     });
     let do_time_weight = true;
-    let mut binner = bins.as_time_binnable_dyn().time_binner_new(binrange, do_time_weight);
+    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
     binner.ingest(&mut bins);
     binner.push_in_progress(true);
     binner.push_in_progress(true);
@@ -1024,7 +1075,7 @@ fn bins_timebin_ingest_only_before() {
         bin_cnt: 5,
     });
     let do_time_weight = true;
-    let mut binner = bins.as_time_binnable_dyn().time_binner_new(binrange, do_time_weight);
+    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
     binner.ingest(&mut bins);
     binner.push_in_progress(true);
     let ready = binner.bins_ready();
@@ -1047,9 +1098,34 @@ fn bins_timebin_ingest_00() {
         bin_cnt: 5,
     });
     let do_time_weight = true;
-    let mut binner = bins.as_time_binnable_dyn().time_binner_new(binrange, do_time_weight);
+    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
     binner.ingest(&mut bins);
     binner.push_in_progress(true);
+    let ready = binner.bins_ready();
+    let got = ready.unwrap();
+    let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
+    let mut exp = BinsDim0::empty();
+    exp.push(SEC * 18, SEC * 20, 0, 0, 0, 0.);
+    exp.push(SEC * 20, SEC * 22, 8, 70, 94, 84.);
+    exp.push(SEC * 22, SEC * 24, 6, 72, 92, 81.);
+    assert_eq!(got, &exp);
+}
+
+#[test]
+fn bins_timebin_ingest_continuous_00() {
+    let binrange = BinnedRangeEnum::Time(BinnedRange {
+        bin_len: TsNano(SEC * 2),
+        bin_off: 9,
+        bin_cnt: 20,
+    });
+    let do_time_weight = true;
+    let mut bins = BinsDim0::<u32>::empty();
+    bins.push(SEC * 20, SEC * 21, 3, 70, 94, 82.);
+    //bins.push(SEC * 21, SEC * 22, 5, 71, 93, 86.);
+    //bins.push(SEC * 23, SEC * 24, 6, 72, 92, 81.);
+    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
+    binner.ingest(&mut bins);
+    //binner.push_in_progress(true);
     let ready = binner.bins_ready();
     let got = ready.unwrap();
     let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();

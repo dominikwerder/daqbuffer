@@ -11,6 +11,7 @@ use items_0::collect_s::CollectableType;
 use items_0::collect_s::Collected;
 use items_0::collect_s::CollectorType;
 use items_0::collect_s::ToJsonResult;
+use items_0::scalar_ops::AsPrimF32;
 use items_0::scalar_ops::ScalarOps;
 use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinned;
@@ -20,6 +21,7 @@ use items_0::AppendEmptyBin;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use items_0::Empty;
+use items_0::Resettable;
 use items_0::TypeName;
 use items_0::WithLen;
 use netpod::is_false;
@@ -37,6 +39,7 @@ use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
 use std::mem;
+use std::ops::Range;
 
 #[allow(unused)]
 macro_rules! trace4 {
@@ -169,16 +172,16 @@ where
     }
 }
 
-impl<NTY> AsAnyMut for BinsXbinDim0<NTY>
+impl<STY> AsAnyMut for BinsXbinDim0<STY>
 where
-    NTY: ScalarOps,
+    STY: ScalarOps,
 {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }
 
-impl<NTY> Empty for BinsXbinDim0<NTY> {
+impl<STY> Empty for BinsXbinDim0<STY> {
     fn empty() -> Self {
         Self {
             ts1s: VecDeque::new(),
@@ -192,9 +195,20 @@ impl<NTY> Empty for BinsXbinDim0<NTY> {
     }
 }
 
-impl<NTY> WithLen for BinsXbinDim0<NTY> {
+impl<STY> WithLen for BinsXbinDim0<STY> {
     fn len(&self) -> usize {
         self.ts1s.len()
+    }
+}
+
+impl<STY> Resettable for BinsXbinDim0<STY> {
+    fn reset(&mut self) {
+        self.ts1s.clear();
+        self.ts2s.clear();
+        self.counts.clear();
+        self.mins.clear();
+        self.maxs.clear();
+        self.avgs.clear();
     }
 }
 
@@ -757,7 +771,7 @@ impl<NTY: ScalarOps> TimeBinned for BinsXbinDim0<NTY> {
         Box::new(self.clone())
     }
 
-    fn as_time_binnable_dyn(&self) -> &dyn TimeBinnable {
+    fn as_time_binnable_ref(&self) -> &dyn TimeBinnable {
         self
     }
 
@@ -815,5 +829,27 @@ impl<NTY: ScalarOps> TimeBinned for BinsXbinDim0<NTY> {
 
     fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
         self
+    }
+
+    fn empty_like_self_box_time_binned(&self) -> Box<dyn TimeBinned> {
+        Box::new(Self::empty())
+    }
+
+    fn to_simple_bins_f32(&mut self) -> Box<dyn TimeBinned> {
+        use mem::replace;
+        let ret = BinsXbinDim0::<f32> {
+            ts1s: replace(&mut self.ts1s, VecDeque::new()),
+            ts2s: replace(&mut self.ts2s, VecDeque::new()),
+            counts: replace(&mut self.counts, VecDeque::new()),
+            mins: self.mins.iter().map(AsPrimF32::as_prim_f32_b).collect(),
+            maxs: self.mins.iter().map(AsPrimF32::as_prim_f32_b).collect(),
+            avgs: replace(&mut self.avgs, VecDeque::new()),
+            dim0kind: None,
+        };
+        Box::new(ret)
+    }
+
+    fn drain_into_tb(&mut self, dst: &mut dyn TimeBinned, range: Range<usize>) -> Result<(), Error> {
+        todo!()
     }
 }

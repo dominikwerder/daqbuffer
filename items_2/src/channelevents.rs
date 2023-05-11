@@ -700,6 +700,10 @@ impl EventsNonObj for ChannelEvents {
 }
 
 impl Events for ChannelEvents {
+    fn as_time_binnable_ref(&self) -> &dyn TimeBinnable {
+        todo!()
+    }
+
     fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable {
         todo!()
     }
