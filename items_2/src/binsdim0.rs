@@ -947,7 +947,7 @@ impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
             ts2s: replace(&mut self.ts2s, VecDeque::new()),
             counts: replace(&mut self.counts, VecDeque::new()),
             mins: self.mins.iter().map(AsPrimF32::as_prim_f32_b).collect(),
-            maxs: self.mins.iter().map(AsPrimF32::as_prim_f32_b).collect(),
+            maxs: self.maxs.iter().map(AsPrimF32::as_prim_f32_b).collect(),
             avgs: replace(&mut self.avgs, VecDeque::new()),
             dim0kind: None,
         };
