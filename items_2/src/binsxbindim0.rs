@@ -51,7 +51,7 @@ macro_rules! trace4 {
 pub struct BinsXbinDim0<NTY> {
     ts1s: VecDeque<u64>,
     ts2s: VecDeque<u64>,
-    pub counts: VecDeque<u64>,
+    counts: VecDeque<u64>,
     mins: VecDeque<NTY>,
     maxs: VecDeque<NTY>,
     avgs: VecDeque<f32>,
@@ -104,6 +104,10 @@ impl<NTY: ScalarOps> BinsXbinDim0<NTY> {
             avgs,
             dim0kind: None,
         }
+    }
+
+    pub fn counts(&self) -> &VecDeque<u64> {
+        &self.counts
     }
 
     pub fn push(&mut self, ts1: u64, ts2: u64, count: u64, min: NTY, max: NTY, avg: f32) {
@@ -837,7 +841,7 @@ impl<NTY: ScalarOps> TimeBinned for BinsXbinDim0<NTY> {
 
     fn to_simple_bins_f32(&mut self) -> Box<dyn TimeBinned> {
         use mem::replace;
-        let ret = BinsXbinDim0::<f32> {
+        let ret = super::binsdim0::BinsDim0::<f32> {
             ts1s: replace(&mut self.ts1s, VecDeque::new()),
             ts2s: replace(&mut self.ts2s, VecDeque::new()),
             counts: replace(&mut self.counts, VecDeque::new()),
@@ -850,6 +854,20 @@ impl<NTY: ScalarOps> TimeBinned for BinsXbinDim0<NTY> {
     }
 
     fn drain_into_tb(&mut self, dst: &mut dyn TimeBinned, range: Range<usize>) -> Result<(), Error> {
-        todo!()
+        // TODO as_any and as_any_mut are declared on unrelated traits. Simplify.
+        if let Some(dst) = dst.as_any_mut().downcast_mut::<Self>() {
+            // TODO make it harder to forget new members when the struct may get modified in the future
+            dst.ts1s.extend(self.ts1s.drain(range.clone()));
+            dst.ts2s.extend(self.ts2s.drain(range.clone()));
+            dst.counts.extend(self.counts.drain(range.clone()));
+            dst.mins.extend(self.mins.drain(range.clone()));
+            dst.maxs.extend(self.maxs.drain(range.clone()));
+            dst.avgs.extend(self.avgs.drain(range.clone()));
+            Ok(())
+        } else {
+            let type_name = any::type_name::<Self>();
+            error!("downcast to {} FAILED", type_name);
+            Err(Error::with_msg_no_trace(format!("downcast to {} FAILED", type_name)))
+        }
     }
 }

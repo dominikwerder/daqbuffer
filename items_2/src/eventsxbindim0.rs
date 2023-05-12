@@ -524,7 +524,7 @@ impl<STY: ScalarOps> TimeBinner for EventsXbinDim0TimeBinner<STY> {
                 error!("{}::push_in_progress  bins.len() {}", Self::type_name(), bins.len());
                 return;
             } else {
-                if push_empty || bins.counts[0] != 0 {
+                if push_empty || bins.counts()[0] != 0 {
                     match self.ready.as_mut() {
                         Some(ready) => {
                             ready.append_all_from(&mut bins);
