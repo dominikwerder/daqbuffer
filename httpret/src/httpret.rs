@@ -510,6 +510,7 @@ async fn update_db_with_channel_names(
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
 ) -> Result<Response<Body>, Error> {
+    info!("httpret::update_db_with_channel_names");
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
         Some(q) => q.contains("dry"),
