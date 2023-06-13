@@ -290,6 +290,25 @@ async fn http_service_inner(
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if path.starts_with("/api/4/private/logtest/") {
+        if req.method() == Method::GET {
+            if path.ends_with("/trace") {
+                trace!("test trace log output");
+            } else if path.ends_with("/debug") {
+                debug!("test debug log output");
+            } else if path.ends_with("/info") {
+                info!("test info log output");
+            } else if path.ends_with("/warn") {
+                warn!("test warn log output");
+            } else if path.ends_with("/error") {
+                error!("test error log output");
+            } else {
+                error!("test unknown log output");
+            }
+            Ok(response(StatusCode::OK).body(Body::empty())?)
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
     } else if let Some(h) = api4::status::StatusNodesRecursive::handler(&req) {
         h.handle(req, ctx, &node_config).await
     } else if let Some(h) = StatusBoardAllHandler::handler(&req) {

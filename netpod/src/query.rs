@@ -8,13 +8,13 @@ use crate::log::*;
 use crate::AggKind;
 use crate::AppendToUrl;
 use crate::ByteSize;
-use crate::Channel;
 use crate::FromUrl;
 use crate::HasBackend;
 use crate::HasTimeout;
 use crate::NanoRange;
 use crate::PulseRange;
 use crate::SeriesRange;
+use crate::SfDbChannel;
 use crate::ToNanos;
 use chrono::DateTime;
 use chrono::TimeZone;
@@ -252,12 +252,12 @@ pub fn agg_kind_from_binning_scheme(pairs: &BTreeMap<String, String>) -> Result<
 
 #[derive(Clone, Debug)]
 pub struct ChannelStateEventsQuery {
-    channel: Channel,
+    channel: SfDbChannel,
     range: NanoRange,
 }
 
 impl ChannelStateEventsQuery {
-    pub fn new(channel: Channel, range: NanoRange) -> Self {
+    pub fn new(channel: SfDbChannel, range: NanoRange) -> Self {
         Self { channel, range }
     }
 
@@ -265,7 +265,7 @@ impl ChannelStateEventsQuery {
         &self.range
     }
 
-    pub fn channel(&self) -> &Channel {
+    pub fn channel(&self) -> &SfDbChannel {
         &self.channel
     }
 
@@ -273,7 +273,7 @@ impl ChannelStateEventsQuery {
         self.channel.series = Some(series);
     }
 
-    pub fn channel_mut(&mut self) -> &mut Channel {
+    pub fn channel_mut(&mut self) -> &mut SfDbChannel {
         &mut self.channel
     }
 }
@@ -300,7 +300,7 @@ impl FromUrl for ChannelStateEventsQuery {
         let beg_date = pairs.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
         let end_date = pairs.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
         let ret = Self {
-            channel: Channel::from_pairs(&pairs)?,
+            channel: SfDbChannel::from_pairs(&pairs)?,
             range: NanoRange {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),

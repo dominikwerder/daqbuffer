@@ -9,7 +9,7 @@ use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::ByteOrder;
 use netpod::ByteSize;
-use netpod::Channel;
+use netpod::SfDbChannel;
 use netpod::Shape;
 use std::path::PathBuf;
 use tokio::fs::File;
@@ -81,7 +81,7 @@ pub fn main() -> Result<(), Error> {
                 let inp = Box::pin(disk::file_content_stream(path.clone(), file, disk_io_tune));
                 let ce = &config.entries[0];
                 let channel_config = SfDbChConf {
-                    channel: Channel {
+                    channel: SfDbChannel {
                         backend: String::new(),
                         name: config.channel_name.clone(),
                         series: None,

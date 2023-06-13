@@ -9,10 +9,10 @@ use netpod::query::TimeRangeQuery;
 use netpod::range::evrange::SeriesRange;
 use netpod::AppendToUrl;
 use netpod::ByteSize;
-use netpod::Channel;
 use netpod::FromUrl;
 use netpod::HasBackend;
 use netpod::HasTimeout;
+use netpod::SfDbChannel;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -21,7 +21,7 @@ use url::Url;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlainEventsQuery {
-    channel: Channel,
+    channel: SfDbChannel,
     range: SeriesRange,
     #[serde(default, skip_serializing_if = "is_false", rename = "oneBeforeRange")]
     one_before_range: bool,
@@ -51,7 +51,7 @@ pub struct PlainEventsQuery {
 }
 
 impl PlainEventsQuery {
-    pub fn new<R>(channel: Channel, range: R) -> Self
+    pub fn new<R>(channel: SfDbChannel, range: R) -> Self
     where
         R: Into<SeriesRange>,
     {
@@ -72,7 +72,7 @@ impl PlainEventsQuery {
         }
     }
 
-    pub fn channel(&self) -> &Channel {
+    pub fn channel(&self) -> &SfDbChannel {
         &self.channel
     }
 
@@ -189,7 +189,7 @@ impl FromUrl for PlainEventsQuery {
             return Err(Error::with_msg_no_trace("no series range in url"));
         };
         let ret = Self {
-            channel: Channel::from_pairs(pairs)?,
+            channel: SfDbChannel::from_pairs(pairs)?,
             range,
             one_before_range: pairs.get("oneBeforeRange").map_or("false", |x| x.as_ref()) == "true",
             transform: TransformQuery::from_pairs(pairs)?,

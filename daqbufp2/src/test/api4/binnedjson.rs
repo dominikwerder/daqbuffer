@@ -13,9 +13,9 @@ use items_2::binsdim0::BinsDim0CollectedResult;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::AppendToUrl;
-use netpod::Channel;
 use netpod::Cluster;
 use netpod::HostPort;
+use netpod::SfDbChannel;
 use netpod::APP_JSON;
 use query::api4::binned::BinnedQuery;
 use serde_json::Value as JsonValue;
@@ -29,7 +29,7 @@ fn make_query<S: Into<String>>(
     end_date: &str,
     bin_count_min: u32,
 ) -> Result<BinnedQuery, Error> {
-    let channel = Channel {
+    let channel = SfDbChannel {
         backend: TEST_BACKEND.into(),
         name: name.into(),
         series: None,
@@ -47,7 +47,7 @@ fn binned_d0_json_00() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = get_binned_json(
-            Channel {
+            SfDbChannel {
                 backend: TEST_BACKEND.into(),
                 name: "test-gen-i32-dim0-v01".into(),
                 series: None,
@@ -104,7 +104,7 @@ fn binned_d0_json_01a() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = get_binned_json(
-            Channel {
+            SfDbChannel {
                 backend: TEST_BACKEND.into(),
                 name: "test-gen-i32-dim0-v01".into(),
                 series: None,
@@ -162,7 +162,7 @@ fn binned_d0_json_01b() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = get_binned_json(
-            Channel {
+            SfDbChannel {
                 backend: TEST_BACKEND.into(),
                 name: "test-gen-i32-dim0-v01".into(),
                 series: None,
@@ -220,7 +220,7 @@ fn binned_d0_json_02() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = get_binned_json(
-            Channel {
+            SfDbChannel {
                 backend: TEST_BACKEND.into(),
                 name: "test-gen-f64-dim1-v00".into(),
                 series: None,
@@ -279,7 +279,7 @@ fn binned_d0_json_03() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = get_binned_json(
-            Channel {
+            SfDbChannel {
                 backend: TEST_BACKEND.into(),
                 name: "test-gen-f64-dim1-v00".into(),
                 series: None,
@@ -312,7 +312,7 @@ fn binned_d0_json_04() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = get_binned_json(
-            Channel {
+            SfDbChannel {
                 backend: TEST_BACKEND.into(),
                 name: "test-gen-i32-dim0-v01".into(),
                 series: None,
@@ -365,7 +365,7 @@ fn binned_d0_json_04() -> Result<(), Error> {
 }
 
 async fn get_binned_json(
-    channel: Channel,
+    channel: SfDbChannel,
     beg_date: &str,
     end_date: &str,
     bin_count: u32,

@@ -19,9 +19,7 @@ use tokio::io::AsyncReadExt;
 
 pub fn main() {
     match taskrun::run(go()) {
-        Ok(k) => {
-            info!("{:?}", k);
-        }
+        Ok(()) => {}
         Err(k) => {
             error!("{:?}", k);
         }
@@ -115,13 +113,10 @@ async fn go() -> Result<(), Error> {
         SubCmd::GenerateTestData => {
             disk::gen::gen_test_data().await?;
         }
-        SubCmd::Logappend(k) => {
-            let jh = tokio::task::spawn_blocking(move || {
-                taskrun::append::append(&k.dir, k.total_size_max_bytes(), std::io::stdin()).unwrap();
-            });
-            jh.await.map_err(Error::from_string)?;
-        }
         SubCmd::Test => (),
+        SubCmd::Version => {
+            println!("{}", clap::crate_version!());
+        }
     }
     Ok(())
 }
@@ -133,15 +128,15 @@ fn simple_fetch() {
     use daqbuffer::err::ErrConv;
     use netpod::timeunits::*;
     use netpod::ByteOrder;
-    use netpod::Channel;
     use netpod::ScalarType;
+    use netpod::SfDbChannel;
     use netpod::Shape;
     taskrun::run(async {
         let _rh = daqbufp2::nodes::require_test_hosts_running()?;
         let t1 = chrono::Utc::now();
         let query = AggQuerySingleChannel {
             channel_config: SfDbChConf {
-                channel: Channel {
+                channel: SfDbChannel {
                     backend: "sf-databuffer".into(),
                     name: "S10BC01-DBAM070:BAM_CH1_NORM".into(),
                     series: None,
@@ -193,7 +188,7 @@ fn simple_fetch() {
             ntot / 1024 / 1024,
             throughput
         );
-        Ok(())
+        Ok::<_, Error>(())
     })
     .unwrap();
 }

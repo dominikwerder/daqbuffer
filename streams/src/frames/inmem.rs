@@ -141,7 +141,8 @@ where
             return Err(e);
         }
         self.inp_bytes_consumed += lentot as u64;
-        trace!("parsed frame well  len {}", len);
+        // TODO metrics
+        //trace!("parsed frame well  len {}", len);
         let ret = InMemoryFrame {
             len,
             tyid,

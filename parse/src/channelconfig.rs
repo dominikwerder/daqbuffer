@@ -1,13 +1,14 @@
 use err::Error;
+use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::timeunits::DAY;
 use netpod::timeunits::MS;
 use netpod::ByteOrder;
-use netpod::Channel;
 use netpod::ChannelConfigQuery;
 use netpod::ChannelConfigResponse;
 use netpod::NodeConfigCached;
 use netpod::ScalarType;
+use netpod::SfDbChannel;
 use netpod::Shape;
 use netpod::TsNano;
 use nom::bytes::complete::take;
@@ -277,11 +278,17 @@ pub fn parse_config(inp: &[u8]) -> NRes<ChannelConfigs> {
         return mkerr(format!("no channel name.  len1 {}", len1));
     }
     let (inp, chn) = take((len1 - 8) as usize)(inp)?;
+    let channel_name = match String::from_utf8(chn.to_vec()) {
+        Ok(k) => k,
+        Err(e) => {
+            return mkerr(format!("channelName utf8 error {:?}", e));
+        }
+    };
     let (inp, len2) = be_i32(inp)?;
     if len1 != len2 {
         return mkerr(format!("Mismatch  len1 {}  len2 {}", len1, len2));
     }
-    let mut entries = vec![];
+    let mut entries = Vec::new();
     let mut inp_a = inp;
     while inp_a.len() > 0 {
         let inp = inp_a;
@@ -291,16 +298,33 @@ pub fn parse_config(inp: &[u8]) -> NRes<ChannelConfigs> {
         }
         inp_a = inp;
     }
-    let channel_name = match String::from_utf8(chn.to_vec()) {
-        Ok(k) => k,
-        Err(e) => {
-            return mkerr(format!("channelName utf8 error {:?}", e));
-        }
-    };
+    // TODO hack to accommodate for parts of databuffer nodes failing:
+    if false && channel_name == "SARFE10-PSSS059:SPECTRUM_X" {
+        warn!("apply hack for {channel_name}");
+        entries = entries
+            .into_iter()
+            .map(|mut e| {
+                e.is_array = true;
+                e.shape = Some(vec![2560]);
+                e
+            })
+            .collect();
+    }
+    if false && channel_name == "SARFE10-PSSS059:SPECTRUM_Y" {
+        warn!("apply hack for {channel_name}");
+        entries = entries
+            .into_iter()
+            .map(|mut e| {
+                e.is_array = true;
+                e.shape = Some(vec![2560]);
+                e
+            })
+            .collect();
+    }
     let ret = ChannelConfigs {
         format_version: ver,
-        channel_name: channel_name,
-        entries: entries,
+        channel_name,
+        entries,
     };
     Ok((inp, ret))
 }
@@ -322,7 +346,7 @@ pub async fn channel_config(q: &ChannelConfigQuery, ncc: &NodeConfigCached) -> R
     Ok(ret)
 }
 
-async fn read_local_config_real(channel: Channel, ncc: &NodeConfigCached) -> Result<ChannelConfigs, Error> {
+async fn read_local_config_real(channel: SfDbChannel, ncc: &NodeConfigCached) -> Result<ChannelConfigs, Error> {
     let path = ncc
         .node
         .sf_databuffer
@@ -356,7 +380,7 @@ async fn read_local_config_real(channel: Channel, ncc: &NodeConfigCached) -> Res
     Ok(config.1)
 }
 
-async fn read_local_config_test(channel: Channel, ncc: &NodeConfigCached) -> Result<ChannelConfigs, Error> {
+async fn read_local_config_test(channel: SfDbChannel, ncc: &NodeConfigCached) -> Result<ChannelConfigs, Error> {
     if channel.name() == "test-gen-i32-dim0-v00" {
         let ret = ChannelConfigs {
             format_version: 0,
@@ -423,7 +447,7 @@ async fn read_local_config_test(channel: Channel, ncc: &NodeConfigCached) -> Res
 }
 
 // TODO can I take parameters as ref, even when used in custom streams?
-pub async fn read_local_config(channel: Channel, ncc: NodeConfigCached) -> Result<ChannelConfigs, Error> {
+pub async fn read_local_config(channel: SfDbChannel, ncc: NodeConfigCached) -> Result<ChannelConfigs, Error> {
     if channel.backend() == TEST_BACKEND {
         read_local_config_test(channel, &ncc).await
     } else {
@@ -442,6 +466,10 @@ pub fn extract_matching_config_entry<'a>(
     range: &NanoRange,
     channel_config: &'a ChannelConfigs,
 ) -> Result<MatchingConfigEntry<'a>, Error> {
+    // TODO remove temporary
+    if channel_config.channel_name == "SARFE10-PSSS059:SPECTRUM_X" {
+        debug!("found config {:?}", channel_config);
+    }
     let mut ixs = Vec::new();
     for i1 in 0..channel_config.entries.len() {
         let e1 = &channel_config.entries[i1];
@@ -461,7 +489,12 @@ pub fn extract_matching_config_entry<'a>(
     } else if ixs.len() > 1 {
         Ok(MatchingConfigEntry::Multiple)
     } else {
-        Ok(MatchingConfigEntry::Entry(&channel_config.entries[ixs[0]]))
+        let e = &channel_config.entries[ixs[0]];
+        // TODO remove temporary
+        if channel_config.channel_name == "SARFE10-PSSS059:SPECTRUM_X" {
+            debug!("found matching entry {:?}", e);
+        }
+        Ok(MatchingConfigEntry::Entry(e))
     }
 }
 

@@ -3,10 +3,10 @@ use err::Error;
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::AggKind;
-use netpod::Channel;
 use netpod::Cluster;
 use netpod::NodeConfigCached;
 use netpod::PreBinnedPatchCoordEnum;
+use netpod::SfDbChannel;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::VecDeque;
@@ -18,7 +18,7 @@ use tiny_keccak::Hasher;
 
 // For file-based caching, this determined the node where the cache file is located.
 // No longer needed for scylla-based caching.
-pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoordEnum, channel: &Channel, cluster: &Cluster) -> u32 {
+pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoordEnum, channel: &SfDbChannel, cluster: &Cluster) -> u32 {
     let mut hash = tiny_keccak::Sha3::v256();
     hash.update(channel.backend.as_bytes());
     hash.update(channel.name.as_bytes());
@@ -36,13 +36,13 @@ pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoordEnum, channel: &Channe
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CacheFileDesc {
     // What identifies a cached file?
-    channel: Channel,
+    channel: SfDbChannel,
     patch: PreBinnedPatchCoordEnum,
     agg_kind: AggKind,
 }
 
 impl CacheFileDesc {
-    pub fn new(channel: Channel, patch: PreBinnedPatchCoordEnum, agg_kind: AggKind) -> Self {
+    pub fn new(channel: SfDbChannel, patch: PreBinnedPatchCoordEnum, agg_kind: AggKind) -> Self {
         Self {
             channel,
             patch,
@@ -104,7 +104,7 @@ pub async fn write_pb_cache_min_max_avg_scalar<T>(
     values: T,
     patch: PreBinnedPatchCoordEnum,
     agg_kind: AggKind,
-    channel: Channel,
+    channel: SfDbChannel,
     node_config: NodeConfigCached,
 ) -> Result<WrittenPbCache, Error>
 where

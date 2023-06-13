@@ -8,10 +8,10 @@ use netpod::query::TimeRangeQuery;
 use netpod::range::evrange::SeriesRange;
 use netpod::AppendToUrl;
 use netpod::ByteSize;
-use netpod::Channel;
 use netpod::FromUrl;
 use netpod::HasBackend;
 use netpod::HasTimeout;
+use netpod::SfDbChannel;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -20,7 +20,7 @@ use url::Url;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BinnedQuery {
-    channel: Channel,
+    channel: SfDbChannel,
     range: SeriesRange,
     bin_count: u32,
     #[serde(
@@ -43,7 +43,7 @@ pub struct BinnedQuery {
 }
 
 impl BinnedQuery {
-    pub fn new(channel: Channel, range: SeriesRange, bin_count: u32) -> Self {
+    pub fn new(channel: SfDbChannel, range: SeriesRange, bin_count: u32) -> Self {
         Self {
             channel,
             range,
@@ -62,7 +62,7 @@ impl BinnedQuery {
         &self.range
     }
 
-    pub fn channel(&self) -> &Channel {
+    pub fn channel(&self) -> &SfDbChannel {
         &self.channel
     }
 
@@ -115,7 +115,7 @@ impl BinnedQuery {
         self.channel.series = Some(series);
     }
 
-    pub fn channel_mut(&mut self) -> &mut Channel {
+    pub fn channel_mut(&mut self) -> &mut SfDbChannel {
         &mut self.channel
     }
 
@@ -169,7 +169,7 @@ impl FromUrl for BinnedQuery {
             return Err(Error::with_msg_no_trace("no series range in url"));
         };
         let ret = Self {
-            channel: Channel::from_pairs(&pairs)?,
+            channel: SfDbChannel::from_pairs(&pairs)?,
             range,
             bin_count: pairs
                 .get("binCount")

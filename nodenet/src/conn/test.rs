@@ -1,4 +1,5 @@
 use crate::conn::events_conn_handler;
+use err::Error;
 use futures_util::StreamExt;
 use items_0::streamitem::sitem_data;
 use items_0::streamitem::Sitemty;
@@ -13,7 +14,6 @@ use items_2::framable::Framable;
 use items_2::frame::decode_frame;
 use netpod::range::evrange::NanoRange;
 use netpod::timeunits::SEC;
-use netpod::Channel;
 use netpod::Cluster;
 use netpod::Database;
 use netpod::FileIoBufferSize;
@@ -22,6 +22,7 @@ use netpod::NodeConfig;
 use netpod::NodeConfigCached;
 use netpod::PerfOpts;
 use netpod::SfDatabuffer;
+use netpod::SfDbChannel;
 use query::api4::events::PlainEventsQuery;
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
 use tokio::io::AsyncWriteExt;
@@ -73,7 +74,7 @@ fn raw_data_00() {
             },
             ix: 0,
         };
-        let channel = Channel {
+        let channel = SfDbChannel {
             series: None,
             backend: TEST_BACKEND.into(),
             name: "scalar-i32".into(),
@@ -117,7 +118,7 @@ fn raw_data_00() {
             }
         }
         jh.await.unwrap().unwrap();
-        Ok(())
+        Ok::<_, Error>(())
     };
     taskrun::run(fut).unwrap();
 }

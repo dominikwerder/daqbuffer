@@ -2,16 +2,17 @@ use crate::eventblobs::EventChunkerMultifile;
 use crate::eventchunker::EventChunkerConf;
 use crate::AggQuerySingleChannel;
 use crate::SfDbChConf;
+use err::Error;
 use netpod::range::evrange::NanoRange;
 use netpod::test_data_base_path_databuffer;
 use netpod::timeunits::*;
 use netpod::ByteOrder;
 use netpod::ByteSize;
-use netpod::Channel;
 use netpod::DiskIoTune;
 use netpod::Node;
 use netpod::ScalarType;
 use netpod::SfDatabuffer;
+use netpod::SfDbChannel;
 use netpod::Shape;
 use netpod::TsNano;
 
@@ -38,7 +39,7 @@ pub fn make_test_node(id: u32) -> Node {
 fn agg_x_dim_0() {
     taskrun::run(async {
         agg_x_dim_0_inner().await;
-        Ok(())
+        Ok::<_, Error>(())
     })
     .unwrap();
 }
@@ -47,7 +48,7 @@ async fn agg_x_dim_0_inner() {
     let node = make_test_node(0);
     let query = AggQuerySingleChannel {
         channel_config: SfDbChConf {
-            channel: Channel {
+            channel: SfDbChannel {
                 backend: "sf-databuffer".into(),
                 name: "S10BC01-DBAM070:EOM1_T1".into(),
                 series: None,
@@ -92,7 +93,7 @@ async fn agg_x_dim_0_inner() {
 fn agg_x_dim_1() {
     taskrun::run(async {
         agg_x_dim_1_inner().await;
-        Ok(())
+        Ok::<_, Error>(())
     })
     .unwrap();
 }
@@ -104,7 +105,7 @@ async fn agg_x_dim_1_inner() {
     let node = make_test_node(0);
     let query = AggQuerySingleChannel {
         channel_config: SfDbChConf {
-            channel: Channel {
+            channel: SfDbChannel {
                 backend: "ks".into(),
                 name: "wave1".into(),
                 series: None,

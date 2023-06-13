@@ -13,12 +13,12 @@ use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
 use netpod::timeunits::*;
 use netpod::ChConf;
-use netpod::Channel;
 use netpod::ChannelConfigQuery;
 use netpod::ChannelConfigResponse;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ScalarType;
+use netpod::SfDbChannel;
 use netpod::Shape;
 use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
@@ -100,7 +100,7 @@ impl ChannelConfigHandler {
         let conf = if let Some(_scyco) = &node_config.node_config.cluster.scylla {
             let c = nodenet::channelconfig::channel_config(q.range.clone(), q.channel.clone(), node_config).await?;
             ChannelConfigResponse {
-                channel: Channel {
+                channel: SfDbChannel {
                     series: c.series.clone(),
                     backend: q.channel.backend().into(),
                     name: c.name,
@@ -110,9 +110,9 @@ impl ChannelConfigHandler {
                 shape: c.shape,
             }
         } else if let Some(_) = &node_config.node.channel_archiver {
-            return Err(Error::with_msg_no_trace("no archiver"));
+            return Err(Error::with_msg_no_trace("channel archiver not supported"));
         } else if let Some(_) = &node_config.node.archiver_appliance {
-            return Err(Error::with_msg_no_trace("no archapp"));
+            return Err(Error::with_msg_no_trace("archiver appliance not supported"));
         } else {
             parse::channelconfig::channel_config(&q, node_config).await?
         };
@@ -332,7 +332,7 @@ impl FromUrl for ChannelsWithTypeQuery {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChannelListWithType {
-    channels: Vec<Channel>,
+    channels: Vec<SfDbChannel>,
 }
 
 pub struct ScyllaChannelsWithType {}
@@ -392,7 +392,7 @@ impl ScyllaChannelsWithType {
         let mut list = Vec::new();
         for row in res.rows_typed_or_empty::<(String, i64)>() {
             let (channel_name, series) = row.err_conv()?;
-            let ch = Channel {
+            let ch = SfDbChannel {
                 backend: backend.into(),
                 name: channel_name,
                 series: Some(series as u64),

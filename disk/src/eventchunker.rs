@@ -53,11 +53,15 @@ pub struct EventChunker {
     seen_after_range_count: usize,
     unordered_warn_count: usize,
     repeated_ts_warn_count: usize,
+    config_mismatch_discard: usize,
 }
 
 impl Drop for EventChunker {
     fn drop(&mut self) {
         // TODO collect somewhere
+        if self.config_mismatch_discard != 0 {
+            warn!("config_mismatch_discard {}", self.config_mismatch_discard);
+        }
         debug!(
             "EventChunker  Drop Stats:\ndecomp_dt_histo: {:?}\nitem_len_emit_histo: {:?}",
             self.decomp_dt_histo, self.item_len_emit_histo
@@ -124,6 +128,7 @@ impl EventChunker {
             seen_after_range_count: 0,
             unordered_warn_count: 0,
             repeated_ts_warn_count: 0,
+            config_mismatch_discard: 0,
         }
     }
 
@@ -352,73 +357,111 @@ impl EventChunker {
                             let type_size = scalar_type.bytes() as u32;
                             let ele_count = value_bytes / type_size as u64;
                             let ele_size = type_size;
-                            match self.channel_config.shape {
+                            let config_matches = match self.channel_config.shape {
                                 Shape::Scalar => {
                                     if is_array {
-                                        Err(Error::with_msg(format!(
-                                            "ChannelConfig expects Scalar but we find event is_array"
-                                        )))?;
+                                        if false {
+                                            error!(
+                                                "channel config mismatch  {:?}  {:?}  {:?}  {:?}",
+                                                self.channel_config, is_array, ele_count, self.dbg_path,
+                                            );
+                                        }
+                                        if false {
+                                            return Err(Error::with_msg(format!(
+                                                "ChannelConfig expects {:?} but we find event is_array",
+                                                self.channel_config,
+                                            )));
+                                        }
+                                        false
+                                    } else {
+                                        true
                                     }
                                 }
                                 Shape::Wave(dim1count) => {
                                     if dim1count != ele_count as u32 {
-                                        Err(Error::with_msg(format!(
-                                            "ChannelConfig expects {:?} but event has ele_count {}",
-                                            self.channel_config.shape, ele_count,
-                                        )))?;
+                                        if false {
+                                            error!(
+                                                "channel config mismatch  {:?}  {:?}  {:?}  {:?}",
+                                                self.channel_config, is_array, ele_count, self.dbg_path,
+                                            );
+                                        }
+                                        if false {
+                                            return Err(Error::with_msg(format!(
+                                                "ChannelConfig expects {:?} but event has ele_count {}",
+                                                self.channel_config, ele_count,
+                                            )));
+                                        }
+                                        false
+                                    } else {
+                                        true
                                     }
                                 }
                                 Shape::Image(n1, n2) => {
                                     let nt = n1 as usize * n2 as usize;
                                     if nt != ele_count as usize {
-                                        Err(Error::with_msg(format!(
-                                            "ChannelConfig expects {:?} but event has ele_count {}",
-                                            self.channel_config.shape, ele_count,
-                                        )))?;
-                                    }
-                                }
-                            }
-                            let data = &buf.as_ref()[(p1 as usize)..(p1 as usize + k1 as usize)];
-                            let decomp = {
-                                if self.do_decompress {
-                                    assert!(data.len() > 12);
-                                    let ts1 = Instant::now();
-                                    let decomp_bytes = (type_size * ele_count as u32) as usize;
-                                    let mut decomp = vec![0; decomp_bytes];
-                                    // TODO limit the buf slice range
-                                    match bitshuffle_decompress(
-                                        &data[12..],
-                                        &mut decomp,
-                                        ele_count as usize,
-                                        ele_size as usize,
-                                        0,
-                                    ) {
-                                        Ok(c1) => {
-                                            assert!(c1 as u64 + 12 == k1);
-                                            let ts2 = Instant::now();
-                                            let dt = ts2.duration_since(ts1);
-                                            // TODO analyze the histo
-                                            self.decomp_dt_histo.ingest(dt.as_secs() as u32 + dt.subsec_micros());
-                                            Some(decomp)
+                                        if false {
+                                            error!(
+                                                "channel config mismatch  {:?}  {:?}  {:?}  {:?}",
+                                                self.channel_config, is_array, ele_count, self.dbg_path,
+                                            );
                                         }
-                                        Err(e) => {
-                                            return Err(Error::with_msg(format!("decompression failed {:?}", e)))?;
+                                        if false {
+                                            return Err(Error::with_msg(format!(
+                                                "ChannelConfig expects {:?} but event has ele_count {}",
+                                                self.channel_config, ele_count,
+                                            )));
                                         }
+                                        false
+                                    } else {
+                                        true
                                     }
-                                } else {
-                                    None
                                 }
                             };
-                            ret.add_event(
-                                ts,
-                                pulse,
-                                Some(data.to_vec()),
-                                decomp,
-                                ScalarType::from_dtype_index(type_index)?,
-                                is_big_endian,
-                                shape_this,
-                                comp_this,
-                            );
+                            if config_matches {
+                                let data = buf.as_ref()[(p1 as usize)..(p1 as usize + k1 as usize)].as_ref();
+                                let decomp = {
+                                    if self.do_decompress {
+                                        assert!(data.len() > 12);
+                                        let ts1 = Instant::now();
+                                        let decomp_bytes = (type_size * ele_count as u32) as usize;
+                                        let mut decomp = vec![0; decomp_bytes];
+                                        // TODO limit the buf slice range
+                                        match bitshuffle_decompress(
+                                            &data[12..],
+                                            &mut decomp,
+                                            ele_count as usize,
+                                            ele_size as usize,
+                                            0,
+                                        ) {
+                                            Ok(c1) => {
+                                                assert!(c1 as u64 + 12 == k1);
+                                                let ts2 = Instant::now();
+                                                let dt = ts2.duration_since(ts1);
+                                                // TODO analyze the histo
+                                                self.decomp_dt_histo.ingest(dt.as_secs() as u32 + dt.subsec_micros());
+                                                Some(decomp)
+                                            }
+                                            Err(e) => {
+                                                return Err(Error::with_msg(format!("decompression failed {:?}", e)))?;
+                                            }
+                                        }
+                                    } else {
+                                        None
+                                    }
+                                };
+                                ret.add_event(
+                                    ts,
+                                    pulse,
+                                    Some(data.to_vec()),
+                                    decomp,
+                                    ScalarType::from_dtype_index(type_index)?,
+                                    is_big_endian,
+                                    shape_this,
+                                    comp_this,
+                                );
+                            } else {
+                                self.config_mismatch_discard += 1;
+                            }
                         } else {
                             if len < p1 as u32 + 4 {
                                 let msg = format!("uncomp  len: {}  p1: {}", len, p1);

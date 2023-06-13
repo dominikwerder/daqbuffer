@@ -1,10 +1,10 @@
-pub mod append;
-
 use crate::log::*;
 use err::Error;
+use std::fmt;
 use std::future::Future;
 use std::panic;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use std::sync::Mutex;
 use tokio::runtime::Runtime;
 use tokio::task::JoinHandle;
 
@@ -72,22 +72,23 @@ pub fn get_runtime_opts(nworkers: usize, nblocking: usize) -> Arc<Runtime> {
     }
 }
 
-pub fn run<T, F>(fut: F) -> Result<T, Error>
+pub fn run<T, E, F>(fut: F) -> Result<T, E>
 where
-    F: Future<Output = Result<T, Error>>,
+    F: Future<Output = Result<T, E>>,
+    E: fmt::Display,
 {
     let runtime = get_runtime();
     match tracing_init() {
         Ok(_) => {}
-        Err(e) => {
-            eprintln!("TRACING: {e:?}");
+        Err(()) => {
+            eprintln!("ERROR tracing: can not init");
         }
     }
     let res = runtime.block_on(async { fut.await });
     match res {
         Ok(k) => Ok(k),
         Err(e) => {
-            error!("Catched: {:?}", e);
+            error!("ERROR catched: {e}");
             Err(e)
         }
     }
@@ -109,6 +110,7 @@ fn tracing_init_inner() -> Result<(), Error> {
         let fmt_layer = tracing_subscriber::fmt::Layer::new()
             .with_timer(timer)
             .with_target(true)
+            .with_ansi(false)
             .with_thread_names(true)
             .with_filter(filter);
         let z = tracing_subscriber::registry().with(fmt_layer);
@@ -125,6 +127,7 @@ fn tracing_init_inner() -> Result<(), Error> {
         /*let fmt_layer = tracing_subscriber::fmt::Layer::new()
         .with_timer(timer)
         .with_target(true)
+        .with_ansi(false)
         .with_thread_names(true)
         .with_filter(tracing_subscriber::EnvFilter::from_default_env());*/
         let url = "http://[::1]:6947";

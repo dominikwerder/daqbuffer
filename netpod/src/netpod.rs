@@ -595,12 +595,12 @@ pub struct NodeStatus {
     pub subs: VecDeque<NodeStatusSub>,
 }
 
-// Describes a "channel" which is a time-series with a unique name within a "backend".
+// Describes a swissfel-databuffer style "channel" which is a time-series with a unique name within a "backend".
 // Also the concept of "backend" could be split into "facility" and some optional other identifier
 // for cases like e.g. post-mortem, or to differentiate between channel-access and bsread for cases where
 // the same channel-name is delivered via different methods.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Channel {
+pub struct SfDbChannel {
     pub series: Option<u64>,
     // "backend" is currently used in the existing systems for multiple purposes:
     // it can indicate the facility (eg. sf-databuffer, hipa, ...) but also
@@ -609,7 +609,7 @@ pub struct Channel {
     pub name: String,
 }
 
-impl Channel {
+impl SfDbChannel {
     pub fn backend(&self) -> &str {
         &self.backend
     }
@@ -623,14 +623,14 @@ impl Channel {
     }
 }
 
-impl FromUrl for Channel {
+impl FromUrl for SfDbChannel {
     fn from_url(url: &Url) -> Result<Self, Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
-        let ret = Channel {
+        let ret = SfDbChannel {
             backend: pairs
                 .get("backend")
                 .ok_or(Error::with_public_msg("missing backend"))?
@@ -654,7 +654,7 @@ impl FromUrl for Channel {
     }
 }
 
-impl AppendToUrl for Channel {
+impl AppendToUrl for SfDbChannel {
     fn append_to_url(&self, url: &mut Url) {
         let mut g = url.query_pairs_mut();
         g.append_pair("backend", &self.backend);
@@ -669,13 +669,13 @@ impl AppendToUrl for Channel {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChannelTyped {
-    pub channel: Channel,
+    pub channel: SfDbChannel,
     pub scalar_type: ScalarType,
     pub shape: Shape,
 }
 
 impl ChannelTyped {
-    pub fn channel(&self) -> &Channel {
+    pub fn channel(&self) -> &SfDbChannel {
         &self.channel
     }
 }
@@ -2238,7 +2238,7 @@ pub fn get_url_query_pairs(url: &Url) -> BTreeMap<String, String> {
 // The presence of a configuration in some range does not imply that there is any data available.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelConfigQuery {
-    pub channel: Channel,
+    pub channel: SfDbChannel,
     pub range: NanoRange,
     pub expand: bool,
 }
@@ -2265,14 +2265,14 @@ impl FromUrl for ChannelConfigQuery {
         let beg_date = pairs
             .get("begDate")
             .map(String::from)
-            .unwrap_or_else(|| String::from("2000-01-01T00:00:00Z"));
+            .unwrap_or_else(|| String::from("1970-01-01T00:00:00Z"));
         let end_date = pairs
             .get("endDate")
             .map(String::from)
             .unwrap_or_else(|| String::from("3000-01-01T00:00:00Z"));
         let expand = pairs.get("expand").map(|s| s == "true").unwrap_or(false);
         let ret = Self {
-            channel: Channel::from_pairs(&pairs)?,
+            channel: SfDbChannel::from_pairs(&pairs)?,
             range: NanoRange {
                 beg: beg_date.parse::<DateTime<Utc>>()?.to_nanos(),
                 end: end_date.parse::<DateTime<Utc>>()?.to_nanos(),
@@ -2305,7 +2305,7 @@ impl AppendToUrl for ChannelConfigQuery {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelConfigResponse {
     #[serde(rename = "channel")]
-    pub channel: Channel,
+    pub channel: SfDbChannel,
     #[serde(rename = "scalarType")]
     pub scalar_type: ScalarType,
     #[serde(rename = "byteOrder", default, skip_serializing_if = "Option::is_none")]

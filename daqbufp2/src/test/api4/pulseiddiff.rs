@@ -6,13 +6,13 @@ use items_0::WithLen;
 use items_2::eventsdim0::EventsDim0CollectorOutput;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
-use netpod::Channel;
+use netpod::SfDbChannel;
 use query::api4::events::PlainEventsQuery;
 
 const BACKEND: &str = "testbackend-00";
 
 pub fn make_query<S: Into<String>>(name: S, beg_date: &str, end_date: &str) -> Result<PlainEventsQuery, Error> {
-    let channel = Channel {
+    let channel = SfDbChannel {
         backend: BACKEND.into(),
         name: name.into(),
         series: None,

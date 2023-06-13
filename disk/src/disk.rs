@@ -27,11 +27,11 @@ use futures_util::StreamExt;
 use futures_util::TryFutureExt;
 use netpod::log::*;
 use netpod::ByteOrder;
-use netpod::Channel;
 use netpod::DiskIoTune;
 use netpod::Node;
 use netpod::ReadSys;
 use netpod::ScalarType;
+use netpod::SfDbChannel;
 use netpod::Shape;
 use netpod::TsNano;
 use serde::Deserialize;
@@ -63,7 +63,7 @@ use tokio::sync::mpsc;
 // TODO move to databuffer-specific crate
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SfDbChConf {
-    pub channel: Channel,
+    pub channel: SfDbChannel,
     pub keyspace: u8,
     pub time_bin_size: TsNano,
     pub scalar_type: ScalarType,

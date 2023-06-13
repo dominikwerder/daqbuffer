@@ -483,8 +483,8 @@ async fn update_db_with_channel_config(
     } else {
         return Ok(UpdateChannelConfigResult::NotFound);
     };
-    if meta.len() > 8 * 1024 * 1024 {
-        return Err(Error::with_msg("meta data too long"));
+    if meta.len() > 40 * 1024 * 1024 {
+        return Err(Error::with_msg("meta data too long {meta:?}"));
     }
     let rows = dbc
         .query(

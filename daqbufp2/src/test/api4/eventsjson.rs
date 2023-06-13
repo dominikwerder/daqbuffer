@@ -10,9 +10,9 @@ use items_2::eventsdim0::EventsDim0CollectorOutput;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::AppendToUrl;
-use netpod::Channel;
 use netpod::Cluster;
 use netpod::HostPort;
+use netpod::SfDbChannel;
 use netpod::APP_JSON;
 use query::api4::events::PlainEventsQuery;
 use serde_json::Value as JsonValue;
@@ -21,7 +21,7 @@ use url::Url;
 const TEST_BACKEND: &str = "testbackend-00";
 
 fn make_query<S: Into<String>>(name: S, beg_date: &str, end_date: &str) -> Result<PlainEventsQuery, Error> {
-    let channel = Channel {
+    let channel = SfDbChannel {
         backend: TEST_BACKEND.into(),
         name: name.into(),
         series: None,
@@ -59,7 +59,7 @@ fn events_plain_json_02_range_incomplete() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = events_plain_json(
-            Channel {
+            SfDbChannel {
                 backend: TEST_BACKEND.into(),
                 name: "test-gen-i32-dim0-v01".into(),
                 series: None,
@@ -79,7 +79,7 @@ fn events_plain_json_02_range_incomplete() -> Result<(), Error> {
 
 // TODO improve by a more information-rich return type.
 async fn events_plain_json(
-    channel: Channel,
+    channel: SfDbChannel,
     beg_date: &str,
     end_date: &str,
     cluster: &Cluster,

@@ -1,6 +1,5 @@
-use crate::SfDbChConf;
-
 use super::paths;
+use crate::SfDbChConf;
 use bytes::BytesMut;
 use err::ErrStr;
 use err::Error;
@@ -445,7 +444,7 @@ mod test {
             assert_eq!(res.file.index, false);
             assert_eq!(res.file.positioned, true);
             assert_eq!(res.file.pos, 23);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -463,7 +462,7 @@ mod test {
             assert_eq!(res.found, false);
             assert_eq!(res.file.index, false);
             assert_eq!(res.file.positioned, false);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -482,7 +481,7 @@ mod test {
             assert_eq!(res.file.index, false);
             assert_eq!(res.file.positioned, true);
             assert_eq!(res.file.pos, 23);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -501,7 +500,7 @@ mod test {
             assert_eq!(res.file.index, false);
             assert_eq!(res.file.positioned, true);
             assert_eq!(res.file.pos, 179);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -520,7 +519,7 @@ mod test {
             assert_eq!(res.found, false);
             assert_eq!(res.file.index, false);
             assert_eq!(res.file.positioned, false);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -539,7 +538,7 @@ mod test {
             assert_eq!(res.found, false);
             assert_eq!(res.file.index, false);
             assert_eq!(res.file.positioned, false);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -557,7 +556,7 @@ mod test {
             assert_eq!(res.found, false);
             assert_eq!(res.file.index, false);
             assert_eq!(res.file.positioned, false);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -576,7 +575,7 @@ mod test {
             assert_eq!(res.file.index, true);
             assert_eq!(res.file.positioned, true);
             assert_eq!(res.file.pos, 184);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -594,7 +593,7 @@ mod test {
             assert_eq!(res.found, false);
             assert_eq!(res.file.index, true);
             assert_eq!(res.file.positioned, false);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -612,7 +611,7 @@ mod test {
             assert_eq!(res.found, false);
             assert_eq!(res.file.index, true);
             assert_eq!(res.file.positioned, false);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -631,7 +630,7 @@ mod test {
             assert_eq!(res.file.index, true);
             assert_eq!(res.file.positioned, false);
             assert_eq!(res.file.pos, 0);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -655,10 +654,10 @@ mod test {
                     .await?;
             assert_eq!(res.1, true);
             assert_eq!(res.3, 75);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
-        Ok(())
+        Ok::<_, Error>(())
     }
 
     #[test]
@@ -673,7 +672,7 @@ mod test {
             assert_eq!(res.found, false);
             assert_eq!(res.file.index, false);
             assert_eq!(res.file.positioned, false);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -692,7 +691,7 @@ mod test {
             assert_eq!(res.file.index, false);
             assert_eq!(res.file.positioned, true);
             assert_eq!(res.file.pos, 23);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -711,7 +710,7 @@ mod test {
             assert_eq!(res.file.index, false);
             assert_eq!(res.file.positioned, true);
             assert_eq!(res.file.pos, 75);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -731,7 +730,7 @@ mod test {
             assert_eq!(res.file.index, false);
             assert_eq!(res.file.positioned, true);
             assert_eq!(res.file.pos, 2995171);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -750,7 +749,7 @@ mod test {
             assert_eq!(res.found, false);
             assert_eq!(res.file.index, false);
             assert_eq!(res.file.positioned, false);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -770,7 +769,7 @@ mod test {
             assert_eq!(res.file.index, false);
             assert_eq!(res.file.positioned, true);
             assert_eq!(res.file.pos, 23);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -790,7 +789,7 @@ mod test {
             assert_eq!(res.file.index, false);
             assert_eq!(res.file.positioned, true);
             assert_eq!(res.file.pos, 75);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -810,7 +809,7 @@ mod test {
             assert_eq!(res.file.index, false);
             assert_eq!(res.file.positioned, true);
             assert_eq!(res.file.pos, 127);
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(fut)?;
         Ok(())
@@ -822,7 +821,7 @@ mod test {
             beg: DAY + HOUR * 5,
             end: DAY + HOUR * 8,
         };
-        let chn = netpod::Channel {
+        let chn = netpod::SfDbChannel {
             backend: BACKEND.into(),
             name: "scalar-i32-be".into(),
             series: None,
@@ -860,7 +859,7 @@ mod test {
                     n = paths.len()
                 )));
             }
-            Ok(())
+            Ok::<_, Error>(())
         };
         taskrun::run(task).unwrap();
     }

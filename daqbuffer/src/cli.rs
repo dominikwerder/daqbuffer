@@ -16,8 +16,8 @@ pub enum SubCmd {
     Proxy(Proxy),
     Client(Client),
     GenerateTestData,
-    Logappend(Logappend),
     Test,
+    Version,
 }
 
 #[derive(Debug, Parser)]
@@ -72,18 +72,4 @@ pub struct BinnedClient {
     pub cache: String,
     #[arg(long, default_value = "1048576")]
     pub disk_stats_every_kb: u32,
-}
-
-#[derive(Debug, Parser)]
-pub struct Logappend {
-    #[arg(long)]
-    pub dir: String,
-    #[arg(long)]
-    pub total_mb: Option<u64>,
-}
-
-impl Logappend {
-    pub fn total_size_max_bytes(&self) -> u64 {
-        1024 * 1024 * self.total_mb.unwrap_or(20)
-    }
 }

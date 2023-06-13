@@ -6,9 +6,9 @@ use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
-use netpod::Channel;
 use netpod::Cluster;
 use netpod::HostPort;
+use netpod::SfDbChannel;
 use netpod::APP_JSON;
 use url::Url;
 
@@ -16,7 +16,7 @@ const TEST_BACKEND: &str = "testbackend-00";
 
 // Fetches all data, not streaming, meant for basic test cases that fit in memory.
 async fn fetch_data_api_python_blob(
-    channels: Vec<Channel>,
+    channels: Vec<SfDbChannel>,
     beg_date: &str,
     end_date: &str,
     cluster: &Cluster,
@@ -67,7 +67,7 @@ fn api3_hdf_dim0_00() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = fetch_data_api_python_blob(
-            vec![Channel {
+            vec![SfDbChannel {
                 backend: TEST_BACKEND.into(),
                 name: "test-gen-i32-dim0-v00".into(),
                 series: None,

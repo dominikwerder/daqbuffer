@@ -4,10 +4,10 @@ use super::CacheUsage;
 use crate::AggKind;
 use crate::AppendToUrl;
 use crate::ByteSize;
-use crate::Channel;
 use crate::FromUrl;
 use crate::PreBinnedPatchCoordEnum;
 use crate::ScalarType;
+use crate::SfDbChannel;
 use crate::Shape;
 use err::Error;
 use std::collections::BTreeMap;
@@ -16,7 +16,7 @@ use url::Url;
 #[derive(Clone, Debug)]
 pub struct PreBinnedQuery {
     patch: PreBinnedPatchCoordEnum,
-    channel: Channel,
+    channel: SfDbChannel,
     scalar_type: ScalarType,
     shape: Shape,
     agg_kind: Option<AggKind>,
@@ -28,7 +28,7 @@ pub struct PreBinnedQuery {
 impl PreBinnedQuery {
     pub fn new(
         patch: PreBinnedPatchCoordEnum,
-        channel: Channel,
+        channel: SfDbChannel,
         scalar_type: ScalarType,
         shape: Shape,
         agg_kind: Option<AggKind>,
@@ -64,7 +64,7 @@ impl PreBinnedQuery {
             .map(|x| Shape::from_url_str(&x))??;
         let ret = Self {
             patch: PreBinnedPatchCoordEnum::from_pairs(&pairs)?,
-            channel: Channel::from_pairs(&pairs)?,
+            channel: SfDbChannel::from_pairs(&pairs)?,
             scalar_type,
             shape,
             agg_kind: agg_kind_from_binning_scheme(&pairs)?,
@@ -85,7 +85,7 @@ impl PreBinnedQuery {
         &self.patch
     }
 
-    pub fn channel(&self) -> &Channel {
+    pub fn channel(&self) -> &SfDbChannel {
         &self.channel
     }
 

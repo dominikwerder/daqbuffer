@@ -17,9 +17,9 @@ use netpod::range::evrange::NanoRange;
 use netpod::AggKind;
 use netpod::ByteSize;
 use netpod::ChConf;
-use netpod::Channel;
 use netpod::DiskIoTune;
 use netpod::NodeConfigCached;
+use netpod::SfDbChannel;
 use parse::channelconfig::extract_matching_config_entry;
 use parse::channelconfig::read_local_config;
 use parse::channelconfig::ConfigEntry;
@@ -130,10 +130,10 @@ pub async fn make_event_pipe(
 
 pub async fn get_applicable_entry(
     range: &NanoRange,
-    channel: Channel,
+    channel: SfDbChannel,
     node_config: &NodeConfigCached,
 ) -> Result<ConfigEntry, Error> {
-    info!("----------  disk::raw::conn::get_applicable_entry");
+    debug!("disk::raw::conn::get_applicable_entry");
     let channel_config = read_local_config(channel.clone(), node_config.clone()).await?;
     let entry_res = match extract_matching_config_entry(range, &channel_config) {
         Ok(k) => k,
@@ -159,7 +159,7 @@ pub async fn get_applicable_entry(
 
 pub fn make_local_event_blobs_stream(
     range: NanoRange,
-    channel: Channel,
+    channel: SfDbChannel,
     entry: &ConfigEntry,
     expand: bool,
     do_decompress: bool,
@@ -208,7 +208,7 @@ pub fn make_local_event_blobs_stream(
 
 pub fn make_remote_event_blobs_stream(
     range: NanoRange,
-    channel: Channel,
+    channel: SfDbChannel,
     entry: &ConfigEntry,
     expand: bool,
     do_decompress: bool,
@@ -216,7 +216,7 @@ pub fn make_remote_event_blobs_stream(
     disk_io_tune: DiskIoTune,
     node_config: &NodeConfigCached,
 ) -> Result<impl Stream<Item = Sitemty<EventFull>>, Error> {
-    info!("make_remote_event_blobs_stream");
+    debug!("make_remote_event_blobs_stream");
     let shape = match entry.to_shape() {
         Ok(k) => k,
         Err(e) => return Err(e)?,
@@ -363,7 +363,7 @@ pub async fn make_event_blobs_pipe(
     evq: &PlainEventsQuery,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
-    info!("make_event_blobs_pipe {evq:?}");
+    debug!("make_event_blobs_pipe {evq:?}");
     if evq.channel().backend() == TEST_BACKEND {
         make_event_blobs_pipe_test(evq, node_config).await
     } else {

@@ -7,11 +7,11 @@ use err::Error;
 use netpod::log::*;
 use netpod::timeunits::*;
 use netpod::ByteOrder;
-use netpod::Channel;
 use netpod::GenVar;
 use netpod::Node;
 use netpod::ScalarType;
 use netpod::SfDatabuffer;
+use netpod::SfDbChannel;
 use netpod::Shape;
 use netpod::TsNano;
 use std::path::Path;
@@ -34,7 +34,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
     {
         let chn = ChannelGenProps {
             config: SfDbChConf {
-                channel: Channel {
+                channel: SfDbChannel {
                     backend: backend.clone(),
                     name: "scalar-i32-be".into(),
                     series: None,
@@ -53,7 +53,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         ensemble.channels.push(chn);
         let chn = ChannelGenProps {
             config: SfDbChConf {
-                channel: Channel {
+                channel: SfDbChannel {
                     backend: backend.clone(),
                     name: "wave-f64-be-n21".into(),
                     series: None,
@@ -72,7 +72,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         ensemble.channels.push(chn);
         let chn = ChannelGenProps {
             config: SfDbChConf {
-                channel: Channel {
+                channel: SfDbChannel {
                     backend: backend.clone(),
                     name: "wave-u16-le-n77".into(),
                     series: None,
@@ -91,7 +91,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         ensemble.channels.push(chn);
         let chn = ChannelGenProps {
             config: SfDbChConf {
-                channel: Channel {
+                channel: SfDbChannel {
                     backend: backend.clone(),
                     name: "tw-scalar-i32-be".into(),
                     series: None,
@@ -110,7 +110,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         ensemble.channels.push(chn);
         let chn = ChannelGenProps {
             config: SfDbChConf {
-                channel: Channel {
+                channel: SfDbChannel {
                     backend: backend.clone(),
                     name: "const-regular-scalar-i32-be".into(),
                     series: None,

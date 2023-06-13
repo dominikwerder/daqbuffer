@@ -12,7 +12,7 @@ use err::Error;
 use err::Res2;
 use netpod::log::*;
 use netpod::TableSizes;
-use netpod::{Channel, Database, NodeConfigCached};
+use netpod::{Database, NodeConfigCached, SfDbChannel};
 use netpod::{ScalarType, Shape};
 use pg::{Client as PgClient, NoTls};
 use std::sync::Arc;
@@ -71,7 +71,7 @@ pub async fn create_connection(db_config: &Database) -> Result<PgClient, Error> 
     Ok(cl)
 }
 
-pub async fn channel_exists(channel: &Channel, node_config: &NodeConfigCached) -> Result<bool, Error> {
+pub async fn channel_exists(channel: &SfDbChannel, node_config: &NodeConfigCached) -> Result<bool, Error> {
     let cl = create_connection(&node_config.node_config.cluster.database).await?;
     let rows = cl
         .query("select rowid from channels where name = $1::text", &[&channel.name])
@@ -155,7 +155,7 @@ pub async fn insert_channel(name: String, facility: i64, dbc: &PgClient) -> Resu
 }
 
 // Currently only for scylla type backends
-pub async fn find_series(channel: &Channel, pgclient: Arc<PgClient>) -> Result<(u64, ScalarType, Shape), Error> {
+pub async fn find_series(channel: &SfDbChannel, pgclient: Arc<PgClient>) -> Result<(u64, ScalarType, Shape), Error> {
     info!("find_series  channel {:?}", channel);
     let rows = if let Some(series) = channel.series() {
         let q = "select series, facility, channel, scalar_type, shape_dims from series_by_channel where series = $1";
@@ -194,7 +194,7 @@ pub async fn find_series(channel: &Channel, pgclient: Arc<PgClient>) -> Result<(
 
 // Currently only for sf-databuffer type backends
 // Note: we currently treat the channels primary key as series-id for sf-databuffer type backends.
-pub async fn find_series_sf_databuffer(channel: &Channel, pgclient: Arc<PgClient>) -> Res2<u64> {
+pub async fn find_series_sf_databuffer(channel: &SfDbChannel, pgclient: Arc<PgClient>) -> Res2<u64> {
     info!("find_series  channel {:?}", channel);
     let sql = "select rowid from facilities where name = $1";
     let rows = pgclient.query(sql, &[&channel.backend()]).await.err_conv()?;

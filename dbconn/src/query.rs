@@ -2,11 +2,14 @@ use crate::create_connection;
 use crate::ErrConv;
 use err::Error;
 use netpod::log::*;
-use netpod::Channel;
 use netpod::NodeConfigCached;
+use netpod::SfDbChannel;
 
 // For sf-databuffer backend, given a Channel, try to complete the information if only id is given.
-pub async fn sf_databuffer_fetch_channel_by_series(channel: Channel, ncc: &NodeConfigCached) -> Result<Channel, Error> {
+pub async fn sf_databuffer_fetch_channel_by_series(
+    channel: SfDbChannel,
+    ncc: &NodeConfigCached,
+) -> Result<SfDbChannel, Error> {
     info!("sf_databuffer_fetch_channel_by_series");
     // TODO should not be needed at some point.
     if channel.backend().is_empty() || channel.name().is_empty() {
@@ -29,7 +32,7 @@ pub async fn sf_databuffer_fetch_channel_by_series(channel: Channel, ncc: &NodeC
                 if let Some(row) = rows.pop() {
                     info!("sf_databuffer_fetch_channel_by_series got a row {row:?}");
                     let name: String = row.get(0);
-                    let channel = Channel {
+                    let channel = SfDbChannel {
                         series: channel.series,
                         backend: ncc.node_config.cluster.backend.clone(),
                         name,

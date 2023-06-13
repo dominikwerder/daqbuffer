@@ -2,9 +2,9 @@ use crate::ErrConv;
 use err::Error;
 use netpod::log::*;
 use netpod::ChConf;
-use netpod::Channel;
 use netpod::NodeConfigCached;
 use netpod::ScalarType;
+use netpod::SfDbChannel;
 use netpod::Shape;
 
 /// It is an unsolved question as to how we want to uniquely address channels.
@@ -15,7 +15,7 @@ use netpod::Shape;
 /// Otherwise we try to uniquely identify the series id from the given information.
 /// In the future, we can even try to involve time range information for that, but backends like
 /// old archivers and sf databuffer do not support such lookup.
-pub async fn chconf_from_scylla_type_backend(channel: &Channel, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
+pub async fn chconf_from_scylla_type_backend(channel: &SfDbChannel, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
     if channel.backend != ncc.node_config.cluster.backend {
         warn!(
             "mismatched backend  {}  vs  {}",

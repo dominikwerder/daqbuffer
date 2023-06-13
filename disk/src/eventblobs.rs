@@ -298,7 +298,7 @@ mod test {
     const BACKEND: &str = "testbackend-00";
 
     fn read_expanded_for_range(range: NanoRange, nodeix: usize) -> Result<(usize, Vec<u64>), Error> {
-        let chn = netpod::Channel {
+        let chn = netpod::SfDbChannel {
             backend: BACKEND.into(),
             name: "scalar-i32-be".into(),
             series: None,

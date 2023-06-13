@@ -3,14 +3,14 @@ use err::Error;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::ChConf;
-use netpod::Channel;
 use netpod::NodeConfigCached;
 use netpod::ScalarType;
+use netpod::SfDbChannel;
 use netpod::Shape;
 
 const TEST_BACKEND: &str = "testbackend-00";
 
-pub async fn channel_config(range: NanoRange, channel: Channel, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
+pub async fn channel_config(range: NanoRange, channel: SfDbChannel, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
     if channel.backend() == TEST_BACKEND {
         let backend = channel.backend().into();
         // TODO the series-ids here are just random. Need to integrate with better test setup.
@@ -75,14 +75,14 @@ pub async fn channel_config(range: NanoRange, channel: Channel, ncc: &NodeConfig
         };
         ret
     } else if ncc.node_config.cluster.scylla.is_some() {
-        info!("try to get ChConf for scylla type backend");
+        debug!("try to get ChConf for scylla type backend");
         let ret = dbconn::channelconfig::chconf_from_scylla_type_backend(&channel, ncc)
             .await
             .map_err(Error::from)?;
         Ok(ret)
     } else if ncc.node.sf_databuffer.is_some() {
-        info!("channel_config  BEFORE  {channel:?}");
-        info!("try to get ChConf for sf-databuffer type backend");
+        debug!("channel_config  BEFORE  {channel:?}");
+        debug!("try to get ChConf for sf-databuffer type backend");
         // TODO in the future we should not need this:
         let mut channel = sf_databuffer_fetch_channel_by_series(channel, ncc).await?;
         if channel.series.is_none() {
@@ -92,9 +92,9 @@ pub async fn channel_config(range: NanoRange, channel: Channel, ncc: &NodeConfig
             channel.series = Some(series);
         }
         let channel = channel;
-        info!("channel_config  AFTER  {channel:?}");
+        debug!("channel_config  AFTER  {channel:?}");
         let c1 = disk::channelconfig::config(range, channel.clone(), ncc).await?;
-        info!("channel_config  THEN  {c1:?}");
+        debug!("channel_config  THEN  {c1:?}");
         let ret = ChConf {
             backend: c1.channel.backend,
             series: channel.series,

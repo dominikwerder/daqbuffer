@@ -13,9 +13,9 @@ use netpod::query::CacheUsage;
 use netpod::range::evrange::NanoRange;
 use netpod::AppendToUrl;
 use netpod::ByteSize;
-use netpod::Channel;
 use netpod::HostPort;
 use netpod::PerfOpts;
+use netpod::SfDbChannel;
 use netpod::APP_OCTET;
 use query::api4::binned::BinnedQuery;
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
@@ -61,7 +61,7 @@ pub async fn get_binned(
     info!("end  {}", end_date);
     info!("-------");
     let t1 = Utc::now();
-    let channel = Channel {
+    let channel = SfDbChannel {
         backend: channel_backend.clone(),
         name: channel_name.into(),
         series: None,

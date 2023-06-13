@@ -8,8 +8,8 @@ use netpod::log::*;
 use netpod::query::CacheUsage;
 use netpod::range::evrange::NanoRange;
 use netpod::AppendToUrl;
-use netpod::Channel;
 use netpod::Cluster;
+use netpod::SfDbChannel;
 use netpod::APP_JSON;
 use query::api4::binned::BinnedQuery;
 use std::time::Duration;
@@ -39,7 +39,7 @@ async fn get_json_common(
     let beg_date: DateTime<Utc> = beg_date.parse()?;
     let end_date: DateTime<Utc> = end_date.parse()?;
     let channel_backend = TEST_BACKEND;
-    let channel = Channel {
+    let channel = SfDbChannel {
         backend: channel_backend.into(),
         name: channel_name.into(),
         series: None,
