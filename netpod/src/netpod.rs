@@ -601,7 +601,7 @@ pub struct NodeStatus {
 // the same channel-name is delivered via different methods.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SfDbChannel {
-    pub series: Option<u64>,
+    series: Option<u64>,
     // "backend" is currently used in the existing systems for multiple purposes:
     // it can indicate the facility (eg. sf-databuffer, hipa, ...) but also
     // some special subsystem (eg. sf-rf-databuffer).
@@ -610,16 +610,36 @@ pub struct SfDbChannel {
 }
 
 impl SfDbChannel {
+    pub fn from_full<T: Into<String>, U: Into<String>>(backend: T, series: Option<u64>, name: U) -> Self {
+        Self {
+            backend: backend.into(),
+            series,
+            name: name.into(),
+        }
+    }
+
+    pub fn from_name<T: Into<String>, U: Into<String>>(backend: T, name: U) -> Self {
+        Self {
+            backend: backend.into(),
+            series: None,
+            name: name.into(),
+        }
+    }
+
     pub fn backend(&self) -> &str {
         &self.backend
+    }
+
+    pub fn series(&self) -> Option<u64> {
+        self.series
     }
 
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    pub fn series(&self) -> Option<u64> {
-        self.series
+    pub fn set_series(&mut self, series: u64) {
+        self.series = Some(series);
     }
 }
 
@@ -677,6 +697,73 @@ pub struct ChannelTyped {
 impl ChannelTyped {
     pub fn channel(&self) -> &SfDbChannel {
         &self.channel
+    }
+}
+
+// Describes a Scylla-based "daqbuffer" style time series.
+// The tuple `(backend, series)` is supposed to be unique.
+// Contains also the name because it is so useful.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct DaqbufSeries {
+    pub series: u64,
+    // "backend" is currently used in the existing systems for multiple purposes:
+    // it can indicate the facility (eg. sf-databuffer, hipa, ...) but also
+    // some special subsystem (eg. sf-rf-databuffer).
+    pub backend: String,
+    // This name is only for better user-facing messages. The (backend, series-id) is the identifier.
+    pub name: String,
+}
+
+impl DaqbufSeries {
+    pub fn series(&self) -> u64 {
+        self.series
+    }
+
+    pub fn backend(&self) -> &str {
+        &self.backend
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl FromUrl for DaqbufSeries {
+    fn from_url(url: &Url) -> Result<Self, Error> {
+        let pairs = get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+        let ret = DaqbufSeries {
+            series: pairs
+                .get("seriesId")
+                .ok_or_else(|| Error::with_public_msg("missing seriesId"))
+                .map(|x| x.parse::<u64>())??,
+            backend: pairs
+                .get("backend")
+                .ok_or_else(|| Error::with_public_msg("missing backend"))?
+                .into(),
+            name: pairs
+                .get("channelName")
+                .map(String::from)
+                .unwrap_or(String::new())
+                .into(),
+        };
+        Ok(ret)
+    }
+}
+
+impl AppendToUrl for DaqbufSeries {
+    fn append_to_url(&self, url: &mut Url) {
+        let mut g = url.query_pairs_mut();
+        g.append_pair("backend", &self.backend);
+        if self.name().len() > 0 {
+            g.append_pair("channelName", &self.name);
+        }
+        if let series = self.series {
+            g.append_pair("seriesId", &series.to_string());
+        }
     }
 }
 

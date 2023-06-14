@@ -100,11 +100,7 @@ impl ChannelConfigHandler {
         let conf = if let Some(_scyco) = &node_config.node_config.cluster.scylla {
             let c = nodenet::channelconfig::channel_config(q.range.clone(), q.channel.clone(), node_config).await?;
             ChannelConfigResponse {
-                channel: SfDbChannel {
-                    series: c.series.clone(),
-                    backend: q.channel.backend().into(),
-                    name: c.name,
-                },
+                channel: SfDbChannel::from_full(q.channel.backend(), c.series.clone(), &c.name),
                 scalar_type: c.scalar_type,
                 byte_order: None,
                 shape: c.shape,
@@ -392,11 +388,7 @@ impl ScyllaChannelsWithType {
         let mut list = Vec::new();
         for row in res.rows_typed_or_empty::<(String, i64)>() {
             let (channel_name, series) = row.err_conv()?;
-            let ch = SfDbChannel {
-                backend: backend.into(),
-                name: channel_name,
-                series: Some(series as u64),
-            };
+            let ch = SfDbChannel::from_full(backend, Some(series as u64), channel_name);
             list.push(ch);
         }
         let ret = ChannelListWithType { channels: list };

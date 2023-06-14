@@ -136,11 +136,7 @@ fn simple_fetch() {
         let t1 = chrono::Utc::now();
         let query = AggQuerySingleChannel {
             channel_config: SfDbChConf {
-                channel: SfDbChannel {
-                    backend: "sf-databuffer".into(),
-                    name: "S10BC01-DBAM070:BAM_CH1_NORM".into(),
-                    series: None,
-                },
+                channel: SfDbChannel::from_name("sf-databuffer", "S10BC01-DBAM070:BAM_CH1_NORM"),
                 keyspace: 3,
                 time_bin_size: TsNano(DAY),
                 array: true,

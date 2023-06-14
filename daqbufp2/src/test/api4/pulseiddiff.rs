@@ -12,11 +12,7 @@ use query::api4::events::PlainEventsQuery;
 const BACKEND: &str = "testbackend-00";
 
 pub fn make_query<S: Into<String>>(name: S, beg_date: &str, end_date: &str) -> Result<PlainEventsQuery, Error> {
-    let channel = SfDbChannel {
-        backend: BACKEND.into(),
-        name: name.into(),
-        series: None,
-    };
+    let channel = SfDbChannel::from_name(BACKEND, name);
     let beg_date = beg_date.parse()?;
     let end_date = end_date.parse()?;
     let range = NanoRange::from_date_time(beg_date, end_date);

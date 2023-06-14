@@ -39,11 +39,7 @@ async fn get_json_common(
     let beg_date: DateTime<Utc> = beg_date.parse()?;
     let end_date: DateTime<Utc> = end_date.parse()?;
     let channel_backend = TEST_BACKEND;
-    let channel = SfDbChannel {
-        backend: channel_backend.into(),
-        name: channel_name.into(),
-        series: None,
-    };
+    let channel = SfDbChannel::from_name(channel_backend, channel_name);
     let range = NanoRange::from_date_time(beg_date, end_date).into();
     let mut query = BinnedQuery::new(channel, range, bin_count).for_time_weighted_scalar();
     query.set_timeout(Duration::from_millis(40000));

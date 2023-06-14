@@ -67,11 +67,7 @@ fn api3_hdf_dim0_00() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = fetch_data_api_python_blob(
-            vec![SfDbChannel {
-                backend: TEST_BACKEND.into(),
-                name: "test-gen-i32-dim0-v00".into(),
-                series: None,
-            }],
+            vec![SfDbChannel::from_name(TEST_BACKEND, "test-gen-i32-dim0-v00")],
             "1970-01-01T00:20:04.000Z",
             "1970-01-01T00:21:10.000Z",
             cluster,

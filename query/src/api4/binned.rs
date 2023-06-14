@@ -112,7 +112,7 @@ impl BinnedQuery {
     }
 
     pub fn set_series_id(&mut self, series: u64) {
-        self.channel.series = Some(series);
+        self.channel.set_series(series);
     }
 
     pub fn channel_mut(&mut self) -> &mut SfDbChannel {

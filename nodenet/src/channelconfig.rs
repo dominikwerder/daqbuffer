@@ -85,11 +85,11 @@ pub async fn channel_config(range: NanoRange, channel: SfDbChannel, ncc: &NodeCo
         debug!("try to get ChConf for sf-databuffer type backend");
         // TODO in the future we should not need this:
         let mut channel = sf_databuffer_fetch_channel_by_series(channel, ncc).await?;
-        if channel.series.is_none() {
+        if channel.series().is_none() {
             let pgclient = dbconn::create_connection(&ncc.node_config.cluster.database).await?;
             let pgclient = std::sync::Arc::new(pgclient);
             let series = dbconn::find_series_sf_databuffer(&channel, pgclient).await?;
-            channel.series = Some(series);
+            channel.set_series(series);
         }
         let channel = channel;
         debug!("channel_config  AFTER  {channel:?}");
@@ -97,7 +97,7 @@ pub async fn channel_config(range: NanoRange, channel: SfDbChannel, ncc: &NodeCo
         debug!("channel_config  THEN  {c1:?}");
         let ret = ChConf {
             backend: c1.channel.backend,
-            series: channel.series,
+            series: channel.series(),
             name: c1.channel.name,
             scalar_type: c1.scalar_type,
             shape: c1.shape,

@@ -61,11 +61,7 @@ pub async fn get_binned(
     info!("end  {}", end_date);
     info!("-------");
     let t1 = Utc::now();
-    let channel = SfDbChannel {
-        backend: channel_backend.clone(),
-        name: channel_name.into(),
-        series: None,
-    };
+    let channel = SfDbChannel::from_name(channel_backend, channel_name);
     let range = NanoRange::from_date_time(beg_date, end_date).into();
     // TODO this was before fixed using AggKind::DimXBins1
     let mut query = BinnedQuery::new(channel, range, bin_count).for_time_weighted_scalar();

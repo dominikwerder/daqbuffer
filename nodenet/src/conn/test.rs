@@ -74,11 +74,7 @@ fn raw_data_00() {
             },
             ix: 0,
         };
-        let channel = SfDbChannel {
-            series: None,
-            backend: TEST_BACKEND.into(),
-            name: "scalar-i32".into(),
-        };
+        let channel = SfDbChannel::from_name(TEST_BACKEND, "scalar-i32");
         let range = NanoRange {
             beg: SEC,
             end: SEC * 10,

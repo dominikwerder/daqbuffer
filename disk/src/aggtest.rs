@@ -48,11 +48,7 @@ async fn agg_x_dim_0_inner() {
     let node = make_test_node(0);
     let query = AggQuerySingleChannel {
         channel_config: SfDbChConf {
-            channel: SfDbChannel {
-                backend: "sf-databuffer".into(),
-                name: "S10BC01-DBAM070:EOM1_T1".into(),
-                series: None,
-            },
+            channel: SfDbChannel::from_name("sf-databuffer", "S10BC01-DBAM070:EOM1_T1"),
             keyspace: 2,
             time_bin_size: TsNano(DAY),
             array: false,
@@ -105,11 +101,7 @@ async fn agg_x_dim_1_inner() {
     let node = make_test_node(0);
     let query = AggQuerySingleChannel {
         channel_config: SfDbChConf {
-            channel: SfDbChannel {
-                backend: "ks".into(),
-                name: "wave1".into(),
-                series: None,
-            },
+            channel: SfDbChannel::from_name("ks", "wave1"),
             keyspace: 3,
             time_bin_size: TsNano(DAY),
             array: true,

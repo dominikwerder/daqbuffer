@@ -1046,11 +1046,7 @@ impl Api1EventsBinaryHandler {
             let chans = qu
                 .channels()
                 .iter()
-                .map(|ch| SfDbChannel {
-                    backend: backend.into(),
-                    name: ch.name().into(),
-                    series: None,
-                })
+                .map(|ch| SfDbChannel::from_name(backend, ch.name()))
                 .collect();
             // TODO use a better stream protocol with built-in error delivery.
             let status_id = super::status_board()?.new_status_id();

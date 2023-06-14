@@ -19,11 +19,7 @@ pub async fn config_from_scylla(chq: ChannelConfigQuery, scy: Arc<ScySession>) -
         let cols = row.into_typed::<(i64, i32, Vec<i32>)>().err_conv()?;
         let scalar_type = ScalarType::from_scylla_i32(cols.1)?;
         let shape = Shape::from_scylla_shape_dims(&cols.2)?;
-        let channel = SfDbChannel {
-            series: Some(cols.0 as _),
-            backend: chq.channel.backend().into(),
-            name: chq.channel.name().into(),
-        };
+        let channel = SfDbChannel::from_full(chq.channel.backend(), Some(cols.0 as _), chq.channel.name());
         let res = ChannelConfigResponse {
             channel,
             scalar_type,

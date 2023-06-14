@@ -21,11 +21,7 @@ use url::Url;
 const TEST_BACKEND: &str = "testbackend-00";
 
 fn make_query<S: Into<String>>(name: S, beg_date: &str, end_date: &str) -> Result<PlainEventsQuery, Error> {
-    let channel = SfDbChannel {
-        backend: TEST_BACKEND.into(),
-        name: name.into(),
-        series: None,
-    };
+    let channel = SfDbChannel::from_name(TEST_BACKEND, name);
     let beg_date = beg_date.parse()?;
     let end_date = end_date.parse()?;
     let range = NanoRange::from_date_time(beg_date, end_date);
@@ -59,11 +55,7 @@ fn events_plain_json_02_range_incomplete() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = events_plain_json(
-            SfDbChannel {
-                backend: TEST_BACKEND.into(),
-                name: "test-gen-i32-dim0-v01".into(),
-                series: None,
-            },
+            SfDbChannel::from_name(TEST_BACKEND, "test-gen-i32-dim0-v01"),
             "1970-01-03T23:59:55.000Z",
             "1970-01-04T00:00:01.000Z",
             cluster,

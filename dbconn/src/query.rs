@@ -32,11 +32,8 @@ pub async fn sf_databuffer_fetch_channel_by_series(
                 if let Some(row) = rows.pop() {
                     info!("sf_databuffer_fetch_channel_by_series got a row {row:?}");
                     let name: String = row.get(0);
-                    let channel = SfDbChannel {
-                        series: channel.series,
-                        backend: ncc.node_config.cluster.backend.clone(),
-                        name,
-                    };
+                    let channel =
+                        SfDbChannel::from_full(ncc.node_config.cluster.backend.clone(), channel.series(), name);
                     info!("sf_databuffer_fetch_channel_by_series return {channel:?}");
                     Ok(channel)
                 } else {

@@ -1,11 +1,9 @@
 use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
-use crate::test::api4::common::fetch_binned_json;
 use chrono::Utc;
 use err::Error;
 use http::StatusCode;
 use hyper::Body;
-use items_0::test::f32_cmp_near;
 use items_0::test::f32_iter_cmp_near;
 use items_0::test::f64_iter_cmp_near;
 use items_0::WithLen;
@@ -29,11 +27,7 @@ fn make_query<S: Into<String>>(
     end_date: &str,
     bin_count_min: u32,
 ) -> Result<BinnedQuery, Error> {
-    let channel = SfDbChannel {
-        backend: TEST_BACKEND.into(),
-        name: name.into(),
-        series: None,
-    };
+    let channel = SfDbChannel::from_name(TEST_BACKEND, name);
     let beg_date = beg_date.parse()?;
     let end_date = end_date.parse()?;
     let range = NanoRange::from_date_time(beg_date, end_date).into();
@@ -47,11 +41,7 @@ fn binned_d0_json_00() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = get_binned_json(
-            SfDbChannel {
-                backend: TEST_BACKEND.into(),
-                name: "test-gen-i32-dim0-v01".into(),
-                series: None,
-            },
+            SfDbChannel::from_name(TEST_BACKEND, "test-gen-i32-dim0-v01"),
             "1970-01-01T00:20:04.000Z",
             "1970-01-01T00:20:37.000Z",
             6,
@@ -104,11 +94,7 @@ fn binned_d0_json_01a() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = get_binned_json(
-            SfDbChannel {
-                backend: TEST_BACKEND.into(),
-                name: "test-gen-i32-dim0-v01".into(),
-                series: None,
-            },
+            SfDbChannel::from_name(TEST_BACKEND, "test-gen-i32-dim0-v01"),
             "1970-01-01T00:20:10.000Z",
             "1970-01-01T00:40:30.000Z",
             10,
@@ -162,11 +148,7 @@ fn binned_d0_json_01b() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = get_binned_json(
-            SfDbChannel {
-                backend: TEST_BACKEND.into(),
-                name: "test-gen-i32-dim0-v01".into(),
-                series: None,
-            },
+            SfDbChannel::from_name(TEST_BACKEND, "test-gen-i32-dim0-v01"),
             "1970-01-01T00:20:10.000Z",
             "1970-01-01T01:20:30.000Z",
             10,
@@ -220,11 +202,7 @@ fn binned_d0_json_02() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = get_binned_json(
-            SfDbChannel {
-                backend: TEST_BACKEND.into(),
-                name: "test-gen-f64-dim1-v00".into(),
-                series: None,
-            },
+            SfDbChannel::from_name(TEST_BACKEND, "test-gen-f64-dim1-v00"),
             "1970-01-01T00:20:00Z",
             "1970-01-01T00:20:10Z",
             //"1970-01-01T01:20:45.000Z",
@@ -279,11 +257,7 @@ fn binned_d0_json_03() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = get_binned_json(
-            SfDbChannel {
-                backend: TEST_BACKEND.into(),
-                name: "test-gen-f64-dim1-v00".into(),
-                series: None,
-            },
+            SfDbChannel::from_name(TEST_BACKEND, "test-gen-f64-dim1-v00"),
             "1970-01-01T00:20:10.000Z",
             "1970-01-01T01:20:20.000Z",
             2,
@@ -312,11 +286,7 @@ fn binned_d0_json_04() -> Result<(), Error> {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let jsv = get_binned_json(
-            SfDbChannel {
-                backend: TEST_BACKEND.into(),
-                name: "test-gen-i32-dim0-v01".into(),
-                series: None,
-            },
+            SfDbChannel::from_name(TEST_BACKEND, "test-gen-i32-dim0-v01"),
             "1970-01-01T00:20:10.000Z",
             "1970-01-01T04:20:30.000Z",
             20,

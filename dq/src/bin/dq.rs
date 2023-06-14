@@ -81,11 +81,7 @@ pub fn main() -> Result<(), Error> {
                 let inp = Box::pin(disk::file_content_stream(path.clone(), file, disk_io_tune));
                 let ce = &config.entries[0];
                 let channel_config = SfDbChConf {
-                    channel: SfDbChannel {
-                        backend: String::new(),
-                        name: config.channel_name.clone(),
-                        series: None,
-                    },
+                    channel: SfDbChannel::from_name("", &config.channel_name),
                     keyspace: ce.ks as u8,
                     time_bin_size: ce.bs.clone(),
                     scalar_type: ce.scalar_type.clone(),

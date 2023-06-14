@@ -127,7 +127,7 @@ impl PlainEventsQuery {
     }
 
     pub fn set_series_id(&mut self, series: u64) {
-        self.channel.series = Some(series);
+        self.channel.set_series(series);
     }
 
     pub fn set_do_test_main_error(&mut self, k: bool) {

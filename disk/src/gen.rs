@@ -34,11 +34,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
     {
         let chn = ChannelGenProps {
             config: SfDbChConf {
-                channel: SfDbChannel {
-                    backend: backend.clone(),
-                    name: "scalar-i32-be".into(),
-                    series: None,
-                },
+                channel: SfDbChannel::from_name(&backend, "scalar-i32-be"),
                 keyspace: 2,
                 time_bin_size: TsNano(DAY),
                 scalar_type: ScalarType::I32,
@@ -53,11 +49,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         ensemble.channels.push(chn);
         let chn = ChannelGenProps {
             config: SfDbChConf {
-                channel: SfDbChannel {
-                    backend: backend.clone(),
-                    name: "wave-f64-be-n21".into(),
-                    series: None,
-                },
+                channel: SfDbChannel::from_name(&backend, "wave-f64-be-n21"),
                 keyspace: 3,
                 time_bin_size: TsNano(DAY),
                 array: true,
@@ -72,11 +64,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         ensemble.channels.push(chn);
         let chn = ChannelGenProps {
             config: SfDbChConf {
-                channel: SfDbChannel {
-                    backend: backend.clone(),
-                    name: "wave-u16-le-n77".into(),
-                    series: None,
-                },
+                channel: SfDbChannel::from_name(&backend, "wave-u16-le-n77"),
                 keyspace: 3,
                 time_bin_size: TsNano(DAY),
                 scalar_type: ScalarType::U16,
@@ -91,11 +79,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         ensemble.channels.push(chn);
         let chn = ChannelGenProps {
             config: SfDbChConf {
-                channel: SfDbChannel {
-                    backend: backend.clone(),
-                    name: "tw-scalar-i32-be".into(),
-                    series: None,
-                },
+                channel: SfDbChannel::from_name(&backend, "tw-scalar-i32-be"),
                 keyspace: 2,
                 time_bin_size: TsNano(DAY),
                 scalar_type: ScalarType::I32,
@@ -110,11 +94,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
         ensemble.channels.push(chn);
         let chn = ChannelGenProps {
             config: SfDbChConf {
-                channel: SfDbChannel {
-                    backend: backend.clone(),
-                    name: "const-regular-scalar-i32-be".into(),
-                    series: None,
-                },
+                channel: SfDbChannel::from_name(&backend, "const-regular-scalar-i32-be"),
                 keyspace: 2,
                 time_bin_size: TsNano(DAY),
                 scalar_type: ScalarType::I32,

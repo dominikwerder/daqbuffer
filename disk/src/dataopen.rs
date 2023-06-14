@@ -821,11 +821,7 @@ mod test {
             beg: DAY + HOUR * 5,
             end: DAY + HOUR * 8,
         };
-        let chn = netpod::SfDbChannel {
-            backend: BACKEND.into(),
-            name: "scalar-i32-be".into(),
-            series: None,
-        };
+        let chn = netpod::SfDbChannel::from_name(BACKEND, "scalar-i32-be");
         // TODO read config from disk? Or expose the config from data generator?
         let channel_config = SfDbChConf {
             channel: chn,
