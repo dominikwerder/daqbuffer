@@ -465,6 +465,7 @@ pub fn extract_matching_config_entry<'a>(
         .map({
             let mut nx = None;
             move |(i, x)| {
+                debug!("MAP ENTRY  {i:3}  {:?}", x.ts);
                 let k = nx.clone();
                 nx = Some(x.ts.clone());
                 (i, x, k)
@@ -474,11 +475,14 @@ pub fn extract_matching_config_entry<'a>(
 
     let mut c: Vec<_> = b
         .into_iter()
+        .rev()
         .map(|(i, e, tsn)| {
-            if let Some(ts2) = tsn {
+            //debug!("LOOK AT CONFIG ENTRY  {:3}  {:?}  {:?}", i, e.ts, tsn);
+            let ret = if let Some(ts2) = tsn.clone() {
                 if e.ts.ns() < range.end {
                     let p = if e.ts.ns() < range.beg { range.beg } else { e.ts.ns() };
                     let q = if ts2.ns() < range.end { ts2.ns() } else { range.end };
+                    //debug!("P/Q  {:?}  {:?}", TsNano(q - p), TsNano(p - q));
                     (i, TsNano(q - p), e)
                 } else {
                     (i, TsNano(0), e)
@@ -493,14 +497,16 @@ pub fn extract_matching_config_entry<'a>(
                 } else {
                     (i, TsNano(0), e)
                 }
-            }
+            };
+            debug!("LOOK AT CONFIG ENTRY  {:3}  {:?}  {:?}  {:?}", i, e.ts, tsn, ret.1);
+            ret
         })
         .collect();
 
     c.sort_unstable_by_key(|x| u64::MAX - x.1.ns());
 
-    for (i, ts, e) in &c[..c.len().min(3)] {
-        info!("FOUND CONFIG IN ORDER  {}  {:?}  {:?}", i, ts, e.ts);
+    for (i, dt, e) in &c[..c.len().min(3)] {
+        debug!("FOUND CONFIG IN ORDER  {}  {:?}  {:?}", i, dt, e.ts);
     }
 
     if let Some(&(i, _, _)) = c.first() {

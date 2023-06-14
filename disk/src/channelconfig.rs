@@ -34,12 +34,7 @@ pub async fn channel_config_best_match(
     node_config: &NodeConfigCached,
 ) -> Result<Option<SfDbChConf>, Error> {
     let best = config_entry_best_match(&range, channel.clone(), node_config).await?;
-    let channel_configs = read_local_config(channel.clone(), node_config.clone()).await?;
-    let entry_res = match extract_matching_config_entry(&range, &channel_configs) {
-        Ok(k) => k,
-        Err(e) => return Err(e),
-    };
-    match entry_res.best() {
+    match best {
         None => Ok(None),
         Some(entry) => {
             let shape = match entry.to_shape() {

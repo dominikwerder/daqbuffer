@@ -205,16 +205,16 @@ async fn update_db_with_channel_names_inner(
     info!("update_db_with_channel_names connection done");
     let node_disk_ident = get_node_disk_ident(&node_config, &dbc).await?;
     info!("update_db_with_channel_names get_node_disk_ident done");
-    {
-        let sql = concat!(
-            "insert into channels (facility, name) select facility, name from (values ($1::bigint, $2::text)) v1 (facility, name)",
-            " where not exists (select 1 from channels t1 where t1.facility = v1.facility and t1.name = v1.name)",
-            " on conflict do nothing",
-        );
+    let insert_sql = concat!(
+        "insert into channels (facility, name) select facility, name from (values ($1::bigint, $2::text)) v1 (facility, name)",
+        " where not exists (select 1 from channels t1 where t1.facility = v1.facility and t1.name = v1.name)",
+        " on conflict do nothing",
+    );
+    if false {
         let fac: i64 = 1;
         let ch = format!("tmp_dummy_04");
         let ret = dbc
-            .query(sql, &[&fac, &ch])
+            .query(insert_sql, &[&fac, &ch])
             .await
             .err_conv()
             .map_err(|e| format!("in channel name insert: {e}"));
@@ -234,13 +234,8 @@ async fn update_db_with_channel_names_inner(
     for ch in channel_names {
         let fac = node_disk_ident.facility;
         crate::delay_io_short().await;
-        let sql = concat!(
-                "insert into channels (facility, name) select facility, name from (values ($1::bigint, $2::text)) v1 (facility, name)",
-                " where not exists (select 1 from channels t1 where t1.facility = v1.facility and t1.name = v1.name)",
-                " on conflict do nothing",
-            );
         let ret = dbc
-            .query(sql, &[&fac, &ch])
+            .query(insert_sql, &[&fac, &ch])
             .await
             .err_conv()
             .map_err(|e| format!("in channel name insert: {e}"));
