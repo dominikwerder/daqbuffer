@@ -6,21 +6,21 @@ use netpod::NodeConfigCached;
 use netpod::SfDbChannel;
 
 // For sf-databuffer backend, given a Channel, try to complete the information if only id is given.
-pub async fn sf_databuffer_fetch_channel_by_series(
+#[allow(unused)]
+async fn sf_databuffer_fetch_channel_by_series(
     channel: SfDbChannel,
     ncc: &NodeConfigCached,
 ) -> Result<SfDbChannel, Error> {
-    info!("sf_databuffer_fetch_channel_by_series");
+    let me = "sf_databuffer_fetch_channel_by_series";
+    info!("{me}");
     // TODO should not be needed at some point.
     if channel.backend().is_empty() || channel.name().is_empty() {
         if let Some(series) = channel.series() {
             if series < 1 {
-                error!("sf_databuffer_fetch_channel_by_series  bad input: {channel:?}");
-                Err(Error::with_msg_no_trace(format!(
-                    "sf_databuffer_fetch_channel_by_series  bad input: {channel:?}"
-                )))
+                error!("{me}  bad input: {channel:?}");
+                Err(Error::with_msg_no_trace(format!("{me}  bad input: {channel:?}")))
             } else {
-                info!("sf_databuffer_fetch_channel_by_series do the lookup");
+                info!("{me} do the lookup");
                 let series = channel
                     .series()
                     .ok_or_else(|| Error::with_msg_no_trace("no series id given"))? as i64;
@@ -30,21 +30,18 @@ pub async fn sf_databuffer_fetch_channel_by_series(
                     .await
                     .err_conv()?;
                 if let Some(row) = rows.pop() {
-                    info!("sf_databuffer_fetch_channel_by_series got a row {row:?}");
+                    info!("{me} got a row {row:?}");
                     let name: String = row.get(0);
-                    let channel =
-                        SfDbChannel::from_full(ncc.node_config.cluster.backend.clone(), channel.series(), name);
-                    info!("sf_databuffer_fetch_channel_by_series return {channel:?}");
+                    let channel = SfDbChannel::from_full(&ncc.node_config.cluster.backend, channel.series(), name);
+                    info!("{me} return {channel:?}");
                     Ok(channel)
                 } else {
-                    info!("sf_databuffer_fetch_channel_by_series nothing found");
+                    info!("{me} nothing found");
                     Err(Error::with_msg_no_trace("can not find series"))
                 }
             }
         } else {
-            Err(Error::with_msg_no_trace(format!(
-                "sf_databuffer_fetch_channel_by_series  bad input: {channel:?}"
-            )))
+            Err(Error::with_msg_no_trace(format!("{me}  bad input: {channel:?}")))
         }
     } else {
         Ok(channel)

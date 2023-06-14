@@ -1,8 +1,12 @@
 use crate::errconv::ErrConv;
 use err::Error;
 use futures_util::StreamExt;
-use netpod::{log::*, ScalarType, SfDbChannel, Shape};
-use netpod::{ChannelConfigQuery, ChannelConfigResponse};
+use netpod::log::*;
+use netpod::ChannelConfigQuery;
+use netpod::ChannelConfigResponse;
+use netpod::ScalarType;
+use netpod::SfDbChannel;
+use netpod::Shape;
 use scylla::Session as ScySession;
 use std::sync::Arc;
 

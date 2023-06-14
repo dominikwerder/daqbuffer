@@ -20,8 +20,8 @@ use tiny_keccak::Hasher;
 // No longer needed for scylla-based caching.
 pub fn node_ix_for_patch(patch_coord: &PreBinnedPatchCoordEnum, channel: &SfDbChannel, cluster: &Cluster) -> u32 {
     let mut hash = tiny_keccak::Sha3::v256();
-    hash.update(channel.backend.as_bytes());
-    hash.update(channel.name.as_bytes());
+    hash.update(channel.backend().as_bytes());
+    hash.update(channel.name().as_bytes());
     /*hash.update(&patch_coord.patch_beg().to_le_bytes());
     hash.update(&patch_coord.patch_end().to_le_bytes());
     hash.update(&patch_coord.bin_t_len().to_le_bytes());
@@ -53,8 +53,8 @@ impl CacheFileDesc {
     pub fn hash(&self) -> String {
         let mut h = tiny_keccak::Sha3::v256();
         h.update(b"V000");
-        h.update(self.channel.backend.as_bytes());
-        h.update(self.channel.name.as_bytes());
+        h.update(self.channel.backend().as_bytes());
+        h.update(self.channel.name().as_bytes());
         h.update(format!("{}", self.agg_kind).as_bytes());
         //h.update(&self.patch.spec().bin_t_len().to_le_bytes());
         //h.update(&self.patch.spec().patch_t_len().to_le_bytes());
@@ -67,8 +67,8 @@ impl CacheFileDesc {
     pub fn hash_channel(&self) -> String {
         let mut h = tiny_keccak::Sha3::v256();
         h.update(b"V000");
-        h.update(self.channel.backend.as_bytes());
-        h.update(self.channel.name.as_bytes());
+        h.update(self.channel.backend().as_bytes());
+        h.update(self.channel.name().as_bytes());
         let mut buf = [0; 32];
         h.finalize(&mut buf);
         hex::encode(&buf)
@@ -83,7 +83,7 @@ impl CacheFileDesc {
             .join("cache")
             .join(&hc[0..3])
             .join(&hc[3..6])
-            .join(&self.channel.name)
+            .join(self.channel.name())
             .join(format!("{}", self.agg_kind))
         /*.join(format!(
             "{:010}-{:010}",

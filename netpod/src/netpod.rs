@@ -605,8 +605,8 @@ pub struct SfDbChannel {
     // "backend" is currently used in the existing systems for multiple purposes:
     // it can indicate the facility (eg. sf-databuffer, hipa, ...) but also
     // some special subsystem (eg. sf-rf-databuffer).
-    pub backend: String,
-    pub name: String,
+    backend: String,
+    name: String,
 }
 
 impl SfDbChannel {

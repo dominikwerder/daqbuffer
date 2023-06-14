@@ -74,7 +74,7 @@ pub async fn create_connection(db_config: &Database) -> Result<PgClient, Error> 
 pub async fn channel_exists(channel: &SfDbChannel, node_config: &NodeConfigCached) -> Result<bool, Error> {
     let cl = create_connection(&node_config.node_config.cluster.database).await?;
     let rows = cl
-        .query("select rowid from channels where name = $1::text", &[&channel.name])
+        .query("select rowid from channels where name = $1::text", &[&channel.name()])
         .await
         .err_conv()?;
     debug!("channel_exists  {} rows", rows.len());

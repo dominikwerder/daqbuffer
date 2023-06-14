@@ -144,7 +144,7 @@ impl BinnedQuery {
 
 impl HasBackend for BinnedQuery {
     fn backend(&self) -> &str {
-        &self.channel.backend
+        self.channel.backend()
     }
 }
 

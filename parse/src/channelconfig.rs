@@ -23,6 +23,7 @@ use num_derive::ToPrimitive;
 use num_traits::ToPrimitive;
 use serde::Deserialize;
 use serde::Serialize;
+use std::cmp;
 use std::fmt;
 use tokio::io::ErrorKind;
 
@@ -268,9 +269,7 @@ pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
     ))
 }
 
-/**
-Parse a complete configuration file from given in-memory input buffer.
-*/
+/// Parse a complete configuration file from given in-memory input buffer.
 pub fn parse_config(inp: &[u8]) -> NRes<ChannelConfigs> {
     let (inp, ver) = be_i16(inp)?;
     let (inp, len1) = be_i32(inp)?;
@@ -298,29 +297,9 @@ pub fn parse_config(inp: &[u8]) -> NRes<ChannelConfigs> {
         }
         inp_a = inp;
     }
-    // TODO hack to accommodate for parts of databuffer nodes failing:
-    if false && channel_name == "SARFE10-PSSS059:SPECTRUM_X" {
-        warn!("apply hack for {channel_name}");
-        entries = entries
-            .into_iter()
-            .map(|mut e| {
-                e.is_array = true;
-                e.shape = Some(vec![2560]);
-                e
-            })
-            .collect();
-    }
-    if false && channel_name == "SARFE10-PSSS059:SPECTRUM_Y" {
-        warn!("apply hack for {channel_name}");
-        entries = entries
-            .into_iter()
-            .map(|mut e| {
-                e.is_array = true;
-                e.shape = Some(vec![2560]);
-                e
-            })
-            .collect();
-    }
+    // Do not sort the parsed config entries.
+    // We want to deliver the actual order which is found on disk.
+    // Important for troubleshooting.
     let ret = ChannelConfigs {
         format_version: ver,
         channel_name,
@@ -334,8 +313,8 @@ pub async fn channel_config(q: &ChannelConfigQuery, ncc: &NodeConfigCached) -> R
     let entry_res = extract_matching_config_entry(&q.range, &conf)?;
     let entry = match entry_res {
         MatchingConfigEntry::None => return Err(Error::with_public_msg("no config entry found")),
-        MatchingConfigEntry::Multiple => return Err(Error::with_public_msg("multiple config entries found")),
-        MatchingConfigEntry::Entry(entry) => entry,
+        MatchingConfigEntry::Single(entry) => entry,
+        MatchingConfigEntry::Multiple(_) => return Err(Error::with_public_msg("multiple config entries found")),
     };
     let ret = ChannelConfigResponse {
         channel: q.channel.clone(),
@@ -354,7 +333,7 @@ async fn read_local_config_real(channel: SfDbChannel, ncc: &NodeConfigCached) ->
         .ok_or_else(|| Error::with_msg(format!("missing sf databuffer config in node")))?
         .data_base_path
         .join("config")
-        .join(&channel.name)
+        .join(channel.name())
         .join("latest")
         .join("00000_Config");
     // TODO use commonio here to wrap the error conversion
@@ -363,7 +342,7 @@ async fn read_local_config_real(channel: SfDbChannel, ncc: &NodeConfigCached) ->
         Err(e) => match e.kind() {
             ErrorKind::NotFound => {
                 let bt = err::bt::Backtrace::new();
-                netpod::log::error!("{bt:?}");
+                error!("{bt:?}");
                 return Err(Error::with_public_msg(format!(
                     "databuffer channel config file not found for channel {channel:?} at {path:?}"
                 )));
@@ -458,43 +437,77 @@ pub async fn read_local_config(channel: SfDbChannel, ncc: NodeConfigCached) -> R
 #[derive(Clone)]
 pub enum MatchingConfigEntry<'a> {
     None,
-    Multiple,
-    Entry(&'a ConfigEntry),
+    Single(&'a ConfigEntry),
+    // In this case, we only return the entry which best matches to the time range
+    Multiple(&'a ConfigEntry),
+}
+
+impl<'a> MatchingConfigEntry<'a> {
+    pub fn best(&self) -> Option<&ConfigEntry> {
+        match self {
+            MatchingConfigEntry::None => None,
+            MatchingConfigEntry::Single(e) => Some(e),
+            MatchingConfigEntry::Multiple(e) => Some(e),
+        }
+    }
 }
 
 pub fn extract_matching_config_entry<'a>(
     range: &NanoRange,
     channel_config: &'a ChannelConfigs,
 ) -> Result<MatchingConfigEntry<'a>, Error> {
-    // TODO remove temporary
-    if channel_config.channel_name == "SARFE10-PSSS059:SPECTRUM_X" {
-        debug!("found config {:?}", channel_config);
-    }
-    let mut ixs = Vec::new();
-    for i1 in 0..channel_config.entries.len() {
-        let e1 = &channel_config.entries[i1];
-        if i1 + 1 < channel_config.entries.len() {
-            let e2 = &channel_config.entries[i1 + 1];
-            if e1.ts.ns() < range.end && e2.ts.ns() >= range.beg {
-                ixs.push(i1);
+    let mut a: Vec<_> = channel_config.entries.iter().enumerate().map(|(i, x)| (i, x)).collect();
+    a.sort_unstable_by_key(|(_, x)| x.ts.ns());
+
+    let b: Vec<_> = a
+        .into_iter()
+        .rev()
+        .map({
+            let mut nx = None;
+            move |(i, x)| {
+                let k = nx.clone();
+                nx = Some(x.ts.clone());
+                (i, x, k)
             }
-        } else {
-            if e1.ts.ns() < range.end {
-                ixs.push(i1);
+        })
+        .collect();
+
+    let mut c: Vec<_> = b
+        .into_iter()
+        .map(|(i, e, tsn)| {
+            if let Some(ts2) = tsn {
+                if e.ts.ns() < range.end {
+                    let p = if e.ts.ns() < range.beg { range.beg } else { e.ts.ns() };
+                    let q = if ts2.ns() < range.end { ts2.ns() } else { range.end };
+                    (i, TsNano(q - p), e)
+                } else {
+                    (i, TsNano(0), e)
+                }
+            } else {
+                if e.ts.ns() < range.end {
+                    if e.ts.ns() < range.beg {
+                        (i, TsNano(range.delta()), e)
+                    } else {
+                        (i, TsNano(range.end - e.ts.ns()), e)
+                    }
+                } else {
+                    (i, TsNano(0), e)
+                }
             }
-        }
+        })
+        .collect();
+
+    c.sort_unstable_by_key(|x| u64::MAX - x.1.ns());
+
+    for (i, ts, e) in &c[..c.len().min(3)] {
+        info!("FOUND CONFIG IN ORDER  {}  {:?}  {:?}", i, ts, e.ts);
     }
-    if ixs.len() == 0 {
-        Ok(MatchingConfigEntry::None)
-    } else if ixs.len() > 1 {
-        Ok(MatchingConfigEntry::Multiple)
-    } else {
-        let e = &channel_config.entries[ixs[0]];
+
+    if let Some(&(i, _, _)) = c.first() {
         // TODO remove temporary
-        if channel_config.channel_name == "SARFE10-PSSS059:SPECTRUM_X" {
-            debug!("found matching entry {:?}", e);
-        }
-        Ok(MatchingConfigEntry::Entry(e))
+        Ok(MatchingConfigEntry::Single(&channel_config.entries[i]))
+    } else {
+        Ok(MatchingConfigEntry::None)
     }
 }
 

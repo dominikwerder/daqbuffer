@@ -1,4 +1,3 @@
-use dbconn::query::sf_databuffer_fetch_channel_by_series;
 use err::Error;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
@@ -81,26 +80,17 @@ pub async fn channel_config(range: NanoRange, channel: SfDbChannel, ncc: &NodeCo
             .map_err(Error::from)?;
         Ok(ret)
     } else if ncc.node.sf_databuffer.is_some() {
-        debug!("channel_config  BEFORE  {channel:?}");
-        debug!("try to get ChConf for sf-databuffer type backend");
-        // TODO in the future we should not need this:
-        let mut channel = sf_databuffer_fetch_channel_by_series(channel, ncc).await?;
-        if channel.series().is_none() {
-            let pgclient = dbconn::create_connection(&ncc.node_config.cluster.database).await?;
-            let pgclient = std::sync::Arc::new(pgclient);
-            let series = dbconn::find_series_sf_databuffer(&channel, pgclient).await?;
-            channel.set_series(series);
-        }
-        let channel = channel;
-        debug!("channel_config  AFTER  {channel:?}");
-        let c1 = disk::channelconfig::config(range, channel.clone(), ncc).await?;
-        debug!("channel_config  THEN  {c1:?}");
+        debug!("channel_config  channel {channel:?}");
+        let config = disk::channelconfig::channel_config_best_match(range, channel.clone(), ncc)
+            .await?
+            .ok_or_else(|| Error::with_msg_no_trace("config entry not found"))?;
+        debug!("channel_config  config  {config:?}");
         let ret = ChConf {
-            backend: c1.channel.backend,
+            backend: config.channel.backend().into(),
             series: channel.series(),
-            name: c1.channel.name,
-            scalar_type: c1.scalar_type,
-            shape: c1.shape,
+            name: config.channel.name().into(),
+            scalar_type: config.scalar_type,
+            shape: config.shape,
         };
         Ok(ret)
     } else {

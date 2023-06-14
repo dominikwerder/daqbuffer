@@ -18,7 +18,7 @@ pub fn datapath(timebin: u64, config: &SfDbChConf, split: u32, node: &Node) -> P
             config.keyspace
         ))
         .join("byTime")
-        .join(config.channel.name.clone())
+        .join(config.channel.name())
         .join(format!("{:019}", timebin))
         .join(format!("{:010}", split))
         .join(format!("{:019}_00000_Data", config.time_bin_size.ns() / MS))
@@ -36,7 +36,7 @@ pub async fn datapaths_for_timebin(timebin: u64, config: &SfDbChConf, node: &Nod
         .data_base_path
         .join(format!("{}_{}", sfc.ksprefix, config.keyspace))
         .join("byTime")
-        .join(config.channel.name.clone())
+        .join(config.channel.name())
         .join(format!("{:019}", timebin));
     let rd = tokio::fs::read_dir(timebin_path).await?;
     let mut rd = tokio_stream::wrappers::ReadDirStream::new(rd);
@@ -71,7 +71,7 @@ pub async fn datapaths_for_timebin(timebin: u64, config: &SfDbChConf, node: &Nod
             .data_base_path
             .join(format!("{}_{}", sfc.ksprefix, config.keyspace))
             .join("byTime")
-            .join(config.channel.name.clone())
+            .join(config.channel.name())
             .join(format!("{:019}", timebin))
             .join(format!("{:010}", split))
             .join(format!("{:019}_00000_Data", config.time_bin_size.ns() / MS));
@@ -86,7 +86,7 @@ pub fn channel_timebins_dir_path(channel_config: &SfDbChConf, node: &Node) -> Re
         .data_base_path
         .join(format!("{}_{}", sfc.ksprefix, channel_config.keyspace))
         .join("byTime")
-        .join(&channel_config.channel.name);
+        .join(channel_config.channel.name());
     Ok(ret)
 }
 

@@ -1,3 +1,4 @@
+use crate::channelconfig::config_entry_best_match;
 use crate::eventblobs::EventChunkerMultifile;
 use crate::eventchunker::EventChunkerConf;
 use crate::raw::generated::EventBlobsGeneratorI32Test00;
@@ -20,10 +21,7 @@ use netpod::ChConf;
 use netpod::DiskIoTune;
 use netpod::NodeConfigCached;
 use netpod::SfDbChannel;
-use parse::channelconfig::extract_matching_config_entry;
-use parse::channelconfig::read_local_config;
 use parse::channelconfig::ConfigEntry;
-use parse::channelconfig::MatchingConfigEntry;
 use query::api4::events::PlainEventsQuery;
 use std::pin::Pin;
 
@@ -63,32 +61,16 @@ pub async fn make_event_pipe(
     chconf: ChConf,
     ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
-    info!("----------  disk::raw::conn::make_event_pipe");
-    if false {
-        match dbconn::channel_exists(&evq.channel(), &ncc).await {
-            Ok(_) => (),
-            Err(e) => return Err(e)?,
-        }
-    }
-    let chn = evq.channel().clone();
-    let chn = if chn.name().is_empty() {
-        if let Some(series) = chn.series() {
-            if series < 1 {
-                error!("BAD QUERY: {evq:?}");
-                return Err(Error::with_msg_no_trace(format!("BAD QUERY: {evq:?}")));
-            } else {
-                dbconn::query::sf_databuffer_fetch_channel_by_series(chn, ncc).await?
-            }
-        } else {
-            chn
-        }
-    } else {
-        chn
-    };
+    // sf-databuffer type backends identify channels by their (backend, name) only.
+    let channel = evq.channel().clone();
     let range = evq.range().clone();
-    let channel_config = crate::channelconfig::config(evq.range().try_into()?, chn, ncc).await;
-    let channel_config = match channel_config {
-        Ok(x) => x,
+    let x = crate::channelconfig::channel_config_best_match(evq.range().try_into()?, channel, ncc).await;
+    let channel_config = match x {
+        Ok(Some(x)) => x,
+        Ok(None) => {
+            error!("make_event_pipe  can not find config");
+            return Err(Error::with_msg_no_trace("make_event_pipe  can not find config"));
+        }
         Err(e) => {
             error!("make_event_pipe  can not find config");
             if e.msg().contains("ErrorKind::NotFound") {
@@ -96,7 +78,7 @@ pub async fn make_event_pipe(
                 let s = futures_util::stream::empty();
                 return Ok(Box::pin(s));
             } else {
-                return Err(e)?;
+                return Err(e);
             }
         }
     };
@@ -126,35 +108,6 @@ pub async fn make_event_pipe(
     error!("TODO replace AggKind in the called code");
     let pipe = make_num_pipeline_stream_evs(chconf, AggKind::TimeWeightedScalar, event_blobs);
     Ok(pipe)
-}
-
-pub async fn get_applicable_entry(
-    range: &NanoRange,
-    channel: SfDbChannel,
-    node_config: &NodeConfigCached,
-) -> Result<ConfigEntry, Error> {
-    debug!("disk::raw::conn::get_applicable_entry");
-    let channel_config = read_local_config(channel.clone(), node_config.clone()).await?;
-    let entry_res = match extract_matching_config_entry(range, &channel_config) {
-        Ok(k) => k,
-        Err(e) => return Err(e)?,
-    };
-    let entry = match entry_res {
-        MatchingConfigEntry::None => {
-            return Err(Error::with_public_msg(format!(
-                "get_applicable_entry no config entry found {:?}",
-                channel
-            )))?
-        }
-        MatchingConfigEntry::Multiple => {
-            return Err(Error::with_public_msg(format!(
-                "get_applicable_entry multiple config entries found for {:?}",
-                channel
-            )))?
-        }
-        MatchingConfigEntry::Entry(entry) => entry,
-    };
-    Ok(entry.clone())
 }
 
 pub fn make_local_event_blobs_stream(
@@ -264,8 +217,13 @@ pub async fn make_event_blobs_pipe_real(
     }
     let expand = evq.one_before_range();
     let range = evq.range();
-    let entry = match get_applicable_entry(&evq.range().try_into()?, evq.channel().clone(), node_config).await {
-        Ok(x) => x,
+    let entry = match config_entry_best_match(&evq.range().try_into()?, evq.channel().clone(), node_config).await {
+        Ok(Some(x)) => x,
+        Ok(None) => {
+            let e = Error::with_msg_no_trace("no config entry found");
+            error!("{e}");
+            return Err(e);
+        }
         Err(e) => {
             if e.to_public_error().msg().contains("no config entry found") {
                 let item = items_0::streamitem::LogItem {
@@ -280,7 +238,6 @@ pub async fn make_event_blobs_pipe_real(
         }
     };
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
-    type ItemType = Sitemty<EventFull>;
     // TODO should depend on host config
     let do_local = node_config.node_config.cluster.is_central_storage;
     let pipe = if do_local {
@@ -306,7 +263,9 @@ pub async fn make_event_blobs_pipe_real(
             DiskIoTune::default(),
             node_config,
         )?;
-        /*let s = event_blobs.map(|item: ItemType| Box::new(item) as Box<dyn Framable + Send>);
+        /*
+        type ItemType = Sitemty<EventFull>;
+        let s = event_blobs.map(|item: ItemType| Box::new(item) as Box<dyn Framable + Send>);
         //let s = tracing_futures::Instrumented::instrument(s, tracing::info_span!("make_event_blobs_pipe"));
         let pipe: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>>;
         pipe = Box::pin(s);

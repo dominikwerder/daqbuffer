@@ -152,12 +152,12 @@ async fn gen_node(split: u32, node: &Node, ensemble: &Ensemble) -> Result<(), Er
 
 async fn gen_channel(chn: &ChannelGenProps, split: u32, node: &Node, ensemble: &Ensemble) -> Result<(), Error> {
     let sfc = node.sf_databuffer.as_ref().unwrap();
-    let config_path = sfc.data_base_path.join("config").join(&chn.config.channel.name);
+    let config_path = sfc.data_base_path.join("config").join(chn.config.channel.name());
     let channel_path = sfc
         .data_base_path
         .join(format!("{}_{}", sfc.ksprefix, chn.config.keyspace))
         .join("byTime")
-        .join(&chn.config.channel.name);
+        .join(chn.config.channel.name());
     tokio::fs::create_dir_all(&channel_path).await?;
     gen_config(&config_path, &chn.config, node, ensemble)
         .await
@@ -200,7 +200,7 @@ async fn gen_config(config_path: &Path, config: &SfDbChConf, _node: &Node, _ense
     let mut buf = BytesMut::with_capacity(1024 * 1);
     let ver = 0;
     buf.put_i16(ver);
-    let cnenc = config.channel.name.as_bytes();
+    let cnenc = config.channel.name().as_bytes();
     let len1 = cnenc.len() + 8;
     buf.put_i32(len1 as i32);
     buf.put(cnenc);
@@ -385,7 +385,7 @@ async fn gen_timebin(
 
 async fn gen_datafile_header(file: &mut CountedFile, config: &SfDbChConf) -> Result<(), Error> {
     let mut buf = BytesMut::with_capacity(1024);
-    let cnenc = config.channel.name.as_bytes();
+    let cnenc = config.channel.name().as_bytes();
     let len1 = cnenc.len() + 8;
     buf.put_i16(0);
     buf.put_i32(len1 as i32);

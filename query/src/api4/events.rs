@@ -164,7 +164,7 @@ impl PlainEventsQuery {
 
 impl HasBackend for PlainEventsQuery {
     fn backend(&self) -> &str {
-        &self.channel.backend
+        self.channel.backend()
     }
 }
 

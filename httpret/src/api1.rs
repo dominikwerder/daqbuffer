@@ -50,7 +50,6 @@ use parse::channelconfig::extract_matching_config_entry;
 use parse::channelconfig::read_local_config;
 use parse::channelconfig::ChannelConfigs;
 use parse::channelconfig::ConfigEntry;
-use parse::channelconfig::MatchingConfigEntry;
 use query::api4::events::PlainEventsQuery;
 use serde::Deserialize;
 use serde::Serialize;
@@ -719,7 +718,7 @@ impl DataApiPython3DataStream {
             let compression = if let Some(_) = &b.comps[i1] { Some(1) } else { None };
             if !*header_out {
                 let head = Api1ChannelHeader {
-                    name: channel.name.clone(),
+                    name: channel.name().into(),
                     ty: (&b.scalar_types[i1]).into(),
                     byte_order: if b.be[i1] {
                         Api1ByteOrder::Big
@@ -792,98 +791,79 @@ impl DataApiPython3DataStream {
         match item {
             Ok(config) => {
                 self.config_fut = None;
-                let entry_res = match extract_matching_config_entry(&self.range, &config) {
-                    Ok(k) => k,
-                    Err(e) => return Err(e)?,
-                };
-                match entry_res {
-                    MatchingConfigEntry::None => {
+                let res = extract_matching_config_entry(&self.range, &config)?;
+                let entry = match res.best() {
+                    Some(k) => k,
+                    None => {
                         warn!("DataApiPython3DataStream no config entry found for {:?}", config);
                         self.chan_stream = Some(Box::pin(stream::empty()));
-                        Ok(())
+                        // TODO remember the issue for status and metrics
+                        return Ok(());
                     }
-                    MatchingConfigEntry::Multiple => {
-                        warn!(
-                            "DataApiPython3DataStream multiple config entries found for {:?}",
-                            config
-                        );
-                        self.chan_stream = Some(Box::pin(stream::empty()));
-                        Ok(())
+                };
+                let entry = entry.clone();
+                let channel = self.current_channel.as_ref().unwrap();
+                debug!("found channel_config for {}: {:?}", channel.name(), entry);
+                let evq = PlainEventsQuery::new(channel.clone(), self.range.clone()).for_event_blobs();
+                debug!("query for event blobs retrieval: evq {evq:?}");
+                // TODO  important TODO
+                debug!("TODO fix magic inmem_bufcap");
+                debug!("TODO add timeout option to data api3 download");
+                let perf_opts = PerfOpts::default();
+                // TODO is this a good to place decide this?
+                let s = if self.node_config.node_config.cluster.is_central_storage {
+                    info!("Set up central storage stream");
+                    // TODO pull up this config
+                    let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
+                    let s = make_local_event_blobs_stream(
+                        evq.range().try_into()?,
+                        evq.channel().clone(),
+                        &entry,
+                        evq.one_before_range(),
+                        self.do_decompress,
+                        event_chunker_conf,
+                        self.disk_io_tune.clone(),
+                        &self.node_config,
+                    )?;
+                    Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
+                } else {
+                    if let Some(sh) = &entry.shape {
+                        if sh.len() > 1 {
+                            warn!("Remote stream fetch for shape {sh:?}");
+                        }
                     }
-                    MatchingConfigEntry::Entry(entry) => {
-                        let entry = entry.clone();
-                        let channel = self.current_channel.as_ref().unwrap();
-                        debug!("found channel_config for {}: {:?}", channel.name, entry);
-                        let evq = PlainEventsQuery::new(channel.clone(), self.range.clone()).for_event_blobs();
-                        debug!("query for event blobs retrieval: evq {evq:?}");
-                        // TODO  important TODO
-                        debug!("TODO fix magic inmem_bufcap");
-                        debug!("TODO add timeout option to data api3 download");
-                        let perf_opts = PerfOpts::default();
-                        // TODO is this a good to place decide this?
-                        let s = if self.node_config.node_config.cluster.is_central_storage {
-                            info!("Set up central storage stream");
-                            // TODO pull up this config
-                            let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
-                            let s = make_local_event_blobs_stream(
-                                evq.range().try_into()?,
-                                evq.channel().clone(),
-                                &entry,
-                                evq.one_before_range(),
-                                self.do_decompress,
-                                event_chunker_conf,
-                                self.disk_io_tune.clone(),
-                                &self.node_config,
-                            )?;
-                            Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
-                        } else {
-                            if let Some(sh) = &entry.shape {
-                                if sh.len() > 1 {
-                                    warn!("Remote stream fetch for shape {sh:?}");
-                                }
-                            }
-                            debug!("Set up merged remote stream");
-                            let s = MergedBlobsFromRemotes::new(
-                                evq,
-                                perf_opts,
-                                self.node_config.node_config.cluster.clone(),
-                            );
-                            Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
-                        };
-                        let s = s.map({
-                            let mut header_out = false;
-                            let mut count_events = 0;
-                            let channel = self.current_channel.clone().unwrap();
-                            move |b| {
-                                let ret = match b {
-                                    Ok(b) => {
-                                        let f = match b {
-                                            StreamItem::DataItem(RangeCompletableItem::Data(b)) => Self::convert_item(
-                                                b,
-                                                &channel,
-                                                &entry,
-                                                &mut header_out,
-                                                &mut count_events,
-                                            )?,
-                                            _ => BytesMut::new(),
-                                        };
-                                        Ok(f)
+                    debug!("Set up merged remote stream");
+                    let s = MergedBlobsFromRemotes::new(evq, perf_opts, self.node_config.node_config.cluster.clone());
+                    Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
+                };
+                let s = s.map({
+                    let mut header_out = false;
+                    let mut count_events = 0;
+                    let channel = self.current_channel.clone().unwrap();
+                    move |b| {
+                        let ret = match b {
+                            Ok(b) => {
+                                let f = match b {
+                                    StreamItem::DataItem(RangeCompletableItem::Data(b)) => {
+                                        Self::convert_item(b, &channel, &entry, &mut header_out, &mut count_events)?
                                     }
-                                    Err(e) => Err(e),
+                                    _ => BytesMut::new(),
                                 };
-                                ret
+                                Ok(f)
                             }
-                        });
-                        //let _ = Box::new(s) as Box<dyn Stream<Item = Result<BytesMut, Error>> + Unpin>;
-                        let evm = if self.events_max == 0 {
-                            usize::MAX
-                        } else {
-                            self.events_max as usize
+                            Err(e) => Err(e),
                         };
-                        self.chan_stream = Some(Box::pin(s.map_err(Error::from).take(evm)));
-                        Ok(())
+                        ret
                     }
-                }
+                });
+                //let _ = Box::new(s) as Box<dyn Stream<Item = Result<BytesMut, Error>> + Unpin>;
+                let evm = if self.events_max == 0 {
+                    usize::MAX
+                } else {
+                    self.events_max as usize
+                };
+                self.chan_stream = Some(Box::pin(s.map_err(Error::from).take(evm)));
+                Ok(())
             }
             Err(e) => Err(Error::with_msg_no_trace(format!("can not parse channel config {e}"))),
         }
