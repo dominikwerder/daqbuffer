@@ -1,5 +1,6 @@
 use crate::timeunits::SEC;
 use crate::Dim0Kind;
+use crate::TsNano;
 use chrono::DateTime;
 use chrono::TimeZone;
 use chrono::Utc;
@@ -23,19 +24,28 @@ pub struct NanoRange {
 
 impl fmt::Debug for NanoRange {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let beg = chrono::Utc
-            .timestamp_opt((self.beg / SEC) as i64, (self.beg % SEC) as u32)
-            .earliest();
-        let end = chrono::Utc
-            .timestamp_opt((self.end / SEC) as i64, (self.end % SEC) as u32)
-            .earliest();
-        if let (Some(a), Some(b)) = (beg, end) {
-            f.debug_struct("NanoRange").field("beg", &a).field("end", &b).finish()
-        } else {
+        if true {
+            let beg = TsNano(self.beg);
+            let end = TsNano(self.end);
             f.debug_struct("NanoRange")
                 .field("beg", &beg)
                 .field("end", &end)
                 .finish()
+        } else {
+            let beg = chrono::Utc
+                .timestamp_opt((self.beg / SEC) as i64, (self.beg % SEC) as u32)
+                .earliest();
+            let end = chrono::Utc
+                .timestamp_opt((self.end / SEC) as i64, (self.end % SEC) as u32)
+                .earliest();
+            if let (Some(a), Some(b)) = (beg, end) {
+                f.debug_struct("NanoRange").field("beg", &a).field("end", &b).finish()
+            } else {
+                f.debug_struct("NanoRange")
+                    .field("beg", &beg)
+                    .field("end", &end)
+                    .finish()
+            }
         }
     }
 }
@@ -50,6 +60,14 @@ impl NanoRange {
 
     pub fn delta(&self) -> u64 {
         self.end - self.beg
+    }
+
+    pub fn beg(&self) -> u64 {
+        self.beg
+    }
+
+    pub fn end(&self) -> u64 {
+        self.end
     }
 }
 
