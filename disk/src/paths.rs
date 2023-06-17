@@ -3,6 +3,7 @@ use err::Error;
 use futures_util::StreamExt;
 use netpod::timeunits::MS;
 use netpod::Node;
+use netpod::SfChFetchInfo;
 use netpod::TsNano;
 use std::path::PathBuf;
 
@@ -30,13 +31,17 @@ Return potential datafile paths for the given timebin.
 It says "potential datafile paths" because we don't open the file here yet and of course,
 files may vanish until then. Also, the timebin may actually not exist.
 */
-pub async fn datapaths_for_timebin(timebin: u64, config: &SfDbChConf, node: &Node) -> Result<Vec<PathBuf>, Error> {
+pub async fn datapaths_for_timebin(
+    timebin: u64,
+    fetch_info: &SfChFetchInfo,
+    node: &Node,
+) -> Result<Vec<PathBuf>, Error> {
     let sfc = node.sf_databuffer.as_ref().unwrap();
     let timebin_path = sfc
         .data_base_path
-        .join(format!("{}_{}", sfc.ksprefix, config.keyspace))
+        .join(format!("{}_{}", sfc.ksprefix, fetch_info.ks()))
         .join("byTime")
-        .join(config.channel.name())
+        .join(fetch_info.name())
         .join(format!("{:019}", timebin));
     let rd = tokio::fs::read_dir(timebin_path).await?;
     let mut rd = tokio_stream::wrappers::ReadDirStream::new(rd);
@@ -69,43 +74,43 @@ pub async fn datapaths_for_timebin(timebin: u64, config: &SfDbChConf, node: &Nod
     for split in splits {
         let path = sfc
             .data_base_path
-            .join(format!("{}_{}", sfc.ksprefix, config.keyspace))
+            .join(format!("{}_{}", sfc.ksprefix, fetch_info.ks()))
             .join("byTime")
-            .join(config.channel.name())
+            .join(fetch_info.name())
             .join(format!("{:019}", timebin))
             .join(format!("{:010}", split))
-            .join(format!("{:019}_00000_Data", config.time_bin_size.ns() / MS));
+            .join(format!("{:019}_00000_Data", fetch_info.bs().ns() / MS));
         ret.push(path);
     }
     Ok(ret)
 }
 
-pub fn channel_timebins_dir_path(channel_config: &SfDbChConf, node: &Node) -> Result<PathBuf, Error> {
+pub fn channel_timebins_dir_path(fetch_info: &SfChFetchInfo, node: &Node) -> Result<PathBuf, Error> {
     let sfc = node.sf_databuffer.as_ref().unwrap();
     let ret = sfc
         .data_base_path
-        .join(format!("{}_{}", sfc.ksprefix, channel_config.keyspace))
+        .join(format!("{}_{}", sfc.ksprefix, fetch_info.ks()))
         .join("byTime")
-        .join(channel_config.channel.name());
+        .join(fetch_info.name());
     Ok(ret)
 }
 
-pub fn data_dir_path(ts: TsNano, channel_config: &SfDbChConf, split: u32, node: &Node) -> Result<PathBuf, Error> {
-    let ret = channel_timebins_dir_path(channel_config, node)?
-        .join(format!("{:019}", ts.ns() / channel_config.time_bin_size.ns()))
+pub fn data_dir_path(ts: TsNano, fetch_info: &SfChFetchInfo, split: u32, node: &Node) -> Result<PathBuf, Error> {
+    let ret = channel_timebins_dir_path(fetch_info, node)?
+        .join(format!("{:019}", ts.ns() / fetch_info.bs().ns()))
         .join(format!("{:010}", split));
     Ok(ret)
 }
 
-pub fn data_path(ts: TsNano, channel_config: &SfDbChConf, split: u32, node: &Node) -> Result<PathBuf, Error> {
-    let fname = format!("{:019}_{:05}_Data", channel_config.time_bin_size.ns() / MS, 0);
-    let ret = data_dir_path(ts, channel_config, split, node)?.join(fname);
+pub fn data_path(ts: TsNano, fetch_info: &SfChFetchInfo, split: u32, node: &Node) -> Result<PathBuf, Error> {
+    let fname = format!("{:019}_{:05}_Data", fetch_info.bs().ns() / MS, 0);
+    let ret = data_dir_path(ts, fetch_info, split, node)?.join(fname);
     Ok(ret)
 }
 
-pub fn index_path(ts: TsNano, channel_config: &SfDbChConf, split: u32, node: &Node) -> Result<PathBuf, Error> {
-    let fname = format!("{:019}_{:05}_Data_Index", channel_config.time_bin_size.ns() / MS, 0);
-    let ret = data_dir_path(ts, channel_config, split, node)?.join(fname);
+pub fn index_path(ts: TsNano, fetch_info: &SfChFetchInfo, split: u32, node: &Node) -> Result<PathBuf, Error> {
+    let fname = format!("{:019}_{:05}_Data_Index", fetch_info.bs().ns() / MS, 0);
+    let ret = data_dir_path(ts, fetch_info, split, node)?.join(fname);
     Ok(ret)
 }
 

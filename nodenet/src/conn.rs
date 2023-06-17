@@ -20,9 +20,11 @@ use items_2::inmem::InMemoryFrame;
 use netpod::histo::HistoLog2;
 use netpod::log::*;
 use netpod::ChConf;
+use netpod::ChannelTypeConfigGen;
 use netpod::NodeConfigCached;
 use netpod::PerfOpts;
 use query::api4::events::PlainEventsQuery;
+use serde_json::Value as JsValue;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
@@ -71,7 +73,7 @@ impl<E: Into<Error>> From<(E, OwnedWriteHalf)> for ConnErr {
 
 async fn make_channel_events_stream_data(
     evq: PlainEventsQuery,
-    chconf: ChConf,
+    ch_conf: ChannelTypeConfigGen,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     if evq.channel().backend() == TEST_BACKEND {
@@ -135,7 +137,7 @@ async fn make_channel_events_stream_data(
             }
         }
     } else if let Some(scyconf) = &node_config.node_config.cluster.scylla {
-        scylla_channel_event_stream(evq, chconf, scyconf, node_config).await
+        scylla_channel_event_stream(evq, ch_conf.to_scylla()?, scyconf, node_config).await
     } else if let Some(_) = &node_config.node.channel_archiver {
         let e = Error::with_msg_no_trace("archapp not built");
         Err(e)
@@ -143,18 +145,18 @@ async fn make_channel_events_stream_data(
         let e = Error::with_msg_no_trace("archapp not built");
         Err(e)
     } else {
-        Ok(disk::raw::conn::make_event_pipe(&evq, chconf, node_config).await?)
+        Ok(disk::raw::conn::make_event_pipe(&evq, ch_conf.to_sf_databuffer()?, node_config).await?)
     }
 }
 
 async fn make_channel_events_stream(
     evq: PlainEventsQuery,
-    chconf: ChConf,
+    ch_conf: ChannelTypeConfigGen,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
-    let empty = empty_events_dyn_ev(&chconf.scalar_type, &chconf.shape)?;
+    let empty = empty_events_dyn_ev(ch_conf.scalar_type(), ch_conf.shape())?;
     let empty = sitem_data(ChannelEvents::Events(empty));
-    let stream = make_channel_events_stream_data(evq, chconf, node_config).await?;
+    let stream = make_channel_events_stream_data(evq, ch_conf, node_config).await?;
     let ret = futures_util::stream::iter([empty]).chain(stream);
     let ret = Box::pin(ret);
     Ok(ret)
@@ -187,8 +189,8 @@ async fn events_get_input_frames(netin: OwnedReadHalf) -> Result<Vec<InMemoryFra
 async fn events_parse_input_query(
     frames: Vec<InMemoryFrame>,
     ncc: &NodeConfigCached,
-) -> Result<(PlainEventsQuery, ChConf), Error> {
-    if frames.len() != 1 {
+) -> Result<(PlainEventsQuery, ChannelTypeConfigGen), Error> {
+    if frames.len() != 2 {
         error!("{:?}", frames);
         error!("missing command frame  len {}", frames.len());
         let e = Error::with_msg("missing command frame");
@@ -212,20 +214,31 @@ async fn events_parse_input_query(
         },
         Err(e) => return Err(e),
     };
-    let res: Result<PlainEventsQuery, _> = serde_json::from_str(&qitem.0);
-    let evq = match res {
-        Ok(k) => k,
-        Err(e) => {
-            let e = Error::with_msg_no_trace(format!("json parse error: {e}"));
-            error!("{e}");
-            return Err(e);
-        }
-    };
+    let evq: PlainEventsQuery = serde_json::from_str(&qitem.0).map_err(|e| {
+        let e = Error::with_msg_no_trace(format!("json parse error: {e}"));
+        error!("{e}");
+        e
+    })?;
     debug!("events_parse_input_query  {:?}", evq);
-    let chconf = crate::channelconfig::channel_config(evq.range().try_into()?, evq.channel().clone(), ncc)
-        .await
-        .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?;
-    Ok((evq, chconf))
+    if query_frame.tyid() != EVENT_QUERY_JSON_STRING_FRAME {
+        return Err(Error::with_msg("query frame wrong type"));
+    }
+    let qitem = match decode_frame::<Sitemty<EventQueryJsonStringFrame>>(&frames[1]) {
+        Ok(k) => match k {
+            Ok(k) => match k {
+                StreamItem::DataItem(k) => match k {
+                    RangeCompletableItem::Data(k) => k,
+                    RangeCompletableItem::RangeComplete => return Err(Error::with_msg("bad query item")),
+                },
+                _ => return Err(Error::with_msg("bad query item")),
+            },
+            Err(e) => return Err(e),
+        },
+        Err(e) => return Err(e),
+    };
+    let ch_conf: ChannelTypeConfigGen = serde_json::from_str(&qitem.0)?;
+    info!("\n\nparsed second frame:\n{ch_conf:?}");
+    Ok((evq, ch_conf))
 }
 
 async fn events_conn_handler_inner_try(
@@ -239,23 +252,25 @@ async fn events_conn_handler_inner_try(
         Ok(x) => x,
         Err(e) => return Err((e, netout).into()),
     };
-    let (evq, chconf) = match events_parse_input_query(frames, node_config).await {
+    let (evq, ch_conf) = match events_parse_input_query(frames, node_config).await {
         Ok(x) => x,
         Err(e) => return Err((e, netout).into()),
     };
     let mut stream: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> = if evq.is_event_blobs() {
         // TODO support event blobs as transform
-        match disk::raw::conn::make_event_blobs_pipe(&evq, node_config).await {
+        let fetch_info = match ch_conf.to_sf_databuffer() {
+            Ok(x) => x,
+            Err(e) => return Err((e, netout).into()),
+        };
+        match disk::raw::conn::make_event_blobs_pipe(&evq, &fetch_info, node_config).await {
             Ok(stream) => {
                 let stream = stream.map(|x| Box::new(x) as _);
                 Box::pin(stream)
             }
-            Err(e) => {
-                return Err((e, netout).into());
-            }
+            Err(e) => return Err((e, netout).into()),
         }
     } else {
-        match make_channel_events_stream(evq.clone(), chconf, node_config).await {
+        match make_channel_events_stream(evq.clone(), ch_conf, node_config).await {
             Ok(stream) => {
                 if false {
                     // TODO wasm example

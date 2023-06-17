@@ -3,7 +3,6 @@ use crate::dataopen::open_files;
 use crate::dataopen::OpenedFileSet;
 use crate::eventchunker::EventChunker;
 use crate::eventchunker::EventChunkerConf;
-use crate::SfDbChConf;
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
@@ -19,6 +18,7 @@ use netpod::range::evrange::NanoRange;
 use netpod::timeunits::SEC;
 use netpod::DiskIoTune;
 use netpod::Node;
+use netpod::SfChFetchInfo;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::Context;
@@ -30,7 +30,7 @@ pub trait InputTraits: Stream<Item = Sitemty<EventFull>> {}
 impl<T> InputTraits for T where T: Stream<Item = Sitemty<EventFull>> {}
 
 pub struct EventChunkerMultifile {
-    channel_config: SfDbChConf,
+    fetch_info: SfChFetchInfo,
     file_chan: async_channel::Receiver<Result<OpenedFileSet, Error>>,
     evs: Option<Pin<Box<dyn InputTraits + Send>>>,
     disk_io_tune: DiskIoTune,
@@ -58,7 +58,7 @@ impl EventChunkerMultifile {
 
     pub fn new(
         range: NanoRange,
-        channel_config: SfDbChConf,
+        fetch_info: SfChFetchInfo,
         node: Node,
         node_ix: usize,
         disk_io_tune: DiskIoTune,
@@ -69,16 +69,16 @@ impl EventChunkerMultifile {
     ) -> Self {
         info!("EventChunkerMultifile  expand {expand}  do_decompress {do_decompress}");
         let file_chan = if expand {
-            open_expanded_files(&range, &channel_config, node)
+            open_expanded_files(&range, &fetch_info, node)
         } else {
-            open_files(&range, &channel_config, node)
+            open_files(&range, &fetch_info, node)
         };
         Self {
             file_chan,
             evs: None,
             disk_io_tune,
             event_chunker_conf,
-            channel_config,
+            fetch_info,
             range,
             files_count: 0,
             node_ix,
@@ -196,7 +196,7 @@ impl Stream for EventChunkerMultifile {
                                             ));
                                             let chunker = EventChunker::from_event_boundary(
                                                 inp,
-                                                self.channel_config.clone(),
+                                                self.fetch_info.clone(),
                                                 self.range.clone(),
                                                 self.event_chunker_conf.clone(),
                                                 path.clone(),
@@ -231,7 +231,7 @@ impl Stream for EventChunkerMultifile {
                                             );
                                             let chunker = EventChunker::from_event_boundary(
                                                 inp,
-                                                self.channel_config.clone(),
+                                                self.fetch_info.clone(),
                                                 self.range.clone(),
                                                 self.event_chunker_conf.clone(),
                                                 of.path.clone(),

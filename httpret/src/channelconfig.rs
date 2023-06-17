@@ -15,6 +15,7 @@ use netpod::timeunits::*;
 use netpod::ChConf;
 use netpod::ChannelConfigQuery;
 use netpod::ChannelConfigResponse;
+use netpod::ChannelTypeConfigGen;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ScalarType;
@@ -33,8 +34,12 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use url::Url;
 
-pub async fn chconf_from_events_v1(q: &PlainEventsQuery, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
-    let ret = nodenet::channelconfig::channel_config(q.range().try_into()?, q.channel().clone(), ncc).await?;
+pub async fn chconf_from_events_v1(
+    q: &PlainEventsQuery,
+    ncc: &NodeConfigCached,
+) -> Result<ChannelTypeConfigGen, Error> {
+    // let ret = nodenet::channelconfig::channel_config(q.range().try_into()?, q.channel().clone(), ncc).await?;
+    let ret = nodenet::configquorum::find_config_basics_quorum(q.channel(), ncc).await?;
     Ok(ret)
 }
 
@@ -49,8 +54,9 @@ pub async fn chconf_from_prebinned(q: &PreBinnedQuery, _ncc: &NodeConfigCached) 
     Ok(ret)
 }
 
-pub async fn chconf_from_binned(q: &BinnedQuery, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
-    let ret = nodenet::channelconfig::channel_config(q.range().try_into()?, q.channel().clone(), ncc).await?;
+pub async fn ch_conf_from_binned(q: &BinnedQuery, ncc: &NodeConfigCached) -> Result<ChannelTypeConfigGen, Error> {
+    // let ret = nodenet::channelconfig::channel_config(q.range().try_into()?, q.channel().clone(), ncc).await?;
+    let ret = nodenet::configquorum::find_config_basics_quorum(q.channel(), ncc).await?;
     Ok(ret)
 }
 

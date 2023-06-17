@@ -2,6 +2,7 @@ use crate::log::*;
 use err::Error;
 use std::fmt;
 use std::future::Future;
+use std::io;
 use std::panic;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -108,6 +109,7 @@ fn tracing_init_inner() -> Result<(), Error> {
             .from_env()
             .map_err(|e| Error::with_msg_no_trace(format!("can not build tracing env filter {e}")))?;
         let fmt_layer = tracing_subscriber::fmt::Layer::new()
+            .with_writer(io::stderr)
             .with_timer(timer)
             .with_target(true)
             .with_ansi(false)
@@ -125,6 +127,7 @@ fn tracing_init_inner() -> Result<(), Error> {
     // TODO tracing_loki seems not well composable, try open telemetry instead.
     if false {
         /*let fmt_layer = tracing_subscriber::fmt::Layer::new()
+        .with_writer(io::stderr)
         .with_timer(timer)
         .with_target(true)
         .with_ansi(false)

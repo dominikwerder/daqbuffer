@@ -11,6 +11,7 @@ use netpod::ByteSize;
 use netpod::DiskIoTune;
 use netpod::Node;
 use netpod::ScalarType;
+use netpod::SfChFetchInfo;
 use netpod::SfDatabuffer;
 use netpod::SfDbChannel;
 use netpod::Shape;
@@ -61,6 +62,15 @@ async fn agg_x_dim_0_inner() {
         tb_file_count: 1,
         buffer_size: 1024 * 4,
     };
+    let fetch_info = SfChFetchInfo::new(
+        "sf-databuffer",
+        "S10BC01-DBAM070:EOM1_T1",
+        2,
+        TsNano(DAY),
+        ByteOrder::Big,
+        ScalarType::F64,
+        Shape::Scalar,
+    );
     let _bin_count = 20;
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.0;
     let ts2 = ts1 + HOUR * 24;
@@ -71,7 +81,7 @@ async fn agg_x_dim_0_inner() {
     disk_io_tune.read_buffer_len = query.buffer_size as usize;
     let fut1 = EventChunkerMultifile::new(
         range.clone(),
-        query.channel_config.clone(),
+        fetch_info,
         node.clone(),
         0,
         disk_io_tune,
@@ -114,6 +124,15 @@ async fn agg_x_dim_1_inner() {
         tb_file_count: 1,
         buffer_size: 17,
     };
+    let fetch_info = SfChFetchInfo::new(
+        "ks",
+        "wave1",
+        2,
+        TsNano(DAY),
+        ByteOrder::Big,
+        ScalarType::F64,
+        Shape::Scalar,
+    );
     let _bin_count = 10;
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.0;
     let ts2 = ts1 + HOUR * 24;
@@ -124,7 +143,7 @@ async fn agg_x_dim_1_inner() {
     disk_io_tune.read_buffer_len = query.buffer_size as usize;
     let fut1 = super::eventblobs::EventChunkerMultifile::new(
         range.clone(),
-        query.channel_config.clone(),
+        fetch_info,
         node.clone(),
         0,
         disk_io_tune,

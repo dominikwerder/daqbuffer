@@ -1,6 +1,6 @@
 use crate::bodystream::response;
 use crate::bodystream::ToPublicResponse;
-use crate::channelconfig::chconf_from_binned;
+use crate::channelconfig::ch_conf_from_binned;
 use crate::err::Error;
 use crate::response_err;
 use err::anyhow::Context;
@@ -28,13 +28,7 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
         let msg = format!("can not parse query: {}", e.msg());
         e.add_public_msg(msg)
     })?;
-    let chconf = chconf_from_binned(&query, node_config).await?;
-    // Update the series id since we don't require some unique identifier yet.
-    let query = {
-        let mut query = query;
-        query.set_series_id(chconf.try_series().context("binned_json")?);
-        query
-    };
+    let ch_conf = ch_conf_from_binned(&query, node_config).await?;
     let span1 = span!(
         Level::INFO,
         "httpret::binned",
@@ -45,7 +39,7 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
     span1.in_scope(|| {
         debug!("begin");
     });
-    let item = streams::timebinnedjson::timebinned_json(query, chconf, node_config.node_config.cluster.clone())
+    let item = streams::timebinnedjson::timebinned_json(query, &ch_conf, node_config.node_config.cluster.clone())
         .instrument(span1)
         .await?;
     let buf = serde_json::to_vec(&item)?;

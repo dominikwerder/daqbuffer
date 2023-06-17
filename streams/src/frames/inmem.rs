@@ -72,7 +72,7 @@ where
             Ready(Ok(())) => {
                 let n = buf.filled().len();
                 self.buf.wadv(n)?;
-                trace!("recv bytes {}", n);
+                trace2!("recv bytes {}", n);
                 Ready(Ok(n))
             }
             Ready(Err(e)) => Ready(Err(e.into())),

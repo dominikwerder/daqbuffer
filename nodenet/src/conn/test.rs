@@ -79,6 +79,9 @@ fn raw_data_00() {
             beg: SEC,
             end: SEC * 10,
         };
+        if true {
+            todo!("must add 2nd frame with channel type info");
+        }
         let qu = PlainEventsQuery::new(channel, range);
         let query = EventQueryJsonStringFrame(serde_json::to_string(&qu).unwrap());
         let frame = sitem_data(query).make_frame()?;

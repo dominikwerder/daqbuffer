@@ -1066,6 +1066,15 @@ impl Shape {
         }
     }
 
+    pub fn to_u32_vec(&self) -> Vec<u32> {
+        use Shape::*;
+        match self {
+            Scalar => Vec::new(),
+            Wave(n) => vec![*n as u32],
+            Image(n, m) => vec![*n as u32, *m as u32],
+        }
+    }
+
     pub fn from_url_str(s: &str) -> Result<Self, Error> {
         let ret = serde_json::from_str(s)?;
         Ok(ret)
@@ -2426,6 +2435,127 @@ impl ChConf {
     pub fn try_series(&self) -> Res2<u64> {
         self.series
             .ok_or_else(|| anyhow::anyhow!("ChConf without SeriesId {self:?}"))
+    }
+}
+
+// Includes the necessary information to know where to localize datafiles for sf-databuffer
+// and what (approximate) types to expect.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SfChFetchInfo {
+    backend: String,
+    name: String,
+    ks: u8,
+    bs: TsNano,
+    scalar_type: ScalarType,
+    shape: Shape,
+    compression: bool,
+    byte_order: ByteOrder,
+    array: bool,
+}
+
+impl SfChFetchInfo {
+    pub fn new<S1, S2>(
+        backend: S1,
+        name: S2,
+        ks: u8,
+        bs: TsNano,
+        byte_order: ByteOrder,
+        scalar_type: ScalarType,
+        shape: Shape,
+    ) -> Self
+    where
+        S1: Into<String>,
+        S2: Into<String>,
+    {
+        Self {
+            backend: backend.into(),
+            name: name.into(),
+            ks,
+            bs,
+            scalar_type,
+            shape,
+            byte_order,
+            compression: false,
+            array: false,
+        }
+    }
+
+    pub fn with_compression(mut self, x: bool) -> Self {
+        self.compression = x;
+        self
+    }
+
+    pub fn with_array(mut self, x: bool) -> Self {
+        self.array = x;
+        self
+    }
+
+    pub fn backend(&self) -> &str {
+        &self.backend
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn ks(&self) -> u8 {
+        self.ks
+    }
+
+    pub fn bs(&self) -> TsNano {
+        self.bs.clone()
+    }
+
+    pub fn scalar_type(&self) -> &ScalarType {
+        &self.scalar_type
+    }
+
+    pub fn shape(&self) -> &Shape {
+        &self.shape
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ChannelTypeConfigGen {
+    Scylla(ChConf),
+    SfDatabuffer(SfChFetchInfo),
+}
+
+impl ChannelTypeConfigGen {
+    pub fn to_scylla(&self) -> Result<ChConf, Error> {
+        if let ChannelTypeConfigGen::Scylla(k) = self {
+            Ok(k.clone())
+        } else {
+            Err(Error::with_msg_no_trace("this ChannelTypeConfigGen is not for scylla"))
+        }
+    }
+
+    pub fn to_sf_databuffer(&self) -> Result<SfChFetchInfo, Error> {
+        if let ChannelTypeConfigGen::SfDatabuffer(k) = self {
+            Ok(k.clone())
+        } else {
+            Err(Error::with_msg_no_trace("this ChannelTypeConfigGen is not for scylla"))
+        }
+    }
+
+    pub fn scalar_type(&self) -> &ScalarType {
+        match self {
+            ChannelTypeConfigGen::Scylla(x) => &x.scalar_type,
+            ChannelTypeConfigGen::SfDatabuffer(x) => x.scalar_type(),
+        }
+    }
+
+    pub fn shape(&self) -> &Shape {
+        match self {
+            ChannelTypeConfigGen::Scylla(x) => &x.shape,
+            ChannelTypeConfigGen::SfDatabuffer(x) => x.shape(),
+        }
+    }
+}
+
+impl From<SfChFetchInfo> for ChannelTypeConfigGen {
+    fn from(value: SfChFetchInfo) -> Self {
+        Self::SfDatabuffer(value)
     }
 }
 

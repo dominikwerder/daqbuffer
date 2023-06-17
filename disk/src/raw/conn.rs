@@ -1,9 +1,7 @@
-use crate::channelconfig::config_entry_best_match;
 use crate::eventblobs::EventChunkerMultifile;
 use crate::eventchunker::EventChunkerConf;
 use crate::raw::generated::EventBlobsGeneratorI32Test00;
 use crate::raw::generated::EventBlobsGeneratorI32Test01;
-use crate::SfDbChConf;
 use err::Error;
 use futures_util::stream;
 use futures_util::Stream;
@@ -17,23 +15,21 @@ use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::AggKind;
 use netpod::ByteSize;
-use netpod::ChConf;
 use netpod::DiskIoTune;
 use netpod::NodeConfigCached;
-use netpod::SfDbChannel;
-use parse::channelconfig::ConfigEntry;
+use netpod::SfChFetchInfo;
 use query::api4::events::PlainEventsQuery;
 use std::pin::Pin;
 
 const TEST_BACKEND: &str = "testbackend-00";
 
 fn make_num_pipeline_stream_evs(
-    chconf: ChConf,
+    fetch_info: SfChFetchInfo,
     agg_kind: AggKind,
     event_blobs: EventChunkerMultifile,
 ) -> Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>> {
-    let scalar_type = chconf.scalar_type.clone();
-    let shape = chconf.shape.clone();
+    let scalar_type = fetch_info.scalar_type().clone();
+    let shape = fetch_info.shape().clone();
     let event_stream = match crate::decode::EventsDynStream::new(scalar_type, shape, agg_kind, event_blobs) {
         Ok(k) => k,
         Err(e) => {
@@ -58,30 +54,11 @@ fn make_num_pipeline_stream_evs(
 
 pub async fn make_event_pipe(
     evq: &PlainEventsQuery,
-    chconf: ChConf,
+    fetch_info: SfChFetchInfo,
     ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     // sf-databuffer type backends identify channels by their (backend, name) only.
-    let channel = evq.channel().clone();
     let range = evq.range().clone();
-    let x = crate::channelconfig::channel_config_best_match(evq.range().try_into()?, channel, ncc).await;
-    let channel_config = match x {
-        Ok(Some(x)) => x,
-        Ok(None) => {
-            error!("make_event_pipe  can not find config");
-            return Err(Error::with_msg_no_trace("make_event_pipe  can not find config"));
-        }
-        Err(e) => {
-            error!("make_event_pipe  can not find config");
-            if e.msg().contains("ErrorKind::NotFound") {
-                warn!("{e}");
-                let s = futures_util::stream::empty();
-                return Ok(Box::pin(s));
-            } else {
-                return Err(e);
-            }
-        }
-    };
     info!(
         "make_event_pipe  need_expand {need_expand}  {evq:?}",
         need_expand = evq.one_before_range()
@@ -96,7 +73,7 @@ pub async fn make_event_pipe(
     };
     let event_blobs = EventChunkerMultifile::new(
         (&range).try_into()?,
-        channel_config.clone(),
+        fetch_info.clone(),
         ncc.node.clone(),
         ncc.ix,
         DiskIoTune::default(),
@@ -106,38 +83,25 @@ pub async fn make_event_pipe(
         out_max_len,
     );
     error!("TODO replace AggKind in the called code");
-    let pipe = make_num_pipeline_stream_evs(chconf, AggKind::TimeWeightedScalar, event_blobs);
+    let pipe = make_num_pipeline_stream_evs(fetch_info, AggKind::TimeWeightedScalar, event_blobs);
     Ok(pipe)
 }
 
 pub fn make_local_event_blobs_stream(
     range: NanoRange,
-    channel: SfDbChannel,
-    entry: &ConfigEntry,
+    fetch_info: &SfChFetchInfo,
     expand: bool,
     do_decompress: bool,
     event_chunker_conf: EventChunkerConf,
     disk_io_tune: DiskIoTune,
     node_config: &NodeConfigCached,
 ) -> Result<EventChunkerMultifile, Error> {
-    info!("make_local_event_blobs_stream  do_decompress {do_decompress}  disk_io_tune {disk_io_tune:?}");
+    info!(
+        "make_local_event_blobs_stream  {fetch_info:?}  do_decompress {do_decompress}  disk_io_tune {disk_io_tune:?}"
+    );
     if do_decompress {
         warn!("Possible issue: decompress central storage event blob stream");
     }
-    let shape = match entry.to_shape() {
-        Ok(k) => k,
-        Err(e) => return Err(e)?,
-    };
-    let channel_config = SfDbChConf {
-        channel,
-        keyspace: entry.ks as u8,
-        time_bin_size: entry.bs.clone(),
-        shape,
-        scalar_type: entry.scalar_type.clone(),
-        byte_order: entry.byte_order.clone(),
-        array: entry.is_array,
-        compression: entry.is_compressed,
-    };
     // TODO should not need this for correctness.
     // Should limit based on return size and latency.
     let out_max_len = if node_config.node_config.cluster.is_central_storage {
@@ -147,7 +111,7 @@ pub fn make_local_event_blobs_stream(
     };
     let event_blobs = EventChunkerMultifile::new(
         range,
-        channel_config.clone(),
+        fetch_info.clone(),
         node_config.node.clone(),
         node_config.ix,
         disk_io_tune,
@@ -161,8 +125,7 @@ pub fn make_local_event_blobs_stream(
 
 pub fn make_remote_event_blobs_stream(
     range: NanoRange,
-    channel: SfDbChannel,
-    entry: &ConfigEntry,
+    fetch_info: &SfChFetchInfo,
     expand: bool,
     do_decompress: bool,
     event_chunker_conf: EventChunkerConf,
@@ -170,20 +133,6 @@ pub fn make_remote_event_blobs_stream(
     node_config: &NodeConfigCached,
 ) -> Result<impl Stream<Item = Sitemty<EventFull>>, Error> {
     debug!("make_remote_event_blobs_stream");
-    let shape = match entry.to_shape() {
-        Ok(k) => k,
-        Err(e) => return Err(e)?,
-    };
-    let channel_config = SfDbChConf {
-        channel,
-        keyspace: entry.ks as u8,
-        time_bin_size: entry.bs.clone(),
-        shape: shape,
-        scalar_type: entry.scalar_type.clone(),
-        byte_order: entry.byte_order.clone(),
-        array: entry.is_array,
-        compression: entry.is_compressed,
-    };
     // TODO should not need this for correctness.
     // Should limit based on return size and latency.
     let out_max_len = if node_config.node_config.cluster.is_central_storage {
@@ -193,7 +142,7 @@ pub fn make_remote_event_blobs_stream(
     };
     let event_blobs = EventChunkerMultifile::new(
         range,
-        channel_config.clone(),
+        fetch_info.clone(),
         node_config.node.clone(),
         node_config.ix,
         disk_io_tune,
@@ -207,6 +156,7 @@ pub fn make_remote_event_blobs_stream(
 
 pub async fn make_event_blobs_pipe_real(
     evq: &PlainEventsQuery,
+    fetch_info: &SfChFetchInfo,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
     if false {
@@ -217,34 +167,13 @@ pub async fn make_event_blobs_pipe_real(
     }
     let expand = evq.one_before_range();
     let range = evq.range();
-    let entry = match config_entry_best_match(&evq.range().try_into()?, evq.channel().clone(), node_config).await {
-        Ok(Some(x)) => x,
-        Ok(None) => {
-            let e = Error::with_msg_no_trace("no config entry found");
-            error!("{e}");
-            return Err(e);
-        }
-        Err(e) => {
-            if e.to_public_error().msg().contains("no config entry found") {
-                let item = items_0::streamitem::LogItem {
-                    node_ix: node_config.ix as _,
-                    level: Level::WARN,
-                    msg: format!("{} {}", node_config.node.host, e),
-                };
-                return Ok(Box::pin(stream::iter([Ok(StreamItem::Log(item))])));
-            } else {
-                return Err(e);
-            }
-        }
-    };
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     // TODO should depend on host config
     let do_local = node_config.node_config.cluster.is_central_storage;
     let pipe = if do_local {
         let event_blobs = make_local_event_blobs_stream(
             range.try_into()?,
-            evq.channel().clone(),
-            &entry,
+            fetch_info,
             expand,
             false,
             event_chunker_conf,
@@ -255,8 +184,7 @@ pub async fn make_event_blobs_pipe_real(
     } else {
         let event_blobs = make_remote_event_blobs_stream(
             range.try_into()?,
-            evq.channel().clone(),
-            &entry,
+            fetch_info,
             expand,
             true,
             event_chunker_conf,
@@ -320,12 +248,13 @@ pub async fn make_event_blobs_pipe_test(
 
 pub async fn make_event_blobs_pipe(
     evq: &PlainEventsQuery,
+    fetch_info: &SfChFetchInfo,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
     debug!("make_event_blobs_pipe {evq:?}");
     if evq.channel().backend() == TEST_BACKEND {
         make_event_blobs_pipe_test(evq, node_config).await
     } else {
-        make_event_blobs_pipe_real(evq, node_config).await
+        make_event_blobs_pipe_real(evq, fetch_info, node_config).await
     }
 }

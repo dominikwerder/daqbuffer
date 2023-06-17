@@ -6,6 +6,7 @@ use items_0::streamitem::Sitemty;
 use items_2::eventfull::EventFull;
 use items_2::merger::Merger;
 use netpod::log::*;
+use netpod::ChannelTypeConfigGen;
 use netpod::Cluster;
 use netpod::PerfOpts;
 use query::api4::events::PlainEventsQuery;
@@ -27,11 +28,12 @@ pub struct MergedBlobsFromRemotes {
 }
 
 impl MergedBlobsFromRemotes {
-    pub fn new(evq: PlainEventsQuery, perf_opts: PerfOpts, cluster: Cluster) -> Self {
+    pub fn new(evq: PlainEventsQuery, perf_opts: PerfOpts, ch_conf: ChannelTypeConfigGen, cluster: Cluster) -> Self {
         debug!("MergedBlobsFromRemotes  evq {:?}", evq);
         let mut tcp_establish_futs = Vec::new();
         for node in &cluster.nodes {
-            let f = x_processed_event_blobs_stream_from_node(evq.clone(), perf_opts.clone(), node.clone());
+            let f =
+                x_processed_event_blobs_stream_from_node(evq.clone(), ch_conf.clone(), perf_opts.clone(), node.clone());
             let f: T002<EventFull> = Box::pin(f);
             tcp_establish_futs.push(f);
         }

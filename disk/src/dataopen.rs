@@ -7,6 +7,7 @@ use futures_util::StreamExt;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::Node;
+use netpod::SfChFetchInfo;
 use netpod::TsNano;
 use std::fmt;
 use std::path::PathBuf;
@@ -209,18 +210,18 @@ impl fmt::Debug for OpenedFile {
 
 pub fn open_files(
     range: &NanoRange,
-    channel_config: &SfDbChConf,
+    fetch_info: &SfChFetchInfo,
     node: Node,
 ) -> async_channel::Receiver<Result<OpenedFileSet, Error>> {
     let (chtx, chrx) = async_channel::bounded(2);
     let range = range.clone();
-    let channel_config = channel_config.clone();
+    let fetch_info = fetch_info.clone();
     tokio::spawn(async move {
-        match open_files_inner(&chtx, &range, &channel_config, node).await {
+        match open_files_inner(&chtx, &range, &fetch_info, node).await {
             Ok(_) => {}
             Err(e) => {
                 let e = e.add_public_msg(format!(
-                    "Can not open file for channel: {channel_config:?}  range: {range:?}"
+                    "Can not open file for channel: {fetch_info:?}  range: {range:?}"
                 ));
                 match chtx.send(Err(e.into())).await {
                     Ok(_) => {}
@@ -238,24 +239,24 @@ pub fn open_files(
 async fn open_files_inner(
     chtx: &async_channel::Sender<Result<OpenedFileSet, Error>>,
     range: &NanoRange,
-    channel_config: &SfDbChConf,
+    fetch_info: &SfChFetchInfo,
     node: Node,
 ) -> Result<(), Error> {
-    let channel_config = channel_config.clone();
-    let timebins = get_timebins(&channel_config, node.clone()).await?;
+    let fetch_info = fetch_info.clone();
+    let timebins = get_timebins(&fetch_info, node.clone()).await?;
     if timebins.len() == 0 {
         return Ok(());
     }
     for &tb in &timebins {
-        let ts_bin = TsNano(tb * channel_config.time_bin_size.0);
+        let ts_bin = TsNano(tb * fetch_info.bs().ns());
         if ts_bin.ns() >= range.end {
             continue;
         }
-        if ts_bin.ns() + channel_config.time_bin_size.ns() <= range.beg {
+        if ts_bin.ns() + fetch_info.bs().ns() <= range.beg {
             continue;
         }
         let mut a = Vec::new();
-        for path in paths::datapaths_for_timebin(tb, &channel_config, &node).await? {
+        for path in paths::datapaths_for_timebin(tb, &fetch_info, &node).await? {
             let w = position_file(&path, range, false, false).await?;
             if w.found {
                 a.push(w.file);
@@ -278,14 +279,14 @@ Expanded to one event before and after the requested range, if exists.
 */
 pub fn open_expanded_files(
     range: &NanoRange,
-    channel_config: &SfDbChConf,
+    fetch_info: &SfChFetchInfo,
     node: Node,
 ) -> async_channel::Receiver<Result<OpenedFileSet, Error>> {
     let (chtx, chrx) = async_channel::bounded(2);
     let range = range.clone();
-    let channel_config = channel_config.clone();
+    let fetch_info = fetch_info.clone();
     tokio::spawn(async move {
-        match open_expanded_files_inner(&chtx, &range, &channel_config, node).await {
+        match open_expanded_files_inner(&chtx, &range, &fetch_info, node).await {
             Ok(_) => {}
             Err(e) => match chtx.send(Err(e.into())).await {
                 Ok(_) => {}
@@ -299,9 +300,9 @@ pub fn open_expanded_files(
     chrx
 }
 
-async fn get_timebins(channel_config: &SfDbChConf, node: Node) -> Result<Vec<u64>, Error> {
+async fn get_timebins(fetch_info: &SfChFetchInfo, node: Node) -> Result<Vec<u64>, Error> {
     let mut timebins = Vec::new();
-    let p0 = paths::channel_timebins_dir_path(&channel_config, &node)?;
+    let p0 = paths::channel_timebins_dir_path(&fetch_info, &node)?;
     match tokio::fs::read_dir(&p0).await {
         Ok(rd) => {
             let mut rd = tokio_stream::wrappers::ReadDirStream::new(rd);
@@ -323,10 +324,7 @@ async fn get_timebins(channel_config: &SfDbChConf, node: Node) -> Result<Vec<u64
             Ok(timebins)
         }
         Err(e) => {
-            debug!(
-                "get_timebins  no timebins for {:?}  {:?}  p0 {:?}",
-                channel_config, e, p0
-            );
+            debug!("get_timebins  no timebins for {:?}  {:?}  p0 {:?}", fetch_info, e, p0);
             Ok(Vec::new())
         }
     }
@@ -335,17 +333,17 @@ async fn get_timebins(channel_config: &SfDbChConf, node: Node) -> Result<Vec<u64
 async fn open_expanded_files_inner(
     chtx: &async_channel::Sender<Result<OpenedFileSet, Error>>,
     range: &NanoRange,
-    channel_config: &SfDbChConf,
+    fetch_info: &SfChFetchInfo,
     node: Node,
 ) -> Result<(), Error> {
-    let channel_config = channel_config.clone();
-    let timebins = get_timebins(&channel_config, node.clone()).await?;
+    let fetch_info = fetch_info.clone();
+    let timebins = get_timebins(&fetch_info, node.clone()).await?;
     if timebins.len() == 0 {
         return Ok(());
     }
     let mut p1 = None;
     for (i1, tb) in timebins.iter().enumerate().rev() {
-        let ts_bin = TsNano(tb * channel_config.time_bin_size.ns());
+        let ts_bin = TsNano(tb * fetch_info.bs().ns());
         if ts_bin.ns() <= range.beg {
             p1 = Some(i1);
             break;
@@ -354,15 +352,15 @@ async fn open_expanded_files_inner(
     let mut p1 = if let Some(i1) = p1 { i1 } else { 0 };
     if p1 >= timebins.len() {
         return Err(Error::with_msg(format!(
-            "logic error p1 {}  range {:?}  channel_config {:?}",
-            p1, range, channel_config
+            "logic error p1 {}  range {:?}  fetch_info {:?}",
+            p1, range, fetch_info
         )));
     }
     let mut found_pre = false;
     loop {
         let tb = timebins[p1];
         let mut a = Vec::new();
-        for path in paths::datapaths_for_timebin(tb, &channel_config, &node).await? {
+        for path in paths::datapaths_for_timebin(tb, &fetch_info, &node).await? {
             let w = position_file(&path, range, true, false).await?;
             if w.found {
                 debug!("----- open_expanded_files_inner  w.found for {:?}", path);
@@ -390,7 +388,7 @@ async fn open_expanded_files_inner(
         while p1 < timebins.len() {
             let tb = timebins[p1];
             let mut a = Vec::new();
-            for path in paths::datapaths_for_timebin(tb, &channel_config, &node).await? {
+            for path in paths::datapaths_for_timebin(tb, &fetch_info, &node).await? {
                 let w = position_file(&path, range, false, true).await?;
                 if w.found {
                     a.push(w.file);
@@ -404,7 +402,7 @@ async fn open_expanded_files_inner(
         // TODO emit statsfor this or log somewhere?
         debug!("Could not find some event before the requested range, fall back to standard file list.");
         // Try to locate files according to non-expand-algorithm.
-        open_files_inner(chtx, range, &channel_config, node).await?;
+        open_files_inner(chtx, range, &fetch_info, node).await?;
     }
     Ok(())
 }
@@ -823,20 +821,21 @@ mod test {
         };
         let chn = netpod::SfDbChannel::from_name(BACKEND, "scalar-i32-be");
         // TODO read config from disk? Or expose the config from data generator?
-        let channel_config = SfDbChConf {
-            channel: chn,
-            keyspace: 2,
-            time_bin_size: TsNano(DAY),
-            scalar_type: netpod::ScalarType::I32,
-            byte_order: netpod::ByteOrder::Big,
-            shape: netpod::Shape::Scalar,
-            array: false,
-            compression: false,
-        };
+        let fetch_info = todo!();
+        // let fetch_info = SfChFetchInfo {
+        //     channel: chn,
+        //     keyspace: 2,
+        //     time_bin_size: TsNano(DAY),
+        //     scalar_type: netpod::ScalarType::I32,
+        //     byte_order: netpod::ByteOrder::Big,
+        //     shape: netpod::Shape::Scalar,
+        //     array: false,
+        //     compression: false,
+        // };
         let cluster = netpod::test_cluster();
         let task = async move {
             let mut paths = Vec::new();
-            let mut files = open_expanded_files(&range, &channel_config, cluster.nodes[0].clone());
+            let mut files = open_expanded_files(&range, &fetch_info, cluster.nodes[0].clone());
             while let Some(file) = files.next().await {
                 match file {
                     Ok(k) => {

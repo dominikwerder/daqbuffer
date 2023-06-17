@@ -21,7 +21,7 @@ use items_2::streams::PlainEventStream;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::BinnedRangeEnum;
-use netpod::ChConf;
+use netpod::ChannelTypeConfigGen;
 use netpod::Cluster;
 use query::api4::binned::BinnedQuery;
 use query::api4::events::PlainEventsQuery;
@@ -38,12 +38,13 @@ async fn timebinnable_stream(
     query: BinnedQuery,
     range: NanoRange,
     one_before_range: bool,
+    ch_conf: &ChannelTypeConfigGen,
     cluster: Cluster,
 ) -> Result<TimeBinnableStreamBox, Error> {
     let evq = PlainEventsQuery::new(query.channel().clone(), range.clone()).for_time_weighted_scalar();
     let mut tr = build_merged_event_transform(evq.transform())?;
 
-    let inps = open_tcp_streams::<_, ChannelEvents>(&evq, &cluster).await?;
+    let inps = open_tcp_streams::<_, ChannelEvents>(&evq, ch_conf, &cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader.
     // TODO use a mixture of count and byte-size as threshold.
     let stream = Merger::new(inps, query.merger_out_len_max());
@@ -67,6 +68,7 @@ async fn timebinnable_stream(
 async fn timebinned_stream(
     query: BinnedQuery,
     binned_range: BinnedRangeEnum,
+    ch_conf: &ChannelTypeConfigGen,
     cluster: Cluster,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>, Error> {
     let range = binned_range.binned_range_time().to_nano_range();
@@ -74,7 +76,7 @@ async fn timebinned_stream(
     let do_time_weight = true;
     let one_before_range = true;
 
-    let stream = timebinnable_stream(query.clone(), range, one_before_range, cluster).await?;
+    let stream = timebinnable_stream(query.clone(), range, one_before_range, ch_conf, cluster).await?;
     let stream: Pin<Box<dyn TimeBinnableStreamTrait>> = stream.0;
     let stream = Box::pin(stream);
     // TODO rename TimeBinnedStream to make it more clear that it is the component which initiates the time binning.
@@ -97,11 +99,15 @@ fn timebinned_to_collectable(
     stream
 }
 
-pub async fn timebinned_json(query: BinnedQuery, _chconf: ChConf, cluster: Cluster) -> Result<JsonValue, Error> {
+pub async fn timebinned_json(
+    query: BinnedQuery,
+    ch_conf: &ChannelTypeConfigGen,
+    cluster: Cluster,
+) -> Result<JsonValue, Error> {
     let deadline = Instant::now().checked_add(query.timeout_value()).unwrap();
     let binned_range = BinnedRangeEnum::covering_range(query.range().clone(), query.bin_count())?;
     let collect_max = 10000;
-    let stream = timebinned_stream(query.clone(), binned_range.clone(), cluster).await?;
+    let stream = timebinned_stream(query.clone(), binned_range.clone(), ch_conf, cluster).await?;
     let stream = timebinned_to_collectable(stream);
     let collected = Collect::new(stream, deadline, collect_max, None, Some(binned_range));
     let collected: BoxFuture<_> = Box::pin(collected);

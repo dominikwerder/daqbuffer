@@ -12,7 +12,7 @@ use items_2::channelevents::ChannelEvents;
 use items_2::merger::Merger;
 use items_2::streams::PlainEventStream;
 use netpod::log::*;
-use netpod::ChConf;
+use netpod::ChannelTypeConfigGen;
 use netpod::Cluster;
 use query::api4::events::PlainEventsQuery;
 use serde_json::Value as JsonValue;
@@ -20,7 +20,7 @@ use std::time::Instant;
 
 pub async fn plain_events_json(
     evq: &PlainEventsQuery,
-    _chconf: &ChConf,
+    ch_conf: &ChannelTypeConfigGen,
     cluster: &Cluster,
 ) -> Result<JsonValue, Error> {
     info!("plain_events_json  evquery {:?}", evq);
@@ -28,7 +28,7 @@ pub async fn plain_events_json(
     let deadline = Instant::now() + evq.timeout();
     let mut tr = build_merged_event_transform(evq.transform())?;
     // TODO make sure the empty container arrives over the network.
-    let inps = open_tcp_streams::<_, ChannelEvents>(&evq, cluster).await?;
+    let inps = open_tcp_streams::<_, ChannelEvents>(&evq, ch_conf, cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader.
     // TODO use a mixture of count and byte-size as threshold.
     let stream = Merger::new(inps, evq.merger_out_len_max());

@@ -4,7 +4,6 @@ use crate::response;
 use crate::response_err;
 use crate::BodyStream;
 use crate::ToPublicResponse;
-use err::anyhow::Context;
 use futures_util::stream;
 use futures_util::TryStreamExt;
 use http::Method;
@@ -75,14 +74,8 @@ async fn plain_events_binary(
 ) -> Result<Response<Body>, Error> {
     debug!("plain_events_binary  req: {:?}", req);
     let query = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
-    let chconf = chconf_from_events_v1(&query, node_config).await?;
-    info!("plain_events_binary  chconf_from_events_v1: {chconf:?}");
-    // Update the series id since we don't require some unique identifier yet.
-    let mut query = query;
-    query.set_series_id(chconf.try_series().context("plain_events_binary")?);
-    let query = query;
-    // ---
-    let _ = query;
+    let ch_conf = chconf_from_events_v1(&query, node_config).await?;
+    info!("plain_events_binary  chconf_from_events_v1: {ch_conf:?}");
     let s = stream::iter([Ok::<_, Error>(String::from("TODO_PREBINNED_BINARY_STREAM"))]);
     let ret = response(StatusCode::OK).body(BodyStream::wrapped(
         s.map_err(Error::from),
@@ -100,21 +93,9 @@ async fn plain_events_json(
     let (_head, _body) = req.into_parts();
     let query = PlainEventsQuery::from_url(&url)?;
     info!("plain_events_json  query {query:?}");
-    let chconf = chconf_from_events_v1(&query, node_config).await.map_err(Error::from)?;
-    info!("plain_events_json  chconf_from_events_v1: {chconf:?}");
-    // Update the series id since we don't require some unique identifier yet.
-    let mut query = query;
-    let kk = chconf.try_series();
-    let kk = kk.context("plain_events_json");
-    if let Err(e) = &kk {
-        warn!("kk ctx debug {kk:?}");
-        warn!("kk e ctx display {e}");
-    }
-    query.set_series_id(kk?);
-    let query = query;
-    // ---
-    //let query = RawEventsQuery::new(query.channel().clone(), query.range().clone(), AggKind::Plain);
-    let item = streams::plaineventsjson::plain_events_json(&query, &chconf, &node_config.node_config.cluster).await;
+    let ch_conf = chconf_from_events_v1(&query, node_config).await.map_err(Error::from)?;
+    info!("plain_events_json  chconf_from_events_v1: {ch_conf:?}");
+    let item = streams::plaineventsjson::plain_events_json(&query, &ch_conf, &node_config.node_config.cluster).await;
     let item = match item {
         Ok(item) => item,
         Err(e) => {

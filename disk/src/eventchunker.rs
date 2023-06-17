@@ -1,4 +1,3 @@
-use crate::SfDbChConf;
 use bitshuffle::bitshuffle_decompress;
 use bytes::Buf;
 use bytes::BytesMut;
@@ -18,6 +17,7 @@ use netpod::timeunits::SEC;
 use netpod::ByteSize;
 use netpod::EventDataReadStats;
 use netpod::ScalarType;
+use netpod::SfChFetchInfo;
 use netpod::Shape;
 use parse::channelconfig::CompressionMethod;
 use std::path::PathBuf;
@@ -33,7 +33,7 @@ pub struct EventChunker {
     inp: NeedMinBuffer,
     state: DataFileState,
     need_min: u32,
-    channel_config: SfDbChConf,
+    fetch_info: SfChFetchInfo,
     errored: bool,
     completed: bool,
     range: NanoRange,
@@ -94,7 +94,7 @@ impl EventChunker {
     // TODO   `expand` flag usage
     pub fn from_start(
         inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>,
-        channel_config: SfDbChConf,
+        fetch_info: SfChFetchInfo,
         range: NanoRange,
         stats_conf: EventChunkerConf,
         dbg_path: PathBuf,
@@ -108,7 +108,7 @@ impl EventChunker {
             inp,
             state: DataFileState::FileHeader,
             need_min: 6,
-            channel_config,
+            fetch_info,
             errored: false,
             completed: false,
             range,
@@ -135,7 +135,7 @@ impl EventChunker {
     // TODO   `expand` flag usage
     pub fn from_event_boundary(
         inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>,
-        channel_config: SfDbChConf,
+        fetch_info: SfChFetchInfo,
         range: NanoRange,
         stats_conf: EventChunkerConf,
         dbg_path: PathBuf,
@@ -146,7 +146,7 @@ impl EventChunker {
             "EventChunker::{}  do_decompress {}",
             "from_event_boundary", do_decompress
         );
-        let mut ret = Self::from_start(inp, channel_config, range, stats_conf, dbg_path, expand, do_decompress);
+        let mut ret = Self::from_start(inp, fetch_info, range, stats_conf, dbg_path, expand, do_decompress);
         ret.state = DataFileState::Event;
         ret.need_min = 4;
         ret.inp.set_need_min(4);
@@ -223,7 +223,7 @@ impl EventChunker {
                                     ts % SEC,
                                     self.max_ts / SEC,
                                     self.max_ts % SEC,
-                                    self.channel_config.shape,
+                                    self.fetch_info.shape(),
                                     self.dbg_path
                                 );
                                 warn!("{}", msg);
@@ -239,7 +239,7 @@ impl EventChunker {
                                     ts % SEC,
                                     self.max_ts / SEC,
                                     self.max_ts % SEC,
-                                    self.channel_config.shape,
+                                    self.fetch_info.shape(),
                                     self.dbg_path
                                 );
                                 warn!("{}", msg);
@@ -269,7 +269,7 @@ impl EventChunker {
                                     self.range.end / SEC,
                                     self.range.end % SEC,
                                     pulse,
-                                    self.channel_config.shape,
+                                    self.fetch_info.shape(),
                                     self.dbg_path
                                 );
                                 warn!("{}", msg);
@@ -300,9 +300,9 @@ impl EventChunker {
                         let is_array = type_flags & ARRAY != 0;
                         let is_big_endian = type_flags & BIG_ENDIAN != 0;
                         let is_shaped = type_flags & SHAPE != 0;
-                        if let Shape::Wave(_) = self.channel_config.shape {
+                        if let Shape::Wave(_) = self.fetch_info.shape() {
                             if !is_array {
-                                Err(Error::with_msg(format!("dim1 but not array {:?}", self.channel_config)))?;
+                                Err(Error::with_msg(format!("dim1 but not array {:?}", self.fetch_info)))?;
                             }
                         }
                         let compression_method = if is_compressed { sl.read_u8().unwrap() } else { 0 };
@@ -342,7 +342,7 @@ impl EventChunker {
                             let value_bytes = sl.read_u64::<BE>().unwrap();
                             let block_size = sl.read_u32::<BE>().unwrap();
                             //debug!("event  len {}  ts {}  is_compressed {}  shape_dim {}  len-dim-0 {}  value_bytes {}  block_size {}", len, ts, is_compressed, shape_dim, shape_lens[0], value_bytes, block_size);
-                            match self.channel_config.shape {
+                            match self.fetch_info.shape() {
                                 Shape::Scalar => {
                                     assert!(value_bytes < 1024 * 1);
                                 }
@@ -357,19 +357,19 @@ impl EventChunker {
                             let type_size = scalar_type.bytes() as u32;
                             let ele_count = value_bytes / type_size as u64;
                             let ele_size = type_size;
-                            let config_matches = match self.channel_config.shape {
+                            let config_matches = match self.fetch_info.shape() {
                                 Shape::Scalar => {
                                     if is_array {
                                         if false {
                                             error!(
                                                 "channel config mismatch  {:?}  {:?}  {:?}  {:?}",
-                                                self.channel_config, is_array, ele_count, self.dbg_path,
+                                                self.fetch_info, is_array, ele_count, self.dbg_path,
                                             );
                                         }
                                         if false {
                                             return Err(Error::with_msg(format!(
                                                 "ChannelConfig expects {:?} but we find event is_array",
-                                                self.channel_config,
+                                                self.fetch_info,
                                             )));
                                         }
                                         false
@@ -378,17 +378,17 @@ impl EventChunker {
                                     }
                                 }
                                 Shape::Wave(dim1count) => {
-                                    if dim1count != ele_count as u32 {
+                                    if *dim1count != ele_count as u32 {
                                         if false {
                                             error!(
                                                 "channel config mismatch  {:?}  {:?}  {:?}  {:?}",
-                                                self.channel_config, is_array, ele_count, self.dbg_path,
+                                                self.fetch_info, is_array, ele_count, self.dbg_path,
                                             );
                                         }
                                         if false {
                                             return Err(Error::with_msg(format!(
                                                 "ChannelConfig expects {:?} but event has ele_count {}",
-                                                self.channel_config, ele_count,
+                                                self.fetch_info, ele_count,
                                             )));
                                         }
                                         false
@@ -397,18 +397,18 @@ impl EventChunker {
                                     }
                                 }
                                 Shape::Image(n1, n2) => {
-                                    let nt = n1 as usize * n2 as usize;
+                                    let nt = (*n1 as usize) * (*n2 as usize);
                                     if nt != ele_count as usize {
                                         if false {
                                             error!(
                                                 "channel config mismatch  {:?}  {:?}  {:?}  {:?}",
-                                                self.channel_config, is_array, ele_count, self.dbg_path,
+                                                self.fetch_info, is_array, ele_count, self.dbg_path,
                                             );
                                         }
                                         if false {
                                             return Err(Error::with_msg(format!(
                                                 "ChannelConfig expects {:?} but event has ele_count {}",
-                                                self.channel_config, ele_count,
+                                                self.fetch_info, ele_count,
                                             )));
                                         }
                                         false
@@ -552,7 +552,7 @@ impl Stream for EventChunker {
                                     // TODO gather stats about this:
                                     self.inp.put_back(fcr);
                                 }
-                                match self.channel_config.shape {
+                                match self.fetch_info.shape() {
                                     Shape::Scalar => {
                                         if self.need_min > 1024 * 8 {
                                             let msg =

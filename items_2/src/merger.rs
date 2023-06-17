@@ -440,7 +440,6 @@ where
                     trace3!("emit out-of-band data  len {}", k.len());
                     sitem_data(k)
                 });
-                trace!("emit out-of-band");
                 Ready(Some(item))
             } else {
                 match Self::poll2(self.as_mut(), cx) {
