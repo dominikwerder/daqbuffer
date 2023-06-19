@@ -23,7 +23,7 @@ pub async fn chconf_from_scylla_type_backend(channel: &SfDbChannel, ncc: &NodeCo
             ncc.node_config.cluster.backend
         );
     }
-    let backend = channel.backend().into();
+    let backend = channel.backend();
     let dbconf = &ncc.node_config.cluster.database;
     let pgclient = crate::create_connection(dbconf).await?;
     if let Some(series) = channel.series() {
@@ -44,13 +44,7 @@ pub async fn chconf_from_scylla_type_backend(channel: &SfDbChannel, ncc: &NodeCo
             let scalar_type = ScalarType::from_dtype_index(row.get::<_, i32>(1) as u8)?;
             // TODO can I get a slice from psql driver?
             let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(2))?;
-            let ret = ChConf {
-                backend,
-                series: Some(series),
-                name,
-                scalar_type,
-                shape,
-            };
+            let ret = ChConf::new(backend, series, scalar_type, shape, name);
             Ok(ret)
         }
     } else {
@@ -77,13 +71,7 @@ pub async fn chconf_from_scylla_type_backend(channel: &SfDbChannel, ncc: &NodeCo
                 let scalar_type = ScalarType::from_dtype_index(row.get::<_, i32>(2) as u8)?;
                 // TODO can I get a slice from psql driver?
                 let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(3))?;
-                let ret = ChConf {
-                    backend,
-                    series: Some(series),
-                    name,
-                    scalar_type,
-                    shape,
-                };
+                let ret = ChConf::new(backend, series, scalar_type, shape, name);
                 Ok(ret)
             }
         } else {

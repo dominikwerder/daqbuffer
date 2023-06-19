@@ -12,7 +12,6 @@ use netpod::get_url_query_pairs;
 use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
 use netpod::timeunits::*;
-use netpod::ChConf;
 use netpod::ChannelConfigQuery;
 use netpod::ChannelConfigResponse;
 use netpod::ChannelTypeConfigGen;
@@ -38,24 +37,16 @@ pub async fn chconf_from_events_v1(
     q: &PlainEventsQuery,
     ncc: &NodeConfigCached,
 ) -> Result<ChannelTypeConfigGen, Error> {
-    // let ret = nodenet::channelconfig::channel_config(q.range().try_into()?, q.channel().clone(), ncc).await?;
     let ret = nodenet::configquorum::find_config_basics_quorum(q.channel(), ncc).await?;
     Ok(ret)
 }
 
-pub async fn chconf_from_prebinned(q: &PreBinnedQuery, _ncc: &NodeConfigCached) -> Result<ChConf, Error> {
-    let ret = ChConf {
-        backend: q.channel().backend().into(),
-        series: q.channel().series().clone(),
-        name: q.channel().name().into(),
-        scalar_type: q.scalar_type().clone(),
-        shape: q.shape().clone(),
-    };
+pub async fn chconf_from_prebinned(q: &PreBinnedQuery, ncc: &NodeConfigCached) -> Result<ChannelTypeConfigGen, Error> {
+    let ret = nodenet::configquorum::find_config_basics_quorum(q.channel(), ncc).await?;
     Ok(ret)
 }
 
 pub async fn ch_conf_from_binned(q: &BinnedQuery, ncc: &NodeConfigCached) -> Result<ChannelTypeConfigGen, Error> {
-    // let ret = nodenet::channelconfig::channel_config(q.range().try_into()?, q.channel().clone(), ncc).await?;
     let ret = nodenet::configquorum::find_config_basics_quorum(q.channel(), ncc).await?;
     Ok(ret)
 }
@@ -103,24 +94,11 @@ impl ChannelConfigHandler {
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let q = ChannelConfigQuery::from_url(&url)?;
         info!("channel_config  for q {q:?}");
-        let conf = if let Some(_scyco) = &node_config.node_config.cluster.scylla {
-            let c = nodenet::channelconfig::channel_config(q.range.clone(), q.channel.clone(), node_config).await?;
-            ChannelConfigResponse {
-                channel: SfDbChannel::from_full(q.channel.backend(), c.series.clone(), &c.name),
-                scalar_type: c.scalar_type,
-                byte_order: None,
-                shape: c.shape,
-            }
-        } else if let Some(_) = &node_config.node.channel_archiver {
-            return Err(Error::with_msg_no_trace("channel archiver not supported"));
-        } else if let Some(_) = &node_config.node.archiver_appliance {
-            return Err(Error::with_msg_no_trace("archiver appliance not supported"));
-        } else {
-            parse::channelconfig::channel_config(&q, node_config).await?
-        };
+        let conf = nodenet::channelconfig::channel_config(q.range.clone(), q.channel.clone(), node_config).await?;
+        let res: ChannelConfigResponse = conf.into();
         let ret = response(StatusCode::OK)
             .header(http::header::CONTENT_TYPE, APP_JSON)
-            .body(Body::from(serde_json::to_string(&conf)?))?;
+            .body(Body::from(serde_json::to_string(&res)?))?;
         Ok(ret)
     }
 }
@@ -159,27 +137,15 @@ impl ChannelConfigsHandler {
         }
     }
 
-    async fn channel_configs(
-        &self,
-        req: Request<Body>,
-        node_config: &NodeConfigCached,
-    ) -> Result<Response<Body>, Error> {
+    async fn channel_configs(&self, req: Request<Body>, ncc: &NodeConfigCached) -> Result<Response<Body>, Error> {
         info!("channel_configs");
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let q = ChannelConfigQuery::from_url(&url)?;
         info!("channel_configs  for q {q:?}");
-        let conf = if let Some(_) = &node_config.node_config.cluster.scylla {
-            return Err(Error::with_msg_no_trace("TODO"));
-        } else if let Some(_) = &node_config.node.channel_archiver {
-            return Err(Error::with_msg_no_trace("TODO"));
-        } else if let Some(_) = &node_config.node.archiver_appliance {
-            return Err(Error::with_msg_no_trace("TODO"));
-        } else {
-            disk::channelconfig::configs(q.channel, node_config).await?
-        };
+        let ch_conf = nodenet::channelconfig::channel_config(q.range.clone(), q.channel, ncc).await?;
         let ret = response(StatusCode::OK)
             .header(http::header::CONTENT_TYPE, APP_JSON)
-            .body(Body::from(serde_json::to_string(&conf)?))?;
+            .body(Body::from(serde_json::to_string(&ch_conf)?))?;
         Ok(ret)
     }
 }

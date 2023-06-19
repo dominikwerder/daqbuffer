@@ -640,9 +640,13 @@ impl Api1ChannelHeader {
     }
 }
 
-async fn find_ch_conf(channel: SfDbChannel, ncc: NodeConfigCached) -> Result<SfChFetchInfo, Error> {
-    //find_sf_channel_config_basics_quorum()
-    todo!()
+async fn find_ch_conf(
+    range: NanoRange,
+    channel: SfDbChannel,
+    ncc: NodeConfigCached,
+) -> Result<ChannelTypeConfigGen, Error> {
+    let ret = nodenet::channelconfig::channel_config(range, channel, &ncc).await?;
+    Ok(ret)
 }
 
 pub struct DataApiPython3DataStream {
@@ -651,8 +655,8 @@ pub struct DataApiPython3DataStream {
     current_channel: Option<SfDbChannel>,
     node_config: NodeConfigCached,
     chan_stream: Option<Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>>,
-    config_fut: Option<Pin<Box<dyn Future<Output = Result<SfChFetchInfo, Error>> + Send>>>,
-    ch_conf: Option<SfChFetchInfo>,
+    config_fut: Option<Pin<Box<dyn Future<Output = Result<ChannelTypeConfigGen, Error>> + Send>>>,
+    ch_conf: Option<ChannelTypeConfigGen>,
     disk_io_tune: DiskIoTune,
     do_decompress: bool,
     #[allow(unused)]
@@ -882,14 +886,22 @@ impl Stream for DataApiPython3DataStream {
                     }
                 } else if let Some(fut) = &mut self.config_fut {
                     match fut.poll_unpin(cx) {
-                        Ready(Ok(k)) => match self.handle_config_fut_ready(k) {
-                            Ok(()) => continue,
-                            Err(e) => {
-                                self.config_fut = None;
+                        Ready(Ok(k)) => match k {
+                            ChannelTypeConfigGen::Scylla(_) => {
+                                let e = Error::with_msg_no_trace("scylla");
+                                error!("{e}");
                                 self.data_done = true;
-                                error!("api1_binary_events  error {:?}", e);
                                 Ready(Some(Err(e)))
                             }
+                            ChannelTypeConfigGen::SfDatabuffer(k) => match self.handle_config_fut_ready(k) {
+                                Ok(()) => continue,
+                                Err(e) => {
+                                    self.config_fut = None;
+                                    self.data_done = true;
+                                    error!("api1_binary_events  error {:?}", e);
+                                    Ready(Some(Err(e)))
+                                }
+                            },
                         },
                         Ready(Err(e)) => {
                             self.data_done = true;
@@ -900,7 +912,11 @@ impl Stream for DataApiPython3DataStream {
                 } else {
                     if let Some(channel) = self.channels.pop_front() {
                         self.current_channel = Some(channel.clone());
-                        self.config_fut = Some(Box::pin(find_ch_conf(channel, self.node_config.clone())));
+                        self.config_fut = Some(Box::pin(find_ch_conf(
+                            self.range.clone(),
+                            channel,
+                            self.node_config.clone(),
+                        )));
                         continue;
                     } else {
                         self.data_done = true;

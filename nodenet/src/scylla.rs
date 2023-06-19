@@ -1,12 +1,9 @@
-use err::anyhow::Context;
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
-use items_0::Appendable;
-use items_0::Empty;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
 use netpod::ChConf;
@@ -19,19 +16,16 @@ pub async fn scylla_channel_event_stream(
     evq: PlainEventsQuery,
     chconf: ChConf,
     scyco: &ScyllaConfig,
-    node_config: &NodeConfigCached,
+    _ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     // TODO depends in general on the query
     // TODO why both in PlainEventsQuery and as separate parameter? Check other usages.
     let do_one_before_range = false;
     // TODO use better builder pattern with shortcuts for production and dev defaults
-    let f = crate::channelconfig::channel_config(evq.range().try_into()?, evq.channel().clone(), node_config)
-        .await
-        .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?;
     let scy = scyllaconn::create_scy_session(scyco).await?;
-    let series = f.try_series().context("scylla_channel_event_stream")?;
-    let scalar_type = f.scalar_type;
-    let shape = f.shape;
+    let series = chconf.series();
+    let scalar_type = chconf.scalar_type();
+    let shape = chconf.shape();
     let do_test_stream_error = false;
     let with_values = evq.need_value_data();
     debug!("Make EventsStreamScylla for {series:?} {scalar_type:?} {shape:?}");
@@ -39,8 +33,8 @@ pub async fn scylla_channel_event_stream(
         series,
         evq.range().into(),
         do_one_before_range,
-        scalar_type,
-        shape,
+        scalar_type.clone(),
+        shape.clone(),
         with_values,
         scy,
         do_test_stream_error,

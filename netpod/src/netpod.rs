@@ -1187,8 +1187,16 @@ impl TsNano {
         Self(ns)
     }
 
+    pub fn from_ms(ns: u64) -> Self {
+        Self(MS * ns)
+    }
+
     pub fn ns(&self) -> u64 {
         self.0
+    }
+
+    pub fn ms(&self) -> u64 {
+        self.0 / MS
     }
 }
 
@@ -2399,15 +2407,79 @@ impl AppendToUrl for ChannelConfigQuery {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ChannelConfigResponse {
-    #[serde(rename = "channel")]
-    pub channel: SfDbChannel,
+#[serde(rename = "SfDatabuffer")]
+pub struct SfChannelConfigResponse {
+    #[serde(rename = "backend")]
+    pub backend: String,
+    #[serde(rename = "name")]
+    pub name: String,
+    #[serde(rename = "keyspace")]
+    pub keyspace: u8,
+    #[serde(rename = "timeBinSize")]
+    pub timebinsize: u64,
     #[serde(rename = "scalarType")]
     pub scalar_type: ScalarType,
-    #[serde(rename = "byteOrder", default, skip_serializing_if = "Option::is_none")]
-    pub byte_order: Option<ByteOrder>,
     #[serde(rename = "shape")]
     pub shape: Shape,
+    #[serde(rename = "byteOrder")]
+    pub byte_order: ByteOrder,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename = "Daqbuf")]
+pub struct DaqbufChannelConfig {
+    #[serde(rename = "backend")]
+    pub backend: String,
+    #[serde(rename = "seriesId")]
+    pub series: u64,
+    #[serde(rename = "scalarType")]
+    pub scalar_type: ScalarType,
+    #[serde(rename = "shape")]
+    pub shape: Shape,
+    #[serde(rename = "name")]
+    pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ChannelConfigResponse {
+    SfDatabuffer(SfChannelConfigResponse),
+    Daqbuf(DaqbufChannelConfig),
+}
+
+impl From<SfChFetchInfo> for ChannelConfigResponse {
+    fn from(value: SfChFetchInfo) -> Self {
+        Self::SfDatabuffer(SfChannelConfigResponse {
+            backend: value.backend().into(),
+            name: value.name().into(),
+            keyspace: value.ks(),
+            timebinsize: value.bs().ms(),
+            scalar_type: value.scalar_type().clone(),
+            shape: value.shape().clone(),
+            byte_order: value.byte_order().clone(),
+        })
+    }
+}
+
+impl From<ChConf> for ChannelConfigResponse {
+    fn from(value: ChConf) -> Self {
+        Self::Daqbuf(DaqbufChannelConfig {
+            backend: value.backend().into(),
+            series: value.series(),
+            scalar_type: value.scalar_type().clone(),
+            shape: value.shape().clone(),
+            name: value.name().into(),
+        })
+    }
+}
+
+impl From<ChannelTypeConfigGen> for ChannelConfigResponse {
+    fn from(value: ChannelTypeConfigGen) -> Self {
+        match value {
+            ChannelTypeConfigGen::Scylla(k) => k.into(),
+            ChannelTypeConfigGen::SfDatabuffer(k) => k.into(),
+        }
+    }
 }
 
 /**
@@ -2424,17 +2496,46 @@ pub struct ChannelInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChConf {
-    pub backend: String,
-    pub series: Option<u64>,
-    pub name: String,
-    pub scalar_type: ScalarType,
-    pub shape: Shape,
+    backend: String,
+    series: u64,
+    scalar_type: ScalarType,
+    shape: Shape,
+    name: String,
 }
 
 impl ChConf {
-    pub fn try_series(&self) -> Res2<u64> {
+    pub fn new<S1, S2>(backend: S1, series: u64, scalar_type: ScalarType, shape: Shape, name: S2) -> Self
+    where
+        S1: Into<String>,
+        S2: Into<String>,
+    {
+        Self {
+            backend: backend.into(),
+            series,
+            scalar_type,
+            shape,
+            name: name.into(),
+        }
+    }
+
+    pub fn backend(&self) -> &str {
+        &self.backend
+    }
+
+    pub fn series(&self) -> u64 {
         self.series
-            .ok_or_else(|| anyhow::anyhow!("ChConf without SeriesId {self:?}"))
+    }
+
+    pub fn scalar_type(&self) -> &ScalarType {
+        &self.scalar_type
+    }
+
+    pub fn shape(&self) -> &Shape {
+        &self.shape
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 }
 
@@ -2512,6 +2613,10 @@ impl SfChFetchInfo {
 
     pub fn shape(&self) -> &Shape {
         &self.shape
+    }
+
+    pub fn byte_order(&self) -> &ByteOrder {
+        &self.byte_order
     }
 }
 

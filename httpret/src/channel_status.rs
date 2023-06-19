@@ -12,6 +12,7 @@ use items_2::channelevents::ChannelStatusEvent;
 use items_2::channelevents::ConnStatusEvent;
 use netpod::log::*;
 use netpod::query::ChannelStateEventsQuery;
+use netpod::ChannelTypeConfigGen;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ACCEPT_ALL;
@@ -77,7 +78,6 @@ impl ConnectionStatusEvents {
         let _scy = scyllaconn::create_scy_session(scyco).await?;
         let chconf =
             nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), node_config).await?;
-        let _series = chconf.series;
         let _do_one_before_range = true;
         let ret = Vec::new();
         if true {
@@ -153,17 +153,22 @@ impl ChannelStatusEvents {
         let chconf =
             nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), node_config).await?;
         let do_one_before_range = true;
-        let mut stream = scyllaconn::status::StatusStreamScylla::new(
-            chconf.try_series().context("channel_status")?,
-            q.range().clone(),
-            do_one_before_range,
-            scy,
-        );
-        let mut ret = Vec::new();
-        while let Some(item) = stream.next().await {
-            let item = item?;
-            ret.push(item);
+        match chconf {
+            ChannelTypeConfigGen::Scylla(ch_conf) => {
+                let mut stream = scyllaconn::status::StatusStreamScylla::new(
+                    ch_conf.series(),
+                    q.range().clone(),
+                    do_one_before_range,
+                    scy,
+                );
+                let mut ret = Vec::new();
+                while let Some(item) = stream.next().await {
+                    let item = item?;
+                    ret.push(item);
+                }
+                Ok(ret)
+            }
+            ChannelTypeConfigGen::SfDatabuffer(k) => todo!(),
         }
-        Ok(ret)
     }
 }

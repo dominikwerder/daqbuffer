@@ -308,23 +308,6 @@ pub fn parse_config(inp: &[u8]) -> NRes<ChannelConfigs> {
     Ok((inp, ret))
 }
 
-pub async fn channel_config(q: &ChannelConfigQuery, ncc: &NodeConfigCached) -> Result<ChannelConfigResponse, Error> {
-    let conf = read_local_config(q.channel.clone(), ncc.clone()).await?;
-    let entry_res = extract_matching_config_entry(&q.range, &conf)?;
-    let entry = match entry_res {
-        MatchingConfigEntry::None => return Err(Error::with_public_msg("no config entry found")),
-        MatchingConfigEntry::Single(entry) => entry,
-        MatchingConfigEntry::Multiple(_) => return Err(Error::with_public_msg("multiple config entries found")),
-    };
-    let ret = ChannelConfigResponse {
-        channel: q.channel.clone(),
-        scalar_type: entry.scalar_type.clone(),
-        byte_order: Some(entry.byte_order.clone()),
-        shape: entry.to_shape()?,
-    };
-    Ok(ret)
-}
-
 async fn read_local_config_real(channel: SfDbChannel, ncc: &NodeConfigCached) -> Result<ChannelConfigs, Error> {
     let path = ncc
         .node
