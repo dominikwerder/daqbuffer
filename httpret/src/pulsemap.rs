@@ -23,6 +23,7 @@ use netpod::FromUrl;
 use netpod::HasBackend;
 use netpod::HasTimeout;
 use netpod::NodeConfigCached;
+use netpod::DATETIME_FMT_9MS;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -1429,12 +1430,11 @@ impl Api4MapPulse2HttpFunction {
             Ok(Some(val)) => {
                 let sec = val / SEC;
                 let ns = val % SEC;
-                let date_fmt = "%Y-%m-%dT%H:%M:%S.%9fZ";
                 let datetime = Utc
                     .timestamp_opt(sec as i64, ns as u32)
                     .earliest()
                     .ok_or_else(|| Error::with_msg_no_trace("DateTime earliest fail"))?
-                    .format(date_fmt)
+                    .format(DATETIME_FMT_9MS)
                     .to_string();
                 let res = Api4MapPulse2Response { sec, ns, datetime };
                 Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&res)?))?)

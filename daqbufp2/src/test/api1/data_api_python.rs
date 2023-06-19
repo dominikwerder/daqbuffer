@@ -10,6 +10,7 @@ use netpod::Cluster;
 use netpod::HostPort;
 use netpod::SfDbChannel;
 use netpod::APP_JSON;
+use netpod::DATETIME_FMT_3MS;
 use url::Url;
 
 const TEST_BACKEND: &str = "testbackend-00";
@@ -26,8 +27,8 @@ async fn fetch_data_api_python_blob(
     let beg_date = beg_date.parse()?;
     let end_date = end_date.parse()?;
     let _range = NanoRange::from_date_time(beg_date, end_date);
-    let start_date = beg_date.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
-    let end_date = end_date.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string();
+    let start_date = beg_date.format(DATETIME_FMT_3MS).to_string();
+    let end_date = end_date.format(DATETIME_FMT_3MS).to_string();
     let query = serde_json::json!({
         "range": {
             "type": "date",

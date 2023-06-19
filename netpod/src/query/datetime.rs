@@ -1,13 +1,15 @@
-use chrono::{DateTime, FixedOffset};
+use chrono::DateTime;
+use chrono::FixedOffset;
 use err::Error;
-use serde::{de::Visitor, Deserialize, Serialize};
+use serde::de::Visitor;
+use serde::Deserialize;
+use serde::Serialize;
 use std::fmt;
 use std::ops;
+use std::time::Duration;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Datetime(DateTime<FixedOffset>);
-
-impl Datetime {}
 
 impl From<DateTime<FixedOffset>> for Datetime {
     fn from(x: DateTime<FixedOffset>) -> Self {
@@ -83,4 +85,50 @@ impl<'de> Deserialize<'de> for Datetime {
     {
         deserializer.deserialize_str(Vis1)
     }
+}
+
+#[test]
+fn ser_00() {
+    use chrono::TimeZone;
+    let x = FixedOffset::east_opt(0)
+        .unwrap()
+        .with_ymd_and_hms(2023, 2, 3, 15, 12, 40)
+        .earliest()
+        .unwrap();
+    let x = Datetime(x);
+    let s = serde_json::to_string(&x).unwrap();
+
+    assert_eq!(s, r#""2023-02-03T15:12:40Z""#);
+}
+
+#[test]
+fn ser_01() {
+    use chrono::TimeZone;
+    let x = FixedOffset::east_opt(0)
+        .unwrap()
+        .with_ymd_and_hms(2023, 2, 3, 15, 12, 40)
+        .earliest()
+        .unwrap()
+        .checked_add_signed(chrono::Duration::milliseconds(876))
+        .unwrap();
+    let x = Datetime(x);
+    let s = serde_json::to_string(&x).unwrap();
+
+    assert_eq!(s, r#""2023-02-03T15:12:40.876Z""#);
+}
+
+#[test]
+fn ser_02() {
+    use chrono::TimeZone;
+    let x = FixedOffset::east_opt(0)
+        .unwrap()
+        .with_ymd_and_hms(2023, 2, 3, 15, 12, 40)
+        .earliest()
+        .unwrap()
+        .checked_add_signed(chrono::Duration::nanoseconds(543432120))
+        .unwrap();
+    let x = Datetime(x);
+    let s = serde_json::to_string(&x).unwrap();
+
+    assert_eq!(s, r#""2023-02-03T15:12:40.543432Z""#);
 }

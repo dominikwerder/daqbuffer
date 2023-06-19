@@ -16,6 +16,7 @@ use crate::PulseRange;
 use crate::SeriesRange;
 use crate::SfDbChannel;
 use crate::ToNanos;
+use crate::DATETIME_FMT_6MS;
 use chrono::DateTime;
 use chrono::TimeZone;
 use chrono::Utc;
@@ -118,7 +119,7 @@ impl FromUrl for TimeRangeQuery {
 
 impl AppendToUrl for TimeRangeQuery {
     fn append_to_url(&self, url: &mut Url) {
-        let date_fmt = "%Y-%m-%dT%H:%M:%S.%6fZ";
+        let date_fmt = DATETIME_FMT_6MS;
         let mut g = url.query_pairs_mut();
         g.append_pair(
             "begDate",
@@ -314,16 +315,19 @@ impl FromUrl for ChannelStateEventsQuery {
 
 impl AppendToUrl for ChannelStateEventsQuery {
     fn append_to_url(&self, url: &mut Url) {
-        let date_fmt = "%Y-%m-%dT%H:%M:%S.%6fZ";
         self.channel.append_to_url(url);
         let mut g = url.query_pairs_mut();
         g.append_pair(
             "begDate",
-            &Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt).to_string(),
+            &Utc.timestamp_nanos(self.range.beg as i64)
+                .format(DATETIME_FMT_6MS)
+                .to_string(),
         );
         g.append_pair(
             "endDate",
-            &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
+            &Utc.timestamp_nanos(self.range.end as i64)
+                .format(DATETIME_FMT_6MS)
+                .to_string(),
         );
     }
 }

@@ -1,4 +1,5 @@
 use crate::conn::events_conn_handler;
+use crate::conn::Frame1Parts;
 use err::Error;
 use futures_util::StreamExt;
 use items_0::streamitem::sitem_data;
@@ -79,11 +80,9 @@ fn raw_data_00() {
             beg: SEC,
             end: SEC * 10,
         };
-        if true {
-            todo!("must add 2nd frame with channel type info");
-        }
         let qu = PlainEventsQuery::new(channel, range);
-        let query = EventQueryJsonStringFrame(serde_json::to_string(&qu).unwrap());
+        let frame1 = Frame1Parts::new(qu, err::todoval());
+        let query = EventQueryJsonStringFrame(serde_json::to_string(&frame1).unwrap());
         let frame = sitem_data(query).make_frame()?;
         let jh = taskrun::spawn(events_conn_handler(client, addr, cfg));
         con.write_all(&frame).await.unwrap();

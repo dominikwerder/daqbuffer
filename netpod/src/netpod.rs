@@ -47,6 +47,10 @@ pub const CONNECTION_STATUS_DIV: u64 = timeunits::DAY;
 pub const TS_MSP_GRID_UNIT: u64 = timeunits::SEC * 10;
 pub const TS_MSP_GRID_SPACING: u64 = 6 * 2;
 
+pub const DATETIME_FMT_3MS: &str = "%Y-%m-%dT%H:%M:%S.%3fZ";
+pub const DATETIME_FMT_6MS: &str = "%Y-%m-%dT%H:%M:%S.%6fZ";
+pub const DATETIME_FMT_9MS: &str = "%Y-%m-%dT%H:%M:%S.%9fZ";
+
 const TEST_BACKEND: &str = "testbackend-00";
 
 pub fn is_false<T>(x: T) -> bool
@@ -439,6 +443,7 @@ mod serde_port {
     where
         D: serde::Deserializer<'de>,
     {
+        // We expect to use json or yaml only.
         de.deserialize_any(Vis)
     }
 
@@ -1157,7 +1162,64 @@ where
     pub ix: [T; 2],
 }
 
-#[derive(Clone, Deserialize, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq, PartialOrd)]
+pub struct DtNano(u64);
+
+impl DtNano {
+    pub fn from_ns(ns: u64) -> Self {
+        Self(ns)
+    }
+
+    pub fn ns(&self) -> u64 {
+        self.0
+    }
+}
+
+mod dt_nano_serde {
+    use super::DtNano;
+    use de::Visitor;
+    use serde::de;
+    use serde::Deserialize;
+    use serde::Serialize;
+    use std::fmt;
+
+    impl Serialize for DtNano {
+        fn serialize<S>(&self, ser: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            ser.serialize_u64(self.ns())
+        }
+    }
+
+    struct Vis1;
+
+    impl<'de> Visitor<'de> for Vis1 {
+        type Value = DtNano;
+
+        fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            write!(fmt, "an integer of nanoseconds")
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(DtNano::from_ns(v))
+        }
+    }
+
+    impl<'de> Deserialize<'de> for DtNano {
+        fn deserialize<D>(de: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            de.deserialize_u64(Vis1)
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, PartialOrd)]
 pub struct TsNano(pub u64);
 
 mod ts_nano_ser {
@@ -1165,22 +1227,53 @@ mod ts_nano_ser {
     use crate::timeunits::SEC;
     use chrono::TimeZone;
     use chrono::Utc;
+    use de::Visitor;
+    use serde::de;
+    use serde::Deserialize;
     use serde::Serialize;
+    use std::fmt;
 
     impl Serialize for TsNano {
         fn serialize<S>(&self, ser: S) -> Result<S::Ok, S::Error>
         where
             S: serde::Serializer,
         {
-            let ts = Utc.timestamp_opt((self.0 / SEC) as i64, (self.0 % SEC) as u32);
-            let value = format!("{}", ts.earliest().unwrap());
-            ser.serialize_newtype_struct("TsNano", &value)
+            if false {
+                let ts = Utc.timestamp_opt((self.0 / SEC) as i64, (self.0 % SEC) as u32);
+                let value = format!("{}", ts.earliest().unwrap());
+                ser.serialize_newtype_struct("TsNano", &value)
+            } else {
+                ser.serialize_u64(self.ns())
+            }
+        }
+    }
+
+    struct Vis1;
+
+    impl<'de> Visitor<'de> for Vis1 {
+        type Value = TsNano;
+
+        fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            write!(fmt, "integer nanoseconds since unix epoch")
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(TsNano::from_ns(v))
+        }
+    }
+
+    impl<'de> Deserialize<'de> for TsNano {
+        fn deserialize<D>(de: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            de.deserialize_u64(Vis1)
         }
     }
 }
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
-pub struct PulseId(u64);
 
 impl TsNano {
     pub fn from_ns(ns: u64) -> Self {
@@ -1204,10 +1297,16 @@ impl fmt::Debug for TsNano {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let ts = Utc.timestamp_opt((self.0 / SEC) as i64, (self.0 % SEC) as u32);
         f.debug_struct("TsNano")
-            .field("ts", &ts.earliest().unwrap_or(Default::default()))
+            .field(
+                "ts",
+                &ts.earliest().unwrap_or(Default::default()).format(DATETIME_FMT_3MS),
+            )
             .finish()
     }
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd)]
+pub struct PulseId(u64);
 
 impl PulseId {
     pub fn from_id(id: u64) -> Self {
@@ -2389,16 +2488,19 @@ impl FromUrl for ChannelConfigQuery {
 
 impl AppendToUrl for ChannelConfigQuery {
     fn append_to_url(&self, url: &mut Url) {
-        let date_fmt = "%Y-%m-%dT%H:%M:%S.%3fZ";
         self.channel.append_to_url(url);
         let mut g = url.query_pairs_mut();
         g.append_pair(
             "begDate",
-            &Utc.timestamp_nanos(self.range.beg as i64).format(date_fmt).to_string(),
+            &Utc.timestamp_nanos(self.range.beg as i64)
+                .format(DATETIME_FMT_3MS)
+                .to_string(),
         );
         g.append_pair(
             "endDate",
-            &Utc.timestamp_nanos(self.range.end as i64).format(date_fmt).to_string(),
+            &Utc.timestamp_nanos(self.range.end as i64)
+                .format(DATETIME_FMT_3MS)
+                .to_string(),
         );
         if self.expand {
             g.append_pair("expand", "true");

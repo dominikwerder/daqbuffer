@@ -124,8 +124,14 @@ where
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EventQueryJsonStringFrame(pub String);
+
+impl EventQueryJsonStringFrame {
+    pub fn str(&self) -> &str {
+        &self.0
+    }
+}
 
 impl FrameTypeInnerStatic for EventQueryJsonStringFrame {
     const FRAME_TYPE_ID: u32 = EVENT_QUERY_JSON_STRING_FRAME;

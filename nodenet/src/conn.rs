@@ -19,12 +19,12 @@ use items_2::frame::make_term_frame;
 use items_2::inmem::InMemoryFrame;
 use netpod::histo::HistoLog2;
 use netpod::log::*;
-use netpod::ChConf;
 use netpod::ChannelTypeConfigGen;
 use netpod::NodeConfigCached;
 use netpod::PerfOpts;
 use query::api4::events::PlainEventsQuery;
-use serde_json::Value as JsValue;
+use serde::Deserialize;
+use serde::Serialize;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
@@ -162,6 +162,18 @@ async fn make_channel_events_stream(
     Ok(ret)
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Frame1Parts {
+    query: PlainEventsQuery,
+    ch_conf: ChannelTypeConfigGen,
+}
+
+impl Frame1Parts {
+    pub fn new(query: PlainEventsQuery, ch_conf: ChannelTypeConfigGen) -> Self {
+        Self { query, ch_conf }
+    }
+}
+
 async fn events_get_input_frames(netin: OwnedReadHalf) -> Result<Vec<InMemoryFrame>, Error> {
     let perf_opts = PerfOpts::default();
     let mut h = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
@@ -188,9 +200,8 @@ async fn events_get_input_frames(netin: OwnedReadHalf) -> Result<Vec<InMemoryFra
 
 async fn events_parse_input_query(
     frames: Vec<InMemoryFrame>,
-    ncc: &NodeConfigCached,
 ) -> Result<(PlainEventsQuery, ChannelTypeConfigGen), Error> {
-    if frames.len() != 2 {
+    if frames.len() != 1 {
         error!("{:?}", frames);
         error!("missing command frame  len {}", frames.len());
         let e = Error::with_msg("missing command frame");
@@ -214,37 +225,22 @@ async fn events_parse_input_query(
         },
         Err(e) => return Err(e),
     };
-    let evq: PlainEventsQuery = serde_json::from_str(&qitem.0).map_err(|e| {
-        let e = Error::with_msg_no_trace(format!("json parse error: {e}"));
+    let cmd: Frame1Parts = serde_json::from_str(&qitem.str()).map_err(|e| {
+        let e = Error::with_msg_no_trace(format!("json parse error: {}  inp {:?}", e, qitem.str()));
         error!("{e}");
         e
     })?;
-    debug!("events_parse_input_query  {:?}", evq);
+    debug!("events_parse_input_query  {:?}", cmd);
     if query_frame.tyid() != EVENT_QUERY_JSON_STRING_FRAME {
         return Err(Error::with_msg("query frame wrong type"));
     }
-    let qitem = match decode_frame::<Sitemty<EventQueryJsonStringFrame>>(&frames[1]) {
-        Ok(k) => match k {
-            Ok(k) => match k {
-                StreamItem::DataItem(k) => match k {
-                    RangeCompletableItem::Data(k) => k,
-                    RangeCompletableItem::RangeComplete => return Err(Error::with_msg("bad query item")),
-                },
-                _ => return Err(Error::with_msg("bad query item")),
-            },
-            Err(e) => return Err(e),
-        },
-        Err(e) => return Err(e),
-    };
-    let ch_conf: ChannelTypeConfigGen = serde_json::from_str(&qitem.0)?;
-    info!("\n\nparsed second frame:\n{ch_conf:?}");
-    Ok((evq, ch_conf))
+    Ok((cmd.query, cmd.ch_conf))
 }
 
 async fn events_conn_handler_inner_try(
     stream: TcpStream,
     addr: SocketAddr,
-    node_config: &NodeConfigCached,
+    ncc: &NodeConfigCached,
 ) -> Result<(), ConnErr> {
     let _ = addr;
     let (netin, mut netout) = stream.into_split();
@@ -252,7 +248,7 @@ async fn events_conn_handler_inner_try(
         Ok(x) => x,
         Err(e) => return Err((e, netout).into()),
     };
-    let (evq, ch_conf) = match events_parse_input_query(frames, node_config).await {
+    let (evq, ch_conf) = match events_parse_input_query(frames).await {
         Ok(x) => x,
         Err(e) => return Err((e, netout).into()),
     };
@@ -262,7 +258,7 @@ async fn events_conn_handler_inner_try(
             Ok(x) => x,
             Err(e) => return Err((e, netout).into()),
         };
-        match disk::raw::conn::make_event_blobs_pipe(&evq, &fetch_info, node_config).await {
+        match disk::raw::conn::make_event_blobs_pipe(&evq, &fetch_info, ncc).await {
             Ok(stream) => {
                 let stream = stream.map(|x| Box::new(x) as _);
                 Box::pin(stream)
@@ -270,7 +266,7 @@ async fn events_conn_handler_inner_try(
             Err(e) => return Err((e, netout).into()),
         }
     } else {
-        match make_channel_events_stream(evq.clone(), ch_conf, node_config).await {
+        match make_channel_events_stream(evq.clone(), ch_conf, ncc).await {
             Ok(stream) => {
                 if false {
                     // TODO wasm example
@@ -325,7 +321,7 @@ async fn events_conn_handler_inner_try(
     }
     {
         let item = LogItem {
-            node_ix: node_config.ix as _,
+            node_ix: ncc.ix as _,
             level: Level::INFO,
             msg: format!("buf_len_histo: {:?}", buf_len_histo),
         };

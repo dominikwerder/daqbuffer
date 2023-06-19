@@ -32,6 +32,7 @@ use items_0::MergeError;
 use merger::Mergeable;
 use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::*;
+use netpod::DATETIME_FMT_3MS;
 use serde::Deserialize;
 use serde::Serialize;
 use serde::Serializer;
@@ -145,7 +146,7 @@ impl Serialize for IsoDateTime {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&self.0.format("%Y-%m-%dT%H:%M:%S.%3fZ").to_string())
+        serializer.serialize_str(&self.0.format(DATETIME_FMT_3MS).to_string())
     }
 }
 

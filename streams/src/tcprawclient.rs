@@ -24,10 +24,23 @@ use netpod::PerfOpts;
 use query::api4::events::PlainEventsQuery;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde_json::json;
 use std::fmt;
 use std::pin::Pin;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
+
+pub fn make_node_command_frame<Q>(query: Q, ch_conf: &ChannelTypeConfigGen) -> Result<EventQueryJsonStringFrame, Error>
+where
+    Q: Serialize,
+{
+    let obj = json!({
+        "query": query,
+        "ch_conf":ch_conf,
+    });
+    let ret = serde_json::to_string(&obj)?;
+    Ok(EventQueryJsonStringFrame(ret))
+}
 
 pub async fn x_processed_event_blobs_stream_from_node(
     query: PlainEventsQuery,
@@ -37,19 +50,12 @@ pub async fn x_processed_event_blobs_stream_from_node(
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
     let addr = format!("{}:{}", node.host, node.port_raw);
     debug!("x_processed_event_blobs_stream_from_node  to: {addr}",);
+    let frame1 = make_node_command_frame(&query, &ch_conf)?;
     let net = TcpStream::connect(addr.clone()).await?;
-    let qjs = serde_json::to_string(&query)?;
     let (netin, mut netout) = net.into_split();
-
-    let item = sitem_data(EventQueryJsonStringFrame(qjs));
+    let item = sitem_data(frame1);
     let buf = item.make_frame()?;
     netout.write_all(&buf).await?;
-
-    let s = serde_json::to_string(&ch_conf)?;
-    let item = sitem_data(EventQueryJsonStringFrame(s));
-    let buf = item.make_frame()?;
-    netout.write_all(&buf).await?;
-
     let buf = make_term_frame()?;
     netout.write_all(&buf).await?;
     netout.flush().await?;
@@ -73,23 +79,16 @@ where
     T: FrameTypeInnerStatic + DeserializeOwned + Send + Unpin + fmt::Debug + 'static,
 {
     // TODO when unit tests established, change to async connect:
+    let frame1 = make_node_command_frame(&query, &ch_conf)?;
     let mut streams = Vec::new();
     for node in &cluster.nodes {
         let addr = format!("{}:{}", node.host, node.port_raw);
         debug!("open_tcp_streams  to: {addr}");
         let net = TcpStream::connect(addr.clone()).await?;
-        let qjs = serde_json::to_string(&query)?;
         let (netin, mut netout) = net.into_split();
-
-        let item = sitem_data(EventQueryJsonStringFrame(qjs));
+        let item = sitem_data(frame1.clone());
         let buf = item.make_frame()?;
         netout.write_all(&buf).await?;
-
-        let s = serde_json::to_string(ch_conf)?;
-        let item = sitem_data(EventQueryJsonStringFrame(s));
-        let buf = item.make_frame()?;
-        netout.write_all(&buf).await?;
-
         let buf = make_term_frame()?;
         netout.write_all(&buf).await?;
         netout.flush().await?;
