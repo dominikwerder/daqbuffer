@@ -11,6 +11,7 @@ use netpod::HostPort;
 use netpod::SfDbChannel;
 use netpod::APP_JSON;
 use netpod::DATETIME_FMT_3MS;
+use parse::api1_parse::api1_frames;
 use url::Url;
 
 const TEST_BACKEND: &str = "testbackend-00";
@@ -74,6 +75,12 @@ fn api3_hdf_dim0_00() -> Result<(), Error> {
             cluster,
         )
         .await?;
+        use parse::nom;
+        let x: Result<(&[u8], Vec<parse::api1_parse::Api1Frame>), nom::Err<nom::error::VerboseError<&[u8]>>> =
+            api1_frames(&jsv);
+        let res = x.unwrap();
+        eprintln!("{res:?}");
+        panic!();
         Ok(())
     };
     taskrun::run(fut)

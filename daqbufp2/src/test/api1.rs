@@ -1,16 +1,17 @@
-mod api1_parse;
 mod data_api_python;
 
 use crate::nodes::require_test_hosts_running;
-use crate::test::api1::api1_parse::Api1Frame;
 use err::Error;
 use futures_util::Future;
 use httpclient::http_post;
-use httpret::api1::Api1ScalarType;
 use netpod::log::*;
 use netpod::query::api1::Api1Query;
 use netpod::query::api1::Api1Range;
 use netpod::query::api1::ChannelTuple;
+use netpod::APP_OCTET;
+use parse::api1_parse;
+use parse::api1_parse::Api1Frame;
+use parse::api1_parse::Api1ScalarType;
 use std::fmt;
 use url::Url;
 
@@ -23,7 +24,7 @@ where
     taskrun::run(fut)
 }
 
-fn is_monitonic_strict<I>(it: I) -> bool
+fn is_monotonic_strict<I>(it: I) -> bool
 where
     I: Iterator,
     <I as Iterator>::Item: PartialOrd + fmt::Debug,
@@ -42,8 +43,8 @@ where
 
 #[test]
 fn test_is_monitonic_strict() {
-    assert_eq!(is_monitonic_strict([1, 2, 3].iter()), true);
-    assert_eq!(is_monitonic_strict([1, 2, 2].iter()), false);
+    assert_eq!(is_monotonic_strict([1, 2, 3].iter()), true);
+    assert_eq!(is_monotonic_strict([1, 2, 2].iter()), false);
 }
 
 #[test]
@@ -57,7 +58,7 @@ fn events_f64_plain() -> Result<(), Error> {
         let cluster = &rh.cluster;
         let node = &cluster.nodes[0];
         let url: Url = format!("http://{}:{}/api/1/query", node.host, node.port).parse()?;
-        let accept = "application/octet-stream";
+        let accept = APP_OCTET;
         let range = Api1Range::new("1970-01-01T00:00:00Z".try_into()?, "1970-01-01T00:01:00Z".try_into()?)?;
         // TODO the channel list needs to get pre-processed to check for backend prefix!
         let ch = ChannelTuple::new(TEST_BACKEND.into(), "test-gen-i32-dim0-v01".into());
@@ -101,9 +102,9 @@ fn events_f64_plain() -> Result<(), Error> {
                         _ => None,
                     })
                     .collect();
-                assert_eq!(is_monitonic_strict(tss.iter()), true);
-                assert_eq!(is_monitonic_strict(pulses.iter()), true);
-                assert_eq!(is_monitonic_strict(values.iter()), true);
+                assert_eq!(is_monotonic_strict(tss.iter()), true);
+                assert_eq!(is_monotonic_strict(pulses.iter()), true);
+                assert_eq!(is_monotonic_strict(values.iter()), true);
                 for &val in &values {
                     assert!(val >= 0);
                     assert!(val < 120);

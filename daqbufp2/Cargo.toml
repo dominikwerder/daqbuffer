@@ -32,6 +32,4 @@ disk = { path = "../disk" }
 items_0 = { path = "../items_0" }
 items_2 = { path = "../items_2" }
 streams = { path = "../streams" }
-
-[dev-dependencies]
-nom = "7.1.1"
+parse = { path = "../parse" }

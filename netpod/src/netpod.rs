@@ -47,6 +47,7 @@ pub const CONNECTION_STATUS_DIV: u64 = timeunits::DAY;
 pub const TS_MSP_GRID_UNIT: u64 = timeunits::SEC * 10;
 pub const TS_MSP_GRID_SPACING: u64 = 6 * 2;
 
+pub const DATETIME_FMT_0MS: &str = "%Y-%m-%dT%H:%M:%SZ";
 pub const DATETIME_FMT_3MS: &str = "%Y-%m-%dT%H:%M:%S.%3fZ";
 pub const DATETIME_FMT_6MS: &str = "%Y-%m-%dT%H:%M:%S.%6fZ";
 pub const DATETIME_FMT_9MS: &str = "%Y-%m-%dT%H:%M:%S.%9fZ";
