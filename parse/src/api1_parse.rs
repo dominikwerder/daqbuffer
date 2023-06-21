@@ -3,6 +3,7 @@ use crate::nom;
 use netpod::log::*;
 use netpod::ScalarType;
 use netpod::Shape;
+use nom::bytes::complete::take;
 use nom::error::context;
 use nom::error::ContextError;
 use nom::error::ErrorKind;
@@ -18,8 +19,6 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
 use std::num::NonZeroUsize;
-
-//type Nres<'a, T> = IResult<&'a [u8], T, nom::error::VerboseError<&'a [u8]>>;
 
 type Nres<'a, O, E = nom::error::Error<&'a [u8]>> = Result<(&'a [u8], O), nom::Err<E>>;
 
@@ -210,43 +209,52 @@ pub enum Api1Frame {
     Data(Data),
 }
 
-fn fail_on_input<'a, T, E>(inp: &'a [u8]) -> Nres<'a, T, E>
+fn fail_on_input<'a, T, E>(inp: &'a [u8]) -> Nres<T, E>
 where
     E: ParseError<&'a [u8]>,
 {
-    // IResult::Err(Err::Failure(make_error(inp, ErrorKind::Fail)))
     let e = nom::error::ParseError::from_error_kind(inp, ErrorKind::Fail);
     IResult::Err(Err::Failure(e))
 }
 
-fn header(inp: &[u8]) -> Nres<Header> {
+fn header<'a, E>(inp: &'a [u8]) -> Nres<Header, E>
+where
+    E: ParseError<&'a [u8]> + ContextError<&'a [u8]>,
+{
     match serde_json::from_slice(inp) {
         Ok(k) => {
             let k: Api1ChannelHeader = k;
+            eprintln!("Parsed header OK: {k:?}");
             IResult::Ok((&inp[inp.len()..], Header { header: k }))
         }
         Err(e) => {
-            let s = std::str::from_utf8(inp);
+            let s = String::from_utf8_lossy(inp);
             error!("can not parse json: {e}\n{s:?}");
             context("json parse", fail_on_input)(inp)
         }
     }
 }
 
-fn data(inp: &[u8]) -> Nres<Data> {
+fn data<'a, E>(inp: &'a [u8]) -> Nres<Data, E>
+where
+    E: ParseError<&'a [u8]>,
+{
     if inp.len() < 16 {
         IResult::Err(Err::Incomplete(Needed::Size(NonZeroUsize::new(16).unwrap())))
     } else {
         let (inp, ts) = be_u64(inp)?;
         let (inp, pulse) = be_u64(inp)?;
-        let data = inp.into();
-        let inp = &inp[inp.len()..];
+        let (inp, data) = take(inp.len())(inp)?;
+        let data = data.into();
         let res = Data { ts, pulse, data };
         IResult::Ok((inp, res))
     }
 }
 
-fn api1_frame_complete(inp: &[u8]) -> Nres<Api1Frame> {
+fn api1_frame_complete<'a, E>(inp: &'a [u8]) -> Nres<Api1Frame, E>
+where
+    E: ParseError<&'a [u8]> + ContextError<&'a [u8]>,
+{
     let (inp, mtype) = be_u8(inp)?;
     if mtype == 0 {
         let (inp, val) = header(inp)?;
@@ -270,32 +278,40 @@ fn api1_frame_complete(inp: &[u8]) -> Nres<Api1Frame> {
     }
 }
 
-fn api1_frame(inp: &[u8]) -> Nres<Api1Frame> {
+fn api1_frame<'a, E>(inp: &'a [u8]) -> Nres<Api1Frame, E>
+where
+    E: ParseError<&'a [u8]> + ContextError<&'a [u8]>,
+{
+    let inp_orig = inp;
     let (inp, len) = be_u32(inp)?;
     if len < 1 {
         IResult::Err(Err::Failure(ParseError::from_error_kind(inp, ErrorKind::Fail)))
     } else {
-        if inp.len() < len as usize {
+        if inp.len() < len as usize + 4 {
             let e = Err::Incomplete(Needed::Size(NonZeroUsize::new(len as _).unwrap()));
             IResult::Err(e)
         } else {
-            let (inp2, inp) = inp.split_at(len as _);
-            let (inp2, res) = api1_frame_complete(inp2)?;
-            if inp2.len() != 0 {
-                context("frame did not consume all bytes", fail_on_input)(inp)
+            let (inp, payload) = nom::bytes::complete::take(len)(inp)?;
+            let (inp, len2) = be_u32(inp)?;
+            if len != len2 {
+                IResult::Err(Err::Failure(ParseError::from_error_kind(inp_orig, ErrorKind::Fail)))
             } else {
-                IResult::Ok((inp, res))
+                let (left, res) = api1_frame_complete(payload)?;
+                if left.len() != 0 {
+                    context("frame did not consume all bytes", fail_on_input)(inp_orig)
+                } else {
+                    IResult::Ok((inp, res))
+                }
             }
         }
     }
 }
 
-pub fn api1_frames<'a, E>(inp: &[u8]) -> Nres<Vec<Api1Frame>, E>
+pub fn api1_frames<'a, E>(inp: &'a [u8]) -> Nres<Vec<Api1Frame>, E>
 where
     E: ParseError<&'a [u8]> + ContextError<&'a [u8]>,
 {
-    // TODO remove unwrap
-    IResult::Ok(many0(api1_frame)(inp).unwrap())
+    many0(api1_frame)(inp)
 }
 
 #[allow(unused)]
@@ -306,6 +322,11 @@ fn verbose_err(inp: &[u8]) -> Nres<u32> {
     use nom::Err;
     let e = ParseError::from_error_kind(inp, ErrorKind::Fail);
     IResult::Err(Err::Failure(e))
+}
+
+#[test]
+fn combinator_default_err() {
+    be_u32::<_, nom::error::Error<_>>([1, 2, 3, 4].as_slice()).unwrap();
 }
 
 #[test]

@@ -45,8 +45,9 @@ impl EventBlobsGeneratorI32Test00 {
             SeriesRange::TimeRange(k) => k,
             SeriesRange::PulseRange(_) => todo!(),
         };
-        let dts = MS * 1000 * node_count as u64;
-        let ts = (range.beg / dts + node_ix) * dts;
+        let dt = MS * 1000;
+        let ts = (range.beg / dt + node_ix) * dt;
+        let dts = dt * node_count as u64;
         let tsend = range.end;
         Self {
             ts,
@@ -68,7 +69,7 @@ impl EventBlobsGeneratorI32Test00 {
         let mut item = EventFull::empty();
         let mut ts = self.ts;
         loop {
-            if self.ts >= self.tsend || item.byte_estimate() > 200 {
+            if ts >= self.tsend || item.byte_estimate() > 200 {
                 break;
             }
             let pulse = ts;
@@ -146,8 +147,9 @@ impl EventBlobsGeneratorI32Test01 {
             SeriesRange::TimeRange(k) => k,
             SeriesRange::PulseRange(_) => todo!(),
         };
-        let dts = MS * 500 * node_count as u64;
-        let ts = (range.beg / dts + node_ix) * dts;
+        let dt = MS * 500;
+        let ts = (range.beg / dt + node_ix) * dt;
+        let dts = dt * node_count as u64;
         let tsend = range.end;
         Self {
             ts,

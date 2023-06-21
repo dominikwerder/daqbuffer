@@ -6,12 +6,15 @@ use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
+use netpod::timeunits::MS;
 use netpod::Cluster;
 use netpod::HostPort;
 use netpod::SfDbChannel;
 use netpod::APP_JSON;
 use netpod::DATETIME_FMT_3MS;
 use parse::api1_parse::api1_frames;
+use parse::api1_parse::Api1Frame;
+use parse::api1_parse::Api1ScalarType;
 use url::Url;
 
 const TEST_BACKEND: &str = "testbackend-00";
@@ -75,12 +78,31 @@ fn api3_hdf_dim0_00() -> Result<(), Error> {
             cluster,
         )
         .await?;
+        use nom::error::VerboseError;
         use parse::nom;
-        let x: Result<(&[u8], Vec<parse::api1_parse::Api1Frame>), nom::Err<nom::error::VerboseError<&[u8]>>> =
-            api1_frames(&jsv);
-        let res = x.unwrap();
-        eprintln!("{res:?}");
-        panic!();
+        if false {
+            // Uses the default error type, but not unwrapped:
+            let _x: nom::IResult<_, _> = api1_frames(&jsv);
+        }
+        if false {
+            // Default error and unwrapped:
+            let (_, _) = api1_frames::<nom::error::Error<_>>(&jsv).unwrap();
+        }
+        let (_, frames) = api1_frames::<VerboseError<_>>(&jsv).unwrap();
+        if let Api1Frame::Header(header) = frames.get(0).expect("frame") {
+            assert_eq!(header.header().ty(), Api1ScalarType::I32);
+        } else {
+            panic!("expect header frame");
+        }
+        for (i, frame) in frames[1..].iter().enumerate() {
+            if let Api1Frame::Data(data) = frame {
+                assert_eq!(data.ts() / MS, 1000 * (60 * 20 + 4 + i as u64));
+                eprintln!("ts {}", data.ts() / MS);
+            } else {
+                panic!("expect data frame");
+            }
+        }
+        assert_eq!(frames.len(), 67);
         Ok(())
     };
     taskrun::run(fut)

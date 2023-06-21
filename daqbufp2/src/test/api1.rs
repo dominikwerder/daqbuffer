@@ -66,7 +66,7 @@ fn events_f64_plain() -> Result<(), Error> {
         let body = serde_json::to_string(&qu)?;
         let buf = http_post(url, accept, body.into()).await?;
         eprintln!("body received: {}", buf.len());
-        match api1_parse::api1_frames(&buf) {
+        match api1_parse::api1_frames::<parse::nom::error::VerboseError<_>>(&buf) {
             Ok((_, frames)) => {
                 debug!("FRAMES LEN: {}", frames.len());
                 assert_eq!(frames.len(), 121);
