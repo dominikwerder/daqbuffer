@@ -7,6 +7,7 @@ use err::Error;
 use netpod::log::*;
 use netpod::timeunits::*;
 use netpod::ByteOrder;
+use netpod::DtNano;
 use netpod::GenVar;
 use netpod::Node;
 use netpod::ScalarType;
@@ -36,7 +37,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
             config: SfDbChConf {
                 channel: SfDbChannel::from_name(&backend, "scalar-i32-be"),
                 keyspace: 2,
-                time_bin_size: TsNano(DAY),
+                time_bin_size: DtNano::from_ns(DAY),
                 scalar_type: ScalarType::I32,
                 byte_order: ByteOrder::Big,
                 shape: Shape::Scalar,
@@ -51,7 +52,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
             config: SfDbChConf {
                 channel: SfDbChannel::from_name(&backend, "wave-f64-be-n21"),
                 keyspace: 3,
-                time_bin_size: TsNano(DAY),
+                time_bin_size: DtNano::from_ns(DAY),
                 array: true,
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(21),
@@ -66,7 +67,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
             config: SfDbChConf {
                 channel: SfDbChannel::from_name(&backend, "wave-u16-le-n77"),
                 keyspace: 3,
-                time_bin_size: TsNano(DAY),
+                time_bin_size: DtNano::from_ns(DAY),
                 scalar_type: ScalarType::U16,
                 byte_order: ByteOrder::Little,
                 shape: Shape::Wave(77),
@@ -81,7 +82,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
             config: SfDbChConf {
                 channel: SfDbChannel::from_name(&backend, "tw-scalar-i32-be"),
                 keyspace: 2,
-                time_bin_size: TsNano(DAY),
+                time_bin_size: DtNano::from_ns(DAY),
                 scalar_type: ScalarType::I32,
                 byte_order: ByteOrder::Little,
                 shape: Shape::Scalar,
@@ -96,7 +97,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
             config: SfDbChConf {
                 channel: SfDbChannel::from_name(&backend, "const-regular-scalar-i32-be"),
                 keyspace: 2,
-                time_bin_size: TsNano(DAY),
+                time_bin_size: DtNano::from_ns(DAY),
                 scalar_type: ScalarType::I32,
                 byte_order: ByteOrder::Little,
                 shape: Shape::Scalar,

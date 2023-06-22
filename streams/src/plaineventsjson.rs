@@ -14,21 +14,27 @@ use items_2::streams::PlainEventStream;
 use netpod::log::*;
 use netpod::ChannelTypeConfigGen;
 use netpod::Cluster;
+use query::api4::events::EventsSubQuery;
+use query::api4::events::EventsSubQuerySelect;
+use query::api4::events::EventsSubQuerySettings;
 use query::api4::events::PlainEventsQuery;
 use serde_json::Value as JsonValue;
 use std::time::Instant;
 
 pub async fn plain_events_json(
     evq: &PlainEventsQuery,
-    ch_conf: &ChannelTypeConfigGen,
+    ch_conf: ChannelTypeConfigGen,
     cluster: &Cluster,
 ) -> Result<JsonValue, Error> {
     info!("plain_events_json  evquery {:?}", evq);
+    let select = EventsSubQuerySelect::new(ch_conf, evq.range().clone(), evq.transform().clone());
+    let settings = EventsSubQuerySettings::from(evq);
+    let subq = EventsSubQuery::from_parts(select, settings);
     // TODO remove magic constant
     let deadline = Instant::now() + evq.timeout();
     let mut tr = build_merged_event_transform(evq.transform())?;
     // TODO make sure the empty container arrives over the network.
-    let inps = open_tcp_streams::<_, ChannelEvents>(&evq, ch_conf, cluster).await?;
+    let inps = open_tcp_streams::<ChannelEvents>(subq, cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader.
     // TODO use a mixture of count and byte-size as threshold.
     let stream = Merger::new(inps, evq.merger_out_len_max());

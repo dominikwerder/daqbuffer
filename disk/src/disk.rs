@@ -28,12 +28,12 @@ use futures_util::TryFutureExt;
 use netpod::log::*;
 use netpod::ByteOrder;
 use netpod::DiskIoTune;
+use netpod::DtNano;
 use netpod::Node;
 use netpod::ReadSys;
 use netpod::ScalarType;
 use netpod::SfDbChannel;
 use netpod::Shape;
-use netpod::TsNano;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::VecDeque;
@@ -65,7 +65,7 @@ use tokio::sync::mpsc;
 pub struct SfDbChConf {
     pub channel: SfDbChannel,
     pub keyspace: u8,
-    pub time_bin_size: TsNano,
+    pub time_bin_size: DtNano,
     pub scalar_type: ScalarType,
     pub compression: bool,
     pub shape: Shape,

@@ -9,6 +9,9 @@ use netpod::log::*;
 use netpod::ChannelTypeConfigGen;
 use netpod::Cluster;
 use netpod::PerfOpts;
+use query::api4::events::EventsSubQuery;
+use query::api4::events::EventsSubQuerySelect;
+use query::api4::events::EventsSubQuerySettings;
 use query::api4::events::PlainEventsQuery;
 use std::future::Future;
 use std::pin::Pin;
@@ -30,10 +33,17 @@ pub struct MergedBlobsFromRemotes {
 impl MergedBlobsFromRemotes {
     pub fn new(evq: PlainEventsQuery, perf_opts: PerfOpts, ch_conf: ChannelTypeConfigGen, cluster: Cluster) -> Self {
         debug!("MergedBlobsFromRemotes  evq {:?}", evq);
+        let select = EventsSubQuerySelect::new(ch_conf.clone(), evq.range().clone(), evq.transform().clone());
+        let settings = EventsSubQuerySettings::from(&evq);
+        let subq = EventsSubQuery::from_parts(select, settings);
         let mut tcp_establish_futs = Vec::new();
         for node in &cluster.nodes {
-            let f =
-                x_processed_event_blobs_stream_from_node(evq.clone(), ch_conf.clone(), perf_opts.clone(), node.clone());
+            let f = x_processed_event_blobs_stream_from_node(
+                subq.clone(),
+                ch_conf.clone(),
+                perf_opts.clone(),
+                node.clone(),
+            );
             let f: T002<EventFull> = Box::pin(f);
             tcp_establish_futs.push(f);
         }

@@ -21,36 +21,29 @@ use netpod::ChannelTypeConfigGen;
 use netpod::Cluster;
 use netpod::Node;
 use netpod::PerfOpts;
-use query::api4::events::PlainEventsQuery;
+use query::api4::events::EventsSubQuery;
+use query::api4::events::Frame1Parts;
 use serde::de::DeserializeOwned;
-use serde::Serialize;
-use serde_json::json;
 use std::fmt;
 use std::pin::Pin;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
-pub fn make_node_command_frame<Q>(query: Q, ch_conf: &ChannelTypeConfigGen) -> Result<EventQueryJsonStringFrame, Error>
-where
-    Q: Serialize,
-{
-    let obj = json!({
-        "query": query,
-        "ch_conf":ch_conf,
-    });
+pub fn make_node_command_frame(query: EventsSubQuery) -> Result<EventQueryJsonStringFrame, Error> {
+    let obj = Frame1Parts::new(query);
     let ret = serde_json::to_string(&obj)?;
     Ok(EventQueryJsonStringFrame(ret))
 }
 
 pub async fn x_processed_event_blobs_stream_from_node(
-    query: PlainEventsQuery,
+    query: EventsSubQuery,
     ch_conf: ChannelTypeConfigGen,
     perf_opts: PerfOpts,
     node: Node,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
     let addr = format!("{}:{}", node.host, node.port_raw);
     debug!("x_processed_event_blobs_stream_from_node  to: {addr}",);
-    let frame1 = make_node_command_frame(&query, &ch_conf)?;
+    let frame1 = make_node_command_frame(query)?;
     let net = TcpStream::connect(addr.clone()).await?;
     let (netin, mut netout) = net.into_split();
     let item = sitem_data(frame1);
@@ -68,18 +61,13 @@ pub async fn x_processed_event_blobs_stream_from_node(
 
 pub type BoxedStream<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;
 
-pub async fn open_tcp_streams<Q, T>(
-    query: Q,
-    ch_conf: &ChannelTypeConfigGen,
-    cluster: &Cluster,
-) -> Result<Vec<BoxedStream<T>>, Error>
+pub async fn open_tcp_streams<T>(query: EventsSubQuery, cluster: &Cluster) -> Result<Vec<BoxedStream<T>>, Error>
 where
-    Q: Serialize,
     // Group bounds in new trait
     T: FrameTypeInnerStatic + DeserializeOwned + Send + Unpin + fmt::Debug + 'static,
 {
     // TODO when unit tests established, change to async connect:
-    let frame1 = make_node_command_frame(&query, &ch_conf)?;
+    let frame1 = make_node_command_frame(query)?;
     let mut streams = Vec::new();
     for node in &cluster.nodes {
         let addr = format!("{}:{}", node.host, node.port_raw);

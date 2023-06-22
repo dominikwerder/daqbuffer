@@ -18,7 +18,7 @@ use netpod::ByteSize;
 use netpod::DiskIoTune;
 use netpod::NodeConfigCached;
 use netpod::SfChFetchInfo;
-use query::api4::events::PlainEventsQuery;
+use query::api4::events::EventsSubQuery;
 use std::pin::Pin;
 
 const TEST_BACKEND: &str = "testbackend-00";
@@ -53,15 +53,16 @@ fn make_num_pipeline_stream_evs(
 }
 
 pub async fn make_event_pipe(
-    evq: &PlainEventsQuery,
+    evq: EventsSubQuery,
     fetch_info: SfChFetchInfo,
     ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     // sf-databuffer type backends identify channels by their (backend, name) only.
     let range = evq.range().clone();
+    let one_before = evq.transform().need_one_before_range();
     info!(
         "make_event_pipe  need_expand {need_expand}  {evq:?}",
-        need_expand = evq.one_before_range()
+        need_expand = one_before
     );
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     // TODO should not need this for correctness.
@@ -71,6 +72,7 @@ pub async fn make_event_pipe(
     } else {
         128
     };
+    let do_decompress = true;
     let event_blobs = EventChunkerMultifile::new(
         (&range).try_into()?,
         fetch_info.clone(),
@@ -78,8 +80,8 @@ pub async fn make_event_pipe(
         ncc.ix,
         DiskIoTune::default(),
         event_chunker_conf,
-        evq.one_before_range(),
-        true,
+        one_before,
+        do_decompress,
         out_max_len,
     );
     error!("TODO replace AggKind in the called code");
@@ -155,18 +157,18 @@ pub fn make_remote_event_blobs_stream(
 }
 
 pub async fn make_event_blobs_pipe_real(
-    evq: &PlainEventsQuery,
+    subq: &EventsSubQuery,
     fetch_info: &SfChFetchInfo,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
     if false {
-        match dbconn::channel_exists(evq.channel(), &node_config).await {
+        match dbconn::channel_exists(subq.name(), &node_config).await {
             Ok(_) => (),
             Err(e) => return Err(e)?,
         }
     }
-    let expand = evq.one_before_range();
-    let range = evq.range();
+    let expand = subq.transform().need_one_before_range();
+    let range = subq.range();
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
     // TODO should depend on host config
     let do_local = node_config.node_config.cluster.is_central_storage;
@@ -204,14 +206,14 @@ pub async fn make_event_blobs_pipe_real(
 }
 
 pub async fn make_event_blobs_pipe_test(
-    evq: &PlainEventsQuery,
+    subq: &EventsSubQuery,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
     warn!("GENERATE INMEM TEST DATA");
     let node_count = node_config.node_config.cluster.nodes.len() as u64;
     let node_ix = node_config.ix as u64;
-    let chn = evq.channel().name();
-    let range = evq.range().clone();
+    let chn = subq.name();
+    let range = subq.range().clone();
     if chn == "test-gen-i32-dim0-v00" {
         Ok(Box::pin(EventBlobsGeneratorI32Test00::new(node_ix, node_count, range)))
     } else if chn == "test-gen-i32-dim0-v01" {
@@ -247,14 +249,14 @@ pub async fn make_event_blobs_pipe_test(
 }
 
 pub async fn make_event_blobs_pipe(
-    evq: &PlainEventsQuery,
+    subq: &EventsSubQuery,
     fetch_info: &SfChFetchInfo,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
-    debug!("make_event_blobs_pipe {evq:?}");
-    if evq.channel().backend() == TEST_BACKEND {
-        make_event_blobs_pipe_test(evq, node_config).await
+    debug!("make_event_blobs_pipe {subq:?}");
+    if subq.backend() == TEST_BACKEND {
+        make_event_blobs_pipe_test(subq, node_config).await
     } else {
-        make_event_blobs_pipe_real(evq, fetch_info, node_config).await
+        make_event_blobs_pipe_real(subq, fetch_info, node_config).await
     }
 }

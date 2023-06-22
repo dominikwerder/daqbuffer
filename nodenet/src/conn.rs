@@ -22,6 +22,8 @@ use netpod::log::*;
 use netpod::ChannelTypeConfigGen;
 use netpod::NodeConfigCached;
 use netpod::PerfOpts;
+use query::api4::events::EventsSubQuery;
+use query::api4::events::Frame1Parts;
 use query::api4::events::PlainEventsQuery;
 use serde::Deserialize;
 use serde::Serialize;
@@ -72,37 +74,22 @@ impl<E: Into<Error>> From<(E, OwnedWriteHalf)> for ConnErr {
 }
 
 async fn make_channel_events_stream_data(
-    evq: PlainEventsQuery,
-    ch_conf: ChannelTypeConfigGen,
-    node_config: &NodeConfigCached,
+    subq: EventsSubQuery,
+    ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
-    if evq.channel().backend() == TEST_BACKEND {
+    if subq.backend() == TEST_BACKEND {
         debug!("use test backend data  {}", TEST_BACKEND);
-        let node_count = node_config.node_config.cluster.nodes.len() as u64;
-        let node_ix = node_config.ix as u64;
-        let chn = evq.channel().name();
-        let range = evq.range().clone();
+        let node_count = ncc.node_config.cluster.nodes.len() as u64;
+        let node_ix = ncc.ix as u64;
+        let chn = subq.name();
+        let range = subq.range().clone();
+        let one_before = subq.transform().need_one_before_range();
         if chn == "test-gen-i32-dim0-v00" {
-            Ok(Box::pin(GenerateI32V00::new(
-                node_ix,
-                node_count,
-                range,
-                evq.one_before_range(),
-            )))
+            Ok(Box::pin(GenerateI32V00::new(node_ix, node_count, range, one_before)))
         } else if chn == "test-gen-i32-dim0-v01" {
-            Ok(Box::pin(GenerateI32V01::new(
-                node_ix,
-                node_count,
-                range,
-                evq.one_before_range(),
-            )))
+            Ok(Box::pin(GenerateI32V01::new(node_ix, node_count, range, one_before)))
         } else if chn == "test-gen-f64-dim1-v00" {
-            Ok(Box::pin(GenerateF64V00::new(
-                node_ix,
-                node_count,
-                range,
-                evq.one_before_range(),
-            )))
+            Ok(Box::pin(GenerateF64V00::new(node_ix, node_count, range, one_before)))
         } else {
             let na: Vec<_> = chn.split("-").collect();
             if na.len() != 3 {
@@ -115,7 +102,7 @@ async fn make_channel_events_stream_data(
                         "make_channel_events_stream_data can not understand test channel name: {chn:?}"
                     )))
                 } else {
-                    let range = evq.range().clone();
+                    let range = subq.range().clone();
                     if na[1] == "d0" {
                         if na[2] == "i32" {
                             //generator::generate_i32(node_ix, node_count, range)
@@ -136,42 +123,31 @@ async fn make_channel_events_stream_data(
                 }
             }
         }
-    } else if let Some(scyconf) = &node_config.node_config.cluster.scylla {
-        scylla_channel_event_stream(evq, ch_conf.to_scylla()?, scyconf, node_config).await
-    } else if let Some(_) = &node_config.node.channel_archiver {
+    } else if let Some(scyconf) = &ncc.node_config.cluster.scylla {
+        let cfg = subq.ch_conf().to_scylla()?;
+        scylla_channel_event_stream(subq, cfg, scyconf, ncc).await
+    } else if let Some(_) = &ncc.node.channel_archiver {
         let e = Error::with_msg_no_trace("archapp not built");
         Err(e)
-    } else if let Some(_) = &node_config.node.archiver_appliance {
+    } else if let Some(_) = &ncc.node.archiver_appliance {
         let e = Error::with_msg_no_trace("archapp not built");
         Err(e)
     } else {
-        Ok(disk::raw::conn::make_event_pipe(&evq, ch_conf.to_sf_databuffer()?, node_config).await?)
+        let cfg = subq.ch_conf().to_sf_databuffer()?;
+        Ok(disk::raw::conn::make_event_pipe(subq, cfg, ncc).await?)
     }
 }
 
 async fn make_channel_events_stream(
-    evq: PlainEventsQuery,
-    ch_conf: ChannelTypeConfigGen,
-    node_config: &NodeConfigCached,
+    subq: EventsSubQuery,
+    ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
-    let empty = empty_events_dyn_ev(ch_conf.scalar_type(), ch_conf.shape())?;
+    let empty = empty_events_dyn_ev(subq.ch_conf().scalar_type(), subq.ch_conf().shape())?;
     let empty = sitem_data(ChannelEvents::Events(empty));
-    let stream = make_channel_events_stream_data(evq, ch_conf, node_config).await?;
+    let stream = make_channel_events_stream_data(subq, ncc).await?;
     let ret = futures_util::stream::iter([empty]).chain(stream);
     let ret = Box::pin(ret);
     Ok(ret)
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Frame1Parts {
-    query: PlainEventsQuery,
-    ch_conf: ChannelTypeConfigGen,
-}
-
-impl Frame1Parts {
-    pub fn new(query: PlainEventsQuery, ch_conf: ChannelTypeConfigGen) -> Self {
-        Self { query, ch_conf }
-    }
 }
 
 async fn events_get_input_frames(netin: OwnedReadHalf) -> Result<Vec<InMemoryFrame>, Error> {
@@ -198,9 +174,7 @@ async fn events_get_input_frames(netin: OwnedReadHalf) -> Result<Vec<InMemoryFra
     Ok(frames)
 }
 
-async fn events_parse_input_query(
-    frames: Vec<InMemoryFrame>,
-) -> Result<(PlainEventsQuery, ChannelTypeConfigGen), Error> {
+async fn events_parse_input_query(frames: Vec<InMemoryFrame>) -> Result<(EventsSubQuery,), Error> {
     if frames.len() != 1 {
         error!("{:?}", frames);
         error!("missing command frame  len {}", frames.len());
@@ -225,16 +199,13 @@ async fn events_parse_input_query(
         },
         Err(e) => return Err(e),
     };
-    let cmd: Frame1Parts = serde_json::from_str(&qitem.str()).map_err(|e| {
+    let frame1: Frame1Parts = serde_json::from_str(&qitem.str()).map_err(|e| {
         let e = Error::with_msg_no_trace(format!("json parse error: {}  inp {:?}", e, qitem.str()));
         error!("{e}");
         e
     })?;
-    debug!("events_parse_input_query  {:?}", cmd);
-    if query_frame.tyid() != EVENT_QUERY_JSON_STRING_FRAME {
-        return Err(Error::with_msg("query frame wrong type"));
-    }
-    Ok((cmd.query, cmd.ch_conf))
+    info!("events_parse_input_query  {:?}", frame1);
+    Ok(frame1.parts())
 }
 
 async fn events_conn_handler_inner_try(
@@ -248,13 +219,17 @@ async fn events_conn_handler_inner_try(
         Ok(x) => x,
         Err(e) => return Err((e, netout).into()),
     };
-    let (evq, ch_conf) = match events_parse_input_query(frames).await {
+    let (evq,) = match events_parse_input_query(frames).await {
         Ok(x) => x,
         Err(e) => return Err((e, netout).into()),
     };
+    if evq.create_errors_contains("nodenet_parse_query") {
+        let e = Error::with_msg_no_trace("produced error on request nodenet_parse_query");
+        return Err((e, netout).into());
+    }
     let mut stream: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> = if evq.is_event_blobs() {
         // TODO support event blobs as transform
-        let fetch_info = match ch_conf.to_sf_databuffer() {
+        let fetch_info = match evq.ch_conf().to_sf_databuffer() {
             Ok(x) => x,
             Err(e) => return Err((e, netout).into()),
         };
@@ -266,7 +241,7 @@ async fn events_conn_handler_inner_try(
             Err(e) => return Err((e, netout).into()),
         }
     } else {
-        match make_channel_events_stream(evq.clone(), ch_conf, ncc).await {
+        match make_channel_events_stream(evq.clone(), ncc).await {
             Ok(stream) => {
                 if false {
                     // TODO wasm example
@@ -309,7 +284,11 @@ async fn events_conn_handler_inner_try(
             Ok(buf) => {
                 buf_len_histo.ingest(buf.len() as u32);
                 match netout.write_all(&buf).await {
-                    Ok(_) => {}
+                    Ok(()) => {
+                        // TODO collect timing information and send as summary in a stats item.
+                        // TODO especially collect a distribution over the buf lengths that were send.
+                        // TODO we want to see a reasonable batch size.
+                    }
                     Err(e) => return Err((e, netout))?,
                 }
             }
@@ -331,7 +310,7 @@ async fn events_conn_handler_inner_try(
             Err(e) => return Err((e, netout))?,
         };
         match netout.write_all(&buf).await {
-            Ok(_) => (),
+            Ok(()) => (),
             Err(e) => return Err((e, netout))?,
         }
     }
@@ -340,11 +319,11 @@ async fn events_conn_handler_inner_try(
         Err(e) => return Err((e, netout))?,
     };
     match netout.write_all(&buf).await {
-        Ok(_) => (),
+        Ok(()) => (),
         Err(e) => return Err((e, netout))?,
     }
     match netout.flush().await {
-        Ok(_) => (),
+        Ok(()) => (),
         Err(e) => return Err((e, netout))?,
     }
     Ok(())

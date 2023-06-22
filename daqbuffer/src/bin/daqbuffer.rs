@@ -10,10 +10,10 @@ use disk::SfDbChConf;
 use err::Error;
 use netpod::log::*;
 use netpod::query::CacheUsage;
+use netpod::DtNano;
 use netpod::NodeConfig;
 use netpod::NodeConfigCached;
 use netpod::ProxyConfig;
-use netpod::TsNano;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -138,7 +138,7 @@ fn simple_fetch() {
             channel_config: SfDbChConf {
                 channel: SfDbChannel::from_name("sf-databuffer", "S10BC01-DBAM070:BAM_CH1_NORM"),
                 keyspace: 3,
-                time_bin_size: TsNano(DAY),
+                time_bin_size: DtNano::from_ns(DAY),
                 array: true,
                 scalar_type: ScalarType::F64,
                 shape: Shape::Wave(42),

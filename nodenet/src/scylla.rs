@@ -9,11 +9,11 @@ use netpod::log::*;
 use netpod::ChConf;
 use netpod::NodeConfigCached;
 use netpod::ScyllaConfig;
-use query::api4::events::PlainEventsQuery;
+use query::api4::events::EventsSubQuery;
 use std::pin::Pin;
 
 pub async fn scylla_channel_event_stream(
-    evq: PlainEventsQuery,
+    evq: EventsSubQuery,
     chconf: ChConf,
     scyco: &ScyllaConfig,
     _ncc: &NodeConfigCached,

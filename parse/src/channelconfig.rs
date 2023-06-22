@@ -4,8 +4,7 @@ use netpod::range::evrange::NanoRange;
 use netpod::timeunits::DAY;
 use netpod::timeunits::MS;
 use netpod::ByteOrder;
-use netpod::ChannelConfigQuery;
-use netpod::ChannelConfigResponse;
+use netpod::DtNano;
 use netpod::NodeConfigCached;
 use netpod::ScalarType;
 use netpod::SfDbChannel;
@@ -23,7 +22,6 @@ use num_derive::ToPrimitive;
 use num_traits::ToPrimitive;
 use serde::Deserialize;
 use serde::Serialize;
-use std::cmp;
 use std::fmt;
 use tokio::io::ErrorKind;
 
@@ -88,7 +86,7 @@ pub struct ConfigEntry {
     pub ts: TsNano,
     pub pulse: i64,
     pub ks: i32,
-    pub bs: TsNano,
+    pub bs: DtNano,
     pub split_count: i32,
     pub status: i32,
     pub bb: i8,
@@ -176,7 +174,7 @@ pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
     let (inp, pulse) = be_i64(inp)?;
     let (inp, ks) = be_i32(inp)?;
     let (inp, bs) = be_i64(inp)?;
-    let bs = TsNano(bs as u64 * MS);
+    let bs = DtNano::from_ns(bs as u64 * MS);
     let (inp, split_count) = be_i32(inp)?;
     let (inp, status) = be_i32(inp)?;
     let (inp, bb) = be_i8(inp)?;
@@ -348,10 +346,10 @@ async fn read_local_config_test(channel: SfDbChannel, ncc: &NodeConfigCached) ->
             format_version: 0,
             channel_name: channel.name().into(),
             entries: vec![ConfigEntry {
-                ts: TsNano(0),
+                ts: TsNano::from_ns(0),
                 pulse: 0,
                 ks: 2,
-                bs: TsNano(DAY),
+                bs: DtNano::from_ns(DAY),
                 split_count: ncc.node_config.cluster.nodes.len() as _,
                 status: -1,
                 bb: -1,
@@ -378,10 +376,10 @@ async fn read_local_config_test(channel: SfDbChannel, ncc: &NodeConfigCached) ->
             format_version: 0,
             channel_name: channel.name().into(),
             entries: vec![ConfigEntry {
-                ts: TsNano(0),
+                ts: TsNano::from_ns(0),
                 pulse: 0,
                 ks: 2,
-                bs: TsNano(DAY),
+                bs: DtNano::from_ns(DAY),
                 split_count: ncc.node_config.cluster.nodes.len() as _,
                 status: -1,
                 bb: -1,

@@ -3,7 +3,6 @@ use crate::bodystream::ToPublicResponse;
 use crate::channelconfig::ch_conf_from_binned;
 use crate::err::Error;
 use crate::response_err;
-use err::anyhow::Context;
 use http::Method;
 use http::Request;
 use http::Response;
@@ -39,7 +38,7 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
     span1.in_scope(|| {
         debug!("begin");
     });
-    let item = streams::timebinnedjson::timebinned_json(query, &ch_conf, node_config.node_config.cluster.clone())
+    let item = streams::timebinnedjson::timebinned_json(query, ch_conf, node_config.node_config.cluster.clone())
         .instrument(span1)
         .await?;
     let buf = serde_json::to_vec(&item)?;

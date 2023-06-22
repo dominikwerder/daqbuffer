@@ -1,3 +1,4 @@
+use super::binned::BinnedQuery;
 use crate::transform::TransformQuery;
 use err::Error;
 use netpod::get_url_query_pairs;
@@ -9,6 +10,7 @@ use netpod::query::TimeRangeQuery;
 use netpod::range::evrange::SeriesRange;
 use netpod::AppendToUrl;
 use netpod::ByteSize;
+use netpod::ChannelTypeConfigGen;
 use netpod::FromUrl;
 use netpod::HasBackend;
 use netpod::HasTimeout;
@@ -48,6 +50,8 @@ pub struct PlainEventsQuery {
     test_do_wasm: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     merger_out_len_max: Option<usize>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    create_errors: Vec<String>,
 }
 
 impl PlainEventsQuery {
@@ -69,6 +73,7 @@ impl PlainEventsQuery {
             do_test_stream_error: false,
             test_do_wasm: false,
             merger_out_len_max: None,
+            create_errors: Vec::new(),
         }
     }
 
@@ -160,6 +165,10 @@ impl PlainEventsQuery {
     pub fn need_value_data(&self) -> bool {
         self.transform.need_value_data()
     }
+
+    pub fn create_errors_contains(&self, x: &str) -> bool {
+        self.create_errors.contains(&String::from(x))
+    }
 }
 
 impl HasBackend for PlainEventsQuery {
@@ -227,6 +236,10 @@ impl FromUrl for PlainEventsQuery {
             merger_out_len_max: pairs
                 .get("mergerOutLenMax")
                 .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
+            create_errors: pairs
+                .get("create_errors")
+                .map(|x| x.split(",").map(|x| x.to_string()).collect())
+                .unwrap_or(Vec::new()),
         };
         Ok(ret)
     }
@@ -274,5 +287,169 @@ impl AppendToUrl for PlainEventsQuery {
         if let Some(x) = self.merger_out_len_max.as_ref() {
             g.append_pair("mergerOutLenMax", &format!("{}", x));
         }
+        if self.create_errors.len() != 0 {
+            g.append_pair("create_errors", &self.create_errors.join(","));
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EventsSubQuerySelect {
+    ch_conf: ChannelTypeConfigGen,
+    range: SeriesRange,
+    transform: TransformQuery,
+}
+
+impl EventsSubQuerySelect {
+    pub fn new(ch_info: ChannelTypeConfigGen, range: SeriesRange, transform: TransformQuery) -> Self {
+        Self {
+            ch_conf: ch_info,
+            range,
+            transform,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EventsSubQuerySettings {
+    timeout: Option<Duration>,
+    events_max: Option<u64>,
+    event_delay: Option<Duration>,
+    stream_batch_len: Option<usize>,
+    buf_len_disk_io: Option<usize>,
+    test_do_wasm: bool,
+    create_errors: Vec<String>,
+}
+
+impl Default for EventsSubQuerySettings {
+    fn default() -> Self {
+        Self {
+            timeout: Default::default(),
+            events_max: Default::default(),
+            event_delay: Default::default(),
+            stream_batch_len: Default::default(),
+            buf_len_disk_io: Default::default(),
+            test_do_wasm: Default::default(),
+            create_errors: Default::default(),
+        }
+    }
+}
+
+impl From<&PlainEventsQuery> for EventsSubQuerySettings {
+    fn from(value: &PlainEventsQuery) -> Self {
+        Self {
+            timeout: value.timeout,
+            events_max: value.events_max,
+            event_delay: value.event_delay,
+            stream_batch_len: value.stream_batch_len,
+            buf_len_disk_io: value.buf_len_disk_io,
+            test_do_wasm: value.test_do_wasm,
+            create_errors: value.create_errors.clone(),
+        }
+    }
+}
+
+impl From<&BinnedQuery> for EventsSubQuerySettings {
+    fn from(value: &BinnedQuery) -> Self {
+        Self {
+            timeout: value.timeout(),
+            // TODO ?
+            events_max: None,
+            event_delay: None,
+            stream_batch_len: None,
+            buf_len_disk_io: None,
+            test_do_wasm: false,
+            create_errors: Vec::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EventsSubQuery {
+    select: EventsSubQuerySelect,
+    settings: EventsSubQuerySettings,
+    ty: String,
+}
+
+impl EventsSubQuery {
+    pub fn from_parts(select: EventsSubQuerySelect, settings: EventsSubQuerySettings) -> Self {
+        Self {
+            select,
+            settings,
+            ty: "EventsSubQuery".into(),
+        }
+    }
+
+    pub fn backend(&self) -> &str {
+        &self.select.ch_conf.backend()
+    }
+
+    pub fn name(&self) -> &str {
+        &self.select.ch_conf.name()
+    }
+
+    pub fn range(&self) -> &SeriesRange {
+        &self.select.range
+    }
+
+    pub fn transform(&self) -> &TransformQuery {
+        &self.select.transform
+    }
+
+    pub fn ch_conf(&self) -> &ChannelTypeConfigGen {
+        &self.select.ch_conf
+    }
+
+    pub fn timeout(&self) -> Duration {
+        self.settings.timeout.unwrap_or(Duration::from_millis(10000))
+    }
+
+    pub fn events_max(&self) -> u64 {
+        self.settings.events_max.unwrap_or(1024 * 128)
+    }
+
+    pub fn event_delay(&self) -> &Option<Duration> {
+        &self.settings.event_delay
+    }
+
+    pub fn buf_len_disk_io(&self) -> usize {
+        self.settings.buf_len_disk_io.unwrap_or(1024 * 8)
+    }
+
+    // A rough indication on how many bytes this request is allowed to return. Otherwise, the result should
+    // be a partial result.
+    pub fn bytes_max(&self) -> u64 {
+        self.settings.events_max.unwrap_or(1024 * 512)
+    }
+
+    pub fn test_do_wasm(&self) -> bool {
+        self.settings.test_do_wasm
+    }
+
+    pub fn is_event_blobs(&self) -> bool {
+        self.select.transform.is_event_blobs()
+    }
+
+    pub fn need_value_data(&self) -> bool {
+        self.select.transform.need_value_data()
+    }
+
+    pub fn create_errors_contains(&self, x: &str) -> bool {
+        self.settings.create_errors.contains(&String::from(x))
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Frame1Parts {
+    query: EventsSubQuery,
+}
+
+impl Frame1Parts {
+    pub fn new(query: EventsSubQuery) -> Self {
+        Self { query }
+    }
+
+    pub fn parts(self) -> (EventsSubQuery,) {
+        (self.query,)
     }
 }

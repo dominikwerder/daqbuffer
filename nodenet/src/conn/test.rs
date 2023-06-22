@@ -14,17 +14,25 @@ use items_2::framable::EventQueryJsonStringFrame;
 use items_2::framable::Framable;
 use items_2::frame::decode_frame;
 use netpod::range::evrange::NanoRange;
+use netpod::timeunits::DAY;
 use netpod::timeunits::SEC;
+use netpod::ByteOrder;
 use netpod::Cluster;
 use netpod::Database;
+use netpod::DtNano;
 use netpod::FileIoBufferSize;
 use netpod::Node;
 use netpod::NodeConfig;
 use netpod::NodeConfigCached;
 use netpod::PerfOpts;
+use netpod::ScalarType;
+use netpod::SfChFetchInfo;
 use netpod::SfDatabuffer;
-use netpod::SfDbChannel;
-use query::api4::events::PlainEventsQuery;
+use netpod::Shape;
+use query::api4::events::EventsSubQuery;
+use query::api4::events::EventsSubQuerySelect;
+use query::api4::events::EventsSubQuerySettings;
+use query::transform::TransformQuery;
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
@@ -75,13 +83,23 @@ fn raw_data_00() {
             },
             ix: 0,
         };
-        let channel = SfDbChannel::from_name(TEST_BACKEND, "scalar-i32");
         let range = NanoRange {
             beg: SEC,
             end: SEC * 10,
         };
-        let qu = PlainEventsQuery::new(channel, range);
-        let frame1 = Frame1Parts::new(qu, err::todoval());
+        let fetch_info = SfChFetchInfo::new(
+            TEST_BACKEND,
+            "scalar-i32",
+            2,
+            DtNano::from_ns(DAY),
+            ByteOrder::Big,
+            ScalarType::I32,
+            Shape::Scalar,
+        );
+        let select = EventsSubQuerySelect::new(fetch_info.into(), range.into(), TransformQuery::default_events());
+        let settings = EventsSubQuerySettings::default();
+        let qu = EventsSubQuery::from_parts(select, settings);
+        let frame1 = Frame1Parts::new(qu);
         let query = EventQueryJsonStringFrame(serde_json::to_string(&frame1).unwrap());
         let frame = sitem_data(query).make_frame()?;
         let jh = taskrun::spawn(events_conn_handler(client, addr, cfg));

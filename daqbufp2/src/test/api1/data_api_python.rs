@@ -40,6 +40,7 @@ async fn fetch_data_api_python_blob(
             "endDate": end_date,
         },
         "channels": channels.iter().map(|x| x.name()).collect::<Vec<_>>(),
+        "create_errors": "nodenet_parse_query",
     });
     let query_str = serde_json::to_string_pretty(&query)?;
     let hp = HostPort::from_node(node0);

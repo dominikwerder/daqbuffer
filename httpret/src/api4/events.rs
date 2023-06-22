@@ -95,7 +95,7 @@ async fn plain_events_json(
     info!("plain_events_json  query {query:?}");
     let ch_conf = chconf_from_events_v1(&query, node_config).await.map_err(Error::from)?;
     info!("plain_events_json  chconf_from_events_v1: {ch_conf:?}");
-    let item = streams::plaineventsjson::plain_events_json(&query, &ch_conf, &node_config.node_config.cluster).await;
+    let item = streams::plaineventsjson::plain_events_json(&query, ch_conf, &node_config.node_config.cluster).await;
     let item = match item {
         Ok(item) => item,
         Err(e) => {

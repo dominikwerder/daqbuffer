@@ -9,13 +9,13 @@ use netpod::timeunits::*;
 use netpod::ByteOrder;
 use netpod::ByteSize;
 use netpod::DiskIoTune;
+use netpod::DtNano;
 use netpod::Node;
 use netpod::ScalarType;
 use netpod::SfChFetchInfo;
 use netpod::SfDatabuffer;
 use netpod::SfDbChannel;
 use netpod::Shape;
-use netpod::TsNano;
 
 pub fn make_test_node(id: u32) -> Node {
     Node {
@@ -51,7 +51,7 @@ async fn agg_x_dim_0_inner() {
         channel_config: SfDbChConf {
             channel: SfDbChannel::from_name("sf-databuffer", "S10BC01-DBAM070:EOM1_T1"),
             keyspace: 2,
-            time_bin_size: TsNano(DAY),
+            time_bin_size: DtNano::from_ns(DAY),
             array: false,
             shape: Shape::Scalar,
             scalar_type: ScalarType::F64,
@@ -66,13 +66,13 @@ async fn agg_x_dim_0_inner() {
         "sf-databuffer",
         "S10BC01-DBAM070:EOM1_T1",
         2,
-        TsNano(DAY),
+        DtNano::from_ns(DAY),
         ByteOrder::Big,
         ScalarType::F64,
         Shape::Scalar,
     );
     let _bin_count = 20;
-    let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.0;
+    let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.ns();
     let ts2 = ts1 + HOUR * 24;
     let range = NanoRange { beg: ts1, end: ts2 };
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
@@ -113,7 +113,7 @@ async fn agg_x_dim_1_inner() {
         channel_config: SfDbChConf {
             channel: SfDbChannel::from_name("ks", "wave1"),
             keyspace: 3,
-            time_bin_size: TsNano(DAY),
+            time_bin_size: DtNano::from_ns(DAY),
             array: true,
             shape: Shape::Wave(1024),
             scalar_type: ScalarType::F64,
@@ -128,13 +128,13 @@ async fn agg_x_dim_1_inner() {
         "ks",
         "wave1",
         2,
-        TsNano(DAY),
+        DtNano::from_ns(DAY),
         ByteOrder::Big,
         ScalarType::F64,
         Shape::Scalar,
     );
     let _bin_count = 10;
-    let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.0;
+    let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.ns();
     let ts2 = ts1 + HOUR * 24;
     let range = NanoRange { beg: ts1, end: ts2 };
     let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));

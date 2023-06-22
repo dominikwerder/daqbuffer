@@ -4,12 +4,12 @@ use netpod::range::evrange::NanoRange;
 use netpod::timeunits::DAY;
 use netpod::ByteOrder;
 use netpod::ChannelTypeConfigGen;
+use netpod::DtNano;
 use netpod::NodeConfigCached;
 use netpod::ScalarType;
 use netpod::SfChFetchInfo;
 use netpod::SfDbChannel;
 use netpod::Shape;
-use netpod::TsNano;
 
 const TEST_BACKEND: &str = "testbackend-00";
 
@@ -20,7 +20,7 @@ fn channel_config_test_backend(channel: SfDbChannel) -> Result<ChannelTypeConfig
             backend,
             channel.name(),
             2,
-            TsNano(DAY),
+            DtNano::from_ns(DAY),
             ByteOrder::Big,
             ScalarType::I32,
             Shape::Scalar,
@@ -31,7 +31,7 @@ fn channel_config_test_backend(channel: SfDbChannel) -> Result<ChannelTypeConfig
             backend,
             channel.name(),
             3,
-            TsNano(DAY),
+            DtNano::from_ns(DAY),
             ByteOrder::Big,
             ScalarType::F64,
             Shape::Wave(21),
@@ -42,7 +42,7 @@ fn channel_config_test_backend(channel: SfDbChannel) -> Result<ChannelTypeConfig
             backend,
             channel.name(),
             2,
-            TsNano(DAY),
+            DtNano::from_ns(DAY),
             ByteOrder::Big,
             ScalarType::I32,
             Shape::Scalar,
@@ -53,7 +53,7 @@ fn channel_config_test_backend(channel: SfDbChannel) -> Result<ChannelTypeConfig
             backend,
             channel.name(),
             2,
-            TsNano(DAY),
+            DtNano::from_ns(DAY),
             ByteOrder::Big,
             ScalarType::I32,
             Shape::Scalar,
@@ -64,7 +64,7 @@ fn channel_config_test_backend(channel: SfDbChannel) -> Result<ChannelTypeConfig
             backend,
             channel.name(),
             2,
-            TsNano(DAY),
+            DtNano::from_ns(DAY),
             ByteOrder::Big,
             ScalarType::I32,
             Shape::Scalar,
@@ -75,7 +75,7 @@ fn channel_config_test_backend(channel: SfDbChannel) -> Result<ChannelTypeConfig
             backend,
             channel.name(),
             3,
-            TsNano(DAY),
+            DtNano::from_ns(DAY),
             ByteOrder::Big,
             ScalarType::F64,
             Shape::Wave(21),

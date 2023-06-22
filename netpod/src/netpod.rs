@@ -13,9 +13,7 @@ use bytes::Bytes;
 use chrono::DateTime;
 use chrono::TimeZone;
 use chrono::Utc;
-use err::anyhow;
 use err::Error;
-use err::Res2;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use range::evrange::NanoRange;
@@ -1174,6 +1172,19 @@ impl DtNano {
     pub fn ns(&self) -> u64 {
         self.0
     }
+
+    pub fn ms(&self) -> u64 {
+        self.0 / MS
+    }
+}
+
+impl fmt::Debug for DtNano {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let sec = self.0 / SEC;
+        let ms = (self.0 - SEC * sec) / MS;
+        let ns = self.0 - SEC * sec - MS * ms;
+        f.debug_tuple("DtNano").field(&sec).field(&ms).field(&ns).finish()
+    }
 }
 
 mod dt_nano_serde {
@@ -1300,7 +1311,10 @@ impl fmt::Debug for TsNano {
         f.debug_struct("TsNano")
             .field(
                 "ts",
-                &ts.earliest().unwrap_or(Default::default()).format(DATETIME_FMT_3MS),
+                &ts.earliest()
+                    .unwrap_or(Default::default())
+                    .format(DATETIME_FMT_3MS)
+                    .to_string(),
             )
             .finish()
     }
@@ -2649,7 +2663,7 @@ pub struct SfChFetchInfo {
     backend: String,
     name: String,
     ks: u8,
-    bs: TsNano,
+    bs: DtNano,
     scalar_type: ScalarType,
     shape: Shape,
     compression: bool,
@@ -2662,7 +2676,7 @@ impl SfChFetchInfo {
         backend: S1,
         name: S2,
         ks: u8,
-        bs: TsNano,
+        bs: DtNano,
         byte_order: ByteOrder,
         scalar_type: ScalarType,
         shape: Shape,
@@ -2706,7 +2720,7 @@ impl SfChFetchInfo {
         self.ks
     }
 
-    pub fn bs(&self) -> TsNano {
+    pub fn bs(&self) -> DtNano {
         self.bs.clone()
     }
 
@@ -2743,6 +2757,20 @@ impl ChannelTypeConfigGen {
             Ok(k.clone())
         } else {
             Err(Error::with_msg_no_trace("this ChannelTypeConfigGen is not for scylla"))
+        }
+    }
+
+    pub fn backend(&self) -> &str {
+        match self {
+            ChannelTypeConfigGen::Scylla(x) => x.backend(),
+            ChannelTypeConfigGen::SfDatabuffer(x) => x.backend(),
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            ChannelTypeConfigGen::Scylla(x) => x.name(),
+            ChannelTypeConfigGen::SfDatabuffer(x) => x.name(),
         }
     }
 

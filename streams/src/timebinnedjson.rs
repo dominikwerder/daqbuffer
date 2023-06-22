@@ -24,7 +24,9 @@ use netpod::BinnedRangeEnum;
 use netpod::ChannelTypeConfigGen;
 use netpod::Cluster;
 use query::api4::binned::BinnedQuery;
-use query::api4::events::PlainEventsQuery;
+use query::api4::events::EventsSubQuery;
+use query::api4::events::EventsSubQuerySelect;
+use query::api4::events::EventsSubQuerySettings;
 use serde_json::Value as JsonValue;
 use std::pin::Pin;
 use std::time::Instant;
@@ -38,13 +40,14 @@ async fn timebinnable_stream(
     query: BinnedQuery,
     range: NanoRange,
     one_before_range: bool,
-    ch_conf: &ChannelTypeConfigGen,
+    ch_conf: ChannelTypeConfigGen,
     cluster: Cluster,
 ) -> Result<TimeBinnableStreamBox, Error> {
-    let evq = PlainEventsQuery::new(query.channel().clone(), range.clone()).for_time_weighted_scalar();
-    let mut tr = build_merged_event_transform(evq.transform())?;
-
-    let inps = open_tcp_streams::<_, ChannelEvents>(&evq, ch_conf, &cluster).await?;
+    let select = EventsSubQuerySelect::new(ch_conf, range.clone().into(), query.transform().clone());
+    let settings = EventsSubQuerySettings::from(&query);
+    let subq = EventsSubQuery::from_parts(select, settings);
+    let mut tr = build_merged_event_transform(subq.transform())?;
+    let inps = open_tcp_streams::<ChannelEvents>(subq, &cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader.
     // TODO use a mixture of count and byte-size as threshold.
     let stream = Merger::new(inps, query.merger_out_len_max());
@@ -68,7 +71,7 @@ async fn timebinnable_stream(
 async fn timebinned_stream(
     query: BinnedQuery,
     binned_range: BinnedRangeEnum,
-    ch_conf: &ChannelTypeConfigGen,
+    ch_conf: ChannelTypeConfigGen,
     cluster: Cluster,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>, Error> {
     let range = binned_range.binned_range_time().to_nano_range();
@@ -101,7 +104,7 @@ fn timebinned_to_collectable(
 
 pub async fn timebinned_json(
     query: BinnedQuery,
-    ch_conf: &ChannelTypeConfigGen,
+    ch_conf: ChannelTypeConfigGen,
     cluster: Cluster,
 ) -> Result<JsonValue, Error> {
     let deadline = Instant::now().checked_add(query.timeout_value()).unwrap();
