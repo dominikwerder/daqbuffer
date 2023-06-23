@@ -10,6 +10,7 @@ use items_2::framable::INMEM_FRAME_HEAD;
 use items_2::framable::INMEM_FRAME_MAGIC;
 use items_2::inmem::InMemoryFrame;
 use netpod::log::*;
+use netpod::ByteSize;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
@@ -51,10 +52,10 @@ where
         std::any::type_name::<Self>()
     }
 
-    pub fn new(inp: T, bufcap: usize) -> Self {
+    pub fn new(inp: T, bufcap: ByteSize) -> Self {
         Self {
             inp,
-            buf: SlideBuf::new(bufcap),
+            buf: SlideBuf::new(bufcap.bytes() as usize),
             need_min: INMEM_FRAME_HEAD,
             done: false,
             complete: false,

@@ -960,7 +960,20 @@ mod serde_shape {
 }
 
 impl Shape {
-    pub fn from_bsread_jsval(v: &JsVal) -> Result<Shape, Error> {
+    pub fn from_sf_databuffer_raw(v: &Option<Vec<u32>>) -> Result<Self, Error> {
+        let ret = match v {
+            Some(a) => match a.len() {
+                0 => Shape::Scalar,
+                1 => Shape::Wave(a[0]),
+                2 => Shape::Image(a[0], a[1]),
+                _ => return Err(Error::with_msg_no_trace("can not understand sf databuffer shape spec")),
+            },
+            None => Shape::Scalar,
+        };
+        Ok(ret)
+    }
+
+    pub fn from_bsread_jsval(v: &JsVal) -> Result<Self, Error> {
         match v {
             JsVal::Array(v) => match v.len() {
                 0 => Ok(Shape::Scalar),
@@ -991,7 +1004,7 @@ impl Shape {
     }
 
     // TODO use simply a list to represent all shapes: empty, or with 1 or 2 entries.
-    pub fn from_db_jsval(v: &JsVal) -> Result<Shape, Error> {
+    pub fn from_db_jsval(v: &JsVal) -> Result<Self, Error> {
         match v {
             JsVal::String(s) => {
                 if s == "Scalar" {
@@ -1636,6 +1649,13 @@ impl PreBinnedPatchCoordEnum {
         todo!()
     }
 
+    pub fn patch_range(&self) -> SeriesRange {
+        match self {
+            PreBinnedPatchCoordEnum::Time(k) => k.series_range(),
+            PreBinnedPatchCoordEnum::Pulse(k) => k.series_range(),
+        }
+    }
+
     pub fn span_desc(&self) -> String {
         match self {
             PreBinnedPatchCoordEnum::Time(k) => {
@@ -2228,32 +2248,22 @@ impl ReadExactStats {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct PerfOpts {
-    pub inmem_bufcap: usize,
-}
-
-impl PerfOpts {
-    pub fn default() -> Self {
-        Self {
-            inmem_bufcap: 1024 * 512,
-        }
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ByteSize(pub u32);
 
 impl ByteSize {
-    pub fn b(b: u32) -> Self {
+    pub fn from_bytes(b: u32) -> Self {
         Self(b)
     }
-    pub fn kb(kb: u32) -> Self {
+
+    pub fn from_kb(kb: u32) -> Self {
         Self(1024 * kb)
     }
-    pub fn mb(mb: u32) -> Self {
+
+    pub fn from_mb(mb: u32) -> Self {
         Self(1024 * 1024 * mb)
     }
+
     pub fn bytes(&self) -> u32 {
         self.0
     }
@@ -2454,7 +2464,7 @@ pub fn get_url_query_pairs(url: &Url) -> BTreeMap<String, String> {
 // At least on some backends the channel configuration may change depending on the queried range.
 // Therefore, the query includes the range.
 // The presence of a configuration in some range does not imply that there is any data available.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChannelConfigQuery {
     pub channel: SfDbChannel,
     pub range: NanoRange,

@@ -37,17 +37,18 @@ pub async fn chconf_from_events_v1(
     q: &PlainEventsQuery,
     ncc: &NodeConfigCached,
 ) -> Result<ChannelTypeConfigGen, Error> {
-    let ret = nodenet::configquorum::find_config_basics_quorum(q.channel(), ncc).await?;
+    let ret = nodenet::configquorum::find_config_basics_quorum(q.channel().clone(), q.range().clone(), ncc).await?;
     Ok(ret)
 }
 
 pub async fn chconf_from_prebinned(q: &PreBinnedQuery, ncc: &NodeConfigCached) -> Result<ChannelTypeConfigGen, Error> {
-    let ret = nodenet::configquorum::find_config_basics_quorum(q.channel(), ncc).await?;
+    let ret =
+        nodenet::configquorum::find_config_basics_quorum(q.channel().clone(), q.patch().patch_range(), ncc).await?;
     Ok(ret)
 }
 
 pub async fn ch_conf_from_binned(q: &BinnedQuery, ncc: &NodeConfigCached) -> Result<ChannelTypeConfigGen, Error> {
-    let ret = nodenet::configquorum::find_config_basics_quorum(q.channel(), ncc).await?;
+    let ret = nodenet::configquorum::find_config_basics_quorum(q.channel().clone(), q.range().clone(), ncc).await?;
     Ok(ret)
 }
 
@@ -142,10 +143,10 @@ impl ChannelConfigsHandler {
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let q = ChannelConfigQuery::from_url(&url)?;
         info!("channel_configs  for q {q:?}");
-        let ch_conf = nodenet::channelconfig::channel_config(q.range.clone(), q.channel, ncc).await?;
+        let ch_confs = nodenet::channelconfig::channel_configs(q.channel, ncc).await?;
         let ret = response(StatusCode::OK)
             .header(http::header::CONTENT_TYPE, APP_JSON)
-            .body(Body::from(serde_json::to_string(&ch_conf)?))?;
+            .body(Body::from(serde_json::to_string(&ch_confs)?))?;
         Ok(ret)
     }
 }

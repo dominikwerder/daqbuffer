@@ -1,8 +1,12 @@
 use err::Error;
+use httpclient::url::Url;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::timeunits::DAY;
+use netpod::AppendToUrl;
 use netpod::ByteOrder;
+use netpod::ChannelConfigQuery;
+use netpod::ChannelConfigResponse;
 use netpod::ChannelTypeConfigGen;
 use netpod::DtNano;
 use netpod::NodeConfigCached;
@@ -10,6 +14,7 @@ use netpod::ScalarType;
 use netpod::SfChFetchInfo;
 use netpod::SfDbChannel;
 use netpod::Shape;
+use netpod::APP_JSON;
 
 const TEST_BACKEND: &str = "testbackend-00";
 
@@ -125,4 +130,50 @@ pub async fn channel_config(
                 .add_public_msg(format!("no channel config for backend {}", channel.backend())),
         );
     }
+}
+
+pub async fn channel_configs(channel: SfDbChannel, ncc: &NodeConfigCached) -> Result<Vec<ChannelTypeConfigGen>, Error> {
+    if channel.backend() == TEST_BACKEND {
+        let x = vec![channel_config_test_backend(channel)?];
+        Ok(x)
+    } else if ncc.node_config.cluster.scylla.is_some() {
+        debug!("try to get ChConf for scylla type backend");
+        let ret = dbconn::channelconfig::chconf_from_scylla_type_backend(&channel, ncc)
+            .await
+            .map_err(Error::from)?;
+        Ok(vec![ChannelTypeConfigGen::Scylla(ret)])
+    } else if ncc.node.sf_databuffer.is_some() {
+        debug!("channel_config  channel {channel:?}");
+        let configs = disk::channelconfig::channel_configs(channel.clone(), ncc).await?;
+        let a = configs;
+        let mut configs = Vec::new();
+        for config in a.entries {
+            let ret = SfChFetchInfo::new(
+                channel.backend(),
+                channel.name(),
+                config.ks as _,
+                config.bs,
+                config.byte_order,
+                config.scalar_type,
+                Shape::from_sf_databuffer_raw(&config.shape)?,
+            );
+            let ret = ChannelTypeConfigGen::SfDatabuffer(ret);
+            configs.push(ret);
+        }
+        Ok(configs)
+    } else {
+        return Err(
+            Error::with_msg_no_trace(format!("no channel config for backend {}", channel.backend()))
+                .add_public_msg(format!("no channel config for backend {}", channel.backend())),
+        );
+    }
+}
+
+pub async fn http_get_channel_config(qu: ChannelConfigQuery, baseurl: Url) -> Result<ChannelConfigResponse, Error> {
+    let url = baseurl;
+    let mut url = url.join("channel/config").unwrap();
+    qu.append_to_url(&mut url);
+    let res = httpclient::http_get(url, APP_JSON).await?;
+    let ret: ChannelConfigResponse = serde_json::from_slice(&res)?;
+    Ok(ret)
 }

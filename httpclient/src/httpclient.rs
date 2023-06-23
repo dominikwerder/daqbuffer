@@ -1,14 +1,25 @@
 use bytes::Bytes;
-use err::{Error, PublicError};
+use err::Error;
+use err::PublicError;
 use futures_util::pin_mut;
-use http::{header, Request, Response, StatusCode};
+use http::header;
+use http::Request;
+use http::Response;
+use http::StatusCode;
 use hyper::body::HttpBody;
-use hyper::{Body, Method};
+use hyper::Body;
+use hyper::Method;
 use netpod::log::*;
-use netpod::{AppendToUrl, ChannelConfigQuery, ChannelConfigResponse, NodeConfigCached};
+use netpod::AppendToUrl;
+use netpod::ChannelConfigQuery;
+use netpod::ChannelConfigResponse;
+use netpod::NodeConfigCached;
 use std::pin::Pin;
-use std::task::{Context, Poll};
-use tokio::io::{self, AsyncRead, ReadBuf};
+use std::task::Context;
+use std::task::Poll;
+use tokio::io;
+use tokio::io::AsyncRead;
+use tokio::io::ReadBuf;
 use url::Url;
 
 pub trait ErrConv<T> {
@@ -39,7 +50,6 @@ pub async fn http_get(url: Url, accept: &str) -> Result<Bytes, Error> {
     let client = hyper::Client::new();
     let res = client.request(req).await.ec()?;
     if res.status() != StatusCode::OK {
-        error!("Server error  {:?}", res);
         let (head, body) = res.into_parts();
         let buf = hyper::body::to_bytes(body).await.ec()?;
         let s = String::from_utf8_lossy(&buf);

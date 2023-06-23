@@ -24,7 +24,7 @@ pub async fn config_entry_best_match(
     }
 }
 
-pub async fn configs(channel: SfDbChannel, node_config: &NodeConfigCached) -> Result<ChannelConfigs, Error> {
+pub async fn channel_configs(channel: SfDbChannel, node_config: &NodeConfigCached) -> Result<ChannelConfigs, Error> {
     read_local_config(channel.clone(), node_config.clone()).await
 }
 

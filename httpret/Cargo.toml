@@ -37,3 +37,4 @@ nodenet = { path = "../nodenet" }
 commonio = { path = "../commonio" }
 taskrun = { path = "../taskrun" }
 scyllaconn = { path = "../scyllaconn" }
+httpclient = { path = "../httpclient" }

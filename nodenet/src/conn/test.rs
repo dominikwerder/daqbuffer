@@ -24,7 +24,6 @@ use netpod::FileIoBufferSize;
 use netpod::Node;
 use netpod::NodeConfig;
 use netpod::NodeConfigCached;
-use netpod::PerfOpts;
 use netpod::ScalarType;
 use netpod::SfChFetchInfo;
 use netpod::SfDatabuffer;
@@ -99,7 +98,7 @@ fn raw_data_00() {
         let select = EventsSubQuerySelect::new(fetch_info.into(), range.into(), TransformQuery::default_events());
         let settings = EventsSubQuerySettings::default();
         let qu = EventsSubQuery::from_parts(select, settings);
-        let frame1 = Frame1Parts::new(qu);
+        let frame1 = Frame1Parts::new(qu.clone());
         let query = EventQueryJsonStringFrame(serde_json::to_string(&frame1).unwrap());
         let frame = sitem_data(query).make_frame()?;
         let jh = taskrun::spawn(events_conn_handler(client, addr, cfg));
@@ -108,8 +107,7 @@ fn raw_data_00() {
         con.shutdown().await.unwrap();
         eprintln!("shut down");
 
-        let perf_opts = PerfOpts::default();
-        let mut frames = InMemoryFrameAsyncReadStream::new(con, perf_opts.inmem_bufcap);
+        let mut frames = InMemoryFrameAsyncReadStream::new(con, qu.inmem_bufcap());
         while let Some(frame) = frames.next().await {
             match frame {
                 Ok(frame) => match frame {

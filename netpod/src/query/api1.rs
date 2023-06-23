@@ -3,6 +3,7 @@ use crate::{DiskIoTune, FileIoBufferSize, ReadSys};
 use err::Error;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::time::Duration;
 
 fn bool_true() -> bool {
     true
@@ -225,6 +226,8 @@ mod serde_channel_tuple {
 pub struct Api1Query {
     range: Api1Range,
     channels: Vec<ChannelTuple>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    timeout: Option<Duration>,
     // All following parameters are private and not to be used
     #[serde(default, skip_serializing_if = "Option::is_none")]
     file_io_buffer_size: Option<FileIoBufferSize>,
@@ -245,6 +248,7 @@ impl Api1Query {
         Self {
             range,
             channels,
+            timeout: None,
             decompress: true,
             events_max: None,
             file_io_buffer_size: None,
@@ -273,6 +277,14 @@ impl Api1Query {
 
     pub fn channels(&self) -> &[ChannelTuple] {
         &self.channels
+    }
+
+    pub fn timeout(&self) -> Option<Duration> {
+        self.timeout
+    }
+
+    pub fn timeout_or_default(&self) -> Duration {
+        Duration::from_secs(60 * 30)
     }
 
     pub fn log_level(&self) -> &str {

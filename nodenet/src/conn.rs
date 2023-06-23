@@ -19,14 +19,9 @@ use items_2::frame::make_term_frame;
 use items_2::inmem::InMemoryFrame;
 use netpod::histo::HistoLog2;
 use netpod::log::*;
-use netpod::ChannelTypeConfigGen;
 use netpod::NodeConfigCached;
-use netpod::PerfOpts;
 use query::api4::events::EventsSubQuery;
 use query::api4::events::Frame1Parts;
-use query::api4::events::PlainEventsQuery;
-use serde::Deserialize;
-use serde::Serialize;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use streams::frames::inmem::InMemoryFrameAsyncReadStream;
@@ -102,7 +97,7 @@ async fn make_channel_events_stream_data(
                         "make_channel_events_stream_data can not understand test channel name: {chn:?}"
                     )))
                 } else {
-                    let range = subq.range().clone();
+                    let _range = subq.range().clone();
                     if na[1] == "d0" {
                         if na[2] == "i32" {
                             //generator::generate_i32(node_ix, node_count, range)
@@ -151,8 +146,7 @@ async fn make_channel_events_stream(
 }
 
 async fn events_get_input_frames(netin: OwnedReadHalf) -> Result<Vec<InMemoryFrame>, Error> {
-    let perf_opts = PerfOpts::default();
-    let mut h = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
+    let mut h = InMemoryFrameAsyncReadStream::new(netin, netpod::ByteSize::from_kb(1));
     let mut frames = Vec::new();
     while let Some(k) = h
         .next()
@@ -204,7 +198,6 @@ async fn events_parse_input_query(frames: Vec<InMemoryFrame>) -> Result<(EventsS
         error!("{e}");
         e
     })?;
-    info!("events_parse_input_query  {:?}", frame1);
     Ok(frame1.parts())
 }
 
@@ -223,6 +216,7 @@ async fn events_conn_handler_inner_try(
         Ok(x) => x,
         Err(e) => return Err((e, netout).into()),
     };
+    info!("events_parse_input_query  {evq:?}");
     if evq.create_errors_contains("nodenet_parse_query") {
         let e = Error::with_msg_no_trace("produced error on request nodenet_parse_query");
         return Err((e, netout).into());

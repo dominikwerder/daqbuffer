@@ -64,7 +64,7 @@ pub async fn make_event_pipe(
         "make_event_pipe  need_expand {need_expand}  {evq:?}",
         need_expand = one_before
     );
-    let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
+    let event_chunker_conf = EventChunkerConf::new(ByteSize::from_kb(1024));
     // TODO should not need this for correctness.
     // Should limit based on return size and latency.
     let out_max_len = if ncc.node_config.cluster.is_central_storage {
@@ -169,7 +169,7 @@ pub async fn make_event_blobs_pipe_real(
     }
     let expand = subq.transform().need_one_before_range();
     let range = subq.range();
-    let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
+    let event_chunker_conf = EventChunkerConf::new(ByteSize::from_kb(1024));
     // TODO should depend on host config
     let do_local = node_config.node_config.cluster.is_central_storage;
     let pipe = if do_local {

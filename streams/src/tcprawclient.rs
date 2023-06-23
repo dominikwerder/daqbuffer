@@ -20,7 +20,6 @@ use netpod::log::*;
 use netpod::ChannelTypeConfigGen;
 use netpod::Cluster;
 use netpod::Node;
-use netpod::PerfOpts;
 use query::api4::events::EventsSubQuery;
 use query::api4::events::Frame1Parts;
 use serde::de::DeserializeOwned;
@@ -36,14 +35,12 @@ pub fn make_node_command_frame(query: EventsSubQuery) -> Result<EventQueryJsonSt
 }
 
 pub async fn x_processed_event_blobs_stream_from_node(
-    query: EventsSubQuery,
-    ch_conf: ChannelTypeConfigGen,
-    perf_opts: PerfOpts,
+    subq: EventsSubQuery,
     node: Node,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
     let addr = format!("{}:{}", node.host, node.port_raw);
     debug!("x_processed_event_blobs_stream_from_node  to: {addr}",);
-    let frame1 = make_node_command_frame(query)?;
+    let frame1 = make_node_command_frame(subq.clone())?;
     let net = TcpStream::connect(addr.clone()).await?;
     let (netin, mut netout) = net.into_split();
     let item = sitem_data(frame1);
@@ -53,7 +50,7 @@ pub async fn x_processed_event_blobs_stream_from_node(
     netout.write_all(&buf).await?;
     netout.flush().await?;
     netout.forget();
-    let frames = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
+    let frames = InMemoryFrameAsyncReadStream::new(netin, subq.inmem_bufcap());
     let frames = Box::pin(frames);
     let items = EventsFromFrames::new(frames, addr);
     Ok(Box::pin(items))
@@ -61,13 +58,13 @@ pub async fn x_processed_event_blobs_stream_from_node(
 
 pub type BoxedStream<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;
 
-pub async fn open_tcp_streams<T>(query: EventsSubQuery, cluster: &Cluster) -> Result<Vec<BoxedStream<T>>, Error>
+pub async fn open_tcp_streams<T>(subq: EventsSubQuery, cluster: &Cluster) -> Result<Vec<BoxedStream<T>>, Error>
 where
     // Group bounds in new trait
     T: FrameTypeInnerStatic + DeserializeOwned + Send + Unpin + fmt::Debug + 'static,
 {
     // TODO when unit tests established, change to async connect:
-    let frame1 = make_node_command_frame(query)?;
+    let frame1 = make_node_command_frame(subq.clone())?;
     let mut streams = Vec::new();
     for node in &cluster.nodes {
         let addr = format!("{}:{}", node.host, node.port_raw);
@@ -82,8 +79,7 @@ where
         netout.flush().await?;
         netout.forget();
         // TODO for images, we need larger buffer capacity
-        let perf_opts = PerfOpts::default();
-        let frames = InMemoryFrameAsyncReadStream::new(netin, perf_opts.inmem_bufcap);
+        let frames = InMemoryFrameAsyncReadStream::new(netin, subq.inmem_bufcap());
         let frames = Box::pin(frames);
         let stream = EventsFromFrames::<T>::new(frames, addr);
         streams.push(Box::pin(stream) as _);

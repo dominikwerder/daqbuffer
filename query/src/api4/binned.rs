@@ -185,7 +185,7 @@ impl FromUrl for BinnedQuery {
                 .get("diskStatsEveryKb")
                 .map(|k| k.parse().ok())
                 .unwrap_or(None)
-                .map(ByteSize::kb),
+                .map(ByteSize::from_kb),
             /*report_error: pairs
             .get("reportError")
             .map_or("false", |k| k)

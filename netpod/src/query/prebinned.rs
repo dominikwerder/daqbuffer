@@ -76,7 +76,7 @@ impl PreBinnedQuery {
                 .get("diskStatsEveryKb")
                 .map(|k| k.parse().ok())
                 .unwrap_or(None)
-                .map(ByteSize::kb),
+                .map(ByteSize::from_kb),
         };
         Ok(ret)
     }

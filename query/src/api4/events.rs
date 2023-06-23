@@ -3,8 +3,7 @@ use crate::transform::TransformQuery;
 use err::Error;
 use netpod::get_url_query_pairs;
 use netpod::is_false;
-use netpod::log::*;
-use netpod::query::CacheUsage;
+use netpod::query::api1::Api1Query;
 use netpod::query::PulseRangeQuery;
 use netpod::query::TimeRangeQuery;
 use netpod::range::evrange::SeriesRange;
@@ -364,6 +363,21 @@ impl From<&BinnedQuery> for EventsSubQuerySettings {
     }
 }
 
+impl From<&Api1Query> for EventsSubQuerySettings {
+    fn from(value: &Api1Query) -> Self {
+        Self {
+            timeout: value.timeout(),
+            // TODO ?
+            events_max: None,
+            event_delay: None,
+            stream_batch_len: None,
+            buf_len_disk_io: None,
+            test_do_wasm: false,
+            create_errors: Vec::new(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EventsSubQuery {
     select: EventsSubQuerySelect,
@@ -414,6 +428,10 @@ impl EventsSubQuery {
 
     pub fn buf_len_disk_io(&self) -> usize {
         self.settings.buf_len_disk_io.unwrap_or(1024 * 8)
+    }
+
+    pub fn inmem_bufcap(&self) -> ByteSize {
+        ByteSize::from_kb(4)
     }
 
     // A rough indication on how many bytes this request is allowed to return. Otherwise, the result should

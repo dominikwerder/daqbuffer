@@ -14,7 +14,6 @@ use netpod::range::evrange::NanoRange;
 use netpod::AppendToUrl;
 use netpod::ByteSize;
 use netpod::HostPort;
-use netpod::PerfOpts;
 use netpod::SfDbChannel;
 use netpod::APP_OCTET;
 use query::api4::binned::BinnedQuery;
@@ -94,9 +93,8 @@ pub async fn get_binned(
             head, s
         )));
     }
-    let perf_opts = PerfOpts::default();
     let s1 = HttpBodyAsAsyncRead::new(res);
-    let s2 = InMemoryFrameAsyncReadStream::new(s1, perf_opts.inmem_bufcap);
+    let s2 = InMemoryFrameAsyncReadStream::new(s1, ByteSize::from_kb(8));
     use futures_util::StreamExt;
     use std::future::ready;
     let s3 = s2

@@ -75,7 +75,7 @@ async fn agg_x_dim_0_inner() {
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.ns();
     let ts2 = ts1 + HOUR * 24;
     let range = NanoRange { beg: ts1, end: ts2 };
-    let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
+    let event_chunker_conf = EventChunkerConf::new(ByteSize::from_kb(1024));
     // TODO let upstream already provide DiskIoTune:
     let mut disk_io_tune = DiskIoTune::default_for_testing();
     disk_io_tune.read_buffer_len = query.buffer_size as usize;
@@ -137,7 +137,7 @@ async fn agg_x_dim_1_inner() {
     let ts1 = query.timebin as u64 * query.channel_config.time_bin_size.ns();
     let ts2 = ts1 + HOUR * 24;
     let range = NanoRange { beg: ts1, end: ts2 };
-    let event_chunker_conf = EventChunkerConf::new(ByteSize::kb(1024));
+    let event_chunker_conf = EventChunkerConf::new(ByteSize::from_kb(1024));
     // TODO let upstream already provide DiskIoTune:
     let mut disk_io_tune = DiskIoTune::default_for_testing();
     disk_io_tune.read_buffer_len = query.buffer_size as usize;

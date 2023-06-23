@@ -92,7 +92,7 @@ pub fn main() -> Result<(), Error> {
                     end: u64::MAX,
                 };
                 let stats_conf = EventChunkerConf {
-                    disk_stats_every: ByteSize::mb(2),
+                    disk_stats_every: ByteSize::from_mb(2),
                 };
                 let _chunks = EventChunker::from_start(inp, fetch_info, range, stats_conf, path.clone(), false, true);
                 err::todo();
