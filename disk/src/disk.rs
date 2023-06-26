@@ -61,6 +61,7 @@ use tokio::io::ReadBuf;
 use tokio::sync::mpsc;
 
 // TODO move to databuffer-specific crate
+// TODO duplicate of SfChFetchInfo?
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SfDbChConf {
     pub channel: SfDbChannel,

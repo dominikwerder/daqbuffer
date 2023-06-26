@@ -479,6 +479,12 @@ impl Node {
             prometheus_api_bind: None,
         }
     }
+
+    // TODO should a node know how to reach itself? Because, depending on network
+    // topology (proxies etc.) the way to reach a node depends on the tuple `(node, client)`.
+    pub fn baseurl(&self) -> Url {
+        format!("http://{}:{}/api/4/", self.host, self.port).parse().unwrap()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -765,9 +771,7 @@ impl AppendToUrl for DaqbufSeries {
         if self.name().len() > 0 {
             g.append_pair("channelName", &self.name);
         }
-        if let series = self.series {
-            g.append_pair("seriesId", &series.to_string());
-        }
+        g.append_pair("seriesId", &self.series.to_string());
     }
 }
 
@@ -803,7 +807,7 @@ impl From<FilePos> for u64 {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
 pub enum ByteOrder {
     Little,
     Big,
@@ -1174,12 +1178,16 @@ where
     pub ix: [T; 2],
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct DtNano(u64);
 
 impl DtNano {
     pub fn from_ns(ns: u64) -> Self {
         Self(ns)
+    }
+
+    pub fn from_ms(ns: u64) -> Self {
+        Self(MS * ns)
     }
 
     pub fn ns(&self) -> u64 {
@@ -2621,7 +2629,7 @@ pub struct ChannelInfo {
     pub msg: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
 pub struct ChConf {
     backend: String,
     series: u64,
@@ -2668,7 +2676,7 @@ impl ChConf {
 
 // Includes the necessary information to know where to localize datafiles for sf-databuffer
 // and what (approximate) types to expect.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
 pub struct SfChFetchInfo {
     backend: String,
     name: String,
@@ -2747,7 +2755,7 @@ impl SfChFetchInfo {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, PartialOrd, Eq, Ord)]
 pub enum ChannelTypeConfigGen {
     Scylla(ChConf),
     SfDatabuffer(SfChFetchInfo),
