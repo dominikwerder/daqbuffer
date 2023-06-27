@@ -98,32 +98,37 @@ pub async fn channel_config(
     range: NanoRange,
     channel: SfDbChannel,
     ncc: &NodeConfigCached,
-) -> Result<ChannelTypeConfigGen, Error> {
+) -> Result<Option<ChannelTypeConfigGen>, Error> {
     if channel.backend() == TEST_BACKEND {
-        channel_config_test_backend(channel)
+        Ok(Some(channel_config_test_backend(channel)?))
     } else if ncc.node_config.cluster.scylla.is_some() {
         debug!("try to get ChConf for scylla type backend");
         let ret = dbconn::channelconfig::chconf_from_scylla_type_backend(&channel, ncc)
             .await
             .map_err(Error::from)?;
-        Ok(ChannelTypeConfigGen::Scylla(ret))
+        Ok(Some(ChannelTypeConfigGen::Scylla(ret)))
     } else if ncc.node.sf_databuffer.is_some() {
         debug!("channel_config  channel {channel:?}");
-        let config = disk::channelconfig::channel_config_best_match(range, channel.clone(), ncc)
-            .await?
-            .ok_or_else(|| Error::with_msg_no_trace("config entry not found"))?;
-        debug!("channel_config  config  {config:?}");
-        let ret = SfChFetchInfo::new(
-            config.channel.backend(),
-            config.channel.name(),
-            config.keyspace,
-            config.time_bin_size,
-            config.byte_order,
-            config.scalar_type,
-            config.shape,
-        );
-        let ret = ChannelTypeConfigGen::SfDatabuffer(ret);
-        Ok(ret)
+        let k = disk::channelconfig::channel_config_best_match(range, channel.clone(), ncc)
+            .await
+            .map_err(|e| Error::from(e.to_string()))?;
+        match k {
+            Some(config) => {
+                debug!("channel_config  config  {config:?}");
+                let ret = SfChFetchInfo::new(
+                    config.channel.backend(),
+                    config.channel.name(),
+                    config.keyspace,
+                    config.time_bin_size,
+                    config.byte_order,
+                    config.scalar_type,
+                    config.shape,
+                );
+                let ret = ChannelTypeConfigGen::SfDatabuffer(ret);
+                Ok(Some(ret))
+            }
+            None => Ok(None),
+        }
     } else {
         return Err(
             Error::with_msg_no_trace(format!("no channel config for backend {}", channel.backend()))
@@ -144,7 +149,9 @@ pub async fn channel_configs(channel: SfDbChannel, ncc: &NodeConfigCached) -> Re
         Ok(vec![ChannelTypeConfigGen::Scylla(ret)])
     } else if ncc.node.sf_databuffer.is_some() {
         debug!("channel_config  channel {channel:?}");
-        let configs = disk::channelconfig::channel_configs(channel.clone(), ncc).await?;
+        let configs = disk::channelconfig::channel_configs(channel.clone(), ncc)
+            .await
+            .map_err(|e| Error::from(e.to_string()))?;
         let a = configs;
         let mut configs = Vec::new();
         for config in a.entries {
@@ -169,11 +176,26 @@ pub async fn channel_configs(channel: SfDbChannel, ncc: &NodeConfigCached) -> Re
     }
 }
 
-pub async fn http_get_channel_config(qu: ChannelConfigQuery, baseurl: Url) -> Result<ChannelConfigResponse, Error> {
+pub async fn http_get_channel_config(
+    qu: ChannelConfigQuery,
+    baseurl: Url,
+) -> Result<Option<ChannelConfigResponse>, Error> {
     let url = baseurl;
     let mut url = url.join("channel/config").unwrap();
     qu.append_to_url(&mut url);
     let res = httpclient::http_get(url, APP_JSON).await?;
-    let ret: ChannelConfigResponse = serde_json::from_slice(&res)?;
-    Ok(ret)
+    use httpclient::http::StatusCode;
+    if res.head.status == StatusCode::NOT_FOUND {
+        Ok(None)
+    } else if res.head.status == StatusCode::OK {
+        let ret: ChannelConfigResponse = serde_json::from_slice(&res.body)?;
+        Ok(Some(ret))
+    } else {
+        let b = &res.body;
+        let s = String::from_utf8_lossy(&b[0..b.len().min(256)]);
+        Err(Error::with_msg_no_trace(format!(
+            "http_get_channel_config  {}  {}",
+            res.head.status, s
+        )))
+    }
 }

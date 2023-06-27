@@ -51,6 +51,7 @@ use query::transform::TransformQuery;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+use std::any;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
@@ -518,7 +519,7 @@ async fn find_ch_conf(
     range: NanoRange,
     channel: SfDbChannel,
     ncc: NodeConfigCached,
-) -> Result<ChannelTypeConfigGen, Error> {
+) -> Result<Option<ChannelTypeConfigGen>, Error> {
     let ret = nodenet::channelconfig::channel_config(range, channel, &ncc).await?;
     Ok(ret)
 }
@@ -530,7 +531,7 @@ pub struct DataApiPython3DataStream {
     current_channel: Option<ChannelTypeConfigGen>,
     node_config: NodeConfigCached,
     chan_stream: Option<Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>>,
-    config_fut: Option<Pin<Box<dyn Future<Output = Result<ChannelTypeConfigGen, Error>> + Send>>>,
+    config_fut: Option<Pin<Box<dyn Future<Output = Result<Option<ChannelTypeConfigGen>, Error>> + Send>>>,
     disk_io_tune: DiskIoTune,
     do_decompress: bool,
     #[allow(unused)]
@@ -676,7 +677,6 @@ impl DataApiPython3DataStream {
     // TODO this stream can currently only handle sf-databuffer type backend anyway.
     fn handle_config_fut_ready(&mut self, fetch_info: SfChFetchInfo) -> Result<(), Error> {
         self.config_fut = None;
-        debug!("found channel_config  {:?}", fetch_info);
         let select = EventsSubQuerySelect::new(
             ChannelTypeConfigGen::SfDatabuffer(fetch_info.clone()),
             self.range.clone().into(),
@@ -695,7 +695,7 @@ impl DataApiPython3DataStream {
             let event_chunker_conf = EventChunkerConf::new(ByteSize::from_kb(1024));
             let s = make_local_event_blobs_stream(
                 self.range.clone(),
-                &fetch_info,
+                fetch_info.clone(),
                 one_before,
                 self.do_decompress,
                 event_chunker_conf,
@@ -704,7 +704,7 @@ impl DataApiPython3DataStream {
             )?;
             Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
         } else {
-            debug!("Set up merged remote stream");
+            debug!("set up merged remote stream  {}", fetch_info.name());
             let s = MergedBlobsFromRemotes::new(subq, self.node_config.node_config.cluster.clone());
             Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
         };
@@ -762,7 +762,7 @@ impl Stream for DataApiPython3DataStream {
                     }
                 } else if let Some(fut) = &mut self.config_fut {
                     match fut.poll_unpin(cx) {
-                        Ready(Ok(k)) => match k {
+                        Ready(Ok(Some(k))) => match k {
                             ChannelTypeConfigGen::Scylla(_) => {
                                 let e = Error::with_msg_no_trace("scylla");
                                 error!("{e}");
@@ -779,6 +779,11 @@ impl Stream for DataApiPython3DataStream {
                                 }
                             },
                         },
+                        Ready(Ok(None)) => {
+                            warn!("logic error");
+                            self.config_fut = None;
+                            continue;
+                        }
                         Ready(Err(e)) => {
                             self.data_done = true;
                             Ready(Some(Err(e)))
@@ -795,7 +800,7 @@ impl Stream for DataApiPython3DataStream {
                                 self.node_config.clone(),
                             )));
                         }
-                        self.config_fut = Some(Box::pin(futures_util::future::ready(Ok(channel))));
+                        self.config_fut = Some(Box::pin(futures_util::future::ready(Ok(Some(channel)))));
                         continue;
                     } else {
                         self.data_done = true;
@@ -858,7 +863,7 @@ impl Api1EventsBinaryHandler {
             .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?
             .to_owned();
         let body_data = hyper::body::to_bytes(body).await?;
-        if body_data.len() < 512 && body_data.first() == Some(&"{".as_bytes()[0]) {
+        if body_data.len() < 1024 * 2 && body_data.first() == Some(&"{".as_bytes()[0]) {
             info!("request body_data string: {}", String::from_utf8_lossy(&body_data));
         }
         let qu = match serde_json::from_slice::<Api1Query>(&body_data) {
@@ -895,9 +900,10 @@ impl Api1EventsBinaryHandler {
         span: tracing::Span,
         ncc: &NodeConfigCached,
     ) -> Result<Response<Body>, Error> {
+        let self_name = any::type_name::<Self>();
         // TODO this should go to usage statistics:
         info!(
-            "Handle Api1Query  {:?}  {}  {:?}",
+            "{self_name}  {:?}  {}  {:?}",
             qu.range(),
             qu.channels().len(),
             qu.channels().first()
@@ -905,7 +911,7 @@ impl Api1EventsBinaryHandler {
         let settings = EventsSubQuerySettings::from(&qu);
         let beg_date = qu.range().beg().clone();
         let end_date = qu.range().end().clone();
-        trace!("Api1Query  beg_date {:?}  end_date {:?}", beg_date, end_date);
+        trace!("{self_name}  beg_date {:?}  end_date {:?}", beg_date, end_date);
         //let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         //let query = PlainEventsBinaryQuery::from_url(&url)?;
         if accept.contains(APP_OCTET) || accept.contains(ACCEPT_ALL) {
@@ -916,12 +922,25 @@ impl Api1EventsBinaryHandler {
             let backend = &ncc.node_config.cluster.backend;
             // TODO ask for channel config quorum for all channels up front.
             //httpclient::http_get(url, accept);
+            let ts1 = Instant::now();
             let mut chans = Vec::new();
             for ch in qu.channels() {
+                info!("try to find config quorum for {ch:?}");
                 let ch = SfDbChannel::from_name(backend, ch.name());
-                let ch_conf = nodenet::configquorum::find_config_basics_quorum(ch, range.clone().into(), ncc).await?;
-                chans.push(ch_conf);
+                let ch_conf =
+                    nodenet::configquorum::find_config_basics_quorum(ch.clone(), range.clone().into(), ncc).await?;
+                match ch_conf {
+                    Some(x) => {
+                        chans.push(x);
+                    }
+                    None => {
+                        error!("no config quorum found for {ch:?}");
+                    }
+                }
             }
+            let ts2 = Instant::now();
+            let dt = ts2.duration_since(ts1).as_millis();
+            info!("{self_name}  configs fetched in {} ms", dt);
             // TODO use a better stream protocol with built-in error delivery.
             let status_id = super::status_board()?.new_status_id();
             let s = DataApiPython3DataStream::new(
@@ -942,8 +961,8 @@ impl Api1EventsBinaryHandler {
             Ok(ret)
         } else {
             // TODO set the public error code and message and return Err(e).
-            let e = Error::with_public_msg(format!("Unsupported Accept: {}", accept));
-            error!("{e}");
+            let e = Error::with_public_msg(format!("{self_name}  unsupported Accept: {}", accept));
+            error!("{self_name}  {e}");
             Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)
         }
     }

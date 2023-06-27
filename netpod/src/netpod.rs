@@ -315,7 +315,7 @@ impl ScalarType {
             F32 => 4,
             F64 => 8,
             BOOL => 1,
-            STRING => 0,
+            STRING => 1,
         }
     }
 
@@ -1252,7 +1252,7 @@ mod dt_nano_serde {
     }
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct TsNano(pub u64);
 
 mod ts_nano_ser {

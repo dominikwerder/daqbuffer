@@ -103,6 +103,7 @@ impl Stream for EventChunkerMultifile {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let span1 = span!(Level::INFO, "EvChMul", node_ix = self.node_ix);
         let _spg = span1.enter();
+        info!("EventChunkerMultifile  poll_next");
         use Poll::*;
         'outer: loop {
             break if let Some(item) = self.log_queue.pop_front() {

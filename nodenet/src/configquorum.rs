@@ -1,5 +1,6 @@
 use crate::channelconfig::http_get_channel_config;
 use err::Error;
+use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 use netpod::ChConf;
 use netpod::ChannelConfigQuery;
@@ -10,6 +11,7 @@ use netpod::NodeConfigCached;
 use netpod::SfChFetchInfo;
 use netpod::SfDbChannel;
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 fn decide_sf_ch_config_quorum(inp: Vec<ChannelConfigResponse>) -> Result<Option<ChannelTypeConfigGen>, Error> {
     let mut histo = BTreeMap::new();
@@ -60,9 +62,12 @@ async fn find_sf_ch_config_quorum(
             // TODO
             expand: false,
         };
-        let res = http_get_channel_config(qu, node.baseurl()).await?;
+        let res = tokio::time::timeout(Duration::from_millis(4000), http_get_channel_config(qu, node.baseurl()))
+            .await
+            .map_err(|_| Error::with_msg_no_trace("timeout"))??;
         all.push(res);
     }
+    let all: Vec<_> = all.into_iter().filter_map(|x| x).collect();
     let qu = decide_sf_ch_config_quorum(all)?;
     match qu {
         Some(item) => match item {
@@ -79,17 +84,18 @@ pub async fn find_config_basics_quorum(
     channel: SfDbChannel,
     range: SeriesRange,
     ncc: &NodeConfigCached,
-) -> Result<ChannelTypeConfigGen, Error> {
+) -> Result<Option<ChannelTypeConfigGen>, Error> {
     if let Some(_cfg) = &ncc.node.sf_databuffer {
-        let ret: SfChFetchInfo = find_sf_ch_config_quorum(channel, range, ncc)
-            .await?
-            .ok_or_else(|| Error::with_msg_no_trace("no config found at all"))?;
-        Ok(ChannelTypeConfigGen::SfDatabuffer(ret))
+        match find_sf_ch_config_quorum(channel, range, ncc).await? {
+            Some(x) => Ok(Some(ChannelTypeConfigGen::SfDatabuffer(x))),
+            None => Ok(None),
+        }
     } else if let Some(_cfg) = &ncc.node_config.cluster.scylla {
+        // TODO let called function allow to return None instead of error-not-found
         let ret = dbconn::channelconfig::chconf_from_scylla_type_backend(&channel, ncc)
             .await
             .map_err(Error::from)?;
-        Ok(ChannelTypeConfigGen::Scylla(ret))
+        Ok(Some(ChannelTypeConfigGen::Scylla(ret)))
     } else {
         Err(Error::with_msg_no_trace(
             "find_config_basics_quorum  not supported backend",

@@ -40,7 +40,12 @@ impl<T, E: Convable> ErrConv<T> for Result<T, E> {
 impl Convable for http::Error {}
 impl Convable for hyper::Error {}
 
-pub async fn http_get(url: Url, accept: &str) -> Result<Bytes, Error> {
+pub struct HttpResponse {
+    pub head: http::response::Parts,
+    pub body: Bytes,
+}
+
+pub async fn http_get(url: Url, accept: &str) -> Result<HttpResponse, Error> {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri(url.to_string())
@@ -49,22 +54,11 @@ pub async fn http_get(url: Url, accept: &str) -> Result<Bytes, Error> {
         .ec()?;
     let client = hyper::Client::new();
     let res = client.request(req).await.ec()?;
-    if res.status() != StatusCode::OK {
-        let (head, body) = res.into_parts();
-        let buf = hyper::body::to_bytes(body).await.ec()?;
-        let s = String::from_utf8_lossy(&buf);
-        return Err(Error::with_msg(format!(
-            concat!(
-                "Server error  {:?}\n",
-                "---------------------- message from http body:\n",
-                "{}\n",
-                "---------------------- end of http body",
-            ),
-            head, s
-        )));
-    }
-    let body = hyper::body::to_bytes(res.into_body()).await.ec()?;
-    Ok(body)
+    let (head, body) = res.into_parts();
+    info!("http_get  head {head:?}");
+    let body = hyper::body::to_bytes(body).await.ec()?;
+    let ret = HttpResponse { head, body };
+    Ok(ret)
 }
 
 pub async fn http_post(url: Url, accept: &str, body: String) -> Result<Bytes, Error> {

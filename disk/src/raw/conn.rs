@@ -91,7 +91,7 @@ pub async fn make_event_pipe(
 
 pub fn make_local_event_blobs_stream(
     range: NanoRange,
-    fetch_info: &SfChFetchInfo,
+    fetch_info: SfChFetchInfo,
     expand: bool,
     do_decompress: bool,
     event_chunker_conf: EventChunkerConf,
@@ -127,7 +127,7 @@ pub fn make_local_event_blobs_stream(
 
 pub fn make_remote_event_blobs_stream(
     range: NanoRange,
-    fetch_info: &SfChFetchInfo,
+    fetch_info: SfChFetchInfo,
     expand: bool,
     do_decompress: bool,
     event_chunker_conf: EventChunkerConf,
@@ -175,7 +175,7 @@ pub async fn make_event_blobs_pipe_real(
     let pipe = if do_local {
         let event_blobs = make_local_event_blobs_stream(
             range.try_into()?,
-            fetch_info,
+            fetch_info.clone(),
             expand,
             false,
             event_chunker_conf,
@@ -186,7 +186,7 @@ pub async fn make_event_blobs_pipe_real(
     } else {
         let event_blobs = make_remote_event_blobs_stream(
             range.try_into()?,
-            fetch_info,
+            fetch_info.clone(),
             expand,
             true,
             event_chunker_conf,

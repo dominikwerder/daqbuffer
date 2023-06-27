@@ -36,18 +36,24 @@ use url::Url;
 pub async fn chconf_from_events_v1(
     q: &PlainEventsQuery,
     ncc: &NodeConfigCached,
-) -> Result<ChannelTypeConfigGen, Error> {
+) -> Result<Option<ChannelTypeConfigGen>, Error> {
     let ret = nodenet::configquorum::find_config_basics_quorum(q.channel().clone(), q.range().clone(), ncc).await?;
     Ok(ret)
 }
 
-pub async fn chconf_from_prebinned(q: &PreBinnedQuery, ncc: &NodeConfigCached) -> Result<ChannelTypeConfigGen, Error> {
+pub async fn chconf_from_prebinned(
+    q: &PreBinnedQuery,
+    ncc: &NodeConfigCached,
+) -> Result<Option<ChannelTypeConfigGen>, Error> {
     let ret =
         nodenet::configquorum::find_config_basics_quorum(q.channel().clone(), q.patch().patch_range(), ncc).await?;
     Ok(ret)
 }
 
-pub async fn ch_conf_from_binned(q: &BinnedQuery, ncc: &NodeConfigCached) -> Result<ChannelTypeConfigGen, Error> {
+pub async fn ch_conf_from_binned(
+    q: &BinnedQuery,
+    ncc: &NodeConfigCached,
+) -> Result<Option<ChannelTypeConfigGen>, Error> {
     let ret = nodenet::configquorum::find_config_basics_quorum(q.channel().clone(), q.range().clone(), ncc).await?;
     Ok(ret)
 }
@@ -91,16 +97,24 @@ impl ChannelConfigHandler {
         req: Request<Body>,
         node_config: &NodeConfigCached,
     ) -> Result<Response<Body>, Error> {
-        info!("channel_config");
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let q = ChannelConfigQuery::from_url(&url)?;
-        info!("channel_config  for q {q:?}");
         let conf = nodenet::channelconfig::channel_config(q.range.clone(), q.channel.clone(), node_config).await?;
-        let res: ChannelConfigResponse = conf.into();
-        let ret = response(StatusCode::OK)
-            .header(http::header::CONTENT_TYPE, APP_JSON)
-            .body(Body::from(serde_json::to_string(&res)?))?;
-        Ok(ret)
+        match conf {
+            Some(conf) => {
+                let res: ChannelConfigResponse = conf.into();
+                let ret = response(StatusCode::OK)
+                    .header(http::header::CONTENT_TYPE, APP_JSON)
+                    .body(Body::from(serde_json::to_string(&res)?))?;
+                Ok(ret)
+            }
+            None => {
+                let ret = response(StatusCode::NOT_FOUND)
+                    .header(http::header::CONTENT_TYPE, APP_JSON)
+                    .body(Body::empty())?;
+                Ok(ret)
+            }
+        }
     }
 }
 
@@ -126,7 +140,7 @@ impl ChannelConfigsHandler {
                 match self.channel_configs(req, &node_config).await {
                     Ok(k) => Ok(k),
                     Err(e) => {
-                        warn!("ChannelConfigHandler::handle: got error from channel_config: {e:?}");
+                        warn!("got error from channel_config: {e}");
                         Ok(e.to_public_response())
                     }
                 }
@@ -144,6 +158,53 @@ impl ChannelConfigsHandler {
         let q = ChannelConfigQuery::from_url(&url)?;
         info!("channel_configs  for q {q:?}");
         let ch_confs = nodenet::channelconfig::channel_configs(q.channel, ncc).await?;
+        let ret = response(StatusCode::OK)
+            .header(http::header::CONTENT_TYPE, APP_JSON)
+            .body(Body::from(serde_json::to_string(&ch_confs)?))?;
+        Ok(ret)
+    }
+}
+
+pub struct ChannelConfigQuorumHandler {}
+
+impl ChannelConfigQuorumHandler {
+    pub fn handler(req: &Request<Body>) -> Option<Self> {
+        if req.uri().path() == "/api/4/channel/config/quorum" {
+            Some(Self {})
+        } else {
+            None
+        }
+    }
+
+    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+        if req.method() == Method::GET {
+            let accept_def = APP_JSON;
+            let accept = req
+                .headers()
+                .get(http::header::ACCEPT)
+                .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
+            if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
+                match self.channel_config_quorum(req, &node_config).await {
+                    Ok(k) => Ok(k),
+                    Err(e) => {
+                        warn!("from channel_config_quorum: {e}");
+                        Ok(e.to_public_response())
+                    }
+                }
+            } else {
+                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+            }
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        }
+    }
+
+    async fn channel_config_quorum(&self, req: Request<Body>, ncc: &NodeConfigCached) -> Result<Response<Body>, Error> {
+        info!("channel_config_quorum");
+        let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+        let q = ChannelConfigQuery::from_url(&url)?;
+        info!("channel_config_quorum  for q {q:?}");
+        let ch_confs = nodenet::configquorum::find_config_basics_quorum(q.channel, q.range.into(), ncc).await?;
         let ret = response(StatusCode::OK)
             .header(http::header::CONTENT_TYPE, APP_JSON)
             .body(Body::from(serde_json::to_string(&ch_confs)?))?;

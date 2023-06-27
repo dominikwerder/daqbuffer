@@ -317,6 +317,8 @@ async fn http_service_inner(
         h.handle(req, &node_config).await
     } else if let Some(h) = api4::binned::BinnedHandler::handler(&req) {
         h.handle(req, &node_config).await
+    } else if let Some(h) = channelconfig::ChannelConfigQuorumHandler::handler(&req) {
+        h.handle(req, &node_config).await
     } else if let Some(h) = channelconfig::ChannelConfigsHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = channelconfig::ChannelConfigHandler::handler(&req) {

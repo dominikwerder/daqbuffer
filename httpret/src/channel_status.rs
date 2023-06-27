@@ -149,8 +149,9 @@ impl ChannelStatusEvents {
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("no scylla configured")))?;
         let scy = scyllaconn::create_scy_session(scyco).await?;
-        let chconf =
-            nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), node_config).await?;
+        let chconf = nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), node_config)
+            .await?
+            .ok_or_else(|| Error::with_msg_no_trace("channel config not found"))?;
         let do_one_before_range = true;
         match chconf {
             ChannelTypeConfigGen::Scylla(ch_conf) => {

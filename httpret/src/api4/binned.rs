@@ -27,7 +27,10 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
         let msg = format!("can not parse query: {}", e.msg());
         e.add_public_msg(msg)
     })?;
-    let ch_conf = ch_conf_from_binned(&query, node_config).await?;
+    // TODO handle None case better and return 404
+    let ch_conf = ch_conf_from_binned(&query, node_config)
+        .await?
+        .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
     let span1 = span!(
         Level::INFO,
         "httpret::binned",

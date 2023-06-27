@@ -1,3 +1,4 @@
+use err::thiserror;
 use err::Error;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
@@ -26,6 +27,17 @@ use std::fmt;
 use tokio::io::ErrorKind;
 
 const TEST_BACKEND: &str = "testbackend-00";
+
+#[derive(Debug, thiserror::Error)]
+#[error("ConfigParseError")]
+pub enum ConfigParseError {
+    NotSupportedOnNode,
+    FileNotFound,
+    PermissionDenied,
+    IO,
+    ParseError,
+    NotSupported,
+}
 
 #[derive(Debug)]
 pub struct NErr {
@@ -306,41 +318,40 @@ pub fn parse_config(inp: &[u8]) -> NRes<ChannelConfigs> {
     Ok((inp, ret))
 }
 
-async fn read_local_config_real(channel: SfDbChannel, ncc: &NodeConfigCached) -> Result<ChannelConfigs, Error> {
+async fn read_local_config_real(
+    channel: SfDbChannel,
+    ncc: &NodeConfigCached,
+) -> Result<ChannelConfigs, ConfigParseError> {
     let path = ncc
         .node
         .sf_databuffer
         .as_ref()
-        .ok_or_else(|| Error::with_msg(format!("missing sf databuffer config in node")))?
+        .ok_or_else(|| ConfigParseError::NotSupportedOnNode)?
         .data_base_path
         .join("config")
         .join(channel.name())
         .join("latest")
         .join("00000_Config");
-    // TODO use commonio here to wrap the error conversion
-    let buf = match tokio::fs::read(&path).await {
-        Ok(k) => k,
+    match tokio::fs::read(&path).await {
+        Ok(buf) => {
+            let config = parse_config(&buf).map_err(|_| ConfigParseError::ParseError)?;
+            Ok(config.1)
+        }
         Err(e) => match e.kind() {
-            ErrorKind::NotFound => {
-                let bt = err::bt::Backtrace::new();
-                error!("{bt:?}");
-                return Err(Error::with_public_msg(format!(
-                    "databuffer channel config file not found for channel {channel:?} at {path:?}"
-                )));
+            ErrorKind::NotFound => Err(ConfigParseError::FileNotFound),
+            ErrorKind::PermissionDenied => Err(ConfigParseError::PermissionDenied),
+            e => {
+                error!("read_local_config_real {e:?}");
+                Err(ConfigParseError::IO)
             }
-            ErrorKind::PermissionDenied => {
-                return Err(Error::with_public_msg(format!(
-                    "databuffer channel config file permission denied for channel {channel:?} at {path:?}"
-                )))
-            }
-            _ => return Err(e.into()),
         },
-    };
-    let config = parse_config(&buf).map_err(NErr::from)?;
-    Ok(config.1)
+    }
 }
 
-async fn read_local_config_test(channel: SfDbChannel, ncc: &NodeConfigCached) -> Result<ChannelConfigs, Error> {
+async fn read_local_config_test(
+    channel: SfDbChannel,
+    ncc: &NodeConfigCached,
+) -> Result<ChannelConfigs, ConfigParseError> {
     if channel.name() == "test-gen-i32-dim0-v00" {
         let ret = ChannelConfigs {
             format_version: 0,
@@ -402,12 +413,15 @@ async fn read_local_config_test(channel: SfDbChannel, ncc: &NodeConfigCached) ->
         };
         Ok(ret)
     } else {
-        Err(Error::with_msg_no_trace(format!("unknown test channel {channel:?}")))
+        Err(ConfigParseError::NotSupported)
     }
 }
 
 // TODO can I take parameters as ref, even when used in custom streams?
-pub async fn read_local_config(channel: SfDbChannel, ncc: NodeConfigCached) -> Result<ChannelConfigs, Error> {
+pub async fn read_local_config(
+    channel: SfDbChannel,
+    ncc: NodeConfigCached,
+) -> Result<ChannelConfigs, ConfigParseError> {
     if channel.backend() == TEST_BACKEND {
         read_local_config_test(channel, &ncc).await
     } else {
@@ -436,7 +450,7 @@ impl<'a> MatchingConfigEntry<'a> {
 pub fn extract_matching_config_entry<'a>(
     range: &NanoRange,
     channel_config: &'a ChannelConfigs,
-) -> Result<MatchingConfigEntry<'a>, Error> {
+) -> Result<MatchingConfigEntry<'a>, ConfigParseError> {
     let mut a: Vec<_> = channel_config.entries.iter().enumerate().map(|(i, x)| (i, x)).collect();
     a.sort_unstable_by_key(|(_, x)| x.ts.ns());
 

@@ -17,7 +17,6 @@ use items_2::framable::EventQueryJsonStringFrame;
 use items_2::framable::Framable;
 use items_2::frame::make_term_frame;
 use netpod::log::*;
-use netpod::ChannelTypeConfigGen;
 use netpod::Cluster;
 use netpod::Node;
 use query::api4::events::EventsSubQuery;
