@@ -1,5 +1,5 @@
 [workspace]
-members = ["daqbuffer", "httpret", "h5out", "items_proc", "nodenet", "httpclient", "dq"]
+members = ["crates/*"]
 
 [profile.release]
 opt-level = 1

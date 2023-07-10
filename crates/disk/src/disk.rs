@@ -17,6 +17,8 @@ pub mod read3;
 pub mod read4;
 pub mod streamlog;
 
+pub use parse;
+
 use bytes::Bytes;
 use bytes::BytesMut;
 use err::Error;

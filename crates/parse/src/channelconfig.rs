@@ -1,3 +1,5 @@
+use chrono::DateTime;
+use chrono::Utc;
 use err::thiserror;
 use err::Error;
 use netpod::log::*;
@@ -24,6 +26,8 @@ use num_traits::ToPrimitive;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
+use std::time::Duration;
+use std::time::SystemTime;
 use tokio::io::ErrorKind;
 
 const TEST_BACKEND: &str = "testbackend-00";
@@ -96,6 +100,8 @@ impl CompressionMethod {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ConfigEntry {
     pub ts: TsNano,
+    #[serde(with = "humantime_serde")]
+    pub ts_human: SystemTime,
     pub pulse: i64,
     pub ks: i32,
     pub bs: DtNano,
@@ -254,6 +260,7 @@ pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
         inp_e,
         Some(ConfigEntry {
             ts: TsNano::from_ns(ts as u64),
+            ts_human: SystemTime::UNIX_EPOCH + Duration::from_nanos(ts as u64),
             pulse,
             ks,
             bs,
@@ -353,11 +360,13 @@ async fn read_local_config_test(
     ncc: &NodeConfigCached,
 ) -> Result<ChannelConfigs, ConfigParseError> {
     if channel.name() == "test-gen-i32-dim0-v00" {
+        let ts = 0;
         let ret = ChannelConfigs {
             format_version: 0,
             channel_name: channel.name().into(),
             entries: vec![ConfigEntry {
-                ts: TsNano::from_ns(0),
+                ts: TsNano::from_ns(ts),
+                ts_human: SystemTime::UNIX_EPOCH + Duration::from_nanos(ts as u64),
                 pulse: 0,
                 ks: 2,
                 bs: DtNano::from_ns(DAY),
@@ -383,11 +392,13 @@ async fn read_local_config_test(
         };
         Ok(ret)
     } else if channel.name() == "test-gen-i32-dim0-v01" {
+        let ts = 0;
         let ret = ChannelConfigs {
             format_version: 0,
             channel_name: channel.name().into(),
             entries: vec![ConfigEntry {
-                ts: TsNano::from_ns(0),
+                ts: TsNano::from_ns(ts),
+                ts_human: SystemTime::UNIX_EPOCH + Duration::from_nanos(ts as u64),
                 pulse: 0,
                 ks: 2,
                 bs: DtNano::from_ns(DAY),
@@ -451,23 +462,41 @@ pub fn extract_matching_config_entry<'a>(
     range: &NanoRange,
     channel_config: &'a ChannelConfigs,
 ) -> Result<MatchingConfigEntry<'a>, ConfigParseError> {
+    const DO_DEBUG: bool = false;
+    if DO_DEBUG {
+        debug!("extract_matching_config_entry  range {range:?}");
+    }
     let mut a: Vec<_> = channel_config.entries.iter().enumerate().map(|(i, x)| (i, x)).collect();
     a.sort_unstable_by_key(|(_, x)| x.ts.ns());
+    let a = a;
+
+    if DO_DEBUG {
+        debug!("------------------------------------------------------------------");
+        for x in &a {
+            debug!("SORTED  {:3}  {:?}", x.0, x.1.ks);
+        }
+    }
 
     let b: Vec<_> = a
         .into_iter()
         .rev()
         .map({
-            let mut nx = None;
+            let mut last = None;
             move |(i, x)| {
-                let k = nx.clone();
-                nx = Some(x.ts.clone());
+                let k = last.clone();
+                last = Some(x.ts.clone());
                 (i, x, k)
             }
         })
         .collect();
 
-    let mut c: Vec<_> = b
+    if DO_DEBUG {
+        debug!("------------------------------------------------------------------");
+        for x in &b {
+            debug!("NEIGHB  {:3}  {:?}  {:?}", x.0, x.1.ks, x.2);
+        }
+    }
+    let c: Vec<_> = b
         .into_iter()
         .rev()
         .map(|(i, e, tsn)| {
@@ -487,25 +516,41 @@ pub fn extract_matching_config_entry<'a>(
                             range.end()
                         }
                     };
-                    (i, TsNano(q - p), e)
+                    (i, DtNano::from_ns(q - p), e)
                 } else {
-                    (i, TsNano(0), e)
+                    (i, DtNano::from_ns(0), e)
                 }
             } else {
                 if e.ts.ns() < range.end() {
                     if e.ts.ns() < range.beg() {
-                        (i, TsNano(range.delta()), e)
+                        (i, DtNano::from_ns(range.delta()), e)
                     } else {
-                        (i, TsNano(range.end() - e.ts.ns()), e)
+                        (i, DtNano::from_ns(range.end() - e.ts.ns()), e)
                     }
                 } else {
-                    (i, TsNano(0), e)
+                    (i, DtNano::from_ns(0), e)
                 }
             }
         })
         .collect();
 
-    c.sort_unstable_by_key(|x| u64::MAX - x.1.ns());
+    if DO_DEBUG {
+        debug!("------------------------------------------------------------------");
+        for (i, dt, e) in &c {
+            debug!("WEIGHT  {:3}  {:?}  {:?}  {:?}", i, dt, e.ks, e.ts);
+        }
+    }
+
+    let mut c = c;
+    c.sort_unstable_by_key(|(_, dt, _)| u64::MAX - dt.ns());
+    let c = c;
+
+    if DO_DEBUG {
+        debug!("------------------------------------------------------------------");
+        for (i, dt, e) in &c {
+            debug!("WEISOR  {:3}  {:?}  {:?}  {:?}", i, dt, e.ks, e.ts);
+        }
+    }
 
     if let Some(&(i, _, _)) = c.first() {
         Ok(MatchingConfigEntry::Single(&channel_config.entries[i]))

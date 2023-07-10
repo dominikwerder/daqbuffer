@@ -5,6 +5,7 @@ use netpod::range::evrange::NanoRange;
 use netpod::timeunits::DAY;
 use netpod::AppendToUrl;
 use netpod::ByteOrder;
+use netpod::ChConf;
 use netpod::ChannelConfigQuery;
 use netpod::ChannelConfigResponse;
 use netpod::ChannelTypeConfigGen;
@@ -15,6 +16,7 @@ use netpod::SfChFetchInfo;
 use netpod::SfDbChannel;
 use netpod::Shape;
 use netpod::APP_JSON;
+use serde::Serialize;
 
 const TEST_BACKEND: &str = "testbackend-00";
 
@@ -137,37 +139,31 @@ pub async fn channel_config(
     }
 }
 
-pub async fn channel_configs(channel: SfDbChannel, ncc: &NodeConfigCached) -> Result<Vec<ChannelTypeConfigGen>, Error> {
+#[derive(Debug, Serialize)]
+pub enum ChannelConfigsGen {
+    Scylla(ChConf),
+    SfDatabuffer(disk::parse::channelconfig::ChannelConfigs),
+}
+
+pub async fn channel_configs(channel: SfDbChannel, ncc: &NodeConfigCached) -> Result<ChannelConfigsGen, Error> {
     if channel.backend() == TEST_BACKEND {
-        let x = vec![channel_config_test_backend(channel)?];
-        Ok(x)
+        let ret = match channel_config_test_backend(channel)? {
+            ChannelTypeConfigGen::Scylla(x) => ChannelConfigsGen::Scylla(x),
+            ChannelTypeConfigGen::SfDatabuffer(x) => ChannelConfigsGen::SfDatabuffer(todo!()),
+        };
+        Ok(ret)
     } else if ncc.node_config.cluster.scylla.is_some() {
         debug!("try to get ChConf for scylla type backend");
         let ret = dbconn::channelconfig::chconf_from_scylla_type_backend(&channel, ncc)
             .await
             .map_err(Error::from)?;
-        Ok(vec![ChannelTypeConfigGen::Scylla(ret)])
+        Ok(ChannelConfigsGen::Scylla(ret))
     } else if ncc.node.sf_databuffer.is_some() {
         debug!("channel_config  channel {channel:?}");
         let configs = disk::channelconfig::channel_configs(channel.clone(), ncc)
             .await
             .map_err(|e| Error::from(e.to_string()))?;
-        let a = configs;
-        let mut configs = Vec::new();
-        for config in a.entries {
-            let ret = SfChFetchInfo::new(
-                channel.backend(),
-                channel.name(),
-                config.ks as _,
-                config.bs,
-                config.byte_order,
-                config.scalar_type,
-                Shape::from_sf_databuffer_raw(&config.shape)?,
-            );
-            let ret = ChannelTypeConfigGen::SfDatabuffer(ret);
-            configs.push(ret);
-        }
-        Ok(configs)
+        Ok(ChannelConfigsGen::SfDatabuffer(configs))
     } else {
         return Err(
             Error::with_msg_no_trace(format!("no channel config for backend {}", channel.backend()))

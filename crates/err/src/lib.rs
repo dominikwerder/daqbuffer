@@ -2,6 +2,7 @@
 
 pub use anyhow;
 pub use thiserror;
+pub use thiserror::Error as ThisError;
 
 pub mod bt {
     pub use backtrace::Backtrace;
@@ -20,13 +21,13 @@ use std::sync::PoisonError;
 
 pub type Res2<T> = anyhow::Result<T>;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, ThisError)]
 pub enum ErrA {
     #[error("bad-A")]
     Bad,
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, ThisError)]
 pub enum ErrB {
     #[error("worse-B")]
     Worse,
@@ -473,4 +474,49 @@ pub fn todoval<T>() -> T {
     let bt = backtrace::Backtrace::new();
     eprintln!("TODO\n{bt:?}");
     todo!("TODO todoval\n{bt:?}")
+}
+
+pub trait ToPublicError: std::error::Error {
+    fn to_public_error(&self) -> String;
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[derive(Debug, ThisError, Serialize, Deserialize)]
+    enum SomeErrorEnumA {
+        BadCase,
+        WithStringContent(String),
+        #[error("bad: {0}")]
+        WithStringContentFmt(String),
+    }
+
+    fn failing_a() -> Result<(), SomeErrorEnumA> {
+        Err(SomeErrorEnumA::BadCase)
+    }
+
+    #[test]
+    fn error_handle_00() {
+        assert_eq!(format!("{}", SomeErrorEnumA::BadCase), "BadCase");
+    }
+
+    #[test]
+    fn error_handle_01() {
+        assert_eq!(
+            format!("{}", SomeErrorEnumA::WithStringContent(format!("inner"))),
+            "WithStringContent"
+        );
+    }
+
+    #[test]
+    fn error_handle_02() {
+        assert_eq!(
+            format!(
+                "{}",
+                SomeErrorEnumA::WithStringContentFmt(format!("inner failure \"quoted\""))
+            ),
+            "bad: inner failure \"quoted\""
+        );
+    }
 }

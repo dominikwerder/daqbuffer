@@ -19,11 +19,11 @@ pub enum ConfigError {
     Error,
 }
 
-impl fmt::Display for ConfigError {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "ConfigError::{self:?}")
-    }
-}
+// impl fmt::Display for ConfigError {
+//     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+//         write!(fmt, "ConfigError::{self:?}")
+//     }
+// }
 
 impl From<ConfigParseError> for ConfigError {
     fn from(value: ConfigParseError) -> Self {
