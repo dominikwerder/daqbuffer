@@ -492,31 +492,64 @@ mod test {
         WithStringContentFmt(String),
     }
 
-    fn failing_a() -> Result<(), SomeErrorEnumA> {
+    #[derive(Debug, ThisError, Serialize, Deserialize)]
+    enum SomeErrorEnumB0 {
+        FromA(#[from] SomeErrorEnumA),
+    }
+
+    #[derive(Debug, ThisError, Serialize, Deserialize)]
+    enum SomeErrorEnumB1 {
+        FromA(#[from] SomeErrorEnumA),
+        #[error("caffe")]
+        Caffe(SomeErrorEnumA),
+    }
+
+    fn failing_a_00() -> Result<(), SomeErrorEnumA> {
         Err(SomeErrorEnumA::BadCase)
     }
 
-    #[test]
-    fn error_handle_00() {
-        assert_eq!(format!("{}", SomeErrorEnumA::BadCase), "BadCase");
+    fn failing_b0_00() -> Result<(), SomeErrorEnumB0> {
+        let ret = failing_a_00()?;
+        Ok(ret)
+    }
+
+    fn failing_b1_00() -> Result<(), SomeErrorEnumB1> {
+        let ret = failing_a_00()?;
+        Ok(ret)
     }
 
     #[test]
-    fn error_handle_01() {
+    fn error_handle_a_00() {
+        assert_eq!(format!("{}", SomeErrorEnumA::BadCase), "SomeErrorEnumA::BadCase");
+    }
+
+    #[test]
+    fn error_handle_a_01() {
         assert_eq!(
-            format!("{}", SomeErrorEnumA::WithStringContent(format!("inner"))),
-            "WithStringContent"
+            SomeErrorEnumA::WithStringContent(format!("inner")).to_string(),
+            "SomeErrorEnumA::WithStringContent"
         );
     }
 
     #[test]
-    fn error_handle_02() {
+    fn error_handle_a_02() {
         assert_eq!(
-            format!(
-                "{}",
-                SomeErrorEnumA::WithStringContentFmt(format!("inner failure \"quoted\""))
-            ),
+            SomeErrorEnumA::WithStringContentFmt(format!("inner failure \"quoted\"")).to_string(),
             "bad: inner failure \"quoted\""
         );
+    }
+
+    #[test]
+    fn error_handle_b0_00() {
+        let e = failing_b0_00().unwrap_err();
+        let s = e.to_string();
+        assert_eq!(s, "SomeErrorEnumB0::FromA(SomeErrorEnumA::BadCase)");
+    }
+
+    #[test]
+    fn error_handle_b1_00() {
+        let e = failing_b1_00().unwrap_err();
+        let s = e.to_string();
+        assert_eq!(s, "SomeErrorEnumB1::FromA(SomeErrorEnumA::BadCase)");
     }
 }
