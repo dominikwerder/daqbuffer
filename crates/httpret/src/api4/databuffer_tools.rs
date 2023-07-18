@@ -93,6 +93,7 @@ impl FindActiveHandler {
             type _A = netpod::BodyStream;
             let stream = FindActiveStream::new(40, 2, ncc);
             let stream = stream.chain(FindActiveStream::new(40, 3, ncc));
+            let stream = stream.chain(FindActiveStream::new(40, 4, ncc));
             let stream = stream
                 .map(|item| match item {
                     Ok(item) => {
@@ -186,7 +187,8 @@ async fn find_active_inner(
     for _ in 0..64 {
         rng.next();
     }
-    let tb_exp = now_sec / 60 / 60 / 24;
+    let tb_exp_dat = now_sec / 60 / 60 / 24;
+    let tb_exp_img = now_sec / 60 / 60;
     let re_tb = regex::Regex::new(r"(0000\d{15})").unwrap();
     let path = disk::paths::datapath_for_keyspace(ks, &node);
     let mut dir_stream = tokio::fs::read_dir(path).await?;
@@ -227,7 +229,7 @@ async fn find_active_inner(
                             // TODO bin-size depends on channel config
                             match s.parse::<u64>() {
                                 Ok(x) => {
-                                    if x == tb_exp {
+                                    if (ks == 2 || ks == 3) && x == tb_exp_dat || ks == 4 && x == tb_exp_img {
                                         // debug!("matching tb {}", chname);
                                         let sum = sum_dir_contents(e.path()).await?;
                                         if sum > 1024 * 1024 * 10 {
