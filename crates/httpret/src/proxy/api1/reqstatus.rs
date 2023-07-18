@@ -1,5 +1,5 @@
 use crate::bodystream::response;
-use err::Error;
+use crate::err::Error;
 use http::Method;
 use http::Request;
 use http::Response;
@@ -45,7 +45,7 @@ impl RequestStatusHandler {
         }
         let _body_data = hyper::body::to_bytes(body).await?;
         let status_id = &head.uri.path()[Self::path_prefix().len()..];
-        info!("RequestStatusHandler  status_id {:?}", status_id);
+        debug!("RequestStatusHandler  status_id {:?}", status_id);
 
         let back = {
             let mut ret = None;
@@ -59,7 +59,7 @@ impl RequestStatusHandler {
         };
         if let Some(back) = back {
             let url_str = format!("{}{}{}", back.url, Self::path_prefix(), status_id);
-            info!("try to ask {url_str}");
+            debug!("try to ask {url_str}");
             let req = Request::builder()
                 .method(Method::GET)
                 .uri(url_str)
@@ -71,7 +71,7 @@ impl RequestStatusHandler {
                 error!("backend returned error: {head:?}");
                 Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
             } else {
-                info!("backend returned OK");
+                debug!("backend returned OK");
                 Ok(response(StatusCode::OK).body(body)?)
             }
         } else {

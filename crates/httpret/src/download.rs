@@ -1,5 +1,5 @@
+use crate::err::Error;
 use crate::response;
-use crate::RetrievalError;
 use futures_util::TryStreamExt;
 use http::Method;
 use http::StatusCode;
@@ -67,11 +67,7 @@ impl DownloadHandler {
         }
     }
 
-    pub async fn get(
-        &self,
-        req: Request<Body>,
-        node_config: &NodeConfigCached,
-    ) -> Result<Response<Body>, RetrievalError> {
+    pub async fn get(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
         let (head, _body) = req.into_parts();
         let p2 = &head.uri.path()[Self::path_prefix().len()..];
         let base = match &node_config.node.sf_databuffer {
@@ -88,11 +84,7 @@ impl DownloadHandler {
         Ok(response(StatusCode::OK).body(Body::wrap_stream(s))?)
     }
 
-    pub async fn handle(
-        &self,
-        req: Request<Body>,
-        node_config: &NodeConfigCached,
-    ) -> Result<Response<Body>, RetrievalError> {
+    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
         if req.method() == Method::GET {
             self.get(req, node_config).await
         } else {

@@ -423,7 +423,7 @@ pub async fn host(bind: SocketAddr) -> Result<(), RetrievalError> {
                 Ok::<_, RetrievalError>(service_fn({
                     move |req| {
                         info!(
-                            "REQUEST  {:?} - {:?} - {:?} - {:?}",
+                            "http-request  {:?} - {:?} - {:?} - {:?}",
                             addr,
                             req.method(),
                             req.uri(),

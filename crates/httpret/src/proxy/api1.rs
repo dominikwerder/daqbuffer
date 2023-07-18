@@ -1,8 +1,8 @@
 pub mod reqstatus;
 
 use crate::bodystream::response;
+use crate::err::Error;
 use crate::ReqCtx;
-use err::Error;
 use http::HeaderValue;
 use http::Method;
 use http::Request;

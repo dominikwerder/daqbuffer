@@ -96,7 +96,7 @@ impl Drop for EventChunker {
             warn!("config_mismatch_discard {}", self.config_mismatch_discard);
         }
         debug!(
-            "EventChunker  Drop Stats:\ndecomp_dt_histo: {:?}\nitem_len_emit_histo: {:?}",
+            "EventChunker-stats {{ decomp_dt_histo: {:?}, item_len_emit_histo: {:?} }}",
             self.decomp_dt_histo, self.item_len_emit_histo
         );
     }
@@ -164,7 +164,7 @@ impl EventChunker {
         dbg_path: PathBuf,
         expand: bool,
     ) -> Self {
-        info!("{}::{}", Self::self_name(), "from_start");
+        debug!("{}::{}", Self::self_name(), "from_start");
         let need_min_max = match fetch_info.shape() {
             Shape::Scalar => 1024 * 8,
             Shape::Wave(_) => 1024 * 32,
@@ -210,7 +210,7 @@ impl EventChunker {
         dbg_path: PathBuf,
         expand: bool,
     ) -> Self {
-        info!("{}::{}", Self::self_name(), "from_event_boundary");
+        debug!("{}::{}", Self::self_name(), "from_event_boundary");
         let mut ret = Self::from_start(inp, fetch_info, range, stats_conf, dbg_path, expand);
         ret.state = DataFileState::Event;
         ret.need_min = 4;
@@ -440,7 +440,7 @@ impl EventChunker {
                         if discard {
                             self.discard_count += 1;
                         } else {
-                            ret.add_event(
+                            ret.push(
                                 ts,
                                 pulse,
                                 databuf.to_vec(),

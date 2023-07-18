@@ -4,6 +4,7 @@ pub mod bodystream;
 pub mod channel_status;
 pub mod channelconfig;
 pub mod download;
+pub mod err;
 pub mod gather;
 pub mod prometheus;
 pub mod proxy;
@@ -12,10 +13,11 @@ pub mod settings;
 
 use self::bodystream::ToPublicResponse;
 use crate::bodystream::response;
+use crate::err::Error;
 use crate::gather::gather_get_json;
 use crate::pulsemap::UpdateTask;
-use err::thiserror;
-use err::ThisError;
+use ::err::thiserror;
+use ::err::ThisError;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::StreamExt;
@@ -32,6 +34,7 @@ use net::SocketAddr;
 use netpod::is_false;
 use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
+use netpod::CmpZero;
 use netpod::NodeConfigCached;
 use netpod::ProxyConfig;
 use netpod::APP_JSON;
@@ -61,7 +64,8 @@ pub const PSI_DAQBUFFER_SEEN_URL: &'static str = "PSI-Daqbuffer-Seen-Url";
 
 #[derive(Debug, ThisError, Serialize, Deserialize)]
 pub enum RetrievalError {
-    Error(#[from] err::Error),
+    Error(#[from] ::err::Error),
+    Error2(#[from] crate::err::Error),
     TextError(String),
     #[serde(skip)]
     Hyper(#[from] hyper::Error),
@@ -79,6 +83,7 @@ trait IntoBoxedError: std::error::Error {}
 impl IntoBoxedError for net::AddrParseError {}
 impl IntoBoxedError for tokio::task::JoinError {}
 impl IntoBoxedError for api4::databuffer_tools::FindActiveError {}
+impl IntoBoxedError for std::string::FromUtf8Error {}
 
 impl<E> From<E> for RetrievalError
 where
@@ -86,6 +91,12 @@ where
 {
     fn from(value: E) -> Self {
         Self::TextError(value.to_string())
+    }
+}
+
+impl ::err::ToErr for RetrievalError {
+    fn to_err(self) -> ::err::Error {
+        ::err::Error::with_msg_no_trace(self.to_string())
     }
 }
 
@@ -114,11 +125,11 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), RetrievalError> {
             let node_config = node_config.clone();
             let addr = conn.remote_addr();
             async move {
-                Ok::<_, RetrievalError>(service_fn({
+                Ok::<_, Error>(service_fn({
                     move |req| {
                         // TODO send to logstash
                         info!(
-                            "REQUEST  {:?} - {:?} - {:?} - {:?}",
+                            "http-request  {:?} - {:?} - {:?} - {:?}",
                             addr,
                             req.method(),
                             req.uri(),
@@ -131,12 +142,15 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), RetrievalError> {
             }
         }
     });
-    Server::bind(&addr).serve(make_service).await?;
+    Server::bind(&addr)
+        .serve(make_service)
+        .await
+        .map(|e| RetrievalError::TextError(format!("{e:?}")))?;
     rawjh.await??;
     Ok(())
 }
 
-async fn http_service(req: Request<Body>, node_config: NodeConfigCached) -> Result<Response<Body>, RetrievalError> {
+async fn http_service(req: Request<Body>, node_config: NodeConfigCached) -> Result<Response<Body>, Error> {
     match http_service_try(req, &node_config).await {
         Ok(k) => Ok(k),
         Err(e) => {
@@ -146,13 +160,14 @@ async fn http_service(req: Request<Body>, node_config: NodeConfigCached) -> Resu
     }
 }
 
+// TODO move this and related stuff to separate module
 struct Cont<F> {
     f: Pin<Box<F>>,
 }
 
 impl<F, I> Future for Cont<F>
 where
-    F: Future<Output = Result<I, RetrievalError>>,
+    F: Future<Output = Result<I, Error>>,
 {
     type Output = <F as Future>::Output;
 
@@ -162,13 +177,13 @@ where
             Ok(k) => k,
             Err(e) => {
                 error!("Cont<F>  catch_unwind  {e:?}");
-                match e.downcast_ref::<RetrievalError>() {
+                match e.downcast_ref::<Error>() {
                     Some(e) => {
                         error!("Cont<F>  catch_unwind  is Error: {e:?}");
                     }
                     None => {}
                 }
-                Poll::Ready(Err(RetrievalError::TextError(format!("{e:?}"))))
+                Poll::Ready(Err(Error::with_msg_no_trace(format!("{e:?}"))))
             }
         }
     }
@@ -271,10 +286,7 @@ macro_rules! static_http_api1 {
     };
 }
 
-async fn http_service_try(
-    req: Request<Body>,
-    node_config: &NodeConfigCached,
-) -> Result<Response<Body>, RetrievalError> {
+async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     use http::HeaderValue;
     let mut urlmarks = Vec::new();
     urlmarks.push(format!("{}:{}", req.method(), req.uri()));
@@ -343,37 +355,37 @@ async fn http_service_inner(
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else if let Some(h) = api4::status::StatusNodesRecursive::handler(&req) {
-        h.handle(req, ctx, &node_config).await
+        Ok(h.handle(req, ctx, &node_config).await?)
     } else if let Some(h) = StatusBoardAllHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = api4::databuffer_tools::FindActiveHandler::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = api4::search::ChannelSearchHandler::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = api4::binned::BinnedHandler::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::ChannelConfigQuorumHandler::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::ChannelConfigsHandler::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::ChannelConfigHandler::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::ScyllaChannelsWithType::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::IocForChannel::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::ScyllaChannelsActive::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::ScyllaSeriesTsMsp::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::AmbigiousChannelNames::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = api4::events::EventsHandler::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channel_status::ConnectionStatusEvents::handler(&req) {
-        h.handle(req, ctx, &node_config).await
+        Ok(h.handle(req, ctx, &node_config).await?)
     } else if let Some(h) = channel_status::ChannelStatusEvents::handler(&req) {
-        h.handle(req, ctx, &node_config).await
+        Ok(h.handle(req, ctx, &node_config).await?)
     } else if path == "/api/4/prebinned" {
         if req.method() == Method::GET {
             Ok(prebinned(req, ctx, &node_config).await?)
@@ -417,29 +429,29 @@ async fn http_service_inner(
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else if let Some(h) = download::DownloadHandler::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = settings::SettingsThreadsMaxHandler::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = api1::Api1EventsBinaryHandler::handler(&req) {
-        h.handle(req, ctx, &node_config).await
+        Ok(h.handle(req, ctx, &node_config).await?)
     } else if let Some(h) = pulsemap::MapPulseScyllaHandler::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = pulsemap::IndexFullHttpFunction::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = pulsemap::MarkClosedHttpFunction::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = pulsemap::MapPulseLocalHttpFunction::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = pulsemap::MapPulseHistoHttpFunction::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = pulsemap::MapPulseHttpFunction::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = pulsemap::Api4MapPulse2HttpFunction::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = pulsemap::Api4MapPulseHttpFunction::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = api1::RequestStatusHandler::handler(&req) {
-        h.handle(req, &node_config).await
+        Ok(h.handle(req, &node_config).await?)
     } else if path.starts_with("/api/1/documentation/") {
         if req.method() == Method::GET {
             api_1_docs(path)
@@ -670,26 +682,33 @@ async fn update_search_cache(
     Ok(ret)
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct StatusBoardEntry {
     #[allow(unused)]
     #[serde(serialize_with = "instant_serde::ser")]
     ts_created: SystemTime,
     #[serde(serialize_with = "instant_serde::ser")]
     ts_updated: SystemTime,
-    #[serde(skip_serializing_if = "is_false")]
-    is_error: bool,
-    #[serde(skip_serializing_if = "is_false")]
-    is_ok: bool,
+    // #[serde(skip_serializing_if = "is_false")]
+    done: bool,
     // #[serde(skip_serializing_if = "Vec::is_empty")]
-    #[serde(skip)]
-    errors: Vec<Box<dyn std::error::Error + Send>>,
+    errors: Vec<::err::Error>,
+    // TODO make this a better Stats container and remove pub access.
+    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
+    error_count: usize,
+    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
+    warn_count: usize,
+    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
+    channel_not_found: usize,
+    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
+    subreq_fail: usize,
 }
 
 mod instant_serde {
     use super::*;
     use netpod::DATETIME_FMT_3MS;
     use serde::Serializer;
+
     pub fn ser<S: Serializer>(x: &SystemTime, ser: S) -> Result<S::Ok, S::Error> {
         use chrono::LocalResult;
         let dur = x.duration_since(std::time::UNIX_EPOCH).unwrap();
@@ -713,14 +732,48 @@ impl StatusBoardEntry {
         Self {
             ts_created: SystemTime::now(),
             ts_updated: SystemTime::now(),
-            is_error: false,
-            is_ok: false,
+            done: false,
             errors: Vec::new(),
+            error_count: 0,
+            warn_count: 0,
+            channel_not_found: 0,
+            subreq_fail: 0,
+        }
+    }
+
+    pub fn warn_inc(&mut self) {
+        self.warn_count += 1;
+    }
+
+    pub fn channel_not_found_inc(&mut self) {
+        self.channel_not_found += 1;
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct StatusBoardEntryUser {
+    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
+    error_count: usize,
+    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
+    warn_count: usize,
+    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
+    channel_not_found: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    errors: Vec<::err::PublicError>,
+}
+
+impl From<&StatusBoardEntry> for StatusBoardEntryUser {
+    fn from(e: &StatusBoardEntry) -> Self {
+        Self {
+            error_count: e.error_count,
+            warn_count: e.warn_count,
+            channel_not_found: e.channel_not_found,
+            errors: e.errors.iter().map(|e| e.to_public_error()).collect(),
         }
     }
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 pub struct StatusBoard {
     entries: BTreeMap<String, StatusBoardEntry>,
 }
@@ -741,7 +794,7 @@ impl StatusBoard {
         f.read_exact(&mut buf).unwrap();
         let n = u32::from_le_bytes(buf);
         let s = format!("{:08x}", n);
-        info!("new_status_id {s}");
+        debug!("new_status_id {s}");
         self.entries.insert(s.clone(), StatusBoardEntry::new());
         s
     }
@@ -757,6 +810,10 @@ impl StatusBoard {
         }
     }
 
+    pub fn get_entry(&mut self, status_id: &str) -> Option<&mut StatusBoardEntry> {
+        self.entries.get_mut(status_id)
+    }
+
     pub fn mark_alive(&mut self, status_id: &str) {
         match self.entries.get_mut(status_id) {
             Some(e) => {
@@ -768,12 +825,25 @@ impl StatusBoard {
         }
     }
 
-    pub fn mark_ok(&mut self, status_id: &str) {
+    pub fn mark_done(&mut self, status_id: &str) {
         match self.entries.get_mut(status_id) {
             Some(e) => {
                 e.ts_updated = SystemTime::now();
-                if !e.is_error {
-                    e.is_ok = true;
+                e.done = true;
+            }
+            None => {
+                error!("can not find status id {}", status_id);
+            }
+        }
+    }
+
+    pub fn add_error(&mut self, status_id: &str, err: ::err::Error) {
+        match self.entries.get_mut(status_id) {
+            Some(e) => {
+                e.ts_updated = SystemTime::now();
+                if e.errors.len() < 100 {
+                    e.errors.push(err);
+                    e.error_count += 1;
                 }
             }
             None => {
@@ -782,51 +852,18 @@ impl StatusBoard {
         }
     }
 
-    pub fn add_error<E>(&mut self, status_id: &str, error: E)
-    where
-        E: Into<Box<dyn std::error::Error + Send>>,
-    {
-        match self.entries.get_mut(status_id) {
-            Some(e) => {
-                e.ts_updated = SystemTime::now();
-                e.is_error = true;
-                e.is_ok = false;
-                e.errors.push(error.into());
-            }
-            None => {
-                error!("can not find status id {}", status_id);
-            }
-        }
-    }
-
-    pub fn status_as_json(&self, status_id: &str) -> String {
-        #[derive(Serialize)]
-        struct StatJs {
-            #[serde(skip_serializing_if = "Vec::is_empty")]
-            errors: Vec<::err::PublicError>,
-        }
+    pub fn status_as_json(&self, status_id: &str) -> StatusBoardEntryUser {
         match self.entries.get(status_id) {
-            Some(e) => {
-                if e.is_ok {
-                    let js = StatJs { errors: Vec::new() };
-                    return serde_json::to_string(&js).unwrap();
-                } else if e.is_error {
-                    // TODO
-                    // let errors = e.errors.iter().map(|e| (&e.0).into()).collect();
-                    let errors = vec![err::Error::with_msg_no_trace("TODO convert to user error").into()];
-                    let js = StatJs { errors };
-                    return serde_json::to_string(&js).unwrap();
-                } else {
-                    warn!("requestStatus for unfinished {status_id}");
-                    let js = StatJs { errors: Vec::new() };
-                    return serde_json::to_string(&js).unwrap();
-                }
-            }
+            Some(e) => e.into(),
             None => {
                 error!("can not find status id {}", status_id);
                 let e = ::err::Error::with_public_msg_no_trace(format!("Request status ID unknown {status_id}"));
-                let js = StatJs { errors: vec![e.into()] };
-                return serde_json::to_string(&js).unwrap();
+                StatusBoardEntryUser {
+                    error_count: 1,
+                    warn_count: 0,
+                    channel_not_found: 0,
+                    errors: vec![::err::Error::with_public_msg_no_trace("request-id not found").into()],
+                }
             }
         }
     }

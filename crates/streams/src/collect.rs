@@ -128,6 +128,7 @@ impl Collect {
                                 //total_duration += k.duration;
                             }
                         },
+                        _ => {}
                     }
                     Ok(())
                 }
@@ -281,6 +282,7 @@ where
                                 total_duration += k.duration;
                             }
                         },
+                        _ => {}
                     }
                 }
             },

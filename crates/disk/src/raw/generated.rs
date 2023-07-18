@@ -74,7 +74,7 @@ impl EventBlobsGeneratorI32Test00 {
             }
             let pulse = ts;
             let value = (ts / (MS * 100) % 1000) as T;
-            item.add_event(
+            item.push(
                 ts,
                 pulse,
                 value.to_be_bytes().to_vec(),
@@ -174,7 +174,7 @@ impl EventBlobsGeneratorI32Test01 {
             }
             let pulse = ts;
             let value = (ts / self.dts) as T;
-            item.add_event(
+            item.push(
                 ts,
                 pulse,
                 value.to_be_bytes().to_vec(),

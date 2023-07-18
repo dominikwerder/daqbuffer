@@ -1,3 +1,4 @@
+use crate::err::Error;
 use crate::response;
 use async_channel::Receiver;
 use async_channel::Sender;
@@ -6,7 +7,6 @@ use bytes::BufMut;
 use bytes::BytesMut;
 use chrono::TimeZone;
 use chrono::Utc;
-use err::Error;
 use futures_util::stream::FuturesOrdered;
 use futures_util::stream::FuturesUnordered;
 use futures_util::FutureExt;

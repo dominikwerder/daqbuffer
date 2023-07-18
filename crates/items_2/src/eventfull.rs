@@ -80,7 +80,7 @@ mod decomps_serde {
 }
 
 impl EventFull {
-    pub fn add_event(
+    pub fn push(
         &mut self,
         ts: u64,
         pulse: u64,
@@ -117,6 +117,13 @@ impl EventFull {
         self.be.truncate(nkeep);
         self.shapes.truncate(nkeep);
         self.comps.truncate(nkeep);
+    }
+
+    // NOTE needed because the databuffer actually doesn't write the correct shape per event.
+    pub fn overwrite_all_shapes(&mut self, shape: &Shape) {
+        for u in &mut self.shapes {
+            *u = shape.clone();
+        }
     }
 }
 

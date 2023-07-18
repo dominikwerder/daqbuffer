@@ -466,6 +466,12 @@ impl From<&Error> for PublicError {
     }
 }
 
+impl fmt::Display for PublicError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{}", self.msg)
+    }
+}
+
 pub fn todo() {
     let bt = backtrace::Backtrace::new();
     eprintln!("TODO\n{bt:?}");

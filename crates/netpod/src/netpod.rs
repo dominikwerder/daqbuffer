@@ -69,6 +69,11 @@ impl CmpZero for u32 {
         *self == 0
     }
 }
+impl CmpZero for usize {
+    fn is_zero(&self) -> bool {
+        *self == 0
+    }
+}
 
 pub struct BodyStream {
     //pub receiver: async_channel::Receiver<Result<Bytes, Error>>,
@@ -2262,6 +2267,17 @@ pub struct ReadExactStats {
 impl ReadExactStats {
     pub fn new(duration: Duration) -> Self {
         Self { duration }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Api1WarningStats {
+    pub subreq_fail: usize,
+}
+
+impl Api1WarningStats {
+    pub fn new() -> Self {
+        Self { subreq_fail: 0 }
     }
 }
 

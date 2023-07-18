@@ -1,6 +1,6 @@
 use crate::bodystream::response;
 use crate::bodystream::ToPublicResponse;
-use err::Error;
+use crate::err::Error;
 use http::Method;
 use http::Request;
 use http::Response;

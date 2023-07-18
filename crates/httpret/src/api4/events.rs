@@ -1,8 +1,8 @@
 use crate::channelconfig::chconf_from_events_v1;
+use crate::err::Error;
 use crate::response;
 use crate::response_err;
 use crate::ToPublicResponse;
-use err::Error;
 use futures_util::stream;
 use futures_util::TryStreamExt;
 use http::Method;

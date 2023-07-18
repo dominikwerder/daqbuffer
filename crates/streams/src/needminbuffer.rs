@@ -40,7 +40,7 @@ impl NeedMinBuffer {
 // TODO collect somewhere else
 impl Drop for NeedMinBuffer {
     fn drop(&mut self) {
-        debug!("NeedMinBuffer  Drop Stats:\nbuf_len_histo: {:?}", self.buf_len_histo);
+        debug!("NeedMinBuffer-drop {{ buf_len_histo: {:?} }}", self.buf_len_histo);
     }
 }
 

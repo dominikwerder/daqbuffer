@@ -1,5 +1,5 @@
+use crate::err::Error;
 use crate::response;
-use err::Error;
 use http::Method;
 use http::StatusCode;
 use hyper::Body;

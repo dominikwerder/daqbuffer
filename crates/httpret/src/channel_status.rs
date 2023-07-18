@@ -1,6 +1,6 @@
 use crate::bodystream::response;
+use crate::err::Error;
 use crate::ReqCtx;
-use err::Error;
 use futures_util::StreamExt;
 use http::Method;
 use http::Request;

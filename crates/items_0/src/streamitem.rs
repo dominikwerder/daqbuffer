@@ -42,6 +42,7 @@ pub enum StatsItem {
     EventDataReadStats(EventDataReadStats),
     RangeFilterStats(RangeFilterStats),
     DiskStats(DiskStats),
+    Warnings(),
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

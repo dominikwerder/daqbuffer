@@ -1,8 +1,8 @@
 use crate::bodystream::response;
 use crate::bodystream::ToPublicResponse;
 use crate::channelconfig::ch_conf_from_binned;
+use crate::err::Error;
 use crate::response_err;
-use err::Error;
 use http::Method;
 use http::Request;
 use http::Response;
@@ -21,7 +21,9 @@ use url::Url;
 
 async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     debug!("{:?}", req);
-    let reqid = crate::status_board()?.new_status_id();
+    let reqid = crate::status_board()
+        .map_err(|e| Error::with_msg_no_trace(e.to_string()))?
+        .new_status_id();
     let (_head, _body) = req.into_parts();
     let query = BinnedQuery::from_url(&url).map_err(|e| {
         error!("binned_json: {e:?}");

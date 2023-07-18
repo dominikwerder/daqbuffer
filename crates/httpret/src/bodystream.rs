@@ -1,4 +1,4 @@
-use err::Error;
+use crate::err::Error;
 use futures_util::StreamExt;
 use http::HeaderMap;
 use http::Response;
@@ -25,6 +25,34 @@ pub trait ToPublicResponse {
 impl ToPublicResponse for Error {
     fn to_public_response(&self) -> Response<Body> {
         self.0.to_public_response()
+    }
+}
+
+impl ToPublicResponse for ::err::Error {
+    fn to_public_response(&self) -> Response<Body> {
+        use err::Reason;
+        let e = self.to_public_error();
+        let status = match e.reason() {
+            Some(Reason::BadRequest) => StatusCode::BAD_REQUEST,
+            Some(Reason::InternalError) => StatusCode::INTERNAL_SERVER_ERROR,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        };
+        let msg = match serde_json::to_string(&e) {
+            Ok(s) => s,
+            Err(_) => "can not serialize error".into(),
+        };
+        match response(status)
+            .header(http::header::ACCEPT, APP_JSON)
+            .body(Body::from(msg))
+        {
+            Ok(res) => res,
+            Err(e) => {
+                error!("can not generate http error response {e:?}");
+                let mut res = Response::new(Body::default());
+                *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+                res
+            }
+        }
     }
 }
 

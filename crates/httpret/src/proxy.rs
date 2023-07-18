@@ -6,6 +6,7 @@ use crate::api1::channel_search_list_v1;
 use crate::api1::gather_json_2_v1;
 use crate::api_1_docs;
 use crate::api_4_docs;
+use crate::err::Error;
 use crate::gather::gather_get_json_generic;
 use crate::gather::SubRes;
 use crate::pulsemap::MapPulseQuery;
@@ -14,7 +15,6 @@ use crate::response_err;
 use crate::Cont;
 use crate::ReqCtx;
 use crate::PSI_DAQBUFFER_SERVICE_MARK;
-use err::Error;
 use futures_util::pin_mut;
 use futures_util::Stream;
 use http::Method;
@@ -66,9 +66,8 @@ pub async fn proxy(proxy_config: ProxyConfig) -> Result<(), Error> {
             async move {
                 Ok::<_, Error>(service_fn({
                     move |req| {
-                        // TODO send to logstash
                         info!(
-                            "REQUEST  {:?} - {:?} - {:?} - {:?}",
+                            "http-request  {:?} - {:?} - {:?} - {:?}",
                             addr,
                             req.method(),
                             req.uri(),
@@ -159,13 +158,13 @@ async fn proxy_http_service_inner(
         Ok(proxy_single_backend_query::<ChannelConfigQuery>(req, ctx, proxy_config).await?)
     } else if path.starts_with("/api/1/documentation/") {
         if req.method() == Method::GET {
-            api_1_docs(path)
+            Ok(api_1_docs(path)?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else if path.starts_with("/api/4/documentation/") {
         if req.method() == Method::GET {
-            api_4_docs(path)
+            Ok(api_4_docs(path)?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }

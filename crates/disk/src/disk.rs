@@ -61,6 +61,7 @@ use tokio::io::AsyncReadExt;
 use tokio::io::AsyncSeekExt;
 use tokio::io::ReadBuf;
 use tokio::sync::mpsc;
+use tracing::Instrument;
 
 // TODO move to databuffer-specific crate
 // TODO duplicate of SfChFetchInfo?
@@ -347,8 +348,10 @@ fn start_read5(
             }
         }
         let n = pos - pos_beg;
-        info!("read5  done  {n}");
+        debug!("read5  done  {n}");
     };
+    let span = tracing::span!(tracing::Level::INFO, "read5", reqid);
+    let fut = fut.instrument(span);
     tokio::task::spawn(fut);
     Ok(())
 }

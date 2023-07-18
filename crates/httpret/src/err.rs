@@ -37,6 +37,10 @@ impl Error {
     pub fn add_public_msg(self, msg: impl Into<String>) -> Self {
         Error(self.0.add_public_msg(msg))
     }
+
+    pub fn from_to_string<E: ToString>(e: E) -> Self {
+        Self::with_msg_no_trace(e.to_string())
+    }
 }
 
 impl fmt::Debug for Error {
@@ -93,3 +97,4 @@ impl Convable for http::header::ToStrError {}
 impl Convable for hyper::Error {}
 impl Convable for std::array::TryFromSliceError {}
 impl Convable for err::anyhow::Error {}
+impl Convable for crate::RetrievalError {}

@@ -1,5 +1,5 @@
+use crate::err::Error;
 use crate::response;
-use crate::RetrievalError;
 use futures_util::select;
 use futures_util::FutureExt;
 use http::Method;
@@ -33,7 +33,7 @@ struct GatherHost {
     inst: String,
 }
 
-async fn process_answer(res: Response<Body>) -> Result<JsonValue, RetrievalError> {
+async fn process_answer(res: Response<Body>) -> Result<JsonValue, Error> {
     let (pre, mut body) = res.into_parts();
     if pre.status != StatusCode::OK {
         use hyper::body::HttpBody;
@@ -55,14 +55,11 @@ async fn process_answer(res: Response<Body>) -> Result<JsonValue, RetrievalError
             Ok(k) => k,
             Err(_e) => JsonValue::String(String::from_utf8(body_all.to_vec())?),
         };
-        Ok::<_, RetrievalError>(val)
+        Ok::<_, Error>(val)
     }
 }
 
-pub async fn unused_gather_json_from_hosts(
-    req: Request<Body>,
-    pathpre: &str,
-) -> Result<Response<Body>, RetrievalError> {
+pub async fn unused_gather_json_from_hosts(req: Request<Body>, pathpre: &str) -> Result<Response<Body>, Error> {
     let (part_head, part_body) = req.into_parts();
     let bodyslice = hyper::body::to_bytes(part_body).await?;
     let gather_from: GatherFrom = serde_json::from_slice(&bodyslice)?;
@@ -82,7 +79,7 @@ pub async fn unused_gather_json_from_hosts(
         let task = tokio::spawn(async move {
             select! {
               _ = sleep(Duration::from_millis(1500)).fuse() => {
-                Err(RetrievalError::with_msg("timeout"))
+                Err(Error::with_msg_no_trace(format!("timeout")))
               }
               res = Client::new().request(req?).fuse() => Ok(process_answer(res?).await?)
             }
@@ -115,10 +112,7 @@ pub async fn unused_gather_json_from_hosts(
     Ok(res)
 }
 
-pub async fn gather_get_json(
-    req: Request<Body>,
-    node_config: &NodeConfigCached,
-) -> Result<Response<Body>, RetrievalError> {
+pub async fn gather_get_json(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
     let (head, body) = req.into_parts();
     let _bodyslice = hyper::body::to_bytes(body).await?;
     let pathpre = "/api/4/gather/";
@@ -136,7 +130,7 @@ pub async fn gather_get_json(
             let task = tokio::spawn(async move {
                 select! {
                   _ = sleep(Duration::from_millis(1500)).fuse() => {
-                    Err(RetrievalError::with_msg("timeout"))
+                    Err(Error::with_msg_no_trace(format!("timeout")))
                   }
                   res = Client::new().request(req?).fuse() => Ok(process_answer(res?).await?)
                 }
@@ -194,23 +188,23 @@ pub async fn gather_get_json_generic<SM, NT, FT, OUT>(
     // TODO use deadline instead.
     // TODO Wait a bit longer compared to remote to receive partial results.
     timeout: Duration,
-) -> Result<OUT, RetrievalError>
+) -> Result<OUT, Error>
 where
     SM: Send + 'static,
-    NT: Fn(String, Response<Body>) -> Pin<Box<dyn Future<Output = Result<SubRes<SM>, RetrievalError>> + Send>>
+    NT: Fn(String, Response<Body>) -> Pin<Box<dyn Future<Output = Result<SubRes<SM>, Error>> + Send>>
         + Send
         + Sync
         + Copy
         + 'static,
-    FT: Fn(Vec<(Tag, Result<SubRes<SM>, RetrievalError>)>) -> Result<OUT, RetrievalError>,
+    FT: Fn(Vec<(Tag, Result<SubRes<SM>, Error>)>) -> Result<OUT, Error>,
 {
     // TODO remove magic constant
     let extra_timeout = Duration::from_millis(3000);
     if urls.len() != bodies.len() {
-        return Err(RetrievalError::TextError(format!("unequal numbers of urls and bodies")));
+        return Err(Error::with_msg_no_trace(format!("unequal numbers of urls and bodies")));
     }
     if urls.len() != tags.len() {
-        return Err(RetrievalError::TextError(format!("unequal numbers of urls and tags")));
+        return Err(Error::with_msg_no_trace(format!("unequal numbers of urls and tags")));
     }
     let spawned: Vec<_> = urls
         .into_iter()
@@ -240,7 +234,7 @@ where
                 select! {
                     _ = sleep(timeout + extra_timeout).fuse() => {
                         error!("PROXY TIMEOUT");
-                        Err(RetrievalError::TextError(format!("timeout")))
+                        Err(Error::with_msg_no_trace(format!("timeout")))
                     }
                     res = {
                         let client = Client::new();
