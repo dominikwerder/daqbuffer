@@ -1,8 +1,8 @@
 use crate::bodystream::response;
 use crate::bodystream::ToPublicResponse;
 use crate::channelconfig::ch_conf_from_binned;
-use crate::err::Error;
 use crate::response_err;
+use err::Error;
 use http::Method;
 use http::Request;
 use http::Response;
@@ -20,7 +20,8 @@ use tracing::Instrument;
 use url::Url;
 
 async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    debug!("httpret  plain_events_json  req: {:?}", req);
+    debug!("{:?}", req);
+    let reqid = crate::status_board()?.new_status_id();
     let (_head, _body) = req.into_parts();
     let query = BinnedQuery::from_url(&url).map_err(|e| {
         error!("binned_json: {e:?}");
@@ -41,7 +42,7 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
     span1.in_scope(|| {
         debug!("begin");
     });
-    let item = streams::timebinnedjson::timebinned_json(query, ch_conf, node_config.node_config.cluster.clone())
+    let item = streams::timebinnedjson::timebinned_json(query, ch_conf, reqid, node_config.node_config.cluster.clone())
         .instrument(span1)
         .await?;
     let buf = serde_json::to_vec(&item)?;

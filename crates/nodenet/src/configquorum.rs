@@ -86,6 +86,19 @@ pub async fn find_config_basics_quorum(
     ncc: &NodeConfigCached,
 ) -> Result<Option<ChannelTypeConfigGen>, Error> {
     if let Some(_cfg) = &ncc.node.sf_databuffer {
+        let channel = if channel.name().is_empty() {
+            if let Some(_) = channel.series() {
+                let pgclient = dbconn::create_connection(&ncc.node_config.cluster.database).await?;
+                let pgclient = std::sync::Arc::new(pgclient);
+                dbconn::find_sf_channel_by_series(channel, pgclient)
+                    .await
+                    .map_err(|e| Error::with_msg_no_trace(e.to_string()))?
+            } else {
+                channel
+            }
+        } else {
+            channel
+        };
         match find_sf_ch_config_quorum(channel, range, ncc).await? {
             Some(x) => Ok(Some(ChannelTypeConfigGen::SfDatabuffer(x))),
             None => Ok(None),

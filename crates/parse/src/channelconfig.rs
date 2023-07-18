@@ -1,7 +1,4 @@
-use chrono::DateTime;
-use chrono::Utc;
-use err::thiserror;
-use err::Error;
+use err::*;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::timeunits::DAY;
@@ -32,57 +29,43 @@ use tokio::io::ErrorKind;
 
 const TEST_BACKEND: &str = "testbackend-00";
 
-#[derive(Debug, thiserror::Error)]
-#[error("ConfigParseError")]
+#[derive(Debug, ThisError)]
+// #[error("ConfigParseError")]
 pub enum ConfigParseError {
     NotSupportedOnNode,
     FileNotFound,
     PermissionDenied,
     IO,
-    ParseError,
+    ParseError(String),
     NotSupported,
 }
 
-#[derive(Debug)]
-pub struct NErr {
-    msg: String,
-}
-
-impl<T: fmt::Debug> From<nom::Err<T>> for NErr {
+impl<T: fmt::Debug> From<nom::Err<T>> for ConfigParseError {
     fn from(k: nom::Err<T>) -> Self {
-        Self {
-            msg: format!("nom::Err<T> {:?}", k),
-        }
+        let msg = format!("nom::Err<T> {:?}", k);
+        Self::ParseError(msg)
     }
 }
 
-impl<I> nom::error::ParseError<I> for NErr {
+impl<I> nom::error::ParseError<I> for ConfigParseError {
     fn from_error_kind(_input: I, kind: nom::error::ErrorKind) -> Self {
-        Self {
-            msg: format!("ParseError  {:?}", kind),
-        }
+        let msg = format!("ParseError kind {:?}", kind);
+        Self::ParseError(msg)
     }
 
     fn append(_input: I, kind: nom::error::ErrorKind, other: Self) -> Self {
-        Self {
-            msg: format!("ParseError  kind {:?}  other {:?}", kind, other),
-        }
+        let msg = format!("ParseError kind {:?} other {:?}", kind, other);
+        Self::ParseError(msg)
     }
 }
 
-impl From<NErr> for Error {
-    fn from(x: NErr) -> Self {
-        Self::with_msg_no_trace(x.msg)
-    }
-}
-
-type NRes<'a, O> = nom::IResult<&'a [u8], O, NErr>;
+type NRes<'a, O> = nom::IResult<&'a [u8], O, ConfigParseError>;
 
 fn mkerr<'a, S, O>(msg: S) -> NRes<'a, O>
 where
     S: Into<String>,
 {
-    let e = NErr { msg: msg.into() };
+    let e = ConfigParseError::ParseError(msg.into());
     Err(nom::Err::Error(e))
 }
 
@@ -287,7 +270,7 @@ pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
 }
 
 /// Parse a complete configuration file from given in-memory input buffer.
-pub fn parse_config(inp: &[u8]) -> NRes<ChannelConfigs> {
+fn parse_config_inner(inp: &[u8]) -> NRes<ChannelConfigs> {
     let (inp, ver) = be_i16(inp)?;
     let (inp, len1) = be_i32(inp)?;
     if len1 <= 8 || len1 > 500 {
@@ -325,6 +308,11 @@ pub fn parse_config(inp: &[u8]) -> NRes<ChannelConfigs> {
     Ok((inp, ret))
 }
 
+pub fn parse_config(inp: &[u8]) -> Result<ChannelConfigs, ConfigParseError> {
+    let (_inp, ret) = parse_config_inner(inp).map_err(|e| ConfigParseError::ParseError(e.to_string()))?;
+    Ok(ret)
+}
+
 async fn read_local_config_real(
     channel: SfDbChannel,
     ncc: &NodeConfigCached,
@@ -340,10 +328,7 @@ async fn read_local_config_real(
         .join("latest")
         .join("00000_Config");
     match tokio::fs::read(&path).await {
-        Ok(buf) => {
-            let config = parse_config(&buf).map_err(|_| ConfigParseError::ParseError)?;
-            Ok(config.1)
-        }
+        Ok(buf) => parse_config(&buf),
         Err(e) => match e.kind() {
             ErrorKind::NotFound => Err(ConfigParseError::FileNotFound),
             ErrorKind::PermissionDenied => Err(ConfigParseError::PermissionDenied),
@@ -579,13 +564,13 @@ mod test {
     #[test]
     fn parse_dummy() {
         let config = parse_config(&[0, 0, 0, 0, 0, 11, 0x61, 0x62, 0x63, 0, 0, 0, 11, 0, 0, 0, 1]).unwrap();
-        assert_eq!(0, config.1.format_version);
-        assert_eq!("abc", config.1.channel_name);
+        assert_eq!(0, config.format_version);
+        assert_eq!("abc", config.channel_name);
     }
 
     #[test]
     fn open_file() {
-        let config = parse_config(&read_data()).unwrap().1;
+        let config = parse_config(&read_data()).unwrap();
         assert_eq!(config.format_version, 0);
         assert_eq!(config.entries.len(), 18);
         for e in &config.entries {

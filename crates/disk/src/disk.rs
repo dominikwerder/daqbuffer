@@ -283,6 +283,7 @@ fn start_read5(
     file: File,
     tx: async_channel::Sender<Result<FileChunkRead, Error>>,
     disk_io_tune: DiskIoTune,
+    reqid: String,
 ) -> Result<(), Error> {
     let fut = async move {
         let mut file = file;
@@ -300,7 +301,7 @@ fn start_read5(
             }
         };
         let mut pos = pos_beg;
-        info!("read5  begin  {disk_io_tune:?}");
+        debug!("read5  begin  {disk_io_tune:?}");
         loop {
             let mut buf = BytesMut::new();
             buf.resize(disk_io_tune.read_buffer_len, 0);
@@ -357,9 +358,9 @@ pub struct FileContentStream5 {
 }
 
 impl FileContentStream5 {
-    pub fn new(path: PathBuf, file: File, disk_io_tune: DiskIoTune) -> Result<Self, Error> {
+    pub fn new(path: PathBuf, file: File, disk_io_tune: DiskIoTune, reqid: String) -> Result<Self, Error> {
         let (tx, rx) = async_channel::bounded(32);
-        start_read5(path, file, tx, disk_io_tune)?;
+        start_read5(path, file, tx, disk_io_tune, reqid)?;
         let ret = Self { rx };
         Ok(ret)
     }
@@ -747,11 +748,16 @@ impl Stream for FileContentStream4 {
     }
 }
 
-pub fn file_content_stream(
+pub fn file_content_stream<S>(
     path: PathBuf,
     file: File,
     disk_io_tune: DiskIoTune,
-) -> Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>> {
+    reqid: S,
+) -> Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>
+where
+    S: Into<String>,
+{
+    let reqid = reqid.into();
     debug!("file_content_stream  disk_io_tune {disk_io_tune:?}");
     match &disk_io_tune.read_sys {
         ReadSys::TokioAsyncRead => {
@@ -771,7 +777,7 @@ pub fn file_content_stream(
             Box::pin(s) as _
         }
         ReadSys::Read5 => {
-            let s = FileContentStream5::new(path, file, disk_io_tune).unwrap();
+            let s = FileContentStream5::new(path, file, disk_io_tune, reqid).unwrap();
             Box::pin(s) as _
         }
     }

@@ -24,12 +24,13 @@ use std::time::Instant;
 pub async fn plain_events_json(
     evq: &PlainEventsQuery,
     ch_conf: ChannelTypeConfigGen,
+    reqid: String,
     cluster: &Cluster,
 ) -> Result<JsonValue, Error> {
     info!("plain_events_json  evquery {:?}", evq);
     let select = EventsSubQuerySelect::new(ch_conf, evq.range().clone(), evq.transform().clone());
     let settings = EventsSubQuerySettings::from(evq);
-    let subq = EventsSubQuery::from_parts(select, settings);
+    let subq = EventsSubQuery::from_parts(select, settings, reqid);
     // TODO remove magic constant
     let deadline = Instant::now() + evq.timeout();
     let mut tr = build_merged_event_transform(evq.transform())?;

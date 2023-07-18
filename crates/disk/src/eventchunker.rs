@@ -1,8 +1,8 @@
-use bitshuffle::bitshuffle_decompress;
 use bytes::Buf;
 use bytes::BytesMut;
 use err::thiserror;
 use err::Error;
+use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::streamitem::RangeCompletableItem;
@@ -21,23 +21,21 @@ use netpod::ScalarType;
 use netpod::SfChFetchInfo;
 use netpod::Shape;
 use parse::channelconfig::CompressionMethod;
+use serde::Deserialize;
+use serde::Serialize;
 use std::io::Cursor;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
-use std::time::Instant;
 use streams::dtflags::*;
 use streams::filechunkread::FileChunkRead;
 use streams::needminbuffer::NeedMinBuffer;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, ThisError, Serialize, Deserialize)]
 pub enum DataParseError {
-    #[error("DataFrameLengthMismatch")]
     DataFrameLengthMismatch,
-    #[error("FileHeaderTooShort")]
     FileHeaderTooShort,
-    #[error("BadVersionTag")]
     BadVersionTag,
     #[error("HeaderTooLarge")]
     HeaderTooLarge,
@@ -59,9 +57,7 @@ pub enum DataParseError {
     ShapedWithoutDims,
     #[error("TooManyDims")]
     TooManyDims,
-    #[error("UnknownCompression")]
     UnknownCompression,
-    #[error("BadCompresionBlockSize")]
     BadCompresionBlockSize,
 }
 
@@ -83,7 +79,6 @@ pub struct EventChunker {
     dbg_path: PathBuf,
     last_ts: u64,
     expand: bool,
-    do_decompress: bool,
     decomp_dt_histo: HistoLog2,
     item_len_emit_histo: HistoLog2,
     seen_before_range_count: usize,
@@ -155,36 +150,6 @@ fn is_config_match(is_array: &bool, ele_count: &u64, fetch_info: &SfChFetchInfo)
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-pub enum DecompError {
-    #[error("Error")]
-    Error,
-}
-
-fn decompress(databuf: &[u8], type_size: u32, ele_count: u64) -> Result<Vec<u8>, DecompError> {
-    if databuf.len() < 13 {
-        return Err(DecompError::Error);
-    }
-    let ts1 = Instant::now();
-    let decomp_bytes = type_size as u64 * ele_count;
-    let mut decomp = vec![0; decomp_bytes as usize];
-    let ele_size = type_size;
-    // TODO limit the buf slice range
-    match bitshuffle_decompress(&databuf[12..], &mut decomp, ele_count as usize, ele_size as usize, 0) {
-        Ok(c1) => {
-            if 12 + c1 != databuf.len() {}
-            let ts2 = Instant::now();
-            let dt = ts2.duration_since(ts1);
-            // TODO analyze the histo
-            //self.decomp_dt_histo.ingest(dt.as_secs() as u32 + dt.subsec_micros());
-            Ok(decomp)
-        }
-        Err(e) => {
-            return Err(DecompError::Error);
-        }
-    }
-}
-
 impl EventChunker {
     pub fn self_name() -> &'static str {
         std::any::type_name::<Self>()
@@ -198,14 +163,8 @@ impl EventChunker {
         stats_conf: EventChunkerConf,
         dbg_path: PathBuf,
         expand: bool,
-        do_decompress: bool,
     ) -> Self {
-        info!(
-            "{}::{}  do_decompress {}",
-            Self::self_name(),
-            "from_start",
-            do_decompress
-        );
+        info!("{}::{}", Self::self_name(), "from_start");
         let need_min_max = match fetch_info.shape() {
             Shape::Scalar => 1024 * 8,
             Shape::Wave(_) => 1024 * 32,
@@ -231,7 +190,6 @@ impl EventChunker {
             dbg_path,
             last_ts: 0,
             expand,
-            do_decompress,
             decomp_dt_histo: HistoLog2::new(8),
             item_len_emit_histo: HistoLog2::new(0),
             seen_before_range_count: 0,
@@ -251,15 +209,9 @@ impl EventChunker {
         stats_conf: EventChunkerConf,
         dbg_path: PathBuf,
         expand: bool,
-        do_decompress: bool,
     ) -> Self {
-        info!(
-            "{}::{}  do_decompress {}",
-            Self::self_name(),
-            "from_event_boundary",
-            do_decompress
-        );
-        let mut ret = Self::from_start(inp, fetch_info, range, stats_conf, dbg_path, expand, do_decompress);
+        info!("{}::{}", Self::self_name(), "from_event_boundary");
+        let mut ret = Self::from_start(inp, fetch_info, range, stats_conf, dbg_path, expand);
         ret.state = DataFileState::Event;
         ret.need_min = 4;
         ret.inp.set_need_min(4);
@@ -275,7 +227,7 @@ impl EventChunker {
     fn parse_buf_inner(&mut self, buf: &mut BytesMut) -> Result<ParseResult, DataParseError> {
         use byteorder::ReadBytesExt;
         use byteorder::BE;
-        info!("parse_buf_inner  buf len {}", buf.len());
+        trace!("parse_buf_inner  buf len {}", buf.len());
         let mut ret = EventFull::empty();
         let mut parsed_bytes = 0;
         loop {
@@ -485,37 +437,13 @@ impl EventChunker {
                         let n1 = p1 - p0;
                         let n2 = len as u64 - n1 - 4;
                         let databuf = buf[p1 as usize..(p1 as usize + n2 as usize)].as_ref();
-                        if false && is_compressed {
-                            //debug!("event  ts {}  is_compressed {}", ts, is_compressed);
-                            let value_bytes = sl.read_u64::<BE>().unwrap();
-                            let block_size = sl.read_u32::<BE>().unwrap();
-                            //debug!("event  len {}  ts {}  is_compressed {}  shape_dim {}  len-dim-0 {}  value_bytes {}  block_size {}", len, ts, is_compressed, shape_dim, shape_lens[0], value_bytes, block_size);
-                            match self.fetch_info.shape() {
-                                Shape::Scalar => {
-                                    assert!(value_bytes < 1024 * 1);
-                                }
-                                Shape::Wave(_) => {
-                                    assert!(value_bytes < 1024 * 64);
-                                }
-                                Shape::Image(_, _) => {
-                                    assert!(value_bytes < 1024 * 1024 * 20);
-                                }
-                            }
-                            if block_size > 1024 * 32 {
-                                return Err(DataParseError::BadCompresionBlockSize);
-                            }
-                            let type_size = scalar_type.bytes() as u32;
-                            let _ele_count = value_bytes / type_size as u64;
-                            let _ele_size = type_size;
-                        }
                         if discard {
                             self.discard_count += 1;
                         } else {
                             ret.add_event(
                                 ts,
                                 pulse,
-                                Some(databuf.to_vec()),
-                                None,
+                                databuf.to_vec(),
                                 scalar_type,
                                 is_big_endian,
                                 shape_this,
@@ -634,40 +562,4 @@ impl Stream for EventChunker {
             };
         }
     }
-}
-
-#[cfg(test)]
-mod test {
-    //use err::Error;
-    //use netpod::timeunits::*;
-    //use netpod::{ByteSize, Nanos};
-
-    //const TEST_BACKEND: &str = "testbackend-00";
-
-    /*
-    #[test]
-    fn read_expanded_for_range(range: netpod::NanoRange, nodeix: usize) -> Result<(usize, usize), Error> {
-        let chn = netpod::Channel {
-            backend: TEST_BACKEND.into(),
-            name: "scalar-i32-be".into(),
-        };
-        // TODO read config from disk.
-        let channel_config = ChannelConfig {
-            channel: chn,
-            keyspace: 2,
-            time_bin_size: Nanos { ns: DAY },
-            scalar_type: netpod::ScalarType::I32,
-            byte_order: netpod::ByteOrder::big_endian(),
-            shape: netpod::Shape::Scalar,
-            array: false,
-            compression: false,
-        };
-        let cluster = taskrun::test_cluster();
-        let node = cluster.nodes[nodeix].clone();
-        let buffer_size = 512;
-        let event_chunker_conf = EventChunkerConf {
-            disk_stats_every: ByteSize::kb(1024),
-        };
-    }
-    */
 }

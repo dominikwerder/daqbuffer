@@ -19,6 +19,7 @@ use tokio::io::AsyncSeekExt;
 use tokio::io::ErrorKind;
 use tokio::io::SeekFrom;
 
+#[cfg(test)]
 const BACKEND: &str = "testbackend-00";
 
 pub struct Positioned {

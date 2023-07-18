@@ -383,14 +383,16 @@ pub struct EventsSubQuery {
     select: EventsSubQuerySelect,
     settings: EventsSubQuerySettings,
     ty: String,
+    reqid: String,
 }
 
 impl EventsSubQuery {
-    pub fn from_parts(select: EventsSubQuerySelect, settings: EventsSubQuerySettings) -> Self {
+    pub fn from_parts(select: EventsSubQuerySelect, settings: EventsSubQuerySettings, reqid: String) -> Self {
         Self {
             select,
             settings,
             ty: "EventsSubQuery".into(),
+            reqid,
         }
     }
 
@@ -431,7 +433,8 @@ impl EventsSubQuery {
     }
 
     pub fn inmem_bufcap(&self) -> ByteSize {
-        ByteSize::from_kb(4)
+        // TODO should depend on the type of backend: only imagebuffer needs large size.
+        ByteSize::from_kb(1024 * 30)
     }
 
     // A rough indication on how many bytes this request is allowed to return. Otherwise, the result should
@@ -454,6 +457,10 @@ impl EventsSubQuery {
 
     pub fn create_errors_contains(&self, x: &str) -> bool {
         self.settings.create_errors.contains(&String::from(x))
+    }
+
+    pub fn reqid(&self) -> &str {
+        &self.reqid
     }
 }
 

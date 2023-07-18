@@ -18,6 +18,7 @@ use netpod::range::evrange::NanoRange;
 use netpod::timeunits::SEC;
 use netpod::DiskIoTune;
 use netpod::Node;
+use netpod::ReqCtxArc;
 use netpod::SfChFetchInfo;
 use std::collections::VecDeque;
 use std::pin::Pin;
@@ -39,7 +40,6 @@ pub struct EventChunkerMultifile {
     files_count: u32,
     node_ix: usize,
     expand: bool,
-    do_decompress: bool,
     max_ts: u64,
     out_max_len: usize,
     emit_count: usize,
@@ -49,6 +49,7 @@ pub struct EventChunkerMultifile {
     done: bool,
     done_emit_range_final: bool,
     complete: bool,
+    reqctx: ReqCtxArc,
 }
 
 impl EventChunkerMultifile {
@@ -64,10 +65,10 @@ impl EventChunkerMultifile {
         disk_io_tune: DiskIoTune,
         event_chunker_conf: EventChunkerConf,
         expand: bool,
-        do_decompress: bool,
         out_max_len: usize,
+        reqctx: ReqCtxArc,
     ) -> Self {
-        info!("EventChunkerMultifile  expand {expand}  do_decompress {do_decompress}");
+        debug!("EventChunkerMultifile  expand {expand}");
         let file_chan = if expand {
             open_expanded_files(&range, &fetch_info, node)
         } else {
@@ -83,7 +84,6 @@ impl EventChunkerMultifile {
             files_count: 0,
             node_ix,
             expand,
-            do_decompress,
             max_ts: 0,
             out_max_len,
             emit_count: 0,
@@ -93,6 +93,7 @@ impl EventChunkerMultifile {
             done: false,
             done_emit_range_final: false,
             complete: false,
+            reqctx,
         }
     }
 }
@@ -103,7 +104,6 @@ impl Stream for EventChunkerMultifile {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         let span1 = span!(Level::INFO, "EvChMul", node_ix = self.node_ix);
         let _spg = span1.enter();
-        info!("EventChunkerMultifile  poll_next");
         use Poll::*;
         'outer: loop {
             break if let Some(item) = self.log_queue.pop_front() {
@@ -194,6 +194,7 @@ impl Stream for EventChunkerMultifile {
                                                 path.clone(),
                                                 file,
                                                 self.disk_io_tune.clone(),
+                                                self.reqctx.reqid(),
                                             ));
                                             let chunker = EventChunker::from_event_boundary(
                                                 inp,
@@ -202,7 +203,6 @@ impl Stream for EventChunkerMultifile {
                                                 self.event_chunker_conf.clone(),
                                                 path.clone(),
                                                 self.expand,
-                                                self.do_decompress,
                                             );
                                             let filtered = RangeFilter2::new(chunker, self.range.clone(), self.expand);
                                             self.evs = Some(Box::pin(filtered));
@@ -229,6 +229,7 @@ impl Stream for EventChunkerMultifile {
                                                 of.path.clone(),
                                                 file,
                                                 self.disk_io_tune.clone(),
+                                                self.reqctx.reqid(),
                                             );
                                             let chunker = EventChunker::from_event_boundary(
                                                 inp,
@@ -237,7 +238,6 @@ impl Stream for EventChunkerMultifile {
                                                 self.event_chunker_conf.clone(),
                                                 of.path.clone(),
                                                 self.expand,
-                                                self.do_decompress,
                                             );
                                             chunkers.push(Box::pin(chunker) as _);
                                         }

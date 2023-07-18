@@ -7,18 +7,18 @@ use netpod::SfChFetchInfo;
 use netpod::TsNano;
 use std::path::PathBuf;
 
-// TODO remove/replace this
-pub fn datapath(timebin: u64, config: &SfDbChConf, split: u32, node: &Node) -> PathBuf {
+pub fn datapath_for_keyspace(ks: u32, node: &Node) -> PathBuf {
     node.sf_databuffer
         .as_ref()
         .unwrap()
         .data_base_path
-        .join(format!(
-            "{}_{}",
-            node.sf_databuffer.as_ref().unwrap().ksprefix,
-            config.keyspace
-        ))
+        .join(format!("{}_{}", node.sf_databuffer.as_ref().unwrap().ksprefix, ks))
         .join("byTime")
+}
+
+// TODO remove/replace this
+pub fn datapath(timebin: u64, config: &SfDbChConf, split: u32, node: &Node) -> PathBuf {
+    datapath_for_keyspace(config.keyspace as u32, node)
         .join(config.channel.name())
         .join(format!("{:019}", timebin))
         .join(format!("{:010}", split))
@@ -37,10 +37,7 @@ pub async fn datapaths_for_timebin(
     node: &Node,
 ) -> Result<Vec<PathBuf>, Error> {
     let sfc = node.sf_databuffer.as_ref().unwrap();
-    let timebin_path = sfc
-        .data_base_path
-        .join(format!("{}_{}", sfc.ksprefix, fetch_info.ks()))
-        .join("byTime")
+    let timebin_path = datapath_for_keyspace(fetch_info.ks() as u32, node)
         .join(fetch_info.name())
         .join(format!("{:019}", timebin));
     let rd = tokio::fs::read_dir(timebin_path).await?;
@@ -70,12 +67,9 @@ pub async fn datapaths_for_timebin(
             }
         }
     }
-    let mut ret = vec![];
+    let mut ret = Vec::new();
     for split in splits {
-        let path = sfc
-            .data_base_path
-            .join(format!("{}_{}", sfc.ksprefix, fetch_info.ks()))
-            .join("byTime")
+        let path = datapath_for_keyspace(fetch_info.ks() as u32, node)
             .join(fetch_info.name())
             .join(format!("{:019}", timebin))
             .join(format!("{:010}", split))
@@ -86,12 +80,7 @@ pub async fn datapaths_for_timebin(
 }
 
 pub fn channel_timebins_dir_path(fetch_info: &SfChFetchInfo, node: &Node) -> Result<PathBuf, Error> {
-    let sfc = node.sf_databuffer.as_ref().unwrap();
-    let ret = sfc
-        .data_base_path
-        .join(format!("{}_{}", sfc.ksprefix, fetch_info.ks()))
-        .join("byTime")
-        .join(fetch_info.name());
+    let ret = datapath_for_keyspace(fetch_info.ks() as u32, node).join(fetch_info.name());
     Ok(ret)
 }
 
@@ -115,11 +104,7 @@ pub fn index_path(ts: TsNano, fetch_info: &SfChFetchInfo, split: u32, node: &Nod
 }
 
 pub fn data_dir_path_tb(ks: u32, channel_name: &str, tb: u32, split: u32, node: &Node) -> Result<PathBuf, Error> {
-    let sfc = node.sf_databuffer.as_ref().unwrap();
-    let ret = sfc
-        .data_base_path
-        .join(format!("{}_{}", sfc.ksprefix, ks))
-        .join("byTime")
+    let ret = datapath_for_keyspace(ks, node)
         .join(channel_name)
         .join(format!("{:019}", tb))
         .join(format!("{:010}", split));

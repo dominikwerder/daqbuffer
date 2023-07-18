@@ -1,5 +1,5 @@
 use crate::SfDbChConf;
-use err::thiserror;
+use err::*;
 #[allow(unused)]
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
@@ -10,20 +10,13 @@ use parse::channelconfig::read_local_config;
 use parse::channelconfig::ChannelConfigs;
 use parse::channelconfig::ConfigEntry;
 use parse::channelconfig::ConfigParseError;
-use std::fmt;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, ThisError)]
 pub enum ConfigError {
     ParseError(ConfigParseError),
     NotFound,
     Error,
 }
-
-// impl fmt::Display for ConfigError {
-//     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-//         write!(fmt, "ConfigError::{self:?}")
-//     }
-// }
 
 impl From<ConfigParseError> for ConfigError {
     fn from(value: ConfigParseError) -> Self {

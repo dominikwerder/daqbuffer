@@ -1,7 +1,7 @@
-use crate::err::Error;
 use crate::response;
 use crate::ToPublicResponse;
 use dbconn::create_connection;
+use err::Error;
 use futures_util::StreamExt;
 use http::Method;
 use http::Request;
@@ -22,6 +22,7 @@ use netpod::SfDbChannel;
 use netpod::Shape;
 use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
+use nodenet::configquorum::find_config_basics_quorum;
 use query::api4::binned::BinnedQuery;
 use query::api4::events::PlainEventsQuery;
 use scylla::frame::response::cql_to_rust::FromRowError as ScyFromRowError;
@@ -37,7 +38,7 @@ pub async fn chconf_from_events_v1(
     q: &PlainEventsQuery,
     ncc: &NodeConfigCached,
 ) -> Result<Option<ChannelTypeConfigGen>, Error> {
-    let ret = nodenet::configquorum::find_config_basics_quorum(q.channel().clone(), q.range().clone(), ncc).await?;
+    let ret = find_config_basics_quorum(q.channel().clone(), q.range().clone(), ncc).await?;
     Ok(ret)
 }
 
@@ -45,8 +46,7 @@ pub async fn chconf_from_prebinned(
     q: &PreBinnedQuery,
     ncc: &NodeConfigCached,
 ) -> Result<Option<ChannelTypeConfigGen>, Error> {
-    let ret =
-        nodenet::configquorum::find_config_basics_quorum(q.channel().clone(), q.patch().patch_range(), ncc).await?;
+    let ret = find_config_basics_quorum(q.channel().clone(), q.patch().patch_range(), ncc).await?;
     Ok(ret)
 }
 
@@ -54,7 +54,7 @@ pub async fn ch_conf_from_binned(
     q: &BinnedQuery,
     ncc: &NodeConfigCached,
 ) -> Result<Option<ChannelTypeConfigGen>, Error> {
-    let ret = nodenet::configquorum::find_config_basics_quorum(q.channel().clone(), q.range().clone(), ncc).await?;
+    let ret = find_config_basics_quorum(q.channel().clone(), q.range().clone(), ncc).await?;
     Ok(ret)
 }
 

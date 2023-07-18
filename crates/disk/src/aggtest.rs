@@ -86,10 +86,10 @@ async fn agg_x_dim_0_inner() {
         0,
         disk_io_tune,
         event_chunker_conf,
-        false,
         true,
         // TODO
         32,
+        netpod::ReqCtx::new("req-000"),
     );
     let _ = fut1;
     // TODO add the binning and expectation and await the result.
@@ -148,10 +148,10 @@ async fn agg_x_dim_1_inner() {
         0,
         disk_io_tune,
         event_chunker_conf,
-        false,
         true,
         // TODO
         32,
+        netpod::ReqCtx::new("req-000"),
     );
     let _ = fut1;
     // TODO add the binning and expectation and await the result.

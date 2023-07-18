@@ -37,10 +37,10 @@ err = { path = "../err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }
 query = { path = "../query" }
-bitshuffle = { path = "../bitshuffle" }
 dbconn = { path = "../dbconn" }
 parse = { path = "../parse" }
 items_0 = { path = "../items_0" }
 items_2 = { path = "../items_2" }
 streams = { path = "../streams" }
 httpclient = { path = "../httpclient" }
+bitshuffle = { path = "../bitshuffle" }

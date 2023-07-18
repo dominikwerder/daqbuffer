@@ -41,11 +41,12 @@ async fn timebinnable_stream(
     range: NanoRange,
     one_before_range: bool,
     ch_conf: ChannelTypeConfigGen,
+    reqid: String,
     cluster: Cluster,
 ) -> Result<TimeBinnableStreamBox, Error> {
     let select = EventsSubQuerySelect::new(ch_conf, range.clone().into(), query.transform().clone());
     let settings = EventsSubQuerySettings::from(&query);
-    let subq = EventsSubQuery::from_parts(select, settings);
+    let subq = EventsSubQuery::from_parts(select, settings, reqid);
     let mut tr = build_merged_event_transform(subq.transform())?;
     let inps = open_tcp_streams::<ChannelEvents>(subq, &cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader.
@@ -72,6 +73,7 @@ async fn timebinned_stream(
     query: BinnedQuery,
     binned_range: BinnedRangeEnum,
     ch_conf: ChannelTypeConfigGen,
+    reqid: String,
     cluster: Cluster,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>, Error> {
     let range = binned_range.binned_range_time().to_nano_range();
@@ -79,7 +81,7 @@ async fn timebinned_stream(
     let do_time_weight = true;
     let one_before_range = true;
 
-    let stream = timebinnable_stream(query.clone(), range, one_before_range, ch_conf, cluster).await?;
+    let stream = timebinnable_stream(query.clone(), range, one_before_range, ch_conf, reqid, cluster).await?;
     let stream: Pin<Box<dyn TimeBinnableStreamTrait>> = stream.0;
     let stream = Box::pin(stream);
     // TODO rename TimeBinnedStream to make it more clear that it is the component which initiates the time binning.
@@ -105,12 +107,13 @@ fn timebinned_to_collectable(
 pub async fn timebinned_json(
     query: BinnedQuery,
     ch_conf: ChannelTypeConfigGen,
+    reqid: String,
     cluster: Cluster,
 ) -> Result<JsonValue, Error> {
     let deadline = Instant::now().checked_add(query.timeout_value()).unwrap();
     let binned_range = BinnedRangeEnum::covering_range(query.range().clone(), query.bin_count())?;
     let collect_max = 10000;
-    let stream = timebinned_stream(query.clone(), binned_range.clone(), ch_conf, cluster).await?;
+    let stream = timebinned_stream(query.clone(), binned_range.clone(), ch_conf, reqid, cluster).await?;
     let stream = timebinned_to_collectable(stream);
     let collected = Collect::new(stream, deadline, collect_max, None, Some(binned_range));
     let collected: BoxFuture<_> = Box::pin(collected);

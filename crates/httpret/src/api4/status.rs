@@ -1,6 +1,6 @@
 use crate::bodystream::response;
-use crate::err::Error;
 use crate::ReqCtx;
+use crate::RetrievalError;
 use http::Request;
 use http::Response;
 use http::StatusCode;
@@ -14,7 +14,7 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 #[allow(unused)]
-async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, Error> {
+async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, RetrievalError> {
     let ret = dbconn::table_sizes(node_config).await?;
     Ok(ret)
 }
@@ -39,12 +39,12 @@ impl StatusNodesRecursive {
         req: Request<Body>,
         ctx: &ReqCtx,
         node_config: &NodeConfigCached,
-    ) -> Result<Response<Body>, Error> {
+    ) -> Result<Response<Body>, RetrievalError> {
         let res = tokio::time::timeout(Duration::from_millis(1200), self.status(req, ctx, node_config)).await;
         let res = match res {
             Ok(res) => res,
             Err(e) => {
-                let e = Error::from(e).add_public_msg("see timeout");
+                let e = RetrievalError::from(e).add_public_msg("see timeout");
                 return Ok(crate::bodystream::ToPublicResponse::to_public_response(&e));
             }
         };
@@ -67,7 +67,7 @@ impl StatusNodesRecursive {
         req: Request<Body>,
         _ctx: &ReqCtx,
         node_config: &NodeConfigCached,
-    ) -> Result<NodeStatus, Error> {
+    ) -> Result<NodeStatus, RetrievalError> {
         let (_head, _body) = req.into_parts();
         let archiver_appliance_status = match node_config.node.archiver_appliance.as_ref() {
             Some(k) => {

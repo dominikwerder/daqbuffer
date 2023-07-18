@@ -248,7 +248,10 @@ fn make_scalar_conv(
     agg_kind: &AggKind,
 ) -> Result<Box<dyn ValueFromBytes>, Error> {
     let ret = match agg_kind {
-        AggKind::EventBlobs => todo!("make_scalar_conv  EventBlobs"),
+        AggKind::EventBlobs => {
+            error!("make_scalar_conv  EventBlobs");
+            return Err(Error::with_msg_no_trace("make_scalar_conv  EventBlobs"));
+        }
         AggKind::Plain
         | AggKind::DimXBinsN(_)
         | AggKind::DimXBins1
@@ -285,7 +288,10 @@ fn make_scalar_conv(
                     ScalarType::STRING => ValueDim1FromBytesImpl::<String>::boxed(shape),
                 }
             }
-            Shape::Image(_, _) => todo!("make_scalar_conv  Image"),
+            Shape::Image(_, _) => {
+                error!("make_scalar_conv  Image");
+                return Err(Error::with_msg_no_trace("make_scalar_conv  Image"));
+            }
         },
     };
     Ok(ret)
@@ -343,7 +349,7 @@ impl EventsDynStream {
     fn replace_events_out(&mut self) -> Result<Box<dyn Events>, Error> {
         let st = &self.scalar_type;
         let sh = &self.shape;
-        error!("TODO replace_events_out feed through transform");
+        // error!("TODO replace_events_out feed through transform");
         // TODO do we need/want the empty item from here?
         let empty = items_2::empty::empty_events_dyn_ev(st, sh)?;
         let evs = mem::replace(&mut self.events_out, empty);
@@ -362,11 +368,6 @@ impl EventsDynStream {
             .zip(item.pulses.iter())
         {
             let endian = if be { Endian::Big } else { Endian::Little };
-            let buf = if let Some(x) = buf {
-                x
-            } else {
-                return Err(Error::with_msg_no_trace("no buf in event"));
-            };
             self.scalar_conv
                 .convert(ts, pulse, buf, endian, self.events_out.as_mut())?;
         }

@@ -1,10 +1,16 @@
-use crate::err::Error;
 use crate::response;
+use crate::RetrievalError;
 use futures_util::TryStreamExt;
-use http::{Method, StatusCode};
-use hyper::{Body, Request, Response};
+use http::Method;
+use http::StatusCode;
+use hyper::Body;
+use hyper::Request;
+use hyper::Response;
+use netpod::get_url_query_pairs;
 use netpod::log::*;
-use netpod::{get_url_query_pairs, DiskIoTune, FromUrl, NodeConfigCached};
+use netpod::DiskIoTune;
+use netpod::FromUrl;
+use netpod::NodeConfigCached;
 use url::Url;
 
 #[derive(Clone, Debug)]
@@ -61,7 +67,11 @@ impl DownloadHandler {
         }
     }
 
-    pub async fn get(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn get(
+        &self,
+        req: Request<Body>,
+        node_config: &NodeConfigCached,
+    ) -> Result<Response<Body>, RetrievalError> {
         let (head, _body) = req.into_parts();
         let p2 = &head.uri.path()[Self::path_prefix().len()..];
         let base = match &node_config.node.sf_databuffer {
@@ -74,11 +84,15 @@ impl DownloadHandler {
         let pp = base.join(p2);
         info!("Try to open {pp:?}");
         let file = tokio::fs::OpenOptions::new().read(true).open(&pp).await?;
-        let s = disk::file_content_stream(pp, file, query.disk_io_tune.clone()).map_ok(|x| x.into_buf());
+        let s = disk::file_content_stream(pp, file, query.disk_io_tune.clone(), "download").map_ok(|x| x.into_buf());
         Ok(response(StatusCode::OK).body(Body::wrap_stream(s))?)
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(
+        &self,
+        req: Request<Body>,
+        node_config: &NodeConfigCached,
+    ) -> Result<Response<Body>, RetrievalError> {
         if req.method() == Method::GET {
             self.get(req, node_config).await
         } else {

@@ -55,7 +55,7 @@ pub async fn http_get(url: Url, accept: &str) -> Result<HttpResponse, Error> {
     let client = hyper::Client::new();
     let res = client.request(req).await.ec()?;
     let (head, body) = res.into_parts();
-    info!("http_get  head {head:?}");
+    debug!("http_get  head {head:?}");
     let body = hyper::body::to_bytes(body).await.ec()?;
     let ret = HttpResponse { head, body };
     Ok(ret)

@@ -1,6 +1,6 @@
 use crate::bodystream::response;
-use crate::err::Error;
 use crate::ReqCtx;
+use err::Error;
 use http::Request;
 use http::Response;
 use http::StatusCode;

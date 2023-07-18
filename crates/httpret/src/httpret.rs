@@ -4,19 +4,18 @@ pub mod bodystream;
 pub mod channel_status;
 pub mod channelconfig;
 pub mod download;
-pub mod err;
 pub mod gather;
 pub mod prometheus;
 pub mod proxy;
 pub mod pulsemap;
 pub mod settings;
 
-use self::bodystream::BodyStream;
 use self::bodystream::ToPublicResponse;
 use crate::bodystream::response;
-use crate::err::Error;
 use crate::gather::gather_get_json;
 use crate::pulsemap::UpdateTask;
+use err::thiserror;
+use err::ThisError;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::StreamExt;
@@ -41,6 +40,7 @@ use nodenet::conn::events_service;
 use panic::AssertUnwindSafe;
 use panic::UnwindSafe;
 use pin::Pin;
+use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::net;
@@ -59,7 +59,37 @@ use task::Poll;
 pub const PSI_DAQBUFFER_SERVICE_MARK: &'static str = "PSI-Daqbuffer-Service-Mark";
 pub const PSI_DAQBUFFER_SEEN_URL: &'static str = "PSI-Daqbuffer-Seen-Url";
 
-pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
+#[derive(Debug, ThisError, Serialize, Deserialize)]
+pub enum RetrievalError {
+    Error(#[from] err::Error),
+    TextError(String),
+    #[serde(skip)]
+    Hyper(#[from] hyper::Error),
+    #[serde(skip)]
+    Http(#[from] http::Error),
+    #[serde(skip)]
+    Serde(#[from] serde_json::Error),
+    #[serde(skip)]
+    Fmt(#[from] std::fmt::Error),
+    #[serde(skip)]
+    Url(#[from] url::ParseError),
+}
+
+trait IntoBoxedError: std::error::Error {}
+impl IntoBoxedError for net::AddrParseError {}
+impl IntoBoxedError for tokio::task::JoinError {}
+impl IntoBoxedError for api4::databuffer_tools::FindActiveError {}
+
+impl<E> From<E> for RetrievalError
+where
+    E: ToString + IntoBoxedError,
+{
+    fn from(value: E) -> Self {
+        Self::TextError(value.to_string())
+    }
+}
+
+pub async fn host(node_config: NodeConfigCached) -> Result<(), RetrievalError> {
     static STATUS_BOARD_INIT: Once = Once::new();
     STATUS_BOARD_INIT.call_once(|| {
         let b = StatusBoard::new();
@@ -84,7 +114,7 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
             let node_config = node_config.clone();
             let addr = conn.remote_addr();
             async move {
-                Ok::<_, Error>(service_fn({
+                Ok::<_, RetrievalError>(service_fn({
                     move |req| {
                         // TODO send to logstash
                         info!(
@@ -106,7 +136,7 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), Error> {
     Ok(())
 }
 
-async fn http_service(req: Request<Body>, node_config: NodeConfigCached) -> Result<Response<Body>, Error> {
+async fn http_service(req: Request<Body>, node_config: NodeConfigCached) -> Result<Response<Body>, RetrievalError> {
     match http_service_try(req, &node_config).await {
         Ok(k) => Ok(k),
         Err(e) => {
@@ -122,7 +152,7 @@ struct Cont<F> {
 
 impl<F, I> Future for Cont<F>
 where
-    F: Future<Output = Result<I, Error>>,
+    F: Future<Output = Result<I, RetrievalError>>,
 {
     type Output = <F as Future>::Output;
 
@@ -131,14 +161,14 @@ where
         match h {
             Ok(k) => k,
             Err(e) => {
-                error!("Cont<F>  catch_unwind  {:?}", e);
-                match e.downcast_ref::<Error>() {
+                error!("Cont<F>  catch_unwind  {e:?}");
+                match e.downcast_ref::<RetrievalError>() {
                     Some(e) => {
-                        error!("Cont<F>  catch_unwind  is Error: {:?}", e);
+                        error!("Cont<F>  catch_unwind  is Error: {e:?}");
                     }
                     None => {}
                 }
-                Poll::Ready(Err(Error::with_msg(format!("{:?}", e))))
+                Poll::Ready(Err(RetrievalError::TextError(format!("{e:?}"))))
             }
         }
     }
@@ -182,7 +212,7 @@ impl ReqCtx {
 }
 
 // TODO remove because I want error bodies to be json.
-pub fn response_err<T>(status: StatusCode, msg: T) -> Result<Response<Body>, Error>
+pub fn response_err<T>(status: StatusCode, msg: T) -> Result<Response<Body>, RetrievalError>
 where
     T: AsRef<str>,
 {
@@ -241,7 +271,10 @@ macro_rules! static_http_api1 {
     };
 }
 
-async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+async fn http_service_try(
+    req: Request<Body>,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, RetrievalError> {
     use http::HeaderValue;
     let mut urlmarks = Vec::new();
     urlmarks.push(format!("{}:{}", req.method(), req.uri()));
@@ -271,7 +304,7 @@ async fn http_service_inner(
     req: Request<Body>,
     ctx: &ReqCtx,
     node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<Body>, RetrievalError> {
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/4/private/version" {
@@ -313,6 +346,8 @@ async fn http_service_inner(
         h.handle(req, ctx, &node_config).await
     } else if let Some(h) = StatusBoardAllHandler::handler(&req) {
         h.handle(req, &node_config).await
+    } else if let Some(h) = api4::databuffer_tools::FindActiveHandler::handler(&req) {
+        Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = api4::search::ChannelSearchHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = api4::binned::BinnedHandler::handler(&req) {
@@ -436,7 +471,7 @@ async fn http_service_inner(
     }
 }
 
-pub fn api_4_docs(path: &str) -> Result<Response<Body>, Error> {
+pub fn api_4_docs(path: &str) -> Result<Response<Body>, RetrievalError> {
     static_http!(path, "", "api4.html", "text/html");
     static_http!(path, "style.css", "text/css");
     static_http!(path, "script.js", "text/javascript");
@@ -444,7 +479,7 @@ pub fn api_4_docs(path: &str) -> Result<Response<Body>, Error> {
     Ok(response(StatusCode::NOT_FOUND).body(Body::empty())?)
 }
 
-pub fn api_1_docs(path: &str) -> Result<Response<Body>, Error> {
+pub fn api_1_docs(path: &str) -> Result<Response<Body>, RetrievalError> {
     static_http_api1!(path, "", "api1.html", "text/html");
     static_http_api1!(path, "style.css", "text/css");
     static_http_api1!(path, "script.js", "text/javascript");
@@ -462,7 +497,11 @@ impl StatusBoardAllHandler {
         }
     }
 
-    pub async fn handle(&self, _req: Request<Body>, _node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(
+        &self,
+        _req: Request<Body>,
+        _node_config: &NodeConfigCached,
+    ) -> Result<Response<Body>, RetrievalError> {
         use std::ops::Deref;
         let sb = status_board().unwrap();
         let buf = serde_json::to_vec(sb.deref()).unwrap();
@@ -471,12 +510,16 @@ impl StatusBoardAllHandler {
     }
 }
 
-async fn prebinned(req: Request<Body>, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+async fn prebinned(
+    req: Request<Body>,
+    ctx: &ReqCtx,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, RetrievalError> {
     match prebinned_inner(req, ctx, node_config).await {
         Ok(ret) => Ok(ret),
         Err(e) => {
             error!("fn prebinned: {e:?}");
-            Ok(response(StatusCode::BAD_REQUEST).body(Body::from(e.msg().to_string()))?)
+            Ok(response(StatusCode::BAD_REQUEST).body(Body::from(format!("[prebinned-error]")))?)
         }
     }
 }
@@ -485,7 +528,7 @@ async fn prebinned_inner(
     req: Request<Body>,
     _ctx: &ReqCtx,
     _node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<Body>, RetrievalError> {
     let (head, _body) = req.into_parts();
     let url: url::Url = format!("dummy://{}", head.uri).parse()?;
     let query = PreBinnedQuery::from_url(&url)?;
@@ -493,7 +536,7 @@ async fn prebinned_inner(
     span1.in_scope(|| {
         debug!("begin");
     });
-    error!("TODO hhtpret prebinned_inner");
+    error!("TODO httpret prebinned_inner");
     //let fut = disk::binned::prebinned::pre_binned_bytes_for_http(node_config, &query).instrument(span1);
     todo!()
 }
@@ -502,7 +545,7 @@ async fn random_channel(
     req: Request<Body>,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<Body>, RetrievalError> {
     let (_head, _body) = req.into_parts();
     let ret = dbconn::random_channel(node_config).await?;
     let ret = response(StatusCode::OK).body(Body::from(ret))?;
@@ -513,7 +556,7 @@ async fn clear_cache_all(
     req: Request<Body>,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<Body>, RetrievalError> {
     let (head, _body) = req.into_parts();
     let dry = match head.uri.query() {
         Some(q) => q.contains("dry"),
@@ -530,7 +573,7 @@ async fn update_db_with_channel_names(
     req: Request<Body>,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<Body>, RetrievalError> {
     info!("httpret::update_db_with_channel_names");
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
@@ -568,7 +611,7 @@ async fn update_db_with_channel_names_3(
     req: Request<Body>,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<Body>, RetrievalError> {
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
         Some(q) => q.contains("dry"),
@@ -591,7 +634,7 @@ async fn update_db_with_all_channel_configs(
     req: Request<Body>,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<Body>, RetrievalError> {
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
         Some(q) => q.contains("dry"),
@@ -614,7 +657,7 @@ async fn update_search_cache(
     req: Request<Body>,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<Body>, RetrievalError> {
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
         Some(q) => q.contains("dry"),
@@ -638,8 +681,9 @@ pub struct StatusBoardEntry {
     is_error: bool,
     #[serde(skip_serializing_if = "is_false")]
     is_ok: bool,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    errors: Vec<Error>,
+    // #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(skip)]
+    errors: Vec<Box<dyn std::error::Error + Send>>,
 }
 
 mod instant_serde {
@@ -693,10 +737,10 @@ impl StatusBoard {
         use std::io::Read;
         self.clean();
         let mut f = File::open("/dev/urandom").unwrap();
-        let mut buf = [0; 8];
+        let mut buf = [0; 4];
         f.read_exact(&mut buf).unwrap();
-        let n = u64::from_le_bytes(buf);
-        let s = format!("{:016x}", n);
+        let n = u32::from_le_bytes(buf);
+        let s = format!("{:08x}", n);
         info!("new_status_id {s}");
         self.entries.insert(s.clone(), StatusBoardEntry::new());
         s
@@ -738,13 +782,16 @@ impl StatusBoard {
         }
     }
 
-    pub fn add_error(&mut self, status_id: &str, error: Error) {
+    pub fn add_error<E>(&mut self, status_id: &str, error: E)
+    where
+        E: Into<Box<dyn std::error::Error + Send>>,
+    {
         match self.entries.get_mut(status_id) {
             Some(e) => {
                 e.ts_updated = SystemTime::now();
                 e.is_error = true;
                 e.is_ok = false;
-                e.errors.push(error);
+                e.errors.push(error.into());
             }
             None => {
                 error!("can not find status id {}", status_id);
@@ -764,7 +811,9 @@ impl StatusBoard {
                     let js = StatJs { errors: Vec::new() };
                     return serde_json::to_string(&js).unwrap();
                 } else if e.is_error {
-                    let errors = e.errors.iter().map(|e| (&e.0).into()).collect();
+                    // TODO
+                    // let errors = e.errors.iter().map(|e| (&e.0).into()).collect();
+                    let errors = vec![err::Error::with_msg_no_trace("TODO convert to user error").into()];
                     let js = StatJs { errors };
                     return serde_json::to_string(&js).unwrap();
                 } else {
@@ -785,10 +834,10 @@ impl StatusBoard {
 
 static STATUS_BOARD: AtomicPtr<RwLock<StatusBoard>> = AtomicPtr::new(std::ptr::null_mut());
 
-pub fn status_board() -> Result<RwLockWriteGuard<'static, StatusBoard>, Error> {
+pub fn status_board() -> Result<RwLockWriteGuard<'static, StatusBoard>, RetrievalError> {
     let x = unsafe { &*STATUS_BOARD.load(Ordering::SeqCst) }.write();
     match x {
         Ok(x) => Ok(x),
-        Err(e) => Err(Error::with_msg(format!("{e:?}"))),
+        Err(e) => Err(RetrievalError::TextError(format!("{e}"))),
     }
 }

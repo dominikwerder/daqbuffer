@@ -1,33 +1,40 @@
 use crate::bodystream::response;
-use crate::bodystream::BodyStream;
 use crate::response_err;
+use async_channel::Receiver;
+use async_channel::Sender;
 use bytes::Bytes;
 use err::thiserror;
+use err::ThisError;
 use err::ToPublicError;
 use futures_util::Stream;
+use futures_util::StreamExt;
 use http::Method;
 use http::Request;
 use http::Response;
 use http::StatusCode;
 use hyper::Body;
 use netpod::log::*;
+use netpod::Node;
 use netpod::NodeConfigCached;
 use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
+use serde::Serialize;
+use std::path::PathBuf;
+use std::pin::Pin;
+use std::task::Context;
+use std::task::Poll;
 use url::Url;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, ThisError)]
 pub enum FindActiveError {
-    #[error("HttpBadAccept")]
     HttpBadAccept,
-    #[error("HttpBadUrl")]
     HttpBadUrl,
-    #[error("{0}")]
+    #[error("Error({0})")]
     Error(Box<dyn ToPublicError>),
-    #[error("{0}")]
+    #[error("UrlError({0})")]
     UrlError(#[from] url::ParseError),
-    #[error("InternalError")]
     InternalError,
+    IO(#[from] std::io::Error),
 }
 
 impl ToPublicError for FindActiveError {
@@ -36,8 +43,9 @@ impl ToPublicError for FindActiveError {
             FindActiveError::HttpBadAccept => format!("{self}"),
             FindActiveError::HttpBadUrl => format!("{self}"),
             FindActiveError::Error(e) => e.to_public_error(),
-            FindActiveError::UrlError(e) => format!("can not parse url: {e}"),
+            FindActiveError::UrlError(_) => format!("{self}"),
             FindActiveError::InternalError => format!("{self}"),
+            FindActiveError::IO(_) => format!("{self}"),
         }
     }
 }
@@ -46,7 +54,7 @@ pub struct FindActiveHandler {}
 
 impl FindActiveHandler {
     pub fn handler(req: &Request<Body>) -> Option<Self> {
-        if req.uri().path() == "/api/4/tools/databuffer/findActive" {
+        if req.uri().path() == "/api/4/tool/sfdatabuffer/find/channel/active" {
             Some(Self {})
         } else {
             None
@@ -83,28 +91,222 @@ impl FindActiveHandler {
         };
         if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
             type _A = netpod::BodyStream;
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .body(BodyStream::wrapped(Box::pin(DummyStream::new()), "find_active".into()))
-                .map_err(|_| FindActiveError::InternalError)?)
+            let stream = FindActiveStream::new(40, 2, ncc);
+            let stream = stream.chain(FindActiveStream::new(40, 3, ncc));
+            let stream = stream
+                .map(|item| match item {
+                    Ok(item) => {
+                        let mut s = serde_json::to_vec(&item).unwrap();
+                        s.push(0x0a);
+                        s
+                    }
+                    Err(e) => {
+                        error!("ERROR in http body stream after headers: {e}");
+                        Vec::new()
+                    }
+                })
+                .map(|x| Ok::<_, String>(Bytes::from(x)));
+            let body = Body::wrap_stream(Box::pin(stream));
+            Ok(Response::builder().status(StatusCode::OK).body(body).unwrap())
         } else {
             Err(FindActiveError::HttpBadAccept)
         }
     }
 }
 
-struct DummyStream {}
+#[derive(Debug, Serialize)]
+struct ActiveChannelDesc {
+    ks: u32,
+    name: String,
+    totlen: u64,
+}
 
-impl DummyStream {
-    pub fn new() -> Self {
-        todo!()
+async fn sum_dir_contents(path: PathBuf) -> Result<u64, FindActiveError> {
+    let mut sum = 0;
+    let mut dir_stream = tokio::fs::read_dir(path).await?;
+    loop {
+        match dir_stream.next_entry().await? {
+            Some(x) => {
+                if x.file_name().to_string_lossy().starts_with("..") {
+                    debug!("INCONVENIENT: {x:?}");
+                } else if x.file_type().await.unwrap().is_dir() {
+                    let mut dir_stream_2 = tokio::fs::read_dir(x.path()).await?;
+                    loop {
+                        match dir_stream_2.next_entry().await? {
+                            Some(x) => {
+                                let md = x.metadata().await?;
+                                sum += md.len();
+                            }
+                            None => break,
+                        }
+                    }
+                } else {
+                    error!("unexpected file: {:?}", x.file_name());
+                    sum += x.metadata().await?.len();
+                }
+            }
+            None => break,
+        }
+    }
+    Ok(sum)
+}
+
+struct XorShift32 {
+    state: u32,
+}
+
+impl XorShift32 {
+    fn new(state: u32) -> Self {
+        Self { state }
+    }
+
+    fn next(&mut self) -> u32 {
+        let mut x = self.state;
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        self.state = x;
+        x
     }
 }
 
-impl Stream for DummyStream {
-    type Item = Result<Bytes, crate::err::Error>;
+async fn find_active_inner(
+    max: usize,
+    ks: u32,
+    splits: &[u64],
+    node: Node,
+    tx: Sender<Result<ActiveChannelDesc, FindActiveError>>,
+) -> Result<(), FindActiveError> {
+    let mut count = 0;
+    let now_sec = std::time::SystemTime::now()
+        .duration_since(std::time::SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let mut rng = XorShift32::new(now_sec as u32);
+    for _ in 0..64 {
+        rng.next();
+    }
+    let tb_exp = now_sec / 60 / 60 / 24;
+    let re_tb = regex::Regex::new(r"(0000\d{15})").unwrap();
+    let path = disk::paths::datapath_for_keyspace(ks, &node);
+    let mut dir_stream = tokio::fs::read_dir(path).await?;
+    let mut channel_dirs = Vec::new();
+    loop {
+        let x = dir_stream.next_entry().await?;
+        match x {
+            Some(x) => {
+                if x.file_name().to_string_lossy().starts_with(".") {
+                    debug!("INCONVENIENT: {x:?}");
+                } else if x.file_name().to_string_lossy().starts_with("..") {
+                    debug!("INCONVENIENT: {x:?}");
+                } else {
+                    channel_dirs.push((rng.next(), x));
+                }
+            }
+            None => break,
+        }
+    }
+    channel_dirs.sort_by_key(|x| x.0);
+    let channel_dirs = channel_dirs;
+    // TODO randomize channel list using given seed
+    'outer: for (_, chdir) in channel_dirs {
+        let ft = chdir.file_type().await?;
+        if ft.is_dir() {
+            let mut dir_stream = tokio::fs::read_dir(chdir.path())
+                .await
+                .map_err(|e| FindActiveError::IO(e))?;
+            loop {
+                match dir_stream.next_entry().await? {
+                    Some(e) => {
+                        let x = e.file_name();
+                        let s = x.to_string_lossy();
+                        if let Some(_) = re_tb.captures(&s) {
+                            let chn1 = chdir.file_name();
+                            let chname = chn1.to_string_lossy();
+                            // debug!("match: {m:?}");
+                            // TODO bin-size depends on channel config
+                            match s.parse::<u64>() {
+                                Ok(x) => {
+                                    if x == tb_exp {
+                                        // debug!("matching tb {}", chname);
+                                        let sum = sum_dir_contents(e.path()).await?;
+                                        if sum > 1024 * 1024 * 10 {
+                                            // debug!("sizable content: {sum}");
+                                            let x = ActiveChannelDesc {
+                                                ks,
+                                                name: chname.into(),
+                                                totlen: sum,
+                                            };
+                                            tx.send(Ok(x)).await;
+                                            count += 1;
+                                            if count >= max {
+                                                break 'outer;
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(_) => {}
+                            }
+                        } else {
+                            // debug!("no match");
+                        }
+                    }
+                    None => break,
+                }
+            }
+        } else {
+            error!("unexpected file {chdir:?}");
+        }
+    }
+    Ok(())
+}
 
-    fn poll_next(self: std::pin::Pin<&mut Self>, cx: &mut std::task::Context) -> std::task::Poll<Option<Self::Item>> {
-        todo!()
+async fn find_active(
+    max: usize,
+    ks: u32,
+    splits: Vec<u64>,
+    node: Node,
+    tx: Sender<Result<ActiveChannelDesc, FindActiveError>>,
+) {
+    let tx2 = tx.clone();
+    match find_active_inner(max, ks, &splits, node, tx).await {
+        Ok(x) => x,
+        Err(e) => {
+            tx2.send(Err(e)).await;
+            return;
+        }
+    }
+}
+
+struct FindActiveStream {
+    rx: Receiver<Result<ActiveChannelDesc, FindActiveError>>,
+}
+
+impl FindActiveStream {
+    pub fn new(max: usize, ks: u32, ncc: &NodeConfigCached) -> Self {
+        let (tx, rx) = async_channel::bounded(4);
+        let splits = ncc
+            .node
+            .sf_databuffer
+            .as_ref()
+            .unwrap()
+            .splits
+            .as_ref()
+            .map_or(Vec::new(), Clone::clone);
+        let _jh = taskrun::spawn(find_active(max, ks, splits, ncc.node.clone(), tx));
+        Self { rx }
+    }
+}
+
+impl Stream for FindActiveStream {
+    type Item = Result<ActiveChannelDesc, FindActiveError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        match self.rx.poll_next_unpin(cx) {
+            Ready(Some(item)) => Ready(Some(item)),
+            Ready(None) => Ready(None),
+            Pending => Pending,
+        }
     }
 }

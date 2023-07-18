@@ -1,14 +1,13 @@
-use crate::err::Error;
 use crate::gather::gather_get_json_generic;
 use crate::gather::SubRes;
 use crate::response;
-use crate::BodyStream;
 use crate::ReqCtx;
 use bytes::BufMut;
 use bytes::BytesMut;
 use disk::eventchunker::EventChunkerConf;
 use disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes;
 use disk::raw::conn::make_local_event_blobs_stream;
+use err::Error;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
@@ -36,12 +35,14 @@ use netpod::ChannelTypeConfigGen;
 use netpod::DiskIoTune;
 use netpod::NodeConfigCached;
 use netpod::ProxyConfig;
+use netpod::ReqCtxArc;
 use netpod::SfChFetchInfo;
 use netpod::SfDbChannel;
 use netpod::Shape;
 use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
 use netpod::APP_OCTET;
+use netpod::X_DAQBUF_REQID;
 use parse::api1_parse::Api1ByteOrder;
 use parse::api1_parse::Api1ChannelHeader;
 use query::api4::events::EventsSubQuery;
@@ -529,15 +530,16 @@ pub struct DataApiPython3DataStream {
     channels: VecDeque<ChannelTypeConfigGen>,
     settings: EventsSubQuerySettings,
     current_channel: Option<ChannelTypeConfigGen>,
+    current_fetch_info: Option<SfChFetchInfo>,
     node_config: NodeConfigCached,
-    chan_stream: Option<Pin<Box<dyn Stream<Item = Result<BytesMut, Error>> + Send>>>,
+    chan_stream: Option<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>>,
     config_fut: Option<Pin<Box<dyn Future<Output = Result<Option<ChannelTypeConfigGen>, Error>> + Send>>>,
     disk_io_tune: DiskIoTune,
     do_decompress: bool,
-    #[allow(unused)]
-    event_count: u64,
+    event_count: usize,
     events_max: u64,
-    status_id: String,
+    header_out: bool,
+    reqctx: ReqCtxArc,
     ping_last: Instant,
     data_done: bool,
     completed: bool,
@@ -551,7 +553,7 @@ impl DataApiPython3DataStream {
         disk_io_tune: DiskIoTune,
         do_decompress: bool,
         events_max: u64,
-        status_id: String,
+        reqctx: ReqCtxArc,
         node_config: NodeConfigCached,
     ) -> Self {
         Self {
@@ -559,6 +561,7 @@ impl DataApiPython3DataStream {
             channels: channels.into_iter().collect(),
             settings,
             current_channel: None,
+            current_fetch_info: None,
             node_config,
             chan_stream: None,
             config_fut: None,
@@ -566,7 +569,8 @@ impl DataApiPython3DataStream {
             do_decompress,
             event_count: 0,
             events_max,
-            status_id,
+            header_out: false,
+            reqctx,
             ping_last: Instant::now(),
             data_done: false,
             completed: false,
@@ -577,6 +581,7 @@ impl DataApiPython3DataStream {
         b: EventFull,
         channel: &ChannelTypeConfigGen,
         fetch_info: &SfChFetchInfo,
+        do_decompress: bool,
         header_out: &mut bool,
         count_events: &mut usize,
     ) -> Result<BytesMut, Error> {
@@ -586,10 +591,10 @@ impl DataApiPython3DataStream {
             const EVIMAX: usize = 6;
             if *count_events < EVIMAX {
                 debug!(
-                    "ev info {}/{} decomps len {:?}  BE {:?}  scalar-type {:?}  shape {:?}  comps {:?}",
+                    "ev info {}/{} bloblen {:?}  BE {:?}  scalar-type {:?}  shape {:?}  comps {:?}",
                     *count_events + 1,
                     EVIMAX,
-                    b.decomps[i1].as_ref().map(|x| x.len()),
+                    b.blobs[i1].len(),
                     b.be[i1],
                     b.scalar_types[i1],
                     b.shapes[i1],
@@ -618,26 +623,38 @@ impl DataApiPython3DataStream {
                     b.comps.get(i1).map(|x| x.clone()).unwrap(),
                 );
                 let h = serde_json::to_string(&head)?;
-                info!("sending channel header {}", h);
+                debug!("sending channel header {}", h);
                 let l1 = 1 + h.as_bytes().len() as u32;
                 d.put_u32(l1);
                 d.put_u8(0);
-                info!("header frame byte len {}", 4 + 1 + h.as_bytes().len());
+                debug!("header frame byte len {}", 4 + 1 + h.as_bytes().len());
                 d.extend_from_slice(h.as_bytes());
                 d.put_u32(l1);
                 *header_out = true;
             }
             match &b.shapes[i1] {
                 _ => {
-                    let empty_blob = Vec::new();
-                    let blob = b.blobs[i1].as_ref().unwrap_or(&empty_blob);
-                    let l1 = 17 + blob.len() as u32;
-                    d.put_u32(l1);
-                    d.put_u8(1);
-                    d.put_u64(b.tss[i1]);
-                    d.put_u64(b.pulses[i1]);
-                    d.put_slice(&blob);
-                    d.put_u32(l1);
+                    if do_decompress {
+                        let blob = b
+                            .data_decompressed(i1, fetch_info.scalar_type(), fetch_info.shape())
+                            .map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
+                        let l1 = 17 + blob.len() as u32;
+                        d.put_u32(l1);
+                        d.put_u8(1);
+                        d.put_u64(b.tss[i1]);
+                        d.put_u64(b.pulses[i1]);
+                        d.put_slice(&blob);
+                        d.put_u32(l1);
+                    } else {
+                        let blob = b.data_raw(i1);
+                        let l1 = 17 + blob.len() as u32;
+                        d.put_u32(l1);
+                        d.put_u8(1);
+                        d.put_u64(b.tss[i1]);
+                        d.put_u64(b.pulses[i1]);
+                        d.put_slice(&blob);
+                        d.put_u32(l1);
+                    }
                 }
             }
             *count_events += 1;
@@ -645,23 +662,42 @@ impl DataApiPython3DataStream {
         Ok(d)
     }
 
-    fn handle_chan_stream_ready(&mut self, item: Result<BytesMut, Error>) -> Option<Result<BytesMut, Error>> {
+    fn handle_chan_stream_ready(&mut self, item: Sitemty<EventFull>) -> Option<Result<BytesMut, Error>> {
         match item {
             Ok(k) => {
                 let n = Instant::now();
                 if n.duration_since(self.ping_last) >= Duration::from_millis(2000) {
                     let mut sb = crate::status_board().unwrap();
-                    sb.mark_alive(&self.status_id);
+                    sb.mark_alive(self.reqctx.reqid());
                     self.ping_last = n;
                 }
-                Some(Ok(k))
+                match k {
+                    StreamItem::DataItem(k) => match k {
+                        RangeCompletableItem::RangeComplete => todo!(),
+                        RangeCompletableItem::Data(k) => {
+                            let item = Self::convert_item(
+                                k,
+                                self.current_channel.as_ref().unwrap(),
+                                self.current_fetch_info.as_ref().unwrap(),
+                                self.do_decompress,
+                                &mut self.header_out,
+                                &mut self.event_count,
+                            )?;
+                            todo!()
+                        }
+                    },
+                    StreamItem::Log(k) => todo!(),
+                    StreamItem::Stats(k) => todo!(),
+                }
             }
             Err(e) => {
                 error!("DataApiPython3DataStream  emit error: {e:?}");
                 self.chan_stream = None;
+                self.current_channel = None;
+                self.current_fetch_info = None;
                 self.data_done = true;
                 let mut sb = crate::status_board().unwrap();
-                sb.add_error(&self.status_id, e);
+                sb.add_error(self.reqctx.reqid(), e);
                 if false {
                     // TODO format as python data api error frame:
                     let mut buf = BytesMut::with_capacity(1024);
@@ -682,14 +718,14 @@ impl DataApiPython3DataStream {
             self.range.clone().into(),
             TransformQuery::for_event_blobs(),
         );
-        let subq = EventsSubQuery::from_parts(select, self.settings.clone());
+        let subq = EventsSubQuery::from_parts(select, self.settings.clone(), self.reqctx.reqid().into());
         let one_before = subq.transform().need_one_before_range();
         debug!("query for event blobs retrieval  subq {subq:?}");
         // TODO  important TODO
         debug!("TODO fix magic inmem_bufcap");
         debug!("TODO add timeout option to data api3 download");
         // TODO is this a good to place decide this?
-        let s = if self.node_config.node_config.cluster.is_central_storage {
+        let stream = if self.node_config.node_config.cluster.is_central_storage {
             info!("Set up central storage stream");
             // TODO pull up this config
             let event_chunker_conf = EventChunkerConf::new(ByteSize::from_kb(1024));
@@ -697,9 +733,9 @@ impl DataApiPython3DataStream {
                 self.range.clone(),
                 fetch_info.clone(),
                 one_before,
-                self.do_decompress,
                 event_chunker_conf,
                 self.disk_io_tune.clone(),
+                self.reqctx.clone(),
                 &self.node_config,
             )?;
             Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
@@ -708,33 +744,13 @@ impl DataApiPython3DataStream {
             let s = MergedBlobsFromRemotes::new(subq, self.node_config.node_config.cluster.clone());
             Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
         };
-        let s = s.map({
-            let mut header_out = false;
-            let mut count_events = 0;
-            let channel = self.current_channel.clone().unwrap();
-            move |b| {
-                let ret = match b {
-                    Ok(b) => {
-                        let f = match b {
-                            StreamItem::DataItem(RangeCompletableItem::Data(b)) => {
-                                Self::convert_item(b, &channel, &fetch_info, &mut header_out, &mut count_events)?
-                            }
-                            _ => BytesMut::new(),
-                        };
-                        Ok(f)
-                    }
-                    Err(e) => Err(e),
-                };
-                ret
-            }
-        });
-        //let _ = Box::new(s) as Box<dyn Stream<Item = Result<BytesMut, Error>> + Unpin>;
         let evm = if self.events_max == 0 {
             usize::MAX
         } else {
             self.events_max as usize
         };
-        self.chan_stream = Some(Box::pin(s.map_err(Error::from).take(evm)));
+        self.chan_stream = Some(Box::pin(stream));
+        self.current_fetch_info = Some(fetch_info);
         Ok(())
     }
 }
@@ -807,9 +823,9 @@ impl Stream for DataApiPython3DataStream {
                         {
                             let n = Instant::now();
                             let mut sb = crate::status_board().unwrap();
-                            sb.mark_alive(&self.status_id);
+                            sb.mark_alive(self.reqctx.reqid());
                             self.ping_last = n;
-                            sb.mark_ok(&self.status_id);
+                            sb.mark_ok(self.reqctx.reqid());
                         }
                         continue;
                     }
@@ -864,7 +880,7 @@ impl Api1EventsBinaryHandler {
             .to_owned();
         let body_data = hyper::body::to_bytes(body).await?;
         if body_data.len() < 1024 * 2 && body_data.first() == Some(&"{".as_bytes()[0]) {
-            info!("request body_data string: {}", String::from_utf8_lossy(&body_data));
+            debug!("request body_data string: {}", String::from_utf8_lossy(&body_data));
         }
         let qu = match serde_json::from_slice::<Api1Query>(&body_data) {
             Ok(mut qu) => {
@@ -879,6 +895,8 @@ impl Api1EventsBinaryHandler {
                 return Err(Error::with_msg_no_trace("can not parse query"));
             }
         };
+        let reqid = super::status_board()?.new_status_id();
+        let reqctx = netpod::ReqCtx::new(reqid);
         let span = if qu.log_level() == "trace" {
             debug!("enable trace for handler");
             tracing::span!(tracing::Level::TRACE, "log_span_trace")
@@ -888,8 +906,10 @@ impl Api1EventsBinaryHandler {
         } else {
             tracing::Span::none()
         };
-        self.handle_for_query(qu, accept, span.clone(), node_config)
+        let reqidspan = tracing::info_span!("api1query", reqid = reqctx.reqid());
+        self.handle_for_query(qu, accept, &reqctx, span.clone(), reqidspan.clone(), node_config)
             .instrument(span)
+            .instrument(reqidspan)
             .await
     }
 
@@ -897,12 +917,14 @@ impl Api1EventsBinaryHandler {
         &self,
         qu: Api1Query,
         accept: String,
+        reqctx: &ReqCtxArc,
         span: tracing::Span,
+        reqidspan: tracing::Span,
         ncc: &NodeConfigCached,
     ) -> Result<Response<Body>, Error> {
         let self_name = any::type_name::<Self>();
         // TODO this should go to usage statistics:
-        info!(
+        debug!(
             "{self_name}  {:?}  {}  {:?}",
             qu.range(),
             qu.channels().len(),
@@ -925,24 +947,24 @@ impl Api1EventsBinaryHandler {
             let ts1 = Instant::now();
             let mut chans = Vec::new();
             for ch in qu.channels() {
-                info!("try to find config quorum for {ch:?}");
+                debug!("try to find config quorum for {ch:?}");
                 let ch = SfDbChannel::from_name(backend, ch.name());
                 let ch_conf =
                     nodenet::configquorum::find_config_basics_quorum(ch.clone(), range.clone().into(), ncc).await?;
                 match ch_conf {
                     Some(x) => {
+                        debug!("found quorum {ch:?} {x:?}");
                         chans.push(x);
                     }
                     None => {
+                        // TODO count in request ctx.
                         error!("no config quorum found for {ch:?}");
                     }
                 }
             }
             let ts2 = Instant::now();
             let dt = ts2.duration_since(ts1).as_millis();
-            info!("{self_name}  configs fetched in {} ms", dt);
-            // TODO use a better stream protocol with built-in error delivery.
-            let status_id = super::status_board()?.new_status_id();
+            debug!("{self_name}  {} configs fetched in {} ms", chans.len(), dt);
             let s = DataApiPython3DataStream::new(
                 range.clone(),
                 chans,
@@ -951,12 +973,12 @@ impl Api1EventsBinaryHandler {
                 DiskIoTune::default(),
                 qu.decompress(),
                 qu.events_max().unwrap_or(u64::MAX),
-                status_id.clone(),
+                reqctx.clone(),
                 ncc.clone(),
             );
-            let s = s.instrument(span);
-            let body = BodyStream::wrapped(s, format!("Api1EventsBinaryHandler"));
-            let ret = response(StatusCode::OK).header("x-daqbuffer-request-id", status_id);
+            let s = s.instrument(span).instrument(reqidspan);
+            let body = Body::wrap_stream(s);
+            let ret = response(StatusCode::OK).header(X_DAQBUF_REQID, reqctx.reqid());
             let ret = ret.body(body)?;
             Ok(ret)
         } else {

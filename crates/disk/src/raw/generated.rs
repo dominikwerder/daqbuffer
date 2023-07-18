@@ -77,8 +77,7 @@ impl EventBlobsGeneratorI32Test00 {
             item.add_event(
                 ts,
                 pulse,
-                Some(value.to_be_bytes().to_vec()),
-                None,
+                value.to_be_bytes().to_vec(),
                 self.scalar_type.clone(),
                 self.be,
                 self.shape.clone(),
@@ -178,8 +177,7 @@ impl EventBlobsGeneratorI32Test01 {
             item.add_event(
                 ts,
                 pulse,
-                Some(value.to_be_bytes().to_vec()),
-                None,
+                value.to_be_bytes().to_vec(),
                 self.scalar_type.clone(),
                 self.be,
                 self.shape.clone(),

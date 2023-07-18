@@ -1,12 +1,19 @@
-use crate::err::Error;
 use crate::response;
-use futures_util::{select, FutureExt};
-use http::{Method, StatusCode};
-use hyper::{Body, Client, Request, Response};
+use crate::RetrievalError;
+use futures_util::select;
+use futures_util::FutureExt;
+use http::Method;
+use http::StatusCode;
+use hyper::Body;
+use hyper::Client;
+use hyper::Request;
+use hyper::Response;
 use netpod::log::*;
+use netpod::Node;
+use netpod::NodeConfigCached;
 use netpod::APP_JSON;
-use netpod::{Node, NodeConfigCached};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use serde_json::Value as JsonValue;
 use std::future::Future;
 use std::pin::Pin;
@@ -26,7 +33,7 @@ struct GatherHost {
     inst: String,
 }
 
-async fn process_answer(res: Response<Body>) -> Result<JsonValue, Error> {
+async fn process_answer(res: Response<Body>) -> Result<JsonValue, RetrievalError> {
     let (pre, mut body) = res.into_parts();
     if pre.status != StatusCode::OK {
         use hyper::body::HttpBody;
@@ -48,11 +55,14 @@ async fn process_answer(res: Response<Body>) -> Result<JsonValue, Error> {
             Ok(k) => k,
             Err(_e) => JsonValue::String(String::from_utf8(body_all.to_vec())?),
         };
-        Ok::<_, Error>(val)
+        Ok::<_, RetrievalError>(val)
     }
 }
 
-pub async fn unused_gather_json_from_hosts(req: Request<Body>, pathpre: &str) -> Result<Response<Body>, Error> {
+pub async fn unused_gather_json_from_hosts(
+    req: Request<Body>,
+    pathpre: &str,
+) -> Result<Response<Body>, RetrievalError> {
     let (part_head, part_body) = req.into_parts();
     let bodyslice = hyper::body::to_bytes(part_body).await?;
     let gather_from: GatherFrom = serde_json::from_slice(&bodyslice)?;
@@ -72,7 +82,7 @@ pub async fn unused_gather_json_from_hosts(req: Request<Body>, pathpre: &str) ->
         let task = tokio::spawn(async move {
             select! {
               _ = sleep(Duration::from_millis(1500)).fuse() => {
-                Err(Error::with_msg("timeout"))
+                Err(RetrievalError::with_msg("timeout"))
               }
               res = Client::new().request(req?).fuse() => Ok(process_answer(res?).await?)
             }
@@ -105,7 +115,10 @@ pub async fn unused_gather_json_from_hosts(req: Request<Body>, pathpre: &str) ->
     Ok(res)
 }
 
-pub async fn gather_get_json(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+pub async fn gather_get_json(
+    req: Request<Body>,
+    node_config: &NodeConfigCached,
+) -> Result<Response<Body>, RetrievalError> {
     let (head, body) = req.into_parts();
     let _bodyslice = hyper::body::to_bytes(body).await?;
     let pathpre = "/api/4/gather/";
@@ -123,7 +136,7 @@ pub async fn gather_get_json(req: Request<Body>, node_config: &NodeConfigCached)
             let task = tokio::spawn(async move {
                 select! {
                   _ = sleep(Duration::from_millis(1500)).fuse() => {
-                    Err(Error::with_msg("timeout"))
+                    Err(RetrievalError::with_msg("timeout"))
                   }
                   res = Client::new().request(req?).fuse() => Ok(process_answer(res?).await?)
                 }
@@ -181,23 +194,23 @@ pub async fn gather_get_json_generic<SM, NT, FT, OUT>(
     // TODO use deadline instead.
     // TODO Wait a bit longer compared to remote to receive partial results.
     timeout: Duration,
-) -> Result<OUT, Error>
+) -> Result<OUT, RetrievalError>
 where
     SM: Send + 'static,
-    NT: Fn(String, Response<Body>) -> Pin<Box<dyn Future<Output = Result<SubRes<SM>, Error>> + Send>>
+    NT: Fn(String, Response<Body>) -> Pin<Box<dyn Future<Output = Result<SubRes<SM>, RetrievalError>> + Send>>
         + Send
         + Sync
         + Copy
         + 'static,
-    FT: Fn(Vec<(Tag, Result<SubRes<SM>, Error>)>) -> Result<OUT, Error>,
+    FT: Fn(Vec<(Tag, Result<SubRes<SM>, RetrievalError>)>) -> Result<OUT, RetrievalError>,
 {
     // TODO remove magic constant
     let extra_timeout = Duration::from_millis(3000);
     if urls.len() != bodies.len() {
-        return Err(Error::with_msg_no_trace("unequal numbers of urls and bodies"));
+        return Err(RetrievalError::TextError(format!("unequal numbers of urls and bodies")));
     }
     if urls.len() != tags.len() {
-        return Err(Error::with_msg_no_trace("unequal numbers of urls and tags"));
+        return Err(RetrievalError::TextError(format!("unequal numbers of urls and tags")));
     }
     let spawned: Vec<_> = urls
         .into_iter()
@@ -227,7 +240,7 @@ where
                 select! {
                     _ = sleep(timeout + extra_timeout).fuse() => {
                         error!("PROXY TIMEOUT");
-                        Err(Error::with_msg_no_trace("timeout"))
+                        Err(RetrievalError::TextError(format!("timeout")))
                     }
                     res = {
                         let client = Client::new();

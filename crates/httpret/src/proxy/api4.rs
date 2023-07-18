@@ -1,12 +1,12 @@
 pub mod caioclookup;
 
 use crate::bodystream::ToPublicResponse;
-use crate::err::Error;
 use crate::gather::gather_get_json_generic;
 use crate::gather::SubRes;
 use crate::gather::Tag;
 use crate::response;
 use crate::ReqCtx;
+use err::Error;
 use futures_util::Future;
 use http::Method;
 use http::Request;

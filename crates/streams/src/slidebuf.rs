@@ -3,7 +3,7 @@ use std::fmt;
 #[derive(Debug)]
 pub enum Error {
     NotEnoughBytes,
-    NotEnoughSpace,
+    NotEnoughSpace(usize, usize, usize),
     TryFromSliceError,
 }
 
@@ -97,7 +97,7 @@ impl SlideBuf {
             self.rewind();
         }
         if self.wcap() < x {
-            return Err(Error::NotEnoughSpace);
+            return Err(Error::NotEnoughSpace(self.cap(), self.wcap(), x));
         } else {
             self.wp += x;
             Ok(())
@@ -260,7 +260,7 @@ impl SlideBuf {
             self.rewind();
         }
         if self.wcap() < n {
-            Err(Error::NotEnoughSpace)
+            Err(Error::NotEnoughSpace(self.cap(), self.wcap(), n))
         } else {
             let ret = &mut self.buf[self.wp..self.wp + n];
             self.wp += n;
@@ -293,7 +293,7 @@ impl SlideBuf {
             self.rewind();
         }
         if self.wcap() < need_min {
-            Err(Error::NotEnoughSpace)
+            Err(Error::NotEnoughSpace(self.cap(), self.wcap(), need_min))
         } else {
             let ret = &mut self.buf[self.wp..];
             Ok(ret)
@@ -307,7 +307,7 @@ impl SlideBuf {
             self.rewind();
         }
         if self.wcap() < buf.len() {
-            return Err(Error::NotEnoughSpace);
+            return Err(Error::NotEnoughSpace(self.cap(), self.wcap(), buf.len()));
         } else {
             self.buf[self.wp..self.wp + buf.len()].copy_from_slice(buf);
             self.wp += buf.len();
@@ -324,7 +324,7 @@ impl SlideBuf {
             self.rewind();
         }
         if self.wcap() < TS {
-            return Err(Error::NotEnoughSpace);
+            return Err(Error::NotEnoughSpace(self.cap(), self.wcap(), TS));
         } else {
             self.buf[self.wp..self.wp + TS].copy_from_slice(&v.to_be_bytes());
             self.wp += TS;
@@ -341,7 +341,7 @@ impl SlideBuf {
             self.rewind();
         }
         if self.wcap() < TS {
-            return Err(Error::NotEnoughSpace);
+            return Err(Error::NotEnoughSpace(self.cap(), self.wcap(), TS));
         } else {
             self.buf[self.wp..self.wp + TS].copy_from_slice(&v.to_be_bytes());
             self.wp += TS;
@@ -358,7 +358,7 @@ impl SlideBuf {
             self.rewind();
         }
         if self.wcap() < TS {
-            return Err(Error::NotEnoughSpace);
+            return Err(Error::NotEnoughSpace(self.cap(), self.wcap(), TS));
         } else {
             self.buf[self.wp..self.wp + TS].copy_from_slice(&v.to_be_bytes());
             self.wp += TS;
@@ -375,7 +375,7 @@ impl SlideBuf {
             self.rewind();
         }
         if self.wcap() < TS {
-            return Err(Error::NotEnoughSpace);
+            return Err(Error::NotEnoughSpace(self.cap(), self.wcap(), TS));
         } else {
             self.buf[self.wp..self.wp + TS].copy_from_slice(&v.to_be_bytes());
             self.wp += TS;
@@ -392,7 +392,7 @@ impl SlideBuf {
             self.rewind();
         }
         if self.wcap() < TS {
-            return Err(Error::NotEnoughSpace);
+            return Err(Error::NotEnoughSpace(self.cap(), self.wcap(), TS));
         } else {
             self.buf[self.wp..self.wp + TS].copy_from_slice(&v.to_be_bytes());
             self.wp += TS;
@@ -409,7 +409,7 @@ impl SlideBuf {
             self.rewind();
         }
         if self.wcap() < TS {
-            return Err(Error::NotEnoughSpace);
+            return Err(Error::NotEnoughSpace(self.cap(), self.wcap(), TS));
         } else {
             self.buf[self.wp..self.wp + TS].copy_from_slice(&v.to_be_bytes());
             self.wp += TS;

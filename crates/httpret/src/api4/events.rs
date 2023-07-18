@@ -1,9 +1,8 @@
 use crate::channelconfig::chconf_from_events_v1;
-use crate::err::Error;
 use crate::response;
 use crate::response_err;
-use crate::BodyStream;
 use crate::ToPublicResponse;
+use err::Error;
 use futures_util::stream;
 use futures_util::TryStreamExt;
 use http::Method;
@@ -72,15 +71,12 @@ async fn plain_events_binary(
     req: Request<Body>,
     node_config: &NodeConfigCached,
 ) -> Result<Response<Body>, Error> {
-    debug!("plain_events_binary  req: {:?}", req);
+    debug!("{:?}", req);
     let query = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
     let ch_conf = chconf_from_events_v1(&query, node_config).await?;
     info!("plain_events_binary  chconf_from_events_v1: {ch_conf:?}");
     let s = stream::iter([Ok::<_, Error>(String::from("TODO_PREBINNED_BINARY_STREAM"))]);
-    let ret = response(StatusCode::OK).body(BodyStream::wrapped(
-        s.map_err(Error::from),
-        format!("plain_events_binary"),
-    ))?;
+    let ret = response(StatusCode::OK).body(Body::wrap_stream(s.map_err(Error::from)))?;
     Ok(ret)
 }
 
@@ -89,6 +85,7 @@ async fn plain_events_json(
     req: Request<Body>,
     node_config: &NodeConfigCached,
 ) -> Result<Response<Body>, Error> {
+    let reqid = crate::status_board()?.new_status_id();
     info!("plain_events_json  req: {:?}", req);
     let (_head, _body) = req.into_parts();
     let query = PlainEventsQuery::from_url(&url)?;
@@ -99,7 +96,8 @@ async fn plain_events_json(
         .map_err(Error::from)?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
     info!("plain_events_json  chconf_from_events_v1: {ch_conf:?}");
-    let item = streams::plaineventsjson::plain_events_json(&query, ch_conf, &node_config.node_config.cluster).await;
+    let item =
+        streams::plaineventsjson::plain_events_json(&query, ch_conf, reqid, &node_config.node_config.cluster).await;
     let item = match item {
         Ok(item) => item,
         Err(e) => {

@@ -1,5 +1,5 @@
 use crate::bodystream::response;
-use crate::err::Error;
+use err::Error;
 use http::Method;
 use http::Request;
 use http::Response;

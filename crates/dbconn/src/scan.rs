@@ -12,7 +12,6 @@ use futures_util::Stream;
 use netpod::log::*;
 use netpod::Database;
 use netpod::NodeConfigCached;
-use parse::channelconfig::NErr;
 use pin_project::pin_project;
 use serde::Deserialize;
 use serde::Serialize;
@@ -513,7 +512,7 @@ async fn update_db_with_channel_config(
     };
     if do_parse {
         let buf = tokio::fs::read(&path).await?;
-        let config = parse::channelconfig::parse_config(&buf).map_err(NErr::from)?.1;
+        let config = parse::channelconfig::parse_config(&buf).map_err(|e| Error::from(e.to_string()))?;
         match config_id {
             None => {
                 dbc.query(

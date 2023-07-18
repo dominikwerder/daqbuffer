@@ -8,13 +8,16 @@ pub mod pg {
 }
 
 use err::anyhow;
+use err::thiserror;
 use err::Error;
 use err::Res2;
+use err::ThisError;
 use netpod::log::*;
 use netpod::TableSizes;
 use netpod::{Database, NodeConfigCached, SfDbChannel};
 use netpod::{ScalarType, Shape};
 use pg::{Client as PgClient, NoTls};
+use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -195,7 +198,7 @@ pub async fn find_series(channel: &SfDbChannel, pgclient: Arc<PgClient>) -> Resu
 // Currently only for sf-databuffer type backends
 // Note: we currently treat the channels primary key as series-id for sf-databuffer type backends.
 pub async fn find_series_sf_databuffer(channel: &SfDbChannel, pgclient: Arc<PgClient>) -> Res2<u64> {
-    info!("find_series  channel {:?}", channel);
+    debug!("find_series_sf_databuffer  {:?}", channel);
     let sql = "select rowid from facilities where name = $1";
     let rows = pgclient.query(sql, &[&channel.backend()]).await.err_conv()?;
     let row = rows
@@ -217,4 +220,48 @@ pub async fn find_series_sf_databuffer(channel: &SfDbChannel, pgclient: Arc<PgCl
         .ok_or_else(|| anyhow::anyhow!("No series found for {channel:?}"))?;
     let series = row.get::<_, i64>(0) as u64;
     Ok(series)
+}
+
+#[derive(Debug, ThisError, Serialize)]
+pub enum FindChannelError {
+    UnknownBackend,
+    BadSeriesId,
+    NoFound,
+    MultipleFound,
+    Database(String),
+}
+
+// On sf-databuffer, the channel name identifies the series. But we can also have a series id.
+// This function is used if the request provides only the series-id, but no name.
+pub async fn find_sf_channel_by_series(
+    channel: SfDbChannel,
+    pgclient: Arc<PgClient>,
+) -> Result<SfDbChannel, FindChannelError> {
+    debug!("find_sf_channel_by_series  {:?}", channel);
+    let series = channel.series().ok_or_else(|| FindChannelError::BadSeriesId)?;
+    let sql = "select rowid from facilities where name = $1";
+    let rows = pgclient
+        .query(sql, &[&channel.backend()])
+        .await
+        .map_err(|e| FindChannelError::Database(e.to_string()))?;
+    let row = rows
+        .into_iter()
+        .next()
+        .ok_or_else(|| FindChannelError::UnknownBackend)?;
+    let backend_id: i64 = row.get(0);
+    let sql = "select name from channels where facility = $1 and rowid = $2";
+    let rows = pgclient
+        .query(sql, &[&backend_id, &(series as i64)])
+        .await
+        .map_err(|e| FindChannelError::Database(e.to_string()))?;
+    if rows.len() > 1 {
+        return Err(FindChannelError::MultipleFound);
+    }
+    if let Some(row) = rows.into_iter().next() {
+        let name = row.get::<_, String>(0);
+        let channel = SfDbChannel::from_full(channel.backend(), channel.series(), name);
+        Ok(channel)
+    } else {
+        return Err(FindChannelError::NoFound);
+    }
 }

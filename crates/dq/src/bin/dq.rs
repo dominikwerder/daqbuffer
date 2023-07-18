@@ -56,7 +56,7 @@ pub fn main() -> Result<(), Error> {
                 file.read_exact(&mut buf).await?;
                 drop(file);
                 let config = match parse::channelconfig::parse_config(&buf) {
-                    Ok(k) => k.1,
+                    Ok(k) => k,
                     Err(e) => return Err(Error::with_msg_no_trace(format!("can not parse: {:?}", e))),
                 };
                 eprintln!("Read config: {:?}", config);
@@ -69,14 +69,14 @@ pub fn main() -> Result<(), Error> {
                 file.read_exact(&mut buf).await?;
                 drop(file);
                 let config = match parse::channelconfig::parse_config(&buf) {
-                    Ok(k) => k.1,
+                    Ok(k) => k,
                     Err(e) => return Err(Error::with_msg_no_trace(format!("can not parse: {:?}", e))),
                 };
                 eprintln!("Read config: {:?}", config);
                 let path = sub.datafile;
                 let file = File::open(&path).await?;
                 let disk_io_tune = netpod::DiskIoTune::default();
-                let inp = Box::pin(disk::file_content_stream(path.clone(), file, disk_io_tune));
+                let inp = Box::pin(disk::file_content_stream(path.clone(), file, disk_io_tune, "req-000"));
                 let ce = &config.entries[0];
                 let fetch_info = SfChFetchInfo::new(
                     "",
@@ -94,7 +94,7 @@ pub fn main() -> Result<(), Error> {
                 let stats_conf = EventChunkerConf {
                     disk_stats_every: ByteSize::from_mb(2),
                 };
-                let _chunks = EventChunker::from_start(inp, fetch_info, range, stats_conf, path.clone(), false, true);
+                let _chunks = EventChunker::from_start(inp, fetch_info, range, stats_conf, path.clone(), true);
                 err::todo();
                 Ok(())
             }

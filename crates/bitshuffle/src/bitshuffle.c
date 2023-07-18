@@ -20,7 +20,7 @@
 
 // Constants.
 // Use fast decompression instead of safe decompression for LZ4.
-#define BSHUF_LZ4_DECOMPRESS_FAST
+// #define BSHUF_LZ4_DECOMPRESS_FAST
 
 
 // Macros.

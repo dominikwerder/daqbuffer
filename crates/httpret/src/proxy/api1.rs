@@ -1,8 +1,8 @@
 pub mod reqstatus;
 
 use crate::bodystream::response;
-use crate::err::Error;
 use crate::ReqCtx;
+use err::Error;
 use http::HeaderValue;
 use http::Method;
 use http::Request;
@@ -14,6 +14,7 @@ use netpod::log::*;
 use netpod::query::api1::Api1Query;
 use netpod::ProxyConfig;
 use netpod::ACCEPT_ALL;
+use netpod::X_DAQBUF_REQID;
 
 pub struct PythonDataApi1Query {}
 
@@ -85,10 +86,8 @@ impl PythonDataApi1Query {
             } else {
                 info!("backend returned OK");
                 let riq_def = HeaderValue::from_static("(none)");
-                let riq = head.headers.get("x-daqbuffer-request-id").unwrap_or(&riq_def);
-                Ok(response(StatusCode::OK)
-                    .header("x-daqbuffer-request-id", riq)
-                    .body(body)?)
+                let riq = head.headers.get(X_DAQBUF_REQID).unwrap_or(&riq_def);
+                Ok(response(StatusCode::OK).header(X_DAQBUF_REQID, riq).body(body)?)
             }
         } else {
             Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)

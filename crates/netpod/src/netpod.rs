@@ -36,10 +36,11 @@ use std::time::Duration;
 use timeunits::*;
 use url::Url;
 
-pub const APP_JSON: &'static str = "application/json";
-pub const APP_JSON_LINES: &'static str = "application/jsonlines";
-pub const APP_OCTET: &'static str = "application/octet-stream";
-pub const ACCEPT_ALL: &'static str = "*/*";
+pub const APP_JSON: &str = "application/json";
+pub const APP_JSON_LINES: &str = "application/jsonlines";
+pub const APP_OCTET: &str = "application/octet-stream";
+pub const ACCEPT_ALL: &str = "*/*";
+pub const X_DAQBUF_REQID: &str = "x-daqbuffer-request-id";
 
 pub const CONNECTION_STATUS_DIV: u64 = timeunits::DAY;
 pub const TS_MSP_GRID_UNIT: u64 = timeunits::SEC * 10;
@@ -1099,6 +1100,14 @@ impl Shape {
     pub fn from_url_str(s: &str) -> Result<Self, Error> {
         let ret = serde_json::from_str(s)?;
         Ok(ret)
+    }
+
+    pub fn ele_count(&self) -> u64 {
+        match self {
+            Shape::Scalar => 1,
+            Shape::Wave(n) => *n as u64,
+            Shape::Image(n, m) => *n as u64 * *m as u64,
+        }
     }
 }
 
@@ -2987,3 +2996,23 @@ mod test_parse {
         assert_eq!(a.get("shape").unwrap(), "Image(3, 4)");
     }
 }
+
+pub struct ReqCtx {
+    reqid: String,
+}
+
+impl ReqCtx {
+    pub fn new<S>(reqid: S) -> std::sync::Arc<Self>
+    where
+        S: Into<String>,
+    {
+        let ret = Self { reqid: reqid.into() };
+        std::sync::Arc::new(ret)
+    }
+
+    pub fn reqid(&self) -> &str {
+        &self.reqid
+    }
+}
+
+pub type ReqCtxArc = std::sync::Arc<ReqCtx>;

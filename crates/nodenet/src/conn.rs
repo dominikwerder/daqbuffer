@@ -1,5 +1,7 @@
 use crate::scylla::scylla_channel_event_stream;
+use err::thiserror;
 use err::Error;
+use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::on_sitemty_data;
@@ -20,6 +22,7 @@ use items_2::inmem::InMemoryFrame;
 use netpod::histo::HistoLog2;
 use netpod::log::*;
 use netpod::NodeConfigCached;
+use netpod::ReqCtxArc;
 use query::api4::events::EventsSubQuery;
 use query::api4::events::Frame1Parts;
 use std::net::SocketAddr;
@@ -39,6 +42,9 @@ const TEST_BACKEND: &str = "testbackend-00";
 
 #[cfg(test)]
 mod test;
+
+#[derive(Debug, ThisError)]
+pub enum NodeNetError {}
 
 pub async fn events_service(node_config: NodeConfigCached) -> Result<(), Error> {
     let addr = format!("{}:{}", node_config.node.listen, node_config.node.port_raw);
@@ -70,6 +76,7 @@ impl<E: Into<Error>> From<(E, OwnedWriteHalf)> for ConnErr {
 
 async fn make_channel_events_stream_data(
     subq: EventsSubQuery,
+    reqctx: ReqCtxArc,
     ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     if subq.backend() == TEST_BACKEND {
@@ -129,24 +136,137 @@ async fn make_channel_events_stream_data(
         Err(e)
     } else {
         let cfg = subq.ch_conf().to_sf_databuffer()?;
-        Ok(disk::raw::conn::make_event_pipe(subq, cfg, ncc).await?)
+        Ok(disk::raw::conn::make_event_pipe(subq, cfg, reqctx, ncc).await?)
     }
 }
 
 async fn make_channel_events_stream(
     subq: EventsSubQuery,
+    reqctx: ReqCtxArc,
     ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     let empty = empty_events_dyn_ev(subq.ch_conf().scalar_type(), subq.ch_conf().shape())?;
     let empty = sitem_data(ChannelEvents::Events(empty));
-    let stream = make_channel_events_stream_data(subq, ncc).await?;
+    let stream = make_channel_events_stream_data(subq, reqctx, ncc).await?;
     let ret = futures_util::stream::iter([empty]).chain(stream);
     let ret = Box::pin(ret);
     Ok(ret)
 }
 
+async fn events_conn_handler_with_reqid(
+    mut netout: OwnedWriteHalf,
+    evq: EventsSubQuery,
+    ncc: &NodeConfigCached,
+) -> Result<(), ConnErr> {
+    let reqctx = netpod::ReqCtx::new(evq.reqid());
+    if evq.create_errors_contains("nodenet_parse_query") {
+        let e = Error::with_msg_no_trace("produced error on request nodenet_parse_query");
+        return Err((e, netout).into());
+    }
+    let stream: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> = if evq.is_event_blobs() {
+        // TODO support event blobs as transform
+        let fetch_info = match evq.ch_conf().to_sf_databuffer() {
+            Ok(x) => x,
+            Err(e) => return Err((e, netout).into()),
+        };
+        match disk::raw::conn::make_event_blobs_pipe(&evq, &fetch_info, reqctx, ncc).await {
+            Ok(stream) => {
+                let stream = stream.map(|x| Box::new(x) as _);
+                Box::pin(stream)
+            }
+            Err(e) => return Err((e, netout).into()),
+        }
+    } else {
+        match make_channel_events_stream(evq.clone(), reqctx, ncc).await {
+            Ok(stream) => {
+                if false {
+                    // TODO wasm example
+                    use wasmer::Value;
+                    let wasm = b"";
+                    let mut store = wasmer::Store::default();
+                    let module = wasmer::Module::new(&store, wasm).unwrap();
+                    let import_object = wasmer::imports! {};
+                    let instance = wasmer::Instance::new(&mut store, &module, &import_object).unwrap();
+                    let add_one = instance.exports.get_function("event_transform").unwrap();
+                    let result = add_one.call(&mut store, &[Value::I32(42)]).unwrap();
+                    assert_eq!(result[0], Value::I32(43));
+                }
+                let mut tr = match build_event_transform(evq.transform()) {
+                    Ok(x) => x,
+                    Err(e) => {
+                        return Err((e, netout).into());
+                    }
+                };
+                let stream = stream.map(move |x| {
+                    let item = on_sitemty_data!(x, |x| {
+                        let x: Box<dyn Events> = Box::new(x);
+                        let x = tr.0.transform(x);
+                        Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
+                    });
+                    Box::new(item) as Box<dyn Framable + Send>
+                });
+                Box::pin(stream)
+            }
+            Err(e) => {
+                return Err((e, netout).into());
+            }
+        }
+    };
+    let mut stream = stream;
+    let mut buf_len_histo = HistoLog2::new(5);
+    while let Some(item) = stream.next().await {
+        let item = item.make_frame();
+        match item {
+            Ok(buf) => {
+                buf_len_histo.ingest(buf.len() as u32);
+                match netout.write_all(&buf).await {
+                    Ok(()) => {
+                        // TODO collect timing information and send as summary in a stats item.
+                        // TODO especially collect a distribution over the buf lengths that were send.
+                        // TODO we want to see a reasonable batch size.
+                    }
+                    Err(e) => return Err((e, netout))?,
+                }
+            }
+            Err(e) => {
+                error!("events_conn_handler_inner_try sees error in stream: {e:?}");
+                return Err((e, netout))?;
+            }
+        }
+    }
+    {
+        let item = LogItem {
+            node_ix: ncc.ix as _,
+            level: Level::INFO,
+            msg: format!("buf_len_histo: {:?}", buf_len_histo),
+        };
+        let item: Sitemty<ChannelEvents> = Ok(StreamItem::Log(item));
+        let buf = match item.make_frame() {
+            Ok(k) => k,
+            Err(e) => return Err((e, netout))?,
+        };
+        match netout.write_all(&buf).await {
+            Ok(()) => (),
+            Err(e) => return Err((e, netout))?,
+        }
+    }
+    let buf = match make_term_frame() {
+        Ok(k) => k,
+        Err(e) => return Err((e, netout))?,
+    };
+    match netout.write_all(&buf).await {
+        Ok(()) => (),
+        Err(e) => return Err((e, netout))?,
+    }
+    match netout.flush().await {
+        Ok(()) => (),
+        Err(e) => return Err((e, netout))?,
+    }
+    Ok(())
+}
+
 async fn events_get_input_frames(netin: OwnedReadHalf) -> Result<Vec<InMemoryFrame>, Error> {
-    let mut h = InMemoryFrameAsyncReadStream::new(netin, netpod::ByteSize::from_kb(1));
+    let mut h = InMemoryFrameAsyncReadStream::new(netin, netpod::ByteSize::from_kb(8));
     let mut frames = Vec::new();
     while let Some(k) = h
         .next()
@@ -207,7 +327,7 @@ async fn events_conn_handler_inner_try(
     ncc: &NodeConfigCached,
 ) -> Result<(), ConnErr> {
     let _ = addr;
-    let (netin, mut netout) = stream.into_split();
+    let (netin, netout) = stream.into_split();
     let frames = match events_get_input_frames(netin).await {
         Ok(x) => x,
         Err(e) => return Err((e, netout).into()),
@@ -216,111 +336,10 @@ async fn events_conn_handler_inner_try(
         Ok(x) => x,
         Err(e) => return Err((e, netout).into()),
     };
-    info!("events_parse_input_query  {evq:?}");
-    if evq.create_errors_contains("nodenet_parse_query") {
-        let e = Error::with_msg_no_trace("produced error on request nodenet_parse_query");
-        return Err((e, netout).into());
-    }
-    let mut stream: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> = if evq.is_event_blobs() {
-        // TODO support event blobs as transform
-        let fetch_info = match evq.ch_conf().to_sf_databuffer() {
-            Ok(x) => x,
-            Err(e) => return Err((e, netout).into()),
-        };
-        match disk::raw::conn::make_event_blobs_pipe(&evq, &fetch_info, ncc).await {
-            Ok(stream) => {
-                let stream = stream.map(|x| Box::new(x) as _);
-                Box::pin(stream)
-            }
-            Err(e) => return Err((e, netout).into()),
-        }
-    } else {
-        match make_channel_events_stream(evq.clone(), ncc).await {
-            Ok(stream) => {
-                if false {
-                    // TODO wasm example
-                    use wasmer::Value;
-                    let wasm = b"";
-                    let mut store = wasmer::Store::default();
-                    let module = wasmer::Module::new(&store, wasm).unwrap();
-                    let import_object = wasmer::imports! {};
-                    let instance = wasmer::Instance::new(&mut store, &module, &import_object).unwrap();
-                    let add_one = instance.exports.get_function("event_transform").unwrap();
-                    let result = add_one.call(&mut store, &[Value::I32(42)]).unwrap();
-                    assert_eq!(result[0], Value::I32(43));
-                }
-                let mut tr = match build_event_transform(evq.transform()) {
-                    Ok(x) => x,
-                    Err(e) => {
-                        return Err((e, netout).into());
-                    }
-                };
-                let stream = stream.map(move |x| {
-                    let item = on_sitemty_data!(x, |x| {
-                        let x: Box<dyn Events> = Box::new(x);
-                        let x = tr.0.transform(x);
-                        Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
-                    });
-                    Box::new(item) as Box<dyn Framable + Send>
-                });
-                Box::pin(stream)
-            }
-            Err(e) => {
-                return Err((e, netout).into());
-            }
-        }
-    };
-
-    let mut buf_len_histo = HistoLog2::new(5);
-    while let Some(item) = stream.next().await {
-        let item = item.make_frame();
-        match item {
-            Ok(buf) => {
-                buf_len_histo.ingest(buf.len() as u32);
-                match netout.write_all(&buf).await {
-                    Ok(()) => {
-                        // TODO collect timing information and send as summary in a stats item.
-                        // TODO especially collect a distribution over the buf lengths that were send.
-                        // TODO we want to see a reasonable batch size.
-                    }
-                    Err(e) => return Err((e, netout))?,
-                }
-            }
-            Err(e) => {
-                error!("events_conn_handler_inner_try sees error in stream: {e:?}");
-                return Err((e, netout))?;
-            }
-        }
-    }
-    {
-        let item = LogItem {
-            node_ix: ncc.ix as _,
-            level: Level::INFO,
-            msg: format!("buf_len_histo: {:?}", buf_len_histo),
-        };
-        let item: Sitemty<ChannelEvents> = Ok(StreamItem::Log(item));
-        let buf = match item.make_frame() {
-            Ok(k) => k,
-            Err(e) => return Err((e, netout))?,
-        };
-        match netout.write_all(&buf).await {
-            Ok(()) => (),
-            Err(e) => return Err((e, netout))?,
-        }
-    }
-    let buf = match make_term_frame() {
-        Ok(k) => k,
-        Err(e) => return Err((e, netout))?,
-    };
-    match netout.write_all(&buf).await {
-        Ok(()) => (),
-        Err(e) => return Err((e, netout))?,
-    }
-    match netout.flush().await {
-        Ok(()) => (),
-        Err(e) => return Err((e, netout))?,
-    }
-    Ok(())
+    debug!("events_conn_handler sees:  {evq:?}");
+    let reqid = evq.reqid();
+    let span = tracing::info_span!("subreq", reqid = reqid);
+    events_conn_handler_with_reqid(netout, evq, ncc).instrument(span).await
 }
 
 async fn events_conn_handler_inner(

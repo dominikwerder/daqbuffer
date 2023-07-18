@@ -27,3 +27,4 @@ items_proc = { path = "../items_proc" }
 netpod = { path = "../netpod" }
 taskrun = { path = "../taskrun" }
 parse = { path = "../parse" }
+bitshuffle = { path = "../bitshuffle" }

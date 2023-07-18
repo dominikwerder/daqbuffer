@@ -1,10 +1,14 @@
-use crate::err::Error;
 use crate::response;
-use http::{Method, StatusCode};
-use hyper::{Body, Request, Response};
+use err::Error;
+use http::Method;
+use http::StatusCode;
+use hyper::Body;
+use hyper::Request;
+use hyper::Response;
 use netpod::log::*;
 use netpod::NodeConfigCached;
-use netpod::{ACCEPT_ALL, APP_JSON};
+use netpod::ACCEPT_ALL;
+use netpod::APP_JSON;
 
 pub struct SettingsThreadsMaxHandler {}
 

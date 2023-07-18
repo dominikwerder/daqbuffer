@@ -71,6 +71,8 @@ impl LogItem {
 
 pub type Sitemty<T> = Result<StreamItem<RangeCompletableItem<T>>, Error>;
 
+pub type Sitemty2<T, E> = Result<StreamItem<RangeCompletableItem<T>>, E>;
+
 #[macro_export]
 macro_rules! on_sitemty_range_complete {
     ($item:expr, $ex:expr) => {

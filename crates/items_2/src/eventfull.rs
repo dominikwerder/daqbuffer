@@ -1,12 +1,17 @@
 use crate::framable::FrameType;
 use crate::merger::Mergeable;
+use bitshuffle::bitshuffle_decompress;
 use bytes::BytesMut;
+use err::thiserror;
+use err::ThisError;
 use items_0::container::ByteEstimate;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::streamitem::EVENT_FULL_FRAME_TYPE_ID;
 use items_0::Empty;
 use items_0::MergeError;
 use items_0::WithLen;
+#[allow(unused)]
+use netpod::log::*;
 use netpod::ScalarType;
 use netpod::Shape;
 use parse::channelconfig::CompressionMethod;
@@ -15,15 +20,20 @@ use serde::Deserializer;
 use serde::Serialize;
 use serde::Serializer;
 use std::collections::VecDeque;
+use std::time::Instant;
+
+#[allow(unused)]
+macro_rules! trace2 {
+    ($($arg:tt)*) => {};
+    ($($arg:tt)*) => { trace!($($arg)*) };
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EventFull {
     pub tss: VecDeque<u64>,
     pub pulses: VecDeque<u64>,
-    pub blobs: VecDeque<Option<Vec<u8>>>,
+    pub blobs: VecDeque<Vec<u8>>,
     //#[serde(with = "decomps_serde")]
-    // TODO allow access to `decomps` via method which checks first if `blobs` is already the decomp.
-    pub decomps: VecDeque<Option<Vec<u8>>>,
     pub scalar_types: VecDeque<ScalarType>,
     pub be: VecDeque<bool>,
     pub shapes: VecDeque<Shape>,
@@ -74,20 +84,17 @@ impl EventFull {
         &mut self,
         ts: u64,
         pulse: u64,
-        blob: Option<Vec<u8>>,
-        decomp: Option<Vec<u8>>,
+        blob: Vec<u8>,
         scalar_type: ScalarType,
         be: bool,
         shape: Shape,
         comp: Option<CompressionMethod>,
     ) {
-        let m1 = blob.as_ref().map_or(0, |x| x.len());
-        let m2 = decomp.as_ref().map_or(0, |x| x.len());
-        self.entry_payload_max = self.entry_payload_max.max(m1 as u64 + m2 as u64);
+        let m1 = blob.len();
+        self.entry_payload_max = self.entry_payload_max.max(m1 as u64);
         self.tss.push_back(ts);
         self.pulses.push_back(pulse);
         self.blobs.push_back(blob);
-        self.decomps.push_back(decomp);
         self.scalar_types.push_back(scalar_type);
         self.be.push_back(be);
         self.shapes.push_back(shape);
@@ -106,7 +113,6 @@ impl EventFull {
         self.tss.truncate(nkeep);
         self.pulses.truncate(nkeep);
         self.blobs.truncate(nkeep);
-        self.decomps.truncate(nkeep);
         self.scalar_types.truncate(nkeep);
         self.be.truncate(nkeep);
         self.shapes.truncate(nkeep);
@@ -130,7 +136,6 @@ impl Empty for EventFull {
             tss: VecDeque::new(),
             pulses: VecDeque::new(),
             blobs: VecDeque::new(),
-            decomps: VecDeque::new(),
             scalar_types: VecDeque::new(),
             be: VecDeque::new(),
             shapes: VecDeque::new(),
@@ -170,15 +175,12 @@ impl Mergeable for EventFull {
         let r = range.0..range.1;
         let mut max = dst.entry_payload_max;
         for i in r.clone() {
-            let m1 = self.blobs[i].as_ref().map_or(0, |x| x.len());
-            let m2 = self.decomps[i].as_ref().map_or(0, |x| x.len());
-            max = max.max(m1 as u64 + m2 as u64);
+            max = max.max(self.blobs[i].len() as _);
         }
         dst.entry_payload_max = max;
         dst.tss.extend(self.tss.drain(r.clone()));
         dst.pulses.extend(self.pulses.drain(r.clone()));
         dst.blobs.extend(self.blobs.drain(r.clone()));
-        dst.decomps.extend(self.decomps.drain(r.clone()));
         dst.scalar_types.extend(self.scalar_types.drain(r.clone()));
         dst.be.extend(self.be.drain(r.clone()));
         dst.shapes.extend(self.shapes.drain(r.clone()));
@@ -211,5 +213,82 @@ impl Mergeable for EventFull {
             }
         }
         None
+    }
+}
+
+#[derive(Debug, ThisError, Serialize, Deserialize)]
+pub enum DecompError {
+    TooLittleInput,
+    BadCompresionBlockSize,
+    UnusedBytes,
+    BitshuffleError,
+}
+
+fn decompress(databuf: &[u8], type_size: u32, ele_count_2: u64, ele_count_exp: u64) -> Result<Vec<u8>, DecompError> {
+    let ts1 = Instant::now();
+    if databuf.len() < 12 {
+        return Err(DecompError::TooLittleInput);
+    }
+    let value_bytes = u64::from_be_bytes(databuf[0..8].try_into().unwrap());
+    let block_size = u32::from_be_bytes(databuf[8..12].try_into().unwrap());
+    trace2!(
+        "decompress  len {}  value_bytes {}  block_size {}",
+        databuf.len(),
+        value_bytes,
+        block_size
+    );
+    if block_size > 1024 * 32 {
+        return Err(DecompError::BadCompresionBlockSize);
+    }
+    let ele_count = value_bytes / type_size as u64;
+    trace2!(
+        "ele_count {}  ele_count_2 {}  ele_count_exp {}",
+        ele_count,
+        ele_count_2,
+        ele_count_exp
+    );
+    let mut decomp = Vec::with_capacity(type_size as usize * ele_count as usize);
+    unsafe {
+        decomp.set_len(decomp.capacity());
+    }
+    match bitshuffle_decompress(&databuf[12..], &mut decomp, ele_count as _, type_size as _, 0) {
+        Ok(c1) => {
+            if 12 + c1 != databuf.len() {
+                Err(DecompError::UnusedBytes)
+            } else {
+                let ts2 = Instant::now();
+                let _dt = ts2.duration_since(ts1);
+                // TODO analyze the histo
+                //self.decomp_dt_histo.ingest(dt.as_secs() as u32 + dt.subsec_micros());
+                Ok(decomp)
+            }
+        }
+        Err(_) => Err(DecompError::BitshuffleError),
+    }
+}
+
+impl EventFull {
+    pub fn data_raw(&self, i: usize) -> &[u8] {
+        &self.blobs[i]
+    }
+
+    pub fn data_decompressed(
+        &self,
+        i: usize,
+        _scalar_type: &ScalarType,
+        shape: &Shape,
+    ) -> Result<Vec<u8>, DecompError> {
+        if let Some(comp) = &self.comps[i] {
+            match comp {
+                CompressionMethod::BitshuffleLZ4 => {
+                    let type_size = self.scalar_types[i].bytes() as u32;
+                    let ele_count = self.shapes[i].ele_count();
+                    decompress(&self.blobs[i], type_size, ele_count, shape.ele_count())
+                }
+            }
+        } else {
+            // TODO use a Cow type.
+            Ok(self.blobs[i].clone())
+        }
     }
 }

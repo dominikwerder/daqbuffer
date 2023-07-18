@@ -3,6 +3,8 @@
 pub use anyhow;
 pub use thiserror;
 pub use thiserror::Error as ThisError;
+pub use thiserror::UserErrorClass;
+pub use thiserror::UserErrorContent;
 
 pub mod bt {
     pub use backtrace::Backtrace;
@@ -476,7 +478,7 @@ pub fn todoval<T>() -> T {
     todo!("TODO todoval\n{bt:?}")
 }
 
-pub trait ToPublicError: std::error::Error {
+pub trait ToPublicError: std::error::Error + Send {
     fn to_public_error(&self) -> String;
 }
 
@@ -544,6 +546,19 @@ mod test {
         let e = failing_b0_00().unwrap_err();
         let s = e.to_string();
         assert_eq!(s, "SomeErrorEnumB0::FromA(SomeErrorEnumA::BadCase)");
+    }
+
+    #[test]
+    fn error_handle_b0_user_00() {
+        use thiserror::UserErrorClass;
+        use thiserror::UserErrorInfo;
+        let e = failing_b0_00().unwrap_err();
+        let s = e.class();
+        if let UserErrorClass::Unspecified = s {
+            ()
+        } else {
+            panic!()
+        }
     }
 
     #[test]

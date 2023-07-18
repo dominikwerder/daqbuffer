@@ -17,6 +17,7 @@ use netpod::AggKind;
 use netpod::ByteSize;
 use netpod::DiskIoTune;
 use netpod::NodeConfigCached;
+use netpod::ReqCtxArc;
 use netpod::SfChFetchInfo;
 use query::api4::events::EventsSubQuery;
 use std::pin::Pin;
@@ -55,6 +56,7 @@ fn make_num_pipeline_stream_evs(
 pub async fn make_event_pipe(
     evq: EventsSubQuery,
     fetch_info: SfChFetchInfo,
+    reqctx: ReqCtxArc,
     ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     // sf-databuffer type backends identify channels by their (backend, name) only.
@@ -72,7 +74,6 @@ pub async fn make_event_pipe(
     } else {
         128
     };
-    let do_decompress = true;
     let event_blobs = EventChunkerMultifile::new(
         (&range).try_into()?,
         fetch_info.clone(),
@@ -81,8 +82,8 @@ pub async fn make_event_pipe(
         DiskIoTune::default(),
         event_chunker_conf,
         one_before,
-        do_decompress,
         out_max_len,
+        reqctx,
     );
     error!("TODO replace AggKind in the called code");
     let pipe = make_num_pipeline_stream_evs(fetch_info, AggKind::TimeWeightedScalar, event_blobs);
@@ -93,17 +94,12 @@ pub fn make_local_event_blobs_stream(
     range: NanoRange,
     fetch_info: SfChFetchInfo,
     expand: bool,
-    do_decompress: bool,
     event_chunker_conf: EventChunkerConf,
     disk_io_tune: DiskIoTune,
+    reqctx: ReqCtxArc,
     node_config: &NodeConfigCached,
 ) -> Result<EventChunkerMultifile, Error> {
-    info!(
-        "make_local_event_blobs_stream  {fetch_info:?}  do_decompress {do_decompress}  disk_io_tune {disk_io_tune:?}"
-    );
-    if do_decompress {
-        warn!("Possible issue: decompress central storage event blob stream");
-    }
+    info!("make_local_event_blobs_stream  {fetch_info:?}  disk_io_tune {disk_io_tune:?}");
     // TODO should not need this for correctness.
     // Should limit based on return size and latency.
     let out_max_len = if node_config.node_config.cluster.is_central_storage {
@@ -119,8 +115,8 @@ pub fn make_local_event_blobs_stream(
         disk_io_tune,
         event_chunker_conf,
         expand,
-        do_decompress,
         out_max_len,
+        reqctx,
     );
     Ok(event_blobs)
 }
@@ -129,9 +125,9 @@ pub fn make_remote_event_blobs_stream(
     range: NanoRange,
     fetch_info: SfChFetchInfo,
     expand: bool,
-    do_decompress: bool,
     event_chunker_conf: EventChunkerConf,
     disk_io_tune: DiskIoTune,
+    reqctx: ReqCtxArc,
     node_config: &NodeConfigCached,
 ) -> Result<impl Stream<Item = Sitemty<EventFull>>, Error> {
     debug!("make_remote_event_blobs_stream");
@@ -150,8 +146,8 @@ pub fn make_remote_event_blobs_stream(
         disk_io_tune,
         event_chunker_conf,
         expand,
-        do_decompress,
         out_max_len,
+        reqctx,
     );
     Ok(event_blobs)
 }
@@ -159,6 +155,7 @@ pub fn make_remote_event_blobs_stream(
 pub async fn make_event_blobs_pipe_real(
     subq: &EventsSubQuery,
     fetch_info: &SfChFetchInfo,
+    reqctx: ReqCtxArc,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
     if false {
@@ -177,9 +174,9 @@ pub async fn make_event_blobs_pipe_real(
             range.try_into()?,
             fetch_info.clone(),
             expand,
-            false,
             event_chunker_conf,
             DiskIoTune::default(),
+            reqctx,
             node_config,
         )?;
         Box::pin(event_blobs) as _
@@ -188,9 +185,9 @@ pub async fn make_event_blobs_pipe_real(
             range.try_into()?,
             fetch_info.clone(),
             expand,
-            true,
             event_chunker_conf,
             DiskIoTune::default(),
+            reqctx,
             node_config,
         )?;
         /*
@@ -251,12 +248,13 @@ pub async fn make_event_blobs_pipe_test(
 pub async fn make_event_blobs_pipe(
     subq: &EventsSubQuery,
     fetch_info: &SfChFetchInfo,
+    reqctx: ReqCtxArc,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
     debug!("make_event_blobs_pipe {subq:?}");
     if subq.backend() == TEST_BACKEND {
         make_event_blobs_pipe_test(subq, node_config).await
     } else {
-        make_event_blobs_pipe_real(subq, fetch_info, node_config).await
+        make_event_blobs_pipe_real(subq, fetch_info, reqctx, node_config).await
     }
 }

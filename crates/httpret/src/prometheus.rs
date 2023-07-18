@@ -1,11 +1,20 @@
-use crate::err::Error;
-use http::{HeaderMap, HeaderValue, Method, Request, Response, StatusCode};
+use crate::RetrievalError;
+use http::HeaderMap;
+use http::HeaderValue;
+use http::Method;
+use http::Request;
+use http::Response;
+use http::StatusCode;
 use hyper::server::conn::AddrStream;
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Server};
+use hyper::service::make_service_fn;
+use hyper::service::service_fn;
+use hyper::Body;
+use hyper::Server;
 use netpod::log::*;
-use netpod::{ACCEPT_ALL, APP_JSON};
-use serde_json::{json, Value};
+use netpod::ACCEPT_ALL;
+use netpod::APP_JSON;
+use serde_json::json;
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::Once;
@@ -50,7 +59,7 @@ impl StatusBuildInfoHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, RetrievalError> {
         info!("{} for {:?}", std::any::type_name::<Self>(), req);
         if req.method() == Method::GET {
             if accepts_json(req.headers()) {
@@ -91,7 +100,7 @@ impl SeriesHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, RetrievalError> {
         info!("{} for {:?}", std::any::type_name::<Self>(), req);
         if req.method() == Method::GET || req.method() == Method::POST {
             if accepts_json(req.headers()) {
@@ -128,7 +137,7 @@ impl MetadataHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, RetrievalError> {
         info!("{} for {:?}", std::any::type_name::<Self>(), req);
         if req.method() == Method::GET {
             if accepts_json(req.headers()) {
@@ -163,7 +172,7 @@ impl LabelsHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, RetrievalError> {
         let self_name = std::any::type_name::<Self>();
         info!("{} for {:?}", self_name, req);
         if req.method() == Method::GET || req.method() == Method::POST {
@@ -218,7 +227,7 @@ impl LabelValuesHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, RetrievalError> {
         let self_name = std::any::type_name::<Self>();
         info!("{} for {:?}", self_name, req);
         info!("LABEL {:?}", self.label);
@@ -263,7 +272,7 @@ impl QueryHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, RetrievalError> {
         info!("{} for {:?}", std::any::type_name::<Self>(), req);
         let url = url::Url::parse(&format!("dummy://{}", &req.uri()));
         info!("/api/v1/query  parsed url: {:?}", url);
@@ -295,7 +304,7 @@ impl QueryRangeHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, RetrievalError> {
         info!("{} for {:?}", std::any::type_name::<Self>(), req);
         let url = url::Url::parse(&format!("dummy://{}", &req.uri()));
         info!("/api/v1/query_range  parsed url: {:?}", url);
@@ -375,7 +384,7 @@ impl QueryRangeHandler {
     }
 }
 
-async fn http_service_inner(req: Request<Body>) -> Result<Response<Body>, Error> {
+async fn http_service_inner(req: Request<Body>) -> Result<Response<Body>, RetrievalError> {
     if let Some(h) = StatusBuildInfoHandler::handler(&req) {
         h.handle(req).await
     } else if let Some(h) = SeriesHandler::handler(&req) {
@@ -396,7 +405,7 @@ async fn http_service_inner(req: Request<Body>) -> Result<Response<Body>, Error>
     }
 }
 
-async fn http_service(req: Request<Body>) -> Result<Response<Body>, Error> {
+async fn http_service(req: Request<Body>) -> Result<Response<Body>, RetrievalError> {
     match http_service_inner(req).await {
         Ok(k) => Ok(k),
         Err(e) => {
@@ -406,12 +415,12 @@ async fn http_service(req: Request<Body>) -> Result<Response<Body>, Error> {
     }
 }
 
-pub async fn host(bind: SocketAddr) -> Result<(), Error> {
+pub async fn host(bind: SocketAddr) -> Result<(), RetrievalError> {
     let make_service = make_service_fn({
         move |conn: &AddrStream| {
             let addr = conn.remote_addr();
             async move {
-                Ok::<_, Error>(service_fn({
+                Ok::<_, RetrievalError>(service_fn({
                     move |req| {
                         info!(
                             "REQUEST  {:?} - {:?} - {:?} - {:?}",
