@@ -18,6 +18,7 @@ use tokio::io::AsyncReadExt;
 use tokio::io::AsyncSeekExt;
 use tokio::io::ErrorKind;
 use tokio::io::SeekFrom;
+use tracing::Instrument;
 
 #[cfg(test)]
 const BACKEND: &str = "testbackend-00";
@@ -212,28 +213,33 @@ impl fmt::Debug for OpenedFile {
 pub fn open_files(
     range: &NanoRange,
     fetch_info: &SfChFetchInfo,
+    reqid: &str,
     node: Node,
 ) -> async_channel::Receiver<Result<OpenedFileSet, Error>> {
+    let span = tracing::span!(tracing::Level::DEBUG, "open_files", reqid);
     let (chtx, chrx) = async_channel::bounded(2);
     let range = range.clone();
     let fetch_info = fetch_info.clone();
-    tokio::spawn(async move {
-        match open_files_inner(&chtx, &range, &fetch_info, node).await {
-            Ok(_) => {}
-            Err(e) => {
-                let e = e.add_public_msg(format!(
-                    "Can not open file for channel: {fetch_info:?}  range: {range:?}"
-                ));
-                match chtx.send(Err(e.into())).await {
-                    Ok(_) => {}
-                    Err(e) => {
-                        // This case is fine.
-                        debug!("open_files  channel send error {:?}", e);
+    tokio::spawn(
+        async move {
+            match open_files_inner(&chtx, &range, &fetch_info, node).await {
+                Ok(_) => {}
+                Err(e) => {
+                    let e = e.add_public_msg(format!(
+                        "Can not open file for channel: {fetch_info:?}  range: {range:?}"
+                    ));
+                    match chtx.send(Err(e.into())).await {
+                        Ok(_) => {}
+                        Err(e) => {
+                            // This case is fine.
+                            debug!("open_files  channel send error {:?}", e);
+                        }
                     }
                 }
             }
         }
-    });
+        .instrument(span),
+    );
     chrx
 }
 

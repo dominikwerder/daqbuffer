@@ -604,20 +604,25 @@ impl DataApiPython3DataStream {
                 };
             };
             if !*header_out {
-                let byte_order = if b.be[i1] {
+                let byte_order = if *b.be.get(i1).unwrap() {
                     Api1ByteOrder::Big
                 } else {
                     Api1ByteOrder::Little
+                };
+                let comp = if do_decompress {
+                    None
+                } else {
+                    b.comps.get(i1).unwrap().clone()
                 };
                 let head = Api1ChannelHeader::new(
                     channel.name().into(),
                     b.scalar_types.get(i1).unwrap().into(),
                     byte_order,
                     shape.clone(),
-                    b.comps.get(i1).map(|x| x.clone()).unwrap(),
+                    comp.clone(),
                 );
                 let h = serde_json::to_string(&head)?;
-                debug!("sending channel header {}", h);
+                debug!("sending channel header  comp {:?}  {}", comp, h);
                 let l1 = 1 + h.as_bytes().len() as u32;
                 d.put_u32(l1);
                 d.put_u8(0);

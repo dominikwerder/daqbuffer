@@ -72,7 +72,7 @@ impl EventChunkerMultifile {
         let file_chan = if expand {
             open_expanded_files(&range, &fetch_info, node)
         } else {
-            open_files(&range, &fetch_info, node)
+            open_files(&range, &fetch_info, reqctx.reqid(), node)
         };
         Self {
             file_chan,

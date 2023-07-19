@@ -17,9 +17,6 @@ use nom::number::complete::be_i64;
 use nom::number::complete::be_i8;
 use nom::number::complete::be_u8;
 use nom::Needed;
-use num_derive::FromPrimitive;
-use num_derive::ToPrimitive;
-use num_traits::ToPrimitive;
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
@@ -69,15 +66,9 @@ where
     Err(nom::Err::Error(e))
 }
 
-#[derive(Clone, Debug, FromPrimitive, ToPrimitive, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum CompressionMethod {
-    BitshuffleLZ4 = 0,
-}
-
-impl CompressionMethod {
-    pub fn to_i16(&self) -> i16 {
-        ToPrimitive::to_i16(self).unwrap()
-    }
+    BitshuffleLZ4,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -205,11 +196,9 @@ pub fn parse_entry(inp: &[u8]) -> NRes<Option<ConfigEntry>> {
         false => (inp, None),
         true => {
             let (inp, cm) = be_u8(inp)?;
-            match num_traits::FromPrimitive::from_u8(cm) {
-                Some(k) => (inp, Some(k)),
-                None => {
-                    return mkerr(format!("unknown compression"));
-                }
+            match cm {
+                0 => (inp, Some(CompressionMethod::BitshuffleLZ4)),
+                _ => return mkerr(format!("unknown compression")),
             }
         }
     };

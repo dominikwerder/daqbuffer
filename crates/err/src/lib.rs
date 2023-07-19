@@ -371,12 +371,6 @@ impl From<serde_cbor::Error> for Error {
     }
 }
 
-impl From<erased_serde::Error> for Error {
-    fn from(k: erased_serde::Error) -> Self {
-        Self::with_msg(k.to_string())
-    }
-}
-
 impl From<std::fmt::Error> for Error {
     fn from(k: std::fmt::Error) -> Self {
         Self::with_msg(k.to_string())

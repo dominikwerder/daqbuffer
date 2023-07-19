@@ -129,8 +129,8 @@ pub struct Api1ChannelHeader {
     byte_order: Api1ByteOrder,
     #[serde(default)]
     shape: Vec<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    compression: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "serde_compression_method")]
+    compression: Option<CompressionMethod>,
 }
 
 impl Api1ChannelHeader {
@@ -146,7 +146,7 @@ impl Api1ChannelHeader {
             ty,
             byte_order,
             shape: shape.to_u32_vec(),
-            compression: compression.map(|x| x.to_i16() as usize),
+            compression,
         }
     }
 
@@ -157,6 +157,148 @@ impl Api1ChannelHeader {
     pub fn ty(&self) -> Api1ScalarType {
         self.ty.clone()
     }
+}
+
+mod serde_compression_method {
+    use super::CompressionMethod;
+    use serde::de;
+    use serde::de::Visitor;
+    use serde::Deserializer;
+    use serde::Serializer;
+    use std::fmt;
+
+    pub fn serialize<S>(v: &Option<CompressionMethod>, ser: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match v {
+            Some(v) => {
+                let n = match v {
+                    CompressionMethod::BitshuffleLZ4 => 1,
+                };
+                ser.serialize_some(&n)
+            }
+            None => ser.serialize_none(),
+        }
+    }
+
+    struct VisC;
+
+    impl<'de> Visitor<'de> for VisC {
+        type Value = Option<CompressionMethod>;
+
+        fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            write!(fmt, "compression method index")
+        }
+
+        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            match v {
+                0 => Ok(None),
+                1 => Ok(Some(CompressionMethod::BitshuffleLZ4)),
+                _ => Err(de::Error::unknown_variant("compression variant index", &["0"])),
+            }
+        }
+    }
+
+    struct Vis;
+
+    impl<'de> Visitor<'de> for Vis {
+        type Value = Option<CompressionMethod>;
+
+        fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            write!(fmt, "optional compression method index")
+        }
+
+        fn visit_some<D>(self, de: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            de.deserialize_u64(VisC)
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+    }
+
+    pub fn deserialize<'de, D>(de: D) -> Result<Option<CompressionMethod>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        de.deserialize_option(Vis)
+    }
+}
+
+#[test]
+fn basic_header_ser_00() {
+    let h = Api1ChannelHeader {
+        name: "Name".into(),
+        ty: Api1ScalarType::F32,
+        byte_order: Api1ByteOrder::Big,
+        shape: Vec::new(),
+        compression: None,
+    };
+    let js = serde_json::to_string(&h).unwrap();
+    let vals = serde_json::from_str::<serde_json::Value>(&js).unwrap();
+    let x = vals.as_object().unwrap().get("compression");
+    assert_eq!(x, None)
+}
+
+#[test]
+fn basic_header_ser_01() {
+    let h = Api1ChannelHeader {
+        name: "Name".into(),
+        ty: Api1ScalarType::F32,
+        byte_order: Api1ByteOrder::Big,
+        shape: Vec::new(),
+        compression: Some(CompressionMethod::BitshuffleLZ4),
+    };
+    let js = serde_json::to_string(&h).unwrap();
+    let vals = serde_json::from_str::<serde_json::Value>(&js).unwrap();
+    let x = vals.as_object().unwrap().get("compression").unwrap().as_i64();
+    assert_eq!(x, Some(1))
+}
+
+#[test]
+fn basic_header_deser_00() {
+    let js = r#"{ "name": "ch1", "type": "float64", "byteOrder": "LITTLE_ENDIAN" }"#;
+    let h: Api1ChannelHeader = serde_json::from_str(js).unwrap();
+    assert!(h.compression.is_none());
+}
+
+#[test]
+fn basic_header_deser_01() {
+    let js = r#"{ "name": "ch1", "type": "float64", "byteOrder": "LITTLE_ENDIAN", "compression": null }"#;
+    let h: Api1ChannelHeader = serde_json::from_str(js).unwrap();
+    assert!(h.compression.is_none());
+}
+
+#[test]
+fn basic_header_deser_02() {
+    let js = r#"{ "name": "ch1", "type": "float64", "byteOrder": "LITTLE_ENDIAN", "compression": 0 }"#;
+    let h: Api1ChannelHeader = serde_json::from_str(js).unwrap();
+    assert!(h.compression.is_none());
+}
+
+#[test]
+fn basic_header_deser_03() {
+    let js = r#"{ "name": "ch1", "type": "float64", "byteOrder": "LITTLE_ENDIAN", "compression": 1 }"#;
+    let h: Api1ChannelHeader = serde_json::from_str(js).unwrap();
+    assert!(h.compression.is_some());
+    assert_eq!(h.compression, Some(CompressionMethod::BitshuffleLZ4));
+}
+
+#[test]
+fn basic_header_deser_04() {
+    let js = r#"{ "name": "ch1", "type": "float64", "byteOrder": "LITTLE_ENDIAN", "compression": 2 }"#;
+    let res = serde_json::from_str::<Api1ChannelHeader>(js);
+    assert!(res.is_err());
 }
 
 // u32be length_1.
