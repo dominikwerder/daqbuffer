@@ -19,6 +19,7 @@ use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
 use serde::Serializer;
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::time::Instant;
 
@@ -284,18 +285,19 @@ impl EventFull {
         i: usize,
         _scalar_type: &ScalarType,
         shape: &Shape,
-    ) -> Result<Vec<u8>, DecompError> {
+    ) -> Result<Cow<[u8]>, DecompError> {
         if let Some(comp) = &self.comps[i] {
             match comp {
                 CompressionMethod::BitshuffleLZ4 => {
                     let type_size = self.scalar_types[i].bytes() as u32;
                     let ele_count = self.shapes[i].ele_count();
-                    decompress(&self.blobs[i], type_size, ele_count, shape.ele_count())
+                    let data = decompress(&self.blobs[i], type_size, ele_count, shape.ele_count())?;
+                    Ok(Cow::Owned(data))
                 }
             }
         } else {
-            // TODO use a Cow type.
-            Ok(self.blobs[i].clone())
+            let data = &self.blobs[i];
+            Ok(Cow::Borrowed(data.as_slice()))
         }
     }
 }

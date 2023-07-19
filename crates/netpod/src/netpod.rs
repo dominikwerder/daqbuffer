@@ -523,6 +523,16 @@ pub struct Cluster {
     pub cache_scylla: Option<ScyllaConfig>,
 }
 
+impl Cluster {
+    pub fn decompress_default(&self) -> bool {
+        if self.is_central_storage {
+            false
+        } else {
+            true
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NodeConfig {
     pub name: String,

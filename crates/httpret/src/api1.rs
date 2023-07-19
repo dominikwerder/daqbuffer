@@ -887,12 +887,7 @@ impl Api1EventsBinaryHandler {
             debug!("request body_data string: {}", String::from_utf8_lossy(&body_data));
         }
         let qu = match serde_json::from_slice::<Api1Query>(&body_data) {
-            Ok(mut qu) => {
-                if node_config.node_config.cluster.is_central_storage {
-                    qu.set_decompress(false);
-                }
-                qu
-            }
+            Ok(x) => x,
             Err(e) => {
                 error!("got body_data: {:?}", String::from_utf8_lossy(&body_data[..]));
                 error!("can not parse: {e}");
@@ -982,7 +977,8 @@ impl Api1EventsBinaryHandler {
                 // TODO carry those settings from the query again
                 settings,
                 DiskIoTune::default(),
-                qu.decompress(),
+                qu.decompress()
+                    .unwrap_or_else(|| ncc.node_config.cluster.decompress_default()),
                 qu.events_max().unwrap_or(u64::MAX),
                 reqctx.clone(),
                 ncc.clone(),

@@ -231,8 +231,8 @@ pub struct Api1Query {
     // All following parameters are private and not to be used
     #[serde(default, skip_serializing_if = "Option::is_none")]
     file_io_buffer_size: Option<FileIoBufferSize>,
-    #[serde(default = "bool_true", skip_serializing_if = "bool_is_true")]
-    decompress: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    decompress: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     events_max: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -249,7 +249,7 @@ impl Api1Query {
             range,
             channels,
             timeout: None,
-            decompress: true,
+            decompress: None,
             events_max: None,
             file_io_buffer_size: None,
             io_queue_len: None,
@@ -291,7 +291,7 @@ impl Api1Query {
         &self.log_level
     }
 
-    pub fn decompress(&self) -> bool {
+    pub fn decompress(&self) -> Option<bool> {
         self.decompress
     }
 
@@ -299,7 +299,7 @@ impl Api1Query {
         self.events_max
     }
 
-    pub fn set_decompress(&mut self, v: bool) {
+    pub fn set_decompress(&mut self, v: Option<bool>) {
         self.decompress = v;
     }
 }
