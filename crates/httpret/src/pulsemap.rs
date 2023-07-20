@@ -881,9 +881,11 @@ impl FromUrl for MapPulseQuery {
     fn from_url(url: &url::Url) -> Result<Self, err::Error> {
         let mut pit = url
             .path_segments()
-            .ok_or(Error::with_msg_no_trace("no path in url"))?
+            .ok_or_else(|| Error::with_msg_no_trace("no path in url"))?
             .rev();
-        let pulsestr = pit.next().ok_or(Error::with_msg_no_trace("no pulse in url path"))?;
+        let pulsestr = pit
+            .next()
+            .ok_or_else(|| Error::with_msg_no_trace("no pulse in url path"))?;
         let backend = pit.next().unwrap_or("sf-databuffer").into();
         // TODO legacy: use a default backend if not specified.
         let backend = if backend == "pulse" {

@@ -202,52 +202,63 @@ mod serde_channel_events {
         where
             A: de::SeqAccess<'de>,
         {
-            let e0: &str = seq.next_element()?.ok_or(de::Error::missing_field("[0] cty"))?;
-            let e1: u32 = seq.next_element()?.ok_or(de::Error::missing_field("[1] nty"))?;
+            let e0: &str = seq.next_element()?.ok_or_else(|| de::Error::missing_field("[0] cty"))?;
+            let e1: u32 = seq.next_element()?.ok_or_else(|| de::Error::missing_field("[1] nty"))?;
             if e0 == EventsDim0::<u8>::serde_id() {
                 match e1 {
                     u8::SUB => {
-                        let obj: EventsDim0<u8> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        let obj: EventsDim0<u8> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     u16::SUB => {
-                        let obj: EventsDim0<u16> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        let obj: EventsDim0<u16> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     u32::SUB => {
-                        let obj: EventsDim0<u32> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        let obj: EventsDim0<u32> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     u64::SUB => {
-                        let obj: EventsDim0<u64> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        let obj: EventsDim0<u64> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     i8::SUB => {
-                        let obj: EventsDim0<i8> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        let obj: EventsDim0<i8> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     i16::SUB => {
-                        let obj: EventsDim0<i16> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        let obj: EventsDim0<i16> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     i32::SUB => {
-                        let obj: EventsDim0<i32> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        let obj: EventsDim0<i32> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     i64::SUB => {
-                        let obj: EventsDim0<i64> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        let obj: EventsDim0<i64> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     f32::SUB => {
-                        let obj: EventsDim0<f32> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        let obj: EventsDim0<f32> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     f64::SUB => {
-                        let obj: EventsDim0<f64> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        let obj: EventsDim0<f64> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     bool::SUB => {
-                        let obj: EventsDim0<bool> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        let obj: EventsDim0<bool> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     _ => Err(de::Error::custom(&format!("unknown nty {e1}"))),
@@ -255,15 +266,18 @@ mod serde_channel_events {
             } else if e0 == EventsDim1::<u8>::serde_id() {
                 match e1 {
                     f32::SUB => {
-                        let obj: EventsDim1<f32> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        let obj: EventsDim1<f32> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     f64::SUB => {
-                        let obj: EventsDim1<f64> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        let obj: EventsDim1<f64> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     bool::SUB => {
-                        let obj: EventsDim1<bool> = seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                        let obj: EventsDim1<bool> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     _ => Err(de::Error::custom(&format!("unknown nty {e1}"))),
@@ -272,17 +286,17 @@ mod serde_channel_events {
                 match e1 {
                     f32::SUB => {
                         let obj: EventsXbinDim0<f32> =
-                            seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     f64::SUB => {
                         let obj: EventsXbinDim0<f64> =
-                            seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     bool::SUB => {
                         let obj: EventsXbinDim0<bool> =
-                            seq.next_element()?.ok_or(de::Error::missing_field("[2] obj"))?;
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
                     _ => Err(de::Error::custom(&format!("unknown nty {e1}"))),

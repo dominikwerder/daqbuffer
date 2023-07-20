@@ -995,7 +995,7 @@ impl Api1EventsBinaryHandler {
             Ok(ret)
         } else {
             // TODO set the public error code and message and return Err(e).
-            let e = Error::with_public_msg(format!("{self_name}  unsupported Accept: {}", accept));
+            let e = Error::with_public_msg_no_trace(format!("{self_name}  unsupported Accept: {}", accept));
             error!("{self_name}  {e}");
             Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)
         }
@@ -1030,7 +1030,7 @@ impl RequestStatusHandler {
             .to_owned();
         if accept != APP_JSON && accept != ACCEPT_ALL {
             // TODO set the public error code and message and return Err(e).
-            let e = Error::with_public_msg(format!("Unsupported Accept: {:?}", accept));
+            let e = Error::with_public_msg_no_trace(format!("Unsupported Accept: {:?}", accept));
             error!("{e}");
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }

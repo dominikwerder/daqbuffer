@@ -35,7 +35,7 @@ impl SettingsThreadsMaxHandler {
             .to_owned();
         if accept != APP_JSON && accept != ACCEPT_ALL {
             // TODO set the public error code and message and return Err(e).
-            let e = Error::with_public_msg(format!("Unsupported Accept: {:?}", accept));
+            let e = Error::with_public_msg_no_trace(format!("Unsupported Accept: {:?}", accept));
             error!("{e}");
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }

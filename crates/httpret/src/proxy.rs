@@ -37,6 +37,7 @@ use netpod::FromUrl;
 use netpod::HasBackend;
 use netpod::HasTimeout;
 use netpod::ProxyConfig;
+use netpod::ServiceVersion;
 use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
 use query::api4::binned::BinnedQuery;
@@ -57,12 +58,13 @@ use url::Url;
 
 const DISTRI_PRE: &str = "/distri/";
 
-pub async fn proxy(proxy_config: ProxyConfig) -> Result<(), Error> {
+pub async fn proxy(proxy_config: ProxyConfig, service_version: ServiceVersion) -> Result<(), Error> {
     use std::str::FromStr;
     let addr = SocketAddr::from_str(&format!("{}:{}", proxy_config.listen, proxy_config.port))?;
     let make_service = make_service_fn({
         move |_conn| {
             let proxy_config = proxy_config.clone();
+            let service_version = service_version.clone();
             async move {
                 Ok::<_, Error>(service_fn({
                     move |req| {
@@ -73,7 +75,7 @@ pub async fn proxy(proxy_config: ProxyConfig) -> Result<(), Error> {
                             req.uri(),
                             req.headers()
                         );
-                        let f = proxy_http_service(req, proxy_config.clone());
+                        let f = proxy_http_service(req, proxy_config.clone(), service_version.clone());
                         Cont { f: Box::pin(f) }
                     }
                 }))
@@ -84,8 +86,12 @@ pub async fn proxy(proxy_config: ProxyConfig) -> Result<(), Error> {
     Ok(())
 }
 
-async fn proxy_http_service(req: Request<Body>, proxy_config: ProxyConfig) -> Result<Response<Body>, Error> {
-    match proxy_http_service_try(req, &proxy_config).await {
+async fn proxy_http_service(
+    req: Request<Body>,
+    proxy_config: ProxyConfig,
+    service_version: ServiceVersion,
+) -> Result<Response<Body>, Error> {
+    match proxy_http_service_try(req, &proxy_config, &service_version).await {
         Ok(k) => Ok(k),
         Err(e) => {
             error!("data_api_proxy sees error: {:?}", e);
@@ -94,9 +100,13 @@ async fn proxy_http_service(req: Request<Body>, proxy_config: ProxyConfig) -> Re
     }
 }
 
-async fn proxy_http_service_try(req: Request<Body>, proxy_config: &ProxyConfig) -> Result<Response<Body>, Error> {
+async fn proxy_http_service_try(
+    req: Request<Body>,
+    proxy_config: &ProxyConfig,
+    service_version: &ServiceVersion,
+) -> Result<Response<Body>, Error> {
     let ctx = ReqCtx::with_proxy(&req, proxy_config);
-    let mut res = proxy_http_service_inner(req, &ctx, proxy_config).await?;
+    let mut res = proxy_http_service_inner(req, &ctx, proxy_config, &service_version).await?;
     let hm = res.headers_mut();
     hm.insert("Access-Control-Allow-Origin", "*".parse().unwrap());
     hm.insert("Access-Control-Allow-Headers", "*".parse().unwrap());
@@ -111,6 +121,7 @@ async fn proxy_http_service_inner(
     req: Request<Body>,
     ctx: &ReqCtx,
     proxy_config: &ProxyConfig,
+    service_version: &ServiceVersion,
 ) -> Result<Response<Body>, Error> {
     let uri = req.uri().clone();
     let path = uri.path();
@@ -122,14 +133,11 @@ async fn proxy_http_service_inner(
         Ok(gather_json_2_v1(req, "/api/1/gather/", proxy_config).await?)
     } else if path == "/api/4/private/version" {
         if req.method() == Method::GET {
-            let ver_maj: u32 = std::env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0);
-            let ver_min: u32 = std::env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0);
-            let ver_pat: u32 = std::env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0);
             let ret = serde_json::json!({
                 "daqbuf_version": {
-                    "major": ver_maj,
-                    "minor": ver_min,
-                    "patch": ver_pat,
+                    "major": service_version.major,
+                    "minor": service_version.minor,
+                    "patch": service_version.patch,
                 },
             });
             Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
@@ -137,7 +145,7 @@ async fn proxy_http_service_inner(
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else if let Some(h) = api4::StatusNodesRecursive::handler(&req) {
-        h.handle(req, ctx, &proxy_config).await
+        h.handle(req, ctx, &proxy_config, service_version).await
     } else if path == "/api/4/backends" {
         Ok(backends(req, proxy_config).await?)
     } else if let Some(h) = api4::ChannelSearchAggHandler::handler(&req) {

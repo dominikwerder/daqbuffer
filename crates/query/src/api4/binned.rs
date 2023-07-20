@@ -173,9 +173,9 @@ impl FromUrl for BinnedQuery {
             range,
             bin_count: pairs
                 .get("binCount")
-                .ok_or(Error::with_msg("missing binCount"))?
+                .ok_or_else(|| Error::with_msg_no_trace("missing binCount"))?
                 .parse()
-                .map_err(|e| Error::with_msg(format!("can not parse binCount {:?}", e)))?,
+                .map_err(|e| Error::with_msg_no_trace(format!("can not parse binCount {:?}", e)))?,
             transform: TransformQuery::from_pairs(pairs)?,
             cache_usage: CacheUsage::from_pairs(&pairs)?,
             buf_len_disk_io: pairs

@@ -1,5 +1,6 @@
 use crate::framable::FrameDecodable;
 use crate::framable::INMEM_FRAME_ENCID;
+use crate::framable::INMEM_FRAME_FOOT;
 use crate::framable::INMEM_FRAME_HEAD;
 use crate::framable::INMEM_FRAME_MAGIC;
 use crate::inmem::InMemoryFrame;
@@ -112,25 +113,57 @@ where
     rmp_serde::from_slice(buf).map_err(|e| format!("{e}").into())
 }
 
+pub fn postcard_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
+where
+    T: Serialize,
+{
+    postcard::to_stdvec(&item).map_err(|e| format!("{e}").into())
+}
+
+pub fn postcard_erased_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
+where
+    T: erased_serde::Serialize,
+{
+    use postcard::ser_flavors::Flavor;
+    let mut ser1 = postcard::Serializer {
+        output: postcard::ser_flavors::AllocVec::new(),
+    };
+    let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser1);
+    item.erased_serialize(&mut ser2)
+        .map_err(|e| Error::from(format!("{e}")))?;
+    let ret = ser1.output.finalize().map_err(|e| format!("{e}").into());
+    ret
+}
+
+pub fn postcard_from_slice<T>(buf: &[u8]) -> Result<T, Error>
+where
+    T: for<'de> serde::Deserialize<'de>,
+{
+    postcard::from_bytes(buf).map_err(|e| format!("{e}").into())
+}
+
 pub fn encode_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
 where
     T: Serialize,
 {
-    msgpack_to_vec(item)
+    // msgpack_to_vec(item)
+    postcard_to_vec(item)
 }
 
 pub fn encode_erased_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
 where
     T: erased_serde::Serialize,
 {
-    msgpack_erased_to_vec(item)
+    // msgpack_erased_to_vec(item)
+    postcard_erased_to_vec(item)
 }
 
 pub fn decode_from_slice<T>(buf: &[u8]) -> Result<T, Error>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
-    msgpack_from_slice(buf)
+    // msgpack_from_slice(buf)
+    postcard_from_slice(buf)
 }
 
 pub fn make_frame_2<T>(item: T, fty: u32) -> Result<BytesMut, Error>
@@ -145,7 +178,7 @@ where
     h.update(&enc);
     let payload_crc = h.finalize();
     // TODO reserve also for footer via constant
-    let mut buf = BytesMut::with_capacity(enc.len() + INMEM_FRAME_HEAD);
+    let mut buf = BytesMut::with_capacity(INMEM_FRAME_HEAD + INMEM_FRAME_FOOT + enc.len());
     buf.put_u32_le(INMEM_FRAME_MAGIC);
     buf.put_u32_le(INMEM_FRAME_ENCID);
     buf.put_u32_le(fty);
@@ -168,7 +201,7 @@ pub fn make_error_frame(error: &err::Error) -> Result<BytesMut, Error> {
             let mut h = crc32fast::Hasher::new();
             h.update(&enc);
             let payload_crc = h.finalize();
-            let mut buf = BytesMut::with_capacity(INMEM_FRAME_HEAD);
+            let mut buf = BytesMut::with_capacity(INMEM_FRAME_HEAD + INMEM_FRAME_FOOT + enc.len());
             buf.put_u32_le(INMEM_FRAME_MAGIC);
             buf.put_u32_le(INMEM_FRAME_ENCID);
             buf.put_u32_le(ERROR_FRAME_TYPE_ID);
@@ -191,7 +224,7 @@ pub fn make_log_frame(item: &LogItem) -> Result<BytesMut, Error> {
             let mut h = crc32fast::Hasher::new();
             h.update(&enc);
             let payload_crc = h.finalize();
-            let mut buf = BytesMut::with_capacity(INMEM_FRAME_HEAD);
+            let mut buf = BytesMut::with_capacity(INMEM_FRAME_HEAD + INMEM_FRAME_FOOT + enc.len());
             buf.put_u32_le(INMEM_FRAME_MAGIC);
             buf.put_u32_le(INMEM_FRAME_ENCID);
             buf.put_u32_le(LOG_FRAME_TYPE_ID);
@@ -214,7 +247,7 @@ pub fn make_stats_frame(item: &StatsItem) -> Result<BytesMut, Error> {
             let mut h = crc32fast::Hasher::new();
             h.update(&enc);
             let payload_crc = h.finalize();
-            let mut buf = BytesMut::with_capacity(INMEM_FRAME_HEAD);
+            let mut buf = BytesMut::with_capacity(INMEM_FRAME_HEAD + INMEM_FRAME_FOOT + enc.len());
             buf.put_u32_le(INMEM_FRAME_MAGIC);
             buf.put_u32_le(INMEM_FRAME_ENCID);
             buf.put_u32_le(STATS_FRAME_TYPE_ID);
@@ -236,7 +269,7 @@ pub fn make_range_complete_frame() -> Result<BytesMut, Error> {
     let mut h = crc32fast::Hasher::new();
     h.update(&enc);
     let payload_crc = h.finalize();
-    let mut buf = BytesMut::with_capacity(INMEM_FRAME_HEAD);
+    let mut buf = BytesMut::with_capacity(INMEM_FRAME_HEAD + INMEM_FRAME_FOOT + enc.len());
     buf.put_u32_le(INMEM_FRAME_MAGIC);
     buf.put_u32_le(INMEM_FRAME_ENCID);
     buf.put_u32_le(RANGE_COMPLETE_FRAME_TYPE_ID);
@@ -255,7 +288,7 @@ pub fn make_term_frame() -> Result<BytesMut, Error> {
     let mut h = crc32fast::Hasher::new();
     h.update(&enc);
     let payload_crc = h.finalize();
-    let mut buf = BytesMut::with_capacity(INMEM_FRAME_HEAD);
+    let mut buf = BytesMut::with_capacity(INMEM_FRAME_HEAD + INMEM_FRAME_FOOT + enc.len());
     buf.put_u32_le(INMEM_FRAME_MAGIC);
     buf.put_u32_le(INMEM_FRAME_ENCID);
     buf.put_u32_le(TERM_FRAME_TYPE_ID);

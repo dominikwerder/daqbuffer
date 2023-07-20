@@ -563,6 +563,23 @@ impl NodeConfig {
 }
 
 #[derive(Clone, Debug)]
+pub struct ServiceVersion {
+    pub major: u32,
+    pub minor: u32,
+    pub patch: u32,
+    pub pre: Option<String>,
+}
+
+impl fmt::Display for ServiceVersion {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match &self.pre {
+            Some(pre) => write!(fmt, "{}.{}.{}-{}", self.major, self.minor, self.patch, pre),
+            None => write!(fmt, "{}.{}.{}", self.major, self.minor, self.patch),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct NodeConfigCached {
     pub node_config: NodeConfig,
     pub node: Node,
@@ -679,11 +696,10 @@ impl FromUrl for SfDbChannel {
         let ret = SfDbChannel {
             backend: pairs
                 .get("backend")
-                .ok_or(Error::with_public_msg("missing backend"))?
+                .ok_or_else(|| Error::with_public_msg_no_trace("missing backend"))?
                 .into(),
             name: pairs
                 .get("channelName")
-                //.ok_or(Error::with_public_msg("missing channelName"))?
                 .map(String::from)
                 .unwrap_or(String::new())
                 .into(),
@@ -692,7 +708,7 @@ impl FromUrl for SfDbChannel {
                 .and_then(|x| x.parse::<u64>().map_or(None, |x| Some(x))),
         };
         if ret.name.is_empty() && ret.series.is_none() {
-            return Err(Error::with_public_msg(format!(
+            return Err(Error::with_public_msg_no_trace(format!(
                 "Missing one of channelName or seriesId parameters."
             )));
         }
@@ -764,11 +780,11 @@ impl FromUrl for DaqbufSeries {
         let ret = DaqbufSeries {
             series: pairs
                 .get("seriesId")
-                .ok_or_else(|| Error::with_public_msg("missing seriesId"))
+                .ok_or_else(|| Error::with_public_msg_no_trace("missing seriesId"))
                 .map(|x| x.parse::<u64>())??,
             backend: pairs
                 .get("backend")
-                .ok_or_else(|| Error::with_public_msg("missing backend"))?
+                .ok_or_else(|| Error::with_public_msg_no_trace("missing backend"))?
                 .into(),
             name: pairs
                 .get("channelName")

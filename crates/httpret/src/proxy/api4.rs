@@ -19,6 +19,7 @@ use netpod::ChannelSearchResult;
 use netpod::NodeStatus;
 use netpod::NodeStatusSub;
 use netpod::ProxyConfig;
+use netpod::ServiceVersion;
 use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
 use serde_json::Value as JsVal;
@@ -162,9 +163,10 @@ impl StatusNodesRecursive {
         &self,
         req: Request<Body>,
         ctx: &ReqCtx,
-        node_config: &ProxyConfig,
+        proxy_config: &ProxyConfig,
+        service_version: &ServiceVersion,
     ) -> Result<Response<Body>, Error> {
-        match self.status(req, ctx, node_config).await {
+        match self.status(req, ctx, proxy_config, service_version).await {
             Ok(status) => {
                 let body = serde_json::to_vec(&status)?;
                 let ret = response(StatusCode::OK).body(Body::from(body))?;
@@ -183,6 +185,7 @@ impl StatusNodesRecursive {
         _req: Request<Body>,
         _ctx: &ReqCtx,
         proxy_config: &ProxyConfig,
+        service_version: &ServiceVersion,
     ) -> Result<NodeStatus, Error> {
         let path = crate::api4::status::StatusNodesRecursive::path();
         let mut bodies = Vec::new();
@@ -243,7 +246,7 @@ impl StatusNodesRecursive {
             }
             let ret = NodeStatus {
                 name: format!("{}:{}", proxy_config.name, proxy_config.port),
-                version: core::env!("CARGO_PKG_VERSION").into(),
+                version: service_version.to_string(),
                 is_sf_databuffer: false,
                 is_archiver_engine: false,
                 is_archiver_appliance: false,

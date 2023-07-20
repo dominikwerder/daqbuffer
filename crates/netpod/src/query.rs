@@ -112,7 +112,7 @@ impl FromUrl for TimeRangeQuery {
             };
             Ok(ret)
         } else {
-            Err(Error::with_public_msg("missing date range"))
+            Err(Error::with_public_msg_no_trace("missing date range"))
         }
     }
 }
@@ -178,7 +178,7 @@ impl FromUrl for PulseRangeQuery {
             };
             Ok(ret)
         } else {
-            Err(Error::with_public_msg("missing pulse range"))
+            Err(Error::with_public_msg_no_trace("missing pulse range"))
         }
     }
 }
@@ -298,8 +298,12 @@ impl FromUrl for ChannelStateEventsQuery {
     }
 
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
-        let beg_date = pairs.get("begDate").ok_or(Error::with_msg("missing begDate"))?;
-        let end_date = pairs.get("endDate").ok_or(Error::with_msg("missing endDate"))?;
+        let beg_date = pairs
+            .get("begDate")
+            .ok_or_else(|| Error::with_msg_no_trace("missing begDate"))?;
+        let end_date = pairs
+            .get("endDate")
+            .ok_or_else(|| Error::with_msg_no_trace("missing endDate"))?;
         let ret = Self {
             channel: SfDbChannel::from_pairs(&pairs)?,
             range: NanoRange {

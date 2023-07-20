@@ -91,7 +91,13 @@ pub enum MergeError {
 
 impl From<MergeError> for err::Error {
     fn from(e: MergeError) -> Self {
-        format!("{e:?}").into()
+        e.to_string().into()
+    }
+}
+
+impl fmt::Display for MergeError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{:?}", self)
     }
 }
 

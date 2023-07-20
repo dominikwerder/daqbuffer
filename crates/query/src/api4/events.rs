@@ -221,12 +221,12 @@ impl FromUrl for PlainEventsQuery {
                 .get("doTestMainError")
                 .map_or("false", |k| k)
                 .parse()
-                .map_err(|e| Error::with_public_msg(format!("can not parse doTestMainError: {}", e)))?,
+                .map_err(|e| Error::with_public_msg_no_trace(format!("can not parse doTestMainError: {}", e)))?,
             do_test_stream_error: pairs
                 .get("doTestStreamError")
                 .map_or("false", |k| k)
                 .parse()
-                .map_err(|e| Error::with_public_msg(format!("can not parse doTestStreamError: {}", e)))?,
+                .map_err(|e| Error::with_public_msg_no_trace(format!("can not parse doTestStreamError: {}", e)))?,
             test_do_wasm: pairs
                 .get("testDoWasm")
                 .map(|x| x.parse::<bool>().ok())

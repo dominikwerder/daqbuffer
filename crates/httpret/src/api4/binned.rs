@@ -12,9 +12,6 @@ use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
-use netpod::ACCEPT_ALL;
-use netpod::APP_JSON;
-use netpod::APP_OCTET;
 use query::api4::binned::BinnedQuery;
 use tracing::Instrument;
 use url::Url;
@@ -37,6 +34,7 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
     let span1 = span!(
         Level::INFO,
         "httpret::binned",
+        reqid,
         beg = query.range().beg_u64() / SEC,
         end = query.range().end_u64() / SEC,
         ch = query.channel().name().clone(),
@@ -53,10 +51,6 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
 }
 
 async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-    let accept = req
-        .headers()
-        .get(http::header::ACCEPT)
-        .map_or(ACCEPT_ALL, |k| k.to_str().unwrap_or(ACCEPT_ALL));
     let url = {
         let s1 = format!("dummy:{}", req.uri());
         Url::parse(&s1)
@@ -70,15 +64,18 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
     {
         Err(Error::with_msg_no_trace("hidden message").add_public_msg("PublicMessage"))?;
     }
-    if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
+    if crate::accepts_json(&req.headers()) {
         Ok(binned_json(url, req, node_config).await?)
-    } else if accept == APP_OCTET {
+    } else if crate::accepts_octets(&req.headers()) {
         Ok(response_err(
             StatusCode::NOT_ACCEPTABLE,
             format!("binary binned data not yet available"),
         )?)
     } else {
-        let ret = response_err(StatusCode::NOT_ACCEPTABLE, format!("Unsupported Accept: {:?}", accept))?;
+        let ret = response_err(
+            StatusCode::NOT_ACCEPTABLE,
+            format!("Unsupported Accept: {:?}", req.headers()),
+        )?;
         Ok(ret)
     }
 }

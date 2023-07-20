@@ -37,6 +37,7 @@ use netpod::query::prebinned::PreBinnedQuery;
 use netpod::CmpZero;
 use netpod::NodeConfigCached;
 use netpod::ProxyConfig;
+use netpod::ServiceVersion;
 use netpod::APP_JSON;
 use netpod::APP_JSON_LINES;
 use nodenet::conn::events_service;
@@ -100,7 +101,27 @@ impl ::err::ToErr for RetrievalError {
     }
 }
 
-pub async fn host(node_config: NodeConfigCached) -> Result<(), RetrievalError> {
+pub fn accepts_json(hm: &http::HeaderMap) -> bool {
+    match hm.get(http::header::ACCEPT) {
+        Some(x) => match x.to_str() {
+            Ok(x) => x.contains(netpod::APP_JSON) || x.contains(netpod::ACCEPT_ALL),
+            Err(_) => false,
+        },
+        None => false,
+    }
+}
+
+pub fn accepts_octets(hm: &http::HeaderMap) -> bool {
+    match hm.get(http::header::ACCEPT) {
+        Some(x) => match x.to_str() {
+            Ok(x) => x.contains(netpod::APP_OCTET),
+            Err(_) => false,
+        },
+        None => false,
+    }
+}
+
+pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion) -> Result<(), RetrievalError> {
     static STATUS_BOARD_INIT: Once = Once::new();
     STATUS_BOARD_INIT.call_once(|| {
         let b = StatusBoard::new();
@@ -124,6 +145,7 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), RetrievalError> {
             debug!("new connection from {:?}", conn.remote_addr());
             let node_config = node_config.clone();
             let addr = conn.remote_addr();
+            let service_version = service_version.clone();
             async move {
                 Ok::<_, Error>(service_fn({
                     move |req| {
@@ -135,7 +157,7 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), RetrievalError> {
                             req.uri(),
                             req.headers()
                         );
-                        let f = http_service(req, node_config.clone());
+                        let f = http_service(req, node_config.clone(), service_version.clone());
                         Cont { f: Box::pin(f) }
                     }
                 }))
@@ -150,8 +172,12 @@ pub async fn host(node_config: NodeConfigCached) -> Result<(), RetrievalError> {
     Ok(())
 }
 
-async fn http_service(req: Request<Body>, node_config: NodeConfigCached) -> Result<Response<Body>, Error> {
-    match http_service_try(req, &node_config).await {
+async fn http_service(
+    req: Request<Body>,
+    node_config: NodeConfigCached,
+    service_version: ServiceVersion,
+) -> Result<Response<Body>, Error> {
+    match http_service_try(req, &node_config, &service_version).await {
         Ok(k) => Ok(k),
         Err(e) => {
             error!("daqbuffer node http_service sees error: {}", e);
@@ -286,7 +312,11 @@ macro_rules! static_http_api1 {
     };
 }
 
-async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+async fn http_service_try(
+    req: Request<Body>,
+    node_config: &NodeConfigCached,
+    service_version: &ServiceVersion,
+) -> Result<Response<Body>, Error> {
     use http::HeaderValue;
     let mut urlmarks = Vec::new();
     urlmarks.push(format!("{}:{}", req.method(), req.uri()));
@@ -297,7 +327,7 @@ async fn http_service_try(req: Request<Body>, node_config: &NodeConfigCached) ->
         }
     }
     let ctx = ReqCtx::with_node(&req, node_config);
-    let mut res = http_service_inner(req, &ctx, node_config).await?;
+    let mut res = http_service_inner(req, &ctx, node_config, service_version).await?;
     let hm = res.headers_mut();
     hm.append("Access-Control-Allow-Origin", "*".parse().unwrap());
     hm.append("Access-Control-Allow-Headers", "*".parse().unwrap());
@@ -316,19 +346,17 @@ async fn http_service_inner(
     req: Request<Body>,
     ctx: &ReqCtx,
     node_config: &NodeConfigCached,
+    service_version: &ServiceVersion,
 ) -> Result<Response<Body>, RetrievalError> {
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/4/private/version" {
         if req.method() == Method::GET {
-            let ver_maj: u32 = std::env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0);
-            let ver_min: u32 = std::env!("CARGO_PKG_VERSION_MINOR").parse().unwrap_or(0);
-            let ver_pat: u32 = std::env!("CARGO_PKG_VERSION_PATCH").parse().unwrap_or(0);
             let ret = serde_json::json!({
                 "daqbuf_version": {
-                    "major": ver_maj,
-                    "minor": ver_min,
-                    "patch": ver_pat,
+                    "major": service_version.major,
+                    "minor": service_version.minor,
+                    "patch": service_version.patch,
                 },
             });
             Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
@@ -355,7 +383,7 @@ async fn http_service_inner(
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
     } else if let Some(h) = api4::status::StatusNodesRecursive::handler(&req) {
-        Ok(h.handle(req, ctx, &node_config).await?)
+        Ok(h.handle(req, ctx, &node_config, service_version).await?)
     } else if let Some(h) = StatusBoardAllHandler::handler(&req) {
         h.handle(req, &node_config).await
     } else if let Some(h) = api4::databuffer_tools::FindActiveHandler::handler(&req) {

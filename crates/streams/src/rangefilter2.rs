@@ -45,7 +45,7 @@ where
 
     pub fn new(inp: S, range: NanoRange, one_before_range: bool) -> Self {
         trace!(
-            "{}::new  range: {:?}  one_before_range: {:?}",
+            "{}::new  range: {:?}  one_before_range {:?}",
             Self::type_name(),
             range,
             one_before_range
@@ -112,16 +112,18 @@ where
                     } else {
                         let mut dummy = item.new_empty();
                         item.drain_into(&mut dummy, (0, ilge - 1))
-                            .map_err(|e| format!("{e:?} unexpected MergeError while remove of items"))?;
+                            .map_err(|e| format!("{e} unexpected MergeError while remove of items"))?;
                         self.slot1 = None;
                         item
                     }
                 }
                 None => {
+                    // TODO keep stats about this case
+                    debug!("drain into to keep one before");
                     let n = item.len();
                     let mut keep = item.new_empty();
                     item.drain_into(&mut keep, (n.max(1) - 1, n))
-                        .map_err(|e| format!("{e:?} unexpected MergeError while remove of items"))?;
+                        .map_err(|e| format!("{e} unexpected MergeError while remove of items"))?;
                     self.slot1 = Some(keep);
                     item.new_empty()
                 }

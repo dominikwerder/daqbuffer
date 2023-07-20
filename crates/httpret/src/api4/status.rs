@@ -9,6 +9,7 @@ use netpod::log::*;
 use netpod::NodeConfigCached;
 use netpod::NodeStatus;
 use netpod::NodeStatusArchiverAppliance;
+use netpod::ServiceVersion;
 use netpod::TableSizes;
 use std::collections::VecDeque;
 use std::time::Duration;
@@ -39,8 +40,13 @@ impl StatusNodesRecursive {
         req: Request<Body>,
         ctx: &ReqCtx,
         node_config: &NodeConfigCached,
+        service_version: &ServiceVersion,
     ) -> Result<Response<Body>, Error> {
-        let res = tokio::time::timeout(Duration::from_millis(1200), self.status(req, ctx, node_config)).await;
+        let res = tokio::time::timeout(
+            Duration::from_millis(1200),
+            self.status(req, ctx, node_config, service_version),
+        )
+        .await;
         let res = match res {
             Ok(res) => res,
             Err(e) => {
@@ -67,6 +73,7 @@ impl StatusNodesRecursive {
         req: Request<Body>,
         _ctx: &ReqCtx,
         node_config: &NodeConfigCached,
+        service_version: &ServiceVersion,
     ) -> Result<NodeStatus, Error> {
         let (_head, _body) = req.into_parts();
         let archiver_appliance_status = match node_config.node.archiver_appliance.as_ref() {
@@ -96,7 +103,7 @@ impl StatusNodesRecursive {
         let database_size = dbconn::database_size(node_config).await.map_err(|e| format!("{e}"));
         let ret = NodeStatus {
             name: format!("{}:{}", node_config.node.host, node_config.node.port),
-            version: core::env!("CARGO_PKG_VERSION").into(),
+            version: service_version.to_string(),
             is_sf_databuffer: node_config.node.sf_databuffer.is_some(),
             is_archiver_engine: node_config.node.channel_archiver.is_some(),
             is_archiver_appliance: node_config.node.archiver_appliance.is_some(),

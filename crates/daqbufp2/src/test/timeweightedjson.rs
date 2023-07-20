@@ -76,9 +76,9 @@ async fn get_json_common(
         if expect_finalised_range {
             if !res
                 .get("rangeFinal")
-                .ok_or(Error::with_msg("missing rangeFinal"))?
+                .ok_or_else(|| Error::with_msg("missing rangeFinal"))?
                 .as_bool()
-                .ok_or(Error::with_msg("key rangeFinal not bool"))?
+                .ok_or_else(|| Error::with_msg("key rangeFinal not bool"))?
             {
                 return Err(Error::with_msg("expected rangeFinal"));
             }
