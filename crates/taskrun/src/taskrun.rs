@@ -1,3 +1,5 @@
+pub use tokio;
+
 use crate::log::*;
 use err::Error;
 use std::fmt;
@@ -85,7 +87,8 @@ where
             eprintln!("ERROR tracing: can not init");
         }
     }
-    let res = runtime.block_on(async { fut.await });
+    // let res = runtime.block_on(async { fut.await });
+    let res = runtime.block_on(fut);
     match res {
         Ok(k) => Ok(k),
         Err(e) => {
@@ -115,13 +118,24 @@ fn tracing_init_inner() -> Result<(), Error> {
             .with_ansi(false)
             .with_thread_names(true)
             .with_filter(filter);
-        let z = tracing_subscriber::registry().with(fmt_layer);
-        #[cfg(CONSOLE)]
-        {
-            let console_layer = console_subscriber::spawn();
-            let z = z.with(console_layer);
-        }
-        z.try_init().map_err(|e| format!("{e}"))?;
+
+        let console_layer = console_subscriber::ConsoleLayer::builder()
+            .retention(std::time::Duration::from_secs(4))
+            .server_addr(([127, 0, 0, 1], 2875))
+            .spawn();
+        // .build();
+
+        // eprintln!("spawn console sever");
+        // tokio::spawn(console_server.serve());
+
+        let reg = tracing_subscriber::registry().with(console_layer);
+
+        let reg = reg.with(fmt_layer);
+
+        reg.try_init().map_err(|e| {
+            eprintln!("SOMETHING BAD HAPPENED: {e}");
+            format!("{e}")
+        })?;
     }
     #[cfg(DISABLED_LOKI)]
     // TODO tracing_loki seems not well composable, try open telemetry instead.
@@ -176,7 +190,7 @@ pub fn tracing_init() -> Result<(), ()> {
     } else if *initg == 1 {
         Ok(())
     } else {
-        eprintln!("ERROR Unknown tracing state");
+        eprintln!("ERROR unknown tracing state");
         Err(())
     }
 }

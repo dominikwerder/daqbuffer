@@ -251,6 +251,7 @@ impl Stream for FileStream {
         let mut rb = ReadBuf::new(&mut buf);
         let f = &mut self.file;
         pin_mut!(f);
+        trace!("poll_read for proxy distri");
         match f.poll_read(cx, &mut rb) {
             Ready(k) => match k {
                 Ok(_) => {

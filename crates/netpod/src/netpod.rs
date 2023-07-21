@@ -2357,7 +2357,7 @@ pub enum ReadSys {
 
 impl ReadSys {
     pub fn default() -> Self {
-        Self::Read5
+        Self::TokioAsyncRead
     }
 }
 
@@ -2394,6 +2394,7 @@ impl DiskIoTune {
             read_queue_len: 4,
         }
     }
+
     pub fn default() -> Self {
         Self {
             read_sys: ReadSys::default(),
@@ -2401,11 +2402,45 @@ impl DiskIoTune {
             read_queue_len: 4,
         }
     }
+
+    pub fn with_read_buffer_len(mut self, x: usize) -> Self {
+        self.read_buffer_len = x;
+        self
+    }
 }
 
 impl Default for DiskIoTune {
     fn default() -> Self {
         Self::default()
+    }
+}
+
+impl FromUrl for DiskIoTune {
+    fn from_url(url: &Url) -> Result<Self, Error> {
+        Self::from_pairs(&get_url_query_pairs(url))
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+        let read_sys = pairs
+            .get("ReadSys")
+            .map(|x| x.as_str().into())
+            .unwrap_or_else(|| ReadSys::default());
+        let read_buffer_len = pairs
+            .get("ReadBufferLen")
+            .map(|x| x.parse().map_or(None, Some))
+            .unwrap_or(None)
+            .unwrap_or(1024 * 4);
+        let read_queue_len = pairs
+            .get("ReadQueueLen")
+            .map(|x| x.parse().map_or(None, Some))
+            .unwrap_or(None)
+            .unwrap_or(8);
+        let ret = DiskIoTune {
+            read_sys,
+            read_buffer_len,
+            read_queue_len,
+        };
+        Ok(ret)
     }
 }
 

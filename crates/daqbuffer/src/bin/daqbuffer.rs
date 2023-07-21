@@ -15,6 +15,7 @@ use netpod::NodeConfig;
 use netpod::NodeConfigCached;
 use netpod::ProxyConfig;
 use netpod::ServiceVersion;
+use taskrun::tokio;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -66,6 +67,14 @@ async fn go() -> Result<(), Error> {
         SubCmd::Retrieval(subcmd) => {
             info!("daqbuffer version {} 0000", clap::crate_version!());
             info!("{:?}", service_version);
+            {
+                #[allow(non_snake_case)]
+                let TARGET = std::env!("DAQBUF_TARGET");
+                #[allow(non_snake_case)]
+                let CARGO_ENCODED_RUSTFLAGS = std::env!("DAQBUF_CARGO_ENCODED_RUSTFLAGS");
+                info!("TARGET: {:?}", TARGET);
+                info!("CARGO_ENCODED_RUSTFLAGS: {:?}", CARGO_ENCODED_RUSTFLAGS);
+            }
             let mut config_file = File::open(&subcmd.config).await?;
             let mut buf = Vec::new();
             config_file.read_to_end(&mut buf).await?;

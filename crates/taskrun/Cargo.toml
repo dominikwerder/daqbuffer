@@ -1,6 +1,6 @@
 [package]
 name = "taskrun"
-version = "0.0.3"
+version = "0.0.4"
 authors = ["Dominik Werder <dominik.werder@gmail.com>"]
 edition = "2021"
 
@@ -8,13 +8,13 @@ edition = "2021"
 path = "src/taskrun.rs"
 
 [dependencies]
-futures-util = "0.3"
-tokio = { version = "1.21.2", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs", "tracing"] }
+tokio = { version = "1.29.1", features = ["full", "tracing"] }
+futures-util = "0.3.28"
 tracing = "0.1.37"
-tracing-subscriber = { version = "0.3.16", features = ["fmt", "time"] }
+tracing-subscriber = { version = "0.3.17", features = ["fmt", "time"] }
 #tracing-loki = { version = "0.2.1", default-features = false, features = ["compat-0-2-1"] }
+console-subscriber = { version = "0.1.10" }
 time = { version = "0.3", features = ["formatting"] }
-console-subscriber = "0.1.5"
 backtrace = "0.3.56"
 lazy_static = "1.4.0"
 chrono = "0.4"

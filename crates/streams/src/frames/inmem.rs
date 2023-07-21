@@ -69,6 +69,7 @@ where
         let mut buf = ReadBuf::new(self.buf.available_writable_area(self.need_min - self.buf.len())?);
         let inp = &mut self.inp;
         pin_mut!(inp);
+        trace!("poll_upstream");
         match AsyncRead::poll_read(inp, cx, &mut buf) {
             Ready(Ok(())) => {
                 let n = buf.filled().len();

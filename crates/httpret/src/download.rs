@@ -27,20 +27,17 @@ impl FromUrl for DownloadQuery {
     fn from_pairs(pairs: &std::collections::BTreeMap<String, String>) -> Result<Self, err::Error> {
         let read_sys = pairs
             .get("ReadSys")
-            .map(|x| x as &str)
-            .unwrap_or("TokioAsyncRead")
-            .into();
+            .map(|x| x.as_str().into())
+            .unwrap_or_else(|| netpod::ReadSys::default());
         let read_buffer_len = pairs
             .get("ReadBufferLen")
-            .map(|x| x as &str)
-            .unwrap_or("xx")
-            .parse()
+            .map(|x| x.parse().map_or(None, Some))
+            .unwrap_or(None)
             .unwrap_or(1024 * 4);
         let read_queue_len = pairs
             .get("ReadQueueLen")
-            .map(|x| x as &str)
-            .unwrap_or("xx")
-            .parse()
+            .map(|x| x.parse().map_or(None, Some))
+            .unwrap_or(None)
             .unwrap_or(8);
         let disk_io_tune = DiskIoTune {
             read_sys,
@@ -67,10 +64,10 @@ impl DownloadHandler {
         }
     }
 
-    pub async fn get(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn get(&self, req: Request<Body>, ncc: &NodeConfigCached) -> Result<Response<Body>, Error> {
         let (head, _body) = req.into_parts();
         let p2 = &head.uri.path()[Self::path_prefix().len()..];
-        let base = match &node_config.node.sf_databuffer {
+        let base = match &ncc.node.sf_databuffer {
             Some(k) => k.data_base_path.clone(),
             None => "/UNDEFINED".into(),
         };

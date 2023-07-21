@@ -28,7 +28,7 @@ pub struct MergedBlobsFromRemotes {
 
 impl MergedBlobsFromRemotes {
     pub fn new(subq: EventsSubQuery, cluster: Cluster) -> Self {
-        debug!("MergedBlobsFromRemotes  subq {:?}", subq);
+        debug!("MergedBlobsFromRemotes::new  subq {:?}", subq);
         let mut tcp_establish_futs = Vec::new();
         for node in &cluster.nodes {
             let f = x_processed_event_blobs_stream_from_node(subq.clone(), node.clone());

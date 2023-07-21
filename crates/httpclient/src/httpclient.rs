@@ -108,6 +108,7 @@ impl HttpBodyAsAsyncRead {
 
 impl AsyncRead for HttpBodyAsAsyncRead {
     fn poll_read(mut self: Pin<&mut Self>, cx: &mut Context, buf: &mut ReadBuf) -> Poll<io::Result<()>> {
+        trace!("impl AsyncRead for HttpBodyAsAsyncRead");
         use Poll::*;
         if self.left.len() != 0 {
             let n1 = buf.remaining();

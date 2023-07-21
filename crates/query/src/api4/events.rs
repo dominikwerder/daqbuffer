@@ -365,13 +365,14 @@ impl From<&BinnedQuery> for EventsSubQuerySettings {
 
 impl From<&Api1Query> for EventsSubQuerySettings {
     fn from(value: &Api1Query) -> Self {
+        let disk_io_tune = value.disk_io_tune();
         Self {
             timeout: value.timeout(),
             // TODO ?
             events_max: None,
             event_delay: None,
             stream_batch_len: None,
-            buf_len_disk_io: None,
+            buf_len_disk_io: Some(disk_io_tune.read_buffer_len),
             test_do_wasm: false,
             create_errors: Vec::new(),
         }

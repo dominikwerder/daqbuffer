@@ -32,6 +32,7 @@ use netpod::ChannelSearchQuery;
 use netpod::ChannelSearchResult;
 use netpod::ChannelTypeConfigGen;
 use netpod::DiskIoTune;
+use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ProxyConfig;
 use netpod::ReqCtxArc;
@@ -544,6 +545,7 @@ impl DataApiPython3DataStream {
         reqctx: ReqCtxArc,
         node_config: NodeConfigCached,
     ) -> Self {
+        debug!("DataApiPython3DataStream::new  settings {settings:?}  disk_io_tune {disk_io_tune:?}");
         Self {
             range,
             channels: channels.into_iter().collect(),
@@ -910,17 +912,33 @@ impl Api1EventsBinaryHandler {
         } else {
             tracing::Span::none()
         };
+        let url = {
+            let s1 = format!("dummy:{}", head.uri);
+            Url::parse(&s1)
+                .map_err(Error::from)
+                .map_err(|e| e.add_public_msg(format!("Can not parse query url")))?
+        };
+        let disk_tune = DiskIoTune::from_url(&url)?;
         let reqidspan = tracing::info_span!("api1query", reqid = reqctx.reqid());
-        self.handle_for_query(qu, accept, &reqctx, span.clone(), reqidspan.clone(), node_config)
-            .instrument(span)
-            .instrument(reqidspan)
-            .await
+        self.handle_for_query(
+            qu,
+            accept,
+            disk_tune,
+            &reqctx,
+            span.clone(),
+            reqidspan.clone(),
+            node_config,
+        )
+        .instrument(span)
+        .instrument(reqidspan)
+        .await
     }
 
     pub async fn handle_for_query(
         &self,
         qu: Api1Query,
         accept: String,
+        disk_io_tune: DiskIoTune,
         reqctx: &ReqCtxArc,
         span: tracing::Span,
         reqidspan: tracing::Span,
@@ -981,7 +999,7 @@ impl Api1EventsBinaryHandler {
                 chans,
                 // TODO carry those settings from the query again
                 settings,
-                DiskIoTune::default(),
+                disk_io_tune,
                 qu.decompress()
                     .unwrap_or_else(|| ncc.node_config.cluster.decompress_default()),
                 qu.events_max().unwrap_or(u64::MAX),
