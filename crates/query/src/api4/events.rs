@@ -10,6 +10,7 @@ use netpod::range::evrange::SeriesRange;
 use netpod::AppendToUrl;
 use netpod::ByteSize;
 use netpod::ChannelTypeConfigGen;
+use netpod::DiskIoTune;
 use netpod::FromUrl;
 use netpod::HasBackend;
 use netpod::HasTimeout;
@@ -316,6 +317,7 @@ pub struct EventsSubQuerySettings {
     event_delay: Option<Duration>,
     stream_batch_len: Option<usize>,
     buf_len_disk_io: Option<usize>,
+    queue_len_disk_io: Option<usize>,
     test_do_wasm: bool,
     create_errors: Vec<String>,
 }
@@ -323,13 +325,14 @@ pub struct EventsSubQuerySettings {
 impl Default for EventsSubQuerySettings {
     fn default() -> Self {
         Self {
-            timeout: Default::default(),
-            events_max: Default::default(),
-            event_delay: Default::default(),
-            stream_batch_len: Default::default(),
-            buf_len_disk_io: Default::default(),
-            test_do_wasm: Default::default(),
-            create_errors: Default::default(),
+            timeout: None,
+            events_max: None,
+            event_delay: None,
+            stream_batch_len: None,
+            buf_len_disk_io: None,
+            queue_len_disk_io: None,
+            test_do_wasm: false,
+            create_errors: Vec::new(),
         }
     }
 }
@@ -342,6 +345,8 @@ impl From<&PlainEventsQuery> for EventsSubQuerySettings {
             event_delay: value.event_delay,
             stream_batch_len: value.stream_batch_len,
             buf_len_disk_io: value.buf_len_disk_io,
+            // TODO add to query
+            queue_len_disk_io: None,
             test_do_wasm: value.test_do_wasm,
             create_errors: value.create_errors.clone(),
         }
@@ -357,6 +362,8 @@ impl From<&BinnedQuery> for EventsSubQuerySettings {
             event_delay: None,
             stream_batch_len: None,
             buf_len_disk_io: None,
+            // TODO add to query
+            queue_len_disk_io: None,
             test_do_wasm: false,
             create_errors: Vec::new(),
         }
@@ -373,6 +380,7 @@ impl From<&Api1Query> for EventsSubQuerySettings {
             event_delay: None,
             stream_batch_len: None,
             buf_len_disk_io: Some(disk_io_tune.read_buffer_len),
+            queue_len_disk_io: Some(disk_io_tune.read_queue_len),
             test_do_wasm: false,
             create_errors: Vec::new(),
         }
@@ -429,8 +437,12 @@ impl EventsSubQuery {
         &self.settings.event_delay
     }
 
-    pub fn buf_len_disk_io(&self) -> usize {
-        self.settings.buf_len_disk_io.unwrap_or(1024 * 8)
+    pub fn disk_io_tune(&self) -> DiskIoTune {
+        let mut tune = DiskIoTune::default();
+        if let Some(x) = self.settings.buf_len_disk_io {
+            tune.read_buffer_len = x;
+        }
+        tune
     }
 
     pub fn inmem_bufcap(&self) -> ByteSize {

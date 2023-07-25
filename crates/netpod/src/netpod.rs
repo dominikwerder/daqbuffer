@@ -913,7 +913,7 @@ mod serde_shape {
         {
             use Shape::*;
             match self {
-                Scalar => ser.collect_seq([0u32; 0].iter()),
+                Scalar => ser.collect_seq(std::iter::empty::<u32>()),
                 Wave(a) => ser.collect_seq([*a].iter()),
                 Image(a, b) => ser.collect_seq([*a, *b].iter()),
             }
@@ -2353,11 +2353,12 @@ pub enum ReadSys {
     Read3,
     Read4,
     Read5,
+    BlockingTaskIntoChannel,
 }
 
 impl ReadSys {
     pub fn default() -> Self {
-        Self::TokioAsyncRead
+        Self::BlockingTaskIntoChannel
     }
 }
 
@@ -2373,6 +2374,8 @@ impl From<&str> for ReadSys {
             Self::Read4
         } else if k == "Read5" {
             Self::Read5
+        } else if k == "BlockingTaskIntoChannel" {
+            Self::BlockingTaskIntoChannel
         } else {
             Self::default()
         }
@@ -2390,7 +2393,7 @@ impl DiskIoTune {
     pub fn default_for_testing() -> Self {
         Self {
             read_sys: ReadSys::default(),
-            read_buffer_len: 1024 * 4,
+            read_buffer_len: 1024 * 8,
             read_queue_len: 4,
         }
     }
@@ -2398,7 +2401,7 @@ impl DiskIoTune {
     pub fn default() -> Self {
         Self {
             read_sys: ReadSys::default(),
-            read_buffer_len: 1024 * 4,
+            read_buffer_len: 1024 * 16,
             read_queue_len: 4,
         }
     }

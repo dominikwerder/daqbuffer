@@ -19,6 +19,8 @@ pub mod streamlog;
 
 pub use parse;
 
+use async_channel::Receiver;
+use async_channel::Sender;
 use bytes::BytesMut;
 use err::Error;
 use futures_util::future::FusedFuture;
@@ -719,6 +721,128 @@ impl Stream for FileContentStream4 {
     }
 }
 
+async fn file_tokio_to_std(file: File) -> std::fs::File {
+    file.into_std().await
+}
+
+struct BlockingTaskIntoChannel {
+    convert_file_fut: Option<Pin<Box<dyn Future<Output = std::fs::File> + Send>>>,
+    tx: Option<Sender<Result<FileChunkRead, Error>>>,
+    rx: Receiver<Result<FileChunkRead, Error>>,
+    cap: usize,
+    reqid: String,
+}
+
+impl BlockingTaskIntoChannel {
+    fn new(file: File, disk_io_tune: DiskIoTune, reqid: String) -> Self {
+        let (tx, rx) = async_channel::bounded(disk_io_tune.read_queue_len);
+        Self {
+            convert_file_fut: Some(Box::pin(file_tokio_to_std(file))),
+            tx: Some(tx),
+            rx,
+            cap: disk_io_tune.read_buffer_len,
+            reqid,
+        }
+    }
+
+    fn readloop(mut file: std::fs::File, cap: usize, tx: Sender<Result<FileChunkRead, Error>>, reqid: String) {
+        let span = tracing::span!(tracing::Level::DEBUG, "bticrl", reqid);
+        let _spg = span.entered();
+        loop {
+            use std::io::Read;
+            let ts1 = Instant::now();
+            let mut buf = BytesMut::with_capacity(cap);
+            unsafe {
+                // SAFETY we can always size up to capacity
+                buf.set_len(buf.capacity());
+            }
+            match file.read(&mut buf) {
+                Ok(n) => {
+                    if n == 0 {
+                        tx.close();
+                        break;
+                    } else if n > buf.capacity() {
+                        let msg = format!("blocking_task_into_channel read more than buffer cap");
+                        error!("{msg}");
+                        match tx.send_blocking(Err(Error::with_msg_no_trace(msg))) {
+                            Ok(()) => (),
+                            Err(e) => {
+                                error!("blocking_task_into_channel can not send into channel {e}");
+                            }
+                        }
+                        break;
+                    } else {
+                        let ts2 = Instant::now();
+                        unsafe {
+                            // SAFETY we checked before that n <= capacity
+                            buf.set_len(n);
+                        }
+                        let item = FileChunkRead::with_buf_dur(buf, ts2.duration_since(ts1));
+                        match tx.send_blocking(Ok(item)) {
+                            Ok(()) => (),
+                            Err(e) => {
+                                error!("blocking_task_into_channel can not send into channel {e}");
+                                break;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    match tx.send_blocking(Err(e.into())) {
+                        Ok(()) => (),
+                        Err(e) => {
+                            error!("blocking_task_into_channel can not send into channel {e}");
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    fn setup(&mut self, file: std::fs::File) {
+        let cap = self.cap;
+        let tx = self.tx.take().unwrap();
+        let reqid = self.reqid.clone();
+        taskrun::tokio::task::spawn_blocking(move || Self::readloop(file, cap, tx, reqid));
+    }
+}
+
+impl Stream for BlockingTaskIntoChannel {
+    type Item = Result<FileChunkRead, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        if let Some(fut) = &mut self.convert_file_fut {
+            match fut.poll_unpin(cx) {
+                Ready(file) => {
+                    self.convert_file_fut = None;
+                    self.setup(file);
+                    cx.waker().wake_by_ref();
+                    Pending
+                }
+                Pending => Pending,
+            }
+        } else {
+            match self.rx.poll_next_unpin(cx) {
+                Ready(Some(Ok(item))) => Ready(Some(Ok(item))),
+                Ready(Some(Err(e))) => Ready(Some(Err(e))),
+                Ready(None) => Ready(None),
+                Pending => Pending,
+            }
+        }
+    }
+}
+
+fn blocking_task_into_channel(
+    path: PathBuf,
+    file: File,
+    disk_io_tune: DiskIoTune,
+    reqid: String,
+) -> Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>> {
+    Box::pin(BlockingTaskIntoChannel::new(file, disk_io_tune, reqid)) as _
+}
+
 pub fn file_content_stream<S>(
     path: PathBuf,
     file: File,
@@ -728,7 +852,7 @@ pub fn file_content_stream<S>(
 where
     S: Into<String>,
 {
-    if let ReadSys::TokioAsyncRead = disk_io_tune.read_sys {
+    if let ReadSys::BlockingTaskIntoChannel = disk_io_tune.read_sys {
     } else {
         warn!("reading via {:?}", disk_io_tune.read_sys);
     }
@@ -755,6 +879,7 @@ where
             let s = FileContentStream5::new(path, file, disk_io_tune, reqid).unwrap();
             Box::pin(s) as _
         }
+        ReadSys::BlockingTaskIntoChannel => blocking_task_into_channel(path, file, disk_io_tune, reqid),
     }
 }
 

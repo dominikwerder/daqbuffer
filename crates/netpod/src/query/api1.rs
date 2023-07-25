@@ -263,8 +263,8 @@ impl Api1Query {
         if let Some(x) = &self.file_io_buffer_size {
             k.read_buffer_len = x.0;
         }
-        if let Some(io_queue_len) = self.io_queue_len {
-            k.read_queue_len = io_queue_len as usize;
+        if let Some(x) = self.io_queue_len {
+            k.read_queue_len = x as usize;
         }
         let read_sys: ReadSys = self.read_sys.as_str().into();
         k.read_sys = read_sys;

@@ -79,7 +79,7 @@ pub async fn make_event_pipe(
         fetch_info.clone(),
         ncc.node.clone(),
         ncc.ix,
-        DiskIoTune::default(),
+        evq.disk_io_tune(),
         event_chunker_conf,
         one_before,
         out_max_len,
@@ -175,7 +175,7 @@ pub async fn make_event_blobs_pipe_real(
             fetch_info.clone(),
             expand,
             event_chunker_conf,
-            DiskIoTune::default().with_read_buffer_len(subq.buf_len_disk_io()),
+            subq.disk_io_tune(),
             reqctx,
             node_config,
         )?;
@@ -186,7 +186,7 @@ pub async fn make_event_blobs_pipe_real(
             fetch_info.clone(),
             expand,
             event_chunker_conf,
-            DiskIoTune::default().with_read_buffer_len(subq.buf_len_disk_io()),
+            subq.disk_io_tune(),
             reqctx,
             node_config,
         )?;
