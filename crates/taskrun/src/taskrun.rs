@@ -119,9 +119,12 @@ fn tracing_init_inner() -> Result<(), Error> {
             .with_thread_names(true)
             .with_filter(filter);
 
+        let pid = std::process::id();
+        let cspn = format!("/tmp/daqbuffer.tokio.console.pid.{pid}");
         let console_layer = console_subscriber::ConsoleLayer::builder()
-            .retention(std::time::Duration::from_secs(4))
-            .server_addr(([127, 0, 0, 1], 2875))
+            .retention(std::time::Duration::from_secs(10))
+            // .server_addr(([127, 0, 0, 1], 2875))
+            .server_addr(std::path::Path::new(&cspn))
             .spawn();
         // .build();
 
@@ -129,11 +132,9 @@ fn tracing_init_inner() -> Result<(), Error> {
         // tokio::spawn(console_server.serve());
 
         let reg = tracing_subscriber::registry().with(console_layer);
-
         let reg = reg.with(fmt_layer);
-
         reg.try_init().map_err(|e| {
-            eprintln!("SOMETHING BAD HAPPENED: {e}");
+            eprintln!("can not initialize tracing layer: {e}");
             format!("{e}")
         })?;
     }
