@@ -16,8 +16,6 @@ use netpod::ServiceVersion;
 
 #[derive(Debug, ThisError)]
 pub enum EventDataError {
-    HttpBadMethod,
-    HttpBadAccept,
     QueryParse,
     #[error("Error({0})")]
     Error(Box<dyn ToPublicError>),
@@ -27,8 +25,6 @@ pub enum EventDataError {
 impl ToPublicError for EventDataError {
     fn to_public_error(&self) -> String {
         match self {
-            EventDataError::HttpBadMethod => format!("{self}"),
-            EventDataError::HttpBadAccept => format!("{self}"),
             EventDataError::QueryParse => format!("{self}"),
             EventDataError::Error(e) => e.to_public_error(),
             EventDataError::InternalError => format!("{self}"),

@@ -71,7 +71,6 @@ fn raw_data_00() {
                 listen: None,
                 port: 9090,
                 port_raw: 9090,
-                cache_base_path: "".into(),
                 sf_databuffer: Some(SfDatabuffer {
                     data_base_path: "/home/dominik/daqbuffer-testdata/databuffer/node00".into(),
                     ksprefix: "ks".into(),

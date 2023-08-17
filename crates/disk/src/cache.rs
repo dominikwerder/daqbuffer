@@ -77,9 +77,7 @@ impl CacheFileDesc {
     pub fn path(&self, node_config: &NodeConfigCached) -> PathBuf {
         let hash = self.hash();
         let hc = self.hash_channel();
-        node_config
-            .node
-            .cache_base_path
+        PathBuf::from(format!("{}", err::todoval::<u8>()))
             .join("cache")
             .join(&hc[0..3])
             .join(&hc[3..6])
@@ -175,7 +173,8 @@ pub async fn clear_cache_all(node_config: &NodeConfigCached, dry: bool) -> Resul
     }
     let mut dirs = VecDeque::new();
     let mut stack = VecDeque::new();
-    stack.push_front(node_config.node.cache_base_path.join("cache"));
+    // stack.push_front(node_config.node.cache_base_path.join("cache"));
+    stack.push_front(PathBuf::from("UNDEFINED/NOTHING/REMOVE/ME").join("cache"));
     loop {
         match stack.pop_front() {
             Some(path) => {

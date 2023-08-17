@@ -386,7 +386,6 @@ pub struct Node {
     pub port: u16,
     #[serde(deserialize_with = "serde_port::port_from_any", default)]
     pub port_raw: u16,
-    pub cache_base_path: PathBuf,
     pub sf_databuffer: Option<SfDatabuffer>,
     pub archiver_appliance: Option<ArchiverAppliance>,
     pub channel_archiver: Option<ChannelArchiver>,
@@ -474,7 +473,6 @@ impl Node {
             listen: None,
             port: 4444,
             port_raw: 4444,
-            cache_base_path: PathBuf::new(),
             sf_databuffer: Some(SfDatabuffer {
                 data_base_path: PathBuf::new(),
                 ksprefix: "daqlocal".into(),
@@ -2936,7 +2934,6 @@ pub fn test_cluster() -> Cluster {
             listen: None,
             port: 6170 + id as u16,
             port_raw: 6170 + id as u16 + 100,
-            cache_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
             sf_databuffer: Some(SfDatabuffer {
                 data_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
                 ksprefix: "ks".into(),
@@ -2973,7 +2970,6 @@ pub fn sls_test_cluster() -> Cluster {
             listen: None,
             port: 6190 + id as u16,
             port_raw: 6190 + id as u16 + 100,
-            cache_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
             sf_databuffer: None,
             archiver_appliance: None,
             channel_archiver: Some(ChannelArchiver {
@@ -3008,7 +3004,6 @@ pub fn archapp_test_cluster() -> Cluster {
             listen: None,
             port: 6200 + id as u16,
             port_raw: 6200 + id as u16 + 100,
-            cache_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
             sf_databuffer: None,
             channel_archiver: None,
             archiver_appliance: Some(ArchiverAppliance {
