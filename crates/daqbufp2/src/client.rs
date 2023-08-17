@@ -17,7 +17,8 @@ use netpod::HostPort;
 use netpod::SfDbChannel;
 use netpod::APP_OCTET;
 use query::api4::binned::BinnedQuery;
-use streams::frames::inmem::InMemoryFrameAsyncReadStream;
+use streams::frames::inmem::InMemoryFrameStream;
+use streams::frames::inmem::TcpReadAsBytes;
 use url::Url;
 
 pub async fn status(host: String, port: u16) -> Result<(), Error> {
@@ -94,7 +95,7 @@ pub async fn get_binned(
         )));
     }
     let s1 = HttpBodyAsAsyncRead::new(res);
-    let s2 = InMemoryFrameAsyncReadStream::new(s1, ByteSize::from_kb(8));
+    let s2 = InMemoryFrameStream::new(TcpReadAsBytes::new(s1), ByteSize::from_kb(8));
     use futures_util::StreamExt;
     use std::future::ready;
     let s3 = s2

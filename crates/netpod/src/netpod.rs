@@ -381,10 +381,10 @@ pub struct ChannelArchiver {
 pub struct Node {
     pub host: String,
     // TODO for `listen` and the ports, would be great to allow a default on Cluster level.
-    pub listen: String,
+    pub listen: Option<String>,
     #[serde(deserialize_with = "serde_port::port_from_any")]
     pub port: u16,
-    #[serde(deserialize_with = "serde_port::port_from_any")]
+    #[serde(deserialize_with = "serde_port::port_from_any", default)]
     pub port_raw: u16,
     pub cache_base_path: PathBuf,
     pub sf_databuffer: Option<SfDatabuffer>,
@@ -471,7 +471,7 @@ impl Node {
     pub fn dummy() -> Self {
         Self {
             host: "dummy".into(),
-            listen: "dummy".into(),
+            listen: None,
             port: 4444,
             port_raw: 4444,
             cache_base_path: PathBuf::new(),
@@ -489,7 +489,17 @@ impl Node {
     // TODO should a node know how to reach itself? Because, depending on network
     // topology (proxies etc.) the way to reach a node depends on the tuple `(node, client)`.
     pub fn baseurl(&self) -> Url {
-        format!("http://{}:{}/api/4/", self.host, self.port).parse().unwrap()
+        // TODO should be able to decide whether we are reachable via tls.
+        // So far this does not matter because this `baseurl` is used for internal communication
+        // and is always non-tls.
+        format!("http://{}:{}", self.host, self.port).parse().unwrap()
+    }
+
+    pub fn listen(&self) -> String {
+        match &self.listen {
+            Some(x) => x.into(),
+            None => "0.0.0.0".into(),
+        }
     }
 }
 
@@ -2923,7 +2933,7 @@ pub fn test_cluster() -> Cluster {
         .into_iter()
         .map(|id| Node {
             host: "localhost".into(),
-            listen: "0.0.0.0".into(),
+            listen: None,
             port: 6170 + id as u16,
             port_raw: 6170 + id as u16 + 100,
             cache_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
@@ -2960,7 +2970,7 @@ pub fn sls_test_cluster() -> Cluster {
         .into_iter()
         .map(|id| Node {
             host: "localhost".into(),
-            listen: "0.0.0.0".into(),
+            listen: None,
             port: 6190 + id as u16,
             port_raw: 6190 + id as u16 + 100,
             cache_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),
@@ -2995,7 +3005,7 @@ pub fn archapp_test_cluster() -> Cluster {
         .into_iter()
         .map(|id| Node {
             host: "localhost".into(),
-            listen: "0.0.0.0".into(),
+            listen: None,
             port: 6200 + id as u16,
             port_raw: 6200 + id as u16 + 100,
             cache_base_path: test_data_base_path_databuffer().join(format!("node{:02}", id)),

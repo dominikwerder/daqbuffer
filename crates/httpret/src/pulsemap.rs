@@ -164,7 +164,6 @@ pub struct MapPulseHisto {
     _counts: Vec<u64>,
 }
 
-const MAP_INDEX_FULL_URL_PREFIX: &'static str = "/api/1/map/index/full/";
 const _MAP_INDEX_FAST_URL_PREFIX: &'static str = "/api/1/map/index/fast/";
 const MAP_PULSE_HISTO_URL_PREFIX: &'static str = "/api/1/map/pulse/histo/";
 const MAP_PULSE_URL_PREFIX: &'static str = "/api/1/map/pulse/";
@@ -490,7 +489,7 @@ pub struct IndexFullHttpFunction {}
 
 impl IndexFullHttpFunction {
     pub fn handler(req: &Request<Body>) -> Option<Self> {
-        if req.uri().path().starts_with(MAP_INDEX_FULL_URL_PREFIX) {
+        if req.uri().path().eq("/api/1/map/index/full") {
             Some(Self {})
         } else {
             None
@@ -724,7 +723,10 @@ impl Future for UpdateTask {
 }
 
 impl UpdateTask {
-    pub fn new(node_config: NodeConfigCached) -> UpdateTaskGuard {
+    /// Returns a guard which must be kept alive as long as the service should run.
+    /// Should instead of this use a system-timer and call the rest api.
+    #[allow(unused)]
+    fn new(node_config: NodeConfigCached) -> UpdateTaskGuard {
         let do_abort = Arc::new(AtomicUsize::default());
         let task = Self {
             do_abort: do_abort.clone(),

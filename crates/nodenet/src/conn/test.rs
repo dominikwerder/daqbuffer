@@ -32,7 +32,8 @@ use query::api4::events::EventsSubQuery;
 use query::api4::events::EventsSubQuerySelect;
 use query::api4::events::EventsSubQuerySettings;
 use query::transform::TransformQuery;
-use streams::frames::inmem::InMemoryFrameAsyncReadStream;
+use streams::frames::inmem::InMemoryFrameStream;
+use streams::frames::inmem::TcpReadAsBytes;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
@@ -67,7 +68,7 @@ fn raw_data_00() {
             },
             node: Node {
                 host: "empty".into(),
-                listen: "listen_dummy".into(),
+                listen: None,
                 port: 9090,
                 port_raw: 9090,
                 cache_base_path: "".into(),
@@ -107,7 +108,8 @@ fn raw_data_00() {
         con.shutdown().await.unwrap();
         eprintln!("shut down");
 
-        let mut frames = InMemoryFrameAsyncReadStream::new(con, qu.inmem_bufcap());
+        let (netin, netout) = con.into_split();
+        let mut frames = InMemoryFrameStream::new(TcpReadAsBytes::new(netin), qu.inmem_bufcap());
         while let Some(frame) = frames.next().await {
             match frame {
                 Ok(frame) => match frame {

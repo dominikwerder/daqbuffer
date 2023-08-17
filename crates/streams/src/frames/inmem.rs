@@ -15,7 +15,6 @@ use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 use tokio::io::AsyncRead;
-use tokio::io::ReadBuf;
 
 #[allow(unused)]
 macro_rules! trace2 {
@@ -29,14 +28,54 @@ impl err::ToErr for crate::slidebuf::Error {
     }
 }
 
+pub struct TcpReadAsBytes<INP> {
+    inp: INP,
+}
+
+impl<INP> TcpReadAsBytes<INP> {
+    pub fn new(inp: INP) -> Self {
+        Self { inp }
+    }
+}
+
+impl<INP> Stream for TcpReadAsBytes<INP>
+where
+    INP: AsyncRead + Unpin,
+{
+    type Item = Result<Bytes, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        // TODO keep this small as long as InMemoryFrameStream uses SlideBuf internally.
+        let mut buf1 = vec![0; 128];
+        let mut buf2 = tokio::io::ReadBuf::new(&mut buf1);
+        match tokio::io::AsyncRead::poll_read(Pin::new(&mut self.inp), cx, &mut buf2) {
+            Ready(Ok(())) => {
+                let n = buf2.filled().len();
+                if n == 0 {
+                    Ready(None)
+                } else {
+                    buf1.truncate(n);
+                    let item = Bytes::from(buf1);
+                    Ready(Some(Ok(item)))
+                }
+            }
+            Ready(Err(e)) => Ready(Some(Err(e.into()))),
+            Pending => Pending,
+        }
+    }
+}
+
 /// Interprets a byte stream as length-delimited frames.
 ///
 /// Emits each frame as a single item. Therefore, each item must fit easily into memory.
-pub struct InMemoryFrameAsyncReadStream<T>
+pub struct InMemoryFrameStream<T, E>
 where
-    T: AsyncRead + Unpin,
+    T: Stream<Item = Result<Bytes, E>> + Unpin,
 {
     inp: T,
+    // TODO since we moved to input stream of Bytes, we have the danger that the ring buffer
+    // is not large enough. Actually, this should rather use a RopeBuf with incoming owned bufs.
     buf: SlideBuf,
     need_min: usize,
     done: bool,
@@ -44,9 +83,9 @@ where
     inp_bytes_consumed: u64,
 }
 
-impl<T> InMemoryFrameAsyncReadStream<T>
+impl<T, E> InMemoryFrameStream<T, E>
 where
-    T: AsyncRead + Unpin,
+    T: Stream<Item = Result<Bytes, E>> + Unpin,
 {
     pub fn type_name() -> &'static str {
         std::any::type_name::<Self>()
@@ -66,20 +105,35 @@ where
     fn poll_upstream(&mut self, cx: &mut Context) -> Poll<Result<usize, Error>> {
         trace2!("poll_upstream");
         use Poll::*;
-        let mut buf = ReadBuf::new(self.buf.available_writable_area(self.need_min - self.buf.len())?);
+        // use tokio::io::AsyncRead;
+        // use tokio::io::ReadBuf;
+        // let mut buf = ReadBuf::new(self.buf.available_writable_area(self.need_min.saturating_sub(self.buf.len()))?);
         let inp = &mut self.inp;
         pin_mut!(inp);
         trace!("poll_upstream");
-        match AsyncRead::poll_read(inp, cx, &mut buf) {
-            Ready(Ok(())) => {
-                let n = buf.filled().len();
-                self.buf.wadv(n)?;
-                trace2!("recv bytes {}", n);
-                Ready(Ok(n))
-            }
-            Ready(Err(e)) => Ready(Err(e.into())),
+        match inp.poll_next(cx) {
+            Ready(Some(Ok(x))) => match self.buf.available_writable_area(x.len()) {
+                Ok(dst) => {
+                    dst[..x.len()].copy_from_slice(&x);
+                    self.buf.wadv(x.len())?;
+                    Ready(Ok(x.len()))
+                }
+                Err(e) => Ready(Err(e.into())),
+            },
+            Ready(Some(Err(_e))) => Ready(Err(Error::with_msg_no_trace("input error"))),
+            Ready(None) => Ready(Ok(0)),
             Pending => Pending,
         }
+        // match AsyncRead::poll_read(inp, cx, &mut buf) {
+        //     Ready(Ok(())) => {
+        //         let n = buf.filled().len();
+        //         self.buf.wadv(n)?;
+        //         trace2!("recv bytes {}", n);
+        //         Ready(Ok(n))
+        //     }
+        //     Ready(Err(e)) => Ready(Err(e.into())),
+        //     Pending => Pending,
+        // }
     }
 
     // Try to consume bytes to parse a frame.
@@ -157,9 +211,9 @@ where
     }
 }
 
-impl<T> Stream for InMemoryFrameAsyncReadStream<T>
+impl<T, E> Stream for InMemoryFrameStream<T, E>
 where
-    T: AsyncRead + Unpin,
+    T: Stream<Item = Result<Bytes, E>> + Unpin,
 {
     type Item = Result<StreamItem<InMemoryFrame>, Error>;
 

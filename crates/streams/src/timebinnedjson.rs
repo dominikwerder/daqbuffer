@@ -1,6 +1,6 @@
 use crate::collect::Collect;
 use crate::rangefilter2::RangeFilter2;
-use crate::tcprawclient::open_tcp_streams;
+use crate::tcprawclient::open_event_data_streams;
 use crate::timebin::TimeBinnedStream;
 use crate::transform::build_merged_event_transform;
 use crate::transform::EventsToTimeBinnable;
@@ -48,7 +48,7 @@ async fn timebinnable_stream(
     let settings = EventsSubQuerySettings::from(&query);
     let subq = EventsSubQuery::from_parts(select, settings, reqid);
     let mut tr = build_merged_event_transform(subq.transform())?;
-    let inps = open_tcp_streams::<ChannelEvents>(subq, &cluster).await?;
+    let inps = open_event_data_streams::<ChannelEvents>(subq, &cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader.
     // TODO use a mixture of count and byte-size as threshold.
     let stream = Merger::new(inps, query.merger_out_len_max());

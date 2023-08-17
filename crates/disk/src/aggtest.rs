@@ -20,7 +20,7 @@ use netpod::Shape;
 pub fn make_test_node(id: u32) -> Node {
     Node {
         host: "localhost".into(),
-        listen: "0.0.0.0".into(),
+        listen: None,
         port: 8800 + id as u16,
         port_raw: 8800 + id as u16 + 100,
         // TODO use a common function to supply the tmp path.

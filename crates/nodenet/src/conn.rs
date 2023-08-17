@@ -1,4 +1,5 @@
 use crate::scylla::scylla_channel_event_stream;
+use bytes::Bytes;
 use err::thiserror;
 use err::Error;
 use err::ThisError;
@@ -27,13 +28,13 @@ use query::api4::events::EventsSubQuery;
 use query::api4::events::Frame1Parts;
 use std::net::SocketAddr;
 use std::pin::Pin;
-use streams::frames::inmem::InMemoryFrameAsyncReadStream;
+use streams::frames::inmem::InMemoryFrameStream;
+use streams::frames::inmem::TcpReadAsBytes;
 use streams::generators::GenerateF64V00;
 use streams::generators::GenerateI32V00;
 use streams::generators::GenerateI32V01;
 use streams::transform::build_event_transform;
 use tokio::io::AsyncWriteExt;
-use tokio::net::tcp::OwnedReadHalf;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
 use tracing::Instrument;
@@ -47,7 +48,7 @@ mod test;
 pub enum NodeNetError {}
 
 pub async fn events_service(node_config: NodeConfigCached) -> Result<(), Error> {
-    let addr = format!("{}:{}", node_config.node.listen, node_config.node.port_raw);
+    let addr = format!("{}:{}", node_config.node.listen(), node_config.node.port_raw);
     let lis = tokio::net::TcpListener::bind(addr).await?;
     loop {
         match lis.accept().await {
@@ -153,69 +154,70 @@ async fn make_channel_events_stream(
     Ok(ret)
 }
 
+pub type BytesStreamBox = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>;
+
+pub async fn create_response_bytes_stream(
+    evq: EventsSubQuery,
+    ncc: &NodeConfigCached,
+) -> Result<BytesStreamBox, Error> {
+    let reqctx = netpod::ReqCtx::new(evq.reqid());
+    if evq.create_errors_contains("nodenet_parse_query") {
+        let e = Error::with_msg_no_trace("produced error on request nodenet_parse_query");
+        return Err(e);
+    }
+    if evq.is_event_blobs() {
+        // TODO support event blobs as transform
+        let fetch_info = evq.ch_conf().to_sf_databuffer()?;
+        let stream = disk::raw::conn::make_event_blobs_pipe(&evq, &fetch_info, reqctx, ncc).await?;
+        // let stream = stream.map(|x| Box::new(x) as _);
+        let stream = stream.map(|x| x.make_frame().map(|x| x.freeze()));
+        let ret = Box::pin(stream);
+        Ok(ret)
+    } else {
+        let stream = make_channel_events_stream(evq.clone(), reqctx, ncc).await?;
+        if false {
+            // TODO wasm example
+            use wasmer::Value;
+            let wasm = b"";
+            let mut store = wasmer::Store::default();
+            let module = wasmer::Module::new(&store, wasm).unwrap();
+            let import_object = wasmer::imports! {};
+            let instance = wasmer::Instance::new(&mut store, &module, &import_object).unwrap();
+            let add_one = instance.exports.get_function("event_transform").unwrap();
+            let result = add_one.call(&mut store, &[Value::I32(42)]).unwrap();
+            assert_eq!(result[0], Value::I32(43));
+        }
+        let mut tr = match build_event_transform(evq.transform()) {
+            Ok(x) => x,
+            Err(e) => {
+                return Err(e);
+            }
+        };
+        let stream = stream.map(move |x| {
+            let item = on_sitemty_data!(x, |x| {
+                let x: Box<dyn Events> = Box::new(x);
+                let x = tr.0.transform(x);
+                Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
+            });
+            Box::new(item) as Box<dyn Framable + Send>
+        });
+        let stream = stream.map(|x| x.make_frame().map(|x| x.freeze()));
+        let ret = Box::pin(stream);
+        Ok(ret)
+    }
+}
+
 async fn events_conn_handler_with_reqid(
     mut netout: OwnedWriteHalf,
     evq: EventsSubQuery,
     ncc: &NodeConfigCached,
 ) -> Result<(), ConnErr> {
-    let reqctx = netpod::ReqCtx::new(evq.reqid());
-    if evq.create_errors_contains("nodenet_parse_query") {
-        let e = Error::with_msg_no_trace("produced error on request nodenet_parse_query");
-        return Err((e, netout).into());
-    }
-    let stream: Pin<Box<dyn Stream<Item = Box<dyn Framable + Send>> + Send>> = if evq.is_event_blobs() {
-        // TODO support event blobs as transform
-        let fetch_info = match evq.ch_conf().to_sf_databuffer() {
-            Ok(x) => x,
-            Err(e) => return Err((e, netout).into()),
-        };
-        match disk::raw::conn::make_event_blobs_pipe(&evq, &fetch_info, reqctx, ncc).await {
-            Ok(stream) => {
-                let stream = stream.map(|x| Box::new(x) as _);
-                Box::pin(stream)
-            }
-            Err(e) => return Err((e, netout).into()),
-        }
-    } else {
-        match make_channel_events_stream(evq.clone(), reqctx, ncc).await {
-            Ok(stream) => {
-                if false {
-                    // TODO wasm example
-                    use wasmer::Value;
-                    let wasm = b"";
-                    let mut store = wasmer::Store::default();
-                    let module = wasmer::Module::new(&store, wasm).unwrap();
-                    let import_object = wasmer::imports! {};
-                    let instance = wasmer::Instance::new(&mut store, &module, &import_object).unwrap();
-                    let add_one = instance.exports.get_function("event_transform").unwrap();
-                    let result = add_one.call(&mut store, &[Value::I32(42)]).unwrap();
-                    assert_eq!(result[0], Value::I32(43));
-                }
-                let mut tr = match build_event_transform(evq.transform()) {
-                    Ok(x) => x,
-                    Err(e) => {
-                        return Err((e, netout).into());
-                    }
-                };
-                let stream = stream.map(move |x| {
-                    let item = on_sitemty_data!(x, |x| {
-                        let x: Box<dyn Events> = Box::new(x);
-                        let x = tr.0.transform(x);
-                        Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
-                    });
-                    Box::new(item) as Box<dyn Framable + Send>
-                });
-                Box::pin(stream)
-            }
-            Err(e) => {
-                return Err((e, netout).into());
-            }
-        }
+    let mut stream = match create_response_bytes_stream(evq, ncc).await {
+        Ok(x) => x,
+        Err(e) => return Err((e, netout))?,
     };
-    let mut stream = stream;
     let mut buf_len_histo = HistoLog2::new(5);
     while let Some(item) = stream.next().await {
-        let item = item.make_frame();
         match item {
             Ok(buf) => {
                 buf_len_histo.ingest(buf.len() as u32);
@@ -265,8 +267,11 @@ async fn events_conn_handler_with_reqid(
     Ok(())
 }
 
-async fn events_get_input_frames(netin: OwnedReadHalf) -> Result<Vec<InMemoryFrame>, Error> {
-    let mut h = InMemoryFrameAsyncReadStream::new(netin, netpod::ByteSize::from_kb(8));
+pub async fn events_get_input_frames<INP>(netin: INP) -> Result<Vec<InMemoryFrame>, Error>
+where
+    INP: Stream<Item = Result<Bytes, Error>> + Unpin,
+{
+    let mut h = InMemoryFrameStream::new(netin, netpod::ByteSize::from_kb(8));
     let mut frames = Vec::new();
     while let Some(k) = h
         .next()
@@ -288,7 +293,7 @@ async fn events_get_input_frames(netin: OwnedReadHalf) -> Result<Vec<InMemoryFra
     Ok(frames)
 }
 
-async fn events_parse_input_query(frames: Vec<InMemoryFrame>) -> Result<(EventsSubQuery,), Error> {
+pub fn events_parse_input_query(frames: Vec<InMemoryFrame>) -> Result<(EventsSubQuery,), Error> {
     if frames.len() != 1 {
         error!("{:?}", frames);
         error!("missing command frame  len {}", frames.len());
@@ -321,18 +326,21 @@ async fn events_parse_input_query(frames: Vec<InMemoryFrame>) -> Result<(EventsS
     Ok(frame1.parts())
 }
 
-async fn events_conn_handler_inner_try(
-    stream: TcpStream,
+async fn events_conn_handler_inner_try<INP>(
+    netin: INP,
+    netout: OwnedWriteHalf,
     addr: SocketAddr,
     ncc: &NodeConfigCached,
-) -> Result<(), ConnErr> {
+) -> Result<(), ConnErr>
+where
+    INP: Stream<Item = Result<Bytes, Error>> + Unpin,
+{
     let _ = addr;
-    let (netin, netout) = stream.into_split();
     let frames = match events_get_input_frames(netin).await {
         Ok(x) => x,
         Err(e) => return Err((e, netout).into()),
     };
-    let (evq,) = match events_parse_input_query(frames).await {
+    let (evq,) = match events_parse_input_query(frames) {
         Ok(x) => x,
         Err(e) => return Err((e, netout).into()),
     };
@@ -342,12 +350,16 @@ async fn events_conn_handler_inner_try(
     events_conn_handler_with_reqid(netout, evq, ncc).instrument(span).await
 }
 
-async fn events_conn_handler_inner(
-    stream: TcpStream,
+async fn events_conn_handler_inner<INP>(
+    netin: INP,
+    netout: OwnedWriteHalf,
     addr: SocketAddr,
     node_config: &NodeConfigCached,
-) -> Result<(), Error> {
-    match events_conn_handler_inner_try(stream, addr, node_config).await {
+) -> Result<(), Error>
+where
+    INP: Stream<Item = Result<Bytes, Error>> + Unpin,
+{
+    match events_conn_handler_inner_try(netin, netout, addr, node_config).await {
         Ok(_) => (),
         Err(ce) => {
             let mut out = ce.netout;
@@ -360,8 +372,10 @@ async fn events_conn_handler_inner(
 }
 
 async fn events_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: NodeConfigCached) -> Result<(), Error> {
+    let (netin, netout) = stream.into_split();
+    let inp = Box::new(TcpReadAsBytes::new(netin));
     let span1 = span!(Level::INFO, "events_conn_handler");
-    let r = events_conn_handler_inner(stream, addr, &node_config)
+    let r = events_conn_handler_inner(inp, netout, addr, &node_config)
         .instrument(span1)
         .await;
     match r {

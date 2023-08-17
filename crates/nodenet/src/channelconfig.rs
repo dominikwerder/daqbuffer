@@ -177,7 +177,7 @@ pub async fn http_get_channel_config(
     baseurl: Url,
 ) -> Result<Option<ChannelConfigResponse>, Error> {
     let url = baseurl;
-    let mut url = url.join("channel/config").unwrap();
+    let mut url = url.join("/api/4/channel/config").unwrap();
     qu.append_to_url(&mut url);
     let res = httpclient::http_get(url, APP_JSON).await?;
     use httpclient::http::StatusCode;

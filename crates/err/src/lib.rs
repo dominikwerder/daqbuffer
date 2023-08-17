@@ -466,6 +466,13 @@ impl fmt::Display for PublicError {
     }
 }
 
+impl ToPublicError for Error {
+    fn to_public_error(&self) -> String {
+        let e = PublicError::from(self);
+        e.msg().into()
+    }
+}
+
 pub fn todo() {
     let bt = backtrace::Backtrace::new();
     eprintln!("TODO\n{bt:?}");

@@ -112,7 +112,7 @@ pub async fn gen_test_data() -> Result<(), Error> {
     for i1 in 0..3 {
         let node = Node {
             host: "localhost".into(),
-            listen: "0.0.0.0".into(),
+            listen: None,
             port: 7780 + i1 as u16,
             port_raw: 7780 + i1 as u16 + 100,
             cache_base_path: data_base_path.join(format!("node{:02}", i1)),

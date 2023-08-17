@@ -1,5 +1,5 @@
 use crate::collect::Collect;
-use crate::tcprawclient::open_tcp_streams;
+use crate::tcprawclient::open_event_data_streams;
 use crate::transform::build_merged_event_transform;
 use crate::transform::EventsToTimeBinnable;
 use crate::transform::TimeBinnableToCollectable;
@@ -35,7 +35,7 @@ pub async fn plain_events_json(
     let deadline = Instant::now() + evq.timeout();
     let mut tr = build_merged_event_transform(evq.transform())?;
     // TODO make sure the empty container arrives over the network.
-    let inps = open_tcp_streams::<ChannelEvents>(subq, cluster).await?;
+    let inps = open_event_data_streams::<ChannelEvents>(subq, cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader.
     // TODO use a mixture of count and byte-size as threshold.
     let stream = Merger::new(inps, evq.merger_out_len_max());

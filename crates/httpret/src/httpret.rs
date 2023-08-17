@@ -132,14 +132,9 @@ pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion
     if let Some(bind) = node_config.node.prometheus_api_bind {
         tokio::spawn(prometheus::host(bind));
     }
-    let _update_task = if node_config.node_config.cluster.run_map_pulse_task {
-        Some(UpdateTask::new(node_config.clone()))
-    } else {
-        None
-    };
-    let rawjh = taskrun::spawn(events_service(node_config.clone()));
+    // let rawjh = taskrun::spawn(events_service(node_config.clone()));
     use std::str::FromStr;
-    let addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen, node_config.node.port))?;
+    let addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen(), node_config.node.port))?;
     let make_service = make_service_fn({
         move |conn: &AddrStream| {
             debug!("new connection from {:?}", conn.remote_addr());
@@ -147,20 +142,19 @@ pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion
             let addr = conn.remote_addr();
             let service_version = service_version.clone();
             async move {
-                Ok::<_, Error>(service_fn({
-                    move |req| {
-                        // TODO send to logstash
-                        info!(
-                            "http-request  {:?} - {:?} - {:?} - {:?}",
-                            addr,
-                            req.method(),
-                            req.uri(),
-                            req.headers()
-                        );
-                        let f = http_service(req, node_config.clone(), service_version.clone());
-                        Cont { f: Box::pin(f) }
-                    }
-                }))
+                let ret = service_fn(move |req| {
+                    // TODO send to logstash
+                    info!(
+                        "http-request  {:?} - {:?} - {:?} - {:?}",
+                        addr,
+                        req.method(),
+                        req.uri(),
+                        req.headers()
+                    );
+                    let f = http_service(req, node_config.clone(), service_version.clone());
+                    Cont { f: Box::pin(f) }
+                });
+                Ok::<_, Error>(ret)
             }
         }
     });
@@ -168,7 +162,7 @@ pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion
         .serve(make_service)
         .await
         .map(|e| RetrievalError::TextError(format!("{e:?}")))?;
-    rawjh.await??;
+    // rawjh.await??;
     Ok(())
 }
 
@@ -382,6 +376,10 @@ async fn http_service_inner(
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
         }
+    } else if let Some(h) = api4::eventdata::EventDataHandler::handler(&req) {
+        Ok(h.handle(req, ctx, &node_config, service_version)
+            .await
+            .map_err(|e| Error::with_msg_no_trace(e.to_string()))?)
     } else if let Some(h) = api4::status::StatusNodesRecursive::handler(&req) {
         Ok(h.handle(req, ctx, &node_config, service_version).await?)
     } else if let Some(h) = StatusBoardAllHandler::handler(&req) {
