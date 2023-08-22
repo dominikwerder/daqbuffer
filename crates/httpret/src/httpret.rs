@@ -15,7 +15,6 @@ use self::bodystream::ToPublicResponse;
 use crate::bodystream::response;
 use crate::err::Error;
 use crate::gather::gather_get_json;
-use crate::pulsemap::UpdateTask;
 use ::err::thiserror;
 use ::err::ThisError;
 use futures_util::Future;
@@ -31,16 +30,13 @@ use hyper::Body;
 use hyper::Request;
 use hyper::Response;
 use net::SocketAddr;
-use netpod::is_false;
 use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
-use netpod::CmpZero;
 use netpod::NodeConfigCached;
 use netpod::ProxyConfig;
 use netpod::ServiceVersion;
 use netpod::APP_JSON;
 use netpod::APP_JSON_LINES;
-use nodenet::conn::events_service;
 use panic::AssertUnwindSafe;
 use panic::UnwindSafe;
 use pin::Pin;
@@ -132,7 +128,7 @@ pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion
     if let Some(bind) = node_config.node.prometheus_api_bind {
         tokio::spawn(prometheus::host(bind));
     }
-    // let rawjh = taskrun::spawn(events_service(node_config.clone()));
+    // let rawjh = taskrun::spawn(nodenet::conn::events_service(node_config.clone()));
     use std::str::FromStr;
     let addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen(), node_config.node.port))?;
     let make_service = make_service_fn({
@@ -883,7 +879,7 @@ impl StatusBoard {
             Some(e) => e.into(),
             None => {
                 error!("can not find status id {}", status_id);
-                let e = ::err::Error::with_public_msg_no_trace(format!("Request status ID unknown {status_id}"));
+                let _e = ::err::Error::with_public_msg_no_trace(format!("Request status ID unknown {status_id}"));
                 StatusBoardEntryUser {
                     error_count: 1,
                     warn_count: 0,

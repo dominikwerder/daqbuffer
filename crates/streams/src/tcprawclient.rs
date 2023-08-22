@@ -108,6 +108,8 @@ pub async fn x_processed_event_blobs_stream_from_node_http(
     Ok(Box::pin(stream))
 }
 
+// Currently used only for the python data api3 protocol endpoint.
+// TODO merge with main method.
 pub async fn x_processed_event_blobs_stream_from_node(
     subq: EventsSubQuery,
     node: Node,

@@ -1,3 +1,4 @@
+pub mod hex;
 pub mod histo;
 pub mod query;
 pub mod range;

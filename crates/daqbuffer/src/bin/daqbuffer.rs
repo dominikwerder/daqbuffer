@@ -65,9 +65,9 @@ async fn go() -> Result<(), Error> {
     };
     match opts.subcmd {
         SubCmd::Retrieval(subcmd) => {
-            info!("daqbuffer version {} 0000", clap::crate_version!());
-            info!("{:?}", service_version);
-            {
+            info!("daqbuffer  version {}", clap::crate_version!());
+            info!("   service_version {}", service_version);
+            if false {
                 #[allow(non_snake_case)]
                 let TARGET = std::env!("DAQBUF_TARGET");
                 #[allow(non_snake_case)]

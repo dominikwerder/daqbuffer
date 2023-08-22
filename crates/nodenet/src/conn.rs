@@ -12,7 +12,6 @@ use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::streamitem::EVENT_QUERY_JSON_STRING_FRAME;
-use items_0::Events;
 use items_2::channelevents::ChannelEvents;
 use items_2::empty::empty_events_dyn_ev;
 use items_2::framable::EventQueryJsonStringFrame;
@@ -160,6 +159,8 @@ pub async fn create_response_bytes_stream(
     evq: EventsSubQuery,
     ncc: &NodeConfigCached,
 ) -> Result<BytesStreamBox, Error> {
+    debug!("create_response_bytes_stream  {:?}", evq.ch_conf().scalar_type());
+    debug!("wasm1 {:?}", evq.wasm1());
     let reqctx = netpod::ReqCtx::new(evq.reqid());
     if evq.create_errors_contains("nodenet_parse_query") {
         let e = Error::with_msg_no_trace("produced error on request nodenet_parse_query");
@@ -175,32 +176,24 @@ pub async fn create_response_bytes_stream(
         Ok(ret)
     } else {
         let stream = make_channel_events_stream(evq.clone(), reqctx, ncc).await?;
-        if false {
-            // TODO wasm example
-            use wasmer::Value;
-            let wasm = b"";
-            let mut store = wasmer::Store::default();
-            let module = wasmer::Module::new(&store, wasm).unwrap();
-            let import_object = wasmer::imports! {};
-            let instance = wasmer::Instance::new(&mut store, &module, &import_object).unwrap();
-            let add_one = instance.exports.get_function("event_transform").unwrap();
-            let result = add_one.call(&mut store, &[Value::I32(42)]).unwrap();
-            assert_eq!(result[0], Value::I32(43));
-        }
-        let mut tr = match build_event_transform(evq.transform()) {
-            Ok(x) => x,
-            Err(e) => {
-                return Err(e);
-            }
-        };
+        let mut tr = build_event_transform(evq.transform())?;
+
         let stream = stream.map(move |x| {
-            let item = on_sitemty_data!(x, |x| {
-                let x: Box<dyn Events> = Box::new(x);
-                let x = tr.0.transform(x);
-                Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
-            });
-            Box::new(item) as Box<dyn Framable + Send>
+            on_sitemty_data!(x, |x: ChannelEvents| {
+                match x {
+                    ChannelEvents::Events(evs) => {
+                        let evs = tr.0.transform(evs);
+                        Ok(StreamItem::DataItem(RangeCompletableItem::Data(ChannelEvents::Events(
+                            evs,
+                        ))))
+                    }
+                    ChannelEvents::Status(x) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(
+                        ChannelEvents::Status(x),
+                    ))),
+                }
+            })
         });
+        // let stream = stream.map(move |x| Box::new(x) as Box<dyn Framable + Send>);
         let stream = stream.map(|x| x.make_frame().map(|x| x.freeze()));
         let ret = Box::pin(stream);
         Ok(ret)

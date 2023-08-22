@@ -46,8 +46,8 @@ pub struct PlainEventsQuery {
     do_test_main_error: bool,
     #[serde(default, skip_serializing_if = "is_false")]
     do_test_stream_error: bool,
-    #[serde(default, skip_serializing_if = "is_false")]
-    test_do_wasm: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    test_do_wasm: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     merger_out_len_max: Option<usize>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -71,7 +71,7 @@ impl PlainEventsQuery {
             buf_len_disk_io: None,
             do_test_main_error: false,
             do_test_stream_error: false,
-            test_do_wasm: false,
+            test_do_wasm: None,
             merger_out_len_max: None,
             create_errors: Vec::new(),
         }
@@ -127,8 +127,11 @@ impl PlainEventsQuery {
         self.do_test_stream_error
     }
 
-    pub fn test_do_wasm(&self) -> bool {
-        self.test_do_wasm
+    pub fn test_do_wasm(&self) -> Option<&str> {
+        match &self.test_do_wasm {
+            Some(x) => Some(&x),
+            None => None,
+        }
     }
 
     pub fn set_series_id(&mut self, series: u64) {
@@ -228,11 +231,12 @@ impl FromUrl for PlainEventsQuery {
                 .map_or("false", |k| k)
                 .parse()
                 .map_err(|e| Error::with_public_msg_no_trace(format!("can not parse doTestStreamError: {}", e)))?,
-            test_do_wasm: pairs
-                .get("testDoWasm")
-                .map(|x| x.parse::<bool>().ok())
-                .unwrap_or(None)
-                .unwrap_or(false),
+            // test_do_wasm: pairs
+            //     .get("testDoWasm")
+            //     .map(|x| x.parse::<bool>().ok())
+            //     .unwrap_or(None)
+            //     .unwrap_or(false),
+            test_do_wasm: pairs.get("testDoWasm").map(|x| String::from(x)),
             merger_out_len_max: pairs
                 .get("mergerOutLenMax")
                 .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
@@ -281,8 +285,8 @@ impl AppendToUrl for PlainEventsQuery {
         if self.do_test_stream_error {
             g.append_pair("doTestStreamError", "true");
         }
-        if self.test_do_wasm {
-            g.append_pair("testDoWasm", "true");
+        if let Some(x) = &self.test_do_wasm {
+            g.append_pair("testDoWasm", &x);
         }
         if let Some(x) = self.merger_out_len_max.as_ref() {
             g.append_pair("mergerOutLenMax", &format!("{}", x));
@@ -298,6 +302,7 @@ pub struct EventsSubQuerySelect {
     ch_conf: ChannelTypeConfigGen,
     range: SeriesRange,
     transform: TransformQuery,
+    wasm1: Option<String>,
 }
 
 impl EventsSubQuerySelect {
@@ -306,7 +311,19 @@ impl EventsSubQuerySelect {
             ch_conf: ch_info,
             range,
             transform,
+            wasm1: None,
         }
+    }
+
+    pub fn wasm1(&self) -> Option<&str> {
+        match &self.wasm1 {
+            Some(x) => Some(&x),
+            None => None,
+        }
+    }
+
+    pub fn set_wasm1(&mut self, x: String) {
+        self.wasm1 = Some(x);
     }
 }
 
@@ -318,7 +335,6 @@ pub struct EventsSubQuerySettings {
     stream_batch_len: Option<usize>,
     buf_len_disk_io: Option<usize>,
     queue_len_disk_io: Option<usize>,
-    test_do_wasm: bool,
     create_errors: Vec<String>,
 }
 
@@ -331,7 +347,6 @@ impl Default for EventsSubQuerySettings {
             stream_batch_len: None,
             buf_len_disk_io: None,
             queue_len_disk_io: None,
-            test_do_wasm: false,
             create_errors: Vec::new(),
         }
     }
@@ -347,7 +362,6 @@ impl From<&PlainEventsQuery> for EventsSubQuerySettings {
             buf_len_disk_io: value.buf_len_disk_io,
             // TODO add to query
             queue_len_disk_io: None,
-            test_do_wasm: value.test_do_wasm,
             create_errors: value.create_errors.clone(),
         }
     }
@@ -364,7 +378,6 @@ impl From<&BinnedQuery> for EventsSubQuerySettings {
             buf_len_disk_io: None,
             // TODO add to query
             queue_len_disk_io: None,
-            test_do_wasm: false,
             create_errors: Vec::new(),
         }
     }
@@ -381,7 +394,6 @@ impl From<&Api1Query> for EventsSubQuerySettings {
             stream_batch_len: None,
             buf_len_disk_io: Some(disk_io_tune.read_buffer_len),
             queue_len_disk_io: Some(disk_io_tune.read_queue_len),
-            test_do_wasm: false,
             create_errors: Vec::new(),
         }
     }
@@ -456,10 +468,6 @@ impl EventsSubQuery {
         self.settings.events_max.unwrap_or(1024 * 512)
     }
 
-    pub fn test_do_wasm(&self) -> bool {
-        self.settings.test_do_wasm
-    }
-
     pub fn is_event_blobs(&self) -> bool {
         self.select.transform.is_event_blobs()
     }
@@ -474,6 +482,10 @@ impl EventsSubQuery {
 
     pub fn reqid(&self) -> &str {
         &self.reqid
+    }
+
+    pub fn wasm1(&self) -> Option<&str> {
+        self.select.wasm1()
     }
 }
 

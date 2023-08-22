@@ -40,6 +40,8 @@ pub struct BinnedQuery {
     disk_stats_every: Option<ByteSize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merger_out_len_max: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    test_do_wasm: Option<String>,
 }
 
 impl BinnedQuery {
@@ -55,6 +57,7 @@ impl BinnedQuery {
             disk_stats_every: None,
             timeout: None,
             merger_out_len_max: None,
+            test_do_wasm: None,
         }
     }
 
@@ -140,6 +143,13 @@ impl BinnedQuery {
         v.transform = TransformQuery::for_time_weighted_scalar();
         v
     }
+
+    pub fn test_do_wasm(&self) -> Option<&str> {
+        match &self.test_do_wasm {
+            Some(x) => Some(&x),
+            None => None,
+        }
+    }
 }
 
 impl HasBackend for BinnedQuery {
@@ -199,6 +209,7 @@ impl FromUrl for BinnedQuery {
             merger_out_len_max: pairs
                 .get("mergerOutLenMax")
                 .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
+            test_do_wasm: pairs.get("testDoWasm").map(|x| String::from(x)),
         };
         debug!("BinnedQuery::from_url  {:?}", ret);
         Ok(ret)
@@ -235,6 +246,9 @@ impl AppendToUrl for BinnedQuery {
         }
         if let Some(x) = self.merger_out_len_max.as_ref() {
             g.append_pair("mergerOutLenMax", &format!("{}", x));
+        }
+        if let Some(x) = &self.test_do_wasm {
+            g.append_pair("testDoWasm", &x);
         }
     }
 }
