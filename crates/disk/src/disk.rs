@@ -54,6 +54,7 @@ use streams::dtflags::BIG_ENDIAN;
 use streams::dtflags::COMPRESSION;
 use streams::dtflags::SHAPE;
 use streams::filechunkread::FileChunkRead;
+use taskrun::tokio;
 use tokio::fs::File;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncRead;

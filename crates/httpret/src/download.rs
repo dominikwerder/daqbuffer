@@ -11,6 +11,7 @@ use netpod::log::*;
 use netpod::DiskIoTune;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
+use taskrun::tokio;
 use url::Url;
 
 #[derive(Clone, Debug)]

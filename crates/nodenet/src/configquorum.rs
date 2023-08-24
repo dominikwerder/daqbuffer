@@ -12,6 +12,7 @@ use netpod::SfChFetchInfo;
 use netpod::SfDbChannel;
 use std::collections::BTreeMap;
 use std::time::Duration;
+use taskrun::tokio;
 
 fn decide_sf_ch_config_quorum(inp: Vec<ChannelConfigResponse>) -> Result<Option<ChannelTypeConfigGen>, Error> {
     let mut histo = BTreeMap::new();

@@ -33,6 +33,7 @@ use streams::generators::GenerateF64V00;
 use streams::generators::GenerateI32V00;
 use streams::generators::GenerateI32V01;
 use streams::transform::build_event_transform;
+use taskrun::tokio;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;

@@ -11,6 +11,7 @@ use netpod::NodeConfigCached;
 use netpod::ScyllaConfig;
 use query::api4::events::EventsSubQuery;
 use std::pin::Pin;
+use taskrun::tokio;
 
 pub async fn scylla_channel_event_stream(
     evq: EventsSubQuery,

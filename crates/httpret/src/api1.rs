@@ -60,6 +60,7 @@ use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
 use std::time::Instant;
+use taskrun::tokio;
 use tracing_futures::Instrument;
 use url::Url;
 

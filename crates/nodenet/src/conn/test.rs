@@ -34,6 +34,7 @@ use query::api4::events::EventsSubQuerySettings;
 use query::transform::TransformQuery;
 use streams::frames::inmem::InMemoryFrameStream;
 use streams::frames::inmem::TcpReadAsBytes;
+use taskrun::tokio;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;

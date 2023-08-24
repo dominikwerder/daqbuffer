@@ -1,6 +1,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 use std::fmt;
+use taskrun::tokio;
 
 #[derive(Serialize, Deserialize)]
 pub struct Error(pub err::Error);

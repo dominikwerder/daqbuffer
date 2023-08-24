@@ -18,6 +18,7 @@ use serde_json::Value as JsonValue;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
+use taskrun::tokio;
 use tokio::time::sleep;
 use url::Url;
 

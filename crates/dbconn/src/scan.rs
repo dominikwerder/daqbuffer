@@ -25,6 +25,7 @@ use std::sync::Arc;
 use std::sync::RwLock;
 use std::task::Context;
 use std::task::Poll;
+use taskrun::tokio;
 use tokio::fs::DirEntry;
 use tokio::fs::ReadDir;
 use tokio_postgres::Client;

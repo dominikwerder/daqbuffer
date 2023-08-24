@@ -51,6 +51,7 @@ use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
+use taskrun::tokio;
 use tokio::fs::File;
 use tokio::io::AsyncRead;
 use tokio::io::ReadBuf;

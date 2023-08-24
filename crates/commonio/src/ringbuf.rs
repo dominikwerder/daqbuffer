@@ -1,8 +1,12 @@
-use crate::{read, seek, StatsChannel};
+use crate::read;
+use crate::seek;
+use crate::StatsChannel;
 use err::Error;
 use netpod::log::*;
+use std::borrow::BorrowMut;
 use std::fmt;
-use std::{borrow::BorrowMut, io::SeekFrom};
+use std::io::SeekFrom;
+use taskrun::tokio;
 use tokio::fs::File;
 
 pub struct RingBuf<F> {

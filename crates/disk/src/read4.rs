@@ -2,9 +2,13 @@ use bytes::BytesMut;
 use err::Error;
 use netpod::log::*;
 use std::os::unix::prelude::RawFd;
-use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
+use std::sync::atomic::AtomicPtr;
+use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::Ordering;
 use std::sync::Once;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use std::time::Instant;
+use taskrun::tokio;
 use tokio::sync::mpsc;
 
 static READ4: AtomicPtr<Read4> = AtomicPtr::new(std::ptr::null_mut());

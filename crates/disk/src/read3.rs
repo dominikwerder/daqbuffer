@@ -5,6 +5,7 @@ use std::os::unix::prelude::RawFd;
 use std::sync::atomic::{AtomicPtr, AtomicUsize, Ordering};
 use std::sync::Once;
 use std::time::{Duration, Instant};
+use taskrun::tokio;
 use tokio::sync::{mpsc, oneshot};
 
 const DO_TRACE: bool = false;

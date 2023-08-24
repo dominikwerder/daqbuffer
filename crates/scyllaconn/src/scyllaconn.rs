@@ -3,6 +3,8 @@ pub mod errconv;
 pub mod events;
 pub mod status;
 
+pub use scylla;
+
 use err::Error;
 use errconv::ErrConv;
 use netpod::range::evrange::SeriesRange;

@@ -13,6 +13,7 @@ use netpod::ServiceVersion;
 use netpod::TableSizes;
 use std::collections::VecDeque;
 use std::time::Duration;
+use taskrun::tokio;
 
 #[allow(unused)]
 async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, Error> {

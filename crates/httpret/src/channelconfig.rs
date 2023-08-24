@@ -25,10 +25,7 @@ use netpod::APP_JSON;
 use nodenet::configquorum::find_config_basics_quorum;
 use query::api4::binned::BinnedQuery;
 use query::api4::events::PlainEventsQuery;
-use scylla::frame::response::cql_to_rust::FromRowError as ScyFromRowError;
-use scylla::transport::errors::NewSessionError as ScyNewSessionError;
-use scylla::transport::errors::QueryError as ScyQueryError;
-use scylla::transport::iterator::NextRowError;
+use scyllaconn::errconv::ErrConv;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -209,46 +206,6 @@ impl ChannelConfigQuorumHandler {
             .header(http::header::CONTENT_TYPE, APP_JSON)
             .body(Body::from(serde_json::to_string(&ch_confs)?))?;
         Ok(ret)
-    }
-}
-
-trait ErrConv<T> {
-    fn err_conv(self) -> Result<T, Error>;
-}
-
-impl<T> ErrConv<T> for Result<T, ScyQueryError> {
-    fn err_conv(self) -> Result<T, Error> {
-        match self {
-            Ok(k) => Ok(k),
-            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
-        }
-    }
-}
-
-impl<T> ErrConv<T> for Result<T, ScyNewSessionError> {
-    fn err_conv(self) -> Result<T, Error> {
-        match self {
-            Ok(k) => Ok(k),
-            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
-        }
-    }
-}
-
-impl<T> ErrConv<T> for Result<T, ScyFromRowError> {
-    fn err_conv(self) -> Result<T, Error> {
-        match self {
-            Ok(k) => Ok(k),
-            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
-        }
-    }
-}
-
-impl<T> ErrConv<T> for Result<T, NextRowError> {
-    fn err_conv(self) -> Result<T, Error> {
-        match self {
-            Ok(k) => Ok(k),
-            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
-        }
     }
 }
 
@@ -937,7 +894,7 @@ impl GenerateScyllaTestData {
             .err_conv()?;
         let mut it = it.into_typed::<(i64,)>();
         while let Some(row) = it.next().await {
-            let row = row.err_conv()?;
+            let row = row.map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
             let values = (series as i64, row.0);
             scy.query("delete from events_scalar_f64 where series = ? and ts_msp = ?", values)
                 .await

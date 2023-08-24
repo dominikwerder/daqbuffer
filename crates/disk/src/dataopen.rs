@@ -12,6 +12,7 @@ use netpod::TsNano;
 use std::fmt;
 use std::path::PathBuf;
 use std::time::Instant;
+use taskrun::tokio;
 use tokio::fs::File;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncReadExt;

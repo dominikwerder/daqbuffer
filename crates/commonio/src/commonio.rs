@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::time::Instant;
+use taskrun::tokio;
 use tokio::fs::File;
 use tokio::fs::OpenOptions;
 use tokio::io::AsyncReadExt;

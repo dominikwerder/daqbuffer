@@ -14,6 +14,7 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
+use taskrun::tokio;
 use tiny_keccak::Hasher;
 
 // For file-based caching, this determined the node where the cache file is located.

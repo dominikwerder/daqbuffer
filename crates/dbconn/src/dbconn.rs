@@ -4,7 +4,9 @@ pub mod scan;
 pub mod search;
 
 pub mod pg {
-    pub use tokio_postgres::{Client, Error, NoTls};
+    pub use tokio_postgres::Client;
+    pub use tokio_postgres::Error;
+    pub use tokio_postgres::NoTls;
 }
 
 use err::anyhow;
@@ -13,13 +15,18 @@ use err::Error;
 use err::Res2;
 use err::ThisError;
 use netpod::log::*;
+use netpod::Database;
+use netpod::NodeConfigCached;
+use netpod::ScalarType;
+use netpod::SfDbChannel;
+use netpod::Shape;
 use netpod::TableSizes;
-use netpod::{Database, NodeConfigCached, SfDbChannel};
-use netpod::{ScalarType, Shape};
-use pg::{Client as PgClient, NoTls};
+use pg::Client as PgClient;
+use pg::NoTls;
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
+use taskrun::tokio;
 
 trait ErrConv<T> {
     fn err_conv(self) -> Result<T, Error>;
