@@ -345,8 +345,12 @@ impl EventFull {
                                         // NOTE
                                         // We only know the number of pixels from the compressed blob but we can't
                                         // know the actual shape.
-                                        // Can only rely on user input.
-                                        Ok(Shape::Image(*a, *b))
+                                        // Can only rely on user input and check that total number of pixels agree.
+                                        if *a * *b != n {
+                                            Err(DecompError::ShapeMakesNoSense)
+                                        } else {
+                                            Ok(Shape::Image(*a, *b))
+                                        }
                                     }
                                 }
                                 Err(_) => Err(DecompError::ShapeMakesNoSense),
