@@ -126,6 +126,16 @@ impl EventFull {
             *u = shape.clone();
         }
     }
+
+    pub fn pop_back(&mut self) {
+        self.tss.pop_back();
+        self.pulses.pop_back();
+        self.blobs.pop_back();
+        self.scalar_types.pop_back();
+        self.be.pop_back();
+        self.shapes.pop_back();
+        self.comps.pop_back();
+    }
 }
 
 impl FrameTypeInnerStatic for EventFull {
@@ -230,9 +240,11 @@ pub enum DecompError {
     BadCompresionBlockSize,
     UnusedBytes,
     BitshuffleError,
+    ShapeMakesNoSense,
 }
 
-fn decompress(databuf: &[u8], type_size: u32, ele_count_2: u64, ele_count_exp: u64) -> Result<Vec<u8>, DecompError> {
+fn decompress(databuf: &[u8], type_size: u32) -> Result<Vec<u8>, DecompError> {
+    // TODO collect decompression stats
     let ts1 = Instant::now();
     if databuf.len() < 12 {
         return Err(DecompError::TooLittleInput);
@@ -276,22 +288,93 @@ fn decompress(databuf: &[u8], type_size: u32, ele_count_2: u64, ele_count_exp: u
 }
 
 impl EventFull {
+    /// Tries to infer the actual shape of the event from what's on disk and what we expect.
+    /// The event data on disk usually always indicate "scalar" even for waveforms.
+    /// If the data is compressed via bslz4 then we can infer the number of elements
+    /// but we still don't know whether that's an image or a waveform.
+    /// Therefore, the function accepts the expected shape to at least make an assumption
+    /// about whether this is an image or a waveform.
+    pub fn shape_derived(&self, i: usize, shape_exp: &Shape) -> Result<Shape, DecompError> {
+        match shape_exp {
+            Shape::Scalar => match &self.comps[i] {
+                Some(_) => Err(DecompError::ShapeMakesNoSense),
+                None => Ok(Shape::Scalar),
+            },
+            Shape::Wave(_) => match &self.shapes[i] {
+                Shape::Scalar => match &self.comps[i] {
+                    Some(comp) => match comp {
+                        CompressionMethod::BitshuffleLZ4 => {
+                            let type_size = self.scalar_types[i].bytes() as u32;
+                            match self.blobs[i][0..8].try_into() {
+                                Ok(a) => {
+                                    let value_bytes = u64::from_be_bytes(a);
+                                    let value_bytes = value_bytes as u32;
+                                    if value_bytes % type_size != 0 {
+                                        Err(DecompError::ShapeMakesNoSense)
+                                    } else {
+                                        let n = value_bytes / type_size;
+                                        // Here we still can't know whether the disk contains a waveform or image
+                                        // so we assume that the user input is correct:
+                                        Ok(Shape::Wave(n))
+                                    }
+                                }
+                                Err(_) => Err(DecompError::ShapeMakesNoSense),
+                            }
+                        }
+                    },
+                    None => Err(DecompError::ShapeMakesNoSense),
+                },
+                Shape::Wave(s) => Ok(Shape::Wave(s.clone())),
+                Shape::Image(_, _) => Err(DecompError::ShapeMakesNoSense),
+            },
+            Shape::Image(a, b) => match &self.shapes[i] {
+                Shape::Scalar => match &self.comps[i] {
+                    Some(comp) => match comp {
+                        CompressionMethod::BitshuffleLZ4 => {
+                            let type_size = self.scalar_types[i].bytes() as u32;
+                            match self.blobs[i][0..8].try_into() {
+                                Ok(vb) => {
+                                    let value_bytes = u64::from_be_bytes(vb);
+                                    let value_bytes = value_bytes as u32;
+                                    if value_bytes % type_size != 0 {
+                                        Err(DecompError::ShapeMakesNoSense)
+                                    } else {
+                                        let n = value_bytes / type_size;
+                                        // Here we still can't know whether the disk contains a waveform or image
+                                        // so we assume that the user input is correct.
+                                        // NOTE
+                                        // We only know the number of pixels from the compressed blob but we can't
+                                        // know the actual shape.
+                                        // Can only rely on user input.
+                                        Ok(Shape::Image(*a, *b))
+                                    }
+                                }
+                                Err(_) => Err(DecompError::ShapeMakesNoSense),
+                            }
+                        }
+                    },
+                    None => Err(DecompError::ShapeMakesNoSense),
+                },
+                Shape::Wave(_) => Err(DecompError::ShapeMakesNoSense),
+                Shape::Image(a, b) => Ok(Shape::Image(*a, *b)),
+            },
+        }
+    }
+
     pub fn data_raw(&self, i: usize) -> &[u8] {
         &self.blobs[i]
     }
 
-    pub fn data_decompressed(
-        &self,
-        i: usize,
-        _scalar_type: &ScalarType,
-        shape: &Shape,
-    ) -> Result<Cow<[u8]>, DecompError> {
+    pub fn data_decompressed(&self, i: usize) -> Result<Cow<[u8]>, DecompError> {
         if let Some(comp) = &self.comps[i] {
             match comp {
                 CompressionMethod::BitshuffleLZ4 => {
+                    // NOTE the event data on databuffer disk seems to contain the correct scalar type
+                    // but the shape of the event record seems always "scalar" even for waveforms
+                    // so we must derive the shape of the compressed data from the length of the
+                    // uncompressed byte blob and the byte size of the scalar type.
                     let type_size = self.scalar_types[i].bytes() as u32;
-                    let ele_count = self.shapes[i].ele_count();
-                    let data = decompress(&self.blobs[i], type_size, ele_count, shape.ele_count())?;
+                    let data = decompress(&self.blobs[i], type_size)?;
                     Ok(Cow::Owned(data))
                 }
             }

@@ -64,7 +64,7 @@ where
     ser
 }
 
-pub fn bincode_to_vec<S>(item: S) -> Result<Vec<u8>, Error>
+fn bincode_to_vec<S>(item: S) -> Result<Vec<u8>, Error>
 where
     S: Serialize,
 {
@@ -74,7 +74,7 @@ where
     Ok(out)
 }
 
-pub fn bincode_from_slice<T>(buf: &[u8]) -> Result<T, Error>
+fn bincode_from_slice<T>(buf: &[u8]) -> Result<T, Error>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
@@ -87,14 +87,14 @@ where
     <T as serde::Deserialize>::deserialize(&mut de).map_err(|e| format!("{e}").into())
 }
 
-pub fn msgpack_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
+fn msgpack_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
 where
     T: Serialize,
 {
     rmp_serde::to_vec_named(&item).map_err(|e| format!("{e}").into())
 }
 
-pub fn msgpack_erased_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
+fn msgpack_erased_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
 where
     T: erased_serde::Serialize,
 {
@@ -106,21 +106,21 @@ where
     Ok(out)
 }
 
-pub fn msgpack_from_slice<T>(buf: &[u8]) -> Result<T, Error>
+fn msgpack_from_slice<T>(buf: &[u8]) -> Result<T, Error>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
     rmp_serde::from_slice(buf).map_err(|e| format!("{e}").into())
 }
 
-pub fn postcard_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
+fn postcard_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
 where
     T: Serialize,
 {
     postcard::to_stdvec(&item).map_err(|e| format!("{e}").into())
 }
 
-pub fn postcard_erased_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
+fn postcard_erased_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
 where
     T: erased_serde::Serialize,
 {
@@ -146,24 +146,37 @@ pub fn encode_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
 where
     T: Serialize,
 {
-    // msgpack_to_vec(item)
-    postcard_to_vec(item)
+    if false {
+        msgpack_to_vec(item)
+    } else if false {
+        bincode_to_vec(item)
+    } else {
+        postcard_to_vec(item)
+    }
 }
 
 pub fn encode_erased_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
 where
     T: erased_serde::Serialize,
 {
-    // msgpack_erased_to_vec(item)
-    postcard_erased_to_vec(item)
+    if false {
+        msgpack_erased_to_vec(item)
+    } else {
+        postcard_erased_to_vec(item)
+    }
 }
 
 pub fn decode_from_slice<T>(buf: &[u8]) -> Result<T, Error>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
-    // msgpack_from_slice(buf)
-    postcard_from_slice(buf)
+    if false {
+        msgpack_from_slice(buf)
+    } else if false {
+        bincode_from_slice(buf)
+    } else {
+        postcard_from_slice(buf)
+    }
 }
 
 pub fn make_frame_2<T>(item: T, fty: u32) -> Result<BytesMut, Error>
@@ -321,11 +334,7 @@ where
         let k: err::Error = match decode_from_slice(frame.buf()) {
             Ok(item) => item,
             Err(e) => {
-                error!(
-                    "ERROR deserialize  len {}  ERROR_FRAME_TYPE_ID  {}",
-                    frame.buf().len(),
-                    e
-                );
+                error!("deserialize  len {}  ERROR_FRAME_TYPE_ID  {}", frame.buf().len(), e);
                 let n = frame.buf().len().min(256);
                 let s = String::from_utf8_lossy(&frame.buf()[..n]);
                 error!("frame.buf as string: {:?}", s);
@@ -337,7 +346,7 @@ where
         let k: LogItem = match decode_from_slice(frame.buf()) {
             Ok(item) => item,
             Err(e) => {
-                error!("ERROR deserialize  len {}  LOG_FRAME_TYPE_ID  {}", frame.buf().len(), e);
+                error!("deserialize  len {}  LOG_FRAME_TYPE_ID  {}", frame.buf().len(), e);
                 let n = frame.buf().len().min(128);
                 let s = String::from_utf8_lossy(&frame.buf()[..n]);
                 error!("frame.buf as string: {:?}", s);
@@ -349,11 +358,7 @@ where
         let k: StatsItem = match decode_from_slice(frame.buf()) {
             Ok(item) => item,
             Err(e) => {
-                error!(
-                    "ERROR deserialize  len {}  STATS_FRAME_TYPE_ID  {}",
-                    frame.buf().len(),
-                    e
-                );
+                error!("deserialize  len {}  STATS_FRAME_TYPE_ID  {}", frame.buf().len(), e);
                 let n = frame.buf().len().min(128);
                 let s = String::from_utf8_lossy(&frame.buf()[..n]);
                 error!("frame.buf as string: {:?}", s);
@@ -368,7 +373,7 @@ where
         let tyid = T::FRAME_TYPE_ID;
         if frame.tyid() != tyid {
             Err(Error::with_msg(format!(
-                "type id mismatch  expect {:x}  found {:x}  {:?}",
+                "type id mismatch  expect {:04x}  found {:04x}  {:?}",
                 tyid,
                 frame.tyid(),
                 frame
@@ -377,11 +382,16 @@ where
             match decode_from_slice(frame.buf()) {
                 Ok(item) => Ok(item),
                 Err(e) => {
-                    error!("decode_frame  T = {}", any::type_name::<T>());
-                    error!("ERROR deserialize  len {}  tyid {:x}", frame.buf().len(), frame.tyid());
+                    error!(
+                        "decode_from_slice error  len {}  tyid {:04x}  T {}",
+                        frame.buf().len(),
+                        frame.tyid(),
+                        any::type_name::<T>()
+                    );
                     let n = frame.buf().len().min(64);
                     let s = String::from_utf8_lossy(&frame.buf()[..n]);
-                    error!("frame.buf as string: {:?}", s);
+                    error!("decode_from_slice bad frame.buf as bytes: {:?}", &frame.buf()[..n]);
+                    error!("decode_from_slice bad frame.buf as string: {:?}", s);
                     Err(e)?
                 }
             }

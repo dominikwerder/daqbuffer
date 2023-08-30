@@ -186,7 +186,7 @@ impl Stream for EventChunkerMultifile {
                                     let file = ofs.files.pop().unwrap();
                                     let path = file.path;
                                     let msg = format!("handle OFS {:?}", ofs);
-                                    let item = LogItem::quick(Level::DEBUG, msg);
+                                    let item = LogItem::from_node(self.node_ix, Level::DEBUG, msg);
                                     match file.file {
                                         Some(file) => {
                                             let inp = Box::pin(crate::file_content_stream(
@@ -200,6 +200,7 @@ impl Stream for EventChunkerMultifile {
                                                 self.fetch_info.clone(),
                                                 self.range.clone(),
                                                 self.event_chunker_conf.clone(),
+                                                self.node_ix,
                                                 path.clone(),
                                                 self.expand,
                                             );
@@ -211,12 +212,12 @@ impl Stream for EventChunkerMultifile {
                                     Ready(Some(Ok(StreamItem::Log(item))))
                                 } else if ofs.files.len() == 0 {
                                     let msg = format!("handle OFS {:?}  NO FILES", ofs);
-                                    let item = LogItem::quick(Level::DEBUG, msg);
+                                    let item = LogItem::from_node(self.node_ix, Level::DEBUG, msg);
                                     Ready(Some(Ok(StreamItem::Log(item))))
                                 } else {
                                     let paths: Vec<_> = ofs.files.iter().map(|x| &x.path).collect();
                                     let msg = format!("handle OFS MERGED timebin {}  {:?}", ofs.timebin, paths);
-                                    let item = LogItem::quick(Level::DEBUG, msg);
+                                    let item = LogItem::from_node(self.node_ix, Level::DEBUG, msg);
                                     let mut chunkers = Vec::new();
                                     for of in ofs.files {
                                         if let Some(file) = of.file {
@@ -231,6 +232,7 @@ impl Stream for EventChunkerMultifile {
                                                 self.fetch_info.clone(),
                                                 self.range.clone(),
                                                 self.event_chunker_conf.clone(),
+                                                self.node_ix,
                                                 of.path.clone(),
                                                 self.expand,
                                             );
@@ -250,7 +252,8 @@ impl Stream for EventChunkerMultifile {
                         },
                         Ready(None) => {
                             self.done = true;
-                            let item = LogItem::quick(
+                            let item = LogItem::from_node(
+                                self.node_ix,
                                 Level::DEBUG,
                                 format!(
                                     "EventChunkerMultifile used {} datafiles  beg {}  end {}  node_ix {}",

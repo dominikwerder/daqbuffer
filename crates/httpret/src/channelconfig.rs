@@ -31,7 +31,7 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use url::Url;
 
-pub async fn chconf_from_events_v1(
+pub async fn chconf_from_events_quorum(
     q: &PlainEventsQuery,
     ncc: &NodeConfigCached,
 ) -> Result<Option<ChannelTypeConfigGen>, Error> {

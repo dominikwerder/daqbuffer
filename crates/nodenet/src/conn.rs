@@ -160,7 +160,11 @@ pub async fn create_response_bytes_stream(
     evq: EventsSubQuery,
     ncc: &NodeConfigCached,
 ) -> Result<BytesStreamBox, Error> {
-    debug!("create_response_bytes_stream  {:?}", evq.ch_conf().scalar_type());
+    debug!(
+        "create_response_bytes_stream  {:?}  {:?}",
+        evq.ch_conf().scalar_type(),
+        evq.ch_conf().shape(),
+    );
     debug!("wasm1 {:?}", evq.wasm1());
     let reqctx = netpod::ReqCtx::new(evq.reqid());
     if evq.create_errors_contains("nodenet_parse_query") {

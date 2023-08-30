@@ -155,15 +155,23 @@ impl AsAnyMut for ChannelEvents {
 }
 
 mod serde_channel_events {
-    use super::{ChannelEvents, Events};
+    use super::ChannelEvents;
+    use super::Events;
     use crate::channelevents::ConnStatusEvent;
     use crate::eventsdim0::EventsDim0;
     use crate::eventsdim1::EventsDim1;
     use crate::eventsxbindim0::EventsXbinDim0;
     use items_0::subfr::SubFrId;
-    use serde::de::{self, EnumAccess, VariantAccess, Visitor};
+    use netpod::log::*;
+    use serde::de;
+    use serde::de::EnumAccess;
+    use serde::de::VariantAccess;
+    use serde::de::Visitor;
     use serde::ser::SerializeSeq;
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use serde::Deserialize;
+    use serde::Deserializer;
+    use serde::Serialize;
+    use serde::Serializer;
     use std::fmt;
 
     struct EvRef<'a>(&'a dyn Events);
@@ -202,10 +210,10 @@ mod serde_channel_events {
         where
             A: de::SeqAccess<'de>,
         {
-            let e0: &str = seq.next_element()?.ok_or_else(|| de::Error::missing_field("[0] cty"))?;
-            let e1: u32 = seq.next_element()?.ok_or_else(|| de::Error::missing_field("[1] nty"))?;
-            if e0 == EventsDim0::<u8>::serde_id() {
-                match e1 {
+            let cty: &str = seq.next_element()?.ok_or_else(|| de::Error::missing_field("[0] cty"))?;
+            let nty: u32 = seq.next_element()?.ok_or_else(|| de::Error::missing_field("[1] nty"))?;
+            if cty == EventsDim0::<u8>::serde_id() {
+                match nty {
                     u8::SUB => {
                         let obj: EventsDim0<u8> =
                             seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
@@ -261,10 +269,18 @@ mod serde_channel_events {
                             seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
-                    _ => Err(de::Error::custom(&format!("unknown nty {e1}"))),
+                    _ => {
+                        error!("TODO serde  cty {cty}  nty {nty}");
+                        Err(de::Error::custom(&format!("unknown nty {nty}")))
+                    }
                 }
-            } else if e0 == EventsDim1::<u8>::serde_id() {
-                match e1 {
+            } else if cty == EventsDim1::<u8>::serde_id() {
+                match nty {
+                    i64::SUB => {
+                        let obj: EventsDim1<i64> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
                     f32::SUB => {
                         let obj: EventsDim1<f32> =
                             seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
@@ -280,10 +296,13 @@ mod serde_channel_events {
                             seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
-                    _ => Err(de::Error::custom(&format!("unknown nty {e1}"))),
+                    _ => {
+                        error!("TODO serde  cty {cty}  nty {nty}");
+                        Err(de::Error::custom(&format!("unknown nty {nty}")))
+                    }
                 }
-            } else if e0 == EventsXbinDim0::<u8>::serde_id() {
-                match e1 {
+            } else if cty == EventsXbinDim0::<u8>::serde_id() {
+                match nty {
                     f32::SUB => {
                         let obj: EventsXbinDim0<f32> =
                             seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
@@ -299,10 +318,14 @@ mod serde_channel_events {
                             seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
-                    _ => Err(de::Error::custom(&format!("unknown nty {e1}"))),
+                    _ => {
+                        error!("TODO serde  cty {cty}  nty {nty}");
+                        Err(de::Error::custom(&format!("unknown nty {nty}")))
+                    }
                 }
             } else {
-                Err(de::Error::custom(&format!("unknown cty {e0}")))
+                error!("TODO serde  cty {cty}  nty {nty}");
+                Err(de::Error::custom(&format!("unknown cty {cty}")))
             }
         }
     }

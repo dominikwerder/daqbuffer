@@ -1,4 +1,4 @@
-use crate::channelconfig::chconf_from_events_v1;
+use crate::channelconfig::chconf_from_events_quorum;
 use crate::err::Error;
 use crate::response;
 use crate::response_err;
@@ -73,8 +73,8 @@ async fn plain_events_binary(
 ) -> Result<Response<Body>, Error> {
     debug!("{:?}", req);
     let query = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
-    let ch_conf = chconf_from_events_v1(&query, node_config).await?;
-    info!("plain_events_binary  chconf_from_events_v1: {ch_conf:?}");
+    let ch_conf = chconf_from_events_quorum(&query, node_config).await?;
+    info!("plain_events_binary  chconf_from_events_quorum: {ch_conf:?}");
     let s = stream::iter([Ok::<_, Error>(String::from("TODO_PREBINNED_BINARY_STREAM"))]);
     let ret = response(StatusCode::OK).body(Body::wrap_stream(s.map_err(Error::from)))?;
     Ok(ret)
@@ -91,11 +91,11 @@ async fn plain_events_json(
     let query = PlainEventsQuery::from_url(&url)?;
     info!("plain_events_json  query {query:?}");
     // TODO handle None case better and return 404
-    let ch_conf = chconf_from_events_v1(&query, node_config)
+    let ch_conf = chconf_from_events_quorum(&query, node_config)
         .await
         .map_err(Error::from)?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
-    info!("plain_events_json  chconf_from_events_v1: {ch_conf:?}");
+    info!("plain_events_json  chconf_from_events_quorum: {ch_conf:?}");
     let item =
         streams::plaineventsjson::plain_events_json(&query, ch_conf, reqid, &node_config.node_config.cluster).await;
     let item = match item {

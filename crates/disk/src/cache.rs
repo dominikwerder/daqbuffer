@@ -1,7 +1,6 @@
 use chrono::Utc;
 use err::Error;
 use netpod::log::*;
-use netpod::timeunits::SEC;
 use netpod::AggKind;
 use netpod::Cluster;
 use netpod::NodeConfigCached;

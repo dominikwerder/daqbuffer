@@ -11,7 +11,6 @@ use futures_util::StreamExt;
 use items_0::on_sitemty_data;
 use items_0::streamitem::sitem_data;
 use items_0::streamitem::RangeCompletableItem;
-use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinned;
@@ -421,7 +420,8 @@ fn timebin_multi_stage_00() -> Result<(), Error> {
             let stream = q1rx;
             while let Ok(item) = stream.recv().await {
                 //eprintln!("RECV [q1rx] {:?}", item);
-                on_sitemty_data!(item, |mut item: Box<dyn TimeBinned>| {
+                // TODO use the transformed item
+                let _item = on_sitemty_data!(item, |mut item: Box<dyn TimeBinned>| {
                     if let Some(k) = item.as_any_mut().downcast_mut::<BinsDim0<i32>>() {
                         coll.append_all_from(k);
                     }
@@ -437,7 +437,8 @@ fn timebin_multi_stage_00() -> Result<(), Error> {
             let stream = q2rx;
             while let Ok(item) = stream.recv().await {
                 //eprintln!("RECV [q2rx] {:?}", item);
-                on_sitemty_data!(item, |mut item: Box<dyn TimeBinned>| {
+                // TODO use the transformed item
+                let _item = on_sitemty_data!(item, |mut item: Box<dyn TimeBinned>| {
                     if let Some(k) = item.as_any_mut().downcast_mut::<BinsDim0<i32>>() {
                         coll.append_all_from(k);
                     }

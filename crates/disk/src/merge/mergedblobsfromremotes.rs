@@ -7,7 +7,6 @@ use items_2::eventfull::EventFull;
 use items_2::merger::Merger;
 use netpod::log::*;
 use netpod::Cluster;
-use netpod::SfChFetchInfo;
 use query::api4::events::EventsSubQuery;
 use std::future::Future;
 use std::pin::Pin;

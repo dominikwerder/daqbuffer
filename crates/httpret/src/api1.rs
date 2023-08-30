@@ -638,7 +638,7 @@ impl DataApiPython3DataStream {
                 _ => {
                     if do_decompress {
                         let blob = b
-                            .data_decompressed(i1, fetch_info.scalar_type(), fetch_info.shape())
+                            .data_decompressed(i1)
                             .map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
                         let l1 = 17 + blob.len() as u32;
                         d.put_u32(l1);
@@ -720,8 +720,8 @@ impl DataApiPython3DataStream {
                     }
                     Ok(BytesMut::new())
                 }
-                StreamItem::Stats(k) => {
-                    //
+                StreamItem::Stats(_k) => {
+                    // TODO collect the stats
                     Ok(BytesMut::new())
                 }
             },

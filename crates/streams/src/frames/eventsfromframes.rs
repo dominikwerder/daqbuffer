@@ -77,7 +77,12 @@ where
                                 }
                             },
                             Err(e) => {
-                                error!("frame payload  len {}  tyid {}  {}", frame.buf().len(), frame.tyid(), e);
+                                error!(
+                                    "frame payload  len {}  tyid {:04x}  {}",
+                                    frame.buf().len(),
+                                    frame.tyid(),
+                                    e
+                                );
                                 self.errored = true;
                                 Ready(Some(Err(e)))
                             }

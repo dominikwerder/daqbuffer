@@ -29,6 +29,7 @@ use items_0::WithLen;
 use netpod::is_false;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
+use netpod::timeunits::MS;
 use netpod::timeunits::SEC;
 use netpod::BinnedRangeEnum;
 use serde::Deserialize;
@@ -184,13 +185,17 @@ where
 }
 
 #[derive(Debug)]
-pub struct EventsDim1Collector<NTY> {
-    vals: EventsDim1<NTY>,
+pub struct EventsDim1Collector<STY> {
+    vals: EventsDim1<STY>,
     range_final: bool,
     timed_out: bool,
 }
 
-impl<NTY> EventsDim1Collector<NTY> {
+impl<STY> EventsDim1Collector<STY> {
+    pub fn self_name() -> &'static str {
+        any::type_name::<Self>()
+    }
+
     pub fn new() -> Self {
         Self {
             vals: EventsDim1::empty(),
@@ -200,14 +205,14 @@ impl<NTY> EventsDim1Collector<NTY> {
     }
 }
 
-impl<NTY> WithLen for EventsDim1Collector<NTY> {
+impl<STY> WithLen for EventsDim1Collector<STY> {
     fn len(&self) -> usize {
         self.vals.tss.len()
     }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct EventsDim1CollectorOutput<NTY> {
+pub struct EventsDim1CollectorOutput<STY> {
     #[serde(rename = "tsAnchor")]
     ts_anchor_sec: u64,
     #[serde(rename = "tsMs")]
@@ -219,7 +224,7 @@ pub struct EventsDim1CollectorOutput<NTY> {
     #[serde(rename = "pulseOff")]
     pulse_off: VecDeque<u64>,
     #[serde(rename = "values")]
-    values: VecDeque<Vec<NTY>>,
+    values: VecDeque<Vec<STY>>,
     #[serde(rename = "rangeFinal", default, skip_serializing_if = "is_false")]
     range_final: bool,
     #[serde(rename = "timedOut", default, skip_serializing_if = "is_false")]
@@ -228,7 +233,7 @@ pub struct EventsDim1CollectorOutput<NTY> {
     continue_at: Option<IsoDateTime>,
 }
 
-impl<NTY: ScalarOps> EventsDim1CollectorOutput<NTY> {
+impl<STY: ScalarOps> EventsDim1CollectorOutput<STY> {
     pub fn ts_anchor_sec(&self) -> u64 {
         self.ts_anchor_sec
     }
@@ -253,12 +258,39 @@ impl<NTY: ScalarOps> EventsDim1CollectorOutput<NTY> {
             .collect()
     }
 
-    pub fn range_complete(&self) -> bool {
+    pub fn range_final(&self) -> bool {
         self.range_final
     }
 
     pub fn timed_out(&self) -> bool {
         self.timed_out
+    }
+
+    pub fn is_valid(&self) -> bool {
+        if self.ts_off_ms.len() != self.ts_off_ns.len() {
+            false
+        } else if self.ts_off_ms.len() != self.pulse_off.len() {
+            false
+        } else if self.ts_off_ms.len() != self.values.len() {
+            false
+        } else {
+            true
+        }
+    }
+
+    pub fn info_str(&self) -> String {
+        use fmt::Write;
+        let mut out = String::new();
+        write!(
+            out,
+            "ts_off_ms {}  ts_off_ns {}  pulse_off {}  values {}",
+            self.ts_off_ms.len(),
+            self.ts_off_ns.len(),
+            self.pulse_off.len(),
+            self.values.len(),
+        )
+        .unwrap();
+        out
     }
 }
 
@@ -295,9 +327,9 @@ impl<NTY: ScalarOps> ToJsonResult for EventsDim1CollectorOutput<NTY> {
 
 impl<NTY: ScalarOps> Collected for EventsDim1CollectorOutput<NTY> {}
 
-impl<NTY: ScalarOps> CollectorType for EventsDim1Collector<NTY> {
-    type Input = EventsDim1<NTY>;
-    type Output = EventsDim1CollectorOutput<NTY>;
+impl<STY: ScalarOps> CollectorType for EventsDim1Collector<STY> {
+    type Input = EventsDim1<STY>;
+    type Output = EventsDim1CollectorOutput<STY>;
 
     fn ingest(&mut self, src: &mut Self::Input) {
         self.vals.tss.append(&mut src.tss);
@@ -313,6 +345,7 @@ impl<NTY: ScalarOps> CollectorType for EventsDim1Collector<NTY> {
         self.timed_out = true;
     }
 
+    // TODO unify with dim0 case
     fn result(
         &mut self,
         range: Option<SeriesRange>,
@@ -323,12 +356,19 @@ impl<NTY: ScalarOps> CollectorType for EventsDim1Collector<NTY> {
         // We currently give the timestamp of the last event plus a small delta.
         // The amount of the delta must take into account what kind of timestamp precision the client
         // can parse and handle.
-        /*let continue_at = if self.timed_out {
-            if let Some(ts) = self.vals.tss.back() {
-                Some(IsoDateTime::from_u64(*ts + netpod::timeunits::MS))
+        let vals = &mut self.vals;
+        let continue_at = if self.timed_out {
+            if let Some(ts) = vals.tss.back() {
+                Some(IsoDateTime::from_u64(*ts + MS))
             } else {
                 if let Some(range) = &range {
-                    Some(IsoDateTime::from_u64(range.beg + netpod::timeunits::SEC))
+                    match range {
+                        SeriesRange::TimeRange(x) => Some(IsoDateTime::from_u64(x.beg + SEC)),
+                        SeriesRange::PulseRange(x) => {
+                            error!("TODO emit create continueAt for pulse range");
+                            None
+                        }
+                    }
                 } else {
                     warn!("can not determine continue-at parameters");
                     None
@@ -337,28 +377,40 @@ impl<NTY: ScalarOps> CollectorType for EventsDim1Collector<NTY> {
         } else {
             None
         };
-        let tss_sl = self.vals.tss.make_contiguous();
-        let pulses_sl = self.vals.pulses.make_contiguous();
+        let tss_sl = vals.tss.make_contiguous();
+        let pulses_sl = vals.pulses.make_contiguous();
         let (ts_anchor_sec, ts_off_ms, ts_off_ns) = crate::ts_offs_from_abs(tss_sl);
         let (pulse_anchor, pulse_off) = crate::pulse_offs_from_abs(pulses_sl);
+        let values = mem::replace(&mut vals.values, VecDeque::new());
+        if ts_off_ms.len() != ts_off_ns.len() {
+            return Err(Error::with_msg_no_trace("collected len mismatch"));
+        }
+        if ts_off_ms.len() != pulse_off.len() {
+            return Err(Error::with_msg_no_trace("collected len mismatch"));
+        }
+        if ts_off_ms.len() != values.len() {
+            return Err(Error::with_msg_no_trace("collected len mismatch"));
+        }
         let ret = Self::Output {
             ts_anchor_sec,
             ts_off_ms,
             ts_off_ns,
             pulse_anchor,
-            pulse_off: pulse_off,
-            values: mem::replace(&mut self.vals.values, VecDeque::new()),
+            pulse_off,
+            values,
             range_final: self.range_final,
             timed_out: self.timed_out,
             continue_at,
         };
-        Ok(ret)*/
-        todo!()
+        if !ret.is_valid() {
+            error!("invalid:\n{}", ret.info_str());
+        }
+        Ok(ret)
     }
 }
 
-impl<NTY: ScalarOps> CollectableType for EventsDim1<NTY> {
-    type Collector = EventsDim1Collector<NTY>;
+impl<STY: ScalarOps> CollectableType for EventsDim1<STY> {
+    type Collector = EventsDim1Collector<STY>;
 
     fn new_collector() -> Self::Collector {
         Self::Collector::new()

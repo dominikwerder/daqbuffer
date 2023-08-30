@@ -86,7 +86,7 @@ impl FindActiveHandler {
             .headers()
             .get(http::header::ACCEPT)
             .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
-        let url = {
+        let _url = {
             let s1 = format!("dummy:{}", req.uri());
             Url::parse(&s1)?
         };
@@ -175,7 +175,7 @@ impl XorShift32 {
 async fn find_active_inner(
     max: usize,
     ks: u32,
-    splits: &[u64],
+    _splits: &[u64],
     node: Node,
     tx: Sender<Result<ActiveChannelDesc, FindActiveError>>,
 ) -> Result<(), FindActiveError> {
@@ -240,7 +240,9 @@ async fn find_active_inner(
                                                 name: chname.into(),
                                                 totlen: sum,
                                             };
-                                            tx.send(Ok(x)).await;
+                                            if let Err(e) = tx.send(Ok(x)).await {
+                                                error!("{e}");
+                                            }
                                             count += 1;
                                             if count >= max {
                                                 break 'outer;
@@ -275,7 +277,9 @@ async fn find_active(
     match find_active_inner(max, ks, &splits, node, tx).await {
         Ok(x) => x,
         Err(e) => {
-            tx2.send(Err(e)).await;
+            if let Err(e) = tx2.send(Err(e)).await {
+                error!("{e}");
+            }
             return;
         }
     }

@@ -61,11 +61,11 @@ pub struct LogItem {
 }
 
 impl LogItem {
-    pub fn quick(level: Level, msg: String) -> Self {
+    pub fn from_node(node_ix: usize, level: Level, msg: String) -> Self {
         Self {
+            node_ix: node_ix as _,
             level,
             msg,
-            node_ix: 42,
         }
     }
 }

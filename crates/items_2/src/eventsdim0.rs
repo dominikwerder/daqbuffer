@@ -228,15 +228,19 @@ where
 
 #[derive(Debug)]
 pub struct EventsDim0Collector<STY> {
-    vals: Option<EventsDim0<STY>>,
+    vals: EventsDim0<STY>,
     range_final: bool,
     timed_out: bool,
 }
 
 impl<STY> EventsDim0Collector<STY> {
+    pub fn self_name() -> &'static str {
+        any::type_name::<Self>()
+    }
+
     pub fn new() -> Self {
         Self {
-            vals: None,
+            vals: EventsDim0::empty(),
             range_final: false,
             timed_out: false,
         }
@@ -245,7 +249,7 @@ impl<STY> EventsDim0Collector<STY> {
 
 impl<STY> WithLen for EventsDim0Collector<STY> {
     fn len(&self) -> usize {
-        self.vals.as_ref().map_or(0, |x| x.tss.len())
+        self.vals.tss.len()
     }
 }
 
@@ -367,13 +371,9 @@ impl<STY: ScalarOps> CollectorType for EventsDim0Collector<STY> {
     type Output = EventsDim0CollectorOutput<STY>;
 
     fn ingest(&mut self, src: &mut Self::Input) {
-        if self.vals.is_none() {
-            self.vals = Some(EventsDim0::empty());
-        }
-        let vals = self.vals.as_mut().unwrap();
-        vals.tss.append(&mut src.tss);
-        vals.pulses.append(&mut src.pulses);
-        vals.values.append(&mut src.values);
+        self.vals.tss.append(&mut src.tss);
+        self.vals.pulses.append(&mut src.pulses);
+        self.vals.values.append(&mut src.values);
     }
 
     fn set_range_complete(&mut self) {
@@ -389,17 +389,12 @@ impl<STY: ScalarOps> CollectorType for EventsDim0Collector<STY> {
         range: Option<SeriesRange>,
         _binrange: Option<BinnedRangeEnum>,
     ) -> Result<Self::Output, Error> {
-        let self_name = any::type_name::<Self>();
         // If we timed out, we want to hint the client from where to continue.
         // This is tricky: currently, client can not request a left-exclusive range.
         // We currently give the timestamp of the last event plus a small delta.
         // The amount of the delta must take into account what kind of timestamp precision the client
         // can parse and handle.
-        let vals = if let Some(x) = &mut self.vals {
-            x
-        } else {
-            return Err(Error::with_msg_no_trace(format!("{self_name} no vals")));
-        };
+        let vals = &mut self.vals;
         let continue_at = if self.timed_out {
             if let Some(ts) = vals.tss.back() {
                 Some(IsoDateTime::from_u64(*ts + MS))

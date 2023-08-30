@@ -51,27 +51,32 @@ fn on_thread_start() {
 }
 
 pub fn get_runtime_opts(nworkers: usize, nblocking: usize) -> Arc<Runtime> {
-    let mut g = RUNTIME.lock().unwrap();
-    match g.as_ref() {
-        None => {
-            let res = tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(nworkers)
-                .max_blocking_threads(nblocking)
-                .enable_all()
-                .on_thread_start(on_thread_start)
-                .build();
-            let res = match res {
-                Ok(x) => x,
-                Err(e) => {
-                    eprintln!("ERROR {e}");
-                    panic!();
-                }
-            };
-            let a = Arc::new(res);
-            *g = Some(a.clone());
-            a
+    match RUNTIME.lock() {
+        Ok(mut g) => match g.as_ref() {
+            None => {
+                let res = tokio::runtime::Builder::new_multi_thread()
+                    .worker_threads(nworkers)
+                    .max_blocking_threads(nblocking)
+                    .enable_all()
+                    .on_thread_start(on_thread_start)
+                    .build();
+                let res = match res {
+                    Ok(x) => x,
+                    Err(e) => {
+                        eprintln!("ERROR {e}");
+                        panic!("can not create runtime {e}");
+                    }
+                };
+                let a = Arc::new(res);
+                *g = Some(a.clone());
+                a
+            }
+            Some(g) => g.clone(),
+        },
+        Err(e) => {
+            eprintln!("can not lock tracing init {e}");
+            panic!("can not lock tracing init {e}");
         }
-        Some(g) => g.clone(),
     }
 }
 
@@ -87,7 +92,6 @@ where
             eprintln!("ERROR tracing: can not init");
         }
     }
-    // let res = runtime.block_on(async { fut.await });
     let res = runtime.block_on(fut);
     match res {
         Ok(k) => Ok(k),
@@ -119,19 +123,31 @@ fn tracing_init_inner() -> Result<(), Error> {
             .with_thread_names(true)
             .with_filter(filter);
 
-        let pid = std::process::id();
-        let cspn = format!("/tmp/daqbuffer.tokio.console.pid.{pid}");
-        let console_layer = console_subscriber::ConsoleLayer::builder()
-            .retention(std::time::Duration::from_secs(10))
-            // .server_addr(([127, 0, 0, 1], 2875))
-            .server_addr(std::path::Path::new(&cspn))
-            .spawn();
-        // .build();
+        let reg = tracing_subscriber::registry();
 
-        // eprintln!("spawn console sever");
-        // tokio::spawn(console_server.serve());
+        #[cfg(DISABLED_CONSOLE)]
+        let reg = {
+            let (console_layer, console_server) = console_subscriber::ConsoleLayer::builder().build();
+            tokio::spawn(console_server.serve());
+            reg.with(console_layer)
+        };
 
-        let reg = tracing_subscriber::registry().with(console_layer);
+        #[cfg(DISABLED_CONSOLE)]
+        let reg = {
+            let pid = std::process::id();
+            // let cspn = format!("/tmp/daqbuffer.tokio.console.pid.{pid}");
+            let console_layer = console_subscriber::ConsoleLayer::builder()
+                // .retention(std::time::Duration::from_secs(10))
+                .server_addr(([127, 0, 0, 1], 14571))
+                // .server_addr(std::path::Path::new(&cspn))
+                .spawn();
+            // .build();
+
+            // eprintln!("spawn console sever");
+            // tokio::spawn(console_server.serve());
+            reg.with(console_layer)
+        };
+
         let reg = reg.with(fmt_layer);
         reg.try_init().map_err(|e| {
             eprintln!("can not initialize tracing layer: {e}");
@@ -176,23 +192,30 @@ fn tracing_init_inner() -> Result<(), Error> {
 }
 
 pub fn tracing_init() -> Result<(), ()> {
-    let mut initg = INIT_TRACING_ONCE.lock().unwrap();
-    if *initg == 0 {
-        match tracing_init_inner() {
-            Ok(_) => {
-                *initg = 1;
-            }
-            Err(e) => {
-                *initg = 2;
-                eprintln!("tracing_init_inner gave error {e}");
+    match INIT_TRACING_ONCE.lock() {
+        Ok(mut initg) => {
+            if *initg == 0 {
+                match tracing_init_inner() {
+                    Ok(_) => {
+                        *initg = 1;
+                    }
+                    Err(e) => {
+                        *initg = 2;
+                        eprintln!("tracing_init_inner gave error {e}");
+                    }
+                }
+                Ok(())
+            } else if *initg == 1 {
+                Ok(())
+            } else {
+                eprintln!("ERROR unknown tracing state");
+                Err(())
             }
         }
-        Ok(())
-    } else if *initg == 1 {
-        Ok(())
-    } else {
-        eprintln!("ERROR unknown tracing state");
-        Err(())
+        Err(e) => {
+            eprintln!("can not lock tracing init {e}");
+            Err(())
+        }
     }
 }
 
