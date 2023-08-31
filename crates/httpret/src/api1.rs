@@ -7,7 +7,7 @@ use bytes::BufMut;
 use bytes::BytesMut;
 use disk::eventchunker::EventChunkerConf;
 use disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes;
-use disk::raw::conn::make_local_event_blobs_stream;
+use disk::raw::conn::make_event_blobs_stream;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use http::Method;
@@ -757,7 +757,7 @@ impl DataApiPython3DataStream {
             debug!("set up central storage stream");
             // TODO pull up this config
             let event_chunker_conf = EventChunkerConf::new(ByteSize::from_kb(1024));
-            let s = make_local_event_blobs_stream(
+            let s = make_event_blobs_stream(
                 self.range.clone(),
                 fetch_info.clone(),
                 one_before,
