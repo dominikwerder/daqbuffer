@@ -121,18 +121,12 @@ pub fn make_event_blobs_stream(
     Ok(event_blobs)
 }
 
-pub async fn make_event_blobs_pipe_real(
+pub fn make_event_blobs_pipe_real(
     subq: &EventsSubQuery,
     fetch_info: &SfChFetchInfo,
     reqctx: ReqCtxArc,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
-    if false {
-        match dbconn::channel_exists(subq.name(), &node_config).await {
-            Ok(_) => (),
-            Err(e) => return Err(e)?,
-        }
-    }
     let expand = subq.transform().need_one_before_range();
     let range = subq.range();
     let event_chunker_conf = EventChunkerConf::new(ByteSize::from_kb(1024));
@@ -149,7 +143,7 @@ pub async fn make_event_blobs_pipe_real(
     Ok(pipe)
 }
 
-pub async fn make_event_blobs_pipe_test(
+pub fn make_event_blobs_pipe_test(
     subq: &EventsSubQuery,
     node_config: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
@@ -192,7 +186,7 @@ pub async fn make_event_blobs_pipe_test(
     }
 }
 
-pub async fn make_event_blobs_pipe(
+pub fn make_event_blobs_pipe(
     subq: &EventsSubQuery,
     fetch_info: &SfChFetchInfo,
     reqctx: ReqCtxArc,
@@ -200,8 +194,8 @@ pub async fn make_event_blobs_pipe(
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
     debug!("make_event_blobs_pipe {subq:?}");
     if subq.backend() == TEST_BACKEND {
-        make_event_blobs_pipe_test(subq, node_config).await
+        make_event_blobs_pipe_test(subq, node_config)
     } else {
-        make_event_blobs_pipe_real(subq, fetch_info, reqctx, node_config).await
+        make_event_blobs_pipe_real(subq, fetch_info, reqctx, node_config)
     }
 }

@@ -174,7 +174,7 @@ pub async fn create_response_bytes_stream(
     if evq.is_event_blobs() {
         // TODO support event blobs as transform
         let fetch_info = evq.ch_conf().to_sf_databuffer()?;
-        let stream = disk::raw::conn::make_event_blobs_pipe(&evq, &fetch_info, reqctx, ncc).await?;
+        let stream = disk::raw::conn::make_event_blobs_pipe(&evq, &fetch_info, reqctx, ncc)?;
         // let stream = stream.map(|x| Box::new(x) as _);
         let stream = stream.map(|x| x.make_frame().map(|x| x.freeze()));
         let ret = Box::pin(stream);

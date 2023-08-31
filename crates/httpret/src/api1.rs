@@ -747,7 +747,6 @@ impl DataApiPython3DataStream {
             TransformQuery::for_event_blobs(),
         );
         let subq = EventsSubQuery::from_parts(select, self.settings.clone(), self.reqctx.reqid().into());
-        let one_before = subq.transform().need_one_before_range();
         debug!("query for event blobs retrieval  subq {subq:?}");
         // TODO  important TODO
         debug!("TODO fix magic inmem_bufcap");
@@ -755,18 +754,7 @@ impl DataApiPython3DataStream {
         // TODO is this a good to place decide this?
         let stream = if self.node_config.node_config.cluster.is_central_storage {
             debug!("set up central storage stream");
-            // TODO pull up this config
-            let event_chunker_conf = EventChunkerConf::new(ByteSize::from_kb(1024));
-            let s = make_event_blobs_stream(
-                self.range.clone(),
-                fetch_info.clone(),
-                one_before,
-                event_chunker_conf,
-                self.disk_io_tune.clone(),
-                self.reqctx.clone(),
-                &self.node_config,
-            )?;
-            Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
+            disk::raw::conn::make_event_blobs_pipe(&subq, &fetch_info, self.reqctx.clone(), &self.node_config)?
         } else {
             debug!("set up merged remote stream  {}", fetch_info.name());
             let s = MergedBlobsFromRemotes::new(subq, self.node_config.node_config.cluster.clone());
