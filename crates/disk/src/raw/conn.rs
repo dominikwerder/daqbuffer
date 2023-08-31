@@ -1,5 +1,5 @@
-use crate::eventblobs::EventChunkerMultifile;
 use crate::eventchunker::EventChunkerConf;
+use crate::eventchunkermultifile::EventChunkerMultifile;
 use crate::raw::generated::EventBlobsGeneratorI32Test00;
 use crate::raw::generated::EventBlobsGeneratorI32Test01;
 use err::Error;

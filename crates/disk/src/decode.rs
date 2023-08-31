@@ -1,4 +1,4 @@
-use crate::eventblobs::EventChunkerMultifile;
+use crate::eventchunkermultifile::EventChunkerMultifile;
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;

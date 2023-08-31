@@ -185,7 +185,7 @@ impl Stream for EventChunkerMultifile {
                                     let mut ofs = ofs;
                                     let file = ofs.files.pop().unwrap();
                                     let path = file.path;
-                                    let msg = format!("handle OFS {:?}", ofs);
+                                    let msg = format!("use opened files {:?}", ofs);
                                     let item = LogItem::from_node(self.node_ix, Level::DEBUG, msg);
                                     match file.file {
                                         Some(file) => {
@@ -211,12 +211,12 @@ impl Stream for EventChunkerMultifile {
                                     }
                                     Ready(Some(Ok(StreamItem::Log(item))))
                                 } else if ofs.files.len() == 0 {
-                                    let msg = format!("handle OFS {:?}  NO FILES", ofs);
+                                    let msg = format!("use opened files {:?}  no files", ofs);
                                     let item = LogItem::from_node(self.node_ix, Level::DEBUG, msg);
                                     Ready(Some(Ok(StreamItem::Log(item))))
                                 } else {
-                                    let paths: Vec<_> = ofs.files.iter().map(|x| &x.path).collect();
-                                    let msg = format!("handle OFS MERGED timebin {}  {:?}", ofs.timebin, paths);
+                                    // let paths: Vec<_> = ofs.files.iter().map(|x| &x.path).collect();
+                                    let msg = format!("use opened files {:?}  locally merged", ofs);
                                     let item = LogItem::from_node(self.node_ix, Level::DEBUG, msg);
                                     let mut chunkers = Vec::new();
                                     for of in ofs.files {
@@ -277,8 +277,8 @@ impl Stream for EventChunkerMultifile {
 #[cfg(DISABLED)]
 #[cfg(test)]
 mod test {
-    use crate::eventblobs::EventChunkerMultifile;
     use crate::eventchunker::EventChunkerConf;
+    use crate::eventchunkermultifile::EventChunkerMultifile;
     use crate::SfDbChConf;
     use err::Error;
     use futures_util::StreamExt;

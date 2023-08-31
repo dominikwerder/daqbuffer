@@ -1,5 +1,5 @@
-use crate::eventblobs::EventChunkerMultifile;
 use crate::eventchunker::EventChunkerConf;
+use crate::eventchunkermultifile::EventChunkerMultifile;
 use crate::AggQuerySingleChannel;
 use crate::SfDbChConf;
 use err::Error;
@@ -140,7 +140,7 @@ async fn agg_x_dim_1_inner() {
     // TODO let upstream already provide DiskIoTune:
     let mut disk_io_tune = DiskIoTune::default_for_testing();
     disk_io_tune.read_buffer_len = query.buffer_size as usize;
-    let fut1 = super::eventblobs::EventChunkerMultifile::new(
+    let fut1 = super::eventchunkermultifile::EventChunkerMultifile::new(
         range.clone(),
         fetch_info,
         node.clone(),
