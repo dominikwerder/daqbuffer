@@ -72,26 +72,38 @@ pub struct EventChunker {
     dbg_path: PathBuf,
     last_ts: u64,
     expand: bool,
-    decomp_dt_histo: HistoLog2,
     item_len_emit_histo: HistoLog2,
     seen_before_range_count: usize,
     seen_after_range_count: usize,
+    seen_events: usize,
     unordered_count: usize,
     repeated_ts_count: usize,
-    config_mismatch_discard: usize,
-    discard_count: usize,
+    discard_count_range: usize,
+    discard_count_scalar_type: usize,
+    discard_count_shape: usize,
+    discard_count_shape_derived: usize,
+    discard_count_shape_derived_err: usize,
     log_items: VecDeque<LogItem>,
 }
 
 impl Drop for EventChunker {
     fn drop(&mut self) {
         // TODO collect somewhere
-        if self.config_mismatch_discard != 0 {
-            warn!("config_mismatch_discard {}", self.config_mismatch_discard);
-        }
         debug!(
-            "EventChunker-stats {{ decomp_dt_histo: {:?}, item_len_emit_histo: {:?} }}",
-            self.decomp_dt_histo, self.item_len_emit_histo
+            concat!(
+                "EventChunker-stats {{ node_ix: {}, seen_events: {}, discard_count_range: {},",
+                " discard_count_scalar_type: {}, discard_count_shape: {},",
+                " discard_count_shape_derived: {}, discard_count_shape_derived_err: {},",
+                " item_len_emit_histo: {:?} }}",
+            ),
+            self.node_ix,
+            self.seen_events,
+            self.discard_count_range,
+            self.discard_count_scalar_type,
+            self.discard_count_shape,
+            self.discard_count_shape_derived,
+            self.discard_count_shape_derived_err,
+            self.item_len_emit_histo
         );
     }
 }
@@ -114,33 +126,6 @@ pub struct EventChunkerConf {
 impl EventChunkerConf {
     pub fn new(disk_stats_every: ByteSize) -> Self {
         Self { disk_stats_every }
-    }
-}
-
-fn is_config_match(is_array: &bool, ele_count: &u64, fetch_info: &SfChFetchInfo) -> bool {
-    match fetch_info.shape() {
-        Shape::Scalar => {
-            if *is_array {
-                false
-            } else {
-                true
-            }
-        }
-        Shape::Wave(dim1count) => {
-            if (*dim1count as u64) != *ele_count {
-                false
-            } else {
-                true
-            }
-        }
-        Shape::Image(n1, n2) => {
-            let nt = (*n1 as u64) * (*n2 as u64);
-            if nt != *ele_count {
-                false
-            } else {
-                true
-            }
-        }
     }
 }
 
@@ -186,14 +171,17 @@ impl EventChunker {
             node_ix,
             last_ts: 0,
             expand,
-            decomp_dt_histo: HistoLog2::new(8),
             item_len_emit_histo: HistoLog2::new(0),
             seen_before_range_count: 0,
             seen_after_range_count: 0,
+            seen_events: 0,
             unordered_count: 0,
             repeated_ts_count: 0,
-            config_mismatch_discard: 0,
-            discard_count: 0,
+            discard_count_range: 0,
+            discard_count_scalar_type: 0,
+            discard_count_shape: 0,
+            discard_count_shape_derived: 0,
+            discard_count_shape_derived_err: 0,
             log_items: VecDeque::new(),
         }
     }
@@ -283,6 +271,7 @@ impl EventChunker {
                         self.need_min = len as u32;
                         break;
                     } else {
+                        self.seen_events += 1;
                         let mut discard = false;
                         let _ttl = sl.read_i64::<BE>().unwrap();
                         let ts = sl.read_i64::<BE>().unwrap() as u64;
@@ -305,6 +294,7 @@ impl EventChunker {
                         }
                         if ts < self.last_ts {
                             discard = true;
+                            self.discard_count_range += 1;
                             self.unordered_count += 1;
                             if self.unordered_count < 20 {
                                 let msg = format!(
@@ -323,6 +313,7 @@ impl EventChunker {
                         self.last_ts = ts;
                         if ts >= self.range.end {
                             discard = true;
+                            self.discard_count_range += 1;
                             self.seen_after_range_count += 1;
                             if !self.expand || self.seen_after_range_count >= 2 {
                                 self.seen_beyond_range = true;
@@ -332,6 +323,7 @@ impl EventChunker {
                         }
                         if ts < self.range.beg {
                             discard = true;
+                            self.discard_count_range += 1;
                             self.seen_before_range_count += 1;
                             if self.seen_before_range_count < 20 {
                                 let msg = format!(
@@ -414,10 +406,12 @@ impl EventChunker {
                                     Shape::Image(shape_lens[0], shape_lens[1])
                                 } else if shape_dim == 0 {
                                     discard = true;
+                                    self.discard_count_shape += 1;
                                     // return Err(DataParseError::ShapedWithoutDims);
                                     Shape::Scalar
                                 } else {
                                     discard = true;
+                                    self.discard_count_shape += 1;
                                     // return Err(DataParseError::TooManyDims);
                                     Shape::Scalar
                                 }
@@ -436,11 +430,11 @@ impl EventChunker {
                         };
                         if self.fetch_info.scalar_type().ne(&scalar_type) {
                             discard = true;
+                            self.discard_count_scalar_type += 1;
                             let msg = format!(
-                                "scalar_type mismatch  {:?}  {:?}  {:?}",
+                                "scalar_type mismatch  {:?}  {:?}",
                                 scalar_type,
                                 self.fetch_info.scalar_type(),
-                                self.dbg_path,
                             );
                             let item = LogItem::from_node(self.node_ix, Level::WARN, msg);
                             log_items.push(item);
@@ -450,12 +444,8 @@ impl EventChunker {
                             // especially for waveforms it will wrongly indicate scalar. So this is unusable.
                             if self.fetch_info.shape().ne(&shape_this) {
                                 discard = true;
-                                let msg = format!(
-                                    "shape mismatch  {:?}  {:?}  {:?}",
-                                    shape_this,
-                                    self.fetch_info.shape(),
-                                    self.dbg_path,
-                                );
+                                self.discard_count_shape += 1;
+                                let msg = format!("shape mismatch  {:?}  {:?}", shape_this, self.fetch_info.shape(),);
                                 let item = LogItem::from_node(self.node_ix, Level::WARN, msg);
                                 log_items.push(item);
                             }
@@ -465,7 +455,6 @@ impl EventChunker {
                         let n2 = len as u64 - n1 - 4;
                         let databuf = buf[p1 as usize..(p1 as usize + n2 as usize)].as_ref();
                         if discard {
-                            self.discard_count += 1;
                         } else {
                             ret.push(
                                 ts,
@@ -479,27 +468,25 @@ impl EventChunker {
                             match ret.shape_derived(ret.len() - 1, self.fetch_info.shape()) {
                                 Ok(sh) => {
                                     if sh.ne(self.fetch_info.shape()) {
-                                        self.discard_count += 1;
+                                        self.discard_count_shape_derived += 1;
                                         ret.pop_back();
                                         let msg = format!(
-                                            "shape_derived mismatch  {:?}  {:?}  {:?}  {:?}",
+                                            "shape_derived mismatch  {:?}  {:?}  {:?}",
                                             self.fetch_info.scalar_type(),
                                             self.fetch_info.shape(),
                                             sh,
-                                            self.dbg_path,
                                         );
                                         let item = LogItem::from_node(self.node_ix, Level::WARN, msg);
                                         log_items.push(item);
                                     }
                                 }
                                 Err(_) => {
-                                    self.discard_count += 1;
+                                    self.discard_count_shape_derived_err += 1;
                                     ret.pop_back();
                                     let msg = format!(
-                                        "shape_derived error  {:?}  {:?}  {:?}",
+                                        "shape_derived error  {:?}  {:?}",
                                         self.fetch_info.scalar_type(),
                                         self.fetch_info.shape(),
-                                        self.dbg_path,
                                     );
                                     let item = LogItem::from_node(self.node_ix, Level::WARN, msg);
                                     log_items.push(item);
@@ -526,7 +513,7 @@ impl Stream for EventChunker {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        'outer: loop {
+        loop {
             break if self.completed {
                 panic!("EventChunker poll_next on completed");
             } else if let Some(item) = self.log_items.pop_front() {
@@ -552,7 +539,7 @@ impl Stream for EventChunker {
                     Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
                 } else {
                     trace!("sent_beyond_range  non-complete");
-                    continue 'outer;
+                    continue;
                 }
             } else if self.data_emit_complete {
                 let item = EventDataReadStats {
@@ -616,7 +603,7 @@ impl Stream for EventChunker {
                     }
                     Ready(None) => {
                         self.data_emit_complete = true;
-                        continue 'outer;
+                        continue;
                     }
                     Pending => Pending,
                 }

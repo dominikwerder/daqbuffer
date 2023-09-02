@@ -1437,6 +1437,7 @@ impl Dim0Index for TsNano {
     }
 
     fn prebin_patch_len_for(i: usize) -> Self {
+        let _ = i;
         todo!()
     }
 
@@ -1507,6 +1508,7 @@ impl Dim0Index for PulseId {
     }
 
     fn prebin_patch_len_for(i: usize) -> Self {
+        let _ = i;
         todo!()
     }
 
@@ -1543,6 +1545,7 @@ const PREBIN_TIME_BIN_LEN_VAR0: [u64; 3] = [MIN * 1, HOUR * 1, DAY];
 
 const PREBIN_PULSE_BIN_LEN_VAR0: [u64; 4] = [100, 10000, 1000000, 100000000];
 
+#[allow(unused)]
 const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 3] = [
     //
     //MIN * 60,
@@ -1551,6 +1554,7 @@ const PATCH_T_LEN_OPTIONS_SCALAR: [u64; 3] = [
     DAY * 64,
 ];
 
+#[allow(unused)]
 const PATCH_T_LEN_OPTIONS_WAVE: [u64; 3] = [
     //
     //MIN * 10,
@@ -1606,10 +1610,12 @@ const PULSE_BIN_THRESHOLDS: [u64; 25] = [
     800000, 1000000, 2000000, 4000000, 8000000, 10000000,
 ];
 
+#[allow(unused)]
 const fn time_bin_threshold_at(i: usize) -> TsNano {
     TsNano(TIME_BIN_THRESHOLDS[i])
 }
 
+#[allow(unused)]
 const fn pulse_bin_threshold_at(i: usize) -> PulseId {
     PulseId(PULSE_BIN_THRESHOLDS[i])
 }
@@ -1726,17 +1732,17 @@ impl PreBinnedPatchCoordEnum {
 }
 
 impl FromUrl for PreBinnedPatchCoordEnum {
-    fn from_url(url: &Url) -> Result<Self, Error> {
+    fn from_url(_url: &Url) -> Result<Self, Error> {
         todo!()
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+    fn from_pairs(_pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
         todo!()
     }
 }
 
 impl AppendToUrl for PreBinnedPatchCoordEnum {
-    fn append_to_url(&self, url: &mut Url) {
+    fn append_to_url(&self, _url: &mut Url) {
         todo!()
     }
 }
@@ -1755,8 +1761,8 @@ where
     T: Dim0Index,
 {
     pub fn edges(&self) -> Vec<u64> {
-        let mut ret = Vec::new();
         err::todo();
+        let ret = Vec::new();
         ret
     }
 
@@ -1855,6 +1861,7 @@ where
     }
 
     pub fn get_range(&self, ix: u32) -> NanoRange {
+        let _ = ix;
         /*NanoRange {
             beg: (self.offset + ix as u64) * self.grid_spec.bin_t_len,
             end: (self.offset + ix as u64 + 1) * self.grid_spec.bin_t_len,

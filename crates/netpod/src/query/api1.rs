@@ -5,14 +5,6 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
 
-fn bool_true() -> bool {
-    true
-}
-
-fn bool_is_true(x: &bool) -> bool {
-    *x
-}
-
 #[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Api1Range {
     #[serde(rename = "type", default, skip_serializing_if = "String::is_empty")]

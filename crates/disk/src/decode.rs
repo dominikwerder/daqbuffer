@@ -1,4 +1,3 @@
-use crate::eventchunkermultifile::EventChunkerMultifile;
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
@@ -300,8 +299,7 @@ fn make_scalar_conv(
 pub struct EventsDynStream {
     scalar_type: ScalarType,
     shape: Shape,
-    agg_kind: AggKind,
-    events_full: EventChunkerMultifile,
+    events_full: Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>,
     events_out: Box<dyn Events>,
     scalar_conv: Box<dyn ValueFromBytes>,
     emit_threshold: usize,
@@ -318,15 +316,14 @@ impl EventsDynStream {
         scalar_type: ScalarType,
         shape: Shape,
         agg_kind: AggKind,
-        events_full: EventChunkerMultifile,
+        events_full: Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>,
     ) -> Result<Self, Error> {
         let st = &scalar_type;
         let sh = &shape;
-        let ag = &agg_kind;
         warn!("TODO EventsDynStream::new feed through transform");
         // TODO do we need/want the empty item from here?
         let events_out = items_2::empty::empty_events_dyn_ev(st, sh)?;
-        let scalar_conv = make_scalar_conv(st, sh, ag)?;
+        let scalar_conv = make_scalar_conv(st, sh, &agg_kind)?;
         let emit_threshold = match &shape {
             Shape::Scalar => 2048,
             Shape::Wave(_) => 64,
@@ -335,7 +332,6 @@ impl EventsDynStream {
         let ret = Self {
             scalar_type,
             shape,
-            agg_kind,
             events_full,
             events_out,
             scalar_conv,
@@ -360,16 +356,13 @@ impl EventsDynStream {
         if item.len() >= self.emit_threshold {
             info!("handle_event_full  item len {}", item.len());
         }
-        for (((buf, &be), &ts), &pulse) in item
-            .blobs
-            .iter()
-            .zip(item.be.iter())
-            .zip(item.tss.iter())
-            .zip(item.pulses.iter())
-        {
+        for (i, ((&be, &ts), &pulse)) in item.be.iter().zip(item.tss.iter()).zip(item.pulses.iter()).enumerate() {
+            let buf = item
+                .data_decompressed(i)
+                .map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
             let endian = if be { Endian::Big } else { Endian::Little };
             self.scalar_conv
-                .convert(ts, pulse, buf, endian, self.events_out.as_mut())?;
+                .convert(ts, pulse, &buf, endian, self.events_out.as_mut())?;
         }
         Ok(())
     }

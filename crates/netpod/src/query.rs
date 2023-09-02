@@ -3,17 +3,14 @@ pub mod datetime;
 pub mod prebinned;
 
 use crate::get_url_query_pairs;
-use crate::is_false;
 use crate::log::*;
 use crate::AggKind;
 use crate::AppendToUrl;
-use crate::ByteSize;
 use crate::FromUrl;
 use crate::HasBackend;
 use crate::HasTimeout;
 use crate::NanoRange;
 use crate::PulseRange;
-use crate::SeriesRange;
 use crate::SfDbChannel;
 use crate::ToNanos;
 use crate::DATETIME_FMT_6MS;

@@ -105,7 +105,17 @@ impl Collect {
                     }
                 },
                 StreamItem::Log(item) => {
-                    trace!("collect log {:?}", item);
+                    if item.level == Level::ERROR {
+                        error!("node {}  msg {}", item.node_ix, item.msg);
+                    } else if item.level == Level::WARN {
+                        warn!("node {}  msg {}", item.node_ix, item.msg);
+                    } else if item.level == Level::INFO {
+                        info!("node {}  msg {}", item.node_ix, item.msg);
+                    } else if item.level == Level::DEBUG {
+                        debug!("node {}  msg {}", item.node_ix, item.msg);
+                    } else if item.level == Level::TRACE {
+                        trace!("node {}  msg {}", item.node_ix, item.msg);
+                    }
                     Ok(())
                 }
                 StreamItem::Stats(item) => {

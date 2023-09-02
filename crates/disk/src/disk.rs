@@ -7,6 +7,7 @@ pub mod dataopen;
 pub mod decode;
 pub mod eventchunker;
 pub mod eventchunkermultifile;
+pub mod eventfilter;
 pub mod frame;
 pub mod gen;
 pub mod index;
@@ -836,7 +837,7 @@ impl Stream for BlockingTaskIntoChannel {
 }
 
 fn blocking_task_into_channel(
-    path: PathBuf,
+    _path: PathBuf,
     file: File,
     disk_io_tune: DiskIoTune,
     reqid: String,

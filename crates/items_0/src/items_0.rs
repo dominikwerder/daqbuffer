@@ -18,7 +18,6 @@ pub use futures_util;
 
 use collect_s::Collectable;
 use container::ByteEstimate;
-use netpod::range::evrange::SeriesRange;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;

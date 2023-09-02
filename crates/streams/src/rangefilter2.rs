@@ -225,7 +225,7 @@ where
     ITY: Mergeable,
 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct(Self::type_name()).finish()
+        f.debug_struct("RangeFilter2").field("stats", &self.stats).finish()
     }
 }
 
@@ -235,6 +235,7 @@ where
     ITY: Mergeable,
 {
     fn drop(&mut self) {
-        debug!("drop {} {:?}", Self::type_name(), self);
+        // Self::type_name()
+        debug!("drop {:?}", self);
     }
 }

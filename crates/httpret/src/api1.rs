@@ -5,9 +5,7 @@ use crate::response;
 use crate::ReqCtx;
 use bytes::BufMut;
 use bytes::BytesMut;
-use disk::eventchunker::EventChunkerConf;
 use disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes;
-use disk::raw::conn::make_event_blobs_stream;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use http::Method;
@@ -27,7 +25,6 @@ use netpod::query::api1::Api1Query;
 use netpod::range::evrange::NanoRange;
 use netpod::timeunits::SEC;
 use netpod::Api1WarningStats;
-use netpod::ByteSize;
 use netpod::ChannelSearchQuery;
 use netpod::ChannelSearchResult;
 use netpod::ChannelTypeConfigGen;
@@ -523,6 +520,7 @@ pub struct DataApiPython3DataStream {
     current_fetch_info: Option<SfChFetchInfo>,
     node_config: NodeConfigCached,
     chan_stream: Option<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>>,
+    #[allow(unused)]
     disk_io_tune: DiskIoTune,
     do_decompress: bool,
     event_count: usize,

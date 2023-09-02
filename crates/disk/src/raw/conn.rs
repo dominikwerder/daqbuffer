@@ -31,6 +31,7 @@ fn make_num_pipeline_stream_evs(
 ) -> Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>> {
     let scalar_type = fetch_info.scalar_type().clone();
     let shape = fetch_info.shape().clone();
+    let event_blobs = Box::pin(event_blobs);
     let event_stream = match crate::decode::EventsDynStream::new(scalar_type, shape, agg_kind, event_blobs) {
         Ok(k) => k,
         Err(e) => {

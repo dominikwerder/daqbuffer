@@ -1388,7 +1388,10 @@ impl Api4MapPulseHttpFunction {
         let ret = match Self::find_timestamp(q, ncc).await {
             Ok(Some(val)) => Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&val)?))?),
             Ok(None) => Ok(response(StatusCode::NO_CONTENT).body(Body::empty())?),
-            Err(e) => Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?),
+            Err(e) => {
+                error!("find_timestamp {e}");
+                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
+            }
         };
         let ts2 = Instant::now();
         let dt = ts2.duration_since(ts1);
@@ -1446,7 +1449,10 @@ impl Api4MapPulse2HttpFunction {
                 Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&res)?))?)
             }
             Ok(None) => Ok(response(StatusCode::NO_CONTENT).body(Body::empty())?),
-            Err(e) => Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?),
+            Err(e) => {
+                error!("find_timestamp {e}");
+                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
+            }
         };
         let ts2 = Instant::now();
         let dt = ts2.duration_since(ts1);

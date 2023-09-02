@@ -1,5 +1,4 @@
 use super::paths;
-use crate::SfDbChConf;
 use bytes::BytesMut;
 use err::ErrStr;
 use err::Error;
@@ -827,9 +826,9 @@ mod test {
             beg: DAY + HOUR * 5,
             end: DAY + HOUR * 8,
         };
-        let chn = netpod::SfDbChannel::from_name(BACKEND, "scalar-i32-be");
+        let _chn = netpod::SfDbChannel::from_name(BACKEND, "scalar-i32-be");
         // TODO read config from disk? Or expose the config from data generator?
-        let fetch_info = todo!();
+        let fetch_info = err::todoval();
         // let fetch_info = SfChFetchInfo {
         //     channel: chn,
         //     keyspace: 2,

@@ -8,23 +8,11 @@ pub mod binnedjson;
 mod timeweightedjson;
 
 use bytes::BytesMut;
-use err::Error;
-use std::future::Future;
-
-fn run_test<F>(f: F) -> Result<(), Error>
-where
-    F: Future<Output = Result<(), Error>> + Send,
-{
-    let runtime = taskrun::get_runtime();
-    let _g = runtime.enter();
-    runtime.block_on(f)
-    //let jh = tokio::spawn(f);
-    //jh.await;
-}
 
 #[test]
 fn bufs() {
-    use bytes::{Buf, BufMut};
+    use bytes::Buf;
+    use bytes::BufMut;
     let mut buf = BytesMut::with_capacity(1024);
     assert!(buf.as_mut().len() == 0);
     buf.put_u32_le(123);

@@ -136,6 +136,20 @@ impl EventFull {
         self.shapes.pop_back();
         self.comps.pop_back();
     }
+
+    pub fn keep_ixs(&mut self, ixs: &[bool]) {
+        fn inner<T>(v: &mut VecDeque<T>, ixs: &[bool]) {
+            let mut it = ixs.iter();
+            v.retain_mut(move |_| it.next().map(Clone::clone).unwrap_or(false));
+        }
+        inner(&mut self.tss, ixs);
+        inner(&mut self.pulses, ixs);
+        inner(&mut self.blobs, ixs);
+        inner(&mut self.scalar_types, ixs);
+        inner(&mut self.be, ixs);
+        inner(&mut self.shapes, ixs);
+        inner(&mut self.comps, ixs);
+    }
 }
 
 impl FrameTypeInnerStatic for EventFull {
