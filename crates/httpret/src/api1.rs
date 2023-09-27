@@ -144,6 +144,7 @@ pub async fn channel_search_list_v1(req: Request<Body>, proxy_config: &ProxyConf
                     name_regex: query.regex.map_or(String::new(), |k| k),
                     source_regex: query.source_regex.map_or(String::new(), |k| k),
                     description_regex: query.description_regex.map_or(String::new(), |k| k),
+                    channel_status: false,
                 };
                 let urls = proxy_config
                     .backends
@@ -250,6 +251,7 @@ pub async fn channel_search_configs_v1(
                     name_regex: query.regex.map_or(String::new(), |k| k),
                     source_regex: query.source_regex.map_or(String::new(), |k| k),
                     description_regex: query.description_regex.map_or(String::new(), |k| k),
+                    channel_status: false,
                 };
                 let urls = proxy_config
                     .backends

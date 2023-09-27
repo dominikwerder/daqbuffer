@@ -110,6 +110,7 @@ impl From<&ScalarType> for Api1ScalarType {
             A::F64 => B::F64,
             A::BOOL => B::BOOL,
             A::STRING => B::STRING,
+            A::ChannelStatus => todo!("ChannelStatus not in Api1ScalarType"),
         }
     }
 }

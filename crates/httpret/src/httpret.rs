@@ -407,7 +407,7 @@ async fn http_service_inner(
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channel_status::ConnectionStatusEvents::handler(&req) {
         Ok(h.handle(req, ctx, &node_config).await?)
-    } else if let Some(h) = channel_status::ChannelStatusEvents::handler(&req) {
+    } else if let Some(h) = channel_status::ChannelStatusEventsHandler::handler(&req) {
         Ok(h.handle(req, ctx, &node_config).await?)
     } else if path == "/api/4/prebinned" {
         if req.method() == Method::GET {

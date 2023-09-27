@@ -115,6 +115,7 @@ impl_scaty_scalar!(i64, i64, "events_scalar_i64");
 impl_scaty_scalar!(f32, f32, "events_scalar_f32");
 impl_scaty_scalar!(f64, f64, "events_scalar_f64");
 impl_scaty_scalar!(bool, bool, "events_scalar_bool");
+impl_scaty_scalar!(String, String, "events_scalar_string");
 
 impl_scaty_array!(Vec<u8>, u8, Vec<i8>, "events_array_u8");
 impl_scaty_array!(Vec<u16>, u16, Vec<i16>, "events_array_u16");
@@ -127,6 +128,7 @@ impl_scaty_array!(Vec<i64>, i64, Vec<i64>, "events_array_i64");
 impl_scaty_array!(Vec<f32>, f32, Vec<f32>, "events_array_f32");
 impl_scaty_array!(Vec<f64>, f64, Vec<f64>, "events_array_f64");
 impl_scaty_array!(Vec<bool>, bool, Vec<bool>, "events_array_bool");
+impl_scaty_array!(Vec<String>, String, Vec<String>, "events_array_string");
 
 struct ReadNextValuesOpts {
     series: u64,
@@ -350,6 +352,7 @@ impl ReadValues {
                     ScalarType::F32 => read_next_values::<f32>(opts).await,
                     ScalarType::F64 => read_next_values::<f64>(opts).await,
                     ScalarType::BOOL => read_next_values::<bool>(opts).await,
+                    ScalarType::STRING => read_next_values::<String>(opts).await,
                     _ => {
                         error!("TODO ReadValues add more types");
                         err::todoval()

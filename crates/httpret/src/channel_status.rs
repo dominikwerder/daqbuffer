@@ -7,11 +7,12 @@ use http::Request;
 use http::Response;
 use http::StatusCode;
 use hyper::Body;
-use items_2::channelevents::ChannelStatusEvent;
+use items_0::Empty;
+use items_0::Extendable;
+use items_2::channelevents::ChannelStatusEvents;
 use items_2::channelevents::ConnStatusEvent;
 use netpod::log::*;
 use netpod::query::ChannelStateEventsQuery;
-use netpod::ChannelTypeConfigGen;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ACCEPT_ALL;
@@ -75,26 +76,26 @@ impl ConnectionStatusEvents {
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("no scylla configured")))?;
         let _scy = scyllaconn::create_scy_session(scyco).await?;
-        let chconf =
+        let _chconf =
             nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), node_config).await?;
         let _do_one_before_range = true;
         let ret = Vec::new();
         if true {
             return Err(Error::with_msg_no_trace("TODO channel_status fetch_data"));
         }
-        /*let mut stream =
-            scyllaconn::status::StatusStreamScylla::new(series, q.range().clone(), do_one_before_range, scy);
-        while let Some(item) = stream.next().await {
-            let item = item?;
-            ret.push(item);
-        }*/
+        // let mut stream =
+        //     scyllaconn::status::StatusStreamScylla::new(series, q.range().clone(), do_one_before_range, scy);
+        // while let Some(item) = stream.next().await {
+        //     let item = item?;
+        //     ret.push(item);
+        // }
         Ok(ret)
     }
 }
 
-pub struct ChannelStatusEvents {}
+pub struct ChannelStatusEventsHandler {}
 
-impl ChannelStatusEvents {
+impl ChannelStatusEventsHandler {
     pub fn handler(req: &Request<Body>) -> Option<Self> {
         if req.uri().path() == "/api/4/status/channel/events" {
             Some(Self {})
@@ -141,7 +142,7 @@ impl ChannelStatusEvents {
         &self,
         q: &ChannelStateEventsQuery,
         node_config: &NodeConfigCached,
-    ) -> Result<Vec<ChannelStatusEvent>, Error> {
+    ) -> Result<ChannelStatusEvents, Error> {
         let scyco = node_config
             .node_config
             .cluster
@@ -149,26 +150,28 @@ impl ChannelStatusEvents {
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("no scylla configured")))?;
         let scy = scyllaconn::create_scy_session(scyco).await?;
-        let chconf = nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), node_config)
-            .await?
-            .ok_or_else(|| Error::with_msg_no_trace("channel config not found"))?;
         let do_one_before_range = true;
-        match chconf {
-            ChannelTypeConfigGen::Scylla(ch_conf) => {
-                let mut stream = scyllaconn::status::StatusStreamScylla::new(
-                    ch_conf.series(),
-                    q.range().clone(),
-                    do_one_before_range,
-                    scy,
-                );
-                let mut ret = Vec::new();
-                while let Some(item) = stream.next().await {
-                    let item = item?;
-                    ret.push(item);
-                }
-                Ok(ret)
+        if false {
+            let chconf = nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), node_config)
+                .await?
+                .ok_or_else(|| Error::with_msg_no_trace("channel config not found"))?;
+            use netpod::ChannelTypeConfigGen;
+            match chconf {
+                ChannelTypeConfigGen::Scylla(_x) => todo!(),
+                ChannelTypeConfigGen::SfDatabuffer(_x) => todo!(),
             }
-            ChannelTypeConfigGen::SfDatabuffer(k) => todo!(),
         }
+        let mut stream = scyllaconn::status::StatusStreamScylla::new(
+            q.channel().series().unwrap(),
+            q.range().clone(),
+            do_one_before_range,
+            scy,
+        );
+        let mut ret = ChannelStatusEvents::empty();
+        while let Some(item) = stream.next().await {
+            let mut item = item?;
+            ret.extend_from(&mut item);
+        }
+        Ok(ret)
     }
 }

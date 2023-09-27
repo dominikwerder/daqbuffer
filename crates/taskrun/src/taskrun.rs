@@ -23,7 +23,7 @@ pub fn get_runtime() -> Arc<Runtime> {
     get_runtime_opts(24, 128)
 }
 
-#[allow(unused)]
+// #[allow(unused)]
 fn on_thread_start() {
     let old = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
@@ -58,7 +58,7 @@ pub fn get_runtime_opts(nworkers: usize, nblocking: usize) -> Arc<Runtime> {
                     .worker_threads(nworkers)
                     .max_blocking_threads(nblocking)
                     .enable_all()
-                    .on_thread_start(on_thread_start)
+                    // .on_thread_start(on_thread_start)
                     .build();
                 let res = match res {
                     Ok(x) => x,

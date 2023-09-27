@@ -95,6 +95,7 @@ pub enum ScalarType {
     F64,
     BOOL,
     STRING,
+    ChannelStatus,
 }
 
 impl fmt::Debug for ScalarType {
@@ -128,6 +129,7 @@ impl Serialize for ScalarType {
             F64 => ser.serialize_str("f64"),
             BOOL => ser.serialize_str("bool"),
             STRING => ser.serialize_str("string"),
+            ChannelStatus => ser.serialize_str("ChannelStatus"),
         }
     }
 }
@@ -156,6 +158,7 @@ impl<'de> serde::de::Visitor<'de> for ScalarTypeVis {
             "f64" => ScalarType::F64,
             "bool" => ScalarType::BOOL,
             "string" => ScalarType::STRING,
+            "channelstatus" => ScalarType::ChannelStatus,
             k => return Err(E::custom(format!("can not understand variant {k:?}"))),
         };
         Ok(ret)
@@ -192,6 +195,7 @@ impl ScalarType {
             11 => F32,
             12 => F64,
             13 => STRING,
+            14 => ChannelStatus,
             //13 => return Err(Error::with_msg(format!("STRING not supported"))),
             6 => return Err(Error::with_msg(format!("CHARACTER not supported"))),
             _ => return Err(Error::with_msg(format!("unknown dtype code: {:?}", ix))),
@@ -214,6 +218,7 @@ impl ScalarType {
             F64 => "f64",
             BOOL => "bool",
             STRING => "string",
+            ChannelStatus => "ChannelStatus",
         }
     }
 
@@ -232,6 +237,7 @@ impl ScalarType {
             F64 => "float64",
             BOOL => "bool",
             STRING => "string",
+            ChannelStatus => "ChannelStatus",
         }
     }
 
@@ -252,6 +258,7 @@ impl ScalarType {
             "float64" => F64,
             "string" => STRING,
             "bool" => BOOL,
+            "ChannelStatus" => ChannelStatus,
             _ => {
                 return Err(Error::with_msg_no_trace(format!(
                     "from_bsread_str can not understand bsread {:?}",
@@ -323,6 +330,7 @@ impl ScalarType {
             F64 => 8,
             BOOL => 1,
             STRING => 1,
+            ChannelStatus => 4,
         }
     }
 
@@ -341,6 +349,7 @@ impl ScalarType {
             F64 => 12,
             BOOL => 0,
             STRING => 13,
+            ChannelStatus => 14,
         }
     }
 
@@ -2469,6 +2478,8 @@ pub struct ChannelSearchQuery {
     pub name_regex: String,
     pub source_regex: String,
     pub description_regex: String,
+    #[serde(default)]
+    pub channel_status: bool,
 }
 
 impl ChannelSearchQuery {
@@ -2479,6 +2490,11 @@ impl ChannelSearchQuery {
             name_regex: pairs.get("nameRegex").map_or(String::new(), |k| k.clone()),
             source_regex: pairs.get("sourceRegex").map_or(String::new(), |k| k.clone()),
             description_regex: pairs.get("descriptionRegex").map_or(String::new(), |k| k.clone()),
+            channel_status: pairs
+                .get("channelStatus")
+                .map(|k| k.parse().ok())
+                .unwrap_or(None)
+                .unwrap_or(false),
         };
         Ok(ret)
     }
@@ -2491,6 +2507,8 @@ impl ChannelSearchQuery {
         qp.append_pair("nameRegex", &self.name_regex);
         qp.append_pair("sourceRegex", &self.source_regex);
         qp.append_pair("descriptionRegex", &self.description_regex);
+        let v = &self.channel_status;
+        qp.append_pair("channelStatus", &v.to_string());
     }
 }
 

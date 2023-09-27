@@ -115,7 +115,7 @@ impl Error {
     where
         E: ToString,
     {
-        Self::with_msg(e.to_string())
+        Self::with_msg_no_trace(e.to_string())
     }
 
     pub fn add_backtrace(self) -> Self {
@@ -421,6 +421,12 @@ impl From<http::header::ToStrError> for Error {
 
 impl From<anyhow::Error> for Error {
     fn from(k: anyhow::Error) -> Self {
+        Self::with_msg(format!("{k}"))
+    }
+}
+
+impl From<tokio::task::JoinError> for Error {
+    fn from(k: tokio::task::JoinError) -> Self {
         Self::with_msg(format!("{k}"))
     }
 }

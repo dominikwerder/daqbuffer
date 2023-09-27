@@ -16,6 +16,7 @@ use netpod::Shape;
 /// In the future, we can even try to involve time range information for that, but backends like
 /// old archivers and sf databuffer do not support such lookup.
 pub async fn chconf_from_scylla_type_backend(channel: &SfDbChannel, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
+    debug!("chconf_from_scylla_type_backend {channel:?}");
     if channel.backend() != ncc.node_config.cluster.backend {
         warn!(
             "mismatched backend  {}  vs  {}",

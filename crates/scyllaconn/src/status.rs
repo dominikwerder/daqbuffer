@@ -3,11 +3,15 @@ use err::Error;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
+use items_0::isodate::IsoDateTime;
+use items_0::Empty;
+use items_0::Extendable;
+use items_0::WithLen;
 use items_2::channelevents::ChannelStatus;
-use items_2::channelevents::ChannelStatusEvent;
+use items_2::channelevents::ChannelStatusEvents;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
-use netpod::range::evrange::SeriesRange;
+use netpod::timeunits::MS;
 use netpod::CONNECTION_STATUS_DIV;
 use scylla::Session as ScySession;
 use std::collections::VecDeque;
@@ -15,8 +19,6 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
-use std::time::Duration;
-use std::time::SystemTime;
 
 async fn read_next_status_events(
     series: u64,
@@ -25,7 +27,7 @@ async fn read_next_status_events(
     fwd: bool,
     do_one_before: bool,
     scy: Arc<ScySession>,
-) -> Result<VecDeque<ChannelStatusEvent>, Error> {
+) -> Result<ChannelStatusEvents, Error> {
     if ts_msp >= range.end {
         warn!(
             "given ts_msp {}  >=  range.end {}  not necessary to read this",
@@ -75,27 +77,27 @@ async fn read_next_status_events(
             .err_conv()?
     };
     let mut last_before = None;
-    let mut ret = VecDeque::new();
+    let mut ret = ChannelStatusEvents::empty();
     for row in res.rows_typed_or_empty::<(i64, i32)>() {
         let row = row.err_conv()?;
         let ts = ts_msp + row.0 as u64;
         let kind = row.1 as u32;
-        let ev = ChannelStatusEvent {
-            ts,
-            datetime: SystemTime::UNIX_EPOCH + Duration::from_millis(ts / 1000000),
-            status: ChannelStatus::from_ca_ingest_status_kind(kind),
-        };
+        let datetime = IsoDateTime::from_unix_millis(ts / MS);
+        let status = ChannelStatus::from_ca_ingest_status_kind(kind);
         if ts >= range.end {
         } else if ts >= range.beg {
-            ret.push_back(ev);
+            ret.tss.push_back(ts);
+            ret.datetimes.push_back(datetime);
+            ret.statuses.push_back(status);
         } else {
-            last_before = Some(ev);
+            last_before = Some((ts, datetime, status));
         }
     }
     if do_one_before {
-        if let Some(ev) = last_before {
-            debug!("PREPENDING THE LAST BEFORE  {ev:?}");
-            ret.push_front(ev);
+        if let Some((ts, datetime, status)) = last_before {
+            ret.tss.push_front(ts);
+            ret.datetimes.push_front(datetime);
+            ret.statuses.push_front(status);
         }
     }
     trace!("found in total {} events  ts_msp {}", ret.len(), ts_msp);
@@ -108,7 +110,7 @@ struct ReadValues {
     ts_msps: VecDeque<u64>,
     fwd: bool,
     do_one_before_range: bool,
-    fut: Pin<Box<dyn Future<Output = Result<VecDeque<ChannelStatusEvent>, Error>> + Send>>,
+    fut: Pin<Box<dyn Future<Output = Result<ChannelStatusEvents, Error>> + Send>>,
     scy: Arc<ScySession>,
 }
 
@@ -146,10 +148,7 @@ impl ReadValues {
         }
     }
 
-    fn make_fut(
-        &mut self,
-        ts_msp: u64,
-    ) -> Pin<Box<dyn Future<Output = Result<VecDeque<ChannelStatusEvent>, Error>> + Send>> {
+    fn make_fut(&mut self, ts_msp: u64) -> Pin<Box<dyn Future<Output = Result<ChannelStatusEvents, Error>> + Send>> {
         info!("make fut for {ts_msp}");
         let fut = read_next_status_events(
             self.series,
@@ -175,7 +174,7 @@ pub struct StatusStreamScylla {
     range: NanoRange,
     do_one_before_range: bool,
     scy: Arc<ScySession>,
-    outbuf: VecDeque<ChannelStatusEvent>,
+    outbuf: ChannelStatusEvents,
 }
 
 impl StatusStreamScylla {
@@ -186,28 +185,29 @@ impl StatusStreamScylla {
             range,
             do_one_before_range,
             scy,
-            outbuf: VecDeque::new(),
+            outbuf: ChannelStatusEvents::empty(),
         }
     }
 }
 
 impl Stream for StatusStreamScylla {
-    type Item = Result<ChannelStatusEvent, Error>;
+    type Item = Result<ChannelStatusEvents, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         let span = tracing::span!(tracing::Level::TRACE, "poll_next");
         let _spg = span.enter();
         loop {
-            if let Some(x) = self.outbuf.pop_front() {
-                break Ready(Some(Ok(x)));
+            if self.outbuf.len() > 0 {
+                let item = std::mem::replace(&mut self.outbuf, ChannelStatusEvents::empty());
+                break Ready(Some(Ok(item)));
             }
             break match self.state {
                 FrState::New => {
                     let mut ts_msps = VecDeque::new();
                     let mut ts = self.range.beg / CONNECTION_STATUS_DIV * CONNECTION_STATUS_DIV;
                     while ts < self.range.end {
-                        info!("Use ts {ts}");
+                        debug!("Use ts {ts}");
                         ts_msps.push_back(ts);
                         ts += CONNECTION_STATUS_DIV;
                     }
@@ -223,14 +223,12 @@ impl Stream for StatusStreamScylla {
                     continue;
                 }
                 FrState::ReadValues(ref mut st) => match st.fut.poll_unpin(cx) {
-                    Ready(Ok(item)) => {
+                    Ready(Ok(mut item)) => {
                         if !st.next() {
                             debug!("ReadValues exhausted");
                             self.state = FrState::Done;
                         }
-                        for x in item {
-                            self.outbuf.push_back(x);
-                        }
+                        self.outbuf.extend_from(&mut item);
                         continue;
                     }
                     Ready(Err(e)) => {

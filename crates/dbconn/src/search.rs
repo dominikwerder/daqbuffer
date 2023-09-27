@@ -8,7 +8,6 @@ use netpod::ChannelSearchSingleResult;
 use netpod::Database;
 use netpod::NodeConfigCached;
 use netpod::ScalarType;
-use netpod::ScyllaConfig;
 use netpod::Shape;
 use serde_json::Value as JsVal;
 
@@ -85,24 +84,28 @@ pub async fn search_channel_databuffer(
     Ok(ret)
 }
 
-pub async fn search_channel_scylla(
-    query: ChannelSearchQuery,
-    _scyconf: &ScyllaConfig,
-    pgconf: &Database,
-) -> Result<ChannelSearchResult, Error> {
+pub async fn search_channel_scylla(query: ChannelSearchQuery, pgconf: &Database) -> Result<ChannelSearchResult, Error> {
     let empty = if !query.name_regex.is_empty() { false } else { true };
     if empty {
         let ret = ChannelSearchResult { channels: Vec::new() };
         return Ok(ret);
     }
-    let sql = format!(concat!(
-        "select",
-        " series, facility, channel, scalar_type, shape_dims",
-        " from series_by_channel",
-        " where channel ~* $1",
-        " and scalar_type != -2147483647",
-        " limit 400000",
-    ));
+    let cond_status = if query.channel_status {
+        "scalar_type = 14"
+    } else {
+        "scalar_type != 14"
+    };
+    let sql = format!(
+        concat!(
+            "select",
+            " series, facility, channel, scalar_type, shape_dims",
+            " from series_by_channel",
+            " where channel ~* $1",
+            " and {}",
+            " limit 400000",
+        ),
+        cond_status
+    );
     let pgclient = crate::create_connection(pgconf).await?;
     let rows = pgclient.query(sql.as_str(), &[&query.name_regex]).await.err_conv()?;
     let mut res = Vec::new();
@@ -112,21 +115,28 @@ pub async fn search_channel_scylla(
         let backend: String = row.get(1);
         let channel: String = row.get(2);
         let a: i32 = row.get(3);
-        let scalar_type = ScalarType::from_scylla_i32(a)?;
-        let a: Vec<i32> = row.get(4);
-        let shape = Shape::from_scylla_shape_dims(&a)?;
-        let k = ChannelSearchSingleResult {
-            backend,
-            name: channel,
-            series,
-            source: "".into(),
-            ty: scalar_type.to_variant_str().into(),
-            shape: shape.to_scylla_vec().into_iter().map(|x| x as u32).collect(),
-            unit: "".into(),
-            description: "".into(),
-            is_api_0: None,
-        };
-        res.push(k);
+        // TODO count the failure cases
+        if let Ok(scalar_type) = ScalarType::from_scylla_i32(a) {
+            let a: Vec<i32> = row.get(4);
+            if let Ok(shape) = Shape::from_scylla_shape_dims(&a) {
+                let k = ChannelSearchSingleResult {
+                    backend,
+                    name: channel,
+                    series,
+                    source: "".into(),
+                    ty: scalar_type.to_variant_str().into(),
+                    shape: shape.to_scylla_vec().into_iter().map(|x| x as u32).collect(),
+                    unit: "".into(),
+                    description: "".into(),
+                    is_api_0: None,
+                };
+                res.push(k);
+            } else {
+                netpod::log::warn!("unknown shape {a:?}");
+            }
+        } else {
+            netpod::log::warn!("unknown scalar_type {a:?}");
+        }
     }
     let ret = ChannelSearchResult { channels: res };
     Ok(ret)
@@ -249,8 +259,8 @@ pub async fn search_channel(
     node_config: &NodeConfigCached,
 ) -> Result<ChannelSearchResult, Error> {
     let pgconf = &node_config.node_config.cluster.database;
-    if let Some(scyconf) = node_config.node_config.cluster.scylla.as_ref() {
-        search_channel_scylla(query, scyconf, pgconf).await
+    if let Some(_scyconf) = node_config.node_config.cluster.scylla.as_ref() {
+        search_channel_scylla(query, pgconf).await
     } else if let Some(conf) = node_config.node.channel_archiver.as_ref() {
         search_channel_archeng(query, node_config.node_config.cluster.backend.clone(), conf, pgconf).await
     } else if let Some(_conf) = node_config.node.archiver_appliance.as_ref() {

@@ -39,6 +39,10 @@ pub trait Appendable<STY>: Empty + WithLen {
     fn push(&mut self, ts: u64, pulse: u64, value: STY);
 }
 
+pub trait Extendable: Empty + WithLen {
+    fn extend_from(&mut self, src: &mut Self);
+}
+
 pub trait TypeName {
     fn type_name(&self) -> String;
 }

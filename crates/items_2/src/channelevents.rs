@@ -6,6 +6,7 @@ use items_0::collect_s::Collected;
 use items_0::collect_s::Collector;
 use items_0::container::ByteEstimate;
 use items_0::framable::FrameTypeInnerStatic;
+use items_0::isodate::IsoDateTime;
 use items_0::overlap::RangeOverlapInfo;
 use items_0::streamitem::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID;
 use items_0::timebin::TimeBinnable;
@@ -15,7 +16,9 @@ use items_0::timebin::TimeBinner;
 use items_0::timebin::TimeBinnerTy;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
+use items_0::Empty;
 use items_0::EventsNonObj;
+use items_0::Extendable;
 use items_0::MergeError;
 use items_0::TypeName;
 use items_0::WithLen;
@@ -82,6 +85,41 @@ impl ChannelStatus {
             1 => Self::Connect,
             _ => Self::Disconnect,
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ChannelStatusEvents {
+    pub tss: VecDeque<u64>,
+    pub datetimes: VecDeque<IsoDateTime>,
+    pub statuses: VecDeque<ChannelStatus>,
+}
+
+impl Empty for ChannelStatusEvents {
+    fn empty() -> Self {
+        Self {
+            tss: VecDeque::new(),
+            datetimes: VecDeque::new(),
+            statuses: VecDeque::new(),
+        }
+    }
+}
+
+impl WithLen for ChannelStatusEvents {
+    fn len(&self) -> usize {
+        self.tss.len()
+    }
+}
+
+impl Extendable for ChannelStatusEvents {
+    fn extend_from(&mut self, src: &mut Self) {
+        use core::mem::replace;
+        let v = replace(&mut src.tss, VecDeque::new());
+        self.tss.extend(v.into_iter());
+        let v = replace(&mut src.datetimes, VecDeque::new());
+        self.datetimes.extend(v.into_iter());
+        let v = replace(&mut src.statuses, VecDeque::new());
+        self.statuses.extend(v.into_iter());
     }
 }
 
@@ -269,6 +307,11 @@ mod serde_channel_events {
                             seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }
+                    String::SUB => {
+                        let obj: EventsDim0<String> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
                     _ => {
                         error!("TODO serde  cty {cty}  nty {nty}");
                         Err(de::Error::custom(&format!("unknown nty {nty}")))
@@ -293,6 +336,11 @@ mod serde_channel_events {
                     }
                     bool::SUB => {
                         let obj: EventsDim1<bool> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    String::SUB => {
+                        let obj: EventsDim1<String> =
                             seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }

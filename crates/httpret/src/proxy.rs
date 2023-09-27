@@ -290,8 +290,8 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
             if v == APP_JSON {
                 let url = Url::parse(&format!("dummy:{}", head.uri))?;
                 let query = ChannelSearchQuery::from_url(&url)?;
-                let mut methods = vec![];
-                let mut bodies = vec![];
+                let mut methods = Vec::new();
+                let mut bodies = Vec::new();
                 let mut urls = proxy_config
                     .backends
                     .iter()
