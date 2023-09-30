@@ -1112,7 +1112,7 @@ impl Shape {
         Ok(res)
     }
 
-    pub fn from_ca_count(k: u16) -> Result<Self, Error> {
+    pub fn from_ca_count(k: u32) -> Result<Self, Error> {
         if k == 0 {
             Err(Error::with_public_msg_no_trace(format!(
                 "zero sized ca data count {k:?}"
@@ -1120,7 +1120,7 @@ impl Shape {
         } else if k == 1 {
             Ok(Shape::Scalar)
         } else if k <= 1024 * 32 {
-            Ok(Shape::Wave(k as u32))
+            Ok(Shape::Wave(k))
         } else {
             Err(Error::with_public_msg_no_trace(format!(
                 "too large ca data count {k:?}"
