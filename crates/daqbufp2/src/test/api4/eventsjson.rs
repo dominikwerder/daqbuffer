@@ -1,10 +1,8 @@
-use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
 use crate::test::api4::common::fetch_events_json;
 use chrono::Utc;
 use err::Error;
 use http::StatusCode;
-use hyper::Body;
 use items_0::WithLen;
 use items_2::eventsdim0::EventsDim0CollectorOutput;
 use netpod::log::*;
@@ -86,21 +84,8 @@ async fn events_plain_json(
     let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    info!("http get {}", url);
-    let req = hyper::Request::builder()
-        .method(http::Method::GET)
-        .uri(url.to_string())
-        .header(http::header::ACCEPT, APP_JSON)
-        .body(Body::empty())
-        .ec()?;
-    let client = hyper::Client::new();
-    let res = client.request(req).await.ec()?;
-    if res.status() != StatusCode::OK {
-        error!("client response {:?}", res);
-        return Err(Error::with_msg_no_trace(format!("bad result {res:?}")));
-    }
-    let buf = hyper::body::to_bytes(res.into_body()).await.ec()?;
-    let s = String::from_utf8_lossy(&buf);
+    let res = httpclient::http_get(url, APP_JSON).await?;
+    let s = String::from_utf8_lossy(&res.body);
     let res: JsonValue = serde_json::from_str(&s)?;
     let pretty = serde_json::to_string_pretty(&res)?;
     info!("{pretty}");

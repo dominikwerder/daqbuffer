@@ -1,9 +1,6 @@
-use crate::err::ErrConv;
 use chrono::DateTime;
 use chrono::Utc;
 use err::Error;
-use http::StatusCode;
-use hyper::Body;
 use netpod::log::*;
 use netpod::query::CacheUsage;
 use netpod::range::evrange::NanoRange;
@@ -47,25 +44,13 @@ async fn get_json_common(
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", node0.host, node0.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    debug!("get_json_common  get {}", url);
-    let req = hyper::Request::builder()
-        .method(http::Method::GET)
-        .uri(url.to_string())
-        .header(http::header::ACCEPT, APP_JSON)
-        .body(Body::empty())
-        .ec()?;
-    let client = hyper::Client::new();
-    let res = client.request(req).await.ec()?;
-    if res.status() != StatusCode::OK {
-        error!("get_json_common client response {:?}", res);
-    }
-    let res = hyper::body::to_bytes(res.into_body()).await.ec()?;
+    let res = httpclient::http_get(url, APP_JSON).await?;
+    let s = String::from_utf8_lossy(&res.body);
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     // TODO add timeout
     debug!("get_json_common  DONE  time {} ms", ms);
-    let res = String::from_utf8_lossy(&res).to_string();
-    let res: serde_json::Value = serde_json::from_str(res.as_str())?;
+    let res: serde_json::Value = serde_json::from_str(&s)?;
     // TODO assert these:
     debug!(
         "result from endpoint: --------------\n{}\n--------------",

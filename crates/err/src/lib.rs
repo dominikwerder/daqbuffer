@@ -118,10 +118,10 @@ impl Error {
         Self::with_msg_no_trace(e.to_string())
     }
 
-    pub fn add_backtrace(self) -> Self {
-        let mut ret = self;
-        ret.trace_str = Some(fmt_backtrace(&backtrace::Backtrace::new()));
-        ret
+    pub fn add_backtrace(mut self) -> Self {
+        self.msg.extend(" (add_backtrace DISABLED)".chars());
+        // ret.trace_str = Some(fmt_backtrace(&backtrace::Backtrace::new()));
+        self
     }
 
     pub fn mark_bad_request(mut self) -> Self {
@@ -165,7 +165,11 @@ impl Error {
     }
 }
 
+#[allow(unused)]
 fn fmt_backtrace(trace: &backtrace::Backtrace) -> String {
+    if true {
+        return String::from("fmt_backtrace DISABLED");
+    }
     use std::io::Write;
     let mut buf = Vec::new();
     let mut c1 = 0;
@@ -295,139 +299,163 @@ impl ToErr for Infallible {
 
 impl From<String> for Error {
     fn from(k: String) -> Self {
-        Self::with_msg(k)
+        Self::from_string(k)
     }
 }
 
 impl From<&str> for Error {
     fn from(k: &str) -> Self {
-        Self::with_msg(k)
+        Self::from_string(k)
     }
 }
 
 impl From<std::io::Error> for Error {
     fn from(k: std::io::Error) -> Self {
-        Self::with_msg(k.to_string())
+        Self::from_string(k)
     }
 }
 
 impl From<AddrParseError> for Error {
     fn from(k: AddrParseError) -> Self {
-        Self::with_msg(k.to_string())
+        Self::from_string(k)
     }
 }
 
 impl From<serde_json::Error> for Error {
     fn from(k: serde_json::Error) -> Self {
-        Self::with_msg(k.to_string())
+        Self::from_string(k)
     }
 }
 
 impl<T> From<async_channel::SendError<T>> for Error {
     fn from(k: async_channel::SendError<T>) -> Self {
-        Self::with_msg(format!("{:?}", k))
+        Self::from_string(k)
     }
 }
 
 impl From<async_channel::RecvError> for Error {
     fn from(k: async_channel::RecvError) -> Self {
-        Self::with_msg(k.to_string())
+        Self::from_string(k)
+    }
+}
+
+impl<T> From<async_channel_2::SendError<T>> for Error {
+    fn from(k: async_channel_2::SendError<T>) -> Self {
+        Self::from_string(k)
+    }
+}
+
+impl From<async_channel_2::RecvError> for Error {
+    fn from(k: async_channel_2::RecvError) -> Self {
+        Self::from_string(k)
     }
 }
 
 impl From<chrono::format::ParseError> for Error {
     fn from(k: chrono::format::ParseError) -> Self {
-        Self::with_msg(k.to_string())
+        Self::from_string(k)
     }
 }
 
 impl From<ParseIntError> for Error {
     fn from(k: ParseIntError) -> Self {
-        Self::with_msg(k.to_string())
+        Self::from_string(k)
     }
 }
 
 impl From<ParseFloatError> for Error {
     fn from(k: ParseFloatError) -> Self {
-        Self::with_msg(k.to_string())
+        Self::from_string(k)
     }
 }
 
 impl From<FromUtf8Error> for Error {
     fn from(k: FromUtf8Error) -> Self {
-        Self::with_msg(k.to_string())
+        Self::from_string(k)
     }
 }
 
 impl From<std::str::Utf8Error> for Error {
     fn from(k: std::str::Utf8Error) -> Self {
-        Self::with_msg(k.to_string())
+        Self::from_string(k)
     }
 }
 
 impl From<serde_cbor::Error> for Error {
     fn from(k: serde_cbor::Error) -> Self {
-        Self::with_msg(k.to_string())
+        Self::from_string(k)
     }
 }
 
 impl From<std::fmt::Error> for Error {
     fn from(k: std::fmt::Error) -> Self {
-        Self::with_msg(k.to_string())
+        Self::from_string(k)
     }
 }
 
 impl From<regex::Error> for Error {
     fn from(k: regex::Error) -> Self {
-        Self::with_msg(k.to_string())
+        Self::from_string(k)
     }
 }
 
 impl<T> From<PoisonError<T>> for Error {
     fn from(_: PoisonError<T>) -> Self {
-        Self::with_msg("PoisonError")
+        Self::from_string("PoisonError")
     }
 }
 
 impl From<url::ParseError> for Error {
     fn from(k: url::ParseError) -> Self {
-        Self::with_msg(format!("{:?}", k))
+        Self::from_string(format!("{:?}", k))
     }
 }
 
 impl From<TryFromSliceError> for Error {
     fn from(k: TryFromSliceError) -> Self {
-        Self::with_msg(format!("{:?}", k))
+        Self::from_string(format!("{:?}", k))
     }
 }
 
 impl From<rmp_serde::encode::Error> for Error {
     fn from(k: rmp_serde::encode::Error) -> Self {
-        Self::with_msg(format!("{:?}", k))
+        Self::from_string(format!("{:?}", k))
     }
 }
 
 impl From<rmp_serde::decode::Error> for Error {
     fn from(k: rmp_serde::decode::Error) -> Self {
-        Self::with_msg(format!("{:?}", k))
+        Self::from_string(format!("{:?}", k))
     }
 }
 
 impl From<http::header::ToStrError> for Error {
     fn from(k: http::header::ToStrError) -> Self {
-        Self::with_msg(format!("{:?}", k))
+        Self::from_string(format!("{:?}", k))
     }
 }
 
 impl From<anyhow::Error> for Error {
     fn from(k: anyhow::Error) -> Self {
-        Self::with_msg(format!("{k}"))
+        Self::from_string(format!("{k}"))
     }
 }
 
 impl From<tokio::task::JoinError> for Error {
     fn from(k: tokio::task::JoinError) -> Self {
-        Self::with_msg(format!("{k}"))
+        Self::from_string(format!("{k}"))
+    }
+}
+
+impl From<http_1::Error> for Error {
+    fn from(k: http_1::Error) -> Self {
+        Self::from_string(k)
+    }
+}
+
+impl From<hyper_1::Error> for Error {
+    fn from(k: hyper_1::Error) -> Self {
+        Self::from_string(k)
     }
 }
 

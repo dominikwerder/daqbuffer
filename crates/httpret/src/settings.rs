@@ -1,8 +1,8 @@
 use crate::err::Error;
 use crate::response;
+use http::header;
 use http::Method;
 use http::StatusCode;
-use hyper::Body;
 use hyper::Request;
 use hyper::Response;
 use netpod::log::*;
@@ -29,7 +29,7 @@ impl SettingsThreadsMaxHandler {
         let (head, body) = req.into_parts();
         let accept = head
             .headers
-            .get(http::header::ACCEPT)
+            .get(header::ACCEPT)
             .map_or(Ok(ACCEPT_ALL), |k| k.to_str())
             .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?
             .to_owned();
@@ -39,7 +39,7 @@ impl SettingsThreadsMaxHandler {
             error!("{e}");
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
         }
-        let body = hyper::body::to_bytes(body).await?;
+        let body = httpclient::read_body_bytes(body).await?;
         //let threads_max: usize = head.uri.path()[Self::path_prefix().len()..].parse()?;
         let threads_max: usize = String::from_utf8_lossy(&body).parse()?;
         info!("threads_max {threads_max}");

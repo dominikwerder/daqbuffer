@@ -1,11 +1,18 @@
+use crate::body_empty;
 use crate::err::Error;
 use crate::response;
+use crate::Requ;
+use crate::RespFull;
+use crate::StreamBody;
+use bytes::Bytes;
+use futures_util::Stream;
 use futures_util::TryStreamExt;
 use http::Method;
+use http::Response;
 use http::StatusCode;
-use hyper::Body;
-use hyper::Request;
-use hyper::Response;
+use http_body_util::BodyExt;
+use httpclient::httpclient::http_body_util;
+use httpclient::RespBox;
 use netpod::get_url_query_pairs;
 use netpod::log::*;
 use netpod::DiskIoTune;
@@ -57,7 +64,7 @@ impl DownloadHandler {
         "/api/4/test/download/"
     }
 
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path().starts_with(Self::path_prefix()) {
             Some(Self {})
         } else {
@@ -65,7 +72,15 @@ impl DownloadHandler {
         }
     }
 
-    pub async fn get(&self, req: Request<Body>, ncc: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<RespBox, Error> {
+        if req.method() == Method::GET {
+            self.get(req, node_config).await
+        } else {
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
+        }
+    }
+
+    pub async fn get(&self, req: Requ, ncc: &NodeConfigCached) -> Result<RespBox, Error> {
         let (head, _body) = req.into_parts();
         let p2 = &head.uri.path()[Self::path_prefix().len()..];
         let base = match &ncc.node.sf_databuffer {
@@ -78,15 +93,18 @@ impl DownloadHandler {
         let pp = base.join(p2);
         info!("Try to open {pp:?}");
         let file = tokio::fs::OpenOptions::new().read(true).open(&pp).await?;
-        let s = disk::file_content_stream(pp, file, query.disk_io_tune.clone(), "download").map_ok(|x| x.into_buf());
-        Ok(response(StatusCode::OK).body(Body::wrap_stream(s))?)
-    }
+        let stream =
+            disk::file_content_stream(pp, file, query.disk_io_tune.clone(), "download").map_ok(|x| x.into_buf());
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
-        if req.method() == Method::GET {
-            self.get(req, node_config).await
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
-        }
+        use futures_util::StreamExt;
+        use hyper::body::Frame;
+        let stream = stream.map(|item| item.map(|x| Frame::data(x.freeze())));
+        let body = httpclient::httpclient::http_body_util::StreamBody::new(stream);
+        let body = BodyExt::boxed(body);
+        // let body = http_body_util::combinators::BoxBody::new(body);
+        // let body: StreamBody = Box::pin(body);
+        // let body: Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, err::Error>>>> = Box::pin(body);
+        let res = response(StatusCode::OK).body(body)?;
+        Ok(res)
     }
 }

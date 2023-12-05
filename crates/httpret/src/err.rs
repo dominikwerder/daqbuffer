@@ -99,3 +99,4 @@ impl Convable for hyper::Error {}
 impl Convable for std::array::TryFromSliceError {}
 impl Convable for err::anyhow::Error {}
 impl Convable for crate::RetrievalError {}
+impl Convable for httpclient::Error {}

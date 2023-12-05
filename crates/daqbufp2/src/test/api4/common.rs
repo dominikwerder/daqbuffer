@@ -1,8 +1,5 @@
-use crate::err::ErrConv;
 use chrono::Utc;
 use err::Error;
-use http::StatusCode;
-use hyper::Body;
 use netpod::log::*;
 use netpod::AppendToUrl;
 use netpod::Cluster;
@@ -21,21 +18,8 @@ pub async fn fetch_events_json(query: PlainEventsQuery, cluster: &Cluster) -> Re
     let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    debug!("fetch_events_json  url {}", url);
-    let req = hyper::Request::builder()
-        .method(http::Method::GET)
-        .uri(url.to_string())
-        .header(http::header::ACCEPT, APP_JSON)
-        .body(Body::empty())
-        .ec()?;
-    let client = hyper::Client::new();
-    let res = client.request(req).await.ec()?;
-    if res.status() != StatusCode::OK {
-        error!("client response {:?}", res);
-        return Err(Error::with_msg_no_trace(format!("bad result {res:?}")));
-    }
-    let buf = hyper::body::to_bytes(res.into_body()).await.ec()?;
-    let s = String::from_utf8_lossy(&buf);
+    let res = httpclient::http_get(url, APP_JSON).await?;
+    let s = String::from_utf8_lossy(&res.body);
     let res: JsonValue = serde_json::from_str(&s)?;
     let pretty = serde_json::to_string_pretty(&res)?;
     debug!("fetch_binned_json pretty: {pretty}");
@@ -54,21 +38,8 @@ pub async fn fetch_binned_json(query: BinnedQuery, cluster: &Cluster) -> Result<
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", hp.host, hp.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    debug!("fetch_binned_json  url {}", url);
-    let req = hyper::Request::builder()
-        .method(http::Method::GET)
-        .uri(url.to_string())
-        .header(http::header::ACCEPT, APP_JSON)
-        .body(Body::empty())
-        .ec()?;
-    let client = hyper::Client::new();
-    let res = client.request(req).await.ec()?;
-    if res.status() != StatusCode::OK {
-        error!("client response {:?}", res);
-        return Err(Error::with_msg_no_trace(format!("bad result {res:?}")));
-    }
-    let buf = hyper::body::to_bytes(res.into_body()).await.ec()?;
-    let s = String::from_utf8_lossy(&buf);
+    let res = httpclient::http_get(url, APP_JSON).await?;
+    let s = String::from_utf8_lossy(&res.body);
     let res: JsonValue = serde_json::from_str(&s)?;
     let pretty = serde_json::to_string_pretty(&res)?;
     debug!("fetch_binned_json pretty: {pretty}");

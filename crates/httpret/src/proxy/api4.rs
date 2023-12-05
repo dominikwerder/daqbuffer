@@ -12,7 +12,6 @@ use http::Method;
 use http::Request;
 use http::Response;
 use http::StatusCode;
-use hyper::Body;
 use netpod::log::*;
 use netpod::ChannelSearchQuery;
 use netpod::ChannelSearchResult;

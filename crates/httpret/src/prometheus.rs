@@ -5,6 +5,7 @@ use http::Method;
 use http::Request;
 use http::Response;
 use http::StatusCode;
+use httpclient::read_body_bytes;
 use hyper::server::conn::AddrStream;
 use hyper::service::make_service_fn;
 use hyper::service::service_fn;
@@ -276,7 +277,7 @@ impl QueryHandler {
         info!("{} for {:?}", std::any::type_name::<Self>(), req);
         let url = url::Url::parse(&format!("dummy://{}", &req.uri()));
         info!("/api/v1/query  parsed url: {:?}", url);
-        let body = hyper::body::to_bytes(req.into_body()).await?;
+        let body = read_body_bytes(req.into_body()).await?;
         let body_str = String::from_utf8_lossy(&body);
         info!("/api/v1/query  body_str: {:?}", body_str);
         let formurl = url::Url::parse(&format!("dummy:///?{}", body_str));
@@ -308,7 +309,7 @@ impl QueryRangeHandler {
         info!("{} for {:?}", std::any::type_name::<Self>(), req);
         let url = url::Url::parse(&format!("dummy://{}", &req.uri()));
         info!("/api/v1/query_range  parsed url: {:?}", url);
-        let body = hyper::body::to_bytes(req.into_body()).await?;
+        let body = read_body_bytes(req.into_body()).await?;
         let body_str = String::from_utf8_lossy(&body);
         info!("/api/v1/query_range  body_str: {:?}", body_str);
         let formurl = url::Url::parse(&format!("dummy:///?{}", body_str));

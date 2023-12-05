@@ -1,9 +1,6 @@
-use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
 use chrono::Utc;
 use err::Error;
-use http::StatusCode;
-use hyper::Body;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::timeunits::MS;
@@ -46,20 +43,7 @@ async fn fetch_data_api_python_blob(
     let hp = HostPort::from_node(node0);
     let url = Url::parse(&format!("http://{}:{}/api/1/query", hp.host, hp.port))?;
     info!("http get {}", url);
-    let req = hyper::Request::builder()
-        .method(http::Method::POST)
-        .uri(url.to_string())
-        .header(http::header::CONTENT_TYPE, APP_JSON)
-        //.header(http::header::ACCEPT, APP_JSON)
-        .body(Body::from(query_str))
-        .ec()?;
-    let client = hyper::Client::new();
-    let res = client.request(req).await.ec()?;
-    if res.status() != StatusCode::OK {
-        error!("client response {:?}", res);
-        return Err(Error::with_msg_no_trace(format!("bad result {res:?}")));
-    }
-    let buf = hyper::body::to_bytes(res.into_body()).await.ec()?;
+    let buf = httpclient::http_post(url, APP_JSON, query_str).await?;
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     // TODO add timeout

@@ -1,3 +1,5 @@
+pub mod formatter;
+
 pub use tokio;
 
 use crate::log::*;
@@ -23,7 +25,7 @@ pub fn get_runtime() -> Arc<Runtime> {
     get_runtime_opts(24, 128)
 }
 
-// #[allow(unused)]
+#[allow(unused)]
 fn on_thread_start() {
     let old = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
@@ -86,7 +88,7 @@ where
     E: fmt::Display,
 {
     let runtime = get_runtime();
-    match tracing_init() {
+    match tracing_init(TracingMode::Development) {
         Ok(_) => {}
         Err(()) => {
             eprintln!("ERROR tracing: can not init");
@@ -102,7 +104,7 @@ where
     }
 }
 
-fn tracing_init_inner() -> Result<(), Error> {
+fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
     use tracing_subscriber::Layer;
@@ -110,7 +112,12 @@ fn tracing_init_inner() -> Result<(), Error> {
     let timer = tracing_subscriber::fmt::time::UtcTime::new(
         time::format_description::parse(fmtstr).map_err(|e| format!("{e}"))?,
     );
-    if true {
+    if let TracingMode::Console = mode {
+        // Only async console
+        console_subscriber::init();
+    } else {
+        // #[cfg(DISABLED)]
+        // Logging setup
         let filter = tracing_subscriber::EnvFilter::builder()
             .with_default_directive(tracing::metadata::LevelFilter::INFO.into())
             .from_env()
@@ -121,6 +128,7 @@ fn tracing_init_inner() -> Result<(), Error> {
             .with_target(true)
             .with_ansi(false)
             .with_thread_names(true)
+            .event_format(formatter::FormatTxt)
             .with_filter(filter);
 
         let reg = tracing_subscriber::registry();
@@ -191,11 +199,21 @@ fn tracing_init_inner() -> Result<(), Error> {
     Ok(())
 }
 
-pub fn tracing_init() -> Result<(), ()> {
+pub enum TracingMode {
+    Production,
+    Development,
+    Console,
+}
+
+pub fn tracing_init_testing() -> Result<(), ()> {
+    tracing_init(TracingMode::Development)
+}
+
+pub fn tracing_init(mode: TracingMode) -> Result<(), ()> {
     match INIT_TRACING_ONCE.lock() {
         Ok(mut initg) => {
             if *initg == 0 {
-                match tracing_init_inner() {
+                match tracing_init_inner(mode) {
                     Ok(_) => {
                         *initg = 1;
                     }

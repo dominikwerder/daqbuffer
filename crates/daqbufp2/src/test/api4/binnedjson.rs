@@ -1,9 +1,6 @@
-use crate::err::ErrConv;
 use crate::nodes::require_test_hosts_running;
 use chrono::Utc;
 use err::Error;
-use http::StatusCode;
-use hyper::Body;
 use items_0::test::f32_iter_cmp_near;
 use items_0::test::f64_iter_cmp_near;
 use items_0::WithLen;
@@ -352,24 +349,8 @@ async fn get_binned_json(
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", hp.host, hp.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    debug!("http get {}", url);
-    let req = hyper::Request::builder()
-        .method(http::Method::GET)
-        .uri(url.to_string())
-        .header(http::header::ACCEPT, APP_JSON)
-        .body(Body::empty())
-        .ec()?;
-    let client = hyper::Client::new();
-    let res = client.request(req).await.ec()?;
-    if res.status() != StatusCode::OK {
-        error!("error response {:?}", res);
-        let buf = hyper::body::to_bytes(res.into_body()).await.ec()?;
-        let s = String::from_utf8_lossy(&buf);
-        error!("body of error response: {s}");
-        return Err(Error::with_msg_no_trace(format!("error response")));
-    }
-    let buf = hyper::body::to_bytes(res.into_body()).await.ec()?;
-    let s = String::from_utf8_lossy(&buf);
+    let res = httpclient::http_get(url, APP_JSON).await?;
+    let s = String::from_utf8_lossy(&res.body);
     let res: JsonValue = serde_json::from_str(&s)?;
     let pretty = serde_json::to_string_pretty(&res)?;
     debug!("get_binned_json  pretty {pretty}");

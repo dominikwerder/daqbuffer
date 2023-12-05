@@ -769,7 +769,7 @@ impl BlockingTaskIntoChannel {
                         match tx.send_blocking(Err(Error::with_msg_no_trace(msg))) {
                             Ok(()) => (),
                             Err(e) => {
-                                error!("blocking_task_into_channel can not send into channel {e}");
+                                error!("blocking_task_into_channel can not send Err into channel {e}");
                             }
                         }
                         break;
@@ -783,7 +783,8 @@ impl BlockingTaskIntoChannel {
                         match tx.send_blocking(Ok(item)) {
                             Ok(()) => (),
                             Err(e) => {
-                                error!("blocking_task_into_channel can not send into channel {e}");
+                                // Receiver most likely disconnected.
+                                // error!("blocking_task_into_channel can not send into channel {e}");
                                 break;
                             }
                         }
@@ -793,7 +794,7 @@ impl BlockingTaskIntoChannel {
                     match tx.send_blocking(Err(e.into())) {
                         Ok(()) => (),
                         Err(e) => {
-                            error!("blocking_task_into_channel can not send into channel {e}");
+                            error!("blocking_task_into_channel can not send Err into channel {e}");
                         }
                     }
                     break;

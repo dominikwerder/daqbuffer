@@ -1,12 +1,11 @@
 use crate::err::ErrConv;
+use bytes::Bytes;
 use chrono::DateTime;
 use chrono::Utc;
 use disk::streamlog::Streamlog;
 use err::Error;
 use futures_util::TryStreamExt;
 use http::StatusCode;
-use httpclient::HttpBodyAsAsyncRead;
-use hyper::Body;
 use items_0::streamitem::StreamItem;
 use netpod::log::*;
 use netpod::query::CacheUsage;
@@ -18,7 +17,6 @@ use netpod::SfDbChannel;
 use netpod::APP_OCTET;
 use query::api4::binned::BinnedQuery;
 use streams::frames::inmem::InMemoryFrameStream;
-use streams::frames::inmem::TcpReadAsBytes;
 use url::Url;
 
 pub async fn status(host: String, port: u16) -> Result<(), Error> {
@@ -27,16 +25,16 @@ pub async fn status(host: String, port: u16) -> Result<(), Error> {
     let req = hyper::Request::builder()
         .method(http::Method::GET)
         .uri(uri)
-        .body(Body::empty())
-        .ec()?;
-    let client = hyper::Client::new();
-    let res = client.request(req).await.ec()?;
+        .body(httpclient::Full::new(Bytes::new()))?;
+    let mut client = httpclient::connect_client(req.uri()).await?;
+    let res = client.send_request(req).await?;
     if res.status() != StatusCode::OK {
         error!("Server error  {:?}", res);
         return Err(Error::with_msg(format!("Server error  {:?}", res)));
     }
-    let body = hyper::body::to_bytes(res.into_body()).await.ec()?;
-    let res = String::from_utf8(body.to_vec())?;
+    let (_, body) = res.into_parts();
+    let body = httpclient::read_body_bytes(body).await?;
+    let res = String::from_utf8_lossy(&body);
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     info!("node_status DONE  duration: {} ms", ms);
@@ -75,15 +73,15 @@ pub async fn get_binned(
         .method(http::Method::GET)
         .uri(url.to_string())
         .header(http::header::ACCEPT, APP_OCTET)
-        .body(Body::empty())
+        .body(httpclient::Full::new(Bytes::new()))
         .ec()?;
-    let client = hyper::Client::new();
-    let res = client.request(req).await.ec()?;
+    let mut client = httpclient::connect_client(req.uri()).await?;
+    let res = client.send_request(req).await?;
     if res.status() != StatusCode::OK {
         error!("Server error  {:?}", res);
         let (head, body) = res.into_parts();
-        let buf = hyper::body::to_bytes(body).await.ec()?;
-        let s = String::from_utf8_lossy(&buf);
+        let body = httpclient::read_body_bytes(body).await?;
+        let s = String::from_utf8_lossy(&body);
         return Err(Error::with_msg(format!(
             concat!(
                 "Server error  {:?}\n",
@@ -94,8 +92,9 @@ pub async fn get_binned(
             head, s
         )));
     }
-    let s1 = HttpBodyAsAsyncRead::new(res);
-    let s2 = InMemoryFrameStream::new(TcpReadAsBytes::new(s1), ByteSize::from_kb(8));
+    let (_head, body) = res.into_parts();
+    let inp = httpclient::IncomingStream::new(body);
+    let s2 = InMemoryFrameStream::new(inp, ByteSize::from_kb(8));
     use futures_util::StreamExt;
     use std::future::ready;
     let s3 = s2

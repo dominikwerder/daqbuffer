@@ -10,10 +10,11 @@ path = "src/taskrun.rs"
 [dependencies]
 tokio = { version = "1.32.0", features = ["full", "tracing", "time"] }
 futures-util = "0.3.28"
-tracing = "0.1.37"
+tracing = "0.1.40"
+tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.17", features = ["fmt", "time"] }
 #tracing-loki = { version = "0.2.1", default-features = false, features = ["compat-0-2-1"] }
-console-subscriber = { version = "0.1.10" }
+console-subscriber = { version = "0.2.0" }
 time = { version = "0.3", features = ["formatting"] }
 backtrace = "0.3.56"
 lazy_static = "1.4.0"

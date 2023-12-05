@@ -1,7 +1,10 @@
+use crate::body_empty;
+use crate::body_string;
+use crate::cache::Cache;
 use crate::err::Error;
 use crate::response;
-use async_channel::Receiver;
-use async_channel::Sender;
+use crate::Requ;
+use crate::RespFull;
 use bytes::Buf;
 use bytes::BufMut;
 use bytes::BytesMut;
@@ -10,12 +13,13 @@ use chrono::Utc;
 use futures_util::stream::FuturesOrdered;
 use futures_util::stream::FuturesUnordered;
 use futures_util::FutureExt;
+use http::header;
 use http::Method;
 use http::StatusCode;
 use http::Uri;
-use hyper::Body;
+use httpclient::connect_client;
+use httpclient::read_body_bytes;
 use hyper::Request;
-use hyper::Response;
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::AppendToUrl;
@@ -36,7 +40,6 @@ use std::pin::Pin;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use std::sync::Mutex;
 use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
@@ -49,114 +52,6 @@ use tokio::io::AsyncSeekExt;
 use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
 use url::Url;
-
-struct Dummy;
-
-enum CachePortal<V> {
-    Fresh,
-    Existing(Receiver<Dummy>),
-    Known(V),
-}
-
-impl<V> CachePortal<V> {}
-
-enum CacheEntry<V> {
-    Waiting(SystemTime, Sender<Dummy>, Receiver<Dummy>),
-    Known(SystemTime, V),
-}
-
-impl<V> CacheEntry<V> {
-    fn ts(&self) -> &SystemTime {
-        match self {
-            CacheEntry::Waiting(ts, _, _) => ts,
-            CacheEntry::Known(ts, _) => ts,
-        }
-    }
-}
-
-struct CacheInner<K, V> {
-    map: BTreeMap<K, CacheEntry<V>>,
-}
-
-impl<K, V> CacheInner<K, V>
-where
-    K: Ord,
-{
-    const fn new() -> Self {
-        Self { map: BTreeMap::new() }
-    }
-
-    fn housekeeping(&mut self) {
-        if self.map.len() > 200 {
-            info!("trigger housekeeping with len {}", self.map.len());
-            let mut v: Vec<_> = self.map.iter().map(|(k, v)| (v.ts(), k)).collect();
-            v.sort();
-            let ts0 = v[v.len() / 2].0.clone();
-            //let tsnow = SystemTime::now();
-            //let tscut = tsnow.checked_sub(Duration::from_secs(60 * 10)).unwrap_or(tsnow);
-            self.map.retain(|_k, v| v.ts() >= &ts0);
-            info!("housekeeping kept len {}", self.map.len());
-        }
-    }
-}
-
-struct Cache<K, V> {
-    inner: Mutex<CacheInner<K, V>>,
-}
-
-impl<K, V> Cache<K, V>
-where
-    K: Ord,
-    V: Clone,
-{
-    const fn new() -> Self {
-        Self {
-            inner: Mutex::new(CacheInner::new()),
-        }
-    }
-
-    fn housekeeping(&self) {
-        let mut g = self.inner.lock().unwrap();
-        g.housekeeping();
-    }
-
-    fn portal(&self, key: K) -> CachePortal<V> {
-        use std::collections::btree_map::Entry;
-        let mut g = self.inner.lock().unwrap();
-        g.housekeeping();
-        match g.map.entry(key) {
-            Entry::Vacant(e) => {
-                let (tx, rx) = async_channel::bounded(16);
-                let ret = CachePortal::Fresh;
-                let v = CacheEntry::Waiting(SystemTime::now(), tx, rx);
-                e.insert(v);
-                ret
-            }
-            Entry::Occupied(e) => match e.get() {
-                CacheEntry::Waiting(_ts, _tx, rx) => CachePortal::Existing(rx.clone()),
-                CacheEntry::Known(_ts, v) => CachePortal::Known(v.clone()),
-            },
-        }
-    }
-
-    fn set_value(&self, key: K, val: V) {
-        let mut g = self.inner.lock().unwrap();
-        if let Some(e) = g.map.get_mut(&key) {
-            match e {
-                CacheEntry::Waiting(ts, tx, _rx) => {
-                    let tx = tx.clone();
-                    *e = CacheEntry::Known(*ts, val);
-                    tx.close();
-                }
-                CacheEntry::Known(_ts, _val) => {
-                    error!("set_value  already known");
-                }
-            }
-        } else {
-            error!("set_value  no entry for key");
-        }
-    }
-}
 
 static CACHE: Cache<u64, u64> = Cache::new();
 
@@ -176,26 +71,25 @@ const API_4_MAP_PULSE_URL_PREFIX: &'static str = "/api/4/map/pulse/";
 const MAP_PULSE_LOCAL_TIMEOUT: Duration = Duration::from_millis(8000);
 const MAP_PULSE_QUERY_TIMEOUT: Duration = Duration::from_millis(10000);
 
-async fn make_tables(node_config: &NodeConfigCached) -> Result<(), Error> {
-    let conn = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
+async fn make_tables(pgc: &dbconn::pg::Client) -> Result<(), Error> {
     let sql = "set client_min_messages = 'warning'";
-    conn.execute(sql, &[]).await?;
+    pgc.execute(sql, &[]).await?;
     let sql = "create table if not exists map_pulse_channels (name text, tbmax int)";
-    conn.execute(sql, &[]).await?;
+    pgc.execute(sql, &[]).await?;
     let sql = "create table if not exists map_pulse_files (channel text not null, split int not null, timebin int not null, closed int not null default 0, pulse_min int8 not null, pulse_max int8 not null)";
-    conn.execute(sql, &[]).await?;
+    pgc.execute(sql, &[]).await?;
     let sql = "create unique index if not exists map_pulse_files_ix1 on map_pulse_files (channel, split, timebin)";
-    conn.execute(sql, &[]).await?;
+    pgc.execute(sql, &[]).await?;
     let sql = "alter table map_pulse_files add if not exists upc1 int not null default 0";
-    conn.execute(sql, &[]).await?;
+    pgc.execute(sql, &[]).await?;
     let sql = "alter table map_pulse_files add if not exists hostname text not null default ''";
-    conn.execute(sql, &[]).await?;
+    pgc.execute(sql, &[]).await?;
     let sql = "alter table map_pulse_files add if not exists ks int not null default 2";
-    conn.execute(sql, &[]).await?;
+    pgc.execute(sql, &[]).await?;
     let sql = "create index if not exists map_pulse_files_ix2 on map_pulse_files (hostname)";
-    conn.execute(sql, &[]).await?;
+    pgc.execute(sql, &[]).await?;
     let sql = "set client_min_messages = 'notice'";
-    conn.execute(sql, &[]).await?;
+    pgc.execute(sql, &[]).await?;
     Ok(())
 }
 
@@ -223,12 +117,13 @@ fn timer_channel_names() -> Vec<String> {
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 enum MapfilePath {
     Scalar(PathBuf),
-    Index(PathBuf, PathBuf),
+    Index(PathBuf),
 }
 
-async fn datafiles_for_channel(name: String, node_config: &NodeConfigCached) -> Result<Vec<MapfilePath>, Error> {
+async fn datafiles_for_channel(name: &str, node_config: &NodeConfigCached) -> Result<Vec<MapfilePath>, Error> {
     let mut a = Vec::new();
     let sfc = node_config.node.sf_databuffer.as_ref().unwrap();
+    let data_base_path = &sfc.data_base_path;
     let channel_path = sfc
         .data_base_path
         .join(format!("{}_2", sfc.ksprefix))
@@ -252,34 +147,42 @@ async fn datafiles_for_channel(name: String, node_config: &NodeConfigCached) -> 
         }
         Err(e) => match e.kind() {
             std::io::ErrorKind::NotFound => {
-                let channel_path = sfc
-                    .data_base_path
-                    .join(format!("{}_3", sfc.ksprefix))
-                    .join("byTime")
-                    .join(&name);
-                match tokio::fs::read_dir(&channel_path).await {
-                    Ok(mut rd) => {
-                        while let Ok(Some(entry)) = rd.next_entry().await {
-                            let mut rd2 = tokio::fs::read_dir(entry.path()).await?;
-                            while let Ok(Some(e2)) = rd2.next_entry().await {
-                                let mut rd3 = tokio::fs::read_dir(e2.path()).await?;
-                                while let Ok(Some(e3)) = rd3.next_entry().await {
-                                    if e3.file_name().to_string_lossy().ends_with("_00000_Data_Index") {
-                                        let fns = e3.file_name().to_string_lossy().to_string();
-                                        let path_data = e3.path().parent().unwrap().join(&fns[..fns.len() - 6]);
-                                        let x = MapfilePath::Index(e3.path(), path_data);
-                                        a.push(x);
-                                    }
-                                }
-                            }
+                files_recursive(name, &data_base_path, &sfc.ksprefix, 3, "_00000_Data_Index").await
+            }
+            _ => return Err(e)?,
+        },
+    }
+}
+
+async fn files_recursive(
+    name: &str,
+    data_base_path: &Path,
+    ksprefix: &str,
+    ks: u32,
+    data_file_suffix: &str,
+) -> Result<Vec<MapfilePath>, Error> {
+    let mut a = Vec::new();
+    let channel_path = data_base_path
+        .join(format!("{}_{}", ksprefix, ks))
+        .join("byTime")
+        .join(&name);
+    match tokio::fs::read_dir(&channel_path).await {
+        Ok(mut rd) => {
+            while let Ok(Some(entry)) = rd.next_entry().await {
+                let mut rd2 = tokio::fs::read_dir(entry.path()).await?;
+                while let Ok(Some(e2)) = rd2.next_entry().await {
+                    let mut rd3 = tokio::fs::read_dir(e2.path()).await?;
+                    while let Ok(Some(e3)) = rd3.next_entry().await {
+                        if e3.file_name().to_string_lossy().ends_with(data_file_suffix) {
+                            let x = MapfilePath::Index(e3.path());
+                            a.push(x);
                         }
-                        Ok(a)
                     }
-                    Err(e) => match e.kind() {
-                        _ => return Err(e)?,
-                    },
                 }
             }
+            Ok(a)
+        }
+        Err(e) => match e.kind() {
             _ => return Err(e)?,
         },
     }
@@ -490,7 +393,7 @@ async fn read_chunk_at(mut file: File, pos: u64, chunk_len: Option<u64>) -> Resu
 pub struct IndexFullHttpFunction {}
 
 impl IndexFullHttpFunction {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path().eq("/api/1/map/index/full") {
             Some(Self {})
         } else {
@@ -498,42 +401,90 @@ impl IndexFullHttpFunction {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<RespFull, Error> {
         if req.method() != Method::GET {
-            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
         let ret = match Self::index(false, node_config).await {
-            Ok(msg) => response(StatusCode::OK).body(Body::from(msg))?,
-            Err(e) => response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(format!("{:?}", e)))?,
+            Ok(msg) => response(StatusCode::OK).body(body_string(msg))?,
+            Err(e) => {
+                error!("IndexFullHttpFunction {e}");
+                response(StatusCode::INTERNAL_SERVER_ERROR).body(body_string(format!("{:?}", e)))?
+            }
         };
         Ok(ret)
     }
 
-    pub async fn index_channel(
-        channel_name: String,
-        conn: &dbconn::pg::Client,
+    async fn index(do_print: bool, node_config: &NodeConfigCached) -> Result<String, Error> {
+        // TODO avoid double-insert on central storage.
+        let mut msg = format!("LOG");
+        let pgc = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
+        // TODO remove update of static columns when older clients are removed.
+        let sql = "insert into map_pulse_files (channel, split, timebin, pulse_min, pulse_max, hostname, ks) values ($1, $2, $3, $4, $5, $6, $7) on conflict (channel, split, timebin) do update set pulse_min = $4, pulse_max = $5, upc1 = map_pulse_files.upc1 + 1, hostname = $6";
+        let insert_01 = pgc.prepare(sql).await?;
+        make_tables(&pgc).await?;
+        let chs = timer_channel_names();
+        for channel_name in chs {
+            match Self::index_channel(&channel_name, &pgc, do_print, &insert_01, node_config).await {
+                Ok(m) => {
+                    msg.push_str("\n");
+                    msg.push_str(&m);
+                }
+                Err(e) => {
+                    error!("error while indexing {}  {:?}", channel_name, e);
+                    //return Err(e);
+                }
+            }
+        }
+        Ok(msg)
+    }
+
+    async fn index_channel(
+        channel_name: &str,
+        pgc: &dbconn::pg::Client,
         do_print: bool,
+        insert_01: &dbconn::pg::Statement,
         node_config: &NodeConfigCached,
     ) -> Result<String, Error> {
         let mut msg = format!("Index channel {}", channel_name);
-        let files = datafiles_for_channel(channel_name.clone(), node_config).await?;
+        let files = datafiles_for_channel(channel_name, node_config).await?;
         let mut files = files;
         files.sort();
         let files = files;
         msg = format!("{}\n{:?}", msg, files);
         let mut latest_pair = (0, 0);
-        let n1 = files.len().min(3);
-        let m1 = files.len() - n1;
-        for ch in &files[m1..] {
-            trace!("   index over  {:?}", ch);
-        }
-        for mp in files[m1..].into_iter() {
+        let files_from = files.len() - files.len().min(2);
+        for mp in files[files_from..].into_iter() {
             match mp {
                 MapfilePath::Scalar(path) => {
+                    trace!("Scalar {path:?}");
                     let splitted: Vec<_> = path.to_str().unwrap().split("/").collect();
                     let timebin: u64 = splitted[splitted.len() - 3].parse()?;
                     let split: u64 = splitted[splitted.len() - 2].parse()?;
-                    let file = tokio::fs::OpenOptions::new().read(true).open(&path).await?;
+                    if false {
+                        // Not needed, we any use only the last N files.
+                        // TODO the timebin unit depends on the keyspace.
+                        // In worst case could depend on the current channel config, and could have changed
+                        // at each config change. That would be madness. Luckily, it seems always 1d for ks 2 and 3.
+                        let timebin_dt = Duration::from_secs(60 * 60 * 24 * timebin);
+                        let timebin_ts = SystemTime::UNIX_EPOCH.checked_add(timebin_dt).unwrap();
+                        let tsnow = SystemTime::now();
+                        if timebin_ts + Duration::from_secs(60 * 60 * 24 * 2) < tsnow {
+                            debug!("FILTER PAST {timebin} {path:?}");
+                        } else if timebin_ts > tsnow + Duration::from_secs(60 * 60 * 24 * 2) {
+                            debug!("FILTER FUTU {timebin} {path:?}");
+                        } else {
+                            debug!("KEEP TIMEBI {timebin} {path:?}");
+                        }
+                    }
+                    let file = match tokio::fs::OpenOptions::new().read(true).open(&path).await {
+                        Ok(x) => x,
+                        Err(e) => {
+                            let e = Error::with_msg_no_trace(format!("MapfilePath::Scalar {e} {path:?}"));
+                            error!("{e}");
+                            return Err(e);
+                        }
+                    };
                     let (r2, file) = read_first_chunk(file).await?;
                     msg = format!("{}\n{:?}", msg, r2);
                     if let Some(r2) = r2 {
@@ -543,10 +494,8 @@ impl IndexFullHttpFunction {
                             if r3.pulse > latest_pair.0 {
                                 latest_pair = (r3.pulse, r3.ts);
                             }
-                            // TODO remove update of static columns when older clients are removed.
-                            let sql = "insert into map_pulse_files (channel, split, timebin, pulse_min, pulse_max, hostname) values ($1, $2, $3, $4, $5, $6) on conflict (channel, split, timebin) do update set pulse_min = $4, pulse_max = $5, upc1 = map_pulse_files.upc1 + 1, hostname = $6";
-                            conn.execute(
-                                sql,
+                            pgc.execute(
+                                insert_01,
                                 &[
                                     &channel_name,
                                     &(split as i32),
@@ -554,21 +503,42 @@ impl IndexFullHttpFunction {
                                     &(r2.pulse as i64),
                                     &(r3.pulse as i64),
                                     &node_config.node.host,
+                                    &(2 as i32),
                                 ],
                             )
                             .await?;
+                        } else {
+                            warn!("could not find last event chunk in {path:?}");
                         }
                     } else {
                         warn!("could not find first event chunk in {path:?}");
                     }
                 }
-                MapfilePath::Index(path_index, path_data) => {
+                MapfilePath::Index(path_index) => {
                     trace!("Index {path_index:?}");
+                    let path_data = {
+                        let fns = path_index.file_name().unwrap().to_str().unwrap();
+                        path_index.parent().unwrap().join(&fns[..fns.len() - 6])
+                    };
                     let splitted: Vec<_> = path_index.to_str().unwrap().split("/").collect();
                     let timebin: u64 = splitted[splitted.len() - 3].parse()?;
                     let split: u64 = splitted[splitted.len() - 2].parse()?;
-                    let file_index = tokio::fs::OpenOptions::new().read(true).open(&path_index).await?;
-                    let file_data = tokio::fs::OpenOptions::new().read(true).open(&path_data).await?;
+                    let file_index = match tokio::fs::OpenOptions::new().read(true).open(&path_index).await {
+                        Ok(x) => x,
+                        Err(e) => {
+                            let e = Error::with_msg_no_trace(format!("MapfilePath::Index {e} {path_index:?}"));
+                            error!("{e}");
+                            return Err(e);
+                        }
+                    };
+                    let file_data = match tokio::fs::OpenOptions::new().read(true).open(&path_data).await {
+                        Ok(x) => x,
+                        Err(e) => {
+                            let e = Error::with_msg_no_trace(format!("MapfilePath::Index {e} {path_data:?}"));
+                            error!("{e}");
+                            return Err(e);
+                        }
+                    };
                     let (r2, file_index, file_data) = read_first_index_chunk(file_index, file_data).await?;
                     msg = format!("{}\n{:?}", msg, r2);
                     if let Some(r2) = r2 {
@@ -578,10 +548,8 @@ impl IndexFullHttpFunction {
                             if r3.pulse > latest_pair.0 {
                                 latest_pair = (r3.pulse, r3.ts);
                             }
-                            // TODO remove update of static columns when older clients are removed.
-                            let sql = "insert into map_pulse_files (channel, split, timebin, pulse_min, pulse_max, hostname, ks) values ($1, $2, $3, $4, $5, $6, 3) on conflict (channel, split, timebin) do update set pulse_min = $4, pulse_max = $5, upc1 = map_pulse_files.upc1 + 1, hostname = $6";
-                            conn.execute(
-                                sql,
+                            pgc.execute(
+                                insert_01,
                                 &[
                                     &channel_name,
                                     &(split as i32),
@@ -589,12 +557,15 @@ impl IndexFullHttpFunction {
                                     &(r2.pulse as i64),
                                     &(r3.pulse as i64),
                                     &node_config.node.host,
+                                    &(3 as i32),
                                 ],
                             )
                             .await?;
+                        } else {
+                            warn!("could not find last index chunk in {path_index:?}");
                         }
                     } else {
-                        warn!("could not find first event chunk in {path_index:?}");
+                        warn!("could not find first index chunk in {path_index:?}");
                     }
                 }
             }
@@ -605,27 +576,6 @@ impl IndexFullHttpFunction {
                 || channel_name.contains("SINSB03")
             {
                 info!("latest for {channel_name}  {latest_pair:?}");
-            }
-        }
-        Ok(msg)
-    }
-
-    pub async fn index(do_print: bool, node_config: &NodeConfigCached) -> Result<String, Error> {
-        // TODO avoid double-insert on central storage.
-        let mut msg = format!("LOG");
-        make_tables(node_config).await?;
-        let conn = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
-        let chs = timer_channel_names();
-        for channel_name in &chs[..] {
-            match Self::index_channel(channel_name.clone(), &conn, do_print, node_config).await {
-                Ok(m) => {
-                    msg.push_str("\n");
-                    msg.push_str(&m);
-                }
-                Err(e) => {
-                    error!("error while indexing {}  {:?}", channel_name, e);
-                    //return Err(e);
-                }
             }
         }
         Ok(msg)
@@ -728,7 +678,7 @@ impl UpdateTask {
     /// Returns a guard which must be kept alive as long as the service should run.
     /// Should instead of this use a system-timer and call the rest api.
     #[allow(unused)]
-    fn new(node_config: NodeConfigCached) -> UpdateTaskGuard {
+    fn _new(node_config: NodeConfigCached) -> UpdateTaskGuard {
         let do_abort = Arc::new(AtomicUsize::default());
         let task = Self {
             do_abort: do_abort.clone(),
@@ -950,7 +900,7 @@ impl MapPulseScyllaHandler {
         "/api/4/scylla/map/pulse/"
     }
 
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path().starts_with(Self::prefix()) {
             Some(Self {})
         } else {
@@ -958,9 +908,9 @@ impl MapPulseScyllaHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<RespFull, Error> {
         if req.method() != Method::GET {
-            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
         let urls = format!("dummy://{}", req.uri());
         let url = url::Url::parse(&urls)?;
@@ -995,14 +945,14 @@ impl MapPulseScyllaHandler {
             channels.push(ch.into());
         }
         let ret = LocalMap { pulse, tss, channels };
-        Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
+        Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&ret)?))?)
     }
 }
 
 pub struct MapPulseLocalHttpFunction {}
 
 impl MapPulseLocalHttpFunction {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path().starts_with(MAP_PULSE_LOCAL_URL_PREFIX) {
             Some(Self {})
         } else {
@@ -1010,9 +960,9 @@ impl MapPulseLocalHttpFunction {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<RespFull, Error> {
         if req.method() != Method::GET {
-            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
         let urls = req.uri().to_string();
         let pulse: u64 = urls[MAP_PULSE_LOCAL_URL_PREFIX.len()..]
@@ -1042,9 +992,6 @@ impl MapPulseLocalHttpFunction {
                 dt.as_secs_f32() * 1e3
             );
         }
-        //let mut msg = String::new();
-        //use std::fmt::Write;
-        //write!(&mut msg, "cands: {:?}\n", cands)?;
         let mut futs = FuturesUnordered::new();
         for (ch, hostname, tb, sp, ks) in cands {
             futs.push(Self::search(pulse, ch, hostname, tb, sp, ks, node_config));
@@ -1067,7 +1014,7 @@ impl MapPulseLocalHttpFunction {
             }
         }
         let ret = LocalMap { pulse, tss, channels };
-        Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
+        Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&ret)?))?)
     }
 
     async fn search(
@@ -1088,57 +1035,68 @@ impl MapPulseLocalHttpFunction {
             ch
         );
         if ks == 2 {
-            match disk::paths::data_path_tb(ks, &ch, tb, 86400000, sp, &node_config.node) {
-                Ok(path) => {
-                    //write!(&mut msg, "data_path_tb:  {:?}\n", path)?;
-                    match search_pulse(pulse, &path).await {
-                        Ok(ts) => {
-                            //write!(&mut msg, "SEARCH:  {:?}  for {}\n", ts, pulse)?;
-                            if let Some(ts) = ts {
-                                info!("Found in  ks {}  sp {}  tb {}  ch {}  ts {}", ks, sp, tb, ch, ts);
-                                Ok(Some((ts, ch)))
-                            } else {
-                                Ok(None)
-                            }
-                        }
-                        Err(e) => {
-                            warn!("can not map pulse with {ch} {sp} {tb} {e}");
-                            return Err(e);
+            match disk::paths::data_path_tb(ks, &ch, tb, 1000 * 60 * 60 * 24, sp, &node_config.node) {
+                Ok(path) => match search_pulse(pulse, &path).await {
+                    Ok(ts) => {
+                        if let Some(ts) = ts {
+                            info!("pulse {pulse}  found in  ks {ks}  sp {sp}  tb {tb}  ch {ch}  ts {ts}");
+                            Ok(Some((ts, ch)))
+                        } else {
+                            Ok(None)
                         }
                     }
-                }
+                    Err(e) => {
+                        let e = Error::with_msg_no_trace(format!(
+                            "pulse {pulse}  can not map  ks {ks}  sp {sp}  tb {tb}  ch {ch}  {e}"
+                        ));
+                        error!("{e}");
+                        return Err(e);
+                    }
+                },
                 Err(e) => {
-                    warn!("can not get path to files {ch} {e}");
-                    return Err(e)?;
+                    let e = Error::with_msg_no_trace(format!(
+                        "pulse {pulse}  no path  ks {ks}  sp {sp}  tb {tb}  ch {ch}  {e}"
+                    ));
+                    error!("{e}");
+                    return Err(e);
                 }
             }
         } else if ks == 3 {
-            match disk::paths::data_path_tb(ks, &ch, tb, 86400000, sp, &node_config.node) {
-                Ok(path) => {
-                    //write!(&mut msg, "data_path_tb:  {:?}\n", path)?;
-                    match search_index_pulse(pulse, &path).await {
-                        Ok(ts) => {
-                            //write!(&mut msg, "SEARCH:  {:?}  for {}\n", ts, pulse)?;
-                            if let Some(ts) = ts {
-                                info!("Found in  ks {}  sp {}  tb {}  ch {}  ts {}", ks, sp, tb, ch, ts);
-                                Ok(Some((ts, ch)))
-                            } else {
-                                Ok(None)
-                            }
-                        }
-                        Err(e) => {
-                            warn!("can not map pulse with {ch} {sp} {tb} {e}");
-                            return Err(e);
+            match disk::paths::data_path_tb(ks, &ch, tb, 1000 * 60 * 60 * 24, sp, &node_config.node) {
+                Ok(path) => match search_index_pulse(pulse, &path).await {
+                    Ok(ts) => {
+                        if let Some(ts) = ts {
+                            info!(
+                                "pulse {}  found in  ks {}  sp {}  tb {}  ch {}  ts {}",
+                                pulse, ks, sp, tb, ch, ts
+                            );
+                            Ok(Some((ts, ch)))
+                        } else {
+                            Ok(None)
                         }
                     }
-                }
+                    Err(e) => {
+                        let e = Error::with_msg_no_trace(format!(
+                            "pulse {pulse}  can not map  ks {ks}  sp {sp}  tb {tb}  ch {ch}  {e}"
+                        ));
+                        error!("{e}");
+                        return Err(e);
+                    }
+                },
                 Err(e) => {
-                    warn!("can not get path to files {ch} {e}");
-                    return Err(e)?;
+                    let e = Error::with_msg_no_trace(format!(
+                        "pulse {pulse}  no path  ks {ks}  sp {sp}  tb {tb}  ch {ch}  {e}"
+                    ));
+                    error!("{e}");
+                    return Err(e);
                 }
             }
         } else {
-            return Err(Error::with_msg_no_trace(format!("bad keyspace {ks}")));
+            let e = Error::with_msg_no_trace(format!(
+                "pulse {pulse}  bad keyspace  ks {ks}  sp {sp}  tb {tb}  ch {ch}"
+            ));
+            error!("{e}");
+            return Err(e);
         }
     }
 }
@@ -1153,7 +1111,7 @@ pub struct TsHisto {
 pub struct MapPulseHistoHttpFunction {}
 
 impl MapPulseHistoHttpFunction {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path().starts_with(MAP_PULSE_HISTO_URL_PREFIX) {
             Some(Self {})
         } else {
@@ -1161,14 +1119,14 @@ impl MapPulseHistoHttpFunction {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<RespFull, Error> {
         if req.method() != Method::GET {
-            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
         let urls = format!("{}", req.uri());
         let pulse: u64 = urls[MAP_PULSE_HISTO_URL_PREFIX.len()..].parse()?;
         let ret = Self::histo(pulse, node_config).await?;
-        Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
+        Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&ret)?))?)
     }
 
     pub async fn histo(pulse: u64, node_config: &NodeConfigCached) -> Result<TsHisto, Error> {
@@ -1179,12 +1137,21 @@ impl MapPulseHistoHttpFunction {
                 node.host, node.port, MAP_PULSE_LOCAL_URL_PREFIX, pulse
             );
             let uri: Uri = s.parse()?;
-            let req = Request::get(uri)
+            let req = Request::get(&uri)
+                .header(header::HOST, uri.host().unwrap())
                 .header("x-req-from", &node_config.node.host)
-                .body(Body::empty())?;
-            let fut = hyper::Client::new().request(req);
-            //let fut = hyper::Client::new().get(uri);
-            let fut = tokio::time::timeout(MAP_PULSE_LOCAL_TIMEOUT, fut);
+                .body(body_empty())?;
+            let fut = async move {
+                match connect_client(req.uri()).await {
+                    Ok(mut client) => {
+                        let fut = client.send_request(req);
+                        tokio::time::timeout(MAP_PULSE_LOCAL_TIMEOUT, fut)
+                            .await
+                            .map(|x| x.map_err(Error::from_to_string))
+                    }
+                    Err(e) => Ok(Err(Error::from_to_string(e))),
+                }
+            };
             futs.push_back(fut);
         }
         use futures_util::stream::StreamExt;
@@ -1192,7 +1159,7 @@ impl MapPulseHistoHttpFunction {
         while let Some(futres) = futs.next().await {
             match futres {
                 Ok(res) => match res {
-                    Ok(res) => match hyper::body::to_bytes(res.into_body()).await {
+                    Ok(res) => match read_body_bytes(res.into_body()).await {
                         Ok(body) => match serde_json::from_slice::<LocalMap>(&body) {
                             Ok(lm) => {
                                 for ts in lm.tss {
@@ -1227,6 +1194,7 @@ impl MapPulseHistoHttpFunction {
             tss: map.keys().map(|j| *j).collect(),
             counts: map.values().map(|j| *j).collect(),
         };
+        info!("pulse {pulse}  histo {ret:?}");
         Ok(ret)
     }
 }
@@ -1234,7 +1202,7 @@ impl MapPulseHistoHttpFunction {
 pub struct MapPulseHttpFunction {}
 
 impl MapPulseHttpFunction {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path().starts_with(MAP_PULSE_URL_PREFIX) {
             Some(Self {})
         } else {
@@ -1242,16 +1210,16 @@ impl MapPulseHttpFunction {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<RespFull, Error> {
+        use crate::cache::CachePortal;
         if req.method() != Method::GET {
-            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
         trace!("MapPulseHttpFunction  handle  uri: {:?}", req.uri());
         let urls = format!("{}", req.uri());
         let pulse: u64 = urls[MAP_PULSE_URL_PREFIX.len()..].parse()?;
         match CACHE.portal(pulse) {
             CachePortal::Fresh => {
-                trace!("value not yet in cache  pulse {pulse}");
                 let histo = MapPulseHistoHttpFunction::histo(pulse, node_config).await?;
                 let mut i1 = 0;
                 let mut max = 0;
@@ -1264,9 +1232,9 @@ impl MapPulseHttpFunction {
                 if max > 0 {
                     let val = histo.tss[i1];
                     CACHE.set_value(pulse, val);
-                    Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&val)?))?)
+                    Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&val)?))?)
                 } else {
-                    Ok(response(StatusCode::NO_CONTENT).body(Body::empty())?)
+                    Ok(response(StatusCode::NO_CONTENT).body(body_empty())?)
                 }
             }
             CachePortal::Existing(rx) => {
@@ -1274,30 +1242,27 @@ impl MapPulseHttpFunction {
                 match rx.recv().await {
                     Ok(_) => {
                         error!("should never recv from existing operation  pulse {pulse}");
-                        Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
+                        Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
                     }
-                    Err(_e) => {
-                        trace!("woken up while value wait  pulse {pulse}");
-                        match CACHE.portal(pulse) {
-                            CachePortal::Known(val) => {
-                                info!("good, value after wakeup  pulse {pulse}");
-                                Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&val)?))?)
-                            }
-                            CachePortal::Fresh => {
-                                error!("woken up, but portal fresh  pulse {pulse}");
-                                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
-                            }
-                            CachePortal::Existing(..) => {
-                                error!("woken up, but portal existing  pulse {pulse}");
-                                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
-                            }
+                    Err(_e) => match CACHE.portal(pulse) {
+                        CachePortal::Known(ts) => {
+                            info!("pulse {pulse}  known from cache  ts {ts}");
+                            Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&ts)?))?)
                         }
-                    }
+                        CachePortal::Fresh => {
+                            error!("pulse {pulse}  woken up, but fresh");
+                            Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
+                        }
+                        CachePortal::Existing(..) => {
+                            error!("pulse {pulse}  woken up, but existing");
+                            Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
+                        }
+                    },
                 }
             }
-            CachePortal::Known(val) => {
-                trace!("value already in cache  pulse {pulse}  ts {val}");
-                Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&val)?))?)
+            CachePortal::Known(ts) => {
+                info!("pulse {pulse}  in cache  ts {ts}");
+                Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&ts)?))?)
             }
         }
     }
@@ -1306,7 +1271,7 @@ impl MapPulseHttpFunction {
 pub struct Api4MapPulseHttpFunction {}
 
 impl Api4MapPulseHttpFunction {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path().starts_with(API_4_MAP_PULSE_URL_PREFIX) {
             Some(Self {})
         } else {
@@ -1319,6 +1284,7 @@ impl Api4MapPulseHttpFunction {
     }
 
     pub async fn find_timestamp(q: MapPulseQuery, ncc: &NodeConfigCached) -> Result<Option<u64>, Error> {
+        use crate::cache::CachePortal;
         let pulse = q.pulse;
         let res = match CACHE.portal(pulse) {
             CachePortal::Fresh => {
@@ -1377,20 +1343,20 @@ impl Api4MapPulseHttpFunction {
         res
     }
 
-    pub async fn handle(&self, req: Request<Body>, ncc: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, ncc: &NodeConfigCached) -> Result<RespFull, Error> {
         if req.method() != Method::GET {
-            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
         let ts1 = Instant::now();
         trace!("Api4MapPulseHttpFunction  handle  uri: {:?}", req.uri());
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let q = MapPulseQuery::from_url(&url)?;
         let ret = match Self::find_timestamp(q, ncc).await {
-            Ok(Some(val)) => Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&val)?))?),
-            Ok(None) => Ok(response(StatusCode::NO_CONTENT).body(Body::empty())?),
+            Ok(Some(val)) => Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&val)?))?),
+            Ok(None) => Ok(response(StatusCode::NO_CONTENT).body(body_empty())?),
             Err(e) => {
                 error!("find_timestamp {e}");
-                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
+                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
             }
         };
         let ts2 = Instant::now();
@@ -1416,7 +1382,7 @@ impl Api4MapPulse2HttpFunction {
         "/api/4/map/pulse-v2/"
     }
 
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path().starts_with(Self::path_prefix()) {
             Some(Self {})
         } else {
@@ -1428,9 +1394,9 @@ impl Api4MapPulse2HttpFunction {
         path.starts_with(Self::path_prefix())
     }
 
-    pub async fn handle(&self, req: Request<Body>, ncc: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, ncc: &NodeConfigCached) -> Result<RespFull, Error> {
         if req.method() != Method::GET {
-            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
         let ts1 = Instant::now();
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
@@ -1446,12 +1412,12 @@ impl Api4MapPulse2HttpFunction {
                     .format(DATETIME_FMT_9MS)
                     .to_string();
                 let res = Api4MapPulse2Response { sec, ns, datetime };
-                Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&res)?))?)
+                Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&res)?))?)
             }
-            Ok(None) => Ok(response(StatusCode::NO_CONTENT).body(Body::empty())?),
+            Ok(None) => Ok(response(StatusCode::NO_CONTENT).body(body_empty())?),
             Err(e) => {
                 error!("find_timestamp {e}");
-                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
+                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
             }
         };
         let ts2 = Instant::now();
@@ -1466,7 +1432,7 @@ impl Api4MapPulse2HttpFunction {
 pub struct MarkClosedHttpFunction {}
 
 impl MarkClosedHttpFunction {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path().starts_with(MAP_PULSE_MARK_CLOSED_URL_PREFIX) {
             Some(Self {})
         } else {
@@ -1474,19 +1440,19 @@ impl MarkClosedHttpFunction {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<RespFull, Error> {
         if req.method() != Method::GET {
-            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
         info!("MarkClosedHttpFunction  handle  uri: {:?}", req.uri());
         match MarkClosedHttpFunction::mark_closed(node_config).await {
             Ok(_) => {
-                let ret = response(StatusCode::OK).body(Body::empty())?;
+                let ret = response(StatusCode::OK).body(body_empty())?;
                 Ok(ret)
             }
             Err(e) => {
                 let msg = format!("{:?}", e);
-                let ret = response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::from(msg))?;
+                let ret = response(StatusCode::INTERNAL_SERVER_ERROR).body(body_string(msg))?;
                 Ok(ret)
             }
         }

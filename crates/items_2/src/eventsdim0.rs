@@ -1091,7 +1091,7 @@ mod test_frame {
 
     #[test]
     fn events_serialize() {
-        taskrun::tracing_init().unwrap();
+        taskrun::tracing_init_testing().unwrap();
         let mut events = EventsDim0::empty();
         events.push(123, 234, 55f32);
         let events = events;

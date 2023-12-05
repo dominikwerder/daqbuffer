@@ -1,11 +1,16 @@
+use crate::body_empty;
+use crate::body_string;
 use crate::err::Error;
 use crate::response;
+use crate::Requ;
+use crate::RespFull;
 use futures_util::select;
 use futures_util::FutureExt;
 use http::Method;
 use http::StatusCode;
-use hyper::Body;
-use hyper::Client;
+use httpclient::connect_client;
+use httpclient::read_body_bytes;
+use hyper::body::Incoming;
 use hyper::Request;
 use hyper::Response;
 use netpod::log::*;
@@ -34,24 +39,14 @@ struct GatherHost {
     inst: String,
 }
 
-async fn process_answer(res: Response<Body>) -> Result<JsonValue, Error> {
-    let (pre, mut body) = res.into_parts();
+async fn process_answer(res: Response<hyper::body::Incoming>) -> Result<JsonValue, Error> {
+    let (pre, body) = res.into_parts();
     if pre.status != StatusCode::OK {
-        use hyper::body::HttpBody;
-        if let Some(c) = body.data().await {
-            let c: bytes::Bytes = c?;
-            let s1 = String::from_utf8(c.to_vec())?;
-            Ok(JsonValue::String(format!(
-                "status {}  body {}",
-                pre.status.as_str(),
-                s1
-            )))
-        } else {
-            Ok(JsonValue::String(format!("status {}", pre.status.as_str())))
-        }
+        let buf = read_body_bytes(body).await?;
+        let s = String::from_utf8(buf.to_vec())?;
+        Ok(JsonValue::String(format!("status {}  body {}", pre.status.as_str(), s)))
     } else {
-        let body: hyper::Body = body;
-        let body_all = hyper::body::to_bytes(body).await?;
+        let body_all = read_body_bytes(body).await?;
         let val = match serde_json::from_slice(&body_all) {
             Ok(k) => k,
             Err(_e) => JsonValue::String(String::from_utf8(body_all.to_vec())?),
@@ -60,62 +55,9 @@ async fn process_answer(res: Response<Body>) -> Result<JsonValue, Error> {
     }
 }
 
-pub async fn unused_gather_json_from_hosts(req: Request<Body>, pathpre: &str) -> Result<Response<Body>, Error> {
-    let (part_head, part_body) = req.into_parts();
-    let bodyslice = hyper::body::to_bytes(part_body).await?;
-    let gather_from: GatherFrom = serde_json::from_slice(&bodyslice)?;
-    let mut spawned = vec![];
-    let uri = part_head.uri;
-    let path_post = &uri.path()[pathpre.len()..];
-    for gh in gather_from.hosts {
-        let uri = format!("http://{}:{}/{}", gh.host, gh.port, path_post);
-        let req = Request::builder().method(Method::GET).uri(uri);
-        let req = if gh.inst.len() > 0 {
-            req.header("retrieval_instance", &gh.inst)
-        } else {
-            req
-        };
-        let req = req.header(http::header::ACCEPT, APP_JSON);
-        let req = req.body(Body::empty());
-        let task = tokio::spawn(async move {
-            select! {
-              _ = sleep(Duration::from_millis(1500)).fuse() => {
-                Err(Error::with_msg_no_trace(format!("timeout")))
-              }
-              res = Client::new().request(req?).fuse() => Ok(process_answer(res?).await?)
-            }
-        });
-        spawned.push((gh.clone(), task));
-    }
-    #[derive(Serialize)]
-    struct Hres {
-        gh: GatherHost,
-        res: JsonValue,
-    }
-    #[derive(Serialize)]
-    struct Jres {
-        hosts: Vec<Hres>,
-    }
-    let mut a = vec![];
-    for tr in spawned {
-        let res = match tr.1.await {
-            Ok(k) => match k {
-                Ok(k) => k,
-                Err(e) => JsonValue::String(format!("ERROR({:?})", e)),
-            },
-            Err(e) => JsonValue::String(format!("ERROR({:?})", e)),
-        };
-        a.push(Hres { gh: tr.0, res });
-    }
-    let res = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, APP_JSON)
-        .body(serde_json::to_string(&Jres { hosts: a })?.into())?;
-    Ok(res)
-}
-
-pub async fn gather_get_json(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+pub async fn gather_get_json(req: Requ, node_config: &NodeConfigCached) -> Result<RespFull, Error> {
     let (head, body) = req.into_parts();
-    let _bodyslice = hyper::body::to_bytes(body).await?;
+    let _bodyslice = read_body_bytes(body).await?;
     let pathpre = "/api/4/gather/";
     let pathsuf = &head.uri.path()[pathpre.len()..];
     let spawned: Vec<_> = node_config
@@ -123,20 +65,35 @@ pub async fn gather_get_json(req: Request<Body>, node_config: &NodeConfigCached)
         .cluster
         .nodes
         .iter()
-        .map(|node| {
+        .filter_map(|node| {
             let uri = format!("http://{}:{}/api/4/{}", node.host, node.port, pathsuf);
             let req = Request::builder().method(Method::GET).uri(uri);
             let req = req.header(http::header::ACCEPT, APP_JSON);
-            let req = req.body(Body::empty());
-            let task = tokio::spawn(async move {
-                select! {
-                  _ = sleep(Duration::from_millis(1500)).fuse() => {
-                    Err(Error::with_msg_no_trace(format!("timeout")))
-                  }
-                  res = Client::new().request(req?).fuse() => Ok(process_answer(res?).await?)
+            match req.body(body_empty()) {
+                Ok(req) => {
+                    let task = tokio::spawn(async move {
+                        select! {
+                          _ = sleep(Duration::from_millis(1500)).fuse() => {
+                            Err(Error::with_msg_no_trace(format!("timeout")))
+                            }
+                            res = async move {
+                                let mut client = if let Ok(x) = connect_client(req.uri()).await {x}
+                                else { return Err(Error::with_msg("can not make request")); };
+                                let res = if let Ok(x) = client.send_request(req).await { x }
+                                else { return Err(Error::with_msg("can not make request")); };
+                                Ok(res)
+                            }.fuse() => {
+                                Ok(process_answer(res?).await?)
+                            }
+                        }
+                    });
+                    Some((node.clone(), task))
                 }
-            });
-            (node.clone(), task)
+                Err(e) => {
+                    error!("bad request: {e}");
+                    None
+                }
+            }
         })
         .collect();
     #[derive(Serialize)]
@@ -148,7 +105,7 @@ pub async fn gather_get_json(req: Request<Body>, node_config: &NodeConfigCached)
     struct Jres {
         hosts: Vec<Hres>,
     }
-    let mut a = vec![];
+    let mut a = Vec::new();
     for (node, jh) in spawned {
         let res = match jh.await {
             Ok(k) => match k {
@@ -182,7 +139,7 @@ pub struct SubRes<T> {
 pub async fn gather_get_json_generic<SM, NT, FT, OUT>(
     _method: http::Method,
     urls: Vec<Url>,
-    bodies: Vec<Option<Body>>,
+    bodies: Vec<Option<String>>,
     tags: Vec<String>,
     nt: NT,
     ft: FT,
@@ -192,7 +149,7 @@ pub async fn gather_get_json_generic<SM, NT, FT, OUT>(
 ) -> Result<OUT, Error>
 where
     SM: Send + 'static,
-    NT: Fn(String, Response<Body>) -> Pin<Box<dyn Future<Output = Result<SubRes<SM>, Error>> + Send>>
+    NT: Fn(String, Response<Incoming>) -> Pin<Box<dyn Future<Output = Result<SubRes<SM>, Error>> + Send>>
         + Send
         + Sync
         + Copy
@@ -211,7 +168,7 @@ where
         .into_iter()
         .zip(bodies.into_iter())
         .zip(tags.into_iter())
-        .map(move |((url, body), tag)| {
+        .filter_map(move |((url, body), tag)| {
             info!("Try gather from {}", url);
             let url_str = url.as_str();
             let req = if body.is_some() {
@@ -226,29 +183,43 @@ where
                 req
             };
             let body = match body {
-                None => Body::empty(),
-                Some(body) => body,
+                None => body_empty(),
+                Some(body) => body_string(body),
             };
-            let req = req.body(body);
-            let tag2 = tag.clone();
-            let jh = tokio::spawn(async move {
-                select! {
-                    _ = sleep(timeout + extra_timeout).fuse() => {
-                        error!("PROXY TIMEOUT");
-                        Err(Error::with_msg_no_trace(format!("timeout")))
-                    }
-                    res = {
-                        let client = Client::new();
-                        client.request(req?).fuse()
-                    } => {
-                        info!("received result in time");
-                        let ret = nt(tag2, res?).await?;
-                        info!("transformed result in time");
-                        Ok(ret)
-                    }
+            match req.body(body) {
+                Ok(req) => {
+                    let tag2 = tag.clone();
+                    let jh = tokio::spawn(async move {
+                        select! {
+                            _ = sleep(timeout + extra_timeout).fuse() => {
+                                error!("PROXY TIMEOUT");
+                                Err(Error::with_msg_no_trace(format!("timeout")))
+                            }
+                            res = async move {
+                                let mut client = match connect_client(req.uri()).await {
+                                    Ok(x) => x,
+                                    Err(e) => return Err(Error::from_to_string(e)),
+                                };
+                                let res = match client.send_request(req).await {
+                                    Ok(x) => x,
+                                    Err(e) => return Err(Error::from_to_string(e)),
+                                };
+                                Ok(res)
+                            }.fuse() => {
+                                info!("received result in time");
+                                let ret = nt(tag2, res?).await?;
+                                info!("transformed result in time");
+                                Ok(ret)
+                            }
+                        }
+                    });
+                    Some((url, tag, jh))
                 }
-            });
-            (url, tag, jh)
+                Err(e) => {
+                    error!("bad request: {e}");
+                    None
+                }
+            }
         })
         .collect();
     let mut a = Vec::new();

@@ -7,6 +7,7 @@ pub mod pg {
     pub use tokio_postgres::Client;
     pub use tokio_postgres::Error;
     pub use tokio_postgres::NoTls;
+    pub use tokio_postgres::Statement;
 }
 
 use err::anyhow;

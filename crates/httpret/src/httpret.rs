@@ -1,11 +1,13 @@
 pub mod api1;
 pub mod api4;
 pub mod bodystream;
+pub mod cache;
 pub mod channel_status;
 pub mod channelconfig;
 pub mod download;
 pub mod err;
 pub mod gather;
+#[cfg(DISABLED)]
 pub mod prometheus;
 pub mod proxy;
 pub mod pulsemap;
@@ -17,18 +19,19 @@ use crate::err::Error;
 use crate::gather::gather_get_json;
 use ::err::thiserror;
 use ::err::ThisError;
+use bytes::Bytes;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::StreamExt;
 use http::Method;
 use http::StatusCode;
-use hyper::server::conn::AddrStream;
-use hyper::server::Server;
-use hyper::service::make_service_fn;
+use http_body_util::combinators::BoxBody;
+use http_body_util::Full;
+use hyper::body::Incoming;
 use hyper::service::service_fn;
-use hyper::Body;
 use hyper::Request;
 use hyper::Response;
+use hyper_util::rt::TokioIo;
 use net::SocketAddr;
 use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
@@ -56,6 +59,7 @@ use std::time::SystemTime;
 use task::Context;
 use task::Poll;
 use taskrun::tokio;
+use taskrun::tokio::net::TcpListener;
 
 pub const PSI_DAQBUFFER_SERVICE_MARK: &'static str = "PSI-Daqbuffer-Service-Mark";
 pub const PSI_DAQBUFFER_SEEN_URL: &'static str = "PSI-Daqbuffer-Seen-Url";
@@ -82,6 +86,7 @@ impl IntoBoxedError for net::AddrParseError {}
 impl IntoBoxedError for tokio::task::JoinError {}
 impl IntoBoxedError for api4::databuffer_tools::FindActiveError {}
 impl IntoBoxedError for std::string::FromUtf8Error {}
+impl IntoBoxedError for std::io::Error {}
 
 impl<E> From<E> for RetrievalError
 where
@@ -118,6 +123,23 @@ pub fn accepts_octets(hm: &http::HeaderMap) -> bool {
     }
 }
 
+pub type Requ = Request<Incoming>;
+pub type RespFull = Response<Full<Bytes>>;
+
+use http_body_util::BodyExt;
+use httpclient::BodyBox;
+use httpclient::RespBox;
+
+pub fn body_empty() -> BodyBox {
+    Full::new(Bytes::new()).map_err(Into::into).boxed()
+}
+
+pub fn body_string<S: ToString>(body: S) -> BodyBox {
+    Full::new(Bytes::from(body.to_string())).map_err(Into::into).boxed()
+}
+
+pub type StreamBody = Pin<Box<dyn futures_util::Stream<Item = Result<hyper::body::Frame<Bytes>, ::err::Error>>>>;
+
 pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion) -> Result<(), RetrievalError> {
     static STATUS_BOARD_INIT: Once = Once::new();
     STATUS_BOARD_INIT.call_once(|| {
@@ -126,48 +148,64 @@ pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion
         let x = Box::new(a);
         STATUS_BOARD.store(Box::into_raw(x), Ordering::SeqCst);
     });
+    #[cfg(DISABLED)]
     if let Some(bind) = node_config.node.prometheus_api_bind {
         tokio::spawn(prometheus::host(bind));
     }
     // let rawjh = taskrun::spawn(nodenet::conn::events_service(node_config.clone()));
     use std::str::FromStr;
-    let addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen(), node_config.node.port))?;
-    let make_service = make_service_fn({
-        move |conn: &AddrStream| {
-            debug!("new connection from {:?}", conn.remote_addr());
-            let node_config = node_config.clone();
-            let addr = conn.remote_addr();
-            let service_version = service_version.clone();
-            async move {
-                let ret = service_fn(move |req| {
-                    // TODO send to logstash
-                    info!(
-                        "http-request  {:?} - {:?} - {:?} - {:?}",
-                        addr,
-                        req.method(),
-                        req.uri(),
-                        req.headers()
-                    );
-                    let f = http_service(req, node_config.clone(), service_version.clone());
-                    Cont { f: Box::pin(f) }
-                });
-                Ok::<_, Error>(ret)
+    let bind_addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen(), node_config.node.port))?;
+
+    let listener = TcpListener::bind(bind_addr).await?;
+    loop {
+        let (stream, addr) = listener.accept().await?;
+        debug!("new connection from {addr}");
+        let node_config = node_config.clone();
+        let service_version = service_version.clone();
+        let io = TokioIo::new(stream);
+        tokio::task::spawn(async move {
+            let res = hyper::server::conn::http1::Builder::new()
+                .serve_connection(
+                    io,
+                    service_fn(move |req| the_service_fn(req, addr, node_config.clone(), service_version.clone())),
+                )
+                .await;
+            match res {
+                Ok(()) => {}
+                Err(e) => {
+                    error!("{e}");
+                }
             }
-        }
-    });
-    Server::bind(&addr)
-        .serve(make_service)
-        .await
-        .map(|e| RetrievalError::TextError(format!("{e:?}")))?;
+        });
+    }
+
     // rawjh.await??;
     Ok(())
 }
 
-async fn http_service(
-    req: Request<Body>,
+async fn the_service_fn(
+    req: Requ,
+    addr: SocketAddr,
     node_config: NodeConfigCached,
     service_version: ServiceVersion,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<RespBox>, Error> {
+    info!(
+        "http-request  {:?} - {:?} - {:?} - {:?}",
+        addr,
+        req.method(),
+        req.uri(),
+        req.headers()
+    );
+    let f = http_service(req, node_config, service_version).await;
+    // Cont { f: Box::pin(f) }
+    f
+}
+
+async fn http_service(
+    req: Requ,
+    node_config: NodeConfigCached,
+    service_version: ServiceVersion,
+) -> Result<Response<RespBox>, Error> {
     match http_service_try(req, &node_config, &service_version).await {
         Ok(k) => Ok(k),
         Err(e) => {
@@ -244,7 +282,7 @@ impl ReqCtx {
 }
 
 // TODO remove because I want error bodies to be json.
-pub fn response_err<T>(status: StatusCode, msg: T) -> Result<Response<Body>, RetrievalError>
+pub fn response_err<T>(status: StatusCode, msg: T) -> Result<RespFull, RetrievalError>
 where
     T: AsRef<str>,
 {
@@ -257,7 +295,7 @@ where
         ),
         msg.as_ref()
     );
-    let ret = response(status).body(Body::from(msg))?;
+    let ret = response(status).body(Full::new(msg))?;
     Ok(ret)
 }
 
@@ -267,7 +305,7 @@ macro_rules! static_http {
             let c = include_bytes!(concat!("../static/documentation/", $tgtex));
             let ret = response(StatusCode::OK)
                 .header("content-type", $ctype)
-                .body(Body::from(&c[..]))?;
+                .body(Full::new(&c[..]))?;
             return Ok(ret);
         }
     };
@@ -276,7 +314,7 @@ macro_rules! static_http {
             let c = include_bytes!(concat!("../static/documentation/", $tgt));
             let ret = response(StatusCode::OK)
                 .header("content-type", $ctype)
-                .body(Body::from(&c[..]))?;
+                .body(Full::new(&c[..]))?;
             return Ok(ret);
         }
     };
@@ -288,7 +326,7 @@ macro_rules! static_http_api1 {
             let c = include_bytes!(concat!("../static/documentation/", $tgtex));
             let ret = response(StatusCode::OK)
                 .header("content-type", $ctype)
-                .body(Body::from(&c[..]))?;
+                .body(Full::new(&c[..]))?;
             return Ok(ret);
         }
     };
@@ -297,17 +335,17 @@ macro_rules! static_http_api1 {
             let c = include_bytes!(concat!("../static/documentation/", $tgt));
             let ret = response(StatusCode::OK)
                 .header("content-type", $ctype)
-                .body(Body::from(&c[..]))?;
+                .body(Full::new(&c[..]))?;
             return Ok(ret);
         }
     };
 }
 
 async fn http_service_try(
-    req: Request<Body>,
+    req: Requ,
     node_config: &NodeConfigCached,
     service_version: &ServiceVersion,
-) -> Result<Response<Body>, Error> {
+) -> Result<RespBox, Error> {
     use http::HeaderValue;
     let mut urlmarks = Vec::new();
     urlmarks.push(format!("{}:{}", req.method(), req.uri()));
@@ -317,7 +355,7 @@ async fn http_service_try(
             urlmarks.push(s.into());
         }
     }
-    let ctx = ReqCtx::with_node(&req, node_config);
+    let ctx = ReqCtx::with_node(&req, &node_config);
     let mut res = http_service_inner(req, &ctx, node_config, service_version).await?;
     let hm = res.headers_mut();
     hm.append("Access-Control-Allow-Origin", "*".parse().unwrap());
@@ -334,11 +372,11 @@ async fn http_service_try(
 }
 
 async fn http_service_inner(
-    req: Request<Body>,
+    req: Requ,
     ctx: &ReqCtx,
     node_config: &NodeConfigCached,
     service_version: &ServiceVersion,
-) -> Result<Response<Body>, RetrievalError> {
+) -> Result<RespBox, RetrievalError> {
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/4/private/version" {
@@ -350,9 +388,9 @@ async fn http_service_inner(
                     "patch": service_version.patch,
                 },
             });
-            Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
+            Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&ret)?))?)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     } else if path.starts_with("/api/4/private/logtest/") {
         if req.method() == Method::GET {
@@ -366,12 +404,24 @@ async fn http_service_inner(
                 warn!("test warn log output");
             } else if path.ends_with("/error") {
                 error!("test error log output");
+            } else if path.ends_with("/mixed") {
+                warn!("test warn log output");
+                let sp_info = span!(Level::INFO, "sp_info", f1 = "v1");
+                sp_info.in_scope(|| {
+                    warn!("test warn log output in sp_info");
+                    info!("test info log output in sp_info");
+                    let sp_debug = span!(Level::DEBUG, "sp_debug", f1 = "v1");
+                    sp_debug.in_scope(|| {
+                        info!("test info log output in sp_info:sp_debug");
+                        debug!("test debug log output in sp_info:sp_debug");
+                    });
+                });
             } else {
                 error!("test unknown log output");
             }
-            Ok(response(StatusCode::OK).body(Body::empty())?)
+            Ok(response(StatusCode::OK).body(body_empty())?)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     } else if let Some(h) = api4::eventdata::EventDataHandler::handler(&req) {
         Ok(h.handle(req, ctx, &node_config, service_version)
@@ -413,43 +463,43 @@ async fn http_service_inner(
         if req.method() == Method::GET {
             Ok(prebinned(req, ctx, &node_config).await?)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     } else if path == "/api/4/random/channel" {
         if req.method() == Method::GET {
             Ok(random_channel(req, ctx, &node_config).await?)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     } else if path.starts_with("/api/4/gather/") {
         if req.method() == Method::GET {
             Ok(gather_get_json(req, &node_config).await?)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     } else if path == "/api/4/clear_cache" {
         if req.method() == Method::GET {
             Ok(clear_cache_all(req, ctx, &node_config).await?)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     } else if path == "/api/4/update_db_with_channel_names" {
         if req.method() == Method::GET {
             Ok(update_db_with_channel_names(req, ctx, &node_config).await?)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     } else if path == "/api/4/update_db_with_all_channel_configs" {
         if req.method() == Method::GET {
             Ok(update_db_with_all_channel_configs(req, ctx, &node_config).await?)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     } else if path == "/api/4/update_search_cache" {
         if req.method() == Method::GET {
             Ok(update_search_cache(req, ctx, &node_config).await?)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     } else if let Some(h) = download::DownloadHandler::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
@@ -479,13 +529,13 @@ async fn http_service_inner(
         if req.method() == Method::GET {
             api_1_docs(path)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Full::new(Bytes::new()))?)
         }
     } else if path.starts_with("/api/4/documentation/") {
         if req.method() == Method::GET {
             api_4_docs(path)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Full::new(Bytes::new()))?)
         }
     } else {
         use std::fmt::Write;
@@ -502,29 +552,29 @@ async fn http_service_inner(
             write!(out, "HEADER {hn:?}: {hv:?}<br>\n")?;
         }
         write!(out, "</pre>\n")?;
-        Ok(response(StatusCode::NOT_FOUND).body(Body::from(body))?)
+        Ok(response(StatusCode::NOT_FOUND).body(body_string(body))?)
     }
 }
 
-pub fn api_4_docs(path: &str) -> Result<Response<Body>, RetrievalError> {
+pub fn api_4_docs(path: &str) -> Result<RespFull, RetrievalError> {
     static_http!(path, "", "api4.html", "text/html");
     static_http!(path, "style.css", "text/css");
     static_http!(path, "script.js", "text/javascript");
     static_http!(path, "status-main.html", "text/html");
-    Ok(response(StatusCode::NOT_FOUND).body(Body::empty())?)
+    Ok(response(StatusCode::NOT_FOUND).body(body_empty())?)
 }
 
-pub fn api_1_docs(path: &str) -> Result<Response<Body>, RetrievalError> {
+pub fn api_1_docs(path: &str) -> Result<RespFull, RetrievalError> {
     static_http_api1!(path, "", "api1.html", "text/html");
     static_http_api1!(path, "style.css", "text/css");
     static_http_api1!(path, "script.js", "text/javascript");
-    Ok(response(StatusCode::NOT_FOUND).body(Body::empty())?)
+    Ok(response(StatusCode::NOT_FOUND).body(body_empty())?)
 }
 
 pub struct StatusBoardAllHandler {}
 
 impl StatusBoardAllHandler {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/status/board/all" {
             Some(Self {})
         } else {
@@ -532,38 +582,26 @@ impl StatusBoardAllHandler {
         }
     }
 
-    pub async fn handle(
-        &self,
-        _req: Request<Body>,
-        _node_config: &NodeConfigCached,
-    ) -> Result<Response<Body>, RetrievalError> {
+    pub async fn handle(&self, _req: Requ, _node_config: &NodeConfigCached) -> Result<RespBox, RetrievalError> {
         use std::ops::Deref;
         let sb = status_board().unwrap();
-        let buf = serde_json::to_vec(sb.deref()).unwrap();
-        let res = response(StatusCode::OK).body(Body::from(buf))?;
+        let buf = serde_json::to_string(sb.deref()).unwrap();
+        let res = response(StatusCode::OK).body(body_string(buf))?;
         Ok(res)
     }
 }
 
-async fn prebinned(
-    req: Request<Body>,
-    ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
-) -> Result<Response<Body>, RetrievalError> {
+async fn prebinned(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<RespBox, RetrievalError> {
     match prebinned_inner(req, ctx, node_config).await {
         Ok(ret) => Ok(ret),
         Err(e) => {
             error!("fn prebinned: {e:?}");
-            Ok(response(StatusCode::BAD_REQUEST).body(Body::from(format!("[prebinned-error]")))?)
+            Ok(response(StatusCode::BAD_REQUEST).body(body_string(format!("[prebinned-error]")))?)
         }
     }
 }
 
-async fn prebinned_inner(
-    req: Request<Body>,
-    _ctx: &ReqCtx,
-    _node_config: &NodeConfigCached,
-) -> Result<Response<Body>, RetrievalError> {
+async fn prebinned_inner(req: Requ, _ctx: &ReqCtx, _node_config: &NodeConfigCached) -> Result<RespBox, RetrievalError> {
     let (head, _body) = req.into_parts();
     let url: url::Url = format!("dummy://{}", head.uri).parse()?;
     let query = PreBinnedQuery::from_url(&url)?;
@@ -576,22 +614,14 @@ async fn prebinned_inner(
     todo!()
 }
 
-async fn random_channel(
-    req: Request<Body>,
-    _ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
-) -> Result<Response<Body>, RetrievalError> {
+async fn random_channel(req: Requ, _ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<RespBox, RetrievalError> {
     let (_head, _body) = req.into_parts();
     let ret = dbconn::random_channel(node_config).await?;
-    let ret = response(StatusCode::OK).body(Body::from(ret))?;
+    let ret = response(StatusCode::OK).body(body_string(ret))?;
     Ok(ret)
 }
 
-async fn clear_cache_all(
-    req: Request<Body>,
-    _ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
-) -> Result<Response<Body>, RetrievalError> {
+async fn clear_cache_all(req: Requ, _ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<RespBox, RetrievalError> {
     let (head, _body) = req.into_parts();
     let dry = match head.uri.query() {
         Some(q) => q.contains("dry"),
@@ -600,15 +630,15 @@ async fn clear_cache_all(
     let res = disk::cache::clear_cache_all(node_config, dry).await?;
     let ret = response(StatusCode::OK)
         .header(http::header::CONTENT_TYPE, APP_JSON)
-        .body(Body::from(serde_json::to_string(&res)?))?;
+        .body(body_string(serde_json::to_string(&res)?))?;
     Ok(ret)
 }
 
 async fn update_db_with_channel_names(
-    req: Request<Body>,
+    req: Requ,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
-) -> Result<Response<Body>, RetrievalError> {
+) -> Result<RespBox, RetrievalError> {
     info!("httpret::update_db_with_channel_names");
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
@@ -635,7 +665,7 @@ async fn update_db_with_channel_names(
             let p = serde_json::to_string(&e)?;
             let res = response(StatusCode::OK)
                 .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
-                .body(Body::from(p))?;
+                .body(body_string(p))?;
             Ok(res)
         }
     }
@@ -643,10 +673,10 @@ async fn update_db_with_channel_names(
 
 #[allow(unused)]
 async fn update_db_with_channel_names_3(
-    req: Request<Body>,
+    req: Requ,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
-) -> Result<Response<Body>, RetrievalError> {
+) -> Result<RespBox, RetrievalError> {
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
         Some(q) => q.contains("dry"),
@@ -666,10 +696,10 @@ async fn update_db_with_channel_names_3(
 }
 
 async fn update_db_with_all_channel_configs(
-    req: Request<Body>,
+    req: Requ,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
-) -> Result<Response<Body>, RetrievalError> {
+) -> Result<RespBox, RetrievalError> {
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
         Some(q) => q.contains("dry"),
@@ -689,10 +719,10 @@ async fn update_db_with_all_channel_configs(
 }
 
 async fn update_search_cache(
-    req: Request<Body>,
+    req: Requ,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
-) -> Result<Response<Body>, RetrievalError> {
+) -> Result<RespBox, RetrievalError> {
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
         Some(q) => q.contains("dry"),
@@ -701,7 +731,7 @@ async fn update_search_cache(
     let res = dbconn::scan::update_search_cache(node_config).await?;
     let ret = response(StatusCode::OK)
         .header(http::header::CONTENT_TYPE, APP_JSON)
-        .body(Body::from(serde_json::to_string(&res)?))?;
+        .body(body_string(serde_json::to_string(&res)?))?;
     Ok(ret)
 }
 
