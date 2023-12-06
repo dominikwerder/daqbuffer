@@ -9,9 +9,15 @@ use crate::response;
 use crate::ReqCtx;
 use futures_util::Future;
 use http::Method;
-use http::Request;
 use http::Response;
 use http::StatusCode;
+use httpclient::body_empty;
+use httpclient::read_body_bytes;
+use httpclient::IntoBody;
+use httpclient::Requ;
+use httpclient::StreamResponse;
+use httpclient::ToJsonBody;
+use hyper::body::Incoming;
 use netpod::log::*;
 use netpod::ChannelSearchQuery;
 use netpod::ChannelSearchResult;
@@ -34,7 +40,7 @@ use url::Url;
 // The aggregators and leaf nodes behind should as well not depend on backend,
 // but simply answer all matching.
 
-pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> Result<ChannelSearchResult, Error> {
+pub async fn channel_search(req: Requ, proxy_config: &ProxyConfig) -> Result<ChannelSearchResult, Error> {
     let (head, _body) = req.into_parts();
     let inpurl = Url::parse(&format!("dummy:{}", head.uri))?;
     let query = ChannelSearchQuery::from_url(&inpurl)?;
@@ -58,9 +64,10 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
             }
         }
     }
-    let nt = |tag, res| {
+    let nt = |tag: String, res: Response<Incoming>| {
         let fut = async {
-            let body = hyper::body::to_bytes(res).await?;
+            let (_head, body) = res.into_parts();
+            let body = read_body_bytes(body).await?;
             //info!("got a result {:?}", body);
             let res: ChannelSearchResult = match serde_json::from_slice(&body) {
                 Ok(k) => k,
@@ -112,7 +119,7 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
 pub struct ChannelSearchAggHandler {}
 
 impl ChannelSearchAggHandler {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/search/channel" {
             Some(Self {})
         } else {
@@ -120,7 +127,7 @@ impl ChannelSearchAggHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &ProxyConfig) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &ProxyConfig) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -129,20 +136,17 @@ impl ChannelSearchAggHandler {
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
                 match channel_search(req, node_config).await {
-                    Ok(item) => {
-                        let buf = serde_json::to_vec(&item)?;
-                        Ok(response(StatusCode::OK).body(Body::from(buf))?)
-                    }
+                    Ok(item) => Ok(response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?),
                     Err(e) => {
                         warn!("ChannelConfigHandler::handle: got error from channel_config: {e:?}");
                         Ok(e.to_public_response())
                     }
                 }
             } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
             }
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     }
 }
@@ -150,7 +154,7 @@ impl ChannelSearchAggHandler {
 pub struct StatusNodesRecursive {}
 
 impl StatusNodesRecursive {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == crate::api4::status::StatusNodesRecursive::path() {
             Some(Self {})
         } else {
@@ -160,15 +164,14 @@ impl StatusNodesRecursive {
 
     pub async fn handle(
         &self,
-        req: Request<Body>,
+        req: Requ,
         ctx: &ReqCtx,
         proxy_config: &ProxyConfig,
         service_version: &ServiceVersion,
-    ) -> Result<Response<Body>, Error> {
+    ) -> Result<StreamResponse, Error> {
         match self.status(req, ctx, proxy_config, service_version).await {
             Ok(status) => {
-                let body = serde_json::to_vec(&status)?;
-                let ret = response(StatusCode::OK).body(Body::from(body))?;
+                let ret = response(StatusCode::OK).body(ToJsonBody::from(&status).into_body())?;
                 Ok(ret)
             }
             Err(e) => {
@@ -181,7 +184,7 @@ impl StatusNodesRecursive {
 
     async fn status(
         &self,
-        _req: Request<Body>,
+        _req: Requ,
         _ctx: &ReqCtx,
         proxy_config: &ProxyConfig,
         service_version: &ServiceVersion,
@@ -200,9 +203,10 @@ impl StatusNodesRecursive {
                 Err(e) => return Err(Error::with_msg_no_trace(format!("parse error for: {sub:?}  {e:?}"))),
             }
         }
-        let nt = |tag, res| {
+        let nt = |tag: String, res: Response<Incoming>| {
             let fut = async {
-                let body = hyper::body::to_bytes(res).await?;
+                let (_head, body) = res.into_parts();
+                let body = read_body_bytes(body).await?;
                 let res: JsVal = match serde_json::from_slice(&body) {
                     Ok(k) => k,
                     Err(e) => {

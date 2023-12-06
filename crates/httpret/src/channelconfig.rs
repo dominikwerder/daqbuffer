@@ -4,10 +4,13 @@ use crate::ToPublicResponse;
 use dbconn::create_connection;
 use futures_util::StreamExt;
 use http::Method;
-use http::Request;
-use http::Response;
 use http::StatusCode;
-use hyper::Body;
+use httpclient::body_empty;
+use httpclient::body_string;
+use httpclient::IntoBody;
+use httpclient::Requ;
+use httpclient::StreamResponse;
+use httpclient::ToJsonBody;
 use netpod::get_url_query_pairs;
 use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
@@ -58,7 +61,7 @@ pub async fn ch_conf_from_binned(
 pub struct ChannelConfigHandler {}
 
 impl ChannelConfigHandler {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/channel/config" {
             Some(Self {})
         } else {
@@ -66,7 +69,7 @@ impl ChannelConfigHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -82,18 +85,14 @@ impl ChannelConfigHandler {
                     }
                 }
             } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
             }
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     }
 
-    async fn channel_config(
-        &self,
-        req: Request<Body>,
-        node_config: &NodeConfigCached,
-    ) -> Result<Response<Body>, Error> {
+    async fn channel_config(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let q = ChannelConfigQuery::from_url(&url)?;
         let conf = nodenet::channelconfig::channel_config(q.range.clone(), q.channel.clone(), node_config).await?;
@@ -102,13 +101,13 @@ impl ChannelConfigHandler {
                 let res: ChannelConfigResponse = conf.into();
                 let ret = response(StatusCode::OK)
                     .header(http::header::CONTENT_TYPE, APP_JSON)
-                    .body(Body::from(serde_json::to_string(&res)?))?;
+                    .body(ToJsonBody::from(&res).into_body())?;
                 Ok(ret)
             }
             None => {
                 let ret = response(StatusCode::NOT_FOUND)
                     .header(http::header::CONTENT_TYPE, APP_JSON)
-                    .body(Body::empty())?;
+                    .body(body_empty())?;
                 Ok(ret)
             }
         }
@@ -118,7 +117,7 @@ impl ChannelConfigHandler {
 pub struct ChannelConfigsHandler {}
 
 impl ChannelConfigsHandler {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/channel/configs" {
             Some(Self {})
         } else {
@@ -126,7 +125,7 @@ impl ChannelConfigsHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -142,14 +141,14 @@ impl ChannelConfigsHandler {
                     }
                 }
             } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
             }
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     }
 
-    async fn channel_configs(&self, req: Request<Body>, ncc: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    async fn channel_configs(&self, req: Requ, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
         info!("channel_configs");
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let q = ChannelConfigQuery::from_url(&url)?;
@@ -157,7 +156,7 @@ impl ChannelConfigsHandler {
         let ch_confs = nodenet::channelconfig::channel_configs(q.channel, ncc).await?;
         let ret = response(StatusCode::OK)
             .header(http::header::CONTENT_TYPE, APP_JSON)
-            .body(Body::from(serde_json::to_string(&ch_confs)?))?;
+            .body(ToJsonBody::from(&ch_confs).into_body())?;
         Ok(ret)
     }
 }
@@ -165,7 +164,7 @@ impl ChannelConfigsHandler {
 pub struct ChannelConfigQuorumHandler {}
 
 impl ChannelConfigQuorumHandler {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/channel/config/quorum" {
             Some(Self {})
         } else {
@@ -173,7 +172,7 @@ impl ChannelConfigQuorumHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -189,14 +188,14 @@ impl ChannelConfigQuorumHandler {
                     }
                 }
             } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
             }
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     }
 
-    async fn channel_config_quorum(&self, req: Request<Body>, ncc: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    async fn channel_config_quorum(&self, req: Requ, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
         info!("channel_config_quorum");
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let q = ChannelConfigQuery::from_url(&url)?;
@@ -204,7 +203,7 @@ impl ChannelConfigQuorumHandler {
         let ch_confs = nodenet::configquorum::find_config_basics_quorum(q.channel, q.range.into(), ncc).await?;
         let ret = response(StatusCode::OK)
             .header(http::header::CONTENT_TYPE, APP_JSON)
-            .body(Body::from(serde_json::to_string(&ch_confs)?))?;
+            .body(ToJsonBody::from(&ch_confs).into_body())?;
         Ok(ret)
     }
 }
@@ -217,7 +216,7 @@ pub struct ConfigsHisto {
 pub struct ScyllaConfigsHisto {}
 
 impl ScyllaConfigsHisto {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/scylla/configs/histo" {
             Some(Self {})
         } else {
@@ -225,7 +224,7 @@ impl ScyllaConfigsHisto {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -236,13 +235,13 @@ impl ScyllaConfigsHisto {
                 let res = self
                     .make_histo(&node_config.node_config.cluster.backend, node_config)
                     .await?;
-                let body = Body::from(serde_json::to_vec(&res)?);
+                let body = ToJsonBody::from(&res).into_body();
                 Ok(response(StatusCode::OK).body(body)?)
             } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
             }
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     }
 
@@ -325,7 +324,7 @@ pub struct ChannelListWithType {
 pub struct ScyllaChannelsWithType {}
 
 impl ScyllaChannelsWithType {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/scylla/channels/with_type" {
             Some(Self {})
         } else {
@@ -333,7 +332,7 @@ impl ScyllaChannelsWithType {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -346,13 +345,13 @@ impl ScyllaChannelsWithType {
                 let res = self
                     .get_channels(&q, &node_config.node_config.cluster.backend, node_config)
                     .await?;
-                let body = Body::from(serde_json::to_vec(&res)?);
+                let body = ToJsonBody::from(&res).into_body();
                 Ok(response(StatusCode::OK).body(body)?)
             } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
             }
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     }
 
@@ -483,7 +482,7 @@ impl FromUrl for ScyllaChannelsActiveQuery {
 pub struct ScyllaChannelsActive {}
 
 impl ScyllaChannelsActive {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/channels/active" {
             Some(Self {})
         } else {
@@ -491,7 +490,7 @@ impl ScyllaChannelsActive {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -502,13 +501,13 @@ impl ScyllaChannelsActive {
                 let url = Url::parse(&format!("dummy:{}", req.uri()))?;
                 let q = ScyllaChannelsActiveQuery::from_url(&url)?;
                 let res = self.get_channels(&q, node_config).await?;
-                let body = Body::from(serde_json::to_vec(&res)?);
+                let body = ToJsonBody::from(&res).into_body();
                 Ok(response(StatusCode::OK).body(body)?)
             } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
             }
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     }
 
@@ -586,7 +585,7 @@ pub struct IocForChannelRes {
 pub struct IocForChannel {}
 
 impl IocForChannel {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/channel/ioc" {
             Some(Self {})
         } else {
@@ -594,7 +593,7 @@ impl IocForChannel {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -606,19 +605,19 @@ impl IocForChannel {
                 let q = IocForChannelQuery::from_url(&url)?;
                 match self.find(&q, node_config).await {
                     Ok(k) => {
-                        let body = Body::from(serde_json::to_vec(&k)?);
+                        let body = ToJsonBody::from(&k).into_body();
                         Ok(response(StatusCode::OK).body(body)?)
                     }
                     Err(e) => {
-                        let body = Body::from(format!("{:?}", e.public_msg()));
+                        let body = body_string(format!("{:?}", e.public_msg()));
                         Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body)?)
                     }
                 }
             } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
             }
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     }
 
@@ -675,7 +674,7 @@ pub struct ScyllaSeriesTsMspResponse {
 pub struct ScyllaSeriesTsMsp {}
 
 impl ScyllaSeriesTsMsp {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/scylla/series/tsMsps" {
             Some(Self {})
         } else {
@@ -683,7 +682,7 @@ impl ScyllaSeriesTsMsp {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -695,17 +694,17 @@ impl ScyllaSeriesTsMsp {
                 let q = ScyllaSeriesTsMspQuery::from_url(&url)?;
                 match self.get_ts_msps(&q, node_config).await {
                     Ok(k) => {
-                        let body = Body::from(serde_json::to_vec(&k)?);
+                        let body = ToJsonBody::from(&k).into_body();
                         Ok(response(StatusCode::OK).body(body)?)
                     }
                     Err(e) => Ok(response(StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(Body::from(format!("{:?}", e.public_msg())))?),
+                        .body(body_string(format!("{:?}", e.public_msg())))?),
                 }
             } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
             }
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     }
 
@@ -752,7 +751,7 @@ pub struct AmbigiousChannelNamesResponse {
 pub struct AmbigiousChannelNames {}
 
 impl AmbigiousChannelNames {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/channels/ambigious" {
             Some(Self {})
         } else {
@@ -760,7 +759,7 @@ impl AmbigiousChannelNames {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -770,17 +769,17 @@ impl AmbigiousChannelNames {
             if accept == APP_JSON || accept == ACCEPT_ALL {
                 match self.process(node_config).await {
                     Ok(k) => {
-                        let body = Body::from(serde_json::to_vec(&k)?);
+                        let body = ToJsonBody::from(&k).into_body();
                         Ok(response(StatusCode::OK).body(body)?)
                     }
                     Err(e) => Ok(response(StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(Body::from(format!("{:?}", e.public_msg())))?),
+                        .body(body_string(format!("{:?}", e.public_msg())))?),
                 }
             } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
             }
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     }
 
@@ -848,7 +847,7 @@ fn test_data_f64_01() -> (Msps, Lsps, Pulses, ValsF64) {
 pub struct GenerateScyllaTestData {}
 
 impl GenerateScyllaTestData {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/test/generate/scylla" {
             Some(Self {})
         } else {
@@ -856,7 +855,7 @@ impl GenerateScyllaTestData {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -866,17 +865,17 @@ impl GenerateScyllaTestData {
             if accept == APP_JSON || accept == ACCEPT_ALL {
                 match self.process(node_config).await {
                     Ok(k) => {
-                        let body = Body::from(serde_json::to_vec(&k)?);
+                        let body = ToJsonBody::from(&k).into_body();
                         Ok(response(StatusCode::OK).body(body)?)
                     }
                     Err(e) => Ok(response(StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(Body::from(format!("{:?}", e.public_msg())))?),
+                        .body(body_string(format!("{:?}", e.public_msg())))?),
                 }
             } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
             }
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     }
 

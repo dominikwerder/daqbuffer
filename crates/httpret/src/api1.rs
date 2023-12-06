@@ -6,21 +6,23 @@ use crate::gather::SubRes;
 use crate::response;
 use crate::ReqCtx;
 use crate::Requ;
-use crate::RespFull;
 use bytes::BufMut;
-use bytes::Bytes;
 use bytes::BytesMut;
 use disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use http::header;
 use http::Method;
+use http::Response;
 use http::StatusCode;
-use http_body_util::Full;
+use httpclient::body_stream;
 use httpclient::connect_client;
 use httpclient::read_body_bytes;
+use httpclient::IntoBody;
+use httpclient::StreamResponse;
+use httpclient::ToJsonBody;
+use hyper::body::Incoming;
 use hyper::Request;
-use hyper::Response;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
@@ -138,7 +140,7 @@ impl FromErrorCode for ChannelSearchResultItemV1 {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelSearchResultV1(pub Vec<ChannelSearchResultItemV1>);
 
-pub async fn channel_search_list_v1(req: Requ, proxy_config: &ProxyConfig) -> Result<RespFull, Error> {
+pub async fn channel_search_list_v1(req: Requ, proxy_config: &ProxyConfig) -> Result<StreamResponse, Error> {
     let (head, reqbody) = req.into_parts();
     let bodybytes = read_body_bytes(reqbody).await?;
     let query: ChannelSearchQueryV1 = serde_json::from_slice(&bodybytes)?;
@@ -168,9 +170,10 @@ pub async fn channel_search_list_v1(req: Requ, proxy_config: &ProxyConfig) -> Re
                         a
                     })?;
                 let tags: Vec<_> = urls.iter().map(|k| k.to_string()).collect();
-                let nt = |tag, res| {
+                let nt = |tag: String, res: Response<Incoming>| {
                     let fut = async {
-                        let body = read_body_bytes(res).await?;
+                        let (_head, body) = res.into_parts();
+                        let body = read_body_bytes(body).await?;
                         let res: ChannelSearchResult = match serde_json::from_slice(&body) {
                             Ok(k) => k,
                             Err(_) => ChannelSearchResult { channels: Vec::new() },
@@ -234,14 +237,14 @@ pub async fn channel_search_list_v1(req: Requ, proxy_config: &ProxyConfig) -> Re
                 .await?;
                 Ok(ret)
             } else {
-                Ok(response(StatusCode::NOT_ACCEPTABLE).body(Full::new(Bytes::new()))?)
+                Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?)
             }
         }
-        None => Ok(response(StatusCode::NOT_ACCEPTABLE).body(Full::new(Bytes::new()))?),
+        None => Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?),
     }
 }
 
-pub async fn channel_search_configs_v1(req: Requ, proxy_config: &ProxyConfig) -> Result<RespFull, Error> {
+pub async fn channel_search_configs_v1(req: Requ, proxy_config: &ProxyConfig) -> Result<StreamResponse, Error> {
     let (head, reqbody) = req.into_parts();
     let bodybytes = read_body_bytes(reqbody).await?;
     let query: ChannelSearchQueryV1 = serde_json::from_slice(&bodybytes)?;
@@ -267,17 +270,18 @@ pub async fn channel_search_configs_v1(req: Requ, proxy_config: &ProxyConfig) ->
                         }
                         Err(e) => Err(Error::with_msg(format!("parse error for: {:?}  {:?}", sh, e))),
                     })
-                    .fold_ok(vec![], |mut a, x| {
+                    .fold_ok(Vec::new(), |mut a, x| {
                         a.push(x);
                         a
                     })?;
                 let tags: Vec<_> = urls.iter().map(|k| k.to_string()).collect();
-                let nt = |tag, res| {
+                let nt = |tag: String, res: Response<Incoming>| {
                     let fut = async {
-                        let body = read_body_bytes(res).await?;
+                        let (_head, body) = res.into_parts();
+                        let body = read_body_bytes(body).await?;
                         let res: ChannelSearchResult = match serde_json::from_slice(&body) {
                             Ok(k) => k,
-                            Err(_) => ChannelSearchResult { channels: vec![] },
+                            Err(_) => ChannelSearchResult { channels: Vec::new() },
                         };
                         let ret = SubRes {
                             tag,
@@ -340,7 +344,7 @@ pub async fn channel_search_configs_v1(req: Requ, proxy_config: &ProxyConfig) ->
                     }
                     let res = response(StatusCode::OK)
                         .header(http::header::CONTENT_TYPE, APP_JSON)
-                        .body(Full::new(serde_json::to_string(&res)?))?;
+                        .body(ToJsonBody::from(&res).into_body())?;
                     Ok(res)
                 };
                 let bodies = (0..urls.len()).into_iter().map(|_| None).collect();
@@ -356,10 +360,10 @@ pub async fn channel_search_configs_v1(req: Requ, proxy_config: &ProxyConfig) ->
                 .await?;
                 Ok(ret)
             } else {
-                Ok(response(StatusCode::NOT_ACCEPTABLE).body(Full::new(Bytes::new()))?)
+                Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?)
             }
         }
-        None => Ok(response(StatusCode::NOT_ACCEPTABLE).body(Full::new(Bytes::new()))?),
+        None => Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?),
     }
 }
 
@@ -420,7 +424,7 @@ impl FromErrorCode for ChannelBackendConfigsV1 {
 }
 
 // TODO replace usage of this by gather-generic
-pub async fn gather_json_2_v1(req: Requ, pathpre: &str, _proxy_config: &ProxyConfig) -> Result<RespFull, Error> {
+pub async fn gather_json_2_v1(req: Requ, pathpre: &str, _proxy_config: &ProxyConfig) -> Result<StreamResponse, Error> {
     let (part_head, part_body) = req.into_parts();
     let bodyslice = read_body_bytes(part_body).await?;
     let gather_from: GatherFromV1 = serde_json::from_slice(&bodyslice)?;
@@ -432,19 +436,19 @@ pub async fn gather_json_2_v1(req: Requ, pathpre: &str, _proxy_config: &ProxyCon
         let uri = format!("http://{}:{}/{}", gh.host, gh.port, path_post);
         let req = Request::builder()
             .method(Method::GET)
-            .uri(uri)
-            .header(header::HOST, gh.host);
+            .header(header::HOST, &gh.host)
+            .header(header::ACCEPT, APP_JSON)
+            .uri(uri);
         let req = if gh.inst.len() > 0 {
             req.header("retrieval_instance", &gh.inst)
         } else {
             req
         };
-        let req = req.header(http::header::ACCEPT, APP_JSON);
-        let req = req.body(Full::new(Bytes::new()));
+        let req = req.body(body_empty())?;
         let task = tokio::spawn(async move {
             let mut client = connect_client(req.uri()).await?;
             let res = client.send_request(req).await?;
-            Ok::<_, Error>(process_answer(res?).await?)
+            Ok::<_, Error>(process_answer(res).await?)
         });
         let task = tokio::time::timeout(std::time::Duration::from_millis(5000), task);
         spawned.push((gh.clone(), task));
@@ -474,7 +478,7 @@ pub async fn gather_json_2_v1(req: Requ, pathpre: &str, _proxy_config: &ProxyCon
     }
     let res = response(StatusCode::OK)
         .header(http::header::CONTENT_TYPE, APP_JSON)
-        .body(serde_json::to_string(&Jres { hosts: a })?.into())?;
+        .body(ToJsonBody::from(&Jres { hosts: a }).into_body())?;
     Ok(res)
 }
 
@@ -490,24 +494,20 @@ struct GatherHostV1 {
     inst: String,
 }
 
-async fn process_answer(res: RespFull) -> Result<JsonValue, Error> {
-    let (pre, mut body) = res.into_parts();
+async fn process_answer(res: Response<Incoming>) -> Result<JsonValue, Error> {
+    let (pre, body) = res.into_parts();
+    let body = read_body_bytes(body).await?;
+    let body = String::from_utf8(body.to_vec())?;
     if pre.status != StatusCode::OK {
-        if let Some(c) = body.data().await {
-            let c: bytes::Bytes = c?;
-            let s1 = String::from_utf8(c.to_vec())?;
-            Ok(JsonValue::String(format!(
-                "status {}  body {}",
-                pre.status.as_str(),
-                s1
-            )))
-        } else {
-            Ok(JsonValue::String(format!("status {}", pre.status.as_str())))
-        }
+        Ok(JsonValue::String(format!(
+            "status {}  body {}",
+            pre.status.as_str(),
+            body
+        )))
     } else {
-        let val = match serde_json::from_slice(the_data) {
+        let val = match serde_json::from_str(&body) {
             Ok(k) => k,
-            Err(_e) => JsonValue::String(String::from_utf8(body_all.to_vec())?),
+            Err(_e) => JsonValue::String(body),
         };
         Ok::<_, Error>(val)
     }
@@ -850,7 +850,7 @@ impl Stream for DataApiPython3DataStream {
 #[allow(unused)]
 fn shape_to_api3proto(sh: &Option<Vec<u32>>) -> Vec<u32> {
     match sh {
-        None => vec![],
+        None => Vec::new(),
         Some(g) => {
             if g.len() == 1 {
                 vec![g[0]]
@@ -874,9 +874,14 @@ impl Api1EventsBinaryHandler {
         }
     }
 
-    pub async fn handle(&self, req: Requ, _ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<RespFull, Error> {
+    pub async fn handle(
+        &self,
+        req: Requ,
+        _ctx: &ReqCtx,
+        node_config: &NodeConfigCached,
+    ) -> Result<StreamResponse, Error> {
         if req.method() != Method::POST {
-            return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Full::new(Bytes::new()))?);
+            return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?);
         }
         let (head, body) = req.into_parts();
         let accept = head
@@ -939,7 +944,7 @@ impl Api1EventsBinaryHandler {
         span: tracing::Span,
         reqidspan: tracing::Span,
         ncc: &NodeConfigCached,
-    ) -> Result<RespFull, Error> {
+    ) -> Result<StreamResponse, Error> {
         let self_name = any::type_name::<Self>();
         // TODO this should go to usage statistics:
         debug!(
@@ -1003,7 +1008,7 @@ impl Api1EventsBinaryHandler {
                 ncc.clone(),
             );
             let s = s.instrument(span).instrument(reqidspan);
-            let body = Body::wrap_stream(s);
+            let body = body_stream(s);
             let ret = response(StatusCode::OK).header(X_DAQBUF_REQID, reqctx.reqid());
             let ret = ret.body(body)?;
             Ok(ret)
@@ -1011,7 +1016,7 @@ impl Api1EventsBinaryHandler {
             // TODO set the public error code and message and return Err(e).
             let e = Error::with_public_msg_no_trace(format!("{self_name}  unsupported Accept: {}", accept));
             error!("{self_name}  {e}");
-            Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty)?)
+            Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?)
         }
     }
 }
@@ -1031,7 +1036,7 @@ impl RequestStatusHandler {
         }
     }
 
-    pub async fn handle(&self, req: Requ, _ncc: &NodeConfigCached) -> Result<RespFull, Error> {
+    pub async fn handle(&self, req: Requ, _ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
         let (head, body) = req.into_parts();
         if head.method != Method::GET {
             return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?);
@@ -1053,7 +1058,7 @@ impl RequestStatusHandler {
         debug!("RequestStatusHandler  status_id {:?}", status_id);
         let status = crate::status_board()?.status_as_json(status_id);
         let s = serde_json::to_string(&status)?;
-        let ret = response(StatusCode::OK).body(Full::new(s))?;
+        let ret = response(StatusCode::OK).body(body_string(s))?;
         Ok(ret)
     }
 }

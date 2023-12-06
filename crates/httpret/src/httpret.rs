@@ -25,12 +25,16 @@ use futures_util::FutureExt;
 use futures_util::StreamExt;
 use http::Method;
 use http::StatusCode;
-use http_body_util::combinators::BoxBody;
-use http_body_util::Full;
-use hyper::body::Incoming;
+use httpclient::body_bytes;
+use httpclient::body_empty;
+use httpclient::body_stream;
+use httpclient::body_string;
+use httpclient::IntoBody;
+use httpclient::Requ;
+use httpclient::StreamResponse;
+use httpclient::ToJsonBody;
 use hyper::service::service_fn;
 use hyper::Request;
-use hyper::Response;
 use hyper_util::rt::TokioIo;
 use net::SocketAddr;
 use netpod::log::*;
@@ -123,23 +127,6 @@ pub fn accepts_octets(hm: &http::HeaderMap) -> bool {
     }
 }
 
-pub type Requ = Request<Incoming>;
-pub type RespFull = Response<Full<Bytes>>;
-
-use http_body_util::BodyExt;
-use httpclient::BodyBox;
-use httpclient::RespBox;
-
-pub fn body_empty() -> BodyBox {
-    Full::new(Bytes::new()).map_err(Into::into).boxed()
-}
-
-pub fn body_string<S: ToString>(body: S) -> BodyBox {
-    Full::new(Bytes::from(body.to_string())).map_err(Into::into).boxed()
-}
-
-pub type StreamBody = Pin<Box<dyn futures_util::Stream<Item = Result<hyper::body::Frame<Bytes>, ::err::Error>>>>;
-
 pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion) -> Result<(), RetrievalError> {
     static STATUS_BOARD_INIT: Once = Once::new();
     STATUS_BOARD_INIT.call_once(|| {
@@ -158,7 +145,11 @@ pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion
 
     let listener = TcpListener::bind(bind_addr).await?;
     loop {
-        let (stream, addr) = listener.accept().await?;
+        let (stream, addr) = if let Ok(x) = listener.accept().await {
+            x
+        } else {
+            break;
+        };
         debug!("new connection from {addr}");
         let node_config = node_config.clone();
         let service_version = service_version.clone();
@@ -188,7 +179,7 @@ async fn the_service_fn(
     addr: SocketAddr,
     node_config: NodeConfigCached,
     service_version: ServiceVersion,
-) -> Result<Response<RespBox>, Error> {
+) -> Result<StreamResponse, Error> {
     info!(
         "http-request  {:?} - {:?} - {:?} - {:?}",
         addr,
@@ -205,7 +196,7 @@ async fn http_service(
     req: Requ,
     node_config: NodeConfigCached,
     service_version: ServiceVersion,
-) -> Result<Response<RespBox>, Error> {
+) -> Result<StreamResponse, Error> {
     match http_service_try(req, &node_config, &service_version).await {
         Ok(k) => Ok(k),
         Err(e) => {
@@ -282,7 +273,7 @@ impl ReqCtx {
 }
 
 // TODO remove because I want error bodies to be json.
-pub fn response_err<T>(status: StatusCode, msg: T) -> Result<RespFull, RetrievalError>
+pub fn response_err<T>(status: StatusCode, msg: T) -> Result<StreamResponse, RetrievalError>
 where
     T: AsRef<str>,
 {
@@ -295,7 +286,7 @@ where
         ),
         msg.as_ref()
     );
-    let ret = response(status).body(Full::new(msg))?;
+    let ret = response(status).body(body_string(msg))?;
     Ok(ret)
 }
 
@@ -305,7 +296,7 @@ macro_rules! static_http {
             let c = include_bytes!(concat!("../static/documentation/", $tgtex));
             let ret = response(StatusCode::OK)
                 .header("content-type", $ctype)
-                .body(Full::new(&c[..]))?;
+                .body(body_bytes(c.to_vec()))?;
             return Ok(ret);
         }
     };
@@ -314,7 +305,7 @@ macro_rules! static_http {
             let c = include_bytes!(concat!("../static/documentation/", $tgt));
             let ret = response(StatusCode::OK)
                 .header("content-type", $ctype)
-                .body(Full::new(&c[..]))?;
+                .body(body_bytes(c.to_vec()))?;
             return Ok(ret);
         }
     };
@@ -326,7 +317,7 @@ macro_rules! static_http_api1 {
             let c = include_bytes!(concat!("../static/documentation/", $tgtex));
             let ret = response(StatusCode::OK)
                 .header("content-type", $ctype)
-                .body(Full::new(&c[..]))?;
+                .body(body_bytes(c.to_vec()))?;
             return Ok(ret);
         }
     };
@@ -335,7 +326,7 @@ macro_rules! static_http_api1 {
             let c = include_bytes!(concat!("../static/documentation/", $tgt));
             let ret = response(StatusCode::OK)
                 .header("content-type", $ctype)
-                .body(Full::new(&c[..]))?;
+                .body(body_bytes(c.to_vec()))?;
             return Ok(ret);
         }
     };
@@ -345,7 +336,7 @@ async fn http_service_try(
     req: Requ,
     node_config: &NodeConfigCached,
     service_version: &ServiceVersion,
-) -> Result<RespBox, Error> {
+) -> Result<StreamResponse, Error> {
     use http::HeaderValue;
     let mut urlmarks = Vec::new();
     urlmarks.push(format!("{}:{}", req.method(), req.uri()));
@@ -376,7 +367,7 @@ async fn http_service_inner(
     ctx: &ReqCtx,
     node_config: &NodeConfigCached,
     service_version: &ServiceVersion,
-) -> Result<RespBox, RetrievalError> {
+) -> Result<StreamResponse, RetrievalError> {
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/4/private/version" {
@@ -388,7 +379,7 @@ async fn http_service_inner(
                     "patch": service_version.patch,
                 },
             });
-            Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&ret)?))?)
+            Ok(response(StatusCode::OK).body(ToJsonBody::from(&ret).into_body())?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
@@ -529,13 +520,13 @@ async fn http_service_inner(
         if req.method() == Method::GET {
             api_1_docs(path)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Full::new(Bytes::new()))?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     } else if path.starts_with("/api/4/documentation/") {
         if req.method() == Method::GET {
             api_4_docs(path)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Full::new(Bytes::new()))?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     } else {
         use std::fmt::Write;
@@ -556,7 +547,7 @@ async fn http_service_inner(
     }
 }
 
-pub fn api_4_docs(path: &str) -> Result<RespFull, RetrievalError> {
+pub fn api_4_docs(path: &str) -> Result<StreamResponse, RetrievalError> {
     static_http!(path, "", "api4.html", "text/html");
     static_http!(path, "style.css", "text/css");
     static_http!(path, "script.js", "text/javascript");
@@ -564,7 +555,7 @@ pub fn api_4_docs(path: &str) -> Result<RespFull, RetrievalError> {
     Ok(response(StatusCode::NOT_FOUND).body(body_empty())?)
 }
 
-pub fn api_1_docs(path: &str) -> Result<RespFull, RetrievalError> {
+pub fn api_1_docs(path: &str) -> Result<StreamResponse, RetrievalError> {
     static_http_api1!(path, "", "api1.html", "text/html");
     static_http_api1!(path, "style.css", "text/css");
     static_http_api1!(path, "script.js", "text/javascript");
@@ -582,7 +573,7 @@ impl StatusBoardAllHandler {
         }
     }
 
-    pub async fn handle(&self, _req: Requ, _node_config: &NodeConfigCached) -> Result<RespBox, RetrievalError> {
+    pub async fn handle(&self, _req: Requ, _node_config: &NodeConfigCached) -> Result<StreamResponse, RetrievalError> {
         use std::ops::Deref;
         let sb = status_board().unwrap();
         let buf = serde_json::to_string(sb.deref()).unwrap();
@@ -591,7 +582,7 @@ impl StatusBoardAllHandler {
     }
 }
 
-async fn prebinned(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<RespBox, RetrievalError> {
+async fn prebinned(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<StreamResponse, RetrievalError> {
     match prebinned_inner(req, ctx, node_config).await {
         Ok(ret) => Ok(ret),
         Err(e) => {
@@ -601,7 +592,11 @@ async fn prebinned(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -> R
     }
 }
 
-async fn prebinned_inner(req: Requ, _ctx: &ReqCtx, _node_config: &NodeConfigCached) -> Result<RespBox, RetrievalError> {
+async fn prebinned_inner(
+    req: Requ,
+    _ctx: &ReqCtx,
+    _node_config: &NodeConfigCached,
+) -> Result<StreamResponse, RetrievalError> {
     let (head, _body) = req.into_parts();
     let url: url::Url = format!("dummy://{}", head.uri).parse()?;
     let query = PreBinnedQuery::from_url(&url)?;
@@ -614,14 +609,22 @@ async fn prebinned_inner(req: Requ, _ctx: &ReqCtx, _node_config: &NodeConfigCach
     todo!()
 }
 
-async fn random_channel(req: Requ, _ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<RespBox, RetrievalError> {
+async fn random_channel(
+    req: Requ,
+    _ctx: &ReqCtx,
+    node_config: &NodeConfigCached,
+) -> Result<StreamResponse, RetrievalError> {
     let (_head, _body) = req.into_parts();
     let ret = dbconn::random_channel(node_config).await?;
     let ret = response(StatusCode::OK).body(body_string(ret))?;
     Ok(ret)
 }
 
-async fn clear_cache_all(req: Requ, _ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<RespBox, RetrievalError> {
+async fn clear_cache_all(
+    req: Requ,
+    _ctx: &ReqCtx,
+    node_config: &NodeConfigCached,
+) -> Result<StreamResponse, RetrievalError> {
     let (head, _body) = req.into_parts();
     let dry = match head.uri.query() {
         Some(q) => q.contains("dry"),
@@ -638,7 +641,7 @@ async fn update_db_with_channel_names(
     req: Requ,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
-) -> Result<RespBox, RetrievalError> {
+) -> Result<StreamResponse, RetrievalError> {
     info!("httpret::update_db_with_channel_names");
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
@@ -650,15 +653,16 @@ async fn update_db_with_channel_names(
             .await;
     match res {
         Ok(res) => {
+            let stream = res.map(|k| match serde_json::to_string(&k) {
+                Ok(mut item) => {
+                    item.push('\n');
+                    Ok(Bytes::from(item))
+                }
+                Err(e) => Err(e),
+            });
             let ret = response(StatusCode::OK)
                 .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
-                .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {
-                    Ok(mut item) => {
-                        item.push('\n');
-                        Ok(item)
-                    }
-                    Err(e) => Err(e),
-                })))?;
+                .body(body_stream(stream))?;
             Ok(ret)
         }
         Err(e) => {
@@ -676,22 +680,23 @@ async fn update_db_with_channel_names_3(
     req: Requ,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
-) -> Result<RespBox, RetrievalError> {
+) -> Result<StreamResponse, RetrievalError> {
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
         Some(q) => q.contains("dry"),
         None => false,
     };
     let res = dbconn::scan::update_db_with_channel_names_3(node_config);
+    let stream = res.map(|k| match serde_json::to_string(&k) {
+        Ok(mut item) => {
+            item.push('\n');
+            Ok(Bytes::from(item))
+        }
+        Err(e) => Err(e),
+    });
     let ret = response(StatusCode::OK)
         .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
-        .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {
-            Ok(mut item) => {
-                item.push('\n');
-                Ok(item)
-            }
-            Err(e) => Err(e),
-        })))?;
+        .body(body_stream(stream))?;
     Ok(ret)
 }
 
@@ -699,22 +704,23 @@ async fn update_db_with_all_channel_configs(
     req: Requ,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
-) -> Result<RespBox, RetrievalError> {
+) -> Result<StreamResponse, RetrievalError> {
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
         Some(q) => q.contains("dry"),
         None => false,
     };
     let res = dbconn::scan::update_db_with_all_channel_configs(node_config.clone()).await?;
+    let stream = res.map(|k| match serde_json::to_string(&k) {
+        Ok(mut item) => {
+            item.push('\n');
+            Ok(Bytes::from(item))
+        }
+        Err(e) => Err(e),
+    });
     let ret = response(StatusCode::OK)
         .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
-        .body(Body::wrap_stream(res.map(|k| match serde_json::to_string(&k) {
-            Ok(mut item) => {
-                item.push('\n');
-                Ok(item)
-            }
-            Err(e) => Err(e),
-        })))?;
+        .body(body_stream(stream))?;
     Ok(ret)
 }
 
@@ -722,7 +728,7 @@ async fn update_search_cache(
     req: Requ,
     _ctx: &ReqCtx,
     node_config: &NodeConfigCached,
-) -> Result<RespBox, RetrievalError> {
+) -> Result<StreamResponse, RetrievalError> {
     let (head, _body) = req.into_parts();
     let _dry = match head.uri.query() {
         Some(q) => q.contains("dry"),

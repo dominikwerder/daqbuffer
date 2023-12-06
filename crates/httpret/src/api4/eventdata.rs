@@ -4,12 +4,13 @@ use crate::ReqCtx;
 use err::thiserror;
 use err::ThisError;
 use err::ToPublicError;
-use futures_util::TryStreamExt;
 use http::Method;
-use http::Request;
-use http::Response;
 use http::StatusCode;
-use hyper::Body;
+use httpclient::body_empty;
+use httpclient::body_stream;
+use httpclient::read_body_bytes;
+use httpclient::Requ;
+use httpclient::StreamResponse;
 use netpod::log::*;
 use netpod::NodeConfigCached;
 use netpod::ServiceVersion;
@@ -35,7 +36,7 @@ impl ToPublicError for EventDataError {
 pub struct EventDataHandler {}
 
 impl EventDataHandler {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path().eq("/api/4/private/eventdata/frames") {
             Some(Self {})
         } else {
@@ -45,14 +46,14 @@ impl EventDataHandler {
 
     pub async fn handle(
         &self,
-        req: Request<Body>,
+        req: Requ,
         _ctx: &ReqCtx,
         ncc: &NodeConfigCached,
         _service_version: &ServiceVersion,
-    ) -> Result<Response<Body>, EventDataError> {
+    ) -> Result<StreamResponse, EventDataError> {
         if req.method() != Method::POST {
             Ok(response(StatusCode::NOT_ACCEPTABLE)
-                .body(Body::empty())
+                .body(body_empty())
                 .map_err(|_| EventDataError::InternalError)?)
         } else {
             match Self::handle_req(req, ncc).await {
@@ -67,18 +68,21 @@ impl EventDataHandler {
         }
     }
 
-    async fn handle_req(req: Request<Body>, ncc: &NodeConfigCached) -> Result<Response<Body>, EventDataError> {
+    async fn handle_req(req: Requ, ncc: &NodeConfigCached) -> Result<StreamResponse, EventDataError> {
         let (_head, body) = req.into_parts();
-        let frames =
-            nodenet::conn::events_get_input_frames(body.map_err(|e| err::Error::with_msg_no_trace(e.to_string())))
-                .await
-                .map_err(|_| EventDataError::InternalError)?;
+        let body = read_body_bytes(body)
+            .await
+            .map_err(|_e| EventDataError::InternalError)?;
+        let inp = futures_util::stream::iter([Ok(body)]);
+        let frames = nodenet::conn::events_get_input_frames(inp)
+            .await
+            .map_err(|_| EventDataError::InternalError)?;
         let (evsubq,) = nodenet::conn::events_parse_input_query(frames).map_err(|_| EventDataError::QueryParse)?;
         let stream = nodenet::conn::create_response_bytes_stream(evsubq, ncc)
             .await
             .map_err(|e| EventDataError::Error(Box::new(e)))?;
         let ret = response(StatusCode::OK)
-            .body(Body::wrap_stream(stream))
+            .body(body_stream(stream))
             .map_err(|_| EventDataError::InternalError)?;
         Ok(ret)
     }

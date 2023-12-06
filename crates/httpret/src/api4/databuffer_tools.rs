@@ -9,10 +9,12 @@ use err::ToPublicError;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use http::Method;
-use http::Request;
 use http::Response;
 use http::StatusCode;
-use hyper::Body;
+use httpclient::body_empty;
+use httpclient::body_stream;
+use httpclient::Requ;
+use httpclient::StreamResponse;
 use netpod::log::*;
 use netpod::Node;
 use netpod::NodeConfigCached;
@@ -54,7 +56,7 @@ impl ToPublicError for FindActiveError {
 pub struct FindActiveHandler {}
 
 impl FindActiveHandler {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/tool/sfdatabuffer/find/channel/active" {
             Some(Self {})
         } else {
@@ -62,10 +64,10 @@ impl FindActiveHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, ncc: &NodeConfigCached) -> Result<Response<Body>, FindActiveError> {
+    pub async fn handle(&self, req: Requ, ncc: &NodeConfigCached) -> Result<StreamResponse, FindActiveError> {
         if req.method() != Method::GET {
             Ok(response(StatusCode::NOT_ACCEPTABLE)
-                .body(Body::empty())
+                .body(body_empty())
                 .map_err(|_| FindActiveError::InternalError)?)
         } else {
             match Self::handle_req(req, ncc).await {
@@ -80,7 +82,7 @@ impl FindActiveHandler {
         }
     }
 
-    async fn handle_req(req: Request<Body>, ncc: &NodeConfigCached) -> Result<Response<Body>, FindActiveError> {
+    async fn handle_req(req: Requ, ncc: &NodeConfigCached) -> Result<StreamResponse, FindActiveError> {
         let accept_def = APP_JSON;
         let accept = req
             .headers()
@@ -108,7 +110,7 @@ impl FindActiveHandler {
                     }
                 })
                 .map(|x| Ok::<_, String>(Bytes::from(x)));
-            let body = Body::wrap_stream(Box::pin(stream));
+            let body = body_stream(stream);
             Ok(Response::builder().status(StatusCode::OK).body(body).unwrap())
         } else {
             Err(FindActiveError::HttpBadAccept)

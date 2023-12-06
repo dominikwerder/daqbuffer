@@ -6,10 +6,13 @@ use crate::ToPublicResponse;
 use futures_util::stream;
 use futures_util::TryStreamExt;
 use http::Method;
-use http::Request;
-use http::Response;
 use http::StatusCode;
-use hyper::Body;
+use httpclient::body_empty;
+use httpclient::body_stream;
+use httpclient::IntoBody;
+use httpclient::Requ;
+use httpclient::StreamResponse;
+use httpclient::ToJsonBody;
 use netpod::log::*;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
@@ -22,7 +25,7 @@ use url::Url;
 pub struct EventsHandler {}
 
 impl EventsHandler {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/events" {
             Some(Self {})
         } else {
@@ -30,9 +33,9 @@ impl EventsHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() != Method::GET {
-            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
         match plain_events(req, node_config).await {
             Ok(ret) => Ok(ret),
@@ -44,7 +47,7 @@ impl EventsHandler {
     }
 }
 
-async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+async fn plain_events(req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
     let accept_def = APP_JSON;
     let accept = req
         .headers()
@@ -66,25 +69,18 @@ async fn plain_events(req: Request<Body>, node_config: &NodeConfigCached) -> Res
     }
 }
 
-async fn plain_events_binary(
-    url: Url,
-    req: Request<Body>,
-    node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
+async fn plain_events_binary(url: Url, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
     debug!("{:?}", req);
     let query = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
     let ch_conf = chconf_from_events_quorum(&query, node_config).await?;
     info!("plain_events_binary  chconf_from_events_quorum: {ch_conf:?}");
     let s = stream::iter([Ok::<_, Error>(String::from("TODO_PREBINNED_BINARY_STREAM"))]);
-    let ret = response(StatusCode::OK).body(Body::wrap_stream(s.map_err(Error::from)))?;
+    let s = s.map_err(Error::from);
+    let ret = response(StatusCode::OK).body(body_stream(s))?;
     Ok(ret)
 }
 
-async fn plain_events_json(
-    url: Url,
-    req: Request<Body>,
-    node_config: &NodeConfigCached,
-) -> Result<Response<Body>, Error> {
+async fn plain_events_json(url: Url, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
     let reqid = crate::status_board()?.new_status_id();
     info!("plain_events_json  req: {:?}", req);
     let (_head, _body) = req.into_parts();
@@ -105,7 +101,6 @@ async fn plain_events_json(
             return Err(e.into());
         }
     };
-    let buf = serde_json::to_vec(&item)?;
-    let ret = response(StatusCode::OK).body(Body::from(buf))?;
+    let ret = response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?;
     Ok(ret)
 }

@@ -2,17 +2,11 @@ use crate::body_empty;
 use crate::err::Error;
 use crate::response;
 use crate::Requ;
-use crate::RespFull;
-use crate::StreamBody;
-use bytes::Bytes;
-use futures_util::Stream;
 use futures_util::TryStreamExt;
 use http::Method;
-use http::Response;
 use http::StatusCode;
-use http_body_util::BodyExt;
-use httpclient::httpclient::http_body_util;
-use httpclient::RespBox;
+use httpclient::body_stream;
+use httpclient::StreamResponse;
 use netpod::get_url_query_pairs;
 use netpod::log::*;
 use netpod::DiskIoTune;
@@ -72,7 +66,7 @@ impl DownloadHandler {
         }
     }
 
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<RespBox, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             self.get(req, node_config).await
         } else {
@@ -80,7 +74,7 @@ impl DownloadHandler {
         }
     }
 
-    pub async fn get(&self, req: Requ, ncc: &NodeConfigCached) -> Result<RespBox, Error> {
+    pub async fn get(&self, req: Requ, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
         let (head, _body) = req.into_parts();
         let p2 = &head.uri.path()[Self::path_prefix().len()..];
         let base = match &ncc.node.sf_databuffer {
@@ -95,16 +89,7 @@ impl DownloadHandler {
         let file = tokio::fs::OpenOptions::new().read(true).open(&pp).await?;
         let stream =
             disk::file_content_stream(pp, file, query.disk_io_tune.clone(), "download").map_ok(|x| x.into_buf());
-
-        use futures_util::StreamExt;
-        use hyper::body::Frame;
-        let stream = stream.map(|item| item.map(|x| Frame::data(x.freeze())));
-        let body = httpclient::httpclient::http_body_util::StreamBody::new(stream);
-        let body = BodyExt::boxed(body);
-        // let body = http_body_util::combinators::BoxBody::new(body);
-        // let body: StreamBody = Box::pin(body);
-        // let body: Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, err::Error>>>> = Box::pin(body);
-        let res = response(StatusCode::OK).body(body)?;
+        let res = response(StatusCode::OK).body(body_stream(stream))?;
         Ok(res)
     }
 }

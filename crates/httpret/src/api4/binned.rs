@@ -4,10 +4,12 @@ use crate::channelconfig::ch_conf_from_binned;
 use crate::err::Error;
 use crate::response_err;
 use http::Method;
-use http::Request;
-use http::Response;
 use http::StatusCode;
-use hyper::Body;
+use httpclient::body_empty;
+use httpclient::IntoBody;
+use httpclient::Requ;
+use httpclient::StreamResponse;
+use httpclient::ToJsonBody;
 use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::FromUrl;
@@ -16,7 +18,7 @@ use query::api4::binned::BinnedQuery;
 use tracing::Instrument;
 use url::Url;
 
-async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+async fn binned_json(url: Url, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
     debug!("{:?}", req);
     let reqid = crate::status_board()
         .map_err(|e| Error::with_msg_no_trace(e.to_string()))?
@@ -45,12 +47,11 @@ async fn binned_json(url: Url, req: Request<Body>, node_config: &NodeConfigCache
     let item = streams::timebinnedjson::timebinned_json(query, ch_conf, reqid, node_config.node_config.cluster.clone())
         .instrument(span1)
         .await?;
-    let buf = serde_json::to_vec(&item)?;
-    let ret = response(StatusCode::OK).body(Body::from(buf))?;
+    let ret = response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?;
     Ok(ret)
 }
 
-async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+async fn binned(req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
     let url = {
         let s1 = format!("dummy:{}", req.uri());
         Url::parse(&s1)
@@ -83,7 +84,7 @@ async fn binned(req: Request<Body>, node_config: &NodeConfigCached) -> Result<Re
 pub struct BinnedHandler {}
 
 impl BinnedHandler {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/binned" {
             Some(Self {})
         } else {
@@ -91,9 +92,9 @@ impl BinnedHandler {
         }
     }
 
-    pub async fn handle(&self, req: Request<Body>, node_config: &NodeConfigCached) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() != Method::GET {
-            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?);
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
         match binned(req, node_config).await {
             Ok(ret) => Ok(ret),

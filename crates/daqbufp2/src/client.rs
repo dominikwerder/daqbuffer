@@ -1,11 +1,12 @@
 use crate::err::ErrConv;
-use bytes::Bytes;
 use chrono::DateTime;
 use chrono::Utc;
 use disk::streamlog::Streamlog;
 use err::Error;
 use futures_util::TryStreamExt;
 use http::StatusCode;
+use http::Uri;
+use httpclient::body_empty;
 use items_0::streamitem::StreamItem;
 use netpod::log::*;
 use netpod::query::CacheUsage;
@@ -22,10 +23,12 @@ use url::Url;
 pub async fn status(host: String, port: u16) -> Result<(), Error> {
     let t1 = Utc::now();
     let uri = format!("http://{}:{}/api/4/node_status", host, port,);
-    let req = hyper::Request::builder()
+    let uri: Uri = uri.parse()?;
+    let req = http::Request::builder()
         .method(http::Method::GET)
+        .header(http::header::HOST, uri.host().unwrap())
         .uri(uri)
-        .body(httpclient::Full::new(Bytes::new()))?;
+        .body(body_empty())?;
     let mut client = httpclient::connect_client(req.uri()).await?;
     let res = client.send_request(req).await?;
     if res.status() != StatusCode::OK {
@@ -69,11 +72,13 @@ pub async fn get_binned(
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", hp.host, hp.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    let req = hyper::Request::builder()
+    let uri: Uri = url.as_str().parse()?;
+    let req = http::Request::builder()
         .method(http::Method::GET)
-        .uri(url.to_string())
+        .header(http::header::HOST, uri.host().unwrap())
         .header(http::header::ACCEPT, APP_OCTET)
-        .body(httpclient::Full::new(Bytes::new()))
+        .uri(uri)
+        .body(body_empty())
         .ec()?;
     let mut client = httpclient::connect_client(req.uri()).await?;
     let res = client.send_request(req).await?;

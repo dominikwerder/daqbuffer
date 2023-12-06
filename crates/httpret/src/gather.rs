@@ -3,13 +3,15 @@ use crate::body_string;
 use crate::err::Error;
 use crate::response;
 use crate::Requ;
-use crate::RespFull;
 use futures_util::select;
 use futures_util::FutureExt;
 use http::Method;
 use http::StatusCode;
 use httpclient::connect_client;
 use httpclient::read_body_bytes;
+use httpclient::IntoBody;
+use httpclient::StreamResponse;
+use httpclient::ToJsonBody;
 use hyper::body::Incoming;
 use hyper::Request;
 use hyper::Response;
@@ -55,7 +57,7 @@ async fn process_answer(res: Response<hyper::body::Incoming>) -> Result<JsonValu
     }
 }
 
-pub async fn gather_get_json(req: Requ, node_config: &NodeConfigCached) -> Result<RespFull, Error> {
+pub async fn gather_get_json(req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
     let (head, body) = req.into_parts();
     let _bodyslice = read_body_bytes(body).await?;
     let pathpre = "/api/4/gather/";
@@ -68,6 +70,7 @@ pub async fn gather_get_json(req: Requ, node_config: &NodeConfigCached) -> Resul
         .filter_map(|node| {
             let uri = format!("http://{}:{}/api/4/{}", node.host, node.port, pathsuf);
             let req = Request::builder().method(Method::GET).uri(uri);
+            let req = req.header(http::header::HOST, &node.host);
             let req = req.header(http::header::ACCEPT, APP_JSON);
             match req.body(body_empty()) {
                 Ok(req) => {
@@ -123,7 +126,7 @@ pub async fn gather_get_json(req: Requ, node_config: &NodeConfigCached) -> Resul
     let a = a;
     let res = response(StatusCode::OK)
         .header(http::header::CONTENT_TYPE, APP_JSON)
-        .body(serde_json::to_string(&Jres { hosts: a })?.into())?;
+        .body(ToJsonBody::from(&Jres { hosts: a }).into_body())?;
     Ok(res)
 }
 

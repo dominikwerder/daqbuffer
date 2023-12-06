@@ -3,10 +3,13 @@ use crate::err::Error;
 use crate::ReqCtx;
 use futures_util::StreamExt;
 use http::Method;
-use http::Request;
-use http::Response;
 use http::StatusCode;
-use hyper::Body;
+use httpclient::body_empty;
+use httpclient::body_string;
+use httpclient::IntoBody;
+use httpclient::Requ;
+use httpclient::StreamResponse;
+use httpclient::ToJsonBody;
 use items_0::Empty;
 use items_0::Extendable;
 use items_2::channelevents::ChannelStatusEvents;
@@ -22,7 +25,7 @@ use url::Url;
 pub struct ConnectionStatusEvents {}
 
 impl ConnectionStatusEvents {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/status/connection/events" {
             Some(Self {})
         } else {
@@ -32,10 +35,10 @@ impl ConnectionStatusEvents {
 
     pub async fn handle(
         &self,
-        req: Request<Body>,
+        req: Requ,
         _ctx: &ReqCtx,
         node_config: &NodeConfigCached,
-    ) -> Result<Response<Body>, Error> {
+    ) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -47,20 +50,20 @@ impl ConnectionStatusEvents {
                 let q = ChannelStateEventsQuery::from_url(&url)?;
                 match self.fetch_data(&q, node_config).await {
                     Ok(k) => {
-                        let body = Body::from(serde_json::to_vec(&k)?);
+                        let body = ToJsonBody::from(&k).into_body();
                         Ok(response(StatusCode::OK).body(body)?)
                     }
                     Err(e) => {
                         error!("{e}");
                         Ok(response(StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(Body::from(format!("{:?}", e.public_msg())))?)
+                            .body(body_string(format!("{:?}", e.public_msg())))?)
                     }
                 }
             } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
             }
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     }
 
@@ -96,7 +99,7 @@ impl ConnectionStatusEvents {
 pub struct ChannelStatusEventsHandler {}
 
 impl ChannelStatusEventsHandler {
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == "/api/4/status/channel/events" {
             Some(Self {})
         } else {
@@ -106,10 +109,10 @@ impl ChannelStatusEventsHandler {
 
     pub async fn handle(
         &self,
-        req: Request<Body>,
+        req: Requ,
         _ctx: &ReqCtx,
         node_config: &NodeConfigCached,
-    ) -> Result<Response<Body>, Error> {
+    ) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -121,20 +124,20 @@ impl ChannelStatusEventsHandler {
                 let q = ChannelStateEventsQuery::from_url(&url)?;
                 match self.fetch_data(&q, node_config).await {
                     Ok(k) => {
-                        let body = Body::from(serde_json::to_vec(&k)?);
+                        let body = ToJsonBody::from(&k).into_body();
                         Ok(response(StatusCode::OK).body(body)?)
                     }
                     Err(e) => {
                         error!("{e}");
                         Ok(response(StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(Body::from(format!("{:?}", e.public_msg())))?)
+                            .body(body_string(format!("{:?}", e.public_msg())))?)
                     }
                 }
             } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(Body::empty())?)
+                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
             }
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     }
 

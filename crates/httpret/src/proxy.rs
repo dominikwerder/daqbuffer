@@ -19,12 +19,17 @@ use futures_util::pin_mut;
 use futures_util::Stream;
 use http::Method;
 use http::StatusCode;
-use hyper::service::make_service_fn;
+use httpclient::body_empty;
+use httpclient::body_stream;
+use httpclient::body_string;
+use httpclient::read_body_bytes;
+use httpclient::IntoBody;
+use httpclient::Requ;
+use httpclient::StreamResponse;
+use httpclient::ToJsonBody;
 use hyper::service::service_fn;
-use hyper::Body;
-use hyper::Request;
 use hyper::Response;
-use hyper::Server;
+use hyper_util::rt::TokioIo;
 use itertools::Itertools;
 use netpod::log::*;
 use netpod::query::ChannelStateEventsQuery;
@@ -55,43 +60,60 @@ use taskrun::tokio;
 use tokio::fs::File;
 use tokio::io::AsyncRead;
 use tokio::io::ReadBuf;
+use tokio::net::TcpListener;
 use url::Url;
 
 const DISTRI_PRE: &str = "/distri/";
 
 pub async fn proxy(proxy_config: ProxyConfig, service_version: ServiceVersion) -> Result<(), Error> {
     use std::str::FromStr;
-    let addr = SocketAddr::from_str(&format!("{}:{}", proxy_config.listen, proxy_config.port))?;
-    let make_service = make_service_fn({
-        move |_conn| {
-            let proxy_config = proxy_config.clone();
-            let service_version = service_version.clone();
-            async move {
-                Ok::<_, Error>(service_fn({
-                    move |req| {
-                        info!(
-                            "http-request  {:?} - {:?} - {:?} - {:?}",
-                            addr,
-                            req.method(),
-                            req.uri(),
-                            req.headers()
-                        );
-                        let f = proxy_http_service(req, proxy_config.clone(), service_version.clone());
-                        Cont { f: Box::pin(f) }
-                    }
-                }))
+    let bind_addr = SocketAddr::from_str(&format!("{}:{}", proxy_config.listen, proxy_config.port))?;
+    let listener = TcpListener::bind(bind_addr).await?;
+    loop {
+        let (stream, addr) = if let Ok(x) = listener.accept().await {
+            x
+        } else {
+            break;
+        };
+        debug!("new connection from {addr}");
+        let proxy_config = proxy_config.clone();
+        let service_version = service_version.clone();
+        let io = TokioIo::new(stream);
+        tokio::task::spawn(async move {
+            let res = hyper::server::conn::http1::Builder::new()
+                .serve_connection(
+                    io,
+                    service_fn({
+                        move |req| {
+                            info!(
+                                "http-request  {:?} - {:?} - {:?} - {:?}",
+                                bind_addr,
+                                req.method(),
+                                req.uri(),
+                                req.headers()
+                            );
+                            let f = proxy_http_service(req, proxy_config.clone(), service_version.clone());
+                            Cont { f: Box::pin(f) }
+                        }
+                    }),
+                )
+                .await;
+            match res {
+                Ok(()) => {}
+                Err(e) => {
+                    error!("{e}");
+                }
             }
-        }
-    });
-    Server::bind(&addr).serve(make_service).await?;
+        });
+    }
     Ok(())
 }
 
 async fn proxy_http_service(
-    req: Request<Body>,
+    req: Requ,
     proxy_config: ProxyConfig,
     service_version: ServiceVersion,
-) -> Result<Response<Body>, Error> {
+) -> Result<StreamResponse, Error> {
     match proxy_http_service_try(req, &proxy_config, &service_version).await {
         Ok(k) => Ok(k),
         Err(e) => {
@@ -102,10 +124,10 @@ async fn proxy_http_service(
 }
 
 async fn proxy_http_service_try(
-    req: Request<Body>,
+    req: Requ,
     proxy_config: &ProxyConfig,
     service_version: &ServiceVersion,
-) -> Result<Response<Body>, Error> {
+) -> Result<StreamResponse, Error> {
     let ctx = ReqCtx::with_proxy(&req, proxy_config);
     let mut res = proxy_http_service_inner(req, &ctx, proxy_config, &service_version).await?;
     let hm = res.headers_mut();
@@ -119,11 +141,11 @@ async fn proxy_http_service_try(
 }
 
 async fn proxy_http_service_inner(
-    req: Request<Body>,
+    req: Requ,
     ctx: &ReqCtx,
     proxy_config: &ProxyConfig,
     service_version: &ServiceVersion,
-) -> Result<Response<Body>, Error> {
+) -> Result<StreamResponse, Error> {
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/1/channels" {
@@ -141,9 +163,9 @@ async fn proxy_http_service_inner(
                     "patch": service_version.patch,
                 },
             });
-            Ok(response(StatusCode::OK).body(Body::from(serde_json::to_vec(&ret)?))?)
+            Ok(response(StatusCode::OK).body(ToJsonBody::from(&ret).into_body())?)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     } else if let Some(h) = api4::StatusNodesRecursive::handler(&req) {
         h.handle(req, ctx, &proxy_config, service_version).await
@@ -169,34 +191,34 @@ async fn proxy_http_service_inner(
         if req.method() == Method::GET {
             Ok(api_1_docs(path)?)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     } else if path.starts_with("/api/4/documentation/") {
         if req.method() == Method::GET {
             Ok(api_4_docs(path)?)
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     } else if path.starts_with("/api/4/test/http/204") {
-        Ok(response(StatusCode::NO_CONTENT).body(Body::from("No Content"))?)
+        Ok(response(StatusCode::NO_CONTENT).body(body_string("No Content"))?)
     } else if path.starts_with("/api/4/test/http/400") {
-        Ok(response(StatusCode::BAD_REQUEST).body(Body::from("Bad Request"))?)
+        Ok(response(StatusCode::BAD_REQUEST).body(body_string("Bad Request"))?)
     } else if path.starts_with("/api/4/test/http/405") {
-        Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::from("Method Not Allowed"))?)
+        Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_string("Method Not Allowed"))?)
     } else if path.starts_with("/api/4/test/http/406") {
-        Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::from("Not Acceptable"))?)
+        Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_string("Not Acceptable"))?)
     } else if path.starts_with("/api/4/test/log/error") {
         error!("{path}");
-        Ok(response(StatusCode::OK).body(Body::empty())?)
+        Ok(response(StatusCode::OK).body(body_empty())?)
     } else if path.starts_with("/api/4/test/log/warn") {
         warn!("{path}");
-        Ok(response(StatusCode::OK).body(Body::empty())?)
+        Ok(response(StatusCode::OK).body(body_empty())?)
     } else if path.starts_with("/api/4/test/log/info") {
         info!("{path}");
-        Ok(response(StatusCode::OK).body(Body::empty())?)
+        Ok(response(StatusCode::OK).body(body_empty())?)
     } else if path.starts_with("/api/4/test/log/debug") {
         debug!("{path}");
-        Ok(response(StatusCode::OK).body(Body::empty())?)
+        Ok(response(StatusCode::OK).body(body_empty())?)
     } else if let Some(h) = api1::PythonDataApi1Query::handler(&req) {
         h.handle(req, ctx, proxy_config).await
     } else if let Some(h) = api1::reqstatus::RequestStatusHandler::handler(&req) {
@@ -218,11 +240,11 @@ async fn proxy_http_service_inner(
             write!(out, "HEADER {hn:?}: {hv:?}<br>\n")?;
         }
         write!(out, "</pre>\n")?;
-        Ok(response(StatusCode::NOT_FOUND).body(Body::from(body))?)
+        Ok(response(StatusCode::NOT_FOUND).body(body_string(body))?)
     }
 }
 
-pub async fn proxy_distribute_v2(req: Request<Body>) -> Result<Response<Body>, Error> {
+pub async fn proxy_distribute_v2(req: Requ) -> Result<StreamResponse, Error> {
     let path = req.uri().path();
     if path
         .chars()
@@ -233,9 +255,9 @@ pub async fn proxy_distribute_v2(req: Request<Body>) -> Result<Response<Body>, E
         let s = FileStream {
             file: File::open(format!("/opt/distri/{}", &path[DISTRI_PRE.len()..])).await?,
         };
-        Ok(response(StatusCode::OK).body(Body::wrap_stream(s))?)
+        Ok(response(StatusCode::OK).body(body_stream(s))?)
     } else {
-        Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?)
+        Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
     }
 }
 
@@ -276,14 +298,14 @@ pub struct BackendsResponse {
     backends: Vec<String>,
 }
 
-pub async fn backends(_req: Request<Body>, proxy_config: &ProxyConfig) -> Result<Response<Body>, Error> {
+pub async fn backends(_req: Requ, proxy_config: &ProxyConfig) -> Result<StreamResponse, Error> {
     let backends: Vec<_> = proxy_config.backends.iter().map(|k| k.name.to_string()).collect();
     let res = BackendsResponse { backends };
-    let ret = response(StatusCode::OK).body(Body::from(serde_json::to_vec(&res)?))?;
+    let ret = response(StatusCode::OK).body(ToJsonBody::from(&res).into_body())?;
     Ok(ret)
 }
 
-pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> Result<Response<Body>, Error> {
+pub async fn channel_search(req: Requ, proxy_config: &ProxyConfig) -> Result<StreamResponse, Error> {
     let (head, _body) = req.into_parts();
     match head.headers.get(http::header::ACCEPT) {
         Some(v) => {
@@ -331,13 +353,18 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                         };
                         let qs = serde_json::to_string(&q).unwrap();
                         methods.push(http::Method::POST);
-                        bodies.push(Some(Body::from(qs)));
+                        bodies.push(Some(qs));
                     });
                 }
                 let tags = urls.iter().map(|k| k.to_string()).collect();
-                let nt = |tag, res| {
+                // let nt = |tag: String, res: Response<hyper::body::Incoming>| {
+                fn fn_nt(
+                    tag: String,
+                    res: Response<hyper::body::Incoming>,
+                ) -> Pin<Box<dyn Future<Output = Result<SubRes<ChannelSearchResult>, Error>> + Send>> {
                     let fut = async {
-                        let body = hyper::body::to_bytes(res).await?;
+                        let (_head, body) = res.into_parts();
+                        let body = read_body_bytes(body).await?;
                         //info!("got a result {:?}", body);
                         let res: SubRes<ChannelSearchResult> =
                             match serde_json::from_slice::<ChannelSearchResult>(&body) {
@@ -408,7 +435,7 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                         Ok(res)
                     };
                     Box::pin(fut) as Pin<Box<dyn Future<Output = _> + Send>>
-                };
+                }
                 let ft = |all: Vec<(crate::gather::Tag, Result<SubRes<ChannelSearchResult>, Error>)>| {
                     let mut res = Vec::new();
                     for (_tag, j) in all {
@@ -426,7 +453,7 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                     let res = ChannelSearchResult { channels: res };
                     let res = response(StatusCode::OK)
                         .header(http::header::CONTENT_TYPE, APP_JSON)
-                        .body(Body::from(serde_json::to_string(&res)?))?;
+                        .body(ToJsonBody::from(&res).into_body())?;
                     Ok(res)
                 };
                 // TODO gather_get_json_generic must for this case accept a Method for each Request.
@@ -438,25 +465,25 @@ pub async fn channel_search(req: Request<Body>, proxy_config: &ProxyConfig) -> R
                     urls,
                     bodies,
                     tags,
-                    nt,
+                    fn_nt,
                     ft,
                     Duration::from_millis(3000),
                 )
                 .await?;
                 Ok(ret)
             } else {
-                Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)
+                Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?)
             }
         }
-        None => Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?),
+        None => Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?),
     }
 }
 
 pub async fn proxy_single_backend_query<QT>(
-    req: Request<Body>,
+    req: Requ,
     _ctx: &ReqCtx,
     proxy_config: &ProxyConfig,
-) -> Result<Response<Body>, Error>
+) -> Result<StreamResponse, Error>
 where
     QT: FromUrl + AppendToUrl + HasBackend + HasTimeout,
 {
@@ -510,11 +537,11 @@ where
                         a
                     })?;
                 let tags: Vec<_> = urls.iter().map(|k| k.to_string()).collect();
-                let nt = |tag: String, res: Response<Body>| {
+                let nt = |tag: String, res: Response<hyper::body::Incoming>| {
                     let fut = async {
                         let (head, body) = res.into_parts();
                         if head.status == StatusCode::OK {
-                            let body = hyper::body::to_bytes(body).await?;
+                            let body = read_body_bytes(body).await?;
                             match serde_json::from_slice::<JsonValue>(&body) {
                                 Ok(val) => {
                                     let ret = SubRes {
@@ -530,7 +557,7 @@ where
                                 }
                             }
                         } else {
-                            let body = hyper::body::to_bytes(body).await?;
+                            let body = read_body_bytes(body).await?;
                             let b = String::from_utf8_lossy(&body);
                             let ret = SubRes {
                                 tag,
@@ -553,7 +580,7 @@ where
                                 // TODO want to pass arbitrary body type:
                                 let res = response(z.status)
                                     .header(http::header::CONTENT_TYPE, APP_JSON)
-                                    .body(Body::from(serde_json::to_string(&res)?))?;
+                                    .body(ToJsonBody::from(&res).into_body())?;
                                 return Ok(res);
                             }
                             Err(e) => {
@@ -571,10 +598,10 @@ where
                     gather_get_json_generic(http::Method::GET, urls, bodies, tags, nt, ft, query.timeout()).await?;
                 Ok(ret)
             } else {
-                Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?)
+                Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?)
             }
         }
-        None => Ok(response(StatusCode::NOT_ACCEPTABLE).body(Body::empty())?),
+        None => Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?),
     }
 }
 

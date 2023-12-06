@@ -1,10 +1,11 @@
 use crate::bodystream::response;
 use crate::err::Error;
 use crate::ReqCtx;
-use http::Request;
-use http::Response;
 use http::StatusCode;
-use hyper::Body;
+use httpclient::IntoBody;
+use httpclient::Requ;
+use httpclient::StreamResponse;
+use httpclient::ToJsonBody;
 use netpod::log::*;
 use netpod::NodeConfigCached;
 use netpod::NodeStatus;
@@ -28,7 +29,7 @@ impl StatusNodesRecursive {
         "/api/4/private/status/nodes/recursive"
     }
 
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == Self::path() {
             Some(Self {})
         } else {
@@ -38,11 +39,11 @@ impl StatusNodesRecursive {
 
     pub async fn handle(
         &self,
-        req: Request<Body>,
+        req: Requ,
         ctx: &ReqCtx,
         node_config: &NodeConfigCached,
         service_version: &ServiceVersion,
-    ) -> Result<Response<Body>, Error> {
+    ) -> Result<StreamResponse, Error> {
         let res = tokio::time::timeout(
             Duration::from_millis(1200),
             self.status(req, ctx, node_config, service_version),
@@ -57,8 +58,7 @@ impl StatusNodesRecursive {
         };
         match res {
             Ok(status) => {
-                let body = serde_json::to_vec(&status)?;
-                let ret = response(StatusCode::OK).body(Body::from(body))?;
+                let ret = response(StatusCode::OK).body(ToJsonBody::from(&status).into_body())?;
                 Ok(ret)
             }
             Err(e) => {
@@ -71,7 +71,7 @@ impl StatusNodesRecursive {
 
     async fn status(
         &self,
-        req: Request<Body>,
+        req: Requ,
         _ctx: &ReqCtx,
         node_config: &NodeConfigCached,
         service_version: &ServiceVersion,

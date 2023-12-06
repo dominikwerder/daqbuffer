@@ -1,10 +1,11 @@
 use crate::bodystream::response;
 use crate::err::Error;
 use crate::ReqCtx;
-use http::Request;
-use http::Response;
 use http::StatusCode;
-use hyper::Body;
+use httpclient::IntoBody;
+use httpclient::Requ;
+use httpclient::StreamResponse;
+use httpclient::ToJsonBody;
 use netpod::log::*;
 use netpod::ProxyConfig;
 
@@ -15,7 +16,7 @@ impl CaIocLookup {
         "/api/4/channel-access/search/addr"
     }
 
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == Self::path() {
             Some(Self {})
         } else {
@@ -23,16 +24,10 @@ impl CaIocLookup {
         }
     }
 
-    pub async fn handle(
-        &self,
-        req: Request<Body>,
-        ctx: &ReqCtx,
-        node_config: &ProxyConfig,
-    ) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, ctx: &ReqCtx, node_config: &ProxyConfig) -> Result<StreamResponse, Error> {
         match self.search(req, ctx, node_config).await {
             Ok(status) => {
-                let body = serde_json::to_vec(&status)?;
-                let ret = response(StatusCode::OK).body(Body::from(body))?;
+                let ret = response(StatusCode::OK).body(ToJsonBody::from(&status).into_body())?;
                 Ok(ret)
             }
             Err(e) => {
@@ -43,12 +38,7 @@ impl CaIocLookup {
         }
     }
 
-    async fn search(
-        &self,
-        _req: Request<Body>,
-        _ctx: &ReqCtx,
-        _proxy_config: &ProxyConfig,
-    ) -> Result<Option<String>, Error> {
+    async fn search(&self, _req: Requ, _ctx: &ReqCtx, _proxy_config: &ProxyConfig) -> Result<Option<String>, Error> {
         Ok(None)
     }
 }

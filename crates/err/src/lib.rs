@@ -429,12 +429,6 @@ impl From<rmp_serde::decode::Error> for Error {
     }
 }
 
-impl From<http::header::ToStrError> for Error {
-    fn from(k: http::header::ToStrError) -> Self {
-        Self::from_string(format!("{:?}", k))
-    }
-}
-
 impl From<anyhow::Error> for Error {
     fn from(k: anyhow::Error) -> Self {
         Self::from_string(format!("{k}"))
@@ -447,14 +441,20 @@ impl From<tokio::task::JoinError> for Error {
     }
 }
 
-impl From<http_1::Error> for Error {
-    fn from(k: http_1::Error) -> Self {
+impl From<http::Error> for Error {
+    fn from(k: http::Error) -> Self {
         Self::from_string(k)
     }
 }
 
-impl From<hyper_1::Error> for Error {
-    fn from(k: hyper_1::Error) -> Self {
+impl From<http::uri::InvalidUri> for Error {
+    fn from(k: http::uri::InvalidUri) -> Self {
+        Self::from_string(k)
+    }
+}
+
+impl From<hyper::Error> for Error {
+    fn from(k: hyper::Error) -> Self {
         Self::from_string(k)
     }
 }

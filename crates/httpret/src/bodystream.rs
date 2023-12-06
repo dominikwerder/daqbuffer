@@ -1,13 +1,11 @@
 use crate::err::Error;
-use futures_util::StreamExt;
-use http::HeaderMap;
 use http::Response;
 use http::StatusCode;
+use httpclient::body_empty;
+use httpclient::body_string;
+use httpclient::StreamResponse;
 use netpod::log::*;
 use netpod::APP_JSON;
-use std::pin::Pin;
-use std::task::Context;
-use std::task::Poll;
 
 pub fn response<T>(status: T) -> http::response::Builder
 where
@@ -18,17 +16,17 @@ where
 }
 
 pub trait ToPublicResponse {
-    fn to_public_response(&self) -> Response<Body>;
+    fn to_public_response(&self) -> StreamResponse;
 }
 
 impl ToPublicResponse for Error {
-    fn to_public_response(&self) -> Response<Body> {
+    fn to_public_response(&self) -> StreamResponse {
         self.0.to_public_response()
     }
 }
 
 impl ToPublicResponse for ::err::Error {
-    fn to_public_response(&self) -> Response<Body> {
+    fn to_public_response(&self) -> StreamResponse {
         use err::Reason;
         let e = self.to_public_error();
         let status = match e.reason() {
@@ -42,30 +40,15 @@ impl ToPublicResponse for ::err::Error {
         };
         match response(status)
             .header(http::header::ACCEPT, APP_JSON)
-            .body(Body::from(msg))
+            .body(body_string(msg))
         {
             Ok(res) => res,
             Err(e) => {
                 error!("can not generate http error response {e:?}");
-                let mut res = Response::new(Body::default());
+                let mut res = Response::new(body_empty());
                 *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
                 res
             }
         }
     }
 }
-
-struct BodyStreamWrap(netpod::BodyStream);
-
-// impl hyper::body::HttpBody for BodyStreamWrap {
-//     type Data = bytes::Bytes;
-//     type Error = ::err::Error;
-
-//     fn poll_data(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-//         self.0.inner.poll_next_unpin(cx)
-//     }
-
-//     fn poll_trailers(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Result<Option<HeaderMap>, Self::Error>> {
-//         Poll::Ready(Ok(None))
-//     }
-// }

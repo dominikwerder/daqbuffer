@@ -4,7 +4,6 @@ use crate::cache::Cache;
 use crate::err::Error;
 use crate::response;
 use crate::Requ;
-use crate::RespFull;
 use bytes::Buf;
 use bytes::BufMut;
 use bytes::BytesMut;
@@ -19,6 +18,7 @@ use http::StatusCode;
 use http::Uri;
 use httpclient::connect_client;
 use httpclient::read_body_bytes;
+use httpclient::StreamResponse;
 use hyper::Request;
 use netpod::log::*;
 use netpod::timeunits::SEC;
@@ -401,7 +401,7 @@ impl IndexFullHttpFunction {
         }
     }
 
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<RespFull, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
@@ -908,7 +908,7 @@ impl MapPulseScyllaHandler {
         }
     }
 
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<RespFull, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
@@ -960,7 +960,7 @@ impl MapPulseLocalHttpFunction {
         }
     }
 
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<RespFull, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
@@ -1119,7 +1119,7 @@ impl MapPulseHistoHttpFunction {
         }
     }
 
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<RespFull, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
@@ -1210,7 +1210,7 @@ impl MapPulseHttpFunction {
         }
     }
 
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<RespFull, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         use crate::cache::CachePortal;
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
@@ -1343,7 +1343,7 @@ impl Api4MapPulseHttpFunction {
         res
     }
 
-    pub async fn handle(&self, req: Requ, ncc: &NodeConfigCached) -> Result<RespFull, Error> {
+    pub async fn handle(&self, req: Requ, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
@@ -1394,7 +1394,7 @@ impl Api4MapPulse2HttpFunction {
         path.starts_with(Self::path_prefix())
     }
 
-    pub async fn handle(&self, req: Requ, ncc: &NodeConfigCached) -> Result<RespFull, Error> {
+    pub async fn handle(&self, req: Requ, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
@@ -1440,7 +1440,7 @@ impl MarkClosedHttpFunction {
         }
     }
 
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<RespFull, Error> {
+    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }

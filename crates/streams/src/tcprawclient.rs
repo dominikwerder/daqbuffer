@@ -8,6 +8,9 @@ use crate::frames::inmem::InMemoryFrameStream;
 use crate::frames::inmem::TcpReadAsBytes;
 use err::Error;
 use futures_util::Stream;
+use http::Uri;
+use httpclient::body_bytes;
+use httpclient::http;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::streamitem::sitem_data;
 use items_0::streamitem::Sitemty;
@@ -62,21 +65,22 @@ pub async fn x_processed_event_blobs_stream_from_node_http(
     use http::header;
     use http::Method;
     use http::Request;
-    use httpclient::http;
     use httpclient::hyper;
     use hyper::StatusCode;
 
     let frame1 = make_node_command_frame(subq.clone())?;
     let item = sitem_data(frame1.clone());
-    let buf = item.make_frame()?.freeze();
+    let buf = item.make_frame()?;
 
     let url = node.baseurl().join("/api/4/private/eventdata/frames").unwrap();
     debug!("open_event_data_streams_http  post  {url}");
+    let uri: Uri = url.as_str().parse().unwrap();
     let req = Request::builder()
         .method(Method::POST)
-        .uri(url.to_string())
+        .uri(&uri)
+        .header(header::HOST, uri.host().unwrap())
         .header(header::ACCEPT, APP_OCTET)
-        .body(httpclient::Full::new(buf))
+        .body(body_bytes(buf))
         .map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
     let mut client = httpclient::connect_client(req.uri()).await?;
     let res = client
@@ -161,20 +165,20 @@ where
         use http::header;
         use http::Method;
         use http::Request;
-        use httpclient::http;
-        use httpclient::hyper;
-        use hyper::StatusCode;
+        use httpclient::hyper::StatusCode;
 
         let item = sitem_data(frame1.clone());
-        let buf = item.make_frame()?.freeze();
+        let buf = item.make_frame()?;
 
         let url = node.baseurl().join("/api/4/private/eventdata/frames").unwrap();
         debug!("open_event_data_streams_http  post  {url}");
+        let uri: Uri = url.as_str().parse().unwrap();
         let req = Request::builder()
             .method(Method::POST)
-            .uri(url.to_string())
+            .uri(&uri)
+            .header(header::HOST, uri.host().unwrap())
             .header(header::ACCEPT, APP_OCTET)
-            .body(httpclient::Full::new(buf))
+            .body(body_bytes(buf))
             .map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
         let mut client = httpclient::connect_client(req.uri()).await?;
         let res = client

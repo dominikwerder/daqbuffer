@@ -3,13 +3,20 @@ pub mod reqstatus;
 use crate::bodystream::response;
 use crate::err::Error;
 use crate::ReqCtx;
+use http::header;
 use http::HeaderValue;
 use http::Method;
 use http::Request;
-use http::Response;
 use http::StatusCode;
-use hyper::Body;
-use hyper::Client;
+use http::Uri;
+use httpclient::body_bytes;
+use httpclient::body_empty;
+use httpclient::body_stream;
+use httpclient::connect_client;
+use httpclient::read_body_bytes;
+use httpclient::Requ;
+use httpclient::StreamIncoming;
+use httpclient::StreamResponse;
 use netpod::log::*;
 use netpod::query::api1::Api1Query;
 use netpod::ProxyConfig;
@@ -23,7 +30,7 @@ impl PythonDataApi1Query {
         "/api/1/query"
     }
 
-    pub fn handler(req: &Request<Body>) -> Option<Self> {
+    pub fn handler(req: &Requ) -> Option<Self> {
         if req.uri().path() == Self::path() {
             Some(Self {})
         } else {
@@ -31,14 +38,9 @@ impl PythonDataApi1Query {
         }
     }
 
-    pub async fn handle(
-        &self,
-        req: Request<Body>,
-        _ctx: &ReqCtx,
-        proxy_config: &ProxyConfig,
-    ) -> Result<Response<Body>, Error> {
+    pub async fn handle(&self, req: Requ, _ctx: &ReqCtx, proxy_config: &ProxyConfig) -> Result<StreamResponse, Error> {
         if req.method() != Method::POST {
-            return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(Body::empty())?);
+            return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?);
         }
         let (head, body) = req.into_parts();
         let _accept = head
@@ -47,7 +49,7 @@ impl PythonDataApi1Query {
             .map_or(Ok(ACCEPT_ALL), |k| k.to_str())
             .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?
             .to_owned();
-        let body_data = hyper::body::to_bytes(body).await?;
+        let body_data = read_body_bytes(body).await?;
         if body_data.len() < 512 && body_data.first() == Some(&"{".as_bytes()[0]) {
             info!("request body_data string: {}", String::from_utf8_lossy(&body_data));
         }
@@ -73,24 +75,28 @@ impl PythonDataApi1Query {
         if let Some(back) = back {
             let url_str = format!("{}/api/1/query", back.url);
             info!("try to ask {url_str}");
+            let uri: Uri = url_str.parse()?;
             let req = Request::builder()
                 .method(Method::POST)
-                .uri(url_str)
-                .body(Body::from(body_data))?;
-            let client = Client::new();
-            let res = client.request(req).await?;
+                .header(header::HOST, uri.host().unwrap())
+                .uri(&uri)
+                .body(body_bytes(body_data))?;
+            let mut client = connect_client(&uri).await?;
+            let res = client.send_request(req).await?;
             let (head, body) = res.into_parts();
             if head.status != StatusCode::OK {
                 error!("backend returned error: {head:?}");
-                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
+                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
             } else {
                 info!("backend returned OK");
                 let riq_def = HeaderValue::from_static("(none)");
                 let riq = head.headers.get(X_DAQBUF_REQID).unwrap_or(&riq_def);
-                Ok(response(StatusCode::OK).header(X_DAQBUF_REQID, riq).body(body)?)
+                Ok(response(StatusCode::OK)
+                    .header(X_DAQBUF_REQID, riq)
+                    .body(body_stream(StreamIncoming::new(body)))?)
             }
         } else {
-            Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(Body::empty())?)
+            Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
         }
     }
 }
