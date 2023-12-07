@@ -16,6 +16,7 @@ use httpclient::ToJsonBody;
 use netpod::log::*;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
+use netpod::ReqCtx;
 use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
 use netpod::APP_OCTET;
@@ -33,11 +34,16 @@ impl EventsHandler {
         }
     }
 
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
+    pub async fn handle(
+        &self,
+        req: Requ,
+        ctx: &ReqCtx,
+        node_config: &NodeConfigCached,
+    ) -> Result<StreamResponse, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
-        match plain_events(req, node_config).await {
+        match plain_events(req, ctx, node_config).await {
             Ok(ret) => Ok(ret),
             Err(e) => {
                 error!("EventsHandler sees: {e}");
@@ -47,7 +53,7 @@ impl EventsHandler {
     }
 }
 
-async fn plain_events(req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
+async fn plain_events(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
     let accept_def = APP_JSON;
     let accept = req
         .headers()
@@ -60,19 +66,24 @@ async fn plain_events(req: Requ, node_config: &NodeConfigCached) -> Result<Strea
             .map_err(|e| e.add_public_msg(format!("Can not parse query url")))?
     };
     if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
-        Ok(plain_events_json(url, req, node_config).await?)
+        Ok(plain_events_json(url, req, ctx, node_config).await?)
     } else if accept == APP_OCTET {
-        Ok(plain_events_binary(url, req, node_config).await?)
+        Ok(plain_events_binary(url, req, ctx, node_config).await?)
     } else {
         let ret = response_err(StatusCode::NOT_ACCEPTABLE, format!("Unsupported Accept: {:?}", accept))?;
         Ok(ret)
     }
 }
 
-async fn plain_events_binary(url: Url, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
+async fn plain_events_binary(
+    url: Url,
+    req: Requ,
+    ctx: &ReqCtx,
+    node_config: &NodeConfigCached,
+) -> Result<StreamResponse, Error> {
     debug!("{:?}", req);
     let query = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
-    let ch_conf = chconf_from_events_quorum(&query, node_config).await?;
+    let ch_conf = chconf_from_events_quorum(&query, ctx, node_config).await?;
     info!("plain_events_binary  chconf_from_events_quorum: {ch_conf:?}");
     let s = stream::iter([Ok::<_, Error>(String::from("TODO_PREBINNED_BINARY_STREAM"))]);
     let s = s.map_err(Error::from);
@@ -80,20 +91,24 @@ async fn plain_events_binary(url: Url, req: Requ, node_config: &NodeConfigCached
     Ok(ret)
 }
 
-async fn plain_events_json(url: Url, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
-    let reqid = crate::status_board()?.new_status_id();
+async fn plain_events_json(
+    url: Url,
+    req: Requ,
+    ctx: &ReqCtx,
+    node_config: &NodeConfigCached,
+) -> Result<StreamResponse, Error> {
     info!("plain_events_json  req: {:?}", req);
     let (_head, _body) = req.into_parts();
     let query = PlainEventsQuery::from_url(&url)?;
     info!("plain_events_json  query {query:?}");
     // TODO handle None case better and return 404
-    let ch_conf = chconf_from_events_quorum(&query, node_config)
+    let ch_conf = chconf_from_events_quorum(&query, ctx, node_config)
         .await
         .map_err(Error::from)?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
     info!("plain_events_json  chconf_from_events_quorum: {ch_conf:?}");
     let item =
-        streams::plaineventsjson::plain_events_json(&query, ch_conf, reqid, &node_config.node_config.cluster).await;
+        streams::plaineventsjson::plain_events_json(&query, ch_conf, ctx, &node_config.node_config.cluster).await;
     let item = match item {
         Ok(item) => item,
         Err(e) => {

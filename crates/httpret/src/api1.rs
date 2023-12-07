@@ -62,6 +62,7 @@ use std::any;
 use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
@@ -527,7 +528,7 @@ pub struct DataApiPython3DataStream {
     event_count: usize,
     events_max: u64,
     header_out: bool,
-    reqctx: ReqCtxArc,
+    ctx: ReqCtxArc,
     ping_last: Instant,
     data_done: bool,
     completed: bool,
@@ -561,7 +562,7 @@ impl DataApiPython3DataStream {
             event_count: 0,
             events_max,
             header_out: false,
-            reqctx,
+            ctx: reqctx,
             ping_last: Instant::now(),
             data_done: false,
             completed: false,
@@ -737,7 +738,7 @@ impl DataApiPython3DataStream {
         if tsnow.duration_since(self.ping_last) >= Duration::from_millis(500) {
             self.ping_last = tsnow;
             let mut sb = crate::status_board().unwrap();
-            sb.mark_alive(self.reqctx.reqid());
+            sb.mark_alive(self.ctx.reqid());
         }
         ret
     }
@@ -749,7 +750,7 @@ impl DataApiPython3DataStream {
             self.range.clone().into(),
             TransformQuery::for_event_blobs(),
         );
-        let subq = EventsSubQuery::from_parts(select, self.settings.clone(), self.reqctx.reqid().into());
+        let subq = EventsSubQuery::from_parts(select, self.settings.clone(), self.ctx.reqid().into());
         debug!("query for event blobs retrieval  subq {subq:?}");
         // TODO  important TODO
         debug!("TODO fix magic inmem_bufcap");
@@ -757,10 +758,10 @@ impl DataApiPython3DataStream {
         // TODO is this a good to place decide this?
         let stream = if self.node_config.node_config.cluster.is_central_storage {
             debug!("set up central storage stream");
-            disk::raw::conn::make_event_blobs_pipe(&subq, &fetch_info, self.reqctx.clone(), &self.node_config)?
+            disk::raw::conn::make_event_blobs_pipe(&subq, &fetch_info, self.ctx.clone(), &self.node_config)?
         } else {
             debug!("set up merged remote stream  {}", fetch_info.name());
-            let s = MergedBlobsFromRemotes::new(subq, self.node_config.node_config.cluster.clone());
+            let s = MergedBlobsFromRemotes::new(subq, &self.ctx, self.node_config.node_config.cluster.clone());
             Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>
         };
         self.chan_stream = Some(Box::pin(stream));
@@ -779,7 +780,7 @@ impl Stream for DataApiPython3DataStream {
                 panic!("poll on completed")
             } else if self.data_done {
                 self.completed = true;
-                let reqid = self.reqctx.reqid();
+                let reqid = self.ctx.reqid();
                 info!(
                     "{}  response body sent  {} bytes  ({})",
                     reqid, self.count_bytes, self.count_emits
@@ -801,7 +802,7 @@ impl Stream for DataApiPython3DataStream {
                                 self.current_fetch_info = None;
                                 self.data_done = true;
                                 let mut sb = crate::status_board().unwrap();
-                                sb.add_error(self.reqctx.reqid(), e.0.clone());
+                                sb.add_error(self.ctx.reqid(), e.0.clone());
                                 Ready(Some(Err(e)))
                             }
                         },
@@ -836,8 +837,8 @@ impl Stream for DataApiPython3DataStream {
                             let n = Instant::now();
                             self.ping_last = n;
                             let mut sb = crate::status_board().unwrap();
-                            sb.mark_alive(self.reqctx.reqid());
-                            sb.mark_done(self.reqctx.reqid());
+                            sb.mark_alive(self.ctx.reqid());
+                            sb.mark_done(self.ctx.reqid());
                         }
                         continue;
                     }
@@ -877,7 +878,7 @@ impl Api1EventsBinaryHandler {
     pub async fn handle(
         &self,
         req: Requ,
-        _ctx: &ReqCtx,
+        ctx: &ReqCtx,
         node_config: &NodeConfigCached,
     ) -> Result<StreamResponse, Error> {
         if req.method() != Method::POST {
@@ -902,8 +903,6 @@ impl Api1EventsBinaryHandler {
                 return Err(Error::with_msg_no_trace("can not parse query"));
             }
         };
-        let reqid = super::status_board()?.new_status_id();
-        let reqctx = netpod::ReqCtx::new(reqid);
         let span = if qu.log_level() == "trace" {
             debug!("enable trace for handler");
             tracing::span!(tracing::Level::TRACE, "log_span_trace")
@@ -920,7 +919,9 @@ impl Api1EventsBinaryHandler {
                 .map_err(|e| e.add_public_msg(format!("Can not parse query url")))?
         };
         let disk_tune = DiskIoTune::from_url(&url)?;
-        let reqidspan = tracing::info_span!("api1query", reqid = reqctx.reqid());
+        let reqidspan = tracing::info_span!("api1query", reqid = ctx.reqid());
+        // TODO do not clone here
+        let reqctx = Arc::new(ctx.clone());
         self.handle_for_query(
             qu,
             accept,
@@ -928,6 +929,7 @@ impl Api1EventsBinaryHandler {
             &reqctx,
             span.clone(),
             reqidspan.clone(),
+            ctx,
             node_config,
         )
         .instrument(span)
@@ -943,6 +945,7 @@ impl Api1EventsBinaryHandler {
         reqctx: &ReqCtxArc,
         span: tracing::Span,
         reqidspan: tracing::Span,
+        ctx: &ReqCtx,
         ncc: &NodeConfigCached,
     ) -> Result<StreamResponse, Error> {
         let self_name = any::type_name::<Self>();
@@ -973,7 +976,8 @@ impl Api1EventsBinaryHandler {
                 debug!("try to find config quorum for {ch:?}");
                 let ch = SfDbChannel::from_name(backend, ch.name());
                 let ch_conf =
-                    nodenet::configquorum::find_config_basics_quorum(ch.clone(), range.clone().into(), ncc).await?;
+                    nodenet::configquorum::find_config_basics_quorum(ch.clone(), range.clone().into(), ctx, ncc)
+                        .await?;
                 match ch_conf {
                     Some(x) => {
                         debug!("found quorum {ch:?} {x:?}");

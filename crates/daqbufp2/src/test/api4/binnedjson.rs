@@ -10,6 +10,7 @@ use netpod::range::evrange::NanoRange;
 use netpod::AppendToUrl;
 use netpod::Cluster;
 use netpod::HostPort;
+use netpod::ReqCtx;
 use netpod::SfDbChannel;
 use netpod::APP_JSON;
 use query::api4::binned::BinnedQuery;
@@ -338,6 +339,7 @@ async fn get_binned_json(
     bin_count: u32,
     cluster: &Cluster,
 ) -> Result<JsonValue, Error> {
+    let ctx = ReqCtx::for_test();
     let t1 = Utc::now();
     let node0 = &cluster.nodes[0];
     let beg_date = beg_date.parse()?;
@@ -349,7 +351,7 @@ async fn get_binned_json(
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", hp.host, hp.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    let res = httpclient::http_get(url, APP_JSON).await?;
+    let res = httpclient::http_get(url, APP_JSON, &ctx).await?;
     let s = String::from_utf8_lossy(&res.body);
     let res: JsonValue = serde_json::from_str(&s)?;
     let pretty = serde_json::to_string_pretty(&res)?;

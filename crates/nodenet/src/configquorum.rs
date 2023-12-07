@@ -8,6 +8,7 @@ use netpod::ChannelConfigResponse;
 use netpod::ChannelTypeConfigGen;
 use netpod::DtNano;
 use netpod::NodeConfigCached;
+use netpod::ReqCtx;
 use netpod::SfChFetchInfo;
 use netpod::SfDbChannel;
 use std::collections::BTreeMap;
@@ -48,6 +49,7 @@ fn decide_sf_ch_config_quorum(inp: Vec<ChannelConfigResponse>) -> Result<Option<
 async fn find_sf_ch_config_quorum(
     channel: SfDbChannel,
     range: SeriesRange,
+    ctx: &ReqCtx,
     ncc: &NodeConfigCached,
 ) -> Result<Option<SfChFetchInfo>, Error> {
     let range = match range {
@@ -63,9 +65,12 @@ async fn find_sf_ch_config_quorum(
             // TODO
             expand: false,
         };
-        let res = tokio::time::timeout(Duration::from_millis(4000), http_get_channel_config(qu, node.baseurl()))
-            .await
-            .map_err(|_| Error::with_msg_no_trace("timeout"))??;
+        let res = tokio::time::timeout(
+            Duration::from_millis(4000),
+            http_get_channel_config(qu, node.baseurl(), ctx),
+        )
+        .await
+        .map_err(|_| Error::with_msg_no_trace("timeout"))??;
         all.push(res);
     }
     let all: Vec<_> = all.into_iter().filter_map(|x| x).collect();
@@ -84,6 +89,7 @@ async fn find_sf_ch_config_quorum(
 pub async fn find_config_basics_quorum(
     channel: SfDbChannel,
     range: SeriesRange,
+    ctx: &ReqCtx,
     ncc: &NodeConfigCached,
 ) -> Result<Option<ChannelTypeConfigGen>, Error> {
     if let Some(_cfg) = &ncc.node.sf_databuffer {
@@ -100,7 +106,7 @@ pub async fn find_config_basics_quorum(
         } else {
             channel
         };
-        match find_sf_ch_config_quorum(channel, range, ncc).await? {
+        match find_sf_ch_config_quorum(channel, range, ctx, ncc).await? {
             Some(x) => Ok(Some(ChannelTypeConfigGen::SfDatabuffer(x))),
             None => Ok(None),
         }

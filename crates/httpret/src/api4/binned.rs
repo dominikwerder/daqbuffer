@@ -14,11 +14,17 @@ use netpod::log::*;
 use netpod::timeunits::SEC;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
+use netpod::ReqCtx;
 use query::api4::binned::BinnedQuery;
 use tracing::Instrument;
 use url::Url;
 
-async fn binned_json(url: Url, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
+async fn binned_json(
+    url: Url,
+    req: Requ,
+    ctx: &ReqCtx,
+    node_config: &NodeConfigCached,
+) -> Result<StreamResponse, Error> {
     debug!("{:?}", req);
     let reqid = crate::status_board()
         .map_err(|e| Error::with_msg_no_trace(e.to_string()))?
@@ -30,7 +36,7 @@ async fn binned_json(url: Url, req: Requ, node_config: &NodeConfigCached) -> Res
         e.add_public_msg(msg)
     })?;
     // TODO handle None case better and return 404
-    let ch_conf = ch_conf_from_binned(&query, node_config)
+    let ch_conf = ch_conf_from_binned(&query, ctx, node_config)
         .await?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
     let span1 = span!(
@@ -44,14 +50,14 @@ async fn binned_json(url: Url, req: Requ, node_config: &NodeConfigCached) -> Res
     span1.in_scope(|| {
         debug!("begin");
     });
-    let item = streams::timebinnedjson::timebinned_json(query, ch_conf, reqid, node_config.node_config.cluster.clone())
+    let item = streams::timebinnedjson::timebinned_json(query, ch_conf, ctx, node_config.node_config.cluster.clone())
         .instrument(span1)
         .await?;
     let ret = response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?;
     Ok(ret)
 }
 
-async fn binned(req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
+async fn binned(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
     let url = {
         let s1 = format!("dummy:{}", req.uri());
         Url::parse(&s1)
@@ -66,7 +72,7 @@ async fn binned(req: Requ, node_config: &NodeConfigCached) -> Result<StreamRespo
         Err(Error::with_msg_no_trace("hidden message").add_public_msg("PublicMessage"))?;
     }
     if crate::accepts_json(&req.headers()) {
-        Ok(binned_json(url, req, node_config).await?)
+        Ok(binned_json(url, req, ctx, node_config).await?)
     } else if crate::accepts_octets(&req.headers()) {
         Ok(response_err(
             StatusCode::NOT_ACCEPTABLE,
@@ -92,11 +98,16 @@ impl BinnedHandler {
         }
     }
 
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
+    pub async fn handle(
+        &self,
+        req: Requ,
+        ctx: &ReqCtx,
+        node_config: &NodeConfigCached,
+    ) -> Result<StreamResponse, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
-        match binned(req, node_config).await {
+        match binned(req, ctx, node_config).await {
             Ok(ret) => Ok(ret),
             Err(e) => {
                 warn!("BinnedHandler handle sees: {e}");

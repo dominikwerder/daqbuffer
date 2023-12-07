@@ -17,6 +17,7 @@ use chrono::Utc;
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use http::Request;
 use range::evrange::NanoRange;
 use range::evrange::PulseRange;
 use range::evrange::SeriesRange;
@@ -2528,7 +2529,7 @@ mod test {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelSearchSingleResult {
     pub backend: String,
     pub name: String,
@@ -2544,7 +2545,7 @@ pub struct ChannelSearchSingleResult {
     pub is_api_0: Option<bool>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelSearchResult {
     pub channels: Vec<ChannelSearchSingleResult>,
 }
@@ -3108,20 +3109,80 @@ mod test_parse {
     }
 }
 
+pub const PSI_DAQBUFFER_SERVICE_MARK: &'static str = "PSI-Daqbuffer-Service-Mark";
+pub const PSI_DAQBUFFER_SEEN_URL: &'static str = "PSI-Daqbuffer-Seen-Url";
+
+#[derive(Debug, Clone)]
 pub struct ReqCtx {
     reqid: String,
+    marks: Vec<String>,
+    mark: String,
 }
 
 impl ReqCtx {
-    pub fn new<S>(reqid: S) -> std::sync::Arc<Self>
+    pub fn new<S>(reqid: S) -> Self
     where
         S: Into<String>,
     {
-        let ret = Self { reqid: reqid.into() };
-        std::sync::Arc::new(ret)
+        let ret = Self {
+            reqid: reqid.into(),
+            marks: Vec::new(),
+            mark: String::new(),
+        };
+        ret
+    }
+
+    pub fn for_test() -> Self {
+        Self {
+            reqid: "TESTID".into(),
+            marks: Vec::new(),
+            mark: String::new(),
+        }
+    }
+
+    pub fn with_node<T>(mut self, req: &Request<T>, nc: &NodeConfigCached) -> Self {
+        if let Some(reqid) = req.headers().get("daqbuf-reqid") {
+            self.reqid = format!("{}-{}", reqid.to_str().unwrap_or("BADID"), self.reqid());
+        }
+        self.mark = format!("{}:{}", nc.node_config.name, nc.node.port);
+        for (n, v) in req.headers().iter() {
+            if n == PSI_DAQBUFFER_SERVICE_MARK {
+                self.marks.push(String::from_utf8_lossy(v.as_bytes()).to_string());
+            }
+        }
+        self
+    }
+
+    pub fn with_proxy<T>(mut self, req: &Request<T>, proxy: &ProxyConfig) -> Self {
+        if let Some(reqid) = req.headers().get("daqbuf-reqid") {
+            self.reqid = format!("{}-{}", reqid.to_str().unwrap_or("BADID"), self.reqid());
+        }
+        self.mark = format!("{}:{}", proxy.name, proxy.port);
+        for (n, v) in req.headers().iter() {
+            if n == PSI_DAQBUFFER_SERVICE_MARK {
+                self.marks.push(String::from_utf8_lossy(v.as_bytes()).to_string());
+            }
+        }
+        self
     }
 
     pub fn reqid(&self) -> &str {
+        &self.reqid
+    }
+
+    pub fn mark(&self) -> &str {
+        &self.mark
+    }
+
+    pub fn marks(&self) -> &[String] {
+        &self.marks
+    }
+
+    pub fn header_name(&self) -> &'static str {
+        "daqbuf-reqid"
+    }
+
+    pub fn header_value(&self) -> &str {
         &self.reqid
     }
 }

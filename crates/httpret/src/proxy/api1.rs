@@ -38,7 +38,7 @@ impl PythonDataApi1Query {
         }
     }
 
-    pub async fn handle(&self, req: Requ, _ctx: &ReqCtx, proxy_config: &ProxyConfig) -> Result<StreamResponse, Error> {
+    pub async fn handle(&self, req: Requ, ctx: &ReqCtx, proxy_config: &ProxyConfig) -> Result<StreamResponse, Error> {
         if req.method() != Method::POST {
             return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?);
         }
@@ -50,18 +50,16 @@ impl PythonDataApi1Query {
             .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?
             .to_owned();
         let body_data = read_body_bytes(body).await?;
-        if body_data.len() < 512 && body_data.first() == Some(&"{".as_bytes()[0]) {
-            info!("request body_data string: {}", String::from_utf8_lossy(&body_data));
-        }
         let qu = match serde_json::from_slice::<Api1Query>(&body_data) {
             Ok(qu) => qu,
             Err(e) => {
-                error!("got body_data: {:?}", String::from_utf8_lossy(&body_data[..]));
+                let buf = &body_data[..body_data.len().min(200)];
+                error!("got body_data: {:?}", String::from_utf8_lossy(buf));
                 error!("can not parse: {e}");
                 return Err(Error::with_msg_no_trace("can not parse query"));
             }
         };
-        info!("Proxy sees request: {qu:?}");
+        info!("{qu:?}");
         let back = {
             let mut ret = None;
             for b in &proxy_config.backends {
@@ -73,12 +71,24 @@ impl PythonDataApi1Query {
             ret
         };
         if let Some(back) = back {
+            // TODO remove special code, make it part of configuration
+            let back = if back.url.contains("sf-daqbuf-23.psi.ch") {
+                let id = 21 + rand::random::<u32>() % 13;
+                let url = back.url.replace("-23.", &format!("-{id}."));
+                netpod::ProxyBackend {
+                    name: back.name.clone(),
+                    url,
+                }
+            } else {
+                back.clone()
+            };
             let url_str = format!("{}/api/1/query", back.url);
             info!("try to ask {url_str}");
             let uri: Uri = url_str.parse()?;
             let req = Request::builder()
                 .method(Method::POST)
                 .header(header::HOST, uri.host().unwrap())
+                .header(ctx.header_name(), ctx.header_value())
                 .uri(&uri)
                 .body(body_bytes(body_data))?;
             let mut client = connect_client(&uri).await?;

@@ -6,6 +6,7 @@ use netpod::query::CacheUsage;
 use netpod::range::evrange::NanoRange;
 use netpod::AppendToUrl;
 use netpod::Cluster;
+use netpod::ReqCtx;
 use netpod::SfDbChannel;
 use netpod::APP_JSON;
 use query::api4::binned::BinnedQuery;
@@ -44,7 +45,8 @@ async fn get_json_common(
     let mut url = Url::parse(&format!("http://{}:{}/api/4/binned", node0.host, node0.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    let res = httpclient::http_get(url, APP_JSON).await?;
+    let ctx = ReqCtx::for_test();
+    let res = httpclient::http_get(url, APP_JSON, &ctx).await?;
     let s = String::from_utf8_lossy(&res.body);
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;

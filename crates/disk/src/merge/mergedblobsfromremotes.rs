@@ -7,6 +7,7 @@ use items_2::eventfull::EventFull;
 use items_2::merger::Merger;
 use netpod::log::*;
 use netpod::Cluster;
+use netpod::ReqCtx;
 use query::api4::events::EventsSubQuery;
 use std::future::Future;
 use std::pin::Pin;
@@ -26,11 +27,11 @@ pub struct MergedBlobsFromRemotes {
 }
 
 impl MergedBlobsFromRemotes {
-    pub fn new(subq: EventsSubQuery, cluster: Cluster) -> Self {
+    pub fn new(subq: EventsSubQuery, ctx: &ReqCtx, cluster: Cluster) -> Self {
         debug!("MergedBlobsFromRemotes::new  subq {:?}", subq);
         let mut tcp_establish_futs = Vec::new();
         for node in &cluster.nodes {
-            let f = x_processed_event_blobs_stream_from_node(subq.clone(), node.clone());
+            let f = x_processed_event_blobs_stream_from_node(subq.clone(), node.clone(), ctx.clone());
             let f: T002<EventFull> = Box::pin(f);
             tcp_establish_futs.push(f);
         }

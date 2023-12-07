@@ -12,9 +12,9 @@ use crate::gather::SubRes;
 use crate::pulsemap::MapPulseQuery;
 use crate::response;
 use crate::response_err;
+use crate::status_board;
+use crate::status_board_init;
 use crate::Cont;
-use crate::ReqCtx;
-use crate::PSI_DAQBUFFER_SERVICE_MARK;
 use futures_util::pin_mut;
 use futures_util::Stream;
 use http::Method;
@@ -42,9 +42,11 @@ use netpod::FromUrl;
 use netpod::HasBackend;
 use netpod::HasTimeout;
 use netpod::ProxyConfig;
+use netpod::ReqCtx;
 use netpod::ServiceVersion;
 use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
+use netpod::PSI_DAQBUFFER_SERVICE_MARK;
 use query::api4::binned::BinnedQuery;
 use query::api4::events::PlainEventsQuery;
 use serde::Deserialize;
@@ -61,19 +63,23 @@ use tokio::fs::File;
 use tokio::io::AsyncRead;
 use tokio::io::ReadBuf;
 use tokio::net::TcpListener;
+use tracing::Instrument;
 use url::Url;
 
 const DISTRI_PRE: &str = "/distri/";
 
 pub async fn proxy(proxy_config: ProxyConfig, service_version: ServiceVersion) -> Result<(), Error> {
+    status_board_init();
     use std::str::FromStr;
     let bind_addr = SocketAddr::from_str(&format!("{}:{}", proxy_config.listen, proxy_config.port))?;
     let listener = TcpListener::bind(bind_addr).await?;
     loop {
-        let (stream, addr) = if let Ok(x) = listener.accept().await {
-            x
-        } else {
-            break;
+        let (stream, addr) = match listener.accept().await {
+            Ok(x) => x,
+            Err(e) => {
+                error!("{e}");
+                break;
+            }
         };
         debug!("new connection from {addr}");
         let proxy_config = proxy_config.clone();
@@ -83,19 +89,7 @@ pub async fn proxy(proxy_config: ProxyConfig, service_version: ServiceVersion) -
             let res = hyper::server::conn::http1::Builder::new()
                 .serve_connection(
                     io,
-                    service_fn({
-                        move |req| {
-                            info!(
-                                "http-request  {:?} - {:?} - {:?} - {:?}",
-                                bind_addr,
-                                req.method(),
-                                req.uri(),
-                                req.headers()
-                            );
-                            let f = proxy_http_service(req, proxy_config.clone(), service_version.clone());
-                            Cont { f: Box::pin(f) }
-                        }
-                    }),
+                    service_fn(move |req| the_service_fn(req, addr, proxy_config.clone(), service_version.clone())),
                 )
                 .await;
             match res {
@@ -106,15 +100,38 @@ pub async fn proxy(proxy_config: ProxyConfig, service_version: ServiceVersion) -
             }
         });
     }
+    info!("proxy done");
     Ok(())
+}
+
+async fn the_service_fn(
+    req: Requ,
+    addr: SocketAddr,
+    proxy_config: ProxyConfig,
+    service_version: ServiceVersion,
+) -> Result<StreamResponse, Error> {
+    let ctx = ReqCtx::new(status_board().unwrap().new_status_id()).with_proxy(&req, &proxy_config);
+    let reqid_span = span!(Level::INFO, "req", reqid = ctx.reqid());
+    let f = proxy_http_service(req, addr, ctx, proxy_config.clone(), service_version.clone());
+    let f = Cont { f: Box::pin(f) };
+    f.instrument(reqid_span).await
 }
 
 async fn proxy_http_service(
     req: Requ,
+    addr: SocketAddr,
+    ctx: ReqCtx,
     proxy_config: ProxyConfig,
     service_version: ServiceVersion,
 ) -> Result<StreamResponse, Error> {
-    match proxy_http_service_try(req, &proxy_config, &service_version).await {
+    info!(
+        "http-request  {:?} - {:?} - {:?} - {:?}",
+        addr,
+        req.method(),
+        req.uri(),
+        req.headers()
+    );
+    match proxy_http_service_try(req, ctx, &proxy_config, &service_version).await {
         Ok(k) => Ok(k),
         Err(e) => {
             error!("data_api_proxy sees error: {:?}", e);
@@ -125,18 +142,18 @@ async fn proxy_http_service(
 
 async fn proxy_http_service_try(
     req: Requ,
+    ctx: ReqCtx,
     proxy_config: &ProxyConfig,
     service_version: &ServiceVersion,
 ) -> Result<StreamResponse, Error> {
-    let ctx = ReqCtx::with_proxy(&req, proxy_config);
     let mut res = proxy_http_service_inner(req, &ctx, proxy_config, &service_version).await?;
     let hm = res.headers_mut();
     hm.insert("Access-Control-Allow-Origin", "*".parse().unwrap());
     hm.insert("Access-Control-Allow-Headers", "*".parse().unwrap());
-    for m in &ctx.marks {
+    for m in ctx.marks() {
         hm.append(PSI_DAQBUFFER_SERVICE_MARK, m.parse().unwrap());
     }
-    hm.append(PSI_DAQBUFFER_SERVICE_MARK, ctx.mark.parse().unwrap());
+    hm.append(PSI_DAQBUFFER_SERVICE_MARK, ctx.mark().parse().unwrap());
     Ok(res)
 }
 

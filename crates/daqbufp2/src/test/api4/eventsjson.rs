@@ -2,7 +2,6 @@ use crate::nodes::require_test_hosts_running;
 use crate::test::api4::common::fetch_events_json;
 use chrono::Utc;
 use err::Error;
-use http::StatusCode;
 use items_0::WithLen;
 use items_2::eventsdim0::EventsDim0CollectorOutput;
 use netpod::log::*;
@@ -10,6 +9,7 @@ use netpod::range::evrange::NanoRange;
 use netpod::AppendToUrl;
 use netpod::Cluster;
 use netpod::HostPort;
+use netpod::ReqCtx;
 use netpod::SfDbChannel;
 use netpod::APP_JSON;
 use query::api4::events::PlainEventsQuery;
@@ -74,6 +74,7 @@ async fn events_plain_json(
     end_date: &str,
     cluster: &Cluster,
 ) -> Result<JsonValue, Error> {
+    let ctx = ReqCtx::for_test();
     let t1 = Utc::now();
     let node0 = &cluster.nodes[0];
     let beg_date = beg_date.parse()?;
@@ -84,7 +85,7 @@ async fn events_plain_json(
     let mut url = Url::parse(&format!("http://{}:{}/api/4/events", hp.host, hp.port))?;
     query.append_to_url(&mut url);
     let url = url;
-    let res = httpclient::http_get(url, APP_JSON).await?;
+    let res = httpclient::http_get(url, APP_JSON, &ctx).await?;
     let s = String::from_utf8_lossy(&res.body);
     let res: JsonValue = serde_json::from_str(&s)?;
     let pretty = serde_json::to_string_pretty(&res)?;

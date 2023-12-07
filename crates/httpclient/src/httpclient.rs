@@ -17,13 +17,14 @@ use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
 use hyper::body::Body;
 use hyper::body::Incoming;
-use hyper::client::conn::http2::SendRequest;
+use hyper::client::conn::http1::SendRequest;
 use hyper::Method;
 use netpod::log::*;
 use netpod::AppendToUrl;
 use netpod::ChannelConfigQuery;
 use netpod::ChannelConfigResponse;
 use netpod::NodeConfigCached;
+use netpod::ReqCtx;
 use netpod::APP_JSON;
 use serde::Serialize;
 use std::fmt;
@@ -232,12 +233,13 @@ pub struct HttpResponse {
     pub body: Bytes,
 }
 
-pub async fn http_get(url: Url, accept: &str) -> Result<HttpResponse, Error> {
+pub async fn http_get(url: Url, accept: &str, ctx: &ReqCtx) -> Result<HttpResponse, Error> {
     let req = Request::builder()
         .method(http::Method::GET)
         .uri(url.to_string())
         .header(header::HOST, url.host_str().ok_or_else(|| Error::BadUrl)?)
         .header(header::ACCEPT, accept)
+        .header("daqbuf-reqid", ctx.reqid())
         .body(body_empty())?;
     let mut send_req = connect_client(req.uri()).await?;
     let res = send_req.send_request(req).await?;
@@ -261,13 +263,14 @@ pub async fn http_get(url: Url, accept: &str) -> Result<HttpResponse, Error> {
     Ok(ret)
 }
 
-pub async fn http_post(url: Url, accept: &str, body: String) -> Result<Bytes, Error> {
+pub async fn http_post(url: Url, accept: &str, body: String, ctx: &ReqCtx) -> Result<Bytes, Error> {
     let req = Request::builder()
         .method(http::Method::POST)
         .uri(url.to_string())
         .header(header::HOST, url.host_str().ok_or_else(|| Error::BadUrl)?)
         .header(header::CONTENT_TYPE, APP_JSON)
         .header(header::ACCEPT, accept)
+        .header("daqbuf-reqid", ctx.reqid())
         .body(body_string(body))?;
     let mut send_req = connect_client(req.uri()).await?;
     let res = send_req.send_request(req).await?;
@@ -301,8 +304,12 @@ pub async fn connect_client(uri: &http::Uri) -> Result<SendRequest<StreamBody>, 
     let host = uri.host().ok_or_else(|| Error::BadUrl)?;
     let port = uri.port_u16().ok_or_else(|| Error::BadUrl)?;
     let stream = TcpStream::connect(format!("{host}:{port}")).await?;
-    let executor = hyper_util::rt::TokioExecutor::new();
-    let (send_req, conn) = hyper::client::conn::http2::Builder::new(executor)
+    #[cfg(DISABLED)]
+    {
+        let executor = hyper_util::rt::TokioExecutor::new();
+        hyper::client::conn::http2::Builder::new(executor);
+    }
+    let (send_req, conn) = hyper::client::conn::http1::Builder::new()
         .handshake(hyper_util::rt::TokioIo::new(stream))
         .await?;
     // TODO would need to take greater care of this task to catch connection-level errors.

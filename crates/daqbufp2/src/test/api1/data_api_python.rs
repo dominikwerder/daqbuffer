@@ -6,6 +6,7 @@ use netpod::range::evrange::NanoRange;
 use netpod::timeunits::MS;
 use netpod::Cluster;
 use netpod::HostPort;
+use netpod::ReqCtx;
 use netpod::SfDbChannel;
 use netpod::APP_JSON;
 use netpod::DATETIME_FMT_3MS;
@@ -23,6 +24,7 @@ async fn fetch_data_api_python_blob(
     end_date: &str,
     cluster: &Cluster,
 ) -> Result<Vec<u8>, Error> {
+    let ctx = ReqCtx::for_test();
     let t1 = Utc::now();
     let node0 = &cluster.nodes[0];
     let beg_date = beg_date.parse()?;
@@ -43,7 +45,7 @@ async fn fetch_data_api_python_blob(
     let hp = HostPort::from_node(node0);
     let url = Url::parse(&format!("http://{}:{}/api/1/query", hp.host, hp.port))?;
     info!("http get {}", url);
-    let buf = httpclient::http_post(url, APP_JSON, query_str).await?;
+    let buf = httpclient::http_post(url, APP_JSON, query_str, &ctx).await?;
     let t2 = chrono::Utc::now();
     let ms = t2.signed_duration_since(t1).num_milliseconds() as u64;
     // TODO add timeout

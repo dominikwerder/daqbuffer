@@ -61,11 +61,12 @@ where
         match current_thread.name() {
             Some(name) => {
                 let n = name.len();
-                let max = 14;
+                let max = 32;
                 if n > max {
-                    writer.write_str(&name[0..2])?;
+                    let pre = 3;
+                    writer.write_str(&name[0..3])?;
                     writer.write_char('.')?;
-                    writer.write_str(&name[name.len() + 3 - max..])?;
+                    writer.write_str(&name[name.len() + 1 + pre - max..])?;
                 } else {
                     writer.write_str(name)?;
                 }

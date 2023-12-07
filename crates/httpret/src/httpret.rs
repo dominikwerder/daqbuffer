@@ -34,13 +34,12 @@ use httpclient::Requ;
 use httpclient::StreamResponse;
 use httpclient::ToJsonBody;
 use hyper::service::service_fn;
-use hyper::Request;
 use hyper_util::rt::TokioIo;
 use net::SocketAddr;
 use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
 use netpod::NodeConfigCached;
-use netpod::ProxyConfig;
+use netpod::ReqCtx;
 use netpod::ServiceVersion;
 use netpod::APP_JSON;
 use netpod::APP_JSON_LINES;
@@ -64,9 +63,7 @@ use task::Context;
 use task::Poll;
 use taskrun::tokio;
 use taskrun::tokio::net::TcpListener;
-
-pub const PSI_DAQBUFFER_SERVICE_MARK: &'static str = "PSI-Daqbuffer-Service-Mark";
-pub const PSI_DAQBUFFER_SEEN_URL: &'static str = "PSI-Daqbuffer-Seen-Url";
+use tracing::Instrument;
 
 #[derive(Debug, ThisError, Serialize, Deserialize)]
 pub enum RetrievalError {
@@ -128,13 +125,7 @@ pub fn accepts_octets(hm: &http::HeaderMap) -> bool {
 }
 
 pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion) -> Result<(), RetrievalError> {
-    static STATUS_BOARD_INIT: Once = Once::new();
-    STATUS_BOARD_INIT.call_once(|| {
-        let b = StatusBoard::new();
-        let a = RwLock::new(b);
-        let x = Box::new(a);
-        STATUS_BOARD.store(Box::into_raw(x), Ordering::SeqCst);
-    });
+    status_board_init();
     #[cfg(DISABLED)]
     if let Some(bind) = node_config.node.prometheus_api_bind {
         tokio::spawn(prometheus::host(bind));
@@ -180,6 +171,20 @@ async fn the_service_fn(
     node_config: NodeConfigCached,
     service_version: ServiceVersion,
 ) -> Result<StreamResponse, Error> {
+    let ctx = ReqCtx::new(status_board()?.new_status_id()).with_node(&req, &node_config);
+    let reqid_span = span!(Level::INFO, "req", reqid = ctx.reqid());
+    let f = http_service(req, addr, ctx, node_config, service_version);
+    let f = Cont { f: Box::pin(f) };
+    f.instrument(reqid_span).await
+}
+
+async fn http_service(
+    req: Requ,
+    addr: SocketAddr,
+    ctx: ReqCtx,
+    node_config: NodeConfigCached,
+    service_version: ServiceVersion,
+) -> Result<StreamResponse, Error> {
     info!(
         "http-request  {:?} - {:?} - {:?} - {:?}",
         addr,
@@ -187,17 +192,7 @@ async fn the_service_fn(
         req.uri(),
         req.headers()
     );
-    let f = http_service(req, node_config, service_version).await;
-    // Cont { f: Box::pin(f) }
-    f
-}
-
-async fn http_service(
-    req: Requ,
-    node_config: NodeConfigCached,
-    service_version: ServiceVersion,
-) -> Result<StreamResponse, Error> {
-    match http_service_try(req, &node_config, &service_version).await {
+    match http_service_try(req, ctx, &node_config, &service_version).await {
         Ok(k) => Ok(k),
         Err(e) => {
             error!("daqbuffer node http_service sees error: {}", e);
@@ -236,41 +231,6 @@ where
 }
 
 impl<F> UnwindSafe for Cont<F> {}
-
-pub struct ReqCtx {
-    pub marks: Vec<String>,
-    pub mark: String,
-}
-
-impl ReqCtx {
-    fn with_node<T>(req: &Request<T>, nc: &NodeConfigCached) -> Self {
-        let mut marks = Vec::new();
-        for (n, v) in req.headers().iter() {
-            if n == PSI_DAQBUFFER_SERVICE_MARK {
-                marks.push(String::from_utf8_lossy(v.as_bytes()).to_string());
-            }
-        }
-        Self {
-            marks,
-            mark: format!("{}:{}", nc.node_config.name, nc.node.port),
-        }
-    }
-}
-
-impl ReqCtx {
-    fn with_proxy<T>(req: &Request<T>, proxy: &ProxyConfig) -> Self {
-        let mut marks = Vec::new();
-        for (n, v) in req.headers().iter() {
-            if n == PSI_DAQBUFFER_SERVICE_MARK {
-                marks.push(String::from_utf8_lossy(v.as_bytes()).to_string());
-            }
-        }
-        Self {
-            marks,
-            mark: format!("{}:{}", proxy.name, proxy.port),
-        }
-    }
-}
 
 // TODO remove because I want error bodies to be json.
 pub fn response_err<T>(status: StatusCode, msg: T) -> Result<StreamResponse, RetrievalError>
@@ -334,6 +294,7 @@ macro_rules! static_http_api1 {
 
 async fn http_service_try(
     req: Requ,
+    ctx: ReqCtx,
     node_config: &NodeConfigCached,
     service_version: &ServiceVersion,
 ) -> Result<StreamResponse, Error> {
@@ -341,23 +302,22 @@ async fn http_service_try(
     let mut urlmarks = Vec::new();
     urlmarks.push(format!("{}:{}", req.method(), req.uri()));
     for (k, v) in req.headers() {
-        if k == PSI_DAQBUFFER_SEEN_URL {
+        if k == netpod::PSI_DAQBUFFER_SEEN_URL {
             let s = String::from_utf8_lossy(v.as_bytes());
             urlmarks.push(s.into());
         }
     }
-    let ctx = ReqCtx::with_node(&req, &node_config);
     let mut res = http_service_inner(req, &ctx, node_config, service_version).await?;
     let hm = res.headers_mut();
     hm.append("Access-Control-Allow-Origin", "*".parse().unwrap());
     hm.append("Access-Control-Allow-Headers", "*".parse().unwrap());
-    for m in &ctx.marks {
-        hm.append(PSI_DAQBUFFER_SERVICE_MARK, m.parse().unwrap());
+    for m in ctx.marks() {
+        hm.append(netpod::PSI_DAQBUFFER_SERVICE_MARK, m.parse().unwrap());
     }
-    hm.append(PSI_DAQBUFFER_SERVICE_MARK, ctx.mark.parse().unwrap());
+    hm.append(netpod::PSI_DAQBUFFER_SERVICE_MARK, ctx.mark().parse().unwrap());
     for s in urlmarks {
         let v = HeaderValue::from_str(&s).unwrap_or_else(|_| HeaderValue::from_static("invalid"));
-        hm.append(PSI_DAQBUFFER_SEEN_URL, v);
+        hm.append(netpod::PSI_DAQBUFFER_SEEN_URL, v);
     }
     Ok(res)
 }
@@ -427,9 +387,9 @@ async fn http_service_inner(
     } else if let Some(h) = api4::search::ChannelSearchHandler::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = api4::binned::BinnedHandler::handler(&req) {
-        Ok(h.handle(req, &node_config).await?)
+        Ok(h.handle(req, ctx, &node_config).await?)
     } else if let Some(h) = channelconfig::ChannelConfigQuorumHandler::handler(&req) {
-        Ok(h.handle(req, &node_config).await?)
+        Ok(h.handle(req, ctx, &node_config).await?)
     } else if let Some(h) = channelconfig::ChannelConfigsHandler::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::ChannelConfigHandler::handler(&req) {
@@ -445,7 +405,7 @@ async fn http_service_inner(
     } else if let Some(h) = channelconfig::AmbigiousChannelNames::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = api4::events::EventsHandler::handler(&req) {
-        Ok(h.handle(req, &node_config).await?)
+        Ok(h.handle(req, ctx, &node_config).await?)
     } else if let Some(h) = channel_status::ConnectionStatusEvents::handler(&req) {
         Ok(h.handle(req, ctx, &node_config).await?)
     } else if let Some(h) = channel_status::ChannelStatusEventsHandler::handler(&req) {
@@ -845,20 +805,14 @@ impl StatusBoard {
     }
 
     pub fn new_status_id(&mut self) -> String {
-        use std::fs::File;
-        use std::io::Read;
-        self.clean();
-        let mut f = File::open("/dev/urandom").unwrap();
-        let mut buf = [0; 4];
-        f.read_exact(&mut buf).unwrap();
-        let n = u32::from_le_bytes(buf);
+        self.clean_if_needed();
+        let n: u32 = rand::random();
         let s = format!("{:08x}", n);
-        debug!("new_status_id {s}");
         self.entries.insert(s.clone(), StatusBoardEntry::new());
         s
     }
 
-    pub fn clean(&mut self) {
+    pub fn clean_if_needed(&mut self) {
         if self.entries.len() > 15000 {
             let mut tss: Vec<_> = self.entries.values().map(|e| e.ts_updated).collect();
             tss.sort_unstable();
@@ -916,7 +870,7 @@ impl StatusBoard {
             Some(e) => e.into(),
             None => {
                 error!("can not find status id {}", status_id);
-                let _e = ::err::Error::with_public_msg_no_trace(format!("Request status ID unknown {status_id}"));
+                let _e = ::err::Error::with_public_msg_no_trace(format!("request-id unknown {status_id}"));
                 StatusBoardEntryUser {
                     error_count: 1,
                     warn_count: 0,
@@ -936,4 +890,14 @@ pub fn status_board() -> Result<RwLockWriteGuard<'static, StatusBoard>, Retrieva
         Ok(x) => Ok(x),
         Err(e) => Err(RetrievalError::TextError(format!("{e}"))),
     }
+}
+
+pub fn status_board_init() {
+    static STATUS_BOARD_INIT: Once = Once::new();
+    STATUS_BOARD_INIT.call_once(|| {
+        let b = StatusBoard::new();
+        let a = RwLock::new(b);
+        let x = Box::new(a);
+        STATUS_BOARD.store(Box::into_raw(x), Ordering::SeqCst);
+    });
 }

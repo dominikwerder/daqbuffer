@@ -5,8 +5,10 @@ use crate::response;
 use crate::Requ;
 use futures_util::select;
 use futures_util::FutureExt;
+use http::header;
 use http::Method;
 use http::StatusCode;
+use http::Uri;
 use httpclient::connect_client;
 use httpclient::read_body_bytes;
 use httpclient::IntoBody;
@@ -22,6 +24,7 @@ use netpod::APP_JSON;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
@@ -69,9 +72,11 @@ pub async fn gather_get_json(req: Requ, node_config: &NodeConfigCached) -> Resul
         .iter()
         .filter_map(|node| {
             let uri = format!("http://{}:{}/api/4/{}", node.host, node.port, pathsuf);
-            let req = Request::builder().method(Method::GET).uri(uri);
-            let req = req.header(http::header::HOST, &node.host);
-            let req = req.header(http::header::ACCEPT, APP_JSON);
+            let req = Request::builder()
+                .method(Method::GET)
+                .header(http::header::HOST, &node.host)
+                .header(http::header::ACCEPT, APP_JSON)
+                .uri(uri);
             match req.body(body_empty()) {
                 Ok(req) => {
                     let task = tokio::spawn(async move {
@@ -133,6 +138,7 @@ pub async fn gather_get_json(req: Requ, node_config: &NodeConfigCached) -> Resul
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize)]
 pub struct Tag(pub String);
 
+#[derive(Debug)]
 pub struct SubRes<T> {
     pub tag: String,
     pub status: StatusCode,
@@ -158,6 +164,7 @@ where
         + Copy
         + 'static,
     FT: Fn(Vec<(Tag, Result<SubRes<SM>, Error>)>) -> Result<OUT, Error>,
+    SubRes<SM>: fmt::Debug,
 {
     // TODO remove magic constant
     let extra_timeout = Duration::from_millis(3000);
@@ -173,17 +180,26 @@ where
         .zip(tags.into_iter())
         .filter_map(move |((url, body), tag)| {
             info!("Try gather from {}", url);
-            let url_str = url.as_str();
-            let req = if body.is_some() {
-                Request::builder().method(Method::POST).uri(url_str)
+            let uri: Uri = if let Ok(x) = url.as_str().parse() {
+                x
             } else {
-                Request::builder().method(Method::GET).uri(url_str)
+                warn!("can not parse {url}");
+                return None;
             };
-            let req = req.header(http::header::ACCEPT, APP_JSON);
             let req = if body.is_some() {
-                req.header(http::header::CONTENT_TYPE, APP_JSON)
+                Request::builder()
+                    .method(Method::POST)
+                    .header(header::HOST, uri.host().unwrap())
+                    .header(http::header::CONTENT_TYPE, APP_JSON)
+                    .header(http::header::ACCEPT, APP_JSON)
+                    .uri(uri)
             } else {
-                req
+                Request::builder()
+                    .method(Method::GET)
+                    .header(header::HOST, uri.host().unwrap())
+                    .header(http::header::CONTENT_TYPE, APP_JSON)
+                    .header(http::header::ACCEPT, APP_JSON)
+                    .uri(uri)
             };
             let body = match body {
                 None => body_empty(),
@@ -209,9 +225,9 @@ where
                                 };
                                 Ok(res)
                             }.fuse() => {
-                                info!("received result in time");
+                                debug!("received result in time  {res:?}");
                                 let ret = nt(tag2, res?).await?;
-                                info!("transformed result in time");
+                                debug!("transformed result in time  {ret:?}");
                                 Ok(ret)
                             }
                         }

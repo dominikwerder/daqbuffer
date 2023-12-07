@@ -20,6 +20,7 @@ use netpod::ChannelConfigResponse;
 use netpod::ChannelTypeConfigGen;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
+use netpod::ReqCtx;
 use netpod::ScalarType;
 use netpod::SfDbChannel;
 use netpod::Shape;
@@ -36,25 +37,28 @@ use url::Url;
 
 pub async fn chconf_from_events_quorum(
     q: &PlainEventsQuery,
+    ctx: &ReqCtx,
     ncc: &NodeConfigCached,
 ) -> Result<Option<ChannelTypeConfigGen>, Error> {
-    let ret = find_config_basics_quorum(q.channel().clone(), q.range().clone(), ncc).await?;
+    let ret = find_config_basics_quorum(q.channel().clone(), q.range().clone(), ctx, ncc).await?;
     Ok(ret)
 }
 
 pub async fn chconf_from_prebinned(
     q: &PreBinnedQuery,
+    ctx: &ReqCtx,
     ncc: &NodeConfigCached,
 ) -> Result<Option<ChannelTypeConfigGen>, Error> {
-    let ret = find_config_basics_quorum(q.channel().clone(), q.patch().patch_range(), ncc).await?;
+    let ret = find_config_basics_quorum(q.channel().clone(), q.patch().patch_range(), ctx, ncc).await?;
     Ok(ret)
 }
 
 pub async fn ch_conf_from_binned(
     q: &BinnedQuery,
+    ctx: &ReqCtx,
     ncc: &NodeConfigCached,
 ) -> Result<Option<ChannelTypeConfigGen>, Error> {
-    let ret = find_config_basics_quorum(q.channel().clone(), q.range().clone(), ncc).await?;
+    let ret = find_config_basics_quorum(q.channel().clone(), q.range().clone(), ctx, ncc).await?;
     Ok(ret)
 }
 
@@ -172,7 +176,12 @@ impl ChannelConfigQuorumHandler {
         }
     }
 
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
+    pub async fn handle(
+        &self,
+        req: Requ,
+        ctx: &ReqCtx,
+        node_config: &NodeConfigCached,
+    ) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -180,7 +189,7 @@ impl ChannelConfigQuorumHandler {
                 .get(http::header::ACCEPT)
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
-                match self.channel_config_quorum(req, &node_config).await {
+                match self.channel_config_quorum(req, ctx, &node_config).await {
                     Ok(k) => Ok(k),
                     Err(e) => {
                         warn!("from channel_config_quorum: {e}");
@@ -195,12 +204,17 @@ impl ChannelConfigQuorumHandler {
         }
     }
 
-    async fn channel_config_quorum(&self, req: Requ, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
+    async fn channel_config_quorum(
+        &self,
+        req: Requ,
+        ctx: &ReqCtx,
+        ncc: &NodeConfigCached,
+    ) -> Result<StreamResponse, Error> {
         info!("channel_config_quorum");
         let url = Url::parse(&format!("dummy:{}", req.uri()))?;
         let q = ChannelConfigQuery::from_url(&url)?;
         info!("channel_config_quorum  for q {q:?}");
-        let ch_confs = nodenet::configquorum::find_config_basics_quorum(q.channel, q.range.into(), ncc).await?;
+        let ch_confs = nodenet::configquorum::find_config_basics_quorum(q.channel, q.range.into(), ctx, ncc).await?;
         let ret = response(StatusCode::OK)
             .header(http::header::CONTENT_TYPE, APP_JSON)
             .body(ToJsonBody::from(&ch_confs).into_body())?;

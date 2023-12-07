@@ -8,6 +8,7 @@ use netpod::log::*;
 use netpod::query::api1::Api1Query;
 use netpod::query::api1::Api1Range;
 use netpod::query::api1::ChannelTuple;
+use netpod::ReqCtx;
 use netpod::APP_OCTET;
 use parse::api1_parse;
 use parse::api1_parse::Api1Frame;
@@ -54,6 +55,7 @@ fn events_f64_plain() -> Result<(), Error> {
         return Ok(());
     }
     let fut = async {
+        let ctx = ReqCtx::for_test();
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
         let node = &cluster.nodes[0];
@@ -64,7 +66,7 @@ fn events_f64_plain() -> Result<(), Error> {
         let ch = ChannelTuple::new(TEST_BACKEND.into(), "test-gen-i32-dim0-v01".into());
         let qu = Api1Query::new(range, vec![ch]);
         let body = serde_json::to_string(&qu)?;
-        let buf = http_post(url, accept, body.into()).await?;
+        let buf = http_post(url, accept, body.into(), &ctx).await?;
         eprintln!("body received: {}", buf.len());
         match api1_parse::api1_frames::<parse::nom::error::VerboseError<_>>(&buf) {
             Ok((_, frames)) => {

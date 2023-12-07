@@ -11,6 +11,7 @@ use netpod::ChannelConfigResponse;
 use netpod::ChannelTypeConfigGen;
 use netpod::DtNano;
 use netpod::NodeConfigCached;
+use netpod::ReqCtx;
 use netpod::ScalarType;
 use netpod::SfChFetchInfo;
 use netpod::SfDbChannel;
@@ -175,11 +176,12 @@ pub async fn channel_configs(channel: SfDbChannel, ncc: &NodeConfigCached) -> Re
 pub async fn http_get_channel_config(
     qu: ChannelConfigQuery,
     baseurl: Url,
+    ctx: &ReqCtx,
 ) -> Result<Option<ChannelConfigResponse>, Error> {
     let url = baseurl;
     let mut url = url.join("/api/4/channel/config").unwrap();
     qu.append_to_url(&mut url);
-    let res = httpclient::http_get(url, APP_JSON).await?;
+    let res = httpclient::http_get(url, APP_JSON, ctx).await?;
     use httpclient::http::StatusCode;
     if res.head.status == StatusCode::NOT_FOUND {
         Ok(None)

@@ -14,6 +14,7 @@ use items_2::streams::PlainEventStream;
 use netpod::log::*;
 use netpod::ChannelTypeConfigGen;
 use netpod::Cluster;
+use netpod::ReqCtx;
 use query::api4::events::EventsSubQuery;
 use query::api4::events::EventsSubQuerySelect;
 use query::api4::events::EventsSubQuerySettings;
@@ -24,7 +25,7 @@ use std::time::Instant;
 pub async fn plain_events_json(
     evq: &PlainEventsQuery,
     ch_conf: ChannelTypeConfigGen,
-    reqid: String,
+    ctx: &ReqCtx,
     cluster: &Cluster,
 ) -> Result<JsonValue, Error> {
     info!("plain_events_json  evquery {:?}", evq);
@@ -33,12 +34,12 @@ pub async fn plain_events_json(
         select.set_wasm1(x.into());
     }
     let settings = EventsSubQuerySettings::from(evq);
-    let subq = EventsSubQuery::from_parts(select, settings, reqid);
+    let subq = EventsSubQuery::from_parts(select, settings, ctx.reqid().into());
     // TODO remove magic constant
     let deadline = Instant::now() + evq.timeout();
     let mut tr = build_merged_event_transform(evq.transform())?;
     // TODO make sure the empty container arrives over the network.
-    let inps = open_event_data_streams::<ChannelEvents>(subq, cluster).await?;
+    let inps = open_event_data_streams::<ChannelEvents>(subq, ctx, cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader.
     // TODO use a mixture of count and byte-size as threshold.
     let stream = Merger::new(inps, evq.merger_out_len_max());
@@ -72,6 +73,7 @@ pub async fn plain_events_json(
         let t = httpclient::http_get(
             Url::parse(&format!("http://data-api.psi.ch/distri/{}", wasmname)).unwrap(),
             "*/*",
+            ctx,
         )
         .await
         .unwrap();

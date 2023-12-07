@@ -21,6 +21,7 @@ use items_2::frame::make_term_frame;
 use netpod::log::*;
 use netpod::Cluster;
 use netpod::Node;
+use netpod::ReqCtx;
 use netpod::APP_OCTET;
 use query::api4::events::EventsSubQuery;
 use query::api4::events::Frame1Parts;
@@ -61,6 +62,7 @@ pub async fn x_processed_event_blobs_stream_from_node_tcp(
 pub async fn x_processed_event_blobs_stream_from_node_http(
     subq: EventsSubQuery,
     node: Node,
+    ctx: &ReqCtx,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
     use http::header;
     use http::Method;
@@ -80,6 +82,7 @@ pub async fn x_processed_event_blobs_stream_from_node_http(
         .uri(&uri)
         .header(header::HOST, uri.host().unwrap())
         .header(header::ACCEPT, APP_OCTET)
+        .header(ctx.header_name(), ctx.header_value())
         .body(body_bytes(buf))
         .map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
     let mut client = httpclient::connect_client(req.uri()).await?;
@@ -115,9 +118,10 @@ pub async fn x_processed_event_blobs_stream_from_node_http(
 pub async fn x_processed_event_blobs_stream_from_node(
     subq: EventsSubQuery,
     node: Node,
+    ctx: ReqCtx,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
     if true {
-        x_processed_event_blobs_stream_from_node_http(subq, node).await
+        x_processed_event_blobs_stream_from_node_http(subq, node, &ctx).await
     } else {
         x_processed_event_blobs_stream_from_node_tcp(subq, node).await
     }
@@ -154,7 +158,11 @@ where
     Ok(streams)
 }
 
-async fn open_event_data_streams_http<T>(subq: EventsSubQuery, cluster: &Cluster) -> Result<Vec<BoxedStream<T>>, Error>
+async fn open_event_data_streams_http<T>(
+    subq: EventsSubQuery,
+    ctx: &ReqCtx,
+    cluster: &Cluster,
+) -> Result<Vec<BoxedStream<T>>, Error>
 where
     // TODO group bounds in new trait
     T: FrameTypeInnerStatic + DeserializeOwned + Send + Unpin + fmt::Debug + 'static,
@@ -178,6 +186,7 @@ where
             .uri(&uri)
             .header(header::HOST, uri.host().unwrap())
             .header(header::ACCEPT, APP_OCTET)
+            .header(ctx.header_name(), ctx.header_value())
             .body(body_bytes(buf))
             .map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
         let mut client = httpclient::connect_client(req.uri()).await?;
@@ -210,13 +219,17 @@ where
     Ok(streams)
 }
 
-pub async fn open_event_data_streams<T>(subq: EventsSubQuery, cluster: &Cluster) -> Result<Vec<BoxedStream<T>>, Error>
+pub async fn open_event_data_streams<T>(
+    subq: EventsSubQuery,
+    ctx: &ReqCtx,
+    cluster: &Cluster,
+) -> Result<Vec<BoxedStream<T>>, Error>
 where
     // TODO group bounds in new trait
     T: FrameTypeInnerStatic + DeserializeOwned + Send + Unpin + fmt::Debug + 'static,
 {
     if true {
-        open_event_data_streams_http(subq, cluster).await
+        open_event_data_streams_http(subq, ctx, cluster).await
     } else {
         open_event_data_streams_tcp(subq, cluster).await
     }
