@@ -19,6 +19,7 @@ use httpclient::StreamResponse;
 use httpclient::ToJsonBody;
 use hyper::body::Incoming;
 use netpod::log::*;
+use netpod::req_uri_to_url;
 use netpod::ChannelSearchQuery;
 use netpod::ChannelSearchResult;
 use netpod::NodeStatus;
@@ -42,7 +43,7 @@ use url::Url;
 
 pub async fn channel_search(req: Requ, proxy_config: &ProxyConfig) -> Result<ChannelSearchResult, Error> {
     let (head, _body) = req.into_parts();
-    let inpurl = Url::parse(&format!("dummy:{}", head.uri))?;
+    let inpurl = req_uri_to_url(&head.uri)?;
     let query = ChannelSearchQuery::from_url(&inpurl)?;
     let mut urls = Vec::new();
     let mut tags = Vec::new();

@@ -38,6 +38,7 @@ use hyper_util::rt::TokioIo;
 use net::SocketAddr;
 use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
+use netpod::req_uri_to_url;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
 use netpod::ServiceVersion;
@@ -558,7 +559,7 @@ async fn prebinned_inner(
     _node_config: &NodeConfigCached,
 ) -> Result<StreamResponse, RetrievalError> {
     let (head, _body) = req.into_parts();
-    let url: url::Url = format!("dummy://{}", head.uri).parse()?;
+    let url = req_uri_to_url(&head.uri)?;
     let query = PreBinnedQuery::from_url(&url)?;
     let span1 = span!(Level::INFO, "httpret::prebinned", desc = &query.patch().span_desc());
     span1.in_scope(|| {

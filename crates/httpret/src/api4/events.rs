@@ -14,6 +14,7 @@ use httpclient::Requ;
 use httpclient::StreamResponse;
 use httpclient::ToJsonBody;
 use netpod::log::*;
+use netpod::req_uri_to_url;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
@@ -59,12 +60,7 @@ async fn plain_events(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -
         .headers()
         .get(http::header::ACCEPT)
         .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
-    let url = {
-        let s1 = format!("dummy:{}", req.uri());
-        Url::parse(&s1)
-            .map_err(Error::from)
-            .map_err(|e| e.add_public_msg(format!("Can not parse query url")))?
-    };
+    let url = req_uri_to_url(req.uri())?;
     if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
         Ok(plain_events_json(url, req, ctx, node_config).await?)
     } else if accept == APP_OCTET {

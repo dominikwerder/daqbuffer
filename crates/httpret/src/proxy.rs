@@ -33,6 +33,7 @@ use hyper_util::rt::TokioIo;
 use itertools::Itertools;
 use netpod::log::*;
 use netpod::query::ChannelStateEventsQuery;
+use netpod::req_uri_to_url;
 use netpod::AppendToUrl;
 use netpod::ChannelConfigQuery;
 use netpod::ChannelSearchQuery;
@@ -327,7 +328,7 @@ pub async fn channel_search(req: Requ, proxy_config: &ProxyConfig) -> Result<Str
     match head.headers.get(http::header::ACCEPT) {
         Some(v) => {
             if v == APP_JSON {
-                let url = Url::parse(&format!("dummy:{}", head.uri))?;
+                let url = req_uri_to_url(&head.uri)?;
                 let query = ChannelSearchQuery::from_url(&url)?;
                 let mut methods = Vec::new();
                 let mut bodies = Vec::new();
@@ -509,7 +510,7 @@ where
     match head.headers.get(http::header::ACCEPT) {
         Some(v) => {
             if v == APP_JSON || v == ACCEPT_ALL {
-                let url = Url::parse(&format!("dummy:{}", head.uri))?;
+                let url = req_uri_to_url(&head.uri)?;
                 let query = match QT::from_url(&url) {
                     Ok(k) => k,
                     Err(_) => {

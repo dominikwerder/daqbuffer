@@ -275,7 +275,7 @@ impl QueryHandler {
 
     pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, RetrievalError> {
         info!("{} for {:?}", std::any::type_name::<Self>(), req);
-        let url = url::Url::parse(&format!("dummy://{}", &req.uri()));
+        let url = req_uri_to_url(req.uri())?;
         info!("/api/v1/query  parsed url: {:?}", url);
         let body = read_body_bytes(req.into_body()).await?;
         let body_str = String::from_utf8_lossy(&body);
@@ -307,7 +307,7 @@ impl QueryRangeHandler {
 
     pub async fn handle(&self, req: Request<Body>) -> Result<Response<Body>, RetrievalError> {
         info!("{} for {:?}", std::any::type_name::<Self>(), req);
-        let url = url::Url::parse(&format!("dummy://{}", &req.uri()));
+        let url = req_uri_to_url(req.uri())?;
         info!("/api/v1/query_range  parsed url: {:?}", url);
         let body = read_body_bytes(req.into_body()).await?;
         let body_str = String::from_utf8_lossy(&body);

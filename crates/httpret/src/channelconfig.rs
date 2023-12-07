@@ -14,6 +14,7 @@ use httpclient::ToJsonBody;
 use netpod::get_url_query_pairs;
 use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
+use netpod::req_uri_to_url;
 use netpod::timeunits::*;
 use netpod::ChannelConfigQuery;
 use netpod::ChannelConfigResponse;
@@ -97,7 +98,7 @@ impl ChannelConfigHandler {
     }
 
     async fn channel_config(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
-        let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+        let url = req_uri_to_url(req.uri())?;
         let q = ChannelConfigQuery::from_url(&url)?;
         let conf = nodenet::channelconfig::channel_config(q.range.clone(), q.channel.clone(), node_config).await?;
         match conf {
@@ -154,7 +155,7 @@ impl ChannelConfigsHandler {
 
     async fn channel_configs(&self, req: Requ, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
         info!("channel_configs");
-        let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+        let url = req_uri_to_url(req.uri())?;
         let q = ChannelConfigQuery::from_url(&url)?;
         info!("channel_configs  for q {q:?}");
         let ch_confs = nodenet::channelconfig::channel_configs(q.channel, ncc).await?;
@@ -211,7 +212,7 @@ impl ChannelConfigQuorumHandler {
         ncc: &NodeConfigCached,
     ) -> Result<StreamResponse, Error> {
         info!("channel_config_quorum");
-        let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+        let url = req_uri_to_url(req.uri())?;
         let q = ChannelConfigQuery::from_url(&url)?;
         info!("channel_config_quorum  for q {q:?}");
         let ch_confs = nodenet::configquorum::find_config_basics_quorum(q.channel, q.range.into(), ctx, ncc).await?;
@@ -354,7 +355,7 @@ impl ScyllaChannelsWithType {
                 .get(http::header::ACCEPT)
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept == APP_JSON || accept == ACCEPT_ALL {
-                let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+                let url = req_uri_to_url(req.uri())?;
                 let q = ChannelsWithTypeQuery::from_url(&url)?;
                 let res = self
                     .get_channels(&q, &node_config.node_config.cluster.backend, node_config)
@@ -512,7 +513,7 @@ impl ScyllaChannelsActive {
                 .get(http::header::ACCEPT)
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept == APP_JSON || accept == ACCEPT_ALL {
-                let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+                let url = req_uri_to_url(req.uri())?;
                 let q = ScyllaChannelsActiveQuery::from_url(&url)?;
                 let res = self.get_channels(&q, node_config).await?;
                 let body = ToJsonBody::from(&res).into_body();
@@ -615,7 +616,7 @@ impl IocForChannel {
                 .get(http::header::ACCEPT)
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept == APP_JSON || accept == ACCEPT_ALL {
-                let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+                let url = req_uri_to_url(req.uri())?;
                 let q = IocForChannelQuery::from_url(&url)?;
                 match self.find(&q, node_config).await {
                     Ok(k) => {
@@ -704,7 +705,7 @@ impl ScyllaSeriesTsMsp {
                 .get(http::header::ACCEPT)
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept == APP_JSON || accept == ACCEPT_ALL {
-                let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+                let url = req_uri_to_url(req.uri())?;
                 let q = ScyllaSeriesTsMspQuery::from_url(&url)?;
                 match self.get_ts_msps(&q, node_config).await {
                     Ok(k) => {

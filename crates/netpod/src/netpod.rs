@@ -18,6 +18,7 @@ use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use http::Request;
+use http::Uri;
 use range::evrange::NanoRange;
 use range::evrange::PulseRange;
 use range::evrange::SeriesRange;
@@ -3188,3 +3189,15 @@ impl ReqCtx {
 }
 
 pub type ReqCtxArc = std::sync::Arc<ReqCtx>;
+
+pub fn req_uri_to_url(uri: &Uri) -> Result<Url, Error> {
+    if uri.scheme().is_none() {
+        format!("dummy:{uri}")
+            .parse()
+            .map_err(|_| Error::with_msg_no_trace(format!("can not use uri {uri}")))
+    } else {
+        uri.to_string()
+            .parse()
+            .map_err(|_| Error::with_msg_no_trace(format!("can not use uri {uri}")))
+    }
+}

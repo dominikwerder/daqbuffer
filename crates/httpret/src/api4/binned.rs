@@ -11,6 +11,7 @@ use httpclient::Requ;
 use httpclient::StreamResponse;
 use httpclient::ToJsonBody;
 use netpod::log::*;
+use netpod::req_uri_to_url;
 use netpod::timeunits::SEC;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
@@ -58,12 +59,7 @@ async fn binned_json(
 }
 
 async fn binned(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
-    let url = {
-        let s1 = format!("dummy:{}", req.uri());
-        Url::parse(&s1)
-            .map_err(Error::from)
-            .map_err(|e| e.add_public_msg(format!("Can not parse query url")))?
-    };
+    let url = req_uri_to_url(req.uri())?;
     if req
         .uri()
         .path_and_query()

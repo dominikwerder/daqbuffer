@@ -21,6 +21,7 @@ use httpclient::read_body_bytes;
 use httpclient::StreamResponse;
 use hyper::Request;
 use netpod::log::*;
+use netpod::req_uri_to_url;
 use netpod::timeunits::SEC;
 use netpod::AppendToUrl;
 use netpod::FromUrl;
@@ -912,8 +913,7 @@ impl MapPulseScyllaHandler {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
-        let urls = format!("dummy://{}", req.uri());
-        let url = url::Url::parse(&urls)?;
+        let url = req_uri_to_url(req.uri())?;
         let query = MapPulseQuery::from_url(&url)?;
         let pulse = query.pulse;
         let scyconf = if let Some(x) = node_config.node_config.cluster.scylla.as_ref() {
@@ -949,6 +949,24 @@ impl MapPulseScyllaHandler {
     }
 }
 
+fn extract_path_number_after_prefix(req: &Requ, prefix: &str) -> Result<u64, Error> {
+    let v: Vec<_> = req.uri().path().split(prefix).collect();
+    if v.len() < 2 {
+        return Err(Error::with_msg_no_trace(format!(
+            "extract_path_number_after_prefix can not understand url {}  prefix {}",
+            req.uri(),
+            prefix
+        )));
+    }
+    v[1].parse().map_err(|_| {
+        Error::with_public_msg_no_trace(format!(
+            "extract_path_number_after_prefix can not understand url {}  prefix {}",
+            req.uri(),
+            prefix
+        ))
+    })
+}
+
 pub struct MapPulseLocalHttpFunction {}
 
 impl MapPulseLocalHttpFunction {
@@ -964,10 +982,7 @@ impl MapPulseLocalHttpFunction {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
-        let urls = req.uri().to_string();
-        let pulse: u64 = urls[MAP_PULSE_LOCAL_URL_PREFIX.len()..]
-            .parse()
-            .map_err(|_| Error::with_public_msg_no_trace(format!("can not understand pulse map url: {}", req.uri())))?;
+        let pulse = extract_path_number_after_prefix(&req, MAP_PULSE_LOCAL_URL_PREFIX)?;
         let req_from = req.headers().get("x-req-from").map_or(None, |x| Some(format!("{x:?}")));
         let ts1 = Instant::now();
         let conn = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
@@ -1123,8 +1138,7 @@ impl MapPulseHistoHttpFunction {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
-        let urls = format!("{}", req.uri());
-        let pulse: u64 = urls[MAP_PULSE_HISTO_URL_PREFIX.len()..].parse()?;
+        let pulse = extract_path_number_after_prefix(&req, MAP_PULSE_HISTO_URL_PREFIX)?;
         let ret = Self::histo(pulse, node_config).await?;
         Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&ret)?))?)
     }
@@ -1216,8 +1230,7 @@ impl MapPulseHttpFunction {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
         trace!("MapPulseHttpFunction  handle  uri: {:?}", req.uri());
-        let urls = format!("{}", req.uri());
-        let pulse: u64 = urls[MAP_PULSE_URL_PREFIX.len()..].parse()?;
+        let pulse = extract_path_number_after_prefix(&req, MAP_PULSE_URL_PREFIX)?;
         match CACHE.portal(pulse) {
             CachePortal::Fresh => {
                 let histo = MapPulseHistoHttpFunction::histo(pulse, node_config).await?;
@@ -1348,8 +1361,8 @@ impl Api4MapPulseHttpFunction {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
         let ts1 = Instant::now();
-        trace!("Api4MapPulseHttpFunction  handle  uri: {:?}", req.uri());
-        let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+        debug!("Api4MapPulseHttpFunction  handle  uri: {:?}", req.uri());
+        let url = req_uri_to_url(req.uri())?;
         let q = MapPulseQuery::from_url(&url)?;
         let ret = match Self::find_timestamp(q, ncc).await {
             Ok(Some(val)) => Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&val)?))?),
@@ -1399,7 +1412,8 @@ impl Api4MapPulse2HttpFunction {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
         let ts1 = Instant::now();
-        let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+        debug!("Api4MapPulse2HttpFunction  handle  uri: {:?}", req.uri());
+        let url = req_uri_to_url(req.uri())?;
         let q = MapPulseQuery::from_url(&url)?;
         let ret = match Api4MapPulseHttpFunction::find_timestamp(q, ncc).await {
             Ok(Some(val)) => {

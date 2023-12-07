@@ -16,6 +16,7 @@ use httpclient::body_stream;
 use httpclient::Requ;
 use httpclient::StreamResponse;
 use netpod::log::*;
+use netpod::req_uri_to_url;
 use netpod::Node;
 use netpod::NodeConfigCached;
 use netpod::ACCEPT_ALL;
@@ -88,10 +89,7 @@ impl FindActiveHandler {
             .headers()
             .get(http::header::ACCEPT)
             .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
-        let _url = {
-            let s1 = format!("dummy:{}", req.uri());
-            Url::parse(&s1)?
-        };
+        let _url = req_uri_to_url(req.uri()).map_err(|_| FindActiveError::HttpBadUrl)?;
         if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
             type _A = netpod::BodyStream;
             let stream = FindActiveStream::new(40, 2, ncc);

@@ -9,15 +9,15 @@ use httpclient::Requ;
 use httpclient::StreamResponse;
 use httpclient::ToJsonBody;
 use netpod::log::*;
+use netpod::req_uri_to_url;
 use netpod::ChannelSearchQuery;
 use netpod::ChannelSearchResult;
 use netpod::NodeConfigCached;
 use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
-use url::Url;
 
 pub async fn channel_search(req: Requ, node_config: &NodeConfigCached) -> Result<ChannelSearchResult, Error> {
-    let url = Url::parse(&format!("dummy://{}", req.uri()))?;
+    let url = req_uri_to_url(req.uri())?;
     let query = ChannelSearchQuery::from_url(&url)?;
     info!("search query: {:?}", query);
     let res = dbconn::search::search_channel(query, node_config).await?;

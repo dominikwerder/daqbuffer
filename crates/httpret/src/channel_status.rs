@@ -16,6 +16,7 @@ use items_2::channelevents::ChannelStatusEvents;
 use items_2::channelevents::ConnStatusEvent;
 use netpod::log::*;
 use netpod::query::ChannelStateEventsQuery;
+use netpod::req_uri_to_url;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ACCEPT_ALL;
@@ -46,7 +47,7 @@ impl ConnectionStatusEvents {
                 .get(http::header::ACCEPT)
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
-                let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+                let url = req_uri_to_url(req.uri())?;
                 let q = ChannelStateEventsQuery::from_url(&url)?;
                 match self.fetch_data(&q, node_config).await {
                     Ok(k) => {
@@ -120,7 +121,7 @@ impl ChannelStatusEventsHandler {
                 .get(http::header::ACCEPT)
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
-                let url = Url::parse(&format!("dummy:{}", req.uri()))?;
+                let url = req_uri_to_url(req.uri())?;
                 let q = ChannelStateEventsQuery::from_url(&url)?;
                 match self.fetch_data(&q, node_config).await {
                     Ok(k) => {

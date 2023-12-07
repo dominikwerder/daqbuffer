@@ -70,6 +70,7 @@ use std::time::Instant;
 use taskrun::tokio;
 use tracing_futures::Instrument;
 use url::Url;
+use netpod::req_uri_to_url;
 
 pub trait BackendAware {
     fn backend(&self) -> &str;
@@ -912,12 +913,7 @@ impl Api1EventsBinaryHandler {
         } else {
             tracing::Span::none()
         };
-        let url = {
-            let s1 = format!("dummy:{}", head.uri);
-            Url::parse(&s1)
-                .map_err(Error::from)
-                .map_err(|e| e.add_public_msg(format!("Can not parse query url")))?
-        };
+        let url = req_uri_to_url(&head.uri)?;
         let disk_tune = DiskIoTune::from_url(&url)?;
         let reqidspan = tracing::info_span!("api1query", reqid = ctx.reqid());
         // TODO do not clone here
@@ -960,16 +956,12 @@ impl Api1EventsBinaryHandler {
         let beg_date = qu.range().beg().clone();
         let end_date = qu.range().end().clone();
         trace!("{self_name}  beg_date {:?}  end_date {:?}", beg_date, end_date);
-        //let url = Url::parse(&format!("dummy:{}", req.uri()))?;
-        //let query = PlainEventsBinaryQuery::from_url(&url)?;
         if accept.contains(APP_OCTET) || accept.contains(ACCEPT_ALL) {
             let beg = beg_date.timestamp() as u64 * SEC + beg_date.timestamp_subsec_nanos() as u64;
             let end = end_date.timestamp() as u64 * SEC + end_date.timestamp_subsec_nanos() as u64;
             let range = NanoRange { beg, end };
             // TODO check for valid given backend name:
             let backend = &ncc.node_config.cluster.backend;
-            // TODO ask for channel config quorum for all channels up front.
-            //httpclient::http_get(url, accept);
             let ts1 = Instant::now();
             let mut chans = Vec::new();
             for ch in qu.channels() {
