@@ -7,6 +7,7 @@ pub mod generators;
 pub mod itemclone;
 pub mod needminbuffer;
 pub mod plaineventsjson;
+pub mod print_on_done;
 pub mod rangefilter2;
 pub mod slidebuf;
 pub mod tcprawclient;

@@ -91,7 +91,7 @@ async fn make_tables(pgc: &dbconn::pg::Client) -> Result<(), Error> {
     Ok(())
 }
 
-fn timer_channel_names() -> Vec<String> {
+fn _timer_channel_names() -> Vec<String> {
     let sections = vec!["SINEG01", "SINSB01", "SINSB02", "SINSB03", "SINSB04", "SINXB01"];
     let suffixes = vec!["MASTER"];
     let mut all: Vec<_> = sections
@@ -388,57 +388,6 @@ async fn read_chunk_at(mut file: File, pos: u64, chunk_len: Option<u64>) -> Resu
     Ok((ret, file))
 }
 
-pub struct IndexFullHttpFunction {}
-
-impl IndexFullHttpFunction {
-    pub fn handler(req: &Requ) -> Option<Self> {
-        if req.uri().path().eq("/api/1/map/index/full") {
-            Some(Self {})
-        } else {
-            None
-        }
-    }
-
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
-        if req.method() != Method::GET {
-            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
-        }
-        let ret = match Self::index(false, node_config).await {
-            Ok(msg) => response(StatusCode::OK).body(body_string(msg))?,
-            Err(e) => {
-                error!("IndexFullHttpFunction {e}");
-                response(StatusCode::INTERNAL_SERVER_ERROR).body(body_string(format!("{:?}", e)))?
-            }
-        };
-        Ok(ret)
-    }
-
-    async fn index(do_print: bool, node_config: &NodeConfigCached) -> Result<String, Error> {
-        // TODO avoid double-insert on central storage.
-        let mut msg = format!("LOG");
-        let pgc = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
-        // TODO remove update of static columns when older clients are removed.
-        let sql = "insert into map_pulse_files (channel, split, timebin, pulse_min, pulse_max, hostname, ks) values ($1, $2, $3, $4, $5, $6, $7) on conflict (channel, split, timebin) do update set pulse_min = $4, pulse_max = $5, upc1 = map_pulse_files.upc1 + 1, hostname = $6";
-        let insert_01 = pgc.prepare(sql).await?;
-        make_tables(&pgc).await?;
-        let chs = timer_channel_names();
-        for channel_name in chs {
-            match IndexChannelHttpFunction::index_channel(&channel_name, &pgc, do_print, &insert_01, node_config).await
-            {
-                Ok(m) => {
-                    msg.push_str("\n");
-                    msg.push_str(&m);
-                }
-                Err(e) => {
-                    error!("error while indexing {}  {:?}", channel_name, e);
-                    //return Err(e);
-                }
-            }
-        }
-        Ok(msg)
-    }
-}
-
 pub struct IndexChannelHttpFunction {}
 
 impl IndexChannelHttpFunction {
@@ -688,13 +637,20 @@ async fn update_task(do_abort: Arc<AtomicUsize>, node_config: NodeConfigCached) 
             false
         };
         CACHE.housekeeping();
-        match IndexFullHttpFunction::index(do_print, &node_config).await {
+
+        // TODO do the actual work here
+        let _ = node_config;
+        match tokio::time::sleep(Duration::from_millis(100))
+            .map(|_| Ok::<_, Error>(123u32))
+            .await
+        {
             Ok(_) => {}
             Err(e) => {
                 error!("issue during last update task: {:?}", e);
                 tokio::time::sleep(Duration::from_millis(20000)).await;
             }
         }
+
         let ts2 = Instant::now();
         let dt = ts2.duration_since(ts1);
         if do_print || dt >= Duration::from_millis(4000) {

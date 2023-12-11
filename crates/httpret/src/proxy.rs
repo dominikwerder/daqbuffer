@@ -12,7 +12,6 @@ use crate::gather::SubRes;
 use crate::pulsemap::MapPulseQuery;
 use crate::response;
 use crate::response_err;
-use crate::status_board;
 use crate::status_board_init;
 use crate::Cont;
 use futures_util::pin_mut;

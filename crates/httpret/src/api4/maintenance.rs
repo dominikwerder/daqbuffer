@@ -62,6 +62,13 @@ impl UpdateDbWithChannelNamesHandler {
                     }
                     Err(e) => Err(e),
                 });
+                let stream = streams::print_on_done::PrintOnDone::new(
+                    stream,
+                    Box::pin(|ts| {
+                        let dt = ts.elapsed();
+                        info!("{}  stream done  {:.0} ms", Self::self_name(), 1e3 * dt.as_secs_f32());
+                    }),
+                );
                 let ret = response(StatusCode::OK)
                     .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
                     .body(body_stream(stream))?;
@@ -122,6 +129,13 @@ impl UpdateDbWithAllChannelConfigsHandler {
             }
             Err(e) => Err(e),
         });
+        let stream = streams::print_on_done::PrintOnDone::new(
+            stream,
+            Box::pin(|ts| {
+                let dt = ts.elapsed();
+                info!("{}  stream done  {:.0} ms", Self::self_name(), 1e3 * dt.as_secs_f32());
+            }),
+        );
         let ret = response(StatusCode::OK)
             .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
             .body(body_stream(stream))?;

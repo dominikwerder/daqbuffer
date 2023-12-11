@@ -21,7 +21,6 @@ use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
-use url::Url;
 
 pub struct ConnectionStatusEvents {}
 

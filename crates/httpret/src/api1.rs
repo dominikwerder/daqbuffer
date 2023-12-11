@@ -795,7 +795,7 @@ impl Stream for DataApiPython3DataStream {
                 self.completed = true;
                 let dt = self.ts_ctor.elapsed().as_secs_f32();
                 info!(
-                    "response body sent  {} bytes  {} items  {:0} ms",
+                    "response body sent  {} bytes  {} items  {:.0} ms",
                     self.count_bytes,
                     self.count_emits,
                     1e3 * dt

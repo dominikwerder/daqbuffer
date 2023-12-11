@@ -377,6 +377,12 @@ async fn http_service_inner(
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = api4::search::ChannelSearchHandler::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
+    } else if let Some(h) = channel_status::ConnectionStatusEvents::handler(&req) {
+        Ok(h.handle(req, ctx, &node_config).await?)
+    } else if let Some(h) = channel_status::ChannelStatusEventsHandler::handler(&req) {
+        Ok(h.handle(req, ctx, &node_config).await?)
+    } else if let Some(h) = api4::events::EventsHandler::handler(&req) {
+        Ok(h.handle(req, ctx, &node_config).await?)
     } else if let Some(h) = api4::binned::BinnedHandler::handler(&req) {
         Ok(h.handle(req, ctx, &node_config).await?)
     } else if let Some(h) = channelconfig::ChannelConfigQuorumHandler::handler(&req) {
@@ -395,12 +401,6 @@ async fn http_service_inner(
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::AmbigiousChannelNames::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
-    } else if let Some(h) = api4::events::EventsHandler::handler(&req) {
-        Ok(h.handle(req, ctx, &node_config).await?)
-    } else if let Some(h) = channel_status::ConnectionStatusEvents::handler(&req) {
-        Ok(h.handle(req, ctx, &node_config).await?)
-    } else if let Some(h) = channel_status::ChannelStatusEventsHandler::handler(&req) {
-        Ok(h.handle(req, ctx, &node_config).await?)
     } else if path == "/api/4/prebinned" {
         if req.method() == Method::GET {
             Ok(prebinned(req, ctx, &node_config).await?)
@@ -432,8 +432,6 @@ async fn http_service_inner(
     } else if let Some(h) = api1::Api1EventsBinaryHandler::handler(&req) {
         Ok(h.handle(req, ctx, &node_config).await?)
     } else if let Some(h) = pulsemap::MapPulseScyllaHandler::handler(&req) {
-        Ok(h.handle(req, &node_config).await?)
-    } else if let Some(h) = pulsemap::IndexFullHttpFunction::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = pulsemap::IndexChannelHttpFunction::handler(&req) {
         Ok(h.handle(req, ctx, &node_config).await?)
