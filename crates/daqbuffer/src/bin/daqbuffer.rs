@@ -84,18 +84,7 @@ async fn go() -> Result<(), Error> {
                 let cfg = cfg?;
                 daqbufp2::run_node(cfg, service_version).await?;
             } else if let Ok(cfg) = serde_yaml::from_slice::<NodeConfig>(&buf) {
-                let sp = span!(Level::INFO, "parse", id = 123u32);
-                sp.in_scope(|| {
-                    let sp = span!(Level::TRACE, "sptrace");
-                    sp.in_scope(|| {
-                        let sp = span!(Level::INFO, "cfg", file = "some");
-                        sp.in_scope(|| {
-                            debug!("Parsed yaml config from {}", subcmd.config);
-                            info!("Parsed yaml config from {}", subcmd.config);
-                            warn!("Parsed yaml config from {}", subcmd.config);
-                        });
-                    });
-                });
+                info!("Parsed yaml config from {}", subcmd.config);
                 let cfg: Result<NodeConfigCached, Error> = cfg.into();
                 let cfg = cfg?;
                 daqbufp2::run_node(cfg, service_version).await?;

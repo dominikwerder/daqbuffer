@@ -51,6 +51,9 @@ impl RequestStatusHandler {
         let _body_data = read_body_bytes(body).await?;
         let status_id = &head.uri.path()[Self::path_prefix().len()..];
         debug!("RequestStatusHandler  status_id {:?}", status_id);
+        if status_id.len() < 8 {
+            return Err(Error::with_msg_no_trace(format!("bad status id {}", status_id)));
+        }
 
         let back = {
             let mut ret = None;
@@ -63,7 +66,14 @@ impl RequestStatusHandler {
             ret
         };
         if let Some(back) = back {
-            let url_str = format!("{}{}{}", back.url, Self::path_prefix(), status_id);
+            let (status_id, url) = if back.url.contains("sf-daqbuf-23.psi.ch") {
+                // TODO split_at may panic on bad input
+                let (status_id, node_tgt) = status_id.split_at(status_id.len() - 2);
+                (status_id, back.url.replace("-23.", &format!("-{}.", node_tgt)))
+            } else {
+                (status_id, back.url.clone())
+            };
+            let url_str = format!("{}{}{}", url, Self::path_prefix(), status_id);
             debug!("try to ask {url_str}");
             let uri: Uri = url_str.parse()?;
             let req = Request::builder()

@@ -41,7 +41,7 @@ use url::Url;
 // The aggregators and leaf nodes behind should as well not depend on backend,
 // but simply answer all matching.
 
-pub async fn channel_search(req: Requ, proxy_config: &ProxyConfig) -> Result<ChannelSearchResult, Error> {
+pub async fn channel_search(req: Requ, ctx: &ReqCtx, proxy_config: &ProxyConfig) -> Result<ChannelSearchResult, Error> {
     let (head, _body) = req.into_parts();
     let inpurl = req_uri_to_url(&head.uri)?;
     let query = ChannelSearchQuery::from_url(&inpurl)?;
@@ -112,6 +112,7 @@ pub async fn channel_search(req: Requ, proxy_config: &ProxyConfig) -> Result<Cha
         nt,
         ft,
         Duration::from_millis(3000),
+        ctx,
     )
     .await?;
     Ok(ret)
@@ -128,7 +129,7 @@ impl ChannelSearchAggHandler {
         }
     }
 
-    pub async fn handle(&self, req: Requ, node_config: &ProxyConfig) -> Result<StreamResponse, Error> {
+    pub async fn handle(&self, req: Requ, ctx: &ReqCtx, node_config: &ProxyConfig) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -136,7 +137,7 @@ impl ChannelSearchAggHandler {
                 .get(http::header::ACCEPT)
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
-                match channel_search(req, node_config).await {
+                match channel_search(req, ctx, node_config).await {
                     Ok(item) => Ok(response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?),
                     Err(e) => {
                         warn!("ChannelConfigHandler::handle: got error from channel_config: {e:?}");
@@ -186,7 +187,7 @@ impl StatusNodesRecursive {
     async fn status(
         &self,
         _req: Requ,
-        _ctx: &ReqCtx,
+        ctx: &ReqCtx,
         proxy_config: &ProxyConfig,
         service_version: &ServiceVersion,
     ) -> Result<NodeStatus, Error> {
@@ -268,6 +269,7 @@ impl StatusNodesRecursive {
             nt,
             ft,
             Duration::from_millis(1200),
+            ctx,
         )
         .await?;
         Ok(ret)

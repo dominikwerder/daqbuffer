@@ -16,18 +16,14 @@ pub mod settings;
 use self::bodystream::ToPublicResponse;
 use crate::bodystream::response;
 use crate::err::Error;
-use crate::gather::gather_get_json;
 use ::err::thiserror;
 use ::err::ThisError;
-use bytes::Bytes;
 use futures_util::Future;
 use futures_util::FutureExt;
-use futures_util::StreamExt;
 use http::Method;
 use http::StatusCode;
 use httpclient::body_bytes;
 use httpclient::body_empty;
-use httpclient::body_stream;
 use httpclient::body_string;
 use httpclient::IntoBody;
 use httpclient::Requ;
@@ -39,27 +35,21 @@ use net::SocketAddr;
 use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
 use netpod::req_uri_to_url;
+use netpod::status_board;
+use netpod::status_board_init;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
 use netpod::ServiceVersion;
 use netpod::APP_JSON;
-use netpod::APP_JSON_LINES;
 use panic::AssertUnwindSafe;
 use panic::UnwindSafe;
 use pin::Pin;
 use serde::Deserialize;
 use serde::Serialize;
-use std::collections::BTreeMap;
 use std::net;
 use std::panic;
 use std::pin;
-use std::sync::atomic::AtomicPtr;
-use std::sync::atomic::Ordering;
-use std::sync::Once;
-use std::sync::RwLock;
-use std::sync::RwLockWriteGuard;
 use std::task;
-use std::time::SystemTime;
 use task::Context;
 use task::Poll;
 use taskrun::tokio;
@@ -172,7 +162,7 @@ async fn the_service_fn(
     node_config: NodeConfigCached,
     service_version: ServiceVersion,
 ) -> Result<StreamResponse, Error> {
-    let ctx = ReqCtx::new(status_board()?.new_status_id()).with_node(&req, &node_config);
+    let ctx = ReqCtx::new_with_node(&req, &node_config);
     let reqid_span = span!(Level::INFO, "req", reqid = ctx.reqid());
     let f = http_service(req, addr, ctx, node_config, service_version);
     let f = Cont { f: Box::pin(f) };
@@ -423,36 +413,18 @@ async fn http_service_inner(
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
-    } else if path.starts_with("/api/4/gather/") {
-        if req.method() == Method::GET {
-            Ok(gather_get_json(req, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
-        }
     } else if path == "/api/4/clear_cache" {
         if req.method() == Method::GET {
             Ok(clear_cache_all(req, ctx, &node_config).await?)
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
-    } else if path == "/api/4/update_db_with_channel_names" {
-        if req.method() == Method::GET {
-            Ok(update_db_with_channel_names(req, ctx, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
-        }
-    } else if path == "/api/4/update_db_with_all_channel_configs" {
-        if req.method() == Method::GET {
-            Ok(update_db_with_all_channel_configs(req, ctx, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
-        }
-    } else if path == "/api/4/update_search_cache" {
-        if req.method() == Method::GET {
-            Ok(update_search_cache(req, ctx, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
-        }
+    } else if let Some(h) = api4::maintenance::UpdateDbWithChannelNamesHandler::handler(&req) {
+        Ok(h.handle(req, ctx, &node_config).await?)
+    } else if let Some(h) = api4::maintenance::UpdateDbWithAllChannelConfigsHandler::handler(&req) {
+        Ok(h.handle(req, ctx, &node_config).await?)
+    } else if let Some(h) = api4::maintenance::UpdateSearchCacheHandler::handler(&req) {
+        Ok(h.handle(req, ctx, &node_config).await?)
     } else if let Some(h) = download::DownloadHandler::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = settings::SettingsThreadsMaxHandler::handler(&req) {
@@ -463,6 +435,8 @@ async fn http_service_inner(
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = pulsemap::IndexFullHttpFunction::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
+    } else if let Some(h) = pulsemap::IndexChannelHttpFunction::handler(&req) {
+        Ok(h.handle(req, ctx, &node_config).await?)
     } else if let Some(h) = pulsemap::MarkClosedHttpFunction::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = pulsemap::MapPulseLocalHttpFunction::handler(&req) {
@@ -535,9 +509,8 @@ impl StatusBoardAllHandler {
     }
 
     pub async fn handle(&self, _req: Requ, _node_config: &NodeConfigCached) -> Result<StreamResponse, RetrievalError> {
-        use std::ops::Deref;
         let sb = status_board().unwrap();
-        let buf = serde_json::to_string(sb.deref()).unwrap();
+        let buf = serde_json::to_string(std::ops::Deref::deref(&sb)).unwrap();
         let res = response(StatusCode::OK).body(body_string(buf))?;
         Ok(res)
     }
@@ -596,309 +569,4 @@ async fn clear_cache_all(
         .header(http::header::CONTENT_TYPE, APP_JSON)
         .body(body_string(serde_json::to_string(&res)?))?;
     Ok(ret)
-}
-
-async fn update_db_with_channel_names(
-    req: Requ,
-    _ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
-) -> Result<StreamResponse, RetrievalError> {
-    info!("httpret::update_db_with_channel_names");
-    let (head, _body) = req.into_parts();
-    let _dry = match head.uri.query() {
-        Some(q) => q.contains("dry"),
-        None => false,
-    };
-    let res =
-        dbconn::scan::update_db_with_channel_names(node_config.clone(), &node_config.node_config.cluster.database)
-            .await;
-    match res {
-        Ok(res) => {
-            let stream = res.map(|k| match serde_json::to_string(&k) {
-                Ok(mut item) => {
-                    item.push('\n');
-                    Ok(Bytes::from(item))
-                }
-                Err(e) => Err(e),
-            });
-            let ret = response(StatusCode::OK)
-                .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
-                .body(body_stream(stream))?;
-            Ok(ret)
-        }
-        Err(e) => {
-            let p = serde_json::to_string(&e)?;
-            let res = response(StatusCode::OK)
-                .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
-                .body(body_string(p))?;
-            Ok(res)
-        }
-    }
-}
-
-#[allow(unused)]
-async fn update_db_with_channel_names_3(
-    req: Requ,
-    _ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
-) -> Result<StreamResponse, RetrievalError> {
-    let (head, _body) = req.into_parts();
-    let _dry = match head.uri.query() {
-        Some(q) => q.contains("dry"),
-        None => false,
-    };
-    let res = dbconn::scan::update_db_with_channel_names_3(node_config);
-    let stream = res.map(|k| match serde_json::to_string(&k) {
-        Ok(mut item) => {
-            item.push('\n');
-            Ok(Bytes::from(item))
-        }
-        Err(e) => Err(e),
-    });
-    let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
-        .body(body_stream(stream))?;
-    Ok(ret)
-}
-
-async fn update_db_with_all_channel_configs(
-    req: Requ,
-    _ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
-) -> Result<StreamResponse, RetrievalError> {
-    let (head, _body) = req.into_parts();
-    let _dry = match head.uri.query() {
-        Some(q) => q.contains("dry"),
-        None => false,
-    };
-    let res = dbconn::scan::update_db_with_all_channel_configs(node_config.clone()).await?;
-    let stream = res.map(|k| match serde_json::to_string(&k) {
-        Ok(mut item) => {
-            item.push('\n');
-            Ok(Bytes::from(item))
-        }
-        Err(e) => Err(e),
-    });
-    let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, APP_JSON_LINES)
-        .body(body_stream(stream))?;
-    Ok(ret)
-}
-
-async fn update_search_cache(
-    req: Requ,
-    _ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
-) -> Result<StreamResponse, RetrievalError> {
-    let (head, _body) = req.into_parts();
-    let _dry = match head.uri.query() {
-        Some(q) => q.contains("dry"),
-        None => false,
-    };
-    let res = dbconn::scan::update_search_cache(node_config).await?;
-    let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, APP_JSON)
-        .body(body_string(serde_json::to_string(&res)?))?;
-    Ok(ret)
-}
-
-#[derive(Debug, Serialize)]
-pub struct StatusBoardEntry {
-    #[allow(unused)]
-    #[serde(serialize_with = "instant_serde::ser")]
-    ts_created: SystemTime,
-    #[serde(serialize_with = "instant_serde::ser")]
-    ts_updated: SystemTime,
-    // #[serde(skip_serializing_if = "is_false")]
-    done: bool,
-    // #[serde(skip_serializing_if = "Vec::is_empty")]
-    errors: Vec<::err::Error>,
-    // TODO make this a better Stats container and remove pub access.
-    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
-    error_count: usize,
-    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
-    warn_count: usize,
-    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
-    channel_not_found: usize,
-    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
-    subreq_fail: usize,
-}
-
-mod instant_serde {
-    use super::*;
-    use netpod::DATETIME_FMT_3MS;
-    use serde::Serializer;
-
-    pub fn ser<S: Serializer>(x: &SystemTime, ser: S) -> Result<S::Ok, S::Error> {
-        use chrono::LocalResult;
-        let dur = x.duration_since(std::time::UNIX_EPOCH).unwrap();
-        let res = chrono::TimeZone::timestamp_opt(&chrono::Utc, dur.as_secs() as i64, dur.subsec_nanos());
-        match res {
-            LocalResult::None => Err(serde::ser::Error::custom(format!("Bad local instant conversion"))),
-            LocalResult::Single(dt) => {
-                let s = dt.format(DATETIME_FMT_3MS).to_string();
-                ser.serialize_str(&s)
-            }
-            LocalResult::Ambiguous(dt, _dt2) => {
-                let s = dt.format(DATETIME_FMT_3MS).to_string();
-                ser.serialize_str(&s)
-            }
-        }
-    }
-}
-
-impl StatusBoardEntry {
-    pub fn new() -> Self {
-        Self {
-            ts_created: SystemTime::now(),
-            ts_updated: SystemTime::now(),
-            done: false,
-            errors: Vec::new(),
-            error_count: 0,
-            warn_count: 0,
-            channel_not_found: 0,
-            subreq_fail: 0,
-        }
-    }
-
-    pub fn warn_inc(&mut self) {
-        self.warn_count += 1;
-    }
-
-    pub fn channel_not_found_inc(&mut self) {
-        self.channel_not_found += 1;
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub struct StatusBoardEntryUser {
-    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
-    error_count: usize,
-    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
-    warn_count: usize,
-    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
-    channel_not_found: usize,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    errors: Vec<::err::PublicError>,
-}
-
-impl From<&StatusBoardEntry> for StatusBoardEntryUser {
-    fn from(e: &StatusBoardEntry) -> Self {
-        Self {
-            error_count: e.error_count,
-            warn_count: e.warn_count,
-            channel_not_found: e.channel_not_found,
-            errors: e.errors.iter().map(|e| e.to_public_error()).collect(),
-        }
-    }
-}
-
-#[derive(Debug, Serialize)]
-pub struct StatusBoard {
-    entries: BTreeMap<String, StatusBoardEntry>,
-}
-
-impl StatusBoard {
-    pub fn new() -> Self {
-        Self {
-            entries: BTreeMap::new(),
-        }
-    }
-
-    pub fn new_status_id(&mut self) -> String {
-        self.clean_if_needed();
-        let n: u32 = rand::random();
-        let s = format!("{:08x}", n);
-        self.entries.insert(s.clone(), StatusBoardEntry::new());
-        s
-    }
-
-    pub fn clean_if_needed(&mut self) {
-        if self.entries.len() > 15000 {
-            let mut tss: Vec<_> = self.entries.values().map(|e| e.ts_updated).collect();
-            tss.sort_unstable();
-            let tss = tss;
-            let tsm = tss[tss.len() / 3];
-            let a = std::mem::replace(&mut self.entries, BTreeMap::new());
-            self.entries = a.into_iter().filter(|(_k, v)| v.ts_updated >= tsm).collect();
-        }
-    }
-
-    pub fn get_entry(&mut self, status_id: &str) -> Option<&mut StatusBoardEntry> {
-        self.entries.get_mut(status_id)
-    }
-
-    pub fn mark_alive(&mut self, status_id: &str) {
-        match self.entries.get_mut(status_id) {
-            Some(e) => {
-                e.ts_updated = SystemTime::now();
-            }
-            None => {
-                error!("can not find status id {}", status_id);
-            }
-        }
-    }
-
-    pub fn mark_done(&mut self, status_id: &str) {
-        match self.entries.get_mut(status_id) {
-            Some(e) => {
-                e.ts_updated = SystemTime::now();
-                e.done = true;
-            }
-            None => {
-                error!("can not find status id {}", status_id);
-            }
-        }
-    }
-
-    pub fn add_error(&mut self, status_id: &str, err: ::err::Error) {
-        match self.entries.get_mut(status_id) {
-            Some(e) => {
-                e.ts_updated = SystemTime::now();
-                if e.errors.len() < 100 {
-                    e.errors.push(err);
-                    e.error_count += 1;
-                }
-            }
-            None => {
-                error!("can not find status id {}", status_id);
-            }
-        }
-    }
-
-    pub fn status_as_json(&self, status_id: &str) -> StatusBoardEntryUser {
-        match self.entries.get(status_id) {
-            Some(e) => e.into(),
-            None => {
-                error!("can not find status id {}", status_id);
-                let _e = ::err::Error::with_public_msg_no_trace(format!("request-id unknown {status_id}"));
-                StatusBoardEntryUser {
-                    error_count: 1,
-                    warn_count: 0,
-                    channel_not_found: 0,
-                    errors: vec![::err::Error::with_public_msg_no_trace("request-id not found").into()],
-                }
-            }
-        }
-    }
-}
-
-static STATUS_BOARD: AtomicPtr<RwLock<StatusBoard>> = AtomicPtr::new(std::ptr::null_mut());
-
-pub fn status_board() -> Result<RwLockWriteGuard<'static, StatusBoard>, RetrievalError> {
-    let x = unsafe { &*STATUS_BOARD.load(Ordering::SeqCst) }.write();
-    match x {
-        Ok(x) => Ok(x),
-        Err(e) => Err(RetrievalError::TextError(format!("{e}"))),
-    }
-}
-
-pub fn status_board_init() {
-    static STATUS_BOARD_INIT: Once = Once::new();
-    STATUS_BOARD_INIT.call_once(|| {
-        let b = StatusBoard::new();
-        let a = RwLock::new(b);
-        let x = Box::new(a);
-        STATUS_BOARD.store(Box::into_raw(x), Ordering::SeqCst);
-    });
 }

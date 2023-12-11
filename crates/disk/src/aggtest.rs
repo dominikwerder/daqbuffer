@@ -88,7 +88,7 @@ async fn agg_x_dim_0_inner() {
         true,
         // TODO
         32,
-        netpod::ReqCtx::new("req-000").into(),
+        netpod::ReqCtx::for_test().into(),
     );
     let _ = fut1;
     // TODO add the binning and expectation and await the result.
@@ -150,7 +150,7 @@ async fn agg_x_dim_1_inner() {
         true,
         // TODO
         32,
-        netpod::ReqCtx::new("req-000").into(),
+        netpod::ReqCtx::for_test().into(),
     );
     let _ = fut1;
     // TODO add the binning and expectation and await the result.

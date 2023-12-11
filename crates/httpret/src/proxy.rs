@@ -111,7 +111,7 @@ async fn the_service_fn(
     proxy_config: ProxyConfig,
     service_version: ServiceVersion,
 ) -> Result<StreamResponse, Error> {
-    let ctx = ReqCtx::new(status_board().unwrap().new_status_id()).with_proxy(&req, &proxy_config);
+    let ctx = ReqCtx::new_with_proxy(&req, &proxy_config);
     let reqid_span = span!(Level::INFO, "req", reqid = ctx.reqid());
     let f = proxy_http_service(req, addr, ctx, proxy_config.clone(), service_version.clone());
     let f = Cont { f: Box::pin(f) };
@@ -167,9 +167,9 @@ async fn proxy_http_service_inner(
     let uri = req.uri().clone();
     let path = uri.path();
     if path == "/api/1/channels" {
-        Ok(channel_search_list_v1(req, proxy_config).await?)
+        Ok(channel_search_list_v1(req, ctx, proxy_config).await?)
     } else if path == "/api/1/channels/config" {
-        Ok(channel_search_configs_v1(req, proxy_config).await?)
+        Ok(channel_search_configs_v1(req, ctx, proxy_config).await?)
     } else if path.starts_with("/api/1/gather/") {
         Ok(gather_json_2_v1(req, "/api/1/gather/", proxy_config).await?)
     } else if path == "/api/4/private/version" {
@@ -190,7 +190,7 @@ async fn proxy_http_service_inner(
     } else if path == "/api/4/backends" {
         Ok(backends(req, proxy_config).await?)
     } else if let Some(h) = api4::ChannelSearchAggHandler::handler(&req) {
-        h.handle(req, &proxy_config).await
+        h.handle(req, ctx, &proxy_config).await
     } else if path == "/api/4/events" {
         Ok(proxy_single_backend_query::<PlainEventsQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/status/connection/events" {
@@ -323,7 +323,7 @@ pub async fn backends(_req: Requ, proxy_config: &ProxyConfig) -> Result<StreamRe
     Ok(ret)
 }
 
-pub async fn channel_search(req: Requ, proxy_config: &ProxyConfig) -> Result<StreamResponse, Error> {
+pub async fn channel_search(req: Requ, ctx: &ReqCtx, proxy_config: &ProxyConfig) -> Result<StreamResponse, Error> {
     let (head, _body) = req.into_parts();
     match head.headers.get(http::header::ACCEPT) {
         Some(v) => {
@@ -486,6 +486,7 @@ pub async fn channel_search(req: Requ, proxy_config: &ProxyConfig) -> Result<Str
                     fn_nt,
                     ft,
                     Duration::from_millis(3000),
+                    ctx,
                 )
                 .await?;
                 Ok(ret)
@@ -499,7 +500,7 @@ pub async fn channel_search(req: Requ, proxy_config: &ProxyConfig) -> Result<Str
 
 pub async fn proxy_single_backend_query<QT>(
     req: Requ,
-    _ctx: &ReqCtx,
+    ctx: &ReqCtx,
     proxy_config: &ProxyConfig,
 ) -> Result<StreamResponse, Error>
 where
@@ -612,8 +613,8 @@ where
                     }
                 };
                 let bodies = (0..urls.len()).into_iter().map(|_| None).collect();
-                let ret =
-                    gather_get_json_generic(http::Method::GET, urls, bodies, tags, nt, ft, query.timeout()).await?;
+                let ret = gather_get_json_generic(http::Method::GET, urls, bodies, tags, nt, ft, query.timeout(), ctx)
+                    .await?;
                 Ok(ret)
             } else {
                 Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?)

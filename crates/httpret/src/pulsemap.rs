@@ -28,6 +28,7 @@ use netpod::FromUrl;
 use netpod::HasBackend;
 use netpod::HasTimeout;
 use netpod::NodeConfigCached;
+use netpod::ReqCtx;
 use netpod::DATETIME_FMT_9MS;
 use scyllaconn::scylla;
 use serde::Deserialize;
@@ -62,10 +63,6 @@ pub struct MapPulseHisto {
     _counts: Vec<u64>,
 }
 
-const _MAP_INDEX_FAST_URL_PREFIX: &'static str = "/api/1/map/index/fast/";
-const MAP_PULSE_HISTO_URL_PREFIX: &'static str = "/api/1/map/pulse/histo/";
-const MAP_PULSE_URL_PREFIX: &'static str = "/api/1/map/pulse/";
-const MAP_PULSE_LOCAL_URL_PREFIX: &'static str = "/api/1/map/pulse/local/";
 const MAP_PULSE_MARK_CLOSED_URL_PREFIX: &'static str = "/api/1/map/pulse/mark/closed/";
 const API_4_MAP_PULSE_URL_PREFIX: &'static str = "/api/4/map/pulse/";
 
@@ -106,7 +103,7 @@ fn timer_channel_names() -> Vec<String> {
         })
         .flatten()
         .collect();
-    all.push("SIN-CVME-TIFGUN-EVR0:RX-PULSEID".into());
+    // all.push("SIN-CVME-TIFGUN-EVR0:RX-PULSEID".into());
     all.push("SAR-CVME-TIFALL4:EvtSet".into());
     all.push("SAR-CVME-TIFALL5:EvtSet".into());
     all.push("SAR-CVME-TIFALL6:EvtSet".into());
@@ -426,7 +423,8 @@ impl IndexFullHttpFunction {
         make_tables(&pgc).await?;
         let chs = timer_channel_names();
         for channel_name in chs {
-            match Self::index_channel(&channel_name, &pgc, do_print, &insert_01, node_config).await {
+            match IndexChannelHttpFunction::index_channel(&channel_name, &pgc, do_print, &insert_01, node_config).await
+            {
                 Ok(m) => {
                     msg.push_str("\n");
                     msg.push_str(&m);
@@ -438,6 +436,67 @@ impl IndexFullHttpFunction {
             }
         }
         Ok(msg)
+    }
+}
+
+pub struct IndexChannelHttpFunction {}
+
+impl IndexChannelHttpFunction {
+    pub fn handler(req: &Requ) -> Option<Self> {
+        if req.uri().path().eq("/api/1/maintenance/index/pulse/channel") {
+            Some(Self {})
+        } else {
+            None
+        }
+    }
+
+    pub async fn handle(
+        &self,
+        req: Requ,
+        ctx: &ReqCtx,
+        node_config: &NodeConfigCached,
+    ) -> Result<StreamResponse, Error> {
+        if req.method() != Method::GET {
+            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
+        }
+        let ret = match Self::index(req, false, node_config).await {
+            Ok(msg) => {
+                let dt = ctx.ts_ctor().elapsed();
+                let res = response(StatusCode::OK).body(body_string(msg))?;
+                info!("IndexChannelHttpFunction  response dt {:.0} ms", 1e3 * dt.as_secs_f32());
+                res
+            }
+            Err(e) => {
+                error!("IndexChannelHttpFunction {e}");
+                response(StatusCode::INTERNAL_SERVER_ERROR).body(body_string(format!("{:?}", e)))?
+            }
+        };
+        Ok(ret)
+    }
+
+    async fn index(req: Requ, do_print: bool, node_config: &NodeConfigCached) -> Result<String, Error> {
+        // TODO avoid double-insert on central storage.
+        let pgc = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
+        // TODO remove update of static columns when older clients are removed.
+        let sql = "insert into map_pulse_files (channel, split, timebin, pulse_min, pulse_max, hostname, ks) values ($1, $2, $3, $4, $5, $6, $7) on conflict (channel, split, timebin) do update set pulse_min = $4, pulse_max = $5, upc1 = map_pulse_files.upc1 + 1, hostname = $6";
+        let insert_01 = pgc.prepare(sql).await?;
+        make_tables(&pgc).await?;
+        let url = Url::parse(&format!("dummy:{}", req.uri()))
+            .map_err(|e| Error::with_msg_no_trace(format!("{} {}", e, req.uri())))?;
+        let pairs: std::collections::HashMap<_, _> = url.query_pairs().collect();
+        let channel_name = if let Some(x) = pairs.get("name") {
+            x
+        } else {
+            return Err(Error::with_msg_no_trace(format!("no name given")));
+        };
+        match Self::index_channel(&channel_name, &pgc, do_print, &insert_01, node_config).await {
+            Ok(m) => Ok(m),
+            Err(e) => {
+                error!("error while indexing {}  {:?}", channel_name, e);
+                let s = format!("error from index_channel {e}");
+                Ok(s)
+            }
+        }
     }
 
     async fn index_channel(
@@ -970,8 +1029,12 @@ fn extract_path_number_after_prefix(req: &Requ, prefix: &str) -> Result<u64, Err
 pub struct MapPulseLocalHttpFunction {}
 
 impl MapPulseLocalHttpFunction {
+    pub fn prefix() -> &'static str {
+        "/api/1/map/pulse/local/"
+    }
+
     pub fn handler(req: &Requ) -> Option<Self> {
-        if req.uri().path().starts_with(MAP_PULSE_LOCAL_URL_PREFIX) {
+        if req.uri().path().starts_with(Self::prefix()) {
             Some(Self {})
         } else {
             None
@@ -982,8 +1045,16 @@ impl MapPulseLocalHttpFunction {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
-        let pulse = extract_path_number_after_prefix(&req, MAP_PULSE_LOCAL_URL_PREFIX)?;
-        let req_from = req.headers().get("x-req-from").map_or(None, |x| Some(format!("{x:?}")));
+        let pulse = extract_path_number_after_prefix(&req, Self::prefix())?;
+        let req_from = req
+            .headers()
+            .get("x-req-from")
+            .map(|x| {
+                x.to_str()
+                    .map(|x| x.to_string())
+                    .unwrap_or_else(|_| format!("bad string in x-req-from"))
+            })
+            .unwrap_or_else(|| String::from("missing x-req-from"));
         let ts1 = Instant::now();
         let conn = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
         let sql = "select channel, hostname, timebin, split, ks from map_pulse_files where hostname = $1 and pulse_min <= $2 and (pulse_max >= $2 or closed = 0)";
@@ -1000,7 +1071,7 @@ impl MapPulseLocalHttpFunction {
             })
             .collect();
         let dt = Instant::now().duration_since(ts1);
-        if dt >= Duration::from_millis(500) {
+        if dt >= Duration::from_millis(300) {
             info!(
                 "map pulse local  req-from {:?}  candidate list in {:.0}ms",
                 req_from,
@@ -1126,8 +1197,12 @@ pub struct TsHisto {
 pub struct MapPulseHistoHttpFunction {}
 
 impl MapPulseHistoHttpFunction {
+    pub fn prefix() -> &'static str {
+        "/api/1/map/pulse/histo/"
+    }
+
     pub fn handler(req: &Requ) -> Option<Self> {
-        if req.uri().path().starts_with(MAP_PULSE_HISTO_URL_PREFIX) {
+        if req.uri().path().starts_with(Self::prefix()) {
             Some(Self {})
         } else {
             None
@@ -1138,7 +1213,7 @@ impl MapPulseHistoHttpFunction {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
-        let pulse = extract_path_number_after_prefix(&req, MAP_PULSE_HISTO_URL_PREFIX)?;
+        let pulse = extract_path_number_after_prefix(&req, Self::prefix())?;
         let ret = Self::histo(pulse, node_config).await?;
         Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&ret)?))?)
     }
@@ -1148,7 +1223,10 @@ impl MapPulseHistoHttpFunction {
         for node in &node_config.node_config.cluster.nodes {
             let s = format!(
                 "http://{}:{}{}{}",
-                node.host, node.port, MAP_PULSE_LOCAL_URL_PREFIX, pulse
+                node.host,
+                node.port,
+                MapPulseLocalHttpFunction::prefix(),
+                pulse
             );
             let uri: Uri = s.parse()?;
             let req = Request::get(&uri)
@@ -1216,8 +1294,12 @@ impl MapPulseHistoHttpFunction {
 pub struct MapPulseHttpFunction {}
 
 impl MapPulseHttpFunction {
+    pub fn prefix() -> &'static str {
+        "/api/1/map/pulse/"
+    }
+
     pub fn handler(req: &Requ) -> Option<Self> {
-        if req.uri().path().starts_with(MAP_PULSE_URL_PREFIX) {
+        if req.uri().path().starts_with(Self::prefix()) {
             Some(Self {})
         } else {
             None
@@ -1230,7 +1312,7 @@ impl MapPulseHttpFunction {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
         trace!("MapPulseHttpFunction  handle  uri: {:?}", req.uri());
-        let pulse = extract_path_number_after_prefix(&req, MAP_PULSE_URL_PREFIX)?;
+        let pulse = extract_path_number_after_prefix(&req, Self::prefix())?;
         match CACHE.portal(pulse) {
             CachePortal::Fresh => {
                 let histo = MapPulseHistoHttpFunction::histo(pulse, node_config).await?;

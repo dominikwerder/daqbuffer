@@ -1,8 +1,6 @@
 use crate::body_empty;
 use crate::body_string;
 use crate::err::Error;
-use crate::response;
-use crate::Requ;
 use futures_util::select;
 use futures_util::FutureExt;
 use http::header;
@@ -10,20 +8,14 @@ use http::Method;
 use http::StatusCode;
 use http::Uri;
 use httpclient::connect_client;
-use httpclient::read_body_bytes;
-use httpclient::IntoBody;
-use httpclient::StreamResponse;
-use httpclient::ToJsonBody;
 use hyper::body::Incoming;
 use hyper::Request;
 use hyper::Response;
 use netpod::log::*;
-use netpod::Node;
-use netpod::NodeConfigCached;
+use netpod::ReqCtx;
 use netpod::APP_JSON;
 use serde::Deserialize;
 use serde::Serialize;
-use serde_json::Value as JsonValue;
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
@@ -44,97 +36,6 @@ struct GatherHost {
     inst: String,
 }
 
-async fn process_answer(res: Response<hyper::body::Incoming>) -> Result<JsonValue, Error> {
-    let (pre, body) = res.into_parts();
-    if pre.status != StatusCode::OK {
-        let buf = read_body_bytes(body).await?;
-        let s = String::from_utf8(buf.to_vec())?;
-        Ok(JsonValue::String(format!("status {}  body {}", pre.status.as_str(), s)))
-    } else {
-        let body_all = read_body_bytes(body).await?;
-        let val = match serde_json::from_slice(&body_all) {
-            Ok(k) => k,
-            Err(_e) => JsonValue::String(String::from_utf8(body_all.to_vec())?),
-        };
-        Ok::<_, Error>(val)
-    }
-}
-
-pub async fn gather_get_json(req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
-    let (head, body) = req.into_parts();
-    let _bodyslice = read_body_bytes(body).await?;
-    let pathpre = "/api/4/gather/";
-    let pathsuf = &head.uri.path()[pathpre.len()..];
-    let spawned: Vec<_> = node_config
-        .node_config
-        .cluster
-        .nodes
-        .iter()
-        .filter_map(|node| {
-            let uri = format!("http://{}:{}/api/4/{}", node.host, node.port, pathsuf);
-            let req = Request::builder()
-                .method(Method::GET)
-                .header(http::header::HOST, &node.host)
-                .header(http::header::ACCEPT, APP_JSON)
-                .uri(uri);
-            match req.body(body_empty()) {
-                Ok(req) => {
-                    let task = tokio::spawn(async move {
-                        select! {
-                          _ = sleep(Duration::from_millis(1500)).fuse() => {
-                            Err(Error::with_msg_no_trace(format!("timeout")))
-                            }
-                            res = async move {
-                                let mut client = if let Ok(x) = connect_client(req.uri()).await {x}
-                                else { return Err(Error::with_msg("can not make request")); };
-                                let res = if let Ok(x) = client.send_request(req).await { x }
-                                else { return Err(Error::with_msg("can not make request")); };
-                                Ok(res)
-                            }.fuse() => {
-                                Ok(process_answer(res?).await?)
-                            }
-                        }
-                    });
-                    Some((node.clone(), task))
-                }
-                Err(e) => {
-                    error!("bad request: {e}");
-                    None
-                }
-            }
-        })
-        .collect();
-    #[derive(Serialize)]
-    struct Hres {
-        node: Node,
-        res: JsonValue,
-    }
-    #[derive(Serialize)]
-    struct Jres {
-        hosts: Vec<Hres>,
-    }
-    let mut a = Vec::new();
-    for (node, jh) in spawned {
-        let res = match jh.await {
-            Ok(k) => match k {
-                Ok(k) => k,
-                Err(e) => JsonValue::String(format!("ERROR({:?})", e)),
-            },
-            Err(e) => JsonValue::String(format!("ERROR({:?})", e)),
-        };
-        let v = Hres {
-            node: node.clone(),
-            res,
-        };
-        a.push(v);
-    }
-    let a = a;
-    let res = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, APP_JSON)
-        .body(ToJsonBody::from(&Jres { hosts: a }).into_body())?;
-    Ok(res)
-}
-
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize)]
 pub struct Tag(pub String);
 
@@ -146,7 +47,7 @@ pub struct SubRes<T> {
 }
 
 pub async fn gather_get_json_generic<SM, NT, FT, OUT>(
-    _method: http::Method,
+    method: http::Method,
     urls: Vec<Url>,
     bodies: Vec<Option<String>>,
     tags: Vec<String>,
@@ -155,6 +56,7 @@ pub async fn gather_get_json_generic<SM, NT, FT, OUT>(
     // TODO use deadline instead.
     // TODO Wait a bit longer compared to remote to receive partial results.
     timeout: Duration,
+    ctx: &ReqCtx,
 ) -> Result<OUT, Error>
 where
     SM: Send + 'static,
@@ -179,7 +81,7 @@ where
         .zip(bodies.into_iter())
         .zip(tags.into_iter())
         .filter_map(move |((url, body), tag)| {
-            info!("Try gather from {}", url);
+            info!("try gather from {}", url);
             let uri: Uri = if let Ok(x) = url.as_str().parse() {
                 x
             } else {
@@ -187,18 +89,23 @@ where
                 return None;
             };
             let req = if body.is_some() {
+                if method == Method::GET {
+                    warn!("gather sends body via GET");
+                }
                 Request::builder()
-                    .method(Method::POST)
+                    .method(method.clone())
                     .header(header::HOST, uri.host().unwrap())
                     .header(http::header::CONTENT_TYPE, APP_JSON)
                     .header(http::header::ACCEPT, APP_JSON)
+                    .header(ctx.header_name(), ctx.header_value())
                     .uri(uri)
             } else {
                 Request::builder()
-                    .method(Method::GET)
+                    .method(method.clone())
                     .header(header::HOST, uri.host().unwrap())
                     .header(http::header::CONTENT_TYPE, APP_JSON)
                     .header(http::header::ACCEPT, APP_JSON)
+                    .header(ctx.header_name(), ctx.header_value())
                     .uri(uri)
             };
             let body = match body {
@@ -267,6 +174,7 @@ mod test {
 
     #[test]
     fn try_search() {
+        let ctx = ReqCtx::for_test();
         let fut = gather_get_json_generic(
             hyper::Method::GET,
             Vec::new(),
@@ -285,6 +193,7 @@ mod test {
             },
             |_all| Ok(String::from("DUMMY-SEARCH-TEST-RESULT-TODO")),
             Duration::from_millis(800),
+            &ctx,
         );
         let _ = fut;
     }

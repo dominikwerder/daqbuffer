@@ -166,7 +166,7 @@ pub async fn create_response_bytes_stream(
         evq.ch_conf().shape(),
     );
     debug!("wasm1 {:?}", evq.wasm1());
-    let reqctx = netpod::ReqCtx::new(evq.reqid()).into();
+    let reqctx = netpod::ReqCtx::new_from_single_reqid(evq.reqid().into()).into();
     if evq.create_errors_contains("nodenet_parse_query") {
         let e = Error::with_msg_no_trace("produced error on request nodenet_parse_query");
         return Err(e);

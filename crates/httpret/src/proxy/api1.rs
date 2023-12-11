@@ -99,7 +99,7 @@ impl PythonDataApi1Query {
                 Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
             } else {
                 info!("backend returned OK");
-                let riq_def = HeaderValue::from_static("(none)");
+                let riq_def = HeaderValue::from_static("none");
                 let riq = head.headers.get(X_DAQBUF_REQID).unwrap_or(&riq_def);
                 Ok(response(StatusCode::OK)
                     .header(X_DAQBUF_REQID, riq)

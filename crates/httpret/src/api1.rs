@@ -32,6 +32,7 @@ use itertools::Itertools;
 use netpod::log::*;
 use netpod::query::api1::Api1Query;
 use netpod::range::evrange::NanoRange;
+use netpod::req_uri_to_url;
 use netpod::timeunits::SEC;
 use netpod::Api1WarningStats;
 use netpod::ChannelSearchQuery;
@@ -70,7 +71,6 @@ use std::time::Instant;
 use taskrun::tokio;
 use tracing_futures::Instrument;
 use url::Url;
-use netpod::req_uri_to_url;
 
 pub trait BackendAware {
     fn backend(&self) -> &str;
@@ -142,7 +142,11 @@ impl FromErrorCode for ChannelSearchResultItemV1 {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelSearchResultV1(pub Vec<ChannelSearchResultItemV1>);
 
-pub async fn channel_search_list_v1(req: Requ, proxy_config: &ProxyConfig) -> Result<StreamResponse, Error> {
+pub async fn channel_search_list_v1(
+    req: Requ,
+    ctx: &ReqCtx,
+    proxy_config: &ProxyConfig,
+) -> Result<StreamResponse, Error> {
     let (head, reqbody) = req.into_parts();
     let bodybytes = read_body_bytes(reqbody).await?;
     let query: ChannelSearchQueryV1 = serde_json::from_slice(&bodybytes)?;
@@ -235,6 +239,7 @@ pub async fn channel_search_list_v1(req: Requ, proxy_config: &ProxyConfig) -> Re
                     nt,
                     ft,
                     Duration::from_millis(3000),
+                    ctx,
                 )
                 .await?;
                 Ok(ret)
@@ -246,7 +251,11 @@ pub async fn channel_search_list_v1(req: Requ, proxy_config: &ProxyConfig) -> Re
     }
 }
 
-pub async fn channel_search_configs_v1(req: Requ, proxy_config: &ProxyConfig) -> Result<StreamResponse, Error> {
+pub async fn channel_search_configs_v1(
+    req: Requ,
+    ctx: &ReqCtx,
+    proxy_config: &ProxyConfig,
+) -> Result<StreamResponse, Error> {
     let (head, reqbody) = req.into_parts();
     let bodybytes = read_body_bytes(reqbody).await?;
     let query: ChannelSearchQueryV1 = serde_json::from_slice(&bodybytes)?;
@@ -358,6 +367,7 @@ pub async fn channel_search_configs_v1(req: Requ, proxy_config: &ProxyConfig) ->
                     nt,
                     ft,
                     Duration::from_millis(3000),
+                    ctx,
                 )
                 .await?;
                 Ok(ret)
@@ -516,6 +526,7 @@ async fn process_answer(res: Response<Incoming>) -> Result<JsonValue, Error> {
 }
 
 pub struct DataApiPython3DataStream {
+    ts_ctor: Instant,
     range: NanoRange,
     channels: VecDeque<ChannelTypeConfigGen>,
     settings: EventsSubQuerySettings,
@@ -551,6 +562,7 @@ impl DataApiPython3DataStream {
     ) -> Self {
         debug!("DataApiPython3DataStream::new  settings {settings:?}  disk_io_tune {disk_io_tune:?}");
         Self {
+            ts_ctor: Instant::now(),
             range,
             channels: channels.into_iter().collect(),
             settings,
@@ -739,7 +751,7 @@ impl DataApiPython3DataStream {
         if tsnow.duration_since(self.ping_last) >= Duration::from_millis(500) {
             self.ping_last = tsnow;
             let mut sb = crate::status_board().unwrap();
-            sb.mark_alive(self.ctx.reqid());
+            sb.mark_alive(self.ctx.reqid_this());
         }
         ret
     }
@@ -781,10 +793,12 @@ impl Stream for DataApiPython3DataStream {
                 panic!("poll on completed")
             } else if self.data_done {
                 self.completed = true;
-                let reqid = self.ctx.reqid();
+                let dt = self.ts_ctor.elapsed().as_secs_f32();
                 info!(
-                    "{}  response body sent  {} bytes  ({})",
-                    reqid, self.count_bytes, self.count_emits
+                    "response body sent  {} bytes  {} items  {:0} ms",
+                    self.count_bytes,
+                    self.count_emits,
+                    1e3 * dt
                 );
                 Ready(None)
             } else {
@@ -803,7 +817,7 @@ impl Stream for DataApiPython3DataStream {
                                 self.current_fetch_info = None;
                                 self.data_done = true;
                                 let mut sb = crate::status_board().unwrap();
-                                sb.add_error(self.ctx.reqid(), e.0.clone());
+                                sb.add_error(self.ctx.reqid_this(), e.0.clone());
                                 Ready(Some(Err(e)))
                             }
                         },
@@ -838,8 +852,8 @@ impl Stream for DataApiPython3DataStream {
                             let n = Instant::now();
                             self.ping_last = n;
                             let mut sb = crate::status_board().unwrap();
-                            sb.mark_alive(self.ctx.reqid());
-                            sb.mark_done(self.ctx.reqid());
+                            sb.mark_alive(self.ctx.reqid_this());
+                            sb.mark_done(self.ctx.reqid_this());
                         }
                         continue;
                     }
@@ -915,7 +929,7 @@ impl Api1EventsBinaryHandler {
         };
         let url = req_uri_to_url(&head.uri)?;
         let disk_tune = DiskIoTune::from_url(&url)?;
-        let reqidspan = tracing::info_span!("api1query", reqid = ctx.reqid());
+        let reqidspan = tracing::info_span!("api1query");
         // TODO do not clone here
         let reqctx = Arc::new(ctx.clone());
         self.handle_for_query(
@@ -981,8 +995,8 @@ impl Api1EventsBinaryHandler {
                         // This means, the request status must provide these counters.
                         error!("no config quorum found for {ch:?}");
                         let mut sb = crate::status_board().unwrap();
-                        sb.mark_alive(reqctx.reqid());
-                        if let Some(e) = sb.get_entry(reqctx.reqid()) {
+                        sb.mark_alive(reqctx.reqid_this());
+                        if let Some(e) = sb.get_entry(reqctx.reqid_this()) {
                             e.channel_not_found_inc();
                         }
                     }
@@ -1005,7 +1019,23 @@ impl Api1EventsBinaryHandler {
             );
             let s = s.instrument(span).instrument(reqidspan);
             let body = body_stream(s);
-            let ret = response(StatusCode::OK).header(X_DAQBUF_REQID, reqctx.reqid());
+            let n2 = ncc
+                .node_config
+                .cluster
+                .nodes
+                .get(ncc.ix)
+                .ok_or_else(|| Error::with_msg_no_trace(format!("node ix {} not found", ncc.ix)))?;
+            let nodeno_pre = "sf-daqbuf-";
+            let nodeno: u32 = if n2.host.starts_with(nodeno_pre) {
+                n2.host[nodeno_pre.len()..nodeno_pre.len() + 2]
+                    .parse()
+                    .map_err(|e| Error::with_msg_no_trace(format!("{e}")))?
+            } else {
+                0
+            };
+            let req_stat_id = format!("{}{:02}", reqctx.reqid_this(), nodeno);
+            info!("return req_stat_id {req_stat_id}");
+            let ret = response(StatusCode::OK).header(X_DAQBUF_REQID, req_stat_id);
             let ret = ret.body(body)?;
             Ok(ret)
         } else {
@@ -1052,7 +1082,7 @@ impl RequestStatusHandler {
         let _body_data = read_body_bytes(body).await?;
         let status_id = &head.uri.path()[Self::path_prefix().len()..];
         debug!("RequestStatusHandler  status_id {:?}", status_id);
-        let status = crate::status_board()?.status_as_json(status_id);
+        let status = crate::status_board().unwrap().status_as_json(status_id);
         let s = serde_json::to_string(&status)?;
         let ret = response(StatusCode::OK).body(body_string(s))?;
         Ok(ret)

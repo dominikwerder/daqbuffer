@@ -33,9 +33,16 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::str::FromStr;
+use std::sync::atomic;
+use std::sync::atomic::AtomicPtr;
+use std::sync::Once;
+use std::sync::RwLock;
+use std::sync::RwLockWriteGuard;
 use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
+use std::time::Instant;
+use std::time::SystemTime;
 use timeunits::*;
 use url::Url;
 
@@ -3115,60 +3122,92 @@ pub const PSI_DAQBUFFER_SEEN_URL: &'static str = "PSI-Daqbuffer-Seen-Url";
 
 #[derive(Debug, Clone)]
 pub struct ReqCtx {
+    ts_ctor: Instant,
     reqid: String,
+    reqid_this: String,
     marks: Vec<String>,
     mark: String,
 }
 
 impl ReqCtx {
-    pub fn new<S>(reqid: S) -> Self
-    where
-        S: Into<String>,
-    {
-        let ret = Self {
-            reqid: reqid.into(),
+    pub fn new_with_node<T>(req: &Request<T>, nc: &NodeConfigCached) -> Self {
+        let reqid_this = status_board().unwrap().new_status_id();
+        let reqid = if let Some(reqid_parent) = req.headers().get("daqbuf-reqid") {
+            let parent = reqid_parent.to_str().unwrap_or("badid");
+            format!("{}-{}", parent, reqid_this)
+        } else {
+            reqid_this.clone()
+        };
+        let mark = format!("{}:{}", nc.node_config.name, nc.node.port);
+        let mut marks = Vec::new();
+        for (n, v) in req.headers().iter() {
+            if n == PSI_DAQBUFFER_SERVICE_MARK {
+                marks.push(String::from_utf8_lossy(v.as_bytes()).to_string());
+            }
+        }
+        Self {
+            ts_ctor: Instant::now(),
+            reqid,
+            reqid_this,
+            marks,
+            mark,
+        }
+    }
+
+    pub fn new_with_proxy<T>(req: &Request<T>, proxy: &ProxyConfig) -> Self {
+        let reqid_this = status_board().unwrap().new_status_id();
+        let reqid = if let Some(reqid_parent) = req.headers().get("daqbuf-reqid") {
+            let parent = reqid_parent.to_str().unwrap_or("badid");
+            format!("{}-{}", parent, reqid_this)
+        } else {
+            reqid_this.clone()
+        };
+        let mark = format!("{}:{}", proxy.name, proxy.port);
+        let mut marks = Vec::new();
+        for (n, v) in req.headers().iter() {
+            if n == PSI_DAQBUFFER_SERVICE_MARK {
+                marks.push(String::from_utf8_lossy(v.as_bytes()).to_string());
+            }
+        }
+        Self {
+            ts_ctor: Instant::now(),
+            reqid,
+            reqid_this,
+            marks,
+            mark,
+        }
+    }
+
+    pub fn new_from_single_reqid(reqid: String) -> Self {
+        Self {
+            ts_ctor: Instant::now(),
+            reqid_this: reqid.clone(),
+            reqid,
             marks: Vec::new(),
             mark: String::new(),
-        };
-        ret
+        }
     }
 
     pub fn for_test() -> Self {
         Self {
-            reqid: "TESTID".into(),
+            ts_ctor: Instant::now(),
+            reqid: "PARENTID-TESTID".into(),
+            reqid_this: "TESTID".into(),
             marks: Vec::new(),
             mark: String::new(),
         }
     }
 
-    pub fn with_node<T>(mut self, req: &Request<T>, nc: &NodeConfigCached) -> Self {
-        if let Some(reqid) = req.headers().get("daqbuf-reqid") {
-            self.reqid = format!("{}-{}", reqid.to_str().unwrap_or("BADID"), self.reqid());
-        }
-        self.mark = format!("{}:{}", nc.node_config.name, nc.node.port);
-        for (n, v) in req.headers().iter() {
-            if n == PSI_DAQBUFFER_SERVICE_MARK {
-                self.marks.push(String::from_utf8_lossy(v.as_bytes()).to_string());
-            }
-        }
-        self
-    }
-
-    pub fn with_proxy<T>(mut self, req: &Request<T>, proxy: &ProxyConfig) -> Self {
-        if let Some(reqid) = req.headers().get("daqbuf-reqid") {
-            self.reqid = format!("{}-{}", reqid.to_str().unwrap_or("BADID"), self.reqid());
-        }
-        self.mark = format!("{}:{}", proxy.name, proxy.port);
-        for (n, v) in req.headers().iter() {
-            if n == PSI_DAQBUFFER_SERVICE_MARK {
-                self.marks.push(String::from_utf8_lossy(v.as_bytes()).to_string());
-            }
-        }
-        self
+    pub fn ts_ctor(&self) -> Instant {
+        self.ts_ctor.clone()
     }
 
     pub fn reqid(&self) -> &str {
         &self.reqid
+    }
+
+    pub fn reqid_this(&self) -> &str {
+        &self.reqid_this
     }
 
     pub fn mark(&self) -> &str {
@@ -3189,6 +3228,221 @@ impl ReqCtx {
 }
 
 pub type ReqCtxArc = std::sync::Arc<ReqCtx>;
+
+static STATUS_BOARD: AtomicPtr<RwLock<StatusBoard>> = AtomicPtr::new(std::ptr::null_mut());
+
+#[derive(Debug, Serialize)]
+pub struct StatusBoardEntry {
+    #[allow(unused)]
+    #[serde(serialize_with = "instant_serde::ser")]
+    ts_created: SystemTime,
+    #[serde(serialize_with = "instant_serde::ser")]
+    ts_updated: SystemTime,
+    // #[serde(skip_serializing_if = "is_false")]
+    done: bool,
+    // #[serde(skip_serializing_if = "Vec::is_empty")]
+    errors: Vec<::err::Error>,
+    // TODO make this a better Stats container and remove pub access.
+    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
+    error_count: usize,
+    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
+    warn_count: usize,
+    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
+    channel_not_found: usize,
+    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
+    subreq_fail: usize,
+}
+
+mod instant_serde {
+    use super::DATETIME_FMT_3MS;
+    use serde::Serializer;
+    use std::time::SystemTime;
+
+    pub fn ser<S: Serializer>(x: &SystemTime, ser: S) -> Result<S::Ok, S::Error> {
+        use chrono::LocalResult;
+        let dur = x.duration_since(std::time::UNIX_EPOCH).unwrap();
+        let res = chrono::TimeZone::timestamp_opt(&chrono::Utc, dur.as_secs() as i64, dur.subsec_nanos());
+        match res {
+            LocalResult::None => Err(serde::ser::Error::custom(format!("Bad local instant conversion"))),
+            LocalResult::Single(dt) => {
+                let s = dt.format(DATETIME_FMT_3MS).to_string();
+                ser.serialize_str(&s)
+            }
+            LocalResult::Ambiguous(dt, _dt2) => {
+                let s = dt.format(DATETIME_FMT_3MS).to_string();
+                ser.serialize_str(&s)
+            }
+        }
+    }
+}
+
+impl StatusBoardEntry {
+    pub fn new() -> Self {
+        Self {
+            ts_created: SystemTime::now(),
+            ts_updated: SystemTime::now(),
+            done: false,
+            errors: Vec::new(),
+            error_count: 0,
+            warn_count: 0,
+            channel_not_found: 0,
+            subreq_fail: 0,
+        }
+    }
+
+    pub fn warn_inc(&mut self) {
+        self.warn_count += 1;
+    }
+
+    pub fn channel_not_found_inc(&mut self) {
+        self.channel_not_found += 1;
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct StatusBoardEntryUser {
+    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
+    error_count: usize,
+    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
+    warn_count: usize,
+    // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
+    channel_not_found: usize,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    errors: Vec<::err::PublicError>,
+}
+
+impl From<&StatusBoardEntry> for StatusBoardEntryUser {
+    fn from(e: &StatusBoardEntry) -> Self {
+        Self {
+            error_count: e.error_count,
+            warn_count: e.warn_count,
+            channel_not_found: e.channel_not_found,
+            errors: e.errors.iter().map(|e| e.to_public_error()).collect(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct StatusBoard {
+    entries: BTreeMap<String, StatusBoardEntry>,
+}
+
+impl StatusBoard {
+    pub fn new() -> Self {
+        Self {
+            entries: BTreeMap::new(),
+        }
+    }
+
+    pub fn new_status_id(&mut self) -> String {
+        self.clean_if_needed();
+        let n: u32 = rand::random();
+        let s = format!("{:08x}", n);
+        self.entries.insert(s.clone(), StatusBoardEntry::new());
+        s
+    }
+
+    pub fn clean_if_needed(&mut self) {
+        if self.entries.len() > 15000 {
+            let mut tss: Vec<_> = self.entries.values().map(|e| e.ts_updated).collect();
+            tss.sort_unstable();
+            let tss = tss;
+            let tsm = tss[tss.len() / 3];
+            let a = std::mem::replace(&mut self.entries, BTreeMap::new());
+            self.entries = a.into_iter().filter(|(_k, v)| v.ts_updated >= tsm).collect();
+        }
+    }
+
+    pub fn get_entry(&mut self, status_id: &str) -> Option<&mut StatusBoardEntry> {
+        self.entries.get_mut(status_id)
+    }
+
+    pub fn mark_alive(&mut self, status_id: &str) {
+        match self.entries.get_mut(status_id) {
+            Some(e) => {
+                e.ts_updated = SystemTime::now();
+            }
+            None => {
+                error!("can not find status id {}", status_id);
+            }
+        }
+    }
+
+    pub fn mark_done(&mut self, status_id: &str) {
+        match self.entries.get_mut(status_id) {
+            Some(e) => {
+                e.ts_updated = SystemTime::now();
+                e.done = true;
+            }
+            None => {
+                error!("can not find status id {}", status_id);
+            }
+        }
+    }
+
+    pub fn add_error(&mut self, status_id: &str, err: ::err::Error) {
+        match self.entries.get_mut(status_id) {
+            Some(e) => {
+                e.ts_updated = SystemTime::now();
+                if e.errors.len() < 100 {
+                    e.errors.push(err);
+                    e.error_count += 1;
+                }
+            }
+            None => {
+                error!("can not find status id {}", status_id);
+            }
+        }
+    }
+
+    pub fn status_as_json(&self, status_id: &str) -> StatusBoardEntryUser {
+        match self.entries.get(status_id) {
+            Some(e) => e.into(),
+            None => {
+                error!("can not find status id {}", status_id);
+                let _e = ::err::Error::with_public_msg_no_trace(format!("request-id unknown {status_id}"));
+                StatusBoardEntryUser {
+                    error_count: 1,
+                    warn_count: 0,
+                    channel_not_found: 0,
+                    errors: vec![::err::Error::with_public_msg_no_trace("request-id not found").into()],
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum StatusBoardError {
+    CantAcquire,
+}
+
+impl fmt::Display for StatusBoardError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{self:?}")
+    }
+}
+
+pub fn status_board() -> Result<RwLockWriteGuard<'static, StatusBoard>, StatusBoardError> {
+    let x = unsafe { &*STATUS_BOARD.load(atomic::Ordering::SeqCst) }.write();
+    match x {
+        Ok(x) => Ok(x),
+        Err(e) => {
+            error!("{e}");
+            Err(StatusBoardError::CantAcquire)
+        }
+    }
+}
+
+pub fn status_board_init() {
+    static STATUS_BOARD_INIT: Once = Once::new();
+    STATUS_BOARD_INIT.call_once(|| {
+        let b = StatusBoard::new();
+        let a = RwLock::new(b);
+        let x = Box::new(a);
+        STATUS_BOARD.store(Box::into_raw(x), atomic::Ordering::SeqCst);
+    });
+}
 
 pub fn req_uri_to_url(uri: &Uri) -> Result<Url, Error> {
     if uri.scheme().is_none() {
