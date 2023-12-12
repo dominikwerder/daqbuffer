@@ -99,10 +99,12 @@ where
     T: erased_serde::Serialize,
 {
     let mut out = Vec::new();
-    let mut ser1 = rmp_serde::Serializer::new(&mut out).with_struct_map();
-    let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser1);
-    item.erased_serialize(&mut ser2)
-        .map_err(|e| Error::from(format!("{e}")))?;
+    {
+        let mut ser1 = rmp_serde::Serializer::new(&mut out).with_struct_map();
+        let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser1);
+        item.erased_serialize(&mut ser2)
+            .map_err(|e| Error::from(format!("{e}")))?;
+    }
     Ok(out)
 }
 
@@ -128,9 +130,11 @@ where
     let mut ser1 = postcard::Serializer {
         output: postcard::ser_flavors::AllocVec::new(),
     };
-    let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser1);
-    item.erased_serialize(&mut ser2)
-        .map_err(|e| Error::from(format!("{e}")))?;
+    {
+        let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser1);
+        item.erased_serialize(&mut ser2)
+    }
+    .map_err(|e| Error::from(format!("{e}")))?;
     let ret = ser1.output.finalize().map_err(|e| format!("{e}").into());
     ret
 }

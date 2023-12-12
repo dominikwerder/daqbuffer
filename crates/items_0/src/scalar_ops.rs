@@ -63,6 +63,7 @@ impl AsPrimF32 for String {
 pub trait ScalarOps:
     fmt::Debug + Clone + PartialOrd + PartialEq + SubFrId + AsPrimF32 + Serialize + Unpin + Send + 'static
 {
+    fn scalar_type_name() -> &'static str;
     fn zero_b() -> Self;
     fn equal_slack(&self, rhs: &Self) -> bool;
     fn add(&mut self, rhs: &Self);
@@ -73,8 +74,12 @@ pub trait ScalarOps:
 }
 
 macro_rules! impl_scalar_ops {
-    ($ty:ident, $zero:expr, $equal_slack:ident, $mac_add:ident, $mac_div:ident) => {
+    ($ty:ident, $zero:expr, $equal_slack:ident, $mac_add:ident, $mac_div:ident, $sty_name:expr) => {
         impl ScalarOps for $ty {
+            fn scalar_type_name() -> &'static str {
+                $sty_name
+            }
+
             fn zero_b() -> Self {
                 $zero
             }
@@ -200,15 +205,15 @@ macro_rules! div_string {
     };
 }
 
-impl_scalar_ops!(u8, 0, equal_int, add_int, div_int);
-impl_scalar_ops!(u16, 0, equal_int, add_int, div_int);
-impl_scalar_ops!(u32, 0, equal_int, add_int, div_int);
-impl_scalar_ops!(u64, 0, equal_int, add_int, div_int);
-impl_scalar_ops!(i8, 0, equal_int, add_int, div_int);
-impl_scalar_ops!(i16, 0, equal_int, add_int, div_int);
-impl_scalar_ops!(i32, 0, equal_int, add_int, div_int);
-impl_scalar_ops!(i64, 0, equal_int, add_int, div_int);
-impl_scalar_ops!(f32, 0., equal_f32, add_int, div_int);
-impl_scalar_ops!(f64, 0., equal_f64, add_int, div_int);
-impl_scalar_ops!(bool, false, equal_bool, add_bool, div_bool);
-impl_scalar_ops!(String, String::new(), equal_string, add_string, div_string);
+impl_scalar_ops!(u8, 0, equal_int, add_int, div_int, "u8");
+impl_scalar_ops!(u16, 0, equal_int, add_int, div_int, "u16");
+impl_scalar_ops!(u32, 0, equal_int, add_int, div_int, "u32");
+impl_scalar_ops!(u64, 0, equal_int, add_int, div_int, "u64");
+impl_scalar_ops!(i8, 0, equal_int, add_int, div_int, "i8");
+impl_scalar_ops!(i16, 0, equal_int, add_int, div_int, "i16");
+impl_scalar_ops!(i32, 0, equal_int, add_int, div_int, "i32");
+impl_scalar_ops!(i64, 0, equal_int, add_int, div_int, "i64");
+impl_scalar_ops!(f32, 0., equal_f32, add_int, div_int, "f32");
+impl_scalar_ops!(f64, 0., equal_f64, add_int, div_int, "f64");
+impl_scalar_ops!(bool, false, equal_bool, add_bool, div_bool, "bool");
+impl_scalar_ops!(String, String::new(), equal_string, add_string, div_string, "string");

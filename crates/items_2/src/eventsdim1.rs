@@ -1,6 +1,7 @@
 use crate::binsdim0::BinsDim0;
 use crate::eventsxbindim0::EventsXbinDim0;
 use crate::framable::FrameType;
+use crate::ts_offs_from_abs_with_anchor;
 use crate::IsoDateTime;
 use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
@@ -183,6 +184,16 @@ where
         Self::Aggregator::new(range, do_time_weight)
     }
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EventsDim1ChunkOutput<STY> {
+    tss: VecDeque<u64>,
+    pulses: VecDeque<u64>,
+    values: VecDeque<Vec<STY>>,
+    scalar_type: String,
+}
+
+impl<STY: ScalarOps> EventsDim1ChunkOutput<STY> {}
 
 #[derive(Debug)]
 pub struct EventsDim1Collector<STY> {
@@ -912,6 +923,19 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
             avgs,
         };
         Box::new(item)
+    }
+
+    fn to_cbor_vec_u8(&self) -> Vec<u8> {
+        let ret = EventsDim1ChunkOutput {
+            // TODO use &mut to swap the content
+            tss: self.tss.clone(),
+            pulses: self.pulses.clone(),
+            values: self.values.clone(),
+            scalar_type: STY::scalar_type_name().into(),
+        };
+        let mut buf = Vec::new();
+        ciborium::into_writer(&ret, &mut buf).unwrap();
+        buf
     }
 }
 

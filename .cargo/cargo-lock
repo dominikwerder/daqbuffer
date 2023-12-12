@@ -394,6 +394,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "ciborium"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "effd91f6c78e5a4ace8a5d3c0b6bfaec9e2baaef55f3efc00e45fb2e477ee926"
+dependencies = [
+ "ciborium-io",
+ "ciborium-ll",
+ "serde",
+]
+
+[[package]]
+name = "ciborium-io"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cdf919175532b369853f5d5e20b26b43112613fd6fe7aee757e35f7a44642656"
+
+[[package]]
+name = "ciborium-ll"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "defaa24ecc093c77630e6c15e17c51f5e187bf35ee514f4e2d67baaa96dae22b"
+dependencies = [
+ "ciborium-io",
+ "half",
+]
+
+[[package]]
 name = "clap"
 version = "4.4.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -732,7 +759,7 @@ dependencies = [
 
 [[package]]
 name = "daqbuffer"
-version = "0.5.0-alpha.0"
+version = "0.5.0-alpha.1"
 dependencies = [
  "bytes",
  "chrono",
@@ -997,9 +1024,9 @@ checksum = "5443807d6dff69373d433ab9ef5378ad8df50ca6298caf15de6e52e24aaf54d5"
 
 [[package]]
 name = "erased-serde"
-version = "0.3.31"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c138974f9d5e7fe373eb04df7cae98833802ae4b11c24ac7039a21d5af4b26c"
+checksum = "a3286168faae03a0e583f6fde17c02c8b8bba2dcc2061d0f7817066e5b0af706"
 dependencies = [
  "serde",
 ]
@@ -1730,6 +1757,7 @@ dependencies = [
  "bitshuffle",
  "bytes",
  "chrono",
+ "ciborium",
  "crc32fast",
  "erased-serde",
  "err",
@@ -3019,8 +3047,8 @@ dependencies = [
  "byteorder",
  "bytes",
  "chrono",
+ "ciborium",
  "crc32fast",
- "erased-serde",
  "err",
  "futures-util",
  "httpclient",
@@ -4039,9 +4067,9 @@ checksum = "dff9641d1cd4be8d1a070daf9e3773c5f67e78b4d9d42263020c057706765c04"
 
 [[package]]
 name = "winnow"
-version = "0.5.26"
+version = "0.5.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b67b5f0a4e7a27a64c651977932b9dc5667ca7fc31ac44b03ed37a0cf42fdfff"
+checksum = "6c830786f7720c2fd27a1a0e27a709dbd3c4d009b56d098fc742d4f4eab91fe2"
 dependencies = [
  "memchr",
 ]

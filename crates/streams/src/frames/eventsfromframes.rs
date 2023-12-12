@@ -2,6 +2,7 @@ use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::framable::FrameTypeInnerStatic;
+use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_2::frame::decode_frame;
@@ -64,11 +65,20 @@ where
                         StreamItem::DataItem(frame) => match decode_frame::<Sitemty<O>>(&frame) {
                             Ok(item) => match item {
                                 Ok(item) => match item {
+                                    StreamItem::DataItem(item2) => match item2 {
+                                        RangeCompletableItem::Data(item3) => {
+                                            Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(item3)))))
+                                        }
+                                        RangeCompletableItem::RangeComplete => {
+                                            debug!("EventsFromFrames  RangeComplete");
+                                            Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
+                                        }
+                                    },
                                     StreamItem::Log(k) => {
                                         //info!("rcvd log: {}  {:?}  {}", k.node_ix, k.level, k.msg);
                                         Ready(Some(Ok(StreamItem::Log(k))))
                                     }
-                                    item => Ready(Some(Ok(item))),
+                                    StreamItem::Stats(k) => Ready(Some(Ok(StreamItem::Stats(k)))),
                                 },
                                 Err(e) => {
                                     error!("rcvd err: {}", e);

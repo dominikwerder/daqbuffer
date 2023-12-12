@@ -3,8 +3,12 @@ use crate::err::Error;
 use crate::response;
 use crate::response_err;
 use crate::ToPublicResponse;
+use bytes::Bytes;
+use bytes::BytesMut;
+use futures_util::future;
 use futures_util::stream;
-use futures_util::TryStreamExt;
+use futures_util::StreamExt;
+use http::header;
 use http::Method;
 use http::StatusCode;
 use httpclient::body_empty;
@@ -19,8 +23,8 @@ use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
 use netpod::ACCEPT_ALL;
+use netpod::APP_CBOR;
 use netpod::APP_JSON;
-use netpod::APP_OCTET;
 use query::api4::events::PlainEventsQuery;
 use url::Url;
 
@@ -58,32 +62,41 @@ async fn plain_events(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -
     let accept_def = APP_JSON;
     let accept = req
         .headers()
-        .get(http::header::ACCEPT)
+        .get(header::ACCEPT)
         .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
     let url = req_uri_to_url(req.uri())?;
     if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
         Ok(plain_events_json(url, req, ctx, node_config).await?)
-    } else if accept == APP_OCTET {
-        Ok(plain_events_binary(url, req, ctx, node_config).await?)
+    } else if accept == APP_CBOR {
+        Ok(plain_events_cbor(url, req, ctx, node_config).await?)
     } else {
-        let ret = response_err(StatusCode::NOT_ACCEPTABLE, format!("Unsupported Accept: {:?}", accept))?;
+        let ret = response_err(StatusCode::NOT_ACCEPTABLE, format!("unsupported accept: {}", accept))?;
         Ok(ret)
     }
 }
 
-async fn plain_events_binary(
-    url: Url,
-    req: Requ,
-    ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
-) -> Result<StreamResponse, Error> {
-    debug!("{:?}", req);
-    let query = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
-    let ch_conf = chconf_from_events_quorum(&query, ctx, node_config).await?;
-    info!("plain_events_binary  chconf_from_events_quorum: {ch_conf:?}");
-    let s = stream::iter([Ok::<_, Error>(String::from("TODO_PREBINNED_BINARY_STREAM"))]);
-    let s = s.map_err(Error::from);
-    let ret = response(StatusCode::OK).body(body_stream(s))?;
+async fn plain_events_cbor(url: Url, req: Requ, ctx: &ReqCtx, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
+    let evq = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
+    let ch_conf = chconf_from_events_quorum(&evq, ctx, ncc)
+        .await?
+        .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
+    info!("plain_events_cbor  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
+    let stream = streams::plaineventscbor::plain_events_cbor(&evq, ch_conf, ctx, ncc).await?;
+    use future::ready;
+    let stream = stream
+        .flat_map(|x| match x {
+            Ok(y) => {
+                use bytes::BufMut;
+                let buf = y.into_inner();
+                let mut b2 = BytesMut::with_capacity(8);
+                b2.put_u32_le(buf.len() as u32);
+                stream::iter([Ok::<_, Error>(b2.freeze()), Ok(buf)])
+            }
+            // TODO handle other cases
+            _ => stream::iter([Ok(Bytes::new()), Ok(Bytes::new())]),
+        })
+        .filter(|x| if let Ok(x) = x { ready(x.len() > 0) } else { ready(true) });
+    let ret = response(StatusCode::OK).body(body_stream(stream))?;
     Ok(ret)
 }
 

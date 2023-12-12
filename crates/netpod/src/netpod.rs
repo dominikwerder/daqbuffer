@@ -49,6 +49,7 @@ use url::Url;
 pub const APP_JSON: &str = "application/json";
 pub const APP_JSON_LINES: &str = "application/jsonlines";
 pub const APP_OCTET: &str = "application/octet-stream";
+pub const APP_CBOR: &str = "application/cbor";
 pub const ACCEPT_ALL: &str = "*/*";
 pub const X_DAQBUF_REQID: &str = "x-daqbuffer-request-id";
 

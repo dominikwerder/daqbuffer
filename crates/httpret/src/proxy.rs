@@ -190,8 +190,8 @@ async fn proxy_http_service_inner(
         Ok(backends(req, proxy_config).await?)
     } else if let Some(h) = api4::ChannelSearchAggHandler::handler(&req) {
         h.handle(req, ctx, &proxy_config).await
-    } else if path == "/api/4/events" {
-        Ok(proxy_single_backend_query::<PlainEventsQuery>(req, ctx, proxy_config).await?)
+    } else if let Some(h) = api4::events::EventsHandler::handler(&req) {
+        h.handle(req, ctx, &proxy_config).await
     } else if path == "/api/4/status/connection/events" {
         Ok(proxy_single_backend_query::<ChannelStateEventsQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/status/channel/events" {
@@ -550,7 +550,7 @@ where
                         }
                         Err(e) => Err(Error::with_msg(format!("parse error for: {:?}  {:?}", sh, e))),
                     })
-                    .fold_ok(vec![], |mut a, x| {
+                    .fold_ok(Vec::new(), |mut a, x| {
                         a.push(x);
                         a
                     })?;
@@ -630,4 +630,16 @@ fn get_query_host_for_backend(backend: &str, proxy_config: &ProxyConfig) -> Resu
         }
     }
     return Err(Error::with_msg(format!("host not found for backend {:?}", backend)));
+}
+
+fn get_random_query_host_for_backend(backend: &str, proxy_config: &ProxyConfig) -> Result<String, Error> {
+    let url = get_query_host_for_backend(backend, proxy_config)?;
+    // TODO remove special code, make it part of configuration
+    if url.contains("sf-daqbuf-23.psi.ch") {
+        let id = 21 + rand::random::<u32>() % 13;
+        let url = url.replace("-23.", &format!("-{id}."));
+        Ok(url)
+    } else {
+        Ok(url)
+    }
 }

@@ -6,6 +6,7 @@ pub mod frames;
 pub mod generators;
 pub mod itemclone;
 pub mod needminbuffer;
+pub mod plaineventscbor;
 pub mod plaineventsjson;
 pub mod print_on_done;
 pub mod rangefilter2;

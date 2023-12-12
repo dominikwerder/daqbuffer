@@ -143,6 +143,7 @@ pub trait Events:
     fn pulses(&self) -> &VecDeque<u64>;
     fn frame_type_id(&self) -> u32;
     fn to_min_max_avg(&mut self) -> Box<dyn Events>;
+    fn to_cbor_vec_u8(&self) -> Vec<u8>;
 }
 
 impl WithLen for Box<dyn Events> {
@@ -260,5 +261,9 @@ impl Events for Box<dyn Events> {
 
     fn to_min_max_avg(&mut self) -> Box<dyn Events> {
         Events::to_min_max_avg(self.as_mut())
+    }
+
+    fn to_cbor_vec_u8(&self) -> Vec<u8> {
+        Events::to_cbor_vec_u8(self.as_ref())
     }
 }

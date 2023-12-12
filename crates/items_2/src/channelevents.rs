@@ -319,6 +319,41 @@ mod serde_channel_events {
                 }
             } else if cty == EventsDim1::<u8>::serde_id() {
                 match nty {
+                    u8::SUB => {
+                        let obj: EventsDim1<u8> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    u16::SUB => {
+                        let obj: EventsDim1<u16> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    u32::SUB => {
+                        let obj: EventsDim1<u32> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    u64::SUB => {
+                        let obj: EventsDim1<u64> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    i8::SUB => {
+                        let obj: EventsDim1<i8> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    i16::SUB => {
+                        let obj: EventsDim1<i16> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    i32::SUB => {
+                        let obj: EventsDim1<i32> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
                     i64::SUB => {
                         let obj: EventsDim1<i64> =
                             seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
@@ -877,6 +912,16 @@ impl Events for ChannelEvents {
         match self {
             ChannelEvents::Events(item) => Box::new(ChannelEvents::Events(Events::to_min_max_avg(item))),
             ChannelEvents::Status(item) => Box::new(ChannelEvents::Status(item.take())),
+        }
+    }
+
+    fn to_cbor_vec_u8(&self) -> Vec<u8> {
+        match self {
+            ChannelEvents::Events(item) => item.to_cbor_vec_u8(),
+            ChannelEvents::Status(item) => {
+                error!("TODO convert status to cbor");
+                Vec::new()
+            }
         }
     }
 }

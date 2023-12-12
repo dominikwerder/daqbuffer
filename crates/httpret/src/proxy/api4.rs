@@ -1,4 +1,5 @@
 pub mod caioclookup;
+pub mod events;
 
 use crate::bodystream::ToPublicResponse;
 use crate::err::Error;
