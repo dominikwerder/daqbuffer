@@ -241,48 +241,6 @@ where
     Ok(ret)
 }
 
-macro_rules! static_http {
-    ($path:expr, $tgt:expr, $tgtex:expr, $ctype:expr) => {
-        if $path == concat!("/api/4/documentation/", $tgt) {
-            let c = include_bytes!(concat!("../static/documentation/", $tgtex));
-            let ret = response(StatusCode::OK)
-                .header("content-type", $ctype)
-                .body(body_bytes(c.to_vec()))?;
-            return Ok(ret);
-        }
-    };
-    ($path:expr, $tgt:expr, $ctype:expr) => {
-        if $path == concat!("/api/4/documentation/", $tgt) {
-            let c = include_bytes!(concat!("../static/documentation/", $tgt));
-            let ret = response(StatusCode::OK)
-                .header("content-type", $ctype)
-                .body(body_bytes(c.to_vec()))?;
-            return Ok(ret);
-        }
-    };
-}
-
-macro_rules! static_http_api1 {
-    ($path:expr, $tgt:expr, $tgtex:expr, $ctype:expr) => {
-        if $path == concat!("/api/1/documentation/", $tgt) {
-            let c = include_bytes!(concat!("../static/documentation/", $tgtex));
-            let ret = response(StatusCode::OK)
-                .header("content-type", $ctype)
-                .body(body_bytes(c.to_vec()))?;
-            return Ok(ret);
-        }
-    };
-    ($path:expr, $tgt:expr, $ctype:expr) => {
-        if $path == concat!("/api/1/documentation/", $tgt) {
-            let c = include_bytes!(concat!("../static/documentation/", $tgt));
-            let ret = response(StatusCode::OK)
-                .header("content-type", $ctype)
-                .body(body_bytes(c.to_vec()))?;
-            return Ok(ret);
-        }
-    };
-}
-
 async fn http_service_try(
     req: Requ,
     ctx: ReqCtx,
@@ -449,18 +407,8 @@ async fn http_service_inner(
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = api1::RequestStatusHandler::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
-    } else if path.starts_with("/api/1/documentation/") {
-        if req.method() == Method::GET {
-            api_1_docs(path)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
-        }
-    } else if path.starts_with("/api/4/documentation/") {
-        if req.method() == Method::GET {
-            api_4_docs(path)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
-        }
+    } else if let Some(h) = api4::docs::DocsHandler::handler(&req) {
+        Ok(h.handle(req, ctx).await?)
     } else {
         use std::fmt::Write;
         let mut body = String::new();
@@ -478,21 +426,6 @@ async fn http_service_inner(
         write!(out, "</pre>\n")?;
         Ok(response(StatusCode::NOT_FOUND).body(body_string(body))?)
     }
-}
-
-pub fn api_4_docs(path: &str) -> Result<StreamResponse, RetrievalError> {
-    static_http!(path, "", "api4.html", "text/html");
-    static_http!(path, "style.css", "text/css");
-    static_http!(path, "script.js", "text/javascript");
-    static_http!(path, "status-main.html", "text/html");
-    Ok(response(StatusCode::NOT_FOUND).body(body_empty())?)
-}
-
-pub fn api_1_docs(path: &str) -> Result<StreamResponse, RetrievalError> {
-    static_http_api1!(path, "", "api1.html", "text/html");
-    static_http_api1!(path, "style.css", "text/css");
-    static_http_api1!(path, "script.js", "text/javascript");
-    Ok(response(StatusCode::NOT_FOUND).body(body_empty())?)
 }
 
 pub struct StatusBoardAllHandler {}

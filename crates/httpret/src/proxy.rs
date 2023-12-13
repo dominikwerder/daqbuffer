@@ -4,8 +4,6 @@ pub mod api4;
 use crate::api1::channel_search_configs_v1;
 use crate::api1::channel_search_list_v1;
 use crate::api1::gather_json_2_v1;
-use crate::api_1_docs;
-use crate::api_4_docs;
 use crate::err::Error;
 use crate::gather::gather_get_json_generic;
 use crate::gather::SubRes;
@@ -48,7 +46,6 @@ use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
 use netpod::PSI_DAQBUFFER_SERVICE_MARK;
 use query::api4::binned::BinnedQuery;
-use query::api4::events::PlainEventsQuery;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -204,18 +201,6 @@ async fn proxy_http_service_inner(
         Ok(proxy_single_backend_query::<BinnedQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/channel/config" {
         Ok(proxy_single_backend_query::<ChannelConfigQuery>(req, ctx, proxy_config).await?)
-    } else if path.starts_with("/api/1/documentation/") {
-        if req.method() == Method::GET {
-            Ok(api_1_docs(path)?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
-        }
-    } else if path.starts_with("/api/4/documentation/") {
-        if req.method() == Method::GET {
-            Ok(api_4_docs(path)?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
-        }
     } else if path.starts_with("/api/4/test/http/204") {
         Ok(response(StatusCode::NO_CONTENT).body(body_string("No Content"))?)
     } else if path.starts_with("/api/4/test/http/400") {
@@ -242,6 +227,8 @@ async fn proxy_http_service_inner(
         h.handle(req, proxy_config).await
     } else if path.starts_with(DISTRI_PRE) {
         proxy_distribute_v2(req).await
+    } else if let Some(h) = super::api4::docs::DocsHandler::handler(&req) {
+        Ok(h.handle(req, ctx).await?)
     } else {
         use std::fmt::Write;
         let mut body = String::new();

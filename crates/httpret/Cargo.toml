@@ -25,6 +25,9 @@ chrono = "0.4.23"
 md-5 = "0.10.6"
 regex = "1.10.2"
 rand = "0.8.5"
+ciborium = "0.2.1"
+flate2 = "1"
+brotli = "2.4"
 err = { path = "../err" }
 netpod = { path = "../netpod" }
 query = { path = "../query" }
