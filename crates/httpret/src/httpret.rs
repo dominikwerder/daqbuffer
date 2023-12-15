@@ -22,7 +22,6 @@ use futures_util::Future;
 use futures_util::FutureExt;
 use http::Method;
 use http::StatusCode;
-use httpclient::body_bytes;
 use httpclient::body_empty;
 use httpclient::body_string;
 use httpclient::IntoBody;

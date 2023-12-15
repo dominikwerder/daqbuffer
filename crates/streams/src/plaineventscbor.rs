@@ -1,4 +1,4 @@
-use crate::plaineventsjson::dyn_events_stream;
+use crate::plaineventsstream::dyn_events_stream;
 use bytes::Bytes;
 use err::Error;
 use futures_util::future;
@@ -45,10 +45,10 @@ pub async fn plain_events_cbor(
                                 ciborium::into_writer(evs, &mut buf)
                                     .map_err(|e| Error::with_msg_no_trace(format!("{e}")))?;
                                 let bytes = Bytes::from(buf);
-                                let item = CborBytes(bytes);
+                                let _item = CborBytes(bytes);
                                 // Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
                             } else {
-                                let item = LogItem::from_node(0, Level::DEBUG, format!("cbor stream discarded item"));
+                                let _item = LogItem::from_node(0, Level::DEBUG, format!("cbor stream discarded item"));
                                 // Ok(StreamItem::Log(item))
                             };
                         }
