@@ -53,8 +53,8 @@ impl fmt::Debug for NanoRange {
 impl NanoRange {
     pub fn from_date_time(beg: DateTime<Utc>, end: DateTime<Utc>) -> Self {
         Self {
-            beg: beg.timestamp_nanos() as u64,
-            end: end.timestamp_nanos() as u64,
+            beg: beg.timestamp_nanos_opt().unwrap_or(0) as u64,
+            end: end.timestamp_nanos_opt().unwrap_or(0) as u64,
         }
     }
 

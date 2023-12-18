@@ -1,4 +1,5 @@
 use crate::plaineventsstream::dyn_events_stream;
+use crate::tcprawclient::OpenBoxedBytesStreamsBox;
 use bytes::Bytes;
 use err::Error;
 use futures_util::future;
@@ -29,9 +30,9 @@ pub async fn plain_events_cbor(
     evq: &PlainEventsQuery,
     ch_conf: ChannelTypeConfigGen,
     ctx: &ReqCtx,
-    ncc: &NodeConfigCached,
+    open_bytes: OpenBoxedBytesStreamsBox,
 ) -> Result<CborStream, Error> {
-    let stream = dyn_events_stream(evq, ch_conf, ctx, &ncc.node_config.cluster).await?;
+    let stream = dyn_events_stream(evq, ch_conf, ctx, open_bytes).await?;
     let stream = stream
         .map(|x| match x {
             Ok(x) => match x {

@@ -1,5 +1,6 @@
 use crate::collect::Collect;
 use crate::plaineventsstream::dyn_events_stream;
+use crate::tcprawclient::OpenBoxedBytesStreamsBox;
 use err::Error;
 use futures_util::StreamExt;
 use items_0::collect_s::Collectable;
@@ -16,12 +17,13 @@ pub async fn plain_events_json(
     evq: &PlainEventsQuery,
     ch_conf: ChannelTypeConfigGen,
     ctx: &ReqCtx,
-    cluster: &Cluster,
+    _cluster: &Cluster,
+    open_bytes: OpenBoxedBytesStreamsBox,
 ) -> Result<JsonValue, Error> {
     info!("plain_events_json  evquery {:?}", evq);
     let deadline = Instant::now() + evq.timeout();
 
-    let stream = dyn_events_stream(evq, ch_conf, ctx, cluster).await?;
+    let stream = dyn_events_stream(evq, ch_conf, ctx, open_bytes).await?;
 
     let stream = stream.map(move |k| {
         on_sitemty_data!(k, |k| {

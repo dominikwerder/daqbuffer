@@ -1,4 +1,6 @@
-use crate::tcprawclient::open_event_data_streams;
+use crate::tcprawclient::container_stream_from_bytes_stream;
+use crate::tcprawclient::make_sub_query;
+use crate::tcprawclient::OpenBoxedBytesStreamsBox;
 use crate::transform::build_merged_event_transform;
 use err::Error;
 use futures_util::Stream;
@@ -12,11 +14,7 @@ use items_2::channelevents::ChannelEvents;
 use items_2::merger::Merger;
 use netpod::log::*;
 use netpod::ChannelTypeConfigGen;
-use netpod::Cluster;
 use netpod::ReqCtx;
-use query::api4::events::EventsSubQuery;
-use query::api4::events::EventsSubQuerySelect;
-use query::api4::events::EventsSubQuerySettings;
 use query::api4::events::PlainEventsQuery;
 use std::pin::Pin;
 
@@ -26,17 +24,26 @@ pub async fn dyn_events_stream(
     evq: &PlainEventsQuery,
     ch_conf: ChannelTypeConfigGen,
     ctx: &ReqCtx,
-    cluster: &Cluster,
+    open_bytes: OpenBoxedBytesStreamsBox,
 ) -> Result<DynEventsStream, Error> {
-    let mut select = EventsSubQuerySelect::new(ch_conf, evq.range().clone(), evq.transform().clone());
-    if let Some(x) = evq.test_do_wasm() {
-        select.set_wasm1(x.into());
-    }
-    let settings = EventsSubQuerySettings::from(evq);
-    let subq = EventsSubQuery::from_parts(select, settings, ctx.reqid().into());
+    let subq = make_sub_query(
+        ch_conf,
+        evq.range().clone(),
+        evq.transform().clone(),
+        evq.test_do_wasm(),
+        evq,
+        ctx,
+    );
+    let inmem_bufcap = subq.inmem_bufcap();
     let mut tr = build_merged_event_transform(evq.transform())?;
+    let bytes_streams = open_bytes.open(subq, ctx.clone()).await?;
+    let mut inps = Vec::new();
+    for s in bytes_streams {
+        let s = container_stream_from_bytes_stream::<ChannelEvents>(s, inmem_bufcap.clone(), "TODOdbgdesc".into())?;
+        let s = Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>;
+        inps.push(s);
+    }
     // TODO make sure the empty container arrives over the network.
-    let inps = open_event_data_streams::<ChannelEvents>(subq, ctx, cluster).await?;
     // TODO propagate also the max-buf-len for the first stage event reader.
     // TODO use a mixture of count and byte-size as threshold.
     let stream = Merger::new(inps, evq.merger_out_len_max());

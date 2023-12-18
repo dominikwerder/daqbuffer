@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod collect;
 #[cfg(test)]
+mod events;
+#[cfg(test)]
 mod timebin;
 
 use err::Error;
@@ -25,7 +27,7 @@ fn inmem_test_events_d0_i32_00() -> BoxedEventStream {
     evs.push(SEC * 4, 4, 10004);
     let cev = ChannelEvents::Events(Box::new(evs));
     let item = sitem_data(cev);
-    let stream = stream::iter(vec![item]);
+    let stream = stream::iter([item]);
     Box::pin(stream)
 }
 
@@ -34,7 +36,7 @@ fn inmem_test_events_d0_i32_01() -> BoxedEventStream {
     evs.push(SEC * 2, 2, 10002);
     let cev = ChannelEvents::Events(Box::new(evs));
     let item = sitem_data(cev);
-    let stream = stream::iter(vec![item]);
+    let stream = stream::iter([item]);
     Box::pin(stream)
 }
 

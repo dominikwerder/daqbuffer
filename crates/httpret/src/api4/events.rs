@@ -25,6 +25,7 @@ use netpod::ReqCtx;
 use netpod::ACCEPT_ALL;
 use netpod::APP_CBOR;
 use netpod::APP_JSON;
+use nodenet::client::OpenBoxedBytesViaHttp;
 use query::api4::events::PlainEventsQuery;
 use url::Url;
 
@@ -81,7 +82,8 @@ async fn plain_events_cbor(url: Url, req: Requ, ctx: &ReqCtx, ncc: &NodeConfigCa
         .await?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
     info!("plain_events_cbor  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
-    let stream = streams::plaineventscbor::plain_events_cbor(&evq, ch_conf, ctx, ncc).await?;
+    let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
+    let stream = streams::plaineventscbor::plain_events_cbor(&evq, ch_conf, ctx, Box::pin(open_bytes)).await?;
     use future::ready;
     let stream = stream
         .flat_map(|x| match x {
@@ -116,8 +118,15 @@ async fn plain_events_json(
         .map_err(Error::from)?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
     info!("plain_events_json  chconf_from_events_quorum: {ch_conf:?}");
-    let item =
-        streams::plaineventsjson::plain_events_json(&query, ch_conf, ctx, &node_config.node_config.cluster).await;
+    let open_bytes = OpenBoxedBytesViaHttp::new(node_config.node_config.cluster.clone());
+    let item = streams::plaineventsjson::plain_events_json(
+        &query,
+        ch_conf,
+        ctx,
+        &node_config.node_config.cluster,
+        Box::pin(open_bytes),
+    )
+    .await;
     let item = match item {
         Ok(item) => item,
         Err(e) => {

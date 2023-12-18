@@ -27,19 +27,16 @@ use query::api4::events::EventsSubQuery;
 use query::api4::events::Frame1Parts;
 use std::net::SocketAddr;
 use std::pin::Pin;
+use streams::frames::inmem::BoxedBytesStream;
 use streams::frames::inmem::InMemoryFrameStream;
 use streams::frames::inmem::TcpReadAsBytes;
-use streams::generators::GenerateF64V00;
-use streams::generators::GenerateI32V00;
-use streams::generators::GenerateI32V01;
+use streams::tcprawclient::TEST_BACKEND;
 use streams::transform::build_event_transform;
 use taskrun::tokio;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::TcpStream;
 use tracing::Instrument;
-
-const TEST_BACKEND: &str = "testbackend-00";
 
 #[cfg(test)]
 mod test;
@@ -81,51 +78,9 @@ async fn make_channel_events_stream_data(
     ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     if subq.backend() == TEST_BACKEND {
-        debug!("use test backend data  {}", TEST_BACKEND);
         let node_count = ncc.node_config.cluster.nodes.len() as u64;
         let node_ix = ncc.ix as u64;
-        let chn = subq.name();
-        let range = subq.range().clone();
-        let one_before = subq.transform().need_one_before_range();
-        if chn == "test-gen-i32-dim0-v00" {
-            Ok(Box::pin(GenerateI32V00::new(node_ix, node_count, range, one_before)))
-        } else if chn == "test-gen-i32-dim0-v01" {
-            Ok(Box::pin(GenerateI32V01::new(node_ix, node_count, range, one_before)))
-        } else if chn == "test-gen-f64-dim1-v00" {
-            Ok(Box::pin(GenerateF64V00::new(node_ix, node_count, range, one_before)))
-        } else {
-            let na: Vec<_> = chn.split("-").collect();
-            if na.len() != 3 {
-                Err(Error::with_msg_no_trace(format!(
-                    "make_channel_events_stream_data can not understand test channel name: {chn:?}"
-                )))
-            } else {
-                if na[0] != "inmem" {
-                    Err(Error::with_msg_no_trace(format!(
-                        "make_channel_events_stream_data can not understand test channel name: {chn:?}"
-                    )))
-                } else {
-                    let _range = subq.range().clone();
-                    if na[1] == "d0" {
-                        if na[2] == "i32" {
-                            //generator::generate_i32(node_ix, node_count, range)
-                            panic!()
-                        } else if na[2] == "f32" {
-                            //generator::generate_f32(node_ix, node_count, range)
-                            panic!()
-                        } else {
-                            Err(Error::with_msg_no_trace(format!(
-                                "make_channel_events_stream_data can not understand test channel name: {chn:?}"
-                            )))
-                        }
-                    } else {
-                        Err(Error::with_msg_no_trace(format!(
-                            "make_channel_events_stream_data can not understand test channel name: {chn:?}"
-                        )))
-                    }
-                }
-            }
-        }
+        streams::generators::make_test_channel_events_stream_data(subq, node_count, node_ix)
     } else if let Some(scyconf) = &ncc.node_config.cluster.scylla {
         let cfg = subq.ch_conf().to_scylla()?;
         scylla_channel_event_stream(subq, cfg, scyconf, ncc).await
@@ -154,12 +109,10 @@ async fn make_channel_events_stream(
     Ok(ret)
 }
 
-pub type BytesStreamBox = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>;
-
 pub async fn create_response_bytes_stream(
     evq: EventsSubQuery,
     ncc: &NodeConfigCached,
-) -> Result<BytesStreamBox, Error> {
+) -> Result<BoxedBytesStream, Error> {
     debug!(
         "create_response_bytes_stream  {:?}  {:?}",
         evq.ch_conf().scalar_type(),
@@ -180,9 +133,8 @@ pub async fn create_response_bytes_stream(
         let ret = Box::pin(stream);
         Ok(ret)
     } else {
-        let stream = make_channel_events_stream(evq.clone(), reqctx, ncc).await?;
         let mut tr = build_event_transform(evq.transform())?;
-
+        let stream = make_channel_events_stream(evq, reqctx, ncc).await?;
         let stream = stream.map(move |x| {
             on_sitemty_data!(x, |x: ChannelEvents| {
                 match x {

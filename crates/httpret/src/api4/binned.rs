@@ -16,16 +16,12 @@ use netpod::timeunits::SEC;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
+use nodenet::client::OpenBoxedBytesViaHttp;
 use query::api4::binned::BinnedQuery;
 use tracing::Instrument;
 use url::Url;
 
-async fn binned_json(
-    url: Url,
-    req: Requ,
-    ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
-) -> Result<StreamResponse, Error> {
+async fn binned_json(url: Url, req: Requ, ctx: &ReqCtx, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
     debug!("{:?}", req);
     let reqid = crate::status_board()
         .map_err(|e| Error::with_msg_no_trace(e.to_string()))?
@@ -37,7 +33,7 @@ async fn binned_json(
         e.add_public_msg(msg)
     })?;
     // TODO handle None case better and return 404
-    let ch_conf = ch_conf_from_binned(&query, ctx, node_config)
+    let ch_conf = ch_conf_from_binned(&query, ctx, ncc)
         .await?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
     let span1 = span!(
@@ -46,12 +42,14 @@ async fn binned_json(
         reqid,
         beg = query.range().beg_u64() / SEC,
         end = query.range().end_u64() / SEC,
-        ch = query.channel().name().clone(),
+        ch = query.channel().name(),
     );
     span1.in_scope(|| {
         debug!("begin");
     });
-    let item = streams::timebinnedjson::timebinned_json(query, ch_conf, ctx, node_config.node_config.cluster.clone())
+    let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
+    let open_bytes = Box::pin(open_bytes);
+    let item = streams::timebinnedjson::timebinned_json(query, ch_conf, ctx, open_bytes)
         .instrument(span1)
         .await?;
     let ret = response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?;

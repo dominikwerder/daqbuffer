@@ -2946,6 +2946,12 @@ impl From<SfChFetchInfo> for ChannelTypeConfigGen {
     }
 }
 
+impl From<ChConf> for ChannelTypeConfigGen {
+    fn from(value: ChConf) -> Self {
+        Self::Scylla(value)
+    }
+}
+
 pub fn f32_close(a: f32, b: f32) -> bool {
     if (a - b).abs() < 1e-4 || (a / b > 0.999 && a / b < 1.001) {
         true

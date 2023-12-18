@@ -16,6 +16,8 @@ use std::task::Context;
 use std::task::Poll;
 use tokio::io::AsyncRead;
 
+pub type BoxedBytesStream = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>;
+
 #[allow(unused)]
 macro_rules! trace2 {
     ($($arg:tt)*) => ();

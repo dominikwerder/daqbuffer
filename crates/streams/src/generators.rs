@@ -1,7 +1,12 @@
+use crate::frames::inmem::BoxedBytesStream;
+use crate::transform::build_event_transform;
+use err::Error;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
+use futures_util::StreamExt;
 use items_0::container::ByteEstimate;
+use items_0::on_sitemty_data;
 use items_0::streamitem::sitem_data;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
@@ -10,17 +15,117 @@ use items_0::Appendable;
 use items_0::Empty;
 use items_0::WithLen;
 use items_2::channelevents::ChannelEvents;
+use items_2::empty::empty_events_dyn_ev;
 use items_2::eventsdim0::EventsDim0;
 use items_2::eventsdim1::EventsDim1;
+use items_2::framable::Framable;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::DAY;
 use netpod::timeunits::MS;
+use query::api4::events::EventsSubQuery;
 use std::f64::consts::PI;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
+
+pub fn make_test_channel_events_bytes_stream(
+    subq: EventsSubQuery,
+    node_count: u64,
+    node_ix: u64,
+) -> Result<BoxedBytesStream, Error> {
+    if subq.is_event_blobs() {
+        let e = Error::with_msg_no_trace("evq.is_event_blobs() not supported in this generator");
+        error!("{e}");
+        Err(e)
+    } else {
+        let mut tr = build_event_transform(subq.transform())?;
+        let stream = make_test_channel_events_stream_data(subq, node_count, node_ix)?;
+        let stream = stream.map(move |x| {
+            on_sitemty_data!(x, |x: ChannelEvents| {
+                match x {
+                    ChannelEvents::Events(evs) => {
+                        let evs = tr.0.transform(evs);
+                        Ok(StreamItem::DataItem(RangeCompletableItem::Data(ChannelEvents::Events(
+                            evs,
+                        ))))
+                    }
+                    ChannelEvents::Status(x) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(
+                        ChannelEvents::Status(x),
+                    ))),
+                }
+            })
+        });
+        let stream = stream.map(|x| x.make_frame().map(|x| x.freeze()));
+        let ret = Box::pin(stream);
+        Ok(ret)
+    }
+}
+
+// is also used from nodenet::conn
+pub fn make_test_channel_events_stream_data(
+    subq: EventsSubQuery,
+    node_count: u64,
+    node_ix: u64,
+) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
+    let empty = empty_events_dyn_ev(subq.ch_conf().scalar_type(), subq.ch_conf().shape())?;
+    let empty = sitem_data(ChannelEvents::Events(empty));
+    let stream = make_test_channel_events_stream_data_inner(subq, node_count, node_ix)?;
+    let ret = futures_util::stream::iter([empty]).chain(stream);
+    let ret = Box::pin(ret);
+    Ok(ret)
+}
+
+fn make_test_channel_events_stream_data_inner(
+    subq: EventsSubQuery,
+    node_count: u64,
+    node_ix: u64,
+) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
+    debug!("use test backend data");
+    let chn = subq.name();
+    let range = subq.range().clone();
+    let one_before = subq.transform().need_one_before_range();
+    if chn == "test-gen-i32-dim0-v00" {
+        Ok(Box::pin(GenerateI32V00::new(node_ix, node_count, range, one_before)))
+    } else if chn == "test-gen-i32-dim0-v01" {
+        Ok(Box::pin(GenerateI32V01::new(node_ix, node_count, range, one_before)))
+    } else if chn == "test-gen-f64-dim1-v00" {
+        Ok(Box::pin(GenerateF64V00::new(node_ix, node_count, range, one_before)))
+    } else {
+        let na: Vec<_> = chn.split("-").collect();
+        if na.len() != 3 {
+            Err(Error::with_msg_no_trace(format!(
+                "make_channel_events_stream_data can not understand test channel name: {chn:?}"
+            )))
+        } else {
+            if na[0] != "inmem" {
+                Err(Error::with_msg_no_trace(format!(
+                    "make_channel_events_stream_data can not understand test channel name: {chn:?}"
+                )))
+            } else {
+                let _range = subq.range().clone();
+                if na[1] == "d0" {
+                    if na[2] == "i32" {
+                        //generator::generate_i32(node_ix, node_count, range)
+                        panic!()
+                    } else if na[2] == "f32" {
+                        //generator::generate_f32(node_ix, node_count, range)
+                        panic!()
+                    } else {
+                        Err(Error::with_msg_no_trace(format!(
+                            "make_channel_events_stream_data can not understand test channel name: {chn:?}"
+                        )))
+                    }
+                } else {
+                    Err(Error::with_msg_no_trace(format!(
+                        "make_channel_events_stream_data can not understand test channel name: {chn:?}"
+                    )))
+                }
+            }
+        }
+    }
+}
 
 pub struct GenerateI32V00 {
     ts: u64,

@@ -1,6 +1,8 @@
 use crate::collect::Collect;
 use crate::rangefilter2::RangeFilter2;
-use crate::tcprawclient::open_event_data_streams;
+use crate::tcprawclient::container_stream_from_bytes_stream;
+use crate::tcprawclient::make_sub_query;
+use crate::tcprawclient::OpenBoxedBytesStreamsBox;
 use crate::timebin::TimeBinnedStream;
 use crate::transform::build_merged_event_transform;
 use crate::transform::EventsToTimeBinnable;
@@ -25,9 +27,6 @@ use netpod::ChannelTypeConfigGen;
 use netpod::Cluster;
 use netpod::ReqCtx;
 use query::api4::binned::BinnedQuery;
-use query::api4::events::EventsSubQuery;
-use query::api4::events::EventsSubQuerySelect;
-use query::api4::events::EventsSubQuerySettings;
 use serde_json::Value as JsonValue;
 use std::pin::Pin;
 use std::time::Instant;
@@ -43,16 +42,26 @@ async fn timebinnable_stream(
     one_before_range: bool,
     ch_conf: ChannelTypeConfigGen,
     ctx: &ReqCtx,
-    cluster: Cluster,
+    open_bytes: OpenBoxedBytesStreamsBox,
 ) -> Result<TimeBinnableStreamBox, Error> {
-    let mut select = EventsSubQuerySelect::new(ch_conf, range.clone().into(), query.transform().clone());
-    if let Some(wasm1) = query.test_do_wasm() {
-        select.set_wasm1(wasm1.into());
-    }
-    let settings = EventsSubQuerySettings::from(&query);
-    let subq = EventsSubQuery::from_parts(select.clone(), settings, ctx.reqid().into());
+    let subq = make_sub_query(
+        ch_conf,
+        range.clone().into(),
+        query.transform().clone(),
+        query.test_do_wasm(),
+        &query,
+        ctx,
+    );
+    let inmem_bufcap = subq.inmem_bufcap();
+    let wasm1 = subq.wasm1().map(ToString::to_string);
     let mut tr = build_merged_event_transform(subq.transform())?;
-    let inps = open_event_data_streams::<ChannelEvents>(subq, ctx, &cluster).await?;
+    let bytes_streams = open_bytes.open(subq, ctx.clone()).await?;
+    let mut inps = Vec::new();
+    for s in bytes_streams {
+        let s = container_stream_from_bytes_stream::<ChannelEvents>(s, inmem_bufcap.clone(), "TODOdbgdesc".into())?;
+        let s = Box::pin(s) as Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>;
+        inps.push(s);
+    }
     // TODO propagate also the max-buf-len for the first stage event reader.
     // TODO use a mixture of count and byte-size as threshold.
     let stream = Merger::new(inps, query.merger_out_len_max());
@@ -68,7 +77,7 @@ async fn timebinnable_stream(
         })
     });
 
-    let stream = if let Some(wasmname) = select.wasm1() {
+    let stream = if let Some(wasmname) = wasm1 {
         debug!("make wasm transform");
         use httpclient::url::Url;
         use wasmer::Value;
@@ -185,9 +194,6 @@ async fn timebinnable_stream(
             // Box::new(item) as Box<dyn Framable + Send>
             item
         });
-        use futures_util::Stream;
-        use items_0::streamitem::Sitemty;
-        use std::pin::Pin;
         Box::pin(stream) as Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Events>>> + Send>>
     } else {
         let stream = stream.map(|x| x);
@@ -212,14 +218,14 @@ async fn timebinned_stream(
     binned_range: BinnedRangeEnum,
     ch_conf: ChannelTypeConfigGen,
     ctx: &ReqCtx,
-    cluster: Cluster,
+    open_bytes: OpenBoxedBytesStreamsBox,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>, Error> {
     let range = binned_range.binned_range_time().to_nano_range();
 
     let do_time_weight = true;
     let one_before_range = true;
 
-    let stream = timebinnable_stream(query.clone(), range, one_before_range, ch_conf, ctx, cluster).await?;
+    let stream = timebinnable_stream(query.clone(), range, one_before_range, ch_conf, ctx, open_bytes).await?;
     let stream: Pin<Box<dyn TimeBinnableStreamTrait>> = stream.0;
     let stream = Box::pin(stream);
     // TODO rename TimeBinnedStream to make it more clear that it is the component which initiates the time binning.
@@ -246,12 +252,12 @@ pub async fn timebinned_json(
     query: BinnedQuery,
     ch_conf: ChannelTypeConfigGen,
     ctx: &ReqCtx,
-    cluster: Cluster,
+    open_bytes: OpenBoxedBytesStreamsBox,
 ) -> Result<JsonValue, Error> {
     let deadline = Instant::now().checked_add(query.timeout_value()).unwrap();
     let binned_range = BinnedRangeEnum::covering_range(query.range().clone(), query.bin_count())?;
     let collect_max = 10000;
-    let stream = timebinned_stream(query.clone(), binned_range.clone(), ch_conf, ctx, cluster).await?;
+    let stream = timebinned_stream(query.clone(), binned_range.clone(), ch_conf, ctx, open_bytes).await?;
     let stream = timebinned_to_collectable(stream);
     let collected = Collect::new(stream, deadline, collect_max, None, Some(binned_range));
     let collected: BoxFuture<_> = Box::pin(collected);
