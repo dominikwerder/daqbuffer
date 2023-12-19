@@ -27,6 +27,12 @@ pub trait WithLen {
     fn len(&self) -> usize;
 }
 
+impl WithLen for bytes::Bytes {
+    fn len(&self) -> usize {
+        self.len()
+    }
+}
+
 pub trait Empty {
     fn empty() -> Self;
 }

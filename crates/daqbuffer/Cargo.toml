@@ -19,4 +19,5 @@ taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }
 disk = { path = "../disk" }
 httpclient = { path = "../httpclient" }
+streams = { path = "../streams" }
 daqbufp2 = { path = "../daqbufp2" }

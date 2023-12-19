@@ -1,10 +1,13 @@
 pub mod boxed;
+pub mod cbor;
 pub mod collect;
 pub mod dtflags;
 pub mod filechunkread;
+pub mod firsterr;
 pub mod frames;
 pub mod generators;
 pub mod itemclone;
+pub mod lenframed;
 pub mod needminbuffer;
 pub mod plaineventscbor;
 pub mod plaineventsjson;

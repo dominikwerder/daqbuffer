@@ -163,12 +163,6 @@ pub fn build_full_transform_collectable(
     // TODO this must return a Stream!
     //let evs = build_event_transform(tr, inp)?;
     let trtb = tr.get_tr_time_binning();
-    use futures_util::Stream;
-    use items_0::collect_s::Collectable;
-    use items_0::streamitem::RangeCompletableItem;
-    use items_0::streamitem::Sitemty;
-    use items_0::streamitem::StreamItem;
-    use std::pin::Pin;
     let a: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>> = Box::pin(inp.0.map(|item| match item {
         Ok(item) => match item {
             StreamItem::DataItem(item) => match item {

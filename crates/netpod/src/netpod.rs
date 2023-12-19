@@ -232,6 +232,32 @@ impl ScalarType {
         }
     }
 
+    pub fn from_variant_str(s: &str) -> Result<Self, Error> {
+        use ScalarType::*;
+        let ret = match s {
+            "u8" => U8,
+            "u16" => U16,
+            "u32" => U32,
+            "u64" => U64,
+            "i8" => I8,
+            "i16" => I16,
+            "i32" => I32,
+            "i64" => I64,
+            "f32" => F32,
+            "f64" => F64,
+            "bool" => BOOL,
+            "string" => STRING,
+            "ChannelStatus" => ChannelStatus,
+            _ => {
+                return Err(Error::with_msg_no_trace(format!(
+                    "from_bsread_str can not understand bsread {:?}",
+                    s
+                )))
+            }
+        };
+        Ok(ret)
+    }
+
     pub fn to_bsread_str(&self) -> &'static str {
         use ScalarType::*;
         match self {

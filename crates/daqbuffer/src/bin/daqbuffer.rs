@@ -11,7 +11,9 @@ use netpod::query::CacheUsage;
 use netpod::NodeConfig;
 use netpod::NodeConfigCached;
 use netpod::ProxyConfig;
+use netpod::ScalarType;
 use netpod::ServiceVersion;
+use netpod::Shape;
 use taskrun::tokio;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
@@ -122,6 +124,16 @@ async fn go() -> Result<(), Error> {
                     opts.disk_stats_every_kb,
                 )
                 .await?;
+            }
+            ClientType::CborEvents(opts) => {
+                daqbuffer::fetch::fetch_cbor(
+                    &opts.url,
+                    ScalarType::from_variant_str(&opts.scalar_type).unwrap(),
+                    Shape::from_dims_str(&opts.shape).unwrap(),
+                )
+                .await
+                .map_err(|_| Error::with_msg_no_trace("error"))
+                .unwrap();
             }
         },
         SubCmd::GenerateTestData => {

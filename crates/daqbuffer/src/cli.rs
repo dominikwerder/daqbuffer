@@ -42,6 +42,7 @@ pub struct Client {
 pub enum ClientType {
     Binned(BinnedClient),
     Status(StatusClient),
+    CborEvents(CborEvents),
 }
 
 #[derive(Debug, Parser)]
@@ -72,4 +73,14 @@ pub struct BinnedClient {
     pub cache: String,
     #[arg(long, default_value = "1048576")]
     pub disk_stats_every_kb: u32,
+}
+
+#[derive(Debug, Parser)]
+pub struct CborEvents {
+    #[arg(long)]
+    pub url: String,
+    #[arg(long)]
+    pub scalar_type: String,
+    #[arg(long)]
+    pub shape: String,
 }
