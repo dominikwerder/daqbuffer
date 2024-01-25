@@ -192,7 +192,8 @@ impl From<std::convert::Infallible> for BodyError {
 
 #[derive(Debug)]
 pub enum Error {
-    BadUrl,
+    NoHostInUrl,
+    NoPortInUrl,
     Connection,
     IO,
     Http,
@@ -237,7 +238,7 @@ pub async fn http_get(url: Url, accept: &str, ctx: &ReqCtx) -> Result<HttpRespon
     let req = Request::builder()
         .method(http::Method::GET)
         .uri(url.to_string())
-        .header(header::HOST, url.host_str().ok_or_else(|| Error::BadUrl)?)
+        .header(header::HOST, url.host_str().ok_or_else(|| Error::NoHostInUrl)?)
         .header(header::ACCEPT, accept)
         .header("daqbuf-reqid", ctx.reqid())
         .body(body_empty())?;
@@ -267,7 +268,7 @@ pub async fn http_post(url: Url, accept: &str, body: String, ctx: &ReqCtx) -> Re
     let req = Request::builder()
         .method(http::Method::POST)
         .uri(url.to_string())
-        .header(header::HOST, url.host_str().ok_or_else(|| Error::BadUrl)?)
+        .header(header::HOST, url.host_str().ok_or_else(|| Error::NoHostInUrl)?)
         .header(header::CONTENT_TYPE, APP_JSON)
         .header(header::ACCEPT, accept)
         .header("daqbuf-reqid", ctx.reqid())
@@ -301,8 +302,16 @@ pub async fn http_post(url: Url, accept: &str, body: String, ctx: &ReqCtx) -> Re
 }
 
 pub async fn connect_client(uri: &http::Uri) -> Result<SendRequest<StreamBody>, Error> {
-    let host = uri.host().ok_or_else(|| Error::BadUrl)?;
-    let port = uri.port_u16().ok_or_else(|| Error::BadUrl)?;
+    let scheme = uri.scheme_str().unwrap_or("http");
+    let host = uri.host().ok_or_else(|| Error::NoHostInUrl)?;
+    let port = uri.port_u16().unwrap_or_else(|| {
+        // NOTE known issue: url::Url will "forget" the port if it was the default port.
+        if scheme == "https" {
+            443
+        } else {
+            80
+        }
+    });
     let stream = TcpStream::connect(format!("{host}:{port}")).await?;
     #[cfg(DISABLED)]
     {

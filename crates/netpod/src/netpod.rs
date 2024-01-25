@@ -50,6 +50,7 @@ pub const APP_JSON: &str = "application/json";
 pub const APP_JSON_LINES: &str = "application/jsonlines";
 pub const APP_OCTET: &str = "application/octet-stream";
 pub const APP_CBOR: &str = "application/cbor";
+pub const APP_CBOR_FRAMES: &str = "application/cbor-frames";
 pub const ACCEPT_ALL: &str = "*/*";
 pub const X_DAQBUF_REQID: &str = "x-daqbuffer-request-id";
 
@@ -321,6 +322,20 @@ impl ScalarType {
                     k
                 )))
             }
+        };
+        Ok(ret)
+    }
+
+    pub fn to_ca_id(&self) -> Result<u16, Error> {
+        use ScalarType::*;
+        let ret = match self {
+            I8 => 4,
+            I16 => 1,
+            I32 => 5,
+            F32 => 2,
+            F64 => 6,
+            STRING => 0,
+            _ => return Err(Error::with_msg_no_trace(format!("can not represent {self:?} as CA id"))),
         };
         Ok(ret)
     }
@@ -1164,6 +1179,20 @@ impl Shape {
         }
     }
 
+    pub fn to_ca_count(&self) -> Result<u32, Error> {
+        use Shape::*;
+        let res = match self {
+            Scalar => 1,
+            Wave(n) => *n as u32,
+            _ => {
+                return Err(Error::with_msg_no_trace(format!(
+                    "can not represent {self:?} as CA count"
+                )))
+            }
+        };
+        Ok(res)
+    }
+
     pub fn to_scylla_vec(&self) -> Vec<i32> {
         use Shape::*;
         match self {
@@ -1417,6 +1446,22 @@ impl TsNano {
 
     pub fn ms(&self) -> u64 {
         self.0 / MS
+    }
+
+    pub fn sub(self, v: Self) -> Self {
+        Self(self.0 - v.0)
+    }
+
+    pub fn add_ns(self, v: u64) -> Self {
+        Self(self.0 + v)
+    }
+
+    pub fn mul(self, v: u64) -> Self {
+        Self(self.0 * v)
+    }
+
+    pub fn div(self, v: u64) -> Self {
+        Self(self.0 / v)
     }
 }
 

@@ -3,6 +3,7 @@ pub mod formatter;
 pub use tokio;
 
 use crate::log::*;
+use console_subscriber::ConsoleLayer;
 use err::Error;
 use std::fmt;
 use std::future::Future;
@@ -114,6 +115,14 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
     );
     if let TracingMode::Console = mode {
         // Only async console
+        // let console_layer = console_subscriber::spawn();
+        // let console_layer = ConsoleLayer::builder().with_default_env().init();
+        let console_layer = ConsoleLayer::builder().spawn();
+        tracing_subscriber::registry()
+            .with(console_layer)
+            .with(tracing_subscriber::fmt::layer().with_ansi(false))
+            // .with(other_layer)
+            .init();
         console_subscriber::init();
     } else {
         // #[cfg(DISABLED)]

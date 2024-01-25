@@ -965,7 +965,7 @@ impl<STY: ScalarOps> EventsDim0TimeBinner<STY> {
         any::type_name::<Self>()
     }
 
-    fn new(binrange: BinnedRangeEnum, do_time_weight: bool) -> Result<Self, Error> {
+    pub fn new(binrange: BinnedRangeEnum, do_time_weight: bool) -> Result<Self, Error> {
         trace!("{}::new  binrange {binrange:?}", Self::type_name());
         let rng = binrange
             .range_at(0)

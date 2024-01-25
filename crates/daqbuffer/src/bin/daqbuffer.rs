@@ -132,7 +132,7 @@ async fn go() -> Result<(), Error> {
                     Shape::from_dims_str(&opts.shape).unwrap(),
                 )
                 .await
-                .map_err(|_| Error::with_msg_no_trace("error"))
+                .map_err(|e| Error::with_msg_no_trace(format!("got error: {e}")))
                 .unwrap();
             }
         },

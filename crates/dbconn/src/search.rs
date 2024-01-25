@@ -95,19 +95,28 @@ pub async fn search_channel_scylla(query: ChannelSearchQuery, pgconf: &Database)
     } else {
         "scalar_type != 14"
     };
+    let (cb1, cb2) = if let Some(x) = &query.backend {
+        (false, x.as_str())
+    } else {
+        (true, "")
+    };
     let sql = format!(
         concat!(
             "select",
             " series, facility, channel, scalar_type, shape_dims",
             " from series_by_channel",
             " where channel ~* $1",
+            " and ($2 or facility = $3)",
             " and {}",
             " limit 400000",
         ),
         cond_status
     );
     let pgclient = crate::create_connection(pgconf).await?;
-    let rows = pgclient.query(sql.as_str(), &[&query.name_regex]).await.err_conv()?;
+    let rows = pgclient
+        .query(sql.as_str(), &[&query.name_regex, &cb1, &cb2])
+        .await
+        .err_conv()?;
     let mut res = Vec::new();
     for row in rows {
         let series: i64 = row.get(0);
