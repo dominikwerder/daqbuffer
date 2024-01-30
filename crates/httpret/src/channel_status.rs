@@ -78,7 +78,7 @@ impl ConnectionStatusEvents {
             .scylla
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("no scylla configured")))?;
-        let _scy = scyllaconn::create_scy_session(scyco).await?;
+        let _scy = scyllaconn::conn::create_scy_session(scyco).await?;
         let _chconf =
             nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), node_config).await?;
         let _do_one_before_range = true;
@@ -152,7 +152,7 @@ impl ChannelStatusEventsHandler {
             .scylla
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("no scylla configured")))?;
-        let scy = scyllaconn::create_scy_session(scyco).await?;
+        let scy = scyllaconn::conn::create_scy_session(scyco).await?;
         let do_one_before_range = true;
         if false {
             let chconf = nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), node_config)

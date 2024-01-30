@@ -11,6 +11,7 @@ pub mod gather;
 pub mod prometheus;
 pub mod proxy;
 pub mod pulsemap;
+pub mod requests;
 pub mod settings;
 
 use self::bodystream::ToPublicResponse;
@@ -221,24 +222,6 @@ where
 }
 
 impl<F> UnwindSafe for Cont<F> {}
-
-// TODO remove because I want error bodies to be json.
-pub fn response_err<T>(status: StatusCode, msg: T) -> Result<StreamResponse, RetrievalError>
-where
-    T: AsRef<str>,
-{
-    let msg = format!(
-        concat!(
-            "Error:\n{}\n",
-            "\nDocumentation pages API 1 and 4:",
-            "\nhttps://data-api.psi.ch/api/1/documentation/",
-            "\nhttps://data-api.psi.ch/api/4/documentation/",
-        ),
-        msg.as_ref()
-    );
-    let ret = response(status).body(body_string(msg))?;
-    Ok(ret)
-}
 
 async fn http_service_try(
     req: Requ,

@@ -143,13 +143,13 @@ impl ReadValues {
             self.fut = self.make_fut(ts_msp);
             true
         } else {
-            info!("no more msp");
+            debug!("no more msp");
             false
         }
     }
 
     fn make_fut(&mut self, ts_msp: u64) -> Pin<Box<dyn Future<Output = Result<ChannelStatusEvents, Error>> + Send>> {
-        info!("make fut for {ts_msp}");
+        debug!("make fut for {ts_msp}");
         let fut = read_next_status_events(
             self.series,
             ts_msp,

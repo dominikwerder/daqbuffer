@@ -4,24 +4,29 @@ pub mod api4;
 use crate::api1::channel_search_configs_v1;
 use crate::api1::channel_search_list_v1;
 use crate::api1::gather_json_2_v1;
+use crate::bodystream::response_err_msg;
 use crate::err::Error;
 use crate::gather::gather_get_json_generic;
 use crate::gather::SubRes;
 use crate::pulsemap::MapPulseQuery;
 use crate::response;
-use crate::response_err;
 use crate::status_board_init;
 use crate::Cont;
 use futures_util::pin_mut;
 use futures_util::Stream;
+use futures_util::StreamExt;
 use http::Method;
+use http::Request;
 use http::StatusCode;
 use httpclient::body_empty;
 use httpclient::body_stream;
 use httpclient::body_string;
+use httpclient::http;
+use httpclient::http::header;
 use httpclient::read_body_bytes;
 use httpclient::IntoBody;
 use httpclient::Requ;
+use httpclient::StreamIncoming;
 use httpclient::StreamResponse;
 use httpclient::ToJsonBody;
 use hyper::service::service_fn;
@@ -42,13 +47,13 @@ use netpod::HasTimeout;
 use netpod::ProxyConfig;
 use netpod::ReqCtx;
 use netpod::ServiceVersion;
-use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
 use netpod::PSI_DAQBUFFER_SERVICE_MARK;
+use netpod::X_DAQBUF_REQID;
 use query::api4::binned::BinnedQuery;
 use serde::Deserialize;
 use serde::Serialize;
-use serde_json::Value as JsonValue;
+use std::fmt;
 use std::future::Future;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -190,17 +195,19 @@ async fn proxy_http_service_inner(
     } else if let Some(h) = api4::events::EventsHandler::handler(&req) {
         h.handle(req, ctx, &proxy_config).await
     } else if path == "/api/4/status/connection/events" {
-        Ok(proxy_single_backend_query::<ChannelStateEventsQuery>(req, ctx, proxy_config).await?)
+        Ok(proxy_backend_query::<ChannelStateEventsQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/status/channel/events" {
-        Ok(proxy_single_backend_query::<ChannelStateEventsQuery>(req, ctx, proxy_config).await?)
+        Ok(proxy_backend_query::<ChannelStateEventsQuery>(req, ctx, proxy_config).await?)
     } else if path.starts_with("/api/4/map/pulse-v2/") {
-        Ok(proxy_single_backend_query::<MapPulseQuery>(req, ctx, proxy_config).await?)
+        Ok(proxy_backend_query::<MapPulseQuery>(req, ctx, proxy_config).await?)
     } else if path.starts_with("/api/4/map/pulse/") {
-        Ok(proxy_single_backend_query::<MapPulseQuery>(req, ctx, proxy_config).await?)
+        Ok(proxy_backend_query::<MapPulseQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/binned" {
-        Ok(proxy_single_backend_query::<BinnedQuery>(req, ctx, proxy_config).await?)
+        Ok(proxy_backend_query::<BinnedQuery>(req, ctx, proxy_config).await?)
+    } else if let Some(h) = crate::api4::accounting::AccountingIngestedBytes::handler(&req) {
+        Ok(proxy_backend_query::<query::api4::AccountingIngestedBytesQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/channel/config" {
-        Ok(proxy_single_backend_query::<ChannelConfigQuery>(req, ctx, proxy_config).await?)
+        Ok(proxy_backend_query::<ChannelConfigQuery>(req, ctx, proxy_config).await?)
     } else if path.starts_with("/api/4/test/http/204") {
         Ok(response(StatusCode::NO_CONTENT).body(body_string("No Content"))?)
     } else if path.starts_with("/api/4/test/http/400") {
@@ -484,129 +491,100 @@ pub async fn channel_search(req: Requ, ctx: &ReqCtx, proxy_config: &ProxyConfig)
     }
 }
 
-pub async fn proxy_single_backend_query<QT>(
+pub async fn proxy_backend_query<QT>(
     req: Requ,
     ctx: &ReqCtx,
     proxy_config: &ProxyConfig,
 ) -> Result<StreamResponse, Error>
 where
-    QT: FromUrl + AppendToUrl + HasBackend + HasTimeout,
+    QT: fmt::Debug + FromUrl + AppendToUrl + HasBackend + HasTimeout,
 {
     let (head, _body) = req.into_parts();
-    info!("proxy_single_backend_query {}", head.uri);
-    match head.headers.get(http::header::ACCEPT) {
-        Some(v) => {
-            if v == APP_JSON || v == ACCEPT_ALL {
-                let url = req_uri_to_url(&head.uri)?;
-                let query = match QT::from_url(&url) {
-                    Ok(k) => k,
-                    Err(_) => {
-                        let msg = format!("Malformed request or missing parameters");
-                        return Ok(response_err(StatusCode::BAD_REQUEST, msg)?);
-                    }
-                };
-                let sh = get_query_host_for_backend(&query.backend(), proxy_config)?;
-                // TODO remove this special case
-                // SPECIAL CASE:
-                // Since the inner proxy is not yet handling map-pulse requests without backend,
-                // we can not simply copy the original url here.
-                // Instead, url needs to get parsed and formatted.
-                // In general, the caller of this function should be able to provide a url, or maybe
-                // better a closure so that the url can even depend on backend.
-                let uri_path: String = if url.as_str().contains("/map/pulse/") {
-                    match MapPulseQuery::from_url(&url) {
-                        Ok(qu) => {
-                            info!("qu {qu:?}");
-                            format!("/api/4/map/pulse/{}/{}", qu.backend, qu.pulse)
-                        }
-                        Err(e) => {
-                            error!("{e:?}");
-                            String::from("/BAD")
-                        }
-                    }
-                } else {
-                    head.uri.path().into()
-                };
-                info!("uri_path {uri_path}");
-                let urls = [sh]
-                    .iter()
-                    .map(|sh| match Url::parse(&format!("{}{}", sh, uri_path)) {
-                        Ok(mut url) => {
-                            query.append_to_url(&mut url);
-                            Ok(url)
-                        }
-                        Err(e) => Err(Error::with_msg(format!("parse error for: {:?}  {:?}", sh, e))),
-                    })
-                    .fold_ok(Vec::new(), |mut a, x| {
-                        a.push(x);
-                        a
-                    })?;
-                let tags: Vec<_> = urls.iter().map(|k| k.to_string()).collect();
-                let nt = |tag: String, res: Response<hyper::body::Incoming>| {
-                    let fut = async {
-                        let (head, body) = res.into_parts();
-                        if head.status == StatusCode::OK {
-                            let body = read_body_bytes(body).await?;
-                            match serde_json::from_slice::<JsonValue>(&body) {
-                                Ok(val) => {
-                                    let ret = SubRes {
-                                        tag,
-                                        status: head.status,
-                                        val,
-                                    };
-                                    Ok(ret)
-                                }
-                                Err(e) => {
-                                    warn!("can not parse response: {e:?}");
-                                    Err(e.into())
-                                }
-                            }
-                        } else {
-                            let body = read_body_bytes(body).await?;
-                            let b = String::from_utf8_lossy(&body);
-                            let ret = SubRes {
-                                tag,
-                                status: head.status,
-                                // TODO would like to pass arbitrary type of body in these cases:
-                                val: serde_json::Value::String(format!("{}", b)),
-                            };
-                            Ok(ret)
-                        }
-                    };
-                    Box::pin(fut) as Pin<Box<dyn Future<Output = Result<SubRes<serde_json::Value>, Error>> + Send>>
-                };
-                let ft = |mut all: Vec<(crate::gather::Tag, Result<SubRes<JsonValue>, Error>)>| {
-                    if all.len() > 0 {
-                        all.truncate(1);
-                        let (_tag, z) = all.pop().unwrap();
-                        match z {
-                            Ok(z) => {
-                                let res = z.val;
-                                // TODO want to pass arbitrary body type:
-                                let res = response(z.status)
-                                    .header(http::header::CONTENT_TYPE, APP_JSON)
-                                    .body(ToJsonBody::from(&res).into_body())?;
-                                return Ok(res);
-                            }
-                            Err(e) => {
-                                warn!("FT sees: {e}");
-                                let res = crate::bodystream::ToPublicResponse::to_public_response(&e);
-                                return Ok(res);
-                            }
-                        }
-                    } else {
-                        return Err(Error::with_msg("no response from upstream"));
-                    }
-                };
-                let bodies = (0..urls.len()).into_iter().map(|_| None).collect();
-                let ret = gather_get_json_generic(http::Method::GET, urls, bodies, tags, nt, ft, query.timeout(), ctx)
-                    .await?;
-                Ok(ret)
-            } else {
-                Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?)
+    // TODO will we need some mechanism to modify the necessary url?
+    let url = req_uri_to_url(&head.uri)?;
+    let query = match QT::from_url(&url) {
+        Ok(k) => k,
+        Err(_) => {
+            let msg = format!("malformed request or missing parameters  {head:?}");
+            warn!("{msg}");
+            return Ok(response_err_msg(StatusCode::BAD_REQUEST, msg)?);
+        }
+    };
+    info!("proxy_backend_query  {query:?}  {head:?}");
+    let query_host = get_query_host_for_backend(&query.backend(), proxy_config)?;
+    // TODO remove this special case
+    // SPECIAL CASE:
+    // Since the inner proxy is not yet handling map-pulse requests without backend,
+    // we can not simply copy the original url here.
+    // Instead, url needs to get parsed and formatted.
+    // In general, the caller of this function should be able to provide a url, or maybe
+    // better a closure so that the url can even depend on backend.
+    let uri_path: String = if url.as_str().contains("/map/pulse/") {
+        match MapPulseQuery::from_url(&url) {
+            Ok(qu) => {
+                info!("qu {qu:?}");
+                format!("/api/4/map/pulse/{}/{}", qu.backend, qu.pulse)
+            }
+            Err(e) => {
+                error!("{e:?}");
+                String::from("/BAD")
             }
         }
-        None => Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?),
+    } else {
+        head.uri.path().into()
+    };
+    info!("uri_path {uri_path}");
+    let mut url = Url::parse(&format!("{}{}", query_host, uri_path))?;
+    query.append_to_url(&mut url);
+
+    let mut req = Request::builder()
+        .method(http::Method::GET)
+        .uri(url.to_string())
+        .header(
+            header::HOST,
+            url.host_str()
+                .ok_or_else(|| Error::with_msg_no_trace("no host in url"))?,
+        )
+        .header(X_DAQBUF_REQID, ctx.reqid());
+    {
+        let hs = req
+            .headers_mut()
+            .ok_or_else(|| Error::with_msg_no_trace("can not set headers"))?;
+        for (hn, hv) in &head.headers {
+            if hn == header::HOST {
+            } else if hn == X_DAQBUF_REQID {
+            } else {
+                hs.append(hn, hv.clone());
+            }
+        }
+    }
+    let req = req.body(body_empty())?;
+
+    let fut = async move {
+        let mut send_req = httpclient::httpclient::connect_client(req.uri()).await?;
+        let res = send_req.send_request(req).await?;
+        Ok::<_, Error>(res)
+    };
+
+    let res = tokio::time::timeout(Duration::from_millis(5000), fut)
+        .await
+        .map_err(|_| {
+            let e = Error::with_msg_no_trace(format!("timeout trying to make sub request"));
+            warn!("{e}");
+            e
+        })??;
+
+    {
+        use bytes::Bytes;
+        use httpclient::http_body::Frame;
+        use httpclient::BodyError;
+        let (head, body) = res.into_parts();
+        let body = StreamIncoming::new(body);
+        let body = body.map(|x| x.map(Frame::data));
+        let body: Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, BodyError>> + Send>> = Box::pin(body);
+        let body = http_body_util::StreamBody::new(body);
+        let ret = Response::from_parts(head, body);
+        Ok(ret)
     }
 }
 

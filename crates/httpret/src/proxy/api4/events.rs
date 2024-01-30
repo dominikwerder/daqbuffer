@@ -56,7 +56,7 @@ impl EventsHandler {
         if accept.contains(APP_CBOR) {
             self.handle_cbor(req, ctx, proxy_config).await
         } else if accept.contains(APP_JSON) {
-            return Ok(crate::proxy::proxy_single_backend_query::<PlainEventsQuery>(req, ctx, proxy_config).await?);
+            return Ok(crate::proxy::proxy_backend_query::<PlainEventsQuery>(req, ctx, proxy_config).await?);
         } else if accept.contains(ACCEPT_ALL) {
             todo!()
         } else {

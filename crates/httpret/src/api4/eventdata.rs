@@ -1,5 +1,5 @@
+use crate::bodystream::response_err_msg;
 use crate::response;
-use crate::response_err;
 use crate::ReqCtx;
 use err::thiserror;
 use err::ThisError;
@@ -60,7 +60,7 @@ impl EventDataHandler {
                 Ok(ret) => Ok(ret),
                 Err(e) => {
                     error!("{e}");
-                    let res = response_err(StatusCode::NOT_ACCEPTABLE, e.to_public_error())
+                    let res = response_err_msg(StatusCode::NOT_ACCEPTABLE, e.to_public_error())
                         .map_err(|_| EventDataError::InternalError)?;
                     Ok(res)
                 }

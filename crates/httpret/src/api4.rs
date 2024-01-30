@@ -1,3 +1,4 @@
+pub mod accounting;
 pub mod binned;
 pub mod databuffer_tools;
 pub mod docs;

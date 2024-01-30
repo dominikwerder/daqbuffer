@@ -1,5 +1,5 @@
 use crate::errconv::ErrConv;
-use crate::ScyllaSeriesRange;
+use crate::range::ScyllaSeriesRange;
 use err::Error;
 use futures_util::Future;
 use futures_util::FutureExt;
@@ -33,14 +33,14 @@ async fn find_ts_msp(
     let mut ret2 = VecDeque::new();
     // TODO use prepared statements
     let cql = "select ts_msp from ts_msp where series = ? and ts_msp < ? order by ts_msp desc limit 2";
-    let res = scy.query(cql, (series as i64, range.beg as i64)).await.err_conv()?;
+    let res = scy.query(cql, (series as i64, range.beg() as i64)).await.err_conv()?;
     for row in res.rows_typed_or_empty::<(i64,)>() {
         let row = row.err_conv()?;
         ret1.push_front(row.0 as u64);
     }
     let cql = "select ts_msp from ts_msp where series = ? and ts_msp >= ? and ts_msp < ?";
     let res = scy
-        .query(cql, (series as i64, range.beg as i64, range.end as i64))
+        .query(cql, (series as i64, range.beg() as i64, range.end() as i64))
         .await
         .err_conv()?;
     for row in res.rows_typed_or_empty::<(i64,)>() {
@@ -48,7 +48,7 @@ async fn find_ts_msp(
         ret2.push_back(row.0 as u64);
     }
     let cql = "select ts_msp from ts_msp where series = ? and ts_msp >= ? limit 1";
-    let res = scy.query(cql, (series as i64, range.end as i64)).await.err_conv()?;
+    let res = scy.query(cql, (series as i64, range.end() as i64)).await.err_conv()?;
     for row in res.rows_typed_or_empty::<(i64,)>() {
         let row = row.err_conv()?;
         ret2.push_back(row.0 as u64);
@@ -149,7 +149,7 @@ where
     let fwd = opts.fwd;
     let scy = opts.scy;
     let table_name = ST::table_name();
-    if range.end > i64::MAX as u64 {
+    if range.end() > i64::MAX as u64 {
         return Err(Error::with_msg_no_trace(format!("range.end overflows i64")));
     }
     let cql_fields = if opts.with_values {
@@ -158,15 +158,15 @@ where
         "ts_lsp, pulse"
     };
     let ret = if fwd {
-        let ts_lsp_min = if ts_msp < range.beg { range.beg - ts_msp } else { 0 };
-        let ts_lsp_max = if ts_msp < range.end { range.end - ts_msp } else { 0 };
+        let ts_lsp_min = if ts_msp < range.beg() { range.beg() - ts_msp } else { 0 };
+        let ts_lsp_max = if ts_msp < range.end() { range.end() - ts_msp } else { 0 };
         trace!(
             "FWD  ts_msp {}  ts_lsp_min {}  ts_lsp_max {}  beg {}  end {}  {}",
             ts_msp,
             ts_lsp_min,
             ts_lsp_max,
-            range.beg,
-            range.end,
+            range.beg(),
+            range.end(),
             table_name,
         );
         // TODO use prepared!
@@ -200,10 +200,10 @@ where
                 let value = ValTy::default();
                 (ts, pulse, value)
             };
-            if ts >= range.end {
+            if ts >= range.end() {
                 // TODO count as logic error
                 error!("ts >= range.end");
-            } else if ts >= range.beg {
+            } else if ts >= range.beg() {
                 if pulse % 27 != 3618 {
                     ret.push(ts, pulse, value);
                 }
@@ -216,13 +216,13 @@ where
         }
         ret
     } else {
-        let ts_lsp_max = if ts_msp < range.beg { range.beg - ts_msp } else { 0 };
+        let ts_lsp_max = if ts_msp < range.beg() { range.beg() - ts_msp } else { 0 };
         trace!(
             "BCK  ts_msp {}  ts_lsp_max {}  beg {}  end {}  {}",
             ts_msp,
             ts_lsp_max,
-            range.beg,
-            range.end,
+            range.beg(),
+            range.end(),
             table_name,
         );
         // TODO use prepared!
@@ -253,10 +253,10 @@ where
                 let value = ValTy::default();
                 (ts, pulse, value)
             };
-            if ts >= range.beg {
+            if ts >= range.beg() {
                 // TODO count as logic error
                 error!("ts >= range.beg");
-            } else if ts < range.beg {
+            } else if ts < range.beg() {
                 if pulse % 27 != 3618 {
                     ret.push(ts, pulse, value);
                 }
@@ -445,7 +445,7 @@ impl EventsStreamScylla {
         self.ts_msp_fwd = msps2;
         for x in self.ts_msp_bck.iter().rev() {
             let x = x.clone();
-            if x >= self.range.end {
+            if x >= self.range.end() {
                 info!("FOUND one-after because of MSP");
                 self.found_one_after = true;
             }

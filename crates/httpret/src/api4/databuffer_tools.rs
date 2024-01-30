@@ -1,5 +1,5 @@
 use crate::bodystream::response;
-use crate::response_err;
+use crate::bodystream::response_err_msg;
 use async_channel::Receiver;
 use async_channel::Sender;
 use bytes::Bytes;
@@ -27,7 +27,6 @@ use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 use taskrun::tokio;
-use url::Url;
 
 #[derive(Debug, ThisError)]
 pub enum FindActiveError {
@@ -75,7 +74,7 @@ impl FindActiveHandler {
                 Ok(ret) => Ok(ret),
                 Err(e) => {
                     error!("{e}");
-                    let res = response_err(StatusCode::NOT_ACCEPTABLE, e.to_public_error())
+                    let res = response_err_msg(StatusCode::NOT_ACCEPTABLE, e.to_public_error())
                         .map_err(|_| FindActiveError::InternalError)?;
                     Ok(res)
                 }

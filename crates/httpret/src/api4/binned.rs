@@ -1,8 +1,8 @@
 use crate::bodystream::response;
+use crate::bodystream::response_err_msg;
 use crate::bodystream::ToPublicResponse;
 use crate::channelconfig::ch_conf_from_binned;
 use crate::err::Error;
-use crate::response_err;
 use http::Method;
 use http::StatusCode;
 use httpclient::body_empty;
@@ -68,12 +68,12 @@ async fn binned(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Resu
     if crate::accepts_json(&req.headers()) {
         Ok(binned_json(url, req, ctx, node_config).await?)
     } else if crate::accepts_octets(&req.headers()) {
-        Ok(response_err(
+        Ok(response_err_msg(
             StatusCode::NOT_ACCEPTABLE,
             format!("binary binned data not yet available"),
         )?)
     } else {
-        let ret = response_err(
+        let ret = response_err_msg(
             StatusCode::NOT_ACCEPTABLE,
             format!("Unsupported Accept: {:?}", req.headers()),
         )?;

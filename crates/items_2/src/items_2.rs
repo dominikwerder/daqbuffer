@@ -1,3 +1,4 @@
+pub mod accounting;
 pub mod binnedcollected;
 pub mod binsdim0;
 pub mod binsxbindim0;

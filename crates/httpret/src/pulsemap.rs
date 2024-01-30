@@ -936,7 +936,7 @@ impl MapPulseScyllaHandler {
         } else {
             return Err(Error::with_public_msg_no_trace("no scylla configured"));
         };
-        let scy = scyllaconn::create_scy_session(&scyconf).await?;
+        let scy = scyllaconn::conn::create_scy_session(&scyconf).await?;
         let pulse_a = (pulse >> 14) as i64;
         let pulse_b = (pulse & 0x3fff) as i32;
         let res = scy

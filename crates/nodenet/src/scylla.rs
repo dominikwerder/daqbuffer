@@ -23,7 +23,7 @@ pub async fn scylla_channel_event_stream(
     // TODO why both in PlainEventsQuery and as separate parameter? Check other usages.
     let do_one_before_range = false;
     // TODO use better builder pattern with shortcuts for production and dev defaults
-    let scy = scyllaconn::create_scy_session(scyco).await?;
+    let scy = scyllaconn::conn::create_scy_session(scyco).await?;
     let series = chconf.series();
     let scalar_type = chconf.scalar_type();
     let shape = chconf.shape();

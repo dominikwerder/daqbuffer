@@ -267,7 +267,7 @@ impl ScyllaConfigsHisto {
             .scylla
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let scy = scyllaconn::create_scy_session(scyco).await?;
+        let scy = scyllaconn::conn::create_scy_session(scyco).await?;
         let res = scy
             .query(
                 "select scalar_type, shape_dims, series from series_by_channel where facility = ? allow filtering",
@@ -382,7 +382,7 @@ impl ScyllaChannelsWithType {
             .scylla
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let scy = scyllaconn::create_scy_session(scyco).await?;
+        let scy = scyllaconn::conn::create_scy_session(scyco).await?;
         let res = scy
             .query(
                 "select channel_name, series from series_by_channel where facility = ? and scalar_type = ? and shape_dims = ? allow filtering",
@@ -537,7 +537,7 @@ impl ScyllaChannelsActive {
             .scylla
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let scy = scyllaconn::create_scy_session(scyco).await?;
+        let scy = scyllaconn::conn::create_scy_session(scyco).await?;
         // Database stores tsedge/ts_msp in units of (10 sec), and we additionally map to the grid.
         let tsedge = q.tsedge / 10 / (6 * 2) * (6 * 2);
         info!(
@@ -734,7 +734,7 @@ impl ScyllaSeriesTsMsp {
             .scylla
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let scy = scyllaconn::create_scy_session(scyco).await?;
+        let scy = scyllaconn::conn::create_scy_session(scyco).await?;
         let mut ts_msps = Vec::new();
         let mut res = scy
             .query_iter("select ts_msp from ts_msp where series = ?", (q.series as i64,))
@@ -898,7 +898,7 @@ impl GenerateScyllaTestData {
         let dbconf = &node_config.node_config.cluster.database;
         let _pg_client = create_connection(dbconf).await?;
         let scyconf = node_config.node_config.cluster.scylla.as_ref().unwrap();
-        let scy = scyllaconn::create_scy_session(scyconf).await?;
+        let scy = scyllaconn::conn::create_scy_session(scyconf).await?;
         let series: u64 = 42001;
         // TODO query `ts_msp` for all MSP values und use that to delete from event table first.
         // Only later delete also from the `ts_msp` table.

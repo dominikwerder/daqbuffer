@@ -1,4 +1,5 @@
 use crate::err::Error;
+use crate::RetrievalError;
 use http::Response;
 use http::StatusCode;
 use httpclient::body_empty;
@@ -13,6 +14,14 @@ where
     <http::StatusCode as std::convert::TryFrom<T>>::Error: Into<http::Error>,
 {
     Response::builder().status(status)
+}
+
+pub fn response_err_msg<T>(status: StatusCode, msg: T) -> Result<StreamResponse, RetrievalError>
+where
+    T: ToString,
+{
+    let ret = response(status).body(body_string(msg))?;
+    Ok(ret)
 }
 
 pub trait ToPublicResponse {

@@ -8,6 +8,7 @@ use http::Method;
 use http::StatusCode;
 use http::Uri;
 use httpclient::connect_client;
+use httpclient::http;
 use hyper::body::Incoming;
 use hyper::Request;
 use hyper::Response;

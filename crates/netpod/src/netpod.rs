@@ -58,6 +58,8 @@ pub const CONNECTION_STATUS_DIV: u64 = timeunits::DAY;
 pub const TS_MSP_GRID_UNIT: u64 = timeunits::SEC * 10;
 pub const TS_MSP_GRID_SPACING: u64 = 6 * 2;
 
+pub const EMIT_ACCOUNTING_SNAP: u64 = 60 * 10;
+
 pub const DATETIME_FMT_0MS: &str = "%Y-%m-%dT%H:%M:%SZ";
 pub const DATETIME_FMT_3MS: &str = "%Y-%m-%dT%H:%M:%S.%3fZ";
 pub const DATETIME_FMT_6MS: &str = "%Y-%m-%dT%H:%M:%S.%6fZ";
@@ -3210,7 +3212,7 @@ pub struct ReqCtx {
 impl ReqCtx {
     pub fn new_with_node<T>(req: &Request<T>, nc: &NodeConfigCached) -> Self {
         let reqid_this = status_board().unwrap().new_status_id();
-        let reqid = if let Some(reqid_parent) = req.headers().get("daqbuf-reqid") {
+        let reqid = if let Some(reqid_parent) = req.headers().get(X_DAQBUF_REQID) {
             let parent = reqid_parent.to_str().unwrap_or("badid");
             format!("{}-{}", parent, reqid_this)
         } else {
@@ -3234,7 +3236,7 @@ impl ReqCtx {
 
     pub fn new_with_proxy<T>(req: &Request<T>, proxy: &ProxyConfig) -> Self {
         let reqid_this = status_board().unwrap().new_status_id();
-        let reqid = if let Some(reqid_parent) = req.headers().get("daqbuf-reqid") {
+        let reqid = if let Some(reqid_parent) = req.headers().get(X_DAQBUF_REQID) {
             let parent = reqid_parent.to_str().unwrap_or("badid");
             format!("{}-{}", parent, reqid_this)
         } else {
@@ -3297,7 +3299,7 @@ impl ReqCtx {
     }
 
     pub fn header_name(&self) -> &'static str {
-        "daqbuf-reqid"
+        X_DAQBUF_REQID
     }
 
     pub fn header_value(&self) -> &str {

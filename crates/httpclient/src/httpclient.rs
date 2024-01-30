@@ -7,7 +7,6 @@ use bytes::Bytes;
 use bytes::BytesMut;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use futures_util::TryStreamExt;
 use http::header;
 use http::Request;
 use http::Response;
@@ -18,14 +17,10 @@ use http_body_util::BodyExt;
 use hyper::body::Body;
 use hyper::body::Incoming;
 use hyper::client::conn::http1::SendRequest;
-use hyper::Method;
 use netpod::log::*;
-use netpod::AppendToUrl;
-use netpod::ChannelConfigQuery;
-use netpod::ChannelConfigResponse;
-use netpod::NodeConfigCached;
 use netpod::ReqCtx;
 use netpod::APP_JSON;
+use netpod::X_DAQBUF_REQID;
 use serde::Serialize;
 use std::fmt;
 use std::pin::Pin;
@@ -240,7 +235,7 @@ pub async fn http_get(url: Url, accept: &str, ctx: &ReqCtx) -> Result<HttpRespon
         .uri(url.to_string())
         .header(header::HOST, url.host_str().ok_or_else(|| Error::NoHostInUrl)?)
         .header(header::ACCEPT, accept)
-        .header("daqbuf-reqid", ctx.reqid())
+        .header(X_DAQBUF_REQID, ctx.reqid())
         .body(body_empty())?;
     let mut send_req = connect_client(req.uri()).await?;
     let res = send_req.send_request(req).await?;
@@ -271,7 +266,7 @@ pub async fn http_post(url: Url, accept: &str, body: String, ctx: &ReqCtx) -> Re
         .header(header::HOST, url.host_str().ok_or_else(|| Error::NoHostInUrl)?)
         .header(header::CONTENT_TYPE, APP_JSON)
         .header(header::ACCEPT, accept)
-        .header("daqbuf-reqid", ctx.reqid())
+        .header(X_DAQBUF_REQID, ctx.reqid())
         .body(body_string(body))?;
     let mut send_req = connect_client(req.uri()).await?;
     let res = send_req.send_request(req).await?;
