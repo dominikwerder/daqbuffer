@@ -153,16 +153,6 @@ impl Error {
     pub fn reason(&self) -> Option<Reason> {
         self.reason.clone()
     }
-
-    pub fn to_public_error(&self) -> PublicError {
-        PublicError {
-            reason: self.reason(),
-            msg: self
-                .public_msg()
-                .map(|k| k.join("; "))
-                .unwrap_or("No error message".into()),
-        }
-    }
 }
 
 #[allow(unused)]
@@ -284,7 +274,7 @@ impl From<PublicError> for Error {
         Self {
             msg: String::new(),
             trace_str: None,
-            public_msg: Some(vec![k.msg().into()]),
+            public_msg: Some(k.msg.clone()),
             reason: k.reason(),
             parent: None,
         }
@@ -462,7 +452,7 @@ impl From<hyper::Error> for Error {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PublicError {
     reason: Option<Reason>,
-    msg: String,
+    msg: Vec<String>,
 }
 
 impl PublicError {
@@ -470,17 +460,25 @@ impl PublicError {
         self.reason.clone()
     }
 
-    pub fn msg(&self) -> &str {
+    pub fn msg(&self) -> &Vec<String> {
         &self.msg
     }
 }
 
-// TODO make this more useful
+impl From<String> for PublicError {
+    fn from(value: String) -> Self {
+        Self {
+            reason: None,
+            msg: vec![value],
+        }
+    }
+}
+
 impl From<Error> for PublicError {
     fn from(k: Error) -> Self {
         Self {
             reason: k.reason(),
-            msg: k.msg().into(),
+            msg: k.public_msg().map(Clone::clone).unwrap_or(Vec::new()),
         }
     }
 }
@@ -489,21 +487,20 @@ impl From<&Error> for PublicError {
     fn from(k: &Error) -> Self {
         Self {
             reason: k.reason(),
-            msg: k.msg().into(),
+            msg: vec![k.msg().into()],
         }
     }
 }
 
 impl fmt::Display for PublicError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}", self.msg)
+        write!(fmt, "{:?}", self.msg)
     }
 }
 
 impl ToPublicError for Error {
-    fn to_public_error(&self) -> String {
-        let e = PublicError::from(self);
-        e.msg().into()
+    fn to_public_error(&self) -> PublicError {
+        PublicError::from(self)
     }
 }
 
@@ -520,7 +517,7 @@ pub fn todoval<T>() -> T {
 }
 
 pub trait ToPublicError: std::error::Error + Send {
-    fn to_public_error(&self) -> String;
+    fn to_public_error(&self) -> PublicError;
 }
 
 #[cfg(test)]

@@ -1,7 +1,10 @@
 use crate::bodystream::response;
+use crate::bodystream::ToPublicResponse;
 use crate::err::Error;
 use crate::requests::accepts_json_or_all;
 use crate::ReqCtx;
+use err::PublicError;
+use err::ToPublicError;
 use futures_util::StreamExt;
 use http::Method;
 use http::StatusCode;
@@ -14,43 +17,33 @@ use httpclient::ToJsonBody;
 use items_0::Empty;
 use items_0::Extendable;
 use items_2::accounting::AccountingEvents;
-use items_2::channelevents::ChannelStatusEvents;
 use netpod::log::*;
-use netpod::query::ChannelStateEventsQuery;
 use netpod::req_uri_to_url;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
+use query::api4::AccountingIngestedBytesQuery;
 
 pub struct AccountingIngestedBytes {}
 
 impl AccountingIngestedBytes {
     pub fn handler(req: &Requ) -> Option<Self> {
-        if req.uri().path().starts_with("/api/4/status/accounting/ingested/bytes/") {
+        if req.uri().path().starts_with("/api/4/accounting/ingested/bytes") {
             Some(Self {})
         } else {
             None
         }
     }
 
-    pub async fn handle(
-        &self,
-        req: Requ,
-        _ctx: &ReqCtx,
-        node_config: &NodeConfigCached,
-    ) -> Result<StreamResponse, Error> {
+    pub async fn handle(&self, req: Requ, ctx: &ReqCtx, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             if accepts_json_or_all(req.headers()) {
-                let url = req_uri_to_url(req.uri())?;
-                let q = ChannelStateEventsQuery::from_url(&url)?;
-                match self.fetch_data(&q, node_config).await {
-                    Ok(k) => {
-                        let body = ToJsonBody::from(&k).into_body();
-                        Ok(response(StatusCode::OK).body(body)?)
-                    }
+                match self.handle_get(req, ctx, ncc).await {
+                    Ok(x) => Ok(x),
                     Err(e) => {
                         error!("{e}");
-                        Ok(response(StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(body_string(format!("{:?}", e.public_msg())))?)
+                        let e2 = e.to_public_error();
+                        let s = serde_json::to_string(&e2)?;
+                        Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_string(s))?)
                     }
                 }
             } else {
@@ -61,12 +54,21 @@ impl AccountingIngestedBytes {
         }
     }
 
+    async fn handle_get(&self, req: Requ, ctx: &ReqCtx, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
+        let url = req_uri_to_url(req.uri())?;
+        let q = AccountingIngestedBytesQuery::from_url(&url)?;
+        let res = self.fetch_data(q, ctx, ncc).await?;
+        let body = ToJsonBody::from(&res).into_body();
+        Ok(response(StatusCode::OK).body(body)?)
+    }
+
     async fn fetch_data(
         &self,
-        q: &ChannelStateEventsQuery,
-        node_config: &NodeConfigCached,
+        q: AccountingIngestedBytesQuery,
+        _ctx: &ReqCtx,
+        ncc: &NodeConfigCached,
     ) -> Result<AccountingEvents, Error> {
-        let scyco = node_config
+        let scyco = ncc
             .node_config
             .cluster
             .scylla
@@ -75,7 +77,7 @@ impl AccountingIngestedBytes {
         let scy = scyllaconn::conn::create_scy_session(scyco).await?;
         // TODO so far, we sum over everything
         let series_id = 0;
-        let mut stream = scyllaconn::accounting::AccountingStreamScylla::new(series_id, q.range().clone(), scy);
+        let mut stream = scyllaconn::accounting::AccountingStreamScylla::new(q.range().try_into()?, scy);
         let mut ret = AccountingEvents::empty();
         while let Some(item) = stream.next().await {
             let mut item = item?;

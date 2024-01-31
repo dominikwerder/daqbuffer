@@ -171,16 +171,9 @@ impl FromUrl for BinnedQuery {
     }
 
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
-        let range = if let Ok(x) = TimeRangeQuery::from_pairs(pairs) {
-            SeriesRange::TimeRange(x.into())
-        } else if let Ok(x) = PulseRangeQuery::from_pairs(pairs) {
-            SeriesRange::PulseRange(x.into())
-        } else {
-            return Err(Error::with_msg_no_trace("no series range in url"));
-        };
         let ret = Self {
             channel: SfDbChannel::from_pairs(&pairs)?,
-            range,
+            range: SeriesRange::from_pairs(pairs)?,
             bin_count: pairs
                 .get("binCount")
                 .ok_or_else(|| Error::with_msg_no_trace("missing binCount"))?
@@ -218,11 +211,8 @@ impl FromUrl for BinnedQuery {
 
 impl AppendToUrl for BinnedQuery {
     fn append_to_url(&self, url: &mut Url) {
-        match &self.range {
-            SeriesRange::TimeRange(k) => TimeRangeQuery::from(k).append_to_url(url),
-            SeriesRange::PulseRange(k) => PulseRangeQuery::from(k).append_to_url(url),
-        }
         self.channel.append_to_url(url);
+        self.range.append_to_url(url);
         {
             let mut g = url.query_pairs_mut();
             g.append_pair("binCount", &format!("{}", self.bin_count));

@@ -198,7 +198,7 @@ impl FromUrl for PlainEventsQuery {
         } else if let Ok(x) = PulseRangeQuery::from_pairs(pairs) {
             SeriesRange::PulseRange(x.into())
         } else {
-            return Err(Error::with_msg_no_trace("no series range in url"));
+            return Err(Error::with_public_msg_no_trace("no time range in url"));
         };
         let ret = Self {
             channel: SfDbChannel::from_pairs(pairs)?,

@@ -2,6 +2,7 @@ use crate::bodystream::response_err_msg;
 use crate::response;
 use crate::ReqCtx;
 use err::thiserror;
+use err::PublicError;
 use err::ThisError;
 use err::ToPublicError;
 use http::Method;
@@ -24,11 +25,11 @@ pub enum EventDataError {
 }
 
 impl ToPublicError for EventDataError {
-    fn to_public_error(&self) -> String {
+    fn to_public_error(&self) -> PublicError {
         match self {
-            EventDataError::QueryParse => format!("{self}"),
+            EventDataError::QueryParse => format!("{self}").into(),
             EventDataError::Error(e) => e.to_public_error(),
-            EventDataError::InternalError => format!("{self}"),
+            EventDataError::InternalError => format!("{self}").into(),
         }
     }
 }

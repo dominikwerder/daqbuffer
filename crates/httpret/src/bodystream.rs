@@ -1,5 +1,6 @@
 use crate::err::Error;
 use crate::RetrievalError;
+use err::ToPublicError;
 use http::Response;
 use http::StatusCode;
 use httpclient::body_empty;

@@ -4,6 +4,7 @@ use async_channel::Receiver;
 use async_channel::Sender;
 use bytes::Bytes;
 use err::thiserror;
+use err::PublicError;
 use err::ThisError;
 use err::ToPublicError;
 use futures_util::Stream;
@@ -41,14 +42,14 @@ pub enum FindActiveError {
 }
 
 impl ToPublicError for FindActiveError {
-    fn to_public_error(&self) -> String {
+    fn to_public_error(&self) -> PublicError {
         match self {
-            FindActiveError::HttpBadAccept => format!("{self}"),
-            FindActiveError::HttpBadUrl => format!("{self}"),
+            FindActiveError::HttpBadAccept => format!("{self}").into(),
+            FindActiveError::HttpBadUrl => format!("{self}").into(),
             FindActiveError::Error(e) => e.to_public_error(),
-            FindActiveError::UrlError(_) => format!("{self}"),
-            FindActiveError::InternalError => format!("{self}"),
-            FindActiveError::IO(_) => format!("{self}"),
+            FindActiveError::UrlError(_) => format!("{self}").into(),
+            FindActiveError::InternalError => format!("{self}").into(),
+            FindActiveError::IO(_) => format!("{self}").into(),
         }
     }
 }

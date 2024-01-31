@@ -1,5 +1,7 @@
+use err::ToPublicError;
 use serde::Deserialize;
 use serde::Serialize;
+use serde_json::Value as JsVal;
 use std::fmt;
 use taskrun::tokio;
 
@@ -53,6 +55,12 @@ impl fmt::Debug for Error {
 impl fmt::Display for Error {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         fmt::Display::fmt(&self.0, fmt)
+    }
+}
+
+impl ToPublicError for Error {
+    fn to_public_error(&self) -> err::PublicError {
+        err::PublicError::from(&self.0)
     }
 }
 

@@ -3397,7 +3397,11 @@ impl From<&StatusBoardEntry> for StatusBoardEntryUser {
             error_count: e.error_count,
             warn_count: e.warn_count,
             channel_not_found: e.channel_not_found,
-            errors: e.errors.iter().map(|e| e.to_public_error()).collect(),
+            errors: e
+                .errors
+                .iter()
+                .map(|e| err::ToPublicError::to_public_error(e))
+                .collect(),
         }
     }
 }

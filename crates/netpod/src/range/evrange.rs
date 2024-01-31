@@ -1,5 +1,9 @@
+use crate::query::PulseRangeQuery;
+use crate::query::TimeRangeQuery;
 use crate::timeunits::SEC;
+use crate::AppendToUrl;
 use crate::Dim0Kind;
+use crate::FromUrl;
 use crate::TsNano;
 use chrono::DateTime;
 use chrono::TimeZone;
@@ -7,7 +11,9 @@ use chrono::Utc;
 use err::Error;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::BTreeMap;
 use std::fmt;
+use url::Url;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum TimeRange {
@@ -77,7 +83,7 @@ impl TryFrom<&SeriesRange> for NanoRange {
     fn try_from(val: &SeriesRange) -> Result<NanoRange, Self::Error> {
         match val {
             SeriesRange::TimeRange(x) => Ok(x.clone()),
-            SeriesRange::PulseRange(_) => Err(Error::with_msg_no_trace("not a Time range")),
+            SeriesRange::PulseRange(_) => Err(Error::with_public_msg_no_trace("given SeriesRange is not a time range")),
         }
     }
 }
@@ -147,5 +153,32 @@ impl From<NanoRange> for SeriesRange {
 impl From<PulseRange> for SeriesRange {
     fn from(k: PulseRange) -> Self {
         Self::PulseRange(k)
+    }
+}
+
+impl FromUrl for SeriesRange {
+    fn from_url(url: &url::Url) -> Result<Self, Error> {
+        let pairs = crate::get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+        let ret = if let Ok(x) = TimeRangeQuery::from_pairs(pairs) {
+            SeriesRange::TimeRange(x.into())
+        } else if let Ok(x) = PulseRangeQuery::from_pairs(pairs) {
+            SeriesRange::PulseRange(x.into())
+        } else {
+            return Err(Error::with_public_msg_no_trace("no time range in url"));
+        };
+        Ok(ret)
+    }
+}
+
+impl AppendToUrl for SeriesRange {
+    fn append_to_url(&self, url: &mut Url) {
+        match self {
+            SeriesRange::TimeRange(k) => TimeRangeQuery::from(k).append_to_url(url),
+            SeriesRange::PulseRange(k) => PulseRangeQuery::from(k).append_to_url(url),
+        }
     }
 }
