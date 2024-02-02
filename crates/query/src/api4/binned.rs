@@ -3,8 +3,6 @@ use err::Error;
 use netpod::get_url_query_pairs;
 use netpod::log::*;
 use netpod::query::CacheUsage;
-use netpod::query::PulseRangeQuery;
-use netpod::query::TimeRangeQuery;
 use netpod::range::evrange::SeriesRange;
 use netpod::AppendToUrl;
 use netpod::ByteSize;

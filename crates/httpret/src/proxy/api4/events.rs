@@ -1,32 +1,27 @@
 use crate::bodystream::response;
 use crate::err::Error;
 use crate::proxy::get_query_host_for_backend;
+use crate::requests::accepts_cbor_frames;
+use crate::requests::accepts_json_or_all;
 use crate::ReqCtx;
 use http::header;
-use http::HeaderValue;
 use http::Method;
 use http::Request;
 use http::StatusCode;
 use http::Uri;
-use httpclient::body_bytes;
 use httpclient::body_empty;
 use httpclient::body_stream;
 use httpclient::connect_client;
-use httpclient::read_body_bytes;
 use httpclient::Requ;
 use httpclient::StreamIncoming;
 use httpclient::StreamResponse;
 use netpod::get_url_query_pairs;
 use netpod::log::*;
-use netpod::query::api1::Api1Query;
 use netpod::req_uri_to_url;
 use netpod::FromUrl;
 use netpod::HasBackend;
 use netpod::ProxyConfig;
-use netpod::ACCEPT_ALL;
 use netpod::APP_CBOR;
-use netpod::APP_JSON;
-use netpod::X_DAQBUF_REQID;
 use query::api4::events::PlainEventsQuery;
 
 pub struct EventsHandler {}
@@ -46,21 +41,16 @@ impl EventsHandler {
 
     pub async fn handle(&self, req: Requ, ctx: &ReqCtx, proxy_config: &ProxyConfig) -> Result<StreamResponse, Error> {
         if req.method() != Method::GET {
-            return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?);
-        }
-
-        let def = HeaderValue::from_static("*/*");
-        let accept = req.headers().get(header::ACCEPT).unwrap_or(&def);
-        let accept = accept.to_str()?;
-
-        if accept.contains(APP_CBOR) {
-            self.handle_cbor(req, ctx, proxy_config).await
-        } else if accept.contains(APP_JSON) {
-            return Ok(crate::proxy::proxy_backend_query::<PlainEventsQuery>(req, ctx, proxy_config).await?);
-        } else if accept.contains(ACCEPT_ALL) {
-            todo!()
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         } else {
-            return Err(Error::with_msg_no_trace(format!("bad accept {:?}", req.headers())));
+            if accepts_cbor_frames(req.headers()) {
+                // self.handle_cbor(req, ctx, proxy_config).await
+                Ok(crate::proxy::proxy_backend_query::<PlainEventsQuery>(req, ctx, proxy_config).await?)
+            } else if accepts_json_or_all(req.headers()) {
+                Ok(crate::proxy::proxy_backend_query::<PlainEventsQuery>(req, ctx, proxy_config).await?)
+            } else {
+                Err(Error::with_msg_no_trace(format!("bad accept {:?}", req.headers())))
+            }
         }
     }
 

@@ -204,7 +204,7 @@ async fn proxy_http_service_inner(
         Ok(proxy_backend_query::<MapPulseQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/binned" {
         Ok(proxy_backend_query::<BinnedQuery>(req, ctx, proxy_config).await?)
-    } else if let Some(h) = crate::api4::accounting::AccountingIngestedBytes::handler(&req) {
+    } else if let Some(_) = crate::api4::accounting::AccountingIngestedBytes::handler(&req) {
         Ok(proxy_backend_query::<query::api4::AccountingIngestedBytesQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/channel/config" {
         Ok(proxy_backend_query::<ChannelConfigQuery>(req, ctx, proxy_config).await?)
@@ -510,7 +510,7 @@ where
             return Ok(response_err_msg(StatusCode::BAD_REQUEST, msg)?);
         }
     };
-    info!("proxy_backend_query  {query:?}  {head:?}");
+    debug!("proxy_backend_query  {query:?}  {head:?}");
     let query_host = get_query_host_for_backend(&query.backend(), proxy_config)?;
     // TODO remove this special case
     // SPECIAL CASE:
@@ -522,7 +522,7 @@ where
     let uri_path: String = if url.as_str().contains("/map/pulse/") {
         match MapPulseQuery::from_url(&url) {
             Ok(qu) => {
-                info!("qu {qu:?}");
+                debug!("qu {qu:?}");
                 format!("/api/4/map/pulse/{}/{}", qu.backend, qu.pulse)
             }
             Err(e) => {
@@ -533,7 +533,7 @@ where
     } else {
         head.uri.path().into()
     };
-    info!("uri_path {uri_path}");
+    debug!("uri_path {uri_path}");
     let mut url = Url::parse(&format!("{}{}", query_host, uri_path))?;
     query.append_to_url(&mut url);
 
@@ -558,9 +558,11 @@ where
             }
         }
     }
+    debug!("send request {req:?}");
     let req = req.body(body_empty())?;
 
     let fut = async move {
+        debug!("requesting  {:?}  {:?}  {:?}", req.method(), req.uri(), req.headers());
         let mut send_req = httpclient::httpclient::connect_client(req.uri()).await?;
         let res = send_req.send_request(req).await?;
         Ok::<_, Error>(res)
@@ -595,16 +597,4 @@ fn get_query_host_for_backend(backend: &str, proxy_config: &ProxyConfig) -> Resu
         }
     }
     return Err(Error::with_msg(format!("host not found for backend {:?}", backend)));
-}
-
-fn get_random_query_host_for_backend(backend: &str, proxy_config: &ProxyConfig) -> Result<String, Error> {
-    let url = get_query_host_for_backend(backend, proxy_config)?;
-    // TODO remove special code, make it part of configuration
-    if url.contains("sf-daqbuf-23.psi.ch") {
-        let id = 21 + rand::random::<u32>() % 13;
-        let url = url.replace("-23.", &format!("-{id}."));
-        Ok(url)
-    } else {
-        Ok(url)
-    }
 }
