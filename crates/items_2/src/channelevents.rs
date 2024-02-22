@@ -1159,6 +1159,12 @@ impl WithLen for ChannelEventsCollector {
     }
 }
 
+impl ByteEstimate for ChannelEventsCollector {
+    fn byte_estimate(&self) -> u64 {
+        self.coll.as_ref().map_or(0, |x| x.byte_estimate())
+    }
+}
+
 impl Collector for ChannelEventsCollector {
     fn ingest(&mut self, item: &mut dyn Collectable) {
         if let Some(item) = item.as_any_mut().downcast_mut::<ChannelEvents>() {

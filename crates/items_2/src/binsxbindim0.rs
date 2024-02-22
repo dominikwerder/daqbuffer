@@ -11,6 +11,7 @@ use items_0::collect_s::CollectableType;
 use items_0::collect_s::Collected;
 use items_0::collect_s::CollectorType;
 use items_0::collect_s::ToJsonResult;
+use items_0::container::ByteEstimate;
 use items_0::scalar_ops::AsPrimF32;
 use items_0::scalar_ops::ScalarOps;
 use items_0::timebin::TimeBinnable;
@@ -202,6 +203,24 @@ impl<STY> Empty for BinsXbinDim0<STY> {
 impl<STY> WithLen for BinsXbinDim0<STY> {
     fn len(&self) -> usize {
         self.ts1s.len()
+    }
+}
+
+impl<STY: ScalarOps> ByteEstimate for BinsXbinDim0<STY> {
+    fn byte_estimate(&self) -> u64 {
+        // TODO
+        // Should use a better estimate for waveform and string types,
+        // or keep some aggregated byte count on push.
+        let n = self.len();
+        if n == 0 {
+            0
+        } else {
+            // TODO use the actual size of one/some of the elements.
+            let i = n * 2 / 3;
+            let w1 = self.mins[i].byte_estimate();
+            let w2 = self.maxs[i].byte_estimate();
+            (n as u64 * (8 + 8 + 8 + 4 + w1 + w2)) as u64
+        }
     }
 }
 
@@ -401,7 +420,13 @@ impl<NTY> BinsXbinDim0Collector<NTY> {
 
 impl<NTY> WithLen for BinsXbinDim0Collector<NTY> {
     fn len(&self) -> usize {
-        self.vals.ts1s.len()
+        self.vals.len()
+    }
+}
+
+impl<STY: ScalarOps> ByteEstimate for BinsXbinDim0Collector<STY> {
+    fn byte_estimate(&self) -> u64 {
+        self.vals.byte_estimate()
     }
 }
 

@@ -44,6 +44,7 @@ macro_rules! trace4 {
 pub struct Collect {
     inp: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>>,
     events_max: u64,
+    bytes_max: u64,
     range: Option<SeriesRange>,
     binrange: Option<BinnedRangeEnum>,
     collector: Option<Box<dyn Collector>>,
@@ -58,6 +59,7 @@ impl Collect {
         inp: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>>,
         deadline: Instant,
         events_max: u64,
+        bytes_max: u64,
         range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
     ) -> Self {
@@ -65,6 +67,7 @@ impl Collect {
         Self {
             inp,
             events_max,
+            bytes_max,
             range,
             binrange,
             collector: None,
@@ -93,7 +96,12 @@ impl Collect {
                         let coll = self.collector.get_or_insert_with(|| item.new_collector());
                         coll.ingest(&mut item);
                         if coll.len() as u64 >= self.events_max {
-                            info!("reached events_max {}", self.events_max);
+                            info!("reached events_max {} / {}", coll.len(), self.events_max);
+                            coll.set_continue_at_here();
+                            self.done_input = true;
+                        }
+                        if coll.byte_estimate() >= self.bytes_max {
+                            info!("reached bytes_max {} / {}", coll.byte_estimate(), self.events_max);
                             coll.set_continue_at_here();
                             self.done_input = true;
                         }

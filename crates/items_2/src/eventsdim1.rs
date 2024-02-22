@@ -220,7 +220,13 @@ impl<STY> EventsDim1Collector<STY> {
 
 impl<STY> WithLen for EventsDim1Collector<STY> {
     fn len(&self) -> usize {
-        self.vals.tss.len()
+        WithLen::len(&self.vals)
+    }
+}
+
+impl<STY> ByteEstimate for EventsDim1Collector<STY> {
+    fn byte_estimate(&self) -> u64 {
+        ByteEstimate::byte_estimate(&self.vals)
     }
 }
 

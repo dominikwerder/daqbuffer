@@ -1,3 +1,4 @@
+use crate::container::ByteEstimate;
 use crate::timebin::TimeBinned;
 use crate::AsAnyMut;
 use crate::AsAnyRef;
@@ -68,7 +69,7 @@ impl WithLen for Box<dyn Collected> {
 impl Collected for Box<dyn Collected> {}
 
 // TODO rename to `Typed`
-pub trait CollectorType: fmt::Debug + Send + Unpin + WithLen {
+pub trait CollectorType: fmt::Debug + Send + Unpin + WithLen + ByteEstimate {
     type Input: Collectable;
     type Output: Collected + ToJsonResult + Serialize;
 
@@ -81,7 +82,7 @@ pub trait CollectorType: fmt::Debug + Send + Unpin + WithLen {
     fn result(&mut self, range: Option<SeriesRange>, binrange: Option<BinnedRangeEnum>) -> Result<Self::Output, Error>;
 }
 
-pub trait Collector: fmt::Debug + Send + Unpin + WithLen {
+pub trait Collector: fmt::Debug + Send + Unpin + WithLen + ByteEstimate {
     fn ingest(&mut self, src: &mut dyn Collectable);
     fn set_range_complete(&mut self);
     fn set_timed_out(&mut self);

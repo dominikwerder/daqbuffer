@@ -27,15 +27,17 @@ pub struct PlainEventsQuery {
     range: SeriesRange,
     #[serde(default, skip_serializing_if = "is_false", rename = "oneBeforeRange")]
     one_before_range: bool,
-    #[serde(
-        default = "TransformQuery::default_events",
-        skip_serializing_if = "TransformQuery::is_default_events"
-    )]
+    #[serde(default = "TransformQuery::default_events")]
+    #[serde(skip_serializing_if = "TransformQuery::is_default_events")]
     transform: TransformQuery,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "humantime_serde")]
     timeout: Option<Duration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     events_max: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bytes_max: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    allow_large_result: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "humantime_serde")]
     event_delay: Option<Duration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -65,7 +67,9 @@ impl PlainEventsQuery {
             one_before_range: false,
             transform: TransformQuery::default_events(),
             timeout: Some(Duration::from_millis(4000)),
-            events_max: Some(10000),
+            events_max: None,
+            bytes_max: None,
+            allow_large_result: None,
             event_delay: None,
             stream_batch_len: None,
             buf_len_disk_io: None,
@@ -102,13 +106,33 @@ impl PlainEventsQuery {
     }
 
     pub fn events_max(&self) -> u64 {
-        self.events_max.unwrap_or(1024 * 128)
+        self.events_max.map_or_else(
+            || {
+                if self.allow_large_result_or_def() {
+                    1000 * 500
+                } else {
+                    1000 * 80
+                }
+            },
+            |x| x.min(1000 * 1000 * 4),
+        )
     }
 
-    // A rough indication on how many bytes this request is allowed to return. Otherwise, the result should
-    // be a partial result.
     pub fn bytes_max(&self) -> u64 {
-        self.events_max.unwrap_or(1024 * 512)
+        self.bytes_max.map_or_else(
+            || {
+                if self.allow_large_result_or_def() {
+                    1024 * 1024 * 80
+                } else {
+                    1024 * 1024 * 8
+                }
+            },
+            |x| x.min(1024 * 1024 * 400),
+        )
+    }
+
+    pub fn allow_large_result_or_def(&self) -> bool {
+        self.allow_large_result.unwrap_or(false)
     }
 
     pub fn event_delay(&self) -> &Option<Duration> {
@@ -209,9 +233,9 @@ impl FromUrl for PlainEventsQuery {
                 .get("timeout")
                 .map(|x| x.parse::<u64>().map(Duration::from_millis).ok())
                 .unwrap_or(None),
-            events_max: pairs
-                .get("eventsMax")
-                .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
+            events_max: pairs.get("eventsMax").map_or(None, |k| k.parse().ok()),
+            bytes_max: pairs.get("bytesMax").map_or(None, |k| k.parse().ok()),
+            allow_large_result: pairs.get("allowLargeResult").map_or(None, |x| x.parse().ok()),
             event_delay: pairs.get("eventDelay").map_or(Ok(None), |k| {
                 k.parse::<u64>().map(|x| Duration::from_millis(x)).map(|k| Some(k))
             })?,
@@ -265,19 +289,25 @@ impl AppendToUrl for PlainEventsQuery {
         self.transform.append_to_url(url);
         let mut g = url.query_pairs_mut();
         if let Some(x) = &self.timeout {
-            g.append_pair("timeout", &format!("{}", x.as_millis()));
+            g.append_pair("timeout", &format!("{:.0}", x.as_secs_f64() * 1e3));
         }
         if let Some(x) = self.events_max.as_ref() {
-            g.append_pair("eventsMax", &format!("{}", x));
+            g.append_pair("eventsMax", &x.to_string());
+        }
+        if let Some(x) = self.bytes_max.as_ref() {
+            g.append_pair("bytesMax", &x.to_string());
+        }
+        if let Some(x) = self.allow_large_result {
+            g.append_pair("allowLargeResult", &x.to_string());
         }
         if let Some(x) = self.event_delay.as_ref() {
             g.append_pair("eventDelay", &format!("{:.0}", x.as_secs_f64() * 1e3));
         }
         if let Some(x) = self.stream_batch_len.as_ref() {
-            g.append_pair("streamBatchLen", &format!("{}", x));
+            g.append_pair("streamBatchLen", &x.to_string());
         }
         if let Some(x) = self.buf_len_disk_io.as_ref() {
-            g.append_pair("bufLenDiskIo", &format!("{}", x));
+            g.append_pair("bufLenDiskIo", &x.to_string());
         }
         if self.do_test_main_error {
             g.append_pair("doTestMainError", "true");
@@ -289,7 +319,7 @@ impl AppendToUrl for PlainEventsQuery {
             g.append_pair("testDoWasm", &x);
         }
         if let Some(x) = self.merger_out_len_max.as_ref() {
-            g.append_pair("mergerOutLenMax", &format!("{}", x));
+            g.append_pair("mergerOutLenMax", &x.to_string());
         }
         if self.create_errors.len() != 0 {
             g.append_pair("create_errors", &self.create_errors.join(","));
@@ -331,6 +361,7 @@ impl EventsSubQuerySelect {
 pub struct EventsSubQuerySettings {
     timeout: Option<Duration>,
     events_max: Option<u64>,
+    bytes_max: Option<u64>,
     event_delay: Option<Duration>,
     stream_batch_len: Option<usize>,
     buf_len_disk_io: Option<usize>,
@@ -343,6 +374,7 @@ impl Default for EventsSubQuerySettings {
         Self {
             timeout: None,
             events_max: None,
+            bytes_max: None,
             event_delay: None,
             stream_batch_len: None,
             buf_len_disk_io: None,
@@ -357,6 +389,7 @@ impl From<&PlainEventsQuery> for EventsSubQuerySettings {
         Self {
             timeout: value.timeout,
             events_max: value.events_max,
+            bytes_max: value.bytes_max,
             event_delay: value.event_delay,
             stream_batch_len: value.stream_batch_len,
             buf_len_disk_io: value.buf_len_disk_io,
@@ -373,6 +406,7 @@ impl From<&BinnedQuery> for EventsSubQuerySettings {
             timeout: value.timeout(),
             // TODO ?
             events_max: None,
+            bytes_max: None,
             event_delay: None,
             stream_batch_len: None,
             buf_len_disk_io: None,
@@ -390,6 +424,7 @@ impl From<&Api1Query> for EventsSubQuerySettings {
             timeout: value.timeout(),
             // TODO ?
             events_max: None,
+            bytes_max: None,
             event_delay: None,
             stream_batch_len: None,
             buf_len_disk_io: Some(disk_io_tune.read_buffer_len),

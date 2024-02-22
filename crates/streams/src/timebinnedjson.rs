@@ -256,10 +256,12 @@ pub async fn timebinned_json(
 ) -> Result<JsonValue, Error> {
     let deadline = Instant::now().checked_add(query.timeout_value()).unwrap();
     let binned_range = BinnedRangeEnum::covering_range(query.range().clone(), query.bin_count())?;
+    // TODO derive better values, from query
     let collect_max = 10000;
+    let bytes_max = 100 * collect_max;
     let stream = timebinned_stream(query.clone(), binned_range.clone(), ch_conf, ctx, open_bytes).await?;
     let stream = timebinned_to_collectable(stream);
-    let collected = Collect::new(stream, deadline, collect_max, None, Some(binned_range));
+    let collected = Collect::new(stream, deadline, collect_max, bytes_max, None, Some(binned_range));
     let collected: BoxFuture<_> = Box::pin(collected);
     let collected = collected.await?;
     let jsval = serde_json::to_value(&collected)?;

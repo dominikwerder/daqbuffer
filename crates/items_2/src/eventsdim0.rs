@@ -164,10 +164,20 @@ impl<STY> WithLen for EventsDim0<STY> {
     }
 }
 
-impl<STY> ByteEstimate for EventsDim0<STY> {
+impl<STY: ScalarOps> ByteEstimate for EventsDim0<STY> {
     fn byte_estimate(&self) -> u64 {
-        let stylen = mem::size_of::<STY>();
-        (self.len() * (8 + 8 + stylen)) as u64
+        // TODO
+        // Should use a better estimate for waveform and string types,
+        // or keep some aggregated byte count on push.
+        let n = self.len();
+        if n == 0 {
+            0
+        } else {
+            // TODO use the actual size of one/some of the elements.
+            let i = n * 2 / 3;
+            let sty_bytes = self.values[i].byte_estimate();
+            (n as u64 * (8 + 8 + sty_bytes)) as u64
+        }
     }
 }
 
@@ -262,7 +272,13 @@ impl<STY> EventsDim0Collector<STY> {
 
 impl<STY> WithLen for EventsDim0Collector<STY> {
     fn len(&self) -> usize {
-        self.vals.tss.len()
+        WithLen::len(&self.vals)
+    }
+}
+
+impl<STY: ScalarOps> ByteEstimate for EventsDim0Collector<STY> {
+    fn byte_estimate(&self) -> u64 {
+        ByteEstimate::byte_estimate(&self.vals)
     }
 }
 
@@ -426,7 +442,7 @@ impl<STY: ScalarOps> CollectorType for EventsDim0Collector<STY> {
                 if let Some(range) = &range {
                     match range {
                         SeriesRange::TimeRange(x) => Some(IsoDateTime::from_u64(x.beg + SEC)),
-                        SeriesRange::PulseRange(x) => {
+                        SeriesRange::PulseRange(_) => {
                             error!("TODO emit create continueAt for pulse range");
                             Some(IsoDateTime::from_u64(0))
                         }
