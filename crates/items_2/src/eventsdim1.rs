@@ -200,6 +200,7 @@ pub struct EventsDim1Collector<STY> {
     vals: EventsDim1<STY>,
     range_final: bool,
     timed_out: bool,
+    needs_continue_at: bool,
 }
 
 impl<STY> EventsDim1Collector<STY> {
@@ -212,6 +213,7 @@ impl<STY> EventsDim1Collector<STY> {
             vals: EventsDim1::empty(),
             range_final: false,
             timed_out: false,
+            needs_continue_at: false,
         }
     }
 }
@@ -356,6 +358,11 @@ impl<STY: ScalarOps> CollectorType for EventsDim1Collector<STY> {
         self.timed_out = true;
     }
 
+    fn set_continue_at_here(&mut self) {
+        debug!("{}::set_continue_at_here", Self::self_name());
+        self.needs_continue_at = true;
+    }
+
     // TODO unify with dim0 case
     fn result(
         &mut self,
@@ -377,12 +384,12 @@ impl<STY: ScalarOps> CollectorType for EventsDim1Collector<STY> {
                         SeriesRange::TimeRange(x) => Some(IsoDateTime::from_u64(x.beg + SEC)),
                         SeriesRange::PulseRange(x) => {
                             error!("TODO emit create continueAt for pulse range");
-                            None
+                            Some(IsoDateTime::from_u64(0))
                         }
                     }
                 } else {
                     warn!("can not determine continue-at parameters");
-                    None
+                    Some(IsoDateTime::from_u64(0))
                 }
             }
         } else {

@@ -6,6 +6,7 @@ use crate::err::Error;
 use crate::gather::gather_get_json_generic;
 use crate::gather::SubRes;
 use crate::gather::Tag;
+use crate::requests::accepts_json_or_all;
 use crate::response;
 use crate::ReqCtx;
 use futures_util::Future;
@@ -27,8 +28,6 @@ use netpod::NodeStatus;
 use netpod::NodeStatusSub;
 use netpod::ProxyConfig;
 use netpod::ServiceVersion;
-use netpod::ACCEPT_ALL;
-use netpod::APP_JSON;
 use serde_json::Value as JsVal;
 use std::collections::VecDeque;
 use std::pin::Pin;
@@ -132,12 +131,7 @@ impl ChannelSearchAggHandler {
 
     pub async fn handle(&self, req: Requ, ctx: &ReqCtx, node_config: &ProxyConfig) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
-            let accept_def = APP_JSON;
-            let accept = req
-                .headers()
-                .get(http::header::ACCEPT)
-                .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
-            if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
+            if accepts_json_or_all(req.headers()) {
                 match channel_search(req, ctx, node_config).await {
                     Ok(item) => Ok(response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?),
                     Err(e) => {

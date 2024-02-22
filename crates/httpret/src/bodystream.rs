@@ -49,7 +49,7 @@ impl ToPublicResponse for ::err::Error {
             Err(_) => "can not serialize error".into(),
         };
         match response(status)
-            .header(http::header::ACCEPT, APP_JSON)
+            .header(http::header::CONTENT_TYPE, APP_JSON)
             .body(body_string(msg))
         {
             Ok(res) => res,

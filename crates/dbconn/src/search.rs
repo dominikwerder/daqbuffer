@@ -28,15 +28,16 @@ pub async fn search_channel_databuffer(
         let ret = ChannelSearchResult { channels: Vec::new() };
         return Ok(ret);
     }
-    let sql = format!(concat!(
-        "select ",
-        "channel_id, channel_name, source_name, dtype, shape, unit, description, channel_backend",
+    let sql = concat!(
+        "select",
+        " channel_id, channel_name, source_name,",
+        " dtype, shape, unit, description, channel_backend",
         " from searchext($1, $2, $3, $4)",
-    ));
+    );
     let cl = create_connection(&node_config.node_config.cluster.database).await?;
     let rows = cl
         .query(
-            sql.as_str(),
+            sql,
             &[&query.name_regex, &query.source_regex, &query.description_regex, &"asc"],
         )
         .await
@@ -90,31 +91,28 @@ pub async fn search_channel_scylla(query: ChannelSearchQuery, pgconf: &Database)
         let ret = ChannelSearchResult { channels: Vec::new() };
         return Ok(ret);
     }
-    let cond_status = if query.channel_status {
-        "scalar_type = 14"
-    } else {
-        "scalar_type != 14"
-    };
+    let ch_kind: i16 = if query.channel_status { 1 } else { 2 };
     let (cb1, cb2) = if let Some(x) = &query.backend {
         (false, x.as_str())
     } else {
         (true, "")
     };
-    let sql = format!(
+    let regop = if query.icase { "~*" } else { "~" };
+    let sql = &format!(
         concat!(
             "select",
             " series, facility, channel, scalar_type, shape_dims",
             " from series_by_channel",
-            " where channel ~* $1",
-            " and ($2 or facility = $3)",
-            " and {}",
+            " where kind = $1",
+            " and channel {} $2",
+            " and ($3 or facility = $4)",
             " limit 400000",
         ),
-        cond_status
+        regop
     );
     let pgclient = crate::create_connection(pgconf).await?;
     let rows = pgclient
-        .query(sql.as_str(), &[&query.name_regex, &cb1, &cb2])
+        .query(sql, &[&ch_kind, &query.name_regex, &cb1, &cb2])
         .await
         .err_conv()?;
     let mut res = Vec::new();
@@ -151,7 +149,7 @@ pub async fn search_channel_scylla(query: ChannelSearchQuery, pgconf: &Database)
     Ok(ret)
 }
 
-pub async fn search_channel_archeng(
+async fn search_channel_archeng(
     query: ChannelSearchQuery,
     backend: String,
     _conf: &ChannelArchiver,

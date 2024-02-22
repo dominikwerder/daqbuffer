@@ -1131,14 +1131,24 @@ pub struct ChannelEventsCollector {
     coll: Option<Box<dyn Collector>>,
     range_complete: bool,
     timed_out: bool,
+    needs_continue_at: bool,
+    tmp_warned_status: bool,
+    tmp_error_unknown_type: bool,
 }
 
 impl ChannelEventsCollector {
+    pub fn self_name() -> &'static str {
+        any::type_name::<Self>()
+    }
+
     pub fn new() -> Self {
         Self {
             coll: None,
             range_complete: false,
             timed_out: false,
+            needs_continue_at: false,
+            tmp_warned_status: false,
+            tmp_error_unknown_type: false,
         }
     }
 }
@@ -1154,19 +1164,24 @@ impl Collector for ChannelEventsCollector {
         if let Some(item) = item.as_any_mut().downcast_mut::<ChannelEvents>() {
             match item {
                 ChannelEvents::Events(item) => {
-                    if self.coll.is_none() {
-                        let coll = item.as_ref().as_collectable_with_default_ref().new_collector();
-                        self.coll = Some(coll);
-                    }
-                    let coll = self.coll.as_mut().unwrap();
+                    let coll = self
+                        .coll
+                        .get_or_insert_with(|| item.as_ref().as_collectable_with_default_ref().new_collector());
                     coll.ingest(item.as_collectable_with_default_mut());
                 }
                 ChannelEvents::Status(_) => {
                     // TODO decide on output format to collect also the connection status events
+                    if !self.tmp_warned_status {
+                        self.tmp_warned_status = true;
+                        warn!("TODO  ChannelEventsCollector  ChannelEvents::Status");
+                    }
                 }
             }
         } else {
-            error!("ChannelEventsCollector::ingest unexpected item {:?}", item);
+            if !self.tmp_error_unknown_type {
+                self.tmp_error_unknown_type = true;
+                error!("ChannelEventsCollector::ingest unexpected item {:?}", item);
+            }
         }
     }
 
@@ -1178,6 +1193,10 @@ impl Collector for ChannelEventsCollector {
         self.timed_out = true;
     }
 
+    fn set_continue_at_here(&mut self) {
+        self.needs_continue_at = true;
+    }
+
     fn result(
         &mut self,
         range: Option<SeriesRange>,
@@ -1185,6 +1204,7 @@ impl Collector for ChannelEventsCollector {
     ) -> Result<Box<dyn Collected>, err::Error> {
         match self.coll.as_mut() {
             Some(coll) => {
+                coll.set_continue_at_here();
                 if self.range_complete {
                     coll.set_range_complete();
                 }
@@ -1195,8 +1215,9 @@ impl Collector for ChannelEventsCollector {
                 Ok(res)
             }
             None => {
-                error!("nothing collected [caa8d2565]");
-                Err(err::Error::with_public_msg_no_trace("nothing collected [caa8d2565]"))
+                let e = err::Error::with_public_msg_no_trace("nothing collected [caa8d2565]");
+                error!("{e}");
+                Err(e)
             }
         }
     }

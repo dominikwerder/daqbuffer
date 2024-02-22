@@ -4,6 +4,7 @@ pub mod query;
 pub mod range;
 pub mod status;
 pub mod streamext;
+pub mod ttl;
 
 pub mod log {
     pub use tracing::{self, debug, error, event, info, span, trace, warn, Level};
@@ -92,6 +93,31 @@ impl CmpZero for usize {
 pub struct BodyStream {
     //pub receiver: async_channel::Receiver<Result<Bytes, Error>>,
     pub inner: Box<dyn Stream<Item = Result<Bytes, Error>> + Send + Unpin>,
+}
+
+#[derive(Debug, Clone)]
+pub enum SeriesKind {
+    ChannelStatus,
+    ChannelData,
+}
+
+impl SeriesKind {
+    pub fn to_db_i16(&self) -> i16 {
+        use SeriesKind::*;
+        match self {
+            ChannelStatus => 1,
+            ChannelData => 2,
+        }
+    }
+
+    pub fn from_db_i16(x: i16) -> Result<Self, Error> {
+        let ret = match x {
+            1 => Self::ChannelData,
+            2 => Self::ChannelStatus,
+            _ => return Err(Error::with_msg_no_trace("bad SeriesKind value")),
+        };
+        Ok(ret)
+    }
 }
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -566,11 +592,11 @@ impl Node {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Database {
-    pub name: String,
     pub host: String,
     pub port: u16,
     pub user: String,
     pub pass: String,
+    pub name: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -1210,6 +1236,15 @@ impl Shape {
             Scalar => Vec::new(),
             Wave(n) => vec![*n as u32],
             Image(n, m) => vec![*n as u32, *m as u32],
+        }
+    }
+
+    pub fn to_json_value(&self) -> JsVal {
+        use serde_json::Number;
+        match self {
+            Shape::Scalar => JsVal::Array(Vec::new()),
+            Shape::Wave(n) => JsVal::Array(vec![JsVal::Number(Number::from(*n))]),
+            Shape::Image(n, m) => JsVal::Array(vec![JsVal::Number(Number::from(*n)), JsVal::Number(Number::from(*m))]),
         }
     }
 
@@ -2259,6 +2294,23 @@ impl<Tz: TimeZone> ToNanos for DateTime<Tz> {
     }
 }
 
+#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
+pub struct TsMs(pub u64);
+
+impl TsMs {
+    pub fn to_u64(self) -> u64 {
+        self.0
+    }
+}
+
+impl std::ops::Sub for TsMs {
+    type Output = TsMs;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0.saturating_sub(rhs.0))
+    }
+}
+
 pub trait RetStreamExt: Stream {
     fn only_first_error(self) -> OnlyFirstError<Self>
     where
@@ -2563,6 +2615,8 @@ pub struct ChannelSearchQuery {
     pub description_regex: String,
     #[serde(default)]
     pub channel_status: bool,
+    #[serde(default)]
+    pub icase: bool,
 }
 
 impl ChannelSearchQuery {
@@ -2578,6 +2632,7 @@ impl ChannelSearchQuery {
                 .map(|k| k.parse().ok())
                 .unwrap_or(None)
                 .unwrap_or(false),
+            icase: pairs.get("icase").map_or(None, |x| x.parse().ok()).unwrap_or(false),
         };
         Ok(ret)
     }
@@ -2590,8 +2645,8 @@ impl ChannelSearchQuery {
         qp.append_pair("nameRegex", &self.name_regex);
         qp.append_pair("sourceRegex", &self.source_regex);
         qp.append_pair("descriptionRegex", &self.description_regex);
-        let v = &self.channel_status;
-        qp.append_pair("channelStatus", &v.to_string());
+        qp.append_pair("channelStatus", &self.channel_status.to_string());
+        qp.append_pair("icase", &self.icase.to_string());
     }
 }
 

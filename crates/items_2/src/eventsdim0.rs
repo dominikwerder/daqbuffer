@@ -241,6 +241,7 @@ pub struct EventsDim0Collector<STY> {
     vals: EventsDim0<STY>,
     range_final: bool,
     timed_out: bool,
+    needs_continue_at: bool,
 }
 
 impl<STY> EventsDim0Collector<STY> {
@@ -249,10 +250,12 @@ impl<STY> EventsDim0Collector<STY> {
     }
 
     pub fn new() -> Self {
+        debug!("EventsDim0Collector  NEW");
         Self {
             vals: EventsDim0::empty(),
             range_final: false,
             timed_out: false,
+            needs_continue_at: false,
         }
     }
 }
@@ -392,6 +395,11 @@ impl<STY: ScalarOps> CollectorType for EventsDim0Collector<STY> {
 
     fn set_timed_out(&mut self) {
         self.timed_out = true;
+        self.needs_continue_at = true;
+    }
+
+    fn set_continue_at_here(&mut self) {
+        self.needs_continue_at = true;
     }
 
     fn result(
@@ -399,27 +407,32 @@ impl<STY: ScalarOps> CollectorType for EventsDim0Collector<STY> {
         range: Option<SeriesRange>,
         _binrange: Option<BinnedRangeEnum>,
     ) -> Result<Self::Output, Error> {
+        debug!(
+            "{}  result()  needs_continue_at {}",
+            Self::self_name(),
+            self.needs_continue_at
+        );
         // If we timed out, we want to hint the client from where to continue.
         // This is tricky: currently, client can not request a left-exclusive range.
         // We currently give the timestamp of the last event plus a small delta.
         // The amount of the delta must take into account what kind of timestamp precision the client
         // can parse and handle.
         let vals = &mut self.vals;
-        let continue_at = if self.timed_out {
+        let continue_at = if self.needs_continue_at {
             if let Some(ts) = vals.tss.back() {
-                Some(IsoDateTime::from_u64(*ts + MS))
+                let x = Some(IsoDateTime::from_u64(*ts / MS * MS + MS));
+                x
             } else {
                 if let Some(range) = &range {
                     match range {
                         SeriesRange::TimeRange(x) => Some(IsoDateTime::from_u64(x.beg + SEC)),
                         SeriesRange::PulseRange(x) => {
                             error!("TODO emit create continueAt for pulse range");
-                            None
+                            Some(IsoDateTime::from_u64(0))
                         }
                     }
                 } else {
-                    warn!("can not determine continue-at parameters");
-                    None
+                    Some(IsoDateTime::from_u64(0))
                 }
             }
         } else {

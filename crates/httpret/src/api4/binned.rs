@@ -3,6 +3,8 @@ use crate::bodystream::response_err_msg;
 use crate::bodystream::ToPublicResponse;
 use crate::channelconfig::ch_conf_from_binned;
 use crate::err::Error;
+use crate::requests::accepts_json_or_all;
+use crate::requests::accepts_octets;
 use http::Method;
 use http::StatusCode;
 use httpclient::body_empty;
@@ -65,9 +67,9 @@ async fn binned(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Resu
     {
         Err(Error::with_msg_no_trace("hidden message").add_public_msg("PublicMessage"))?;
     }
-    if crate::accepts_json(&req.headers()) {
+    if accepts_json_or_all(&req.headers()) {
         Ok(binned_json(url, req, ctx, node_config).await?)
-    } else if crate::accepts_octets(&req.headers()) {
+    } else if accepts_octets(&req.headers()) {
         Ok(response_err_msg(
             StatusCode::NOT_ACCEPTABLE,
             format!("binary binned data not yet available"),

@@ -1,9 +1,7 @@
 use crate::bodystream::response;
-use crate::bodystream::ToPublicResponse;
 use crate::err::Error;
 use crate::requests::accepts_json_or_all;
 use crate::ReqCtx;
-use err::PublicError;
 use err::ToPublicError;
 use futures_util::StreamExt;
 use http::Method;
@@ -75,8 +73,6 @@ impl AccountingIngestedBytes {
             .as_ref()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("no scylla configured")))?;
         let scy = scyllaconn::conn::create_scy_session(scyco).await?;
-        // TODO so far, we sum over everything
-        let series_id = 0;
         let mut stream = scyllaconn::accounting::AccountingStreamScylla::new(q.range().try_into()?, scy);
         let mut ret = AccountingEvents::empty();
         while let Some(item) = stream.next().await {

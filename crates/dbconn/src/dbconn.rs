@@ -165,44 +165,6 @@ pub async fn insert_channel(name: String, facility: i64, dbc: &PgClient) -> Resu
     Ok(())
 }
 
-// Currently only for scylla type backends
-pub async fn find_series(channel: &SfDbChannel, pgclient: Arc<PgClient>) -> Result<(u64, ScalarType, Shape), Error> {
-    info!("find_series  channel {:?}", channel);
-    let rows = if let Some(series) = channel.series() {
-        let q = "select series, facility, channel, scalar_type, shape_dims from series_by_channel where series = $1";
-        pgclient.query(q, &[&(series as i64)]).await.err_conv()?
-    } else {
-        let q = "select series, facility, channel, scalar_type, shape_dims from series_by_channel where facility = $1 and channel = $2";
-        pgclient
-            .query(q, &[&channel.backend(), &channel.name()])
-            .await
-            .err_conv()?
-    };
-    if rows.len() < 1 {
-        return Err(Error::with_public_msg_no_trace(format!(
-            "No series found for {channel:?}"
-        )));
-    }
-    if rows.len() > 1 {
-        error!("Multiple series found for {channel:?}");
-        return Err(Error::with_public_msg_no_trace(
-            "Multiple series found for channel, can not return data for ambiguous series",
-        ));
-    }
-    let row = rows
-        .into_iter()
-        .next()
-        .ok_or_else(|| Error::with_public_msg_no_trace(format!("can not find series for channel")))?;
-    let series = row.get::<_, i64>(0) as u64;
-    let _facility: String = row.get(1);
-    let _channel: String = row.get(2);
-    let a: i32 = row.get(3);
-    let scalar_type = ScalarType::from_scylla_i32(a)?;
-    let a: Vec<i32> = row.get(4);
-    let shape = Shape::from_scylla_shape_dims(&a)?;
-    Ok((series, scalar_type, shape))
-}
-
 // Currently only for sf-databuffer type backends
 // Note: we currently treat the channels primary key as series-id for sf-databuffer type backends.
 pub async fn find_series_sf_databuffer(channel: &SfDbChannel, pgclient: Arc<PgClient>) -> Res2<u64> {

@@ -95,26 +95,6 @@ impl ::err::ToErr for RetrievalError {
     }
 }
 
-pub fn accepts_json(hm: &http::HeaderMap) -> bool {
-    match hm.get(http::header::ACCEPT) {
-        Some(x) => match x.to_str() {
-            Ok(x) => x.contains(netpod::APP_JSON) || x.contains(netpod::ACCEPT_ALL),
-            Err(_) => false,
-        },
-        None => false,
-    }
-}
-
-pub fn accepts_octets(hm: &http::HeaderMap) -> bool {
-    match hm.get(http::header::ACCEPT) {
-        Some(x) => match x.to_str() {
-            Ok(x) => x.contains(netpod::APP_OCTET),
-            Err(_) => false,
-        },
-        None => false,
-    }
-}
-
 pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion) -> Result<(), RetrievalError> {
     status_board_init();
     #[cfg(DISABLED)]
@@ -146,7 +126,7 @@ pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion
             match res {
                 Ok(()) => {}
                 Err(e) => {
-                    error!("{e}");
+                    error!("error from serve_connection: {e}");
                 }
             }
         });
@@ -186,7 +166,7 @@ async fn http_service(
     match http_service_try(req, ctx, &node_config, &service_version).await {
         Ok(k) => Ok(k),
         Err(e) => {
-            error!("daqbuffer node http_service sees error: {}", e);
+            error!("daqbuffer node http_service sees error from http_service_try: {}", e);
             Err(e)
         }
     }
@@ -233,9 +213,11 @@ async fn http_service_try(
     let mut urlmarks = Vec::new();
     urlmarks.push(format!("{}:{}", req.method(), req.uri()));
     for (k, v) in req.headers() {
-        if k == netpod::PSI_DAQBUFFER_SEEN_URL {
-            let s = String::from_utf8_lossy(v.as_bytes());
-            urlmarks.push(s.into());
+        if false {
+            if k == netpod::PSI_DAQBUFFER_SEEN_URL {
+                let s = String::from_utf8_lossy(v.as_bytes());
+                urlmarks.push(s.into());
+            }
         }
     }
     let mut res = http_service_inner(req, &ctx, node_config, service_version).await?;
@@ -246,9 +228,11 @@ async fn http_service_try(
         hm.append(netpod::PSI_DAQBUFFER_SERVICE_MARK, m.parse().unwrap());
     }
     hm.append(netpod::PSI_DAQBUFFER_SERVICE_MARK, ctx.mark().parse().unwrap());
-    for s in urlmarks {
-        let v = HeaderValue::from_str(&s).unwrap_or_else(|_| HeaderValue::from_static("invalid"));
-        hm.append(netpod::PSI_DAQBUFFER_SEEN_URL, v);
+    if false {
+        for s in urlmarks {
+            let v = HeaderValue::from_str(&s).unwrap_or_else(|_| HeaderValue::from_static("invalid"));
+            hm.append(netpod::PSI_DAQBUFFER_SEEN_URL, v);
+        }
     }
     Ok(res)
 }
@@ -330,8 +314,6 @@ async fn http_service_inner(
     } else if let Some(h) = channelconfig::ChannelConfigsHandler::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::ChannelConfigHandler::handler(&req) {
-        Ok(h.handle(req, &node_config).await?)
-    } else if let Some(h) = channelconfig::ScyllaChannelsWithType::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::IocForChannel::handler(&req) {
         Ok(h.handle(req, &node_config).await?)

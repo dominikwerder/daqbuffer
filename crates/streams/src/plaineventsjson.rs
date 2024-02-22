@@ -36,7 +36,10 @@ pub async fn plain_events_json(
     //let stream = EventsToTimeBinnable::new(stream);
     //let stream = TimeBinnableToCollectable::new(stream);
     let stream = Box::pin(stream);
+    info!("plain_events_json  boxed stream created");
     let collected = Collect::new(stream, deadline, evq.events_max(), Some(evq.range().clone()), None).await?;
+    info!("plain_events_json  collected");
     let jsval = serde_json::to_value(&collected)?;
+    info!("plain_events_json  json serialized");
     Ok(jsval)
 }

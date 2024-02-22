@@ -23,7 +23,6 @@ use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
 use netpod::ScalarType;
-use netpod::SfDbChannel;
 use netpod::Shape;
 use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
@@ -123,7 +122,7 @@ pub struct ChannelConfigsHandler {}
 
 impl ChannelConfigsHandler {
     pub fn handler(req: &Requ) -> Option<Self> {
-        if req.uri().path() == "/api/4/channel/configs" {
+        if req.uri().path() == "/api/4/private/channel/configs" {
             Some(Self {})
         } else {
             None
@@ -228,83 +227,6 @@ pub struct ConfigsHisto {
     scalar_types: Vec<(ScalarType, Vec<(Shape, u32)>)>,
 }
 
-pub struct ScyllaConfigsHisto {}
-
-impl ScyllaConfigsHisto {
-    pub fn handler(req: &Requ) -> Option<Self> {
-        if req.uri().path() == "/api/4/scylla/configs/histo" {
-            Some(Self {})
-        } else {
-            None
-        }
-    }
-
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
-        if req.method() == Method::GET {
-            let accept_def = APP_JSON;
-            let accept = req
-                .headers()
-                .get(http::header::ACCEPT)
-                .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
-            if accept == APP_JSON || accept == ACCEPT_ALL {
-                let res = self
-                    .make_histo(&node_config.node_config.cluster.backend, node_config)
-                    .await?;
-                let body = ToJsonBody::from(&res).into_body();
-                Ok(response(StatusCode::OK).body(body)?)
-            } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
-            }
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
-        }
-    }
-
-    async fn make_histo(&self, backend: &str, node_config: &NodeConfigCached) -> Result<ConfigsHisto, Error> {
-        let scyco = node_config
-            .node_config
-            .cluster
-            .scylla
-            .as_ref()
-            .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let scy = scyllaconn::conn::create_scy_session(scyco).await?;
-        let res = scy
-            .query(
-                "select scalar_type, shape_dims, series from series_by_channel where facility = ? allow filtering",
-                (backend,),
-            )
-            .await
-            .err_conv()?;
-        let mut stm = BTreeMap::new();
-        for row in res.rows_typed_or_empty::<(i32, Vec<i32>, i64)>() {
-            let (st, dims, _) = row.err_conv()?;
-            let scalar_type = ScalarType::from_scylla_i32(st)?;
-            let shape = Shape::from_scylla_shape_dims(&dims)?;
-            if stm.get_mut(&scalar_type).is_none() {
-                stm.insert(scalar_type.clone(), BTreeMap::new());
-            }
-            let a = stm.get_mut(&scalar_type).unwrap();
-            if a.get_mut(&shape).is_none() {
-                a.insert(shape.clone(), 0);
-            }
-            *a.get_mut(&shape).unwrap() += 1;
-        }
-        let mut stm: Vec<_> = stm
-            .into_iter()
-            .map(|(st, m2)| {
-                let mut g: Vec<_> = m2.into_iter().map(|(sh, c)| (sh, c)).collect();
-                g.sort_by_key(|x| !x.1);
-                let n = g.len() as u32;
-                (st, g, n)
-            })
-            .collect();
-        stm.sort_unstable_by_key(|x| !x.2);
-        let stm = stm.into_iter().map(|(st, a, _)| (st, a)).collect();
-        let ret = ConfigsHisto { scalar_types: stm };
-        Ok(ret)
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChannelsWithTypeQuery {
     scalar_type: ScalarType,
@@ -328,76 +250,6 @@ impl FromUrl for ChannelsWithTypeQuery {
             .ok_or_else(|| Error::with_public_msg_no_trace("missing shape"))?;
         let shape = Shape::from_dims_str(s)?;
         Ok(Self { scalar_type, shape })
-    }
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ChannelListWithType {
-    channels: Vec<SfDbChannel>,
-}
-
-pub struct ScyllaChannelsWithType {}
-
-impl ScyllaChannelsWithType {
-    pub fn handler(req: &Requ) -> Option<Self> {
-        if req.uri().path() == "/api/4/scylla/channels/with_type" {
-            Some(Self {})
-        } else {
-            None
-        }
-    }
-
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
-        if req.method() == Method::GET {
-            let accept_def = APP_JSON;
-            let accept = req
-                .headers()
-                .get(http::header::ACCEPT)
-                .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
-            if accept == APP_JSON || accept == ACCEPT_ALL {
-                let url = req_uri_to_url(req.uri())?;
-                let q = ChannelsWithTypeQuery::from_url(&url)?;
-                let res = self
-                    .get_channels(&q, &node_config.node_config.cluster.backend, node_config)
-                    .await?;
-                let body = ToJsonBody::from(&res).into_body();
-                Ok(response(StatusCode::OK).body(body)?)
-            } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
-            }
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
-        }
-    }
-
-    async fn get_channels(
-        &self,
-        q: &ChannelsWithTypeQuery,
-        backend: &str,
-        node_config: &NodeConfigCached,
-    ) -> Result<ChannelListWithType, Error> {
-        let scyco = node_config
-            .node_config
-            .cluster
-            .scylla
-            .as_ref()
-            .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let scy = scyllaconn::conn::create_scy_session(scyco).await?;
-        let res = scy
-            .query(
-                "select channel_name, series from series_by_channel where facility = ? and scalar_type = ? and shape_dims = ? allow filtering",
-                (backend, q.scalar_type.to_scylla_i32(), q.shape.to_scylla_vec()),
-            )
-            .await
-            .err_conv()?;
-        let mut list = Vec::new();
-        for row in res.rows_typed_or_empty::<(String, i64)>() {
-            let (channel_name, series) = row.err_conv()?;
-            let ch = SfDbChannel::from_full(backend, Some(series as u64), channel_name);
-            list.push(ch);
-        }
-        let ret = ChannelListWithType { channels: list };
-        Ok(ret)
     }
 }
 
@@ -767,7 +619,7 @@ pub struct AmbigiousChannelNames {}
 
 impl AmbigiousChannelNames {
     pub fn handler(req: &Requ) -> Option<Self> {
-        if req.uri().path() == "/api/4/channels/ambigious" {
+        if req.uri().path() == "/api/4/private/channels/ambigious" {
             Some(Self {})
         } else {
             None

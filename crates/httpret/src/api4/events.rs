@@ -101,16 +101,17 @@ async fn plain_events_json(
     ctx: &ReqCtx,
     node_config: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
-    info!("plain_events_json  req: {:?}", req);
+    let self_name = "plain_events_json";
+    info!("{self_name}  req: {:?}", req);
     let (_head, _body) = req.into_parts();
     let query = PlainEventsQuery::from_url(&url)?;
-    info!("plain_events_json  query {query:?}");
+    info!("{self_name}  query {query:?}");
     // TODO handle None case better and return 404
     let ch_conf = chconf_from_events_quorum(&query, ctx, node_config)
         .await
         .map_err(Error::from)?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
-    info!("plain_events_json  chconf_from_events_quorum: {ch_conf:?}");
+    info!("{self_name}  chconf_from_events_quorum: {ch_conf:?}");
     let open_bytes = OpenBoxedBytesViaHttp::new(node_config.node_config.cluster.clone());
     let item = streams::plaineventsjson::plain_events_json(
         &query,
@@ -120,13 +121,15 @@ async fn plain_events_json(
         Box::pin(open_bytes),
     )
     .await;
+    info!("{self_name}  returned  {}", item.is_ok());
     let item = match item {
         Ok(item) => item,
         Err(e) => {
-            error!("got error from streams::plaineventsjson::plain_events_json {e:?}");
+            error!("{self_name}  got error from streams::plaineventsjson::plain_events_json {e}");
             return Err(e.into());
         }
     };
     let ret = response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?;
+    info!("{self_name}  response created");
     Ok(ret)
 }

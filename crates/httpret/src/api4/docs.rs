@@ -80,7 +80,7 @@ pub struct DocsHandler {}
 
 impl DocsHandler {
     pub fn path_prefix() -> &'static str {
-        "/api/4/docs/"
+        "/api/4/docs"
     }
 
     pub fn handler(req: &Requ) -> Option<Self> {
@@ -93,6 +93,20 @@ impl DocsHandler {
 
     pub async fn handle(&self, req: Requ, _ctx: &ReqCtx) -> Result<StreamResponse, Error> {
         let path = req.uri().path();
+        if path == "/api/4/docs" {
+            let ret = http::Response::builder()
+                .status(StatusCode::TEMPORARY_REDIRECT)
+                .header(http::header::LOCATION, "/api/4/docs/")
+                .body(body_empty())?;
+            return Ok(ret);
+        }
+        if path == "/api/4/docs/" {
+            let ret = http::Response::builder()
+                .status(StatusCode::TEMPORARY_REDIRECT)
+                .header(http::header::LOCATION, "/api/4/docs/index.html")
+                .body(body_empty())?;
+            return Ok(ret);
+        }
         let mut segs: VecDeque<_> = path.split("/").collect();
         for _ in 0..4 {
             segs.pop_front();

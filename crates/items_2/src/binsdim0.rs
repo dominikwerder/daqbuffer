@@ -399,6 +399,10 @@ pub struct BinsDim0Collector<NTY> {
 }
 
 impl<NTY> BinsDim0Collector<NTY> {
+    pub fn self_name() -> &'static str {
+        any::type_name::<Self>()
+    }
+
     pub fn new() -> Self {
         Self {
             timed_out: false,
@@ -437,6 +441,11 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
 
     fn set_timed_out(&mut self) {
         self.timed_out = true;
+    }
+
+    fn set_continue_at_here(&mut self) {
+        debug!("{}::set_continue_at_here", Self::self_name());
+        // TODO for bins, do nothing: either we have all bins or not.
     }
 
     fn result(

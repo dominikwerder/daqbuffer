@@ -75,6 +75,7 @@ pub trait CollectorType: fmt::Debug + Send + Unpin + WithLen {
     fn ingest(&mut self, src: &mut Self::Input);
     fn set_range_complete(&mut self);
     fn set_timed_out(&mut self);
+    fn set_continue_at_here(&mut self);
 
     // TODO use this crate's Error instead:
     fn result(&mut self, range: Option<SeriesRange>, binrange: Option<BinnedRangeEnum>) -> Result<Self::Output, Error>;
@@ -84,6 +85,7 @@ pub trait Collector: fmt::Debug + Send + Unpin + WithLen {
     fn ingest(&mut self, src: &mut dyn Collectable);
     fn set_range_complete(&mut self);
     fn set_timed_out(&mut self);
+    fn set_continue_at_here(&mut self);
     // TODO factor the required parameters into new struct? Generic over events or binned?
     fn result(
         &mut self,
@@ -122,6 +124,10 @@ where
 
     fn set_timed_out(&mut self) {
         T::set_timed_out(self)
+    }
+
+    fn set_continue_at_here(&mut self) {
+        T::set_continue_at_here(self)
     }
 
     fn result(

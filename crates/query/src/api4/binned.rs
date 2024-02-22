@@ -172,11 +172,12 @@ impl FromUrl for BinnedQuery {
         let ret = Self {
             channel: SfDbChannel::from_pairs(&pairs)?,
             range: SeriesRange::from_pairs(pairs)?,
-            bin_count: pairs
-                .get("binCount")
-                .ok_or_else(|| Error::with_msg_no_trace("missing binCount"))?
-                .parse()
-                .map_err(|e| Error::with_msg_no_trace(format!("can not parse binCount {:?}", e)))?,
+            bin_count: pairs.get("binCount").map_or(None, |x| x.parse().ok()).unwrap_or(10),
+            // bin_count: pairs
+            //     .get("binCount")
+            //     .ok_or_else(|| Error::with_msg_no_trace("missing binCount"))?
+            //     .parse()
+            //     .map_err(|e| Error::with_msg_no_trace(format!("can not parse binCount {:?}", e)))?,
             transform: TransformQuery::from_pairs(pairs)?,
             cache_usage: CacheUsage::from_pairs(&pairs)?,
             buf_len_disk_io: pairs

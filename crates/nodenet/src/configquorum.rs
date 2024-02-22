@@ -110,12 +110,10 @@ pub async fn find_config_basics_quorum(
             Some(x) => Ok(Some(ChannelTypeConfigGen::SfDatabuffer(x))),
             None => Ok(None),
         }
-    } else if let Some(_cfg) = &ncc.node_config.cluster.scylla {
-        // TODO let called function allow to return None instead of error-not-found
-        let ret = dbconn::channelconfig::chconf_from_scylla_type_backend(&channel, ncc)
-            .await
-            .map_err(Error::from)?;
-        Ok(Some(ChannelTypeConfigGen::Scylla(ret)))
+    } else if let Some(_) = &ncc.node_config.cluster.scylla {
+        let range = netpod::range::evrange::NanoRange::try_from(&range)?;
+        let ret = crate::channelconfig::channel_config(range, channel, ncc).await?;
+        Ok(ret)
     } else {
         Err(Error::with_msg_no_trace(
             "find_config_basics_quorum  not supported backend",

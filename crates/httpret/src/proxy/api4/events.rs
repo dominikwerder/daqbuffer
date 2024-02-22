@@ -1,4 +1,5 @@
 use crate::bodystream::response;
+use crate::bodystream::response_err_msg;
 use crate::err::Error;
 use crate::proxy::get_query_host_for_backend;
 use crate::requests::accepts_cbor_frames;
@@ -45,7 +46,12 @@ impl EventsHandler {
         } else {
             if accepts_cbor_frames(req.headers()) {
                 // self.handle_cbor(req, ctx, proxy_config).await
-                Ok(crate::proxy::proxy_backend_query::<PlainEventsQuery>(req, ctx, proxy_config).await?)
+                // Ok(crate::proxy::proxy_backend_query::<PlainEventsQuery>(req, ctx, proxy_config).await?)
+                warn!("TODO enabe cbor endpoint");
+                Ok(response_err_msg(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("cbor endpoint currently disabled"),
+                )?)
             } else if accepts_json_or_all(req.headers()) {
                 Ok(crate::proxy::proxy_backend_query::<PlainEventsQuery>(req, ctx, proxy_config).await?)
             } else {

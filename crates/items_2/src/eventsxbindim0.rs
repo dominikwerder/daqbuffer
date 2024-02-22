@@ -942,14 +942,20 @@ pub struct EventsXbinDim0Collector<NTY> {
     vals: EventsXbinDim0<NTY>,
     range_final: bool,
     timed_out: bool,
+    needs_continue_at: bool,
 }
 
 impl<NTY> EventsXbinDim0Collector<NTY> {
+    pub fn self_name() -> &'static str {
+        any::type_name::<Self>()
+    }
+
     pub fn new() -> Self {
         Self {
             range_final: false,
             timed_out: false,
             vals: EventsXbinDim0::empty(),
+            needs_continue_at: false,
         }
     }
 }
@@ -981,6 +987,10 @@ where
 
     fn set_timed_out(&mut self) {
         self.timed_out = true;
+    }
+
+    fn set_continue_at_here(&mut self) {
+        self.needs_continue_at = true;
     }
 
     fn result(

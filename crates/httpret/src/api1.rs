@@ -160,6 +160,7 @@ pub async fn channel_search_list_v1(
                     source_regex: query.source_regex.map_or(String::new(), |k| k),
                     description_regex: query.description_regex.map_or(String::new(), |k| k),
                     channel_status: false,
+                    icase: false,
                 };
                 let urls = proxy_config
                     .backends
@@ -270,6 +271,7 @@ pub async fn channel_search_configs_v1(
                     source_regex: query.source_regex.map_or(String::new(), |k| k),
                     description_regex: query.description_regex.map_or(String::new(), |k| k),
                     channel_status: false,
+                    icase: false,
                 };
                 let urls = proxy_config
                     .backends

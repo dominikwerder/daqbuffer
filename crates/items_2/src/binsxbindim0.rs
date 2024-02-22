@@ -386,6 +386,10 @@ pub struct BinsXbinDim0Collector<NTY> {
 }
 
 impl<NTY> BinsXbinDim0Collector<NTY> {
+    pub fn self_name() -> &'static str {
+        any::type_name::<Self>()
+    }
+
     pub fn new() -> Self {
         Self {
             vals: BinsXbinDim0::empty(),
@@ -424,6 +428,11 @@ impl<NTY: ScalarOps> CollectorType for BinsXbinDim0Collector<NTY> {
         self.timed_out = true;
     }
 
+    fn set_continue_at_here(&mut self) {
+        debug!("{}::set_continue_at_here", Self::self_name());
+        // TODO for bins, do nothing: either we have all bins or not.
+    }
+
     fn result(
         &mut self,
         _range: std::option::Option<SeriesRange>,
@@ -435,23 +444,19 @@ impl<NTY: ScalarOps> CollectorType for BinsXbinDim0Collector<NTY> {
             0
         };
         let bin_count = self.vals.ts1s.len() as u32;
-        let (missing_bins, continue_at, finished_at) = if self.range_final {
-            if bin_count < bin_count_exp {
-                match self.vals.ts2s.back() {
-                    Some(&k) => {
-                        let missing_bins = bin_count_exp - bin_count;
-                        let continue_at = IsoDateTime(Utc.timestamp_nanos(k as i64));
-                        let u = k + (k - self.vals.ts1s.back().unwrap()) * missing_bins as u64;
-                        let finished_at = IsoDateTime(Utc.timestamp_nanos(u as i64));
-                        (missing_bins, Some(continue_at), Some(finished_at))
-                    }
-                    None => {
-                        warn!("can not determine continue-at parameters");
-                        (0, None, None)
-                    }
+        let (missing_bins, continue_at, finished_at) = if bin_count < bin_count_exp {
+            match self.vals.ts2s.back() {
+                Some(&k) => {
+                    let missing_bins = bin_count_exp - bin_count;
+                    let continue_at = IsoDateTime(Utc.timestamp_nanos(k as i64));
+                    let u = k + (k - self.vals.ts1s.back().unwrap()) * missing_bins as u64;
+                    let finished_at = IsoDateTime(Utc.timestamp_nanos(u as i64));
+                    (missing_bins, Some(continue_at), Some(finished_at))
                 }
-            } else {
-                (0, None, None)
+                None => {
+                    warn!("can not determine continue-at parameters");
+                    (0, None, None)
+                }
             }
         } else {
             (0, None, None)

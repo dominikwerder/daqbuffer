@@ -10,9 +10,6 @@ use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StatsItem;
 use items_0::streamitem::StreamItem;
-use items_0::transform::CollectableStreamBox;
-use items_0::transform::CollectableStreamTrait;
-use items_0::transform::EventStreamTrait;
 use items_0::WithLen;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
@@ -96,10 +93,9 @@ impl Collect {
                         let coll = self.collector.get_or_insert_with(|| item.new_collector());
                         coll.ingest(&mut item);
                         if coll.len() as u64 >= self.events_max {
-                            warn!(
-                                "TODO  compute continue-at  reached events_max {} abort",
-                                self.events_max
-                            );
+                            info!("reached events_max {}", self.events_max);
+                            coll.set_continue_at_here();
+                            self.done_input = true;
                         }
                         Ok(())
                     }
@@ -125,16 +121,16 @@ impl Collect {
                         StatsItem::EventDataReadStats(_) => {}
                         StatsItem::RangeFilterStats(_) => {}
                         StatsItem::DiskStats(item) => match item {
-                            DiskStats::OpenStats(k) => {
+                            DiskStats::OpenStats(_) => {
                                 //total_duration += k.duration;
                             }
-                            DiskStats::SeekStats(k) => {
+                            DiskStats::SeekStats(_) => {
                                 //total_duration += k.duration;
                             }
-                            DiskStats::ReadStats(k) => {
+                            DiskStats::ReadStats(_) => {
                                 //total_duration += k.duration;
                             }
-                            DiskStats::ReadExactStats(k) => {
+                            DiskStats::ReadExactStats(_) => {
                                 //total_duration += k.duration;
                             }
                         },
@@ -264,7 +260,8 @@ where
                         let coll = collector.as_mut().unwrap();
                         coll.ingest(&mut item);
                         if coll.len() as u64 >= events_max {
-                            warn!("TODO  compute continue-at  reached events_max {} abort", events_max);
+                            warn!("span reached events_max {}", events_max);
+                            coll.set_continue_at_here();
                             break;
                         }
                     }
