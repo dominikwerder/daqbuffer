@@ -81,6 +81,11 @@ pub async fn search_channel_databuffer(
         };
         res.push(k);
     }
+    let res = if let Some(backend) = query.backend.as_ref() {
+        res.into_iter().filter(|x| x.backend == *backend).collect()
+    } else {
+        res
+    };
     let ret = ChannelSearchResult { channels: res };
     Ok(ret)
 }
