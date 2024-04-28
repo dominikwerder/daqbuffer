@@ -77,6 +77,8 @@ async fn timebinnable_stream(
         })
     });
 
+    #[cfg(DISABLED)]
+    #[cfg(wasm_transform)]
     let stream = if let Some(wasmname) = wasm1 {
         debug!("make wasm transform");
         use httpclient::url::Url;

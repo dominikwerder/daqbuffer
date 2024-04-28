@@ -44,22 +44,23 @@ use std::task::Poll;
 use std::time::Duration;
 use std::time::Instant;
 use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 use timeunits::*;
 use url::Url;
 
 pub const APP_JSON: &str = "application/json";
 pub const APP_JSON_LINES: &str = "application/jsonlines";
 pub const APP_OCTET: &str = "application/octet-stream";
-pub const APP_CBOR: &str = "application/cbor";
-pub const APP_CBOR_FRAMES: &str = "application/cbor-frames";
+pub const APP_CBOR_FRAMED: &str = "application/cbor-framed";
+pub const APP_JSON_FRAMED: &str = "application/json-framed";
 pub const ACCEPT_ALL: &str = "*/*";
 pub const X_DAQBUF_REQID: &str = "x-daqbuffer-request-id";
 
-pub const CONNECTION_STATUS_DIV: u64 = timeunits::DAY;
-pub const TS_MSP_GRID_UNIT: u64 = timeunits::SEC * 10;
-pub const TS_MSP_GRID_SPACING: u64 = 6 * 2;
+pub const CONNECTION_STATUS_DIV: DtMs = DtMs::from_ms_u64(1000 * 60 * 60);
+// pub const TS_MSP_GRID_UNIT: DtMs = DtMs::from_ms_u64(1000 * 10);
+// pub const TS_MSP_GRID_SPACING: u64 = 6 * 2;
 
-pub const EMIT_ACCOUNTING_SNAP: u64 = 60 * 10;
+pub const EMIT_ACCOUNTING_SNAP: DtMs = DtMs::from_ms_u64(1000 * 60 * 10);
 
 pub const DATETIME_FMT_0MS: &str = "%Y-%m-%dT%H:%M:%SZ";
 pub const DATETIME_FMT_3MS: &str = "%Y-%m-%dT%H:%M:%S.%3fZ";
@@ -67,6 +68,31 @@ pub const DATETIME_FMT_6MS: &str = "%Y-%m-%dT%H:%M:%S.%6fZ";
 pub const DATETIME_FMT_9MS: &str = "%Y-%m-%dT%H:%M:%S.%9fZ";
 
 const TEST_BACKEND: &str = "testbackend-00";
+
+pub struct OnDrop<F>
+where
+    F: FnOnce() -> (),
+{
+    f: Option<F>,
+}
+
+impl<F> OnDrop<F>
+where
+    F: FnOnce() -> (),
+{
+    pub fn new(f: F) -> Self {
+        Self { f: Some(f) }
+    }
+}
+
+impl<F> Drop for OnDrop<F>
+where
+    F: FnOnce() -> (),
+{
+    fn drop(&mut self) {
+        self.f.take().map(|x| x());
+    }
+}
 
 pub fn is_false<T>(x: T) -> bool
 where
@@ -1198,7 +1224,7 @@ impl Shape {
             )))
         } else if k == 1 {
             Ok(Shape::Scalar)
-        } else if k <= 1024 * 32 {
+        } else if k <= 1024 * 3000 {
             Ok(Shape::Wave(k))
         } else {
             Err(Error::with_public_msg_no_trace(format!(
@@ -1338,7 +1364,7 @@ where
     pub ix: [T; 2],
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct DtNano(u64);
 
 impl DtNano {
@@ -1357,8 +1383,13 @@ impl DtNano {
     pub fn ms(&self) -> u64 {
         self.0 / MS
     }
+
+    pub fn to_i64(&self) -> i64 {
+        self.0 as i64
+    }
 }
 
+#[cfg(DISABLED)]
 impl fmt::Debug for DtNano {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let sec = self.0 / SEC;
@@ -1412,7 +1443,24 @@ mod dt_nano_serde {
     }
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
+pub struct DtMs(u64);
+
+impl DtMs {
+    pub const fn from_ms_u64(x: u64) -> Self {
+        Self(x)
+    }
+
+    pub const fn ms(&self) -> u64 {
+        self.0 / MS
+    }
+
+    pub const fn to_i64(&self) -> i64 {
+        self.0 as i64
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct TsNano(pub u64);
 
 mod ts_nano_ser {
@@ -1469,36 +1517,44 @@ mod ts_nano_ser {
 }
 
 impl TsNano {
-    pub fn from_ns(ns: u64) -> Self {
+    pub const fn from_ns(ns: u64) -> Self {
         Self(ns)
     }
 
-    pub fn from_ms(ns: u64) -> Self {
+    pub const fn from_ms(ns: u64) -> Self {
         Self(MS * ns)
     }
 
-    pub fn ns(&self) -> u64 {
+    pub const fn ns(&self) -> u64 {
         self.0
     }
 
-    pub fn ms(&self) -> u64 {
+    pub const fn ms(&self) -> u64 {
         self.0 / MS
     }
 
-    pub fn sub(self, v: Self) -> Self {
+    pub const fn sub(self, v: DtNano) -> Self {
         Self(self.0 - v.0)
     }
 
-    pub fn add_ns(self, v: u64) -> Self {
+    pub const fn delta(self, v: Self) -> DtNano {
+        DtNano(self.0 - v.0)
+    }
+
+    pub const fn add_ns(self, v: u64) -> Self {
         Self(self.0 + v)
     }
 
-    pub fn mul(self, v: u64) -> Self {
+    pub const fn mul(self, v: u64) -> Self {
         Self(self.0 * v)
     }
 
-    pub fn div(self, v: u64) -> Self {
+    pub const fn div(self, v: u64) -> Self {
         Self(self.0 / v)
+    }
+
+    pub const fn to_ts_ms(self) -> TsMs {
+        TsMs::from_ms_u64(self.ms())
     }
 }
 
@@ -2294,12 +2350,40 @@ impl<Tz: TimeZone> ToNanos for DateTime<Tz> {
     }
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Eq, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
 pub struct TsMs(pub u64);
 
 impl TsMs {
-    pub fn to_u64(self) -> u64 {
+    pub const fn from_ms_u64(x: u64) -> Self {
+        Self(x)
+    }
+
+    pub const fn from_ns_u64(x: u64) -> Self {
+        Self(x / 1000000)
+    }
+
+    pub fn from_system_time(st: SystemTime) -> Self {
+        let tsunix = st.duration_since(UNIX_EPOCH).unwrap_or(Duration::ZERO);
+        let x = tsunix.as_secs() * 1000 + tsunix.subsec_millis() as u64;
+        Self::from_ms_u64(x)
+    }
+
+    pub const fn ms(self) -> u64 {
         self.0
+    }
+
+    pub const fn to_u64(self) -> u64 {
+        self.0
+    }
+
+    pub const fn to_i64(self) -> i64 {
+        self.0 as i64
+    }
+
+    pub const fn to_grid_02(self, grid: DtMs) -> (Self, DtMs) {
+        let msp = TsMs(self.0 / grid.0 * grid.0);
+        let lsp = DtMs(self.0 - msp.0);
+        (msp, lsp)
     }
 }
 
@@ -2713,6 +2797,7 @@ pub trait HasBackend {
 
 pub trait HasTimeout {
     fn timeout(&self) -> Duration;
+    fn set_timeout(&mut self, timeout: Duration);
 }
 
 pub trait FromUrl: Sized {
@@ -2748,7 +2833,12 @@ impl HasBackend for ChannelConfigQuery {
 
 impl HasTimeout for ChannelConfigQuery {
     fn timeout(&self) -> Duration {
-        Duration::from_millis(2000)
+        Duration::from_millis(10000)
+    }
+
+    fn set_timeout(&mut self, timeout: Duration) {
+        // TODO
+        // self.timeout = Some(timeout);
     }
 }
 

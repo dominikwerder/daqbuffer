@@ -1,7 +1,8 @@
 use crate::bodystream::response_err_msg;
 use crate::channelconfig::chconf_from_events_quorum;
 use crate::err::Error;
-use crate::requests::accepts_cbor_frames;
+use crate::requests::accepts_cbor_framed;
+use crate::requests::accepts_json_framed;
 use crate::requests::accepts_json_or_all;
 use crate::response;
 use crate::ToPublicResponse;
@@ -9,6 +10,7 @@ use bytes::Bytes;
 use bytes::BytesMut;
 use futures_util::future;
 use futures_util::stream;
+use futures_util::Stream;
 use futures_util::StreamExt;
 use http::Method;
 use http::StatusCode;
@@ -59,8 +61,10 @@ impl EventsHandler {
 
 async fn plain_events(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
     let url = req_uri_to_url(req.uri())?;
-    if accepts_cbor_frames(req.headers()) {
-        Ok(plain_events_cbor(url, req, ctx, node_config).await?)
+    if accepts_cbor_framed(req.headers()) {
+        Ok(plain_events_cbor_framed(url, req, ctx, node_config).await?)
+    } else if accepts_json_framed(req.headers()) {
+        Ok(plain_events_json_framed(url, req, ctx, node_config).await?)
     } else if accepts_json_or_all(req.headers()) {
         Ok(plain_events_json(url, req, ctx, node_config).await?)
     } else {
@@ -69,28 +73,58 @@ async fn plain_events(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -
     }
 }
 
-async fn plain_events_cbor(url: Url, req: Requ, ctx: &ReqCtx, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
+async fn plain_events_cbor_framed(
+    url: Url,
+    req: Requ,
+    ctx: &ReqCtx,
+    ncc: &NodeConfigCached,
+) -> Result<StreamResponse, Error> {
     let evq = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
     let ch_conf = chconf_from_events_quorum(&evq, ctx, ncc)
         .await?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
-    info!("plain_events_cbor  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
+    info!("plain_events_cbor_framed  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
-    let stream = streams::plaineventscbor::plain_events_cbor(&evq, ch_conf, ctx, Box::pin(open_bytes)).await?;
+    let stream = streams::plaineventscbor::plain_events_cbor_stream(&evq, ch_conf, ctx, Box::pin(open_bytes)).await?;
     use future::ready;
     let stream = stream
         .flat_map(|x| match x {
             Ok(y) => {
                 use bytes::BufMut;
                 let buf = y.into_inner();
-                let mut b2 = BytesMut::with_capacity(8);
+                let adv = (buf.len() + 7) / 8 * 8;
+                let pad = adv - buf.len();
+                let mut b2 = BytesMut::with_capacity(16);
                 b2.put_u32_le(buf.len() as u32);
-                stream::iter([Ok::<_, Error>(b2.freeze()), Ok(buf)])
+                b2.put_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+                let mut b3 = BytesMut::with_capacity(16);
+                b3.put_slice(&[0, 0, 0, 0, 0, 0, 0, 0][..pad]);
+                stream::iter([Ok::<_, Error>(b2.freeze()), Ok(buf), Ok(b3.freeze())])
             }
-            // TODO handle other cases
-            _ => stream::iter([Ok(Bytes::new()), Ok(Bytes::new())]),
+            Err(e) => {
+                let e = Error::with_msg_no_trace(e.to_string());
+                stream::iter([Err(e), Ok(Bytes::new()), Ok(Bytes::new())])
+            }
         })
         .filter(|x| if let Ok(x) = x { ready(x.len() > 0) } else { ready(true) });
+    let ret = response(StatusCode::OK).body(body_stream(stream))?;
+    Ok(ret)
+}
+
+async fn plain_events_json_framed(
+    url: Url,
+    req: Requ,
+    ctx: &ReqCtx,
+    ncc: &NodeConfigCached,
+) -> Result<StreamResponse, Error> {
+    let evq = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
+    let ch_conf = chconf_from_events_quorum(&evq, ctx, ncc)
+        .await?
+        .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
+    info!("plain_events_json_framed  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
+    let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
+    let stream = streams::plaineventsjson::plain_events_json_stream(&evq, ch_conf, ctx, Box::pin(open_bytes)).await?;
+    let stream = bytes_chunks_to_framed(stream);
     let ret = response(StatusCode::OK).body(body_stream(stream))?;
     Ok(ret)
 }
@@ -132,4 +166,33 @@ async fn plain_events_json(
     let ret = response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?;
     info!("{self_name}  response created");
     Ok(ret)
+}
+
+fn bytes_chunks_to_framed<S, T>(stream: S) -> impl Stream<Item = Result<Bytes, Error>>
+where
+    S: Stream<Item = Result<T, err::Error>>,
+    T: Into<Bytes>,
+{
+    use future::ready;
+    stream
+        // TODO unify this map to padded bytes for both json and cbor output
+        .flat_map(|x| match x {
+            Ok(y) => {
+                use bytes::BufMut;
+                let buf = y.into();
+                let adv = (buf.len() + 7) / 8 * 8;
+                let pad = adv - buf.len();
+                let mut b2 = BytesMut::with_capacity(16);
+                b2.put_u32_le(buf.len() as u32);
+                b2.put_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+                let mut b3 = BytesMut::with_capacity(16);
+                b3.put_slice(&[0, 0, 0, 0, 0, 0, 0, 0][..pad]);
+                stream::iter([Ok::<_, Error>(b2.freeze()), Ok(buf), Ok(b3.freeze())])
+            }
+            Err(e) => {
+                let e = Error::with_msg_no_trace(e.to_string());
+                stream::iter([Err(e), Ok(Bytes::new()), Ok(Bytes::new())])
+            }
+        })
+        .filter(|x| if let Ok(x) = x { ready(x.len() > 0) } else { ready(true) })
 }

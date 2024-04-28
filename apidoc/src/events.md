@@ -6,10 +6,6 @@ Event data can be fetched like this:
 curl "https://data-api.psi.ch/api/4/events?backend=sf-databuffer&channelName=S10BC01-DBPM010:Q1&begDate=2024-02-15T12:41:00Z&endDate=2024-02-15T12:42:00Z"
 ```
 
-Note: if the channel changes data type within the requested date range, then the
-server will return values for that data type which covers the requested
-date range best.
-
 Parameters:
 - `backend`: the backend that the channel exists in, e.g. `sf-databuffer`.
 - `channelName`: the name of the channel.
@@ -17,3 +13,74 @@ Parameters:
 - `endDate`: end of the time range, exclusive.
 - `allowLargeResult=true` indicates that the client is prepared to accept also larger responses compared to
   what might be suitable for a typical browser.
+
+By default, events are returned as a json object.
+
+Note: if the channel changes data type within the requested date range, then the
+server will return values for that data type which covers the requested
+date range best.
+
+Note: if the server decides that the requested dataset gets "too large" then the response will contain
+the key `continueAt` which indicates that the response is incomplete and that the caller should
+issue another request with `begDate` as given by `continueAt`.
+
+
+## Events as framed JSON stream
+
+To download larger amounts of JSON data it recommended to use the `json-framed` content encoding.
+Using this encoding, the server can send the requested events as a stream of json objects, where each
+json object contains a batch of events.
+This content encoding is triggered via the `Accept: application/json-framed` header in the request.
+
+The returned body looks like:
+```
+[JSON-frame]
+[JSON-frame]
+[JSON-frame]
+... etc
+```
+
+where each `[JSON-frame]` looks like:
+```
+[length N of the following JSON object: uint32 little-endian]
+[reserved: 12 bytes of zero-padding]
+[JSON object: N bytes]
+[padding: P zero-bytes, 0 <= P <= 7, such that (N + P) mod 8 = 0]
+```
+
+
+## Events as framed CBOR stream
+
+The Concise Binary Object Representation (RFC 8949) can be a more compact option to transfer data.
+Usage of the `Accept: application/cbor-framed` header in the request causes the api to return
+the data as a stream of CBOR objects. Each CBOR-object will contain a batch of events.
+
+The http body of the response then looks like this:
+
+```
+[CBOR-frame]
+[CBOR-frame]
+[CBOR-frame]
+... etc
+```
+
+where each `[CBOR-frame]` looks like:
+```
+[length N of the following CBOR object: uint32 little-endian]
+[reserved: 12 bytes of zero-padding]
+[CBOR object: N bytes]
+[padding: P zero-bytes, 0 <= P <= 7, such that (N + P) mod 8 = 0]
+```
+
+Most returned CBOR objects are data objects and look like this in equivalent json notation:
+```json
+{
+  "tss": [1, 2, 3, 4],
+  "values": [42, 60, 55, 20]
+}
+```
+where `tss` is the array of timestamps and `values` the corresponding array of values.
+
+Note: "data" CBOR objects are currently identified by the presence of the `tss` key. There can be
+other types of CBOR objects, like log or statistics.
+The next update will add a type-tag to discriminate them, but for now, look for the key `tss`.

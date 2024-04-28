@@ -105,6 +105,7 @@ pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion
     use std::str::FromStr;
     let bind_addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen(), node_config.node.port))?;
 
+    // tokio::net::TcpSocket::new_v4()?.listen(200)?
     let listener = TcpListener::bind(bind_addr).await?;
     loop {
         let (stream, addr) = if let Ok(x) = listener.accept().await {
@@ -323,6 +324,8 @@ async fn http_service_inner(
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::AmbigiousChannelNames::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
+    } else if let Some(h) = api4::accounting::AccountingToplistCounts::handler(&req) {
+        Ok(h.handle(req, ctx, &node_config).await?)
     } else if let Some(h) = api4::accounting::AccountingIngestedBytes::handler(&req) {
         Ok(h.handle(req, ctx, &node_config).await?)
     } else if path == "/api/4/prebinned" {

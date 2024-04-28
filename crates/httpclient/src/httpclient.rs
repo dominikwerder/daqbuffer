@@ -194,6 +194,8 @@ pub enum Error {
     Http,
 }
 
+impl std::error::Error for Error {}
+
 impl From<std::io::Error> for Error {
     fn from(_: std::io::Error) -> Self {
         Self::IO
@@ -324,13 +326,9 @@ pub async fn connect_client(uri: &http::Uri) -> Result<SendRequest<StreamBody>, 
 pub async fn read_body_bytes(mut body: hyper::body::Incoming) -> Result<Bytes, Error> {
     let mut buf = BytesMut::new();
     while let Some(x) = body.frame().await {
-        match x {
-            Ok(mut x) => {
-                if let Some(x) = x.data_mut() {
-                    buf.put(x);
-                }
-            }
-            Err(e) => return Err(e.into()),
+        let mut frame = x?;
+        if let Some(x) = frame.data_mut() {
+            buf.put(x);
         }
     }
     Ok(buf.freeze())

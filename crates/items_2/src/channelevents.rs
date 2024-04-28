@@ -915,6 +915,16 @@ impl Events for ChannelEvents {
         }
     }
 
+    fn to_json_vec_u8(&self) -> Vec<u8> {
+        match self {
+            ChannelEvents::Events(item) => item.to_json_vec_u8(),
+            ChannelEvents::Status(item) => {
+                error!("TODO convert status to json");
+                Vec::new()
+            }
+        }
+    }
+
     fn to_cbor_vec_u8(&self) -> Vec<u8> {
         match self {
             ChannelEvents::Events(item) => item.to_cbor_vec_u8(),

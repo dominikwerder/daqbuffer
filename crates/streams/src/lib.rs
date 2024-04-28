@@ -7,6 +7,7 @@ pub mod firsterr;
 pub mod frames;
 pub mod generators;
 pub mod itemclone;
+pub mod json_stream;
 pub mod lenframed;
 pub mod needminbuffer;
 pub mod plaineventscbor;

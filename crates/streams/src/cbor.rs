@@ -23,6 +23,9 @@ use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 
+const FRAME_HEAD_LEN: usize = 16;
+const FRAME_PAYLOAD_MAX: u32 = 1024 * 1024 * 80;
+
 trait ErrConv<T> {
     fn ec(self) -> Result<T, Error>;
 }
@@ -62,6 +65,7 @@ impl From<CborBytes> for Bytes {
 
 pub type CborStream = Pin<Box<dyn Stream<Item = Result<CborBytes, Error>> + Send>>;
 
+// TODO move this type decl because it is not specific to cbor
 pub type SitemtyDynEventsStream =
     Pin<Box<dyn Stream<Item = Result<StreamItem<RangeCompletableItem<Box<dyn Events>>>, Error>> + Send>>;
 
@@ -143,29 +147,36 @@ impl<S> FramedBytesToSitemtyDynEventsStream<S> {
             inp,
             scalar_type,
             shape,
-            buf: BytesMut::with_capacity(1024 * 64),
+            buf: BytesMut::with_capacity(1024 * 256),
         }
     }
 
     fn try_parse(&mut self) -> Result<Option<Sitemty<Box<dyn Events>>>, Error> {
         // debug!("try_parse {}", self.buf.len());
-        if self.buf.len() < 4 {
+        if self.buf.len() < FRAME_HEAD_LEN {
             return Ok(None);
         }
         let n = u32::from_le_bytes(self.buf[..4].try_into()?);
-        if n > 1024 * 1024 * 40 {
+        if n > FRAME_PAYLOAD_MAX {
             let e = Error::with_msg_no_trace(format!("frame too large {n}"));
             error!("{e}");
             return Err(e);
         }
-        if self.buf.len() < 4 + n as usize {
+        let frame_len = FRAME_HEAD_LEN + n as usize;
+        let adv = (frame_len + 7) / 8 * 8;
+        assert!(adv % 8 == 0);
+        assert!(adv >= frame_len);
+        assert!(adv < 8 + frame_len);
+        if self.buf.len() < adv {
             // debug!("not enough  {}  {}", n, self.buf.len());
             return Ok(None);
         }
-        let buf = &self.buf[4..4 + n as usize];
+        let buf = &self.buf[FRAME_HEAD_LEN..frame_len];
         let val: ciborium::Value = ciborium::from_reader(std::io::Cursor::new(buf)).map_err(Error::from_string)?;
         // debug!("decoded ciborium value {val:?}");
         let item = if let Some(map) = val.as_map() {
+            let keys: Vec<&str> = map.iter().map(|k| k.0.as_text().unwrap_or("(none)")).collect();
+            debug!("keys {keys:?}");
             if let Some(x) = map.get(0) {
                 if let Some(y) = x.0.as_text() {
                     if y == "rangeFinal" {
@@ -196,9 +207,10 @@ impl<S> FramedBytesToSitemtyDynEventsStream<S> {
             Some(x)
         } else {
             let item = decode_cbor_to_box_events(buf, &self.scalar_type, &self.shape)?;
+            debug!("decoded boxed events  len {}", item.len());
             Some(StreamItem::DataItem(RangeCompletableItem::Data(item)))
         };
-        self.buf.advance(4 + n as usize);
+        self.buf.advance(adv);
         if let Some(x) = item {
             Ok(Some(Ok(x)))
         } else {

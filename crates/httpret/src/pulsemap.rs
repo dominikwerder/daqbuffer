@@ -845,6 +845,11 @@ impl HasTimeout for MapPulseQuery {
     fn timeout(&self) -> Duration {
         MAP_PULSE_QUERY_TIMEOUT
     }
+
+    fn set_timeout(&mut self, timeout: Duration) {
+        // TODO
+        // self.timeout = Some(timeout);
+    }
 }
 
 impl FromUrl for MapPulseQuery {

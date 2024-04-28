@@ -1,9 +1,11 @@
 pub mod channelconfig;
+pub mod channelinfo;
 pub mod query;
 pub mod scan;
 pub mod search;
 
 pub mod pg {
+    pub use tokio_postgres::types::Type;
     pub use tokio_postgres::Client;
     pub use tokio_postgres::Error;
     pub use tokio_postgres::NoTls;

@@ -48,22 +48,22 @@ macro_rules! trace2 {
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
-pub struct EventsDim1<NTY> {
+pub struct EventsDim1<STY> {
     pub tss: VecDeque<u64>,
     pub pulses: VecDeque<u64>,
-    pub values: VecDeque<Vec<NTY>>,
+    pub values: VecDeque<Vec<STY>>,
 }
 
-impl<NTY> EventsDim1<NTY> {
+impl<STY> EventsDim1<STY> {
     #[inline(always)]
-    pub fn push(&mut self, ts: u64, pulse: u64, value: Vec<NTY>) {
+    pub fn push(&mut self, ts: u64, pulse: u64, value: Vec<STY>) {
         self.tss.push_back(ts);
         self.pulses.push_back(pulse);
         self.values.push_back(value);
     }
 
     #[inline(always)]
-    pub fn push_front(&mut self, ts: u64, pulse: u64, value: Vec<NTY>) {
+    pub fn push_front(&mut self, ts: u64, pulse: u64, value: Vec<STY>) {
         self.tss.push_front(ts);
         self.pulses.push_front(pulse);
         self.values.push_front(value);
@@ -78,25 +78,25 @@ impl<NTY> EventsDim1<NTY> {
     }
 }
 
-impl<NTY> AsAnyRef for EventsDim1<NTY>
+impl<STY> AsAnyRef for EventsDim1<STY>
 where
-    NTY: ScalarOps,
+    STY: ScalarOps,
 {
     fn as_any_ref(&self) -> &dyn Any {
         self
     }
 }
 
-impl<NTY> AsAnyMut for EventsDim1<NTY>
+impl<STY> AsAnyMut for EventsDim1<STY>
 where
-    NTY: ScalarOps,
+    STY: ScalarOps,
 {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }
 
-impl<NTY> Empty for EventsDim1<NTY> {
+impl<STY> Empty for EventsDim1<STY> {
     fn empty() -> Self {
         Self {
             tss: VecDeque::new(),
@@ -106,9 +106,9 @@ impl<NTY> Empty for EventsDim1<NTY> {
     }
 }
 
-impl<NTY> fmt::Debug for EventsDim1<NTY>
+impl<STY> fmt::Debug for EventsDim1<STY>
 where
-    NTY: fmt::Debug,
+    STY: fmt::Debug,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         if false {
@@ -133,7 +133,7 @@ where
     }
 }
 
-impl<NTY> WithLen for EventsDim1<NTY> {
+impl<STY> WithLen for EventsDim1<STY> {
     fn len(&self) -> usize {
         self.tss.len()
     }
@@ -167,13 +167,13 @@ impl<STY: ScalarOps> HasTimestampDeque for EventsDim1<STY> {
 
 items_0::impl_range_overlap_info_events!(EventsDim1);
 
-impl<NTY> TimeBinnableType for EventsDim1<NTY>
+impl<STY> TimeBinnableType for EventsDim1<STY>
 where
-    NTY: ScalarOps,
+    STY: ScalarOps,
 {
     // TODO
-    type Output = BinsDim0<NTY>;
-    type Aggregator = EventsDim1Aggregator<NTY>;
+    type Output = BinsDim0<STY>;
+    type Aggregator = EventsDim1Aggregator<STY>;
 
     fn aggregator(range: SeriesRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
         let self_name = std::any::type_name::<Self>();
@@ -313,38 +313,38 @@ impl<STY: ScalarOps> EventsDim1CollectorOutput<STY> {
     }
 }
 
-impl<NTY> AsAnyRef for EventsDim1CollectorOutput<NTY>
+impl<STY> AsAnyRef for EventsDim1CollectorOutput<STY>
 where
-    NTY: ScalarOps,
+    STY: ScalarOps,
 {
     fn as_any_ref(&self) -> &dyn Any {
         self
     }
 }
 
-impl<NTY> AsAnyMut for EventsDim1CollectorOutput<NTY>
+impl<STY> AsAnyMut for EventsDim1CollectorOutput<STY>
 where
-    NTY: ScalarOps,
+    STY: ScalarOps,
 {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 }
 
-impl<NTY: ScalarOps> WithLen for EventsDim1CollectorOutput<NTY> {
+impl<STY: ScalarOps> WithLen for EventsDim1CollectorOutput<STY> {
     fn len(&self) -> usize {
         self.values.len()
     }
 }
 
-impl<NTY: ScalarOps> ToJsonResult for EventsDim1CollectorOutput<NTY> {
+impl<STY: ScalarOps> ToJsonResult for EventsDim1CollectorOutput<STY> {
     fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error> {
         let k = serde_json::to_value(self)?;
         Ok(Box::new(k))
     }
 }
 
-impl<NTY: ScalarOps> Collected for EventsDim1CollectorOutput<NTY> {}
+impl<STY: ScalarOps> Collected for EventsDim1CollectorOutput<STY> {}
 
 impl<STY: ScalarOps> CollectorType for EventsDim1Collector<STY> {
     type Input = EventsDim1<STY>;
@@ -442,23 +442,23 @@ impl<STY: ScalarOps> CollectableType for EventsDim1<STY> {
 }
 
 #[derive(Debug)]
-pub struct EventsDim1Aggregator<NTY> {
+pub struct EventsDim1Aggregator<STY> {
     range: SeriesRange,
     count: u64,
-    min: NTY,
-    max: NTY,
+    min: STY,
+    max: STY,
     sumc: u64,
     sum: f32,
     int_ts: u64,
     last_seen_ts: u64,
-    last_seen_val: Option<NTY>,
+    last_seen_val: Option<STY>,
     did_min_max: bool,
     do_time_weight: bool,
     events_taken_count: u64,
     events_ignored_count: u64,
 }
 
-impl<NTY> Drop for EventsDim1Aggregator<NTY> {
+impl<STY> Drop for EventsDim1Aggregator<STY> {
     fn drop(&mut self) {
         // TODO collect as stats for the request context:
         trace!(
@@ -469,7 +469,7 @@ impl<NTY> Drop for EventsDim1Aggregator<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> EventsDim1Aggregator<NTY> {
+impl<STY: ScalarOps> EventsDim1Aggregator<STY> {
     pub fn new(range: SeriesRange, do_time_weight: bool) -> Self {
         /*let int_ts = range.beg;
         Self {
@@ -491,7 +491,7 @@ impl<NTY: ScalarOps> EventsDim1Aggregator<NTY> {
     }
 
     // TODO reduce clone.. optimize via more traits to factor the trade-offs?
-    fn apply_min_max(&mut self, val: NTY) {
+    fn apply_min_max(&mut self, val: STY) {
         trace!(
             "apply_min_max  val {:?}  last_val {:?}  count {}  sumc {:?}  min {:?}  max {:?}",
             val,
@@ -515,7 +515,7 @@ impl<NTY: ScalarOps> EventsDim1Aggregator<NTY> {
         }
     }
 
-    fn apply_event_unweight(&mut self, val: NTY) {
+    fn apply_event_unweight(&mut self, val: STY) {
         trace!("TODO check again result_reset_unweight");
         err::todo();
         let vf = val.as_prim_f32_b();
@@ -619,7 +619,7 @@ impl<NTY: ScalarOps> EventsDim1Aggregator<NTY> {
         todo!()
     }
 
-    fn result_reset_unweight(&mut self, range: SeriesRange, _expand: bool) -> BinsDim0<NTY> {
+    fn result_reset_unweight(&mut self, range: SeriesRange, _expand: bool) -> BinsDim0<STY> {
         /*trace!("TODO check again result_reset_unweight");
         err::todo();
         let (min, max, avg) = if self.sumc > 0 {
@@ -650,7 +650,7 @@ impl<NTY: ScalarOps> EventsDim1Aggregator<NTY> {
         todo!()
     }
 
-    fn result_reset_time_weight(&mut self, range: SeriesRange, expand: bool) -> BinsDim0<NTY> {
+    fn result_reset_time_weight(&mut self, range: SeriesRange, expand: bool) -> BinsDim0<STY> {
         // TODO check callsite for correct expand status.
         /*if expand {
             debug!("result_reset_time_weight calls apply_event_time_weight");
@@ -689,9 +689,9 @@ impl<NTY: ScalarOps> EventsDim1Aggregator<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> TimeBinnableTypeAggregator for EventsDim1Aggregator<NTY> {
-    type Input = EventsDim1<NTY>;
-    type Output = BinsDim0<NTY>;
+impl<STY: ScalarOps> TimeBinnableTypeAggregator for EventsDim1Aggregator<STY> {
+    type Input = EventsDim1<STY>;
+    type Output = BinsDim0<STY>;
 
     fn range(&self) -> &SeriesRange {
         &self.range
@@ -724,9 +724,9 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for EventsDim1Aggregator<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> TimeBinnable for EventsDim1<NTY> {
+impl<STY: ScalarOps> TimeBinnable for EventsDim1<STY> {
     fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
-        let ret = EventsDim1TimeBinner::<NTY>::new(binrange, do_time_weight).unwrap();
+        let ret = EventsDim1TimeBinner::<STY>::new(binrange, do_time_weight).unwrap();
         Box::new(ret)
     }
 
@@ -938,6 +938,17 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
         Box::new(item)
     }
 
+    fn to_json_vec_u8(&self) -> Vec<u8> {
+        let ret = EventsDim1ChunkOutput {
+            // TODO use &mut to swap the content
+            tss: self.tss.clone(),
+            pulses: self.pulses.clone(),
+            values: self.values.clone(),
+            scalar_type: STY::scalar_type_name().into(),
+        };
+        serde_json::to_vec(&ret).unwrap()
+    }
+
     fn to_cbor_vec_u8(&self) -> Vec<u8> {
         let ret = EventsDim1ChunkOutput {
             // TODO use &mut to swap the content
@@ -953,14 +964,18 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
 }
 
 #[derive(Debug)]
-pub struct EventsDim1TimeBinner<NTY: ScalarOps> {
+pub struct EventsDim1TimeBinner<STY: ScalarOps> {
     edges: VecDeque<u64>,
-    agg: EventsDim1Aggregator<NTY>,
-    ready: Option<<EventsDim1Aggregator<NTY> as TimeBinnableTypeAggregator>::Output>,
+    agg: EventsDim1Aggregator<STY>,
+    ready: Option<<EventsDim1Aggregator<STY> as TimeBinnableTypeAggregator>::Output>,
     range_complete: bool,
 }
 
-impl<NTY: ScalarOps> EventsDim1TimeBinner<NTY> {
+impl<STY: ScalarOps> EventsDim1TimeBinner<STY> {
+    fn type_name() -> &'static str {
+        any::type_name::<Self>()
+    }
+
     fn new(binrange: BinnedRangeEnum, do_time_weight: bool) -> Result<Self, Error> {
         /*if edges.len() < 2 {
             return Err(Error::with_msg_no_trace(format!("need at least 2 edges")));
@@ -981,6 +996,22 @@ impl<NTY: ScalarOps> EventsDim1TimeBinner<NTY> {
             range_complete: false,
         };
         Ok(ret)*/
+
+        // trace!("{}::new  binrange {:?}", Self::type_name(), binrange);
+        // let rng = binrange
+        //     .range_at(0)
+        //     .ok_or_else(|| Error::with_msg_no_trace("empty binrange"))?;
+        // let agg = EventsDim0Aggregator::new(rng, do_time_weight);
+        // let ret = Self {
+        //     binrange,
+        //     rix: 0,
+        //     rng: Some(agg.range().clone()),
+        //     agg,
+        //     ready: None,
+        //     range_final: false,
+        // };
+        // Ok(ret)
+
         todo!()
     }
 
@@ -1003,7 +1034,7 @@ impl<NTY: ScalarOps> EventsDim1TimeBinner<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> TimeBinner for EventsDim1TimeBinner<NTY> {
+impl<STY: ScalarOps> TimeBinner for EventsDim1TimeBinner<STY> {
     fn bins_ready_count(&self) -> usize {
         match &self.ready {
             Some(k) => k.len(),
@@ -1152,7 +1183,7 @@ impl<NTY: ScalarOps> TimeBinner for EventsDim1TimeBinner<NTY> {
     }
 
     fn empty(&self) -> Box<dyn TimeBinned> {
-        let ret = <EventsDim1Aggregator<NTY> as TimeBinnableTypeAggregator>::Output::empty();
+        let ret = <EventsDim1Aggregator<STY> as TimeBinnableTypeAggregator>::Output::empty();
         Box::new(ret)
     }
 

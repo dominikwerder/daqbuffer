@@ -208,6 +208,10 @@ impl HasTimeout for PlainEventsQuery {
     fn timeout(&self) -> Duration {
         self.timeout()
     }
+
+    fn set_timeout(&mut self, timeout: Duration) {
+        self.timeout = Some(timeout);
+    }
 }
 
 impl FromUrl for PlainEventsQuery {

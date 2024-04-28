@@ -965,6 +965,17 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
         Box::new(dst)
     }
 
+    fn to_json_vec_u8(&self) -> Vec<u8> {
+        let ret = EventsDim0ChunkOutput {
+            // TODO use &mut to swap the content
+            tss: self.tss.clone(),
+            pulses: self.pulses.clone(),
+            values: self.values.clone(),
+            scalar_type: STY::scalar_type_name().into(),
+        };
+        serde_json::to_vec(&ret).unwrap()
+    }
+
     fn to_cbor_vec_u8(&self) -> Vec<u8> {
         let ret = EventsDim0ChunkOutput {
             // TODO use &mut to swap the content
@@ -995,7 +1006,7 @@ impl<STY: ScalarOps> EventsDim0TimeBinner<STY> {
     }
 
     pub fn new(binrange: BinnedRangeEnum, do_time_weight: bool) -> Result<Self, Error> {
-        trace!("{}::new  binrange {binrange:?}", Self::type_name());
+        trace!("{}::new  binrange {:?}", Self::type_name(), binrange);
         let rng = binrange
             .range_at(0)
             .ok_or_else(|| Error::with_msg_no_trace("empty binrange"))?;

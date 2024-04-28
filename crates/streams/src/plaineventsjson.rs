@@ -1,4 +1,8 @@
 use crate::collect::Collect;
+use crate::firsterr::non_empty;
+use crate::firsterr::only_first_err;
+use crate::json_stream::events_stream_to_json_stream;
+use crate::json_stream::JsonStream;
 use crate::plaineventsstream::dyn_events_stream;
 use crate::tcprawclient::OpenBoxedBytesStreamsBox;
 use err::Error;
@@ -50,4 +54,18 @@ pub async fn plain_events_json(
     let jsval = serde_json::to_value(&collected)?;
     info!("plain_events_json  json serialized");
     Ok(jsval)
+}
+
+pub async fn plain_events_json_stream(
+    evq: &PlainEventsQuery,
+    ch_conf: ChannelTypeConfigGen,
+    ctx: &ReqCtx,
+    open_bytes: OpenBoxedBytesStreamsBox,
+) -> Result<JsonStream, Error> {
+    trace!("build stream");
+    let stream = dyn_events_stream(evq, ch_conf, ctx, open_bytes).await?;
+    let stream = events_stream_to_json_stream(stream);
+    let stream = non_empty(stream);
+    let stream = only_first_err(stream);
+    Ok(Box::pin(stream))
 }

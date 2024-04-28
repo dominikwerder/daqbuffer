@@ -26,6 +26,7 @@ pub async fn dyn_events_stream(
     ctx: &ReqCtx,
     open_bytes: OpenBoxedBytesStreamsBox,
 ) -> Result<DynEventsStream, Error> {
+    trace!("dyn_events_stream begin");
     let subq = make_sub_query(
         ch_conf,
         evq.range().clone(),
@@ -78,6 +79,21 @@ pub async fn dyn_events_stream(
     }
 }
 
+#[cfg(not(wasm_transform))]
+async fn transform_wasm<INP>(
+    stream: INP,
+    _wasmname: &str,
+    _ctx: &ReqCtx,
+) -> Result<impl Stream<Item = Result<StreamItem<RangeCompletableItem<Box<dyn Events>>>, Error>> + Send, Error>
+where
+    INP: Stream<Item = Result<StreamItem<RangeCompletableItem<Box<dyn Events>>>, Error>> + Send + 'static,
+{
+    let ret: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Events>>> + Send>> = Box::pin(stream);
+    Ok(ret)
+}
+
+#[cfg(DISABLED)]
+#[cfg(wasm_transform)]
 async fn transform_wasm<INP>(
     stream: INP,
     wasmname: &str,

@@ -72,6 +72,7 @@ fn extract_all_files() -> Contents {
     }
 }
 
+// .
 fn blob() -> &'static [u8] {
     include_bytes!(concat!("../../../../apidoc/book.cbor"))
 }
@@ -84,7 +85,7 @@ impl DocsHandler {
     }
 
     pub fn handler(req: &Requ) -> Option<Self> {
-        if req.uri().path().starts_with(Self::path_prefix()) {
+        if req.uri().path().starts_with(Self::path_prefix()) || req.uri().path().starts_with("/api/4/documentation") {
             Some(Self {})
         } else {
             None
@@ -93,6 +94,13 @@ impl DocsHandler {
 
     pub async fn handle(&self, req: Requ, _ctx: &ReqCtx) -> Result<StreamResponse, Error> {
         let path = req.uri().path();
+        if path.starts_with("/api/4/documentation") {
+            let ret = http::Response::builder()
+                .status(StatusCode::TEMPORARY_REDIRECT)
+                .header(http::header::LOCATION, "/api/4/docs/")
+                .body(body_empty())?;
+            return Ok(ret);
+        }
         if path == "/api/4/docs" {
             let ret = http::Response::builder()
                 .status(StatusCode::TEMPORARY_REDIRECT)

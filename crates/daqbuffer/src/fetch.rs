@@ -1,3 +1,5 @@
+use err::thiserror;
+use err::ThisError;
 use futures_util::future;
 use futures_util::StreamExt;
 use http::header;
@@ -5,35 +7,26 @@ use http::Method;
 use httpclient::body_empty;
 use httpclient::connect_client;
 use httpclient::http;
+use httpclient::http::StatusCode;
+use httpclient::http_body_util::BodyExt;
 use httpclient::hyper::Request;
 use httpclient::IncomingStream;
 use netpod::log::*;
 use netpod::ScalarType;
 use netpod::Shape;
-use netpod::APP_CBOR_FRAMES;
-use std::fmt;
+use netpod::APP_CBOR_FRAMED;
 use streams::cbor::FramedBytesToSitemtyDynEventsStream;
 use url::Url;
 
-pub struct Error {
-    msg: String,
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{}", self.msg)
-    }
-}
-
-impl<T> From<T> for Error
-where
-    T: fmt::Debug,
-{
-    fn from(value: T) -> Self {
-        Self {
-            msg: format!("{value:?}"),
-        }
-    }
+#[derive(Debug, ThisError)]
+pub enum Error {
+    Url(#[from] url::ParseError),
+    NoHostname,
+    HttpBody(#[from] http::Error),
+    HttpClient(#[from] httpclient::Error),
+    Hyper(#[from] httpclient::hyper::Error),
+    #[error("RequestFailed({0})")]
+    RequestFailed(String),
 }
 
 pub async fn fetch_cbor(url: &str, scalar_type: ScalarType, shape: Shape) -> Result<(), Error> {
@@ -42,17 +35,35 @@ pub async fn fetch_cbor(url: &str, scalar_type: ScalarType, shape: Shape) -> Res
     let req = Request::builder()
         .method(Method::GET)
         .uri(url.to_string())
-        .header(header::HOST, url.host_str().ok_or_else(|| "NoHostname")?)
-        .header(header::ACCEPT, APP_CBOR_FRAMES)
+        .header(header::HOST, url.host_str().ok_or_else(|| Error::NoHostname)?)
+        .header(header::ACCEPT, APP_CBOR_FRAMED)
         .body(body_empty())?;
     debug!("open connection to {:?}", req.uri());
     let mut send_req = connect_client(req.uri()).await?;
     let res = send_req.send_request(req).await?;
     let (head, body) = res.into_parts();
+    if head.status != StatusCode::OK {
+        let buf = httpclient::read_body_bytes(body).await?;
+        let s = String::from_utf8_lossy(&buf);
+        let e = Error::RequestFailed(format!("request failed {:?}  {}", head, s));
+        return Err(e);
+    }
     debug!("fetch_cbor  head {head:?}");
     let stream = IncomingStream::new(body);
     let stream = FramedBytesToSitemtyDynEventsStream::new(stream, scalar_type, shape);
-    let stream = stream.map(|item| info!("{item:?}"));
+    let stream = stream
+        .map(|item| {
+            info!("{item:?}");
+            item
+        })
+        .take_while({
+            let mut b = true;
+            move |item| {
+                let ret = b;
+                b = b && item.is_ok();
+                future::ready(ret)
+            }
+        });
     stream.for_each(|_| future::ready(())).await;
     Ok(())
 }

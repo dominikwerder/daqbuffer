@@ -149,6 +149,7 @@ pub trait Events:
     fn pulses(&self) -> &VecDeque<u64>;
     fn frame_type_id(&self) -> u32;
     fn to_min_max_avg(&mut self) -> Box<dyn Events>;
+    fn to_json_vec_u8(&self) -> Vec<u8>;
     fn to_cbor_vec_u8(&self) -> Vec<u8>;
 }
 
@@ -267,6 +268,10 @@ impl Events for Box<dyn Events> {
 
     fn to_min_max_avg(&mut self) -> Box<dyn Events> {
         Events::to_min_max_avg(self.as_mut())
+    }
+
+    fn to_json_vec_u8(&self) -> Vec<u8> {
+        Events::to_json_vec_u8(self.as_ref())
     }
 
     fn to_cbor_vec_u8(&self) -> Vec<u8> {

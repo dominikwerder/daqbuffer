@@ -2,8 +2,22 @@ use crate::cbor::CborBytes;
 use futures_util::future;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items_0::WithLen;
 
-pub fn non_empty<S, E>(inp: S) -> impl Stream<Item = Result<CborBytes, E>>
+pub fn non_empty<S, T, E>(inp: S) -> impl Stream<Item = Result<T, E>>
+where
+    S: Stream<Item = Result<T, E>>,
+    T: WithLen,
+{
+    inp.filter(|x| {
+        future::ready(match x {
+            Ok(x) => x.len() > 0,
+            Err(_) => true,
+        })
+    })
+}
+
+pub fn non_empty_nongen<S, E>(inp: S) -> impl Stream<Item = Result<CborBytes, E>>
 where
     S: Stream<Item = Result<CborBytes, E>>,
 {

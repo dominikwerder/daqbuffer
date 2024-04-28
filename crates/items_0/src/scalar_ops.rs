@@ -169,8 +169,9 @@ fn equal_string(a: &String, b: &String) -> bool {
     a == b
 }
 
-fn add_int<T: ops::AddAssign>(a: &mut T, b: &T) {
-    ops::AddAssign::add_assign(a, todo!());
+fn _add_int<T: ops::AddAssign>(a: &mut T, b: &T) {
+    let _ = b;
+    ops::AddAssign::add_assign(a, err::todoval());
 }
 
 macro_rules! add_int {
@@ -193,22 +194,36 @@ macro_rules! add_string {
 
 macro_rules! div_int {
     ($a:expr, $b:expr) => {
+        // TODO what is this used for?
+
         // TODO for average calculation, the accumulator must be large enough!
         // Use u64 for all ints, and f32 for all floats.
         // Therefore, the name "add" is too general.
         //*$a /= $b;
+        {
+            let _ = $a;
+            let _ = $b;
+        }
     };
 }
 
 macro_rules! div_bool {
     ($a:expr, $b:expr) => {
-        //
+        // TODO what is this used for?
+        {
+            let _ = $a;
+            let _ = $b;
+        }
     };
 }
 
 macro_rules! div_string {
     ($a:expr, $b:expr) => {
-        //
+        // TODO what is this used for?
+        {
+            let _ = $a;
+            let _ = $b;
+        }
     };
 }
 

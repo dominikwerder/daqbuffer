@@ -190,6 +190,8 @@ async fn proxy_http_service_inner(
         h.handle(req, ctx, &proxy_config, service_version).await
     } else if path == "/api/4/backends" {
         Ok(backends(req, proxy_config).await?)
+    } else if let Some(h) = api4::backend::BackendListHandler::handler(&req) {
+        h.handle(req, ctx, &proxy_config).await
     } else if let Some(h) = api4::ChannelSearchAggHandler::handler(&req) {
         h.handle(req, ctx, &proxy_config).await
     } else if let Some(h) = api4::events::EventsHandler::handler(&req) {
@@ -499,19 +501,31 @@ pub async fn proxy_backend_query<QT>(
 where
     QT: fmt::Debug + FromUrl + AppendToUrl + HasBackend + HasTimeout,
 {
-    let (head, _body) = req.into_parts();
-    // TODO will we need some mechanism to modify the necessary url?
-    let url = req_uri_to_url(&head.uri)?;
-    let query = match QT::from_url(&url) {
+    let url = req_uri_to_url(req.uri())?;
+    let mut query = match QT::from_url(&url) {
         Ok(k) => k,
         Err(_) => {
-            let msg = format!("malformed request or missing parameters  {head:?}");
+            let msg = format!("malformed request or missing parameters  {:?}", req.uri());
             warn!("{msg}");
             return Ok(response_err_msg(StatusCode::BAD_REQUEST, msg)?);
         }
     };
-    debug!("proxy_backend_query  {query:?}  {head:?}");
-    let query_host = get_query_host_for_backend(&query.backend(), proxy_config)?;
+    debug!("proxy_backend_query  {:?}  {:?}", query, req.uri());
+    let timeout = query.timeout();
+    let timeout_next = timeout.saturating_sub(Duration::from_millis(1000));
+    debug!("timeout {timeout:?}  timeout_next {timeout_next:?}");
+    query.set_timeout(timeout_next);
+    let query = query;
+    let backend = query.backend();
+    let uri_path = proxy_backend_query_helper_uri_path(req.uri().path(), &url);
+    debug!("uri_path {uri_path}");
+    let query_host = get_query_host_for_backend(backend, proxy_config)?;
+    let mut url = Url::parse(&format!("{}{}", query_host, uri_path))?;
+    query.append_to_url(&mut url);
+    proxy_backend_query_inner(req.headers(), url, timeout, ctx, proxy_config).await
+}
+
+fn proxy_backend_query_helper_uri_path(path: &str, url: &Url) -> String {
     // TODO remove this special case
     // SPECIAL CASE:
     // Since the inner proxy is not yet handling map-pulse requests without backend,
@@ -519,7 +533,7 @@ where
     // Instead, url needs to get parsed and formatted.
     // In general, the caller of this function should be able to provide a url, or maybe
     // better a closure so that the url can even depend on backend.
-    let uri_path: String = if url.as_str().contains("/map/pulse/") {
+    if url.as_str().contains("/map/pulse/") {
         match MapPulseQuery::from_url(&url) {
             Ok(qu) => {
                 debug!("qu {qu:?}");
@@ -531,26 +545,30 @@ where
             }
         }
     } else {
-        head.uri.path().into()
-    };
-    debug!("uri_path {uri_path}");
-    let mut url = Url::parse(&format!("{}{}", query_host, uri_path))?;
-    query.append_to_url(&mut url);
+        path.into()
+    }
+}
 
-    let mut req = Request::builder()
+pub async fn proxy_backend_query_inner(
+    headers: &http::HeaderMap,
+    url: Url,
+    timeout: Duration,
+    ctx: &ReqCtx,
+    _proxy_config: &ProxyConfig,
+) -> Result<StreamResponse, Error> {
+    let host = url
+        .host_str()
+        .ok_or_else(|| Error::with_msg_no_trace("no host in url"))?;
+    let mut req2 = Request::builder()
         .method(http::Method::GET)
         .uri(url.to_string())
-        .header(
-            header::HOST,
-            url.host_str()
-                .ok_or_else(|| Error::with_msg_no_trace("no host in url"))?,
-        )
+        .header(header::HOST, host)
         .header(X_DAQBUF_REQID, ctx.reqid());
     {
-        let hs = req
+        let hs = req2
             .headers_mut()
             .ok_or_else(|| Error::with_msg_no_trace("can not set headers"))?;
-        for (hn, hv) in &head.headers {
+        for (hn, hv) in headers {
             if hn == header::HOST {
             } else if hn == X_DAQBUF_REQID {
             } else {
@@ -558,23 +576,27 @@ where
             }
         }
     }
-    debug!("send request {req:?}");
-    let req = req.body(body_empty())?;
+
+    debug!("send request {req2:?}");
+    let req2 = req2.body(body_empty())?;
 
     let fut = async move {
-        debug!("requesting  {:?}  {:?}  {:?}", req.method(), req.uri(), req.headers());
-        let mut send_req = httpclient::httpclient::connect_client(req.uri()).await?;
-        let res = send_req.send_request(req).await?;
+        debug!(
+            "requesting  {:?}  {:?}  {:?}",
+            req2.method(),
+            req2.uri(),
+            req2.headers()
+        );
+        let mut send_req = httpclient::httpclient::connect_client(req2.uri()).await?;
+        let res = send_req.send_request(req2).await?;
         Ok::<_, Error>(res)
     };
 
-    let res = tokio::time::timeout(Duration::from_millis(5000), fut)
-        .await
-        .map_err(|_| {
-            let e = Error::with_msg_no_trace(format!("timeout trying to make sub request"));
-            warn!("{e}");
-            e
-        })??;
+    let res = tokio::time::timeout(timeout, fut).await.map_err(|_| {
+        let e = Error::with_msg_no_trace(format!("timeout trying to make sub request"));
+        warn!("{e}");
+        e
+    })??;
 
     {
         use bytes::Bytes;

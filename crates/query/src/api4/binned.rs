@@ -160,6 +160,10 @@ impl HasTimeout for BinnedQuery {
     fn timeout(&self) -> Duration {
         self.timeout_value()
     }
+
+    fn set_timeout(&mut self, timeout: Duration) {
+        self.timeout = Some(timeout);
+    }
 }
 
 impl FromUrl for BinnedQuery {

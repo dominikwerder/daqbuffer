@@ -1,6 +1,5 @@
 use crate::framable::FrameType;
 use crate::merger::Mergeable;
-use bitshuffle::bitshuffle_decompress;
 use bytes::BytesMut;
 use err::thiserror;
 use err::ThisError;
@@ -281,11 +280,12 @@ fn decompress(databuf: &[u8], type_size: u32) -> Result<Vec<u8>, DecompError> {
         ele_count_2,
         ele_count_exp
     );
-    let mut decomp = Vec::with_capacity(type_size as usize * ele_count as usize);
+    let mut decomp: Vec<u8> = Vec::with_capacity(type_size as usize * ele_count as usize);
     unsafe {
         decomp.set_len(decomp.capacity());
     }
-    match bitshuffle_decompress(&databuf[12..], &mut decomp, ele_count as _, type_size as _, 0) {
+    // #[cfg(DISABLED)]
+    match bitshuffle::bitshuffle_decompress(&databuf[12..], &mut decomp, ele_count as _, type_size as _, 0) {
         Ok(c1) => {
             if 12 + c1 != databuf.len() {
                 Err(DecompError::UnusedBytes)
@@ -299,6 +299,7 @@ fn decompress(databuf: &[u8], type_size: u32) -> Result<Vec<u8>, DecompError> {
         }
         Err(_) => Err(DecompError::BitshuffleError),
     }
+    // todo!("bitshuffle not available")
 }
 
 impl EventFull {

@@ -205,11 +205,12 @@ impl Stream for StatusStreamScylla {
             break match self.state {
                 FrState::New => {
                     let mut ts_msps = VecDeque::new();
-                    let mut ts = self.range.beg / CONNECTION_STATUS_DIV * CONNECTION_STATUS_DIV;
+                    let snap = CONNECTION_STATUS_DIV.ms() * 1000000;
+                    let mut ts = self.range.beg / snap * snap;
                     while ts < self.range.end {
                         debug!("Use ts {ts}");
                         ts_msps.push_back(ts);
-                        ts += CONNECTION_STATUS_DIV;
+                        ts += snap;
                     }
                     let st = ReadValues::new(
                         self.series,

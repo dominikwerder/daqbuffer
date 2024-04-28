@@ -150,10 +150,7 @@ Example config:
 
 The documentation of the currently running service version is served by the service itself:
 
-<https://data-api.psi.ch/api/4/documentation/>
-
-These docs are found in this repository in the directory:
-<httpret/static/documentation/>
+<https://data-api.psi.ch/api/4/docs/>
 
 
 # Setup Toolchain

@@ -420,3 +420,114 @@ impl Stream for GenerateF64V00 {
         }
     }
 }
+
+pub struct GenerateWaveI16V00 {
+    ivl: u64,
+    ts: u64,
+    dts: u64,
+    tsend: u64,
+    node_ix: u64,
+    timeout: Option<Pin<Box<dyn Future<Output = ()> + Send>>>,
+    do_throttle: bool,
+    done: bool,
+    done_range_final: bool,
+}
+
+impl GenerateWaveI16V00 {
+    pub fn self_name() -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
+    pub fn new(node_ix: u64, node_count: u64, range: SeriesRange, one_before_range: bool) -> Self {
+        let range = match range {
+            SeriesRange::TimeRange(k) => k,
+            SeriesRange::PulseRange(_) => todo!(),
+        };
+        let ivl = MS * 100;
+        let dts = ivl * node_count as u64;
+        let ts = (range.beg / ivl + node_ix - if one_before_range { 1 } else { 0 }) * ivl;
+        let tsend = range.end;
+        debug!(
+            "{}::new  ivl {}  dts {}  ts {}  one_before_range {}",
+            Self::self_name(),
+            ivl,
+            dts,
+            ts,
+            one_before_range
+        );
+        Self {
+            ivl,
+            ts,
+            dts,
+            tsend,
+            node_ix,
+            timeout: None,
+            do_throttle: false,
+            done: false,
+            done_range_final: false,
+        }
+    }
+
+    fn make_batch(&mut self) -> Sitemty<ChannelEvents> {
+        type T = i16;
+        let mut item = EventsDim1::empty();
+        let mut ts = self.ts;
+        loop {
+            if self.ts >= self.tsend || item.byte_estimate() > 1024 * 20 {
+                break;
+            }
+            let pulse = ts;
+            let ampl = ((ts / self.ivl) as f32).sin() + 2.;
+            let mut value = Vec::new();
+            let pi = std::f32::consts::PI;
+            for i in 0..21 {
+                let x = ((-pi + (2. * pi / 20.) * i as f32).cos() + 1.1) * ampl;
+                value.push(x as T);
+            }
+            if false {
+                info!(
+                    "v01  node {}  made event  ts {}  pulse {}  value {:?}",
+                    self.node_ix, ts, pulse, value
+                );
+            }
+            item.push(ts, pulse, value);
+            ts += self.dts;
+        }
+        self.ts = ts;
+        trace!("generated  len {}", item.len());
+        let w = ChannelEvents::Events(Box::new(item) as _);
+        let w = sitem_data(w);
+        w
+    }
+}
+
+impl Stream for GenerateWaveI16V00 {
+    type Item = Sitemty<ChannelEvents>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        loop {
+            break if self.done {
+                Ready(None)
+            } else if self.ts >= self.tsend {
+                self.done = true;
+                self.done_range_final = true;
+                Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
+            } else if !self.do_throttle {
+                // To use the generator without throttling, use this scope
+                Ready(Some(self.make_batch()))
+            } else if let Some(fut) = self.timeout.as_mut() {
+                match fut.poll_unpin(cx) {
+                    Ready(()) => {
+                        self.timeout = None;
+                        Ready(Some(self.make_batch()))
+                    }
+                    Pending => Pending,
+                }
+            } else {
+                self.timeout = Some(Box::pin(tokio::time::sleep(Duration::from_millis(2))));
+                continue;
+            };
+        }
+    }
+}

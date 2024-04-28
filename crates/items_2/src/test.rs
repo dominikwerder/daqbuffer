@@ -1,5 +1,7 @@
 #[cfg(test)]
 pub mod eventsdim0;
+#[cfg(test)]
+pub mod eventsdim1;
 
 use crate::binnedcollected::BinnedCollected;
 use crate::binsdim0::BinsDim0CollectedResult;

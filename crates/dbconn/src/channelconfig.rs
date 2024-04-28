@@ -58,6 +58,7 @@ pub async fn chconf_best_matching_for_name_and_range(
             let tsc: DateTime<Utc> = r.get(0);
             let series: i64 = r.get(1);
             let scalar_type: i32 = r.get(2);
+            // TODO can I get a slice from psql driver?
             let shape_dims: Vec<i32> = r.get(3);
             let series = series as u64;
             let _scalar_type = ScalarType::from_scylla_i32(scalar_type)?;
@@ -72,12 +73,15 @@ pub async fn chconf_best_matching_for_name_and_range(
         let ch_conf = chconf_for_series(backend, rows[res].1, ncc).await?;
         Ok(ch_conf)
     } else {
-        let row = res.first().unwrap();
-        let name: String = row.get(0);
-        let series = row.get::<_, i64>(1) as u64;
-        let scalar_type = ScalarType::from_dtype_index(row.get::<_, i32>(2) as u8)?;
+        let r = res.first().unwrap();
+        let _tsc: DateTime<Utc> = r.get(0);
+        let series: i64 = r.get(1);
+        let scalar_type: i32 = r.get(2);
         // TODO can I get a slice from psql driver?
-        let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(3))?;
+        let shape_dims: Vec<i32> = r.get(3);
+        let series = series as u64;
+        let scalar_type = ScalarType::from_scylla_i32(scalar_type)?;
+        let shape = Shape::from_scylla_shape_dims(&shape_dims)?;
         let ret = ChConf::new(backend, series, scalar_type, shape, name);
         Ok(ret)
     }
