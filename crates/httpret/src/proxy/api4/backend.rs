@@ -25,7 +25,14 @@ impl BackendListHandler {
         if req.method() == Method::GET {
             if accepts_json_or_all(req.headers()) {
                 let res = serde_json::json!({
-                    "backends_available": ["sf-databuffer"]
+                    "backends_available": [
+                        {
+                            "name": "sf-databuffer",
+                        },
+                        {
+                            "name": "sf-imagebuffer",
+                        },
+                    ]
                 });
                 let body = serde_json::to_string(&res)?;
                 Ok(response(StatusCode::OK).body(body_string(body))?)

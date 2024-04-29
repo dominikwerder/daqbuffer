@@ -1,4 +1,4 @@
-use crate::cbor::FramedBytesToSitemtyDynEventsStream;
+use crate::cbor_stream::FramedBytesToSitemtyDynEventsStream;
 use crate::firsterr::only_first_err;
 use crate::frames::inmem::BoxedBytesStream;
 use crate::lenframed;

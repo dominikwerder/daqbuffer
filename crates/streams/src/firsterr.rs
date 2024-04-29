@@ -1,4 +1,4 @@
-use crate::cbor::CborBytes;
+use crate::cbor_stream::CborBytes;
 use futures_util::future;
 use futures_util::Stream;
 use futures_util::StreamExt;

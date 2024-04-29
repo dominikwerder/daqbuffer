@@ -1,5 +1,5 @@
 pub mod boxed;
-pub mod cbor;
+pub mod cbor_stream;
 pub mod collect;
 pub mod dtflags;
 pub mod filechunkread;

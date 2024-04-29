@@ -1,5 +1,5 @@
-use crate::cbor::events_stream_to_cbor_stream;
-use crate::cbor::CborStream;
+use crate::cbor_stream::events_stream_to_cbor_stream;
+use crate::cbor_stream::CborStream;
 use crate::firsterr::non_empty;
 use crate::firsterr::only_first_err;
 use crate::plaineventsstream::dyn_events_stream;

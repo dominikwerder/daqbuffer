@@ -92,6 +92,7 @@ pub async fn find_config_basics_quorum(
     ctx: &ReqCtx,
     ncc: &NodeConfigCached,
 ) -> Result<Option<ChannelTypeConfigGen>, Error> {
+    trace!("find_config_basics_quorum");
     if let Some(_cfg) = &ncc.node.sf_databuffer {
         let channel = if channel.name().is_empty() {
             if let Some(_) = channel.series() {

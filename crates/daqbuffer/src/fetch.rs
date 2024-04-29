@@ -8,14 +8,13 @@ use httpclient::body_empty;
 use httpclient::connect_client;
 use httpclient::http;
 use httpclient::http::StatusCode;
-use httpclient::http_body_util::BodyExt;
 use httpclient::hyper::Request;
 use httpclient::IncomingStream;
 use netpod::log::*;
 use netpod::ScalarType;
 use netpod::Shape;
 use netpod::APP_CBOR_FRAMED;
-use streams::cbor::FramedBytesToSitemtyDynEventsStream;
+use streams::cbor_stream::FramedBytesToSitemtyDynEventsStream;
 use url::Url;
 
 #[derive(Debug, ThisError)]

@@ -1,4 +1,4 @@
-use crate::cbor::SitemtyDynEventsStream;
+use crate::cbor_stream::SitemtyDynEventsStream;
 use bytes::Bytes;
 use err::Error;
 use futures_util::Stream;
