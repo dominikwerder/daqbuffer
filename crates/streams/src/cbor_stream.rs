@@ -22,6 +22,7 @@ use std::io::Cursor;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
+use std::time::Duration;
 
 const FRAME_HEAD_LEN: usize = 16;
 const FRAME_PAYLOAD_MAX: u32 = 1024 * 1024 * 80;
@@ -70,7 +71,20 @@ pub type SitemtyDynEventsStream =
     Pin<Box<dyn Stream<Item = Result<StreamItem<RangeCompletableItem<Box<dyn Events>>>, Error>> + Send>>;
 
 pub fn events_stream_to_cbor_stream(stream: SitemtyDynEventsStream) -> impl Stream<Item = Result<CborBytes, Error>> {
-    let stream = stream.map(|x| match x {
+    let interval = tokio::time::interval(Duration::from_millis(4000));
+    let stream = tokio_stream::StreamExt::timeout_repeating(stream, interval).map(|x| match x {
+        Ok(x) => map_events(x),
+        Err(_) => make_keepalive(),
+    });
+    let prepend = {
+        let item = make_keepalive();
+        futures_util::stream::iter([item])
+    };
+    prepend.chain(stream)
+}
+
+fn map_events(x: Result<StreamItem<RangeCompletableItem<Box<dyn Events>>>, Error>) -> Result<CborBytes, Error> {
+    match x {
         Ok(x) => match x {
             StreamItem::DataItem(x) => match x {
                 RangeCompletableItem::Data(evs) => {
@@ -130,8 +144,20 @@ pub fn events_stream_to_cbor_stream(stream: SitemtyDynEventsStream) -> impl Stre
             let item = CborBytes(bytes);
             Ok(item)
         }
-    });
-    stream
+    }
+}
+
+fn make_keepalive() -> Result<CborBytes, Error> {
+    use ciborium::cbor;
+    let item = cbor!({
+        "type" => "keepalive",
+    })
+    .map_err(Error::from_string)?;
+    let mut buf = Vec::with_capacity(64);
+    ciborium::into_writer(&item, &mut buf).map_err(Error::from_string)?;
+    let bytes = Bytes::from(buf);
+    let item = Ok(CborBytes(bytes));
+    item
 }
 
 pub struct FramedBytesToSitemtyDynEventsStream<S> {

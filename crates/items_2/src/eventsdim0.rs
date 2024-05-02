@@ -966,17 +966,31 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
     }
 
     fn to_json_vec_u8(&self) -> Vec<u8> {
-        let ret = EventsDim0ChunkOutput {
-            // TODO use &mut to swap the content
-            tss: self.tss.clone(),
-            pulses: self.pulses.clone(),
-            values: self.values.clone(),
-            scalar_type: STY::scalar_type_name().into(),
+        // TODO redesign with mut access, rename to `into_` and take the values out.
+        let mut tss = self.tss.clone();
+        let mut pulses = self.pulses.clone();
+        let mut values = self.values.clone();
+        let tss_sl = tss.make_contiguous();
+        let pulses_sl = pulses.make_contiguous();
+        let (ts_anchor_sec, ts_off_ms, ts_off_ns) = crate::ts_offs_from_abs(tss_sl);
+        let (pulse_anchor, pulse_off) = crate::pulse_offs_from_abs(pulses_sl);
+        let values = mem::replace(&mut values, VecDeque::new());
+        let ret = EventsDim0CollectorOutput {
+            ts_anchor_sec,
+            ts_off_ms,
+            ts_off_ns,
+            pulse_anchor,
+            pulse_off,
+            values,
+            range_final: false,
+            timed_out: false,
+            continue_at: None,
         };
         serde_json::to_vec(&ret).unwrap()
     }
 
     fn to_cbor_vec_u8(&self) -> Vec<u8> {
+        // TODO redesign with mut access, rename to `into_` and take the values out.
         let ret = EventsDim0ChunkOutput {
             // TODO use &mut to swap the content
             tss: self.tss.clone(),

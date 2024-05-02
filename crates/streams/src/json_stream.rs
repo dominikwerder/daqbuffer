@@ -5,9 +5,11 @@ use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::StreamItem;
+use items_0::Events;
 use items_0::WithLen;
 use netpod::log::*;
 use std::pin::Pin;
+use std::time::Duration;
 
 pub struct JsonBytes(Bytes);
 
@@ -36,7 +38,20 @@ impl From<JsonBytes> for Bytes {
 pub type JsonStream = Pin<Box<dyn Stream<Item = Result<JsonBytes, Error>> + Send>>;
 
 pub fn events_stream_to_json_stream(stream: SitemtyDynEventsStream) -> impl Stream<Item = Result<JsonBytes, Error>> {
-    let stream = stream.map(|x| match x {
+    let interval = tokio::time::interval(Duration::from_millis(4000));
+    let stream = tokio_stream::StreamExt::timeout_repeating(stream, interval).map(|x| match x {
+        Ok(x) => map_events(x),
+        Err(_) => make_keepalive(),
+    });
+    let prepend = {
+        let item = make_keepalive();
+        futures_util::stream::iter([item])
+    };
+    prepend.chain(stream)
+}
+
+fn map_events(x: Result<StreamItem<RangeCompletableItem<Box<dyn Events>>>, Error>) -> Result<JsonBytes, Error> {
+    match x {
         Ok(x) => match x {
             StreamItem::DataItem(x) => match x {
                 RangeCompletableItem::Data(evs) => {
@@ -75,6 +90,15 @@ pub fn events_stream_to_json_stream(stream: SitemtyDynEventsStream) -> impl Stre
             let item = JsonBytes(bytes);
             Ok(item)
         }
+    }
+}
+
+fn make_keepalive() -> Result<JsonBytes, Error> {
+    let item = serde_json::json!({
+        "type": "keepalive",
     });
-    stream
+    let buf = serde_json::to_vec(&item).unwrap();
+    let bytes = Bytes::from(buf);
+    let item = Ok(JsonBytes(bytes));
+    item
 }

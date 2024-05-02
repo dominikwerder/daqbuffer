@@ -48,6 +48,9 @@ where each `[JSON-frame]` looks like:
 [padding: P zero-bytes, 0 <= P <= 7, such that (N + P) mod 8 = 0]
 ```
 
+Note: "data" objects are currently identified by the presence of the `tss` key.
+There can be other types of objects, like keepalive, log or statistics.
+
 
 ## Events as framed CBOR stream
 
@@ -81,6 +84,5 @@ Most returned CBOR objects are data objects and look like this in equivalent jso
 ```
 where `tss` is the array of timestamps and `values` the corresponding array of values.
 
-Note: "data" CBOR objects are currently identified by the presence of the `tss` key. There can be
-other types of CBOR objects, like log or statistics.
-The next update will add a type-tag to discriminate them, but for now, look for the key `tss`.
+Note: "data" objects are currently identified by the presence of the `tss` key.
+There can be other types of objects, like keepalive, log or statistics.
