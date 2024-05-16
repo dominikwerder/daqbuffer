@@ -4,6 +4,7 @@ use err::Error;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
+use futures_util::StreamExt;
 use items_0::scalar_ops::ScalarOps;
 use items_0::Appendable;
 use items_0::Empty;
@@ -13,8 +14,12 @@ use items_2::channelevents::ChannelEvents;
 use items_2::eventsdim0::EventsDim0;
 use items_2::eventsdim1::EventsDim1;
 use netpod::log::*;
+use netpod::DtNano;
 use netpod::ScalarType;
 use netpod::Shape;
+use netpod::TsMs;
+use netpod::TsNano;
+use scylla::frame::response::result::Row;
 use scylla::Session as ScySession;
 use std::collections::VecDeque;
 use std::mem;
@@ -27,33 +32,42 @@ async fn find_ts_msp(
     series: u64,
     range: ScyllaSeriesRange,
     scy: Arc<ScySession>,
-) -> Result<(VecDeque<u64>, VecDeque<u64>), Error> {
-    trace!("find_ts_msp  series {}  {:?}", series, range);
+) -> Result<(VecDeque<TsMs>, VecDeque<TsMs>), Error> {
+    trace!("find_ts_msp  series {:?}  {:?}", series, range);
     let mut ret1 = VecDeque::new();
     let mut ret2 = VecDeque::new();
     // TODO use prepared statements
-    let cql = "select ts_msp from ts_msp where series = ? and ts_msp < ? order by ts_msp desc limit 2";
-    let res = scy.query(cql, (series as i64, range.beg() as i64)).await.err_conv()?;
+    let cql = "select ts_msp from st_ts_msp where series = ? and ts_msp < ? order by ts_msp desc limit 2";
+    let params = (series as i64, range.beg().ms() as i64);
+    trace!("find_ts_msp  query 1  params {:?}", params);
+    let res = scy.query(cql, params).await.err_conv()?;
     for row in res.rows_typed_or_empty::<(i64,)>() {
         let row = row.err_conv()?;
-        ret1.push_front(row.0 as u64);
+        let ts = TsMs::from_ms_u64(row.0 as u64);
+        trace!("query 1  ts_msp {}", ts);
+        ret1.push_front(ts);
     }
-    let cql = "select ts_msp from ts_msp where series = ? and ts_msp >= ? and ts_msp < ?";
-    let res = scy
-        .query(cql, (series as i64, range.beg() as i64, range.end() as i64))
-        .await
-        .err_conv()?;
+    let cql = "select ts_msp from st_ts_msp where series = ? and ts_msp >= ? and ts_msp < ?";
+    let params = (series as i64, range.beg().ms() as i64, 1 + range.end().ms() as i64);
+    trace!("find_ts_msp  query 2  params {:?}", params);
+    let res = scy.query(cql, params).await.err_conv()?;
     for row in res.rows_typed_or_empty::<(i64,)>() {
         let row = row.err_conv()?;
-        ret2.push_back(row.0 as u64);
+        let ts = TsMs::from_ms_u64(row.0 as u64);
+        trace!("query 2  ts_msp {}", ts);
+        ret2.push_back(ts);
     }
-    let cql = "select ts_msp from ts_msp where series = ? and ts_msp >= ? limit 1";
-    let res = scy.query(cql, (series as i64, range.end() as i64)).await.err_conv()?;
+    let cql = "select ts_msp from st_ts_msp where series = ? and ts_msp >= ? limit 1";
+    let params = (series as i64, range.end().ms() as i64);
+    trace!("find_ts_msp  query 3  params {:?}", params);
+    let res = scy.query(cql, params).await.err_conv()?;
     for row in res.rows_typed_or_empty::<(i64,)>() {
         let row = row.err_conv()?;
-        ret2.push_back(row.0 as u64);
+        let ts = TsMs::from_ms_u64(row.0 as u64);
+        trace!("query 3  ts_msp {}", ts);
+        ret2.push_back(ts);
     }
-    trace!("find_ts_msp  n1 {}  n2 {}", ret1.len(), ret2.len());
+    trace!("find_ts_msp  n1 {:?}  n2 {:?}", ret1.len(), ret2.len());
     Ok((ret1, ret2))
 }
 
@@ -64,6 +78,7 @@ trait ValTy: Sized {
     fn from_scyty(inp: Self::ScyTy) -> Self;
     fn table_name() -> &'static str;
     fn default() -> Self;
+    fn is_valueblob() -> bool;
 }
 
 macro_rules! impl_scaty_scalar {
@@ -80,6 +95,9 @@ macro_rules! impl_scaty_scalar {
             }
             fn default() -> Self {
                 <Self as std::default::Default>::default()
+            }
+            fn is_valueblob() -> bool {
+                false
             }
         }
     };
@@ -100,39 +118,42 @@ macro_rules! impl_scaty_array {
             fn default() -> Self {
                 Vec::new()
             }
+            fn is_valueblob() -> bool {
+                true
+            }
         }
     };
 }
 
-impl_scaty_scalar!(u8, i8, "events_scalar_u8");
-impl_scaty_scalar!(u16, i16, "events_scalar_u16");
-impl_scaty_scalar!(u32, i32, "events_scalar_u32");
-impl_scaty_scalar!(u64, i64, "events_scalar_u64");
-impl_scaty_scalar!(i8, i8, "events_scalar_i8");
-impl_scaty_scalar!(i16, i16, "events_scalar_i16");
-impl_scaty_scalar!(i32, i32, "events_scalar_i32");
-impl_scaty_scalar!(i64, i64, "events_scalar_i64");
-impl_scaty_scalar!(f32, f32, "events_scalar_f32");
-impl_scaty_scalar!(f64, f64, "events_scalar_f64");
-impl_scaty_scalar!(bool, bool, "events_scalar_bool");
-impl_scaty_scalar!(String, String, "events_scalar_string");
+impl_scaty_scalar!(u8, i8, "st_events_scalar_u8");
+impl_scaty_scalar!(u16, i16, "st_events_scalar_u16");
+impl_scaty_scalar!(u32, i32, "st_events_scalar_u32");
+impl_scaty_scalar!(u64, i64, "st_events_scalar_u64");
+impl_scaty_scalar!(i8, i8, "st_events_scalar_i8");
+impl_scaty_scalar!(i16, i16, "st_events_scalar_i16");
+impl_scaty_scalar!(i32, i32, "st_events_scalar_i32");
+impl_scaty_scalar!(i64, i64, "st_events_scalar_i64");
+impl_scaty_scalar!(f32, f32, "st_events_scalar_f32");
+impl_scaty_scalar!(f64, f64, "st_events_scalar_f64");
+impl_scaty_scalar!(bool, bool, "st_events_scalar_bool");
+impl_scaty_scalar!(String, String, "st_events_scalar_string");
 
-impl_scaty_array!(Vec<u8>, u8, Vec<i8>, "events_array_u8");
-impl_scaty_array!(Vec<u16>, u16, Vec<i16>, "events_array_u16");
-impl_scaty_array!(Vec<u32>, u32, Vec<i32>, "events_array_u32");
-impl_scaty_array!(Vec<u64>, u64, Vec<i64>, "events_array_u64");
-impl_scaty_array!(Vec<i8>, i8, Vec<i8>, "events_array_i8");
-impl_scaty_array!(Vec<i16>, i16, Vec<i16>, "events_array_i16");
-impl_scaty_array!(Vec<i32>, i32, Vec<i32>, "events_array_i32");
-impl_scaty_array!(Vec<i64>, i64, Vec<i64>, "events_array_i64");
-impl_scaty_array!(Vec<f32>, f32, Vec<f32>, "events_array_f32");
-impl_scaty_array!(Vec<f64>, f64, Vec<f64>, "events_array_f64");
-impl_scaty_array!(Vec<bool>, bool, Vec<bool>, "events_array_bool");
-impl_scaty_array!(Vec<String>, String, Vec<String>, "events_array_string");
+impl_scaty_array!(Vec<u8>, u8, Vec<i8>, "st_events_array_u8");
+impl_scaty_array!(Vec<u16>, u16, Vec<i16>, "st_events_array_u16");
+impl_scaty_array!(Vec<u32>, u32, Vec<i32>, "st_events_array_u32");
+impl_scaty_array!(Vec<u64>, u64, Vec<i64>, "st_events_array_u64");
+impl_scaty_array!(Vec<i8>, i8, Vec<i8>, "st_events_array_i8");
+impl_scaty_array!(Vec<i16>, i16, Vec<i16>, "st_events_array_i16");
+impl_scaty_array!(Vec<i32>, i32, Vec<i32>, "st_events_array_i32");
+impl_scaty_array!(Vec<i64>, i64, Vec<i64>, "st_events_array_i64");
+impl_scaty_array!(Vec<f32>, f32, Vec<f32>, "st_events_array_f32");
+impl_scaty_array!(Vec<f64>, f64, Vec<f64>, "st_events_array_f64");
+impl_scaty_array!(Vec<bool>, bool, Vec<bool>, "st_events_array_bool");
+impl_scaty_array!(Vec<String>, String, Vec<String>, "st_events_array_string");
 
 struct ReadNextValuesOpts {
     series: u64,
-    ts_msp: u64,
+    ts_msp: TsMs,
     range: ScyllaSeriesRange,
     fwd: bool,
     with_values: bool,
@@ -143,30 +164,41 @@ async fn read_next_values<ST>(opts: ReadNextValuesOpts) -> Result<Box<dyn Events
 where
     ST: ValTy,
 {
+    debug!("read_next_values  {}  {}", opts.series, opts.ts_msp);
     let series = opts.series;
     let ts_msp = opts.ts_msp;
     let range = opts.range;
     let fwd = opts.fwd;
     let scy = opts.scy;
     let table_name = ST::table_name();
-    if range.end() > i64::MAX as u64 {
+    if range.end() > TsNano::from_ns(i64::MAX as u64) {
         return Err(Error::with_msg_no_trace(format!("range.end overflows i64")));
     }
     let cql_fields = if opts.with_values {
-        "ts_lsp, pulse, value"
+        if ST::is_valueblob() {
+            "ts_lsp, pulse, valueblob"
+        } else {
+            "ts_lsp, pulse, value"
+        }
     } else {
         "ts_lsp, pulse"
     };
     let ret = if fwd {
-        let ts_lsp_min = if ts_msp < range.beg() { range.beg() - ts_msp } else { 0 };
-        let ts_lsp_max = if ts_msp < range.end() { range.end() - ts_msp } else { 0 };
+        let ts_lsp_min = if range.beg() > ts_msp.ns() {
+            range.beg().delta(ts_msp.ns())
+        } else {
+            DtNano::from_ns(0)
+        };
+        let ts_lsp_max = if range.end() > ts_msp.ns() {
+            range.end().delta(ts_msp.ns())
+        } else {
+            DtNano::from_ns(0)
+        };
         trace!(
-            "FWD  ts_msp {}  ts_lsp_min {}  ts_lsp_max {}  beg {}  end {}  {}",
+            "FWD  ts_msp {}  ts_lsp_min {}  ts_lsp_max {}  {}",
             ts_msp,
             ts_lsp_min,
             ts_lsp_max,
-            range.beg(),
-            range.end(),
             table_name,
         );
         // TODO use prepared!
@@ -177,54 +209,28 @@ where
             ),
             cql_fields, table_name,
         );
-        let res = scy
-            .query(
-                cql,
-                (series as i64, ts_msp as i64, ts_lsp_min as i64, ts_lsp_max as i64),
-            )
-            .await
-            .err_conv()?;
-        let mut last_before = None;
-        let mut ret = ST::Container::empty();
-        for row in res.rows().err_conv()? {
-            let (ts, pulse, value) = if opts.with_values {
-                let row: (i64, i64, ST::ScyTy) = row.into_typed().err_conv()?;
-                let ts = ts_msp + row.0 as u64;
-                let pulse = row.1 as u64;
-                let value = ValTy::from_scyty(row.2);
-                (ts, pulse, value)
-            } else {
-                let row: (i64, i64) = row.into_typed().err_conv()?;
-                let ts = ts_msp + row.0 as u64;
-                let pulse = row.1 as u64;
-                let value = ValTy::default();
-                (ts, pulse, value)
-            };
-            if ts >= range.end() {
-                // TODO count as logic error
-                error!("ts >= range.end");
-            } else if ts >= range.beg() {
-                if pulse % 27 != 3618 {
-                    ret.push(ts, pulse, value);
-                }
-            } else {
-                if last_before.is_none() {
-                    warn!("encounter event before range in forward read {ts}");
-                }
-                last_before = Some((ts, pulse, value));
-            }
+        let params = (
+            series as i64,
+            ts_msp.ms() as i64,
+            ts_lsp_min.ns() as i64,
+            ts_lsp_max.ns() as i64,
+        );
+        trace!("FWD event search  params {:?}", params);
+        let mut res = scy.query_iter(cql, params).await.err_conv()?;
+        let mut rows = Vec::new();
+        while let Some(x) = res.next().await {
+            rows.push(x.err_conv()?);
         }
+        let mut last_before = None;
+        let ret = convert_rows::<ST>(rows, range, ts_msp, opts.with_values, !fwd, &mut last_before)?;
         ret
     } else {
-        let ts_lsp_max = if ts_msp < range.beg() { range.beg() - ts_msp } else { 0 };
-        trace!(
-            "BCK  ts_msp {}  ts_lsp_max {}  beg {}  end {}  {}",
-            ts_msp,
-            ts_lsp_max,
-            range.beg(),
-            range.end(),
-            table_name,
-        );
+        let ts_lsp_max = if ts_msp.ns() < range.beg() {
+            range.beg().delta(ts_msp.ns())
+        } else {
+            DtNano::from_ns(0)
+        };
+        trace!("BCK  ts_msp {}  ts_lsp_max {}  {}", ts_msp, ts_lsp_max, table_name,);
         // TODO use prepared!
         let cql = format!(
             concat!(
@@ -233,45 +239,80 @@ where
             ),
             cql_fields, table_name,
         );
-        let res = scy
-            .query(cql, (series as i64, ts_msp as i64, ts_lsp_max as i64))
-            .await
-            .err_conv()?;
-        let mut seen_before = false;
-        let mut ret = ST::Container::empty();
-        for row in res.rows().err_conv()? {
-            let (ts, pulse, value) = if opts.with_values {
-                let row: (i64, i64, ST::ScyTy) = row.into_typed().err_conv()?;
-                let ts = ts_msp + row.0 as u64;
-                let pulse = row.1 as u64;
-                let value = ValTy::from_scyty(row.2);
-                (ts, pulse, value)
-            } else {
-                let row: (i64, i64) = row.into_typed().err_conv()?;
-                let ts = ts_msp + row.0 as u64;
-                let pulse = row.1 as u64;
-                let value = ValTy::default();
-                (ts, pulse, value)
-            };
-            if ts >= range.beg() {
-                // TODO count as logic error
-                error!("ts >= range.beg");
-            } else if ts < range.beg() {
-                if pulse % 27 != 3618 {
-                    ret.push(ts, pulse, value);
-                }
-            } else {
-                seen_before = true;
-            }
+        let params = (series as i64, ts_msp.ms() as i64, ts_lsp_max.ns() as i64);
+        trace!("BCK event search  params {:?}", params);
+        let mut res = scy.query_iter(cql, params).await.err_conv()?;
+        let mut rows = Vec::new();
+        while let Some(x) = res.next().await {
+            rows.push(x.err_conv()?);
         }
-        let _ = seen_before;
+        let mut _last_before = None;
+        let ret = convert_rows::<ST>(rows, range, ts_msp, opts.with_values, !fwd, &mut _last_before)?;
         if ret.len() > 1 {
             error!("multiple events in backwards search {}", ret.len());
         }
         ret
     };
-    trace!("read  ts_msp {}  len {}", ts_msp, ret.len());
+    trace!("read  ts_msp {:?}  len {}", ts_msp, ret.len());
     let ret = Box::new(ret);
+    Ok(ret)
+}
+
+fn convert_rows<ST: ValTy>(
+    rows: Vec<Row>,
+    range: ScyllaSeriesRange,
+    ts_msp: TsMs,
+    with_values: bool,
+    bck: bool,
+    last_before: &mut Option<(TsNano, u64, ST)>,
+) -> Result<<ST as ValTy>::Container, Error> {
+    let mut ret = <ST as ValTy>::Container::empty();
+    for row in rows {
+        let (ts, pulse, value) = if with_values {
+            if ST::is_valueblob() {
+                let row: (i64, i64, Vec<u8>) = row.into_typed().err_conv()?;
+                trace!("read a value blob len {}", row.2.len());
+                let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
+                let pulse = row.1 as u64;
+                let value = ValTy::default();
+                (ts, pulse, value)
+            } else {
+                let row: (i64, i64, ST::ScyTy) = row.into_typed().err_conv()?;
+                let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
+                let pulse = row.1 as u64;
+                let value = ValTy::from_scyty(row.2);
+                (ts, pulse, value)
+            }
+        } else {
+            let row: (i64, i64) = row.into_typed().err_conv()?;
+            let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
+            let pulse = row.1 as u64;
+            let value = ValTy::default();
+            (ts, pulse, value)
+        };
+        if bck {
+            if ts >= range.beg() {
+                // TODO count as logic error
+                error!("ts >= range.beg");
+            } else if ts < range.beg() {
+                ret.push(ts.ns(), pulse, value);
+            } else {
+                *last_before = Some((ts, pulse, value));
+            }
+        } else {
+            if ts >= range.end() {
+                // TODO count as logic error
+                error!("ts >= range.end");
+            } else if ts >= range.beg() {
+                ret.push(ts.ns(), pulse, value);
+            } else {
+                if last_before.is_none() {
+                    warn!("encounter event before range in forward read {ts}");
+                }
+                *last_before = Some((ts, pulse, value));
+            }
+        }
+    }
     Ok(ret)
 }
 
@@ -280,7 +321,7 @@ struct ReadValues {
     scalar_type: ScalarType,
     shape: Shape,
     range: ScyllaSeriesRange,
-    ts_msps: VecDeque<u64>,
+    ts_msps: VecDeque<TsMs>,
     fwd: bool,
     with_values: bool,
     fut: Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>>,
@@ -294,7 +335,7 @@ impl ReadValues {
         scalar_type: ScalarType,
         shape: Shape,
         range: ScyllaSeriesRange,
-        ts_msps: VecDeque<u64>,
+        ts_msps: VecDeque<TsMs>,
         fwd: bool,
         with_values: bool,
         scy: Arc<ScySession>,
@@ -327,7 +368,7 @@ impl ReadValues {
         }
     }
 
-    fn make_fut(&mut self, ts_msp: u64) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>> {
+    fn make_fut(&mut self, ts_msp: TsMs) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>> {
         let opts = ReadNextValuesOpts {
             series: self.series.clone(),
             ts_msp,
@@ -387,7 +428,7 @@ impl ReadValues {
 
 enum FrState {
     New,
-    FindMsp(Pin<Box<dyn Future<Output = Result<(VecDeque<u64>, VecDeque<u64>), Error>> + Send>>),
+    FindMsp(Pin<Box<dyn Future<Output = Result<(VecDeque<TsMs>, VecDeque<TsMs>), Error>> + Send>>),
     ReadBack1(ReadValues),
     ReadBack2(ReadValues),
     ReadValues(ReadValues),
@@ -402,8 +443,8 @@ pub struct EventsStreamScylla {
     shape: Shape,
     range: ScyllaSeriesRange,
     do_one_before_range: bool,
-    ts_msp_bck: VecDeque<u64>,
-    ts_msp_fwd: VecDeque<u64>,
+    ts_msp_bck: VecDeque<TsMs>,
+    ts_msp_fwd: VecDeque<TsMs>,
     scy: Arc<ScySession>,
     do_test_stream_error: bool,
     found_one_after: bool,
@@ -422,6 +463,7 @@ impl EventsStreamScylla {
         scy: Arc<ScySession>,
         do_test_stream_error: bool,
     ) -> Self {
+        debug!("EventsStreamScylla::new");
         Self {
             state: FrState::New,
             series,
@@ -439,13 +481,13 @@ impl EventsStreamScylla {
         }
     }
 
-    fn ts_msps_found(&mut self, msps1: VecDeque<u64>, msps2: VecDeque<u64>) {
+    fn ts_msps_found(&mut self, msps1: VecDeque<TsMs>, msps2: VecDeque<TsMs>) {
         trace!("ts_msps_found  msps1 {msps1:?}  msps2 {msps2:?}");
         self.ts_msp_bck = msps1;
         self.ts_msp_fwd = msps2;
         for x in self.ts_msp_bck.iter().rev() {
             let x = x.clone();
-            if x >= self.range.end() {
+            if x.ns() >= self.range.end() {
                 info!("FOUND one-after because of MSP");
                 self.found_one_after = true;
             }
@@ -589,6 +631,7 @@ impl Stream for EventsStreamScylla {
                         continue;
                     }
                     Ready(Err(e)) => {
+                        error!("EventsStreamScylla  FindMsp  {e}");
                         self.state = FrState::DataDone;
                         Ready(Some(Err(e)))
                     }
@@ -601,6 +644,7 @@ impl Stream for EventsStreamScylla {
                         continue;
                     }
                     Ready(Err(e)) => {
+                        error!("EventsStreamScylla  ReadBack1  {e}");
                         st.fut_done = true;
                         self.state = FrState::DataDone;
                         Ready(Some(Err(e)))
@@ -614,6 +658,7 @@ impl Stream for EventsStreamScylla {
                         continue;
                     }
                     Ready(Err(e)) => {
+                        error!("EventsStreamScylla  ReadBack2  {e}");
                         st.fut_done = true;
                         self.state = FrState::DataDone;
                         Ready(Some(Err(e)))
@@ -633,6 +678,7 @@ impl Stream for EventsStreamScylla {
                         continue;
                     }
                     Ready(Err(e)) => {
+                        error!("EventsStreamScylla  ReadValues  {e}");
                         st.fut_done = true;
                         Ready(Some(Err(e)))
                     }

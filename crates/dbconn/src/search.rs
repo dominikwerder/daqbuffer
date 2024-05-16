@@ -34,8 +34,8 @@ pub async fn search_channel_databuffer(
         " dtype, shape, unit, description, channel_backend",
         " from searchext($1, $2, $3, $4)",
     );
-    let cl = create_connection(&node_config.node_config.cluster.database).await?;
-    let rows = cl
+    let (pg, _pgjh) = create_connection(&node_config.node_config.cluster.database).await?;
+    let rows = pg
         .query(
             sql,
             &[&query.name_regex, &query.source_regex, &query.description_regex, &"asc"],
@@ -115,7 +115,7 @@ pub async fn search_channel_scylla(query: ChannelSearchQuery, pgconf: &Database)
         ),
         regop
     );
-    let pgclient = crate::create_connection(pgconf).await?;
+    let (pgclient, _pgjh) = crate::create_connection(pgconf).await?;
     let rows = pgclient
         .query(sql, &[&ch_kind, &query.name_regex, &cb1, &cb2])
         .await
@@ -182,7 +182,7 @@ async fn search_channel_archeng(
         " order by c.name",
         " limit 100"
     ));
-    let cl = create_connection(database).await?;
+    let (cl, _pgjh) = create_connection(database).await?;
     let rows = cl.query(sql.as_str(), &[&query.name_regex]).await.err_conv()?;
     let mut res = Vec::new();
     for row in rows {
@@ -271,7 +271,7 @@ pub async fn search_channel(
     node_config: &NodeConfigCached,
 ) -> Result<ChannelSearchResult, Error> {
     let pgconf = &node_config.node_config.cluster.database;
-    if let Some(_scyconf) = node_config.node_config.cluster.scylla.as_ref() {
+    if let Some(_scyconf) = node_config.node_config.cluster.scylla_st() {
         search_channel_scylla(query, pgconf).await
     } else if let Some(conf) = node_config.node.channel_archiver.as_ref() {
         search_channel_archeng(query, node_config.node_config.cluster.backend.clone(), conf, pgconf).await

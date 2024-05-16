@@ -146,6 +146,20 @@ where
     postcard::from_bytes(buf).map_err(|e| format!("{e}").into())
 }
 
+fn json_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
+where
+    T: Serialize,
+{
+    serde_json::to_vec(&item).map_err(Error::from_string)
+}
+
+pub fn json_from_slice<T>(buf: &[u8]) -> Result<T, Error>
+where
+    T: for<'de> serde::Deserialize<'de>,
+{
+    serde_json::from_slice(buf).map_err(Error::from_string)
+}
+
 pub fn encode_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
 where
     T: Serialize,
@@ -213,7 +227,8 @@ where
 // TODO remove duplication for these similar `make_*_frame` functions:
 
 pub fn make_error_frame(error: &err::Error) -> Result<BytesMut, Error> {
-    match encode_to_vec(error) {
+    // error frames are always encoded as json
+    match json_to_vec(error) {
         Ok(enc) => {
             let mut h = crc32fast::Hasher::new();
             h.update(&enc);
@@ -335,7 +350,8 @@ where
         )));
     }
     if frame.tyid() == ERROR_FRAME_TYPE_ID {
-        let k: err::Error = match decode_from_slice(frame.buf()) {
+        // error frames are always encoded as json
+        let k: err::Error = match json_from_slice(frame.buf()) {
             Ok(item) => item,
             Err(e) => {
                 error!("deserialize  len {}  ERROR_FRAME_TYPE_ID  {}", frame.buf().len(), e);

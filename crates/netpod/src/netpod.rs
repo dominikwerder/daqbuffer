@@ -642,8 +642,14 @@ pub struct Cluster {
     pub is_central_storage: bool,
     #[serde(rename = "fileIoBufferSize", default)]
     pub file_io_buffer_size: FileIoBufferSize,
-    pub scylla: Option<ScyllaConfig>,
-    pub cache_scylla: Option<ScyllaConfig>,
+    scylla: Option<ScyllaConfig>,
+    #[serde(rename = "scylla_st")]
+    scylla_st: Option<ScyllaConfig>,
+    #[serde(rename = "scylla_mt")]
+    scylla_mt: Option<ScyllaConfig>,
+    #[serde(rename = "scylla_lt")]
+    scylla_lt: Option<ScyllaConfig>,
+    cache_scylla: Option<ScyllaConfig>,
 }
 
 impl Cluster {
@@ -652,6 +658,40 @@ impl Cluster {
             false
         } else {
             true
+        }
+    }
+
+    pub fn scylla_st(&self) -> Option<&ScyllaConfig> {
+        self.scylla_st.as_ref().map_or_else(|| self.scylla.as_ref(), Some)
+    }
+
+    pub fn scylla_mt(&self) -> Option<&ScyllaConfig> {
+        self.scylla_mt.as_ref()
+    }
+
+    pub fn scylla_lt(&self) -> Option<&ScyllaConfig> {
+        self.scylla_lt.as_ref()
+    }
+
+    pub fn test_00() -> Self {
+        Self {
+            backend: "testbackend-00".into(),
+            nodes: Vec::new(),
+            database: Database {
+                name: "".into(),
+                host: "".into(),
+                port: 5432,
+                user: "".into(),
+                pass: "".into(),
+            },
+            run_map_pulse_task: false,
+            is_central_storage: false,
+            file_io_buffer_size: FileIoBufferSize(1024 * 8),
+            scylla: None,
+            scylla_st: None,
+            scylla_mt: None,
+            scylla_lt: None,
+            cache_scylla: None,
         }
     }
 }
@@ -1368,20 +1408,20 @@ where
 pub struct DtNano(u64);
 
 impl DtNano {
-    pub fn from_ns(ns: u64) -> Self {
+    pub const fn from_ns(ns: u64) -> Self {
         Self(ns)
     }
 
-    pub fn from_ms(ns: u64) -> Self {
-        Self(MS * ns)
+    pub const fn from_ms(ns: u64) -> Self {
+        Self(1000000 * ns)
     }
 
-    pub fn ns(&self) -> u64 {
+    pub const fn ns(&self) -> u64 {
         self.0
     }
 
-    pub fn ms(&self) -> u64 {
-        self.0 / MS
+    pub const fn ms(&self) -> u64 {
+        self.0 / 1000000
     }
 
     pub fn to_i64(&self) -> i64 {
@@ -1389,13 +1429,13 @@ impl DtNano {
     }
 }
 
-#[cfg(DISABLED)]
-impl fmt::Debug for DtNano {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl fmt::Display for DtNano {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let sec = self.0 / SEC;
         let ms = (self.0 - SEC * sec) / MS;
         let ns = self.0 - SEC * sec - MS * ms;
-        f.debug_tuple("DtNano").field(&sec).field(&ms).field(&ns).finish()
+        // fmt.debug_tuple("DtNano").field(&sec).field(&ms).field(&ns).finish()
+        write!(fmt, "DtNano {{ sec {}  ms {}  ns {} }}", sec, ms, ns)
     }
 }
 
@@ -1452,7 +1492,11 @@ impl DtMs {
     }
 
     pub const fn ms(&self) -> u64 {
-        self.0 / MS
+        self.0
+    }
+
+    pub const fn ns(&self) -> u64 {
+        1000000 * self.0
     }
 
     pub const fn to_i64(&self) -> i64 {
@@ -1461,7 +1505,7 @@ impl DtMs {
 }
 
 #[derive(Copy, Clone, PartialEq, PartialOrd, Eq, Ord)]
-pub struct TsNano(pub u64);
+pub struct TsNano(u64);
 
 mod ts_nano_ser {
     use super::TsNano;
@@ -1522,7 +1566,7 @@ impl TsNano {
     }
 
     pub const fn from_ms(ns: u64) -> Self {
-        Self(MS * ns)
+        Self(1000000 * ns)
     }
 
     pub const fn ns(&self) -> u64 {
@@ -1530,7 +1574,7 @@ impl TsNano {
     }
 
     pub const fn ms(&self) -> u64 {
-        self.0 / MS
+        self.0 / 1000000
     }
 
     pub const fn sub(self, v: DtNano) -> Self {
@@ -1560,16 +1604,23 @@ impl TsNano {
 
 impl fmt::Debug for TsNano {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let ts = Utc.timestamp_opt((self.0 / SEC) as i64, (self.0 % SEC) as u32);
+        let ts = Utc
+            .timestamp_opt((self.0 / SEC) as i64, (self.0 % SEC) as u32)
+            .earliest()
+            .unwrap_or(Default::default());
         f.debug_struct("TsNano")
-            .field(
-                "ts",
-                &ts.earliest()
-                    .unwrap_or(Default::default())
-                    .format(DATETIME_FMT_3MS)
-                    .to_string(),
-            )
+            .field("ts", &ts.format(DATETIME_FMT_3MS).to_string())
             .finish()
+    }
+}
+
+impl fmt::Display for TsNano {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let ts = Utc
+            .timestamp_opt((self.0 / SEC) as i64, (self.0 % SEC) as u32)
+            .earliest()
+            .unwrap_or(Default::default());
+        ts.format(DATETIME_FMT_3MS).fmt(fmt)
     }
 }
 
@@ -2372,6 +2423,18 @@ impl TsMs {
         self.0
     }
 
+    pub const fn ns(self) -> TsNano {
+        TsNano::from_ms(self.0)
+    }
+
+    pub const fn ns_u64(self) -> u64 {
+        1000000 * self.0
+    }
+
+    pub const fn sec(self) -> u64 {
+        self.0 / 1000
+    }
+
     pub const fn to_u64(self) -> u64 {
         self.0
     }
@@ -2384,6 +2447,12 @@ impl TsMs {
         let msp = TsMs(self.0 / grid.0 * grid.0);
         let lsp = DtMs(self.0 - msp.0);
         (msp, lsp)
+    }
+}
+
+impl fmt::Display for TsMs {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "TsMs {{ {} }}", self.0)
     }
 }
 
@@ -3215,6 +3284,9 @@ pub fn test_cluster() -> Cluster {
             pass: "testingdaq".into(),
         },
         scylla: None,
+        scylla_st: None,
+        scylla_mt: None,
+        scylla_lt: None,
         cache_scylla: None,
         run_map_pulse_task: false,
         is_central_storage: false,
@@ -3249,6 +3321,9 @@ pub fn sls_test_cluster() -> Cluster {
             pass: "testingdaq".into(),
         },
         scylla: None,
+        scylla_st: None,
+        scylla_mt: None,
+        scylla_lt: None,
         cache_scylla: None,
         run_map_pulse_task: false,
         is_central_storage: false,
@@ -3283,6 +3358,9 @@ pub fn archapp_test_cluster() -> Cluster {
             pass: "testingdaq".into(),
         },
         scylla: None,
+        scylla_st: None,
+        scylla_mt: None,
+        scylla_lt: None,
         cache_scylla: None,
         run_map_pulse_task: false,
         is_central_storage: false,

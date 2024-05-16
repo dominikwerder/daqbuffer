@@ -255,7 +255,7 @@ async fn open_files_inner(
         return Ok(());
     }
     for &tb in &timebins {
-        let ts_bin = TsNano(tb * fetch_info.bs().ns());
+        let ts_bin = TsNano::from_ns(tb * fetch_info.bs().ns());
         if ts_bin.ns() >= range.end {
             continue;
         }
@@ -350,7 +350,7 @@ async fn open_expanded_files_inner(
     }
     let mut p1 = None;
     for (i1, tb) in timebins.iter().enumerate().rev() {
-        let ts_bin = TsNano(tb * fetch_info.bs().ns());
+        let ts_bin = TsNano::from_ns(tb * fetch_info.bs().ns());
         if ts_bin.ns() <= range.beg {
             p1 = Some(i1);
             break;

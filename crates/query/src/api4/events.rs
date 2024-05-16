@@ -170,11 +170,6 @@ impl PlainEventsQuery {
         self.do_test_stream_error = k;
     }
 
-    pub fn for_event_blobs(mut self) -> Self {
-        self.transform = TransformQuery::for_event_blobs();
-        self
-    }
-
     pub fn for_time_weighted_scalar(mut self) -> Self {
         self.transform = TransformQuery::for_time_weighted_scalar();
         self
@@ -195,6 +190,14 @@ impl PlainEventsQuery {
 
     pub fn create_errors_contains(&self, x: &str) -> bool {
         self.create_errors.contains(&String::from(x))
+    }
+
+    pub fn summary_short(&self) -> String {
+        format!(
+            "PlainEventsQuery {{ chn: {}, range: {:?} }}",
+            self.channel().name(),
+            self.range()
+        )
     }
 }
 

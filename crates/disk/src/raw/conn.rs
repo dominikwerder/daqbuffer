@@ -98,12 +98,12 @@ pub fn make_event_blobs_stream(
     event_chunker_conf: EventChunkerConf,
     disk_io_tune: DiskIoTune,
     reqctx: ReqCtxArc,
-    node_config: &NodeConfigCached,
+    ncc: &NodeConfigCached,
 ) -> Result<EventChunkerMultifile, Error> {
     debug!("make_local_event_blobs_stream  {fetch_info:?}  disk_io_tune {disk_io_tune:?}");
     // TODO should not need this for correctness.
     // Should limit based on return size and latency.
-    let out_max_len = if node_config.node_config.cluster.is_central_storage {
+    let out_max_len = if ncc.node_config.cluster.is_central_storage {
         128
     } else {
         128
@@ -111,8 +111,8 @@ pub fn make_event_blobs_stream(
     let event_blobs = EventChunkerMultifile::new(
         range,
         fetch_info.clone(),
-        node_config.node.clone(),
-        node_config.ix,
+        ncc.node.clone(),
+        ncc.ix,
         disk_io_tune,
         event_chunker_conf,
         expand,
@@ -126,7 +126,7 @@ pub fn make_event_blobs_pipe_real(
     subq: &EventsSubQuery,
     fetch_info: &SfChFetchInfo,
     reqctx: ReqCtxArc,
-    node_config: &NodeConfigCached,
+    ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
     let expand = subq.transform().need_one_before_range();
     let range = subq.range();
@@ -138,7 +138,7 @@ pub fn make_event_blobs_pipe_real(
         event_chunker_conf,
         subq.disk_io_tune(),
         reqctx,
-        node_config,
+        ncc,
     )?;
     let pipe = Box::pin(event_blobs) as _;
     Ok(pipe)
@@ -191,12 +191,12 @@ pub fn make_event_blobs_pipe(
     subq: &EventsSubQuery,
     fetch_info: &SfChFetchInfo,
     reqctx: ReqCtxArc,
-    node_config: &NodeConfigCached,
+    ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
     debug!("make_event_blobs_pipe {subq:?}");
     if subq.backend() == TEST_BACKEND {
-        make_event_blobs_pipe_test(subq, node_config)
+        make_event_blobs_pipe_test(subq, ncc)
     } else {
-        make_event_blobs_pipe_real(subq, fetch_info, reqctx, node_config)
+        make_event_blobs_pipe_real(subq, fetch_info, reqctx, ncc)
     }
 }

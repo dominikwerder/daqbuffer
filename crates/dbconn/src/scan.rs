@@ -30,8 +30,6 @@ use tokio::fs::DirEntry;
 use tokio::fs::ReadDir;
 use tokio_postgres::Client;
 
-mod updatechannelnames;
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NodeDiskIdent {
     pub rowid: i64,
@@ -201,7 +199,7 @@ async fn update_db_with_channel_names_inner(
     node_config: NodeConfigCached,
     db_config: Database,
 ) -> Result<(), Error> {
-    let dbc = create_connection(&db_config).await?;
+    let (dbc, _pgjh) = create_connection(&db_config).await?;
     info!("update_db_with_channel_names connection done");
     let node_disk_ident = get_node_disk_ident(&node_config, &dbc).await?;
     info!("update_db_with_channel_names get_node_disk_ident done");
@@ -335,7 +333,7 @@ async fn update_db_with_all_channel_configs_inner(
     node_config: NodeConfigCached,
 ) -> Result<(), Error> {
     let node_config = &node_config;
-    let dbc = create_connection(&node_config.node_config.cluster.database).await?;
+    let (dbc, _pgjh) = create_connection(&node_config.node_config.cluster.database).await?;
     let dbc = Arc::new(dbc);
     let node_disk_ident = &get_node_disk_ident(node_config, &dbc).await?;
     let rows = dbc
@@ -437,7 +435,7 @@ pub async fn update_db_with_all_channel_configs(
 }
 
 pub async fn update_search_cache(node_config: &NodeConfigCached) -> Result<bool, Error> {
-    let dbc = create_connection(&node_config.node_config.cluster.database).await?;
+    let (dbc, _pgjh) = create_connection(&node_config.node_config.cluster.database).await?;
     dbc.query("select update_cache()", &[])
         .await
         .err_conv()
@@ -554,7 +552,8 @@ pub async fn update_db_with_all_channel_datafiles(
     node_disk_ident: &NodeDiskIdent,
     ks_prefix: &str,
 ) -> Result<(), Error> {
-    let dbc = Arc::new(create_connection(&node_config.node_config.cluster.database).await?);
+    let (dbc, _pgjh) = create_connection(&node_config.node_config.cluster.database).await?;
+    let dbc = Arc::new(dbc);
     let rows = dbc
         .query(
             "select rowid, facility, name from channels where facility = $1 order by facility, name",

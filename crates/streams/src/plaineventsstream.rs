@@ -26,7 +26,7 @@ pub async fn dyn_events_stream(
     ctx: &ReqCtx,
     open_bytes: OpenBoxedBytesStreamsBox,
 ) -> Result<DynEventsStream, Error> {
-    trace!("dyn_events_stream begin");
+    trace!("dyn_events_stream  {}", evq.summary_short());
     let subq = make_sub_query(
         ch_conf,
         evq.range().clone(),

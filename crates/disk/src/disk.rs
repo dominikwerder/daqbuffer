@@ -385,7 +385,8 @@ impl FileContentStream2 {
 
     fn make_reading(&mut self) {
         let mut buf = Box::new(BytesMut::with_capacity(self.disk_io_tune.read_buffer_len));
-        let bufref = unsafe { &mut *((&mut buf as &mut BytesMut) as *mut BytesMut) };
+        // let bufref = unsafe { &mut *((&mut buf as &mut BytesMut) as *mut BytesMut) };
+        let bufref: &mut BytesMut = err::todoval();
         let fileref = unsafe { &mut *((&mut self.file) as *mut Pin<Box<File>>) };
         let fut = AsyncReadExt::read_buf(fileref, bufref).map_err(|e| e.into());
         self.fcs = FCS2::Reading((buf, Box::pin(fut)));

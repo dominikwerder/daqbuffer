@@ -1,4 +1,5 @@
 use crate::channelconfig::http_get_channel_config;
+use dbconn::worker::PgQueue;
 use err::Error;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
@@ -90,13 +91,14 @@ pub async fn find_config_basics_quorum(
     channel: SfDbChannel,
     range: SeriesRange,
     ctx: &ReqCtx,
+    pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<Option<ChannelTypeConfigGen>, Error> {
     trace!("find_config_basics_quorum");
     if let Some(_cfg) = &ncc.node.sf_databuffer {
         let channel = if channel.name().is_empty() {
             if let Some(_) = channel.series() {
-                let pgclient = dbconn::create_connection(&ncc.node_config.cluster.database).await?;
+                let (pgclient, _pgjh) = dbconn::create_connection(&ncc.node_config.cluster.database).await?;
                 let pgclient = std::sync::Arc::new(pgclient);
                 dbconn::find_sf_channel_by_series(channel, pgclient)
                     .await
@@ -111,9 +113,9 @@ pub async fn find_config_basics_quorum(
             Some(x) => Ok(Some(ChannelTypeConfigGen::SfDatabuffer(x))),
             None => Ok(None),
         }
-    } else if let Some(_) = &ncc.node_config.cluster.scylla {
+    } else if let Some(_) = &ncc.node_config.cluster.scylla_st() {
         let range = netpod::range::evrange::NanoRange::try_from(&range)?;
-        let ret = crate::channelconfig::channel_config(range, channel, ncc).await?;
+        let ret = crate::channelconfig::channel_config(range, channel, pgqueue, ncc).await?;
         Ok(ret)
     } else {
         Err(Error::with_msg_no_trace(

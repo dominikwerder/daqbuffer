@@ -16,6 +16,7 @@ use items_0::streamitem::ERROR_FRAME_TYPE_ID;
 use items_0::streamitem::EVENT_QUERY_JSON_STRING_FRAME;
 use items_0::streamitem::SITEMTY_NONSPEC_FRAME_TYPE_ID;
 use items_0::Events;
+use netpod::log::*;
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde::Serialize;
@@ -82,7 +83,10 @@ where
             Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)) => make_range_complete_frame(),
             Ok(StreamItem::Log(item)) => make_log_frame(item),
             Ok(StreamItem::Stats(item)) => make_stats_frame(item),
-            Err(e) => make_error_frame(e),
+            Err(e) => {
+                info!("calling make_error_frame for [[{e}]]");
+                make_error_frame(e)
+            }
         }
     }
 }
@@ -181,7 +185,7 @@ fn test_frame_log() {
 #[test]
 fn test_frame_error() {
     use crate::channelevents::ChannelEvents;
-    use crate::frame::decode_from_slice;
+    use crate::frame::json_from_slice;
     let item: Sitemty<ChannelEvents> = Err(Error::with_msg_no_trace(format!("dummy-error-message")));
     let buf = Framable::make_frame(&item).unwrap();
     let len = u32::from_le_bytes(buf[12..16].try_into().unwrap());
@@ -190,5 +194,5 @@ fn test_frame_error() {
         panic!("bad tyid");
     }
     eprintln!("buf len {}  len {}", buf.len(), len);
-    let item2: Error = decode_from_slice(&buf[20..20 + len as usize]).unwrap();
+    let item2: Error = json_from_slice(&buf[20..20 + len as usize]).unwrap();
 }

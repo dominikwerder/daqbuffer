@@ -425,7 +425,7 @@ impl IndexChannelHttpFunction {
 
     async fn index(req: Requ, do_print: bool, node_config: &NodeConfigCached) -> Result<String, Error> {
         // TODO avoid double-insert on central storage.
-        let pgc = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
+        let (pgc, pgjh) = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
         // TODO remove update of static columns when older clients are removed.
         let sql = "insert into map_pulse_files (channel, split, timebin, pulse_min, pulse_max, hostname, ks) values ($1, $2, $3, $4, $5, $6, $7) on conflict (channel, split, timebin) do update set pulse_min = $4, pulse_max = $5, upc1 = map_pulse_files.upc1 + 1, hostname = $6";
         let insert_01 = pgc.prepare(sql).await?;
@@ -936,7 +936,7 @@ impl MapPulseScyllaHandler {
         let url = req_uri_to_url(req.uri())?;
         let query = MapPulseQuery::from_url(&url)?;
         let pulse = query.pulse;
-        let scyconf = if let Some(x) = node_config.node_config.cluster.scylla.as_ref() {
+        let scyconf = if let Some(x) = node_config.node_config.cluster.scylla_st() {
             x
         } else {
             return Err(Error::with_public_msg_no_trace("no scylla configured"));
@@ -1017,7 +1017,7 @@ impl MapPulseLocalHttpFunction {
             })
             .unwrap_or_else(|| String::from("missing x-req-from"));
         let ts1 = Instant::now();
-        let conn = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
+        let (conn, pgjh) = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
         let sql = "select channel, hostname, timebin, split, ks from map_pulse_files where hostname = $1 and pulse_min <= $2 and (pulse_max >= $2 or closed = 0)";
         let rows = conn.query(sql, &[&node_config.node.host, &(pulse as i64)]).await?;
         let cands: Vec<_> = rows
@@ -1516,7 +1516,7 @@ impl MarkClosedHttpFunction {
     }
 
     pub async fn mark_closed(node_config: &NodeConfigCached) -> Result<(), Error> {
-        let conn = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
+        let (conn, pgjh) = dbconn::create_connection(&node_config.node_config.cluster.database).await?;
         let sql = "select distinct channel from map_pulse_files order by channel";
         let rows = conn.query(sql, &[]).await?;
         let chns: Vec<_> = rows.iter().map(|r| r.get::<_, String>(0)).collect();

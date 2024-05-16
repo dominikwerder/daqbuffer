@@ -30,9 +30,9 @@ impl From<ConfigParseError> for ConfigError {
 pub async fn config_entry_best_match(
     range: &NanoRange,
     channel: SfDbChannel,
-    node_config: &NodeConfigCached,
+    ncc: &NodeConfigCached,
 ) -> Result<Option<ConfigEntry>, ConfigError> {
-    let channel_config = match read_local_config(channel.clone(), node_config.clone()).await {
+    let channel_config = match read_local_config(channel.clone(), ncc.clone()).await {
         Ok(x) => x,
         Err(e) => match e {
             ConfigParseError::FileNotFound => return Ok(None),
@@ -59,9 +59,9 @@ pub async fn channel_configs(
 pub async fn channel_config_best_match(
     range: NanoRange,
     channel: SfDbChannel,
-    node_config: &NodeConfigCached,
+    ncc: &NodeConfigCached,
 ) -> Result<Option<SfDbChConf>, ConfigError> {
-    let best = config_entry_best_match(&range, channel.clone(), node_config).await?;
+    let best = config_entry_best_match(&range, channel.clone(), ncc).await?;
     match best {
         None => Ok(None),
         Some(entry) => {

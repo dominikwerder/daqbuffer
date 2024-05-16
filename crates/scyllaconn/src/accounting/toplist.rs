@@ -41,8 +41,9 @@ pub async fn read_ts(ts: u64, scy: Arc<ScySession>) -> Result<UsageData, Error> 
     // TODO  toplist::read_ts  refactor
     info!("TODO  toplist::read_ts  refactor");
     let snap = EMIT_ACCOUNTING_SNAP.ms() / 1000;
+    info!("ts {ts}  snap {snap:?}");
     let ts = ts / timeunits::SEC / snap * snap;
-    let cql = concat!("select series, count, bytes from account_00 where part = ? and ts = ?");
+    let cql = concat!("select series, count, bytes from lt_account_00 where part = ? and ts = ?");
     let qu = prep(cql, scy.clone()).await?;
     let ret = read_ts_inner(ts, qu, scy).await?;
     Ok(ret)

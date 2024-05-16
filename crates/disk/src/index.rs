@@ -197,7 +197,7 @@ pub fn parse_event(buf: &[u8]) -> Result<(u32, TsNano), Error> {
         return Err(Error::with_msg(format!("len mismatch  len1: {}  len2: {}", len1, len2)));
     }
     let ts = u64::from_be_bytes(*array_ref![buf, 12, 8]);
-    Ok((len1 as u32, TsNano(ts)))
+    Ok((len1 as u32, TsNano::from_ns(ts)))
 }
 
 pub async fn read_event_at(pos: u64, file: &mut File) -> Result<(u32, TsNano), Error> {

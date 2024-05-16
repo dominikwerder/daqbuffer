@@ -1,4 +1,5 @@
 use netpod::range::evrange::SeriesRange;
+use netpod::TsNano;
 
 #[derive(Debug, Clone)]
 pub struct ScyllaSeriesRange {
@@ -7,12 +8,12 @@ pub struct ScyllaSeriesRange {
 }
 
 impl ScyllaSeriesRange {
-    pub fn beg(&self) -> u64 {
-        self.beg
+    pub fn beg(&self) -> TsNano {
+        TsNano::from_ns(self.beg)
     }
 
-    pub fn end(&self) -> u64 {
-        self.end
+    pub fn end(&self) -> TsNano {
+        TsNano::from_ns(self.end)
     }
 }
 

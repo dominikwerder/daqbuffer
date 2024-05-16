@@ -29,7 +29,7 @@ pub async fn scylla_channel_event_stream(
     let shape = chconf.shape();
     let do_test_stream_error = false;
     let with_values = evq.need_value_data();
-    debug!("Make EventsStreamScylla for {series:?} {scalar_type:?} {shape:?}");
+    debug!("\n\nmake EventsStreamScylla  {series:?}  {scalar_type:?}  {shape:?}\n");
     let stream = scyllaconn::events::EventsStreamScylla::new(
         series,
         evq.range().into(),

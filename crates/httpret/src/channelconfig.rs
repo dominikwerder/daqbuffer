@@ -2,6 +2,7 @@ use crate::err::Error;
 use crate::response;
 use crate::ToPublicResponse;
 use dbconn::create_connection;
+use dbconn::worker::PgQueue;
 use futures_util::StreamExt;
 use http::Method;
 use http::StatusCode;
@@ -38,27 +39,30 @@ use url::Url;
 pub async fn chconf_from_events_quorum(
     q: &PlainEventsQuery,
     ctx: &ReqCtx,
+    pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<Option<ChannelTypeConfigGen>, Error> {
-    let ret = find_config_basics_quorum(q.channel().clone(), q.range().clone(), ctx, ncc).await?;
+    let ret = find_config_basics_quorum(q.channel().clone(), q.range().clone(), ctx, pgqueue, ncc).await?;
     Ok(ret)
 }
 
 pub async fn chconf_from_prebinned(
     q: &PreBinnedQuery,
     ctx: &ReqCtx,
+    pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<Option<ChannelTypeConfigGen>, Error> {
-    let ret = find_config_basics_quorum(q.channel().clone(), q.patch().patch_range(), ctx, ncc).await?;
+    let ret = find_config_basics_quorum(q.channel().clone(), q.patch().patch_range(), ctx, pgqueue, ncc).await?;
     Ok(ret)
 }
 
 pub async fn ch_conf_from_binned(
     q: &BinnedQuery,
     ctx: &ReqCtx,
+    pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<Option<ChannelTypeConfigGen>, Error> {
-    let ret = find_config_basics_quorum(q.channel().clone(), q.range().clone(), ctx, ncc).await?;
+    let ret = find_config_basics_quorum(q.channel().clone(), q.range().clone(), ctx, pgqueue, ncc).await?;
     Ok(ret)
 }
 
@@ -73,7 +77,12 @@ impl ChannelConfigHandler {
         }
     }
 
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
+    pub async fn handle(
+        &self,
+        req: Requ,
+        pgqueue: &PgQueue,
+        node_config: &NodeConfigCached,
+    ) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -81,7 +90,7 @@ impl ChannelConfigHandler {
                 .get(http::header::ACCEPT)
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
-                match self.channel_config(req, &node_config).await {
+                match self.channel_config(req, pgqueue, &node_config).await {
                     Ok(k) => Ok(k),
                     Err(e) => {
                         warn!("ChannelConfigHandler::handle: got error from channel_config: {e:?}");
@@ -96,10 +105,16 @@ impl ChannelConfigHandler {
         }
     }
 
-    async fn channel_config(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
+    async fn channel_config(
+        &self,
+        req: Requ,
+        pgqueue: &PgQueue,
+        node_config: &NodeConfigCached,
+    ) -> Result<StreamResponse, Error> {
         let url = req_uri_to_url(req.uri())?;
         let q = ChannelConfigQuery::from_url(&url)?;
-        let conf = nodenet::channelconfig::channel_config(q.range.clone(), q.channel.clone(), node_config).await?;
+        let conf =
+            nodenet::channelconfig::channel_config(q.range.clone(), q.channel.clone(), pgqueue, node_config).await?;
         match conf {
             Some(conf) => {
                 let res: ChannelConfigResponse = conf.into();
@@ -180,6 +195,7 @@ impl ChannelConfigQuorumHandler {
         &self,
         req: Requ,
         ctx: &ReqCtx,
+        pgqueue: &PgQueue,
         node_config: &NodeConfigCached,
     ) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
@@ -189,7 +205,7 @@ impl ChannelConfigQuorumHandler {
                 .get(http::header::ACCEPT)
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
-                match self.channel_config_quorum(req, ctx, &node_config).await {
+                match self.channel_config_quorum(req, ctx, pgqueue, &node_config).await {
                     Ok(k) => Ok(k),
                     Err(e) => {
                         warn!("from channel_config_quorum: {e}");
@@ -208,13 +224,15 @@ impl ChannelConfigQuorumHandler {
         &self,
         req: Requ,
         ctx: &ReqCtx,
+        pgqueue: &PgQueue,
         ncc: &NodeConfigCached,
     ) -> Result<StreamResponse, Error> {
         info!("channel_config_quorum");
         let url = req_uri_to_url(req.uri())?;
         let q = ChannelConfigQuery::from_url(&url)?;
         info!("channel_config_quorum  for q {q:?}");
-        let ch_confs = nodenet::configquorum::find_config_basics_quorum(q.channel, q.range.into(), ctx, ncc).await?;
+        let ch_confs =
+            nodenet::configquorum::find_config_basics_quorum(q.channel, q.range.into(), ctx, pgqueue, ncc).await?;
         let ret = response(StatusCode::OK)
             .header(http::header::CONTENT_TYPE, APP_JSON)
             .body(ToJsonBody::from(&ch_confs).into_body())?;
@@ -386,8 +404,7 @@ impl ScyllaChannelsActive {
         let scyco = node_config
             .node_config
             .cluster
-            .scylla
-            .as_ref()
+            .scylla_st()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
         let scy = scyllaconn::conn::create_scy_session(scyco).await?;
         // Database stores tsedge/ts_msp in units of (10 sec), and we additionally map to the grid.
@@ -494,7 +511,7 @@ impl IocForChannel {
         node_config: &NodeConfigCached,
     ) -> Result<Option<IocForChannelRes>, Error> {
         let dbconf = &node_config.node_config.cluster.database;
-        let pg_client = create_connection(dbconf).await?;
+        let (pg_client, pgjh) = create_connection(dbconf).await?;
         let rows = pg_client
             .query(
                 "select addr from ioc_by_channel where facility = $1 and channel = $2",
@@ -583,8 +600,7 @@ impl ScyllaSeriesTsMsp {
         let scyco = node_config
             .node_config
             .cluster
-            .scylla
-            .as_ref()
+            .scylla_st()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
         let scy = scyllaconn::conn::create_scy_session(scyco).await?;
         let mut ts_msps = Vec::new();
@@ -626,7 +642,7 @@ impl AmbigiousChannelNames {
         }
     }
 
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
+    pub async fn handle(&self, req: Requ, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -634,7 +650,7 @@ impl AmbigiousChannelNames {
                 .get(http::header::ACCEPT)
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept == APP_JSON || accept == ACCEPT_ALL {
-                match self.process(node_config).await {
+                match self.process(ncc).await {
                     Ok(k) => {
                         let body = ToJsonBody::from(&k).into_body();
                         Ok(response(StatusCode::OK).body(body)?)
@@ -650,9 +666,9 @@ impl AmbigiousChannelNames {
         }
     }
 
-    async fn process(&self, node_config: &NodeConfigCached) -> Result<AmbigiousChannelNamesResponse, Error> {
-        let dbconf = &node_config.node_config.cluster.database;
-        let pg_client = create_connection(dbconf).await?;
+    async fn process(&self, ncc: &NodeConfigCached) -> Result<AmbigiousChannelNamesResponse, Error> {
+        let dbconf = &ncc.node_config.cluster.database;
+        let (pg_client, pgjh) = create_connection(dbconf).await?;
         let rows = pg_client
             .query(
                 "select t2.series, t2.channel, t2.scalar_type, t2.shape_dims, t2.agg_kind from series_by_channel t1, series_by_channel t2 where t2.channel = t1.channel and t2.series != t1.series",
@@ -747,9 +763,7 @@ impl GenerateScyllaTestData {
     }
 
     async fn process(&self, node_config: &NodeConfigCached) -> Result<(), Error> {
-        let dbconf = &node_config.node_config.cluster.database;
-        let _pg_client = create_connection(dbconf).await?;
-        let scyconf = node_config.node_config.cluster.scylla.as_ref().unwrap();
+        let scyconf = node_config.node_config.cluster.scylla_st().unwrap();
         let scy = scyllaconn::conn::create_scy_session(scyconf).await?;
         let series: u64 = 42001;
         // TODO query `ts_msp` for all MSP values und use that to delete from event table first.

@@ -39,6 +39,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 
+// TODO unify with Cluster::test_00()
 const TEST_BACKEND: &str = "testbackend-00";
 
 #[test]
@@ -50,22 +51,7 @@ fn raw_data_00() {
         let cfg = NodeConfigCached {
             node_config: NodeConfig {
                 name: "node_name_dummy".into(),
-                cluster: Cluster {
-                    backend: TEST_BACKEND.into(),
-                    nodes: Vec::new(),
-                    database: Database {
-                        name: "".into(),
-                        host: "".into(),
-                        port: 5432,
-                        user: "".into(),
-                        pass: "".into(),
-                    },
-                    run_map_pulse_task: false,
-                    is_central_storage: false,
-                    file_io_buffer_size: FileIoBufferSize(1024 * 8),
-                    scylla: None,
-                    cache_scylla: None,
-                },
+                cluster: Cluster::test_00(),
             },
             node: Node {
                 host: "empty".into(),

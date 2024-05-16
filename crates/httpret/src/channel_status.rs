@@ -1,6 +1,7 @@
 use crate::bodystream::response;
 use crate::err::Error;
 use crate::ReqCtx;
+use crate::ServiceSharedResources;
 use futures_util::StreamExt;
 use http::Method;
 use http::StatusCode;
@@ -37,7 +38,8 @@ impl ConnectionStatusEvents {
         &self,
         req: Requ,
         _ctx: &ReqCtx,
-        node_config: &NodeConfigCached,
+        shared_res: &ServiceSharedResources,
+        ncc: &NodeConfigCached,
     ) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
@@ -48,7 +50,7 @@ impl ConnectionStatusEvents {
             if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
                 let url = req_uri_to_url(req.uri())?;
                 let q = ChannelStateEventsQuery::from_url(&url)?;
-                match self.fetch_data(&q, node_config).await {
+                match self.fetch_data(&q, shared_res, ncc).await {
                     Ok(k) => {
                         let body = ToJsonBody::from(&k).into_body();
                         Ok(response(StatusCode::OK).body(body)?)
@@ -70,17 +72,18 @@ impl ConnectionStatusEvents {
     async fn fetch_data(
         &self,
         q: &ChannelStateEventsQuery,
-        node_config: &NodeConfigCached,
+        shared_res: &ServiceSharedResources,
+        ncc: &NodeConfigCached,
     ) -> Result<Vec<ConnStatusEvent>, Error> {
-        let scyco = node_config
+        let scyco = ncc
             .node_config
             .cluster
-            .scylla
-            .as_ref()
+            .scylla_st()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("no scylla configured")))?;
         let _scy = scyllaconn::conn::create_scy_session(scyco).await?;
         let _chconf =
-            nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), node_config).await?;
+            nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), &shared_res.pgqueue, ncc)
+                .await?;
         let _do_one_before_range = true;
         let ret = Vec::new();
         if true {
@@ -111,7 +114,8 @@ impl ChannelStatusEventsHandler {
         &self,
         req: Requ,
         _ctx: &ReqCtx,
-        node_config: &NodeConfigCached,
+        shared_res: &ServiceSharedResources,
+        ncc: &NodeConfigCached,
     ) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
@@ -122,7 +126,7 @@ impl ChannelStatusEventsHandler {
             if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
                 let url = req_uri_to_url(req.uri())?;
                 let q = ChannelStateEventsQuery::from_url(&url)?;
-                match self.fetch_data(&q, node_config).await {
+                match self.fetch_data(&q, shared_res, ncc).await {
                     Ok(k) => {
                         let body = ToJsonBody::from(&k).into_body();
                         Ok(response(StatusCode::OK).body(body)?)
@@ -144,20 +148,25 @@ impl ChannelStatusEventsHandler {
     async fn fetch_data(
         &self,
         q: &ChannelStateEventsQuery,
-        node_config: &NodeConfigCached,
+        shared_res: &ServiceSharedResources,
+        ncc: &NodeConfigCached,
     ) -> Result<ChannelStatusEvents, Error> {
-        let scyco = node_config
+        let scyco = ncc
             .node_config
             .cluster
-            .scylla
-            .as_ref()
+            .scylla_st()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("no scylla configured")))?;
         let scy = scyllaconn::conn::create_scy_session(scyco).await?;
         let do_one_before_range = true;
         if false {
-            let chconf = nodenet::channelconfig::channel_config(q.range().clone(), q.channel().clone(), node_config)
-                .await?
-                .ok_or_else(|| Error::with_msg_no_trace("channel config not found"))?;
+            let chconf = nodenet::channelconfig::channel_config(
+                q.range().clone(),
+                q.channel().clone(),
+                &shared_res.pgqueue,
+                ncc,
+            )
+            .await?
+            .ok_or_else(|| Error::with_msg_no_trace("channel config not found"))?;
             use netpod::ChannelTypeConfigGen;
             match chconf {
                 ChannelTypeConfigGen::Scylla(_x) => todo!(),

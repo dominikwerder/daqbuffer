@@ -1,6 +1,7 @@
 use crate::bodystream::response_err_msg;
 use crate::response;
 use crate::ReqCtx;
+use crate::ServiceSharedResources;
 use err::thiserror;
 use err::PublicError;
 use err::ThisError;
@@ -15,6 +16,7 @@ use httpclient::StreamResponse;
 use netpod::log::*;
 use netpod::NodeConfigCached;
 use netpod::ServiceVersion;
+use std::sync::Arc;
 
 #[derive(Debug, ThisError)]
 pub enum EventDataError {
@@ -50,14 +52,14 @@ impl EventDataHandler {
         req: Requ,
         _ctx: &ReqCtx,
         ncc: &NodeConfigCached,
-        _service_version: &ServiceVersion,
+        shared_res: Arc<ServiceSharedResources>,
     ) -> Result<StreamResponse, EventDataError> {
         if req.method() != Method::POST {
             Ok(response(StatusCode::NOT_ACCEPTABLE)
                 .body(body_empty())
                 .map_err(|_| EventDataError::InternalError)?)
         } else {
-            match Self::handle_req(req, ncc).await {
+            match Self::handle_req(req, ncc, shared_res).await {
                 Ok(ret) => Ok(ret),
                 Err(e) => {
                     error!("{e}");
@@ -69,7 +71,11 @@ impl EventDataHandler {
         }
     }
 
-    async fn handle_req(req: Requ, ncc: &NodeConfigCached) -> Result<StreamResponse, EventDataError> {
+    async fn handle_req(
+        req: Requ,
+        ncc: &NodeConfigCached,
+        shared_res: Arc<ServiceSharedResources>,
+    ) -> Result<StreamResponse, EventDataError> {
         let (_head, body) = req.into_parts();
         let body = read_body_bytes(body)
             .await

@@ -5,9 +5,11 @@ use crate::requests::accepts_cbor_framed;
 use crate::requests::accepts_json_framed;
 use crate::requests::accepts_json_or_all;
 use crate::response;
+use crate::ServiceSharedResources;
 use crate::ToPublicResponse;
 use bytes::Bytes;
 use bytes::BytesMut;
+use dbconn::worker::PgQueue;
 use futures_util::future;
 use futures_util::stream;
 use futures_util::Stream;
@@ -44,12 +46,13 @@ impl EventsHandler {
         &self,
         req: Requ,
         ctx: &ReqCtx,
-        node_config: &NodeConfigCached,
+        shared_res: &ServiceSharedResources,
+        ncc: &NodeConfigCached,
     ) -> Result<StreamResponse, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
-        match plain_events(req, ctx, node_config).await {
+        match plain_events(req, ctx, &shared_res.pgqueue, ncc).await {
             Ok(ret) => Ok(ret),
             Err(e) => {
                 error!("EventsHandler sees: {e}");
@@ -59,14 +62,19 @@ impl EventsHandler {
     }
 }
 
-async fn plain_events(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
+async fn plain_events(
+    req: Requ,
+    ctx: &ReqCtx,
+    pgqueue: &PgQueue,
+    ncc: &NodeConfigCached,
+) -> Result<StreamResponse, Error> {
     let url = req_uri_to_url(req.uri())?;
     if accepts_cbor_framed(req.headers()) {
-        Ok(plain_events_cbor_framed(url, req, ctx, node_config).await?)
+        Ok(plain_events_cbor_framed(url, req, ctx, pgqueue, ncc).await?)
     } else if accepts_json_framed(req.headers()) {
-        Ok(plain_events_json_framed(url, req, ctx, node_config).await?)
+        Ok(plain_events_json_framed(url, req, ctx, pgqueue, ncc).await?)
     } else if accepts_json_or_all(req.headers()) {
-        Ok(plain_events_json(url, req, ctx, node_config).await?)
+        Ok(plain_events_json(url, req, ctx, pgqueue, ncc).await?)
     } else {
         let ret = response_err_msg(StatusCode::NOT_ACCEPTABLE, format!("unsupported accept  {:?}", req))?;
         Ok(ret)
@@ -77,10 +85,11 @@ async fn plain_events_cbor_framed(
     url: Url,
     req: Requ,
     ctx: &ReqCtx,
+    pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
     let evq = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
-    let ch_conf = chconf_from_events_quorum(&evq, ctx, ncc)
+    let ch_conf = chconf_from_events_quorum(&evq, ctx, pgqueue, ncc)
         .await?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
     info!("plain_events_cbor_framed  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
@@ -115,10 +124,11 @@ async fn plain_events_json_framed(
     url: Url,
     req: Requ,
     ctx: &ReqCtx,
+    pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
     let evq = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
-    let ch_conf = chconf_from_events_quorum(&evq, ctx, ncc)
+    let ch_conf = chconf_from_events_quorum(&evq, ctx, pgqueue, ncc)
         .await?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
     info!("plain_events_json_framed  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
@@ -133,7 +143,8 @@ async fn plain_events_json(
     url: Url,
     req: Requ,
     ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
+    pgqueue: &PgQueue,
+    ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
     let self_name = "plain_events_json";
     info!("{self_name}  req: {:?}", req);
@@ -141,17 +152,17 @@ async fn plain_events_json(
     let query = PlainEventsQuery::from_url(&url)?;
     info!("{self_name}  query {query:?}");
     // TODO handle None case better and return 404
-    let ch_conf = chconf_from_events_quorum(&query, ctx, node_config)
+    let ch_conf = chconf_from_events_quorum(&query, ctx, pgqueue, ncc)
         .await
         .map_err(Error::from)?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
     info!("{self_name}  chconf_from_events_quorum: {ch_conf:?}");
-    let open_bytes = OpenBoxedBytesViaHttp::new(node_config.node_config.cluster.clone());
+    let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let item = streams::plaineventsjson::plain_events_json(
         &query,
         ch_conf,
         ctx,
-        &node_config.node_config.cluster,
+        &ncc.node_config.cluster,
         Box::pin(open_bytes),
     )
     .await;

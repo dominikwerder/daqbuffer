@@ -6,7 +6,6 @@ use netpod::NodeConfigCached;
 use netpod::SfDbChannel;
 
 // For sf-databuffer backend, given a Channel, try to complete the information if only id is given.
-#[allow(unused)]
 async fn sf_databuffer_fetch_channel_by_series(
     channel: SfDbChannel,
     ncc: &NodeConfigCached,
@@ -24,7 +23,7 @@ async fn sf_databuffer_fetch_channel_by_series(
                 let series = channel
                     .series()
                     .ok_or_else(|| Error::with_msg_no_trace("no series id given"))? as i64;
-                let pgcon = create_connection(&ncc.node_config.cluster.database).await?;
+                let (pgcon, _pgjh) = create_connection(&ncc.node_config.cluster.database).await?;
                 let mut rows = pgcon
                     .query("select name from channels where rowid = $1", &[&series])
                     .await

@@ -1,3 +1,4 @@
+use dbconn::worker::PgQueue;
 use err::Error;
 use httpclient::url::Url;
 use netpod::log::*;
@@ -100,13 +101,14 @@ fn channel_config_test_backend(channel: SfDbChannel) -> Result<ChannelTypeConfig
 pub async fn channel_config(
     range: NanoRange,
     channel: SfDbChannel,
+    pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<Option<ChannelTypeConfigGen>, Error> {
     if channel.backend() == TEST_BACKEND {
         Ok(Some(channel_config_test_backend(channel)?))
-    } else if ncc.node_config.cluster.scylla.is_some() {
+    } else if ncc.node_config.cluster.scylla_st().is_some() {
         debug!("try to get ChConf for scylla type backend");
-        let ret = scylla_chconf_from_sf_db_channel(range, &channel, ncc)
+        let ret = scylla_chconf_from_sf_db_channel(range, &channel, pgqueue)
             .await
             .map_err(Error::from)?;
         Ok(Some(ChannelTypeConfigGen::Scylla(ret)))
@@ -158,7 +160,7 @@ pub async fn channel_configs(channel: SfDbChannel, ncc: &NodeConfigCached) -> Re
             }
         };
         Ok(ret)
-    } else if ncc.node_config.cluster.scylla.is_some() {
+    } else if ncc.node_config.cluster.scylla_st().is_some() {
         debug!("try to get ChConf for scylla type backend");
         let ret = scylla_all_chconf_from_sf_db_channel(&channel, ncc)
             .await
@@ -206,20 +208,22 @@ pub async fn http_get_channel_config(
 async fn scylla_chconf_from_sf_db_channel(
     range: NanoRange,
     channel: &SfDbChannel,
-    ncc: &NodeConfigCached,
+    pgqueue: &PgQueue,
 ) -> Result<ChConf, Error> {
     if let Some(series) = channel.series() {
-        dbconn::channelconfig::chconf_for_series(channel.backend(), series, ncc).await
+        let ret = pgqueue
+            .chconf_for_series(channel.backend(), series)
+            .await?
+            .recv()
+            .await??;
+        Ok(ret)
     } else {
         // TODO let called function allow to return None instead of error-not-found
-        let ret = dbconn::channelconfig::chconf_best_matching_for_name_and_range(
-            channel.backend(),
-            channel.name(),
-            range,
-            ncc,
-        )
-        .await
-        .map_err(Error::from)?;
+        let ret = pgqueue
+            .chconf_best_matching_name_range_job(channel.backend(), channel.name(), range)
+            .await?
+            .recv()
+            .await??;
         Ok(ret)
     }
 }

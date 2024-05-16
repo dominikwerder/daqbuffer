@@ -59,7 +59,7 @@ impl FromUrl for AccountingIngestedBytesQuery {
         let ret = Self {
             backend: pairs
                 .get("backend")
-                .ok_or_else(|| Error::with_msg_no_trace("missing backend"))?
+                .ok_or_else(|| Error::with_public_msg_no_trace("missing backend"))?
                 .to_string(),
             range: SeriesRange::from_pairs(pairs)?,
         };
@@ -121,14 +121,16 @@ impl FromUrl for AccountingToplistQuery {
 
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
         let fn1 = |pairs: &BTreeMap<String, String>| {
-            let v = pairs.get("tsDate").ok_or(Error::with_public_msg("missing tsDate"))?;
+            let v = pairs
+                .get("tsDate")
+                .ok_or(Error::with_public_msg_no_trace("missing tsDate"))?;
             let w = v.parse::<DateTime<Utc>>()?;
-            Ok::<_, Error>(TsNano(w.to_nanos()))
+            Ok::<_, Error>(TsNano::from_ns(w.to_nanos()))
         };
         let ret = Self {
             backend: pairs
                 .get("backend")
-                .ok_or_else(|| Error::with_msg_no_trace("missing backend"))?
+                .ok_or_else(|| Error::with_public_msg_no_trace("missing backend"))?
                 .to_string(),
             ts: fn1(pairs)?,
             limit: pairs.get("limit").map_or(None, |x| x.parse().ok()).unwrap_or(20),

@@ -1011,7 +1011,7 @@ impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
 fn bins_timebin_fill_empty_00() {
     let mut bins = BinsDim0::<u32>::empty();
     let binrange = BinnedRangeEnum::Time(BinnedRange {
-        bin_len: TsNano(SEC * 2),
+        bin_len: TsNano::from_ns(SEC * 2),
         bin_off: 9,
         bin_cnt: 5,
     });
@@ -1033,7 +1033,7 @@ fn bins_timebin_fill_empty_00() {
 fn bins_timebin_fill_empty_01() {
     let mut bins = BinsDim0::<u32>::empty();
     let binrange = BinnedRangeEnum::Time(BinnedRange {
-        bin_len: TsNano(SEC * 2),
+        bin_len: TsNano::from_ns(SEC * 2),
         bin_off: 9,
         bin_cnt: 5,
     });
@@ -1056,7 +1056,7 @@ fn bins_timebin_fill_empty_01() {
 fn bins_timebin_push_empty_00() {
     let mut bins = BinsDim0::<u32>::empty();
     let binrange = BinnedRangeEnum::Time(BinnedRange {
-        bin_len: TsNano(SEC * 2),
+        bin_len: TsNano::from_ns(SEC * 2),
         bin_off: 9,
         bin_cnt: 5,
     });
@@ -1078,7 +1078,7 @@ fn bins_timebin_push_empty_00() {
 fn bins_timebin_push_empty_01() {
     let mut bins = BinsDim0::<u32>::empty();
     let binrange = BinnedRangeEnum::Time(BinnedRange {
-        bin_len: TsNano(SEC * 2),
+        bin_len: TsNano::from_ns(SEC * 2),
         bin_off: 9,
         bin_cnt: 5,
     });
@@ -1104,7 +1104,7 @@ fn bins_timebin_ingest_only_before() {
     bins.push(SEC * 2, SEC * 4, 3, 7, 9, 8.1);
     bins.push(SEC * 4, SEC * 6, 3, 6, 9, 8.2);
     let binrange = BinnedRangeEnum::Time(BinnedRange {
-        bin_len: TsNano(SEC * 2),
+        bin_len: TsNano::from_ns(SEC * 2),
         bin_off: 9,
         bin_cnt: 5,
     });
@@ -1127,7 +1127,7 @@ fn bins_timebin_ingest_00() {
     bins.push(SEC * 21, SEC * 22, 5, 71, 93, 86.);
     bins.push(SEC * 23, SEC * 24, 6, 72, 92, 81.);
     let binrange = BinnedRangeEnum::Time(BinnedRange {
-        bin_len: TsNano(SEC * 2),
+        bin_len: TsNano::from_ns(SEC * 2),
         bin_off: 9,
         bin_cnt: 5,
     });
@@ -1148,7 +1148,7 @@ fn bins_timebin_ingest_00() {
 #[test]
 fn bins_timebin_ingest_continuous_00() {
     let binrange = BinnedRangeEnum::Time(BinnedRange {
-        bin_len: TsNano(SEC * 2),
+        bin_len: TsNano::from_ns(SEC * 2),
         bin_off: 9,
         bin_cnt: 20,
     });

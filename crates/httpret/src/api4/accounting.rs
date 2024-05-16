@@ -72,8 +72,7 @@ impl AccountingIngestedBytes {
         let scyco = ncc
             .node_config
             .cluster
-            .scylla
-            .as_ref()
+            .scylla_st()
             .ok_or_else(|| Error::with_public_msg_no_trace(format!("no scylla configured")))?;
         let scy = scyllaconn::conn::create_scy_session(scyco).await?;
         let mut stream = scyllaconn::accounting::totals::AccountingStreamScylla::new(q.range().try_into()?, scy);
@@ -136,16 +135,16 @@ impl AccountingToplistCounts {
         _ctx: &ReqCtx,
         ncc: &NodeConfigCached,
     ) -> Result<Toplist, Error> {
+        // TODO assumes that accounting data is in the LT keyspace
         let scyco = ncc
             .node_config
             .cluster
-            .scylla
-            .as_ref()
-            .ok_or_else(|| Error::with_public_msg_no_trace(format!("no scylla configured")))?;
+            .scylla_lt()
+            .ok_or_else(|| Error::with_public_msg_no_trace(format!("no lt scylla configured")))?;
         let scy = scyllaconn::conn::create_scy_session(scyco).await?;
         let pgconf = &ncc.node_config.cluster.database;
-        let pg = dbconn::create_connection(&pgconf).await?;
-        let mut top1 = scyllaconn::accounting::toplist::read_ts(qu.ts().0, scy).await?;
+        let (pg, pgjh) = dbconn::create_connection(&pgconf).await?;
+        let mut top1 = scyllaconn::accounting::toplist::read_ts(qu.ts().ns(), scy).await?;
         top1.sort_by_bytes();
         let mut ret = Toplist { toplist: Vec::new() };
         let series_ids: Vec<_> = top1.usage().iter().take(qu.limit() as _).map(|x| x.0).collect();

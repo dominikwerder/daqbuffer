@@ -5,11 +5,11 @@ use err::Error;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::ChConf;
-use netpod::NodeConfigCached;
 use netpod::ScalarType;
 use netpod::Shape;
 use netpod::TsMs;
 use std::time::Duration;
+use tokio_postgres::Client;
 
 /// It is an unsolved question as to how we want to uniquely address channels.
 /// Currently, the usual (backend, channelname) works in 99% of the cases, but the edge-cases
@@ -19,13 +19,14 @@ use std::time::Duration;
 /// Otherwise we try to uniquely identify the series id from the given information.
 /// In the future, we can even try to involve time range information for that, but backends like
 /// old archivers and sf databuffer do not support such lookup.
-pub async fn chconf_best_matching_for_name_and_range(
+pub(super) async fn chconf_best_matching_for_name_and_range(
     backend: &str,
     name: &str,
     range: NanoRange,
-    ncc: &NodeConfigCached,
+    pg: &Client,
 ) -> Result<ChConf, Error> {
     debug!("chconf_best_matching_for_name_and_range  {backend}  {name}  {range:?}");
+    #[cfg(DISABLED)]
     if ncc.node_config.cluster.scylla.is_none() {
         let e = Error::with_msg_no_trace(format!(
             "chconf_best_matching_for_name_and_range  but not a scylla backend"
@@ -33,21 +34,20 @@ pub async fn chconf_best_matching_for_name_and_range(
         error!("{e}");
         return Err(e);
     };
+    #[cfg(DISABLED)]
     if backend != ncc.node_config.cluster.backend {
         warn!(
             "mismatched backend  {}  vs  {}",
             backend, ncc.node_config.cluster.backend
         );
     }
-    let dbconf = &ncc.node_config.cluster.database;
-    let pgclient = crate::create_connection(dbconf).await?;
     let sql = concat!(
         "select unnest(tscs) as tsc, series, scalar_type, shape_dims",
         " from series_by_channel",
         " where kind = 2 and facility = $1 and channel = $2",
         " order by tsc",
     );
-    let res = pgclient.query(sql, &[&backend, &name]).await.err_conv()?;
+    let res = pg.query(sql, &[&backend, &name]).await.err_conv()?;
     if res.len() == 0 {
         let e = Error::with_public_msg_no_trace(format!("can not find channel information for {name}"));
         warn!("{e}");
@@ -70,7 +70,7 @@ pub async fn chconf_best_matching_for_name_and_range(
         let tsmss: Vec<_> = rows.iter().map(|x| x.0.clone()).collect();
         let range = (TsMs(range.beg / 1000), TsMs(range.end / 1000));
         let res = decide_best_matching_index(range, &tsmss)?;
-        let ch_conf = chconf_for_series(backend, rows[res].1, ncc).await?;
+        let ch_conf = chconf_for_series(backend, rows[res].1, pg).await?;
         Ok(ch_conf)
     } else {
         let r = res.first().unwrap();
@@ -191,10 +191,8 @@ fn test_decide_best_matching_index_after_01() {
     assert_eq!(i, 0);
 }
 
-pub async fn chconf_for_series(backend: &str, series: u64, ncc: &NodeConfigCached) -> Result<ChConf, Error> {
-    let dbconf = &ncc.node_config.cluster.database;
-    let pgclient = crate::create_connection(dbconf).await?;
-    let res = pgclient
+pub(super) async fn chconf_for_series(backend: &str, series: u64, pg: &Client) -> Result<ChConf, Error> {
+    let res = pg
         .query(
             "select channel, scalar_type, shape_dims from series_by_channel where facility = $1 and series = $2",
             &[&backend, &(series as i64)],

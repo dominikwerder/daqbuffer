@@ -1292,7 +1292,7 @@ fn binner_00() {
     let mut ev1 = EventsDim0::empty();
     ev1.push(MS * 1200, 3, 1.2f32);
     ev1.push(MS * 3200, 3, 3.2f32);
-    let binrange = BinnedRangeEnum::from_custom(TsNano(SEC), 0, 10);
+    let binrange = BinnedRangeEnum::from_custom(TsNano::from_ns(SEC), 0, 10);
     let mut binner = ev1.time_binner_new(binrange, true);
     binner.ingest(ev1.as_time_binnable_mut());
     eprintln!("{:?}", binner);
@@ -1306,7 +1306,7 @@ fn binner_01() {
     ev1.push(MS * 1300, 3, 1.3);
     ev1.push(MS * 2100, 3, 2.1);
     ev1.push(MS * 2300, 3, 2.3);
-    let binrange = BinnedRangeEnum::from_custom(TsNano(SEC), 0, 10);
+    let binrange = BinnedRangeEnum::from_custom(TsNano::from_ns(SEC), 0, 10);
     let mut binner = ev1.time_binner_new(binrange, true);
     binner.ingest(ev1.as_time_binnable_mut());
     eprintln!("{:?}", binner);
@@ -1386,7 +1386,7 @@ fn bin_binned_02() {
 #[test]
 fn events_timebin_ingest_continuous_00() {
     let binrange = BinnedRangeEnum::Time(BinnedRange {
-        bin_len: TsNano(SEC * 2),
+        bin_len: TsNano::from_ns(SEC * 2),
         bin_off: 9,
         bin_cnt: 20,
     });

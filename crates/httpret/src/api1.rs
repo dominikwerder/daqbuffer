@@ -6,6 +6,7 @@ use crate::gather::SubRes;
 use crate::response;
 use crate::ReqCtx;
 use crate::Requ;
+use crate::ServiceSharedResources;
 use bytes::BufMut;
 use bytes::BytesMut;
 use disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes;
@@ -896,6 +897,7 @@ impl Api1EventsBinaryHandler {
         &self,
         req: Requ,
         ctx: &ReqCtx,
+        shared_res: &ServiceSharedResources,
         node_config: &NodeConfigCached,
     ) -> Result<StreamResponse, Error> {
         if req.method() != Method::POST {
@@ -942,6 +944,7 @@ impl Api1EventsBinaryHandler {
             span.clone(),
             reqidspan.clone(),
             ctx,
+            shared_res,
             node_config,
         )
         .instrument(span)
@@ -958,6 +961,7 @@ impl Api1EventsBinaryHandler {
         span: tracing::Span,
         reqidspan: tracing::Span,
         ctx: &ReqCtx,
+        shared_res: &ServiceSharedResources,
         ncc: &NodeConfigCached,
     ) -> Result<StreamResponse, Error> {
         let self_name = any::type_name::<Self>();
@@ -983,9 +987,14 @@ impl Api1EventsBinaryHandler {
             for ch in qu.channels() {
                 debug!("try to find config quorum for {ch:?}");
                 let ch = SfDbChannel::from_name(backend, ch.name());
-                let ch_conf =
-                    nodenet::configquorum::find_config_basics_quorum(ch.clone(), range.clone().into(), ctx, ncc)
-                        .await?;
+                let ch_conf = nodenet::configquorum::find_config_basics_quorum(
+                    ch.clone(),
+                    range.clone().into(),
+                    ctx,
+                    &shared_res.pgqueue,
+                    ncc,
+                )
+                .await?;
                 match ch_conf {
                     Some(x) => {
                         debug!("found quorum {ch:?} {x:?}");

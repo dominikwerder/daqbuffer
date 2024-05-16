@@ -5,6 +5,8 @@ use crate::channelconfig::ch_conf_from_binned;
 use crate::err::Error;
 use crate::requests::accepts_json_or_all;
 use crate::requests::accepts_octets;
+use crate::ServiceSharedResources;
+use dbconn::worker::PgQueue;
 use http::Method;
 use http::StatusCode;
 use httpclient::body_empty;
@@ -23,7 +25,13 @@ use query::api4::binned::BinnedQuery;
 use tracing::Instrument;
 use url::Url;
 
-async fn binned_json(url: Url, req: Requ, ctx: &ReqCtx, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
+async fn binned_json(
+    url: Url,
+    req: Requ,
+    ctx: &ReqCtx,
+    pgqueue: &PgQueue,
+    ncc: &NodeConfigCached,
+) -> Result<StreamResponse, Error> {
     debug!("{:?}", req);
     let reqid = crate::status_board()
         .map_err(|e| Error::with_msg_no_trace(e.to_string()))?
@@ -35,7 +43,7 @@ async fn binned_json(url: Url, req: Requ, ctx: &ReqCtx, ncc: &NodeConfigCached) 
         e.add_public_msg(msg)
     })?;
     // TODO handle None case better and return 404
-    let ch_conf = ch_conf_from_binned(&query, ctx, ncc)
+    let ch_conf = ch_conf_from_binned(&query, ctx, pgqueue, ncc)
         .await?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
     let span1 = span!(
@@ -58,7 +66,7 @@ async fn binned_json(url: Url, req: Requ, ctx: &ReqCtx, ncc: &NodeConfigCached) 
     Ok(ret)
 }
 
-async fn binned(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
+async fn binned(req: Requ, ctx: &ReqCtx, pgqueue: &PgQueue, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
     let url = req_uri_to_url(req.uri())?;
     if req
         .uri()
@@ -68,7 +76,7 @@ async fn binned(req: Requ, ctx: &ReqCtx, node_config: &NodeConfigCached) -> Resu
         Err(Error::with_msg_no_trace("hidden message").add_public_msg("PublicMessage"))?;
     }
     if accepts_json_or_all(&req.headers()) {
-        Ok(binned_json(url, req, ctx, node_config).await?)
+        Ok(binned_json(url, req, ctx, pgqueue, ncc).await?)
     } else if accepts_octets(&req.headers()) {
         Ok(response_err_msg(
             StatusCode::NOT_ACCEPTABLE,
@@ -98,12 +106,13 @@ impl BinnedHandler {
         &self,
         req: Requ,
         ctx: &ReqCtx,
-        node_config: &NodeConfigCached,
+        shared_res: &ServiceSharedResources,
+        ncc: &NodeConfigCached,
     ) -> Result<StreamResponse, Error> {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
-        match binned(req, ctx, node_config).await {
+        match binned(req, ctx, &shared_res.pgqueue, ncc).await {
             Ok(ret) => Ok(ret),
             Err(e) => {
                 warn!("BinnedHandler handle sees: {e}");

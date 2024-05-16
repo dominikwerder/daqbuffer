@@ -3,6 +3,7 @@ pub mod channelinfo;
 pub mod query;
 pub mod scan;
 pub mod search;
+pub mod worker;
 
 pub mod pg {
     pub use tokio_postgres::types::Type;
@@ -28,6 +29,7 @@ use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
 use taskrun::tokio;
+use tokio::task::JoinHandle;
 
 trait ErrConv<T> {
     fn err_conv(self) -> Result<T, Error>;
@@ -63,27 +65,28 @@ pub async fn delay_io_medium() {
     delay_us(2000).await;
 }
 
-pub async fn create_connection(db_config: &Database) -> Result<PgClient, Error> {
+pub async fn create_connection(db_config: &Database) -> Result<(PgClient, JoinHandle<Result<(), Error>>), Error> {
+    warn!("create_connection\n\n  CREATING CONNECTION\n\n");
     // TODO use a common already running worker pool for these queries:
     let d = db_config;
     let uri = format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, d.port, d.name);
     let (cl, conn) = tokio_postgres::connect(&uri, NoTls)
         .await
-        .map_err(|e| format!("Can not connect to database: {e:?}"))
-        //.errconv()
-        ?;
-    // TODO monitor connection drop.
-    let _cjh = tokio::spawn(async move {
-        if let Err(e) = conn.await {
-            error!("connection error: {}", e);
+        .map_err(|e| format!("Can not connect to database: {e}"))?;
+    let jh = tokio::spawn(async move {
+        match conn.await {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                error!("connection error: {}", e);
+                Err(Error::from_string(e))
+            }
         }
-        Ok::<_, Error>(())
     });
-    Ok(cl)
+    Ok((cl, jh))
 }
 
 pub async fn channel_exists(channel_name: &str, node_config: &NodeConfigCached) -> Result<bool, Error> {
-    let cl = create_connection(&node_config.node_config.cluster.database).await?;
+    let (cl, _pgjh) = create_connection(&node_config.node_config.cluster.database).await?;
     let rows = cl
         .query("select rowid from channels where name = $1::text", &[&channel_name])
         .await
@@ -101,7 +104,7 @@ pub async fn channel_exists(channel_name: &str, node_config: &NodeConfigCached) 
 }
 
 pub async fn database_size(node_config: &NodeConfigCached) -> Result<u64, Error> {
-    let cl = create_connection(&node_config.node_config.cluster.database).await?;
+    let (cl, _pgjh) = create_connection(&node_config.node_config.cluster.database).await?;
     let rows = cl
         .query(
             "select pg_database_size($1::text)",
@@ -129,7 +132,7 @@ pub async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, E
         "ORDER BY pg_total_relation_size(C.oid) DESC LIMIT 20",
     );
     let sql = sql.as_str();
-    let cl = create_connection(&node_config.node_config.cluster.database).await?;
+    let (cl, _pgjh) = create_connection(&node_config.node_config.cluster.database).await?;
     let rows = cl.query(sql, &[]).await.err_conv()?;
     let mut sizes = TableSizes { sizes: Vec::new() };
     sizes.sizes.push((format!("table"), format!("size")));
@@ -141,7 +144,7 @@ pub async fn table_sizes(node_config: &NodeConfigCached) -> Result<TableSizes, E
 
 pub async fn random_channel(node_config: &NodeConfigCached) -> Result<String, Error> {
     let sql = "select name from channels order by rowid limit 1 offset (random() * (select count(rowid) from channels))::bigint";
-    let cl = create_connection(&node_config.node_config.cluster.database).await?;
+    let (cl, _pgjh) = create_connection(&node_config.node_config.cluster.database).await?;
     let rows = cl.query(sql, &[]).await.err_conv()?;
     if rows.len() == 0 {
         Err(Error::with_msg("can not get random channel"))?;

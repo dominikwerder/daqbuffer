@@ -19,6 +19,8 @@ use crate::bodystream::response;
 use crate::err::Error;
 use ::err::thiserror;
 use ::err::ThisError;
+use dbconn::worker::PgQueue;
+use dbconn::worker::PgWorker;
 use futures_util::Future;
 use futures_util::FutureExt;
 use http::Method;
@@ -37,6 +39,7 @@ use netpod::query::prebinned::PreBinnedQuery;
 use netpod::req_uri_to_url;
 use netpod::status_board;
 use netpod::status_board_init;
+use netpod::Database;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
 use netpod::ServiceVersion;
@@ -49,6 +52,7 @@ use serde::Serialize;
 use std::net;
 use std::panic;
 use std::pin;
+use std::sync::Arc;
 use std::task;
 use task::Context;
 use task::Poll;
@@ -79,6 +83,7 @@ impl IntoBoxedError for tokio::task::JoinError {}
 impl IntoBoxedError for api4::databuffer_tools::FindActiveError {}
 impl IntoBoxedError for std::string::FromUtf8Error {}
 impl IntoBoxedError for std::io::Error {}
+impl IntoBoxedError for dbconn::worker::Error {}
 
 impl<E> From<E> for RetrievalError
 where
@@ -95,16 +100,29 @@ impl ::err::ToErr for RetrievalError {
     }
 }
 
-pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion) -> Result<(), RetrievalError> {
+pub struct ServiceSharedResources {
+    pgqueue: PgQueue,
+}
+
+impl ServiceSharedResources {
+    pub fn new(pgqueue: PgQueue) -> Self {
+        Self { pgqueue }
+    }
+}
+
+pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Result<(), RetrievalError> {
     status_board_init();
     #[cfg(DISABLED)]
-    if let Some(bind) = node_config.node.prometheus_api_bind {
+    if let Some(bind) = ncc.node.prometheus_api_bind {
         tokio::spawn(prometheus::host(bind));
     }
     // let rawjh = taskrun::spawn(nodenet::conn::events_service(node_config.clone()));
+    let (pgqueue, pgworker) = PgWorker::new(&ncc.node_config.cluster.database).await?;
+    let pgworker_jh = taskrun::spawn(pgworker.work());
+    let shared_res = ServiceSharedResources::new(pgqueue);
+    let shared_res = Arc::new(shared_res);
     use std::str::FromStr;
-    let bind_addr = SocketAddr::from_str(&format!("{}:{}", node_config.node.listen(), node_config.node.port))?;
-
+    let bind_addr = SocketAddr::from_str(&format!("{}:{}", ncc.node.listen(), ncc.node.port))?;
     // tokio::net::TcpSocket::new_v4()?.listen(200)?
     let listener = TcpListener::bind(bind_addr).await?;
     loop {
@@ -114,14 +132,24 @@ pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion
             break;
         };
         debug!("new connection from {addr}");
-        let node_config = node_config.clone();
+        let node_config = ncc.clone();
         let service_version = service_version.clone();
         let io = TokioIo::new(stream);
+        let shared_res = shared_res.clone();
+        // let shared_res = &shared_res;
         tokio::task::spawn(async move {
             let res = hyper::server::conn::http1::Builder::new()
                 .serve_connection(
                     io,
-                    service_fn(move |req| the_service_fn(req, addr, node_config.clone(), service_version.clone())),
+                    service_fn(move |req| {
+                        the_service_fn(
+                            req,
+                            addr,
+                            node_config.clone(),
+                            service_version.clone(),
+                            shared_res.clone(),
+                        )
+                    }),
                 )
                 .await;
             match res {
@@ -132,7 +160,7 @@ pub async fn host(node_config: NodeConfigCached, service_version: ServiceVersion
             }
         });
     }
-
+    info!("http host done");
     // rawjh.await??;
     Ok(())
 }
@@ -142,10 +170,11 @@ async fn the_service_fn(
     addr: SocketAddr,
     node_config: NodeConfigCached,
     service_version: ServiceVersion,
+    shared_res: Arc<ServiceSharedResources>,
 ) -> Result<StreamResponse, Error> {
     let ctx = ReqCtx::new_with_node(&req, &node_config);
     let reqid_span = span!(Level::INFO, "req", reqid = ctx.reqid());
-    let f = http_service(req, addr, ctx, node_config, service_version);
+    let f = http_service(req, addr, ctx, node_config, service_version, shared_res);
     let f = Cont { f: Box::pin(f) };
     f.instrument(reqid_span).await
 }
@@ -156,6 +185,7 @@ async fn http_service(
     ctx: ReqCtx,
     node_config: NodeConfigCached,
     service_version: ServiceVersion,
+    shared_res: Arc<ServiceSharedResources>,
 ) -> Result<StreamResponse, Error> {
     info!(
         "http-request  {:?} - {:?} - {:?} - {:?}",
@@ -164,7 +194,7 @@ async fn http_service(
         req.uri(),
         req.headers()
     );
-    match http_service_try(req, ctx, &node_config, &service_version).await {
+    match http_service_try(req, ctx, &node_config, &service_version, shared_res).await {
         Ok(k) => Ok(k),
         Err(e) => {
             error!("daqbuffer node http_service sees error from http_service_try: {}", e);
@@ -209,6 +239,7 @@ async fn http_service_try(
     ctx: ReqCtx,
     node_config: &NodeConfigCached,
     service_version: &ServiceVersion,
+    shared_res: Arc<ServiceSharedResources>,
 ) -> Result<StreamResponse, Error> {
     use http::HeaderValue;
     let mut urlmarks = Vec::new();
@@ -221,7 +252,7 @@ async fn http_service_try(
             }
         }
     }
-    let mut res = http_service_inner(req, &ctx, node_config, service_version).await?;
+    let mut res = http_service_inner(req, &ctx, node_config, service_version, shared_res).await?;
     let hm = res.headers_mut();
     hm.append("Access-Control-Allow-Origin", "*".parse().unwrap());
     hm.append("Access-Control-Allow-Headers", "*".parse().unwrap());
@@ -243,6 +274,7 @@ async fn http_service_inner(
     ctx: &ReqCtx,
     node_config: &NodeConfigCached,
     service_version: &ServiceVersion,
+    shared_res: Arc<ServiceSharedResources>,
 ) -> Result<StreamResponse, RetrievalError> {
     let uri = req.uri().clone();
     let path = uri.path();
@@ -291,7 +323,7 @@ async fn http_service_inner(
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     } else if let Some(h) = api4::eventdata::EventDataHandler::handler(&req) {
-        Ok(h.handle(req, ctx, &node_config, service_version)
+        Ok(h.handle(req, ctx, &node_config, shared_res)
             .await
             .map_err(|e| Error::with_msg_no_trace(e.to_string()))?)
     } else if let Some(h) = api4::status::StatusNodesRecursive::handler(&req) {
@@ -303,19 +335,19 @@ async fn http_service_inner(
     } else if let Some(h) = api4::search::ChannelSearchHandler::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channel_status::ConnectionStatusEvents::handler(&req) {
-        Ok(h.handle(req, ctx, &node_config).await?)
+        Ok(h.handle(req, ctx, &shared_res, &node_config).await?)
     } else if let Some(h) = channel_status::ChannelStatusEventsHandler::handler(&req) {
-        Ok(h.handle(req, ctx, &node_config).await?)
+        Ok(h.handle(req, ctx, &shared_res, &node_config).await?)
     } else if let Some(h) = api4::events::EventsHandler::handler(&req) {
-        Ok(h.handle(req, ctx, &node_config).await?)
+        Ok(h.handle(req, ctx, &shared_res, &node_config).await?)
     } else if let Some(h) = api4::binned::BinnedHandler::handler(&req) {
-        Ok(h.handle(req, ctx, &node_config).await?)
+        Ok(h.handle(req, ctx, &shared_res, &node_config).await?)
     } else if let Some(h) = channelconfig::ChannelConfigQuorumHandler::handler(&req) {
-        Ok(h.handle(req, ctx, &node_config).await?)
+        Ok(h.handle(req, ctx, &shared_res.pgqueue, &node_config).await?)
     } else if let Some(h) = channelconfig::ChannelConfigsHandler::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::ChannelConfigHandler::handler(&req) {
-        Ok(h.handle(req, &node_config).await?)
+        Ok(h.handle(req, &shared_res.pgqueue, &node_config).await?)
     } else if let Some(h) = channelconfig::IocForChannel::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::ScyllaChannelsActive::handler(&req) {
@@ -357,7 +389,7 @@ async fn http_service_inner(
     } else if let Some(h) = settings::SettingsThreadsMaxHandler::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = api1::Api1EventsBinaryHandler::handler(&req) {
-        Ok(h.handle(req, ctx, &node_config).await?)
+        Ok(h.handle(req, ctx, &shared_res, &node_config).await?)
     } else if let Some(h) = pulsemap::MapPulseScyllaHandler::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = pulsemap::IndexChannelHttpFunction::handler(&req) {

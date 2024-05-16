@@ -17,6 +17,7 @@ use items_2::empty::empty_events_dyn_ev;
 use items_2::framable::EventQueryJsonStringFrame;
 use items_2::framable::Framable;
 use items_2::frame::decode_frame;
+use items_2::frame::make_error_frame;
 use items_2::frame::make_term_frame;
 use items_2::inmem::InMemoryFrame;
 use netpod::histo::HistoLog2;
@@ -81,7 +82,7 @@ async fn make_channel_events_stream_data(
         let node_count = ncc.node_config.cluster.nodes.len() as u64;
         let node_ix = ncc.ix as u64;
         streams::generators::make_test_channel_events_stream_data(subq, node_count, node_ix)
-    } else if let Some(scyconf) = &ncc.node_config.cluster.scylla {
+    } else if let Some(scyconf) = &ncc.node_config.cluster.scylla_st() {
         let cfg = subq.ch_conf().to_scylla()?;
         scylla_channel_event_stream(subq, cfg, scyconf, ncc).await
     } else if let Some(_) = &ncc.node.channel_archiver {
@@ -125,6 +126,7 @@ pub async fn create_response_bytes_stream(
         return Err(e);
     }
     if evq.is_event_blobs() {
+        // This is only relevant for "api-1" queries in sf-data/imagebuffer based backends.
         // TODO support event blobs as transform
         let fetch_info = evq.ch_conf().to_sf_databuffer()?;
         let stream = disk::raw::conn::make_event_blobs_pipe(&evq, &fetch_info, reqctx, ncc)?;
@@ -151,7 +153,7 @@ pub async fn create_response_bytes_stream(
             })
         });
         // let stream = stream.map(move |x| Box::new(x) as Box<dyn Framable + Send>);
-        let stream = stream.map(|x| x.make_frame().map(|x| x.freeze()));
+        let stream = stream.map(|x| x.make_frame().map(bytes::BytesMut::freeze));
         let ret = Box::pin(stream);
         Ok(ret)
     }

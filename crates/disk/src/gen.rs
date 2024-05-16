@@ -164,7 +164,7 @@ async fn gen_channel(chn: &ChannelGenProps, split: u32, node: &Node, ensemble: &
         .await
         .map_err(|k| Error::with_msg(format!("can not generate config {:?}", k)))?;
     let mut evix = 0;
-    let mut ts = TsNano(0);
+    let mut ts = TsNano::from_ns(0);
     let mut pulse = 0;
     while ts.ns() < DAY * 3 {
         let res = gen_timebin(
@@ -352,7 +352,7 @@ async fn gen_timebin(
     let mut evix = evix;
     let mut ts = ts;
     let mut pulse = pulse;
-    let tsmax = TsNano((tb + 1) * config.time_bin_size.ns());
+    let tsmax = TsNano::from_ns((tb + 1) * config.time_bin_size.ns());
     while ts.ns() < tsmax.ns() {
         match gen_var {
             // TODO
@@ -377,7 +377,7 @@ async fn gen_timebin(
             }
         }
         evix += 1;
-        ts.0 += ts_spacing;
+        ts = ts.add_ns(ts_spacing);
         pulse += 1;
     }
     let ret = GenTimebinRes { evix, ts, pulse };
