@@ -9,8 +9,8 @@ path = "src/scyllaconn.rs"
 
 [dependencies]
 futures-util = "0.3.24"
-async-channel = "1.9.0"
-scylla = "0.11.0"
+async-channel = "2.3.1"
+scylla = "0.13.0"
 err = { path = "../err" }
 netpod = { path = "../netpod" }
 query = { path = "../query" }

@@ -5,5 +5,6 @@ pub mod errconv;
 pub mod events;
 pub mod range;
 pub mod status;
+pub mod worker;
 
 pub use scylla;
