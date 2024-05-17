@@ -47,6 +47,8 @@ use netpod::APP_JSON;
 use panic::AssertUnwindSafe;
 use panic::UnwindSafe;
 use pin::Pin;
+use scyllaconn::worker::ScyllaQueue;
+use scyllaconn::worker::ScyllaWorker;
 use serde::Deserialize;
 use serde::Serialize;
 use std::net;
@@ -102,11 +104,12 @@ impl ::err::ToErr for RetrievalError {
 
 pub struct ServiceSharedResources {
     pgqueue: PgQueue,
+    scyqueue: Option<ScyllaQueue>,
 }
 
 impl ServiceSharedResources {
-    pub fn new(pgqueue: PgQueue) -> Self {
-        Self { pgqueue }
+    pub fn new(pgqueue: PgQueue, scyqueue: Option<ScyllaQueue>) -> Self {
+        Self { pgqueue, scyqueue }
     }
 }
 
@@ -119,7 +122,21 @@ pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Res
     // let rawjh = taskrun::spawn(nodenet::conn::events_service(node_config.clone()));
     let (pgqueue, pgworker) = PgWorker::new(&ncc.node_config.cluster.database).await?;
     let pgworker_jh = taskrun::spawn(pgworker.work());
-    let shared_res = ServiceSharedResources::new(pgqueue);
+    let scyqueue = if let (Some(st), Some(mt), Some(lt)) = (
+        ncc.node_config.cluster.scylla_st(),
+        ncc.node_config.cluster.scylla_mt(),
+        ncc.node_config.cluster.scylla_lt(),
+    ) {
+        let (scyqueue, scylla_worker) = ScyllaWorker::new(st, mt, lt).await.map_err(|e| {
+            error!("{e}");
+            RetrievalError::TextError(e.to_string())
+        })?;
+        let scylla_worker_jh = taskrun::spawn(scylla_worker.work());
+        Some(scyqueue)
+    } else {
+        None
+    };
+    let shared_res = ServiceSharedResources::new(pgqueue, scyqueue);
     let shared_res = Arc::new(shared_res);
     use std::str::FromStr;
     let bind_addr = SocketAddr::from_str(&format!("{}:{}", ncc.node.listen(), ncc.node.port))?;
@@ -136,7 +153,6 @@ pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Res
         let service_version = service_version.clone();
         let io = TokioIo::new(stream);
         let shared_res = shared_res.clone();
-        // let shared_res = &shared_res;
         tokio::task::spawn(async move {
             let res = hyper::server::conn::http1::Builder::new()
                 .serve_connection(

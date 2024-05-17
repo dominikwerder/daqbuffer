@@ -7,23 +7,20 @@ use items_0::streamitem::StreamItem;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
 use netpod::ChConf;
-use netpod::NodeConfigCached;
-use netpod::ScyllaConfig;
 use query::api4::events::EventsSubQuery;
+use scyllaconn::worker::ScyllaQueue;
 use std::pin::Pin;
 use taskrun::tokio;
 
 pub async fn scylla_channel_event_stream(
     evq: EventsSubQuery,
     chconf: ChConf,
-    scyco: &ScyllaConfig,
-    _ncc: &NodeConfigCached,
+    scyqueue: &ScyllaQueue,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     // TODO depends in general on the query
     // TODO why both in PlainEventsQuery and as separate parameter? Check other usages.
+    // let do_one_before_range = evq.need_one_before_range();
     let do_one_before_range = false;
-    // TODO use better builder pattern with shortcuts for production and dev defaults
-    let scy = scyllaconn::conn::create_scy_session(scyco).await?;
     let series = chconf.series();
     let scalar_type = chconf.scalar_type();
     let shape = chconf.shape();
@@ -37,7 +34,7 @@ pub async fn scylla_channel_event_stream(
         scalar_type.clone(),
         shape.clone(),
         with_values,
-        scy,
+        scyqueue.clone(),
         do_test_stream_error,
     );
     let stream = stream

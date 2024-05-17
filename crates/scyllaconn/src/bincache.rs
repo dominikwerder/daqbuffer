@@ -1,5 +1,4 @@
 use crate::errconv::ErrConv;
-use crate::events::EventsStreamScylla;
 use err::Error;
 use futures_util::Future;
 use futures_util::Stream;

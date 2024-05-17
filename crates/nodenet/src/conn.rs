@@ -17,7 +17,6 @@ use items_2::empty::empty_events_dyn_ev;
 use items_2::framable::EventQueryJsonStringFrame;
 use items_2::framable::Framable;
 use items_2::frame::decode_frame;
-use items_2::frame::make_error_frame;
 use items_2::frame::make_term_frame;
 use items_2::inmem::InMemoryFrame;
 use netpod::histo::HistoLog2;
@@ -26,6 +25,7 @@ use netpod::NodeConfigCached;
 use netpod::ReqCtxArc;
 use query::api4::events::EventsSubQuery;
 use query::api4::events::Frame1Parts;
+use scyllaconn::worker::ScyllaQueue;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use streams::frames::inmem::BoxedBytesStream;
@@ -45,13 +45,14 @@ mod test;
 #[derive(Debug, ThisError)]
 pub enum NodeNetError {}
 
-pub async fn events_service(node_config: NodeConfigCached) -> Result<(), Error> {
-    let addr = format!("{}:{}", node_config.node.listen(), node_config.node.port_raw);
+pub async fn events_service(ncc: NodeConfigCached) -> Result<(), Error> {
+    let scyqueue = err::todoval();
+    let addr = format!("{}:{}", ncc.node.listen(), ncc.node.port_raw);
     let lis = tokio::net::TcpListener::bind(addr).await?;
     loop {
         match lis.accept().await {
             Ok((stream, addr)) => {
-                taskrun::spawn(events_conn_handler(stream, addr, node_config.clone()));
+                taskrun::spawn(events_conn_handler(stream, addr, scyqueue, ncc.clone()));
             }
             Err(e) => Err(e)?,
         }
@@ -76,15 +77,16 @@ impl<E: Into<Error>> From<(E, OwnedWriteHalf)> for ConnErr {
 async fn make_channel_events_stream_data(
     subq: EventsSubQuery,
     reqctx: ReqCtxArc,
+    scyqueue: Option<&ScyllaQueue>,
     ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     if subq.backend() == TEST_BACKEND {
         let node_count = ncc.node_config.cluster.nodes.len() as u64;
         let node_ix = ncc.ix as u64;
         streams::generators::make_test_channel_events_stream_data(subq, node_count, node_ix)
-    } else if let Some(scyconf) = &ncc.node_config.cluster.scylla_st() {
+    } else if let Some(scyqueue) = scyqueue {
         let cfg = subq.ch_conf().to_scylla()?;
-        scylla_channel_event_stream(subq, cfg, scyconf, ncc).await
+        scylla_channel_event_stream(subq, cfg, scyqueue).await
     } else if let Some(_) = &ncc.node.channel_archiver {
         let e = Error::with_msg_no_trace("archapp not built");
         Err(e)
@@ -100,11 +102,12 @@ async fn make_channel_events_stream_data(
 async fn make_channel_events_stream(
     subq: EventsSubQuery,
     reqctx: ReqCtxArc,
+    scyqueue: Option<&ScyllaQueue>,
     ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     let empty = empty_events_dyn_ev(subq.ch_conf().scalar_type(), subq.ch_conf().shape())?;
     let empty = sitem_data(ChannelEvents::Events(empty));
-    let stream = make_channel_events_stream_data(subq, reqctx, ncc).await?;
+    let stream = make_channel_events_stream_data(subq, reqctx, scyqueue, ncc).await?;
     let ret = futures_util::stream::iter([empty]).chain(stream);
     let ret = Box::pin(ret);
     Ok(ret)
@@ -112,6 +115,7 @@ async fn make_channel_events_stream(
 
 pub async fn create_response_bytes_stream(
     evq: EventsSubQuery,
+    scyqueue: Option<&ScyllaQueue>,
     ncc: &NodeConfigCached,
 ) -> Result<BoxedBytesStream, Error> {
     debug!(
@@ -136,7 +140,7 @@ pub async fn create_response_bytes_stream(
         Ok(ret)
     } else {
         let mut tr = build_event_transform(evq.transform())?;
-        let stream = make_channel_events_stream(evq, reqctx, ncc).await?;
+        let stream = make_channel_events_stream(evq, reqctx, scyqueue, ncc).await?;
         let stream = stream.map(move |x| {
             on_sitemty_data!(x, |x: ChannelEvents| {
                 match x {
@@ -162,9 +166,10 @@ pub async fn create_response_bytes_stream(
 async fn events_conn_handler_with_reqid(
     mut netout: OwnedWriteHalf,
     evq: EventsSubQuery,
+    scyqueue: Option<&ScyllaQueue>,
     ncc: &NodeConfigCached,
 ) -> Result<(), ConnErr> {
-    let mut stream = match create_response_bytes_stream(evq, ncc).await {
+    let mut stream = match create_response_bytes_stream(evq, scyqueue, ncc).await {
         Ok(x) => x,
         Err(e) => return Err((e, netout))?,
     };
@@ -283,6 +288,7 @@ async fn events_conn_handler_inner_try<INP>(
     netin: INP,
     netout: OwnedWriteHalf,
     addr: SocketAddr,
+    scyqueue: Option<&ScyllaQueue>,
     ncc: &NodeConfigCached,
 ) -> Result<(), ConnErr>
 where
@@ -300,19 +306,22 @@ where
     debug!("events_conn_handler sees:  {evq:?}");
     let reqid = evq.reqid();
     let span = tracing::info_span!("subreq", reqid = reqid);
-    events_conn_handler_with_reqid(netout, evq, ncc).instrument(span).await
+    events_conn_handler_with_reqid(netout, evq, scyqueue, ncc)
+        .instrument(span)
+        .await
 }
 
 async fn events_conn_handler_inner<INP>(
     netin: INP,
     netout: OwnedWriteHalf,
     addr: SocketAddr,
-    node_config: &NodeConfigCached,
+    scyqueue: Option<&ScyllaQueue>,
+    ncc: &NodeConfigCached,
 ) -> Result<(), Error>
 where
     INP: Stream<Item = Result<Bytes, Error>> + Unpin,
 {
-    match events_conn_handler_inner_try(netin, netout, addr, node_config).await {
+    match events_conn_handler_inner_try(netin, netout, addr, scyqueue, ncc).await {
         Ok(_) => (),
         Err(ce) => {
             let mut out = ce.netout;
@@ -324,11 +333,16 @@ where
     Ok(())
 }
 
-async fn events_conn_handler(stream: TcpStream, addr: SocketAddr, node_config: NodeConfigCached) -> Result<(), Error> {
+async fn events_conn_handler(
+    stream: TcpStream,
+    addr: SocketAddr,
+    scyqueue: Option<&ScyllaQueue>,
+    ncc: NodeConfigCached,
+) -> Result<(), Error> {
     let (netin, netout) = stream.into_split();
     let inp = Box::new(TcpReadAsBytes::new(netin));
     let span1 = span!(Level::INFO, "events_conn_handler");
-    let r = events_conn_handler_inner(inp, netout, addr, &node_config)
+    let r = events_conn_handler_inner(inp, netout, addr, scyqueue, &ncc)
         .instrument(span1)
         .await;
     match r {

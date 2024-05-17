@@ -15,7 +15,6 @@ use httpclient::Requ;
 use httpclient::StreamResponse;
 use netpod::log::*;
 use netpod::NodeConfigCached;
-use netpod::ServiceVersion;
 use std::sync::Arc;
 
 #[derive(Debug, ThisError)]
@@ -85,7 +84,7 @@ impl EventDataHandler {
             .await
             .map_err(|_| EventDataError::InternalError)?;
         let (evsubq,) = nodenet::conn::events_parse_input_query(frames).map_err(|_| EventDataError::QueryParse)?;
-        let stream = nodenet::conn::create_response_bytes_stream(evsubq, ncc)
+        let stream = nodenet::conn::create_response_bytes_stream(evsubq, shared_res.scyqueue.as_ref(), ncc)
             .await
             .map_err(|e| EventDataError::Error(Box::new(e)))?;
         let ret = response(StatusCode::OK)

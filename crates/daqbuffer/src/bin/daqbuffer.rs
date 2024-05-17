@@ -64,7 +64,7 @@ async fn go() -> Result<(), Error> {
     };
     match opts.subcmd {
         SubCmd::Retrieval(subcmd) => {
-            info!("daqbuffer  version {} +0002", clap::crate_version!());
+            info!("daqbuffer  version {} +0003", clap::crate_version!());
             info!("   service_version {}", service_version);
             if false {
                 #[allow(non_snake_case)]

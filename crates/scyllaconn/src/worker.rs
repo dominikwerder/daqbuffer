@@ -1,12 +1,20 @@
 use crate::conn::create_scy_session_no_ks;
+use crate::events::StmtsEventsRt;
+use crate::range::ScyllaSeriesRange;
 use async_channel::Receiver;
 use async_channel::Sender;
 use err::thiserror;
 use err::ThisError;
+use futures_util::Future;
+use items_0::Events;
 use netpod::log::*;
-use netpod::range::evrange::NanoRange;
 use netpod::ScyllaConfig;
+use netpod::TsMs;
 use scylla::Session;
+use std::collections::VecDeque;
+use std::fmt;
+use std::pin::Pin;
+use std::sync::Arc;
 
 #[derive(Debug, ThisError)]
 pub enum Error {
@@ -24,7 +32,31 @@ impl err::ToErr for Error {
 
 #[derive(Debug)]
 enum Job {
-    JobA(String, Sender<Result<String, Error>>),
+    FindTsMsp(
+        // series-id
+        u64,
+        ScyllaSeriesRange,
+        Sender<Result<(VecDeque<TsMs>, VecDeque<TsMs>), Error>>,
+    ),
+    ReadNextValues(ReadNextValues),
+}
+
+struct ReadNextValues {
+    futgen: Box<
+        dyn FnOnce(
+                Arc<Session>,
+                Arc<StmtsEventsRt>,
+            ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, err::Error>> + Send>>
+            + Send,
+    >,
+    // fut: Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>>,
+    tx: Sender<Result<Box<dyn Events>, Error>>,
+}
+
+impl fmt::Debug for ReadNextValues {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "ReadNextValues {{ .. }}")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -33,31 +65,59 @@ pub struct ScyllaQueue {
 }
 
 impl ScyllaQueue {
-    pub async fn job_a(&self, backend: &str) -> Result<Receiver<Result<String, Error>>, Error> {
+    pub async fn find_ts_msp(
+        &self,
+        series: u64,
+        range: ScyllaSeriesRange,
+    ) -> Result<(VecDeque<TsMs>, VecDeque<TsMs>), Error> {
         let (tx, rx) = async_channel::bounded(1);
-        let job = Job::JobA(backend.into(), tx);
+        let job = Job::FindTsMsp(series, range, tx);
         self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
-        Ok(rx)
+        let res = rx.recv().await.map_err(|_| Error::ChannelRecv)??;
+        Ok(res)
+    }
+
+    pub async fn read_next_values<F>(&self, futgen: F) -> Result<Box<dyn Events>, Error>
+    where
+        F: FnOnce(
+                Arc<Session>,
+                Arc<StmtsEventsRt>,
+            ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, err::Error>> + Send>>
+            + Send
+            + 'static,
+    {
+        let (tx, rx) = async_channel::bounded(1);
+        let job = Job::ReadNextValues(ReadNextValues {
+            futgen: Box::new(futgen),
+            tx,
+        });
+        self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
+        let res = rx.recv().await.map_err(|_| Error::ChannelRecv)??;
+        Ok(res)
     }
 }
 
 #[derive(Debug)]
 pub struct ScyllaWorker {
     rx: Receiver<Job>,
-    scy: Session,
-    // pgjh: Option<JoinHandle<Result<(), err::Error>>>,
+    scy: Arc<Session>,
+    stmts_st: Arc<StmtsEventsRt>,
 }
 
 impl ScyllaWorker {
-    pub async fn new(scyconf: &ScyllaConfig) -> Result<(ScyllaQueue, Self), Error> {
+    pub async fn new(
+        scyconf_st: &ScyllaConfig,
+        scyconf_mt: &ScyllaConfig,
+        scyconf_lt: &ScyllaConfig,
+    ) -> Result<(ScyllaQueue, Self), Error> {
         let (tx, rx) = async_channel::bounded(64);
-        let scy = create_scy_session_no_ks(scyconf).await?;
+        let scy = create_scy_session_no_ks(scyconf_st).await?;
+        let scy = Arc::new(scy);
+        let rtpre = format!("{}.st_", scyconf_st.keyspace);
+        let stmts_st = StmtsEventsRt::new(&rtpre, &scy).await?;
+        let stmts_st = Arc::new(stmts_st);
         let queue = ScyllaQueue { tx };
-        let worker = Self {
-            rx,
-            scy,
-            // pgjh: Some(pgjh),
-        };
+        let worker = Self { rx, scy, stmts_st };
         Ok((queue, worker))
     }
 
@@ -72,9 +132,16 @@ impl ScyllaWorker {
                 }
             };
             match job {
-                Job::JobA(backend, tx) => {
-                    let res = Ok::<_, Error>(backend);
+                Job::FindTsMsp(series, range, tx) => {
+                    let res = crate::events::find_ts_msp_worker(series, range, &self.stmts_st, &self.scy).await;
                     if tx.send(res.map_err(Into::into)).await.is_err() {
+                        // TODO count for stats
+                    }
+                }
+                Job::ReadNextValues(job) => {
+                    let fut = (job.futgen)(self.scy.clone(), self.stmts_st.clone());
+                    let res = fut.await;
+                    if job.tx.send(res.map_err(Into::into)).await.is_err() {
                         // TODO count for stats
                     }
                 }
