@@ -269,6 +269,7 @@ fn make_scalar_conv(
                 ScalarType::F64 => ValueDim0FromBytesImpl::<f64>::boxed(),
                 ScalarType::BOOL => ValueDim0FromBytesImpl::<bool>::boxed(),
                 ScalarType::STRING => ValueDim0FromBytesImpl::<String>::boxed(),
+                ScalarType::Enum => ValueDim0FromBytesImpl::<String>::boxed(),
                 ScalarType::ChannelStatus => ValueDim0FromBytesImpl::<u32>::boxed(),
             },
             Shape::Wave(_) => {
@@ -286,6 +287,7 @@ fn make_scalar_conv(
                     ScalarType::F64 => ValueDim1FromBytesImpl::<f64>::boxed(shape),
                     ScalarType::BOOL => ValueDim1FromBytesImpl::<bool>::boxed(shape),
                     ScalarType::STRING => ValueDim1FromBytesImpl::<String>::boxed(shape),
+                    ScalarType::Enum => ValueDim1FromBytesImpl::<String>::boxed(shape),
                     ScalarType::ChannelStatus => ValueDim1FromBytesImpl::<u32>::boxed(shape),
                 }
             }

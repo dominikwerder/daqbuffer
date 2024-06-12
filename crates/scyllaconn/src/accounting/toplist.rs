@@ -43,14 +43,14 @@ pub async fn read_ts(ts: u64, scy: Arc<ScySession>) -> Result<UsageData, Error> 
     let snap = EMIT_ACCOUNTING_SNAP.ms() / 1000;
     info!("ts {ts}  snap {snap:?}");
     let ts = ts / timeunits::SEC / snap * snap;
-    let cql = concat!("select series, count, bytes from lt_account_00 where part = ? and ts = ?");
-    let qu = prep(cql, scy.clone()).await?;
-    let ret = read_ts_inner(ts, qu, scy).await?;
+    let ret = read_ts_inner(ts, scy).await?;
     Ok(ret)
 }
 
-async fn read_ts_inner(ts: u64, qu: PreparedStatement, scy: Arc<ScySession>) -> Result<UsageData, Error> {
+async fn read_ts_inner(ts: u64, scy: Arc<ScySession>) -> Result<UsageData, Error> {
     type RowType = (i64, i64, i64);
+    let cql = concat!("select series, count, bytes from lt_account_00 where part = ? and ts = ?");
+    let qu = prep(cql, scy.clone()).await?;
     let mut ret = UsageData::new(ts);
     for part in 0..255_u32 {
         let mut res = scy

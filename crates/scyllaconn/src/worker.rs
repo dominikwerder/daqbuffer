@@ -100,28 +100,34 @@ impl ScyllaQueue {
 #[derive(Debug)]
 pub struct ScyllaWorker {
     rx: Receiver<Job>,
-    scy: Arc<Session>,
-    stmts_st: Arc<StmtsEventsRt>,
+    scyconf_st: ScyllaConfig,
+    scyconf_mt: ScyllaConfig,
+    scyconf_lt: ScyllaConfig,
 }
 
 impl ScyllaWorker {
     pub async fn new(
-        scyconf_st: &ScyllaConfig,
-        scyconf_mt: &ScyllaConfig,
-        scyconf_lt: &ScyllaConfig,
+        scyconf_st: ScyllaConfig,
+        scyconf_mt: ScyllaConfig,
+        scyconf_lt: ScyllaConfig,
     ) -> Result<(ScyllaQueue, Self), Error> {
         let (tx, rx) = async_channel::bounded(64);
-        let scy = create_scy_session_no_ks(scyconf_st).await?;
-        let scy = Arc::new(scy);
-        let rtpre = format!("{}.st_", scyconf_st.keyspace);
-        let stmts_st = StmtsEventsRt::new(&rtpre, &scy).await?;
-        let stmts_st = Arc::new(stmts_st);
         let queue = ScyllaQueue { tx };
-        let worker = Self { rx, scy, stmts_st };
+        let worker = Self {
+            rx,
+            scyconf_st,
+            scyconf_mt,
+            scyconf_lt,
+        };
         Ok((queue, worker))
     }
 
     pub async fn work(self) -> Result<(), Error> {
+        let scy = create_scy_session_no_ks(&self.scyconf_st).await?;
+        let scy = Arc::new(scy);
+        let rtpre = format!("{}.st_", self.scyconf_st.keyspace);
+        let stmts_st = StmtsEventsRt::new(&rtpre, &scy).await?;
+        let stmts_st = Arc::new(stmts_st);
         loop {
             let x = self.rx.recv().await;
             let job = match x {
@@ -133,13 +139,13 @@ impl ScyllaWorker {
             };
             match job {
                 Job::FindTsMsp(series, range, tx) => {
-                    let res = crate::events::find_ts_msp_worker(series, range, &self.stmts_st, &self.scy).await;
+                    let res = crate::events::find_ts_msp_worker(series, range, &stmts_st, &scy).await;
                     if tx.send(res.map_err(Into::into)).await.is_err() {
                         // TODO count for stats
                     }
                 }
                 Job::ReadNextValues(job) => {
-                    let fut = (job.futgen)(self.scy.clone(), self.stmts_st.clone());
+                    let fut = (job.futgen)(scy.clone(), stmts_st.clone());
                     let res = fut.await;
                     if job.tx.send(res.map_err(Into::into)).await.is_err() {
                         // TODO count for stats

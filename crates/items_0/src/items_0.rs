@@ -128,7 +128,7 @@ pub trait Events:
     fn as_time_binnable_ref(&self) -> &dyn TimeBinnable;
     fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable;
     fn verify(&self) -> bool;
-    fn output_info(&self);
+    fn output_info(&self) -> String;
     fn as_collectable_mut(&mut self) -> &mut dyn Collectable;
     fn as_collectable_with_default_ref(&self) -> &dyn Collectable;
     fn as_collectable_with_default_mut(&mut self) -> &mut dyn Collectable;
@@ -190,7 +190,7 @@ impl Events for Box<dyn Events> {
         Events::verify(self.as_ref())
     }
 
-    fn output_info(&self) {
+    fn output_info(&self) -> String {
         Events::output_info(self.as_ref())
     }
 

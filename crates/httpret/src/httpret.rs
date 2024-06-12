@@ -127,10 +127,12 @@ pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Res
         ncc.node_config.cluster.scylla_mt(),
         ncc.node_config.cluster.scylla_lt(),
     ) {
-        let (scyqueue, scylla_worker) = ScyllaWorker::new(st, mt, lt).await.map_err(|e| {
-            error!("{e}");
-            RetrievalError::TextError(e.to_string())
-        })?;
+        let (scyqueue, scylla_worker) = ScyllaWorker::new(st.clone(), mt.clone(), lt.clone())
+            .await
+            .map_err(|e| {
+                error!("{e}");
+                RetrievalError::TextError(e.to_string())
+            })?;
         let scylla_worker_jh = taskrun::spawn(scylla_worker.work());
         Some(scyqueue)
     } else {
@@ -342,6 +344,8 @@ async fn http_service_inner(
         Ok(h.handle(req, ctx, &node_config, shared_res)
             .await
             .map_err(|e| Error::with_msg_no_trace(e.to_string()))?)
+    } else if let Some(h) = api4::backend::BackendListHandler::handler(&req) {
+        Ok(h.handle(req, ctx, &node_config, service_version).await?)
     } else if let Some(h) = api4::status::StatusNodesRecursive::handler(&req) {
         Ok(h.handle(req, ctx, &node_config, service_version).await?)
     } else if let Some(h) = StatusBoardAllHandler::handler(&req) {

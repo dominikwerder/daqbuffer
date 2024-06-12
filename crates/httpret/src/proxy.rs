@@ -44,6 +44,7 @@ use netpod::ChannelSearchSingleResult;
 use netpod::FromUrl;
 use netpod::HasBackend;
 use netpod::HasTimeout;
+use netpod::MapQuery;
 use netpod::ProxyConfig;
 use netpod::ReqCtx;
 use netpod::ServiceVersion;
@@ -196,6 +197,8 @@ async fn proxy_http_service_inner(
         h.handle(req, ctx, &proxy_config).await
     } else if let Some(h) = api4::events::EventsHandler::handler(&req) {
         h.handle(req, ctx, &proxy_config).await
+    } else if path == "/api/4/accounting/toplist/counts" {
+        Ok(proxy_backend_query::<MapQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/status/connection/events" {
         Ok(proxy_backend_query::<ChannelStateEventsQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/status/channel/events" {

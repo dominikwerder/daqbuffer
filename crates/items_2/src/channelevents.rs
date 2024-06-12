@@ -832,7 +832,7 @@ impl Events for ChannelEvents {
         todo!()
     }
 
-    fn output_info(&self) {
+    fn output_info(&self) -> String {
         todo!()
     }
 
@@ -1220,11 +1220,15 @@ impl Collector for ChannelEventsCollector {
     ) -> Result<Box<dyn Collected>, err::Error> {
         match self.coll.as_mut() {
             Some(coll) => {
-                coll.set_continue_at_here();
+                if self.needs_continue_at {
+                    debug!("ChannelEventsCollector  set_continue_at_here");
+                    coll.set_continue_at_here();
+                }
                 if self.range_complete {
                     coll.set_range_complete();
                 }
                 if self.timed_out {
+                    debug!("ChannelEventsCollector  set_timed_out");
                     coll.set_timed_out();
                 }
                 let res = coll.result(range, binrange)?;

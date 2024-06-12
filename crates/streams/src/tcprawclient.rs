@@ -203,6 +203,7 @@ pub fn make_sub_query<SUB>(
     transform: TransformQuery,
     test_do_wasm: Option<&str>,
     sub: SUB,
+    log_level: String,
     ctx: &ReqCtx,
 ) -> EventsSubQuery
 where
@@ -213,6 +214,6 @@ where
         select.set_wasm1(wasm1.into());
     }
     let settings = sub.into();
-    let subq = EventsSubQuery::from_parts(select, settings, ctx.reqid().into());
+    let subq = EventsSubQuery::from_parts(select, settings, ctx.reqid().into(), log_level);
     subq
 }

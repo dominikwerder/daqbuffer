@@ -1,5 +1,7 @@
 use crate::container::ByteEstimate;
 use crate::subfr::SubFrId;
+use netpod::EnumVariant;
+use netpod::StringFix;
 use serde::Serialize;
 use std::fmt;
 use std::ops;
@@ -247,3 +249,49 @@ impl_scalar_ops!(
     "string",
     16
 );
+
+impl ByteEstimate for EnumVariant {
+    fn byte_estimate(&self) -> u64 {
+        12
+    }
+}
+
+impl AsPrimF32 for EnumVariant {
+    fn as_prim_f32_b(&self) -> f32 {
+        0.
+    }
+}
+
+impl ScalarOps for EnumVariant {
+    fn scalar_type_name() -> &'static str {
+        "enumvariant"
+    }
+
+    fn zero_b() -> Self {
+        EnumVariant::empty()
+    }
+
+    fn equal_slack(&self, rhs: &Self) -> bool {
+        self == rhs
+    }
+
+    fn add(&mut self, _rhs: &Self) {
+        // undefined so far
+    }
+
+    fn div(&mut self, _n: usize) {
+        // undefined so far
+    }
+
+    fn find_vec_min(a: &Vec<Self>) -> Option<Self> {
+        todo!()
+    }
+
+    fn find_vec_max(a: &Vec<Self>) -> Option<Self> {
+        todo!()
+    }
+
+    fn avg_vec(a: &Vec<Self>) -> Option<Self> {
+        todo!()
+    }
+}

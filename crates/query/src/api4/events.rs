@@ -54,6 +54,8 @@ pub struct PlainEventsQuery {
     merger_out_len_max: Option<usize>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     create_errors: Vec<String>,
+    #[serde(default)]
+    log_level: String,
 }
 
 impl PlainEventsQuery {
@@ -78,6 +80,7 @@ impl PlainEventsQuery {
             test_do_wasm: None,
             merger_out_len_max: None,
             create_errors: Vec::new(),
+            log_level: String::new(),
         }
     }
 
@@ -199,6 +202,10 @@ impl PlainEventsQuery {
             self.range()
         )
     }
+
+    pub fn log_level(&self) -> &str {
+        &self.log_level
+    }
 }
 
 impl HasBackend for PlainEventsQuery {
@@ -275,6 +282,7 @@ impl FromUrl for PlainEventsQuery {
                 .get("create_errors")
                 .map(|x| x.split(",").map(|x| x.to_string()).collect())
                 .unwrap_or(Vec::new()),
+            log_level: pairs.get("log_level").map_or(String::new(), String::from),
         };
         Ok(ret)
     }
@@ -330,6 +338,9 @@ impl AppendToUrl for PlainEventsQuery {
         }
         if self.create_errors.len() != 0 {
             g.append_pair("create_errors", &self.create_errors.join(","));
+        }
+        if self.log_level.len() != 0 {
+            g.append_pair("log_level", &self.log_level);
         }
     }
 }
@@ -447,15 +458,22 @@ pub struct EventsSubQuery {
     settings: EventsSubQuerySettings,
     ty: String,
     reqid: String,
+    log_level: String,
 }
 
 impl EventsSubQuery {
-    pub fn from_parts(select: EventsSubQuerySelect, settings: EventsSubQuerySettings, reqid: String) -> Self {
+    pub fn from_parts(
+        select: EventsSubQuerySelect,
+        settings: EventsSubQuerySettings,
+        reqid: String,
+        log_level: String,
+    ) -> Self {
         Self {
             select,
             settings,
             ty: "EventsSubQuery".into(),
             reqid,
+            log_level,
         }
     }
 
@@ -528,6 +546,10 @@ impl EventsSubQuery {
 
     pub fn wasm1(&self) -> Option<&str> {
         self.select.wasm1()
+    }
+
+    pub fn log_level(&self) -> &str {
+        &self.log_level
     }
 }
 

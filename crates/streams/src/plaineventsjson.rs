@@ -24,7 +24,7 @@ pub async fn plain_events_json(
     _cluster: &Cluster,
     open_bytes: OpenBoxedBytesStreamsBox,
 ) -> Result<JsonValue, Error> {
-    info!("plain_events_json  evquery {:?}", evq);
+    debug!("plain_events_json  evquery {:?}", evq);
     let deadline = Instant::now() + evq.timeout();
 
     let stream = dyn_events_stream(evq, ch_conf, ctx, open_bytes).await?;
@@ -40,7 +40,7 @@ pub async fn plain_events_json(
     //let stream = EventsToTimeBinnable::new(stream);
     //let stream = TimeBinnableToCollectable::new(stream);
     let stream = Box::pin(stream);
-    info!("plain_events_json  boxed stream created");
+    debug!("plain_events_json  boxed stream created");
     let collected = Collect::new(
         stream,
         deadline,
@@ -50,9 +50,9 @@ pub async fn plain_events_json(
         None,
     )
     .await?;
-    info!("plain_events_json  collected");
+    debug!("plain_events_json  collected");
     let jsval = serde_json::to_value(&collected)?;
-    info!("plain_events_json  json serialized");
+    debug!("plain_events_json  json serialized");
     Ok(jsval)
 }
 

@@ -50,6 +50,7 @@ async fn timebinnable_stream(
         query.transform().clone(),
         query.test_do_wasm(),
         &query,
+        query.log_level().into(),
         ctx,
     );
     let inmem_bufcap = subq.inmem_bufcap();

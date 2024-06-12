@@ -29,7 +29,7 @@ use netpod::NodeConfigCached;
 use netpod::ReqCtx;
 use nodenet::client::OpenBoxedBytesViaHttp;
 use query::api4::events::PlainEventsQuery;
-use url::Url;
+use tracing::Instrument;
 
 pub struct EventsHandler {}
 
@@ -52,7 +52,26 @@ impl EventsHandler {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
-        match plain_events(req, ctx, &shared_res.pgqueue, ncc).await {
+        let self_name = "handle";
+        let url = req_uri_to_url(req.uri())?;
+        let evq =
+            PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
+        debug!("{self_name}  evq {evq:?}");
+        let logspan = if false {
+            tracing::Span::none()
+        } else if evq.log_level() == "trace" {
+            trace!("enable trace for handler");
+            tracing::span!(tracing::Level::INFO, "log_span_trace")
+        } else if evq.log_level() == "debug" {
+            debug!("enable debug for handler");
+            tracing::span!(tracing::Level::INFO, "log_span_debug")
+        } else {
+            tracing::Span::none()
+        };
+        match plain_events(req, evq, ctx, &shared_res.pgqueue, ncc)
+            .instrument(logspan)
+            .await
+        {
             Ok(ret) => Ok(ret),
             Err(e) => {
                 error!("EventsHandler sees: {e}");
@@ -64,17 +83,17 @@ impl EventsHandler {
 
 async fn plain_events(
     req: Requ,
+    evq: PlainEventsQuery,
     ctx: &ReqCtx,
     pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
-    let url = req_uri_to_url(req.uri())?;
     if accepts_cbor_framed(req.headers()) {
-        Ok(plain_events_cbor_framed(url, req, ctx, pgqueue, ncc).await?)
+        Ok(plain_events_cbor_framed(req, evq, ctx, pgqueue, ncc).await?)
     } else if accepts_json_framed(req.headers()) {
-        Ok(plain_events_json_framed(url, req, ctx, pgqueue, ncc).await?)
+        Ok(plain_events_json_framed(req, evq, ctx, pgqueue, ncc).await?)
     } else if accepts_json_or_all(req.headers()) {
-        Ok(plain_events_json(url, req, ctx, pgqueue, ncc).await?)
+        Ok(plain_events_json(req, evq, ctx, pgqueue, ncc).await?)
     } else {
         let ret = response_err_msg(StatusCode::NOT_ACCEPTABLE, format!("unsupported accept  {:?}", req))?;
         Ok(ret)
@@ -82,17 +101,16 @@ async fn plain_events(
 }
 
 async fn plain_events_cbor_framed(
-    url: Url,
     req: Requ,
+    evq: PlainEventsQuery,
     ctx: &ReqCtx,
     pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
-    let evq = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
     let ch_conf = chconf_from_events_quorum(&evq, ctx, pgqueue, ncc)
         .await?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
-    info!("plain_events_cbor_framed  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
+    debug!("plain_events_cbor_framed  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let stream = streams::plaineventscbor::plain_events_cbor_stream(&evq, ch_conf, ctx, Box::pin(open_bytes)).await?;
     use future::ready;
@@ -121,17 +139,16 @@ async fn plain_events_cbor_framed(
 }
 
 async fn plain_events_json_framed(
-    url: Url,
     req: Requ,
+    evq: PlainEventsQuery,
     ctx: &ReqCtx,
     pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
-    let evq = PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
     let ch_conf = chconf_from_events_quorum(&evq, ctx, pgqueue, ncc)
         .await?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
-    info!("plain_events_json_framed  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
+    debug!("plain_events_json_framed  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let stream = streams::plaineventsjson::plain_events_json_stream(&evq, ch_conf, ctx, Box::pin(open_bytes)).await?;
     let stream = bytes_chunks_to_framed(stream);
@@ -140,33 +157,26 @@ async fn plain_events_json_framed(
 }
 
 async fn plain_events_json(
-    url: Url,
     req: Requ,
+    evq: PlainEventsQuery,
     ctx: &ReqCtx,
     pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
     let self_name = "plain_events_json";
-    info!("{self_name}  req: {:?}", req);
+    debug!("{self_name}  req: {:?}", req);
     let (_head, _body) = req.into_parts();
-    let query = PlainEventsQuery::from_url(&url)?;
-    info!("{self_name}  query {query:?}");
     // TODO handle None case better and return 404
-    let ch_conf = chconf_from_events_quorum(&query, ctx, pgqueue, ncc)
+    let ch_conf = chconf_from_events_quorum(&evq, ctx, pgqueue, ncc)
         .await
         .map_err(Error::from)?
         .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
-    info!("{self_name}  chconf_from_events_quorum: {ch_conf:?}");
+    debug!("{self_name}  chconf_from_events_quorum: {ch_conf:?}");
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
-    let item = streams::plaineventsjson::plain_events_json(
-        &query,
-        ch_conf,
-        ctx,
-        &ncc.node_config.cluster,
-        Box::pin(open_bytes),
-    )
-    .await;
-    info!("{self_name}  returned  {}", item.is_ok());
+    let item =
+        streams::plaineventsjson::plain_events_json(&evq, ch_conf, ctx, &ncc.node_config.cluster, Box::pin(open_bytes))
+            .await;
+    debug!("{self_name}  returned  {}", item.is_ok());
     let item = match item {
         Ok(item) => item,
         Err(e) => {
@@ -175,7 +185,7 @@ async fn plain_events_json(
         }
     };
     let ret = response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?;
-    info!("{self_name}  response created");
+    debug!("{self_name}  response created");
     Ok(ret)
 }
 

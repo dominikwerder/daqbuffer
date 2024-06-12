@@ -766,7 +766,8 @@ impl DataApiPython3DataStream {
             self.range.clone().into(),
             TransformQuery::for_event_blobs(),
         );
-        let subq = EventsSubQuery::from_parts(select, self.settings.clone(), self.ctx.reqid().into());
+        let log_level = String::new();
+        let subq = EventsSubQuery::from_parts(select, self.settings.clone(), self.ctx.reqid().into(), log_level);
         debug!("query for event blobs retrieval  subq {subq:?}");
         // TODO  important TODO
         debug!("TODO fix magic inmem_bufcap");
@@ -922,12 +923,12 @@ impl Api1EventsBinaryHandler {
                 return Err(Error::with_msg_no_trace("can not parse query"));
             }
         };
-        let span = if qu.log_level() == "trace" {
-            debug!("enable trace for handler");
-            tracing::span!(tracing::Level::TRACE, "log_span_trace")
+        let span = if false {
+            tracing::Span::none()
+        } else if qu.log_level() == "trace" {
+            tracing::span!(tracing::Level::INFO, "log_span_trace")
         } else if qu.log_level() == "debug" {
-            debug!("enable debug for handler");
-            tracing::span!(tracing::Level::DEBUG, "log_span_debug")
+            tracing::span!(tracing::Level::INFO, "log_span_debug")
         } else {
             tracing::Span::none()
         };

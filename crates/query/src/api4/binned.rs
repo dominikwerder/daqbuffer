@@ -148,6 +148,11 @@ impl BinnedQuery {
             None => None,
         }
     }
+
+    pub fn log_level(&self) -> &str {
+        // TODO take from query
+        ""
+    }
 }
 
 impl HasBackend for BinnedQuery {

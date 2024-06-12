@@ -224,6 +224,36 @@ macro_rules! impl_scaty_array {
     };
 }
 
+impl ValTy for Vec<String> {
+    type ScaTy = String;
+    type ScyTy = Vec<String>;
+    type Container = EventsDim1<String>;
+
+    fn from_scyty(inp: Self::ScyTy) -> Self {
+        inp
+    }
+
+    fn from_valueblob(inp: Vec<u8>) -> Self {
+        todo!()
+    }
+
+    fn table_name() -> &'static str {
+        "st_events_array_enum"
+    }
+
+    fn default() -> Self {
+        Vec::new()
+    }
+
+    fn is_valueblob() -> bool {
+        false
+    }
+
+    fn st_name() -> &'static str {
+        "enum"
+    }
+}
+
 impl_scaty_scalar!(u8, i8, "u8", "st_events_scalar_u8");
 impl_scaty_scalar!(u16, i16, "u16", "st_events_scalar_u16");
 impl_scaty_scalar!(u32, i32, "u32", "st_events_scalar_u32");
@@ -248,7 +278,6 @@ impl_scaty_array!(Vec<i64>, i64, Vec<i64>, "i64", "st_events_array_i64");
 impl_scaty_array!(Vec<f32>, f32, Vec<f32>, "f32", "st_events_array_f32");
 impl_scaty_array!(Vec<f64>, f64, Vec<f64>, "f64", "st_events_array_f64");
 impl_scaty_array!(Vec<bool>, bool, Vec<bool>, "bool", "st_events_array_bool");
-// impl_scaty_array!(Vec<String>, String, Vec<String>, "string", "st_events_array_string");
 
 struct ReadNextValuesOpts {
     series: u64,
@@ -307,14 +336,19 @@ where
             ts_lsp_max,
             table_name,
         );
+        let dir = "fwd";
         let qu_name = if opts.with_values {
             if ST::is_valueblob() {
-                format!("array_{}_valueblobs_fwd", ST::st_name())
+                format!("array_{}_valueblobs_{}", ST::st_name(), dir)
             } else {
-                format!("array_{}_values_fwd", ST::st_name())
+                format!("scalar_{}_values_{}", ST::st_name(), dir)
             }
         } else {
-            format!("array_{}_timestamps_fwd", ST::st_name())
+            if ST::is_valueblob() {
+                format!("array_{}_timestamps_{}", ST::st_name(), dir)
+            } else {
+                format!("scalar_{}_timestamps_{}", ST::st_name(), dir)
+            }
         };
         let qu = stmts.read_value_queries.get(&qu_name).ok_or_else(|| {
             let e = Error::with_msg_no_trace(format!("can not find query name {}", qu_name));
@@ -343,14 +377,19 @@ where
             DtNano::from_ns(0)
         };
         trace!("BCK  ts_msp {}  ts_lsp_max {}  {}", ts_msp, ts_lsp_max, table_name,);
+        let dir = "bck";
         let qu_name = if opts.with_values {
             if ST::is_valueblob() {
-                format!("array_{}_valueblobs_bck", ST::st_name())
+                format!("array_{}_valueblobs_{}", ST::st_name(), dir)
             } else {
-                format!("array_{}_values_bck", ST::st_name())
+                format!("scalar_{}_values_{}", ST::st_name(), dir)
             }
         } else {
-            format!("array_{}_timestamps_bck", ST::st_name())
+            if ST::is_valueblob() {
+                format!("array_{}_timestamps_{}", ST::st_name(), dir)
+            } else {
+                format!("scalar_{}_timestamps_{}", ST::st_name(), dir)
+            }
         };
         let qu = stmts.read_value_queries.get(&qu_name).ok_or_else(|| {
             let e = Error::with_msg_no_trace(format!("can not find query name {}", qu_name));
@@ -512,6 +551,7 @@ impl ReadValues {
                     ScalarType::F64 => read_next_values::<f64>(opts).await,
                     ScalarType::BOOL => read_next_values::<bool>(opts).await,
                     ScalarType::STRING => read_next_values::<String>(opts).await,
+                    ScalarType::Enum => read_next_values::<String>(opts).await,
                     ScalarType::ChannelStatus => {
                         warn!("read scalar channel status not yet supported");
                         err::todoval()
@@ -533,6 +573,7 @@ impl ReadValues {
                         warn!("read array string not yet supported");
                         err::todoval()
                     }
+                    ScalarType::Enum => read_next_values::<Vec<String>>(opts).await,
                     ScalarType::ChannelStatus => {
                         warn!("read array channel status not yet supported");
                         err::todoval()
@@ -572,6 +613,7 @@ pub struct EventsStreamScylla {
     found_one_after: bool,
     with_values: bool,
     outqueue: VecDeque<Box<dyn Events>>,
+    ts_seen_max: u64,
 }
 
 impl EventsStreamScylla {
@@ -600,6 +642,7 @@ impl EventsStreamScylla {
             found_one_after: false,
             with_values,
             outqueue: VecDeque::new(),
+            ts_seen_max: 0,
         }
     }
 
@@ -618,7 +661,7 @@ impl EventsStreamScylla {
         trace!("ts_msp_bck {:?}", self.ts_msp_bck);
         trace!("ts_msp_fwd {:?}", self.ts_msp_fwd);
         if let Some(msp) = self.ts_msp_bck.pop_back() {
-            trace!("Try ReadBack1");
+            trace!("start ReadBack1  msp {}", msp);
             let st = ReadValues::new(
                 self.series,
                 self.scalar_type.clone(),
@@ -631,7 +674,7 @@ impl EventsStreamScylla {
             );
             self.state = FrState::ReadBack1(st);
         } else if self.ts_msp_fwd.len() > 0 {
-            trace!("Go straight for forward read");
+            trace!("begin immediately with forward read");
             let st = ReadValues::new(
                 self.series,
                 self.scalar_type.clone(),
@@ -653,6 +696,7 @@ impl EventsStreamScylla {
         if item.len() > 0 {
             self.outqueue.push_back(item);
             if self.ts_msp_fwd.len() > 0 {
+                trace!("start forward read after back1");
                 let st = ReadValues::new(
                     self.series,
                     self.scalar_type.clone(),
@@ -669,7 +713,7 @@ impl EventsStreamScylla {
             }
         } else {
             if let Some(msp) = self.ts_msp_bck.pop_back() {
-                trace!("Try ReadBack2");
+                trace!("start ReadBack2  msp {}", msp);
                 let st = ReadValues::new(
                     self.series,
                     self.scalar_type.clone(),
@@ -682,7 +726,7 @@ impl EventsStreamScylla {
                 );
                 self.state = FrState::ReadBack2(st);
             } else if self.ts_msp_fwd.len() > 0 {
-                trace!("No 2nd back MSP, go for forward read");
+                trace!("no 2nd back MSP, go for forward read");
                 let st = ReadValues::new(
                     self.series,
                     self.scalar_type.clone(),
@@ -695,18 +739,19 @@ impl EventsStreamScylla {
                 );
                 self.state = FrState::ReadValues(st);
             } else {
-                trace!("No 2nd back MSP, but also nothing to go forward");
+                trace!("no 2nd back msp, but also nothing to go forward");
                 self.state = FrState::DataDone;
             }
         }
     }
 
     fn back_2_done(&mut self, item: Box<dyn Events>) {
-        trace!("back_1_done  item len {}", item.len());
+        trace!("back_2_done  item len {}", item.len());
         if item.len() > 0 {
             self.outqueue.push_back(item);
         }
         if self.ts_msp_fwd.len() > 0 {
+            trace!("start forward read after back2");
             let st = ReadValues::new(
                 self.series,
                 self.scalar_type.clone(),
@@ -719,6 +764,7 @@ impl EventsStreamScylla {
             );
             self.state = FrState::ReadValues(st);
         } else {
+            trace!("nothing to forward read after back 2");
             self.state = FrState::DataDone;
         }
     }
@@ -745,7 +791,19 @@ impl Stream for EventsStreamScylla {
         loop {
             if let Some(item) = self.outqueue.pop_front() {
                 item.verify();
-                item.output_info();
+                if let Some(item_min) = item.ts_min() {
+                    if item_min < self.ts_seen_max {
+                        debug!("ordering error A  {}  {}", item_min, self.ts_seen_max);
+                    }
+                }
+                if let Some(item_max) = item.ts_max() {
+                    if item_max < self.ts_seen_max {
+                        debug!("ordering error B  {}  {}", item_max, self.ts_seen_max);
+                    } else {
+                        self.ts_seen_max = item_max;
+                    }
+                }
+                debug!("deliver item  {}", item.output_info());
                 break Ready(Some(Ok(ChannelEvents::Events(item))));
             }
             break match self.state {

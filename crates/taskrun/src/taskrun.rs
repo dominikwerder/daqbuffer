@@ -8,6 +8,7 @@ use err::Error;
 use std::fmt;
 use std::future::Future;
 use std::io;
+use std::marker::PhantomData;
 use std::panic;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -40,7 +41,7 @@ fn on_thread_start() {
             format!("unknown payload type")
         };
         error!(
-            "✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗✗     panicking\n{:?}\nLOCATION: {:?}\nPAYLOAD: {:?}\ninfo object: {:?}\nerr: {:?}",
+            "panicking\n{:?}\nLOCATION: {:?}\nPAYLOAD: {:?}\ninfo object: {:?}\nerr: {:?}",
             Error::with_msg("catched panic in taskrun::run"),
             info.location(),
             info.payload(),
@@ -105,6 +106,37 @@ where
     }
 }
 
+struct LogFilterLayer<S, L>
+where
+    L: tracing_subscriber::Layer<S>,
+    S: tracing::Subscriber,
+{
+    name: String,
+    inner: L,
+    _ph1: PhantomData<S>,
+}
+
+impl<S, L> LogFilterLayer<S, L>
+where
+    L: tracing_subscriber::Layer<S>,
+    S: tracing::Subscriber,
+{
+    fn new(name: String, inner: L) -> Self {
+        Self {
+            name,
+            inner,
+            _ph1: PhantomData,
+        }
+    }
+}
+
+impl<S, L> tracing_subscriber::Layer<S> for LogFilterLayer<S, L>
+where
+    L: tracing_subscriber::Layer<S>,
+    S: tracing::Subscriber,
+{
+}
+
 fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
@@ -131,6 +163,19 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
             .with_default_directive(tracing::metadata::LevelFilter::INFO.into())
             .from_env()
             .map_err(|e| Error::with_msg_no_trace(format!("can not build tracing env filter {e}")))?;
+        let filter_2 = tracing_subscriber::EnvFilter::builder()
+            .with_env_var("RUST_LOG_2")
+            .with_default_directive(tracing::metadata::LevelFilter::INFO.into())
+            .from_env()
+            .map_err(|e| Error::with_msg_no_trace(format!("can not build tracing env filter {e}")))?;
+        // let filter_3 = tracing_subscriber::filter::dynamic_filter_fn(|meta, ctx| {
+        //     //
+        //     if ["scyllaconn"].contains(&meta.target()) {
+        //         true
+        //     } else {
+        //         true
+        //     }
+        // });
         let fmt_layer = tracing_subscriber::fmt::Layer::new()
             .with_writer(io::stderr)
             .with_timer(timer)
@@ -138,7 +183,12 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
             .with_ansi(false)
             .with_thread_names(true)
             .event_format(formatter::FormatTxt)
-            .with_filter(filter);
+            .with_filter(filter_2)
+            .with_filter(filter)
+            // .and_then(LogFilterLayer::new("lay1".into()))
+            // .and_then(LogFilterLayer::new("lay2".into()))
+            ;
+        // let layer_2 = LogFilterLayer::new("lay1".into(), fmt_layer);
 
         let reg = tracing_subscriber::registry();
 

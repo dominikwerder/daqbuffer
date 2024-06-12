@@ -19,7 +19,7 @@ pub struct ChannelInfo {
     pub kind: u16,
 }
 
-pub async fn info_for_series_ids(series_ids: &[u64], pg: &Client) -> Result<Vec<ChannelInfo>, Error> {
+pub async fn info_for_series_ids(series_ids: &[u64], pg: &Client) -> Result<Vec<(u64, Option<ChannelInfo>)>, Error> {
     let (ord, seriess) = series_ids
         .iter()
         .enumerate()
@@ -34,33 +34,38 @@ pub async fn info_for_series_ids(series_ids: &[u64], pg: &Client) -> Result<Vec<
         ")",
         "select q1.ord, q1.series, t.facility, t.channel, t.scalar_type, t.shape_dims, t.kind",
         " from q1",
-        " join series_by_channel t on t.series = q1.series",
+        " left join series_by_channel t",
+        " on t.series = q1.series",
+        " and t.kind = 2",
         " order by q1.ord",
     );
-    use crate::pg::Type;
-    let st = pg.prepare_typed(sql, &[Type::INT4_ARRAY, Type::INT8_ARRAY]).await?;
+    use crate::pg::Type as PgType;
+    let st = pg.prepare_typed(sql, &[PgType::INT4_ARRAY, PgType::INT8_ARRAY]).await?;
     let rows = pg.query(&st, &[&ord, &seriess]).await?;
     let mut ret = Vec::new();
     for row in rows {
-        let series: i64 = row.get(1);
-        let backend: String = row.get(2);
-        let channel: String = row.get(3);
-        let scalar_type: i32 = row.get(4);
-        let shape_dims: Vec<i32> = row.get(5);
-        let kind: i16 = row.get(6);
-        let series = series as u64;
-        let scalar_type = ScalarType::from_scylla_i32(scalar_type).map_err(|_| Error::BadValue)?;
-        let shape = Shape::from_scylla_shape_dims(&shape_dims).map_err(|_| Error::BadValue)?;
-        let kind = kind as u16;
-        let e = ChannelInfo {
-            series,
-            backend,
-            name: channel,
-            scalar_type,
-            shape,
-            kind,
-        };
-        ret.push(e);
+        let series = row.get::<_, i64>(1) as u64;
+        let backend: Option<String> = row.get(2);
+        if let Some(backend) = backend {
+            let channel: String = row.get(3);
+            let scalar_type: i32 = row.get(4);
+            let shape_dims: Vec<i32> = row.get(5);
+            let kind: i16 = row.get(6);
+            let scalar_type = ScalarType::from_scylla_i32(scalar_type).map_err(|_| Error::BadValue)?;
+            let shape = Shape::from_scylla_shape_dims(&shape_dims).map_err(|_| Error::BadValue)?;
+            let kind = kind as u16;
+            let e = ChannelInfo {
+                series,
+                backend,
+                name: channel,
+                scalar_type,
+                shape,
+                kind,
+            };
+            ret.push((series, Some(e)));
+        } else {
+            ret.push((series, None));
+        }
     }
     Ok(ret)
 }

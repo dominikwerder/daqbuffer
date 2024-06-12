@@ -166,6 +166,7 @@ impl Future for Collect {
             break if self.done_input {
                 if self.timeout {
                     if let Some(coll) = self.collector.as_mut() {
+                        info!("Collect  call  set_timed_out");
                         coll.set_timed_out();
                     } else {
                         warn!("collect timeout but no collector yet");
@@ -199,7 +200,7 @@ impl Future for Collect {
                                 continue;
                             }
                             Err(e) => {
-                                error!("{e}");
+                                error!("Collect  {e}");
                                 Ready(Err(e))
                             }
                         },
@@ -241,6 +242,7 @@ where
                 warn!("collect timeout");
                 timed_out = true;
                 if let Some(coll) = collector.as_mut() {
+                    info!("collect_in_span  call  set_timed_out");
                     coll.set_timed_out();
                 } else {
                     warn!("collect timeout but no collector yet");
@@ -269,6 +271,7 @@ where
                         coll.ingest(&mut item);
                         if coll.len() as u64 >= events_max {
                             warn!("span reached events_max {}", events_max);
+                            info!("collect_in_span  call  set_continue_at_here");
                             coll.set_continue_at_here();
                             break;
                         }

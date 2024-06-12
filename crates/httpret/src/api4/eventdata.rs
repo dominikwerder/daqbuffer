@@ -16,6 +16,7 @@ use httpclient::StreamResponse;
 use netpod::log::*;
 use netpod::NodeConfigCached;
 use std::sync::Arc;
+use tracing::Instrument;
 
 #[derive(Debug, ThisError)]
 pub enum EventDataError {
@@ -84,7 +85,19 @@ impl EventDataHandler {
             .await
             .map_err(|_| EventDataError::InternalError)?;
         let (evsubq,) = nodenet::conn::events_parse_input_query(frames).map_err(|_| EventDataError::QueryParse)?;
+        let logspan = if false {
+            tracing::Span::none()
+        } else if evsubq.log_level() == "trace" {
+            trace!("enable trace for handler");
+            tracing::span!(tracing::Level::INFO, "log_span_trace")
+        } else if evsubq.log_level() == "debug" {
+            debug!("enable debug for handler");
+            tracing::span!(tracing::Level::INFO, "log_span_debug")
+        } else {
+            tracing::Span::none()
+        };
         let stream = nodenet::conn::create_response_bytes_stream(evsubq, shared_res.scyqueue.as_ref(), ncc)
+            .instrument(logspan)
             .await
             .map_err(|e| EventDataError::Error(Box::new(e)))?;
         let ret = response(StatusCode::OK)

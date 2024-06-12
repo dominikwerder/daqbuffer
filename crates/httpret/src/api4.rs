@@ -1,4 +1,5 @@
 pub mod accounting;
+pub mod backend;
 pub mod binned;
 pub mod databuffer_tools;
 pub mod docs;

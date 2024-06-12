@@ -33,6 +33,7 @@ pub async fn dyn_events_stream(
         evq.transform().clone(),
         evq.test_do_wasm(),
         evq,
+        evq.log_level().into(),
         ctx,
     );
     let inmem_bufcap = subq.inmem_bufcap();

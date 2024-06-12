@@ -4,6 +4,7 @@ use crate::Error;
 use items_0::Empty;
 use items_0::Events;
 use netpod::log::*;
+use netpod::EnumVariant;
 use netpod::ScalarType;
 use netpod::Shape;
 
@@ -25,6 +26,7 @@ pub fn empty_events_dyn_ev(scalar_type: &ScalarType, shape: &Shape) -> Result<Bo
                 F64 => Box::new(K::<f64>::empty()),
                 BOOL => Box::new(K::<bool>::empty()),
                 STRING => Box::new(K::<String>::empty()),
+                Enum => Box::new(K::<EnumVariant>::empty()),
                 ChannelStatus => Box::new(K::<u32>::empty()),
             }
         }
@@ -44,6 +46,7 @@ pub fn empty_events_dyn_ev(scalar_type: &ScalarType, shape: &Shape) -> Result<Bo
                 F64 => Box::new(K::<f64>::empty()),
                 BOOL => Box::new(K::<bool>::empty()),
                 STRING => Box::new(K::<String>::empty()),
+                Enum => Box::new(K::<EnumVariant>::empty()),
                 ChannelStatus => Box::new(K::<u32>::empty()),
             }
         }

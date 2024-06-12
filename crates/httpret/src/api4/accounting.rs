@@ -19,10 +19,12 @@ use netpod::log::*;
 use netpod::req_uri_to_url;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
+use netpod::Shape;
 use query::api4::AccountingIngestedBytesQuery;
 use query::api4::AccountingToplistQuery;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 pub struct AccountingIngestedBytes {}
 
@@ -87,7 +89,33 @@ impl AccountingIngestedBytes {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Toplist {
-    toplist: Vec<(String, u64, u64)>,
+    dim0: Vec<(String, u64, u64)>,
+    dim1: Vec<(String, u64, u64)>,
+    infos_count_total: usize,
+    infos_missing_count: usize,
+    top1_usage_len: usize,
+    scalar_count: usize,
+    wave_count: usize,
+    found: usize,
+    incomplete_count: usize,
+    mismatch_count: usize,
+}
+
+impl Toplist {
+    fn new() -> Self {
+        Self {
+            dim0: Vec::new(),
+            dim1: Vec::new(),
+            infos_count_total: 0,
+            infos_missing_count: 0,
+            top1_usage_len: 0,
+            scalar_count: 0,
+            wave_count: 0,
+            found: 0,
+            incomplete_count: 0,
+            mismatch_count: 0,
+        }
+    }
 }
 
 pub struct AccountingToplistCounts {}
@@ -135,6 +163,7 @@ impl AccountingToplistCounts {
         _ctx: &ReqCtx,
         ncc: &NodeConfigCached,
     ) -> Result<Toplist, Error> {
+        let list_len_max = qu.limit() as usize;
         // TODO assumes that accounting data is in the LT keyspace
         let scyco = ncc
             .node_config
@@ -145,22 +174,74 @@ impl AccountingToplistCounts {
         let pgconf = &ncc.node_config.cluster.database;
         let (pg, pgjh) = dbconn::create_connection(&pgconf).await?;
         let mut top1 = scyllaconn::accounting::toplist::read_ts(qu.ts().ns(), scy).await?;
-        top1.sort_by_bytes();
-        let mut ret = Toplist { toplist: Vec::new() };
-        let series_ids: Vec<_> = top1.usage().iter().take(qu.limit() as _).map(|x| x.0).collect();
-        let infos = dbconn::channelinfo::info_for_series_ids(&series_ids, &pg)
-            .await
-            .map_err(Error::from_to_string)?;
-        let mut it = top1.usage().iter();
-        for info in infos {
-            let h = it.next().ok_or_else(|| Error::with_msg_no_trace("logic error"))?;
-            if info.series != h.0 {
-                let e = Error::with_msg_no_trace(format!("mismatch {} != {}", info.series, h.0));
-                warn!("{e}");
-                return Err(e);
+        top1.sort_by_counts();
+        let mut ret = Toplist::new();
+        let top1_usage = top1.usage();
+        ret.top1_usage_len = top1_usage.len();
+        let usage_map_0: BTreeMap<u64, (u64, u64)> = top1_usage.iter().map(|x| (x.0, (x.1, x.2))).collect();
+        let mut usage_it = usage_map_0.iter();
+        loop {
+            let mut series_ids = Vec::new();
+            let mut usages = Vec::new();
+            while let Some(u) = usage_it.next() {
+                series_ids.push(*u.0);
+                usages.push(u.1.clone());
+                if series_ids.len() >= 200 {
+                    break;
+                }
             }
-            ret.toplist.push((info.name, h.1, h.2));
+            if series_ids.len() == 0 {
+                break;
+            }
+            let infos = dbconn::channelinfo::info_for_series_ids(&series_ids, &pg)
+                .await
+                .map_err(Error::from_to_string)?;
+            for (_series, info_res) in &infos {
+                if let Some(info) = info_res {
+                    match &info.shape {
+                        Shape::Scalar => {
+                            ret.scalar_count += 1;
+                        }
+                        Shape::Wave(_) => {
+                            ret.wave_count += 1;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            if usages.len() > infos.len() {
+                ret.incomplete_count += usages.len() - infos.len();
+            }
+            if infos.len() > usages.len() {
+                ret.incomplete_count += infos.len() - usages.len();
+            }
+            for ((series2, info_res), usage) in infos.into_iter().zip(usages.into_iter()) {
+                if let Some(info) = info_res {
+                    if series2 != info.series {
+                        ret.mismatch_count += 1;
+                    }
+                    ret.infos_count_total += 1;
+                    // if info.name == "SINSB04-RMOD:PULSE-I-WF" {
+                    //     ret.found += 1;
+                    // }
+                    match &info.shape {
+                        Shape::Scalar => {
+                            ret.dim0.push((info.name, usage.0, usage.1));
+                        }
+                        Shape::Wave(_) => {
+                            ret.dim1.push((info.name, usage.0, usage.1));
+                        }
+                        Shape::Image(_, _) => {}
+                    }
+                } else {
+                    ret.infos_missing_count += 1;
+                }
+            }
         }
+        ret.dim0.sort_by_cached_key(|x| u64::MAX - x.1);
+        ret.dim1.sort_by_cached_key(|x| u64::MAX - x.1);
+        ret.dim0.truncate(list_len_max);
+        ret.dim1.truncate(list_len_max);
         Ok(ret)
     }
 }

@@ -121,7 +121,7 @@ pub struct BodyStream {
     pub inner: Box<dyn Stream<Item = Result<Bytes, Error>> + Send + Unpin>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum SeriesKind {
     ChannelStatus,
     ChannelData,
@@ -160,6 +160,7 @@ pub enum ScalarType {
     F64,
     BOOL,
     STRING,
+    Enum,
     ChannelStatus,
 }
 
@@ -194,6 +195,7 @@ impl Serialize for ScalarType {
             F64 => ser.serialize_str("f64"),
             BOOL => ser.serialize_str("bool"),
             STRING => ser.serialize_str("string"),
+            Enum => ser.serialize_str("enum"),
             ChannelStatus => ser.serialize_str("ChannelStatus"),
         }
     }
@@ -223,6 +225,7 @@ impl<'de> serde::de::Visitor<'de> for ScalarTypeVis {
             "f64" => ScalarType::F64,
             "bool" => ScalarType::BOOL,
             "string" => ScalarType::STRING,
+            "enum" => ScalarType::Enum,
             "channelstatus" => ScalarType::ChannelStatus,
             k => return Err(E::custom(format!("can not understand variant {k:?}"))),
         };
@@ -261,7 +264,7 @@ impl ScalarType {
             12 => F64,
             13 => STRING,
             14 => ChannelStatus,
-            //13 => return Err(Error::with_msg(format!("STRING not supported"))),
+            15 => Enum,
             6 => return Err(Error::with_msg(format!("CHARACTER not supported"))),
             _ => return Err(Error::with_msg(format!("unknown dtype code: {:?}", ix))),
         };
@@ -283,6 +286,7 @@ impl ScalarType {
             F64 => "f64",
             BOOL => "bool",
             STRING => "string",
+            Enum => "enum",
             ChannelStatus => "ChannelStatus",
         }
     }
@@ -302,6 +306,7 @@ impl ScalarType {
             "f64" => F64,
             "bool" => BOOL,
             "string" => STRING,
+            "enum" => Enum,
             "ChannelStatus" => ChannelStatus,
             _ => {
                 return Err(Error::with_msg_no_trace(format!(
@@ -328,6 +333,7 @@ impl ScalarType {
             F64 => "float64",
             BOOL => "bool",
             STRING => "string",
+            Enum => "enum",
             ChannelStatus => "ChannelStatus",
         }
     }
@@ -347,8 +353,9 @@ impl ScalarType {
             "double" => F64,
             "float32" => F32,
             "float64" => F64,
-            "string" => STRING,
             "bool" => BOOL,
+            "string" => STRING,
+            "enum" => Enum,
             "ChannelStatus" => ChannelStatus,
             _ => {
                 return Err(Error::with_msg_no_trace(format!(
@@ -366,7 +373,7 @@ impl ScalarType {
             0 => STRING,
             1 => I16,
             2 => F32,
-            3 => I16,
+            3 => Enum,
             4 => I8,
             5 => I32,
             6 => F64,
@@ -389,6 +396,7 @@ impl ScalarType {
             F32 => 2,
             F64 => 6,
             STRING => 0,
+            Enum => 3,
             _ => return Err(Error::with_msg_no_trace(format!("can not represent {self:?} as CA id"))),
         };
         Ok(ret)
@@ -420,6 +428,7 @@ impl ScalarType {
         Self::from_dtype_index(k as u8)
     }
 
+    // TODO this is useless for strings and enums.
     pub fn bytes(&self) -> u8 {
         use ScalarType::*;
         match self {
@@ -435,6 +444,7 @@ impl ScalarType {
             F64 => 8,
             BOOL => 1,
             STRING => 1,
+            Enum => 2,
             ChannelStatus => 4,
         }
     }
@@ -455,6 +465,7 @@ impl ScalarType {
             BOOL => 0,
             STRING => 13,
             ChannelStatus => 14,
+            Enum => 15,
         }
     }
 
@@ -465,6 +476,77 @@ impl ScalarType {
     pub fn from_url_str(s: &str) -> Result<Self, Error> {
         let ret = serde_json::from_str(&format!("\"{s}\""))?;
         Ok(ret)
+    }
+}
+
+#[derive(Debug, Clone, PartialOrd, PartialEq)]
+pub struct StringFix<const N: usize> {
+    data: [char; N],
+}
+
+impl<const N: usize> StringFix<N> {
+    pub fn new() -> Self {
+        Self {
+            data: [char::REPLACEMENT_CHARACTER; N],
+        }
+    }
+}
+
+mod string_fix_impl_serde {
+    use crate::StringFix;
+    use serde::de::Visitor;
+    use serde::Deserialize;
+    use serde::Serialize;
+    use std::fmt;
+
+    impl<const N: usize> Serialize for StringFix<N> {
+        fn serialize<S>(&self, ser: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            ser.serialize_unit()
+        }
+    }
+
+    impl<'de, const N: usize> Deserialize<'de> for StringFix<N> {
+        fn deserialize<D>(de: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            de.deserialize_unit(Vis::<N>)
+        }
+    }
+
+    struct Vis<const N: usize>;
+
+    impl<'de, const N: usize> Visitor<'de> for Vis<N> {
+        type Value = StringFix<N>;
+
+        fn expecting(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+            write!(fmt, "deserialize enum error")
+        }
+
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            Ok(Self::Value::new())
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialOrd, PartialEq)]
+pub struct EnumVariant {
+    ix: u16,
+    name: StringFix<26>,
+}
+
+impl EnumVariant {
+    pub fn empty() -> Self {
+        Self {
+            ix: u16::MAX,
+            name: StringFix::new(),
+        }
     }
 }
 
@@ -650,6 +732,7 @@ pub struct Cluster {
     #[serde(rename = "scylla_lt")]
     scylla_lt: Option<ScyllaConfig>,
     cache_scylla: Option<ScyllaConfig>,
+    pub announce_backends: Option<Vec<String>>,
 }
 
 impl Cluster {
@@ -692,6 +775,7 @@ impl Cluster {
             scylla_mt: None,
             scylla_lt: None,
             cache_scylla: None,
+            announce_backends: None,
         }
     }
 }
@@ -2879,6 +2963,50 @@ pub trait AppendToUrl {
     fn append_to_url(&self, url: &mut Url);
 }
 
+pub type MapQuery = BTreeMap<String, String>;
+
+impl AppendToUrl for MapQuery {
+    fn append_to_url(&self, url: &mut Url) {
+        let mut g = url.query_pairs_mut();
+        for (k, v) in self {
+            g.append_pair(k, v);
+        }
+    }
+}
+
+impl FromUrl for MapQuery {
+    fn from_url(url: &Url) -> Result<Self, Error> {
+        let pairs = get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+        Ok(pairs.clone())
+    }
+}
+
+impl HasBackend for MapQuery {
+    fn backend(&self) -> &str {
+        self.get("backend").map_or("NOBACKEND", AsRef::as_ref)
+    }
+}
+
+impl HasTimeout for MapQuery {
+    fn timeout(&self) -> Duration {
+        let x: Option<u32> = if let Some(v) = self.get("timeout") {
+            v.parse::<u32>().ok()
+        } else {
+            None
+        };
+        let x = x.unwrap_or(5000);
+        Duration::from_millis(x as _)
+    }
+
+    fn set_timeout(&mut self, timeout: Duration) {
+        self.insert("timeout".into(), format!("{:.0}", 1e3 * timeout.as_secs_f32()));
+    }
+}
+
 pub fn get_url_query_pairs(url: &Url) -> BTreeMap<String, String> {
     BTreeMap::from_iter(url.query_pairs().map(|(j, k)| (j.to_string(), k.to_string())))
 }
@@ -3291,6 +3419,7 @@ pub fn test_cluster() -> Cluster {
         run_map_pulse_task: false,
         is_central_storage: false,
         file_io_buffer_size: Default::default(),
+        announce_backends: None,
     }
 }
 
@@ -3328,6 +3457,7 @@ pub fn sls_test_cluster() -> Cluster {
         run_map_pulse_task: false,
         is_central_storage: false,
         file_io_buffer_size: Default::default(),
+        announce_backends: None,
     }
 }
 
@@ -3365,6 +3495,7 @@ pub fn archapp_test_cluster() -> Cluster {
         run_map_pulse_task: false,
         is_central_storage: false,
         file_io_buffer_size: Default::default(),
+        announce_backends: None,
     }
 }
 

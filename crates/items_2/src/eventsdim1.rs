@@ -777,26 +777,14 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
         good
     }
 
-    fn output_info(&self) {
-        if false {
-            info!("output_info  len {}", self.tss.len());
-            if self.tss.len() == 1 {
-                info!(
-                    "  only:  ts {}  pulse {}  value {:?}",
-                    self.tss[0], self.pulses[0], self.values[0]
-                );
-            } else if self.tss.len() > 1 {
-                info!(
-                    "  first: ts {}  pulse {}  value {:?}",
-                    self.tss[0], self.pulses[0], self.values[0]
-                );
-                let n = self.tss.len() - 1;
-                info!(
-                    "  last:  ts {}  pulse {}  value {:?}",
-                    self.tss[n], self.pulses[n], self.values[n]
-                );
-            }
-        }
+    fn output_info(&self) -> String {
+        let n2 = self.tss.len().max(1) - 1;
+        format!(
+            "EventsDim1OutputInfo {{ len {}, ts_min {}, ts_max {} }}",
+            self.tss.len(),
+            self.tss.get(0).map_or(-1i64, |&x| x as i64),
+            self.tss.get(n2).map_or(-1i64, |&x| x as i64),
+        )
     }
 
     fn as_collectable_mut(&mut self) -> &mut dyn Collectable {

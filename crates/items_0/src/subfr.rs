@@ -1,3 +1,5 @@
+use netpod::EnumVariant;
+
 pub trait SubFrId {
     const SUB: u32;
 }
@@ -48,4 +50,8 @@ impl SubFrId for bool {
 
 impl SubFrId for String {
     const SUB: u32 = 0x0e;
+}
+
+impl SubFrId for EnumVariant {
+    const SUB: u32 = 0x0f;
 }

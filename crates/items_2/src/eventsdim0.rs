@@ -812,38 +812,25 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
 
     fn verify(&self) -> bool {
         let mut good = true;
-        let mut ts_max = 0;
-        for ts in &self.tss {
-            let ts = *ts;
-            if ts < ts_max {
+        let n = self.tss.len();
+        for (&ts1, &ts2) in self.tss.iter().zip(self.tss.range(n.min(1)..n)) {
+            if ts1 > ts2 {
                 good = false;
-                error!("unordered event data  ts {}  ts_max {}", ts, ts_max);
+                error!("unordered event data  ts1 {}  ts2 {}", ts1, ts2);
+                break;
             }
-            ts_max = ts_max.max(ts);
         }
         good
     }
 
-    fn output_info(&self) {
-        if false {
-            info!("output_info  len {}", self.tss.len());
-            if self.tss.len() == 1 {
-                info!(
-                    "  only:  ts {}  pulse {}  value {:?}",
-                    self.tss[0], self.pulses[0], self.values[0]
-                );
-            } else if self.tss.len() > 1 {
-                info!(
-                    "  first: ts {}  pulse {}  value {:?}",
-                    self.tss[0], self.pulses[0], self.values[0]
-                );
-                let n = self.tss.len() - 1;
-                info!(
-                    "  last:  ts {}  pulse {}  value {:?}",
-                    self.tss[n], self.pulses[n], self.values[n]
-                );
-            }
-        }
+    fn output_info(&self) -> String {
+        let n2 = self.tss.len().max(1) - 1;
+        format!(
+            "EventsDim0OutputInfo {{ len {}, ts_min {}, ts_max {} }}",
+            self.tss.len(),
+            self.tss.get(0).map_or(-1i64, |&x| x as i64),
+            self.tss.get(n2).map_or(-1i64, |&x| x as i64),
+        )
     }
 
     fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
