@@ -9,3 +9,4 @@ pub mod status;
 pub mod worker;
 
 pub use scylla;
+pub use series::SeriesId;

@@ -1,7 +1,8 @@
 use crate::errconv::ErrConv;
 use crate::range::ScyllaSeriesRange;
 use crate::worker::ScyllaQueue;
-use err::Error;
+use err::thiserror;
+use err::ThisError;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
@@ -32,6 +33,24 @@ use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
 
+#[derive(Debug, ThisError)]
+pub enum Error {
+    ScyllaQuery(#[from] scylla::transport::errors::QueryError),
+    ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),
+    ScyllaTypeConv(#[from] scylla::cql_to_rust::FromRowError),
+    ScyllaWorker(Box<crate::worker::Error>),
+    MissingQuery(String),
+    RangeEndOverflow,
+    InvalidFuture,
+    TestError(String),
+}
+
+impl From<crate::worker::Error> for Error {
+    fn from(value: crate::worker::Error) -> Self {
+        Self::ScyllaWorker(Box::new(value))
+    }
+}
+
 #[derive(Debug)]
 pub struct StmtsLspShape {
     u8: PreparedStatement,
@@ -52,7 +71,7 @@ impl StmtsLspShape {
     fn st(&self, stname: &str) -> Result<&PreparedStatement, Error> {
         let ret = match stname {
             "u8" => &self.u8,
-            _ => return Err(Error::with_msg_no_trace(format!("no query for stname {stname}"))),
+            _ => return Err(Error::MissingQuery(format!("no query for stname {stname}"))),
         };
         Ok(ret)
     }
@@ -123,7 +142,7 @@ async fn make_msp_dir(ks: &str, rt: &RetentionTime, bck: bool, scy: &Session) ->
         table_name,
         select_cond
     );
-    let qu = scy.prepare(cql).await.err_conv()?;
+    let qu = scy.prepare(cql).await?;
     Ok(qu)
 }
 
@@ -153,7 +172,7 @@ async fn make_lsp(
         stname,
         select_cond
     );
-    let qu = scy.prepare(cql).await.err_conv()?;
+    let qu = scy.prepare(cql).await?;
     Ok(qu)
 }
 
@@ -234,54 +253,63 @@ impl StmtsEvents {
     }
 }
 
-pub(super) async fn find_ts_msp_worker(
+pub(super) async fn find_ts_msp(
+    rt: &RetentionTime,
+    series: u64,
+    range: ScyllaSeriesRange,
+    bck: bool,
+    stmts: &StmtsEvents,
+    scy: &ScySession,
+) -> Result<VecDeque<TsMs>, Error> {
+    trace!("find_ts_msp  series  {:?}  {:?}  {:?}  bck {}", rt, series, range, bck);
+    if bck {
+        find_ts_msp_bck(rt, series, range, stmts, scy).await
+    } else {
+        find_ts_msp_fwd(rt, series, range, stmts, scy).await
+    }
+}
+
+async fn find_ts_msp_fwd(
     rt: &RetentionTime,
     series: u64,
     range: ScyllaSeriesRange,
     stmts: &StmtsEvents,
     scy: &ScySession,
-) -> Result<(VecDeque<TsMs>, VecDeque<TsMs>), Error> {
-    trace!("find_ts_msp  series {:?}  {:?}", series, range);
-    let mut ret1 = VecDeque::new();
-    let mut ret2 = VecDeque::new();
-    let params = (series as i64, range.beg().ms() as i64);
-    trace!("find_ts_msp  query 1  params {:?}", params);
-    let mut res = scy
-        .execute_iter(stmts.rt(rt).ts_msp_bck.clone(), params)
-        .await
-        .err_conv()?
-        .into_typed::<(i64,)>();
-    while let Some(x) = res.next().await {
-        let row = x.map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
-        let ts = TsMs::from_ms_u64(row.0 as u64);
-        trace!("query 1  ts_msp {}", ts);
-        ret1.push_front(ts);
-    }
+) -> Result<VecDeque<TsMs>, Error> {
+    let mut ret = VecDeque::new();
+    // TODO time range truncation can be handled better
     let params = (series as i64, range.beg().ms() as i64, 1 + range.end().ms() as i64);
-    trace!("find_ts_msp  query 2  params {:?}", params);
     let mut res = scy
         .execute_iter(stmts.rt(rt).ts_msp_fwd.clone(), params)
-        .await
-        .err_conv()?
+        .await?
         .into_typed::<(i64,)>();
     while let Some(x) = res.next().await {
-        let row = x.map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
+        let row = x?;
         let ts = TsMs::from_ms_u64(row.0 as u64);
-        trace!("query 2  ts_msp {}", ts);
-        ret2.push_front(ts);
+        ret.push_back(ts);
     }
-    // let cql = "select ts_msp from st_ts_msp where series = ? and ts_msp >= ? limit 1";
-    // let params = (series as i64, range.end().ms() as i64);
-    // trace!("find_ts_msp  query 3  params {:?}", params);
-    // let res = scy.query(cql, params).await.err_conv()?;
-    // for row in res.rows_typed_or_empty::<(i64,)>() {
-    //     let row = row.err_conv()?;
-    //     let ts = TsMs::from_ms_u64(row.0 as u64);
-    //     trace!("query 3  ts_msp {}", ts);
-    //     ret2.push_back(ts);
-    // }
-    trace!("find_ts_msp  n1 {:?}  n2 {:?}", ret1.len(), ret2.len());
-    Ok((ret1, ret2))
+    Ok(ret)
+}
+
+async fn find_ts_msp_bck(
+    rt: &RetentionTime,
+    series: u64,
+    range: ScyllaSeriesRange,
+    stmts: &StmtsEvents,
+    scy: &ScySession,
+) -> Result<VecDeque<TsMs>, Error> {
+    let mut ret = VecDeque::new();
+    let params = (series as i64, range.beg().ms() as i64);
+    let mut res = scy
+        .execute_iter(stmts.rt(rt).ts_msp_bck.clone(), params)
+        .await?
+        .into_typed::<(i64,)>();
+    while let Some(x) = res.next().await {
+        let row = x?;
+        let ts = TsMs::from_ms_u64(row.0 as u64);
+        ret.push_front(ts);
+    }
+    Ok(ret)
 }
 
 trait ValTy: Sized + 'static {
@@ -438,8 +466,12 @@ where
     // TODO could take scyqeue out of opts struct.
     let scyqueue = opts.scyqueue.clone();
     let futgen = Box::new(|scy: Arc<ScySession>, stmts: Arc<StmtsEvents>| {
-        let fut = read_next_values_2::<ST>(opts, scy, stmts);
-        Box::pin(fut) as Pin<Box<dyn Future<Output = Result<Box<dyn Events>, err::Error>> + Send>>
+        let fut = async {
+            read_next_values_2::<ST>(opts, scy, stmts)
+                .await
+                .map_err(crate::worker::Error::from)
+        };
+        Box::pin(fut) as Pin<Box<dyn Future<Output = Result<Box<dyn Events>, crate::worker::Error>> + Send>>
     });
     let res = scyqueue.read_next_values(futgen).await?;
     Ok(res)
@@ -459,7 +491,7 @@ where
     let range = opts.range;
     let table_name = ST::table_name();
     if range.end() > TsNano::from_ns(i64::MAX as u64) {
-        return Err(Error::with_msg_no_trace(format!("range.end overflows i64")));
+        return Err(Error::RangeEndOverflow);
     }
     let ret = if opts.fwd {
         let ts_lsp_min = if range.beg() > ts_msp.ns() {
@@ -505,10 +537,10 @@ where
             ts_lsp_max.ns() as i64,
         );
         trace!("FWD event search  params {:?}", params);
-        let mut res = scy.execute_iter(qu.clone(), params).await.err_conv()?;
+        let mut res = scy.execute_iter(qu.clone(), params).await?;
         let mut rows = Vec::new();
         while let Some(x) = res.next().await {
-            rows.push(x.err_conv()?);
+            rows.push(x?);
         }
         let mut last_before = None;
         let ret = convert_rows::<ST>(rows, range, ts_msp, opts.with_values, !opts.fwd, &mut last_before)?;
@@ -541,10 +573,10 @@ where
             .st(ST::st_name())?;
         let params = (series as i64, ts_msp.ms() as i64, ts_lsp_max.ns() as i64);
         trace!("BCK event search  params {:?}", params);
-        let mut res = scy.execute_iter(qu.clone(), params).await.err_conv()?;
+        let mut res = scy.execute_iter(qu.clone(), params).await?;
         let mut rows = Vec::new();
         while let Some(x) = res.next().await {
-            rows.push(x.err_conv()?);
+            rows.push(x?);
         }
         let mut _last_before = None;
         let ret = convert_rows::<ST>(rows, range, ts_msp, opts.with_values, !opts.fwd, &mut _last_before)?;
@@ -570,21 +602,21 @@ fn convert_rows<ST: ValTy>(
     for row in rows {
         let (ts, pulse, value) = if with_values {
             if ST::is_valueblob() {
-                let row: (i64, i64, Vec<u8>) = row.into_typed().err_conv()?;
+                let row: (i64, i64, Vec<u8>) = row.into_typed()?;
                 trace!("read a value blob len {}", row.2.len());
                 let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
                 let pulse = row.1 as u64;
                 let value = ValTy::from_valueblob(row.2);
                 (ts, pulse, value)
             } else {
-                let row: (i64, i64, ST::ScyTy) = row.into_typed().err_conv()?;
+                let row: (i64, i64, ST::ScyTy) = row.into_typed()?;
                 let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
                 let pulse = row.1 as u64;
                 let value = ValTy::from_scyty(row.2);
                 (ts, pulse, value)
             }
         } else {
-            let row: (i64, i64) = row.into_typed().err_conv()?;
+            let row: (i64, i64) = row.into_typed()?;
             let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
             let pulse = row.1 as u64;
             let value = ValTy::default();
@@ -651,9 +683,7 @@ impl ReadValues {
             ts_msps,
             fwd,
             with_values,
-            fut: Box::pin(futures_util::future::ready(Err(Error::with_msg_no_trace(
-                "future not initialized",
-            )))),
+            fut: Box::pin(futures_util::future::ready(Err(Error::InvalidFuture))),
             fut_done: false,
             scyqueue,
         };
@@ -738,7 +768,7 @@ impl ReadValues {
 
 enum FrState {
     New,
-    FindMsp(Pin<Box<dyn Future<Output = Result<(VecDeque<TsMs>, VecDeque<TsMs>), crate::worker::Error>> + Send>>),
+    FindMsp(Pin<Box<dyn Future<Output = Result<VecDeque<TsMs>, crate::worker::Error>> + Send>>),
     ReadBack1(ReadValues),
     ReadBack2(ReadValues),
     ReadValues(ReadValues),
@@ -930,9 +960,10 @@ async fn find_ts_msp_via_queue(
     rt: RetentionTime,
     series: u64,
     range: ScyllaSeriesRange,
+    bck: bool,
     scyqueue: ScyllaQueue,
-) -> Result<(VecDeque<TsMs>, VecDeque<TsMs>), crate::worker::Error> {
-    scyqueue.find_ts_msp(rt, series, range).await
+) -> Result<VecDeque<TsMs>, crate::worker::Error> {
+    scyqueue.find_ts_msp(rt, series, range, bck).await
 }
 
 impl Stream for EventsStreamScylla {
@@ -941,8 +972,7 @@ impl Stream for EventsStreamScylla {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         if self.do_test_stream_error {
-            let e = Error::with_msg(format!("Test PRIVATE STREAM error."))
-                .add_public_msg(format!("Test PUBLIC STREAM error."));
+            let e = Error::TestError("test-message".into());
             return Ready(Some(Err(e)));
         }
         loop {
@@ -967,14 +997,15 @@ impl Stream for EventsStreamScylla {
                 FrState::New => {
                     let series = self.series.clone();
                     let range = self.range.clone();
-                    let fut = find_ts_msp_via_queue(self.rt.clone(), series, range, self.scyqueue.clone());
+                    // TODO this no longer works, we miss the backwards part here
+                    let fut = find_ts_msp_via_queue(self.rt.clone(), series, range, false, self.scyqueue.clone());
                     let fut = Box::pin(fut);
                     self.state = FrState::FindMsp(fut);
                     continue;
                 }
                 FrState::FindMsp(ref mut fut) => match fut.poll_unpin(cx) {
-                    Ready(Ok((msps1, msps2))) => {
-                        self.ts_msps_found(msps1, msps2);
+                    Ready(Ok(msps)) => {
+                        self.ts_msps_found(VecDeque::new(), msps);
                         continue;
                     }
                     Ready(Err(e)) => {

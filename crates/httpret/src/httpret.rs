@@ -373,7 +373,7 @@ async fn http_service_inner(
     } else if let Some(h) = channelconfig::ScyllaChannelsActive::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = channelconfig::ScyllaSeriesTsMsp::handler(&req) {
-        Ok(h.handle(req, &node_config).await?)
+        Ok(h.handle(req, &shared_res, &node_config).await?)
     } else if let Some(h) = channelconfig::AmbigiousChannelNames::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = api4::accounting::AccountingToplistCounts::handler(&req) {

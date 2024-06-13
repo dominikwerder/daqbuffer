@@ -169,6 +169,9 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
             .from_env()
             .map_err(|e| Error::with_msg_no_trace(format!("can not build tracing env filter {e}")))?;
         let filter_3 = tracing_subscriber::filter::dynamic_filter_fn(|meta, ctx| {
+            if true {
+                return true;
+            }
             if *meta.level() <= tracing::Level::TRACE {
                 if ["httpret", "scyllaconn"].contains(&meta.target()) {
                     let mut sr = ctx.lookup_current();

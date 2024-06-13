@@ -19,16 +19,11 @@ use std::sync::Arc;
 
 #[derive(Debug, ThisError)]
 pub enum Error {
-    Error(#[from] err::Error),
+    ScyllaConnection(err::Error),
+    EventsQuery(#[from] crate::events::Error),
     ChannelSend,
     ChannelRecv,
     Join,
-}
-
-impl err::ToErr for Error {
-    fn to_err(self) -> err::Error {
-        err::Error::from_string(self)
-    }
 }
 
 #[derive(Debug)]
@@ -38,7 +33,8 @@ enum Job {
         // series-id
         u64,
         ScyllaSeriesRange,
-        Sender<Result<(VecDeque<TsMs>, VecDeque<TsMs>), Error>>,
+        bool,
+        Sender<Result<VecDeque<TsMs>, Error>>,
     ),
     ReadNextValues(ReadNextValues),
 }
@@ -48,7 +44,7 @@ struct ReadNextValues {
         dyn FnOnce(
                 Arc<Session>,
                 Arc<StmtsEvents>,
-            ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, err::Error>> + Send>>
+            ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>>
             + Send,
     >,
     // fut: Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>>,
@@ -72,9 +68,10 @@ impl ScyllaQueue {
         rt: RetentionTime,
         series: u64,
         range: ScyllaSeriesRange,
-    ) -> Result<(VecDeque<TsMs>, VecDeque<TsMs>), Error> {
+        bck: bool,
+    ) -> Result<VecDeque<TsMs>, Error> {
         let (tx, rx) = async_channel::bounded(1);
-        let job = Job::FindTsMsp(rt, series, range, tx);
+        let job = Job::FindTsMsp(rt, series, range, bck, tx);
         self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
         let res = rx.recv().await.map_err(|_| Error::ChannelRecv)??;
         Ok(res)
@@ -85,7 +82,7 @@ impl ScyllaQueue {
         F: FnOnce(
                 Arc<Session>,
                 Arc<StmtsEvents>,
-            ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, err::Error>> + Send>>
+            ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>>
             + Send
             + 'static,
     {
@@ -126,7 +123,9 @@ impl ScyllaWorker {
     }
 
     pub async fn work(self) -> Result<(), Error> {
-        let scy = create_scy_session_no_ks(&self.scyconf_st).await?;
+        let scy = create_scy_session_no_ks(&self.scyconf_st)
+            .await
+            .map_err(Error::ScyllaConnection)?;
         let scy = Arc::new(scy);
         let kss = [
             self.scyconf_st.keyspace.as_str(),
@@ -145,8 +144,8 @@ impl ScyllaWorker {
                 }
             };
             match job {
-                Job::FindTsMsp(rt, series, range, tx) => {
-                    let res = crate::events::find_ts_msp_worker(&rt, series, range, &stmts, &scy).await;
+                Job::FindTsMsp(rt, series, range, bck, tx) => {
+                    let res = crate::events::find_ts_msp(&rt, series, range, bck, &stmts, &scy).await;
                     if tx.send(res.map_err(Into::into)).await.is_err() {
                         // TODO count for stats
                     }

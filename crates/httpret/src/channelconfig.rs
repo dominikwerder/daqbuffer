@@ -1,5 +1,6 @@
 use crate::err::Error;
 use crate::response;
+use crate::ServiceSharedResources;
 use crate::ToPublicResponse;
 use dbconn::create_connection;
 use dbconn::worker::PgQueue;
@@ -15,8 +16,12 @@ use httpclient::ToJsonBody;
 use netpod::get_url_query_pairs;
 use netpod::log::*;
 use netpod::query::prebinned::PreBinnedQuery;
+use netpod::query::PulseRangeQuery;
+use netpod::query::TimeRangeQuery;
+use netpod::range::evrange::SeriesRange;
 use netpod::req_uri_to_url;
 use netpod::timeunits::*;
+use netpod::ttl::RetentionTime;
 use netpod::ChannelConfigQuery;
 use netpod::ChannelConfigResponse;
 use netpod::ChannelTypeConfigGen;
@@ -31,6 +36,7 @@ use nodenet::configquorum::find_config_basics_quorum;
 use query::api4::binned::BinnedQuery;
 use query::api4::events::PlainEventsQuery;
 use scyllaconn::errconv::ErrConv;
+use scyllaconn::range::ScyllaSeriesRange;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -368,7 +374,7 @@ pub struct ScyllaChannelsActive {}
 
 impl ScyllaChannelsActive {
     pub fn handler(req: &Requ) -> Option<Self> {
-        if req.uri().path() == "/api/4/channels/active" {
+        if req.uri().path() == "/api/4/private/channels/active" {
             Some(Self {})
         } else {
             None
@@ -470,7 +476,7 @@ pub struct IocForChannel {}
 
 impl IocForChannel {
     pub fn handler(req: &Requ) -> Option<Self> {
-        if req.uri().path() == "/api/4/channel/ioc" {
+        if req.uri().path() == "/api/4/private/channel/ioc" {
             Some(Self {})
         } else {
             None
@@ -530,8 +536,8 @@ impl IocForChannel {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ScyllaSeriesTsMspQuery {
-    #[serde(rename = "seriesId")]
-    series: u64,
+    name: String,
+    range: SeriesRange,
 }
 
 impl FromUrl for ScyllaSeriesTsMspQuery {
@@ -541,32 +547,45 @@ impl FromUrl for ScyllaSeriesTsMspQuery {
     }
 
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
-        let s = pairs
-            .get("seriesId")
-            .ok_or_else(|| Error::with_public_msg_no_trace("missing seriesId"))?;
-        let series: u64 = s.parse()?;
-        Ok(Self { series })
+        let name = pairs
+            .get("channelName")
+            .ok_or_else(|| Error::with_public_msg_no_trace("missing channelName"))?
+            .into();
+        let range = if let Ok(x) = TimeRangeQuery::from_pairs(pairs) {
+            SeriesRange::TimeRange(x.into())
+        } else if let Ok(x) = PulseRangeQuery::from_pairs(pairs) {
+            SeriesRange::PulseRange(x.into())
+        } else {
+            return Err(err::Error::with_public_msg_no_trace("no time range in url"));
+        };
+        Ok(Self { name, range })
     }
 }
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ScyllaSeriesTsMspResponse {
-    #[serde(rename = "tsMsps")]
-    ts_msps: Vec<u64>,
+    st_ts_msp_ms: Vec<String>,
+    mt_ts_msp_ms: Vec<String>,
+    lt_ts_msp_ms: Vec<String>,
 }
 
 pub struct ScyllaSeriesTsMsp {}
 
 impl ScyllaSeriesTsMsp {
     pub fn handler(req: &Requ) -> Option<Self> {
-        if req.uri().path() == "/api/4/scylla/series/tsMsps" {
+        if req.uri().path() == "/api/4/private/scylla/series/tsMsp" {
             Some(Self {})
         } else {
             None
         }
     }
 
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
+    pub async fn handle(
+        &self,
+        req: Requ,
+        shared_res: &ServiceSharedResources,
+        ncc: &NodeConfigCached,
+    ) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -576,7 +595,7 @@ impl ScyllaSeriesTsMsp {
             if accept == APP_JSON || accept == ACCEPT_ALL {
                 let url = req_uri_to_url(req.uri())?;
                 let q = ScyllaSeriesTsMspQuery::from_url(&url)?;
-                match self.get_ts_msps(&q, node_config).await {
+                match self.get_ts_msps(&q, shared_res, ncc).await {
                     Ok(k) => {
                         let body = ToJsonBody::from(&k).into_body();
                         Ok(response(StatusCode::OK).body(body)?)
@@ -595,25 +614,65 @@ impl ScyllaSeriesTsMsp {
     async fn get_ts_msps(
         &self,
         q: &ScyllaSeriesTsMspQuery,
-        node_config: &NodeConfigCached,
+        shared_res: &ServiceSharedResources,
+        ncc: &NodeConfigCached,
     ) -> Result<ScyllaSeriesTsMspResponse, Error> {
-        let scyco = node_config
-            .node_config
-            .cluster
-            .scylla_st()
-            .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let scy = scyllaconn::conn::create_scy_session(scyco).await?;
-        let mut ts_msps = Vec::new();
-        let mut res = scy
-            .query_iter("select ts_msp from ts_msp where series = ?", (q.series as i64,))
+        let backend = &ncc.node_config.cluster.backend;
+        let name = &q.name;
+        let nano_range = if let SeriesRange::TimeRange(x) = q.range.clone() {
+            x
+        } else {
+            todo!()
+        };
+        let chconf = shared_res
+            .pgqueue
+            .chconf_best_matching_name_range_job(backend, name, nano_range)
             .await
-            .err_conv()?;
-        while let Some(row) = res.next().await {
-            let row = row.err_conv()?;
-            let (ts_msp,): (i64,) = row.into_typed().err_conv()?;
-            ts_msps.push(ts_msp as u64);
+            .map_err(|e| Error::with_msg_no_trace(format!("error from pg worker: {e}")))?
+            .recv()
+            .await
+            .unwrap()
+            .unwrap();
+        use scyllaconn::SeriesId;
+        let sid = SeriesId::new(chconf.series());
+        let scyqueue = shared_res.scyqueue.clone().unwrap();
+
+        let mut st_ts_msp_ms = Vec::new();
+        let mut msp_stream =
+            scyllaconn::events2::msp::MspStream::new(RetentionTime::Short, sid, (&q.range).into(), scyqueue.clone());
+        use chrono::TimeZone;
+        while let Some(x) = msp_stream.next().await {
+            let v = x.unwrap().ms();
+            let st = chrono::Utc.timestamp_millis_opt(v as _).earliest().unwrap();
+            let s = st.format(netpod::DATETIME_FMT_0MS).to_string();
+            st_ts_msp_ms.push(s);
         }
-        let ret = ScyllaSeriesTsMspResponse { ts_msps };
+
+        let mut mt_ts_msp_ms = Vec::new();
+        let mut msp_stream =
+            scyllaconn::events2::msp::MspStream::new(RetentionTime::Medium, sid, (&q.range).into(), scyqueue.clone());
+        while let Some(x) = msp_stream.next().await {
+            let v = x.unwrap().ms();
+            let st = chrono::Utc.timestamp_millis_opt(v as _).earliest().unwrap();
+            let s = st.format(netpod::DATETIME_FMT_0MS).to_string();
+            mt_ts_msp_ms.push(s);
+        }
+
+        let mut lt_ts_msp_ms = Vec::new();
+        let mut msp_stream =
+            scyllaconn::events2::msp::MspStream::new(RetentionTime::Long, sid, (&q.range).into(), scyqueue.clone());
+        while let Some(x) = msp_stream.next().await {
+            let v = x.unwrap().ms();
+            let st = chrono::Utc.timestamp_millis_opt(v as _).earliest().unwrap();
+            let s = st.format(netpod::DATETIME_FMT_0MS).to_string();
+            lt_ts_msp_ms.push(s);
+        }
+
+        let ret = ScyllaSeriesTsMspResponse {
+            st_ts_msp_ms,
+            mt_ts_msp_ms,
+            lt_ts_msp_ms,
+        };
         Ok(ret)
     }
 }

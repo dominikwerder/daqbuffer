@@ -9,6 +9,7 @@ path = "src/scyllaconn.rs"
 
 [dependencies]
 futures-util = "0.3.24"
+pin-project = "1"
 async-channel = "2.3.1"
 scylla = "0.13.0"
 err = { path = "../err" }
@@ -16,3 +17,4 @@ netpod = { path = "../netpod" }
 query = { path = "../query" }
 items_0 = { path = "../items_0" }
 items_2 = { path = "../items_2" }
+series = { path = "../../../daqingest/series" }

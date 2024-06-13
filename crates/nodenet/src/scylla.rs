@@ -72,7 +72,7 @@ pub async fn scylla_channel_event_stream(
                         item
                     }
                 },
-                Err(e) => Err(e),
+                Err(e) => Err(Error::with_msg_no_trace(format!("scyllaconn eevents error {e}"))),
             };
             item
         });
