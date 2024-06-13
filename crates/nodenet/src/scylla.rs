@@ -6,6 +6,7 @@ use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
+use netpod::ttl::RetentionTime;
 use netpod::ChConf;
 use query::api4::events::EventsSubQuery;
 use scyllaconn::worker::ScyllaQueue;
@@ -28,6 +29,7 @@ pub async fn scylla_channel_event_stream(
     let with_values = evq.need_value_data();
     debug!("\n\nmake EventsStreamScylla  {series:?}  {scalar_type:?}  {shape:?}\n");
     let stream = scyllaconn::events::EventsStreamScylla::new(
+        RetentionTime::Short,
         series,
         evq.range().into(),
         do_one_before_range,

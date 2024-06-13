@@ -1,5 +1,5 @@
 use crate::conn::create_scy_session_no_ks;
-use crate::events::StmtsEventsRt;
+use crate::events::StmtsEvents;
 use crate::range::ScyllaSeriesRange;
 use async_channel::Receiver;
 use async_channel::Sender;
@@ -8,6 +8,7 @@ use err::ThisError;
 use futures_util::Future;
 use items_0::Events;
 use netpod::log::*;
+use netpod::ttl::RetentionTime;
 use netpod::ScyllaConfig;
 use netpod::TsMs;
 use scylla::Session;
@@ -33,6 +34,7 @@ impl err::ToErr for Error {
 #[derive(Debug)]
 enum Job {
     FindTsMsp(
+        RetentionTime,
         // series-id
         u64,
         ScyllaSeriesRange,
@@ -45,7 +47,7 @@ struct ReadNextValues {
     futgen: Box<
         dyn FnOnce(
                 Arc<Session>,
-                Arc<StmtsEventsRt>,
+                Arc<StmtsEvents>,
             ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, err::Error>> + Send>>
             + Send,
     >,
@@ -67,11 +69,12 @@ pub struct ScyllaQueue {
 impl ScyllaQueue {
     pub async fn find_ts_msp(
         &self,
+        rt: RetentionTime,
         series: u64,
         range: ScyllaSeriesRange,
     ) -> Result<(VecDeque<TsMs>, VecDeque<TsMs>), Error> {
         let (tx, rx) = async_channel::bounded(1);
-        let job = Job::FindTsMsp(series, range, tx);
+        let job = Job::FindTsMsp(rt, series, range, tx);
         self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
         let res = rx.recv().await.map_err(|_| Error::ChannelRecv)??;
         Ok(res)
@@ -81,7 +84,7 @@ impl ScyllaQueue {
     where
         F: FnOnce(
                 Arc<Session>,
-                Arc<StmtsEventsRt>,
+                Arc<StmtsEvents>,
             ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, err::Error>> + Send>>
             + Send
             + 'static,
@@ -125,9 +128,13 @@ impl ScyllaWorker {
     pub async fn work(self) -> Result<(), Error> {
         let scy = create_scy_session_no_ks(&self.scyconf_st).await?;
         let scy = Arc::new(scy);
-        let rtpre = format!("{}.st_", self.scyconf_st.keyspace);
-        let stmts_st = StmtsEventsRt::new(&rtpre, &scy).await?;
-        let stmts_st = Arc::new(stmts_st);
+        let kss = [
+            self.scyconf_st.keyspace.as_str(),
+            self.scyconf_mt.keyspace.as_str(),
+            self.scyconf_lt.keyspace.as_str(),
+        ];
+        let stmts = StmtsEvents::new(kss.try_into().unwrap(), &scy).await?;
+        let stmts = Arc::new(stmts);
         loop {
             let x = self.rx.recv().await;
             let job = match x {
@@ -138,14 +145,14 @@ impl ScyllaWorker {
                 }
             };
             match job {
-                Job::FindTsMsp(series, range, tx) => {
-                    let res = crate::events::find_ts_msp_worker(series, range, &stmts_st, &scy).await;
+                Job::FindTsMsp(rt, series, range, tx) => {
+                    let res = crate::events::find_ts_msp_worker(&rt, series, range, &stmts, &scy).await;
                     if tx.send(res.map_err(Into::into)).await.is_err() {
                         // TODO count for stats
                     }
                 }
                 Job::ReadNextValues(job) => {
-                    let fut = (job.futgen)(scy.clone(), stmts_st.clone());
+                    let fut = (job.futgen)(scy.clone(), stmts.clone());
                     let res = fut.await;
                     if job.tx.send(res.map_err(Into::into)).await.is_err() {
                         // TODO count for stats

@@ -106,6 +106,7 @@ where
     }
 }
 
+#[allow(unused)]
 struct LogFilterLayer<S, L>
 where
     L: tracing_subscriber::Layer<S>,
@@ -157,7 +158,6 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
             .init();
         console_subscriber::init();
     } else {
-        // #[cfg(DISABLED)]
         // Logging setup
         let filter = tracing_subscriber::EnvFilter::builder()
             .with_default_directive(tracing::metadata::LevelFilter::INFO.into())
@@ -168,14 +168,43 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
             .with_default_directive(tracing::metadata::LevelFilter::INFO.into())
             .from_env()
             .map_err(|e| Error::with_msg_no_trace(format!("can not build tracing env filter {e}")))?;
-        // let filter_3 = tracing_subscriber::filter::dynamic_filter_fn(|meta, ctx| {
-        //     //
-        //     if ["scyllaconn"].contains(&meta.target()) {
-        //         true
-        //     } else {
-        //         true
-        //     }
-        // });
+        let filter_3 = tracing_subscriber::filter::dynamic_filter_fn(|meta, ctx| {
+            if *meta.level() <= tracing::Level::TRACE {
+                if ["httpret", "scyllaconn"].contains(&meta.target()) {
+                    let mut sr = ctx.lookup_current();
+                    let mut allow = false;
+                    while let Some(g) = sr {
+                        if g.name() == "log_span_trace" {
+                            allow = true;
+                            break;
+                        } else {
+                            sr = g.parent();
+                        }
+                    }
+                    allow
+                } else {
+                    false
+                }
+            } else if *meta.level() <= tracing::Level::DEBUG {
+                if ["httpret", "scyllaconn", "items_0", "items_2", "streams"].contains(&meta.target()) {
+                    let mut sr = ctx.lookup_current();
+                    let mut allow = false;
+                    while let Some(g) = sr {
+                        if g.name() == "log_span_trace" || g.name() == "log_span_debug" {
+                            allow = true;
+                            break;
+                        } else {
+                            sr = g.parent();
+                        }
+                    }
+                    allow
+                } else {
+                    false
+                }
+            } else {
+                true
+            }
+        });
         let fmt_layer = tracing_subscriber::fmt::Layer::new()
             .with_writer(io::stderr)
             .with_timer(timer)
@@ -183,6 +212,7 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
             .with_ansi(false)
             .with_thread_names(true)
             .event_format(formatter::FormatTxt)
+            .with_filter(filter_3)
             .with_filter(filter_2)
             .with_filter(filter)
             // .and_then(LogFilterLayer::new("lay1".into()))
