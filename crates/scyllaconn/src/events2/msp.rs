@@ -54,7 +54,7 @@ enum State {
 }
 
 #[pin_project::pin_project]
-pub struct MspStream {
+pub struct MspStreamRt {
     rt: RetentionTime,
     series: SeriesId,
     range: ScyllaSeriesRange,
@@ -63,7 +63,7 @@ pub struct MspStream {
     out: VecDeque<TsMs>,
 }
 
-impl MspStream {
+impl MspStreamRt {
     pub fn new(rt: RetentionTime, series: SeriesId, range: ScyllaSeriesRange, scyqueue: ScyllaQueue) -> Self {
         let fut_bck = {
             let scyqueue = scyqueue.clone();
@@ -93,7 +93,7 @@ impl MspStream {
     }
 }
 
-impl Stream for MspStream {
+impl Stream for MspStreamRt {
     type Item = Result<TsMs, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
@@ -112,8 +112,7 @@ impl Stream for MspStream {
                                 have_pending = true;
                             }
                         },
-                        Resolvable::Output(_) => {}
-                        Resolvable::Taken => {}
+                        _ => {}
                     }
                     let rsv = &mut st.fut_fwd;
                     match rsv {
@@ -125,37 +124,28 @@ impl Stream for MspStream {
                                 have_pending = true;
                             }
                         },
-                        Resolvable::Output(_) => {}
-                        Resolvable::Taken => {}
+                        _ => {}
                     }
                     if have_pending {
                         Pending
                     } else {
                         let taken_bck = st.fut_bck.take();
                         let taken_fwd = st.fut_fwd.take();
-                        if let Some(x) = taken_bck {
-                            match x {
-                                Ok(v) => {
-                                    for e in v {
-                                        self.out.push_back(e)
-                                    }
-
-                                    if let Some(x) = taken_fwd {
-                                        match x {
-                                            Ok(v) => {
-                                                for e in v {
-                                                    self.out.push_back(e)
-                                                }
-
-                                                self.state = State::InputDone;
-                                                continue;
-                                            }
-                                            Err(e) => Ready(Some(Err(e.into()))),
+                        self.state = State::InputDone;
+                        if let (Some(taken_bck), Some(taken_fwd)) = (taken_bck, taken_fwd) {
+                            match taken_bck {
+                                Ok(v1) => match taken_fwd {
+                                    Ok(v2) => {
+                                        for e in v1 {
+                                            self.out.push_back(e)
                                         }
-                                    } else {
-                                        Ready(Some(Err(Error::Logic)))
+                                        for e in v2 {
+                                            self.out.push_back(e)
+                                        }
+                                        continue;
                                     }
-                                }
+                                    Err(e) => Ready(Some(Err(e.into()))),
+                                },
                                 Err(e) => Ready(Some(Err(e.into()))),
                             }
                         } else {
@@ -183,10 +173,10 @@ where
 
 #[allow(unused)]
 fn trait_assert_try() {
-    let x: MspStream = todoval();
+    let x: MspStreamRt = phantomval();
     trait_assert(x);
 }
 
-fn todoval<T>() -> T {
-    todo!()
+fn phantomval<T>() -> T {
+    panic!()
 }

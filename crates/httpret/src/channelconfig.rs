@@ -639,7 +639,7 @@ impl ScyllaSeriesTsMsp {
 
         let mut st_ts_msp_ms = Vec::new();
         let mut msp_stream =
-            scyllaconn::events2::msp::MspStream::new(RetentionTime::Short, sid, (&q.range).into(), scyqueue.clone());
+            scyllaconn::events2::msp::MspStreamRt::new(RetentionTime::Short, sid, (&q.range).into(), scyqueue.clone());
         use chrono::TimeZone;
         while let Some(x) = msp_stream.next().await {
             let v = x.unwrap().ms();
@@ -650,7 +650,7 @@ impl ScyllaSeriesTsMsp {
 
         let mut mt_ts_msp_ms = Vec::new();
         let mut msp_stream =
-            scyllaconn::events2::msp::MspStream::new(RetentionTime::Medium, sid, (&q.range).into(), scyqueue.clone());
+            scyllaconn::events2::msp::MspStreamRt::new(RetentionTime::Medium, sid, (&q.range).into(), scyqueue.clone());
         while let Some(x) = msp_stream.next().await {
             let v = x.unwrap().ms();
             let st = chrono::Utc.timestamp_millis_opt(v as _).earliest().unwrap();
@@ -660,7 +660,7 @@ impl ScyllaSeriesTsMsp {
 
         let mut lt_ts_msp_ms = Vec::new();
         let mut msp_stream =
-            scyllaconn::events2::msp::MspStream::new(RetentionTime::Long, sid, (&q.range).into(), scyqueue.clone());
+            scyllaconn::events2::msp::MspStreamRt::new(RetentionTime::Long, sid, (&q.range).into(), scyqueue.clone());
         while let Some(x) = msp_stream.next().await {
             let v = x.unwrap().ms();
             let st = chrono::Utc.timestamp_millis_opt(v as _).earliest().unwrap();

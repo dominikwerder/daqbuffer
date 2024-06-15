@@ -56,6 +56,8 @@ pub struct PlainEventsQuery {
     create_errors: Vec<String>,
     #[serde(default)]
     log_level: String,
+    #[serde(default)]
+    use_all_rt: bool,
 }
 
 impl PlainEventsQuery {
@@ -81,6 +83,7 @@ impl PlainEventsQuery {
             merger_out_len_max: None,
             create_errors: Vec::new(),
             log_level: String::new(),
+            use_all_rt: false,
         }
     }
 
@@ -206,6 +209,10 @@ impl PlainEventsQuery {
     pub fn log_level(&self) -> &str {
         &self.log_level
     }
+
+    pub fn use_all_rt(&self) -> bool {
+        self.use_all_rt
+    }
 }
 
 impl HasBackend for PlainEventsQuery {
@@ -283,6 +290,11 @@ impl FromUrl for PlainEventsQuery {
                 .map(|x| x.split(",").map(|x| x.to_string()).collect())
                 .unwrap_or(Vec::new()),
             log_level: pairs.get("log_level").map_or(String::new(), String::from),
+            use_all_rt: pairs
+                .get("useAllRt")
+                .map_or("false", |k| k)
+                .parse()
+                .map_err(|e| Error::with_public_msg_no_trace(format!("can not parse useAllRt: {}", e)))?,
         };
         Ok(ret)
     }
@@ -342,6 +354,9 @@ impl AppendToUrl for PlainEventsQuery {
         if self.log_level.len() != 0 {
             g.append_pair("log_level", &self.log_level);
         }
+        if self.use_all_rt {
+            g.append_pair("useAllRt", "true");
+        }
     }
 }
 
@@ -385,6 +400,7 @@ pub struct EventsSubQuerySettings {
     buf_len_disk_io: Option<usize>,
     queue_len_disk_io: Option<usize>,
     create_errors: Vec<String>,
+    use_all_rt: bool,
 }
 
 impl Default for EventsSubQuerySettings {
@@ -398,6 +414,7 @@ impl Default for EventsSubQuerySettings {
             buf_len_disk_io: None,
             queue_len_disk_io: None,
             create_errors: Vec::new(),
+            use_all_rt: true,
         }
     }
 }
@@ -414,6 +431,7 @@ impl From<&PlainEventsQuery> for EventsSubQuerySettings {
             // TODO add to query
             queue_len_disk_io: None,
             create_errors: value.create_errors.clone(),
+            use_all_rt: value.use_all_rt(),
         }
     }
 }
@@ -431,6 +449,7 @@ impl From<&BinnedQuery> for EventsSubQuerySettings {
             // TODO add to query
             queue_len_disk_io: None,
             create_errors: Vec::new(),
+            use_all_rt: true,
         }
     }
 }
@@ -448,6 +467,7 @@ impl From<&Api1Query> for EventsSubQuerySettings {
             buf_len_disk_io: Some(disk_io_tune.read_buffer_len),
             queue_len_disk_io: Some(disk_io_tune.read_queue_len),
             create_errors: Vec::new(),
+            use_all_rt: false,
         }
     }
 }
@@ -550,6 +570,10 @@ impl EventsSubQuery {
 
     pub fn log_level(&self) -> &str {
         &self.log_level
+    }
+
+    pub fn use_all_rt(&self) -> bool {
+        self.settings.use_all_rt
     }
 }
 

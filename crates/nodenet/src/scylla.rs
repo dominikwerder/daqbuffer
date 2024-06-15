@@ -1,6 +1,7 @@
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
@@ -10,6 +11,7 @@ use netpod::ttl::RetentionTime;
 use netpod::ChConf;
 use query::api4::events::EventsSubQuery;
 use scyllaconn::worker::ScyllaQueue;
+use scyllaconn::SeriesId;
 use std::pin::Pin;
 use taskrun::tokio;
 
@@ -28,7 +30,30 @@ pub async fn scylla_channel_event_stream(
     let do_test_stream_error = false;
     let with_values = evq.need_value_data();
     debug!("\n\nmake EventsStreamScylla  {series:?}  {scalar_type:?}  {shape:?}\n");
-    let stream = scyllaconn::events::EventsStreamScylla::new(
+    let stream: Pin<Box<dyn Stream<Item = _> + Send>> = if evq.use_all_rt() {
+        let x = scyllaconn::events2::mergert::MergeRts::new(
+            SeriesId::new(chconf.series()),
+            scalar_type.clone(),
+            shape.clone(),
+            evq.range().into(),
+            with_values,
+            scyqueue.clone(),
+        );
+        Box::pin(x)
+    } else {
+        let x = scyllaconn::events2::events::EventsStreamRt::new(
+            RetentionTime::Short,
+            SeriesId::new(chconf.series()),
+            scalar_type.clone(),
+            shape.clone(),
+            evq.range().into(),
+            with_values,
+            scyqueue.clone(),
+        )
+        .map_err(|e| scyllaconn::events2::mergert::Error::from(e));
+        Box::pin(x)
+    };
+    /*let stream = scyllaconn::events::EventsStreamScylla::new(
         RetentionTime::Short,
         series,
         evq.range().into(),
@@ -38,7 +63,7 @@ pub async fn scylla_channel_event_stream(
         with_values,
         scyqueue.clone(),
         do_test_stream_error,
-    );
+    );*/
     let stream = stream
         .map(move |item| match &item {
             Ok(k) => match k {

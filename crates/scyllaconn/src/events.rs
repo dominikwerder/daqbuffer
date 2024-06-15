@@ -26,6 +26,7 @@ use scylla::frame::response::result::Row;
 use scylla::prepared_statement::PreparedStatement;
 use scylla::Session;
 use scylla::Session as ScySession;
+use series::SeriesId;
 use std::collections::VecDeque;
 use std::mem;
 use std::pin::Pin;
@@ -71,6 +72,17 @@ impl StmtsLspShape {
     fn st(&self, stname: &str) -> Result<&PreparedStatement, Error> {
         let ret = match stname {
             "u8" => &self.u8,
+            "u16" => &self.u16,
+            "u32" => &self.u32,
+            "u64" => &self.u64,
+            "i8" => &self.i8,
+            "i16" => &self.i16,
+            "i32" => &self.i32,
+            "i64" => &self.i64,
+            "f32" => &self.f32,
+            "f64" => &self.f64,
+            "bool" => &self.bool,
+            "string" => &self.string,
             _ => return Err(Error::MissingQuery(format!("no query for stname {stname}"))),
         };
         Ok(ret)
@@ -449,7 +461,7 @@ impl_scaty_array!(Vec<f32>, f32, Vec<f32>, "f32", "f32");
 impl_scaty_array!(Vec<f64>, f64, Vec<f64>, "f64", "f64");
 impl_scaty_array!(Vec<bool>, bool, Vec<bool>, "bool", "bool");
 
-struct ReadNextValuesOpts {
+pub(super) struct ReadNextValuesOpts {
     rt: RetentionTime,
     series: u64,
     ts_msp: TsMs,
@@ -459,7 +471,29 @@ struct ReadNextValuesOpts {
     scyqueue: ScyllaQueue,
 }
 
-async fn read_next_values<ST>(opts: ReadNextValuesOpts) -> Result<Box<dyn Events>, Error>
+impl ReadNextValuesOpts {
+    pub(super) fn new(
+        rt: RetentionTime,
+        series: SeriesId,
+        ts_msp: TsMs,
+        range: ScyllaSeriesRange,
+        fwd: bool,
+        with_values: bool,
+        scyqueue: ScyllaQueue,
+    ) -> Self {
+        Self {
+            rt,
+            series: series.id(),
+            ts_msp,
+            range,
+            fwd,
+            with_values,
+            scyqueue,
+        }
+    }
+}
+
+pub(super) async fn read_next_values<ST>(opts: ReadNextValuesOpts) -> Result<Box<dyn Events>, Error>
 where
     ST: ValTy,
 {
@@ -648,7 +682,7 @@ fn convert_rows<ST: ValTy>(
     Ok(ret)
 }
 
-struct ReadValues {
+pub(super) struct ReadValues {
     rt: RetentionTime,
     series: u64,
     scalar_type: ScalarType,
@@ -663,7 +697,7 @@ struct ReadValues {
 }
 
 impl ReadValues {
-    fn new(
+    pub(super) fn new(
         rt: RetentionTime,
         series: u64,
         scalar_type: ScalarType,
