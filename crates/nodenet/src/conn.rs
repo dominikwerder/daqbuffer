@@ -118,7 +118,7 @@ pub async fn create_response_bytes_stream(
     scyqueue: Option<&ScyllaQueue>,
     ncc: &NodeConfigCached,
 ) -> Result<BoxedBytesStream, Error> {
-    debug!(
+    info!(
         "create_response_bytes_stream  {:?}  {:?}",
         evq.ch_conf().scalar_type(),
         evq.ch_conf().shape(),

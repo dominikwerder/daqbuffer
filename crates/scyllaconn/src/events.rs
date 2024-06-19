@@ -1,4 +1,3 @@
-use crate::errconv::ErrConv;
 use crate::range::ScyllaSeriesRange;
 use crate::worker::ScyllaQueue;
 use err::thiserror;
@@ -25,7 +24,6 @@ use netpod::TsNano;
 use scylla::frame::response::result::Row;
 use scylla::prepared_statement::PreparedStatement;
 use scylla::Session;
-use scylla::Session as ScySession;
 use series::SeriesId;
 use std::collections::VecDeque;
 use std::mem;
@@ -271,7 +269,7 @@ pub(super) async fn find_ts_msp(
     range: ScyllaSeriesRange,
     bck: bool,
     stmts: &StmtsEvents,
-    scy: &ScySession,
+    scy: &Session,
 ) -> Result<VecDeque<TsMs>, Error> {
     trace!("find_ts_msp  series  {:?}  {:?}  {:?}  bck {}", rt, series, range, bck);
     if bck {
@@ -286,7 +284,7 @@ async fn find_ts_msp_fwd(
     series: u64,
     range: ScyllaSeriesRange,
     stmts: &StmtsEvents,
-    scy: &ScySession,
+    scy: &Session,
 ) -> Result<VecDeque<TsMs>, Error> {
     let mut ret = VecDeque::new();
     // TODO time range truncation can be handled better
@@ -308,7 +306,7 @@ async fn find_ts_msp_bck(
     series: u64,
     range: ScyllaSeriesRange,
     stmts: &StmtsEvents,
-    scy: &ScySession,
+    scy: &Session,
 ) -> Result<VecDeque<TsMs>, Error> {
     let mut ret = VecDeque::new();
     let params = (series as i64, range.beg().ms() as i64);
@@ -324,7 +322,7 @@ async fn find_ts_msp_bck(
     Ok(ret)
 }
 
-trait ValTy: Sized + 'static {
+pub(super) trait ValTy: Sized + 'static {
     type ScaTy: ScalarOps + std::default::Default;
     type ScyTy: scylla::cql_to_rust::FromCqlVal<scylla::frame::response::result::CqlValue>;
     type Container: Events + Appendable<Self>;
@@ -499,7 +497,7 @@ where
 {
     // TODO could take scyqeue out of opts struct.
     let scyqueue = opts.scyqueue.clone();
-    let futgen = Box::new(|scy: Arc<ScySession>, stmts: Arc<StmtsEvents>| {
+    let futgen = Box::new(|scy: Arc<Session>, stmts: Arc<StmtsEvents>| {
         let fut = async {
             read_next_values_2::<ST>(opts, scy, stmts)
                 .await
@@ -513,7 +511,7 @@ where
 
 async fn read_next_values_2<ST>(
     opts: ReadNextValuesOpts,
-    scy: Arc<ScySession>,
+    scy: Arc<Session>,
     stmts: Arc<StmtsEvents>,
 ) -> Result<Box<dyn Events>, Error>
 where
@@ -545,20 +543,6 @@ where
             ts_lsp_max,
             table_name,
         );
-        let dir = "fwd";
-        let qu_name = if opts.with_values {
-            if ST::is_valueblob() {
-                format!("array_{}_valueblobs_{}", ST::st_name(), dir)
-            } else {
-                format!("scalar_{}_values_{}", ST::st_name(), dir)
-            }
-        } else {
-            if ST::is_valueblob() {
-                format!("array_{}_timestamps_{}", ST::st_name(), dir)
-            } else {
-                format!("scalar_{}_timestamps_{}", ST::st_name(), dir)
-            }
-        };
         let qu = stmts
             .rt(&opts.rt)
             .lsp(!opts.fwd, opts.with_values)
@@ -586,20 +570,6 @@ where
             DtNano::from_ns(0)
         };
         trace!("BCK  ts_msp {}  ts_lsp_max {}  {}", ts_msp, ts_lsp_max, table_name,);
-        let dir = "bck";
-        let qu_name = if opts.with_values {
-            if ST::is_valueblob() {
-                format!("array_{}_valueblobs_{}", ST::st_name(), dir)
-            } else {
-                format!("scalar_{}_values_{}", ST::st_name(), dir)
-            }
-        } else {
-            if ST::is_valueblob() {
-                format!("array_{}_timestamps_{}", ST::st_name(), dir)
-            } else {
-                format!("scalar_{}_timestamps_{}", ST::st_name(), dir)
-            }
-        };
         let qu = stmts
             .rt(&opts.rt)
             .lsp(!opts.fwd, opts.with_values)
@@ -829,7 +799,7 @@ pub struct EventsStreamScylla {
 }
 
 impl EventsStreamScylla {
-    pub fn new(
+    pub fn _new(
         rt: RetentionTime,
         series: u64,
         range: ScyllaSeriesRange,
@@ -990,16 +960,6 @@ impl EventsStreamScylla {
     }
 }
 
-async fn find_ts_msp_via_queue(
-    rt: RetentionTime,
-    series: u64,
-    range: ScyllaSeriesRange,
-    bck: bool,
-    scyqueue: ScyllaQueue,
-) -> Result<VecDeque<TsMs>, crate::worker::Error> {
-    scyqueue.find_ts_msp(rt, series, range, bck).await
-}
-
 impl Stream for EventsStreamScylla {
     type Item = Result<ChannelEvents, Error>;
 
@@ -1032,8 +992,9 @@ impl Stream for EventsStreamScylla {
                     let series = self.series.clone();
                     let range = self.range.clone();
                     // TODO this no longer works, we miss the backwards part here
-                    let fut = find_ts_msp_via_queue(self.rt.clone(), series, range, false, self.scyqueue.clone());
-                    let fut = Box::pin(fut);
+                    // let fut = find_ts_msp_via_queue(self.rt.clone(), series, range, false, self.scyqueue.clone());
+                    // let fut = Box::pin(fut);
+                    let fut = todo!();
                     self.state = FrState::FindMsp(fut);
                     continue;
                 }

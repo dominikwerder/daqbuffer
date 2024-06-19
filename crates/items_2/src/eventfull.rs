@@ -201,6 +201,17 @@ impl Mergeable for EventFull {
         Empty::empty()
     }
 
+    fn clear(&mut self) {
+        self.tss.clear();
+        self.pulses.clear();
+        self.blobs.clear();
+        self.scalar_types.clear();
+        self.be.clear();
+        self.shapes.clear();
+        self.comps.clear();
+        self.entry_payload_max = 0;
+    }
+
     fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), MergeError> {
         // TODO make it harder to forget new members when the struct may get modified in the future
         let r = range.0..range.1;

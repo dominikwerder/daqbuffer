@@ -52,6 +52,7 @@ enum State {
     Begin,
     Reading(Reading),
     InputDone,
+    Done,
 }
 
 pub struct EventsStreamRt {
@@ -180,15 +181,45 @@ impl Stream for EventsStreamRt {
         use Poll::*;
         loop {
             if let Some(item) = self.out.pop_front() {
-                item.verify();
+                if !item.verify() {
+                    debug!("{}bad item {:?}", "\n\n--------------------------\n", item);
+                    self.state = State::Done;
+                    break Ready(Some(Err(Error::Logic)));
+                }
                 if let Some(item_min) = item.ts_min() {
+                    if item_min < self.range.beg().ns() {
+                        debug!(
+                            "{}out of range error A  {}  {:?}",
+                            "\n\n--------------------------\n", item_min, self.range
+                        );
+                        self.state = State::Done;
+                        break Ready(Some(Err(Error::Logic)));
+                    }
                     if item_min < self.ts_seen_max {
-                        debug!("ordering error A  {}  {}", item_min, self.ts_seen_max);
+                        debug!(
+                            "{}ordering error A  {}  {}",
+                            "\n\n--------------------------\n", item_min, self.ts_seen_max
+                        );
+                        self.state = State::Done;
+                        break Ready(Some(Err(Error::Logic)));
                     }
                 }
                 if let Some(item_max) = item.ts_max() {
+                    if item_max >= self.range.end().ns() {
+                        debug!(
+                            "{}out of range error B  {}  {:?}",
+                            "\n\n--------------------------\n", item_max, self.range
+                        );
+                        self.state = State::Done;
+                        break Ready(Some(Err(Error::Logic)));
+                    }
                     if item_max < self.ts_seen_max {
-                        debug!("ordering error B  {}  {}", item_max, self.ts_seen_max);
+                        debug!(
+                            "{}ordering error B  {}  {}",
+                            "\n\n--------------------------\n", item_max, self.ts_seen_max
+                        );
+                        self.state = State::Done;
+                        break Ready(Some(Err(Error::Logic)));
                     } else {
                         self.ts_seen_max = item_max;
                     }
@@ -218,6 +249,7 @@ impl Stream for EventsStreamRt {
                                 st.reading_state = ReadingState::FetchEvents(FetchEvents { fut });
                                 continue;
                             } else {
+                                self.state = State::Done;
                                 Ready(Some(Err(Error::Logic)))
                             }
                         }
@@ -240,10 +272,14 @@ impl Stream for EventsStreamRt {
                                 st.reading_state = ReadingState::FetchMsp(FetchMsp { fut });
                                 continue;
                             } else {
+                                self.state = State::Done;
                                 Ready(Some(Err(Error::Logic)))
                             }
                         }
-                        Ready(Err(e)) => Ready(Some(Err(e.into()))),
+                        Ready(Err(e)) => {
+                            self.state = State::Done;
+                            Ready(Some(Err(e.into())))
+                        }
                         Pending => Pending,
                     },
                 },
@@ -254,6 +290,7 @@ impl Stream for EventsStreamRt {
                         continue;
                     }
                 }
+                State::Done => Ready(None),
             };
         }
     }

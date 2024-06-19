@@ -218,10 +218,19 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
             // .with_filter(filter_3)
             .with_filter(filter_2)
             .with_filter(filter_1)
-            // .and_then(LogFilterLayer::new("lay1".into()))
-            // .and_then(LogFilterLayer::new("lay2".into()))
-            ;
+        // let fmt_layer = fmt_layer.with_filter(filter_3);
+        // let fmt_layer: Box<dyn Layer<tracing_subscriber::Registry>> = if std::env::var("RUST_LOG_USE_2").is_ok() {
+        //     let a = fmt_layer.with_filter(filter_2);
+        //     Box::new(a)
+        // } else {
+        //     let a = fmt_layer;
+        //     Box::new(a)
+        // };
+        // let fmt_layer = fmt_layer.with_filter(filter_1);
+        // .and_then(LogFilterLayer::new("lay1".into()))
+        // .and_then(LogFilterLayer::new("lay2".into()))
         // let layer_2 = LogFilterLayer::new("lay1".into(), fmt_layer);
+        ;
 
         let reg = tracing_subscriber::registry();
 

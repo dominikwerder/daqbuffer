@@ -47,6 +47,7 @@ pub trait Mergeable<Rhs = Self>: fmt::Debug + WithLen + ByteEstimate + Unpin {
     fn ts_min(&self) -> Option<u64>;
     fn ts_max(&self) -> Option<u64>;
     fn new_empty(&self) -> Self;
+    fn clear(&mut self);
     // TODO when MergeError::Full gets returned, any guarantees about what has been modified or kept unchanged?
     fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), MergeError>;
     fn find_lowest_index_gt(&self, ts: u64) -> Option<usize>;

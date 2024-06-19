@@ -84,7 +84,9 @@ impl EventDataHandler {
         let frames = nodenet::conn::events_get_input_frames(inp)
             .await
             .map_err(|_| EventDataError::InternalError)?;
+        info!("start parse");
         let (evsubq,) = nodenet::conn::events_parse_input_query(frames).map_err(|_| EventDataError::QueryParse)?;
+        info!("done parse");
         let logspan = if false {
             tracing::Span::none()
         } else if evsubq.log_level() == "trace" {

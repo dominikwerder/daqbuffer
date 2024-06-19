@@ -6,6 +6,7 @@ use chrono::TimeZone;
 use chrono::Utc;
 use err::Error;
 use netpod::get_url_query_pairs;
+use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 use netpod::AppendToUrl;
 use netpod::FromUrl;
@@ -124,7 +125,13 @@ impl FromUrl for AccountingToplistQuery {
             let v = pairs
                 .get("tsDate")
                 .ok_or(Error::with_public_msg_no_trace("missing tsDate"))?;
-            let w = v.parse::<DateTime<Utc>>()?;
+            let mut w = v.parse::<DateTime<Utc>>();
+            if w.is_err() && v.ends_with("ago") {
+                let d = humantime::parse_duration(&v[..v.len() - 3])
+                    .map_err(|_| Error::with_public_msg_no_trace(format!("can not parse {v}")))?;
+                w = Ok(Utc::now() - d);
+            }
+            let w = w?;
             Ok::<_, Error>(TsNano::from_ns(w.to_nanos()))
         };
         let ret = Self {

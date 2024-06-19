@@ -74,11 +74,12 @@ pub async fn channel_search(req: Requ, ctx: &ReqCtx, proxy_config: &ProxyConfig)
             let res: ChannelSearchResult = match serde_json::from_slice(&body) {
                 Ok(k) => k,
                 Err(_) => {
-                    let msg = format!("can not parse result: {}", String::from_utf8_lossy(&body));
+                    let msg = format!("can not parse result  tag {}  {}", tag, String::from_utf8_lossy(&body));
                     error!("{}", msg);
                     return Err(Error::with_msg_no_trace(msg));
                 }
             };
+            info!("from {}  len {}", tag, res.channels.len());
             let ret = SubRes {
                 tag,
                 status: StatusCode::OK,

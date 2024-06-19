@@ -13,6 +13,7 @@ use serde_json::Value as JsVal;
 
 pub async fn search_channel_databuffer(
     query: ChannelSearchQuery,
+    backend: &str,
     node_config: &NodeConfigCached,
 ) -> Result<ChannelSearchResult, Error> {
     let empty = if !query.name_regex.is_empty() {
@@ -33,12 +34,19 @@ pub async fn search_channel_databuffer(
         " channel_id, channel_name, source_name,",
         " dtype, shape, unit, description, channel_backend",
         " from searchext($1, $2, $3, $4)",
+        " where channel_backend = $5"
     );
     let (pg, _pgjh) = create_connection(&node_config.node_config.cluster.database).await?;
     let rows = pg
         .query(
             sql,
-            &[&query.name_regex, &query.source_regex, &query.description_regex, &"asc"],
+            &[
+                &query.name_regex,
+                &query.source_regex,
+                &query.description_regex,
+                &"asc",
+                &backend,
+            ],
         )
         .await
         .err_conv()?;
@@ -90,14 +98,19 @@ pub async fn search_channel_databuffer(
     Ok(ret)
 }
 
-pub async fn search_channel_scylla(query: ChannelSearchQuery, pgconf: &Database) -> Result<ChannelSearchResult, Error> {
+pub async fn search_channel_scylla(
+    query: ChannelSearchQuery,
+    backend: &str,
+    pgconf: &Database,
+) -> Result<ChannelSearchResult, Error> {
     let empty = if !query.name_regex.is_empty() { false } else { true };
     if empty {
         let ret = ChannelSearchResult { channels: Vec::new() };
         return Ok(ret);
     }
     let ch_kind: i16 = if query.channel_status { 1 } else { 2 };
-    let (cb1, cb2) = if let Some(x) = &query.backend {
+    let tmp_backend = Some(backend.to_string());
+    let (cb1, cb2) = if let Some(x) = &tmp_backend {
         (false, x.as_str())
     } else {
         (true, "")
@@ -266,19 +279,17 @@ async fn search_channel_archeng(
     Ok(ret)
 }
 
-pub async fn search_channel(
-    query: ChannelSearchQuery,
-    node_config: &NodeConfigCached,
-) -> Result<ChannelSearchResult, Error> {
-    let pgconf = &node_config.node_config.cluster.database;
-    if let Some(_scyconf) = node_config.node_config.cluster.scylla_st() {
-        search_channel_scylla(query, pgconf).await
-    } else if let Some(conf) = node_config.node.channel_archiver.as_ref() {
-        search_channel_archeng(query, node_config.node_config.cluster.backend.clone(), conf, pgconf).await
-    } else if let Some(_conf) = node_config.node.archiver_appliance.as_ref() {
+pub async fn search_channel(query: ChannelSearchQuery, ncc: &NodeConfigCached) -> Result<ChannelSearchResult, Error> {
+    let backend = &ncc.node_config.cluster.backend;
+    let pgconf = &ncc.node_config.cluster.database;
+    if let Some(_scyconf) = ncc.node_config.cluster.scylla_st() {
+        search_channel_scylla(query, backend, pgconf).await
+    } else if let Some(conf) = ncc.node.channel_archiver.as_ref() {
+        search_channel_archeng(query, backend.clone(), conf, pgconf).await
+    } else if let Some(_conf) = ncc.node.archiver_appliance.as_ref() {
         // TODO
         err::todoval()
     } else {
-        search_channel_databuffer(query, node_config).await
+        search_channel_databuffer(query, backend, ncc).await
     }
 }

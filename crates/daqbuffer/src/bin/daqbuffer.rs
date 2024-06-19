@@ -17,6 +17,7 @@ use netpod::Shape;
 use taskrun::tokio;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
+use tracing::Instrument;
 
 pub fn main() {
     match taskrun::run(go()) {
@@ -64,7 +65,7 @@ async fn go() -> Result<(), Error> {
     };
     match opts.subcmd {
         SubCmd::Retrieval(subcmd) => {
-            info!("daqbuffer  version {} +0005", clap::crate_version!());
+            info!("daqbuffer  version {} +0007", clap::crate_version!());
             info!("   service_version {}", service_version);
             if false {
                 #[allow(non_snake_case)]
@@ -143,8 +144,23 @@ async fn go() -> Result<(), Error> {
         SubCmd::Version => {
             println!("{}", clap::crate_version!());
         }
+        SubCmd::TestLog => {
+            test_log().await;
+        }
     }
     Ok(())
+}
+
+async fn test_log() {
+    daqbufp2::test_log().await;
+    let logspan = tracing::span!(tracing::Level::INFO, "log_span_debug", spanlevel = "info");
+    daqbufp2::test_log().instrument(logspan).await;
+    let logspan = tracing::span!(tracing::Level::INFO, "log_span_debug", spanlevel = "trace");
+    daqbufp2::test_log().instrument(logspan).await;
+    let logspan = tracing::span!(tracing::Level::TRACE, "log_span_trace", spanlevel = "info");
+    daqbufp2::test_log().instrument(logspan).await;
+    let logspan = tracing::span!(tracing::Level::TRACE, "log_span_trace", spanlevel = "trace");
+    daqbufp2::test_log().instrument(logspan).await;
 }
 
 // TODO test data needs to be generated.

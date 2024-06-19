@@ -29,7 +29,6 @@ pub async fn scylla_channel_event_stream(
     let shape = chconf.shape();
     let do_test_stream_error = false;
     let with_values = evq.need_value_data();
-    debug!("\n\nmake EventsStreamScylla  {series:?}  {scalar_type:?}  {shape:?}\n");
     let stream: Pin<Box<dyn Stream<Item = _> + Send>> = if evq.use_all_rt() {
         let x = scyllaconn::events2::mergert::MergeRts::new(
             SeriesId::new(chconf.series()),

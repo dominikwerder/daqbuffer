@@ -154,6 +154,15 @@ pub enum ChannelEvents {
     Status(Option<ConnStatusEvent>),
 }
 
+impl ChannelEvents {
+    pub fn is_events(&self) -> bool {
+        match self {
+            ChannelEvents::Events(_) => true,
+            ChannelEvents::Status(_) => false,
+        }
+    }
+}
+
 impl TypeName for ChannelEvents {
     fn type_name(&self) -> String {
         any::type_name::<Self>().into()
@@ -702,6 +711,17 @@ impl Mergeable for ChannelEvents {
         }
     }
 
+    fn clear(&mut self) {
+        match self {
+            ChannelEvents::Events(x) => {
+                Mergeable::clear(x);
+            }
+            ChannelEvents::Status(x) => {
+                *x = None;
+            }
+        }
+    }
+
     fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), MergeError> {
         match self {
             ChannelEvents::Events(k) => match dst {
@@ -829,7 +849,10 @@ impl Events for ChannelEvents {
     }
 
     fn verify(&self) -> bool {
-        todo!()
+        match self {
+            ChannelEvents::Events(x) => Events::verify(x),
+            ChannelEvents::Status(_) => panic!(),
+        }
     }
 
     fn output_info(&self) -> String {
@@ -861,11 +884,26 @@ impl Events for ChannelEvents {
     }
 
     fn new_empty_evs(&self) -> Box<dyn Events> {
-        todo!()
+        match self {
+            ChannelEvents::Events(x) => Events::new_empty_evs(x),
+            ChannelEvents::Status(_) => panic!(),
+        }
     }
 
-    fn drain_into_evs(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), MergeError> {
-        todo!()
+    fn drain_into_evs(&mut self, dst: &mut dyn Events, range: (usize, usize)) -> Result<(), MergeError> {
+        let dst2 = if let Some(x) = dst.as_any_mut().downcast_mut::<Self>() {
+            // debug!("unwrapped dst ChannelEvents as well");
+            x
+        } else {
+            panic!("dst is not ChannelEvents");
+        };
+        match self {
+            ChannelEvents::Events(k) => match dst2 {
+                ChannelEvents::Events(j) => Events::drain_into_evs(k, j, range),
+                ChannelEvents::Status(_) => panic!("dst is not events"),
+            },
+            ChannelEvents::Status(_) => panic!("self is not events"),
+        }
     }
 
     fn find_lowest_index_gt_evs(&self, ts: u64) -> Option<usize> {
@@ -896,11 +934,14 @@ impl Events for ChannelEvents {
         todo!()
     }
 
-    fn tss(&self) -> &std::collections::VecDeque<u64> {
-        todo!()
+    fn tss(&self) -> &VecDeque<u64> {
+        match self {
+            ChannelEvents::Events(x) => Events::tss(x),
+            ChannelEvents::Status(_) => panic!(),
+        }
     }
 
-    fn pulses(&self) -> &std::collections::VecDeque<u64> {
+    fn pulses(&self) -> &VecDeque<u64> {
         todo!()
     }
 
@@ -931,6 +972,15 @@ impl Events for ChannelEvents {
             ChannelEvents::Status(item) => {
                 error!("TODO convert status to cbor");
                 Vec::new()
+            }
+        }
+    }
+
+    fn clear(&mut self) {
+        match self {
+            ChannelEvents::Events(x) => Events::clear(x.as_mut()),
+            ChannelEvents::Status(x) => {
+                *x = None;
             }
         }
     }
