@@ -48,6 +48,23 @@ macro_rules! trace2 {
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct EventsDim1NoPulse<STY> {
+    pub tss: VecDeque<u64>,
+    pub values: VecDeque<Vec<STY>>,
+}
+
+impl<STY> From<EventsDim1NoPulse<STY>> for EventsDim1<STY> {
+    fn from(value: EventsDim1NoPulse<STY>) -> Self {
+        let pulses = vec![0; value.tss.len()].into();
+        Self {
+            tss: value.tss,
+            pulses,
+            values: value.values,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventsDim1<STY> {
     pub tss: VecDeque<u64>,
     pub pulses: VecDeque<u64>,
@@ -813,9 +830,9 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
         Box::new(Self::empty())
     }
 
-    fn drain_into_evs(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), MergeError> {
+    fn drain_into_evs(&mut self, dst: &mut dyn Events, range: (usize, usize)) -> Result<(), MergeError> {
         // TODO as_any and as_any_mut are declared on unrelated traits. Simplify.
-        if let Some(dst) = dst.as_mut().as_any_mut().downcast_mut::<Self>() {
+        if let Some(dst) = dst.as_any_mut().downcast_mut::<Self>() {
             // TODO make it harder to forget new members when the struct may get modified in the future
             let r = range.0..range.1;
             dst.tss.extend(self.tss.drain(r.clone()));
@@ -948,6 +965,12 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
         let mut buf = Vec::new();
         ciborium::into_writer(&ret, &mut buf).unwrap();
         buf
+    }
+
+    fn clear(&mut self) {
+        self.tss.clear();
+        self.pulses.clear();
+        self.values.clear();
     }
 }
 

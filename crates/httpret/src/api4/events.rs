@@ -29,6 +29,7 @@ use netpod::NodeConfigCached;
 use netpod::ReqCtx;
 use nodenet::client::OpenBoxedBytesViaHttp;
 use query::api4::events::PlainEventsQuery;
+use streams::instrument::InstrumentStream;
 use tracing::Instrument;
 
 pub struct EventsHandler {}
@@ -57,9 +58,7 @@ impl EventsHandler {
         let evq =
             PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
         debug!("{self_name}  evq {evq:?}");
-        let logspan = if false {
-            tracing::Span::none()
-        } else if evq.log_level() == "trace" {
+        let logspan = if evq.log_level() == "trace" {
             trace!("enable trace for handler");
             tracing::span!(tracing::Level::INFO, "log_span_trace")
         } else if evq.log_level() == "debug" {
@@ -134,6 +133,16 @@ async fn plain_events_cbor_framed(
             }
         })
         .filter(|x| if let Ok(x) = x { ready(x.len() > 0) } else { ready(true) });
+    let logspan = if evq.log_level() == "trace" {
+        trace!("enable trace for handler");
+        tracing::span!(tracing::Level::INFO, "log_span_trace")
+    } else if evq.log_level() == "debug" {
+        debug!("enable debug for handler");
+        tracing::span!(tracing::Level::INFO, "log_span_debug")
+    } else {
+        tracing::Span::none()
+    };
+    let stream = InstrumentStream::new(stream, logspan);
     let ret = response(StatusCode::OK).body(body_stream(stream))?;
     Ok(ret)
 }

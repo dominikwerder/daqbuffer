@@ -170,6 +170,10 @@ impl Mergeable for Box<dyn Events> {
         self.as_ref().new_empty_evs()
     }
 
+    fn clear(&mut self) {
+        Events::clear(self.as_mut())
+    }
+
     fn drain_into(&mut self, dst: &mut Self, range: (usize, usize)) -> Result<(), MergeError> {
         self.as_mut().drain_into_evs(dst, range)
     }

@@ -85,6 +85,20 @@ pub struct TimeRangeQuery {
     range: NanoRange,
 }
 
+fn parse_time(v: &str) -> Result<DateTime<Utc>, Error> {
+    if let Ok(x) = v.parse() {
+        Ok(x)
+    } else {
+        if v.ends_with("ago") {
+            let d = humantime::parse_duration(&v[..v.len() - 3])
+                .map_err(|_| Error::with_public_msg_no_trace(format!("can not parse {v}")))?;
+            Ok(Utc::now() - d)
+        } else {
+            Err(Error::with_public_msg_no_trace(format!("can not parse {v}")))
+        }
+    }
+}
+
 impl FromUrl for TimeRangeQuery {
     fn from_url(url: &Url) -> Result<Self, Error> {
         let pairs = get_url_query_pairs(url);
@@ -95,8 +109,8 @@ impl FromUrl for TimeRangeQuery {
         if let (Some(beg), Some(end)) = (pairs.get("begDate"), pairs.get("endDate")) {
             let ret = Self {
                 range: NanoRange {
-                    beg: beg.parse::<DateTime<Utc>>()?.to_nanos(),
-                    end: end.parse::<DateTime<Utc>>()?.to_nanos(),
+                    beg: parse_time(beg)?.to_nanos(),
+                    end: parse_time(end)?.to_nanos(),
                 },
             };
             Ok(ret)

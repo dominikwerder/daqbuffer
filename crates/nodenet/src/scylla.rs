@@ -1,15 +1,16 @@
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
-use netpod::ttl::RetentionTime;
 use netpod::ChConf;
 use query::api4::events::EventsSubQuery;
 use scyllaconn::worker::ScyllaQueue;
+use scyllaconn::SeriesId;
 use std::pin::Pin;
 use taskrun::tokio;
 
@@ -22,23 +23,34 @@ pub async fn scylla_channel_event_stream(
     // TODO why both in PlainEventsQuery and as separate parameter? Check other usages.
     // let do_one_before_range = evq.need_one_before_range();
     let do_one_before_range = false;
-    let series = chconf.series();
+    let series = SeriesId::new(chconf.series());
     let scalar_type = chconf.scalar_type();
     let shape = chconf.shape();
     let do_test_stream_error = false;
     let with_values = evq.need_value_data();
-    debug!("\n\nmake EventsStreamScylla  {series:?}  {scalar_type:?}  {shape:?}\n");
-    let stream = scyllaconn::events::EventsStreamScylla::new(
-        RetentionTime::Short,
-        series,
-        evq.range().into(),
-        do_one_before_range,
-        scalar_type.clone(),
-        shape.clone(),
-        with_values,
-        scyqueue.clone(),
-        do_test_stream_error,
-    );
+    let stream: Pin<Box<dyn Stream<Item = _> + Send>> = if let Some(rt) = evq.use_rt() {
+        let x = scyllaconn::events2::events::EventsStreamRt::new(
+            rt,
+            series,
+            scalar_type.clone(),
+            shape.clone(),
+            evq.range().into(),
+            with_values,
+            scyqueue.clone(),
+        )
+        .map_err(|e| scyllaconn::events2::mergert::Error::from(e));
+        Box::pin(x)
+    } else {
+        let x = scyllaconn::events2::mergert::MergeRts::new(
+            series,
+            scalar_type.clone(),
+            shape.clone(),
+            evq.range().into(),
+            with_values,
+            scyqueue.clone(),
+        );
+        Box::pin(x)
+    };
     let stream = stream
         .map(move |item| match &item {
             Ok(k) => match k {
@@ -72,7 +84,7 @@ pub async fn scylla_channel_event_stream(
                         item
                     }
                 },
-                Err(e) => Err(Error::with_msg_no_trace(format!("scyllaconn eevents error {e}"))),
+                Err(e) => Err(Error::with_msg_no_trace(format!("scyllaconn events error {e}"))),
             };
             item
         });

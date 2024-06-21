@@ -522,3 +522,12 @@ async fn clear_cache_all(
         .body(body_string(serde_json::to_string(&res)?))?;
     Ok(ret)
 }
+
+pub async fn test_log() {
+    error!("------");
+    warn!("------");
+    info!("------");
+    debug!("------");
+    trace!("------");
+    scyllaconn::test_log().await;
+}

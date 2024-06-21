@@ -159,7 +159,7 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
         console_subscriber::init();
     } else {
         // Logging setup
-        let filter = tracing_subscriber::EnvFilter::builder()
+        let filter_1 = tracing_subscriber::EnvFilter::builder()
             .with_default_directive(tracing::metadata::LevelFilter::INFO.into())
             .from_env()
             .map_err(|e| Error::with_msg_no_trace(format!("can not build tracing env filter {e}")))?;
@@ -168,9 +168,9 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
             .with_default_directive(tracing::metadata::LevelFilter::INFO.into())
             .from_env()
             .map_err(|e| Error::with_msg_no_trace(format!("can not build tracing env filter {e}")))?;
-        let filter_3 = tracing_subscriber::filter::dynamic_filter_fn(|meta, ctx| {
+        /*let filter_3 = tracing_subscriber::filter::dynamic_filter_fn(|meta, ctx| {
             if true {
-                return true;
+                return false;
             }
             if *meta.level() <= tracing::Level::TRACE {
                 if ["httpret", "scyllaconn"].contains(&meta.target()) {
@@ -207,7 +207,7 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
             } else {
                 true
             }
-        });
+        });*/
         let fmt_layer = tracing_subscriber::fmt::Layer::new()
             .with_writer(io::stderr)
             .with_timer(timer)
@@ -215,13 +215,22 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
             .with_ansi(false)
             .with_thread_names(true)
             .event_format(formatter::FormatTxt)
-            .with_filter(filter_3)
+            // .with_filter(filter_3)
             .with_filter(filter_2)
-            .with_filter(filter)
-            // .and_then(LogFilterLayer::new("lay1".into()))
-            // .and_then(LogFilterLayer::new("lay2".into()))
-            ;
+            .with_filter(filter_1)
+        // let fmt_layer = fmt_layer.with_filter(filter_3);
+        // let fmt_layer: Box<dyn Layer<tracing_subscriber::Registry>> = if std::env::var("RUST_LOG_USE_2").is_ok() {
+        //     let a = fmt_layer.with_filter(filter_2);
+        //     Box::new(a)
+        // } else {
+        //     let a = fmt_layer;
+        //     Box::new(a)
+        // };
+        // let fmt_layer = fmt_layer.with_filter(filter_1);
+        // .and_then(LogFilterLayer::new("lay1".into()))
+        // .and_then(LogFilterLayer::new("lay2".into()))
         // let layer_2 = LogFilterLayer::new("lay1".into(), fmt_layer);
+        ;
 
         let reg = tracing_subscriber::registry();
 

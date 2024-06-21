@@ -1,4 +1,4 @@
-use crate::errconv::ErrConv;
+use crate::events2::prepare::StmtsEvents;
 use crate::range::ScyllaSeriesRange;
 use crate::worker::ScyllaQueue;
 use err::thiserror;
@@ -23,9 +23,8 @@ use netpod::Shape;
 use netpod::TsMs;
 use netpod::TsNano;
 use scylla::frame::response::result::Row;
-use scylla::prepared_statement::PreparedStatement;
 use scylla::Session;
-use scylla::Session as ScySession;
+use series::SeriesId;
 use std::collections::VecDeque;
 use std::mem;
 use std::pin::Pin;
@@ -35,6 +34,7 @@ use std::task::Poll;
 
 #[derive(Debug, ThisError)]
 pub enum Error {
+    Prepare(#[from] crate::events2::prepare::Error),
     ScyllaQuery(#[from] scylla::transport::errors::QueryError),
     ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),
     ScyllaTypeConv(#[from] scylla::cql_to_rust::FromRowError),
@@ -51,268 +51,7 @@ impl From<crate::worker::Error> for Error {
     }
 }
 
-#[derive(Debug)]
-pub struct StmtsLspShape {
-    u8: PreparedStatement,
-    u16: PreparedStatement,
-    u32: PreparedStatement,
-    u64: PreparedStatement,
-    i8: PreparedStatement,
-    i16: PreparedStatement,
-    i32: PreparedStatement,
-    i64: PreparedStatement,
-    f32: PreparedStatement,
-    f64: PreparedStatement,
-    bool: PreparedStatement,
-    string: PreparedStatement,
-}
-
-impl StmtsLspShape {
-    fn st(&self, stname: &str) -> Result<&PreparedStatement, Error> {
-        let ret = match stname {
-            "u8" => &self.u8,
-            _ => return Err(Error::MissingQuery(format!("no query for stname {stname}"))),
-        };
-        Ok(ret)
-    }
-}
-
-#[derive(Debug)]
-pub struct StmtsLspDir {
-    scalar: StmtsLspShape,
-    array: StmtsLspShape,
-}
-
-impl StmtsLspDir {
-    fn shape(&self, array: bool) -> &StmtsLspShape {
-        if array {
-            &self.array
-        } else {
-            &self.scalar
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct StmtsEventsRt {
-    ts_msp_fwd: PreparedStatement,
-    ts_msp_bck: PreparedStatement,
-    lsp_fwd_val: StmtsLspDir,
-    lsp_bck_val: StmtsLspDir,
-    lsp_fwd_ts: StmtsLspDir,
-    lsp_bck_ts: StmtsLspDir,
-}
-
-impl StmtsEventsRt {
-    fn lsp(&self, bck: bool, val: bool) -> &StmtsLspDir {
-        if bck {
-            if val {
-                &self.lsp_bck_val
-            } else {
-                &self.lsp_bck_ts
-            }
-        } else {
-            if val {
-                &self.lsp_fwd_val
-            } else {
-                &self.lsp_fwd_ts
-            }
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct StmtsEvents {
-    st: StmtsEventsRt,
-    mt: StmtsEventsRt,
-    lt: StmtsEventsRt,
-}
-
-async fn make_msp_dir(ks: &str, rt: &RetentionTime, bck: bool, scy: &Session) -> Result<PreparedStatement, Error> {
-    let table_name = "ts_msp";
-    let select_cond = if bck {
-        "ts_msp < ? order by ts_msp desc limit 2"
-    } else {
-        "ts_msp >= ? and ts_msp < ?"
-    };
-    let cql = format!(
-        "select ts_msp from {}.{}{} where series = ? and {}",
-        ks,
-        rt.table_prefix(),
-        table_name,
-        select_cond
-    );
-    let qu = scy.prepare(cql).await?;
-    Ok(qu)
-}
-
-async fn make_lsp(
-    ks: &str,
-    rt: &RetentionTime,
-    shapepre: &str,
-    stname: &str,
-    values: &str,
-    bck: bool,
-    scy: &Session,
-) -> Result<PreparedStatement, Error> {
-    let select_cond = if bck {
-        "ts_lsp < ? order by ts_lsp desc limit 1"
-    } else {
-        "ts_lsp >= ? and ts_lsp < ?"
-    };
-    let cql = format!(
-        concat!(
-            "select {} from {}.{}events_{}_{}",
-            " where series = ? and ts_msp = ? and {}"
-        ),
-        values,
-        ks,
-        rt.table_prefix(),
-        shapepre,
-        stname,
-        select_cond
-    );
-    let qu = scy.prepare(cql).await?;
-    Ok(qu)
-}
-
-async fn make_lsp_shape(
-    ks: &str,
-    rt: &RetentionTime,
-    shapepre: &str,
-    values: &str,
-    bck: bool,
-    scy: &Session,
-) -> Result<StmtsLspShape, Error> {
-    let values = if shapepre.contains("array") {
-        values.replace("value", "valueblob")
-    } else {
-        values.into()
-    };
-    let values = &values;
-    let maker = |stname| make_lsp(ks, rt, shapepre, stname, values, bck, scy);
-    let ret = StmtsLspShape {
-        u8: maker("u8").await?,
-        u16: maker("u16").await?,
-        u32: maker("u32").await?,
-        u64: maker("u64").await?,
-        i8: maker("i8").await?,
-        i16: maker("i16").await?,
-        i32: maker("i32").await?,
-        i64: maker("i64").await?,
-        f32: maker("f32").await?,
-        f64: maker("f64").await?,
-        bool: maker("bool").await?,
-        string: maker("string").await?,
-    };
-    Ok(ret)
-}
-
-async fn make_lsp_dir(
-    ks: &str,
-    rt: &RetentionTime,
-    values: &str,
-    bck: bool,
-    scy: &Session,
-) -> Result<StmtsLspDir, Error> {
-    let ret = StmtsLspDir {
-        scalar: make_lsp_shape(ks, rt, "scalar", values, bck, scy).await?,
-        array: make_lsp_shape(ks, rt, "array", values, bck, scy).await?,
-    };
-    Ok(ret)
-}
-
-async fn make_rt(ks: &str, rt: &RetentionTime, scy: &Session) -> Result<StmtsEventsRt, Error> {
-    let ret = StmtsEventsRt {
-        ts_msp_fwd: make_msp_dir(ks, rt, false, scy).await?,
-        ts_msp_bck: make_msp_dir(ks, rt, true, scy).await?,
-        lsp_fwd_val: make_lsp_dir(ks, rt, "ts_lsp, pulse, value", false, scy).await?,
-        lsp_bck_val: make_lsp_dir(ks, rt, "ts_lsp, pulse, value", true, scy).await?,
-        lsp_fwd_ts: make_lsp_dir(ks, rt, "ts_lsp, pulse", false, scy).await?,
-        lsp_bck_ts: make_lsp_dir(ks, rt, "ts_lsp, pulse", true, scy).await?,
-    };
-    Ok(ret)
-}
-
-impl StmtsEvents {
-    pub(super) async fn new(ks: [&str; 3], scy: &Session) -> Result<Self, Error> {
-        let ret = StmtsEvents {
-            st: make_rt(ks[0], &RetentionTime::Short, scy).await?,
-            mt: make_rt(ks[1], &RetentionTime::Medium, scy).await?,
-            lt: make_rt(ks[2], &RetentionTime::Long, scy).await?,
-        };
-        Ok(ret)
-    }
-
-    fn rt(&self, rt: &RetentionTime) -> &StmtsEventsRt {
-        match rt {
-            RetentionTime::Short => &self.st,
-            RetentionTime::Medium => &self.mt,
-            RetentionTime::Long => &&self.lt,
-        }
-    }
-}
-
-pub(super) async fn find_ts_msp(
-    rt: &RetentionTime,
-    series: u64,
-    range: ScyllaSeriesRange,
-    bck: bool,
-    stmts: &StmtsEvents,
-    scy: &ScySession,
-) -> Result<VecDeque<TsMs>, Error> {
-    trace!("find_ts_msp  series  {:?}  {:?}  {:?}  bck {}", rt, series, range, bck);
-    if bck {
-        find_ts_msp_bck(rt, series, range, stmts, scy).await
-    } else {
-        find_ts_msp_fwd(rt, series, range, stmts, scy).await
-    }
-}
-
-async fn find_ts_msp_fwd(
-    rt: &RetentionTime,
-    series: u64,
-    range: ScyllaSeriesRange,
-    stmts: &StmtsEvents,
-    scy: &ScySession,
-) -> Result<VecDeque<TsMs>, Error> {
-    let mut ret = VecDeque::new();
-    // TODO time range truncation can be handled better
-    let params = (series as i64, range.beg().ms() as i64, 1 + range.end().ms() as i64);
-    let mut res = scy
-        .execute_iter(stmts.rt(rt).ts_msp_fwd.clone(), params)
-        .await?
-        .into_typed::<(i64,)>();
-    while let Some(x) = res.next().await {
-        let row = x?;
-        let ts = TsMs::from_ms_u64(row.0 as u64);
-        ret.push_back(ts);
-    }
-    Ok(ret)
-}
-
-async fn find_ts_msp_bck(
-    rt: &RetentionTime,
-    series: u64,
-    range: ScyllaSeriesRange,
-    stmts: &StmtsEvents,
-    scy: &ScySession,
-) -> Result<VecDeque<TsMs>, Error> {
-    let mut ret = VecDeque::new();
-    let params = (series as i64, range.beg().ms() as i64);
-    let mut res = scy
-        .execute_iter(stmts.rt(rt).ts_msp_bck.clone(), params)
-        .await?
-        .into_typed::<(i64,)>();
-    while let Some(x) = res.next().await {
-        let row = x?;
-        let ts = TsMs::from_ms_u64(row.0 as u64);
-        ret.push_front(ts);
-    }
-    Ok(ret)
-}
-
-trait ValTy: Sized + 'static {
+pub(super) trait ValTy: Sized + 'static {
     type ScaTy: ScalarOps + std::default::Default;
     type ScyTy: scylla::cql_to_rust::FromCqlVal<scylla::frame::response::result::CqlValue>;
     type Container: Events + Appendable<Self>;
@@ -449,7 +188,7 @@ impl_scaty_array!(Vec<f32>, f32, Vec<f32>, "f32", "f32");
 impl_scaty_array!(Vec<f64>, f64, Vec<f64>, "f64", "f64");
 impl_scaty_array!(Vec<bool>, bool, Vec<bool>, "bool", "bool");
 
-struct ReadNextValuesOpts {
+pub(super) struct ReadNextValuesOpts {
     rt: RetentionTime,
     series: u64,
     ts_msp: TsMs,
@@ -459,13 +198,35 @@ struct ReadNextValuesOpts {
     scyqueue: ScyllaQueue,
 }
 
-async fn read_next_values<ST>(opts: ReadNextValuesOpts) -> Result<Box<dyn Events>, Error>
+impl ReadNextValuesOpts {
+    pub(super) fn new(
+        rt: RetentionTime,
+        series: SeriesId,
+        ts_msp: TsMs,
+        range: ScyllaSeriesRange,
+        fwd: bool,
+        with_values: bool,
+        scyqueue: ScyllaQueue,
+    ) -> Self {
+        Self {
+            rt,
+            series: series.id(),
+            ts_msp,
+            range,
+            fwd,
+            with_values,
+            scyqueue,
+        }
+    }
+}
+
+pub(super) async fn read_next_values<ST>(opts: ReadNextValuesOpts) -> Result<Box<dyn Events>, Error>
 where
     ST: ValTy,
 {
     // TODO could take scyqeue out of opts struct.
     let scyqueue = opts.scyqueue.clone();
-    let futgen = Box::new(|scy: Arc<ScySession>, stmts: Arc<StmtsEvents>| {
+    let futgen = Box::new(|scy: Arc<Session>, stmts: Arc<StmtsEvents>| {
         let fut = async {
             read_next_values_2::<ST>(opts, scy, stmts)
                 .await
@@ -479,7 +240,7 @@ where
 
 async fn read_next_values_2<ST>(
     opts: ReadNextValuesOpts,
-    scy: Arc<ScySession>,
+    scy: Arc<Session>,
     stmts: Arc<StmtsEvents>,
 ) -> Result<Box<dyn Events>, Error>
 where
@@ -511,20 +272,6 @@ where
             ts_lsp_max,
             table_name,
         );
-        let dir = "fwd";
-        let qu_name = if opts.with_values {
-            if ST::is_valueblob() {
-                format!("array_{}_valueblobs_{}", ST::st_name(), dir)
-            } else {
-                format!("scalar_{}_values_{}", ST::st_name(), dir)
-            }
-        } else {
-            if ST::is_valueblob() {
-                format!("array_{}_timestamps_{}", ST::st_name(), dir)
-            } else {
-                format!("scalar_{}_timestamps_{}", ST::st_name(), dir)
-            }
-        };
         let qu = stmts
             .rt(&opts.rt)
             .lsp(!opts.fwd, opts.with_values)
@@ -552,20 +299,6 @@ where
             DtNano::from_ns(0)
         };
         trace!("BCK  ts_msp {}  ts_lsp_max {}  {}", ts_msp, ts_lsp_max, table_name,);
-        let dir = "bck";
-        let qu_name = if opts.with_values {
-            if ST::is_valueblob() {
-                format!("array_{}_valueblobs_{}", ST::st_name(), dir)
-            } else {
-                format!("scalar_{}_values_{}", ST::st_name(), dir)
-            }
-        } else {
-            if ST::is_valueblob() {
-                format!("array_{}_timestamps_{}", ST::st_name(), dir)
-            } else {
-                format!("scalar_{}_timestamps_{}", ST::st_name(), dir)
-            }
-        };
         let qu = stmts
             .rt(&opts.rt)
             .lsp(!opts.fwd, opts.with_values)
@@ -648,7 +381,7 @@ fn convert_rows<ST: ValTy>(
     Ok(ret)
 }
 
-struct ReadValues {
+pub(super) struct ReadValues {
     rt: RetentionTime,
     series: u64,
     scalar_type: ScalarType,
@@ -663,7 +396,7 @@ struct ReadValues {
 }
 
 impl ReadValues {
-    fn new(
+    pub(super) fn new(
         rt: RetentionTime,
         series: u64,
         scalar_type: ScalarType,
@@ -795,7 +528,7 @@ pub struct EventsStreamScylla {
 }
 
 impl EventsStreamScylla {
-    pub fn new(
+    pub fn _new(
         rt: RetentionTime,
         series: u64,
         range: ScyllaSeriesRange,
@@ -956,16 +689,6 @@ impl EventsStreamScylla {
     }
 }
 
-async fn find_ts_msp_via_queue(
-    rt: RetentionTime,
-    series: u64,
-    range: ScyllaSeriesRange,
-    bck: bool,
-    scyqueue: ScyllaQueue,
-) -> Result<VecDeque<TsMs>, crate::worker::Error> {
-    scyqueue.find_ts_msp(rt, series, range, bck).await
-}
-
 impl Stream for EventsStreamScylla {
     type Item = Result<ChannelEvents, Error>;
 
@@ -998,8 +721,9 @@ impl Stream for EventsStreamScylla {
                     let series = self.series.clone();
                     let range = self.range.clone();
                     // TODO this no longer works, we miss the backwards part here
-                    let fut = find_ts_msp_via_queue(self.rt.clone(), series, range, false, self.scyqueue.clone());
-                    let fut = Box::pin(fut);
+                    // let fut = find_ts_msp_via_queue(self.rt.clone(), series, range, false, self.scyqueue.clone());
+                    // let fut = Box::pin(fut);
+                    let fut = todo!();
                     self.state = FrState::FindMsp(fut);
                     continue;
                 }

@@ -10,3 +10,12 @@ pub mod worker;
 
 pub use scylla;
 pub use series::SeriesId;
+
+pub async fn test_log() {
+    use netpod::log::*;
+    error!("------");
+    warn!("------");
+    info!("------");
+    debug!("------");
+    trace!("------");
+}

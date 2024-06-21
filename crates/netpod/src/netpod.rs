@@ -226,7 +226,7 @@ impl<'de> serde::de::Visitor<'de> for ScalarTypeVis {
             "bool" => ScalarType::BOOL,
             "string" => ScalarType::STRING,
             "enum" => ScalarType::Enum,
-            "channelstatus" => ScalarType::ChannelStatus,
+            "ChannelStatus" => ScalarType::ChannelStatus,
             k => return Err(E::custom(format!("can not understand variant {k:?}"))),
         };
         Ok(ret)

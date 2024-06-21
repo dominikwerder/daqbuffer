@@ -110,6 +110,8 @@ impl fmt::Display for MergeError {
     }
 }
 
+impl std::error::Error for MergeError {}
+
 // TODO can I remove the Any bound?
 
 /// Container of some form of events, for use as trait object.
@@ -137,7 +139,7 @@ pub trait Events:
     // TODO is this used?
     fn take_new_events_until_ts(&mut self, ts_end: u64) -> Box<dyn Events>;
     fn new_empty_evs(&self) -> Box<dyn Events>;
-    fn drain_into_evs(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), MergeError>;
+    fn drain_into_evs(&mut self, dst: &mut dyn Events, range: (usize, usize)) -> Result<(), MergeError>;
     fn find_lowest_index_gt_evs(&self, ts: u64) -> Option<usize>;
     fn find_lowest_index_ge_evs(&self, ts: u64) -> Option<usize>;
     fn find_highest_index_lt_evs(&self, ts: u64) -> Option<usize>;
@@ -151,6 +153,7 @@ pub trait Events:
     fn to_min_max_avg(&mut self) -> Box<dyn Events>;
     fn to_json_vec_u8(&self) -> Vec<u8>;
     fn to_cbor_vec_u8(&self) -> Vec<u8>;
+    fn clear(&mut self);
 }
 
 impl WithLen for Box<dyn Events> {
@@ -222,7 +225,7 @@ impl Events for Box<dyn Events> {
         Events::new_empty_evs(self.as_ref())
     }
 
-    fn drain_into_evs(&mut self, dst: &mut Box<dyn Events>, range: (usize, usize)) -> Result<(), MergeError> {
+    fn drain_into_evs(&mut self, dst: &mut dyn Events, range: (usize, usize)) -> Result<(), MergeError> {
         Events::drain_into_evs(self.as_mut(), dst, range)
     }
 
@@ -276,5 +279,9 @@ impl Events for Box<dyn Events> {
 
     fn to_cbor_vec_u8(&self) -> Vec<u8> {
         Events::to_cbor_vec_u8(self.as_ref())
+    }
+
+    fn clear(&mut self) {
+        Events::clear(self.as_mut())
     }
 }

@@ -1,5 +1,5 @@
 use crate::conn::create_scy_session_no_ks;
-use crate::events::StmtsEvents;
+use crate::events2::prepare::StmtsEvents;
 use crate::range::ScyllaSeriesRange;
 use async_channel::Receiver;
 use async_channel::Sender;
@@ -19,8 +19,11 @@ use std::sync::Arc;
 
 #[derive(Debug, ThisError)]
 pub enum Error {
+    #[error("ScyllaConnection({0})")]
     ScyllaConnection(err::Error),
+    Prepare(#[from] crate::events2::prepare::Error),
     EventsQuery(#[from] crate::events::Error),
+    Msp(#[from] crate::events2::msp::Error),
     ChannelSend,
     ChannelRecv,
     Join,
@@ -145,7 +148,7 @@ impl ScyllaWorker {
             };
             match job {
                 Job::FindTsMsp(rt, series, range, bck, tx) => {
-                    let res = crate::events::find_ts_msp(&rt, series, range, bck, &stmts, &scy).await;
+                    let res = crate::events2::msp::find_ts_msp(&rt, series, range, bck, &stmts, &scy).await;
                     if tx.send(res.map_err(Into::into)).await.is_err() {
                         // TODO count for stats
                     }

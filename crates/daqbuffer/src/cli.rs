@@ -18,6 +18,7 @@ pub enum SubCmd {
     GenerateTestData,
     Test,
     Version,
+    TestLog,
 }
 
 #[derive(Debug, Parser)]

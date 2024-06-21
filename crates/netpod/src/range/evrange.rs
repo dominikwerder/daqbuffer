@@ -77,6 +77,15 @@ impl NanoRange {
     }
 }
 
+impl From<(u64, u64)> for NanoRange {
+    fn from(value: (u64, u64)) -> Self {
+        Self {
+            beg: value.0,
+            end: value.1,
+        }
+    }
+}
+
 impl TryFrom<&SeriesRange> for NanoRange {
     type Error = Error;
 

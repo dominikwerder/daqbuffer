@@ -66,7 +66,7 @@ pub async fn delay_io_medium() {
 }
 
 pub async fn create_connection(db_config: &Database) -> Result<(PgClient, JoinHandle<Result<(), Error>>), Error> {
-    warn!("create_connection\n\n  CREATING CONNECTION\n\n");
+    warn!("create_connection\n\n  CREATING POSTGRES CONNECTION\n\n");
     // TODO use a common already running worker pool for these queries:
     let d = db_config;
     let uri = format!("postgresql://{}:{}@{}:{}/{}", d.user, d.pass, d.host, d.port, d.name);

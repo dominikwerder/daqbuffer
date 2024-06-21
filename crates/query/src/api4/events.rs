@@ -7,6 +7,7 @@ use netpod::query::api1::Api1Query;
 use netpod::query::PulseRangeQuery;
 use netpod::query::TimeRangeQuery;
 use netpod::range::evrange::SeriesRange;
+use netpod::ttl::RetentionTime;
 use netpod::AppendToUrl;
 use netpod::ByteSize;
 use netpod::ChannelTypeConfigGen;
@@ -56,6 +57,8 @@ pub struct PlainEventsQuery {
     create_errors: Vec<String>,
     #[serde(default)]
     log_level: String,
+    #[serde(default)]
+    use_rt: Option<RetentionTime>,
 }
 
 impl PlainEventsQuery {
@@ -81,6 +84,7 @@ impl PlainEventsQuery {
             merger_out_len_max: None,
             create_errors: Vec::new(),
             log_level: String::new(),
+            use_rt: None,
         }
     }
 
@@ -206,6 +210,10 @@ impl PlainEventsQuery {
     pub fn log_level(&self) -> &str {
         &self.log_level
     }
+
+    pub fn use_rt(&self) -> Option<RetentionTime> {
+        self.use_rt.clone()
+    }
 }
 
 impl HasBackend for PlainEventsQuery {
@@ -283,6 +291,11 @@ impl FromUrl for PlainEventsQuery {
                 .map(|x| x.split(",").map(|x| x.to_string()).collect())
                 .unwrap_or(Vec::new()),
             log_level: pairs.get("log_level").map_or(String::new(), String::from),
+            use_rt: pairs.get("useRt").map_or(Ok(None), |k| {
+                k.parse()
+                    .map(Some)
+                    .map_err(|_| Error::with_public_msg_no_trace(format!("can not parse useRt: {}", k)))
+            })?,
         };
         Ok(ret)
     }
@@ -342,6 +355,9 @@ impl AppendToUrl for PlainEventsQuery {
         if self.log_level.len() != 0 {
             g.append_pair("log_level", &self.log_level);
         }
+        if let Some(x) = self.use_rt.as_ref() {
+            g.append_pair("useRt", &x.to_string());
+        }
     }
 }
 
@@ -385,6 +401,7 @@ pub struct EventsSubQuerySettings {
     buf_len_disk_io: Option<usize>,
     queue_len_disk_io: Option<usize>,
     create_errors: Vec<String>,
+    use_rt: Option<RetentionTime>,
 }
 
 impl Default for EventsSubQuerySettings {
@@ -398,6 +415,7 @@ impl Default for EventsSubQuerySettings {
             buf_len_disk_io: None,
             queue_len_disk_io: None,
             create_errors: Vec::new(),
+            use_rt: None,
         }
     }
 }
@@ -414,6 +432,7 @@ impl From<&PlainEventsQuery> for EventsSubQuerySettings {
             // TODO add to query
             queue_len_disk_io: None,
             create_errors: value.create_errors.clone(),
+            use_rt: value.use_rt(),
         }
     }
 }
@@ -431,6 +450,7 @@ impl From<&BinnedQuery> for EventsSubQuerySettings {
             // TODO add to query
             queue_len_disk_io: None,
             create_errors: Vec::new(),
+            use_rt: None,
         }
     }
 }
@@ -448,6 +468,7 @@ impl From<&Api1Query> for EventsSubQuerySettings {
             buf_len_disk_io: Some(disk_io_tune.read_buffer_len),
             queue_len_disk_io: Some(disk_io_tune.read_queue_len),
             create_errors: Vec::new(),
+            use_rt: None,
         }
     }
 }
@@ -550,6 +571,10 @@ impl EventsSubQuery {
 
     pub fn log_level(&self) -> &str {
         &self.log_level
+    }
+
+    pub fn use_rt(&self) -> Option<RetentionTime> {
+        self.settings.use_rt.clone()
     }
 }
 

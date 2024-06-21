@@ -118,7 +118,7 @@ pub async fn create_response_bytes_stream(
     scyqueue: Option<&ScyllaQueue>,
     ncc: &NodeConfigCached,
 ) -> Result<BoxedBytesStream, Error> {
-    debug!(
+    info!(
         "create_response_bytes_stream  {:?}  {:?}",
         evq.ch_conf().scalar_type(),
         evq.ch_conf().shape(),
@@ -275,6 +275,7 @@ pub fn events_parse_input_query(frames: Vec<InMemoryFrame>) -> Result<(EventsSub
         },
         Err(e) => return Err(e),
     };
+    info!("parsing json {:?}", qitem.str());
     let frame1: Frame1Parts = serde_json::from_str(&qitem.str()).map_err(|e| {
         let e = Error::with_msg_no_trace(format!("json parse error: {}  inp {}", e, qitem.str()));
         error!("{e}");

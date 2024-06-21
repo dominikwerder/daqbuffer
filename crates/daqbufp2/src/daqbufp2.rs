@@ -46,3 +46,13 @@ pub async fn run_proxy(proxy_config: ProxyConfig, service_version: ServiceVersio
     httpret::proxy::proxy(proxy_config, service_version).await?;
     Ok(())
 }
+
+pub async fn test_log() {
+    use netpod::log::*;
+    error!("------");
+    warn!("------");
+    info!("------");
+    debug!("------");
+    trace!("------");
+    httpret::test_log().await;
+}
