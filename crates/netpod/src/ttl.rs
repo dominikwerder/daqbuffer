@@ -1,6 +1,12 @@
+use core::fmt;
+use err::thiserror;
+use err::ThisError;
+use serde::Deserialize;
+use serde::Serialize;
+use std::str::FromStr;
 use std::time::Duration;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RetentionTime {
     Short,
     Medium,
@@ -59,3 +65,43 @@ impl RetentionTime {
         self.ttl_events_d0()
     }
 }
+
+impl fmt::Display for RetentionTime {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let s = match self {
+            RetentionTime::Short => "short",
+            RetentionTime::Medium => "medium",
+            RetentionTime::Long => "long",
+        };
+        fmt.write_str(s)
+    }
+}
+
+#[derive(Debug, ThisError)]
+pub enum Error {
+    Parse,
+}
+
+impl FromStr for RetentionTime {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let ret = match s {
+            "short" => Self::Short,
+            "medium" => Self::Medium,
+            "long" => Self::Long,
+            _ => return Err(Error::Parse),
+        };
+        Ok(ret)
+    }
+}
+
+// impl ToString for RetentionTime {
+//     fn to_string(&self) -> String {
+//         match self {
+//             RetentionTime::Short => "short".into(),
+//             RetentionTime::Medium => "medium".into(),
+//             RetentionTime::Long => "long".into(),
+//         }
+//     }
+// }

@@ -1,3 +1,4 @@
+use super::prepare::StmtsEvents;
 use crate::range::ScyllaSeriesRange;
 use crate::worker::ScyllaQueue;
 use err::thiserror;
@@ -5,8 +6,11 @@ use err::ThisError;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
+use futures_util::StreamExt;
+use netpod::log::*;
 use netpod::ttl::RetentionTime;
 use netpod::TsMs;
+use scylla::Session;
 use series::SeriesId;
 use std::collections::VecDeque;
 use std::pin::Pin;
@@ -15,8 +19,17 @@ use std::task::Poll;
 
 #[derive(Debug, ThisError)]
 pub enum Error {
-    Worker(#[from] crate::worker::Error),
     Logic,
+    #[error("Worker({0})")]
+    Worker(Box<crate::worker::Error>),
+    ScyllaQuery(#[from] scylla::transport::errors::QueryError),
+    ScyllaRow(#[from] scylla::transport::iterator::NextRowError),
+}
+
+impl From<crate::worker::Error> for Error {
+    fn from(value: crate::worker::Error) -> Self {
+        Self::Worker(Box::new(value))
+    }
 }
 
 enum Resolvable<F>
@@ -179,4 +192,63 @@ fn trait_assert_try() {
 
 fn phantomval<T>() -> T {
     panic!()
+}
+
+pub async fn find_ts_msp(
+    rt: &RetentionTime,
+    series: u64,
+    range: ScyllaSeriesRange,
+    bck: bool,
+    stmts: &StmtsEvents,
+    scy: &Session,
+) -> Result<VecDeque<TsMs>, Error> {
+    trace!("find_ts_msp  series  {:?}  {:?}  {:?}  bck {}", rt, series, range, bck);
+    if bck {
+        find_ts_msp_bck(rt, series, range, stmts, scy).await
+    } else {
+        find_ts_msp_fwd(rt, series, range, stmts, scy).await
+    }
+}
+
+async fn find_ts_msp_fwd(
+    rt: &RetentionTime,
+    series: u64,
+    range: ScyllaSeriesRange,
+    stmts: &StmtsEvents,
+    scy: &Session,
+) -> Result<VecDeque<TsMs>, Error> {
+    let mut ret = VecDeque::new();
+    // TODO time range truncation can be handled better
+    let params = (series as i64, range.beg().ms() as i64, 1 + range.end().ms() as i64);
+    let mut res = scy
+        .execute_iter(stmts.rt(rt).ts_msp_fwd().clone(), params)
+        .await?
+        .into_typed::<(i64,)>();
+    while let Some(x) = res.next().await {
+        let row = x?;
+        let ts = TsMs::from_ms_u64(row.0 as u64);
+        ret.push_back(ts);
+    }
+    Ok(ret)
+}
+
+async fn find_ts_msp_bck(
+    rt: &RetentionTime,
+    series: u64,
+    range: ScyllaSeriesRange,
+    stmts: &StmtsEvents,
+    scy: &Session,
+) -> Result<VecDeque<TsMs>, Error> {
+    let mut ret = VecDeque::new();
+    let params = (series as i64, range.beg().ms() as i64);
+    let mut res = scy
+        .execute_iter(stmts.rt(rt).ts_msp_bck().clone(), params)
+        .await?
+        .into_typed::<(i64,)>();
+    while let Some(x) = res.next().await {
+        let row = x?;
+        let ts = TsMs::from_ms_u64(row.0 as u64);
+        ret.push_front(ts);
+    }
+    Ok(ret)
 }

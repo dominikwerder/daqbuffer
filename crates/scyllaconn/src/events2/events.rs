@@ -22,12 +22,35 @@ use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 
+#[allow(unused)]
+macro_rules! trace_emit {
+    ($($arg:tt)*) => {
+        if true {
+            trace!($($arg)*);
+        }
+    };
+}
+
+#[allow(unused)]
+macro_rules! warn_item {
+    ($($arg:tt)*) => {
+        if true {
+            debug!($($arg)*);
+        }
+    };
+}
+
 #[derive(Debug, ThisError)]
 pub enum Error {
     Worker(#[from] crate::worker::Error),
     Events(#[from] crate::events::Error),
     Msp(#[from] crate::events2::msp::Error),
+    Unordered,
+    OutOfRange,
+    BadBatch,
     Logic,
+    Merge(#[from] items_0::MergeError),
+    TruncateLogic,
 }
 
 struct FetchMsp {
@@ -180,51 +203,75 @@ impl Stream for EventsStreamRt {
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
         loop {
-            if let Some(item) = self.out.pop_front() {
+            if let Some(mut item) = self.out.pop_front() {
                 if !item.verify() {
-                    debug!("{}bad item {:?}", "\n\n--------------------------\n", item);
+                    warn_item!("{}bad item {:?}", "\n\n--------------------------\n", item);
                     self.state = State::Done;
-                    break Ready(Some(Err(Error::Logic)));
+                    break Ready(Some(Err(Error::BadBatch)));
                 }
                 if let Some(item_min) = item.ts_min() {
                     if item_min < self.range.beg().ns() {
-                        debug!(
+                        warn_item!(
                             "{}out of range error A  {}  {:?}",
-                            "\n\n--------------------------\n", item_min, self.range
+                            "\n\n--------------------------\n",
+                            item_min,
+                            self.range
                         );
                         self.state = State::Done;
-                        break Ready(Some(Err(Error::Logic)));
+                        break Ready(Some(Err(Error::OutOfRange)));
                     }
                     if item_min < self.ts_seen_max {
-                        debug!(
+                        warn_item!(
                             "{}ordering error A  {}  {}",
-                            "\n\n--------------------------\n", item_min, self.ts_seen_max
+                            "\n\n--------------------------\n",
+                            item_min,
+                            self.ts_seen_max
                         );
-                        self.state = State::Done;
-                        break Ready(Some(Err(Error::Logic)));
+                        let mut r = items_2::merger::Mergeable::new_empty(&item);
+                        match items_2::merger::Mergeable::find_highest_index_lt(&item, self.ts_seen_max) {
+                            Some(ix) => {
+                                match items_2::merger::Mergeable::drain_into(&mut item, &mut r, (0, ix)) {
+                                    Ok(()) => {}
+                                    Err(e) => {
+                                        self.state = State::Done;
+                                        break Ready(Some(Err(e.into())));
+                                    }
+                                }
+                                // self.state = State::Done;
+                                // break Ready(Some(Err(Error::Unordered)));
+                            }
+                            None => {
+                                self.state = State::Done;
+                                break Ready(Some(Err(Error::TruncateLogic)));
+                            }
+                        }
                     }
                 }
                 if let Some(item_max) = item.ts_max() {
                     if item_max >= self.range.end().ns() {
-                        debug!(
+                        warn_item!(
                             "{}out of range error B  {}  {:?}",
-                            "\n\n--------------------------\n", item_max, self.range
+                            "\n\n--------------------------\n",
+                            item_max,
+                            self.range
                         );
                         self.state = State::Done;
-                        break Ready(Some(Err(Error::Logic)));
+                        break Ready(Some(Err(Error::OutOfRange)));
                     }
                     if item_max < self.ts_seen_max {
-                        debug!(
+                        warn_item!(
                             "{}ordering error B  {}  {}",
-                            "\n\n--------------------------\n", item_max, self.ts_seen_max
+                            "\n\n--------------------------\n",
+                            item_max,
+                            self.ts_seen_max
                         );
                         self.state = State::Done;
-                        break Ready(Some(Err(Error::Logic)));
+                        break Ready(Some(Err(Error::Unordered)));
                     } else {
                         self.ts_seen_max = item_max;
                     }
                 }
-                debug!("deliver item  {}", item.output_info());
+                trace_emit!("deliver item  {}", item.output_info());
                 break Ready(Some(Ok(ChannelEvents::Events(item))));
             }
             break match &mut self.state {

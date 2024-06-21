@@ -75,6 +75,23 @@ macro_rules! trace2 {
 }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
+pub struct EventsDim0NoPulse<STY> {
+    pub tss: VecDeque<u64>,
+    pub values: VecDeque<STY>,
+}
+
+impl<STY> From<EventsDim0NoPulse<STY>> for EventsDim0<STY> {
+    fn from(value: EventsDim0NoPulse<STY>) -> Self {
+        let pulses = vec![0; value.tss.len()].into();
+        Self {
+            tss: value.tss,
+            pulses,
+            values: value.values,
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventsDim0<STY> {
     pub tss: VecDeque<u64>,
     pub pulses: VecDeque<u64>,

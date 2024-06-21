@@ -6,6 +6,7 @@ use err::thiserror;
 use err::PublicError;
 use err::ThisError;
 use err::ToPublicError;
+use futures_util::Stream;
 use http::Method;
 use http::StatusCode;
 use httpclient::body_empty;
@@ -16,7 +17,7 @@ use httpclient::StreamResponse;
 use netpod::log::*;
 use netpod::NodeConfigCached;
 use std::sync::Arc;
-use tracing::Instrument;
+use streams::instrument::InstrumentStream;
 
 #[derive(Debug, ThisError)]
 pub enum EventDataError {
@@ -84,12 +85,9 @@ impl EventDataHandler {
         let frames = nodenet::conn::events_get_input_frames(inp)
             .await
             .map_err(|_| EventDataError::InternalError)?;
-        info!("start parse");
         let (evsubq,) = nodenet::conn::events_parse_input_query(frames).map_err(|_| EventDataError::QueryParse)?;
-        info!("done parse");
-        let logspan = if false {
-            tracing::Span::none()
-        } else if evsubq.log_level() == "trace" {
+        info!("{:?}", evsubq);
+        let logspan = if evsubq.log_level() == "trace" {
             trace!("enable trace for handler");
             tracing::span!(tracing::Level::INFO, "log_span_trace")
         } else if evsubq.log_level() == "debug" {
@@ -98,10 +96,12 @@ impl EventDataHandler {
         } else {
             tracing::Span::none()
         };
+        use tracing::Instrument;
         let stream = nodenet::conn::create_response_bytes_stream(evsubq, shared_res.scyqueue.as_ref(), ncc)
-            .instrument(logspan)
+            .instrument(logspan.clone())
             .await
             .map_err(|e| EventDataError::Error(Box::new(e)))?;
+        let stream = InstrumentStream::new(stream, logspan);
         let ret = response(StatusCode::OK)
             .body(body_stream(stream))
             .map_err(|_| EventDataError::InternalError)?;

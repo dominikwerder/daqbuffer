@@ -56,6 +56,7 @@ fn parse_ts(s: &str) -> Result<DateTime<Utc>, Error> {
 }
 
 async fn go() -> Result<(), Error> {
+    let buildmark = "+0008";
     let opts = Opts::parse();
     let service_version = ServiceVersion {
         major: std::env!("CARGO_PKG_VERSION_MAJOR").parse().unwrap_or(0),
@@ -65,8 +66,8 @@ async fn go() -> Result<(), Error> {
     };
     match opts.subcmd {
         SubCmd::Retrieval(subcmd) => {
-            info!("daqbuffer  version {} +0007", clap::crate_version!());
-            info!("   service_version {}", service_version);
+            info!("daqbuffer  version {} {} retrieval", clap::crate_version!(), buildmark);
+            info!("   service_version {} {} retrieval", service_version, buildmark);
             if false {
                 #[allow(non_snake_case)]
                 let TARGET = std::env!("DAQBUF_TARGET");
@@ -96,7 +97,8 @@ async fn go() -> Result<(), Error> {
             }
         }
         SubCmd::Proxy(subcmd) => {
-            info!("daqbuffer proxy {}", clap::crate_version!());
+            info!("daqbuffer  version {} {} proxy", clap::crate_version!(), buildmark);
+            info!("   service_version {} {} proxy", service_version, buildmark);
             let mut config_file = File::open(&subcmd.config).await?;
             let mut buf = Vec::new();
             config_file.read_to_end(&mut buf).await?;
