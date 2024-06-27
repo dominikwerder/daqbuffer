@@ -27,6 +27,7 @@ pub enum Error {
     ChannelSend,
     ChannelRecv,
     Join,
+    Toplist(#[from] crate::accounting::toplist::Error),
 }
 
 #[derive(Debug)]
@@ -40,6 +41,11 @@ enum Job {
         Sender<Result<VecDeque<TsMs>, Error>>,
     ),
     ReadNextValues(ReadNextValues),
+    AccountingReadTs(
+        RetentionTime,
+        TsMs,
+        Sender<Result<crate::accounting::toplist::UsageData, crate::accounting::toplist::Error>>,
+    ),
 }
 
 struct ReadNextValues {
@@ -94,6 +100,18 @@ impl ScyllaQueue {
             futgen: Box::new(futgen),
             tx,
         });
+        self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
+        let res = rx.recv().await.map_err(|_| Error::ChannelRecv)??;
+        Ok(res)
+    }
+
+    pub async fn accounting_read_ts(
+        &self,
+        rt: RetentionTime,
+        ts: TsMs,
+    ) -> Result<crate::accounting::toplist::UsageData, Error> {
+        let (tx, rx) = async_channel::bounded(1);
+        let job = Job::AccountingReadTs(rt, ts, tx);
         self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
         let res = rx.recv().await.map_err(|_| Error::ChannelRecv)??;
         Ok(res)
@@ -157,6 +175,17 @@ impl ScyllaWorker {
                     let fut = (job.futgen)(scy.clone(), stmts.clone());
                     let res = fut.await;
                     if job.tx.send(res.map_err(Into::into)).await.is_err() {
+                        // TODO count for stats
+                    }
+                }
+                Job::AccountingReadTs(rt, ts, tx) => {
+                    let ks = match &rt {
+                        RetentionTime::Short => &self.scyconf_st.keyspace,
+                        RetentionTime::Medium => &self.scyconf_mt.keyspace,
+                        RetentionTime::Long => &self.scyconf_lt.keyspace,
+                    };
+                    let res = crate::accounting::toplist::read_ts(&ks, rt, ts, &scy).await;
+                    if tx.send(res.map_err(Into::into)).await.is_err() {
                         // TODO count for stats
                     }
                 }

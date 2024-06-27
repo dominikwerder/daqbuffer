@@ -8,7 +8,7 @@ edition = "2021"
 path = "src/taskrun.rs"
 
 [dependencies]
-tokio = { version = "1.37.0", features = ["full", "tracing", "time"] }
+tokio = { version = "1.38.0", features = ["full", "tracing", "time"] }
 futures-util = "0.3.28"
 tracing = "0.1.40"
 tracing-log = "0.2.0"

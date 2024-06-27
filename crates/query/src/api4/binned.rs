@@ -4,6 +4,7 @@ use netpod::get_url_query_pairs;
 use netpod::log::*;
 use netpod::query::CacheUsage;
 use netpod::range::evrange::SeriesRange;
+use netpod::ttl::RetentionTime;
 use netpod::AppendToUrl;
 use netpod::ByteSize;
 use netpod::FromUrl;
@@ -40,6 +41,10 @@ pub struct BinnedQuery {
     pub merger_out_len_max: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     test_do_wasm: Option<String>,
+    #[serde(default)]
+    log_level: String,
+    #[serde(default)]
+    use_rt: Option<RetentionTime>,
 }
 
 impl BinnedQuery {
@@ -56,6 +61,8 @@ impl BinnedQuery {
             timeout: None,
             merger_out_len_max: None,
             test_do_wasm: None,
+            log_level: String::new(),
+            use_rt: None,
         }
     }
 
@@ -150,8 +157,11 @@ impl BinnedQuery {
     }
 
     pub fn log_level(&self) -> &str {
-        // TODO take from query
-        ""
+        &self.log_level
+    }
+
+    pub fn use_rt(&self) -> Option<RetentionTime> {
+        self.use_rt.clone()
     }
 }
 
@@ -211,6 +221,12 @@ impl FromUrl for BinnedQuery {
                 .get("mergerOutLenMax")
                 .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
             test_do_wasm: pairs.get("testDoWasm").map(|x| String::from(x)),
+            log_level: pairs.get("log_level").map_or(String::new(), String::from),
+            use_rt: pairs.get("useRt").map_or(Ok(None), |k| {
+                k.parse()
+                    .map(Some)
+                    .map_err(|_| Error::with_public_msg_no_trace(format!("can not parse useRt: {}", k)))
+            })?,
         };
         debug!("BinnedQuery::from_url  {:?}", ret);
         Ok(ret)
@@ -247,6 +263,12 @@ impl AppendToUrl for BinnedQuery {
         }
         if let Some(x) = &self.test_do_wasm {
             g.append_pair("testDoWasm", &x);
+        }
+        if self.log_level.len() != 0 {
+            g.append_pair("log_level", &self.log_level);
+        }
+        if let Some(x) = self.use_rt.as_ref() {
+            g.append_pair("useRt", &x.to_string());
         }
     }
 }

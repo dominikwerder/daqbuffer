@@ -19,13 +19,13 @@ pub struct ChannelInfo {
     pub kind: u16,
 }
 
-pub async fn info_for_series_ids(series_ids: &[u64], pg: &Client) -> Result<Vec<(u64, Option<ChannelInfo>)>, Error> {
+pub async fn info_for_series_ids(series_ids: &[u64], pg: &Client) -> Result<Vec<Option<ChannelInfo>>, Error> {
     let (ord, seriess) = series_ids
         .iter()
         .enumerate()
-        .fold((Vec::new(), Vec::new()), |mut a, x| {
-            a.0.push(x.0 as i32);
-            a.1.push(*x.1 as i64);
+        .fold((Vec::new(), Vec::new()), |mut a, (i, &series)| {
+            a.0.push(i as i32);
+            a.1.push(series as i64);
             a
         });
     let sql = concat!(
@@ -62,9 +62,9 @@ pub async fn info_for_series_ids(series_ids: &[u64], pg: &Client) -> Result<Vec<
                 shape,
                 kind,
             };
-            ret.push((series, Some(e)));
+            ret.push(Some(e));
         } else {
-            ret.push((series, None));
+            ret.push(None);
         }
     }
     Ok(ret)

@@ -29,6 +29,10 @@ impl err::ToErr for Error {
 enum Job {
     ChConfBestMatchingNameRange(String, String, NanoRange, Sender<Result<ChConf, Error>>),
     ChConfForSeries(String, u64, Sender<Result<ChConf, Error>>),
+    InfoForSeriesIds(
+        Vec<u64>,
+        Sender<Result<Vec<Option<crate::channelinfo::ChannelInfo>>, crate::channelinfo::Error>>,
+    ),
 }
 
 #[derive(Debug, Clone)]
@@ -56,6 +60,16 @@ impl PgQueue {
     ) -> Result<Receiver<Result<ChConf, Error>>, Error> {
         let (tx, rx) = async_channel::bounded(1);
         let job = Job::ChConfBestMatchingNameRange(backend.into(), name.into(), range, tx);
+        self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
+        Ok(rx)
+    }
+
+    pub async fn info_for_series_ids(
+        &self,
+        series_ids: Vec<u64>,
+    ) -> Result<Receiver<Result<Vec<Option<crate::channelinfo::ChannelInfo>>, crate::channelinfo::Error>>, Error> {
+        let (tx, rx) = async_channel::bounded(1);
+        let job = Job::InfoForSeriesIds(series_ids, tx);
         self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
         Ok(rx)
     }
@@ -102,6 +116,12 @@ impl PgWorker {
                 }
                 Job::ChConfForSeries(backend, series, tx) => {
                     let res = crate::channelconfig::chconf_for_series(&backend, series, &self.pg).await;
+                    if tx.send(res.map_err(Into::into)).await.is_err() {
+                        // TODO count for stats
+                    }
+                }
+                Job::InfoForSeriesIds(ids, tx) => {
+                    let res = crate::channelinfo::info_for_series_ids(&ids, &self.pg).await;
                     if tx.send(res.map_err(Into::into)).await.is_err() {
                         // TODO count for stats
                     }

@@ -229,17 +229,15 @@ impl Stream for EventsStreamRt {
                         );
                         let mut r = items_2::merger::Mergeable::new_empty(&item);
                         match items_2::merger::Mergeable::find_highest_index_lt(&item, self.ts_seen_max) {
-                            Some(ix) => {
-                                match items_2::merger::Mergeable::drain_into(&mut item, &mut r, (0, ix)) {
-                                    Ok(()) => {}
-                                    Err(e) => {
-                                        self.state = State::Done;
-                                        break Ready(Some(Err(e.into())));
-                                    }
+                            Some(ix) => match items_2::merger::Mergeable::drain_into(&mut item, &mut r, (0, 1 + ix)) {
+                                Ok(()) => {
+                                    // TODO count for metrics
                                 }
-                                // self.state = State::Done;
-                                // break Ready(Some(Err(Error::Unordered)));
-                            }
+                                Err(e) => {
+                                    self.state = State::Done;
+                                    break Ready(Some(Err(e.into())));
+                                }
+                            },
                             None => {
                                 self.state = State::Done;
                                 break Ready(Some(Err(Error::TruncateLogic)));

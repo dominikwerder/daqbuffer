@@ -8,6 +8,7 @@ use err::Error;
 use netpod::get_url_query_pairs;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
+use netpod::ttl::RetentionTime;
 use netpod::AppendToUrl;
 use netpod::FromUrl;
 use netpod::HasBackend;
@@ -82,18 +83,28 @@ impl AppendToUrl for AccountingIngestedBytesQuery {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountingToplistQuery {
+    rt: RetentionTime,
     backend: String,
     ts: TsNano,
     limit: u32,
+    sort: Option<String>,
 }
 
 impl AccountingToplistQuery {
+    pub fn rt(&self) -> RetentionTime {
+        self.rt.clone()
+    }
+
     pub fn ts(&self) -> TsNano {
         self.ts.clone()
     }
 
     pub fn limit(&self) -> u32 {
         self.limit
+    }
+
+    pub fn sort(&self) -> Option<&str> {
+        self.sort.as_ref().map(|x| x.as_str())
     }
 }
 
@@ -135,12 +146,20 @@ impl FromUrl for AccountingToplistQuery {
             Ok::<_, Error>(TsNano::from_ns(w.to_nanos()))
         };
         let ret = Self {
+            rt: pairs
+                .get("retentionTime")
+                .ok_or_else(|| Error::with_public_msg_no_trace("missing retentionTime"))
+                .and_then(|x| {
+                    x.parse()
+                        .map_err(|_| Error::with_public_msg_no_trace("missing retentionTime"))
+                })?,
             backend: pairs
                 .get("backend")
                 .ok_or_else(|| Error::with_public_msg_no_trace("missing backend"))?
                 .to_string(),
             ts: fn1(pairs)?,
             limit: pairs.get("limit").map_or(None, |x| x.parse().ok()).unwrap_or(20),
+            sort: pairs.get("sort").map(ToString::to_string),
         };
         Ok(ret)
     }

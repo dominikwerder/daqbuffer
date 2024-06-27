@@ -1,76 +1,136 @@
-use crate::errconv::ErrConv;
-use err::Error;
+use err::thiserror;
+use err::ThisError;
 use futures_util::StreamExt;
 use netpod::log::*;
-use netpod::timeunits;
+use netpod::ttl::RetentionTime;
+use netpod::TsMs;
 use netpod::EMIT_ACCOUNTING_SNAP;
 use scylla::prepared_statement::PreparedStatement;
 use scylla::Session as ScySession;
-use std::sync::Arc;
+
+#[derive(Debug, ThisError)]
+pub enum Error {
+    ScyllaQuery(#[from] scylla::transport::errors::QueryError),
+    ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),
+    UsageDataMalformed,
+}
 
 #[derive(Debug)]
 pub struct UsageData {
-    ts: u64,
-    // (series, count, bytes)
-    usage: Vec<(u64, u64, u64)>,
+    ts: TsMs,
+    series: Vec<u64>,
+    counts: Vec<u64>,
+    bytes: Vec<u64>,
 }
 
 impl UsageData {
-    pub fn new(ts: u64) -> Self {
-        Self { ts, usage: Vec::new() }
+    pub fn new(ts: TsMs) -> Self {
+        Self {
+            ts,
+            series: Vec::new(),
+            counts: Vec::new(),
+            bytes: Vec::new(),
+        }
     }
 
-    pub fn ts(&self) -> u64 {
+    pub fn len(&self) -> usize {
+        self.series.len()
+    }
+
+    pub fn ts(&self) -> TsMs {
         self.ts
     }
 
-    pub fn usage(&self) -> &[(u64, u64, u64)] {
-        &self.usage
+    pub fn series(&self) -> &[u64] {
+        &self.series
+    }
+
+    pub fn counts(&self) -> &[u64] {
+        &self.counts
+    }
+
+    pub fn bytes(&self) -> &[u64] {
+        &self.bytes
     }
 
     pub fn sort_by_counts(&mut self) {
-        self.usage.sort_unstable_by(|a, b| b.1.cmp(&a.1))
+        let mut tmp: Vec<_> = self
+            .counts
+            .iter()
+            .map(|&x| x)
+            .enumerate()
+            .map(|(i, x)| (x, i))
+            .collect();
+        tmp.sort_unstable();
+        let tmp: Vec<_> = tmp.into_iter().rev().map(|x| x.1).collect();
+        self.reorder_by_index_list(&tmp);
     }
 
     pub fn sort_by_bytes(&mut self) {
-        self.usage.sort_unstable_by(|a, b| b.2.cmp(&a.2))
+        let mut tmp: Vec<_> = self.bytes.iter().map(|&x| x).enumerate().map(|(i, x)| (x, i)).collect();
+        tmp.sort_unstable();
+        let tmp: Vec<_> = tmp.into_iter().rev().map(|x| x.1).collect();
+        self.reorder_by_index_list(&tmp);
+    }
+
+    fn reorder_by_index_list(&mut self, tmp: &[usize]) {
+        self.series = tmp.iter().map(|&x| self.series[x]).collect();
+        self.counts = tmp.iter().map(|&x| self.counts[x]).collect();
+        self.bytes = tmp.iter().map(|&x| self.bytes[x]).collect();
+    }
+
+    fn verify(&self) -> Result<(), Error> {
+        if self.counts.len() != self.series.len() {
+            Err(Error::UsageDataMalformed)
+        } else if self.bytes.len() != self.series.len() {
+            Err(Error::UsageDataMalformed)
+        } else {
+            Ok(())
+        }
     }
 }
 
-pub async fn read_ts(ts: u64, scy: Arc<ScySession>) -> Result<UsageData, Error> {
+pub async fn read_ts(ks: &str, rt: RetentionTime, ts: TsMs, scy: &ScySession) -> Result<UsageData, Error> {
     // TODO  toplist::read_ts  refactor
-    info!("TODO  toplist::read_ts  refactor");
-    let snap = EMIT_ACCOUNTING_SNAP.ms() / 1000;
-    info!("ts {ts}  snap {snap:?}");
-    let ts = ts / timeunits::SEC / snap * snap;
-    let ret = read_ts_inner(ts, scy).await?;
+    let snap = EMIT_ACCOUNTING_SNAP.ms();
+    let ts = TsMs::from_ms_u64(ts.ms() / snap * snap);
+    let ret = read_ts_inner(ks, rt, ts, scy).await?;
     Ok(ret)
 }
 
-async fn read_ts_inner(ts: u64, scy: Arc<ScySession>) -> Result<UsageData, Error> {
+async fn read_ts_inner(ks: &str, rt: RetentionTime, ts: TsMs, scy: &ScySession) -> Result<UsageData, Error> {
     type RowType = (i64, i64, i64);
-    let cql = concat!("select series, count, bytes from lt_account_00 where part = ? and ts = ?");
-    let qu = prep(cql, scy.clone()).await?;
+    let cql = format!(
+        concat!(
+            "select series, count, bytes",
+            " from {}.{}account_00",
+            " where part = ? and ts = ?"
+        ),
+        ks,
+        rt.table_prefix()
+    );
+    let qu = prep(&cql, scy).await?;
+    let ts_sec = ts.ms() as i64 / 1000;
     let mut ret = UsageData::new(ts);
     for part in 0..255_u32 {
         let mut res = scy
-            .execute_iter(qu.clone(), (part as i32, ts as i64))
-            .await
-            .err_conv()?
+            .execute_iter(qu.clone(), (part as i32, ts_sec))
+            .await?
             .into_typed::<RowType>();
         while let Some(row) = res.next().await {
-            let row = row.map_err(Error::from_string)?;
+            let row = row?;
             let series = row.0 as u64;
             let count = row.1 as u64;
             let bytes = row.2 as u64;
-            ret.usage.push((series, count, bytes));
+            ret.series.push(series);
+            ret.counts.push(count);
+            ret.bytes.push(bytes);
         }
     }
+    ret.verify()?;
     Ok(ret)
 }
 
-async fn prep(cql: &str, scy: Arc<ScySession>) -> Result<PreparedStatement, Error> {
-    scy.prepare(cql)
-        .await
-        .map_err(|e| Error::with_msg_no_trace(format!("cql error {e}")))
+async fn prep(cql: &str, scy: &ScySession) -> Result<PreparedStatement, Error> {
+    Ok(scy.prepare(cql).await?)
 }

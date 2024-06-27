@@ -197,6 +197,8 @@ async fn proxy_http_service_inner(
         h.handle(req, ctx, &proxy_config).await
     } else if let Some(h) = api4::events::EventsHandler::handler(&req) {
         h.handle(req, ctx, &proxy_config).await
+    } else if path == "/api/4/accounting/ingested" {
+        Ok(proxy_backend_query::<MapQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/accounting/toplist/counts" {
         Ok(proxy_backend_query::<MapQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/status/connection/events" {
@@ -209,8 +211,6 @@ async fn proxy_http_service_inner(
         Ok(proxy_backend_query::<MapPulseQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/binned" {
         Ok(proxy_backend_query::<BinnedQuery>(req, ctx, proxy_config).await?)
-    } else if let Some(_) = crate::api4::accounting::AccountingIngestedBytes::handler(&req) {
-        Ok(proxy_backend_query::<query::api4::AccountingIngestedBytesQuery>(req, ctx, proxy_config).await?)
     } else if path == "/api/4/channel/config" {
         Ok(proxy_backend_query::<ChannelConfigQuery>(req, ctx, proxy_config).await?)
     } else if path.starts_with("/api/4/test/http/204") {

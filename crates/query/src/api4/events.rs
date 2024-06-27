@@ -450,7 +450,7 @@ impl From<&BinnedQuery> for EventsSubQuerySettings {
             // TODO add to query
             queue_len_disk_io: None,
             create_errors: Vec::new(),
-            use_rt: None,
+            use_rt: value.use_rt(),
         }
     }
 }

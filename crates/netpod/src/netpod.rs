@@ -287,7 +287,7 @@ impl ScalarType {
             BOOL => "bool",
             STRING => "string",
             Enum => "enum",
-            ChannelStatus => "ChannelStatus",
+            ChannelStatus => "channelstatus",
         }
     }
 
@@ -307,7 +307,7 @@ impl ScalarType {
             "bool" => BOOL,
             "string" => STRING,
             "enum" => Enum,
-            "ChannelStatus" => ChannelStatus,
+            "channelstatus" => ChannelStatus,
             _ => {
                 return Err(Error::with_msg_no_trace(format!(
                     "from_bsread_str can not understand bsread {:?}",
@@ -467,6 +467,10 @@ impl ScalarType {
             ChannelStatus => 14,
             Enum => 15,
         }
+    }
+
+    pub fn to_scylla_table_name_id(&self) -> &'static str {
+        self.to_variant_str()
     }
 
     pub fn to_scylla_i32(&self) -> i32 {
@@ -2942,6 +2946,7 @@ pub struct ProxyConfig {
     pub port: u16,
     pub backends: Vec<ProxyBackend>,
     pub status_subs: Vec<StatusSub>,
+    pub announce_backends: Option<Vec<String>>,
 }
 
 pub trait HasBackend {

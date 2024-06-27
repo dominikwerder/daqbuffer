@@ -9,6 +9,8 @@ use httpclient::Requ;
 use httpclient::StreamResponse;
 use netpod::ProxyConfig;
 use netpod::ReqCtx;
+use netpod::ServiceVersion;
+use std::collections::BTreeMap;
 
 pub struct BackendListHandler {}
 
@@ -21,21 +23,19 @@ impl BackendListHandler {
         }
     }
 
-    pub async fn handle(&self, req: Requ, _ctx: &ReqCtx, _node_config: &ProxyConfig) -> Result<StreamResponse, Error> {
+    pub async fn handle(&self, req: Requ, _ctx: &ReqCtx, cfg: &ProxyConfig) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             if accepts_json_or_all(req.headers()) {
+                let mut list = Vec::new();
+                if let Some(g) = &cfg.announce_backends {
+                    for j in g {
+                        let mut map = BTreeMap::new();
+                        map.insert("name", j.clone());
+                        list.push(map);
+                    }
+                }
                 let res = serde_json::json!({
-                    "backends_available": [
-                        {
-                            "name": "sf-databuffer",
-                        },
-                        {
-                            "name": "sf-imagebuffer",
-                        },
-                        {
-                            "name": "sf-archiver",
-                        },
-                    ]
+                    "backends_available": list,
                 });
                 let body = serde_json::to_string(&res)?;
                 Ok(response(StatusCode::OK).body(body_string(body))?)

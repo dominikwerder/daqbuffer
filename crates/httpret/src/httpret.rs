@@ -376,10 +376,10 @@ async fn http_service_inner(
         Ok(h.handle(req, &shared_res, &node_config).await?)
     } else if let Some(h) = channelconfig::AmbigiousChannelNames::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
+    } else if let Some(h) = api4::accounting::AccountingIngested::handler(&req) {
+        Ok(h.handle(req, ctx, &shared_res, &node_config).await?)
     } else if let Some(h) = api4::accounting::AccountingToplistCounts::handler(&req) {
-        Ok(h.handle(req, ctx, &node_config).await?)
-    } else if let Some(h) = api4::accounting::AccountingIngestedBytes::handler(&req) {
-        Ok(h.handle(req, ctx, &node_config).await?)
+        Ok(h.handle(req, ctx, &shared_res, &node_config).await?)
     } else if path == "/api/4/prebinned" {
         if req.method() == Method::GET {
             Ok(prebinned(req, ctx, &node_config).await?)
