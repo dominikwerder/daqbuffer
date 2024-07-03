@@ -83,10 +83,11 @@ where
     }
 
     fn process_item(&mut self, mut item: T) -> () {
+        let emit_empty_bins = true;
         trace2!("process_item {item:?}");
         if self.binner.is_none() {
             trace!("process_item call time_binner_new");
-            let binner = item.time_binner_new(self.range.clone(), self.do_time_weight);
+            let binner = item.time_binner_new(self.range.clone(), self.do_time_weight, emit_empty_bins);
             self.binner = Some(binner);
         }
         let binner = self.binner.as_mut().unwrap();

@@ -607,7 +607,13 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for BinsXbinDim0Aggregator<NTY> 
 }
 
 impl<NTY: ScalarOps> TimeBinnable for BinsXbinDim0<NTY> {
-    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
+    fn time_binner_new(
+        &self,
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+    ) -> Box<dyn TimeBinner> {
+        // TODO respect emit_empty_bins
         let ret = BinsXbinDim0TimeBinner::<NTY>::new(binrange, do_time_weight);
         Box::new(ret)
     }

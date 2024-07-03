@@ -373,11 +373,13 @@ fn bin_00() {
         let binrange = BinnedRangeEnum::covering_range(range.into(), 10).unwrap();
         let deadline = Instant::now() + Duration::from_millis(4000);
         let do_time_weight = true;
+        let emit_empty_bins = false;
         let res = BinnedCollected::new(
             binrange,
             ScalarType::F32,
             Shape::Scalar,
             do_time_weight,
+            emit_empty_bins,
             deadline,
             Box::pin(stream),
         )
@@ -421,11 +423,13 @@ fn bin_01() {
         let stream = Box::pin(stream);
         let deadline = Instant::now() + Duration::from_millis(4000);
         let do_time_weight = true;
+        let emit_empty_bins = false;
         let res = BinnedCollected::new(
             binrange,
             ScalarType::F32,
             Shape::Scalar,
             do_time_weight,
+            emit_empty_bins,
             deadline,
             Box::pin(stream),
         )
@@ -481,8 +485,17 @@ fn binned_timeout_00() {
         let timeout = Duration::from_millis(400);
         let deadline = Instant::now() + timeout;
         let do_time_weight = true;
-        let res =
-            BinnedCollected::new(binrange, ScalarType::F32, Shape::Scalar, do_time_weight, deadline, inp1).await?;
+        let emit_empty_bins = false;
+        let res = BinnedCollected::new(
+            binrange,
+            ScalarType::F32,
+            Shape::Scalar,
+            do_time_weight,
+            emit_empty_bins,
+            deadline,
+            inp1,
+        )
+        .await?;
         let r2: &BinsDim0CollectedResult<f32> = res.result.as_any_ref().downcast_ref().expect("res seems wrong type");
         eprintln!("rs: {r2:?}");
         assert_eq!(SEC * r2.ts_anchor_sec(), TSBASE + SEC);

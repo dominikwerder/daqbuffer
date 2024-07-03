@@ -13,9 +13,18 @@ futures-util = "0.3.28"
 tracing = "0.1.40"
 tracing-log = "0.2.0"
 tracing-subscriber = { version = "0.3.18", features = ["fmt", "time"] }
-#tracing-loki = { version = "0.2.1", default-features = false, features = ["compat-0-2-1"] }
-console-subscriber = { version = "0.2.0" }
 time = { version = "0.3", features = ["formatting"] }
 backtrace = "0.3.71"
 chrono = "0.4.38"
 err = { path = "../err" }
+
+
+[features]
+with-console = []
+#console-subscriber = { version = "0.3.0" }
+
+with-loki = []
+#tracing-loki = { version = "0.2.1", default-features = false, features = ["compat-0-2-1"] }
+
+# The tracing subscriber env filter would require its feature "env-filter" enabled
+with-env-filter = []

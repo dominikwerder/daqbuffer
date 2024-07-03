@@ -3,7 +3,7 @@ pub mod formatter;
 pub use tokio;
 
 use crate::log::*;
-use console_subscriber::ConsoleLayer;
+// use console_subscriber::ConsoleLayer;
 use err::Error;
 use std::fmt;
 use std::future::Future;
@@ -122,6 +122,7 @@ where
     L: tracing_subscriber::Layer<S>,
     S: tracing::Subscriber,
 {
+    #[allow(unused)]
     fn new(name: String, inner: L) -> Self {
         Self {
             name,
@@ -138,6 +139,15 @@ where
 {
 }
 
+fn collect_env_list(env: &str) -> Vec<String> {
+    std::env::var(env)
+        .unwrap_or(String::new())
+        .split(",")
+        .map(str::trim)
+        .map(ToString::to_string)
+        .collect()
+}
+
 fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
     use tracing_subscriber::layer::SubscriberExt;
     use tracing_subscriber::util::SubscriberInitExt;
@@ -150,30 +160,42 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
         // Only async console
         // let console_layer = console_subscriber::spawn();
         // let console_layer = ConsoleLayer::builder().with_default_env().init();
-        let console_layer = ConsoleLayer::builder().spawn();
-        tracing_subscriber::registry()
-            .with(console_layer)
-            .with(tracing_subscriber::fmt::layer().with_ansi(false))
-            // .with(other_layer)
-            .init();
-        console_subscriber::init();
+
+        #[cfg(feature = "with-console")]
+        {
+            let console_layer = ConsoleLayer::builder().spawn();
+            tracing_subscriber::registry()
+                .with(console_layer)
+                .with(tracing_subscriber::fmt::layer().with_ansi(false))
+                // .with(other_layer)
+                .init();
+            console_subscriber::init();
+        }
     } else {
         // Logging setup
+        #[cfg(feature = "with-env-filter")]
         let filter_1 = tracing_subscriber::EnvFilter::builder()
             .with_default_directive(tracing::metadata::LevelFilter::INFO.into())
             .from_env()
             .map_err(|e| Error::with_msg_no_trace(format!("can not build tracing env filter {e}")))?;
+        #[cfg(feature = "with-env-filter")]
         let filter_2 = tracing_subscriber::EnvFilter::builder()
             .with_env_var("RUST_LOG_2")
             .with_default_directive(tracing::metadata::LevelFilter::INFO.into())
             .from_env()
             .map_err(|e| Error::with_msg_no_trace(format!("can not build tracing env filter {e}")))?;
-        /*let filter_3 = tracing_subscriber::filter::dynamic_filter_fn(|meta, ctx| {
-            if true {
-                return false;
-            }
-            if *meta.level() <= tracing::Level::TRACE {
-                if ["httpret", "scyllaconn"].contains(&meta.target()) {
+        let tracing_debug = collect_env_list("TRACING_DEBUG");
+        let tracing_trace = collect_env_list("TRACING_TRACE");
+        let filter_3 = tracing_subscriber::filter::DynFilterFn::new(move |meta, ctx| {
+            if *meta.level() >= tracing::Level::TRACE {
+                let mut target_match = false;
+                for e in &tracing_trace {
+                    if meta.target().starts_with(e) {
+                        target_match = true;
+                        break;
+                    }
+                }
+                if target_match {
                     let mut sr = ctx.lookup_current();
                     let mut allow = false;
                     while let Some(g) = sr {
@@ -188,8 +210,15 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
                 } else {
                     false
                 }
-            } else if *meta.level() <= tracing::Level::DEBUG {
-                if ["httpret", "scyllaconn", "items_0", "items_2", "streams"].contains(&meta.target()) {
+            } else if *meta.level() >= tracing::Level::DEBUG {
+                let mut target_match = false;
+                for e in &tracing_debug {
+                    if meta.target().starts_with(e) {
+                        target_match = true;
+                        break;
+                    }
+                }
+                if target_match {
                     let mut sr = ctx.lookup_current();
                     let mut allow = false;
                     while let Some(g) = sr {
@@ -207,7 +236,7 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
             } else {
                 true
             }
-        });*/
+        });
         let fmt_layer = tracing_subscriber::fmt::Layer::new()
             .with_writer(io::stderr)
             .with_timer(timer)
@@ -215,9 +244,10 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
             .with_ansi(false)
             .with_thread_names(true)
             .event_format(formatter::FormatTxt)
-            // .with_filter(filter_3)
-            .with_filter(filter_2)
-            .with_filter(filter_1)
+            .with_filter(filter_3)
+            // .with_filter(filter_2)
+            // .with_filter(filter_1)
+        ;
         // let fmt_layer = fmt_layer.with_filter(filter_3);
         // let fmt_layer: Box<dyn Layer<tracing_subscriber::Registry>> = if std::env::var("RUST_LOG_USE_2").is_ok() {
         //     let a = fmt_layer.with_filter(filter_2);
@@ -230,7 +260,6 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
         // .and_then(LogFilterLayer::new("lay1".into()))
         // .and_then(LogFilterLayer::new("lay2".into()))
         // let layer_2 = LogFilterLayer::new("lay1".into(), fmt_layer);
-        ;
 
         let reg = tracing_subscriber::registry();
 

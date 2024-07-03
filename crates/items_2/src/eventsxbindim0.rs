@@ -613,7 +613,9 @@ where
         &self,
         binrange: BinnedRangeEnum,
         do_time_weight: bool,
+        emit_empty_bins: bool,
     ) -> Box<dyn items_0::timebin::TimeBinner> {
+        // TODO respect emit_empty_bins
         let ret = EventsXbinDim0TimeBinner::<STY>::new(binrange, do_time_weight).unwrap();
         Box::new(ret)
     }

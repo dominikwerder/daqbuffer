@@ -54,7 +54,12 @@ pub trait TimeBinnerTy: fmt::Debug + Send + Unpin {
 pub trait TimeBinnableTy: fmt::Debug + WithLen + Send + Sized {
     type TimeBinner: TimeBinnerTy<Input = Self>;
 
-    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Self::TimeBinner;
+    fn time_binner_new(
+        &self,
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+    ) -> Self::TimeBinner;
 }
 
 /// Data in time-binned form.
@@ -95,12 +100,17 @@ impl RangeOverlapInfo for Box<dyn TimeBinned> {
 }
 
 impl TimeBinnable for Box<dyn TimeBinned> {
-    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
-        todo!()
+    fn time_binner_new(
+        &self,
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+    ) -> Box<dyn TimeBinner> {
+        self.as_ref().time_binner_new(binrange, do_time_weight, emit_empty_bins)
     }
 
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
-        todo!()
+        self.as_ref().to_box_to_json_result()
     }
 }
 
@@ -135,7 +145,12 @@ pub trait TimeBinnable:
     fmt::Debug + WithLen + RangeOverlapInfo + Collectable + Any + AsAnyRef + AsAnyMut + Send
 {
     // TODO implementors may fail if edges contain not at least 2 entries.
-    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner>;
+    fn time_binner_new(
+        &self,
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+    ) -> Box<dyn TimeBinner>;
     // TODO just a helper for the empty result.
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult>;
 }
@@ -161,8 +176,13 @@ impl RangeOverlapInfo for Box<dyn TimeBinnable> {
 }
 
 impl TimeBinnable for Box<dyn TimeBinnable> {
-    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
-        todo!()
+    fn time_binner_new(
+        &self,
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+    ) -> Box<dyn TimeBinner> {
+        self.as_ref().time_binner_new(binrange, do_time_weight, emit_empty_bins)
     }
 
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
@@ -185,8 +205,13 @@ impl RangeOverlapInfo for Box<dyn Events> {
 }
 
 impl TimeBinnable for Box<dyn Events> {
-    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
-        TimeBinnable::time_binner_new(self.as_ref(), binrange, do_time_weight)
+    fn time_binner_new(
+        &self,
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+    ) -> Box<dyn TimeBinner> {
+        TimeBinnable::time_binner_new(self.as_ref(), binrange, do_time_weight, emit_empty_bins)
     }
 
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
@@ -211,6 +236,7 @@ pub struct TimeBinnerDynStruct {
     binrange: BinnedRangeEnum,
     do_time_weight: bool,
     binner: Option<Box<dyn TimeBinner>>,
+    emit_empty_bins: bool,
 }
 
 impl TimeBinnerDynStruct {
@@ -218,11 +244,17 @@ impl TimeBinnerDynStruct {
         std::any::type_name::<Self>()
     }
 
-    pub fn new(binrange: BinnedRangeEnum, do_time_weight: bool, binner: Box<dyn TimeBinner>) -> Self {
+    pub fn new(
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+        binner: Box<dyn TimeBinner>,
+    ) -> Self {
         Self {
             binrange,
             do_time_weight,
             binner: Some(binner),
+            emit_empty_bins,
         }
     }
 }
@@ -238,6 +270,7 @@ impl TimeBinnerTy for TimeBinnerDynStruct {
                 item,
                 self.binrange.clone(),
                 self.do_time_weight,
+                self.emit_empty_bins,
             )));
         }
         self.binner.as_mut().unwrap().as_mut().ingest(item.as_mut())
@@ -329,6 +362,7 @@ impl TimeBinner for TimeBinnerDynStruct {
 pub struct TimeBinnerDynStruct2 {
     binrange: BinnedRangeEnum,
     do_time_weight: bool,
+    emit_empty_bins: bool,
     binner: Option<Box<dyn TimeBinner>>,
 }
 
@@ -337,10 +371,16 @@ impl TimeBinnerDynStruct2 {
         std::any::type_name::<Self>()
     }
 
-    pub fn new(binrange: BinnedRangeEnum, do_time_weight: bool, binner: Box<dyn TimeBinner>) -> Self {
+    pub fn new(
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+        binner: Box<dyn TimeBinner>,
+    ) -> Self {
         Self {
             binrange,
             do_time_weight,
+            emit_empty_bins,
             binner: Some(binner),
         }
     }
@@ -357,6 +397,7 @@ impl TimeBinnerTy for TimeBinnerDynStruct2 {
                 item,
                 self.binrange.clone(),
                 self.do_time_weight,
+                self.emit_empty_bins,
             )));
         }
         self.binner
@@ -451,20 +492,32 @@ impl TimeBinner for TimeBinnerDynStruct2 {
 impl TimeBinnableTy for Box<dyn TimeBinnable> {
     type TimeBinner = TimeBinnerDynStruct;
 
-    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Self::TimeBinner {
-        let binner = self.as_ref().time_binner_new(binrange.clone(), do_time_weight);
-        TimeBinnerDynStruct::new(binrange, do_time_weight, binner)
+    fn time_binner_new(
+        &self,
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+    ) -> Self::TimeBinner {
+        let binner = self
+            .as_ref()
+            .time_binner_new(binrange.clone(), do_time_weight, emit_empty_bins);
+        TimeBinnerDynStruct::new(binrange, do_time_weight, emit_empty_bins, binner)
     }
 }
 
 impl TimeBinnableTy for Box<dyn TimeBinned> {
     type TimeBinner = TimeBinnerDynStruct2;
 
-    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Self::TimeBinner {
+    fn time_binner_new(
+        &self,
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+    ) -> Self::TimeBinner {
         let binner = self
             .as_time_binnable_ref()
-            .time_binner_new(binrange.clone(), do_time_weight);
-        TimeBinnerDynStruct2::new(binrange, do_time_weight, binner)
+            .time_binner_new(binrange.clone(), do_time_weight, emit_empty_bins);
+        TimeBinnerDynStruct2::new(binrange, do_time_weight, emit_empty_bins, binner)
     }
 }
 

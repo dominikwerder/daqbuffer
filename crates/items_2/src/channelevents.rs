@@ -820,8 +820,13 @@ impl RangeOverlapInfo for ChannelEvents {
 }
 
 impl TimeBinnable for ChannelEvents {
-    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
-        let ret = <ChannelEvents as TimeBinnableTy>::time_binner_new(&self, binrange, do_time_weight);
+    fn time_binner_new(
+        &self,
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+    ) -> Box<dyn TimeBinner> {
+        let ret = <ChannelEvents as TimeBinnableTy>::time_binner_new(&self, binrange, do_time_weight, emit_empty_bins);
         Box::new(ret)
     }
 
@@ -997,6 +1002,7 @@ pub struct ChannelEventsTimeBinner {
     // here we would rather require a simplified current state for binning purpose.
     binrange: BinnedRangeEnum,
     do_time_weight: bool,
+    emit_empty_bins: bool,
     conn_state: ConnStatus,
     binner: Option<Box<dyn TimeBinner>>,
 }
@@ -1012,6 +1018,7 @@ impl fmt::Debug for ChannelEventsTimeBinner {
         fmt.debug_struct(Self::type_name())
             .field("binrange", &self.binrange)
             .field("do_time_weight", &self.do_time_weight)
+            .field("emit_empty_bins", &self.emit_empty_bins)
             .field("conn_state", &self.conn_state)
             .finish()
     }
@@ -1028,7 +1035,7 @@ impl TimeBinnerTy for ChannelEventsTimeBinner {
         match item {
             ChannelEvents::Events(item) => {
                 if self.binner.is_none() {
-                    let binner = item.time_binner_new(self.binrange.clone(), self.do_time_weight);
+                    let binner = item.time_binner_new(self.binrange.clone(), self.do_time_weight, self.emit_empty_bins);
                     self.binner = Some(binner);
                 }
                 match self.binner.as_mut() {
@@ -1141,7 +1148,12 @@ impl TimeBinner for ChannelEventsTimeBinner {
 impl TimeBinnableTy for ChannelEvents {
     type TimeBinner = ChannelEventsTimeBinner;
 
-    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Self::TimeBinner {
+    fn time_binner_new(
+        &self,
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+    ) -> Self::TimeBinner {
         trace!("TimeBinnableTy for ChannelEvents  make ChannelEventsTimeBinner");
         // TODO probably wrong?
         let (binner, status) = match self {
@@ -1151,6 +1163,7 @@ impl TimeBinnableTy for ChannelEvents {
         ChannelEventsTimeBinner {
             binrange,
             do_time_weight,
+            emit_empty_bins,
             conn_state: status,
             binner,
         }

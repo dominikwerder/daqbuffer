@@ -545,7 +545,7 @@ impl<STY: ScalarOps> TimeAggregatorCommonV0Trait for EventsDim0Aggregator<STY> {
         &self.range
     }
 
-    fn common_ingest_unweight_range(&mut self, item: &Self::Input, r: std::ops::Range<usize>) {
+    fn common_ingest_unweight_range(&mut self, item: &Self::Input, r: core::ops::Range<usize>) {
         for (&ts, val) in item.tss.range(r.clone()).zip(item.values.range(r)) {
             self.apply_event_unweight(val.clone());
             self.count += 1;
@@ -560,7 +560,7 @@ impl<STY: ScalarOps> TimeAggregatorCommonV0Trait for EventsDim0Aggregator<STY> {
         self.last_val = Some(item.values[j].clone());
     }
 
-    fn common_ingest_range(&mut self, item: &Self::Input, r: std::ops::Range<usize>) {
+    fn common_ingest_range(&mut self, item: &Self::Input, r: core::ops::Range<usize>) {
         let beg = self.range.beg_u64();
         for (&ts, val) in item.tss.range(r.clone()).zip(item.values.range(r)) {
             if ts > beg {
@@ -787,9 +787,14 @@ impl<STY: ScalarOps> TimeBinnableTypeAggregator for EventsDim0Aggregator<STY> {
 }
 
 impl<STY: ScalarOps> TimeBinnable for EventsDim0<STY> {
-    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
+    fn time_binner_new(
+        &self,
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+    ) -> Box<dyn TimeBinner> {
         // TODO get rid of unwrap
-        let ret = EventsDim0TimeBinner::<STY>::new(binrange, do_time_weight).unwrap();
+        let ret = EventsDim0TimeBinner::<STY>::new(binrange, do_time_weight, emit_empty_bins).unwrap();
         Box::new(ret)
     }
 
@@ -1027,6 +1032,7 @@ pub struct EventsDim0TimeBinner<STY: ScalarOps> {
     agg: EventsDim0Aggregator<STY>,
     ready: Option<<EventsDim0Aggregator<STY> as TimeBinnableTypeAggregator>::Output>,
     range_final: bool,
+    emit_empty_bins: bool,
 }
 
 impl<STY: ScalarOps> EventsDim0TimeBinner<STY> {
@@ -1034,11 +1040,12 @@ impl<STY: ScalarOps> EventsDim0TimeBinner<STY> {
         any::type_name::<Self>()
     }
 
-    pub fn new(binrange: BinnedRangeEnum, do_time_weight: bool) -> Result<Self, Error> {
+    pub fn new(binrange: BinnedRangeEnum, do_time_weight: bool, emit_empty_bins: bool) -> Result<Self, Error> {
         trace!("{}::new  binrange {:?}", Self::type_name(), binrange);
         let rng = binrange
             .range_at(0)
             .ok_or_else(|| Error::with_msg_no_trace("empty binrange"))?;
+        trace!("{}::new  rng {:?}", Self::type_name(), rng);
         let agg = EventsDim0Aggregator::new(rng, do_time_weight);
         let ret = Self {
             binrange,
@@ -1047,6 +1054,7 @@ impl<STY: ScalarOps> EventsDim0TimeBinner<STY> {
             agg,
             ready: None,
             range_final: false,
+            emit_empty_bins,
         };
         Ok(ret)
     }
@@ -1121,6 +1129,10 @@ impl<STY: ScalarOps> TimeBinnerCommonV0Trait for EventsDim0TimeBinner<STY> {
 }
 
 impl<STY: ScalarOps> TimeBinner for EventsDim0TimeBinner<STY> {
+    fn ingest(&mut self, item: &mut dyn TimeBinnable) {
+        TimeBinnerCommonV0Func::ingest(self, item)
+    }
+
     fn bins_ready_count(&self) -> usize {
         TimeBinnerCommonV0Trait::common_bins_ready_count(self)
     }
@@ -1130,10 +1142,6 @@ impl<STY: ScalarOps> TimeBinner for EventsDim0TimeBinner<STY> {
             Some(k) => Some(Box::new(k)),
             None => None,
         }
-    }
-
-    fn ingest(&mut self, item: &mut dyn TimeBinnable) {
-        TimeBinnerCommonV0Func::ingest(self, item)
     }
 
     fn push_in_progress(&mut self, push_empty: bool) {
@@ -1308,7 +1316,7 @@ fn binner_00() {
     ev1.push(MS * 1200, 3, 1.2f32);
     ev1.push(MS * 3200, 3, 3.2f32);
     let binrange = BinnedRangeEnum::from_custom(TsNano::from_ns(SEC), 0, 10);
-    let mut binner = ev1.time_binner_new(binrange, true);
+    let mut binner = ev1.time_binner_new(binrange, true, false);
     binner.ingest(ev1.as_time_binnable_mut());
     eprintln!("{:?}", binner);
     // TODO add actual asserts
@@ -1322,7 +1330,7 @@ fn binner_01() {
     ev1.push(MS * 2100, 3, 2.1);
     ev1.push(MS * 2300, 3, 2.3);
     let binrange = BinnedRangeEnum::from_custom(TsNano::from_ns(SEC), 0, 10);
-    let mut binner = ev1.time_binner_new(binrange, true);
+    let mut binner = ev1.time_binner_new(binrange, true, false);
     binner.ingest(ev1.as_time_binnable_mut());
     eprintln!("{:?}", binner);
     // TODO add actual asserts
@@ -1409,7 +1417,9 @@ fn events_timebin_ingest_continuous_00() {
     let mut bins = EventsDim0::<u32>::empty();
     bins.push(SEC * 20, 1, 20);
     bins.push(SEC * 23, 2, 23);
-    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
+    let mut binner = bins
+        .as_time_binnable_ref()
+        .time_binner_new(binrange, do_time_weight, false);
     binner.ingest(&mut bins);
     //binner.push_in_progress(true);
     let ready = binner.bins_ready();

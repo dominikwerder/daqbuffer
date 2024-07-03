@@ -12,14 +12,20 @@ use std::ops::Range;
 
 #[allow(unused)]
 macro_rules! trace_ingest {
-    ($($arg:tt)*) => {};
-    ($($arg:tt)*) => { trace!($($arg)*); };
+    ($($arg:tt)*) => {
+        if false {
+            trace!($($arg)*);
+        }
+    };
 }
 
 #[allow(unused)]
 macro_rules! trace_ingest_item {
-    ($($arg:tt)*) => {};
-    ($($arg:tt)*) => { trace!($($arg)*); };
+    ($($arg:tt)*) => {
+        if true {
+            info!($($arg)*);
+        }
+    };
 }
 
 #[allow(unused)]
@@ -45,23 +51,15 @@ pub trait TimeBinnerCommonV0Trait {
 pub struct TimeBinnerCommonV0Func {}
 
 impl TimeBinnerCommonV0Func {
-    pub fn agg_ingest<B>(binner: &mut B, item: &mut <B as TimeBinnerCommonV0Trait>::Input)
-    where
-        B: TimeBinnerCommonV0Trait,
-    {
-        //self.agg.ingest(item);
-        <B as TimeBinnerCommonV0Trait>::common_agg_ingest(binner, item)
-    }
-
     pub fn ingest<B>(binner: &mut B, item: &mut dyn TimeBinnable)
     where
         B: TimeBinnerCommonV0Trait,
     {
         let self_name = B::type_name();
         trace_ingest_item!(
-            "TimeBinner for {} ingest  agg.range {:?}  item {:?}",
-            Self::type_name(),
-            self.agg.range(),
+            "TimeBinner for {} ingest  common_range_current {:?}  item {:?}",
+            self_name,
+            binner.common_range_current(),
             item
         );
         if item.len() == 0 {
@@ -118,6 +116,14 @@ impl TimeBinnerCommonV0Func {
                 }
             }
         }
+    }
+
+    fn agg_ingest<B>(binner: &mut B, item: &mut <B as TimeBinnerCommonV0Trait>::Input)
+    where
+        B: TimeBinnerCommonV0Trait,
+    {
+        //self.agg.ingest(item);
+        <B as TimeBinnerCommonV0Trait>::common_agg_ingest(binner, item)
     }
 
     pub fn push_in_progress<B>(binner: &mut B, push_empty: bool)
@@ -200,20 +206,21 @@ impl ChooseIndicesForTimeBinEvents {
     }
 
     pub fn choose_timeweight(beg: u64, end: u64, tss: &VecDeque<u64>) -> (Option<usize>, usize, usize) {
+        let self_name = "choose_timeweight";
         // TODO improve via binary search.
         let mut one_before = None;
         let mut j = 0;
         let mut k = tss.len();
         for (i1, &ts) in tss.iter().enumerate() {
             if ts >= end {
-                trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  AFTER", i1, ts, val);
+                trace_ingest!("{self_name} ingest  {:6}  {:20}  AFTER", i1, ts);
                 // TODO count all the ignored events for stats
                 k = i1;
                 break;
             } else if ts >= beg {
-                trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  INSIDE", i1, ts, val);
+                trace_ingest!("{self_name} ingest  {:6}  {:20}  INSIDE", i1, ts);
             } else {
-                trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  BEFORE", i1, ts, val);
+                trace_ingest!("{self_name} ingest  {:6}  {:20}  BEFORE", i1, ts);
                 one_before = Some(i1);
                 j = i1 + 1;
             }
@@ -223,7 +230,7 @@ impl ChooseIndicesForTimeBinEvents {
 }
 
 pub trait TimeAggregatorCommonV0Trait {
-    type Input: RangeOverlapInfo + ChooseIndicesForTimeBin + 'static;
+    type Input: WithLen + RangeOverlapInfo + ChooseIndicesForTimeBin + 'static;
     type Output: WithLen + Empty + AppendEmptyBin + HasNonemptyFirstBin + 'static;
     fn type_name() -> &'static str;
     fn common_range_current(&self) -> &SeriesRange;
@@ -240,10 +247,12 @@ impl TimeAggregatorCommonV0Func {
         B: TimeAggregatorCommonV0Trait,
     {
         let self_name = B::type_name();
+        // TODO
+        let items_seen = 777;
         trace_ingest!(
             "{self_name}::ingest_unweight  item len {}  items_seen {}",
             item.len(),
-            self.items_seen
+            items_seen
         );
         let rng = B::common_range_current(binner);
         if rng.is_time() {
@@ -265,10 +274,12 @@ impl TimeAggregatorCommonV0Func {
         B: TimeAggregatorCommonV0Trait,
     {
         let self_name = B::type_name();
+        // TODO
+        let items_seen = 777;
         trace_ingest!(
             "{self_name}::ingest_time_weight  item len {}  items_seen {}",
             item.len(),
-            self.items_seen
+            items_seen
         );
         let rng = B::common_range_current(binner);
         if rng.is_time() {

@@ -647,8 +647,14 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for BinsDim0Aggregator<NTY> {
 }
 
 impl<NTY: ScalarOps> TimeBinnable for BinsDim0<NTY> {
-    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
+    fn time_binner_new(
+        &self,
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+    ) -> Box<dyn TimeBinner> {
         // TODO get rid of unwrap
+        // TODO respect emit_empty_bins
         let ret = BinsDim0TimeBinner::<NTY>::new(binrange, do_time_weight).unwrap();
         Box::new(ret)
     }
@@ -1016,7 +1022,9 @@ fn bins_timebin_fill_empty_00() {
         bin_cnt: 5,
     });
     let do_time_weight = true;
-    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
+    let mut binner = bins
+        .as_time_binnable_ref()
+        .time_binner_new(binrange, do_time_weight, false);
     binner.ingest(&mut bins);
     binner.append_empty_until_end();
     let ready = binner.bins_ready();
@@ -1038,7 +1046,9 @@ fn bins_timebin_fill_empty_01() {
         bin_cnt: 5,
     });
     let do_time_weight = true;
-    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
+    let mut binner = bins
+        .as_time_binnable_ref()
+        .time_binner_new(binrange, do_time_weight, false);
     binner.ingest(&mut bins);
     binner.push_in_progress(true);
     binner.append_empty_until_end();
@@ -1061,7 +1071,9 @@ fn bins_timebin_push_empty_00() {
         bin_cnt: 5,
     });
     let do_time_weight = true;
-    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
+    let mut binner = bins
+        .as_time_binnable_ref()
+        .time_binner_new(binrange, do_time_weight, false);
     binner.ingest(&mut bins);
     binner.push_in_progress(true);
     let ready = binner.bins_ready();
@@ -1083,7 +1095,9 @@ fn bins_timebin_push_empty_01() {
         bin_cnt: 5,
     });
     let do_time_weight = true;
-    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
+    let mut binner = bins
+        .as_time_binnable_ref()
+        .time_binner_new(binrange, do_time_weight, false);
     binner.ingest(&mut bins);
     binner.push_in_progress(true);
     binner.push_in_progress(true);
@@ -1109,7 +1123,9 @@ fn bins_timebin_ingest_only_before() {
         bin_cnt: 5,
     });
     let do_time_weight = true;
-    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
+    let mut binner = bins
+        .as_time_binnable_ref()
+        .time_binner_new(binrange, do_time_weight, false);
     binner.ingest(&mut bins);
     binner.push_in_progress(true);
     let ready = binner.bins_ready();
@@ -1132,7 +1148,9 @@ fn bins_timebin_ingest_00() {
         bin_cnt: 5,
     });
     let do_time_weight = true;
-    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
+    let mut binner = bins
+        .as_time_binnable_ref()
+        .time_binner_new(binrange, do_time_weight, false);
     binner.ingest(&mut bins);
     binner.push_in_progress(true);
     let ready = binner.bins_ready();
@@ -1157,7 +1175,9 @@ fn bins_timebin_ingest_continuous_00() {
     bins.push(SEC * 20, SEC * 21, 3, 70, 94, 82.);
     //bins.push(SEC * 21, SEC * 22, 5, 71, 93, 86.);
     //bins.push(SEC * 23, SEC * 24, 6, 72, 92, 81.);
-    let mut binner = bins.as_time_binnable_ref().time_binner_new(binrange, do_time_weight);
+    let mut binner = bins
+        .as_time_binnable_ref()
+        .time_binner_new(binrange, do_time_weight, false);
     binner.ingest(&mut bins);
     //binner.push_in_progress(true);
     let ready = binner.bins_ready();

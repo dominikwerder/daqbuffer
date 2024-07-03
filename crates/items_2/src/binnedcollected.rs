@@ -99,6 +99,7 @@ pub struct BinnedCollected {
     scalar_type: ScalarType,
     shape: Shape,
     do_time_weight: bool,
+    emit_empty_bins: bool,
     did_timeout: bool,
     range_final: bool,
     coll: Option<Box<dyn Collector>>,
@@ -116,6 +117,7 @@ impl BinnedCollected {
         scalar_type: ScalarType,
         shape: Shape,
         do_time_weight: bool,
+        emit_empty_bins: bool,
         //transformer: &dyn Transformer,
         deadline: Instant,
         inp: Pin<Box<dyn ChannelEventsInput>>,
@@ -126,6 +128,7 @@ impl BinnedCollected {
             scalar_type,
             shape,
             do_time_weight,
+            emit_empty_bins,
             did_timeout: false,
             range_final: false,
             coll: None,
@@ -143,9 +146,11 @@ impl BinnedCollected {
                 RangeCompletableItem::Data(k) => match k {
                     ChannelEvents::Events(mut events) => {
                         if self.binner.is_none() {
-                            let bb = events
-                                .as_time_binnable_mut()
-                                .time_binner_new(self.binrange.clone(), self.do_time_weight);
+                            let bb = events.as_time_binnable_mut().time_binner_new(
+                                self.binrange.clone(),
+                                self.do_time_weight,
+                                self.emit_empty_bins,
+                            );
                             self.binner = Some(bb);
                         }
                         let binner = self.binner.as_mut().unwrap();

@@ -742,7 +742,13 @@ impl<STY: ScalarOps> TimeBinnableTypeAggregator for EventsDim1Aggregator<STY> {
 }
 
 impl<STY: ScalarOps> TimeBinnable for EventsDim1<STY> {
-    fn time_binner_new(&self, binrange: BinnedRangeEnum, do_time_weight: bool) -> Box<dyn TimeBinner> {
+    fn time_binner_new(
+        &self,
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+    ) -> Box<dyn TimeBinner> {
+        // TODO respect emit_empty_bins
         let ret = EventsDim1TimeBinner::<STY>::new(binrange, do_time_weight).unwrap();
         Box::new(ret)
     }

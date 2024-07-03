@@ -6,8 +6,56 @@ pub mod status;
 pub mod streamext;
 pub mod ttl;
 
+pub mod log_macros {
+    #[allow(unused)]
+    #[macro_export]
+    macro_rules! trace {
+        ($($arg:tt)*) => {
+            eprintln!($($arg)*);
+        };
+    }
+
+    #[allow(unused)]
+    #[macro_export]
+    macro_rules! debug {
+        ($($arg:tt)*) => {
+            eprintln!($($arg)*);
+        };
+    }
+
+    #[allow(unused)]
+    #[macro_export]
+    macro_rules! info {
+        ($($arg:tt)*) => {
+            eprintln!($($arg)*);
+        };
+    }
+
+    #[allow(unused)]
+    #[macro_export]
+    macro_rules! warn {
+        ($($arg:tt)*) => {
+            eprintln!($($arg)*);
+        };
+    }
+
+    #[allow(unused)]
+    #[macro_export]
+    macro_rules! error {
+        ($($arg:tt)*) => {
+            eprintln!($($arg)*);
+        };
+    }
+}
+
 pub mod log {
-    pub use tracing::{self, debug, error, event, info, span, trace, warn, Level};
+    pub use tracing::{self, event, span, Level};
+    pub use tracing::{debug, error, info, trace, warn};
+}
+
+pub mod log2 {
+    pub use crate::{debug, error, info, trace, warn};
+    pub use tracing::{self, event, span, Level};
 }
 
 use crate::log::*;
@@ -1500,8 +1548,8 @@ impl DtNano {
         Self(ns)
     }
 
-    pub const fn from_ms(ns: u64) -> Self {
-        Self(1000000 * ns)
+    pub const fn from_ms(ms: u64) -> Self {
+        Self(1000000 * ms)
     }
 
     pub const fn ns(&self) -> u64 {
@@ -2544,11 +2592,11 @@ impl fmt::Display for TsMs {
     }
 }
 
-impl std::ops::Sub for TsMs {
-    type Output = TsMs;
+impl core::ops::Sub for TsMs {
+    type Output = DtMs;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        Self(self.0.saturating_sub(rhs.0))
+        DtMs(self.0.saturating_sub(rhs.0))
     }
 }
 

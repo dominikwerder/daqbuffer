@@ -108,15 +108,15 @@ fn decide_best_matching_index(range: (TsMs, TsMs), rows: &[TsMs]) -> Result<usiz
                     Duration::from_millis(0)
                 } else if x.0 <= range.0 {
                     if x.1 >= range.1 {
-                        Duration::from_millis((range.1.clone() - range.0.clone()).to_u64())
+                        Duration::from_millis((range.1.clone() - range.0.clone()).ms())
                     } else {
-                        Duration::from_millis((x.1.clone() - range.0.clone()).to_u64())
+                        Duration::from_millis((x.1.clone() - range.0.clone()).ms())
                     }
                 } else {
                     if x.1 >= range.1 {
-                        Duration::from_millis((range.1.clone() - x.0.clone()).to_u64())
+                        Duration::from_millis((range.1.clone() - x.0.clone()).ms())
                     } else {
-                        Duration::from_millis((x.1.clone() - x.0.clone()).to_u64())
+                        Duration::from_millis((x.1.clone() - x.0.clone()).ms())
                     }
                 };
                 dur
