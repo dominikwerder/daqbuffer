@@ -21,8 +21,9 @@ regex = "1.9.1"
 http = "1.0.0"
 hyper = "1.0.1"
 thiserror = "=0.0.1"
+#thiserror = "1"
 anyhow = "1.0"
 tokio = "1"
 
 [patch.crates-io]
-thiserror = { git = "https://github.com/dominikwerder/thiserror.git" }
+thiserror = { git = "https://github.com/dominikwerder/thiserror.git", branch = "cstm" }

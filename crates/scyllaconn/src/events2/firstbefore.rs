@@ -11,6 +11,7 @@ use std::task::Context;
 use std::task::Poll;
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "EventsFirstBefore")]
 pub enum Error {
     Unordered,
     Logic,

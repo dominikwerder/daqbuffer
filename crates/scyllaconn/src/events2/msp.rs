@@ -18,9 +18,9 @@ use std::task::Context;
 use std::task::Poll;
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "EventsMsp")]
 pub enum Error {
     Logic,
-    #[error("Worker({0})")]
     Worker(Box<crate::worker::Error>),
     ScyllaQuery(#[from] scylla::transport::errors::QueryError),
     ScyllaRow(#[from] scylla::transport::iterator::NextRowError),

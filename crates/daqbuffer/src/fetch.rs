@@ -18,13 +18,13 @@ use streams::cbor_stream::FramedBytesToSitemtyDynEventsStream;
 use url::Url;
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "DataFetch")]
 pub enum Error {
     Url(#[from] url::ParseError),
     NoHostname,
     HttpBody(#[from] http::Error),
     HttpClient(#[from] httpclient::Error),
     Hyper(#[from] httpclient::hyper::Error),
-    #[error("RequestFailed({0})")]
     RequestFailed(String),
 }
 

@@ -244,7 +244,7 @@ impl Serialize for ScalarType {
             BOOL => ser.serialize_str("bool"),
             STRING => ser.serialize_str("string"),
             Enum => ser.serialize_str("enum"),
-            ChannelStatus => ser.serialize_str("ChannelStatus"),
+            ChannelStatus => ser.serialize_str("channelstatus"),
         }
     }
 }
@@ -274,7 +274,7 @@ impl<'de> serde::de::Visitor<'de> for ScalarTypeVis {
             "bool" => ScalarType::BOOL,
             "string" => ScalarType::STRING,
             "enum" => ScalarType::Enum,
-            "ChannelStatus" => ScalarType::ChannelStatus,
+            "channelstatus" => ScalarType::ChannelStatus,
             k => return Err(E::custom(format!("can not understand variant {k:?}"))),
         };
         Ok(ret)
@@ -382,7 +382,7 @@ impl ScalarType {
             BOOL => "bool",
             STRING => "string",
             Enum => "enum",
-            ChannelStatus => "ChannelStatus",
+            ChannelStatus => "channelstatus",
         }
     }
 
@@ -404,7 +404,7 @@ impl ScalarType {
             "bool" => BOOL,
             "string" => STRING,
             "enum" => Enum,
-            "ChannelStatus" => ChannelStatus,
+            "channelstatus" => ChannelStatus,
             _ => {
                 return Err(Error::with_msg_no_trace(format!(
                     "from_bsread_str can not understand bsread {:?}",
@@ -593,8 +593,8 @@ pub struct EnumVariant {
     name: StringFix<26>,
 }
 
-impl EnumVariant {
-    pub fn empty() -> Self {
+impl Default for EnumVariant {
+    fn default() -> Self {
         Self {
             ix: u16::MAX,
             name: StringFix::new(),

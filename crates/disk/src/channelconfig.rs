@@ -12,6 +12,7 @@ use parse::channelconfig::ConfigEntry;
 use parse::channelconfig::ConfigParseError;
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "ChannelConfig")]
 pub enum ConfigError {
     ParseError(ConfigParseError),
     NotFound,

@@ -13,6 +13,7 @@ use items_0::Events;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
 use netpod::ttl::RetentionTime;
+use netpod::EnumVariant;
 use netpod::ScalarType;
 use netpod::Shape;
 use netpod::TsMs;
@@ -41,6 +42,7 @@ macro_rules! warn_item {
 }
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "ScyllaEvents")]
 pub enum Error {
     Worker(#[from] crate::worker::Error),
     Events(#[from] crate::events::Error),
@@ -143,6 +145,7 @@ impl EventsStreamRt {
         );
         let scalar_type = self.scalar_type.clone();
         let shape = self.shape.clone();
+        debug!("make_read_events_fut  {:?}  {:?}", shape, scalar_type);
         let fut = async move {
             let ret = match &shape {
                 Shape::Scalar => match &scalar_type {
@@ -158,9 +161,15 @@ impl EventsStreamRt {
                     ScalarType::F64 => read_next_values::<f64>(opts).await,
                     ScalarType::BOOL => read_next_values::<bool>(opts).await,
                     ScalarType::STRING => read_next_values::<String>(opts).await,
-                    ScalarType::Enum => read_next_values::<String>(opts).await,
+                    ScalarType::Enum => {
+                        debug!(
+                            "make_read_events_fut  {:?}  {:?}  ------------- good",
+                            shape, scalar_type
+                        );
+                        read_next_values::<EnumVariant>(opts).await
+                    }
                     ScalarType::ChannelStatus => {
-                        warn!("read scalar channel status not yet supported");
+                        warn!("read not yet supported  {:?}  {:?}", shape, scalar_type);
                         err::todoval()
                     }
                 },
@@ -177,12 +186,15 @@ impl EventsStreamRt {
                     ScalarType::F64 => read_next_values::<Vec<f64>>(opts).await,
                     ScalarType::BOOL => read_next_values::<Vec<bool>>(opts).await,
                     ScalarType::STRING => {
-                        warn!("read array string not yet supported");
+                        warn!("read not yet supported  {:?}  {:?}", shape, scalar_type);
                         err::todoval()
                     }
-                    ScalarType::Enum => read_next_values::<Vec<String>>(opts).await,
+                    ScalarType::Enum => {
+                        warn!("read not yet supported  {:?}  {:?}", shape, scalar_type);
+                        err::todoval()
+                    }
                     ScalarType::ChannelStatus => {
-                        warn!("read array channel status not yet supported");
+                        warn!("read not yet supported  {:?}  {:?}", shape, scalar_type);
                         err::todoval()
                     }
                 },

@@ -25,6 +25,7 @@ use std::task::Context;
 use std::task::Poll;
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "EventsMergeRt")]
 pub enum Error {
     Input(#[from] crate::events2::firstbefore::Error),
     Events(#[from] crate::events2::events::Error),

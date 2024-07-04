@@ -27,7 +27,7 @@ use tokio::io::ErrorKind;
 const TEST_BACKEND: &str = "testbackend-00";
 
 #[derive(Debug, ThisError)]
-// #[error("ConfigParseError")]
+#[cstm(name = "ConfigParse")]
 pub enum ConfigParseError {
     NotSupportedOnNode,
     FileNotFound,

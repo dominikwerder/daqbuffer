@@ -1,6 +1,7 @@
 use crate::bodystream::response;
 use crate::bodystream::ToPublicResponse;
 use crate::err::Error;
+use dbconn::worker::PgQueue;
 use http::Method;
 use http::StatusCode;
 use httpclient::body_empty;
@@ -16,14 +17,6 @@ use netpod::NodeConfigCached;
 use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
 
-pub async fn channel_search(req: Requ, node_config: &NodeConfigCached) -> Result<ChannelSearchResult, Error> {
-    let url = req_uri_to_url(req.uri())?;
-    let query = ChannelSearchQuery::from_url(&url)?;
-    info!("search query: {:?}", query);
-    let res = dbconn::search::search_channel(query, node_config).await?;
-    Ok(res)
-}
-
 pub struct ChannelSearchHandler {}
 
 impl ChannelSearchHandler {
@@ -35,7 +28,7 @@ impl ChannelSearchHandler {
         }
     }
 
-    pub async fn handle(&self, req: Requ, node_config: &NodeConfigCached) -> Result<StreamResponse, Error> {
+    pub async fn handle(&self, req: Requ, pgqueue: &PgQueue, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
             let accept = req
@@ -43,7 +36,7 @@ impl ChannelSearchHandler {
                 .get(http::header::ACCEPT)
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
-                match channel_search(req, node_config).await {
+                match channel_search(req, pgqueue, ncc).await {
                     Ok(item) => Ok(response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?),
                     Err(e) => {
                         warn!("handle: got error from channel_search: {e:?}");
@@ -57,4 +50,12 @@ impl ChannelSearchHandler {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
     }
+}
+
+async fn channel_search(req: Requ, pgqueue: &PgQueue, ncc: &NodeConfigCached) -> Result<ChannelSearchResult, Error> {
+    let url = req_uri_to_url(req.uri())?;
+    let query = ChannelSearchQuery::from_url(&url)?;
+    info!("search query: {:?}", query);
+    let res = dbconn::search::search_channel(query, pgqueue, ncc).await?;
+    Ok(res)
 }

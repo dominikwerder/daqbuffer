@@ -5,6 +5,7 @@ use scylla::prepared_statement::PreparedStatement;
 use scylla::Session;
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "ScyllaPrepare")]
 pub enum Error {
     ScyllaQuery(#[from] scylla::transport::errors::QueryError),
     ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),

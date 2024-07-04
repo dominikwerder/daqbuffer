@@ -23,4 +23,4 @@ incremental = true
 
 [patch.crates-io]
 #tokio = { git = "https://github.com/dominikwerder/tokio", rev = "995221d8" }
-thiserror = { git = "https://github.com/dominikwerder/thiserror.git" }
+thiserror = { git = "https://github.com/dominikwerder/thiserror.git", branch = "cstm" }

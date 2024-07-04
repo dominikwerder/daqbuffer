@@ -30,6 +30,7 @@ use std::task::Poll;
 use taskrun::tokio;
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "ChannelFindActive")]
 pub enum FindActiveError {
     HttpBadAccept,
     HttpBadUrl,

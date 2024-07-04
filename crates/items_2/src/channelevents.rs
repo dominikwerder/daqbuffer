@@ -210,6 +210,7 @@ mod serde_channel_events {
     use crate::eventsxbindim0::EventsXbinDim0;
     use items_0::subfr::SubFrId;
     use netpod::log::*;
+    use netpod::EnumVariant;
     use serde::de;
     use serde::de::EnumAccess;
     use serde::de::VariantAccess;
@@ -318,6 +319,11 @@ mod serde_channel_events {
                     }
                     String::SUB => {
                         let obj: EventsDim0<String> =
+                            seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
+                        Ok(EvBox(Box::new(obj)))
+                    }
+                    EnumVariant::SUB => {
+                        let obj: EventsDim0<EnumVariant> =
                             seq.next_element()?.ok_or_else(|| de::Error::missing_field("[2] obj"))?;
                         Ok(EvBox(Box::new(obj)))
                     }

@@ -268,7 +268,7 @@ impl ScalarOps for EnumVariant {
     }
 
     fn zero_b() -> Self {
-        EnumVariant::empty()
+        EnumVariant::default()
     }
 
     fn equal_slack(&self, rhs: &Self) -> bool {

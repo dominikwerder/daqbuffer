@@ -18,8 +18,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "ScyllaWorker")]
 pub enum Error {
-    #[error("ScyllaConnection({0})")]
     ScyllaConnection(err::Error),
     Prepare(#[from] crate::events2::prepare::Error),
     EventsQuery(#[from] crate::events::Error),

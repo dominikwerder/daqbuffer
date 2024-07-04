@@ -63,6 +63,7 @@ use taskrun::tokio::net::TcpListener;
 use tracing::Instrument;
 
 #[derive(Debug, ThisError, Serialize, Deserialize)]
+#[cstm(name = "Retrieval")]
 pub enum RetrievalError {
     Error(#[from] ::err::Error),
     Error2(#[from] crate::err::Error),
@@ -353,7 +354,7 @@ async fn http_service_inner(
     } else if let Some(h) = api4::databuffer_tools::FindActiveHandler::handler(&req) {
         Ok(h.handle(req, &node_config).await?)
     } else if let Some(h) = api4::search::ChannelSearchHandler::handler(&req) {
-        Ok(h.handle(req, &node_config).await?)
+        Ok(h.handle(req, &shared_res.pgqueue, &node_config).await?)
     } else if let Some(h) = channel_status::ConnectionStatusEvents::handler(&req) {
         Ok(h.handle(req, ctx, &shared_res, &node_config).await?)
     } else if let Some(h) = channel_status::ChannelStatusEventsHandler::handler(&req) {

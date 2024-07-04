@@ -1,4 +1,5 @@
 use crate::create_connection;
+use crate::worker::PgQueue;
 use crate::ErrConv;
 use err::Error;
 use netpod::ChannelArchiver;
@@ -10,6 +11,7 @@ use netpod::NodeConfigCached;
 use netpod::ScalarType;
 use netpod::Shape;
 use serde_json::Value as JsVal;
+use tokio_postgres::Client as PgClient;
 
 pub async fn search_channel_databuffer(
     query: ChannelSearchQuery,
@@ -98,10 +100,9 @@ pub async fn search_channel_databuffer(
     Ok(ret)
 }
 
-pub async fn search_channel_scylla(
+pub(super) async fn search_channel_scylla(
     query: ChannelSearchQuery,
-    backend: &str,
-    pgconf: &Database,
+    pgc: &PgClient,
 ) -> Result<ChannelSearchResult, Error> {
     let empty = if !query.name_regex.is_empty() { false } else { true };
     if empty {
@@ -109,11 +110,10 @@ pub async fn search_channel_scylla(
         return Ok(ret);
     }
     let ch_kind: i16 = if query.channel_status { 1 } else { 2 };
-    let tmp_backend = Some(backend.to_string());
-    let (cb1, cb2) = if let Some(x) = &tmp_backend {
+    let (cb1, cb2) = if let Some(x) = query.backend.as_ref() {
         (false, x.as_str())
     } else {
-        (true, "")
+        (false, "----------")
     };
     let regop = if query.icase { "~*" } else { "~" };
     let sql = &format!(
@@ -128,8 +128,7 @@ pub async fn search_channel_scylla(
         ),
         regop
     );
-    let (pgclient, _pgjh) = crate::create_connection(pgconf).await?;
-    let rows = pgclient
+    let rows = pgc
         .query(sql, &[&ch_kind, &query.name_regex, &cb1, &cb2])
         .await
         .err_conv()?;
@@ -279,11 +278,21 @@ async fn search_channel_archeng(
     Ok(ret)
 }
 
-pub async fn search_channel(query: ChannelSearchQuery, ncc: &NodeConfigCached) -> Result<ChannelSearchResult, Error> {
+pub async fn search_channel(
+    query: ChannelSearchQuery,
+    pgqueue: &PgQueue,
+    ncc: &NodeConfigCached,
+) -> Result<ChannelSearchResult, Error> {
     let backend = &ncc.node_config.cluster.backend;
     let pgconf = &ncc.node_config.cluster.database;
+    let mut query = query;
+    query.backend = Some(backend.into());
     if let Some(_scyconf) = ncc.node_config.cluster.scylla_st() {
-        search_channel_scylla(query, backend, pgconf).await
+        pgqueue
+            .search_channel_scylla(query)
+            .await
+            .map_err(|e| Error::with_msg_no_trace(format!("db worker error {e}")))?
+        // search_channel_scylla(query, backend, pgconf).await
     } else if let Some(conf) = ncc.node.channel_archiver.as_ref() {
         search_channel_archeng(query, backend.clone(), conf, pgconf).await
     } else if let Some(_conf) = ncc.node.archiver_appliance.as_ref() {

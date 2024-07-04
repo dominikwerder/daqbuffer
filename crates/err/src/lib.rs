@@ -1,10 +1,21 @@
 //! Error handling and reporting.
 
+#[macro_export]
+macro_rules! err_dbg_dis {
+    ($tt:ty, $nn:expr) => {
+        impl ::core::fmt::Display for $tt {
+            fn fmt(&self, fmt: &mut ::core::fmt::Formatter) -> ::core::fmt::Result {
+                write!(fmt, "{}::{:?}", $nn, self)
+            }
+        }
+    };
+}
+
 pub use anyhow;
 pub use thiserror;
 pub use thiserror::Error as ThisError;
-pub use thiserror::UserErrorClass;
-pub use thiserror::UserErrorContent;
+// pub use thiserror::UserErrorClass;
+// pub use thiserror::UserErrorContent;
 
 pub mod bt {
     pub use backtrace::Backtrace;
@@ -525,19 +536,22 @@ mod test {
     use super::*;
 
     #[derive(Debug, ThisError, Serialize, Deserialize)]
+    #[cstm(name = "SomeErrorEnumA")]
     enum SomeErrorEnumA {
         BadCase,
         WithStringContent(String),
-        #[error("bad: {0}")]
+        // #[error("bad: {0}")]
         WithStringContentFmt(String),
     }
 
     #[derive(Debug, ThisError, Serialize, Deserialize)]
+    #[cstm(name = "SomeErrorEnumB0")]
     enum SomeErrorEnumB0 {
         FromA(#[from] SomeErrorEnumA),
     }
 
     #[derive(Debug, ThisError, Serialize, Deserialize)]
+    #[cstm(name = "SomeErrorEnumB1")]
     enum SomeErrorEnumB1 {
         FromA(#[from] SomeErrorEnumA),
         #[error("caffe")]

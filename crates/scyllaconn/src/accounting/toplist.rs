@@ -9,6 +9,7 @@ use scylla::prepared_statement::PreparedStatement;
 use scylla::Session as ScySession;
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "AccountingToplist")]
 pub enum Error {
     ScyllaQuery(#[from] scylla::transport::errors::QueryError),
     ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),

@@ -1,22 +1,32 @@
 use crate::create_connection;
 use async_channel::Receiver;
+use async_channel::RecvError;
 use async_channel::Sender;
 use err::thiserror;
 use err::ThisError;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::ChConf;
+use netpod::ChannelSearchQuery;
+use netpod::ChannelSearchResult;
 use netpod::Database;
 use taskrun::tokio;
 use tokio::task::JoinHandle;
 use tokio_postgres::Client;
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "PgWorker")]
 pub enum Error {
     Error(#[from] err::Error),
     ChannelSend,
     ChannelRecv,
     Join,
+}
+
+impl From<RecvError> for Error {
+    fn from(_value: RecvError) -> Self {
+        Self::ChannelRecv
+    }
 }
 
 impl err::ToErr for Error {
@@ -33,6 +43,7 @@ enum Job {
         Vec<u64>,
         Sender<Result<Vec<Option<crate::channelinfo::ChannelInfo>>, crate::channelinfo::Error>>,
     ),
+    SearchChannel(ChannelSearchQuery, Sender<Result<ChannelSearchResult, err::Error>>),
 }
 
 #[derive(Debug, Clone)]
@@ -72,6 +83,17 @@ impl PgQueue {
         let job = Job::InfoForSeriesIds(series_ids, tx);
         self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
         Ok(rx)
+    }
+
+    pub async fn search_channel_scylla(
+        &self,
+        query: ChannelSearchQuery,
+    ) -> Result<Result<ChannelSearchResult, err::Error>, Error> {
+        let (tx, rx) = async_channel::bounded(1);
+        let job = Job::SearchChannel(query, tx);
+        self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
+        let ret = rx.recv().await?;
+        Ok(ret)
     }
 }
 
@@ -122,6 +144,12 @@ impl PgWorker {
                 }
                 Job::InfoForSeriesIds(ids, tx) => {
                     let res = crate::channelinfo::info_for_series_ids(&ids, &self.pg).await;
+                    if tx.send(res.map_err(Into::into)).await.is_err() {
+                        // TODO count for stats
+                    }
+                }
+                Job::SearchChannel(query, tx) => {
+                    let res = crate::search::search_channel_scylla(query, &self.pg).await;
                     if tx.send(res.map_err(Into::into)).await.is_err() {
                         // TODO count for stats
                     }

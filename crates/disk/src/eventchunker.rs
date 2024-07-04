@@ -35,6 +35,7 @@ use streams::filechunkread::FileChunkRead;
 use streams::needminbuffer::NeedMinBuffer;
 
 #[derive(Debug, ThisError, Serialize, Deserialize)]
+#[cstm(name = "DatabufferDataParse")]
 pub enum DataParseError {
     DataFrameLengthMismatch,
     FileHeaderTooShort,

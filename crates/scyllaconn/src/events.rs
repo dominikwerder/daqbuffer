@@ -18,6 +18,7 @@ use items_2::eventsdim1::EventsDim1;
 use netpod::log::*;
 use netpod::ttl::RetentionTime;
 use netpod::DtNano;
+use netpod::EnumVariant;
 use netpod::ScalarType;
 use netpod::Shape;
 use netpod::TsMs;
@@ -33,6 +34,7 @@ use std::task::Context;
 use std::task::Poll;
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "ScyllaReadEvents")]
 pub enum Error {
     Prepare(#[from] crate::events2::prepare::Error),
     ScyllaQuery(#[from] scylla::transport::errors::QueryError),
@@ -132,6 +134,38 @@ macro_rules! impl_scaty_array {
     };
 }
 
+impl ValTy for EnumVariant {
+    type ScaTy = EnumVariant;
+    type ScyTy = i16;
+    type Container = EventsDim0<EnumVariant>;
+
+    fn from_scyty(inp: Self::ScyTy) -> Self {
+        let _ = inp;
+        panic!("uses more specialized impl")
+    }
+
+    fn from_valueblob(inp: Vec<u8>) -> Self {
+        let _ = inp;
+        panic!("uses more specialized impl")
+    }
+
+    fn table_name() -> &'static str {
+        "array_string"
+    }
+
+    fn default() -> Self {
+        <Self as Default>::default()
+    }
+
+    fn is_valueblob() -> bool {
+        false
+    }
+
+    fn st_name() -> &'static str {
+        "enum"
+    }
+}
+
 impl ValTy for Vec<String> {
     type ScaTy = String;
     type ScyTy = Vec<String>;
@@ -142,6 +176,7 @@ impl ValTy for Vec<String> {
     }
 
     fn from_valueblob(inp: Vec<u8>) -> Self {
+        let _ = inp;
         warn!("ValTy::from_valueblob for Vec<String>");
         Vec::new()
     }
@@ -188,6 +223,7 @@ impl_scaty_array!(Vec<f32>, f32, Vec<f32>, "f32", "f32");
 impl_scaty_array!(Vec<f64>, f64, Vec<f64>, "f64", "f64");
 impl_scaty_array!(Vec<bool>, bool, Vec<bool>, "bool", "bool");
 
+#[derive(Debug)]
 pub(super) struct ReadNextValuesOpts {
     rt: RetentionTime,
     series: u64,
@@ -226,6 +262,7 @@ where
 {
     // TODO could take scyqeue out of opts struct.
     let scyqueue = opts.scyqueue.clone();
+    debug!("bbbbbbbbbbbbbbbbbbbbbbbbbbbb");
     let futgen = Box::new(|scy: Arc<Session>, stmts: Arc<StmtsEvents>| {
         let fut = async {
             read_next_values_2::<ST>(opts, scy, stmts)
@@ -246,7 +283,13 @@ async fn read_next_values_2<ST>(
 where
     ST: ValTy,
 {
-    trace!("read_next_values_2  {}  {}", opts.series, opts.ts_msp);
+    debug!("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  {opts:?}");
+    trace!(
+        "read_next_values_2  {}  {}  st_name {}",
+        opts.series,
+        opts.ts_msp,
+        ST::st_name()
+    );
     let series = opts.series;
     let ts_msp = opts.ts_msp;
     let range = opts.range;

@@ -259,6 +259,7 @@ impl Mergeable for EventFull {
 }
 
 #[derive(Debug, ThisError, Serialize, Deserialize)]
+#[cstm(name = "Decompress")]
 pub enum DecompError {
     TooLittleInput,
     BadCompresionBlockSize,

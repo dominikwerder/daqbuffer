@@ -25,6 +25,7 @@ macro_rules! trace_parse {
 }
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "StreamFramedBytes")]
 pub enum Error {
     FrameTooLarge,
     Logic,

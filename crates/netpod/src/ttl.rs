@@ -78,9 +78,12 @@ impl fmt::Display for RetentionTime {
 }
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "TTL")]
 pub enum Error {
     Parse,
 }
+
+// err::err_dbg_dis!(Error, "ttl::Error::");
 
 impl FromStr for RetentionTime {
     type Err = Error;

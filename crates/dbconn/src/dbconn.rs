@@ -196,6 +196,7 @@ pub async fn find_series_sf_databuffer(channel: &SfDbChannel, pgclient: Arc<PgCl
 }
 
 #[derive(Debug, ThisError, Serialize)]
+#[cstm(name = "FindChannel")]
 pub enum FindChannelError {
     UnknownBackend,
     BadSeriesId,

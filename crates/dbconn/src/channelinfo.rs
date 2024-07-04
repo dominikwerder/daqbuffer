@@ -5,6 +5,7 @@ use netpod::Shape;
 use tokio_postgres::Client;
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "ChannelInfo")]
 pub enum Error {
     Pg(#[from] crate::pg::Error),
     BadValue,

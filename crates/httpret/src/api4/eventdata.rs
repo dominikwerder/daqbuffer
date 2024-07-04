@@ -20,9 +20,9 @@ use std::sync::Arc;
 use streams::instrument::InstrumentStream;
 
 #[derive(Debug, ThisError)]
+#[cstm(name = "EventData")]
 pub enum EventDataError {
     QueryParse,
-    #[error("Error({0})")]
     Error(Box<dyn ToPublicError>),
     InternalError,
 }
