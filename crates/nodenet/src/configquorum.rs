@@ -30,7 +30,7 @@ fn decide_sf_ch_config_quorum(inp: Vec<ChannelConfigResponse>) -> Result<Option<
                 k.shape,
             )),
             ChannelConfigResponse::Daqbuf(k) => {
-                ChannelTypeConfigGen::Scylla(ChConf::new(k.backend, k.series, k.scalar_type, k.shape, k.name))
+                ChannelTypeConfigGen::Scylla(ChConf::new(k.backend, k.series, k.kind, k.scalar_type, k.shape, k.name))
             }
         };
         if histo.contains_key(&item) {

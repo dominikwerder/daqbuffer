@@ -10,6 +10,7 @@ use netpod::ChConf;
 use netpod::ChannelSearchQuery;
 use netpod::ChannelSearchResult;
 use netpod::Database;
+use netpod::SeriesKind;
 use netpod::SfDbChannel;
 use taskrun::tokio;
 use tokio::task::JoinHandle;
@@ -38,7 +39,7 @@ impl err::ToErr for Error {
 
 #[derive(Debug)]
 enum Job {
-    ChConfBestMatchingNameRange(String, String, NanoRange, Sender<Result<ChConf, Error>>),
+    ChConfBestMatchingNameRange(SfDbChannel, NanoRange, Sender<Result<ChConf, Error>>),
     ChConfForSeries(String, u64, Sender<Result<ChConf, Error>>),
     InfoForSeriesIds(
         Vec<u64>,
@@ -70,12 +71,11 @@ impl PgQueue {
 
     pub async fn chconf_best_matching_name_range(
         &self,
-        backend: &str,
-        name: &str,
+        channel: SfDbChannel,
         range: NanoRange,
     ) -> Result<Receiver<Result<ChConf, Error>>, Error> {
         let (tx, rx) = async_channel::bounded(1);
-        let job = Job::ChConfBestMatchingNameRange(backend.into(), name.into(), range, tx);
+        let job = Job::ChConfBestMatchingNameRange(channel, range, tx);
         self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
         Ok(rx)
     }
@@ -144,10 +144,9 @@ impl PgWorker {
                 }
             };
             match job {
-                Job::ChConfBestMatchingNameRange(backend, name, range, tx) => {
+                Job::ChConfBestMatchingNameRange(channel, range, tx) => {
                     let res =
-                        crate::channelconfig::chconf_best_matching_for_name_and_range(&backend, &name, range, &self.pg)
-                            .await;
+                        crate::channelconfig::chconf_best_matching_for_name_and_range(channel, range, &self.pg).await;
                     if tx.send(res.map_err(Into::into)).await.is_err() {
                         // TODO count for stats
                     }
@@ -223,7 +222,7 @@ async fn find_sf_channel_by_series(
     }
     if let Some(row) = rows.into_iter().next() {
         let name = row.get::<_, String>(0);
-        let channel = SfDbChannel::from_full(channel.backend(), channel.series(), name);
+        let channel = SfDbChannel::from_full(channel.backend(), channel.series(), name, SeriesKind::default());
         Ok(channel)
     } else {
         return Err(FindChannelError::NoFound);

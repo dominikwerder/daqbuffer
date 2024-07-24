@@ -108,7 +108,7 @@ pub async fn channel_config(
         Ok(Some(channel_config_test_backend(channel)?))
     } else if ncc.node_config.cluster.scylla_st().is_some() {
         debug!("try to get ChConf for scylla type backend");
-        let ret = scylla_chconf_from_sf_db_channel(range, &channel, pgqueue)
+        let ret = scylla_chconf_from_sf_db_channel(range, channel, pgqueue)
             .await
             .map_err(Error::from)?;
         Ok(Some(ChannelTypeConfigGen::Scylla(ret)))
@@ -207,7 +207,7 @@ pub async fn http_get_channel_config(
 
 async fn scylla_chconf_from_sf_db_channel(
     range: NanoRange,
-    channel: &SfDbChannel,
+    channel: SfDbChannel,
     pgqueue: &PgQueue,
 ) -> Result<ChConf, Error> {
     if let Some(series) = channel.series() {
@@ -220,7 +220,7 @@ async fn scylla_chconf_from_sf_db_channel(
     } else {
         // TODO let called function allow to return None instead of error-not-found
         let ret = pgqueue
-            .chconf_best_matching_name_range(channel.backend(), channel.name(), range)
+            .chconf_best_matching_name_range(channel, range)
             .await?
             .recv()
             .await??;

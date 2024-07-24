@@ -56,7 +56,6 @@ where
 }
 
 struct BckAndFirstFwd {
-    scyqueue: ScyllaQueue,
     fut_bck: Resolvable<Pin<Box<dyn Future<Output = Result<VecDeque<TsMs>, crate::worker::Error>> + Send>>>,
     fut_fwd: Resolvable<Pin<Box<dyn Future<Output = Result<VecDeque<TsMs>, crate::worker::Error>> + Send>>>,
 }
@@ -97,7 +96,6 @@ impl MspStreamRt {
             series,
             range,
             state: State::BckAndFirstFwd(BckAndFirstFwd {
-                scyqueue,
                 fut_bck: Resolvable::Future(Box::pin(fut_bck)),
                 fut_fwd: Resolvable::Future(Box::pin(fut_fwd)),
             }),

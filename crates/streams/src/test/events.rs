@@ -15,6 +15,7 @@ use netpod::range::evrange::SeriesRange;
 use netpod::ChConf;
 use netpod::ReqCtx;
 use netpod::ScalarType;
+use netpod::SeriesKind;
 use netpod::SfDbChannel;
 use netpod::Shape;
 use query::api4::events::EventsSubQuery;
@@ -30,7 +31,14 @@ async fn merged_events_inner() -> Result<(), Error> {
     let ctx = ReqCtx::for_test();
     // TODO factor out the channel config lookup such that the test code can use a similar code path,
     // except that we don't want to go over the network here.
-    let ch_conf = ChConf::new(TEST_BACKEND, 1, ScalarType::I32, Shape::Scalar, "test-gen-i32-dim0-v00");
+    let ch_conf = ChConf::new(
+        TEST_BACKEND,
+        1,
+        SeriesKind::ChannelData,
+        ScalarType::I32,
+        Shape::Scalar,
+        "test-gen-i32-dim0-v00",
+    );
     let channel = SfDbChannel::from_name(ch_conf.backend(), ch_conf.name());
     let range = SeriesRange::TimeRange(NanoRange::from_date_time(
         "2023-12-18T05:10:00Z".parse().unwrap(),

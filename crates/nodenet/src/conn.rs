@@ -129,9 +129,8 @@ pub async fn create_response_bytes_stream(
     ncc: &NodeConfigCached,
 ) -> Result<BoxedBytesStream, Error> {
     debug!(
-        "create_response_bytes_stream  {:?}  {:?}  wasm1 {:?}",
-        evq.ch_conf().scalar_type(),
-        evq.ch_conf().shape(),
+        "create_response_bytes_stream  {:?}  wasm1 {:?}",
+        evq.ch_conf(),
         evq.wasm1()
     );
     let reqctx = netpod::ReqCtx::new_from_single_reqid(evq.reqid().into()).into();

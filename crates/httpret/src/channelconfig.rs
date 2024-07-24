@@ -29,6 +29,7 @@ use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
 use netpod::ScalarType;
+use netpod::SfDbChannel;
 use netpod::Shape;
 use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
@@ -537,7 +538,7 @@ impl IocForChannel {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ScyllaSeriesTsMspQuery {
-    name: String,
+    channel: SfDbChannel,
     range: SeriesRange,
 }
 
@@ -548,10 +549,7 @@ impl FromUrl for ScyllaSeriesTsMspQuery {
     }
 
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
-        let name = pairs
-            .get("channelName")
-            .ok_or_else(|| Error::with_public_msg_no_trace("missing channelName"))?
-            .into();
+        let channel = SfDbChannel::from_pairs(pairs)?;
         let range = if let Ok(x) = TimeRangeQuery::from_pairs(pairs) {
             SeriesRange::TimeRange(x.into())
         } else if let Ok(x) = PulseRangeQuery::from_pairs(pairs) {
@@ -559,7 +557,7 @@ impl FromUrl for ScyllaSeriesTsMspQuery {
         } else {
             return Err(err::Error::with_public_msg_no_trace("no time range in url"));
         };
-        Ok(Self { name, range })
+        Ok(Self { channel, range })
     }
 }
 
@@ -585,7 +583,7 @@ impl ScyllaSeriesTsMsp {
         &self,
         req: Requ,
         shared_res: &ServiceSharedResources,
-        ncc: &NodeConfigCached,
+        _ncc: &NodeConfigCached,
     ) -> Result<StreamResponse, Error> {
         if req.method() == Method::GET {
             let accept_def = APP_JSON;
@@ -596,7 +594,7 @@ impl ScyllaSeriesTsMsp {
             if accept == APP_JSON || accept == ACCEPT_ALL {
                 let url = req_uri_to_url(req.uri())?;
                 let q = ScyllaSeriesTsMspQuery::from_url(&url)?;
-                match self.get_ts_msps(&q, shared_res, ncc).await {
+                match self.get_ts_msps(&q, shared_res).await {
                     Ok(k) => {
                         let body = ToJsonBody::from(&k).into_body();
                         Ok(response(StatusCode::OK).body(body)?)
@@ -616,10 +614,7 @@ impl ScyllaSeriesTsMsp {
         &self,
         q: &ScyllaSeriesTsMspQuery,
         shared_res: &ServiceSharedResources,
-        ncc: &NodeConfigCached,
     ) -> Result<ScyllaSeriesTsMspResponse, Error> {
-        let backend = &ncc.node_config.cluster.backend;
-        let name = &q.name;
         let nano_range = if let SeriesRange::TimeRange(x) = q.range.clone() {
             x
         } else {
@@ -627,7 +622,7 @@ impl ScyllaSeriesTsMsp {
         };
         let chconf = shared_res
             .pgqueue
-            .chconf_best_matching_name_range(backend, name, nano_range)
+            .chconf_best_matching_name_range(q.channel.clone(), nano_range)
             .await
             .map_err(|e| Error::with_msg_no_trace(format!("error from pg worker: {e}")))?
             .recv()

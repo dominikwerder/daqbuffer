@@ -6,6 +6,8 @@ use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::ChConf;
 use netpod::ScalarType;
+use netpod::SeriesKind;
+use netpod::SfDbChannel;
 use netpod::Shape;
 use netpod::TsMs;
 use std::time::Duration;
@@ -20,12 +22,11 @@ use tokio_postgres::Client;
 /// In the future, we can even try to involve time range information for that, but backends like
 /// old archivers and sf databuffer do not support such lookup.
 pub(super) async fn chconf_best_matching_for_name_and_range(
-    backend: &str,
-    name: &str,
+    channel: SfDbChannel,
     range: NanoRange,
     pg: &Client,
 ) -> Result<ChConf, Error> {
-    debug!("chconf_best_matching_for_name_and_range  {backend}  {name}  {range:?}");
+    debug!("chconf_best_matching_for_name_and_range  {channel:?}  {range:?}");
     #[cfg(DISABLED)]
     if ncc.node_config.cluster.scylla.is_none() {
         let e = Error::with_msg_no_trace(format!(
@@ -44,12 +45,17 @@ pub(super) async fn chconf_best_matching_for_name_and_range(
     let sql = concat!(
         "select unnest(tscs) as tsc, series, scalar_type, shape_dims",
         " from series_by_channel",
-        " where kind = 2 and facility = $1 and channel = $2",
+        " where facility = $1",
+        " and channel = $2",
+        " and kind = $3",
         " order by tsc",
     );
-    let res = pg.query(sql, &[&backend, &name]).await.err_conv()?;
+    let res = pg
+        .query(sql, &[&channel.backend(), &channel.name(), &channel.kind().to_db_i16()])
+        .await
+        .err_conv()?;
     if res.len() == 0 {
-        let e = Error::with_public_msg_no_trace(format!("can not find channel information for {name}"));
+        let e = Error::with_public_msg_no_trace(format!("can not find channel information for {channel:?} {range:?}"));
         warn!("{e}");
         Err(e)
     } else if res.len() > 1 {
@@ -64,12 +70,13 @@ pub(super) async fn chconf_best_matching_for_name_and_range(
             let _scalar_type = ScalarType::from_scylla_i32(scalar_type)?;
             let _shape = Shape::from_scylla_shape_dims(&shape_dims)?;
             let tsms = tsc.signed_duration_since(DateTime::UNIX_EPOCH).num_milliseconds() as u64;
-            let ts = TsMs(tsms);
+            let ts = TsMs::from_ms_u64(tsms);
             rows.push((ts, series));
         }
         let tsmss: Vec<_> = rows.iter().map(|x| x.0.clone()).collect();
         let range = (TsMs(range.beg / 1000), TsMs(range.end / 1000));
         let res = decide_best_matching_index(range, &tsmss)?;
+        let backend = channel.backend().into();
         let ch_conf = chconf_for_series(backend, rows[res].1, pg).await?;
         Ok(ch_conf)
     } else {
@@ -80,9 +87,10 @@ pub(super) async fn chconf_best_matching_for_name_and_range(
         // TODO can I get a slice from psql driver?
         let shape_dims: Vec<i32> = r.get(3);
         let series = series as u64;
+        let kind = channel.kind();
         let scalar_type = ScalarType::from_scylla_i32(scalar_type)?;
         let shape = Shape::from_scylla_shape_dims(&shape_dims)?;
-        let ret = ChConf::new(backend, series, scalar_type, shape, name);
+        let ret = ChConf::new(channel.backend(), series, kind, scalar_type, shape, channel.name());
         Ok(ret)
     }
 }
@@ -194,7 +202,7 @@ fn test_decide_best_matching_index_after_01() {
 pub(super) async fn chconf_for_series(backend: &str, series: u64, pg: &Client) -> Result<ChConf, Error> {
     let res = pg
         .query(
-            "select channel, scalar_type, shape_dims from series_by_channel where facility = $1 and series = $2",
+            "select channel, scalar_type, shape_dims, kind from series_by_channel where facility = $1 and series = $2",
             &[&backend, &(series as i64)],
         )
         .await
@@ -211,7 +219,9 @@ pub(super) async fn chconf_for_series(backend: &str, series: u64, pg: &Client) -
         let scalar_type = ScalarType::from_dtype_index(row.get::<_, i32>(1) as u8)?;
         // TODO can I get a slice from psql driver?
         let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(2))?;
-        let ret = ChConf::new(backend, series, scalar_type, shape, name);
+        let kind: i16 = row.get(3);
+        let kind = SeriesKind::from_db_i16(kind)?;
+        let ret = ChConf::new(backend, series, kind, scalar_type, shape, name);
         Ok(ret)
     }
 }

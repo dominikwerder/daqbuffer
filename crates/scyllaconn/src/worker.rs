@@ -164,8 +164,7 @@ impl ScyllaWorker {
             let job = match x {
                 Ok(x) => x,
                 Err(_) => {
-                    error!("ScyllaWorker can not receive from channel");
-                    return Err(Error::ChannelRecv);
+                    break;
                 }
             };
             match job {
@@ -198,6 +197,7 @@ impl ScyllaWorker {
                 }
             }
         }
-        info!("scylla worker ended");
+        info!("scylla worker finished");
+        Ok(())
     }
 }

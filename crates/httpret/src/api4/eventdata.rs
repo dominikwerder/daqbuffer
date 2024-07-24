@@ -77,9 +77,7 @@ impl EventDataHandler {
         shared_res: Arc<ServiceSharedResources>,
     ) -> Result<StreamResponse, EventDataError> {
         let (_head, body) = req.into_parts();
-        let body = read_body_bytes(body)
-            .await
-            .map_err(|_e| EventDataError::InternalError)?;
+        let body = read_body_bytes(body).await.map_err(|_| EventDataError::InternalError)?;
         let inp = futures_util::stream::iter([Ok(body)]);
         let frames = nodenet::conn::events_get_input_frames(inp)
             .await

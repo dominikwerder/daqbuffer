@@ -13,6 +13,7 @@ use items_0::Events;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
 use netpod::ttl::RetentionTime;
+use netpod::ChConf;
 use netpod::EnumVariant;
 use netpod::ScalarType;
 use netpod::Shape;
@@ -97,9 +98,8 @@ enum State {
 
 pub struct EventsStreamRt {
     rt: RetentionTime,
+    ch_conf: ChConf,
     series: SeriesId,
-    scalar_type: ScalarType,
-    shape: Shape,
     range: ScyllaSeriesRange,
     readopts: EventReadOpts,
     state: State,
@@ -112,21 +112,18 @@ pub struct EventsStreamRt {
 impl EventsStreamRt {
     pub fn new(
         rt: RetentionTime,
-        series: SeriesId,
-        scalar_type: ScalarType,
-        shape: Shape,
+        ch_conf: ChConf,
         range: ScyllaSeriesRange,
         readopts: EventReadOpts,
         scyqueue: ScyllaQueue,
     ) -> Self {
-        debug!("EventsStreamRt::new  {series:?}  {range:?}  {rt:?}  {readopts:?}");
-        let msp_inp =
-            crate::events2::msp::MspStreamRt::new(rt.clone(), series.clone(), range.clone(), scyqueue.clone());
+        debug!("EventsStreamRt::new  {ch_conf:?}  {range:?}  {rt:?}  {readopts:?}");
+        let series = SeriesId::new(ch_conf.series());
+        let msp_inp = crate::events2::msp::MspStreamRt::new(rt.clone(), series, range.clone(), scyqueue.clone());
         Self {
             rt,
+            ch_conf,
             series,
-            scalar_type,
-            shape,
             range,
             readopts,
             state: State::Begin,
@@ -135,12 +132,6 @@ impl EventsStreamRt {
             out: VecDeque::new(),
             ts_seen_max: 0,
         }
-    }
-
-    fn __handle_reading(self: Pin<&mut Self>, st: &mut Reading, cx: &mut Context) -> Result<(), Error> {
-        let _ = st;
-        let _ = cx;
-        todo!()
     }
 
     fn make_read_events_fut(
@@ -158,8 +149,8 @@ impl EventsStreamRt {
             self.readopts.clone(),
             scyqueue,
         );
-        let scalar_type = self.scalar_type.clone();
-        let shape = self.shape.clone();
+        let scalar_type = self.ch_conf.scalar_type().clone();
+        let shape = self.ch_conf.shape().clone();
         debug!("make_read_events_fut  {:?}  {:?}", shape, scalar_type);
         let fut = async move {
             let ret = match &shape {

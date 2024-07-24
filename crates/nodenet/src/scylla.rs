@@ -41,9 +41,7 @@ pub async fn scylla_channel_event_stream(
     let stream: Pin<Box<dyn Stream<Item = _> + Send>> = if let Some(rt) = evq.use_rt() {
         let x = scyllaconn::events2::events::EventsStreamRt::new(
             rt,
-            series,
-            scalar_type.clone(),
-            shape.clone(),
+            chconf,
             evq.range().into(),
             readopts,
             scyqueue.clone(),
@@ -51,14 +49,7 @@ pub async fn scylla_channel_event_stream(
         .map_err(|e| scyllaconn::events2::mergert::Error::from(e));
         Box::pin(x)
     } else {
-        let x = scyllaconn::events2::mergert::MergeRts::new(
-            series,
-            scalar_type.clone(),
-            shape.clone(),
-            evq.range().into(),
-            readopts,
-            scyqueue.clone(),
-        );
+        let x = scyllaconn::events2::mergert::MergeRts::new(chconf, evq.range().into(), readopts, scyqueue.clone());
         Box::pin(x)
     };
     let stream = stream

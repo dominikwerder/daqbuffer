@@ -110,7 +110,7 @@ async fn plain_events_cbor_framed(
     ctx: &ReqCtx,
     ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
-    debug!("plain_events_cbor_framed  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
+    debug!("plain_events_cbor_framed  {ch_conf:?}  {req:?}");
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let stream = streams::plaineventscbor::plain_events_cbor_stream(&evq, ch_conf, ctx, Box::pin(open_bytes)).await?;
     let stream = bytes_chunks_to_framed(stream);
@@ -135,7 +135,7 @@ async fn plain_events_json_framed(
     ctx: &ReqCtx,
     ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
-    debug!("plain_events_json_framed  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
+    debug!("plain_events_json_framed  {ch_conf:?}  {req:?}");
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let stream = streams::plaineventsjson::plain_events_json_stream(&evq, ch_conf, ctx, Box::pin(open_bytes)).await?;
     let stream = bytes_chunks_to_len_framed_str(stream);
@@ -151,7 +151,7 @@ async fn plain_events_json(
     ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
     let self_name = "plain_events_json";
-    debug!("{self_name}  req: {:?}", req);
+    debug!("{self_name}  {ch_conf:?}  {req:?}");
     let (_head, _body) = req.into_parts();
     // TODO handle None case better and return 404
     debug!("{self_name}  chconf_from_events_quorum: {ch_conf:?}");

@@ -58,7 +58,6 @@ pub mod log2 {
     pub use tracing::{self, event, span, Level};
 }
 
-use crate::log::*;
 use bytes::Bytes;
 use chrono::DateTime;
 use chrono::TimeZone;
@@ -169,7 +168,7 @@ pub struct BodyStream {
     pub inner: Box<dyn Stream<Item = Result<Bytes, Error>> + Send + Unpin>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize)]
 pub enum SeriesKind {
     ChannelStatus,
     ChannelData,
@@ -194,6 +193,44 @@ impl SeriesKind {
             _ => return Err(Error::with_msg_no_trace("bad SeriesKind value")),
         };
         Ok(ret)
+    }
+}
+
+impl Default for SeriesKind {
+    fn default() -> Self {
+        SeriesKind::ChannelData
+    }
+}
+
+impl FromUrl for SeriesKind {
+    fn from_url(url: &Url) -> Result<Self, Error> {
+        let pairs = get_url_query_pairs(url);
+        Self::from_pairs(&pairs)
+    }
+
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+        let ret = pairs
+            .get("seriesKind")
+            .and_then(|x| match x.as_str() {
+                "channelStatus" => Some(Self::ChannelStatus),
+                "channelData" => Some(Self::ChannelData),
+                "caStatus" => Some(Self::CaStatus),
+                _ => None,
+            })
+            .unwrap_or(Self::default());
+        Ok(ret)
+    }
+}
+
+impl AppendToUrl for SeriesKind {
+    fn append_to_url(&self, url: &mut Url) {
+        let s = match self {
+            SeriesKind::ChannelStatus => "channelStatus",
+            SeriesKind::ChannelData => "channelData",
+            SeriesKind::CaStatus => "caStatus",
+        };
+        let mut g = url.query_pairs_mut();
+        g.append_pair("seriesKind", &s);
     }
 }
 
@@ -975,7 +1012,7 @@ pub struct NodeStatus {
 // Also the concept of "backend" could be split into "facility" and some optional other identifier
 // for cases like e.g. post-mortem, or to differentiate between channel-access and bsread for cases where
 // the same channel-name is delivered via different methods.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SfDbChannel {
     series: Option<u64>,
     // "backend" is currently used in the existing systems for multiple purposes:
@@ -983,14 +1020,21 @@ pub struct SfDbChannel {
     // some special subsystem (eg. sf-rf-databuffer).
     backend: String,
     name: String,
+    kind: SeriesKind,
 }
 
 impl SfDbChannel {
-    pub fn from_full<T: Into<String>, U: Into<String>>(backend: T, series: Option<u64>, name: U) -> Self {
+    pub fn from_full<T: Into<String>, U: Into<String>>(
+        backend: T,
+        series: Option<u64>,
+        name: U,
+        kind: SeriesKind,
+    ) -> Self {
         Self {
             backend: backend.into(),
             series,
             name: name.into(),
+            kind,
         }
     }
 
@@ -999,6 +1043,7 @@ impl SfDbChannel {
             backend: backend.into(),
             series: None,
             name: name.into(),
+            kind: SeriesKind::default(),
         }
     }
 
@@ -1012,6 +1057,10 @@ impl SfDbChannel {
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn kind(&self) -> SeriesKind {
+        self.kind.clone()
     }
 
     pub fn set_series(&mut self, series: u64) {
@@ -1039,6 +1088,7 @@ impl FromUrl for SfDbChannel {
             series: pairs
                 .get("seriesId")
                 .and_then(|x| x.parse::<u64>().map_or(None, |x| Some(x))),
+            kind: SeriesKind::from_pairs(pairs)?,
         };
         if ret.name.is_empty() && ret.series.is_none() {
             return Err(Error::with_public_msg_no_trace(format!(
@@ -1059,6 +1109,8 @@ impl AppendToUrl for SfDbChannel {
         if let Some(series) = self.series {
             g.append_pair("seriesId", &series.to_string());
         }
+        drop(g);
+        self.kind.append_to_url(url);
     }
 }
 
@@ -3130,7 +3182,7 @@ impl HasTimeout for ChannelConfigQuery {
         Duration::from_millis(10000)
     }
 
-    fn set_timeout(&mut self, timeout: Duration) {
+    fn set_timeout(&mut self, _timeout: Duration) {
         // TODO
         // self.timeout = Some(timeout);
     }
@@ -3212,6 +3264,8 @@ pub struct DaqbufChannelConfig {
     pub backend: String,
     #[serde(rename = "seriesId")]
     pub series: u64,
+    #[serde(rename = "seriesKind")]
+    pub kind: SeriesKind,
     #[serde(rename = "scalarType")]
     pub scalar_type: ScalarType,
     #[serde(rename = "shape")]
@@ -3246,6 +3300,7 @@ impl From<ChConf> for ChannelConfigResponse {
         Self::Daqbuf(DaqbufChannelConfig {
             backend: value.backend().into(),
             series: value.series(),
+            kind: value.kind(),
             scalar_type: value.scalar_type().clone(),
             shape: value.shape().clone(),
             name: value.name().into(),
@@ -3278,13 +3333,21 @@ pub struct ChannelInfo {
 pub struct ChConf {
     backend: String,
     series: u64,
+    kind: SeriesKind,
     scalar_type: ScalarType,
     shape: Shape,
     name: String,
 }
 
 impl ChConf {
-    pub fn new<S1, S2>(backend: S1, series: u64, scalar_type: ScalarType, shape: Shape, name: S2) -> Self
+    pub fn new<S1, S2>(
+        backend: S1,
+        series: u64,
+        kind: SeriesKind,
+        scalar_type: ScalarType,
+        shape: Shape,
+        name: S2,
+    ) -> Self
     where
         S1: Into<String>,
         S2: Into<String>,
@@ -3292,6 +3355,7 @@ impl ChConf {
         Self {
             backend: backend.into(),
             series,
+            kind,
             scalar_type,
             shape,
             name: name.into(),
@@ -3304,6 +3368,10 @@ impl ChConf {
 
     pub fn series(&self) -> u64 {
         self.series
+    }
+
+    pub fn kind(&self) -> SeriesKind {
+        self.kind.clone()
     }
 
     pub fn scalar_type(&self) -> &ScalarType {

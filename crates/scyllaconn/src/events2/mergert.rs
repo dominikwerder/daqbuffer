@@ -17,9 +17,7 @@ use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::range::evrange::SeriesRange;
 use netpod::ttl::RetentionTime;
-use netpod::ScalarType;
-use netpod::Shape;
-use series::SeriesId;
+use netpod::ChConf;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::Context;
@@ -35,6 +33,7 @@ pub enum Error {
     OrderMax,
 }
 
+#[allow(unused)]
 enum Resolvable<F>
 where
     F: Future,
@@ -44,6 +43,7 @@ where
     Taken,
 }
 
+#[allow(unused)]
 impl<F> Resolvable<F>
 where
     F: Future,
@@ -100,9 +100,7 @@ enum State {
 }
 
 pub struct MergeRts {
-    series: SeriesId,
-    scalar_type: ScalarType,
-    shape: Shape,
+    ch_conf: ChConf,
     range: ScyllaSeriesRange,
     range_mt: ScyllaSeriesRange,
     range_lt: ScyllaSeriesRange,
@@ -121,18 +119,9 @@ pub struct MergeRts {
 }
 
 impl MergeRts {
-    pub fn new(
-        series: SeriesId,
-        scalar_type: ScalarType,
-        shape: Shape,
-        range: ScyllaSeriesRange,
-        readopts: EventReadOpts,
-        scyqueue: ScyllaQueue,
-    ) -> Self {
+    pub fn new(ch_conf: ChConf, range: ScyllaSeriesRange, readopts: EventReadOpts, scyqueue: ScyllaQueue) -> Self {
         Self {
-            series,
-            scalar_type,
-            shape,
+            ch_conf,
             range_mt: range.clone(),
             range_lt: range.clone(),
             range,
@@ -160,9 +149,7 @@ impl MergeRts {
         let tsbeg = range.beg();
         let inp = EventsStreamRt::new(
             rt,
-            self.series.clone(),
-            self.scalar_type.clone(),
-            self.shape.clone(),
+            self.ch_conf.clone(),
             range,
             self.readopts.clone(),
             self.scyqueue.clone(),
@@ -181,9 +168,7 @@ impl MergeRts {
         let tsbeg = range.beg();
         let inp = EventsStreamRt::new(
             rt,
-            self.series.clone(),
-            self.scalar_type.clone(),
-            self.shape.clone(),
+            self.ch_conf.clone(),
             range,
             self.readopts.clone(),
             self.scyqueue.clone(),
@@ -201,9 +186,7 @@ impl MergeRts {
         let tsbeg = range.beg();
         let inp = EventsStreamRt::new(
             rt,
-            self.series.clone(),
-            self.scalar_type.clone(),
-            self.shape.clone(),
+            self.ch_conf.clone(),
             range,
             self.readopts.clone(),
             self.scyqueue.clone(),

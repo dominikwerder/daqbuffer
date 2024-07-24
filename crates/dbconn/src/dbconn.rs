@@ -1,6 +1,5 @@
 pub mod channelconfig;
 pub mod channelinfo;
-pub mod query;
 pub mod scan;
 pub mod search;
 pub mod worker;
