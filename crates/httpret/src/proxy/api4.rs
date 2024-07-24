@@ -79,7 +79,7 @@ pub async fn channel_search(req: Requ, ctx: &ReqCtx, proxy_config: &ProxyConfig)
                     return Err(Error::with_msg_no_trace(msg));
                 }
             };
-            info!("from {}  len {}", tag, res.channels.len());
+            info!("from {}  len {}  {:?}", tag, res.channels.len(), res.channels);
             let ret = SubRes {
                 tag,
                 status: StatusCode::OK,

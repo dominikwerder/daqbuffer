@@ -44,7 +44,7 @@ impl<INP> Stream for TcpReadAsBytes<INP>
 where
     INP: AsyncRead + Unpin,
 {
-    type Item = Result<Bytes, Error>;
+    type Item = Result<Bytes, err::Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;

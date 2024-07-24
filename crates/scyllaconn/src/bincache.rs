@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use crate::errconv::ErrConv;
 use err::Error;
 use futures_util::Future;

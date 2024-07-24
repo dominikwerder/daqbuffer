@@ -56,31 +56,35 @@ where
 
         write!(writer, " {:>5} ", meta.level().as_str())?;
 
-        writer.write_str("[THR ")?;
-        let current_thread = std::thread::current();
-        match current_thread.name() {
-            Some(name) => {
-                let n = name.len();
-                let max = 32;
-                if n > max {
-                    let pre = 3;
-                    writer.write_str(&name[0..3])?;
-                    writer.write_char('.')?;
-                    writer.write_str(&name[name.len() + 1 + pre - max..])?;
-                } else {
-                    writer.write_str(name)?;
+        if false {
+            writer.write_str("[THR ")?;
+            let current_thread = std::thread::current();
+            match current_thread.name() {
+                Some(name) => {
+                    let n = name.len();
+                    let max = 32;
+                    if n > max {
+                        let pre = 3;
+                        writer.write_str(&name[0..3])?;
+                        writer.write_char('.')?;
+                        writer.write_str(&name[name.len() + 1 + pre - max..])?;
+                    } else {
+                        writer.write_str(name)?;
+                    }
+                }
+                None => {
+                    // write!(writer, "{:0>2?} ", current_thread.id())?;
+                    write!(writer, "{:?} ", current_thread.id())?;
                 }
             }
-            None => {
-                // write!(writer, "{:0>2?} ", current_thread.id())?;
-                write!(writer, "{:?} ", current_thread.id())?;
-            }
+            writer.write_char(' ')?;
         }
-        writer.write_char(' ')?;
 
-        writer.write_str("[TGT ")?;
-        writer.write_str(meta.target())?;
-        writer.write_char(' ')?;
+        {
+            writer.write_str("[TGT ")?;
+            writer.write_str(meta.target())?;
+            writer.write_char(' ')?;
+        }
 
         writer.write_str("[SCP ")?;
         if let Some(sc) = ctx.event_scope() {

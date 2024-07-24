@@ -49,7 +49,7 @@ impl RetentionTime {
     pub fn ttl_ts_msp(&self) -> Duration {
         let day = 60 * 60 * 24;
         match self {
-            RetentionTime::Short => Duration::from_secs(day * 40),
+            RetentionTime::Short => Duration::from_secs(day * 7),
             RetentionTime::Medium => Duration::from_secs(day * 31 * 13),
             RetentionTime::Long => Duration::from_secs(day * 31 * 12 * 17),
         }

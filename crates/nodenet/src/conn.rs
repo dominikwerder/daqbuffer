@@ -1,7 +1,6 @@
 use crate::scylla::scylla_channel_event_stream;
 use bytes::Bytes;
 use err::thiserror;
-use err::Error;
 use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
@@ -43,7 +42,16 @@ use tracing::Instrument;
 mod test;
 
 #[derive(Debug, ThisError)]
-pub enum NodeNetError {}
+#[cstm(name = "NodenetConn")]
+pub enum Error {
+    BadQuery,
+    Scylla(#[from] crate::scylla::Error),
+    Error(#[from] err::Error),
+    Io(#[from] std::io::Error),
+    Items(#[from] items_2::Error),
+    NotAvailable,
+    DebugTest,
+}
 
 pub async fn events_service(ncc: NodeConfigCached) -> Result<(), Error> {
     let scyqueue = err::todoval();
@@ -83,15 +91,17 @@ async fn make_channel_events_stream_data(
     if subq.backend() == TEST_BACKEND {
         let node_count = ncc.node_config.cluster.nodes.len() as u64;
         let node_ix = ncc.ix as u64;
-        streams::generators::make_test_channel_events_stream_data(subq, node_count, node_ix)
+        let ret = streams::generators::make_test_channel_events_stream_data(subq, node_count, node_ix)?;
+        Ok(ret)
     } else if let Some(scyqueue) = scyqueue {
         let cfg = subq.ch_conf().to_scylla()?;
-        scylla_channel_event_stream(subq, cfg, scyqueue).await
+        let ret = scylla_channel_event_stream(subq, cfg, scyqueue).await?;
+        Ok(ret)
     } else if let Some(_) = &ncc.node.channel_archiver {
-        let e = Error::with_msg_no_trace("archapp not built");
+        let e = Error::NotAvailable;
         Err(e)
     } else if let Some(_) = &ncc.node.archiver_appliance {
-        let e = Error::with_msg_no_trace("archapp not built");
+        let e = Error::NotAvailable;
         Err(e)
     } else {
         let cfg = subq.ch_conf().to_sf_databuffer()?;
@@ -126,7 +136,7 @@ pub async fn create_response_bytes_stream(
     debug!("wasm1 {:?}", evq.wasm1());
     let reqctx = netpod::ReqCtx::new_from_single_reqid(evq.reqid().into()).into();
     if evq.create_errors_contains("nodenet_parse_query") {
-        let e = Error::with_msg_no_trace("produced error on request nodenet_parse_query");
+        let e = Error::DebugTest;
         return Err(e);
     }
     if evq.is_event_blobs() {
@@ -226,7 +236,7 @@ async fn events_conn_handler_with_reqid(
 
 pub async fn events_get_input_frames<INP>(netin: INP) -> Result<Vec<InMemoryFrame>, Error>
 where
-    INP: Stream<Item = Result<Bytes, Error>> + Unpin,
+    INP: Stream<Item = Result<Bytes, err::Error>> + Unpin,
 {
     let mut h = InMemoryFrameStream::new(netin, netpod::ByteSize::from_kb(8));
     let mut frames = Vec::new();
@@ -243,7 +253,7 @@ where
                 debug!("ignored incoming frame {:?}", item);
             }
             Err(e) => {
-                return Err(e);
+                return Err(e.into());
             }
         }
     }
@@ -254,12 +264,12 @@ pub fn events_parse_input_query(frames: Vec<InMemoryFrame>) -> Result<(EventsSub
     if frames.len() != 1 {
         error!("{:?}", frames);
         error!("missing command frame  len {}", frames.len());
-        let e = Error::with_msg("missing command frame");
+        let e = Error::BadQuery;
         return Err(e);
     }
     let query_frame = &frames[0];
     if query_frame.tyid() != EVENT_QUERY_JSON_STRING_FRAME {
-        return Err(Error::with_msg("query frame wrong type"));
+        return Err(Error::BadQuery);
     }
     // TODO this does not need all variants of Sitemty.
     let qitem = match decode_frame::<Sitemty<EventQueryJsonStringFrame>>(query_frame) {
@@ -267,17 +277,17 @@ pub fn events_parse_input_query(frames: Vec<InMemoryFrame>) -> Result<(EventsSub
             Ok(k) => match k {
                 StreamItem::DataItem(k) => match k {
                     RangeCompletableItem::Data(k) => k,
-                    RangeCompletableItem::RangeComplete => return Err(Error::with_msg("bad query item")),
+                    RangeCompletableItem::RangeComplete => return Err(Error::BadQuery),
                 },
-                _ => return Err(Error::with_msg("bad query item")),
+                _ => return Err(Error::BadQuery),
             },
-            Err(e) => return Err(e),
+            Err(e) => return Err(e.into()),
         },
-        Err(e) => return Err(e),
+        Err(e) => return Err(e.into()),
     };
     info!("parsing json {:?}", qitem.str());
-    let frame1: Frame1Parts = serde_json::from_str(&qitem.str()).map_err(|e| {
-        let e = Error::with_msg_no_trace(format!("json parse error: {}  inp {}", e, qitem.str()));
+    let frame1: Frame1Parts = serde_json::from_str(&qitem.str()).map_err(|_e| {
+        let e = Error::BadQuery;
         error!("{e}");
         error!("input was {}", qitem.str());
         e
@@ -293,7 +303,7 @@ async fn events_conn_handler_inner_try<INP>(
     ncc: &NodeConfigCached,
 ) -> Result<(), ConnErr>
 where
-    INP: Stream<Item = Result<Bytes, Error>> + Unpin,
+    INP: Stream<Item = Result<Bytes, err::Error>> + Unpin,
 {
     let _ = addr;
     let frames = match events_get_input_frames(netin).await {
@@ -320,13 +330,13 @@ async fn events_conn_handler_inner<INP>(
     ncc: &NodeConfigCached,
 ) -> Result<(), Error>
 where
-    INP: Stream<Item = Result<Bytes, Error>> + Unpin,
+    INP: Stream<Item = Result<Bytes, err::Error>> + Unpin,
 {
     match events_conn_handler_inner_try(netin, netout, addr, scyqueue, ncc).await {
         Ok(_) => (),
         Err(ce) => {
             let mut out = ce.netout;
-            let item: Sitemty<ChannelEvents> = Err(ce.err);
+            let item: Sitemty<ChannelEvents> = Err(err::Error::from_string(ce.err));
             let buf = Framable::make_frame(&item)?;
             out.write_all(&buf).await?;
         }
@@ -350,7 +360,7 @@ async fn events_conn_handler(
         Ok(k) => Ok(k),
         Err(e) => {
             error!("events_conn_handler sees error: {:?}", e);
-            Err(e)
+            Err(e.into())
         }
     }
 }

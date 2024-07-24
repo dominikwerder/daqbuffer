@@ -28,6 +28,7 @@ pub fn empty_events_dyn_ev(scalar_type: &ScalarType, shape: &Shape) -> Result<Bo
                 STRING => Box::new(K::<String>::empty()),
                 Enum => Box::new(K::<EnumVariant>::empty()),
                 ChannelStatus => Box::new(K::<u32>::empty()),
+                CaStatus => Box::new(K::<i16>::empty()),
             }
         }
         Shape::Wave(..) => {
@@ -48,6 +49,7 @@ pub fn empty_events_dyn_ev(scalar_type: &ScalarType, shape: &Shape) -> Result<Bo
                 STRING => Box::new(K::<String>::empty()),
                 Enum => Box::new(K::<EnumVariant>::empty()),
                 ChannelStatus => Box::new(K::<u32>::empty()),
+                CaStatus => Box::new(K::<i16>::empty()),
             }
         }
         Shape::Image(..) => {

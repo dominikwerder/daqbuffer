@@ -18,3 +18,4 @@ query = { path = "../query" }
 items_0 = { path = "../items_0" }
 items_2 = { path = "../items_2" }
 series = { path = "../../../daqingest/series" }
+taskrun = { path = "../taskrun" }

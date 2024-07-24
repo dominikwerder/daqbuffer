@@ -24,7 +24,6 @@ use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::BinnedRangeEnum;
 use netpod::ChannelTypeConfigGen;
-use netpod::Cluster;
 use netpod::ReqCtx;
 use query::api4::binned::BinnedQuery;
 use serde_json::Value as JsonValue;
@@ -54,7 +53,7 @@ async fn timebinnable_stream(
         ctx,
     );
     let inmem_bufcap = subq.inmem_bufcap();
-    let wasm1 = subq.wasm1().map(ToString::to_string);
+    let _wasm1 = subq.wasm1().map(ToString::to_string);
     let mut tr = build_merged_event_transform(subq.transform())?;
     let bytes_streams = open_bytes.open(subq, ctx.clone()).await?;
     let mut inps = Vec::new();

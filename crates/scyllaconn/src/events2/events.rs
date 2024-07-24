@@ -41,6 +41,21 @@ macro_rules! warn_item {
     };
 }
 
+#[derive(Debug, Clone)]
+pub struct EventReadOpts {
+    pub with_values: bool,
+    pub enum_as_strings: bool,
+}
+
+impl EventReadOpts {
+    pub fn new(with_values: bool, enum_as_strings: bool) -> Self {
+        Self {
+            with_values,
+            enum_as_strings,
+        }
+    }
+}
+
 #[derive(Debug, ThisError)]
 #[cstm(name = "ScyllaEvents")]
 pub enum Error {
@@ -86,7 +101,7 @@ pub struct EventsStreamRt {
     scalar_type: ScalarType,
     shape: Shape,
     range: ScyllaSeriesRange,
-    with_values: bool,
+    readopts: EventReadOpts,
     state: State,
     scyqueue: ScyllaQueue,
     msp_inp: MspStreamRt,
@@ -101,10 +116,10 @@ impl EventsStreamRt {
         scalar_type: ScalarType,
         shape: Shape,
         range: ScyllaSeriesRange,
-        with_values: bool,
+        readopts: EventReadOpts,
         scyqueue: ScyllaQueue,
     ) -> Self {
-        debug!("EventsStreamRt::new  {series:?}  {range:?}  {rt:?}");
+        debug!("EventsStreamRt::new  {series:?}  {range:?}  {rt:?}  {readopts:?}");
         let msp_inp =
             crate::events2::msp::MspStreamRt::new(rt.clone(), series.clone(), range.clone(), scyqueue.clone());
         Self {
@@ -113,7 +128,7 @@ impl EventsStreamRt {
             scalar_type,
             shape,
             range,
-            with_values,
+            readopts,
             state: State::Begin,
             scyqueue,
             msp_inp,
@@ -140,7 +155,7 @@ impl EventsStreamRt {
             ts_msp,
             self.range.clone(),
             fwd,
-            self.with_values,
+            self.readopts.clone(),
             scyqueue,
         );
         let scalar_type = self.scalar_type.clone();

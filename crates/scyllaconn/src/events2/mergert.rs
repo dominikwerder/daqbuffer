@@ -1,3 +1,4 @@
+use super::events::EventReadOpts;
 use super::events::EventsStreamRt;
 use super::firstbefore::FirstBeforeAndInside;
 use crate::events2::firstbefore;
@@ -30,6 +31,8 @@ pub enum Error {
     Input(#[from] crate::events2::firstbefore::Error),
     Events(#[from] crate::events2::events::Error),
     Logic,
+    OrderMin,
+    OrderMax,
 }
 
 enum Resolvable<F>
@@ -103,7 +106,7 @@ pub struct MergeRts {
     range: ScyllaSeriesRange,
     range_mt: ScyllaSeriesRange,
     range_lt: ScyllaSeriesRange,
-    with_values: bool,
+    readopts: EventReadOpts,
     scyqueue: ScyllaQueue,
     inp_st: Option<Box<TI>>,
     inp_mt: Option<Box<TI>>,
@@ -123,7 +126,7 @@ impl MergeRts {
         scalar_type: ScalarType,
         shape: Shape,
         range: ScyllaSeriesRange,
-        with_values: bool,
+        readopts: EventReadOpts,
         scyqueue: ScyllaQueue,
     ) -> Self {
         Self {
@@ -133,7 +136,7 @@ impl MergeRts {
             range_mt: range.clone(),
             range_lt: range.clone(),
             range,
-            with_values,
+            readopts,
             scyqueue,
             inp_st: None,
             inp_mt: None,
@@ -161,7 +164,7 @@ impl MergeRts {
             self.scalar_type.clone(),
             self.shape.clone(),
             range,
-            self.with_values,
+            self.readopts.clone(),
             self.scyqueue.clone(),
         );
         let inp = TI::new(inp, tsbeg);
@@ -182,7 +185,7 @@ impl MergeRts {
             self.scalar_type.clone(),
             self.shape.clone(),
             range,
-            self.with_values,
+            self.readopts.clone(),
             self.scyqueue.clone(),
         );
         let inp = TI::new(inp, tsbeg);
@@ -202,7 +205,7 @@ impl MergeRts {
             self.scalar_type.clone(),
             self.shape.clone(),
             range,
-            self.with_values,
+            self.readopts.clone(),
             self.scyqueue.clone(),
         );
         let inp = TI::new(inp, tsbeg);
@@ -309,7 +312,7 @@ impl Stream for MergeRts {
                             "\n\n--------------------------\n", item_min, self.ts_seen_max
                         );
                         self.state = State::Done;
-                        break Ready(Some(Err(Error::Logic)));
+                        break Ready(Some(Err(Error::OrderMin)));
                     }
                 }
                 if let Some(item_max) = item.ts_max() {
@@ -319,7 +322,7 @@ impl Stream for MergeRts {
                             "\n\n--------------------------\n", item_max, self.ts_seen_max
                         );
                         self.state = State::Done;
-                        break Ready(Some(Err(Error::Logic)));
+                        break Ready(Some(Err(Error::OrderMax)));
                     } else {
                         self.ts_seen_max = item_max;
                     }

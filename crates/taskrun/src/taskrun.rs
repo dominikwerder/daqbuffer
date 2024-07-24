@@ -1,6 +1,8 @@
 pub mod formatter;
 
 pub use tokio;
+pub use tracing;
+pub use tracing_subscriber;
 
 use crate::log::*;
 // use console_subscriber::ConsoleLayer;
@@ -144,6 +146,7 @@ fn collect_env_list(env: &str) -> Vec<String> {
         .unwrap_or(String::new())
         .split(",")
         .map(str::trim)
+        .filter(|x| !x.is_empty())
         .map(ToString::to_string)
         .collect()
 }
@@ -186,6 +189,7 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
             .map_err(|e| Error::with_msg_no_trace(format!("can not build tracing env filter {e}")))?;
         let tracing_debug = collect_env_list("TRACING_DEBUG");
         let tracing_trace = collect_env_list("TRACING_TRACE");
+        // let tracing_trace_always = collect_env_list("TRACING_TRACE_ALWAYS");
         let filter_3 = tracing_subscriber::filter::DynFilterFn::new(move |meta, ctx| {
             if *meta.level() >= tracing::Level::TRACE {
                 let mut target_match = false;
@@ -206,7 +210,8 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
                             sr = g.parent();
                         }
                     }
-                    allow
+                    // allow
+                    true
                 } else {
                     false
                 }
@@ -229,7 +234,8 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
                             sr = g.parent();
                         }
                     }
-                    allow
+                    // allow
+                    true
                 } else {
                     false
                 }
@@ -373,4 +379,41 @@ where
     T::Output: Send + 'static,
 {
     tokio::spawn(task)
+}
+
+pub fn query_log_level() -> tracing::Level {
+    use tracing::Level;
+    let mut level = Level::INFO;
+    if false {
+        let mut _reg = tracing_subscriber::registry();
+    }
+    tracing::Span::current().id().map(|id| {
+        tracing::dispatcher::get_default(|disp| {
+            disp.downcast_ref::<tracing_subscriber::Registry>().map(|reg| {
+                use tracing_subscriber::registry::LookupSpan;
+                if let Some(mut sp) = reg.span(&id) {
+                    loop {
+                        if sp.name() == "log_span_debug" {
+                            if level < Level::DEBUG {
+                                level = Level::DEBUG;
+                            }
+                        }
+                        if sp.name() == "log_span_trace" {
+                            if level < Level::TRACE {
+                                level = Level::TRACE;
+                            }
+                        }
+                        if let Some(x) = sp.parent() {
+                            sp = x;
+                        } else {
+                            break;
+                        }
+                    }
+                } else {
+                    info!("reg span not available");
+                }
+            });
+        })
+    });
+    level
 }

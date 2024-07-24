@@ -122,7 +122,15 @@ pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Res
     }
     // let rawjh = taskrun::spawn(nodenet::conn::events_service(node_config.clone()));
     let (pgqueue, pgworker) = PgWorker::new(&ncc.node_config.cluster.database).await?;
-    let pgworker_jh = taskrun::spawn(pgworker.work());
+    let pgworker_jh = taskrun::spawn(async move {
+        let x = pgworker.work().await;
+        match x {
+            Ok(()) => {}
+            Err(e) => {
+                error!("received error from PgWorker: {e}");
+            }
+        }
+    });
     let scyqueue = if let (Some(st), Some(mt), Some(lt)) = (
         ncc.node_config.cluster.scylla_st(),
         ncc.node_config.cluster.scylla_mt(),
@@ -134,7 +142,15 @@ pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Res
                 error!("{e}");
                 RetrievalError::TextError(e.to_string())
             })?;
-        let scylla_worker_jh = taskrun::spawn(scylla_worker.work());
+        let scylla_worker_jh = taskrun::spawn(async move {
+            let x = scylla_worker.work().await;
+            match x {
+                Ok(()) => {}
+                Err(e) => {
+                    error!("received error from ScyllaWorker: {e}");
+                }
+            }
+        });
         Some(scyqueue)
     } else {
         None

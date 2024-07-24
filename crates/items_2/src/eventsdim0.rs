@@ -979,7 +979,7 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
         Box::new(dst)
     }
 
-    fn to_json_vec_u8(&self) -> Vec<u8> {
+    fn to_json_string(&self) -> String {
         // TODO redesign with mut access, rename to `into_` and take the values out.
         let mut tss = self.tss.clone();
         let mut pulses = self.pulses.clone();
@@ -1000,7 +1000,11 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
             timed_out: false,
             continue_at: None,
         };
-        serde_json::to_vec(&ret).unwrap()
+        serde_json::to_string(&ret).unwrap()
+    }
+
+    fn to_json_vec_u8(&self) -> Vec<u8> {
+        self.to_json_string().into_bytes()
     }
 
     fn to_cbor_vec_u8(&self) -> Vec<u8> {

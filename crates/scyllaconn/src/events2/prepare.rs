@@ -31,6 +31,7 @@ pub struct StmtsLspShape {
     f64: PreparedStatement,
     bool: PreparedStatement,
     string: PreparedStatement,
+    enumvals: PreparedStatement,
 }
 
 impl StmtsLspShape {
@@ -48,6 +49,7 @@ impl StmtsLspShape {
             "f64" => &self.f64,
             "bool" => &self.bool,
             "string" => &self.string,
+            "enum" => &self.enumvals,
             _ => return Err(Error::MissingQuery(format!("no query for stname {stname}"))),
         };
         Ok(ret)
@@ -182,6 +184,15 @@ async fn make_lsp_shape(
         f64: maker("f64").await?,
         bool: maker("bool").await?,
         string: maker("string").await?,
+        enumvals: if shapepre == "scalar" {
+            make_lsp(ks, rt, shapepre, "enum", "ts_lsp, value, valuestr", bck, scy).await?
+        } else {
+            // exists only for scalar, therefore produce some dummy here
+            let table_name = "ts_msp";
+            let cql = format!("select ts_msp from {}.{}{} limit 1", ks, rt.table_prefix(), table_name);
+            let qu = scy.prepare(cql).await?;
+            qu
+        },
     };
     Ok(ret)
 }
@@ -204,10 +215,10 @@ async fn make_rt(ks: &str, rt: &RetentionTime, scy: &Session) -> Result<StmtsEve
     let ret = StmtsEventsRt {
         ts_msp_fwd: make_msp_dir(ks, rt, false, scy).await?,
         ts_msp_bck: make_msp_dir(ks, rt, true, scy).await?,
-        lsp_fwd_val: make_lsp_dir(ks, rt, "ts_lsp, pulse, value", false, scy).await?,
-        lsp_bck_val: make_lsp_dir(ks, rt, "ts_lsp, pulse, value", true, scy).await?,
-        lsp_fwd_ts: make_lsp_dir(ks, rt, "ts_lsp, pulse", false, scy).await?,
-        lsp_bck_ts: make_lsp_dir(ks, rt, "ts_lsp, pulse", true, scy).await?,
+        lsp_fwd_val: make_lsp_dir(ks, rt, "ts_lsp, value", false, scy).await?,
+        lsp_bck_val: make_lsp_dir(ks, rt, "ts_lsp, value", true, scy).await?,
+        lsp_fwd_ts: make_lsp_dir(ks, rt, "ts_lsp", false, scy).await?,
+        lsp_bck_ts: make_lsp_dir(ks, rt, "ts_lsp", true, scy).await?,
     };
     Ok(ret)
 }

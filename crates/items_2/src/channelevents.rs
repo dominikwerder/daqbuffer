@@ -967,6 +967,16 @@ impl Events for ChannelEvents {
         }
     }
 
+    fn to_json_string(&self) -> String {
+        match self {
+            ChannelEvents::Events(item) => item.to_json_string(),
+            ChannelEvents::Status(item) => {
+                error!("TODO convert status to json");
+                String::new()
+            }
+        }
+    }
+
     fn to_json_vec_u8(&self) -> Vec<u8> {
         match self {
             ChannelEvents::Events(item) => item.to_json_vec_u8(),

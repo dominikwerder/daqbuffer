@@ -949,7 +949,7 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
         Box::new(item)
     }
 
-    fn to_json_vec_u8(&self) -> Vec<u8> {
+    fn to_json_string(&self) -> String {
         let ret = EventsDim1ChunkOutput {
             // TODO use &mut to swap the content
             tss: self.tss.clone(),
@@ -957,7 +957,11 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
             values: self.values.clone(),
             scalar_type: STY::scalar_type_name().into(),
         };
-        serde_json::to_vec(&ret).unwrap()
+        serde_json::to_string(&ret).unwrap()
+    }
+
+    fn to_json_vec_u8(&self) -> Vec<u8> {
+        self.to_json_string().into_bytes()
     }
 
     fn to_cbor_vec_u8(&self) -> Vec<u8> {

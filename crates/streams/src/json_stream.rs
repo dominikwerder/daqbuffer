@@ -1,5 +1,4 @@
 use crate::cbor_stream::SitemtyDynEventsStream;
-use bytes::Bytes;
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
@@ -11,10 +10,14 @@ use netpod::log::*;
 use std::pin::Pin;
 use std::time::Duration;
 
-pub struct JsonBytes(Bytes);
+pub struct JsonBytes(String);
 
 impl JsonBytes {
-    pub fn into_inner(self) -> Bytes {
+    pub fn new<S: Into<String>>(s: S) -> Self {
+        Self(s.into())
+    }
+
+    pub fn into_inner(self) -> String {
         self.0
     }
 
@@ -29,7 +32,7 @@ impl WithLen for JsonBytes {
     }
 }
 
-impl From<JsonBytes> for Bytes {
+impl From<JsonBytes> for String {
     fn from(value: JsonBytes) -> Self {
         value.0
     }
@@ -55,29 +58,27 @@ fn map_events(x: Result<StreamItem<RangeCompletableItem<Box<dyn Events>>>, Error
         Ok(x) => match x {
             StreamItem::DataItem(x) => match x {
                 RangeCompletableItem::Data(evs) => {
-                    let buf = evs.to_json_vec_u8();
-                    let bytes = Bytes::from(buf);
-                    let item = JsonBytes(bytes);
+                    let s = evs.to_json_string();
+                    let item = JsonBytes::new(s);
                     Ok(item)
                 }
                 RangeCompletableItem::RangeComplete => {
                     let item = serde_json::json!({
                         "rangeFinal": true,
                     });
-                    let buf = serde_json::to_vec(&item)?;
-                    let bytes = Bytes::from(buf);
-                    let item = JsonBytes(bytes);
+                    let s = serde_json::to_string(&item)?;
+                    let item = JsonBytes::new(s);
                     Ok(item)
                 }
             },
             StreamItem::Log(item) => {
                 info!("{item:?}");
-                let item = JsonBytes(Bytes::new());
+                let item = JsonBytes::new(String::new());
                 Ok(item)
             }
             StreamItem::Stats(item) => {
                 info!("{item:?}");
-                let item = JsonBytes(Bytes::new());
+                let item = JsonBytes::new(String::new());
                 Ok(item)
             }
         },
@@ -85,9 +86,8 @@ fn map_events(x: Result<StreamItem<RangeCompletableItem<Box<dyn Events>>>, Error
             let item = serde_json::json!({
                 "error": e.to_string(),
             });
-            let buf = serde_json::to_vec(&item)?;
-            let bytes = Bytes::from(buf);
-            let item = JsonBytes(bytes);
+            let s = serde_json::to_string(&item)?;
+            let item = JsonBytes::new(s);
             Ok(item)
         }
     }
@@ -97,8 +97,7 @@ fn make_keepalive() -> Result<JsonBytes, Error> {
     let item = serde_json::json!({
         "type": "keepalive",
     });
-    let buf = serde_json::to_vec(&item).unwrap();
-    let bytes = Bytes::from(buf);
-    let item = Ok(JsonBytes(bytes));
+    let s = serde_json::to_string(&item).unwrap();
+    let item = Ok(JsonBytes::new(s));
     item
 }

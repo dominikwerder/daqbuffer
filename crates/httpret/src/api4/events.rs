@@ -112,27 +112,7 @@ async fn plain_events_cbor_framed(
     debug!("plain_events_cbor_framed  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let stream = streams::plaineventscbor::plain_events_cbor_stream(&evq, ch_conf, ctx, Box::pin(open_bytes)).await?;
-    use future::ready;
-    let stream = stream
-        .flat_map(|x| match x {
-            Ok(y) => {
-                use bytes::BufMut;
-                let buf = y.into_inner();
-                let adv = (buf.len() + 7) / 8 * 8;
-                let pad = adv - buf.len();
-                let mut b2 = BytesMut::with_capacity(16);
-                b2.put_u32_le(buf.len() as u32);
-                b2.put_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
-                let mut b3 = BytesMut::with_capacity(16);
-                b3.put_slice(&[0, 0, 0, 0, 0, 0, 0, 0][..pad]);
-                stream::iter([Ok::<_, Error>(b2.freeze()), Ok(buf), Ok(b3.freeze())])
-            }
-            Err(e) => {
-                let e = Error::with_msg_no_trace(e.to_string());
-                stream::iter([Err(e), Ok(Bytes::new()), Ok(Bytes::new())])
-            }
-        })
-        .filter(|x| if let Ok(x) = x { ready(x.len() > 0) } else { ready(true) });
+    let stream = bytes_chunks_to_framed(stream);
     let logspan = if evq.log_level() == "trace" {
         trace!("enable trace for handler");
         tracing::span!(tracing::Level::INFO, "log_span_trace")
@@ -160,7 +140,7 @@ async fn plain_events_json_framed(
     debug!("plain_events_json_framed  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let stream = streams::plaineventsjson::plain_events_json_stream(&evq, ch_conf, ctx, Box::pin(open_bytes)).await?;
-    let stream = bytes_chunks_to_framed(stream);
+    let stream = bytes_chunks_to_len_framed_str(stream);
     let ret = response(StatusCode::OK).body(body_stream(stream))?;
     Ok(ret)
 }
@@ -222,6 +202,29 @@ where
             Err(e) => {
                 let e = Error::with_msg_no_trace(e.to_string());
                 stream::iter([Err(e), Ok(Bytes::new()), Ok(Bytes::new())])
+            }
+        })
+        .filter(|x| if let Ok(x) = x { ready(x.len() > 0) } else { ready(true) })
+}
+
+fn bytes_chunks_to_len_framed_str<S, T>(stream: S) -> impl Stream<Item = Result<String, Error>>
+where
+    S: Stream<Item = Result<T, err::Error>>,
+    T: Into<String>,
+{
+    use future::ready;
+    stream
+        .flat_map(|x| match x {
+            Ok(y) => {
+                use std::fmt::Write;
+                let s = y.into();
+                let mut b2 = String::with_capacity(16);
+                write!(b2, "\n{}\n", s.len()).unwrap();
+                stream::iter([Ok::<_, Error>(b2), Ok(s)])
+            }
+            Err(e) => {
+                let e = Error::with_msg_no_trace(e.to_string());
+                stream::iter([Err(e), Ok(String::new())])
             }
         })
         .filter(|x| if let Ok(x) = x { ready(x.len() > 0) } else { ready(true) })

@@ -6,7 +6,6 @@ use err::thiserror;
 use err::PublicError;
 use err::ThisError;
 use err::ToPublicError;
-use futures_util::Stream;
 use http::Method;
 use http::StatusCode;
 use httpclient::body_empty;
@@ -100,7 +99,7 @@ impl EventDataHandler {
         let stream = nodenet::conn::create_response_bytes_stream(evsubq, shared_res.scyqueue.as_ref(), ncc)
             .instrument(logspan.clone())
             .await
-            .map_err(|e| EventDataError::Error(Box::new(e)))?;
+            .map_err(|e| EventDataError::Error(Box::new(err::Error::from_string(e))))?;
         let stream = InstrumentStream::new(stream, logspan);
         let ret = response(StatusCode::OK)
             .body(body_stream(stream))

@@ -53,6 +53,8 @@ impl TimeBinningTransformQuery {
 pub struct TransformQuery {
     event: EventTransformQuery,
     time_binning: TimeBinningTransformQuery,
+    // #[serde(default, skip_serializing_if = "Option::is_none")]
+    enum_as_string: Option<bool>,
 }
 
 impl TransformQuery {
@@ -64,6 +66,7 @@ impl TransformQuery {
         Self {
             event: EventTransformQuery::ValueFull,
             time_binning: TimeBinningTransformQuery::None,
+            enum_as_string: None,
         }
     }
 
@@ -71,6 +74,7 @@ impl TransformQuery {
         Self {
             event: EventTransformQuery::MinMaxAvgDev,
             time_binning: TimeBinningTransformQuery::TimeWeighted,
+            enum_as_string: None,
         }
     }
 
@@ -86,6 +90,7 @@ impl TransformQuery {
         Self {
             event: EventTransformQuery::EventBlobsVerbatim,
             time_binning: TimeBinningTransformQuery::None,
+            enum_as_string: None,
         }
     }
 
@@ -93,6 +98,7 @@ impl TransformQuery {
         Self {
             event: EventTransformQuery::MinMaxAvgDev,
             time_binning: TimeBinningTransformQuery::TimeWeighted,
+            enum_as_string: None,
         }
     }
 
@@ -101,6 +107,7 @@ impl TransformQuery {
             event: EventTransformQuery::PulseIdDiff,
             // TODO probably we want unweighted binning here.
             time_binning: TimeBinningTransformQuery::TimeWeighted,
+            enum_as_string: None,
         }
     }
 
@@ -137,6 +144,10 @@ impl TransformQuery {
     pub fn get_tr_time_binning(&self) -> &TimeBinningTransformQuery {
         &self.time_binning
     }
+
+    pub fn enum_as_string(&self) -> Option<bool> {
+        self.enum_as_string.clone()
+    }
 }
 
 impl FromUrl for TransformQuery {
@@ -146,6 +157,20 @@ impl FromUrl for TransformQuery {
     }
 
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+        let enum_as_string = if let Some(k) = pairs.get("enumAsString") {
+            Some(
+                k.parse()
+                    .map_err(|_| Error::with_public_msg_no_trace(format!("can not parse enumAsString: {}", k)))?,
+            )
+        } else {
+            None
+        };
+        // enum_string: Ok(pairs.get("enumString")).and_then(|x| {
+        //     x.map_or(Ok(None), |k| {
+        //         k.parse()
+        //             .map_err(|_| Error::with_public_msg_no_trace(format!("can not parse enumString: {}", k)))?
+        //     })
+        // })?,
         let upre = Self::url_prefix();
         let key = "binningScheme";
         if let Some(s) = pairs.get(key) {
@@ -153,21 +178,25 @@ impl FromUrl for TransformQuery {
                 TransformQuery {
                     event: EventTransformQuery::EventBlobsVerbatim,
                     time_binning: TimeBinningTransformQuery::None,
+                    enum_as_string,
                 }
             } else if s == "fullValue" {
                 TransformQuery {
                     event: EventTransformQuery::ValueFull,
                     time_binning: TimeBinningTransformQuery::None,
+                    enum_as_string,
                 }
             } else if s == "timeWeightedScalar" {
                 TransformQuery {
                     event: EventTransformQuery::MinMaxAvgDev,
                     time_binning: TimeBinningTransformQuery::TimeWeighted,
+                    enum_as_string,
                 }
             } else if s == "unweightedScalar" {
                 TransformQuery {
                     event: EventTransformQuery::ValueFull,
                     time_binning: TimeBinningTransformQuery::None,
+                    enum_as_string,
                 }
             } else if s == "binnedX" {
                 let _u: usize = pairs.get("binnedXcount").map_or("1", |k| k).parse()?;
@@ -175,11 +204,13 @@ impl FromUrl for TransformQuery {
                 TransformQuery {
                     event: EventTransformQuery::MinMaxAvgDev,
                     time_binning: TimeBinningTransformQuery::None,
+                    enum_as_string,
                 }
             } else if s == "pulseIdDiff" {
                 TransformQuery {
                     event: EventTransformQuery::PulseIdDiff,
                     time_binning: TimeBinningTransformQuery::None,
+                    enum_as_string,
                 }
             } else {
                 return Err(Error::with_msg("can not extract binningScheme"));
@@ -197,6 +228,7 @@ impl FromUrl for TransformQuery {
             let ret = TransformQuery {
                 event: EventTransformQuery::ValueFull,
                 time_binning: TimeBinningTransformQuery::None,
+                enum_as_string,
             };
             Ok(ret)
         }
@@ -233,6 +265,11 @@ impl AppendToUrl for TransformQuery {
             }
             EventTransformQuery::PulseIdDiff => {
                 g.append_pair(key, &format!("{}", "pulseIdDiff"));
+            }
+        }
+        if let Some(x) = self.enum_as_string {
+            if x {
+                g.append_pair("enumAsString", "true");
             }
         }
     }

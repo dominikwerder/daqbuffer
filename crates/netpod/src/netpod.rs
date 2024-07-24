@@ -173,6 +173,7 @@ pub struct BodyStream {
 pub enum SeriesKind {
     ChannelStatus,
     ChannelData,
+    CaStatus,
 }
 
 impl SeriesKind {
@@ -181,6 +182,7 @@ impl SeriesKind {
         match self {
             ChannelStatus => 1,
             ChannelData => 2,
+            CaStatus => 3,
         }
     }
 
@@ -188,6 +190,7 @@ impl SeriesKind {
         let ret = match x {
             1 => Self::ChannelData,
             2 => Self::ChannelStatus,
+            3 => Self::CaStatus,
             _ => return Err(Error::with_msg_no_trace("bad SeriesKind value")),
         };
         Ok(ret)
@@ -259,22 +262,23 @@ impl<'de> serde::de::Visitor<'de> for ScalarTypeVis {
     }
 
     fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+        use ScalarType::*;
         let s = value.to_lowercase();
         let ret = match s.as_str() {
-            "u8" => ScalarType::U8,
-            "u16" => ScalarType::U16,
-            "u32" => ScalarType::U32,
-            "u64" => ScalarType::U64,
-            "i8" => ScalarType::I8,
-            "i16" => ScalarType::I16,
-            "i32" => ScalarType::I32,
-            "i64" => ScalarType::I64,
-            "f32" => ScalarType::F32,
-            "f64" => ScalarType::F64,
-            "bool" => ScalarType::BOOL,
-            "string" => ScalarType::STRING,
-            "enum" => ScalarType::Enum,
-            "channelstatus" => ScalarType::ChannelStatus,
+            "u8" => U8,
+            "u16" => U16,
+            "u32" => U32,
+            "u64" => U64,
+            "i8" => I8,
+            "i16" => I16,
+            "i32" => I32,
+            "i64" => I64,
+            "f32" => F32,
+            "f64" => F64,
+            "bool" => BOOL,
+            "string" => STRING,
+            "enum" => Enum,
+            "channelstatus" => ChannelStatus,
             k => return Err(E::custom(format!("can not understand variant {k:?}"))),
         };
         Ok(ret)
@@ -534,13 +538,37 @@ impl ScalarType {
 #[derive(Debug, Clone, PartialOrd, PartialEq)]
 pub struct StringFix<const N: usize> {
     data: [char; N],
+    len: u8,
 }
 
 impl<const N: usize> StringFix<N> {
     pub fn new() -> Self {
         Self {
             data: [char::REPLACEMENT_CHARACTER; N],
+            len: 0,
         }
+    }
+}
+
+impl<const N: usize, T> From<T> for StringFix<N>
+where
+    T: AsRef<str>,
+{
+    fn from(x: T) -> Self {
+        let sl = x.as_ref();
+        let sl = &sl[0..sl.len().min(N)];
+        let mut ret = Self::new();
+        for (i, ch) in sl.chars().enumerate() {
+            ret.data[i] = ch;
+        }
+        ret.len = sl.len() as u8;
+        ret
+    }
+}
+
+impl<const N: usize> From<StringFix<N>> for String {
+    fn from(x: StringFix<N>) -> Self {
+        x.data[0..x.len as _].iter().collect()
     }
 }
 
@@ -591,6 +619,12 @@ mod string_fix_impl_serde {
 pub struct EnumVariant {
     ix: u16,
     name: StringFix<26>,
+}
+
+impl EnumVariant {
+    pub fn new(ix: u16, name: StringFix<26>) -> Self {
+        Self { ix, name }
+    }
 }
 
 impl Default for EnumVariant {
@@ -1556,7 +1590,7 @@ impl DtNano {
         self.0
     }
 
-    pub const fn ms(&self) -> u64 {
+    pub const fn ms_u64(&self) -> u64 {
         self.0 / 1000000
     }
 
@@ -1713,6 +1747,10 @@ impl TsNano {
         self.0 / 1000000
     }
 
+    pub const fn add_dt_nano(self, v: DtNano) -> Self {
+        Self(self.0 + v.0)
+    }
+
     pub const fn sub(self, v: DtNano) -> Self {
         Self(self.0 - v.0)
     }
@@ -1735,6 +1773,12 @@ impl TsNano {
 
     pub const fn to_ts_ms(self) -> TsMs {
         TsMs::from_ms_u64(self.ms())
+    }
+
+    pub fn from_system_time(st: SystemTime) -> Self {
+        let tsunix = st.duration_since(UNIX_EPOCH).unwrap_or(Duration::ZERO);
+        let x = tsunix.as_secs() * 1000000000 + tsunix.subsec_nanos() as u64;
+        Self::from_ns(x)
     }
 }
 
@@ -3189,7 +3233,7 @@ impl From<SfChFetchInfo> for ChannelConfigResponse {
             backend: value.backend().into(),
             name: value.name().into(),
             keyspace: value.ks(),
-            timebinsize: value.bs().ms(),
+            timebinsize: value.bs().ms_u64(),
             scalar_type: value.scalar_type().clone(),
             shape: value.shape().clone(),
             byte_order: value.byte_order().clone(),

@@ -358,6 +358,10 @@ impl<STY: ScalarOps> Events for EventsXbinDim0<STY> {
         Box::new(dst)
     }
 
+    fn to_json_string(&self) -> String {
+        todo!()
+    }
+
     fn to_json_vec_u8(&self) -> Vec<u8> {
         todo!()
     }
