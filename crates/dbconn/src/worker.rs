@@ -10,6 +10,7 @@ use netpod::ChConf;
 use netpod::ChannelSearchQuery;
 use netpod::ChannelSearchResult;
 use netpod::Database;
+use netpod::SfDbChannel;
 use taskrun::tokio;
 use tokio::task::JoinHandle;
 use tokio_postgres::Client;
@@ -44,6 +45,10 @@ enum Job {
         Sender<Result<Vec<Option<crate::channelinfo::ChannelInfo>>, crate::channelinfo::Error>>,
     ),
     SearchChannel(ChannelSearchQuery, Sender<Result<ChannelSearchResult, err::Error>>),
+    SfChannelBySeries(
+        netpod::SfDbChannel,
+        Sender<Result<netpod::SfDbChannel, crate::FindChannelError>>,
+    ),
 }
 
 #[derive(Debug, Clone)]
@@ -63,7 +68,7 @@ impl PgQueue {
         Ok(rx)
     }
 
-    pub async fn chconf_best_matching_name_range_job(
+    pub async fn chconf_best_matching_name_range(
         &self,
         backend: &str,
         name: &str,
@@ -91,6 +96,17 @@ impl PgQueue {
     ) -> Result<Result<ChannelSearchResult, err::Error>, Error> {
         let (tx, rx) = async_channel::bounded(1);
         let job = Job::SearchChannel(query, tx);
+        self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
+        let ret = rx.recv().await?;
+        Ok(ret)
+    }
+
+    pub async fn find_sf_channel_by_series(
+        &self,
+        query: netpod::SfDbChannel,
+    ) -> Result<Result<netpod::SfDbChannel, crate::FindChannelError>, Error> {
+        let (tx, rx) = async_channel::bounded(1);
+        let job = Job::SfChannelBySeries(query, tx);
         self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
         let ret = rx.recv().await?;
         Ok(ret)
@@ -154,6 +170,12 @@ impl PgWorker {
                         // TODO count for stats
                     }
                 }
+                Job::SfChannelBySeries(query, tx) => {
+                    let res = find_sf_channel_by_series(query, &self.pg).await;
+                    if tx.send(res.map_err(Into::into)).await.is_err() {
+                        // TODO count for stats
+                    }
+                }
             }
         }
     }
@@ -169,5 +191,41 @@ impl PgWorker {
 
     pub fn close(&self) {
         self.rx.close();
+    }
+}
+
+// On sf-databuffer, the channel name identifies the series. But we can also have a series id.
+// This function is used if the request provides only the series-id, but no name.
+async fn find_sf_channel_by_series(
+    channel: SfDbChannel,
+    pgclient: &Client,
+) -> Result<SfDbChannel, crate::FindChannelError> {
+    use crate::FindChannelError;
+    debug!("find_sf_channel_by_series  {:?}", channel);
+    let series = channel.series().ok_or_else(|| FindChannelError::BadSeriesId)?;
+    let sql = "select rowid from facilities where name = $1";
+    let rows = pgclient
+        .query(sql, &[&channel.backend()])
+        .await
+        .map_err(|e| FindChannelError::Database(e.to_string()))?;
+    let row = rows
+        .into_iter()
+        .next()
+        .ok_or_else(|| FindChannelError::UnknownBackend)?;
+    let backend_id: i64 = row.get(0);
+    let sql = "select name from channels where facility = $1 and rowid = $2";
+    let rows = pgclient
+        .query(sql, &[&backend_id, &(series as i64)])
+        .await
+        .map_err(|e| FindChannelError::Database(e.to_string()))?;
+    if rows.len() > 1 {
+        return Err(FindChannelError::MultipleFound);
+    }
+    if let Some(row) = rows.into_iter().next() {
+        let name = row.get::<_, String>(0);
+        let channel = SfDbChannel::from_full(channel.backend(), channel.series(), name);
+        Ok(channel)
+    } else {
+        return Err(FindChannelError::NoFound);
     }
 }

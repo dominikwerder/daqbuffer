@@ -36,7 +36,6 @@ use nodenet::configquorum::find_config_basics_quorum;
 use query::api4::binned::BinnedQuery;
 use query::api4::events::PlainEventsQuery;
 use scyllaconn::errconv::ErrConv;
-use scyllaconn::range::ScyllaSeriesRange;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -524,6 +523,8 @@ impl IocForChannel {
                 &[&q.backend, &q.name],
             )
             .await?;
+        drop(pg_client);
+        pgjh.await??;
         if let Some(row) = rows.first() {
             let ioc_addr = row.get(0);
             let ret = IocForChannelRes { ioc_addr };
@@ -626,7 +627,7 @@ impl ScyllaSeriesTsMsp {
         };
         let chconf = shared_res
             .pgqueue
-            .chconf_best_matching_name_range_job(backend, name, nano_range)
+            .chconf_best_matching_name_range(backend, name, nano_range)
             .await
             .map_err(|e| Error::with_msg_no_trace(format!("error from pg worker: {e}")))?
             .recv()
@@ -734,6 +735,8 @@ impl AmbigiousChannelNames {
                 &[],
             )
             .await?;
+        drop(pg_client);
+        pgjh.await??;
         let mut ret = AmbigiousChannelNamesResponse { ambigious: Vec::new() };
         for row in rows {
             let g = AmbigiousChannel {
@@ -745,16 +748,6 @@ impl AmbigiousChannelNames {
             ret.ambigious.push(g);
         }
         Ok(ret)
-    }
-}
-
-struct TestData01Iter {}
-
-impl Iterator for TestData01Iter {
-    type Item = f64;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        None
     }
 }
 

@@ -98,10 +98,10 @@ pub async fn find_config_basics_quorum(
     if let Some(_cfg) = &ncc.node.sf_databuffer {
         let channel = if channel.name().is_empty() {
             if let Some(_) = channel.series() {
-                let (pgclient, _pgjh) = dbconn::create_connection(&ncc.node_config.cluster.database).await?;
-                let pgclient = std::sync::Arc::new(pgclient);
-                dbconn::find_sf_channel_by_series(channel, pgclient)
+                pgqueue
+                    .find_sf_channel_by_series(channel)
                     .await
+                    .map_err(|e| Error::with_msg_no_trace(e.to_string()))?
                     .map_err(|e| Error::with_msg_no_trace(e.to_string()))?
             } else {
                 channel

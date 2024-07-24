@@ -220,7 +220,7 @@ async fn scylla_chconf_from_sf_db_channel(
     } else {
         // TODO let called function allow to return None instead of error-not-found
         let ret = pgqueue
-            .chconf_best_matching_name_range_job(channel.backend(), channel.name(), range)
+            .chconf_best_matching_name_range(channel.backend(), channel.name(), range)
             .await?
             .recv()
             .await??;

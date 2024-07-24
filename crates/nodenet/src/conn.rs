@@ -128,12 +128,12 @@ pub async fn create_response_bytes_stream(
     scyqueue: Option<&ScyllaQueue>,
     ncc: &NodeConfigCached,
 ) -> Result<BoxedBytesStream, Error> {
-    info!(
-        "create_response_bytes_stream  {:?}  {:?}",
+    debug!(
+        "create_response_bytes_stream  {:?}  {:?}  wasm1 {:?}",
         evq.ch_conf().scalar_type(),
         evq.ch_conf().shape(),
+        evq.wasm1()
     );
-    debug!("wasm1 {:?}", evq.wasm1());
     let reqctx = netpod::ReqCtx::new_from_single_reqid(evq.reqid().into()).into();
     if evq.create_errors_contains("nodenet_parse_query") {
         let e = Error::DebugTest;

@@ -24,6 +24,7 @@ use httpclient::StreamResponse;
 use httpclient::ToJsonBody;
 use netpod::log::*;
 use netpod::req_uri_to_url;
+use netpod::ChannelTypeConfigGen;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
@@ -87,12 +88,15 @@ async fn plain_events(
     pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
+    let ch_conf = chconf_from_events_quorum(&evq, ctx, pgqueue, ncc)
+        .await?
+        .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
     if accepts_cbor_framed(req.headers()) {
-        Ok(plain_events_cbor_framed(req, evq, ctx, pgqueue, ncc).await?)
+        Ok(plain_events_cbor_framed(req, evq, ch_conf, ctx, ncc).await?)
     } else if accepts_json_framed(req.headers()) {
-        Ok(plain_events_json_framed(req, evq, ctx, pgqueue, ncc).await?)
+        Ok(plain_events_json_framed(req, evq, ch_conf, ctx, ncc).await?)
     } else if accepts_json_or_all(req.headers()) {
-        Ok(plain_events_json(req, evq, ctx, pgqueue, ncc).await?)
+        Ok(plain_events_json(req, evq, ch_conf, ctx, ncc).await?)
     } else {
         let ret = response_err_msg(StatusCode::NOT_ACCEPTABLE, format!("unsupported accept  {:?}", req))?;
         Ok(ret)
@@ -102,13 +106,10 @@ async fn plain_events(
 async fn plain_events_cbor_framed(
     req: Requ,
     evq: PlainEventsQuery,
+    ch_conf: ChannelTypeConfigGen,
     ctx: &ReqCtx,
-    pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
-    let ch_conf = chconf_from_events_quorum(&evq, ctx, pgqueue, ncc)
-        .await?
-        .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
     debug!("plain_events_cbor_framed  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let stream = streams::plaineventscbor::plain_events_cbor_stream(&evq, ch_conf, ctx, Box::pin(open_bytes)).await?;
@@ -130,13 +131,10 @@ async fn plain_events_cbor_framed(
 async fn plain_events_json_framed(
     req: Requ,
     evq: PlainEventsQuery,
+    ch_conf: ChannelTypeConfigGen,
     ctx: &ReqCtx,
-    pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
-    let ch_conf = chconf_from_events_quorum(&evq, ctx, pgqueue, ncc)
-        .await?
-        .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
     debug!("plain_events_json_framed  chconf_from_events_quorum: {ch_conf:?}  {req:?}");
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let stream = streams::plaineventsjson::plain_events_json_stream(&evq, ch_conf, ctx, Box::pin(open_bytes)).await?;
@@ -148,18 +146,14 @@ async fn plain_events_json_framed(
 async fn plain_events_json(
     req: Requ,
     evq: PlainEventsQuery,
+    ch_conf: ChannelTypeConfigGen,
     ctx: &ReqCtx,
-    pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
     let self_name = "plain_events_json";
     debug!("{self_name}  req: {:?}", req);
     let (_head, _body) = req.into_parts();
     // TODO handle None case better and return 404
-    let ch_conf = chconf_from_events_quorum(&evq, ctx, pgqueue, ncc)
-        .await
-        .map_err(Error::from)?
-        .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
     debug!("{self_name}  chconf_from_events_quorum: {ch_conf:?}");
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let item =
