@@ -270,7 +270,6 @@ fn make_scalar_conv(
                 ScalarType::BOOL => ValueDim0FromBytesImpl::<bool>::boxed(),
                 ScalarType::STRING => ValueDim0FromBytesImpl::<String>::boxed(),
                 ScalarType::Enum => ValueDim0FromBytesImpl::<String>::boxed(),
-                ScalarType::ChannelStatus => ValueDim0FromBytesImpl::<u32>::boxed(),
             },
             Shape::Wave(_) => {
                 let shape = shape.clone();
@@ -288,7 +287,6 @@ fn make_scalar_conv(
                     ScalarType::BOOL => ValueDim1FromBytesImpl::<bool>::boxed(shape),
                     ScalarType::STRING => ValueDim1FromBytesImpl::<String>::boxed(shape),
                     ScalarType::Enum => ValueDim1FromBytesImpl::<String>::boxed(shape),
-                    ScalarType::ChannelStatus => ValueDim1FromBytesImpl::<u32>::boxed(shape),
                 }
             }
             Shape::Image(_, _) => {

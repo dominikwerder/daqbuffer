@@ -174,10 +174,6 @@ impl EventsStreamRt {
                         );
                         read_next_values::<EnumVariant>(opts).await
                     }
-                    ScalarType::ChannelStatus => {
-                        warn!("read not yet supported  {:?}  {:?}", shape, scalar_type);
-                        err::todoval()
-                    }
                 },
                 Shape::Wave(_) => match &scalar_type {
                     ScalarType::U8 => read_next_values::<Vec<u8>>(opts).await,
@@ -196,10 +192,6 @@ impl EventsStreamRt {
                         err::todoval()
                     }
                     ScalarType::Enum => {
-                        warn!("read not yet supported  {:?}  {:?}", shape, scalar_type);
-                        err::todoval()
-                    }
-                    ScalarType::ChannelStatus => {
                         warn!("read not yet supported  {:?}  {:?}", shape, scalar_type);
                         err::todoval()
                     }

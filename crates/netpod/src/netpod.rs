@@ -187,8 +187,8 @@ impl SeriesKind {
 
     pub fn from_db_i16(x: i16) -> Result<Self, Error> {
         let ret = match x {
-            1 => Self::ChannelData,
-            2 => Self::ChannelStatus,
+            1 => Self::ChannelStatus,
+            2 => Self::ChannelData,
             3 => Self::CaStatus,
             _ => return Err(Error::with_msg_no_trace("bad SeriesKind value")),
         };
@@ -249,7 +249,6 @@ pub enum ScalarType {
     BOOL,
     STRING,
     Enum,
-    ChannelStatus,
 }
 
 impl fmt::Debug for ScalarType {
@@ -284,7 +283,6 @@ impl Serialize for ScalarType {
             BOOL => ser.serialize_str("bool"),
             STRING => ser.serialize_str("string"),
             Enum => ser.serialize_str("enum"),
-            ChannelStatus => ser.serialize_str("channelstatus"),
         }
     }
 }
@@ -315,7 +313,6 @@ impl<'de> serde::de::Visitor<'de> for ScalarTypeVis {
             "bool" => BOOL,
             "string" => STRING,
             "enum" => Enum,
-            "channelstatus" => ChannelStatus,
             k => return Err(E::custom(format!("can not understand variant {k:?}"))),
         };
         Ok(ret)
@@ -352,7 +349,6 @@ impl ScalarType {
             11 => F32,
             12 => F64,
             13 => STRING,
-            14 => ChannelStatus,
             15 => Enum,
             6 => return Err(Error::with_msg(format!("CHARACTER not supported"))),
             _ => return Err(Error::with_msg(format!("unknown dtype code: {:?}", ix))),
@@ -376,7 +372,6 @@ impl ScalarType {
             BOOL => "bool",
             STRING => "string",
             Enum => "enum",
-            ChannelStatus => "channelstatus",
         }
     }
 
@@ -396,7 +391,6 @@ impl ScalarType {
             "bool" => BOOL,
             "string" => STRING,
             "enum" => Enum,
-            "channelstatus" => ChannelStatus,
             _ => {
                 return Err(Error::with_msg_no_trace(format!(
                     "from_bsread_str can not understand bsread {:?}",
@@ -423,7 +417,6 @@ impl ScalarType {
             BOOL => "bool",
             STRING => "string",
             Enum => "enum",
-            ChannelStatus => "channelstatus",
         }
     }
 
@@ -445,7 +438,6 @@ impl ScalarType {
             "bool" => BOOL,
             "string" => STRING,
             "enum" => Enum,
-            "channelstatus" => ChannelStatus,
             _ => {
                 return Err(Error::with_msg_no_trace(format!(
                     "from_bsread_str can not understand bsread {:?}",
@@ -534,7 +526,6 @@ impl ScalarType {
             BOOL => 1,
             STRING => 1,
             Enum => 2,
-            ChannelStatus => 4,
         }
     }
 
@@ -553,7 +544,6 @@ impl ScalarType {
             F64 => 12,
             BOOL => 0,
             STRING => 13,
-            ChannelStatus => 14,
             Enum => 15,
         }
     }
@@ -2999,9 +2989,9 @@ pub struct ChannelSearchQuery {
     pub source_regex: String,
     pub description_regex: String,
     #[serde(default)]
-    pub channel_status: bool,
-    #[serde(default)]
     pub icase: bool,
+    #[serde(default)]
+    pub kind: SeriesKind,
 }
 
 impl ChannelSearchQuery {
@@ -3012,12 +3002,8 @@ impl ChannelSearchQuery {
             name_regex: pairs.get("nameRegex").map_or(String::new(), |k| k.clone()),
             source_regex: pairs.get("sourceRegex").map_or(String::new(), |k| k.clone()),
             description_regex: pairs.get("descriptionRegex").map_or(String::new(), |k| k.clone()),
-            channel_status: pairs
-                .get("channelStatus")
-                .map(|k| k.parse().ok())
-                .unwrap_or(None)
-                .unwrap_or(false),
             icase: pairs.get("icase").map_or(None, |x| x.parse().ok()).unwrap_or(false),
+            kind: SeriesKind::from_pairs(&pairs)?,
         };
         Ok(ret)
     }
@@ -3030,8 +3016,9 @@ impl ChannelSearchQuery {
         qp.append_pair("nameRegex", &self.name_regex);
         qp.append_pair("sourceRegex", &self.source_regex);
         qp.append_pair("descriptionRegex", &self.description_regex);
-        qp.append_pair("channelStatus", &self.channel_status.to_string());
         qp.append_pair("icase", &self.icase.to_string());
+        drop(qp);
+        self.kind.append_to_url(url);
     }
 }
 

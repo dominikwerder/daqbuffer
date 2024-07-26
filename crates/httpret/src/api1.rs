@@ -44,6 +44,7 @@ use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ProxyConfig;
 use netpod::ReqCtxArc;
+use netpod::SeriesKind;
 use netpod::SfChFetchInfo;
 use netpod::SfDbChannel;
 use netpod::Shape;
@@ -160,8 +161,8 @@ pub async fn channel_search_list_v1(
                     name_regex: query.regex.map_or(String::new(), |k| k),
                     source_regex: query.source_regex.map_or(String::new(), |k| k),
                     description_regex: query.description_regex.map_or(String::new(), |k| k),
-                    channel_status: false,
                     icase: false,
+                    kind: SeriesKind::default(),
                 };
                 let urls = proxy_config
                     .backends
@@ -271,8 +272,8 @@ pub async fn channel_search_configs_v1(
                     name_regex: query.regex.map_or(String::new(), |k| k),
                     source_regex: query.source_regex.map_or(String::new(), |k| k),
                     description_regex: query.description_regex.map_or(String::new(), |k| k),
-                    channel_status: false,
                     icase: false,
+                    kind: SeriesKind::default(),
                 };
                 let urls = proxy_config
                     .backends

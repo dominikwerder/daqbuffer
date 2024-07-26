@@ -383,6 +383,7 @@ impl FileContentStream2 {
         }
     }
 
+    #[allow(unused_mut)]
     fn make_reading(&mut self) {
         let mut buf = Box::new(BytesMut::with_capacity(self.disk_io_tune.read_buffer_len));
         // let bufref = unsafe { &mut *((&mut buf as &mut BytesMut) as *mut BytesMut) };
@@ -783,7 +784,8 @@ impl BlockingTaskIntoChannel {
                         let item = FileChunkRead::with_buf_dur(buf, ts2.duration_since(ts1));
                         match tx.send_blocking(Ok(item)) {
                             Ok(()) => (),
-                            Err(e) => {
+                            Err(_) => {
+                                // TODO
                                 // Receiver most likely disconnected.
                                 // error!("blocking_task_into_channel can not send into channel {e}");
                                 break;

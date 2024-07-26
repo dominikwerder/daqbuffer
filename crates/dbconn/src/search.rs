@@ -109,7 +109,7 @@ pub(super) async fn search_channel_scylla(
         let ret = ChannelSearchResult { channels: Vec::new() };
         return Ok(ret);
     }
-    let ch_kind: i16 = if query.channel_status { 1 } else { 2 };
+    let ch_kind: i16 = query.kind.to_db_i16();
     let (cb1, cb2) = if let Some(x) = query.backend.as_ref() {
         (false, x.as_str())
     } else {
