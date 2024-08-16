@@ -2,6 +2,7 @@ use crate::create_connection;
 use crate::worker::PgQueue;
 use crate::ErrConv;
 use err::Error;
+use netpod::log::*;
 use netpod::ChannelArchiver;
 use netpod::ChannelSearchQuery;
 use netpod::ChannelSearchResult;
@@ -128,10 +129,9 @@ pub(super) async fn search_channel_scylla(
         ),
         regop
     );
-    let rows = pgc
-        .query(sql, &[&ch_kind, &query.name_regex, &cb1, &cb2])
-        .await
-        .err_conv()?;
+    let params: &[&(dyn tokio_postgres::types::ToSql + Sync)] = &[&ch_kind, &query.name_regex, &cb1, &cb2];
+    info!("search_channel_scylla  {:?}", params);
+    let rows = pgc.query(sql, params).await.err_conv()?;
     let mut res = Vec::new();
     for row in rows {
         let series: i64 = row.get(0);

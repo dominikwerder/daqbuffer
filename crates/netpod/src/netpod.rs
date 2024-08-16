@@ -3,6 +3,7 @@ pub mod histo;
 pub mod query;
 pub mod range;
 pub mod status;
+pub mod stream_impl_tracer;
 pub mod streamext;
 pub mod ttl;
 
@@ -115,6 +116,12 @@ pub const DATETIME_FMT_6MS: &str = "%Y-%m-%dT%H:%M:%S.%6fZ";
 pub const DATETIME_FMT_9MS: &str = "%Y-%m-%dT%H:%M:%S.%9fZ";
 
 const TEST_BACKEND: &str = "testbackend-00";
+
+#[allow(non_upper_case_globals)]
+pub const trigger: [&'static str; 1] = [
+    //
+    "S30CB05-VMCP-A010:PRESSURE",
+];
 
 pub struct OnDrop<F>
 where

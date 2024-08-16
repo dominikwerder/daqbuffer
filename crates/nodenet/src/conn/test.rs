@@ -82,7 +82,8 @@ fn raw_data_00() {
             ScalarType::I32,
             Shape::Scalar,
         );
-        let select = EventsSubQuerySelect::new(fetch_info.into(), range.into(), TransformQuery::default_events());
+        let select =
+            EventsSubQuerySelect::new(fetch_info.into(), range.into(), false, TransformQuery::default_events());
         let settings = EventsSubQuerySettings::default();
         let log_level = String::new();
         let qu = EventsSubQuery::from_parts(select, settings, "dummy".into(), log_level);

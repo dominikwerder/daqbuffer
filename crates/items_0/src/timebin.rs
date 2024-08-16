@@ -161,6 +161,7 @@ impl WithLen for Box<dyn TimeBinnable> {
     }
 }
 
+#[allow(unused)]
 impl RangeOverlapInfo for Box<dyn TimeBinnable> {
     fn ends_before(&self, range: &SeriesRange) -> bool {
         todo!()
@@ -190,6 +191,7 @@ impl TimeBinnable for Box<dyn TimeBinnable> {
     }
 }
 
+#[allow(unused)]
 impl RangeOverlapInfo for Box<dyn Events> {
     fn ends_before(&self, range: &SeriesRange) -> bool {
         todo!()
@@ -455,6 +457,7 @@ impl TimeBinnerTy for TimeBinnerDynStruct2 {
     }
 }
 
+#[allow(unused)]
 impl TimeBinner for TimeBinnerDynStruct2 {
     fn ingest(&mut self, item: &mut dyn TimeBinnable) {
         todo!()

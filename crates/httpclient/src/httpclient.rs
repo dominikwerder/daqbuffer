@@ -310,8 +310,7 @@ pub async fn connect_client(uri: &http::Uri) -> Result<SendRequest<StreamBody>, 
         }
     });
     let stream = TcpStream::connect(format!("{host}:{port}")).await?;
-    #[cfg(DISABLED)]
-    {
+    if false {
         let executor = hyper_util::rt::TokioExecutor::new();
         hyper::client::conn::http2::Builder::new(executor);
     }

@@ -1,4 +1,3 @@
-use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 
 // TODO rename, no more deque involved

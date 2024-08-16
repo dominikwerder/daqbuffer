@@ -46,6 +46,7 @@ async fn timebinnable_stream(
     let subq = make_sub_query(
         ch_conf,
         range.clone().into(),
+        one_before_range,
         query.transform().clone(),
         query.test_do_wasm(),
         &query,

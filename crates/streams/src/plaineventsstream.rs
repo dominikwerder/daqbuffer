@@ -30,6 +30,7 @@ pub async fn dyn_events_stream(
     let subq = make_sub_query(
         ch_conf,
         evq.range().clone(),
+        evq.one_before_range(),
         evq.transform().clone(),
         evq.test_do_wasm(),
         evq,

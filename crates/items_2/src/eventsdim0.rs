@@ -74,6 +74,15 @@ macro_rules! trace2 {
     ($($arg:tt)*) => { trace!($($arg)*); };
 }
 
+#[allow(unused)]
+macro_rules! trace_binning {
+    ($($arg:tt)*) => {
+        if false {
+            trace!($($arg)*);
+        }
+    };
+}
+
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventsDim0NoPulse<STY> {
     pub tss: VecDeque<u64>,
@@ -667,7 +676,7 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
 
     fn reset_values(&mut self, range: SeriesRange) {
         self.int_ts = range.beg_u64();
-        trace!("ON RESET SET int_ts {:10}", self.int_ts);
+        trace_binning!("ON RESET SET int_ts {:10}", self.int_ts);
         self.range = range;
         self.count = 0;
         self.sum = 0.;
@@ -707,9 +716,11 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
 
     fn result_reset_time_weight(&mut self, range: SeriesRange) -> BinsDim0<STY> {
         // TODO check callsite for correct expand status.
-        debug!(
+        trace_binning!(
             "result_reset_time_weight calls apply_event_time_weight  range {:?}  items_seen {}  count {}",
-            self.range, self.items_seen, self.count
+            self.range,
+            self.items_seen,
+            self.count
         );
         let range_beg = self.range.beg_u64();
         let range_end = self.range.end_u64();
@@ -777,7 +788,7 @@ impl<STY: ScalarOps> TimeBinnableTypeAggregator for EventsDim0Aggregator<STY> {
     }
 
     fn result_reset(&mut self, range: SeriesRange) -> Self::Output {
-        trace!("result_reset  {:?}", range);
+        trace_binning!("result_reset  {:?}", range);
         if self.do_time_weight {
             self.result_reset_time_weight(range)
         } else {
@@ -1066,10 +1077,10 @@ impl<STY: ScalarOps> EventsDim0TimeBinner<STY> {
     fn next_bin_range(&mut self) -> Option<SeriesRange> {
         self.rix += 1;
         if let Some(rng) = self.binrange.range_at(self.rix) {
-            trace!("{}  next_bin_range {:?}", Self::type_name(), rng);
+            trace_binning!("{}  next_bin_range {:?}", Self::type_name(), rng);
             Some(rng)
         } else {
-            trace!("{}  next_bin_range None", Self::type_name());
+            trace_binning!("{}  next_bin_range None", Self::type_name());
             None
         }
     }

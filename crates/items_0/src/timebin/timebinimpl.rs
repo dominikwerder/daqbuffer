@@ -17,7 +17,7 @@ macro_rules! trace_ingest {
     ($($arg:tt)*) => { trace!($($arg)*) };
 }
 
-#[cfg(DISABLED)]
+#[cfg(target_abi = "x32")]
 impl<T> TimeBinner for T
 where
     T: TimeBinnerIngest,

@@ -22,7 +22,7 @@ macro_rules! trace_ingest {
 #[allow(unused)]
 macro_rules! trace_ingest_item {
     ($($arg:tt)*) => {
-        if true {
+        if false {
             info!($($arg)*);
         }
     };
@@ -30,8 +30,11 @@ macro_rules! trace_ingest_item {
 
 #[allow(unused)]
 macro_rules! trace2 {
-    ($($arg:tt)*) => {};
-    ($($arg:tt)*) => { trace!($($arg)*); };
+    ($($arg:tt)*) => {
+        if false {
+            trace!($($arg)*);
+        }
+    };
 }
 
 pub trait TimeBinnerCommonV0Trait {

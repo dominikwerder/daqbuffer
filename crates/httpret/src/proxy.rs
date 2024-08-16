@@ -242,20 +242,21 @@ async fn proxy_http_service_inner(
     } else if let Some(h) = super::api4::docs::DocsHandler::handler(&req) {
         Ok(h.handle(req, ctx).await?)
     } else {
-        use std::fmt::Write;
-        let mut body = String::new();
-        let out = &mut body;
-        write!(out, "<pre>\n")?;
-        write!(out, "METHOD {:?}<br>\n", req.method())?;
-        write!(out, "URI    {:?}<br>\n", req.uri())?;
-        write!(out, "HOST   {:?}<br>\n", req.uri().host())?;
-        write!(out, "PORT   {:?}<br>\n", req.uri().port())?;
-        write!(out, "PATH   {:?}<br>\n", req.uri().path())?;
-        write!(out, "QUERY  {:?}<br>\n", req.uri().query())?;
-        for (hn, hv) in req.headers() {
-            write!(out, "HEADER {hn:?}: {hv:?}<br>\n")?;
-        }
-        write!(out, "</pre>\n")?;
+        let headers: std::collections::BTreeMap<String, String> = req
+            .headers()
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_str().map_or(String::new(), |x| x.to_string())))
+            .collect();
+        let res = serde_json::json!({
+            "method": req.method().to_string(),
+            "uri": req.uri().to_string(),
+            "host": req.uri().host().unwrap_or(""),
+            "port":  req.uri().port().map_or(String::new(), |x| x.to_string()),
+            "path": req.uri().path(),
+            "query": req.uri().query(),
+            "headers": headers,
+        });
+        let body = serde_json::to_string(&res).unwrap_or("{}".into());
         Ok(response(StatusCode::NOT_FOUND).body(body_string(body))?)
     }
 }
@@ -513,18 +514,20 @@ where
             return Ok(response_err_msg(StatusCode::BAD_REQUEST, msg)?);
         }
     };
-    debug!("proxy_backend_query  {:?}  {:?}", query, req.uri());
+    trace!("proxy_backend_query  {:?}  {:?}", query, req.uri());
     let timeout = query.timeout();
     let timeout_next = timeout.saturating_sub(Duration::from_millis(1000));
-    debug!("timeout {timeout:?}  timeout_next {timeout_next:?}");
+    trace!("timeout {timeout:?}  timeout_next {timeout_next:?}");
     query.set_timeout(timeout_next);
     let query = query;
     let backend = query.backend();
     let uri_path = proxy_backend_query_helper_uri_path(req.uri().path(), &url);
-    debug!("uri_path {uri_path}");
+    trace!("uri_path {uri_path}");
     let query_host = get_query_host_for_backend(backend, proxy_config)?;
     let mut url = Url::parse(&format!("{}{}", query_host, uri_path))?;
+    trace!("query_host {query_host}  uri_path {uri_path}  query {query:?}");
     query.append_to_url(&mut url);
+    trace!("url {:?}", url);
     proxy_backend_query_inner(req.headers(), url, timeout, ctx, proxy_config).await
 }
 

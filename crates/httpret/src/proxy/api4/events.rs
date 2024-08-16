@@ -68,7 +68,7 @@ impl EventsHandler {
         let url = req_uri_to_url(&head.uri)?;
         let pairs = get_url_query_pairs(&url);
         let evq = PlainEventsQuery::from_pairs(&pairs)?;
-        debug!("{evq:?}");
+        debug!("{:?}", evq);
         let query_host = get_query_host_for_backend(evq.backend(), proxy_config)?;
         let url_str = format!(
             "{}{}",

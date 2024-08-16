@@ -25,6 +25,15 @@ use std::task::Context;
 use std::task::Poll;
 
 #[allow(unused)]
+macro_rules! trace_fetch {
+    ($($arg:tt)*) => {
+        if true {
+            trace!($($arg)*);
+        }
+    };
+}
+
+#[allow(unused)]
 macro_rules! trace_emit {
     ($($arg:tt)*) => {
         if true {
@@ -46,11 +55,13 @@ macro_rules! warn_item {
 pub struct EventReadOpts {
     pub with_values: bool,
     pub enum_as_strings: bool,
+    pub one_before: bool,
 }
 
 impl EventReadOpts {
-    pub fn new(with_values: bool, enum_as_strings: bool) -> Self {
+    pub fn new(one_before: bool, with_values: bool, enum_as_strings: bool) -> Self {
         Self {
+            one_before,
             with_values,
             enum_as_strings,
         }
@@ -84,14 +95,20 @@ enum ReadingState {
     FetchEvents(FetchEvents),
 }
 
-struct Reading {
+struct ReadingBck {
+    scyqueue: ScyllaQueue,
+    reading_state: ReadingState,
+}
+
+struct ReadingFwd {
     scyqueue: ScyllaQueue,
     reading_state: ReadingState,
 }
 
 enum State {
     Begin,
-    Reading(Reading),
+    ReadingBck(ReadingBck),
+    ReadingFwd(ReadingFwd),
     InputDone,
     Done,
 }
@@ -105,6 +122,8 @@ pub struct EventsStreamRt {
     state: State,
     scyqueue: ScyllaQueue,
     msp_inp: MspStreamRt,
+    msp_buf: VecDeque<TsMs>,
+    msp_buf_bck: VecDeque<TsMs>,
     out: VecDeque<Box<dyn Events>>,
     ts_seen_max: u64,
 }
@@ -129,29 +148,43 @@ impl EventsStreamRt {
             state: State::Begin,
             scyqueue,
             msp_inp,
+            msp_buf: VecDeque::new(),
+            msp_buf_bck: VecDeque::new(),
             out: VecDeque::new(),
             ts_seen_max: 0,
         }
     }
 
+    fn make_msp_read_fut(
+        msp_inp: &mut MspStreamRt,
+    ) -> Pin<Box<dyn Future<Output = Option<Result<TsMs, crate::events2::msp::Error>>> + Send>> {
+        trace_fetch!("make_msp_read_fut");
+        let msp_inp = unsafe {
+            let ptr = msp_inp as *mut MspStreamRt;
+            &mut *ptr
+        };
+        let fut = Box::pin(msp_inp.next());
+        fut
+    }
+
     fn make_read_events_fut(
         &mut self,
         ts_msp: TsMs,
+        bck: bool,
         scyqueue: ScyllaQueue,
     ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>> {
-        let fwd = true;
         let opts = ReadNextValuesOpts::new(
             self.rt.clone(),
             self.series.clone(),
             ts_msp,
             self.range.clone(),
-            fwd,
+            !bck,
             self.readopts.clone(),
             scyqueue,
         );
         let scalar_type = self.ch_conf.scalar_type().clone();
         let shape = self.ch_conf.shape().clone();
-        debug!("make_read_events_fut  {:?}  {:?}", shape, scalar_type);
+        trace_fetch!("make_read_events_fut  bck {}  {:?}  {:?}", bck, shape, scalar_type);
         let fut = async move {
             let ret = match &shape {
                 Shape::Scalar => match &scalar_type {
@@ -168,9 +201,10 @@ impl EventsStreamRt {
                     ScalarType::BOOL => read_next_values::<bool>(opts).await,
                     ScalarType::STRING => read_next_values::<String>(opts).await,
                     ScalarType::Enum => {
-                        debug!(
+                        trace_fetch!(
                             "make_read_events_fut  {:?}  {:?}  ------------- good",
-                            shape, scalar_type
+                            shape,
+                            scalar_type
                         );
                         read_next_values::<EnumVariant>(opts).await
                     }
@@ -205,6 +239,60 @@ impl EventsStreamRt {
         };
         Box::pin(fut)
     }
+
+    fn transition_to_bck_read(&mut self) {
+        trace_fetch!("transition_to_bck_read");
+        for ts in self.msp_buf.iter() {
+            if ts.ns() < self.range.beg() {
+                self.msp_buf_bck.push_front(ts.clone());
+            }
+        }
+        let c = self.msp_buf.iter().take_while(|x| x.ns() < self.range.beg()).count();
+        let g = c.max(1) - 1;
+        for _ in 0..g {
+            self.msp_buf.pop_front();
+        }
+        self.setup_bck_read();
+    }
+
+    fn setup_bck_read(&mut self) {
+        trace_fetch!("setup_bck_read");
+        if let Some(ts) = self.msp_buf_bck.pop_front() {
+            let scyqueue = self.scyqueue.clone();
+            let fut = self.make_read_events_fut(ts, true, scyqueue);
+            self.state = State::ReadingBck(ReadingBck {
+                scyqueue: self.scyqueue.clone(),
+                reading_state: ReadingState::FetchEvents(FetchEvents { fut }),
+            });
+        } else {
+            self.transition_to_fwd_read();
+        }
+    }
+
+    fn transition_to_fwd_read(&mut self) {
+        trace_fetch!("transition_to_fwd_read");
+        self.msp_buf_bck = VecDeque::new();
+        self.setup_fwd_read();
+    }
+
+    fn setup_fwd_read(&mut self) {
+        if let Some(ts) = self.msp_buf.pop_front() {
+            trace_fetch!("setup_fwd_read  {ts}");
+            let scyqueue = self.scyqueue.clone();
+            let fut = self.make_read_events_fut(ts, false, scyqueue);
+            self.state = State::ReadingFwd(ReadingFwd {
+                scyqueue: self.scyqueue.clone(),
+                reading_state: ReadingState::FetchEvents(FetchEvents { fut }),
+            });
+        } else {
+            trace_fetch!("setup_fwd_read  no msp");
+            let fut = Self::make_msp_read_fut(&mut self.msp_inp);
+            self.state = State::ReadingFwd(ReadingFwd {
+                scyqueue: self.scyqueue.clone(),
+                reading_state: ReadingState::FetchMsp(FetchMsp { fut }),
+            });
+        }
+    }
 }
 
 impl Stream for EventsStreamRt {
@@ -220,7 +308,7 @@ impl Stream for EventsStreamRt {
                     break Ready(Some(Err(Error::BadBatch)));
                 }
                 if let Some(item_min) = item.ts_min() {
-                    if item_min < self.range.beg().ns() {
+                    if !self.readopts.one_before && item_min < self.range.beg().ns() {
                         warn_item!(
                             "{}out of range error A  {}  {:?}",
                             "\n\n--------------------------\n",
@@ -284,29 +372,84 @@ impl Stream for EventsStreamRt {
             }
             break match &mut self.state {
                 State::Begin => {
-                    let msp_inp = unsafe {
-                        let ptr = (&mut self.msp_inp) as *mut MspStreamRt;
-                        &mut *ptr
-                    };
-                    let fut = Box::pin(msp_inp.next());
-                    self.state = State::Reading(Reading {
-                        scyqueue: self.scyqueue.clone(),
-                        reading_state: ReadingState::FetchMsp(FetchMsp { fut }),
-                    });
+                    if self.readopts.one_before {
+                        trace_fetch!("State::Begin  Bck");
+                        let fut = Self::make_msp_read_fut(&mut self.msp_inp);
+                        self.state = State::ReadingBck(ReadingBck {
+                            scyqueue: self.scyqueue.clone(),
+                            reading_state: ReadingState::FetchMsp(FetchMsp { fut }),
+                        });
+                    } else {
+                        trace_fetch!("State::Begin  Fwd");
+                        let fut = Self::make_msp_read_fut(&mut self.msp_inp);
+                        self.state = State::ReadingFwd(ReadingFwd {
+                            scyqueue: self.scyqueue.clone(),
+                            reading_state: ReadingState::FetchMsp(FetchMsp { fut }),
+                        });
+                    }
                     continue;
                 }
-                State::Reading(st) => match &mut st.reading_state {
+                State::ReadingBck(st) => match &mut st.reading_state {
                     ReadingState::FetchMsp(st2) => match st2.fut.poll_unpin(cx) {
                         Ready(Some(Ok(ts))) => {
-                            let scyqueue = st.scyqueue.clone();
-                            let fut = self.make_read_events_fut(ts, scyqueue);
-                            if let State::Reading(st) = &mut self.state {
-                                st.reading_state = ReadingState::FetchEvents(FetchEvents { fut });
-                                continue;
+                            trace_fetch!("ReadingBck  FetchMsp  {:?}", ts);
+                            self.msp_buf.push_back(ts);
+                            if ts.ns() >= self.range.beg() {
+                                self.transition_to_bck_read();
                             } else {
-                                self.state = State::Done;
-                                Ready(Some(Err(Error::Logic)))
+                                let fut = Self::make_msp_read_fut(&mut self.msp_inp);
+                                self.state = State::ReadingBck(ReadingBck {
+                                    scyqueue: self.scyqueue.clone(),
+                                    reading_state: ReadingState::FetchMsp(FetchMsp { fut }),
+                                });
                             }
+                            continue;
+                        }
+                        Ready(Some(Err(e))) => Ready(Some(Err(e.into()))),
+                        Ready(None) => {
+                            self.transition_to_bck_read();
+                            continue;
+                        }
+                        Pending => Pending,
+                    },
+                    ReadingState::FetchEvents(st2) => match st2.fut.poll_unpin(cx) {
+                        Ready(Ok(mut x)) => {
+                            use items_2::merger::Mergeable;
+                            trace_fetch!("ReadingBck  FetchEvents  got len {:?}", x.len());
+                            if let Some(ix) = Mergeable::find_highest_index_lt(&x, self.range.beg().ns()) {
+                                trace_fetch!("ReadingBck  FetchEvents  find_highest_index_lt {:?}", ix);
+                                let mut y = Mergeable::new_empty(&x);
+                                match Mergeable::drain_into(&mut x, &mut y, (ix, 1 + ix)) {
+                                    Ok(()) => {
+                                        trace_fetch!("ReadingBck  FetchEvents  drained y len {:?}", y.len());
+                                        self.out.push_back(y);
+                                        self.transition_to_fwd_read();
+                                        continue;
+                                    }
+                                    Err(e) => {
+                                        self.state = State::Done;
+                                        Ready(Some(Err(e.into())))
+                                    }
+                                }
+                            } else {
+                                trace_fetch!("ReadingBck  FetchEvents  find_highest_index_lt None");
+                                self.setup_bck_read();
+                                continue;
+                            }
+                        }
+                        Ready(Err(e)) => {
+                            self.state = State::Done;
+                            Ready(Some(Err(e.into())))
+                        }
+                        Pending => Pending,
+                    },
+                },
+                State::ReadingFwd(st) => match &mut st.reading_state {
+                    ReadingState::FetchMsp(st2) => match st2.fut.poll_unpin(cx) {
+                        Ready(Some(Ok(ts))) => {
+                            self.msp_buf.push_back(ts);
+                            self.setup_fwd_read();
+                            continue;
                         }
                         Ready(Some(Err(e))) => Ready(Some(Err(e.into()))),
                         Ready(None) => {
@@ -318,18 +461,8 @@ impl Stream for EventsStreamRt {
                     ReadingState::FetchEvents(st2) => match st2.fut.poll_unpin(cx) {
                         Ready(Ok(x)) => {
                             self.out.push_back(x);
-                            let msp_inp = unsafe {
-                                let ptr = (&mut self.msp_inp) as *mut MspStreamRt;
-                                &mut *ptr
-                            };
-                            let fut = Box::pin(msp_inp.next());
-                            if let State::Reading(st) = &mut self.state {
-                                st.reading_state = ReadingState::FetchMsp(FetchMsp { fut });
-                                continue;
-                            } else {
-                                self.state = State::Done;
-                                Ready(Some(Err(Error::Logic)))
-                            }
+                            self.setup_fwd_read();
+                            continue;
                         }
                         Ready(Err(e)) => {
                             self.state = State::Done;

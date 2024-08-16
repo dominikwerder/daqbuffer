@@ -59,6 +59,7 @@ pub struct PlainEventsQuery {
     log_level: String,
     #[serde(default)]
     use_rt: Option<RetentionTime>,
+    querymarker: String,
 }
 
 impl PlainEventsQuery {
@@ -85,6 +86,7 @@ impl PlainEventsQuery {
             create_errors: Vec::new(),
             log_level: String::new(),
             use_rt: None,
+            querymarker: String::new(),
         }
     }
 
@@ -97,7 +99,7 @@ impl PlainEventsQuery {
     }
 
     pub fn one_before_range(&self) -> bool {
-        self.transform.need_one_before_range()
+        self.one_before_range || self.transform.need_one_before_range()
     }
 
     pub fn transform(&self) -> &TransformQuery {
@@ -296,6 +298,7 @@ impl FromUrl for PlainEventsQuery {
                     .map(Some)
                     .map_err(|_| Error::with_public_msg_no_trace(format!("can not parse useRt: {}", k)))
             })?,
+            querymarker: pairs.get("querymarker").map_or(String::new(), |x| x.to_string()),
         };
         Ok(ret)
     }
@@ -308,12 +311,10 @@ impl AppendToUrl for PlainEventsQuery {
             SeriesRange::PulseRange(_) => todo!(),
         }
         self.channel.append_to_url(url);
-        {
-            let mut g = url.query_pairs_mut();
-            if self.one_before_range() {
-                g.append_pair("oneBeforeRange", "true");
-            }
-        }
+        let mut g = url.query_pairs_mut();
+        g.append_pair("oneBeforeRange", &self.one_before_range().to_string());
+        g.append_pair("querymarker", &self.querymarker);
+        drop(g);
         self.transform.append_to_url(url);
         let mut g = url.query_pairs_mut();
         if let Some(x) = &self.timeout {
@@ -365,15 +366,22 @@ impl AppendToUrl for PlainEventsQuery {
 pub struct EventsSubQuerySelect {
     ch_conf: ChannelTypeConfigGen,
     range: SeriesRange,
+    one_before_range: bool,
     transform: TransformQuery,
     wasm1: Option<String>,
 }
 
 impl EventsSubQuerySelect {
-    pub fn new(ch_info: ChannelTypeConfigGen, range: SeriesRange, transform: TransformQuery) -> Self {
+    pub fn new(
+        ch_info: ChannelTypeConfigGen,
+        range: SeriesRange,
+        one_before_range: bool,
+        transform: TransformQuery,
+    ) -> Self {
         Self {
             ch_conf: ch_info,
             range,
+            one_before_range,
             transform,
             wasm1: None,
         }
@@ -508,6 +516,10 @@ impl EventsSubQuery {
 
     pub fn range(&self) -> &SeriesRange {
         &self.select.range
+    }
+
+    pub fn need_one_before_range(&self) -> bool {
+        self.select.one_before_range
     }
 
     pub fn transform(&self) -> &TransformQuery {

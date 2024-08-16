@@ -16,12 +16,47 @@ use items_2::merger::Mergeable;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::range::evrange::SeriesRange;
+use netpod::stream_impl_tracer::StreamImplTracer;
 use netpod::ttl::RetentionTime;
 use netpod::ChConf;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
+
+#[allow(unused)]
+macro_rules! trace_fetch {
+    ($($arg:tt)*) => {
+        if true {
+            trace!($($arg)*);
+        }
+    };
+}
+
+#[allow(unused)]
+macro_rules! trace_emit {
+    ($($arg:tt)*) => {
+        if true {
+            trace!($($arg)*);
+        }
+    };
+}
+
+macro_rules! tracer_poll_enter {
+    ($self:expr) => {
+        if false && $self.tracer.poll_enter() {
+            return Ready(Some(Err(Error::LimitPoll)));
+        }
+    };
+}
+
+macro_rules! tracer_loop_enter {
+    ($self:expr) => {
+        if false && $self.tracer.loop_enter() {
+            return Ready(Some(Err(Error::LimitLoop)));
+        }
+    };
+}
 
 #[derive(Debug, ThisError)]
 #[cstm(name = "EventsMergeRt")]
@@ -31,6 +66,8 @@ pub enum Error {
     Logic,
     OrderMin,
     OrderMax,
+    LimitPoll,
+    LimitLoop,
 }
 
 #[allow(unused)]
@@ -116,10 +153,12 @@ pub struct MergeRts {
     out: VecDeque<ChannelEvents>,
     buf_before: Option<ChannelEvents>,
     ts_seen_max: u64,
+    tracer: StreamImplTracer,
 }
 
 impl MergeRts {
     pub fn new(ch_conf: ChConf, range: ScyllaSeriesRange, readopts: EventReadOpts, scyqueue: ScyllaQueue) -> Self {
+        info!("MergeRts  readopts {readopts:?}");
         Self {
             ch_conf,
             range_mt: range.clone(),
@@ -137,6 +176,7 @@ impl MergeRts {
             out: VecDeque::new(),
             buf_before: None,
             ts_seen_max: 0,
+            tracer: StreamImplTracer::new("MergeRts".into(), 2000, 2000),
         }
     }
 
@@ -145,7 +185,7 @@ impl MergeRts {
         let limbuf = &VecDeque::new();
         let inpdst = &mut self.inp_st;
         let range = Self::constrained_range(&self.range, limbuf);
-        debug!("setup_first_st  constrained beg  {}", range.beg().ns());
+        trace_fetch!("setup_first_st  constrained beg  {}", range.beg().ns());
         let tsbeg = range.beg();
         let inp = EventsStreamRt::new(
             rt,
@@ -164,7 +204,7 @@ impl MergeRts {
         let inpdst = &mut self.inp_mt;
         let range = Self::constrained_range(&self.range_mt, limbuf);
         self.range_lt = range.clone();
-        debug!("setup_first_mt  constrained beg  {}", range.beg().ns());
+        trace_fetch!("setup_first_mt  constrained beg  {}", range.beg().ns());
         let tsbeg = range.beg();
         let inp = EventsStreamRt::new(
             rt,
@@ -182,7 +222,7 @@ impl MergeRts {
         let limbuf = &self.buf_mt;
         let inpdst = &mut self.inp_lt;
         let range = Self::constrained_range(&self.range_lt, limbuf);
-        debug!("setup_first_lt  constrained beg  {}", range.beg().ns());
+        trace_fetch!("setup_first_lt  constrained beg  {}", range.beg().ns());
         let tsbeg = range.beg();
         let inp = EventsStreamRt::new(
             rt,
@@ -196,37 +236,35 @@ impl MergeRts {
     }
 
     fn setup_read_st(&mut self) -> ReadEvents {
-        let stream = unsafe { &mut *(self.inp_st.as_mut().unwrap().as_mut() as *mut TI) };
-        let fut = Box::pin(stream.next());
-        ReadEvents { fut }
+        trace_fetch!("setup_read_st");
+        Self::setup_read_any(&mut self.inp_st)
     }
 
     fn setup_read_mt(&mut self) -> ReadEvents {
-        let stream = unsafe { &mut *(self.inp_mt.as_mut().unwrap().as_mut() as *mut TI) };
-        let fut = Box::pin(stream.next());
-        ReadEvents { fut }
+        trace_fetch!("setup_read_mt");
+        Self::setup_read_any(&mut self.inp_mt)
     }
 
     fn setup_read_lt(&mut self) -> ReadEvents {
-        let stream = unsafe { &mut *(self.inp_lt.as_mut().unwrap().as_mut() as *mut TI) };
-        let fut = Box::pin(stream.next());
-        ReadEvents { fut }
+        trace_fetch!("setup_read_lt");
+        Self::setup_read_any(&mut self.inp_lt)
     }
 
     fn setup_read_any(inp: &mut Option<Box<TI>>) -> ReadEvents {
+        trace_fetch!("setup_read_any");
         let stream = unsafe { &mut *(inp.as_mut().unwrap().as_mut() as *mut TI) };
         let fut = Box::pin(stream.next());
         ReadEvents { fut }
     }
 
     fn constrained_range(full: &ScyllaSeriesRange, buf: &VecDeque<ChannelEvents>) -> ScyllaSeriesRange {
-        debug!("constrained_range  {:?}  {:?}", full, buf.front());
+        trace_fetch!("constrained_range  {:?}  {:?}", full, buf.front());
         if let Some(e) = buf.front() {
             if let Some(ts) = e.ts_min() {
                 let nrange = NanoRange::from((full.beg().ns(), ts));
                 ScyllaSeriesRange::from(&SeriesRange::from(nrange))
             } else {
-                debug!("no ts even though should not have empty buffers");
+                debug!("constrained_range  no ts even though should not have empty buffers");
                 full.clone()
             }
         } else {
@@ -235,6 +273,7 @@ impl MergeRts {
     }
 
     fn handle_first_st(&mut self, mut before: ChannelEvents, bulk: ChannelEvents) {
+        trace_fetch!("handle_first_st");
         Self::move_latest_to_before_buf(&mut before, &mut self.buf_before);
         self.buf_st.push_back(bulk);
         self.setup_first_mt();
@@ -242,6 +281,7 @@ impl MergeRts {
     }
 
     fn handle_first_mt(&mut self, mut before: ChannelEvents, bulk: ChannelEvents) {
+        trace_fetch!("handle_first_mt");
         Self::move_latest_to_before_buf(&mut before, &mut self.buf_before);
         self.buf_mt.push_back(bulk);
         self.setup_first_lt();
@@ -249,25 +289,37 @@ impl MergeRts {
     }
 
     fn handle_first_lt(&mut self, mut before: ChannelEvents, bulk: ChannelEvents) {
+        trace_fetch!("handle_first_lt");
         Self::move_latest_to_before_buf(&mut before, &mut self.buf_before);
         self.buf_lt.push_back(bulk);
+        self.push_out_one_before();
         let buf = core::mem::replace(&mut self.buf_lt, VecDeque::new());
         self.state = State::ReadingLt(None, buf, self.inp_lt.take());
     }
 
     fn move_latest_to_before_buf(before: &mut ChannelEvents, buf: &mut Option<ChannelEvents>) {
+        trace_fetch!("move_latest_to_before_buf");
         if buf.is_none() {
             *buf = Some(before.new_empty());
         }
         let buf = buf.as_mut().unwrap();
         if let Some(tsn) = before.ts_max() {
-            if let Some(tse) = buf.ts_max() {
-                if tsn > tse {
-                    let n = before.len();
-                    buf.clear();
-                    before.drain_into(buf, (n - 1, n)).unwrap();
-                }
+            if buf.ts_max().map_or(true, |x| tsn > x) {
+                let n = before.len();
+                buf.clear();
+                before.drain_into(buf, (n - 1, n)).unwrap();
             }
+        }
+    }
+
+    fn push_out_one_before(&mut self) {
+        if let Some(buf) = self.buf_before.take() {
+            trace_fetch!("push_out_one_before  len {len:?}", len = buf.len());
+            if buf.len() != 0 {
+                self.out.push_back(buf);
+            }
+        } else {
+            trace_fetch!("push_out_one_before  no buffer");
         }
     }
 }
@@ -277,13 +329,15 @@ impl Stream for MergeRts {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        tracer_poll_enter!(self);
         let mut out2 = VecDeque::new();
         loop {
+            tracer_loop_enter!(self);
             while let Some(x) = out2.pop_front() {
                 self.out.push_back(x);
             }
             if let Some(item) = self.out.pop_front() {
-                debug!("emit item  {}  {:?}", items_0::Events::verify(&item), item);
+                trace_emit!("emit item  {}  {:?}", items_0::Events::verify(&item), item);
                 if items_0::Events::verify(&item) != true {
                     debug!("{}bad item {:?}", "\n\n--------------------------\n", item);
                     self.state = State::Done;
@@ -310,6 +364,9 @@ impl Stream for MergeRts {
                         self.ts_seen_max = item_max;
                     }
                 }
+                if let Some(ix) = item.find_highest_index_lt(self.range.beg().ns()) {
+                    trace_fetch!("see item before range  ix {ix}");
+                }
                 break Ready(Some(Ok(item)));
             }
             break match &mut self.state {
@@ -321,7 +378,7 @@ impl Stream for MergeRts {
                 State::FetchFirstSt(st2) => match st2.fut.poll_unpin(cx) {
                     Ready(Some(Ok(x))) => match x {
                         firstbefore::Output::First(before, bulk) => {
-                            debug!("have first from ST");
+                            trace_fetch!("have first from ST");
                             self.handle_first_st(before, bulk);
                             continue;
                         }
@@ -336,7 +393,7 @@ impl Stream for MergeRts {
                         Ready(Some(Err(e.into())))
                     }
                     Ready(None) => {
-                        debug!("no first from ST");
+                        trace_fetch!("no first from ST");
                         self.inp_st = None;
                         self.setup_first_mt();
                         self.state = State::FetchFirstMt(self.setup_read_mt());
@@ -347,7 +404,7 @@ impl Stream for MergeRts {
                 State::FetchFirstMt(st2) => match st2.fut.poll_unpin(cx) {
                     Ready(Some(Ok(x))) => match x {
                         firstbefore::Output::First(before, bulk) => {
-                            debug!("have first from MT");
+                            trace_fetch!("have first from MT");
                             self.handle_first_mt(before, bulk);
                             continue;
                         }
@@ -362,7 +419,7 @@ impl Stream for MergeRts {
                         Ready(Some(Err(e.into())))
                     }
                     Ready(None) => {
-                        debug!("no first from MT");
+                        trace_fetch!("no first from MT");
                         self.inp_mt = None;
                         self.setup_first_lt();
                         self.state = State::FetchFirstLt(self.setup_read_lt());
@@ -373,7 +430,7 @@ impl Stream for MergeRts {
                 State::FetchFirstLt(st2) => match st2.fut.poll_unpin(cx) {
                     Ready(Some(Ok(x))) => match x {
                         firstbefore::Output::First(before, bulk) => {
-                            debug!("have first from LT");
+                            trace_fetch!("have first from LT");
                             self.handle_first_lt(before, bulk);
                             continue;
                         }
@@ -388,8 +445,9 @@ impl Stream for MergeRts {
                         Ready(Some(Err(e.into())))
                     }
                     Ready(None) => {
-                        debug!("no first from LT");
+                        trace_fetch!("no first from LT");
                         self.inp_lt = None;
+                        self.push_out_one_before();
                         let buf = core::mem::replace(&mut self.buf_lt, VecDeque::new());
                         self.state = State::ReadingLt(None, buf, self.inp_lt.take());
                         continue;
@@ -433,7 +491,7 @@ impl Stream for MergeRts {
                         self.state = State::ReadingLt(Some(Self::setup_read_any(inp)), buf, inp.take());
                         continue;
                     } else {
-                        debug!("transition ReadingLt to ReadingMt");
+                        trace_emit!("transition ReadingLt to ReadingMt");
                         let buf = core::mem::replace(&mut self.buf_mt, VecDeque::new());
                         self.state = State::ReadingMt(None, buf, self.inp_mt.take());
                         continue;
@@ -476,7 +534,7 @@ impl Stream for MergeRts {
                         self.state = State::ReadingMt(Some(Self::setup_read_any(inp)), buf, inp.take());
                         continue;
                     } else {
-                        debug!("transition ReadingMt to ReadingSt");
+                        trace_emit!("transition ReadingMt to ReadingSt");
                         let buf = core::mem::replace(&mut self.buf_st, VecDeque::new());
                         self.state = State::ReadingSt(None, buf, self.inp_st.take());
                         continue;
@@ -519,7 +577,7 @@ impl Stream for MergeRts {
                         self.state = State::ReadingSt(Some(Self::setup_read_any(inp)), buf, inp.take());
                         continue;
                     } else {
-                        debug!("fully done");
+                        trace_emit!("fully done");
                         Ready(None)
                     }
                 }

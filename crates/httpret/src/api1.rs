@@ -765,6 +765,7 @@ impl DataApiPython3DataStream {
         let select = EventsSubQuerySelect::new(
             ChannelTypeConfigGen::SfDatabuffer(fetch_info.clone()),
             self.range.clone().into(),
+            false,
             TransformQuery::for_event_blobs(),
         );
         let log_level = String::new();

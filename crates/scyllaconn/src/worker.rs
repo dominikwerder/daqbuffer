@@ -159,7 +159,6 @@ impl ScyllaWorker {
         let stmts = Arc::new(stmts);
         info!("scylla worker  PREPARE DONE");
         loop {
-            info!("scylla worker  WAIT FOR JOB");
             let x = self.rx.recv().await;
             let job = match x {
                 Ok(x) => x,
@@ -169,14 +168,12 @@ impl ScyllaWorker {
             };
             match job {
                 Job::FindTsMsp(rt, series, range, bck, tx) => {
-                    info!("scylla worker  Job::FindTsMsp");
                     let res = crate::events2::msp::find_ts_msp(&rt, series, range, bck, &stmts, &scy).await;
                     if tx.send(res.map_err(Into::into)).await.is_err() {
                         // TODO count for stats
                     }
                 }
                 Job::ReadNextValues(job) => {
-                    info!("scylla worker  Job::ReadNextValues");
                     let fut = (job.futgen)(scy.clone(), stmts.clone());
                     let res = fut.await;
                     if job.tx.send(res.map_err(Into::into)).await.is_err() {
@@ -184,7 +181,6 @@ impl ScyllaWorker {
                     }
                 }
                 Job::AccountingReadTs(rt, ts, tx) => {
-                    info!("scylla worker  Job::AccountingReadTs");
                     let ks = match &rt {
                         RetentionTime::Short => &self.scyconf_st.keyspace,
                         RetentionTime::Medium => &self.scyconf_mt.keyspace,

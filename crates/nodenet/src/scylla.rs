@@ -31,13 +31,12 @@ pub async fn scylla_channel_event_stream(
     debug!("scylla_channel_event_stream  {evq:?}");
     // TODO depends in general on the query
     // TODO why both in PlainEventsQuery and as separate parameter? Check other usages.
-    // let do_one_before_range = evq.need_one_before_range();
-    let do_one_before_range = false;
-    let series = SeriesId::new(chconf.series());
-    let scalar_type = chconf.scalar_type();
-    let shape = chconf.shape();
-    let do_test_stream_error = false;
-    let readopts = EventReadOpts::new(evq.need_value_data(), evq.transform().enum_as_string().unwrap_or(false));
+    let _series = SeriesId::new(chconf.series());
+    let readopts = EventReadOpts::new(
+        evq.need_one_before_range(),
+        evq.need_value_data(),
+        evq.transform().enum_as_string().unwrap_or(false),
+    );
     let stream: Pin<Box<dyn Stream<Item = _> + Send>> = if let Some(rt) = evq.use_rt() {
         let x = scyllaconn::events2::events::EventsStreamRt::new(
             rt,

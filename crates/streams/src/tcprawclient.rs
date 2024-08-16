@@ -200,6 +200,7 @@ where
 pub fn make_sub_query<SUB>(
     ch_conf: ChannelTypeConfigGen,
     range: SeriesRange,
+    one_before_range: bool,
     transform: TransformQuery,
     test_do_wasm: Option<&str>,
     sub: SUB,
@@ -209,7 +210,7 @@ pub fn make_sub_query<SUB>(
 where
     SUB: Into<EventsSubQuerySettings>,
 {
-    let mut select = EventsSubQuerySelect::new(ch_conf, range, transform);
+    let mut select = EventsSubQuerySelect::new(ch_conf, range, one_before_range, transform);
     if let Some(wasm1) = test_do_wasm {
         select.set_wasm1(wasm1.into());
     }

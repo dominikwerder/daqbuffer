@@ -110,6 +110,7 @@ where
                             item
                         }
                     } else {
+                        trace!("discarding events  len {:?}", ilge - 1);
                         let mut dummy = item.new_empty();
                         item.drain_into(&mut dummy, (0, ilge - 1))
                             .map_err(|e| format!("{e} unexpected MergeError while remove of items"))?;
