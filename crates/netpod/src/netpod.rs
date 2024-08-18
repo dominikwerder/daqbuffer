@@ -118,9 +118,15 @@ pub const DATETIME_FMT_9MS: &str = "%Y-%m-%dT%H:%M:%S.%9fZ";
 const TEST_BACKEND: &str = "testbackend-00";
 
 #[allow(non_upper_case_globals)]
-pub const trigger: [&'static str; 1] = [
+pub const trigger: [&'static str; 2] = [
     //
     "S30CB05-VMCP-A010:PRESSURE",
+    "ATSRF-CAV:TUN-DETUNING-REL-ACT",
+];
+
+pub const TRACE_SERIES_ID: [u64; 1] = [
+    //
+    4985969403507503043,
 ];
 
 pub struct OnDrop<F>
@@ -1784,8 +1790,8 @@ impl TsNano {
         Self(ns)
     }
 
-    pub const fn from_ms(ns: u64) -> Self {
-        Self(1000000 * ns)
+    pub const fn from_ms(ms: u64) -> Self {
+        Self(1000000 * ms)
     }
 
     pub const fn ns(&self) -> u64 {
@@ -1829,6 +1835,10 @@ impl TsNano {
         let x = tsunix.as_secs() * 1000000000 + tsunix.subsec_nanos() as u64;
         Self::from_ns(x)
     }
+
+    pub fn fmt(&self) -> TsNanoFmt {
+        TsNanoFmt { ts: self.clone() }
+    }
 }
 
 impl fmt::Debug for TsNano {
@@ -1850,6 +1860,25 @@ impl fmt::Display for TsNano {
             .earliest()
             .unwrap_or(Default::default());
         ts.format(DATETIME_FMT_3MS).fmt(fmt)
+    }
+}
+
+pub struct TsNanoFmt {
+    ts: TsNano,
+}
+
+impl fmt::Display for TsNanoFmt {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        chrono::DateTime::from_timestamp_millis(self.ts.ms() as i64)
+            .unwrap()
+            .format(DATETIME_FMT_3MS)
+            .fmt(fmt)
+    }
+}
+
+impl fmt::Debug for TsNanoFmt {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Display::fmt(self, fmt)
     }
 }
 
@@ -2677,6 +2706,20 @@ impl TsMs {
         let lsp = DtMs(self.0 - msp.0);
         (msp, lsp)
     }
+
+    pub fn bump_epsilon(&self) -> TsMs {
+        Self(self.0 + 1)
+    }
+
+    pub fn fmt(&self) -> TsMsFmt {
+        TsMsFmt { ts: self.clone() }
+    }
+}
+
+impl AsRef<TsMs> for TsMs {
+    fn as_ref(&self) -> &TsMs {
+        &self
+    }
 }
 
 impl fmt::Display for TsMs {
@@ -2690,6 +2733,45 @@ impl core::ops::Sub for TsMs {
 
     fn sub(self, rhs: Self) -> Self::Output {
         DtMs(self.0.saturating_sub(rhs.0))
+    }
+}
+
+pub struct TsMsFmt {
+    ts: TsMs,
+}
+
+impl fmt::Debug for TsMsFmt {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        chrono::DateTime::from_timestamp_millis(self.ts.ms() as i64)
+            .unwrap()
+            .format(DATETIME_FMT_3MS)
+            .fmt(fmt)
+    }
+}
+
+impl fmt::Display for TsMsFmt {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        chrono::DateTime::from_timestamp_millis(self.ts.ms() as i64)
+            .unwrap()
+            .format(DATETIME_FMT_3MS)
+            .fmt(fmt)
+    }
+}
+
+pub struct TsMsVecFmt<I>(pub I);
+
+impl<I, T> fmt::Display for TsMsVecFmt<I>
+where
+    I: Clone + IntoIterator<Item = T>,
+    T: AsRef<TsMs>,
+{
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "[")?;
+        for ts in self.0.clone().into_iter() {
+            write!(fmt, "  {}", ts.as_ref().fmt())?;
+        }
+        write!(fmt, "  ]")?;
+        Ok(())
     }
 }
 

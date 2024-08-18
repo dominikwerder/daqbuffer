@@ -29,11 +29,15 @@ pub struct NanoRange {
 }
 
 impl fmt::Debug for NanoRange {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         if true {
             let beg = TsNano(self.beg);
             let end = TsNano(self.end);
-            f.debug_struct("NanoRange")
+            write!(fmt, "NanoRange {{ beg: {}, end: {} }}", beg.fmt(), end.fmt())
+        } else if false {
+            let beg = TsNano(self.beg);
+            let end = TsNano(self.end);
+            fmt.debug_struct("NanoRange")
                 .field("beg", &beg)
                 .field("end", &end)
                 .finish()
@@ -45,9 +49,9 @@ impl fmt::Debug for NanoRange {
                 .timestamp_opt((self.end / SEC) as i64, (self.end % SEC) as u32)
                 .earliest();
             if let (Some(a), Some(b)) = (beg, end) {
-                f.debug_struct("NanoRange").field("beg", &a).field("end", &b).finish()
+                fmt.debug_struct("NanoRange").field("beg", &a).field("end", &b).finish()
             } else {
-                f.debug_struct("NanoRange")
+                fmt.debug_struct("NanoRange")
                     .field("beg", &beg)
                     .field("end", &end)
                     .finish()

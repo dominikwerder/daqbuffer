@@ -18,6 +18,8 @@ use netpod::EnumVariant;
 use netpod::ScalarType;
 use netpod::Shape;
 use netpod::TsMs;
+use netpod::TsMsVecFmt;
+use netpod::TsNano;
 use series::SeriesId;
 use std::collections::VecDeque;
 use std::pin::Pin;
@@ -184,7 +186,14 @@ impl EventsStreamRt {
         );
         let scalar_type = self.ch_conf.scalar_type().clone();
         let shape = self.ch_conf.shape().clone();
-        trace_fetch!("make_read_events_fut  bck {}  {:?}  {:?}", bck, shape, scalar_type);
+        trace_fetch!(
+            "make_read_events_fut  bck {}  msp {:?} {}  {:?}  {:?}",
+            bck,
+            ts_msp,
+            ts_msp.fmt(),
+            shape,
+            scalar_type
+        );
         let fut = async move {
             let ret = match &shape {
                 Shape::Scalar => match &scalar_type {
@@ -241,10 +250,10 @@ impl EventsStreamRt {
     }
 
     fn transition_to_bck_read(&mut self) {
-        trace_fetch!("transition_to_bck_read");
+        trace_fetch!("transition_to_bck_read  A  {}", TsMsVecFmt(&self.msp_buf));
         for ts in self.msp_buf.iter() {
             if ts.ns() < self.range.beg() {
-                self.msp_buf_bck.push_front(ts.clone());
+                self.msp_buf_bck.push_back(ts.clone());
             }
         }
         let c = self.msp_buf.iter().take_while(|x| x.ns() < self.range.beg()).count();
@@ -252,12 +261,17 @@ impl EventsStreamRt {
         for _ in 0..g {
             self.msp_buf.pop_front();
         }
+        trace_fetch!(
+            "transition_to_bck_read  B  {}  {}",
+            TsMsVecFmt(&self.msp_buf_bck),
+            TsMsVecFmt(&self.msp_buf)
+        );
         self.setup_bck_read();
     }
 
     fn setup_bck_read(&mut self) {
-        trace_fetch!("setup_bck_read");
-        if let Some(ts) = self.msp_buf_bck.pop_front() {
+        if let Some(ts) = self.msp_buf_bck.pop_back() {
+            trace_fetch!("setup_bck_read  {}", ts.fmt());
             let scyqueue = self.scyqueue.clone();
             let fut = self.make_read_events_fut(ts, true, scyqueue);
             self.state = State::ReadingBck(ReadingBck {
@@ -265,6 +279,7 @@ impl EventsStreamRt {
                 reading_state: ReadingState::FetchEvents(FetchEvents { fut }),
             });
         } else {
+            trace_fetch!("setup_bck_read  no msp");
             self.transition_to_fwd_read();
         }
     }
@@ -272,12 +287,13 @@ impl EventsStreamRt {
     fn transition_to_fwd_read(&mut self) {
         trace_fetch!("transition_to_fwd_read");
         self.msp_buf_bck = VecDeque::new();
+        trace_fetch!("transition_to_fwd_read  {}", TsMsVecFmt(&self.msp_buf));
         self.setup_fwd_read();
     }
 
     fn setup_fwd_read(&mut self) {
         if let Some(ts) = self.msp_buf.pop_front() {
-            trace_fetch!("setup_fwd_read  {ts}");
+            trace_fetch!("setup_fwd_read  {}", ts.fmt());
             let scyqueue = self.scyqueue.clone();
             let fut = self.make_read_events_fut(ts, false, scyqueue);
             self.state = State::ReadingFwd(ReadingFwd {
@@ -392,7 +408,7 @@ impl Stream for EventsStreamRt {
                 State::ReadingBck(st) => match &mut st.reading_state {
                     ReadingState::FetchMsp(st2) => match st2.fut.poll_unpin(cx) {
                         Ready(Some(Ok(ts))) => {
-                            trace_fetch!("ReadingBck  FetchMsp  {:?}", ts);
+                            trace_fetch!("ReadingBck  FetchMsp  {}", ts.fmt());
                             self.msp_buf.push_back(ts);
                             if ts.ns() >= self.range.beg() {
                                 self.transition_to_bck_read();
@@ -415,7 +431,10 @@ impl Stream for EventsStreamRt {
                     ReadingState::FetchEvents(st2) => match st2.fut.poll_unpin(cx) {
                         Ready(Ok(mut x)) => {
                             use items_2::merger::Mergeable;
-                            trace_fetch!("ReadingBck  FetchEvents  got len {:?}", x.len());
+                            trace_fetch!("ReadingBck  FetchEvents  got len {}", x.len());
+                            for ts in Mergeable::tss(&x) {
+                                trace_fetch!("ReadingBck  FetchEvents     ts {}", ts.fmt());
+                            }
                             if let Some(ix) = Mergeable::find_highest_index_lt(&x, self.range.beg().ns()) {
                                 trace_fetch!("ReadingBck  FetchEvents  find_highest_index_lt {:?}", ix);
                                 let mut y = Mergeable::new_empty(&x);
@@ -447,6 +466,7 @@ impl Stream for EventsStreamRt {
                 State::ReadingFwd(st) => match &mut st.reading_state {
                     ReadingState::FetchMsp(st2) => match st2.fut.poll_unpin(cx) {
                         Ready(Some(Ok(ts))) => {
+                            trace_fetch!("ReadingFwd  FetchMsp  {}", ts.fmt());
                             self.msp_buf.push_back(ts);
                             self.setup_fwd_read();
                             continue;
@@ -460,6 +480,11 @@ impl Stream for EventsStreamRt {
                     },
                     ReadingState::FetchEvents(st2) => match st2.fut.poll_unpin(cx) {
                         Ready(Ok(x)) => {
+                            trace_fetch!("ReadingFwd  FetchEvents  got len {:?}", x.len());
+                            for ts_ns in x.tss() {
+                                let ts = TsNano::from_ns(*ts_ns).to_ts_ms();
+                                trace_fetch!("ReadingFwd  FetchEvents     ts {}", ts.fmt());
+                            }
                             self.out.push_back(x);
                             self.setup_fwd_read();
                             continue;

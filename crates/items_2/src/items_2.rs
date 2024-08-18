@@ -189,6 +189,13 @@ impl Mergeable for Box<dyn Events> {
     fn find_highest_index_lt(&self, ts: u64) -> Option<usize> {
         self.as_ref().find_highest_index_lt_evs(ts)
     }
+
+    fn tss(&self) -> Vec<netpod::TsMs> {
+        Events::tss(self)
+            .iter()
+            .map(|x| netpod::TsMs::from_ns_u64(*x))
+            .collect()
+    }
 }
 
 // TODO rename to `Typed`

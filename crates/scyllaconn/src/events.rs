@@ -410,7 +410,7 @@ where
         };
         trace!(
             "FWD  ts_msp {}  ts_lsp_min {}  ts_lsp_max {}  {}",
-            ts_msp,
+            ts_msp.fmt(),
             ts_lsp_min,
             ts_lsp_max,
             table_name,
@@ -441,7 +441,12 @@ where
         } else {
             DtNano::from_ns(0)
         };
-        trace!("BCK  ts_msp {}  ts_lsp_max {}  {}", ts_msp, ts_lsp_max, table_name,);
+        trace!(
+            "BCK  ts_msp {}  ts_lsp_max {}  {}",
+            ts_msp.fmt(),
+            ts_lsp_max,
+            table_name,
+        );
         let qu = stmts
             .rt(&opts.rt)
             .lsp(!opts.fwd, with_values)
@@ -461,7 +466,7 @@ where
         }
         ret
     };
-    trace!("read  ts_msp {:?}  len {}", ts_msp, ret.len());
+    trace!("read  ts_msp {}  len {}", ts_msp.fmt(), ret.len());
     let ret = Box::new(ret);
     Ok(ret)
 }

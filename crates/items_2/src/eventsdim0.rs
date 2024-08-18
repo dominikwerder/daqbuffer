@@ -112,6 +112,12 @@ impl<STY> EventsDim0<STY> {
         std::any::type_name::<Self>()
     }
 
+    pub fn push_back(&mut self, ts: u64, pulse: u64, value: STY) {
+        self.tss.push_back(ts);
+        self.pulses.push_back(pulse);
+        self.values.push_back(value);
+    }
+
     pub fn push_front(&mut self, ts: u64, pulse: u64, value: STY) {
         self.tss.push_front(ts);
         self.pulses.push_front(pulse);
@@ -858,11 +864,21 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
 
     fn output_info(&self) -> String {
         let n2 = self.tss.len().max(1) - 1;
+        let min = if let Some(ts) = self.tss.get(0) {
+            TsNano::from_ns(*ts).fmt().to_string()
+        } else {
+            String::from("None")
+        };
+        let max = if let Some(ts) = self.tss.get(n2) {
+            TsNano::from_ns(*ts).fmt().to_string()
+        } else {
+            String::from("None")
+        };
         format!(
             "EventsDim0OutputInfo {{ len {}, ts_min {}, ts_max {} }}",
             self.tss.len(),
-            self.tss.get(0).map_or(-1i64, |&x| x as i64),
-            self.tss.get(n2).map_or(-1i64, |&x| x as i64),
+            min,
+            max,
         )
     }
 

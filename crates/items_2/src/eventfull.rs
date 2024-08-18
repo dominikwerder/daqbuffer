@@ -256,6 +256,10 @@ impl Mergeable for EventFull {
         }
         None
     }
+
+    fn tss(&self) -> Vec<netpod::TsMs> {
+        self.tss.iter().map(|x| netpod::TsMs::from_ns_u64(*x)).collect()
+    }
 }
 
 #[derive(Debug, ThisError, Serialize, Deserialize)]

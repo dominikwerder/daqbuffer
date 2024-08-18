@@ -809,6 +809,13 @@ impl Mergeable for ChannelEvents {
             }
         }
     }
+
+    fn tss(&self) -> Vec<netpod::TsMs> {
+        Events::tss(self)
+            .iter()
+            .map(|x| netpod::TsMs::from_ns_u64(*x))
+            .collect()
+    }
 }
 
 impl RangeOverlapInfo for ChannelEvents {

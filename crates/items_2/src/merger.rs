@@ -15,6 +15,7 @@ use items_0::Events;
 use items_0::MergeError;
 use items_0::WithLen;
 use netpod::log::*;
+use netpod::TsMs;
 use std::collections::VecDeque;
 use std::fmt;
 use std::ops::ControlFlow;
@@ -53,6 +54,8 @@ pub trait Mergeable<Rhs = Self>: fmt::Debug + WithLen + ByteEstimate + Unpin {
     fn find_lowest_index_gt(&self, ts: u64) -> Option<usize>;
     fn find_lowest_index_ge(&self, ts: u64) -> Option<usize>;
     fn find_highest_index_lt(&self, ts: u64) -> Option<usize>;
+    // TODO only for testing:
+    fn tss(&self) -> Vec<TsMs>;
 }
 
 type MergeInp<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;

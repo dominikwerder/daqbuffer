@@ -119,7 +119,7 @@ where
                             Ready(Some(Err(e)))
                         } else {
                             // Separate events into before and bulk
-                            let tss = item.tss();
+                            let tss = Events::tss(&item);
                             let pp = tss.partition_point(|&x| x < self.ts0.ns());
                             trace_transition!("partition_point  {pp:?}  {n:?}", n = tss.len());
                             if pp > item.len() {

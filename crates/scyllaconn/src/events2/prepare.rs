@@ -113,7 +113,7 @@ async fn make_msp_dir(ks: &str, rt: &RetentionTime, bck: bool, scy: &Session) ->
     let select_cond = if bck {
         "ts_msp < ? order by ts_msp desc limit 2"
     } else {
-        "ts_msp >= ? and ts_msp < ?"
+        "ts_msp >= ? and ts_msp < ? limit 20"
     };
     let cql = format!(
         "select ts_msp from {}.{}{} where series = ? and {}",
