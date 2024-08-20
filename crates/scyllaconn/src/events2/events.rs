@@ -53,6 +53,15 @@ macro_rules! warn_item {
     };
 }
 
+#[allow(unused)]
+macro_rules! trace_every_event {
+    ($($arg:tt)*) => {
+        if false {
+            trace!($($arg)*);
+        }
+    };
+}
+
 #[derive(Debug, Clone)]
 pub struct EventReadOpts {
     pub with_values: bool,
@@ -433,7 +442,7 @@ impl Stream for EventsStreamRt {
                             use items_2::merger::Mergeable;
                             trace_fetch!("ReadingBck  FetchEvents  got len {}", x.len());
                             for ts in Mergeable::tss(&x) {
-                                trace_fetch!("ReadingBck  FetchEvents     ts {}", ts.fmt());
+                                trace_every_event!("ReadingBck  FetchEvents     ts {}", ts.fmt());
                             }
                             if let Some(ix) = Mergeable::find_highest_index_lt(&x, self.range.beg().ns()) {
                                 trace_fetch!("ReadingBck  FetchEvents  find_highest_index_lt {:?}", ix);
@@ -480,10 +489,10 @@ impl Stream for EventsStreamRt {
                     },
                     ReadingState::FetchEvents(st2) => match st2.fut.poll_unpin(cx) {
                         Ready(Ok(x)) => {
+                            use items_2::merger::Mergeable;
                             trace_fetch!("ReadingFwd  FetchEvents  got len {:?}", x.len());
-                            for ts_ns in x.tss() {
-                                let ts = TsNano::from_ns(*ts_ns).to_ts_ms();
-                                trace_fetch!("ReadingFwd  FetchEvents     ts {}", ts.fmt());
+                            for ts in Mergeable::tss(&x) {
+                                trace_every_event!("ReadingFwd  FetchEvents     ts {}", ts.fmt());
                             }
                             self.out.push_back(x);
                             self.setup_fwd_read();

@@ -23,6 +23,7 @@ pub enum Error {
     ChannelSend,
     ChannelRecv,
     Join,
+    ChannelConfig(#[from] crate::channelconfig::Error),
 }
 
 impl From<RecvError> for Error {
@@ -39,8 +40,12 @@ impl err::ToErr for Error {
 
 #[derive(Debug)]
 enum Job {
-    ChConfBestMatchingNameRange(SfDbChannel, NanoRange, Sender<Result<ChConf, Error>>),
-    ChConfForSeries(String, u64, Sender<Result<ChConf, Error>>),
+    ChConfBestMatchingNameRange(
+        SfDbChannel,
+        NanoRange,
+        Sender<Result<ChConf, crate::channelconfig::Error>>,
+    ),
+    ChConfForSeries(String, u64, Sender<Result<ChConf, crate::channelconfig::Error>>),
     InfoForSeriesIds(
         Vec<u64>,
         Sender<Result<Vec<Option<crate::channelinfo::ChannelInfo>>, crate::channelinfo::Error>>,
@@ -58,26 +63,28 @@ pub struct PgQueue {
 }
 
 impl PgQueue {
-    pub async fn chconf_for_series(
-        &self,
-        backend: &str,
-        series: u64,
-    ) -> Result<Receiver<Result<ChConf, Error>>, Error> {
-        let (tx, rx) = async_channel::bounded(1);
-        let job = Job::ChConfForSeries(backend.into(), series, tx);
-        self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
-        Ok(rx)
-    }
-
     pub async fn chconf_best_matching_name_range(
         &self,
         channel: SfDbChannel,
         range: NanoRange,
-    ) -> Result<Receiver<Result<ChConf, Error>>, Error> {
+    ) -> Result<Result<ChConf, crate::channelconfig::Error>, netpod::AsyncChannelError> {
         let (tx, rx) = async_channel::bounded(1);
         let job = Job::ChConfBestMatchingNameRange(channel, range, tx);
-        self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
-        Ok(rx)
+        self.tx.send(job).await.map_err(|_| netpod::AsyncChannelError::Send)?;
+        let res = rx.recv().await.map_err(|_| netpod::AsyncChannelError::Recv)?;
+        Ok(res)
+    }
+
+    pub async fn chconf_for_series(
+        &self,
+        backend: &str,
+        series: u64,
+    ) -> Result<Result<ChConf, crate::channelconfig::Error>, netpod::AsyncChannelError> {
+        let (tx, rx) = async_channel::bounded(1);
+        let job = Job::ChConfForSeries(backend.into(), series, tx);
+        self.tx.send(job).await.map_err(|_| netpod::AsyncChannelError::Send)?;
+        let res = rx.recv().await.map_err(|_| netpod::AsyncChannelError::Recv)?;
+        Ok(res)
     }
 
     pub async fn info_for_series_ids(

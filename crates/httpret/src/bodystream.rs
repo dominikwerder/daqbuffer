@@ -17,14 +17,6 @@ where
     Response::builder().status(status)
 }
 
-pub fn response_err_msg<T>(status: StatusCode, msg: T) -> Result<StreamResponse, RetrievalError>
-where
-    T: ToString,
-{
-    let ret = response(status).body(body_string(msg))?;
-    Ok(ret)
-}
-
 pub trait ToPublicResponse {
     fn to_public_response(&self) -> StreamResponse;
 }

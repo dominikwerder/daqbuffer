@@ -1,5 +1,4 @@
 use crate::bodystream::response;
-use crate::bodystream::response_err_msg;
 use async_channel::Receiver;
 use async_channel::Sender;
 use bytes::Bytes;
@@ -14,6 +13,7 @@ use http::Response;
 use http::StatusCode;
 use httpclient::body_empty;
 use httpclient::body_stream;
+use httpclient::error_response;
 use httpclient::Requ;
 use httpclient::StreamResponse;
 use netpod::log::*;
@@ -76,8 +76,7 @@ impl FindActiveHandler {
                 Ok(ret) => Ok(ret),
                 Err(e) => {
                     error!("{e}");
-                    let res = response_err_msg(StatusCode::NOT_ACCEPTABLE, e.to_public_error())
-                        .map_err(|_| FindActiveError::InternalError)?;
+                    let res = error_response(e.to_public_error().to_string(), "missing-req");
                     Ok(res)
                 }
             }

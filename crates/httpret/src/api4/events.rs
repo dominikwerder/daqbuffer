@@ -1,23 +1,25 @@
-use crate::bodystream::response_err_msg;
 use crate::channelconfig::chconf_from_events_quorum;
-use crate::err::Error;
 use crate::requests::accepts_cbor_framed;
 use crate::requests::accepts_json_framed;
 use crate::requests::accepts_json_or_all;
 use crate::response;
 use crate::ServiceSharedResources;
-use crate::ToPublicResponse;
 use bytes::Bytes;
 use bytes::BytesMut;
 use dbconn::worker::PgQueue;
+use err::thiserror;
+use err::ThisError;
 use futures_util::future;
 use futures_util::stream;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use http::header::CONTENT_TYPE;
 use http::Method;
 use http::StatusCode;
 use httpclient::body_empty;
 use httpclient::body_stream;
+use httpclient::error_response;
+use httpclient::not_found_response;
 use httpclient::IntoBody;
 use httpclient::Requ;
 use httpclient::StreamResponse;
@@ -28,10 +30,35 @@ use netpod::ChannelTypeConfigGen;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
+use netpod::APP_CBOR_FRAMED;
+use netpod::APP_JSON;
+use netpod::APP_JSON_FRAMED;
+use netpod::HEADER_NAME_REQUEST_ID;
 use nodenet::client::OpenBoxedBytesViaHttp;
 use query::api4::events::PlainEventsQuery;
 use streams::instrument::InstrumentStream;
 use tracing::Instrument;
+
+#[derive(Debug, ThisError)]
+#[cstm(name = "Api4Events")]
+pub enum Error {
+    ChannelNotFound,
+    HttpLib(#[from] http::Error),
+    ChannelConfig(crate::channelconfig::Error),
+    Retrieval(#[from] crate::RetrievalError),
+    EventsCbor(#[from] streams::plaineventscbor::Error),
+    EventsJson(#[from] streams::plaineventsjson::Error),
+}
+
+impl From<crate::channelconfig::Error> for Error {
+    fn from(value: crate::channelconfig::Error) -> Self {
+        use crate::channelconfig::Error::*;
+        match value {
+            NotFound(_) => Self::ChannelNotFound,
+            _ => Self::ChannelConfig(value),
+        }
+    }
+}
 
 pub struct EventsHandler {}
 
@@ -50,9 +77,9 @@ impl EventsHandler {
         ctx: &ReqCtx,
         shared_res: &ServiceSharedResources,
         ncc: &NodeConfigCached,
-    ) -> Result<StreamResponse, Error> {
+    ) -> Result<StreamResponse, crate::err::Error> {
         if req.method() != Method::GET {
-            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
+            return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?);
         }
         let self_name = "handle";
         let url = req_uri_to_url(req.uri())?;
@@ -73,10 +100,16 @@ impl EventsHandler {
             .await
         {
             Ok(ret) => Ok(ret),
-            Err(e) => {
-                error!("EventsHandler sees: {e}");
-                Ok(e.to_public_response())
-            }
+            Err(e) => match e {
+                Error::ChannelNotFound => {
+                    let res = not_found_response("channel not found".into(), ctx.reqid());
+                    Ok(res)
+                }
+                _ => {
+                    error!("EventsHandler sees: {e}");
+                    Ok(error_response(e.public_message(), ctx.reqid()))
+                }
+            },
         }
     }
 }
@@ -90,7 +123,7 @@ async fn plain_events(
 ) -> Result<StreamResponse, Error> {
     let ch_conf = chconf_from_events_quorum(&evq, ctx, pgqueue, ncc)
         .await?
-        .ok_or_else(|| Error::with_msg_no_trace("channel not found"))?;
+        .ok_or_else(|| Error::ChannelNotFound)?;
     if accepts_cbor_framed(req.headers()) {
         Ok(plain_events_cbor_framed(req, evq, ch_conf, ctx, ncc).await?)
     } else if accepts_json_framed(req.headers()) {
@@ -98,7 +131,7 @@ async fn plain_events(
     } else if accepts_json_or_all(req.headers()) {
         Ok(plain_events_json(req, evq, ch_conf, ctx, ncc).await?)
     } else {
-        let ret = response_err_msg(StatusCode::NOT_ACCEPTABLE, format!("unsupported accept  {:?}", req))?;
+        let ret = error_response(format!("unsupported accept"), ctx.reqid());
         Ok(ret)
     }
 }
@@ -124,7 +157,10 @@ async fn plain_events_cbor_framed(
         tracing::Span::none()
     };
     let stream = InstrumentStream::new(stream, logspan);
-    let ret = response(StatusCode::OK).body(body_stream(stream))?;
+    let ret = response(StatusCode::OK)
+        .header(CONTENT_TYPE, APP_CBOR_FRAMED)
+        .header(HEADER_NAME_REQUEST_ID, ctx.reqid())
+        .body(body_stream(stream))?;
     Ok(ret)
 }
 
@@ -139,7 +175,10 @@ async fn plain_events_json_framed(
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let stream = streams::plaineventsjson::plain_events_json_stream(&evq, ch_conf, ctx, Box::pin(open_bytes)).await?;
     let stream = bytes_chunks_to_len_framed_str(stream);
-    let ret = response(StatusCode::OK).body(body_stream(stream))?;
+    let ret = response(StatusCode::OK)
+        .header(CONTENT_TYPE, APP_JSON_FRAMED)
+        .header(HEADER_NAME_REQUEST_ID, ctx.reqid())
+        .body(body_stream(stream))?;
     Ok(ret)
 }
 
@@ -167,12 +206,15 @@ async fn plain_events_json(
             return Err(e.into());
         }
     };
-    let ret = response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?;
+    let ret = response(StatusCode::OK)
+        .header(CONTENT_TYPE, APP_JSON)
+        .header(HEADER_NAME_REQUEST_ID, ctx.reqid())
+        .body(ToJsonBody::from(&item).into_body())?;
     debug!("{self_name}  response created");
     Ok(ret)
 }
 
-fn bytes_chunks_to_framed<S, T>(stream: S) -> impl Stream<Item = Result<Bytes, Error>>
+fn bytes_chunks_to_framed<S, T>(stream: S) -> impl Stream<Item = Result<Bytes, crate::err::Error>>
 where
     S: Stream<Item = Result<T, err::Error>>,
     T: Into<Bytes>,
@@ -191,19 +233,19 @@ where
                 b2.put_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
                 let mut b3 = BytesMut::with_capacity(16);
                 b3.put_slice(&[0, 0, 0, 0, 0, 0, 0, 0][..pad]);
-                stream::iter([Ok::<_, Error>(b2.freeze()), Ok(buf), Ok(b3.freeze())])
+                stream::iter([Ok::<_, crate::err::Error>(b2.freeze()), Ok(buf), Ok(b3.freeze())])
             }
             Err(e) => {
-                let e = Error::with_msg_no_trace(e.to_string());
+                let e = crate::err::Error::with_msg_no_trace(e.to_string());
                 stream::iter([Err(e), Ok(Bytes::new()), Ok(Bytes::new())])
             }
         })
         .filter(|x| if let Ok(x) = x { ready(x.len() > 0) } else { ready(true) })
 }
 
-fn bytes_chunks_to_len_framed_str<S, T>(stream: S) -> impl Stream<Item = Result<String, Error>>
+fn bytes_chunks_to_len_framed_str<S, T>(stream: S) -> impl Stream<Item = Result<String, crate::err::Error>>
 where
-    S: Stream<Item = Result<T, err::Error>>,
+    S: Stream<Item = Result<T, ::err::Error>>,
     T: Into<String>,
 {
     use future::ready;
@@ -214,10 +256,10 @@ where
                 let s = y.into();
                 let mut b2 = String::with_capacity(16);
                 write!(b2, "\n{}\n", s.len()).unwrap();
-                stream::iter([Ok::<_, Error>(b2), Ok(s)])
+                stream::iter([Ok::<_, crate::err::Error>(b2), Ok(s)])
             }
             Err(e) => {
-                let e = Error::with_msg_no_trace(e.to_string());
+                let e = crate::err::Error::with_msg_no_trace(e.to_string());
                 stream::iter([Err(e), Ok(String::new())])
             }
         })

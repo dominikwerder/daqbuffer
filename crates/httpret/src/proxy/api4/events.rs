@@ -8,6 +8,7 @@ use crate::ReqCtx;
 use http::header;
 use http::Method;
 use http::Request;
+use http::Response;
 use http::StatusCode;
 use http::Uri;
 use httpclient::body_empty;
@@ -68,7 +69,7 @@ impl EventsHandler {
         let url = req_uri_to_url(&head.uri)?;
         let pairs = get_url_query_pairs(&url);
         let evq = PlainEventsQuery::from_pairs(&pairs)?;
-        debug!("{:?}", evq);
+        debug!("handle_framed  {evq:?}");
         let query_host = get_query_host_for_backend(evq.backend(), proxy_config)?;
         let url_str = format!(
             "{}{}",
@@ -92,10 +93,14 @@ impl EventsHandler {
         let (head, body) = res.into_parts();
         if head.status != StatusCode::OK {
             warn!("backend returned error: {head:?}");
-            Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
-        } else {
-            debug!("backend returned OK");
-            Ok(response(StatusCode::OK).body(body_stream(StreamIncoming::new(body)))?)
         }
+        let mut resb = Response::builder().status(head.status);
+        for h in head.headers {
+            if let (Some(hn), hv) = h {
+                resb = resb.header(hn, hv);
+            }
+        }
+        let res = resb.body(body_stream(StreamIncoming::new(body)))?;
+        Ok(res)
     }
 }

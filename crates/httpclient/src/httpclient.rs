@@ -74,6 +74,57 @@ pub fn body_bytes<D: Into<Bytes>>(body: D) -> StreamBody {
     http_body_util::StreamBody::new(Box::pin(stream))
 }
 
+pub fn internal_error() -> http::Response<StreamBody> {
+    let mut res = http::Response::new(body_empty());
+    *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+    res
+}
+
+pub fn error_response(msg: String, reqid: impl AsRef<str>) -> http::Response<StreamBody> {
+    let status = StatusCode::INTERNAL_SERVER_ERROR;
+    let js = serde_json::json!({
+        "message": msg.to_string(),
+        "requestid": reqid.as_ref(),
+    });
+    if let Ok(body) = serde_json::to_string_pretty(&js) {
+        match Response::builder()
+            .status(status)
+            .header(http::header::CONTENT_TYPE, APP_JSON)
+            .body(body_string(body))
+        {
+            Ok(res) => res,
+            Err(e) => {
+                error!("can not generate http error response {e}");
+                internal_error()
+            }
+        }
+    } else {
+        internal_error()
+    }
+}
+pub fn not_found_response(msg: String, reqid: impl AsRef<str>) -> http::Response<StreamBody> {
+    let status = StatusCode::NOT_FOUND;
+    let js = serde_json::json!({
+        "message": msg.to_string(),
+        "requestid": reqid.as_ref(),
+    });
+    if let Ok(body) = serde_json::to_string_pretty(&js) {
+        match Response::builder()
+            .status(status)
+            .header(http::header::CONTENT_TYPE, APP_JSON)
+            .body(body_string(body))
+        {
+            Ok(res) => res,
+            Err(e) => {
+                error!("can not generate http error response {e}");
+                internal_error()
+            }
+        }
+    } else {
+        internal_error()
+    }
+}
+
 pub trait IntoBody {
     fn into_body(self) -> StreamBody;
 }
@@ -153,6 +204,7 @@ impl Stream for StreamIncoming {
                 if x.is_data() {
                     Ready(Some(Ok(x.into_data().unwrap())))
                 } else {
+                    warn!("non-data in stream: {x:?}");
                     Ready(Some(Ok(Bytes::new())))
                 }
             }

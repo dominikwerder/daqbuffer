@@ -1,7 +1,6 @@
 use err::ToPublicError;
 use serde::Deserialize;
 use serde::Serialize;
-use serde_json::Value as JsVal;
 use std::fmt;
 use taskrun::tokio;
 
@@ -108,3 +107,6 @@ impl Convable for std::array::TryFromSliceError {}
 impl Convable for err::anyhow::Error {}
 impl Convable for crate::RetrievalError {}
 impl Convable for httpclient::Error {}
+impl Convable for netpod::UriError {}
+impl Convable for nodenet::configquorum::Error {}
+impl Convable for nodenet::channelconfig::Error {}

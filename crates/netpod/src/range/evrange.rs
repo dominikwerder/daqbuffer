@@ -60,6 +60,12 @@ impl fmt::Debug for NanoRange {
     }
 }
 
+impl fmt::Display for NanoRange {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(self, fmt)
+    }
+}
+
 impl NanoRange {
     pub fn from_date_time(beg: DateTime<Utc>, end: DateTime<Utc>) -> Self {
         Self {

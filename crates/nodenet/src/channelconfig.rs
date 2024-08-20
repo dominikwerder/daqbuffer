@@ -1,5 +1,6 @@
 use dbconn::worker::PgQueue;
-use err::Error;
+use err::thiserror;
+use err::ThisError;
 use httpclient::url::Url;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
@@ -19,6 +20,50 @@ use netpod::SfDbChannel;
 use netpod::Shape;
 use netpod::APP_JSON;
 use serde::Serialize;
+
+#[derive(Debug, ThisError)]
+#[cstm(name = "ChannelConfigNode")]
+pub enum Error {
+    NotFoundChannel(SfDbChannel),
+    ChannelConfig(dbconn::channelconfig::Error),
+    DbWorker(#[from] dbconn::worker::Error),
+    DiskConfig(#[from] disk::channelconfig::ConfigError),
+    BackendConfigError,
+    BadTestSetup,
+    HttpReqError,
+    HttpClient(#[from] httpclient::Error),
+    ConfigParse(#[from] disk::parse::channelconfig::ConfigParseError),
+    JsonParse(#[from] serde_json::Error),
+    SearchWithGivenSeries,
+    AsyncSend,
+    AsyncRecv,
+    Todo,
+}
+
+impl From<async_channel::RecvError> for Error {
+    fn from(_value: async_channel::RecvError) -> Self {
+        Error::AsyncRecv
+    }
+}
+
+impl From<netpod::AsyncChannelError> for Error {
+    fn from(value: netpod::AsyncChannelError) -> Self {
+        match value {
+            netpod::AsyncChannelError::Send => Self::AsyncSend,
+            netpod::AsyncChannelError::Recv => Self::AsyncRecv,
+        }
+    }
+}
+
+impl From<dbconn::channelconfig::Error> for Error {
+    fn from(value: dbconn::channelconfig::Error) -> Self {
+        use dbconn::channelconfig::Error::*;
+        match value {
+            NotFound(chn, _) => Self::NotFoundChannel(chn),
+            _ => Self::ChannelConfig(value),
+        }
+    }
+}
 
 const TEST_BACKEND: &str = "testbackend-00";
 
@@ -92,8 +137,7 @@ fn channel_config_test_backend(channel: SfDbChannel) -> Result<ChannelTypeConfig
         ret
     } else {
         error!("no test information");
-        return Err(Error::with_msg_no_trace(format!("no test information"))
-            .add_public_msg("No channel config for test channel {:?}"));
+        return Err(Error::NotFoundChannel(channel));
     };
     Ok(ChannelTypeConfigGen::SfDatabuffer(ret))
 }
@@ -108,15 +152,11 @@ pub async fn channel_config(
         Ok(Some(channel_config_test_backend(channel)?))
     } else if ncc.node_config.cluster.scylla_st().is_some() {
         debug!("try to get ChConf for scylla type backend");
-        let ret = scylla_chconf_from_sf_db_channel(range, channel, pgqueue)
-            .await
-            .map_err(Error::from)?;
+        let ret = scylla_chconf_from_sf_db_channel(range, channel, pgqueue).await?;
         Ok(Some(ChannelTypeConfigGen::Scylla(ret)))
     } else if ncc.node.sf_databuffer.is_some() {
         debug!("channel_config  channel {channel:?}");
-        let k = disk::channelconfig::channel_config_best_match(range, channel.clone(), ncc)
-            .await
-            .map_err(|e| Error::from(e.to_string()))?;
+        let k = disk::channelconfig::channel_config_best_match(range, channel.clone(), ncc).await?;
         match k {
             Some(config) => {
                 debug!("channel_config  config  {config:?}");
@@ -135,10 +175,7 @@ pub async fn channel_config(
             None => Ok(None),
         }
     } else {
-        return Err(
-            Error::with_msg_no_trace(format!("no channel config for backend {}", channel.backend()))
-                .add_public_msg(format!("no channel config for backend {}", channel.backend())),
-        );
+        Err(Error::BackendConfigError)
     }
 }
 
@@ -154,7 +191,7 @@ pub async fn channel_configs(channel: SfDbChannel, ncc: &NodeConfigCached) -> Re
             ChannelTypeConfigGen::Scylla(x) => ChannelConfigsGen::Scylla(x),
             ChannelTypeConfigGen::SfDatabuffer(_) => {
                 // ChannelConfigsGen::SfDatabuffer(todo!())
-                let e = Error::with_msg_no_trace("channel_configs test backend TODO SfDatabuffer");
+                let e = Error::BadTestSetup;
                 warn!("{e}");
                 return Err(e);
             }
@@ -168,15 +205,10 @@ pub async fn channel_configs(channel: SfDbChannel, ncc: &NodeConfigCached) -> Re
         Ok(ChannelConfigsGen::Scylla(ret))
     } else if ncc.node.sf_databuffer.is_some() {
         debug!("channel_config  channel {channel:?}");
-        let configs = disk::channelconfig::channel_configs(channel.clone(), ncc)
-            .await
-            .map_err(|e| Error::from(e.to_string()))?;
+        let configs = disk::channelconfig::channel_configs(channel.clone(), ncc).await?;
         Ok(ChannelConfigsGen::SfDatabuffer(configs))
     } else {
-        return Err(
-            Error::with_msg_no_trace(format!("no channel config for backend {}", channel.backend()))
-                .add_public_msg(format!("no channel config for backend {}", channel.backend())),
-        );
+        return Err(Error::BackendConfigError);
     }
 }
 
@@ -196,12 +228,9 @@ pub async fn http_get_channel_config(
         let ret: ChannelConfigResponse = serde_json::from_slice(&res.body)?;
         Ok(Some(ret))
     } else {
-        let b = &res.body;
-        let s = String::from_utf8_lossy(&b[0..b.len().min(256)]);
-        Err(Error::with_msg_no_trace(format!(
-            "http_get_channel_config  {}  {}",
-            res.head.status, s
-        )))
+        // let b = &res.body;
+        // let s = String::from_utf8_lossy(&b[0..b.len().min(256)]);
+        Err(Error::HttpReqError)
     }
 }
 
@@ -210,43 +239,21 @@ async fn scylla_chconf_from_sf_db_channel(
     channel: SfDbChannel,
     pgqueue: &PgQueue,
 ) -> Result<ChConf, Error> {
+    trace!("scylla_chconf_from_sf_db_channel  {:?}", channel);
     if let Some(series) = channel.series() {
-        let ret = pgqueue
-            .chconf_for_series(channel.backend(), series)
-            .await?
-            .recv()
-            .await??;
+        let ret = pgqueue.chconf_for_series(channel.backend(), series).await??;
         Ok(ret)
     } else {
         // TODO let called function allow to return None instead of error-not-found
-        let ret = pgqueue
-            .chconf_best_matching_name_range(channel, range)
-            .await?
-            .recv()
-            .await??;
+        let ret = pgqueue.chconf_best_matching_name_range(channel, range).await??;
         Ok(ret)
     }
 }
 
 async fn scylla_all_chconf_from_sf_db_channel(channel: &SfDbChannel, _ncc: &NodeConfigCached) -> Result<ChConf, Error> {
     if let Some(_) = channel.series() {
-        let e = Error::with_msg_no_trace(format!(
-            "scylla_all_chconf_from_sf_db_channel  but series anyways specified  {channel:?}"
-        ));
-        // dbconn::channelconfig::chconf_for_series(channel.backend(), series, ncc).await
-        warn!("{e}");
-        Err(e)
+        Err(Error::SearchWithGivenSeries)
     } else {
-        #[cfg(DISABLED)]
-        {
-            // TODO let called function allow to return None instead of error-not-found
-            let ret = dbconn::channelconfig::chconf_from_scylla_type_backend(&channel, ncc)
-                .await
-                .map_err(Error::from)?;
-            Ok(Some(ChannelTypeConfigGen::Scylla(ret)))
-        }
-        let e = Error::with_msg_no_trace(format!("scylla_all_chconf_from_sf_db_channel  TODO"));
-        warn!("{e}");
-        Err(e)
+        Err(Error::Todo)
     }
 }

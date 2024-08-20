@@ -87,6 +87,8 @@ impl IntoBoxedError for api4::databuffer_tools::FindActiveError {}
 impl IntoBoxedError for std::string::FromUtf8Error {}
 impl IntoBoxedError for std::io::Error {}
 impl IntoBoxedError for dbconn::worker::Error {}
+impl IntoBoxedError for netpod::UriError {}
+impl IntoBoxedError for crate::api4::binned::Error {}
 
 impl<E> From<E> for RetrievalError
 where

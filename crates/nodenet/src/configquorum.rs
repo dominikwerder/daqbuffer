@@ -1,6 +1,7 @@
 use crate::channelconfig::http_get_channel_config;
 use dbconn::worker::PgQueue;
-use err::Error;
+use err::thiserror;
+use err::ThisError;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 use netpod::ChConf;
@@ -15,6 +16,30 @@ use netpod::SfDbChannel;
 use std::collections::BTreeMap;
 use std::time::Duration;
 use taskrun::tokio;
+
+#[derive(Debug, ThisError)]
+#[cstm(name = "ConfigQuorum")]
+pub enum Error {
+    NotFound(SfDbChannel),
+    MissingTimeRange,
+    Timeout,
+    ChannelConfig(crate::channelconfig::Error),
+    ExpectSfDatabufferBackend,
+    UnsupportedBackend,
+    BadTimeRange,
+    DbWorker(#[from] dbconn::worker::Error),
+    FindChannel(#[from] dbconn::FindChannelError),
+}
+
+impl From<crate::channelconfig::Error> for Error {
+    fn from(value: crate::channelconfig::Error) -> Self {
+        use crate::channelconfig::Error::*;
+        match value {
+            NotFoundChannel(chn) => Self::NotFound(chn),
+            _ => Self::ChannelConfig(value),
+        }
+    }
+}
 
 fn decide_sf_ch_config_quorum(inp: Vec<ChannelConfigResponse>) -> Result<Option<ChannelTypeConfigGen>, Error> {
     let mut histo = BTreeMap::new();
@@ -55,7 +80,7 @@ async fn find_sf_ch_config_quorum(
 ) -> Result<Option<SfChFetchInfo>, Error> {
     let range = match range {
         SeriesRange::TimeRange(x) => x,
-        SeriesRange::PulseRange(_) => return Err(Error::with_msg_no_trace("expect TimeRange")),
+        SeriesRange::PulseRange(_) => return Err(Error::MissingTimeRange),
     };
     let mut all = Vec::new();
     for node in &ncc.node_config.cluster.nodes {
@@ -71,16 +96,14 @@ async fn find_sf_ch_config_quorum(
             http_get_channel_config(qu, node.baseurl(), ctx),
         )
         .await
-        .map_err(|_| Error::with_msg_no_trace("timeout"))??;
+        .map_err(|_| Error::Timeout)??;
         all.push(res);
     }
     let all: Vec<_> = all.into_iter().filter_map(|x| x).collect();
     let qu = decide_sf_ch_config_quorum(all)?;
     match qu {
         Some(item) => match item {
-            ChannelTypeConfigGen::Scylla(_) => Err(Error::with_msg_no_trace(
-                "find_sf_ch_config_quorum  not a sf-databuffer config",
-            )),
+            ChannelTypeConfigGen::Scylla(_) => Err(Error::ExpectSfDatabufferBackend),
             ChannelTypeConfigGen::SfDatabuffer(item) => Ok(Some(item)),
         },
         None => Ok(None),
@@ -98,11 +121,7 @@ pub async fn find_config_basics_quorum(
     if let Some(_cfg) = &ncc.node.sf_databuffer {
         let channel = if channel.name().is_empty() {
             if let Some(_) = channel.series() {
-                pgqueue
-                    .find_sf_channel_by_series(channel)
-                    .await
-                    .map_err(|e| Error::with_msg_no_trace(e.to_string()))?
-                    .map_err(|e| Error::with_msg_no_trace(e.to_string()))?
+                pgqueue.find_sf_channel_by_series(channel).await??
             } else {
                 channel
             }
@@ -114,12 +133,10 @@ pub async fn find_config_basics_quorum(
             None => Ok(None),
         }
     } else if let Some(_) = &ncc.node_config.cluster.scylla_st() {
-        let range = netpod::range::evrange::NanoRange::try_from(&range)?;
+        let range = netpod::range::evrange::NanoRange::try_from(&range).map_err(|_| Error::BadTimeRange)?;
         let ret = crate::channelconfig::channel_config(range, channel, pgqueue, ncc).await?;
         Ok(ret)
     } else {
-        Err(Error::with_msg_no_trace(
-            "find_config_basics_quorum  not supported backend",
-        ))
+        Err(Error::UnsupportedBackend)
     }
 }

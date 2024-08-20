@@ -1,7 +1,7 @@
-use crate::ErrConv;
 use chrono::DateTime;
 use chrono::Utc;
-use err::Error;
+use err::thiserror;
+use err::ThisError;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::ChConf;
@@ -12,6 +12,19 @@ use netpod::Shape;
 use netpod::TsMs;
 use std::time::Duration;
 use tokio_postgres::Client;
+
+#[derive(Debug, ThisError)]
+#[cstm(name = "DbChannelConfig")]
+pub enum Error {
+    Pg(#[from] tokio_postgres::Error),
+    #[error("NotFound({0}, {1})")]
+    NotFound(SfDbChannel, NanoRange),
+    SeriesNotFound(String, u64),
+    BadScalarType(i32),
+    BadShape(Vec<i32>),
+    BadKind(i16),
+    NoInput,
+}
 
 /// It is an unsolved question as to how we want to uniquely address channels.
 /// Currently, the usual (backend, channelname) works in 99% of the cases, but the edge-cases
@@ -27,21 +40,6 @@ pub(super) async fn chconf_best_matching_for_name_and_range(
     pg: &Client,
 ) -> Result<ChConf, Error> {
     debug!("chconf_best_matching_for_name_and_range  {channel:?}  {range:?}");
-    #[cfg(DISABLED)]
-    if ncc.node_config.cluster.scylla.is_none() {
-        let e = Error::with_msg_no_trace(format!(
-            "chconf_best_matching_for_name_and_range  but not a scylla backend"
-        ));
-        error!("{e}");
-        return Err(e);
-    };
-    #[cfg(DISABLED)]
-    if backend != ncc.node_config.cluster.backend {
-        warn!(
-            "mismatched backend  {}  vs  {}",
-            backend, ncc.node_config.cluster.backend
-        );
-    }
     let sql = concat!(
         "select unnest(tscs) as tsc, series, scalar_type, shape_dims",
         " from series_by_channel",
@@ -52,10 +50,9 @@ pub(super) async fn chconf_best_matching_for_name_and_range(
     );
     let res = pg
         .query(sql, &[&channel.backend(), &channel.name(), &channel.kind().to_db_i16()])
-        .await
-        .err_conv()?;
+        .await?;
     if res.len() == 0 {
-        let e = Error::with_public_msg_no_trace(format!("can not find channel information for {channel:?} {range:?}"));
+        let e = Error::NotFound(channel, range);
         warn!("{e}");
         Err(e)
     } else if res.len() > 1 {
@@ -67,8 +64,9 @@ pub(super) async fn chconf_best_matching_for_name_and_range(
             // TODO can I get a slice from psql driver?
             let shape_dims: Vec<i32> = r.get(3);
             let series = series as u64;
-            let _scalar_type = ScalarType::from_scylla_i32(scalar_type)?;
-            let _shape = Shape::from_scylla_shape_dims(&shape_dims)?;
+            let _scalar_type =
+                ScalarType::from_scylla_i32(scalar_type).map_err(|_| Error::BadScalarType(scalar_type))?;
+            let _shape = Shape::from_scylla_shape_dims(&shape_dims).map_err(|_| Error::BadShape(shape_dims))?;
             let tsms = tsc.signed_duration_since(DateTime::UNIX_EPOCH).num_milliseconds() as u64;
             let ts = TsMs::from_ms_u64(tsms);
             rows.push((ts, series));
@@ -88,8 +86,8 @@ pub(super) async fn chconf_best_matching_for_name_and_range(
         let shape_dims: Vec<i32> = r.get(3);
         let series = series as u64;
         let kind = channel.kind();
-        let scalar_type = ScalarType::from_scylla_i32(scalar_type)?;
-        let shape = Shape::from_scylla_shape_dims(&shape_dims)?;
+        let scalar_type = ScalarType::from_scylla_i32(scalar_type).map_err(|_| Error::BadScalarType(scalar_type))?;
+        let shape = Shape::from_scylla_shape_dims(&shape_dims).map_err(|_| Error::BadShape(shape_dims))?;
         let ret = ChConf::new(channel.backend(), series, kind, scalar_type, shape, channel.name());
         Ok(ret)
     }
@@ -97,7 +95,7 @@ pub(super) async fn chconf_best_matching_for_name_and_range(
 
 fn decide_best_matching_index(range: (TsMs, TsMs), rows: &[TsMs]) -> Result<usize, Error> {
     if rows.len() < 1 {
-        let e = Error::with_msg_no_trace("decide_best_matching_index  no rows");
+        let e = Error::NoInput;
         warn!("{e}");
         Err(e)
     } else {
@@ -205,22 +203,22 @@ pub(super) async fn chconf_for_series(backend: &str, series: u64, pg: &Client) -
             "select channel, scalar_type, shape_dims, kind from series_by_channel where facility = $1 and series = $2",
             &[&backend, &(series as i64)],
         )
-        .await
-        .err_conv()?;
+        .await?;
     if res.len() < 1 {
-        let e = Error::with_public_msg_no_trace(format!(
-            "can not find channel information  backend {backend}  series {series}"
-        ));
+        let e = Error::SeriesNotFound(backend.into(), series);
         warn!("{e}");
         Err(e)
     } else {
         let row = res.first().unwrap();
         let name: String = row.get(0);
-        let scalar_type = ScalarType::from_dtype_index(row.get::<_, i32>(1) as u8)?;
+        let scalar_type = row.get::<_, i32>(1);
+        let scalar_type =
+            ScalarType::from_dtype_index(scalar_type as _).map_err(|_| Error::BadScalarType(scalar_type))?;
         // TODO can I get a slice from psql driver?
-        let shape = Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(2))?;
+        let shape = row.get::<_, Vec<i32>>(2);
+        let shape = Shape::from_scylla_shape_dims(&shape).map_err(|_| Error::BadShape(shape))?;
         let kind: i16 = row.get(3);
-        let kind = SeriesKind::from_db_i16(kind)?;
+        let kind = SeriesKind::from_db_i16(kind).map_err(|_| Error::BadKind(kind))?;
         let ret = ChConf::new(backend, series, kind, scalar_type, shape, name);
         Ok(ret)
     }

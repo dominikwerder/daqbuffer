@@ -1,7 +1,6 @@
-use crate::err::Error;
 use crate::response;
 use crate::ServiceSharedResources;
-use crate::ToPublicResponse;
+use core::fmt;
 use dbconn::create_connection;
 use dbconn::worker::PgQueue;
 use futures_util::StreamExt;
@@ -36,11 +35,190 @@ use netpod::APP_JSON;
 use nodenet::configquorum::find_config_basics_quorum;
 use query::api4::binned::BinnedQuery;
 use query::api4::events::PlainEventsQuery;
-use scyllaconn::errconv::ErrConv;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use url::Url;
+
+#[derive(Debug)]
+pub enum Error {
+    NotFound(SfDbChannel),
+    ConfigQuorum(nodenet::configquorum::Error),
+    ConfigNode(nodenet::channelconfig::Error),
+    Http(crate::Error),
+    HttpCrate(http::Error),
+    // TODO create dedicated error type for query parsing
+    BadQuery(err::Error),
+    MissingBackend,
+    MissingScalarType,
+    MissingShape,
+    MissingShapeKind,
+    MissingEdge,
+    Uri(netpod::UriError),
+    ChannelConfigQuery(err::Error),
+    ExpectScyllaBackend,
+    Pg(dbconn::pg::Error),
+    Scylla(String),
+    Join,
+    OtherErr(err::Error),
+    PgWorker(dbconn::worker::Error),
+    Async(netpod::AsyncChannelError),
+    ChannelConfig(dbconn::channelconfig::Error),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let name = "HttpChannelConfigError";
+        write!(fmt, "{name}(")?;
+        match self {
+            Error::NotFound(chn) => write!(fmt, "NotFound({chn}")?,
+            Error::ConfigQuorum(e) => write!(fmt, "ConfigQuorum({e})")?,
+            Error::ConfigNode(e) => write!(fmt, "ConfigNode({e})")?,
+            Error::Http(e) => write!(fmt, "Http({e})")?,
+            Error::HttpCrate(e) => write!(fmt, "HttpCrate({e})")?,
+            Error::BadQuery(e) => write!(fmt, "BadQuery({e})")?,
+            Error::MissingBackend => write!(fmt, "MissingBackend")?,
+            Error::MissingScalarType => write!(fmt, "MissingScalarType")?,
+            Error::MissingShape => write!(fmt, "MissingShape")?,
+            Error::MissingShapeKind => write!(fmt, "MissingShapeKind")?,
+            Error::MissingEdge => write!(fmt, "MissingEdge")?,
+            Error::Uri(x) => write!(fmt, "Uri({x})")?,
+            Error::ChannelConfigQuery(e) => write!(fmt, "ChannelConfigQuery({e})")?,
+            Error::ExpectScyllaBackend => write!(fmt, "ExpectScyllaBackend")?,
+            Error::Pg(e) => write!(fmt, "Pg({e})")?,
+            Error::Scylla(e) => write!(fmt, "Scylla({e})")?,
+            Error::Join => write!(fmt, "Join")?,
+            Error::OtherErr(e) => write!(fmt, "OtherErr({e})")?,
+            Error::PgWorker(e) => write!(fmt, "PgWorker({e})")?,
+            Error::Async(e) => write!(fmt, "Async({e})")?,
+            Error::ChannelConfig(e) => write!(fmt, "ChannelConfig({e})")?,
+        }
+        write!(fmt, ")")?;
+        Ok(())
+    }
+}
+
+fn other_err_error(e: err::Error) -> Error {
+    Error::OtherErr(e)
+}
+
+impl std::error::Error for Error {}
+
+impl From<crate::Error> for Error {
+    fn from(e: crate::Error) -> Self {
+        Self::Http(e)
+    }
+}
+impl From<http::Error> for Error {
+    fn from(e: http::Error) -> Self {
+        Self::HttpCrate(e)
+    }
+}
+
+impl From<nodenet::configquorum::Error> for Error {
+    fn from(e: nodenet::configquorum::Error) -> Self {
+        use nodenet::configquorum::Error::*;
+        match e {
+            NotFound(a) => Self::NotFound(a),
+            _ => Self::ConfigQuorum(e),
+        }
+    }
+}
+
+impl From<nodenet::channelconfig::Error> for Error {
+    fn from(e: nodenet::channelconfig::Error) -> Self {
+        match e {
+            nodenet::channelconfig::Error::NotFoundChannel(a) => Self::NotFound(a),
+            _ => Self::ConfigNode(e),
+        }
+    }
+}
+
+impl From<netpod::UriError> for Error {
+    fn from(e: netpod::UriError) -> Self {
+        Self::Uri(e)
+    }
+}
+
+impl From<dbconn::pg::Error> for Error {
+    fn from(e: dbconn::pg::Error) -> Self {
+        Self::Pg(e)
+    }
+}
+
+impl From<dbconn::worker::Error> for Error {
+    fn from(e: dbconn::worker::Error) -> Self {
+        Self::PgWorker(e)
+    }
+}
+
+impl From<scyllaconn::scylla::cql_to_rust::FromRowError> for Error {
+    fn from(e: scyllaconn::scylla::cql_to_rust::FromRowError) -> Self {
+        Self::Scylla(e.to_string())
+    }
+}
+
+impl From<scyllaconn::scylla::transport::errors::QueryError> for Error {
+    fn from(e: scyllaconn::scylla::transport::errors::QueryError) -> Self {
+        Self::Scylla(e.to_string())
+    }
+}
+
+impl From<scyllaconn::scylla::transport::iterator::NextRowError> for Error {
+    fn from(e: scyllaconn::scylla::transport::iterator::NextRowError) -> Self {
+        Self::Scylla(e.to_string())
+    }
+}
+
+impl From<taskrun::tokio::task::JoinError> for Error {
+    fn from(_e: taskrun::tokio::task::JoinError) -> Self {
+        Self::Join
+    }
+}
+
+impl From<netpod::AsyncChannelError> for Error {
+    fn from(e: netpod::AsyncChannelError) -> Self {
+        Self::Async(e)
+    }
+}
+
+impl From<dbconn::channelconfig::Error> for Error {
+    fn from(e: dbconn::channelconfig::Error) -> Self {
+        Self::ChannelConfig(e)
+    }
+}
+
+impl From<Error> for crate::err::Error {
+    fn from(e: Error) -> Self {
+        Self::with_msg_no_trace(format!("{e} TODO add public message"))
+    }
+}
+
+impl Error {
+    fn to_public_response(self) -> http::Response<httpclient::StreamBody> {
+        use httpclient::internal_error;
+        let status = StatusCode::INTERNAL_SERVER_ERROR;
+        let js = serde_json::json!({
+            "message": self.to_string(),
+        });
+        if let Ok(body) = serde_json::to_string_pretty(&js) {
+            match response(status)
+                .header(http::header::CONTENT_TYPE, APP_JSON)
+                .body(body_string(body))
+            {
+                Ok(res) => res,
+                Err(e) => {
+                    error!("can not generate http error response {e}");
+                    internal_error()
+                }
+            }
+        } else {
+            internal_error()
+        }
+    }
+}
+
+impl crate::IntoBoxedError for Error {}
 
 pub async fn chconf_from_events_quorum(
     q: &PlainEventsQuery,
@@ -118,7 +296,7 @@ impl ChannelConfigHandler {
         node_config: &NodeConfigCached,
     ) -> Result<StreamResponse, Error> {
         let url = req_uri_to_url(req.uri())?;
-        let q = ChannelConfigQuery::from_url(&url)?;
+        let q = ChannelConfigQuery::from_url(&url).map_err(|e| Error::BadQuery(e))?;
         let conf =
             nodenet::channelconfig::channel_config(q.range.clone(), q.channel.clone(), pgqueue, node_config).await?;
         match conf {
@@ -176,7 +354,7 @@ impl ChannelConfigsHandler {
     async fn channel_configs(&self, req: Requ, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
         info!("channel_configs");
         let url = req_uri_to_url(req.uri())?;
-        let q = ChannelConfigQuery::from_url(&url)?;
+        let q = ChannelConfigQuery::from_url(&url).map_err(|e| Error::BadQuery(e))?;
         info!("channel_configs  for q {q:?}");
         let ch_confs = nodenet::channelconfig::channel_configs(q.channel, ncc).await?;
         let ret = response(StatusCode::OK)
@@ -235,7 +413,7 @@ impl ChannelConfigQuorumHandler {
     ) -> Result<StreamResponse, Error> {
         info!("channel_config_quorum");
         let url = req_uri_to_url(req.uri())?;
-        let q = ChannelConfigQuery::from_url(&url)?;
+        let q = ChannelConfigQuery::from_url(&url).map_err(|e| Error::ChannelConfigQuery(e))?;
         info!("channel_config_quorum  for q {q:?}");
         let ch_confs =
             nodenet::configquorum::find_config_basics_quorum(q.channel, q.range.into(), ctx, pgqueue, ncc).await?;
@@ -266,12 +444,12 @@ impl FromUrl for ChannelsWithTypeQuery {
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
         let s = pairs
             .get("scalar_type")
-            .ok_or_else(|| Error::with_public_msg_no_trace("missing scalar_type"))?;
+            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing scalar_type"))?;
         //let scalar_type = ScalarType::from_bsread_str(s)?;
         let scalar_type: ScalarType = serde_json::from_str(&format!("\"{s}\""))?;
         let s = pairs
             .get("shape")
-            .ok_or_else(|| Error::with_public_msg_no_trace("missing shape"))?;
+            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing shape"))?;
         let shape = Shape::from_dims_str(s)?;
         Ok(Self { scalar_type, shape })
     }
@@ -302,19 +480,19 @@ impl FromUrl for ScyllaChannelEventSeriesIdQuery {
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
         let backend = pairs
             .get("backend")
-            .ok_or_else(|| Error::with_public_msg_no_trace("missing backend"))?
+            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing backend"))?
             .into();
         let name = pairs
             .get("channelName")
-            .ok_or_else(|| Error::with_public_msg_no_trace("missing channelName"))?
+            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing channelName"))?
             .into();
         let s = pairs
             .get("scalarType")
-            .ok_or_else(|| Error::with_public_msg_no_trace("missing scalarType"))?;
+            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing scalarType"))?;
         let scalar_type: ScalarType = serde_json::from_str(&format!("\"{s}\""))?;
         let s = pairs
             .get("shape")
-            .ok_or_else(|| Error::with_public_msg_no_trace("missing shape"))?;
+            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing shape"))?;
         let shape = Shape::from_dims_str(s)?;
         let do_create = pairs.get("doCreate").map_or("false", |x| x.as_str()) == "true";
         Ok(Self {
@@ -351,15 +529,15 @@ impl FromUrl for ScyllaChannelsActiveQuery {
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
         let s = pairs
             .get("tsedge")
-            .ok_or_else(|| Error::with_public_msg_no_trace("missing tsedge"))?;
+            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing tsedge"))?;
         let tsedge: u64 = s.parse()?;
         let s = pairs
             .get("shapeKind")
-            .ok_or_else(|| Error::with_public_msg_no_trace("missing shapeKind"))?;
+            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing shapeKind"))?;
         let shape_kind: u32 = s.parse()?;
         let s = pairs
             .get("scalarType")
-            .ok_or_else(|| Error::with_public_msg_no_trace("missing scalarType"))?;
+            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing scalarType"))?;
         let scalar_type: ScalarType = serde_json::from_str(&format!("\"{s}\""))?;
         info!("parsed scalar type  inp: {s:?}  val: {scalar_type:?}");
         Ok(Self {
@@ -390,7 +568,7 @@ impl ScyllaChannelsActive {
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept == APP_JSON || accept == ACCEPT_ALL {
                 let url = req_uri_to_url(req.uri())?;
-                let q = ScyllaChannelsActiveQuery::from_url(&url)?;
+                let q = ScyllaChannelsActiveQuery::from_url(&url).map_err(|e| Error::BadQuery(e))?;
                 let res = self.get_channels(&q, node_config).await?;
                 let body = ToJsonBody::from(&res).into_body();
                 Ok(response(StatusCode::OK).body(body)?)
@@ -411,8 +589,10 @@ impl ScyllaChannelsActive {
             .node_config
             .cluster
             .scylla_st()
-            .ok_or_else(|| Error::with_public_msg_no_trace(format!("No Scylla configured")))?;
-        let scy = scyllaconn::conn::create_scy_session(scyco).await?;
+            .ok_or_else(|| Error::ExpectScyllaBackend)?;
+        let scy = scyllaconn::conn::create_scy_session(scyco)
+            .await
+            .map_err(other_err_error)?;
         // Database stores tsedge/ts_msp in units of (10 sec), and we additionally map to the grid.
         let tsedge = q.tsedge / 10 / (6 * 2) * (6 * 2);
         info!(
@@ -427,11 +607,10 @@ impl ScyllaChannelsActive {
                 "select series from series_by_ts_msp where part = ? and ts_msp = ? and shape_kind = ? and scalar_type = ?",
                 (part as i32, tsedge as i32, q.shape_kind as i32, q.scalar_type.to_scylla_i32()),
             )
-            .await
-            .err_conv()?;
+            .await.map_err(|e| Error::Scylla(e.to_string()))?;
             while let Some(row) = res.next().await {
-                let row = row.err_conv()?;
-                let (series,): (i64,) = row.into_typed().err_conv()?;
+                let row = row?;
+                let (series,): (i64,) = row.into_typed()?;
                 ret.push(series as u64);
             }
         }
@@ -456,11 +635,11 @@ impl FromUrl for IocForChannelQuery {
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
         let backend = pairs
             .get("backend")
-            .ok_or_else(|| Error::with_public_msg_no_trace("missing backend"))?
+            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing backend"))?
             .into();
         let name = pairs
             .get("channelName")
-            .ok_or_else(|| Error::with_public_msg_no_trace("missing channelName"))?
+            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing channelName"))?
             .into();
         Ok(Self { backend, name })
     }
@@ -492,16 +671,13 @@ impl IocForChannel {
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept == APP_JSON || accept == ACCEPT_ALL {
                 let url = req_uri_to_url(req.uri())?;
-                let q = IocForChannelQuery::from_url(&url)?;
+                let q = IocForChannelQuery::from_url(&url).map_err(|e| Error::BadQuery(e))?;
                 match self.find(&q, node_config).await {
                     Ok(k) => {
                         let body = ToJsonBody::from(&k).into_body();
                         Ok(response(StatusCode::OK).body(body)?)
                     }
-                    Err(e) => {
-                        let body = body_string(format!("{:?}", e.public_msg()));
-                        Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body)?)
-                    }
+                    Err(e) => Ok(e.to_public_response()),
                 }
             } else {
                 Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
@@ -517,7 +693,7 @@ impl IocForChannel {
         node_config: &NodeConfigCached,
     ) -> Result<Option<IocForChannelRes>, Error> {
         let dbconf = &node_config.node_config.cluster.database;
-        let (pg_client, pgjh) = create_connection(dbconf).await?;
+        let (pg_client, pgjh) = create_connection(dbconf).await.map_err(other_err_error)?;
         let rows = pg_client
             .query(
                 "select addr from ioc_by_channel where facility = $1 and channel = $2",
@@ -525,7 +701,7 @@ impl IocForChannel {
             )
             .await?;
         drop(pg_client);
-        pgjh.await??;
+        pgjh.await?.map_err(other_err_error)?;
         if let Some(row) = rows.first() {
             let ioc_addr = row.get(0);
             let ret = IocForChannelRes { ioc_addr };
@@ -593,14 +769,13 @@ impl ScyllaSeriesTsMsp {
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept == APP_JSON || accept == ACCEPT_ALL {
                 let url = req_uri_to_url(req.uri())?;
-                let q = ScyllaSeriesTsMspQuery::from_url(&url)?;
+                let q = ScyllaSeriesTsMspQuery::from_url(&url).map_err(|e| Error::BadQuery(e))?;
                 match self.get_ts_msps(&q, shared_res).await {
                     Ok(k) => {
                         let body = ToJsonBody::from(&k).into_body();
                         Ok(response(StatusCode::OK).body(body)?)
                     }
-                    Err(e) => Ok(response(StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(body_string(format!("{:?}", e.public_msg())))?),
+                    Err(e) => Ok(e.to_public_response()),
                 }
             } else {
                 Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
@@ -623,12 +798,7 @@ impl ScyllaSeriesTsMsp {
         let chconf = shared_res
             .pgqueue
             .chconf_best_matching_name_range(q.channel.clone(), nano_range)
-            .await
-            .map_err(|e| Error::with_msg_no_trace(format!("error from pg worker: {e}")))?
-            .recv()
-            .await
-            .unwrap()
-            .unwrap();
+            .await??;
         use scyllaconn::SeriesId;
         let sid = SeriesId::new(chconf.series());
         let scyqueue = shared_res.scyqueue.clone().unwrap();
@@ -710,8 +880,7 @@ impl AmbigiousChannelNames {
                         let body = ToJsonBody::from(&k).into_body();
                         Ok(response(StatusCode::OK).body(body)?)
                     }
-                    Err(e) => Ok(response(StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(body_string(format!("{:?}", e.public_msg())))?),
+                    Err(e) => Ok(e.to_public_response()),
                 }
             } else {
                 Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
@@ -723,7 +892,7 @@ impl AmbigiousChannelNames {
 
     async fn process(&self, ncc: &NodeConfigCached) -> Result<AmbigiousChannelNamesResponse, Error> {
         let dbconf = &ncc.node_config.cluster.database;
-        let (pg_client, pgjh) = create_connection(dbconf).await?;
+        let (pg_client, pgjh) = create_connection(dbconf).await.map_err(other_err_error)?;
         let rows = pg_client
             .query(
                 "select t2.series, t2.channel, t2.scalar_type, t2.shape_dims, t2.agg_kind from series_by_channel t1, series_by_channel t2 where t2.channel = t1.channel and t2.series != t1.series",
@@ -731,14 +900,14 @@ impl AmbigiousChannelNames {
             )
             .await?;
         drop(pg_client);
-        pgjh.await??;
+        pgjh.await?.map_err(other_err_error)?;
         let mut ret = AmbigiousChannelNamesResponse { ambigious: Vec::new() };
         for row in rows {
             let g = AmbigiousChannel {
                 series: row.get::<_, i64>(0) as u64,
                 name: row.get(1),
-                scalar_type: ScalarType::from_scylla_i32(row.get(2))?,
-                shape: Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(3))?,
+                scalar_type: ScalarType::from_scylla_i32(row.get(2)).map_err(other_err_error)?,
+                shape: Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(3)).map_err(other_err_error)?,
             };
             ret.ambigious.push(g);
         }
@@ -798,8 +967,7 @@ impl GenerateScyllaTestData {
                         let body = ToJsonBody::from(&k).into_body();
                         Ok(response(StatusCode::OK).body(body)?)
                     }
-                    Err(e) => Ok(response(StatusCode::INTERNAL_SERVER_ERROR)
-                        .body(body_string(format!("{:?}", e.public_msg())))?),
+                    Err(e) => Ok(e.to_public_response()),
                 }
             } else {
                 Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
@@ -811,25 +979,24 @@ impl GenerateScyllaTestData {
 
     async fn process(&self, node_config: &NodeConfigCached) -> Result<(), Error> {
         let scyconf = node_config.node_config.cluster.scylla_st().unwrap();
-        let scy = scyllaconn::conn::create_scy_session(scyconf).await?;
+        let scy = scyllaconn::conn::create_scy_session(scyconf)
+            .await
+            .map_err(other_err_error)?;
         let series: u64 = 42001;
         // TODO query `ts_msp` for all MSP values und use that to delete from event table first.
         // Only later delete also from the `ts_msp` table.
         let it = scy
             .query_iter("select ts_msp from ts_msp where series = ?", (series as i64,))
-            .await
-            .err_conv()?;
+            .await?;
         let mut it = it.into_typed::<(i64,)>();
         while let Some(row) = it.next().await {
-            let row = row.map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
+            let row = row?;
             let values = (series as i64, row.0);
             scy.query("delete from events_scalar_f64 where series = ? and ts_msp = ?", values)
-                .await
-                .err_conv()?;
+                .await?;
         }
         scy.query("delete from ts_msp where series = ?", (series as i64,))
-            .await
-            .err_conv()?;
+            .await?;
 
         // Generate
         let (msps, lsps, pulses, vals) = test_data_f64_01();
@@ -840,8 +1007,7 @@ impl GenerateScyllaTestData {
                     "insert into ts_msp (series, ts_msp) values (?, ?)",
                     (series as i64, msp as i64),
                 )
-                .await
-                .err_conv()?;
+                .await?;
             }
             last = msp;
         }
@@ -850,8 +1016,7 @@ impl GenerateScyllaTestData {
                 "insert into events_scalar_f64 (series, ts_msp, ts_lsp, pulse, value) values (?, ?, ?, ?, ?)",
                 (series as i64, msp as i64, lsp as i64, pulse as i64, val),
             )
-            .await
-            .err_conv()?;
+            .await?;
         }
         Ok(())
     }

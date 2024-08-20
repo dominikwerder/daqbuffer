@@ -4,7 +4,6 @@ pub mod api4;
 use crate::api1::channel_search_configs_v1;
 use crate::api1::channel_search_list_v1;
 use crate::api1::gather_json_2_v1;
-use crate::bodystream::response_err_msg;
 use crate::err::Error;
 use crate::gather::gather_get_json_generic;
 use crate::gather::SubRes;
@@ -21,6 +20,7 @@ use http::StatusCode;
 use httpclient::body_empty;
 use httpclient::body_stream;
 use httpclient::body_string;
+use httpclient::error_response;
 use httpclient::http;
 use httpclient::http::header;
 use httpclient::read_body_bytes;
@@ -509,9 +509,9 @@ where
     let mut query = match QT::from_url(&url) {
         Ok(k) => k,
         Err(_) => {
-            let msg = format!("malformed request or missing parameters  {:?}", req.uri());
+            let msg = format!("malformed request or missing parameters  {}", req.uri());
             warn!("{msg}");
-            return Ok(response_err_msg(StatusCode::BAD_REQUEST, msg)?);
+            return Ok(error_response(msg, ctx.reqid()));
         }
     };
     trace!("proxy_backend_query  {:?}  {:?}", query, req.uri());

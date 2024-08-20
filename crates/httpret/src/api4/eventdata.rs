@@ -1,4 +1,3 @@
-use crate::bodystream::response_err_msg;
 use crate::response;
 use crate::ReqCtx;
 use crate::ServiceSharedResources;
@@ -10,6 +9,7 @@ use http::Method;
 use http::StatusCode;
 use httpclient::body_empty;
 use httpclient::body_stream;
+use httpclient::error_response;
 use httpclient::read_body_bytes;
 use httpclient::Requ;
 use httpclient::StreamResponse;
@@ -50,7 +50,7 @@ impl EventDataHandler {
     pub async fn handle(
         &self,
         req: Requ,
-        _ctx: &ReqCtx,
+        ctx: &ReqCtx,
         ncc: &NodeConfigCached,
         shared_res: Arc<ServiceSharedResources>,
     ) -> Result<StreamResponse, EventDataError> {
@@ -63,8 +63,7 @@ impl EventDataHandler {
                 Ok(ret) => Ok(ret),
                 Err(e) => {
                     error!("{e}");
-                    let res = response_err_msg(StatusCode::NOT_ACCEPTABLE, e.to_public_error())
-                        .map_err(|_| EventDataError::InternalError)?;
+                    let res = error_response(e.to_public_error().to_string(), ctx.reqid());
                     Ok(res)
                 }
             }

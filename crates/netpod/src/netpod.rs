@@ -63,7 +63,9 @@ use bytes::Bytes;
 use chrono::DateTime;
 use chrono::TimeZone;
 use chrono::Utc;
+use err::thiserror;
 use err::Error;
+use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use http::Request;
@@ -103,6 +105,7 @@ pub const APP_CBOR_FRAMED: &str = "application/cbor-framed";
 pub const APP_JSON_FRAMED: &str = "application/json-framed";
 pub const ACCEPT_ALL: &str = "*/*";
 pub const X_DAQBUF_REQID: &str = "x-daqbuffer-request-id";
+pub const HEADER_NAME_REQUEST_ID: &str = "requestid";
 
 pub const CONNECTION_STATUS_DIV: DtMs = DtMs::from_ms_u64(1000 * 60 * 60);
 // pub const TS_MSP_GRID_UNIT: DtMs = DtMs::from_ms_u64(1000 * 10);
@@ -174,6 +177,13 @@ impl CmpZero for usize {
     fn is_zero(&self) -> bool {
         *self == 0
     }
+}
+
+#[derive(Debug, err::ThisError)]
+#[cstm(name = "AsyncChannelError")]
+pub enum AsyncChannelError {
+    Send,
+    Recv,
 }
 
 pub struct BodyStream {
@@ -1068,6 +1078,16 @@ impl SfDbChannel {
 
     pub fn set_series(&mut self, series: u64) {
         self.series = Some(series);
+    }
+}
+
+impl fmt::Display for SfDbChannel {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            fmt,
+            "SfDbChannel {{ series: {:?}, backend: {:?}, name: {:?}, kind: {:?} }}",
+            self.series, self.backend, self.name, self.kind
+        )
     }
 }
 
@@ -4123,14 +4143,18 @@ pub fn status_board_init() {
     });
 }
 
-pub fn req_uri_to_url(uri: &Uri) -> Result<Url, Error> {
+#[derive(Debug, ThisError)]
+#[cstm(name = "UriError")]
+pub enum UriError {
+    ParseError(Uri),
+}
+
+pub fn req_uri_to_url(uri: &Uri) -> Result<Url, UriError> {
     if uri.scheme().is_none() {
         format!("dummy:{uri}")
             .parse()
-            .map_err(|_| Error::with_msg_no_trace(format!("can not use uri {uri}")))
+            .map_err(|_| UriError::ParseError(uri.clone()))
     } else {
-        uri.to_string()
-            .parse()
-            .map_err(|_| Error::with_msg_no_trace(format!("can not use uri {uri}")))
+        uri.to_string().parse().map_err(|_| UriError::ParseError(uri.clone()))
     }
 }

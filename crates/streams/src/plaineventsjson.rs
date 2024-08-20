@@ -5,7 +5,8 @@ use crate::json_stream::events_stream_to_json_stream;
 use crate::json_stream::JsonStream;
 use crate::plaineventsstream::dyn_events_stream;
 use crate::tcprawclient::OpenBoxedBytesStreamsBox;
-use err::Error;
+use err::thiserror;
+use err::ThisError;
 use futures_util::StreamExt;
 use items_0::collect_s::Collectable;
 use items_0::on_sitemty_data;
@@ -16,6 +17,14 @@ use netpod::ReqCtx;
 use query::api4::events::PlainEventsQuery;
 use serde_json::Value as JsonValue;
 use std::time::Instant;
+
+#[derive(Debug, ThisError)]
+#[cstm(name = "PlainEventsJson")]
+pub enum Error {
+    Stream(#[from] crate::plaineventsstream::Error),
+    Collect(err::Error),
+    Json(#[from] serde_json::Error),
+}
 
 pub async fn plain_events_json(
     evq: &PlainEventsQuery,
@@ -49,7 +58,8 @@ pub async fn plain_events_json(
         Some(evq.range().clone()),
         None,
     )
-    .await?;
+    .await
+    .map_err(Error::Collect)?;
     debug!("plain_events_json  collected");
     let jsval = serde_json::to_value(&collected)?;
     debug!("plain_events_json  json serialized");
