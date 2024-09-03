@@ -55,6 +55,7 @@ use tokio::task::JoinHandle;
 use tokio::time::error::Elapsed;
 use url::Url;
 
+static USE_CACHE: bool = false;
 static CACHE: Cache<u64, u64> = Cache::new();
 
 pub struct MapPulseHisto {
@@ -1274,51 +1275,69 @@ impl MapPulseHttpFunction {
         }
         trace!("MapPulseHttpFunction  handle  uri: {:?}", req.uri());
         let pulse = extract_path_number_after_prefix(&req, Self::prefix())?;
-        match CACHE.portal(pulse) {
-            CachePortal::Fresh => {
-                let histo = MapPulseHistoHttpFunction::histo(pulse, node_config).await?;
-                let mut i1 = 0;
-                let mut max = 0;
-                for i2 in 0..histo.tss.len() {
-                    if histo.counts[i2] > max {
-                        max = histo.counts[i2];
-                        i1 = i2;
+        if USE_CACHE {
+            match CACHE.portal(pulse) {
+                CachePortal::Fresh => {
+                    let histo = MapPulseHistoHttpFunction::histo(pulse, node_config).await?;
+                    let mut i1 = 0;
+                    let mut max = 0;
+                    for i2 in 0..histo.tss.len() {
+                        if histo.counts[i2] > max {
+                            max = histo.counts[i2];
+                            i1 = i2;
+                        }
+                    }
+                    if max > 0 {
+                        let val = histo.tss[i1];
+                        CACHE.set_value(pulse, val);
+                        Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&val)?))?)
+                    } else {
+                        Ok(response(StatusCode::NO_CONTENT).body(body_empty())?)
                     }
                 }
-                if max > 0 {
-                    let val = histo.tss[i1];
-                    CACHE.set_value(pulse, val);
-                    Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&val)?))?)
-                } else {
-                    Ok(response(StatusCode::NO_CONTENT).body(body_empty())?)
-                }
-            }
-            CachePortal::Existing(rx) => {
-                trace!("waiting for already running pulse map  pulse {pulse}");
-                match rx.recv().await {
-                    Ok(_) => {
-                        error!("should never recv from existing operation  pulse {pulse}");
-                        Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
+                CachePortal::Existing(rx) => {
+                    trace!("waiting for already running pulse map  pulse {pulse}");
+                    match rx.recv().await {
+                        Ok(_) => {
+                            error!("should never recv from existing operation  pulse {pulse}");
+                            Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
+                        }
+                        Err(_e) => match CACHE.portal(pulse) {
+                            CachePortal::Known(ts) => {
+                                info!("pulse {pulse}  known from cache  ts {ts}");
+                                Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&ts)?))?)
+                            }
+                            CachePortal::Fresh => {
+                                error!("pulse {pulse}  woken up, but fresh");
+                                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
+                            }
+                            CachePortal::Existing(..) => {
+                                error!("pulse {pulse}  woken up, but existing");
+                                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
+                            }
+                        },
                     }
-                    Err(_e) => match CACHE.portal(pulse) {
-                        CachePortal::Known(ts) => {
-                            info!("pulse {pulse}  known from cache  ts {ts}");
-                            Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&ts)?))?)
-                        }
-                        CachePortal::Fresh => {
-                            error!("pulse {pulse}  woken up, but fresh");
-                            Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
-                        }
-                        CachePortal::Existing(..) => {
-                            error!("pulse {pulse}  woken up, but existing");
-                            Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
-                        }
-                    },
+                }
+                CachePortal::Known(ts) => {
+                    info!("pulse {pulse}  in cache  ts {ts}");
+                    Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&ts)?))?)
                 }
             }
-            CachePortal::Known(ts) => {
-                info!("pulse {pulse}  in cache  ts {ts}");
-                Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&ts)?))?)
+        } else {
+            let histo = MapPulseHistoHttpFunction::histo(pulse, node_config).await?;
+            let mut i1 = 0;
+            let mut max = 0;
+            for i2 in 0..histo.tss.len() {
+                if histo.counts[i2] > max {
+                    max = histo.counts[i2];
+                    i1 = i2;
+                }
+            }
+            if max > 0 {
+                let val = histo.tss[i1];
+                Ok(response(StatusCode::OK).body(body_string(serde_json::to_string(&val)?))?)
+            } else {
+                Ok(response(StatusCode::NO_CONTENT).body(body_empty())?)
             }
         }
     }
@@ -1342,58 +1361,80 @@ impl Api4MapPulseHttpFunction {
     pub async fn find_timestamp(q: MapPulseQuery, ncc: &NodeConfigCached) -> Result<Option<u64>, Error> {
         use crate::cache::CachePortal;
         let pulse = q.pulse;
-        let res = match CACHE.portal(pulse) {
-            CachePortal::Fresh => {
-                trace!("value not yet in cache  pulse {pulse}");
-                let histo = MapPulseHistoHttpFunction::histo(pulse, ncc).await?;
-                let mut i1 = 0;
-                let mut max = 0;
-                for i2 in 0..histo.tss.len() {
-                    if histo.counts[i2] > max {
-                        max = histo.counts[i2];
-                        i1 = i2;
+        let res = if USE_CACHE {
+            match CACHE.portal(pulse) {
+                CachePortal::Fresh => {
+                    trace!("value not yet in cache  pulse {pulse}");
+                    let histo = MapPulseHistoHttpFunction::histo(pulse, ncc).await?;
+                    let mut i1 = 0;
+                    let mut max = 0;
+                    for i2 in 0..histo.tss.len() {
+                        if histo.counts[i2] > max {
+                            max = histo.counts[i2];
+                            i1 = i2;
+                        }
+                    }
+                    if histo.tss.len() > 1 {
+                        warn!("Ambigious pulse map  pulse {}  histo {:?}", pulse, histo);
+                    }
+                    if max > 0 {
+                        let val = histo.tss[i1];
+                        CACHE.set_value(pulse, val);
+                        Ok(Some(val))
+                    } else {
+                        Ok(None)
                     }
                 }
-                if histo.tss.len() > 1 {
-                    warn!("Ambigious pulse map  pulse {}  histo {:?}", pulse, histo);
-                }
-                if max > 0 {
-                    let val = histo.tss[i1];
-                    CACHE.set_value(pulse, val);
-                    Ok(Some(val))
-                } else {
-                    Ok(None)
-                }
-            }
-            CachePortal::Existing(rx) => {
-                trace!("waiting for already running pulse map  pulse {pulse}");
-                match rx.recv().await {
-                    Ok(_) => {
-                        error!("should never recv from existing operation  pulse {pulse}");
-                        Err(Error::with_msg_no_trace("map pulse error"))
-                    }
-                    Err(_e) => {
-                        trace!("woken up while value wait  pulse {pulse}");
-                        match CACHE.portal(pulse) {
-                            CachePortal::Known(val) => {
-                                trace!("good, value after wakeup  pulse {pulse}");
-                                Ok(Some(val))
-                            }
-                            CachePortal::Fresh => {
-                                error!("woken up, but portal fresh  pulse {pulse}");
-                                Err(Error::with_msg_no_trace("map pulse error"))
-                            }
-                            CachePortal::Existing(..) => {
-                                error!("woken up, but portal existing  pulse {pulse}");
-                                Err(Error::with_msg_no_trace("map pulse error"))
+                CachePortal::Existing(rx) => {
+                    trace!("waiting for already running pulse map  pulse {pulse}");
+                    match rx.recv().await {
+                        Ok(_) => {
+                            error!("should never recv from existing operation  pulse {pulse}");
+                            Err(Error::with_msg_no_trace("map pulse error"))
+                        }
+                        Err(_e) => {
+                            trace!("woken up while value wait  pulse {pulse}");
+                            match CACHE.portal(pulse) {
+                                CachePortal::Known(val) => {
+                                    trace!("good, value after wakeup  pulse {pulse}");
+                                    Ok(Some(val))
+                                }
+                                CachePortal::Fresh => {
+                                    error!("woken up, but portal fresh  pulse {pulse}");
+                                    Err(Error::with_msg_no_trace("map pulse error"))
+                                }
+                                CachePortal::Existing(..) => {
+                                    error!("woken up, but portal existing  pulse {pulse}");
+                                    Err(Error::with_msg_no_trace("map pulse error"))
+                                }
                             }
                         }
                     }
                 }
+                CachePortal::Known(val) => {
+                    trace!("value already in cache  pulse {pulse}  ts {val}");
+                    Ok(Some(val))
+                }
             }
-            CachePortal::Known(val) => {
-                trace!("value already in cache  pulse {pulse}  ts {val}");
+        } else {
+            trace!("value not yet in cache  pulse {pulse}");
+            let histo = MapPulseHistoHttpFunction::histo(pulse, ncc).await?;
+            let mut i1 = 0;
+            let mut max = 0;
+            for i2 in 0..histo.tss.len() {
+                if histo.counts[i2] > max {
+                    max = histo.counts[i2];
+                    i1 = i2;
+                }
+            }
+            if histo.tss.len() > 1 {
+                warn!("Ambigious pulse map  pulse {}  histo {:?}", pulse, histo);
+            }
+            if max > 0 {
+                let val = histo.tss[i1];
                 Ok(Some(val))
+            } else {
+                Ok(None)
             }
         };
         res

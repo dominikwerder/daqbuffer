@@ -26,6 +26,15 @@ use std::pin::Pin;
 use std::sync::Arc;
 use tracing::Instrument;
 
+#[allow(unused)]
+macro_rules! trace_fetch {
+    ($($arg:tt)*) => {
+        if true {
+            trace!($($arg)*);
+        }
+    };
+}
+
 #[derive(Debug, ThisError)]
 #[cstm(name = "ScyllaReadEvents")]
 pub enum Error {
@@ -535,22 +544,18 @@ fn convert_rows_enum(
     last_before: &mut Option<(TsNano, EnumVariant)>,
 ) -> Result<<EnumVariant as ValTy>::Container, Error> {
     let mut ret = <EnumVariant as ValTy>::Container::empty();
+    trace_fetch!("convert_rows_enum  {}", <EnumVariant as ValTy>::st_name());
     for row in rows {
         let (ts, value) = if with_values {
             if EnumVariant::is_valueblob() {
-                if true {
-                    return Err(Error::Logic);
-                }
-                let row: (i64, Vec<u8>) = row.into_typed()?;
-                let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
-                let value = ValTy::from_valueblob(row.1);
-                (ts, value)
+                return Err(Error::Logic);
             } else {
                 let row: (i64, i16, String) = row.into_typed()?;
                 let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
                 let val = row.1 as u16;
                 let valstr = row.2;
-                let value = EnumVariant::new(val, valstr.into());
+                let value = EnumVariant::new(val, valstr);
+                info!("read enum variant  {:?}  {:?}", value, value.name_string());
                 (ts, value)
             }
         } else {
@@ -582,5 +587,6 @@ fn convert_rows_enum(
             }
         }
     }
+    trace_fetch!("convert_rows_enum  return {:?}", ret);
     Ok(ret)
 }

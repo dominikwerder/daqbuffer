@@ -29,7 +29,7 @@ issue another request with `begDate` as given by `continueAt`.
 
 ## Events as framed JSON stream
 
-To download larger amounts of JSON data it recommended to use the `json-framed` content encoding.
+To download larger amounts data as JSON it is recommended to use the `json-framed` content encoding.
 Using this encoding, the server can send the requested events as a stream of json objects, where each
 json object contains a batch of events.
 This content encoding is triggered via the `Accept: application/json-framed` header in the request.
@@ -44,10 +44,10 @@ The returned body looks like:
 
 where each `[JSON-frame]` looks like:
 ```
-[length N of the following JSON object: uint32 little-endian]
-[reserved: 12 bytes of zero-padding]
+[number of bytes N of the following json-encoded data, as ASCII-encoded number]
+[newline]
 [JSON object: N bytes]
-[padding: P zero-bytes, 0 <= P <= 7, such that (N + P) mod 8 = 0]
+[newline]
 ```
 
 Note: "data" objects are currently identified by the presence of the `tss` key.

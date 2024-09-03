@@ -1,5 +1,6 @@
 use crate::bodystream::response;
 use crate::err::Error;
+use crate::requests::accepts_json_or_all;
 use crate::ReqCtx;
 use crate::ServiceSharedResources;
 use futures_util::StreamExt;
@@ -7,6 +8,8 @@ use http::Method;
 use http::StatusCode;
 use httpclient::body_empty;
 use httpclient::body_string;
+use httpclient::error_response;
+use httpclient::error_status_response;
 use httpclient::IntoBody;
 use httpclient::Requ;
 use httpclient::StreamResponse;
@@ -113,35 +116,36 @@ impl ChannelStatusEventsHandler {
     pub async fn handle(
         &self,
         req: Requ,
-        _ctx: &ReqCtx,
+        ctx: &ReqCtx,
         shared_res: &ServiceSharedResources,
         ncc: &NodeConfigCached,
     ) -> Result<StreamResponse, Error> {
-        if req.method() == Method::GET {
-            let accept_def = APP_JSON;
-            let accept = req
-                .headers()
-                .get(http::header::ACCEPT)
-                .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
-            if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
-                let url = req_uri_to_url(req.uri())?;
-                let q = ChannelStateEventsQuery::from_url(&url)?;
-                match self.fetch_data(&q, shared_res, ncc).await {
-                    Ok(k) => {
-                        let body = ToJsonBody::from(&k).into_body();
-                        Ok(response(StatusCode::OK).body(body)?)
-                    }
-                    Err(e) => {
-                        error!("{e}");
-                        Ok(response(StatusCode::INTERNAL_SERVER_ERROR)
-                            .body(body_string(format!("{:?}", e.public_msg())))?)
-                    }
-                }
-            } else {
-                Ok(response(StatusCode::BAD_REQUEST).body(body_empty())?)
-            }
+        if req.method() != Method::GET {
+            Ok(error_status_response(
+                StatusCode::METHOD_NOT_ALLOWED,
+                "expect a GET request".into(),
+                ctx.reqid(),
+            ))
+        } else if !accepts_json_or_all(req.headers()) {
+            Ok(error_status_response(
+                StatusCode::NOT_ACCEPTABLE,
+                "server can only deliver json".into(),
+                ctx.reqid(),
+            ))
         } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
+            let url = req_uri_to_url(req.uri())?;
+            let q = ChannelStateEventsQuery::from_url(&url)?;
+            match self.fetch_data(&q, shared_res, ncc).await {
+                Ok(k) => {
+                    let body = ToJsonBody::from(&k).into_body();
+                    Ok(response(StatusCode::OK).body(body)?)
+                }
+                Err(e) => {
+                    error!("{e}");
+                    Ok(response(StatusCode::INTERNAL_SERVER_ERROR)
+                        .body(body_string(format!("{:?}", e.public_msg())))?)
+                }
+            }
         }
     }
 

@@ -191,10 +191,14 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
         let tracing_trace = collect_env_list("TRACING_TRACE");
         // let tracing_trace_always = collect_env_list("TRACING_TRACE_ALWAYS");
         let filter_3 = tracing_subscriber::filter::DynFilterFn::new(move |meta, ctx| {
+            let mut tmp1 = String::with_capacity(128);
             if *meta.level() >= tracing::Level::TRACE {
                 let mut target_match = false;
                 for e in &tracing_trace {
-                    if meta.target().starts_with(e) {
+                    tmp1.clear();
+                    tmp1.push_str(e);
+                    tmp1.push_str("::");
+                    if meta.target() == &tmp1[..tmp1.len() - 2] || meta.target().starts_with(&tmp1) {
                         target_match = true;
                         break;
                     }
@@ -218,7 +222,10 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
             } else if *meta.level() >= tracing::Level::DEBUG {
                 let mut target_match = false;
                 for e in &tracing_debug {
-                    if meta.target().starts_with(e) {
+                    tmp1.clear();
+                    tmp1.push_str(e);
+                    tmp1.push_str("::");
+                    if meta.target() == &tmp1[..tmp1.len() - 2] || meta.target().starts_with(&tmp1) {
                         target_match = true;
                         break;
                     }

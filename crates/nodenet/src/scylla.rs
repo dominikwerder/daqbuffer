@@ -9,6 +9,7 @@ use items_0::streamitem::StreamItem;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
 use netpod::ChConf;
+use netpod::SeriesKind;
 use query::api4::events::EventsSubQuery;
 use scyllaconn::events2::events::EventReadOpts;
 use scyllaconn::events2::mergert;
@@ -40,7 +41,7 @@ pub async fn scylla_channel_event_stream(
     let stream: Pin<Box<dyn Stream<Item = _> + Send>> = if let Some(rt) = evq.use_rt() {
         let x = scyllaconn::events2::events::EventsStreamRt::new(
             rt,
-            chconf,
+            chconf.clone(),
             evq.range().into(),
             readopts,
             scyqueue.clone(),
@@ -48,10 +49,45 @@ pub async fn scylla_channel_event_stream(
         .map_err(|e| scyllaconn::events2::mergert::Error::from(e));
         Box::pin(x)
     } else {
-        let x = scyllaconn::events2::mergert::MergeRts::new(chconf, evq.range().into(), readopts, scyqueue.clone());
+        let x =
+            scyllaconn::events2::mergert::MergeRts::new(chconf.clone(), evq.range().into(), readopts, scyqueue.clone());
         Box::pin(x)
     };
     let stream = stream
+        .map(move |item| match item {
+            Ok(k) => match k {
+                ChannelEvents::Events(mut k) => {
+                    if let SeriesKind::ChannelStatus = chconf.kind() {
+                        use items_0::Empty;
+                        type C1 = items_2::eventsdim0::EventsDim0<u64>;
+                        type C2 = items_2::eventsdim0::EventsDim0<String>;
+                        if let Some(j) = k.as_any_mut().downcast_mut::<C1>() {
+                            let mut g = C2::empty();
+                            let tss = j.tss();
+                            let vals = j.private_values_ref();
+                            for (&ts, &val) in tss.iter().zip(vals.iter()) {
+                                use netpod::channelstatus as cs2;
+                                let val = match cs2::ChannelStatus::from_kind(val as _) {
+                                    Ok(x) => x.to_user_variant_string(),
+                                    Err(_) => format!("{}", val),
+                                };
+                                if val.len() != 0 {
+                                    g.push_back(ts, 0, val);
+                                }
+                            }
+                            Ok(ChannelEvents::Events(Box::new(g)))
+                            // Ok(ChannelEvents::Events(k))
+                        } else {
+                            Ok(ChannelEvents::Events(k))
+                        }
+                    } else {
+                        Ok(ChannelEvents::Events(k))
+                    }
+                }
+                ChannelEvents::Status(k) => Ok(ChannelEvents::Status(k)),
+            },
+            _ => item,
+        })
         .map(move |item| match &item {
             Ok(k) => match k {
                 ChannelEvents::Events(k) => {

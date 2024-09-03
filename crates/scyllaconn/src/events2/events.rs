@@ -19,7 +19,6 @@ use netpod::ScalarType;
 use netpod::Shape;
 use netpod::TsMs;
 use netpod::TsMsVecFmt;
-use netpod::TsNano;
 use series::SeriesId;
 use std::collections::VecDeque;
 use std::pin::Pin;
@@ -107,12 +106,10 @@ enum ReadingState {
 }
 
 struct ReadingBck {
-    scyqueue: ScyllaQueue,
     reading_state: ReadingState,
 }
 
 struct ReadingFwd {
-    scyqueue: ScyllaQueue,
     reading_state: ReadingState,
 }
 
@@ -136,6 +133,7 @@ pub struct EventsStreamRt {
     msp_buf: VecDeque<TsMs>,
     msp_buf_bck: VecDeque<TsMs>,
     out: VecDeque<Box<dyn Events>>,
+    out_cnt: u64,
     ts_seen_max: u64,
 }
 
@@ -162,6 +160,7 @@ impl EventsStreamRt {
             msp_buf: VecDeque::new(),
             msp_buf_bck: VecDeque::new(),
             out: VecDeque::new(),
+            out_cnt: 0,
             ts_seen_max: 0,
         }
     }
@@ -218,14 +217,7 @@ impl EventsStreamRt {
                     ScalarType::F64 => read_next_values::<f64>(opts).await,
                     ScalarType::BOOL => read_next_values::<bool>(opts).await,
                     ScalarType::STRING => read_next_values::<String>(opts).await,
-                    ScalarType::Enum => {
-                        trace_fetch!(
-                            "make_read_events_fut  {:?}  {:?}  ------------- good",
-                            shape,
-                            scalar_type
-                        );
-                        read_next_values::<EnumVariant>(opts).await
-                    }
+                    ScalarType::Enum => read_next_values::<EnumVariant>(opts).await,
                 },
                 Shape::Wave(_) => match &scalar_type {
                     ScalarType::U8 => read_next_values::<Vec<u8>>(opts).await,
@@ -284,7 +276,6 @@ impl EventsStreamRt {
             let scyqueue = self.scyqueue.clone();
             let fut = self.make_read_events_fut(ts, true, scyqueue);
             self.state = State::ReadingBck(ReadingBck {
-                scyqueue: self.scyqueue.clone(),
                 reading_state: ReadingState::FetchEvents(FetchEvents { fut }),
             });
         } else {
@@ -306,14 +297,12 @@ impl EventsStreamRt {
             let scyqueue = self.scyqueue.clone();
             let fut = self.make_read_events_fut(ts, false, scyqueue);
             self.state = State::ReadingFwd(ReadingFwd {
-                scyqueue: self.scyqueue.clone(),
                 reading_state: ReadingState::FetchEvents(FetchEvents { fut }),
             });
         } else {
             trace_fetch!("setup_fwd_read  no msp");
             let fut = Self::make_msp_read_fut(&mut self.msp_inp);
             self.state = State::ReadingFwd(ReadingFwd {
-                scyqueue: self.scyqueue.clone(),
                 reading_state: ReadingState::FetchMsp(FetchMsp { fut }),
             });
         }
@@ -393,6 +382,7 @@ impl Stream for EventsStreamRt {
                     }
                 }
                 trace_emit!("deliver item  {}", item.output_info());
+                self.out_cnt += item.len() as u64;
                 break Ready(Some(Ok(ChannelEvents::Events(item))));
             }
             break match &mut self.state {
@@ -401,14 +391,12 @@ impl Stream for EventsStreamRt {
                         trace_fetch!("State::Begin  Bck");
                         let fut = Self::make_msp_read_fut(&mut self.msp_inp);
                         self.state = State::ReadingBck(ReadingBck {
-                            scyqueue: self.scyqueue.clone(),
                             reading_state: ReadingState::FetchMsp(FetchMsp { fut }),
                         });
                     } else {
                         trace_fetch!("State::Begin  Fwd");
                         let fut = Self::make_msp_read_fut(&mut self.msp_inp);
                         self.state = State::ReadingFwd(ReadingFwd {
-                            scyqueue: self.scyqueue.clone(),
                             reading_state: ReadingState::FetchMsp(FetchMsp { fut }),
                         });
                     }
@@ -424,7 +412,6 @@ impl Stream for EventsStreamRt {
                             } else {
                                 let fut = Self::make_msp_read_fut(&mut self.msp_inp);
                                 self.state = State::ReadingBck(ReadingBck {
-                                    scyqueue: self.scyqueue.clone(),
                                     reading_state: ReadingState::FetchMsp(FetchMsp { fut }),
                                 });
                             }
@@ -507,7 +494,24 @@ impl Stream for EventsStreamRt {
                 },
                 State::InputDone => {
                     if self.out.len() == 0 {
-                        Ready(None)
+                        self.state = State::Done;
+                        if self.out_cnt == 0 {
+                            let d =
+                                items_2::empty::empty_events_dyn_ev(self.ch_conf.scalar_type(), self.ch_conf.shape());
+                            match d {
+                                Ok(empty) => {
+                                    // let empty = items_0::streamitem::sitem_data(ChannelEvents::Events(empty));
+                                    let item = items_2::channelevents::ChannelEvents::Events(empty);
+                                    Ready(Some(Ok(item)))
+                                }
+                                Err(_) => {
+                                    self.state = State::Done;
+                                    Ready(Some(Err(Error::Logic)))
+                                }
+                            }
+                        } else {
+                            continue;
+                        }
                     } else {
                         continue;
                     }

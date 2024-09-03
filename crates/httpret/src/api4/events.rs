@@ -19,9 +19,9 @@ use http::StatusCode;
 use httpclient::body_empty;
 use httpclient::body_stream;
 use httpclient::error_response;
-use httpclient::not_found_response;
 use httpclient::IntoBody;
 use httpclient::Requ;
+use httpclient::StreamBody;
 use httpclient::StreamResponse;
 use httpclient::ToJsonBody;
 use netpod::log::*;
@@ -48,6 +48,44 @@ pub enum Error {
     Retrieval(#[from] crate::RetrievalError),
     EventsCbor(#[from] streams::plaineventscbor::Error),
     EventsJson(#[from] streams::plaineventsjson::Error),
+}
+
+impl Error {
+    pub fn user_message(&self) -> String {
+        match self {
+            Error::ChannelNotFound => format!("channel not found"),
+            _ => self.to_string(),
+        }
+    }
+
+    pub fn status_code(&self) -> StatusCode {
+        match self {
+            Error::ChannelNotFound => StatusCode::NOT_FOUND,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    pub fn response(&self, reqid: &str) -> http::Response<StreamBody> {
+        let js = serde_json::json!({
+            "message": self.user_message(),
+            "requestid": reqid,
+        });
+        if let Ok(body) = serde_json::to_string_pretty(&js) {
+            match http::Response::builder()
+                .status(self.status_code())
+                .header(http::header::CONTENT_TYPE, APP_JSON)
+                .body(httpclient::body_string(body))
+            {
+                Ok(res) => res,
+                Err(e) => {
+                    error!("can not generate http error response {e}");
+                    httpclient::internal_error()
+                }
+            }
+        } else {
+            httpclient::internal_error()
+        }
+    }
 }
 
 impl From<crate::channelconfig::Error> for Error {
@@ -100,16 +138,7 @@ impl EventsHandler {
             .await
         {
             Ok(ret) => Ok(ret),
-            Err(e) => match e {
-                Error::ChannelNotFound => {
-                    let res = not_found_response("channel not found".into(), ctx.reqid());
-                    Ok(res)
-                }
-                _ => {
-                    error!("EventsHandler sees: {e}");
-                    Ok(error_response(e.public_message(), ctx.reqid()))
-                }
-            },
+            Err(e) => Ok(e.response(ctx.reqid())),
         }
     }
 }

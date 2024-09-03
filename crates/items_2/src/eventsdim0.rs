@@ -83,6 +83,231 @@ macro_rules! trace_binning {
     };
 }
 
+#[derive(Debug)]
+pub struct EventsDim0EnumCollector {
+    vals: EventsDim0Enum,
+    range_final: bool,
+    timed_out: bool,
+    needs_continue_at: bool,
+}
+
+impl EventsDim0EnumCollector {
+    pub fn new() -> Self {
+        Self {
+            vals: EventsDim0Enum::new(),
+            range_final: false,
+            timed_out: false,
+            needs_continue_at: false,
+        }
+    }
+}
+
+impl TypeName for EventsDim0EnumCollector {
+    fn type_name(&self) -> String {
+        "EventsDim0EnumCollector".into()
+    }
+}
+
+impl WithLen for EventsDim0EnumCollector {
+    fn len(&self) -> usize {
+        self.vals.tss.len()
+    }
+}
+
+impl ByteEstimate for EventsDim0EnumCollector {
+    fn byte_estimate(&self) -> u64 {
+        // TODO does it need to be more accurate?
+        30 * self.len() as u64
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EventsDim0EnumCollectorOutput {
+    #[serde(rename = "tsAnchor")]
+    ts_anchor_sec: u64,
+    #[serde(rename = "tsMs")]
+    ts_off_ms: VecDeque<u64>,
+    #[serde(rename = "tsNs")]
+    ts_off_ns: VecDeque<u64>,
+    #[serde(rename = "values")]
+    vals: VecDeque<u16>,
+    #[serde(rename = "valuestrings")]
+    valstrs: VecDeque<String>,
+    #[serde(rename = "rangeFinal", default, skip_serializing_if = "is_false")]
+    range_final: bool,
+    #[serde(rename = "timedOut", default, skip_serializing_if = "is_false")]
+    timed_out: bool,
+    #[serde(rename = "continueAt", default, skip_serializing_if = "Option::is_none")]
+    continue_at: Option<IsoDateTime>,
+}
+
+impl WithLen for EventsDim0EnumCollectorOutput {
+    fn len(&self) -> usize {
+        todo!()
+    }
+}
+
+impl AsAnyRef for EventsDim0EnumCollectorOutput {
+    fn as_any_ref(&self) -> &dyn Any {
+        todo!()
+    }
+}
+
+impl AsAnyMut for EventsDim0EnumCollectorOutput {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        todo!()
+    }
+}
+
+impl ToJsonResult for EventsDim0EnumCollectorOutput {
+    fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error> {
+        todo!()
+    }
+}
+
+impl Collected for EventsDim0EnumCollectorOutput {}
+
+impl CollectorType for EventsDim0EnumCollector {
+    type Input = EventsDim0Enum;
+    type Output = EventsDim0EnumCollectorOutput;
+
+    fn ingest(&mut self, src: &mut EventsDim0Enum) {
+        self.vals.tss.append(&mut src.tss);
+        self.vals.values.append(&mut src.values);
+        self.vals.valuestrs.append(&mut src.valuestrs);
+    }
+
+    fn set_range_complete(&mut self) {
+        self.range_final = true;
+    }
+
+    fn set_timed_out(&mut self) {
+        self.timed_out = true;
+        self.needs_continue_at = true;
+    }
+
+    fn set_continue_at_here(&mut self) {
+        self.needs_continue_at = true;
+    }
+
+    fn result(
+        &mut self,
+        range: Option<SeriesRange>,
+        binrange: Option<BinnedRangeEnum>,
+    ) -> Result<EventsDim0EnumCollectorOutput, Error> {
+        debug!(
+            "{}  result()  needs_continue_at {}",
+            self.type_name(),
+            self.needs_continue_at
+        );
+        // If we timed out, we want to hint the client from where to continue.
+        // This is tricky: currently, client can not request a left-exclusive range.
+        // We currently give the timestamp of the last event plus a small delta.
+        // The amount of the delta must take into account what kind of timestamp precision the client
+        // can parse and handle.
+        let vals = &mut self.vals;
+        let continue_at = if self.needs_continue_at {
+            if let Some(ts) = vals.tss.back() {
+                let x = Some(IsoDateTime::from_u64(*ts / MS * MS + MS));
+                x
+            } else {
+                if let Some(range) = &range {
+                    match range {
+                        SeriesRange::TimeRange(x) => Some(IsoDateTime::from_u64(x.beg + SEC)),
+                        SeriesRange::PulseRange(_) => {
+                            error!("TODO emit create continueAt for pulse range");
+                            Some(IsoDateTime::from_u64(0))
+                        }
+                    }
+                } else {
+                    Some(IsoDateTime::from_u64(0))
+                }
+            }
+        } else {
+            None
+        };
+        let tss_sl = vals.tss.make_contiguous();
+        let (ts_anchor_sec, ts_off_ms, ts_off_ns) = crate::ts_offs_from_abs(tss_sl);
+        let valixs = mem::replace(&mut vals.values, VecDeque::new());
+        let valstrs = mem::replace(&mut vals.valuestrs, VecDeque::new());
+        let vals = valixs;
+        if ts_off_ms.len() != ts_off_ns.len() {
+            return Err(Error::with_msg_no_trace("collected len mismatch"));
+        }
+        if ts_off_ms.len() != vals.len() {
+            return Err(Error::with_msg_no_trace("collected len mismatch"));
+        }
+        if ts_off_ms.len() != valstrs.len() {
+            return Err(Error::with_msg_no_trace("collected len mismatch"));
+        }
+        let ret = Self::Output {
+            ts_anchor_sec,
+            ts_off_ms,
+            ts_off_ns,
+            vals,
+            valstrs,
+            range_final: self.range_final,
+            timed_out: self.timed_out,
+            continue_at,
+        };
+        Ok(ret)
+    }
+}
+
+// Experiment with having this special case for enums
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EventsDim0Enum {
+    pub tss: VecDeque<u64>,
+    pub values: VecDeque<u16>,
+    pub valuestrs: VecDeque<String>,
+}
+
+impl EventsDim0Enum {
+    pub fn new() -> Self {
+        Self {
+            tss: VecDeque::new(),
+            values: VecDeque::new(),
+            valuestrs: VecDeque::new(),
+        }
+    }
+
+    pub fn push_back(&mut self, ts: u64, value: u16, valuestr: String) {
+        self.tss.push_back(ts);
+        self.values.push_back(value);
+        self.valuestrs.push_back(valuestr);
+    }
+}
+
+impl TypeName for EventsDim0Enum {
+    fn type_name(&self) -> String {
+        "EventsDim0Enum".into()
+    }
+}
+
+impl AsAnyRef for EventsDim0Enum {
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl AsAnyMut for EventsDim0Enum {
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+impl WithLen for EventsDim0Enum {
+    fn len(&self) -> usize {
+        self.tss.len()
+    }
+}
+
+impl Collectable for EventsDim0Enum {
+    fn new_collector(&self) -> Box<dyn Collector> {
+        Box::new(EventsDim0EnumCollector::new())
+    }
+}
+
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventsDim0NoPulse<STY> {
     pub tss: VecDeque<u64>,
@@ -130,6 +355,14 @@ impl<STY> EventsDim0<STY> {
 
     pub fn tss(&self) -> &VecDeque<u64> {
         &self.tss
+    }
+
+    // only for testing at the moment
+    pub fn private_values_ref(&self) -> &VecDeque<STY> {
+        &self.values
+    }
+    pub fn private_values_mut(&mut self) -> &mut VecDeque<STY> {
+        &mut self.values
     }
 }
 

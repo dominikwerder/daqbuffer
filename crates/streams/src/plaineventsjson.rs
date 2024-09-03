@@ -39,9 +39,39 @@ pub async fn plain_events_json(
     let stream = dyn_events_stream(evq, ch_conf, ctx, open_bytes).await?;
 
     let stream = stream.map(move |k| {
-        on_sitemty_data!(k, |k| {
-            let k: Box<dyn Collectable> = Box::new(k);
-            Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
+        on_sitemty_data!(k, |mut k: Box<dyn items_0::Events>| {
+            if let Some(j) = k.as_any_mut().downcast_mut::<items_2::channelevents::ChannelEvents>() {
+                use items_0::AsAnyMut;
+                match j {
+                    items_2::channelevents::ChannelEvents::Events(m) => {
+                        if let Some(g) = m
+                            .as_any_mut()
+                            .downcast_mut::<items_2::eventsdim0::EventsDim0<netpod::EnumVariant>>()
+                        {
+                            trace!("consider container EnumVariant");
+                            let mut out = items_2::eventsdim0::EventsDim0Enum::new();
+                            for (&ts, val) in g.tss.iter().zip(g.values.iter()) {
+                                out.push_back(ts, val.ix(), val.name_string());
+                            }
+                            let k: Box<dyn Collectable> = Box::new(out);
+                            Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
+                        } else {
+                            trace!("consider container channel events other events  {}", k.type_name());
+                            let k: Box<dyn Collectable> = Box::new(k);
+                            Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
+                        }
+                    }
+                    items_2::channelevents::ChannelEvents::Status(_) => {
+                        trace!("consider container channel events status  {}", k.type_name());
+                        let k: Box<dyn Collectable> = Box::new(k);
+                        Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
+                    }
+                }
+            } else {
+                trace!("consider container else  {}", k.type_name());
+                let k: Box<dyn Collectable> = Box::new(k);
+                Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
+            }
         })
     });
 

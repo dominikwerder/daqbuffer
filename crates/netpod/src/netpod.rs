@@ -1,3 +1,4 @@
+pub mod channelstatus;
 pub mod hex;
 pub mod histo;
 pub mod query;
@@ -121,10 +122,11 @@ pub const DATETIME_FMT_9MS: &str = "%Y-%m-%dT%H:%M:%S.%9fZ";
 const TEST_BACKEND: &str = "testbackend-00";
 
 #[allow(non_upper_case_globals)]
-pub const trigger: [&'static str; 2] = [
+pub const trigger: [&'static str; 0] = [
     //
-    "S30CB05-VMCP-A010:PRESSURE",
-    "ATSRF-CAV:TUN-DETUNING-REL-ACT",
+    // "S30CB05-VMCP-A010:PRESSURE",
+    // "ATSRF-CAV:TUN-DETUNING-REL-ACT",
+    // "S30CB14-KBOC-HPPI1:PI-OUT",
 ];
 
 pub const TRACE_SERIES_ID: [u64; 1] = [
@@ -598,6 +600,10 @@ impl<const N: usize> StringFix<N> {
             len: 0,
         }
     }
+
+    pub fn string(&self) -> String {
+        self.data[..self.len as usize].iter().map(|x| *x).collect()
+    }
 }
 
 impl<const N: usize, T> From<T> for StringFix<N>
@@ -634,7 +640,7 @@ mod string_fix_impl_serde {
         where
             S: serde::Serializer,
         {
-            ser.serialize_unit()
+            ser.serialize_str(todo!("StringFix Serialize"))
         }
     }
 
@@ -643,7 +649,8 @@ mod string_fix_impl_serde {
         where
             D: serde::Deserializer<'de>,
         {
-            de.deserialize_unit(Vis::<N>)
+            todo!("StringFix Deserialize")
+            // de.deserialize_unit(Vis::<N>)
         }
     }
 
@@ -660,7 +667,8 @@ mod string_fix_impl_serde {
         where
             E: serde::de::Error,
         {
-            Ok(Self::Value::new())
+            todo!("StringFix Visitor")
+            // Ok(Self::Value::new())
         }
     }
 }
@@ -668,12 +676,20 @@ mod string_fix_impl_serde {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialOrd, PartialEq)]
 pub struct EnumVariant {
     ix: u16,
-    name: StringFix<26>,
+    name: String,
 }
 
 impl EnumVariant {
-    pub fn new(ix: u16, name: StringFix<26>) -> Self {
-        Self { ix, name }
+    pub fn new(ix: u16, name: impl Into<String>) -> Self {
+        Self { ix, name: name.into() }
+    }
+
+    pub fn ix(&self) -> u16 {
+        self.ix
+    }
+
+    pub fn name_string(&self) -> String {
+        self.name.clone()
     }
 }
 
@@ -681,7 +697,7 @@ impl Default for EnumVariant {
     fn default() -> Self {
         Self {
             ix: u16::MAX,
-            name: StringFix::new(),
+            name: String::new(),
         }
     }
 }
@@ -1852,7 +1868,7 @@ impl TsNano {
 
     pub fn from_system_time(st: SystemTime) -> Self {
         let tsunix = st.duration_since(UNIX_EPOCH).unwrap_or(Duration::ZERO);
-        let x = tsunix.as_secs() * 1000000000 + tsunix.subsec_nanos() as u64;
+        let x = tsunix.as_secs() * 1_000_000_000 + tsunix.subsec_nanos() as u64;
         Self::from_ns(x)
     }
 
@@ -2430,8 +2446,12 @@ impl BinnedRangeEnum {
         if min_bin_count < 1 {
             Err(Error::with_msg("min_bin_count < 1"))?;
         }
-        if min_bin_count > 20000 {
-            Err(Error::with_msg(format!("min_bin_count > 20000: {}", min_bin_count)))?;
+        let bin_count_max = i32::MAX as u32;
+        if min_bin_count > bin_count_max {
+            Err(Error::with_msg(format!(
+                "min_bin_count > {}: {}",
+                bin_count_max, min_bin_count
+            )))?;
         }
         let du = b.sub(&a);
         let max_bin_len = du.div_n(min_bin_count as u64);

@@ -5,14 +5,12 @@ use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::on_sitemty_data;
-use items_0::streamitem::sitem_data;
 use items_0::streamitem::LogItem;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::streamitem::EVENT_QUERY_JSON_STRING_FRAME;
 use items_2::channelevents::ChannelEvents;
-use items_2::empty::empty_events_dyn_ev;
 use items_2::framable::EventQueryJsonStringFrame;
 use items_2::framable::Framable;
 use items_2::frame::decode_frame;
@@ -115,11 +113,8 @@ async fn make_channel_events_stream(
     scyqueue: Option<&ScyllaQueue>,
     ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
-    let empty = empty_events_dyn_ev(subq.ch_conf().scalar_type(), subq.ch_conf().shape())?;
-    let empty = sitem_data(ChannelEvents::Events(empty));
     let stream = make_channel_events_stream_data(subq, reqctx, scyqueue, ncc).await?;
-    let ret = futures_util::stream::iter([empty]).chain(stream);
-    let ret = Box::pin(ret);
+    let ret = Box::pin(stream);
     Ok(ret)
 }
 
