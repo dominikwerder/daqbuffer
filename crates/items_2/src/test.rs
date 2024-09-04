@@ -503,10 +503,7 @@ fn binned_timeout_00() {
         assert_eq!(r2.mins(), &[3.0, 2.0, 3.0]);
         assert_eq!(r2.maxs(), &[3.2, 2.2, 3.2]);
         assert_eq!(r2.missing_bins(), 6);
-        assert_eq!(
-            r2.continue_at(),
-            Some(IsoDateTime(Utc.timestamp_nanos((TSBASE + SEC * 4) as i64)))
-        );
+        assert_eq!(r2.continue_at(), Some(IsoDateTime::from_ns_u64(TSBASE + SEC * 4)));
         Ok::<_, Error>(())
     };
     runfut(fut).unwrap();

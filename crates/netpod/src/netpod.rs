@@ -3213,9 +3213,9 @@ pub trait HasBackend {
     fn backend(&self) -> &str;
 }
 
+// TODO change into Option, why do I need to set a timeout using this trait?
 pub trait HasTimeout {
-    fn timeout(&self) -> Duration;
-    fn set_timeout(&mut self, timeout: Duration);
+    fn timeout(&self) -> Option<Duration>;
 }
 
 pub trait FromUrl: Sized {
@@ -3257,18 +3257,13 @@ impl HasBackend for MapQuery {
 }
 
 impl HasTimeout for MapQuery {
-    fn timeout(&self) -> Duration {
+    fn timeout(&self) -> Option<Duration> {
         let x: Option<u32> = if let Some(v) = self.get("timeout") {
             v.parse::<u32>().ok()
         } else {
             None
         };
-        let x = x.unwrap_or(5000);
-        Duration::from_millis(x as _)
-    }
-
-    fn set_timeout(&mut self, timeout: Duration) {
-        self.insert("timeout".into(), format!("{:.0}", 1e3 * timeout.as_secs_f32()));
+        x.map(|x| Duration::from_millis(x as _))
     }
 }
 
@@ -3294,13 +3289,8 @@ impl HasBackend for ChannelConfigQuery {
 }
 
 impl HasTimeout for ChannelConfigQuery {
-    fn timeout(&self) -> Duration {
-        Duration::from_millis(10000)
-    }
-
-    fn set_timeout(&mut self, _timeout: Duration) {
-        // TODO
-        // self.timeout = Some(timeout);
+    fn timeout(&self) -> Option<Duration> {
+        None
     }
 }
 

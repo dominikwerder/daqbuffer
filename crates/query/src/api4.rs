@@ -41,13 +41,8 @@ impl HasBackend for AccountingIngestedBytesQuery {
 }
 
 impl HasTimeout for AccountingIngestedBytesQuery {
-    fn timeout(&self) -> Duration {
-        Duration::from_millis(10000)
-    }
-
-    fn set_timeout(&mut self, timeout: Duration) {
-        // TODO
-        // self.timeout = Some(timeout);
+    fn timeout(&self) -> Option<Duration> {
+        None
     }
 }
 
@@ -115,13 +110,8 @@ impl HasBackend for AccountingToplistQuery {
 }
 
 impl HasTimeout for AccountingToplistQuery {
-    fn timeout(&self) -> Duration {
-        Duration::from_millis(10000)
-    }
-
-    fn set_timeout(&mut self, timeout: Duration) {
-        // TODO
-        // self.timeout = Some(timeout);
+    fn timeout(&self) -> Option<Duration> {
+        None
     }
 }
 

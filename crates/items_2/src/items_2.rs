@@ -6,6 +6,7 @@ pub mod channelevents;
 pub mod empty;
 pub mod eventfull;
 pub mod eventsdim0;
+pub mod eventsdim0enum;
 pub mod eventsdim1;
 pub mod eventsxbindim0;
 pub mod framable;
@@ -20,10 +21,8 @@ pub mod timebin;
 pub mod transform;
 
 use channelevents::ChannelEvents;
-use chrono::DateTime;
-use chrono::TimeZone;
-use chrono::Utc;
 use futures_util::Stream;
+use items_0::isodate::IsoDateTime;
 use items_0::overlap::RangeOverlapInfo;
 use items_0::streamitem::Sitemty;
 use items_0::transform::EventTransform;
@@ -33,10 +32,6 @@ use items_0::MergeError;
 use merger::Mergeable;
 use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::*;
-use netpod::DATETIME_FMT_3MS;
-use serde::Deserialize;
-use serde::Serialize;
-use serde::Serializer;
 use std::collections::VecDeque;
 use std::fmt;
 
@@ -133,28 +128,8 @@ impl serde::de::Error for Error {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-pub struct IsoDateTime(DateTime<Utc>);
-
-impl IsoDateTime {
-    pub fn from_u64(ts: u64) -> Self {
-        IsoDateTime(Utc.timestamp_nanos(ts as i64))
-    }
-}
-
-impl Serialize for IsoDateTime {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&self.0.format(DATETIME_FMT_3MS).to_string())
-    }
-}
-
 pub fn make_iso_ts(tss: &[u64]) -> Vec<IsoDateTime> {
-    tss.iter()
-        .map(|&k| IsoDateTime(Utc.timestamp_nanos(k as i64)))
-        .collect()
+    tss.iter().map(|&k| IsoDateTime::from_ns_u64(k)).collect()
 }
 
 impl Mergeable for Box<dyn Events> {

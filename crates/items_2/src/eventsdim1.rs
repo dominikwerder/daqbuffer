@@ -400,19 +400,19 @@ impl<STY: ScalarOps> CollectorType for EventsDim1Collector<STY> {
         let vals = &mut self.vals;
         let continue_at = if self.timed_out {
             if let Some(ts) = vals.tss.back() {
-                Some(IsoDateTime::from_u64(*ts + MS))
+                Some(IsoDateTime::from_ns_u64(*ts + MS))
             } else {
                 if let Some(range) = &range {
                     match range {
-                        SeriesRange::TimeRange(x) => Some(IsoDateTime::from_u64(x.beg + SEC)),
+                        SeriesRange::TimeRange(x) => Some(IsoDateTime::from_ns_u64(x.beg + SEC)),
                         SeriesRange::PulseRange(x) => {
                             error!("TODO emit create continueAt for pulse range");
-                            Some(IsoDateTime::from_u64(0))
+                            Some(IsoDateTime::from_ns_u64(0))
                         }
                     }
                 } else {
                     warn!("can not determine continue-at parameters");
-                    Some(IsoDateTime::from_u64(0))
+                    Some(IsoDateTime::from_ns_u64(0))
                 }
             }
         } else {

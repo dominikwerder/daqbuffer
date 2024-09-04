@@ -22,6 +22,8 @@ pub struct BinnedQuery {
     channel: SfDbChannel,
     range: SeriesRange,
     bin_count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "humantime_serde")]
+    bin_width: Option<Duration>,
     #[serde(
         default = "TransformQuery::default_time_binned",
         skip_serializing_if = "TransformQuery::is_default_time_binned"
@@ -31,8 +33,13 @@ pub struct BinnedQuery {
     cache_usage: Option<CacheUsage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     bins_max: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    timeout: Option<Duration>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "humantime_serde",
+        rename = "contentTimeout"
+    )]
+    timeout_content: Option<Duration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     buf_len_disk_io: Option<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -53,12 +60,13 @@ impl BinnedQuery {
             channel,
             range,
             bin_count,
+            bin_width: None,
             transform: TransformQuery::default_time_binned(),
             cache_usage: None,
             bins_max: None,
             buf_len_disk_io: None,
             disk_stats_every: None,
-            timeout: None,
+            timeout_content: None,
             merger_out_len_max: None,
             test_do_wasm: None,
             log_level: String::new(),
@@ -100,19 +108,12 @@ impl BinnedQuery {
         }
     }
 
-    pub fn timeout(&self) -> Option<Duration> {
-        self.timeout.clone()
-    }
-
-    pub fn timeout_value(&self) -> Duration {
-        match &self.timeout {
-            Some(x) => x.clone(),
-            None => Duration::from_millis(6000),
-        }
+    pub fn timeout_content(&self) -> Option<Duration> {
+        self.timeout_content
     }
 
     pub fn bins_max(&self) -> u32 {
-        self.bins_max.unwrap_or(2000)
+        self.bins_max.unwrap_or(200000)
     }
 
     pub fn merger_out_len_max(&self) -> usize {
@@ -135,8 +136,9 @@ impl BinnedQuery {
         self.disk_stats_every = Some(k);
     }
 
+    // Currently only for testing
     pub fn set_timeout(&mut self, k: Duration) {
-        self.timeout = Some(k);
+        self.timeout_content = Some(k);
     }
 
     pub fn set_buf_len_disk_io(&mut self, k: usize) {
@@ -172,12 +174,8 @@ impl HasBackend for BinnedQuery {
 }
 
 impl HasTimeout for BinnedQuery {
-    fn timeout(&self) -> Duration {
-        self.timeout_value()
-    }
-
-    fn set_timeout(&mut self, timeout: Duration) {
-        self.timeout = Some(timeout);
+    fn timeout(&self) -> Option<Duration> {
+        self.timeout_content
     }
 }
 
@@ -191,7 +189,8 @@ impl FromUrl for BinnedQuery {
         let ret = Self {
             channel: SfDbChannel::from_pairs(&pairs)?,
             range: SeriesRange::from_pairs(pairs)?,
-            bin_count: pairs.get("binCount").map_or(None, |x| x.parse().ok()).unwrap_or(10),
+            bin_count: pairs.get("binCount").and_then(|x| x.parse().ok()).unwrap_or(10),
+            bin_width: pairs.get("binWidth").and_then(|x| humantime::parse_duration(x).ok()),
             transform: TransformQuery::from_pairs(pairs)?,
             cache_usage: CacheUsage::from_pairs(&pairs)?,
             buf_len_disk_io: pairs
@@ -207,10 +206,9 @@ impl FromUrl for BinnedQuery {
             .map_or("false", |k| k)
             .parse()
             .map_err(|e| Error::with_msg(format!("can not parse reportError {:?}", e)))?,*/
-            timeout: pairs
-                .get("timeout")
-                .map(|x| x.parse::<u64>().map(Duration::from_millis).ok())
-                .unwrap_or(None),
+            timeout_content: pairs
+                .get("contentTimeout")
+                .and_then(|x| humantime::parse_duration(x).ok()),
             bins_max: pairs.get("binsMax").map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
             merger_out_len_max: pairs
                 .get("mergerOutLenMax")
@@ -235,14 +233,27 @@ impl AppendToUrl for BinnedQuery {
         {
             let mut g = url.query_pairs_mut();
             g.append_pair("binCount", &format!("{}", self.bin_count));
+            if let Some(x) = self.bin_width {
+                if x < Duration::from_secs(1) {
+                    g.append_pair("binWidth", &format!("{:.0}ms", x.subsec_millis()));
+                } else if x < Duration::from_secs(60) {
+                    g.append_pair("binWidth", &format!("{:.0}s", x.as_secs_f64()));
+                } else if x < Duration::from_secs(60 * 60) {
+                    g.append_pair("binWidth", &format!("{:.0}m", x.as_secs() / 60));
+                } else if x < Duration::from_secs(60 * 60 * 24) {
+                    g.append_pair("binWidth", &format!("{:.0}h", x.as_secs() / 60 / 60));
+                } else {
+                    g.append_pair("binWidth", &format!("{:.0}d", x.as_secs() / 60 / 60 / 24));
+                }
+            }
         }
         self.transform.append_to_url(url);
         let mut g = url.query_pairs_mut();
         if let Some(x) = &self.cache_usage {
             g.append_pair("cacheUsage", &x.query_param_value());
         }
-        if let Some(x) = &self.timeout {
-            g.append_pair("timeout", &format!("{}", x.as_millis()));
+        if let Some(x) = &self.timeout_content {
+            g.append_pair("contentTimeout", &format!("{:.0}ms", 1e3 * x.as_secs_f64()));
         }
         if let Some(x) = self.bins_max {
             g.append_pair("binsMax", &format!("{}", x));

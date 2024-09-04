@@ -31,8 +31,13 @@ pub struct PlainEventsQuery {
     #[serde(default = "TransformQuery::default_events")]
     #[serde(skip_serializing_if = "TransformQuery::is_default_events")]
     transform: TransformQuery,
-    #[serde(default, skip_serializing_if = "Option::is_none", with = "humantime_serde")]
-    timeout: Option<Duration>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "humantime_serde",
+        rename = "contentTimeout"
+    )]
+    timeout_content: Option<Duration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     events_max: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -72,7 +77,7 @@ impl PlainEventsQuery {
             range: range.into(),
             one_before_range: false,
             transform: TransformQuery::default_events(),
-            timeout: Some(Duration::from_millis(4000)),
+            timeout_content: None,
             events_max: None,
             bytes_max: None,
             allow_large_result: None,
@@ -110,8 +115,8 @@ impl PlainEventsQuery {
         self.buf_len_disk_io.unwrap_or(1024 * 8)
     }
 
-    pub fn timeout(&self) -> Duration {
-        self.timeout.unwrap_or(Duration::from_millis(10000))
+    pub fn timeout_content(&self) -> Option<Duration> {
+        self.timeout_content
     }
 
     pub fn events_max(&self) -> u64 {
@@ -225,12 +230,8 @@ impl HasBackend for PlainEventsQuery {
 }
 
 impl HasTimeout for PlainEventsQuery {
-    fn timeout(&self) -> Duration {
-        self.timeout()
-    }
-
-    fn set_timeout(&mut self, timeout: Duration) {
-        self.timeout = Some(timeout);
+    fn timeout(&self) -> Option<Duration> {
+        PlainEventsQuery::timeout_content(self)
     }
 }
 
@@ -253,10 +254,9 @@ impl FromUrl for PlainEventsQuery {
             range,
             one_before_range: pairs.get("oneBeforeRange").map_or("false", |x| x.as_ref()) == "true",
             transform: TransformQuery::from_pairs(pairs)?,
-            timeout: pairs
-                .get("timeout")
-                .map(|x| x.parse::<u64>().map(Duration::from_millis).ok())
-                .unwrap_or(None),
+            timeout_content: pairs
+                .get("contentTimeout")
+                .and_then(|x| humantime::parse_duration(x).ok()),
             events_max: pairs.get("eventsMax").map_or(None, |k| k.parse().ok()),
             bytes_max: pairs.get("bytesMax").map_or(None, |k| k.parse().ok()),
             allow_large_result: pairs.get("allowLargeResult").map_or(None, |x| x.parse().ok()),
@@ -317,8 +317,8 @@ impl AppendToUrl for PlainEventsQuery {
         drop(g);
         self.transform.append_to_url(url);
         let mut g = url.query_pairs_mut();
-        if let Some(x) = &self.timeout {
-            g.append_pair("timeout", &format!("{:.0}", x.as_secs_f64() * 1e3));
+        if let Some(x) = &self.timeout_content {
+            g.append_pair("contentTimeout", &format!("{:.0}ms", 1e3 * x.as_secs_f64()));
         }
         if let Some(x) = self.events_max.as_ref() {
             g.append_pair("eventsMax", &x.to_string());
@@ -431,7 +431,7 @@ impl Default for EventsSubQuerySettings {
 impl From<&PlainEventsQuery> for EventsSubQuerySettings {
     fn from(value: &PlainEventsQuery) -> Self {
         Self {
-            timeout: value.timeout,
+            timeout: value.timeout_content(),
             events_max: value.events_max,
             bytes_max: value.bytes_max,
             event_delay: value.event_delay,

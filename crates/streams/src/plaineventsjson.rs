@@ -13,9 +13,11 @@ use items_0::on_sitemty_data;
 use netpod::log::*;
 use netpod::ChannelTypeConfigGen;
 use netpod::Cluster;
+use netpod::HasTimeout;
 use netpod::ReqCtx;
 use query::api4::events::PlainEventsQuery;
 use serde_json::Value as JsonValue;
+use std::time::Duration;
 use std::time::Instant;
 
 #[derive(Debug, ThisError)]
@@ -34,7 +36,7 @@ pub async fn plain_events_json(
     open_bytes: OpenBoxedBytesStreamsBox,
 ) -> Result<JsonValue, Error> {
     debug!("plain_events_json  evquery {:?}", evq);
-    let deadline = Instant::now() + evq.timeout();
+    let deadline = Instant::now() + evq.timeout().unwrap_or(Duration::from_millis(4000));
 
     let stream = dyn_events_stream(evq, ch_conf, ctx, open_bytes).await?;
 
@@ -49,7 +51,7 @@ pub async fn plain_events_json(
                             .downcast_mut::<items_2::eventsdim0::EventsDim0<netpod::EnumVariant>>()
                         {
                             trace!("consider container EnumVariant");
-                            let mut out = items_2::eventsdim0::EventsDim0Enum::new();
+                            let mut out = items_2::eventsdim0enum::EventsDim0Enum::new();
                             for (&ts, val) in g.tss.iter().zip(g.values.iter()) {
                                 out.push_back(ts, val.ix(), val.name_string());
                             }

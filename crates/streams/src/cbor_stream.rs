@@ -103,6 +103,35 @@ fn map_events(x: Result<StreamItem<RangeCompletableItem<Box<dyn Events>>>, Error
                             // Ok(StreamItem::Log(item))
                         };
                     }
+                    let mut k = evs;
+                    let evs = if let Some(j) = k.as_any_mut().downcast_mut::<items_2::channelevents::ChannelEvents>() {
+                        use items_0::AsAnyMut;
+                        match j {
+                            items_2::channelevents::ChannelEvents::Events(m) => {
+                                if let Some(g) = m
+                                    .as_any_mut()
+                                    .downcast_mut::<items_2::eventsdim0::EventsDim0<netpod::EnumVariant>>()
+                                {
+                                    trace!("consider container EnumVariant");
+                                    let mut out = items_2::eventsdim0enum::EventsDim0Enum::new();
+                                    for (&ts, val) in g.tss.iter().zip(g.values.iter()) {
+                                        out.push_back(ts, val.ix(), val.name_string());
+                                    }
+                                    Box::new(items_2::channelevents::ChannelEvents::Events(Box::new(out)))
+                                } else {
+                                    trace!("consider container channel events other events  {}", k.type_name());
+                                    k
+                                }
+                            }
+                            items_2::channelevents::ChannelEvents::Status(_) => {
+                                trace!("consider container channel events status  {}", k.type_name());
+                                k
+                            }
+                        }
+                    } else {
+                        trace!("consider container else  {}", k.type_name());
+                        k
+                    };
                     let buf = evs.to_cbor_vec_u8();
                     let bytes = Bytes::from(buf);
                     let item = CborBytes(bytes);

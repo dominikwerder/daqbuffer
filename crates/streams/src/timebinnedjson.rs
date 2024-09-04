@@ -28,6 +28,7 @@ use netpod::ReqCtx;
 use query::api4::binned::BinnedQuery;
 use serde_json::Value as JsonValue;
 use std::pin::Pin;
+use std::time::Duration;
 use std::time::Instant;
 
 #[allow(unused)]
@@ -78,7 +79,7 @@ async fn timebinnable_stream(
         })
     });
 
-    #[cfg(DISABLED)]
+    #[cfg(target_abi = "")]
     #[cfg(wasm_transform)]
     let stream = if let Some(wasmname) = wasm1 {
         debug!("make wasm transform");
@@ -257,7 +258,7 @@ pub async fn timebinned_json(
     ctx: &ReqCtx,
     open_bytes: OpenBoxedBytesStreamsBox,
 ) -> Result<JsonValue, Error> {
-    let deadline = Instant::now().checked_add(query.timeout_value()).unwrap();
+    let deadline = Instant::now() + query.timeout_content().unwrap_or(Duration::from_millis(5000));
     let binned_range = BinnedRangeEnum::covering_range(query.range().clone(), query.bin_count())?;
     // TODO derive better values, from query
     let collect_max = 10000;

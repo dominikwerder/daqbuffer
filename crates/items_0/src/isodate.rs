@@ -11,8 +11,17 @@ pub struct IsoDateTime(DateTime<Utc>);
 
 impl IsoDateTime {
     pub fn from_unix_millis(ms: u64) -> Self {
-        let datetime = chrono::DateTime::from_timestamp_millis(ms as i64).unwrap();
-        Self(datetime)
+        // let datetime = chrono::DateTime::from_timestamp_millis(ms as i64).unwrap();
+        // Self(datetime)
+        IsoDateTime(
+            Utc.timestamp_millis_opt(ms as i64)
+                .earliest()
+                .unwrap_or(Utc.timestamp_nanos(0)),
+        )
+    }
+
+    pub fn from_ns_u64(ts: u64) -> Self {
+        IsoDateTime(Utc.timestamp_nanos(ts as i64))
     }
 }
 

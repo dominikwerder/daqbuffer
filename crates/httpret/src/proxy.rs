@@ -506,7 +506,7 @@ where
     QT: fmt::Debug + FromUrl + AppendToUrl + HasBackend + HasTimeout,
 {
     let url = req_uri_to_url(req.uri())?;
-    let mut query = match QT::from_url(&url) {
+    let query = match QT::from_url(&url) {
         Ok(k) => k,
         Err(_) => {
             let msg = format!("malformed request or missing parameters  {}", req.uri());
@@ -515,10 +515,7 @@ where
         }
     };
     trace!("proxy_backend_query  {:?}  {:?}", query, req.uri());
-    let timeout = query.timeout();
-    let timeout_next = timeout.saturating_sub(Duration::from_millis(1000));
-    trace!("timeout {timeout:?}  timeout_next {timeout_next:?}");
-    query.set_timeout(timeout_next);
+    let timeout = Duration::from_millis(1000 * 30);
     let query = query;
     let backend = query.backend();
     let uri_path = proxy_backend_query_helper_uri_path(req.uri().path(), &url);
@@ -598,23 +595,25 @@ pub async fn proxy_backend_query_inner(
         Ok::<_, Error>(res)
     };
 
-    let res = tokio::time::timeout(timeout, fut).await.map_err(|_| {
-        let e = Error::with_msg_no_trace(format!("timeout trying to make sub request"));
-        warn!("{e}");
-        e
-    })??;
-
-    {
-        use bytes::Bytes;
-        use httpclient::http_body::Frame;
-        use httpclient::BodyError;
-        let (head, body) = res.into_parts();
-        let body = StreamIncoming::new(body);
-        let body = body.map(|x| x.map(Frame::data));
-        let body: Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, BodyError>> + Send>> = Box::pin(body);
-        let body = http_body_util::StreamBody::new(body);
-        let ret = Response::from_parts(head, body);
-        Ok(ret)
+    match tokio::time::timeout(timeout, fut).await {
+        Ok(res) => {
+            let res = res?;
+            use bytes::Bytes;
+            use httpclient::http_body::Frame;
+            use httpclient::BodyError;
+            let (head, body) = res.into_parts();
+            let body = StreamIncoming::new(body);
+            let body = body.map(|x| x.map(Frame::data));
+            let body: Pin<Box<dyn Stream<Item = Result<Frame<Bytes>, BodyError>> + Send>> = Box::pin(body);
+            let body = http_body_util::StreamBody::new(body);
+            let ret = Response::from_parts(head, body);
+            Ok(ret)
+        }
+        Err(_) => Ok(httpclient::error_status_response(
+            StatusCode::REQUEST_TIMEOUT,
+            format!("request timed out at proxy, limit {} ms", timeout.as_millis() as u64),
+            ctx.reqid(),
+        )),
     }
 }
 
