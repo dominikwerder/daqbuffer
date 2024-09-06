@@ -1,5 +1,6 @@
 use err::thiserror;
 use err::ThisError;
+use futures_util::FutureExt;
 use futures_util::Stream;
 use items_2::binsdim0::BinsDim0;
 use netpod::BinnedRange;
@@ -12,6 +13,14 @@ use std::task::Poll;
 
 pub struct Reading {
     fut: Pin<Box<dyn Future<Output = Result<BinsDim0<f32>, Box<dyn std::error::Error>>> + Send>>,
+}
+
+impl Future for Reading {
+    type Output = Result<BinsDim0<f32>, Box<dyn std::error::Error>>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        self.fut.poll_unpin(cx)
+    }
 }
 
 pub trait CacheReadProvider: Send {

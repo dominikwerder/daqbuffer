@@ -64,6 +64,7 @@ impl Stream for GapFill {
         //     It does not attempt to read the given bin-len from a cache, because we just did attempt that.
         //     It still requires that bin-len is cacheable. (NO! it must work with the layering that I passed!)
         //     Then it finds the next cacheable
-        Ready(None)
+        // Ready(None)
+        todo!("poll the already created cached reader, detect and fill in gaps, send off to cache-write")
     }
 }

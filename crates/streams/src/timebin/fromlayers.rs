@@ -52,12 +52,6 @@ impl TimeBinnedFromLayers {
             range,
             bin_len_layers
         );
-        // cases:
-        // if this bin_len is a cachable bin_len:
-        // - have to attempt to read from cache.
-        // expect to read bins in a stream (randomize to small max len for testing).
-        // also, if this bin_len is a cachable bin_len:
-        // must produce bins missing in cache from separate stream.
         let bin_len = DtMs::from_ms_u64(range.bin_len.ms());
         if bin_len_layers.contains(&bin_len) {
             info!("{}::new  bin_len in layers", Self::type_name());
