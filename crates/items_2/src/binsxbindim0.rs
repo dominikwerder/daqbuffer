@@ -344,6 +344,12 @@ where
     }
 }
 
+impl<STY> TypeName for BinsXbinDim0CollectedResult<STY> {
+    fn type_name(&self) -> String {
+        any::type_name::<Self>().into()
+    }
+}
+
 impl<NTY: ScalarOps> WithLen for BinsXbinDim0CollectedResult<NTY> {
     fn len(&self) -> usize {
         self.mins.len()

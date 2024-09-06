@@ -25,6 +25,7 @@ use netpod::timeunits::SEC;
 use netpod::BinnedRangeEnum;
 use serde::Deserialize;
 use serde::Serialize;
+use std::any;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::mem;
@@ -111,6 +112,12 @@ impl AsAnyRef for EventsDim0EnumCollectorOutput {
 impl AsAnyMut for EventsDim0EnumCollectorOutput {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         todo!()
+    }
+}
+
+impl TypeName for EventsDim0EnumCollectorOutput {
+    fn type_name(&self) -> String {
+        any::type_name::<Self>().into()
     }
 }
 

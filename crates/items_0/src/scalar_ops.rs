@@ -258,7 +258,7 @@ impl ByteEstimate for EnumVariant {
 
 impl AsPrimF32 for EnumVariant {
     fn as_prim_f32_b(&self) -> f32 {
-        0.
+        self.ix() as f32
     }
 }
 

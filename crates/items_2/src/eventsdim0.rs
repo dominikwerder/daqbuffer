@@ -267,6 +267,7 @@ where
     type Aggregator = EventsDim0Aggregator<STY>;
 
     fn aggregator(range: SeriesRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+        panic!("TODO remove, should no longer be used");
         let self_name = any::type_name::<Self>();
         debug!(
             "TimeBinnableType for {self_name}  aggregator()  range {:?}  x_bin_count {}  do_time_weight {}",
@@ -404,7 +405,7 @@ impl<STY: ScalarOps> EventsDim0CollectorOutput<STY> {
 
 impl<STY> AsAnyRef for EventsDim0CollectorOutput<STY>
 where
-    STY: ScalarOps,
+    STY: 'static,
 {
     fn as_any_ref(&self) -> &dyn Any {
         self
@@ -413,10 +414,16 @@ where
 
 impl<STY> AsAnyMut for EventsDim0CollectorOutput<STY>
 where
-    STY: ScalarOps,
+    STY: 'static,
 {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+impl<STY> TypeName for EventsDim0CollectorOutput<STY> {
+    fn type_name(&self) -> String {
+        any::type_name::<Self>().into()
     }
 }
 

@@ -26,6 +26,7 @@ use items_0::Empty;
 use items_0::Events;
 use items_0::EventsNonObj;
 use items_0::MergeError;
+use items_0::TypeName;
 use items_0::WithLen;
 use netpod::is_false;
 use netpod::log::*;
@@ -332,7 +333,7 @@ impl<STY: ScalarOps> EventsDim1CollectorOutput<STY> {
 
 impl<STY> AsAnyRef for EventsDim1CollectorOutput<STY>
 where
-    STY: ScalarOps,
+    STY: 'static,
 {
     fn as_any_ref(&self) -> &dyn Any {
         self
@@ -341,10 +342,16 @@ where
 
 impl<STY> AsAnyMut for EventsDim1CollectorOutput<STY>
 where
-    STY: ScalarOps,
+    STY: 'static,
 {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+impl<STY> TypeName for EventsDim1CollectorOutput<STY> {
+    fn type_name(&self) -> String {
+        any::type_name::<Self>().into()
     }
 }
 

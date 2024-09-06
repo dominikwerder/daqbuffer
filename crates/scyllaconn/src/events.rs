@@ -555,7 +555,7 @@ fn convert_rows_enum(
                 let val = row.1 as u16;
                 let valstr = row.2;
                 let value = EnumVariant::new(val, valstr);
-                info!("read enum variant  {:?}  {:?}", value, value.name_string());
+                // trace_fetch!("read enum variant  {:?}  {:?}", value, value.name_string());
                 (ts, value)
             }
         } else {

@@ -60,6 +60,12 @@ impl From<dbconn::channelconfig::Error> for Error {
         use dbconn::channelconfig::Error::*;
         match value {
             NotFound(chn, _) => Self::NotFoundChannel(chn),
+            SeriesNotFound(backend, series) => Self::NotFoundChannel(SfDbChannel::from_full(
+                backend,
+                Some(series),
+                "",
+                netpod::SeriesKind::ChannelData,
+            )),
             _ => Self::ChannelConfig(value),
         }
     }

@@ -28,6 +28,8 @@ pub struct PlainEventsQuery {
     range: SeriesRange,
     #[serde(default, skip_serializing_if = "is_false", rename = "oneBeforeRange")]
     one_before_range: bool,
+    #[serde(default, skip_serializing_if = "is_false", rename = "begExcl")]
+    beg_excl: bool,
     #[serde(default = "TransformQuery::default_events")]
     #[serde(skip_serializing_if = "TransformQuery::is_default_events")]
     transform: TransformQuery,
@@ -75,6 +77,7 @@ impl PlainEventsQuery {
         Self {
             channel,
             range: range.into(),
+            beg_excl: false,
             one_before_range: false,
             transform: TransformQuery::default_events(),
             timeout_content: None,
@@ -252,7 +255,8 @@ impl FromUrl for PlainEventsQuery {
         let ret = Self {
             channel: SfDbChannel::from_pairs(pairs)?,
             range,
-            one_before_range: pairs.get("oneBeforeRange").map_or("false", |x| x.as_ref()) == "true",
+            one_before_range: pairs.get("oneBeforeRange").map_or(false, |x| x == "true"),
+            beg_excl: pairs.get("begExcl").map_or(false, |x| x == "true"),
             transform: TransformQuery::from_pairs(pairs)?,
             timeout_content: pairs
                 .get("contentTimeout")
@@ -313,6 +317,9 @@ impl AppendToUrl for PlainEventsQuery {
         self.channel.append_to_url(url);
         let mut g = url.query_pairs_mut();
         g.append_pair("oneBeforeRange", &self.one_before_range().to_string());
+        if self.beg_excl {
+            g.append_pair("begExcl", "true");
+        }
         g.append_pair("querymarker", &self.querymarker);
         drop(g);
         self.transform.append_to_url(url);

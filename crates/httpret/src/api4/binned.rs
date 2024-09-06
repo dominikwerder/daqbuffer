@@ -149,6 +149,5 @@ async fn binned_json(
         .await
         .map_err(|e| Error::BinnedStream(e))?;
     let ret = response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?;
-    // let ret = error_response(e.public_message(), ctx.reqid());
     Ok(ret)
 }

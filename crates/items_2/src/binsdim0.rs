@@ -19,8 +19,10 @@ use items_0::overlap::HasTimestampDeque;
 use items_0::scalar_ops::AsPrimF32;
 use items_0::scalar_ops::ScalarOps;
 use items_0::timebin::TimeBinnable;
+use items_0::timebin::TimeBinnableTy;
 use items_0::timebin::TimeBinned;
 use items_0::timebin::TimeBinner;
+use items_0::timebin::TimeBinnerTy;
 use items_0::timebin::TimeBins;
 use items_0::AppendAllFrom;
 use items_0::AppendEmptyBin;
@@ -298,6 +300,64 @@ impl<NTY: ScalarOps> TimeBinnableType for BinsDim0<NTY> {
     }
 }
 
+#[derive(Debug)]
+pub struct BinsDim0TimeBinnerTy<STY> {
+    _t1: std::marker::PhantomData<STY>,
+}
+
+impl<STY> TimeBinnerTy for BinsDim0TimeBinnerTy<STY>
+where
+    STY: ScalarOps,
+{
+    type Input = BinsDim0<STY>;
+    type Output = BinsDim0<STY>;
+
+    fn ingest(&mut self, item: &mut Self::Input) {
+        todo!()
+    }
+
+    fn set_range_complete(&mut self) {
+        todo!()
+    }
+
+    fn bins_ready_count(&self) -> usize {
+        todo!()
+    }
+
+    fn bins_ready(&mut self) -> Option<Self::Output> {
+        todo!()
+    }
+
+    fn push_in_progress(&mut self, push_empty: bool) {
+        todo!()
+    }
+
+    fn cycle(&mut self) {
+        todo!()
+    }
+
+    fn empty(&self) -> Option<Self::Output> {
+        todo!()
+    }
+
+    fn append_empty_until_end(&mut self) {
+        todo!()
+    }
+}
+
+impl<STY: ScalarOps> TimeBinnableTy for BinsDim0<STY> {
+    type TimeBinner = BinsDim0TimeBinnerTy<STY>;
+
+    fn time_binner_new(
+        &self,
+        binrange: BinnedRangeEnum,
+        do_time_weight: bool,
+        emit_empty_bins: bool,
+    ) -> Self::TimeBinner {
+        todo!()
+    }
+}
+
 // TODO rename to BinsDim0CollectorOutput
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BinsDim0CollectedResult<NTY> {
@@ -331,9 +391,60 @@ pub struct BinsDim0CollectedResult<NTY> {
     finished_at: Option<IsoDateTime>,
 }
 
+// TODO temporary fix for the enum output
+impl<STY> BinsDim0CollectedResult<STY>
+where
+    STY: ScalarOps,
+{
+    pub fn boxed_collected_with_enum_fix(&self) -> Box<dyn Collected> {
+        if let Some(bins) = self
+            .as_any_ref()
+            .downcast_ref::<BinsDim0CollectedResult<netpod::EnumVariant>>()
+        {
+            let mins = self.mins.iter().map(|x| 0).collect();
+            let maxs = self.mins.iter().map(|x| 0).collect();
+            let bins = BinsDim0CollectedResult::<u16> {
+                ts_anchor_sec: self.ts_anchor_sec.clone(),
+                ts1_off_ms: self.ts1_off_ms.clone(),
+                ts2_off_ms: self.ts2_off_ms.clone(),
+                ts1_off_ns: self.ts1_off_ns.clone(),
+                ts2_off_ns: self.ts2_off_ns.clone(),
+                counts: self.counts.clone(),
+                mins,
+                maxs,
+                avgs: self.avgs.clone(),
+                range_final: self.range_final.clone(),
+                timed_out: self.timed_out.clone(),
+                missing_bins: self.missing_bins.clone(),
+                continue_at: self.continue_at.clone(),
+                finished_at: self.finished_at.clone(),
+            };
+            Box::new(bins)
+        } else {
+            let bins = Self {
+                ts_anchor_sec: self.ts_anchor_sec.clone(),
+                ts1_off_ms: self.ts1_off_ms.clone(),
+                ts2_off_ms: self.ts2_off_ms.clone(),
+                ts1_off_ns: self.ts1_off_ns.clone(),
+                ts2_off_ns: self.ts2_off_ns.clone(),
+                counts: self.counts.clone(),
+                mins: self.mins.clone(),
+                maxs: self.maxs.clone(),
+                avgs: self.avgs.clone(),
+                range_final: self.range_final.clone(),
+                timed_out: self.timed_out.clone(),
+                missing_bins: self.missing_bins.clone(),
+                continue_at: self.continue_at.clone(),
+                finished_at: self.finished_at.clone(),
+            };
+            Box::new(bins)
+        }
+    }
+}
+
 impl<NTY> AsAnyRef for BinsDim0CollectedResult<NTY>
 where
-    NTY: ScalarOps,
+    NTY: 'static,
 {
     fn as_any_ref(&self) -> &dyn Any {
         self
@@ -342,10 +453,16 @@ where
 
 impl<NTY> AsAnyMut for BinsDim0CollectedResult<NTY>
 where
-    NTY: ScalarOps,
+    NTY: 'static,
 {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+impl<STY> TypeName for BinsDim0CollectedResult<STY> {
+    fn type_name(&self) -> String {
+        any::type_name::<Self>().into()
     }
 }
 

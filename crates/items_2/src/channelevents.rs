@@ -1193,6 +1193,7 @@ impl TimeBinnableTy for ChannelEvents {
     }
 }
 
+// TODO remove type
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ChannelEventsCollectorOutput {}
 
@@ -1205,6 +1206,13 @@ impl AsAnyRef for ChannelEventsCollectorOutput {
 impl AsAnyMut for ChannelEventsCollectorOutput {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+impl TypeName for ChannelEventsCollectorOutput {
+    fn type_name(&self) -> String {
+        // TODO should not be here
+        any::type_name::<Self>().into()
     }
 }
 

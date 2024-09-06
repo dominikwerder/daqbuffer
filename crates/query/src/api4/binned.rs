@@ -17,7 +17,43 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 use url::Url;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+mod serde_option_vec_duration {
+    use serde::Deserialize;
+    use serde::Deserializer;
+    use serde::Serialize;
+    use serde::Serializer;
+    use std::time::Duration;
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    struct HumantimeDuration {
+        #[serde(with = "humantime_serde")]
+        inner: Duration,
+    }
+
+    pub fn serialize<S>(val: &Option<Vec<Duration>>, ser: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match val {
+            Some(vec) => {
+                // humantime_serde::serialize(&t, ser)
+                let t: Vec<_> = vec.iter().map(|&x| HumantimeDuration { inner: x }).collect();
+                serde::Serialize::serialize(&t, ser)
+            }
+            None => ser.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'a, D>(de: D) -> Result<Option<Vec<Duration>>, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        let t: Option<Vec<HumantimeDuration>> = serde::Deserialize::deserialize(de)?;
+        Ok(t.map(|v| v.iter().map(|x| x.inner).collect()))
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BinnedQuery {
     channel: SfDbChannel,
     range: SeriesRange,
@@ -33,6 +69,8 @@ pub struct BinnedQuery {
     cache_usage: Option<CacheUsage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     bins_max: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none", with = "serde_option_vec_duration")]
+    subgrids: Option<Vec<Duration>>,
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",
@@ -64,6 +102,7 @@ impl BinnedQuery {
             transform: TransformQuery::default_time_binned(),
             cache_usage: None,
             bins_max: None,
+            subgrids: None,
             buf_len_disk_io: None,
             disk_stats_every: None,
             timeout_content: None,
@@ -91,7 +130,7 @@ impl BinnedQuery {
     }
 
     pub fn cache_usage(&self) -> CacheUsage {
-        self.cache_usage.as_ref().map_or(CacheUsage::Use, |x| x.clone())
+        self.cache_usage.as_ref().map_or(CacheUsage::Ignore, |x| x.clone())
     }
 
     pub fn disk_stats_every(&self) -> ByteSize {
@@ -114,6 +153,10 @@ impl BinnedQuery {
 
     pub fn bins_max(&self) -> u32 {
         self.bins_max.unwrap_or(200000)
+    }
+
+    pub fn subgrids(&self) -> Option<&[Duration]> {
+        self.subgrids.as_ref().map(|x| x.as_slice())
     }
 
     pub fn merger_out_len_max(&self) -> usize {
@@ -210,6 +253,9 @@ impl FromUrl for BinnedQuery {
                 .get("contentTimeout")
                 .and_then(|x| humantime::parse_duration(x).ok()),
             bins_max: pairs.get("binsMax").map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
+            subgrids: pairs
+                .get("subgrids")
+                .map(|x| x.split(",").filter_map(|x| humantime::parse_duration(x).ok()).collect()),
             merger_out_len_max: pairs
                 .get("mergerOutLenMax")
                 .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
@@ -257,6 +303,19 @@ impl AppendToUrl for BinnedQuery {
         }
         if let Some(x) = self.bins_max {
             g.append_pair("binsMax", &format!("{}", x));
+        }
+        if let Some(x) = &self.subgrids {
+            let s: String =
+                x.iter()
+                    .map(|&x| humantime::format_duration(x).to_string())
+                    .fold(String::new(), |mut a, x| {
+                        if a.len() != 0 {
+                            a.push_str(",");
+                        }
+                        a.push_str(&x);
+                        a
+                    });
+            g.append_pair("subgrids", &s);
         }
         if let Some(x) = self.buf_len_disk_io {
             g.append_pair("bufLenDiskIo", &format!("{}", x));

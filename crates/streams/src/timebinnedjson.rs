@@ -12,7 +12,9 @@ use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::collect_s::Collectable;
 use items_0::on_sitemty_data;
+use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
+use items_0::streamitem::StreamItem;
 use items_0::timebin::TimeBinned;
 use items_0::transform::TimeBinnableStreamBox;
 use items_0::transform::TimeBinnableStreamTrait;
@@ -21,9 +23,11 @@ use items_2::channelevents::ChannelEvents;
 use items_2::merger::Merger;
 use items_2::streams::PlainEventStream;
 use netpod::log::*;
+use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::BinnedRangeEnum;
 use netpod::ChannelTypeConfigGen;
+use netpod::DtMs;
 use netpod::ReqCtx;
 use query::api4::binned::BinnedQuery;
 use serde_json::Value as JsonValue;
@@ -224,18 +228,78 @@ async fn timebinned_stream(
     ctx: &ReqCtx,
     open_bytes: OpenBoxedBytesStreamsBox,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>, Error> {
-    let range = binned_range.binned_range_time().to_nano_range();
+    use netpod::query::CacheUsage;
+    match query.cache_usage() {
+        CacheUsage::Use | CacheUsage::Recreate => {
+            let series = if let Some(x) = query.channel().series() {
+                x
+            } else {
+                return Err(Error::with_msg_no_trace(
+                    "cached time binned only available given a series id",
+                ));
+            };
+            info!("--- CACHING PATH ---");
+            info!("{query:?}");
+            info!("subgrids {:?}", query.subgrids());
+            let range = binned_range.binned_range_time().to_nano_range();
+            let do_time_weight = true;
+            let bin_len_layers = if let Some(subgrids) = query.subgrids() {
+                subgrids
+                    .iter()
+                    .map(|&x| DtMs::from_ms_u64(1000 * x.as_secs()))
+                    .collect()
+            } else {
+                vec![
+                    DtMs::from_ms_u64(1000 * 60),
+                    // DtMs::from_ms_u64(1000 * 60 * 60),
+                    // DtMs::from_ms_u64(1000 * 60 * 60 * 12),
+                    // DtMs::from_ms_u64(1000 * 10),
+                ]
+            };
+            let stream = crate::timebin::TimeBinnedFromLayers::new(
+                series,
+                binned_range.binned_range_time(),
+                do_time_weight,
+                bin_len_layers,
+            )
+            .map_err(Error::from_string)?;
+            // Possible to simplify these kind of seemingly simple type conversions?
+            let stream = stream.map(|item| match item {
+                Ok(StreamItem::DataItem(RangeCompletableItem::Data(k))) => Ok(StreamItem::DataItem(
+                    RangeCompletableItem::Data(Box::new(k) as Box<dyn TimeBinned>),
+                )),
+                Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)) => {
+                    Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
+                }
+                Ok(StreamItem::Log(k)) => Ok(StreamItem::Log(k)),
+                Ok(StreamItem::Stats(k)) => Ok(StreamItem::Stats(k)),
+                Err(e) => Err(e),
+            });
+            // let stream = stream.map(|item| match item {
+            //     Ok(k) => {
+            //         let k = Box::new(k) as Box<dyn TimeBinned>;
+            //         Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
+            //     }
+            //     Err(e) => Err(::err::Error::from_string(e)),
+            // });
+            let stream: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>> = Box::pin(stream);
+            Ok(stream)
+        }
+        CacheUsage::Ignore => {
+            let range = binned_range.binned_range_time().to_nano_range();
 
-    let do_time_weight = true;
-    let one_before_range = true;
+            let do_time_weight = true;
+            let one_before_range = true;
 
-    let stream = timebinnable_stream(query.clone(), range, one_before_range, ch_conf, ctx, open_bytes).await?;
-    let stream: Pin<Box<dyn TimeBinnableStreamTrait>> = stream.0;
-    let stream = Box::pin(stream);
-    // TODO rename TimeBinnedStream to make it more clear that it is the component which initiates the time binning.
-    let stream = TimeBinnedStream::new(stream, binned_range, do_time_weight);
-    let stream: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>> = Box::pin(stream);
-    Ok(stream)
+            let stream = timebinnable_stream(query.clone(), range, one_before_range, ch_conf, ctx, open_bytes).await?;
+            let stream: Pin<Box<dyn TimeBinnableStreamTrait>> = stream.0;
+            let stream = Box::pin(stream);
+            // TODO rename TimeBinnedStream to make it more clear that it is the component which initiates the time binning.
+            let stream = TimeBinnedStream::new(stream, binned_range, do_time_weight);
+            let stream: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>> = Box::pin(stream);
+            Ok(stream)
+        }
+    }
 }
 
 fn timebinned_to_collectable(
@@ -268,6 +332,16 @@ pub async fn timebinned_json(
     let collected = Collect::new(stream, deadline, collect_max, bytes_max, None, Some(binned_range));
     let collected: BoxFuture<_> = Box::pin(collected);
     let collected = collected.await?;
+    info!("timebinned_json collected type_name {:?}", collected.type_name());
+    let collected = if let Some(bins) = collected
+        .as_any_ref()
+        .downcast_ref::<items_2::binsdim0::BinsDim0CollectedResult<netpod::EnumVariant>>()
+    {
+        info!("MATCHED");
+        bins.boxed_collected_with_enum_fix()
+    } else {
+        collected
+    };
     let jsval = serde_json::to_value(&collected)?;
     Ok(jsval)
 }

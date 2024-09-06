@@ -925,6 +925,12 @@ where
     }
 }
 
+impl<STY> TypeName for EventsXbinDim0CollectorOutput<STY> {
+    fn type_name(&self) -> String {
+        any::type_name::<Self>().into()
+    }
+}
+
 impl<NTY: ScalarOps> WithLen for EventsXbinDim0CollectorOutput<NTY> {
     fn len(&self) -> usize {
         self.mins.len()
