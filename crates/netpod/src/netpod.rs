@@ -1760,8 +1760,19 @@ impl DtMs {
         1000000 * self.0
     }
 
+    pub const fn dt_ns(&self) -> DtNano {
+        DtNano::from_ms(self.0)
+    }
+
     pub const fn to_i64(&self) -> i64 {
         self.0 as i64
+    }
+}
+
+impl fmt::Display for DtMs {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let dur = Duration::from_millis(self.ms());
+        write!(fmt, "{}", humantime::format_duration(dur))
     }
 }
 
@@ -1864,6 +1875,10 @@ impl TsNano {
 
     pub const fn to_ts_ms(self) -> TsMs {
         TsMs::from_ms_u64(self.ms())
+    }
+
+    pub const fn to_dt_ms(self) -> DtMs {
+        DtMs::from_ms_u64(self.ms())
     }
 
     pub fn from_system_time(st: SystemTime) -> Self {
@@ -2377,6 +2392,16 @@ where
 impl BinnedRange<TsNano> {
     pub fn to_nano_range(&self) -> NanoRange {
         self.full_range()
+    }
+
+    pub fn from_nano_range(range: NanoRange, bin_len: DtMs) -> Self {
+        let off1 = range.beg() / bin_len.ns();
+        let off2 = (bin_len.ns() - 1 + range.end()) / bin_len.ns();
+        Self {
+            bin_len: TsNano::from_ns(bin_len.ns()),
+            bin_off: off1,
+            bin_cnt: off2 - off1,
+        }
     }
 }
 

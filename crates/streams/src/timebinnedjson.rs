@@ -263,25 +263,11 @@ async fn timebinned_stream(
                 bin_len_layers,
             )
             .map_err(Error::from_string)?;
-            // Possible to simplify these kind of seemingly simple type conversions?
-            let stream = stream.map(|item| match item {
-                Ok(StreamItem::DataItem(RangeCompletableItem::Data(k))) => Ok(StreamItem::DataItem(
-                    RangeCompletableItem::Data(Box::new(k) as Box<dyn TimeBinned>),
-                )),
-                Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)) => {
-                    Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
-                }
-                Ok(StreamItem::Log(k)) => Ok(StreamItem::Log(k)),
-                Ok(StreamItem::Stats(k)) => Ok(StreamItem::Stats(k)),
-                Err(e) => Err(e),
+            let stream = stream.map(|item| {
+                on_sitemty_data!(item, |k| Ok(StreamItem::DataItem(RangeCompletableItem::Data(
+                    Box::new(k) as Box<dyn TimeBinned>
+                ))))
             });
-            // let stream = stream.map(|item| match item {
-            //     Ok(k) => {
-            //         let k = Box::new(k) as Box<dyn TimeBinned>;
-            //         Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
-            //     }
-            //     Err(e) => Err(::err::Error::from_string(e)),
-            // });
             let stream: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>> = Box::pin(stream);
             Ok(stream)
         }

@@ -4,6 +4,7 @@ use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
+use items_0::on_sitemty_data;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
@@ -57,7 +58,8 @@ impl TimeBinnedFromLayers {
         // must produce bins missing in cache from separate stream.
         let bin_len = DtMs::from_ms_u64(range.bin_len.ms());
         if bin_len_layers.contains(&bin_len) {
-            let inp = super::gapfill::GapFill::new(series, bin_len, range)?;
+            info!("{}::new  bin_len in layers", Self::type_name());
+            let inp = super::gapfill::GapFill::new(series, range, do_time_weight, bin_len_layers)?;
             let ret = Self { inp: Box::pin(inp) };
             Ok(ret)
         } else {
@@ -65,15 +67,9 @@ impl TimeBinnedFromLayers {
                 Some(finer) => {
                     // TODO
                     // produce from binned sub-stream with additional binner.
-                    let inp = super::gapfill::GapFill::new(series, bin_len, range.clone())?
-                    // .map(|item| {
-                    //     let ret = match item {
-                    //         Ok(k) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(k))),
-                    //         Err(e) => Err(::err::Error::from_string(e)),
-                    //     };
-                    //     ret
-                    // })
-                    ;
+                    let range = BinnedRange::from_nano_range(range.to_nano_range(), finer);
+                    info!("{}::new  next finer  {:?}  {:?}", Self::type_name(), finer, range);
+                    let inp = super::gapfill::GapFill::new(series, range.clone(), do_time_weight, bin_len_layers)?;
                     let inp = super::basic::TimeBinnedStream::new(
                         Box::pin(inp),
                         BinnedRangeEnum::Time(range),
@@ -83,6 +79,7 @@ impl TimeBinnedFromLayers {
                     Ok(ret)
                 }
                 None => {
+                    info!("{}::new  NO next finer", Self::type_name());
                     // TODO
                     // produce from events
                     todo!()

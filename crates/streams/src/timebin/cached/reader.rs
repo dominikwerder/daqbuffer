@@ -16,8 +16,9 @@ pub enum Error {}
 pub struct CachedReader {}
 
 impl CachedReader {
-    pub fn new(series: u64, bin_len: DtMs, range: BinnedRange<TsNano>) -> Self {
-        todo!()
+    pub fn new(series: u64, bin_len: DtMs, range: BinnedRange<TsNano>) -> Result<Self, Error> {
+        let ret = Self {};
+        Ok(ret)
     }
 }
 
@@ -25,6 +26,7 @@ impl Stream for CachedReader {
     type Item = Result<BinsDim0<f32>, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        todo!()
+        use Poll::*;
+        Ready(None)
     }
 }

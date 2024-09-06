@@ -1,6 +1,7 @@
 use err::thiserror;
 use err::ThisError;
 use futures_util::Stream;
+use futures_util::TryStreamExt;
 use items_0::streamitem::Sitemty;
 use items_2::binsdim0::BinsDim0;
 use netpod::BinnedRange;
@@ -12,16 +13,31 @@ use std::task::Poll;
 
 #[derive(Debug, ThisError)]
 #[cstm(name = "BinCachedGapFill")]
-pub enum Error {}
+pub enum Error {
+    CacheReader(#[from] super::cached::reader::Error),
+}
+
+type INP = Pin<Box<dyn Stream<Item = Result<BinsDim0<f32>, Error>> + Send>>;
 
 // Try to read from cache for the given bin len.
 // For gaps in the stream, construct an alternative input from finer bin len with a binner.
-pub struct GapFill {}
+pub struct GapFill {
+    inp: INP,
+}
 
 impl GapFill {
-    pub fn new(series: u64, bin_len: DtMs, range: BinnedRange<TsNano>) -> Result<Self, Error> {
-        // TODO assert that the requested bin_len is a cacheable length.
-        todo!()
+    // bin_len of the given range must be a cacheable bin_len.
+    pub fn new(
+        series: u64,
+        range: BinnedRange<TsNano>,
+        do_time_weight: bool,
+        bin_len_layers: Vec<DtMs>,
+    ) -> Result<Self, Error> {
+        // super::fromlayers::TimeBinnedFromLayers::new(series, range, do_time_weight, bin_len_layers)?;
+        let inp =
+            super::cached::reader::CachedReader::new(series, range.bin_len.to_dt_ms(), range)?.map_err(Error::from);
+        let ret = Self { inp: Box::pin(inp) };
+        Ok(ret)
     }
 }
 
@@ -29,6 +45,7 @@ impl Stream for GapFill {
     type Item = Sitemty<BinsDim0<f32>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
         // When do we detect a gap:
         // - when the current item poses a gap to the last.
         // - when we see EOS before the requested range is filled.
@@ -44,6 +61,6 @@ impl Stream for GapFill {
         //     It does not attempt to read the given bin-len from a cache, because we just did attempt that.
         //     It still requires that bin-len is cacheable. (NO! it must work with the layering that I passed!)
         //     Then it finds the next cacheable
-        todo!()
+        Ready(None)
     }
 }
