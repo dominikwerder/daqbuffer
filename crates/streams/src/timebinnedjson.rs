@@ -256,11 +256,13 @@ async fn timebinned_stream(
                     // DtMs::from_ms_u64(1000 * 10),
                 ]
             };
+            let cache_read_provider = err::todoval();
             let stream = crate::timebin::TimeBinnedFromLayers::new(
                 series,
                 binned_range.binned_range_time(),
                 do_time_weight,
                 bin_len_layers,
+                cache_read_provider,
             )
             .map_err(Error::from_string)?;
             let stream = stream.map(|item| {

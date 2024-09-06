@@ -1,3 +1,4 @@
+use super::cached::reader::CacheReadProvider;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Stream;
@@ -32,10 +33,12 @@ impl GapFill {
         range: BinnedRange<TsNano>,
         do_time_weight: bool,
         bin_len_layers: Vec<DtMs>,
+        cache_read_provider: Box<dyn CacheReadProvider>,
     ) -> Result<Self, Error> {
         // super::fromlayers::TimeBinnedFromLayers::new(series, range, do_time_weight, bin_len_layers)?;
         let inp =
-            super::cached::reader::CachedReader::new(series, range.bin_len.to_dt_ms(), range)?.map_err(Error::from);
+            super::cached::reader::CachedReader::new(series, range.bin_len.to_dt_ms(), range, cache_read_provider)?
+                .map_err(Error::from);
         let ret = Self { inp: Box::pin(inp) };
         Ok(ret)
     }

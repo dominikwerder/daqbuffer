@@ -1,3 +1,4 @@
+use super::cached::reader::CacheReadProvider;
 use crate::timebin::grid::find_next_finer_bin_len;
 use err::thiserror;
 use err::ThisError;
@@ -42,6 +43,7 @@ impl TimeBinnedFromLayers {
         range: BinnedRange<TsNano>,
         do_time_weight: bool,
         bin_len_layers: Vec<DtMs>,
+        cache_read_provider: Box<dyn CacheReadProvider>,
     ) -> Result<Self, Error> {
         info!(
             "{}::new  {:?}  {:?}  {:?}",
@@ -59,7 +61,7 @@ impl TimeBinnedFromLayers {
         let bin_len = DtMs::from_ms_u64(range.bin_len.ms());
         if bin_len_layers.contains(&bin_len) {
             info!("{}::new  bin_len in layers", Self::type_name());
-            let inp = super::gapfill::GapFill::new(series, range, do_time_weight, bin_len_layers)?;
+            let inp = super::gapfill::GapFill::new(series, range, do_time_weight, bin_len_layers, cache_read_provider)?;
             let ret = Self { inp: Box::pin(inp) };
             Ok(ret)
         } else {
@@ -69,7 +71,13 @@ impl TimeBinnedFromLayers {
                     // produce from binned sub-stream with additional binner.
                     let range = BinnedRange::from_nano_range(range.to_nano_range(), finer);
                     info!("{}::new  next finer  {:?}  {:?}", Self::type_name(), finer, range);
-                    let inp = super::gapfill::GapFill::new(series, range.clone(), do_time_weight, bin_len_layers)?;
+                    let inp = super::gapfill::GapFill::new(
+                        series,
+                        range.clone(),
+                        do_time_weight,
+                        bin_len_layers,
+                        cache_read_provider,
+                    )?;
                     let inp = super::basic::TimeBinnedStream::new(
                         Box::pin(inp),
                         BinnedRangeEnum::Time(range),

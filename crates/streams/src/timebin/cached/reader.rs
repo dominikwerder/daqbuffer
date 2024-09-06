@@ -5,19 +5,35 @@ use items_2::binsdim0::BinsDim0;
 use netpod::BinnedRange;
 use netpod::DtMs;
 use netpod::TsNano;
+use std::future::Future;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
+
+pub struct Reading {
+    fut: Pin<Box<dyn Future<Output = Result<BinsDim0<f32>, Box<dyn std::error::Error>>> + Send>>,
+}
+
+pub trait CacheReadProvider: Send {
+    fn read(&self) -> Reading;
+}
 
 #[derive(Debug, ThisError)]
 #[cstm(name = "BinCachedReader")]
 pub enum Error {}
 
-pub struct CachedReader {}
+pub struct CachedReader {
+    cache_read_provider: Box<dyn CacheReadProvider>,
+}
 
 impl CachedReader {
-    pub fn new(series: u64, bin_len: DtMs, range: BinnedRange<TsNano>) -> Result<Self, Error> {
-        let ret = Self {};
+    pub fn new(
+        series: u64,
+        bin_len: DtMs,
+        range: BinnedRange<TsNano>,
+        cache_read_provider: Box<dyn CacheReadProvider>,
+    ) -> Result<Self, Error> {
+        let ret = Self { cache_read_provider };
         Ok(ret)
     }
 }
