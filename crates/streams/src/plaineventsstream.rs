@@ -34,13 +34,13 @@ pub async fn dyn_events_stream(
     open_bytes: OpenBoxedBytesStreamsBox,
 ) -> Result<DynEventsStream, Error> {
     trace!("dyn_events_stream  {}", evq.summary_short());
+    use query::api4::events::EventsSubQuerySettings;
     let subq = make_sub_query(
         ch_conf,
         evq.range().clone(),
         evq.one_before_range(),
         evq.transform().clone(),
-        evq.test_do_wasm(),
-        evq,
+        EventsSubQuerySettings::from(evq),
         evq.log_level().into(),
         ctx,
     );

@@ -252,6 +252,7 @@ where
         trace2!("=================   POLL");
         loop {
             break if self.complete {
+                error!("TimeBinnedStream poll on complete");
                 panic!("TimeBinnedStream poll on complete")
             } else if self.done {
                 self.complete = true;

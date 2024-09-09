@@ -21,6 +21,7 @@ use netpod::Shape;
 use query::api4::events::EventsSubQuery;
 use query::api4::events::PlainEventsQuery;
 use std::pin::Pin;
+use std::sync::Arc;
 
 #[test]
 fn merged_events_cbor() {
@@ -46,7 +47,7 @@ async fn merged_events_inner() -> Result<(), Error> {
     ));
     let evq = PlainEventsQuery::new(channel, range);
     let open_bytes = StreamOpener::new();
-    let open_bytes = Box::pin(open_bytes);
+    let open_bytes = Arc::pin(open_bytes);
     let stream = plain_events_cbor_stream(&evq, ch_conf.clone().into(), &ctx, open_bytes)
         .await
         .unwrap();

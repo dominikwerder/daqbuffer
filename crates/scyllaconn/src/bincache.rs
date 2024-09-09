@@ -1,6 +1,7 @@
 #![allow(unused)]
 
 use crate::errconv::ErrConv;
+use crate::worker::ScyllaQueue;
 use err::Error;
 use futures_util::Future;
 use futures_util::Stream;
@@ -518,4 +519,21 @@ pub async fn pre_binned_value_stream(
     error!("TODO pre_binned_value_stream");
     err::todo();
     Ok(Box::pin(futures_util::stream::iter([Ok(res.0)])))
+}
+
+pub struct ScyllaCacheReadProvider {
+    scyqueue: ScyllaQueue,
+}
+
+impl ScyllaCacheReadProvider {
+    pub fn new(scyqueue: ScyllaQueue) -> Self {
+        Self { scyqueue }
+    }
+}
+
+impl streams::timebin::CacheReadProvider for ScyllaCacheReadProvider {
+    fn read(&self) -> streams::timebin::cached::reader::Reading {
+        warn!("impl CacheReadProvider for ScyllaCacheReadProvider");
+        todo!("impl CacheReadProvider for ScyllaCacheReadProvider")
+    }
 }

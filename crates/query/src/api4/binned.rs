@@ -83,7 +83,7 @@ pub struct BinnedQuery {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     disk_stats_every: Option<ByteSize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub merger_out_len_max: Option<usize>,
+    pub merger_out_len_max: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     test_do_wasm: Option<String>,
     #[serde(default)]
@@ -159,8 +159,8 @@ impl BinnedQuery {
         self.subgrids.as_ref().map(|x| x.as_slice())
     }
 
-    pub fn merger_out_len_max(&self) -> usize {
-        self.merger_out_len_max.unwrap_or(1024)
+    pub fn merger_out_len_max(&self) -> Option<u32> {
+        self.merger_out_len_max
     }
 
     pub fn set_series_id(&mut self, series: u64) {

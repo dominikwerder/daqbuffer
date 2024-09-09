@@ -1877,6 +1877,10 @@ impl TsNano {
         TsMs::from_ms_u64(self.ms())
     }
 
+    pub const fn to_dt_nano(self) -> DtNano {
+        DtNano::from_ns(self.0)
+    }
+
     pub const fn to_dt_ms(self) -> DtMs {
         DtMs::from_ms_u64(self.ms())
     }

@@ -36,6 +36,7 @@ use query::transform::TransformQuery;
 use serde::de::DeserializeOwned;
 use std::fmt;
 use std::pin::Pin;
+use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
@@ -45,11 +46,12 @@ pub trait OpenBoxedBytesStreams {
     fn open(
         &self,
         subq: EventsSubQuery,
+        // TODO take by Arc
         ctx: ReqCtx,
     ) -> Pin<Box<dyn Future<Output = Result<Vec<BoxedBytesStream>, Error>> + Send>>;
 }
 
-pub type OpenBoxedBytesStreamsBox = Pin<Box<dyn OpenBoxedBytesStreams + Send>>;
+pub type OpenBoxedBytesStreamsBox = Pin<Arc<dyn OpenBoxedBytesStreams + Send + Sync>>;
 
 pub fn make_node_command_frame(query: EventsSubQuery) -> Result<EventQueryJsonStringFrame, Error> {
     let obj = Frame1Parts::new(query);
@@ -202,7 +204,6 @@ pub fn make_sub_query<SUB>(
     range: SeriesRange,
     one_before_range: bool,
     transform: TransformQuery,
-    test_do_wasm: Option<&str>,
     sub: SUB,
     log_level: String,
     ctx: &ReqCtx,
@@ -210,8 +211,8 @@ pub fn make_sub_query<SUB>(
 where
     SUB: Into<EventsSubQuerySettings>,
 {
-    let mut select = EventsSubQuerySelect::new(ch_conf, range, one_before_range, transform);
-    if let Some(wasm1) = test_do_wasm {
+    let mut select = EventsSubQuerySelect::new(ch_conf, range, one_before_range, transform.clone());
+    if let Some(wasm1) = transform.do_wasm() {
         select.set_wasm1(wasm1.into());
     }
     let settings = sub.into();

@@ -8,6 +8,7 @@ use netpod::DtMs;
 use netpod::TsNano;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
 
@@ -23,16 +24,18 @@ impl Future for Reading {
     }
 }
 
-pub trait CacheReadProvider: Send {
+pub trait CacheReadProvider: Send + Sync {
     fn read(&self) -> Reading;
 }
 
 #[derive(Debug, ThisError)]
 #[cstm(name = "BinCachedReader")]
-pub enum Error {}
+pub enum Error {
+    TodoImpl,
+}
 
 pub struct CachedReader {
-    cache_read_provider: Box<dyn CacheReadProvider>,
+    cache_read_provider: Arc<dyn CacheReadProvider>,
 }
 
 impl CachedReader {
@@ -40,7 +43,7 @@ impl CachedReader {
         series: u64,
         bin_len: DtMs,
         range: BinnedRange<TsNano>,
-        cache_read_provider: Box<dyn CacheReadProvider>,
+        cache_read_provider: Arc<dyn CacheReadProvider>,
     ) -> Result<Self, Error> {
         let ret = Self { cache_read_provider };
         Ok(ret)
@@ -52,6 +55,7 @@ impl Stream for CachedReader {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
+        // Ready(Some(Err(Error::TodoImpl)))
         Ready(None)
     }
 }

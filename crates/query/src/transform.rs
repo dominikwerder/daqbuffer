@@ -148,6 +148,10 @@ impl TransformQuery {
     pub fn enum_as_string(&self) -> Option<bool> {
         self.enum_as_string.clone()
     }
+
+    pub fn do_wasm(&self) -> Option<&str> {
+        None
+    }
 }
 
 impl FromUrl for TransformQuery {

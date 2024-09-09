@@ -150,6 +150,17 @@ impl<NTY: ScalarOps> BinsDim0<NTY> {
         }
         true
     }
+
+    // TODO make this part of a new bins trait, similar like Events trait.
+    // TODO check for error?
+    pub fn drain_into(&mut self, dst: &mut Self, range: Range<usize>) -> () {
+        dst.ts1s.extend(self.ts1s.drain(range.clone()));
+        dst.ts2s.extend(self.ts2s.drain(range.clone()));
+        dst.counts.extend(self.counts.drain(range.clone()));
+        dst.mins.extend(self.mins.drain(range.clone()));
+        dst.maxs.extend(self.maxs.drain(range.clone()));
+        dst.avgs.extend(self.avgs.drain(range.clone()));
+    }
 }
 
 impl<NTY> AsAnyRef for BinsDim0<NTY>
@@ -301,8 +312,39 @@ impl<NTY: ScalarOps> TimeBinnableType for BinsDim0<NTY> {
 }
 
 #[derive(Debug)]
-pub struct BinsDim0TimeBinnerTy<STY> {
-    _t1: std::marker::PhantomData<STY>,
+pub struct BinsDim0TimeBinnerTy<STY>
+where
+    STY: ScalarOps,
+{
+    ts1now: TsNano,
+    binrange: BinnedRange<TsNano>,
+    do_time_weight: bool,
+    emit_empty_bins: bool,
+    range_complete: bool,
+    buf: <Self as TimeBinnerTy>::Output,
+    out: <Self as TimeBinnerTy>::Output,
+    bins_ready_count: usize,
+}
+
+impl<STY> BinsDim0TimeBinnerTy<STY>
+where
+    STY: ScalarOps,
+{
+    pub fn new(binrange: BinnedRange<TsNano>, do_time_weight: bool, emit_empty_bins: bool) -> Self {
+        // let ts1now = TsNano::from_ns(binrange.bin_off * binrange.bin_len.ns());
+        // let ts2 = ts1.add_dt_nano(binrange.bin_len.to_dt_nano());
+        let buf = <Self as TimeBinnerTy>::Output::empty();
+        Self {
+            ts1now: TsNano::from_ns(binrange.full_range().beg()),
+            binrange,
+            do_time_weight,
+            emit_empty_bins,
+            range_complete: false,
+            buf,
+            out: <Self as TimeBinnerTy>::Output::empty(),
+            bins_ready_count: 0,
+        }
+    }
 }
 
 impl<STY> TimeBinnerTy for BinsDim0TimeBinnerTy<STY>
@@ -313,35 +355,36 @@ where
     type Output = BinsDim0<STY>;
 
     fn ingest(&mut self, item: &mut Self::Input) {
-        todo!()
+        // item.ts1s;
+        todo!("TimeBinnerTy::ingest")
     }
 
     fn set_range_complete(&mut self) {
-        todo!()
+        self.range_complete = true;
     }
 
     fn bins_ready_count(&self) -> usize {
-        todo!()
+        self.bins_ready_count
     }
 
     fn bins_ready(&mut self) -> Option<Self::Output> {
-        todo!()
+        todo!("TimeBinnerTy::bins_ready")
     }
 
     fn push_in_progress(&mut self, push_empty: bool) {
-        todo!()
+        todo!("TimeBinnerTy::push_in_progress")
     }
 
     fn cycle(&mut self) {
-        todo!()
+        todo!("TimeBinnerTy::cycle")
     }
 
     fn empty(&self) -> Option<Self::Output> {
-        todo!()
+        todo!("TimeBinnerTy::empty")
     }
 
     fn append_empty_until_end(&mut self) {
-        todo!()
+        todo!("TimeBinnerTy::append_empty_until_end")
     }
 }
 
@@ -354,7 +397,10 @@ impl<STY: ScalarOps> TimeBinnableTy for BinsDim0<STY> {
         do_time_weight: bool,
         emit_empty_bins: bool,
     ) -> Self::TimeBinner {
-        todo!()
+        match binrange {
+            BinnedRangeEnum::Time(binrange) => BinsDim0TimeBinnerTy::new(binrange, do_time_weight, emit_empty_bins),
+            BinnedRangeEnum::Pulse(_) => todo!("TimeBinnableTy for BinsDim0 Pulse"),
+        }
     }
 }
 

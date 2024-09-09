@@ -59,7 +59,7 @@ pub struct PlainEventsQuery {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     test_do_wasm: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    merger_out_len_max: Option<usize>,
+    merger_out_len_max: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     create_errors: Vec<String>,
     #[serde(default)]
@@ -156,8 +156,8 @@ impl PlainEventsQuery {
         &self.event_delay
     }
 
-    pub fn merger_out_len_max(&self) -> usize {
-        self.merger_out_len_max.unwrap_or(1024)
+    pub fn merger_out_len_max(&self) -> Option<u32> {
+        self.merger_out_len_max
     }
 
     pub fn do_test_main_error(&self) -> bool {
@@ -417,6 +417,13 @@ pub struct EventsSubQuerySettings {
     queue_len_disk_io: Option<usize>,
     create_errors: Vec<String>,
     use_rt: Option<RetentionTime>,
+    merger_out_len_max: Option<u32>,
+}
+
+impl EventsSubQuerySettings {
+    pub fn merger_out_len_max(&self) -> Option<u32> {
+        self.merger_out_len_max
+    }
 }
 
 impl Default for EventsSubQuerySettings {
@@ -431,6 +438,7 @@ impl Default for EventsSubQuerySettings {
             queue_len_disk_io: None,
             create_errors: Vec::new(),
             use_rt: None,
+            merger_out_len_max: None,
         }
     }
 }
@@ -448,6 +456,7 @@ impl From<&PlainEventsQuery> for EventsSubQuerySettings {
             queue_len_disk_io: None,
             create_errors: value.create_errors.clone(),
             use_rt: value.use_rt(),
+            merger_out_len_max: value.merger_out_len_max(),
         }
     }
 }
@@ -466,6 +475,7 @@ impl From<&BinnedQuery> for EventsSubQuerySettings {
             queue_len_disk_io: None,
             create_errors: Vec::new(),
             use_rt: value.use_rt(),
+            merger_out_len_max: value.merger_out_len_max(),
         }
     }
 }
@@ -484,6 +494,7 @@ impl From<&Api1Query> for EventsSubQuerySettings {
             queue_len_disk_io: Some(disk_io_tune.read_queue_len),
             create_errors: Vec::new(),
             use_rt: None,
+            merger_out_len_max: None,
         }
     }
 }
@@ -594,6 +605,10 @@ impl EventsSubQuery {
 
     pub fn use_rt(&self) -> Option<RetentionTime> {
         self.settings.use_rt.clone()
+    }
+
+    pub fn merger_out_len_max(&self) -> Option<u32> {
+        self.settings.merger_out_len_max()
     }
 }
 

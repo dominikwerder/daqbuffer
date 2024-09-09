@@ -57,6 +57,7 @@ pub trait AppendEmptyBin {
     fn append_empty_bin(&mut self, ts1: u64, ts2: u64);
 }
 
+// TODO rename to make it clear that this moves. Better use drain-into or something similar.
 pub trait AppendAllFrom {
     fn append_all_from(&mut self, src: &mut Self);
 }

@@ -45,7 +45,7 @@ fn merge_mergeable_00() -> Result<(), Error> {
     let fut = async {
         let inp0 = inmem_test_events_d0_i32_00();
         let inp1 = inmem_test_events_d0_i32_01();
-        let _merger = items_2::merger::Merger::new(vec![inp0, inp1], 4);
+        let _merger = items_2::merger::Merger::new(vec![inp0, inp1], Some(4));
         Ok(())
     };
     runfut(fut)

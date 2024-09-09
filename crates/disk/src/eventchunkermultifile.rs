@@ -239,7 +239,7 @@ impl Stream for EventChunkerMultifile {
                                             chunkers.push(Box::pin(chunker) as _);
                                         }
                                     }
-                                    let merged = Merger::new(chunkers, self.out_max_len);
+                                    let merged = Merger::new(chunkers, Some(self.out_max_len as u32));
                                     let filtered = RangeFilter2::new(merged, self.range.clone(), self.expand);
                                     self.evs = Some(Box::pin(filtered));
                                     Ready(Some(Ok(StreamItem::Log(item))))

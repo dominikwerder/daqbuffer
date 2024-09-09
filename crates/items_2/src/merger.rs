@@ -101,14 +101,14 @@ impl<T> Merger<T>
 where
     T: Mergeable,
 {
-    pub fn new(inps: Vec<MergeInp<T>>, out_max_len: usize) -> Self {
+    pub fn new(inps: Vec<MergeInp<T>>, out_max_len: Option<u32>) -> Self {
         let n = inps.len();
         Self {
             inps: inps.into_iter().map(|x| Some(x)).collect(),
             items: (0..n).into_iter().map(|_| None).collect(),
             out: None,
             do_clear_out: false,
-            out_max_len,
+            out_max_len: out_max_len.unwrap_or(1000) as usize,
             range_complete: vec![false; n],
             out_of_band_queue: VecDeque::new(),
             log_queue: VecDeque::new(),

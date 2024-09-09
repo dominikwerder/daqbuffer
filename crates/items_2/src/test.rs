@@ -86,7 +86,7 @@ fn items_merge_00() {
         let v1 = ChannelEvents::Events(evs1);
         let stream0 = Box::pin(stream::iter(vec![sitem_data(v0)]));
         let stream1 = Box::pin(stream::iter(vec![sitem_data(v1)]));
-        let mut merger = Merger::new(vec![stream0, stream1], 8);
+        let mut merger = Merger::new(vec![stream0, stream1], Some(8));
         while let Some(item) = merger.next().await {
             eprintln!("{item:?}");
         }
@@ -109,7 +109,7 @@ fn items_merge_01() {
         let stream0 = Box::pin(stream::iter(vec![sitem_data(v0)]));
         let stream1 = Box::pin(stream::iter(vec![sitem_data(v1)]));
         let stream2 = Box::pin(stream::iter(vec![sitem_data(v2), sitem_data(v3), sitem_data(v4)]));
-        let mut merger = Merger::new(vec![stream0, stream1, stream2], 8);
+        let mut merger = Merger::new(vec![stream0, stream1, stream2], Some(8));
         let mut total_event_count = 0;
         while let Some(item) = merger.next().await {
             eprintln!("{item:?}");
@@ -144,7 +144,7 @@ fn items_merge_02() {
         let stream0 = Box::pin(stream::iter(vec![sitem_data(v0)]));
         let stream1 = Box::pin(stream::iter(vec![sitem_data(v1)]));
         let stream2 = Box::pin(stream::iter(vec![sitem_data(v2), sitem_data(v3), sitem_data(v4)]));
-        let mut merger = Merger::new(vec![stream0, stream1, stream2], 8);
+        let mut merger = Merger::new(vec![stream0, stream1, stream2], Some(8));
         let mut total_event_count = 0;
         while let Some(item) = merger.next().await {
             eprintln!("{item:?}");
@@ -187,7 +187,7 @@ fn merge_00() {
         let inp2: Vec<Sitemty<ChannelEvents>> = Vec::new();
         let inp2 = futures_util::stream::iter(inp2);
         let inp2 = Box::pin(inp2);
-        let mut merger = crate::merger::Merger::new(vec![inp1, inp2], 32);
+        let mut merger = crate::merger::Merger::new(vec![inp1, inp2], Some(32));
 
         // Expect an empty first item.
         let item = merger.next().await;
@@ -230,7 +230,7 @@ fn merge_01() {
         let inp2: Vec<Sitemty<ChannelEvents>> = Vec::new();
         let inp2 = futures_util::stream::iter(inp2);
         let inp2 = Box::pin(inp2);
-        let mut merger = crate::merger::Merger::new(vec![inp1, inp2], 10);
+        let mut merger = crate::merger::Merger::new(vec![inp1, inp2], Some(10));
 
         // Expect an empty first item.
         let item = merger.next().await;
@@ -323,7 +323,7 @@ fn merge_02() {
         let inp2: Vec<Sitemty<ChannelEvents>> = inp2_events_a;
         let inp2 = futures_util::stream::iter(inp2);
         let inp2 = Box::pin(inp2);
-        let mut merger = crate::merger::Merger::new(vec![inp1, inp2], 10);
+        let mut merger = crate::merger::Merger::new(vec![inp1, inp2], Some(10));
 
         // Expect an empty first item.
         let item = merger.next().await;
@@ -365,7 +365,7 @@ fn bin_00() {
         let inp1 = futures_util::stream::iter(inp1);
         let inp1 = Box::pin(inp1);
         let inp2 = Box::pin(futures_util::stream::empty()) as _;
-        let stream = crate::merger::Merger::new(vec![inp1, inp2], 32);
+        let stream = crate::merger::Merger::new(vec![inp1, inp2], Some(32));
         let range = NanoRange {
             beg: SEC * 0,
             end: SEC * 100,
@@ -413,7 +413,7 @@ fn bin_01() {
         let inp1 = futures_util::stream::iter(inp1);
         let inp1 = Box::pin(inp1);
         let inp2 = Box::pin(futures_util::stream::empty()) as _;
-        let stream = crate::merger::Merger::new(vec![inp1, inp2], 32);
+        let stream = crate::merger::Merger::new(vec![inp1, inp2], Some(32));
         // covering_range result is subject to adjustments, instead, manually choose bin edges
         let range = NanoRange {
             beg: TSBASE + SEC * 1,

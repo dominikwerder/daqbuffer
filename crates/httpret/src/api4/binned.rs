@@ -23,6 +23,10 @@ use netpod::NodeConfigCached;
 use netpod::ReqCtx;
 use nodenet::client::OpenBoxedBytesViaHttp;
 use query::api4::binned::BinnedQuery;
+use scyllaconn::bincache::ScyllaCacheReadProvider;
+use scyllaconn::worker::ScyllaQueue;
+use std::sync::Arc;
+use streams::timebin::CacheReadProvider;
 use tracing::Instrument;
 use url::Url;
 
@@ -71,7 +75,7 @@ impl BinnedHandler {
         if req.method() != Method::GET {
             return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?);
         }
-        match binned(req, ctx, &shared_res.pgqueue, ncc).await {
+        match binned(req, ctx, &shared_res.pgqueue, shared_res.scyqueue.clone(), ncc).await {
             Ok(ret) => Ok(ret),
             Err(e) => match e {
                 Error::ChannelNotFound => {
@@ -91,7 +95,13 @@ impl BinnedHandler {
     }
 }
 
-async fn binned(req: Requ, ctx: &ReqCtx, pgqueue: &PgQueue, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
+async fn binned(
+    req: Requ,
+    ctx: &ReqCtx,
+    pgqueue: &PgQueue,
+    scyqueue: Option<ScyllaQueue>,
+    ncc: &NodeConfigCached,
+) -> Result<StreamResponse, Error> {
     let url = req_uri_to_url(req.uri()).map_err(|e| Error::BadQuery(e.to_string()))?;
     if req
         .uri()
@@ -101,7 +111,7 @@ async fn binned(req: Requ, ctx: &ReqCtx, pgqueue: &PgQueue, ncc: &NodeConfigCach
         Err(Error::ServerError)?;
     }
     if accepts_json_or_all(&req.headers()) {
-        Ok(binned_json(url, req, ctx, pgqueue, ncc).await?)
+        Ok(binned_json(url, req, ctx, pgqueue, scyqueue, ncc).await?)
     } else if accepts_octets(&req.headers()) {
         Ok(error_response(
             format!("binary binned data not yet available"),
@@ -118,6 +128,7 @@ async fn binned_json(
     req: Requ,
     ctx: &ReqCtx,
     pgqueue: &PgQueue,
+    scyqueue: Option<ScyllaQueue>,
     ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
     debug!("{:?}", req);
@@ -143,8 +154,11 @@ async fn binned_json(
         debug!("begin");
     });
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
-    let open_bytes = Box::pin(open_bytes);
-    let item = streams::timebinnedjson::timebinned_json(query, ch_conf, ctx, open_bytes)
+    let open_bytes = Arc::pin(open_bytes);
+    let cache_read_provider = scyqueue
+        .map(|qu| ScyllaCacheReadProvider::new(qu))
+        .map(|x| Arc::new(x) as Arc<dyn CacheReadProvider>);
+    let item = streams::timebinnedjson::timebinned_json(query, ch_conf, ctx, open_bytes, cache_read_provider)
         .instrument(span1)
         .await
         .map_err(|e| Error::BinnedStream(e))?;
