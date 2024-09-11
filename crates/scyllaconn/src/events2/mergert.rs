@@ -25,22 +25,13 @@ use std::task::Context;
 use std::task::Poll;
 
 #[allow(unused)]
-macro_rules! trace_fetch {
-    ($($arg:tt)*) => {
-        if true {
-            trace!($($arg)*);
-        }
-    };
-}
+macro_rules! trace_init { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ) }
 
 #[allow(unused)]
-macro_rules! trace_emit {
-    ($($arg:tt)*) => {
-        if true {
-            trace!($($arg)*);
-        }
-    };
-}
+macro_rules! trace_fetch { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ) }
+
+#[allow(unused)]
+macro_rules! trace_emit { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ) }
 
 macro_rules! tracer_poll_enter {
     ($self:expr) => {
@@ -158,7 +149,7 @@ pub struct MergeRts {
 
 impl MergeRts {
     pub fn new(ch_conf: ChConf, range: ScyllaSeriesRange, readopts: EventReadOpts, scyqueue: ScyllaQueue) -> Self {
-        info!("MergeRts  readopts {readopts:?}");
+        trace_init!("MergeRts  readopts {readopts:?}");
         Self {
             ch_conf,
             range_mt: range.clone(),

@@ -7,20 +7,24 @@ use futures_util::Future;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::timebin::TimeBinned;
+use items_0::Empty;
 use items_2::binsdim0::BinsDim0;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
 use netpod::query::CacheUsage;
 use netpod::timeunits::*;
 use netpod::AggKind;
+use netpod::BinnedRange;
 use netpod::ChannelTyped;
 use netpod::Dim0Kind;
+use netpod::DtMs;
 use netpod::PreBinnedPatchCoord;
 use netpod::PreBinnedPatchCoordEnum;
 use netpod::PreBinnedPatchRange;
 use netpod::PreBinnedPatchRangeEnum;
 use netpod::ScalarType;
 use netpod::Shape;
+use netpod::TsNano;
 use query::transform::TransformQuery;
 use scylla::Session as ScySession;
 use std::collections::VecDeque;
@@ -532,8 +536,88 @@ impl ScyllaCacheReadProvider {
 }
 
 impl streams::timebin::CacheReadProvider for ScyllaCacheReadProvider {
-    fn read(&self) -> streams::timebin::cached::reader::Reading {
+    fn read(&self, series: u64, range: BinnedRange<TsNano>) -> streams::timebin::cached::reader::CacheReading {
         warn!("impl CacheReadProvider for ScyllaCacheReadProvider");
         todo!("impl CacheReadProvider for ScyllaCacheReadProvider")
     }
+
+    fn write(&self, series: u64, bins: BinsDim0<f32>) -> streams::timebin::cached::reader::CacheWriting {
+        let scyqueue = self.scyqueue.clone();
+        let fut = async move { scyqueue.write_cache_f32(series, bins).await };
+        streams::timebin::cached::reader::CacheWriting::new(Box::pin(fut))
+    }
+}
+
+pub async fn worker_write(
+    series: u64,
+    bins: BinsDim0<f32>,
+    scy: &ScySession,
+) -> Result<(), streams::timebin::cached::reader::Error> {
+    let mut msp_last = u64::MAX;
+    for (((((&ts1, &ts2), &cnt), &min), &max), &avg) in bins
+        .ts1s
+        .iter()
+        .zip(bins.ts2s.iter())
+        .zip(bins.counts.iter())
+        .zip(bins.mins.iter())
+        .zip(bins.maxs.iter())
+        .zip(bins.avgs.iter())
+    {
+        let bin_len = DtMs::from_ms_u64((ts2 - ts1) / 1000000);
+        let part_len = DtMs::from_ms_u64(bin_len.ms() * 1000);
+        let div = part_len.ns();
+        let msp = ts1 / div;
+        let off = (ts1 - msp * div) / bin_len.ns();
+        let params = (
+            series as i64,
+            bin_len.ms() as i32,
+            msp as i64,
+            off as i32,
+            cnt as i64,
+            min,
+            max,
+            avg,
+        );
+        eprintln!("cache write {:?}", params);
+        scy.query(
+            "insert into sf_st.st_binned_scalar_f32 (series, bin_len_ms, ts_msp, off, count, min, max, avg) values (?, ?, ?, ?, ?, ?, ?, ?)",
+            params,
+        )
+        .await
+        .map_err(|e| streams::timebin::cached::reader::Error::Scylla(e.to_string()))?;
+    }
+    Ok(())
+}
+
+pub async fn worker_read(
+    series: u64,
+    range: BinnedRange<TsNano>,
+    scy: &ScySession,
+) -> Result<BinsDim0<f32>, streams::timebin::cached::reader::Error> {
+    let bin_len: DtMs = todo!();
+    let part_len = DtMs::from_ms_u64(bin_len.ms() * 1000);
+    let div = part_len.ns();
+    let msp: u64 = 0;
+    let offs: core::ops::Range<u32> = todo!();
+    let cql = "select off, count, min, max, avg from sf_st.st_binned_scalar_f32 where series = ? and bin_len_ms = ? and ts_msp = ? and off >= ? and off < ?";
+    let params = (
+        series as i64,
+        bin_len.ms() as i32,
+        msp as i64,
+        offs.start as i32,
+        offs.end as i32,
+    );
+    let res = scy
+        .query_iter(cql, params)
+        .await
+        .map_err(|e| streams::timebin::cached::reader::Error::Scylla(e.to_string()))?;
+    let it = res.into_typed::<(i32, i64, f32, f32, f32)>();
+    let mut bins = BinsDim0::empty();
+    while let Some(x) = it.next().await {
+        let row = x.map_err(|e| streams::timebin::cached::reader::Error::Scylla(e.to_string()))?;
+        let off = row.0 as u64;
+        // TODO push bins
+        todo!("push bins");
+    }
+    Ok(bins)
 }

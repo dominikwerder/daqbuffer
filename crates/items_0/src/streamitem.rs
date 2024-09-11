@@ -117,6 +117,30 @@ macro_rules! on_sitemty_data {
     }};
 }
 
+#[macro_export]
+macro_rules! try_map_sitemty_data {
+    ($item:expr, $ex:expr) => {{
+        use $crate::streamitem::RangeCompletableItem;
+        use $crate::streamitem::StreamItem;
+        match $item {
+            Ok(x) => match x {
+                StreamItem::DataItem(x) => match x {
+                    RangeCompletableItem::Data(x) => match $ex(x) {
+                        Ok(x) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))),
+                        Err(e) => Err(e),
+                    },
+                    RangeCompletableItem::RangeComplete => {
+                        Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
+                    }
+                },
+                StreamItem::Log(x) => Ok(StreamItem::Log(x)),
+                StreamItem::Stats(x) => Ok(StreamItem::Stats(x)),
+            },
+            Err(x) => Err(x),
+        }
+    }};
+}
+
 pub fn sitem_data<X>(x: X) -> Sitemty<X> {
     Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
 }

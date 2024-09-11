@@ -1,5 +1,6 @@
 mod basic;
 pub mod cached;
+pub mod fromevents;
 mod fromlayers;
 mod gapfill;
 mod grid;

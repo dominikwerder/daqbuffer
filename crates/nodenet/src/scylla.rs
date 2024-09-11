@@ -1,11 +1,15 @@
 use err::thiserror;
 use err::ThisError;
+use futures_util::Future;
+use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
+use items_0::on_sitemty_data;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
+use items_0::try_map_sitemty_data;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
 use netpod::ChConf;
@@ -16,6 +20,9 @@ use scyllaconn::events2::mergert;
 use scyllaconn::worker::ScyllaQueue;
 use scyllaconn::SeriesId;
 use std::pin::Pin;
+use std::task::Context;
+use std::task::Poll;
+use streams::timebin::cached::reader::EventsReadProvider;
 use taskrun::tokio;
 
 #[derive(Debug, ThisError)]
@@ -128,4 +135,71 @@ pub async fn scylla_channel_event_stream(
             item
         });
     Ok(Box::pin(stream))
+}
+
+struct ScyllaEventsReadStream {
+    fut1: Option<
+        Pin<Box<dyn Future<Output = Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error>> + Send>>,
+    >,
+    stream: Option<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>>,
+}
+
+impl Stream for ScyllaEventsReadStream {
+    type Item = Sitemty<ChannelEvents>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        loop {
+            break if let Some(fut) = self.fut1.as_mut() {
+                match fut.poll_unpin(cx) {
+                    Ready(Ok(x)) => {
+                        self.fut1 = None;
+                        self.stream = Some(x);
+                        continue;
+                    }
+                    Ready(Err(e)) => Ready(Some(Err(::err::Error::from_string(e)))),
+                    Pending => Pending,
+                }
+            } else if let Some(fut) = self.stream.as_mut() {
+                match fut.poll_next_unpin(cx) {
+                    Ready(Some(x)) => {
+                        let x = try_map_sitemty_data!(x, |x| match x {
+                            ChannelEvents::Events(x) => {
+                                let x = x.to_dim0_f32_for_binning();
+                                Ok(ChannelEvents::Events(x))
+                            }
+                            ChannelEvents::Status(x) => Ok(ChannelEvents::Status(x)),
+                        });
+                        Ready(Some(x))
+                    }
+                    Ready(None) => Ready(None),
+                    Pending => Pending,
+                }
+            } else {
+                Ready(None)
+            };
+        }
+    }
+}
+
+pub struct ScyllaEventReadProvider {
+    scyqueue: ScyllaQueue,
+}
+
+impl ScyllaEventReadProvider {
+    pub fn new(scyqueue: ScyllaQueue) -> Self {
+        Self { scyqueue }
+    }
+}
+
+impl EventsReadProvider for ScyllaEventReadProvider {
+    fn read(&self, evq: EventsSubQuery, chconf: ChConf) -> streams::timebin::cached::reader::EventsReading {
+        let scyqueue = self.scyqueue.clone();
+        let fut1 = async move { crate::scylla::scylla_channel_event_stream(evq, chconf, &scyqueue).await };
+        let stream = ScyllaEventsReadStream {
+            fut1: Some(Box::pin(fut1)),
+            stream: None,
+        };
+        streams::timebin::cached::reader::EventsReading::new(Box::pin(stream))
+    }
 }

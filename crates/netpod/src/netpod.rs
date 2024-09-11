@@ -1897,14 +1897,12 @@ impl TsNano {
 }
 
 impl fmt::Debug for TsNano {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let ts = Utc
             .timestamp_opt((self.0 / SEC) as i64, (self.0 % SEC) as u32)
             .earliest()
             .unwrap_or(Default::default());
-        f.debug_struct("TsNano")
-            .field("ts", &ts.format(DATETIME_FMT_3MS).to_string())
-            .finish()
+        write!(fmt, "TsNano {{ {} }}", ts.format(DATETIME_FMT_3MS))
     }
 }
 
@@ -2380,22 +2378,31 @@ where
     pub bin_cnt: u64,
 }
 
-impl<T> fmt::Debug for BinnedRange<T>
-where
-    T: Dim0Index,
-{
+impl fmt::Debug for BinnedRange<TsNano> {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct("BinnedRange")
-            .field("bin_len", &self.bin_len)
-            .field("bin_off", &self.bin_off)
-            .field("bin_cnt", &self.bin_cnt)
-            .finish()
+        let beg = self.bin_len.times(self.bin_off);
+        let end = self.bin_len.times(self.bin_off + self.bin_cnt);
+        write!(fmt, "BinnedRange {{ {}, {}, {} }}", beg, end, self.bin_len.to_dt_ms())
+    }
+}
+
+impl fmt::Debug for BinnedRange<PulseId> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "BinnedRange<PulseId> {{ .. }}")
+    }
+}
+
+impl fmt::Display for BinnedRange<TsNano> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(self, fmt)
     }
 }
 
 impl BinnedRange<TsNano> {
     pub fn to_nano_range(&self) -> NanoRange {
-        self.full_range()
+        let beg = self.bin_len.times(self.bin_off).as_u64();
+        let end = self.bin_len.times(self.bin_off + self.bin_cnt).as_u64();
+        NanoRange { beg, end }
     }
 
     pub fn from_nano_range(range: NanoRange, bin_len: DtMs) -> Self {
@@ -2406,6 +2413,14 @@ impl BinnedRange<TsNano> {
             bin_off: off1,
             bin_cnt: off2 - off1,
         }
+    }
+
+    pub fn nano_beg(&self) -> TsNano {
+        self.bin_len.times(self.bin_off)
+    }
+
+    pub fn nano_end(&self) -> TsNano {
+        self.bin_len.times(self.bin_off + self.bin_cnt)
     }
 }
 

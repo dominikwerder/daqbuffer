@@ -3,6 +3,7 @@ use crate::rangefilter2::RangeFilter2;
 use crate::tcprawclient::container_stream_from_bytes_stream;
 use crate::tcprawclient::make_sub_query;
 use crate::tcprawclient::OpenBoxedBytesStreamsBox;
+use crate::timebin::cached::reader::EventsReadProvider;
 use crate::timebin::CacheReadProvider;
 use crate::timebin::TimeBinnedStream;
 use crate::transform::build_merged_event_transform;
@@ -310,10 +311,11 @@ async fn timebinned_stream(
     ctx: &ReqCtx,
     open_bytes: OpenBoxedBytesStreamsBox,
     cache_read_provider: Option<Arc<dyn CacheReadProvider>>,
+    events_read_provider: Option<Arc<dyn EventsReadProvider>>,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>, Error> {
     use netpod::query::CacheUsage;
-    match (query.cache_usage(), cache_read_provider) {
-        (CacheUsage::Use | CacheUsage::Recreate, Some(cache_read_provider)) => {
+    match (query.cache_usage(), cache_read_provider, events_read_provider) {
+        (CacheUsage::Use | CacheUsage::Recreate, Some(cache_read_provider), Some(events_read_provider)) => {
             let series = if let Some(x) = query.channel().series() {
                 x
             } else {
@@ -351,6 +353,7 @@ async fn timebinned_stream(
                 do_time_weight,
                 bin_len_layers,
                 cache_read_provider,
+                events_read_provider,
             )
             .map_err(Error::from_string)?;
             let stream = stream.map(|item| {
@@ -408,6 +411,7 @@ pub async fn timebinned_json(
     ctx: &ReqCtx,
     open_bytes: OpenBoxedBytesStreamsBox,
     cache_read_provider: Option<Arc<dyn CacheReadProvider>>,
+    events_read_provider: Option<Arc<dyn EventsReadProvider>>,
 ) -> Result<JsonValue, Error> {
     let deadline = Instant::now() + query.timeout_content().unwrap_or(Duration::from_millis(5000));
     let binned_range = BinnedRangeEnum::covering_range(query.range().clone(), query.bin_count())?;
@@ -421,6 +425,7 @@ pub async fn timebinned_json(
         ctx,
         open_bytes,
         cache_read_provider,
+        events_read_provider,
     )
     .await?;
     let stream = timebinned_to_collectable(stream);

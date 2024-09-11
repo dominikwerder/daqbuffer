@@ -1,5 +1,7 @@
 use super::cached::reader::CacheReadProvider;
+use super::cached::reader::EventsReadProvider;
 use crate::tcprawclient::OpenBoxedBytesStreamsBox;
+use crate::timebin::fromevents::BinnedFromEvents;
 use crate::timebin::grid::find_next_finer_bin_len;
 use err::thiserror;
 use err::ThisError;
@@ -13,12 +15,17 @@ use items_0::streamitem::StreamItem;
 use items_0::timebin::TimeBinnableTy;
 use items_2::binsdim0::BinsDim0;
 use netpod::log::*;
+use netpod::range::evrange::SeriesRange;
 use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
+use netpod::ChConf;
 use netpod::ChannelTypeConfigGen;
 use netpod::DtMs;
 use netpod::ReqCtx;
+use netpod::SeriesKind;
 use netpod::TsNano;
+use query::api4::events::EventsSubQuery;
+use query::api4::events::EventsSubQuerySelect;
 use query::api4::events::EventsSubQuerySettings;
 use query::transform::TransformQuery;
 use std::pin::Pin;
@@ -29,8 +36,9 @@ use std::task::Poll;
 #[derive(Debug, ThisError)]
 #[cstm(name = "TimeBinnedFromLayers")]
 pub enum Error {
-    Logic,
     GapFill(#[from] super::gapfill::Error),
+    BinnedFromEvents(#[from] super::fromevents::Error),
+    SfDatabufferNotSupported,
 }
 
 type BoxedInput = Pin<Box<dyn Stream<Item = Sitemty<BinsDim0<f32>>> + Send>>;
@@ -61,7 +69,8 @@ impl TimeBinnedFromLayers {
         range: BinnedRange<TsNano>,
         do_time_weight: bool,
         bin_len_layers: Vec<DtMs>,
-        cache_read_provider: Arc<dyn CacheReadProvider + Send>,
+        cache_read_provider: Arc<dyn CacheReadProvider>,
+        events_read_provider: Arc<dyn EventsReadProvider>,
     ) -> Result<Self, Error> {
         info!(
             "{}::new  {:?}  {:?}  {:?}",
@@ -72,19 +81,20 @@ impl TimeBinnedFromLayers {
         );
         let bin_len = DtMs::from_ms_u64(range.bin_len.ms());
         if bin_len_layers.contains(&bin_len) {
-            info!("{}::new  bin_len in layers", Self::type_name());
+            info!("{}::new  bin_len in layers  {:?}", Self::type_name(), range);
             let inp = super::gapfill::GapFill::new(
+                "FromLayers".into(),
                 ch_conf.clone(),
                 transform_query.clone(),
                 sub.clone(),
                 log_level.clone(),
                 ctx.clone(),
-                open_bytes.clone(),
                 series,
                 range,
                 do_time_weight,
                 bin_len_layers,
                 cache_read_provider,
+                events_read_provider.clone(),
             )?;
             let ret = Self {
                 ch_conf,
@@ -99,22 +109,26 @@ impl TimeBinnedFromLayers {
         } else {
             match find_next_finer_bin_len(bin_len, &bin_len_layers) {
                 Some(finer) => {
-                    // TODO
-                    // produce from binned sub-stream with additional binner.
-                    let range = BinnedRange::from_nano_range(range.to_nano_range(), finer);
-                    warn!("{}::new  next finer  {:?}  {:?}", Self::type_name(), finer, range);
+                    let range_finer = BinnedRange::from_nano_range(range.to_nano_range(), finer);
+                    warn!(
+                        "{}::new  next finer from bins {:?}  {:?}",
+                        Self::type_name(),
+                        finer,
+                        range_finer
+                    );
                     let inp = super::gapfill::GapFill::new(
+                        "FromLayers".into(),
                         ch_conf.clone(),
                         transform_query.clone(),
                         sub.clone(),
                         log_level.clone(),
                         ctx.clone(),
-                        open_bytes.clone(),
                         series,
-                        range.clone(),
+                        range_finer.clone(),
                         do_time_weight,
                         bin_len_layers,
                         cache_read_provider,
+                        events_read_provider.clone(),
                     )?;
                     let inp = super::basic::TimeBinnedStream::new(
                         Box::pin(inp),
@@ -133,10 +147,39 @@ impl TimeBinnedFromLayers {
                     Ok(ret)
                 }
                 None => {
-                    warn!("{}::new  NO next finer", Self::type_name());
-                    // TODO
-                    // produce from events
-                    todo!()
+                    warn!("{}::new  next finer from events", Self::type_name());
+                    let series_range = SeriesRange::TimeRange(range.to_nano_range());
+                    let one_before_range = true;
+                    let select = EventsSubQuerySelect::new(
+                        ch_conf.clone(),
+                        series_range,
+                        one_before_range,
+                        transform_query.clone(),
+                    );
+                    let evq = EventsSubQuery::from_parts(select, sub.clone(), ctx.reqid().into(), log_level.clone());
+                    match &ch_conf {
+                        ChannelTypeConfigGen::Scylla(chconf) => {
+                            let inp = BinnedFromEvents::new(
+                                range,
+                                evq,
+                                chconf.clone(),
+                                do_time_weight,
+                                events_read_provider,
+                            )?;
+                            let ret = Self {
+                                ch_conf,
+                                transform_query,
+                                sub,
+                                log_level,
+                                ctx,
+                                open_bytes,
+                                inp: Box::pin(inp),
+                            };
+                            warn!("{}::new  setup from events", Self::type_name());
+                            Ok(ret)
+                        }
+                        ChannelTypeConfigGen::SfDatabuffer(_) => return Err(Error::SfDatabufferNotSupported),
+                    }
                 }
             }
         }

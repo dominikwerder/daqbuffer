@@ -74,6 +74,10 @@ impl NanoRange {
         }
     }
 
+    pub fn from_ns_u64(beg: u64, end: u64) -> Self {
+        Self { beg, end }
+    }
+
     pub fn delta(&self) -> u64 {
         self.end - self.beg
     }
@@ -113,7 +117,7 @@ pub struct PulseRange {
     pub end: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub enum SeriesRange {
     TimeRange(NanoRange),
     PulseRange(PulseRange),
@@ -159,6 +163,15 @@ impl SeriesRange {
         match self {
             SeriesRange::TimeRange(x) => x.end - x.beg,
             SeriesRange::PulseRange(x) => x.end - x.beg,
+        }
+    }
+}
+
+impl fmt::Debug for SeriesRange {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            SeriesRange::TimeRange(range) => write!(fmt, "SeriesRange::TimeRange {{ {} }}", range),
+            SeriesRange::PulseRange(_) => write!(fmt, "SeriesRange::PulseRange {{ .. }}"),
         }
     }
 }

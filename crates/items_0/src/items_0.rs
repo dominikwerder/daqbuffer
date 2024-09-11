@@ -156,6 +156,8 @@ pub trait Events:
     fn to_json_vec_u8(&self) -> Vec<u8>;
     fn to_cbor_vec_u8(&self) -> Vec<u8>;
     fn clear(&mut self);
+    // TODO: can not name EventsDim0 from here, so use trait object for now. Anyway is a workaround.
+    fn to_dim0_f32_for_binning(&self) -> Box<dyn Events>;
 }
 
 impl WithLen for Box<dyn Events> {
@@ -289,5 +291,9 @@ impl Events for Box<dyn Events> {
 
     fn clear(&mut self) {
         Events::clear(self.as_mut())
+    }
+
+    fn to_dim0_f32_for_binning(&self) -> Box<dyn Events> {
+        Events::to_dim0_f32_for_binning(self.as_ref())
     }
 }

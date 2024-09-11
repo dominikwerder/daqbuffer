@@ -189,8 +189,8 @@ where
                 "{} {{ count {}  ts {:?} .. {:?}  vals {:?} .. {:?} }}",
                 self.type_name(),
                 self.tss.len(),
-                self.tss.front().map(|x| x / SEC),
-                self.tss.back().map(|x| x / SEC),
+                self.tss.front().map(|&x| TsNano::from_ns(x)),
+                self.tss.back().map(|&x| TsNano::from_ns(x)),
                 self.values.front(),
                 self.values.back(),
             )
@@ -1067,6 +1067,14 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
         self.tss.clear();
         self.pulses.clear();
         self.values.clear();
+    }
+
+    fn to_dim0_f32_for_binning(&self) -> Box<dyn Events> {
+        let mut ret = EventsDim0::empty();
+        for (&ts, val) in self.tss.iter().zip(self.values.iter()) {
+            ret.push(ts, 0, val.as_prim_f32_b());
+        }
+        Box::new(ret)
     }
 }
 

@@ -7,6 +7,7 @@ use err::thiserror;
 use err::ThisError;
 use futures_util::Future;
 use items_0::Events;
+use items_2::binsdim0::BinsDim0;
 use netpod::log::*;
 use netpod::ttl::RetentionTime;
 use netpod::ScyllaConfig;
@@ -29,6 +30,7 @@ pub enum Error {
     Join,
     Toplist(#[from] crate::accounting::toplist::Error),
     MissingKeyspaceConfig,
+    CacheWriteF32(#[from] streams::timebin::cached::reader::Error),
 }
 
 #[derive(Debug)]
@@ -46,6 +48,11 @@ enum Job {
         RetentionTime,
         TsMs,
         Sender<Result<crate::accounting::toplist::UsageData, crate::accounting::toplist::Error>>,
+    ),
+    WriteCacheF32(
+        u64,
+        BinsDim0<f32>,
+        Sender<Result<(), streams::timebin::cached::reader::Error>>,
     ),
 }
 
@@ -115,6 +122,24 @@ impl ScyllaQueue {
         let job = Job::AccountingReadTs(rt, ts, tx);
         self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
         let res = rx.recv().await.map_err(|_| Error::ChannelRecv)??;
+        Ok(res)
+    }
+
+    pub async fn write_cache_f32(
+        &self,
+        series: u64,
+        bins: BinsDim0<f32>,
+    ) -> Result<(), streams::timebin::cached::reader::Error> {
+        let (tx, rx) = async_channel::bounded(1);
+        let job = Job::WriteCacheF32(series, bins, tx);
+        self.tx
+            .send(job)
+            .await
+            .map_err(|_| streams::timebin::cached::reader::Error::ChannelSend)?;
+        let res = rx
+            .recv()
+            .await
+            .map_err(|_| streams::timebin::cached::reader::Error::ChannelRecv)??;
         Ok(res)
     }
 }
@@ -188,6 +213,12 @@ impl ScyllaWorker {
                     };
                     let res = crate::accounting::toplist::read_ts(&ks, rt, ts, &scy).await;
                     if tx.send(res.map_err(Into::into)).await.is_err() {
+                        // TODO count for stats
+                    }
+                }
+                Job::WriteCacheF32(series, bins, tx) => {
+                    let res = super::bincache::worker_write(series, bins, &scy).await;
+                    if tx.send(res).await.is_err() {
                         // TODO count for stats
                     }
                 }

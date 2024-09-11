@@ -230,6 +230,15 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
                         break;
                     }
                 }
+                for e in &tracing_trace {
+                    tmp1.clear();
+                    tmp1.push_str(e);
+                    tmp1.push_str("::");
+                    if meta.target() == &tmp1[..tmp1.len() - 2] || meta.target().starts_with(&tmp1) {
+                        target_match = true;
+                        break;
+                    }
+                }
                 if target_match {
                     let mut sr = ctx.lookup_current();
                     let mut allow = false;

@@ -19,10 +19,7 @@ use tokio::io::AsyncRead;
 pub type BoxedBytesStream = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>;
 
 #[allow(unused)]
-macro_rules! trace2 {
-    ($($arg:tt)*) => ();
-    ($($arg:tt)*) => (trace!($($arg)*));
-}
+macro_rules! trace2 { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ); }
 
 impl err::ToErr for crate::slidebuf::Error {
     fn to_err(self) -> Error {
@@ -104,7 +101,7 @@ where
         }
     }
 
-    fn poll_upstream(&mut self, cx: &mut Context) -> Poll<Result<usize, Error>> {
+    fn poll_upstream(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Result<usize, Error>> {
         trace2!("poll_upstream");
         use Poll::*;
         // use tokio::io::AsyncRead;
@@ -112,7 +109,6 @@ where
         // let mut buf = ReadBuf::new(self.buf.available_writable_area(self.need_min.saturating_sub(self.buf.len()))?);
         let inp = &mut self.inp;
         pin_mut!(inp);
-        trace!("poll_upstream");
         match inp.poll_next(cx) {
             Ready(Some(Ok(x))) => match self.buf.available_writable_area(x.len()) {
                 Ok(dst) => {
@@ -254,7 +250,7 @@ where
                     }
                 }
             } else {
-                match self.poll_upstream(cx) {
+                match self.as_mut().poll_upstream(cx) {
                     Ready(Ok(n1)) => {
                         if n1 == 0 {
                             self.done = true;

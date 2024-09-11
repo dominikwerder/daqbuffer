@@ -118,7 +118,6 @@ impl MspStreamRt {
             async move { scyqueue.find_ts_msp(rt, series.id(), range, false).await }
         };
         let do_trace_detail = netpod::TRACE_SERIES_ID.contains(&series.id());
-        info!("-------------------------------------  TEST INFO");
         trace_emit!(do_trace_detail, "-------------------------------------  TEST TRACE");
         Self {
             rt,

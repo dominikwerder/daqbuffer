@@ -1012,6 +1012,14 @@ impl Events for ChannelEvents {
             }
         }
     }
+
+    fn to_dim0_f32_for_binning(&self) -> Box<dyn Events> {
+        use ChannelEvents::*;
+        match self {
+            Events(x) => x.to_dim0_f32_for_binning(),
+            Status(x) => panic!("ChannelEvents::to_dim0_f32_for_binning"),
+        }
+    }
 }
 
 impl Collectable for ChannelEvents {

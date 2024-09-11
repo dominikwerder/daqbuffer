@@ -495,4 +495,8 @@ impl Events for EventsDim0Enum {
     fn clear(&mut self) {
         todo!()
     }
+
+    fn to_dim0_f32_for_binning(&self) -> Box<dyn Events> {
+        todo!("{}::to_dim0_f32_for_binning", self.type_name())
+    }
 }

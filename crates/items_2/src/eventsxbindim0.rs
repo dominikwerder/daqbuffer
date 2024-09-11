@@ -377,6 +377,10 @@ impl<STY: ScalarOps> Events for EventsXbinDim0<STY> {
         self.maxs.clear();
         self.avgs.clear();
     }
+
+    fn to_dim0_f32_for_binning(&self) -> Box<dyn Events> {
+        todo!("{}::to_dim0_f32_for_binning", self.type_name())
+    }
 }
 
 #[derive(Debug)]

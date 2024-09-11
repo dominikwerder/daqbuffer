@@ -22,10 +22,12 @@ use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
 use nodenet::client::OpenBoxedBytesViaHttp;
+use nodenet::scylla::ScyllaEventReadProvider;
 use query::api4::binned::BinnedQuery;
 use scyllaconn::bincache::ScyllaCacheReadProvider;
 use scyllaconn::worker::ScyllaQueue;
 use std::sync::Arc;
+use streams::timebin::cached::reader::EventsReadProvider;
 use streams::timebin::CacheReadProvider;
 use tracing::Instrument;
 use url::Url;
@@ -156,12 +158,23 @@ async fn binned_json(
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let open_bytes = Arc::pin(open_bytes);
     let cache_read_provider = scyqueue
+        .clone()
         .map(|qu| ScyllaCacheReadProvider::new(qu))
         .map(|x| Arc::new(x) as Arc<dyn CacheReadProvider>);
-    let item = streams::timebinnedjson::timebinned_json(query, ch_conf, ctx, open_bytes, cache_read_provider)
-        .instrument(span1)
-        .await
-        .map_err(|e| Error::BinnedStream(e))?;
+    let events_read_provider = scyqueue
+        .map(|qu| ScyllaEventReadProvider::new(qu))
+        .map(|x| Arc::new(x) as Arc<dyn EventsReadProvider>);
+    let item = streams::timebinnedjson::timebinned_json(
+        query,
+        ch_conf,
+        ctx,
+        open_bytes,
+        cache_read_provider,
+        events_read_provider,
+    )
+    .instrument(span1)
+    .await
+    .map_err(|e| Error::BinnedStream(e))?;
     let ret = response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?;
     Ok(ret)
 }

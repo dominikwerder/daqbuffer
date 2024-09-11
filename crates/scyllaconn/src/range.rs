@@ -2,7 +2,7 @@ use core::fmt;
 use netpod::range::evrange::SeriesRange;
 use netpod::TsNano;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ScyllaSeriesRange {
     beg: u64,
     end: u64,
@@ -26,6 +26,17 @@ impl ScyllaSeriesRange {
 
     pub fn fmt(&self) -> ScyllaSeriesRangeFmt {
         ScyllaSeriesRangeFmt { val: self.clone() }
+    }
+}
+
+impl fmt::Debug for ScyllaSeriesRange {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            fmt,
+            "ScyllaSeriesRange {{ beg: {}, end: {} }}",
+            TsNano::from_ns(self.beg),
+            TsNano::from_ns(self.end)
+        )
     }
 }
 

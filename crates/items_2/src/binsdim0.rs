@@ -109,6 +109,40 @@ where
     }
 }
 
+impl<NTY> fmt::Display for BinsDim0<NTY>
+where
+    NTY: fmt::Debug,
+{
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        let self_name = any::type_name::<Self>();
+        if true {
+            write!(
+                fmt,
+                "{self_name}  count {:?}  ts1s {:?}  ts2s {:?}  counts {:?}  mins {:?}  maxs {:?}  avgs {:?}",
+                self.ts1s.len(),
+                self.ts1s.iter().map(|&k| TsNano::from_ns(k)).collect::<Vec<_>>(),
+                self.ts2s.iter().map(|&k| TsNano::from_ns(k)).collect::<Vec<_>>(),
+                self.counts,
+                self.mins,
+                self.maxs,
+                self.avgs,
+            )
+        } else {
+            write!(
+                fmt,
+                "{self_name}  count {:?}  edges {:?} .. {:?}  counts {:?} .. {:?}  avgs {:?} .. {:?}",
+                self.ts1s.len(),
+                self.ts1s.front().map(|&k| TsNano::from_ns(k)),
+                self.ts2s.back().map(|&k| TsNano::from_ns(k)),
+                self.counts.front(),
+                self.counts.back(),
+                self.avgs.front(),
+                self.avgs.back(),
+            )
+        }
+    }
+}
+
 impl<NTY: ScalarOps> BinsDim0<NTY> {
     pub fn push(&mut self, ts1: u64, ts2: u64, count: u64, min: NTY, max: NTY, avg: f32) {
         self.ts1s.push_back(ts1);
@@ -317,13 +351,16 @@ where
     STY: ScalarOps,
 {
     ts1now: TsNano,
+    ts2now: TsNano,
     binrange: BinnedRange<TsNano>,
     do_time_weight: bool,
     emit_empty_bins: bool,
     range_complete: bool,
-    buf: <Self as TimeBinnerTy>::Output,
     out: <Self as TimeBinnerTy>::Output,
-    bins_ready_count: usize,
+    cnt: u64,
+    min: STY,
+    max: STY,
+    avg: f64,
 }
 
 impl<STY> BinsDim0TimeBinnerTy<STY>
@@ -333,17 +370,30 @@ where
     pub fn new(binrange: BinnedRange<TsNano>, do_time_weight: bool, emit_empty_bins: bool) -> Self {
         // let ts1now = TsNano::from_ns(binrange.bin_off * binrange.bin_len.ns());
         // let ts2 = ts1.add_dt_nano(binrange.bin_len.to_dt_nano());
+        let ts1now = TsNano::from_ns(binrange.full_range().beg());
+        let ts2now = ts1now.add_dt_nano(binrange.bin_len.to_dt_nano());
         let buf = <Self as TimeBinnerTy>::Output::empty();
         Self {
-            ts1now: TsNano::from_ns(binrange.full_range().beg()),
+            ts1now,
+            ts2now,
             binrange,
             do_time_weight,
             emit_empty_bins,
             range_complete: false,
-            buf,
             out: <Self as TimeBinnerTy>::Output::empty(),
-            bins_ready_count: 0,
+            cnt: 0,
+            min: STY::zero_b(),
+            max: STY::zero_b(),
+            avg: 0.,
         }
+    }
+
+    // used internally for the aggregation
+    fn reset_agg(&mut self) {
+        self.cnt = 0;
+        self.min = STY::zero_b();
+        self.max = STY::zero_b();
+        self.avg = 0.;
     }
 }
 
@@ -355,8 +405,77 @@ where
     type Output = BinsDim0<STY>;
 
     fn ingest(&mut self, item: &mut Self::Input) {
-        // item.ts1s;
-        todo!("TimeBinnerTy::ingest")
+        let mut count_before = 0;
+        for (((((&ts1, &ts2), &cnt), min), max), &avg) in item
+            .ts1s
+            .iter()
+            .zip(&item.ts2s)
+            .zip(&item.counts)
+            .zip(&item.mins)
+            .zip(&item.maxs)
+            .zip(&item.avgs)
+        {
+            if ts1 < self.ts1now.ns() {
+                // warn!("encountered bin from time before  {}  {}", ts1, self.ts1now.ns());
+                count_before += 1;
+                continue;
+            } else {
+                if ts2 > self.ts2now.ns() {
+                    if ts2 - ts1 > self.ts2now.ns() - self.ts1now.ns() {
+                        panic!("incoming bin len too large");
+                    } else if ts1 < self.ts2now.ns() {
+                        panic!("encountered unaligned input bin");
+                    } else {
+                        let mut i = 0;
+                        while ts1 >= self.ts2now.ns() {
+                            self.cycle();
+                            i += 1;
+                            if i > 50000 {
+                                panic!("cycle forward too many iterations");
+                            }
+                        }
+                    }
+                } else {
+                    // ok, we're still inside the current bin
+                }
+            }
+            if cnt == 0 {
+                // ignore input bin, it does not contain any valid information.
+            } else {
+                if self.cnt == 0 {
+                    self.cnt = cnt;
+                    self.min = min.clone();
+                    self.max = max.clone();
+                    if self.do_time_weight {
+                        let f = (ts2 - ts1) as f64 / (self.ts2now.ns() - self.ts1now.ns()) as f64;
+                        self.avg = avg as f64 * f;
+                    } else {
+                        panic!("TODO non-time-weighted binning to be impl");
+                    }
+                } else {
+                    self.cnt += cnt;
+                    if *min < self.min {
+                        self.min = min.clone();
+                    }
+                    if *max > self.max {
+                        self.max = max.clone();
+                    }
+                    if self.do_time_weight {
+                        let f = (ts2 - ts1) as f64 / (self.ts2now.ns() - self.ts1now.ns()) as f64;
+                        self.avg += avg as f64 * f;
+                    } else {
+                        panic!("TODO non-time-weighted binning to be impl");
+                    }
+                }
+            }
+        }
+        if count_before != 0 {
+            warn!(
+                "-----   seen {} / {} input bins from time before",
+                count_before,
+                item.len()
+            );
+        }
     }
 
     fn set_range_complete(&mut self) {
@@ -364,27 +483,51 @@ where
     }
 
     fn bins_ready_count(&self) -> usize {
-        self.bins_ready_count
+        self.out.len()
     }
 
     fn bins_ready(&mut self) -> Option<Self::Output> {
-        todo!("TimeBinnerTy::bins_ready")
+        if self.out.len() != 0 {
+            let ret = core::mem::replace(&mut self.out, BinsDim0::empty());
+            Some(ret)
+        } else {
+            None
+        }
     }
 
     fn push_in_progress(&mut self, push_empty: bool) {
-        todo!("TimeBinnerTy::push_in_progress")
+        if self.cnt == 0 && !push_empty {
+            self.reset_agg();
+        } else {
+            self.out.ts1s.push_back(self.ts1now.ns());
+            self.out.ts2s.push_back(self.ts2now.ns());
+            self.out.counts.push_back(self.cnt);
+            self.out.mins.push_back(self.min.clone());
+            self.out.maxs.push_back(self.max.clone());
+            self.out.avgs.push_back(self.avg as f32);
+            self.reset_agg();
+        }
     }
 
     fn cycle(&mut self) {
-        todo!("TimeBinnerTy::cycle")
+        self.push_in_progress(true);
+        self.ts1now = self.ts1now.add_dt_nano(self.binrange.bin_len.to_dt_nano());
+        self.ts2now = self.ts2now.add_dt_nano(self.binrange.bin_len.to_dt_nano());
     }
 
     fn empty(&self) -> Option<Self::Output> {
-        todo!("TimeBinnerTy::empty")
+        Some(<Self as TimeBinnerTy>::Output::empty())
     }
 
     fn append_empty_until_end(&mut self) {
-        todo!("TimeBinnerTy::append_empty_until_end")
+        let mut i = 0;
+        while self.ts2now.ns() < self.binrange.full_range().end() {
+            self.cycle();
+            i += 1;
+            if i > 100000 {
+                panic!("append_empty_until_end too many iterations");
+            }
+        }
     }
 }
 

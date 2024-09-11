@@ -17,31 +17,16 @@ use std::task::Context;
 use std::task::Poll;
 
 #[allow(unused)]
-macro_rules! trace2 {
-    ($($arg:tt)*) => {
-        if false {
-            trace!($($arg)*);
-        }
-    };
-}
+macro_rules! debug_first { ($($arg:tt)*) => ( if false { debug!($($arg)*); } ) }
 
 #[allow(unused)]
-macro_rules! trace3 {
-    ($($arg:tt)*) => {
-        if false {
-            trace!($($arg)*);
-        }
-    };
-}
+macro_rules! trace2 { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ) }
 
 #[allow(unused)]
-macro_rules! trace4 {
-    ($($arg:tt)*) => {
-        if false {
-            trace!($($arg)*);
-        }
-    };
-}
+macro_rules! trace3 { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ) }
+
+#[allow(unused)]
+macro_rules! trace4 { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ) }
 
 type SitemtyStream<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;
 
@@ -115,7 +100,7 @@ where
         self.process_item(item);
         let mut do_emit = false;
         if self.done_first_input == false {
-            debug!(
+            debug_first!(
                 "emit container after the first input  len {}  binner {}",
                 item_len,
                 self.binner.is_some()
@@ -191,13 +176,13 @@ where
         trace2!("=================   handle_none");
         let self_range_final = self.range_final;
         if let Some(binner) = self.binner.as_mut() {
-            trace!("bins ready count before finish {}", binner.bins_ready_count());
+            trace2!("bins ready count before finish {}", binner.bins_ready_count());
             // TODO rework the finish logic
             if self_range_final {
                 binner.set_range_complete();
             }
             binner.push_in_progress(false);
-            trace!("bins ready count after finish  {}", binner.bins_ready_count());
+            trace2!("bins ready count after finish  {}", binner.bins_ready_count());
             if let Some(bins) = binner.bins_ready() {
                 self.done_data = true;
                 Ok(Break(Ready(sitem_data(bins))))
@@ -260,6 +245,7 @@ where
             } else if self.done_data {
                 self.done = true;
                 if self.range_final {
+                    info!("TimeBinnedStream   EMIT RANGE FINAL");
                     Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
                 } else {
                     continue;
