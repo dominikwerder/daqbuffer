@@ -15,6 +15,7 @@ use items_0::streamitem::StreamItem;
 use items_0::timebin::TimeBinnableTy;
 use items_2::binsdim0::BinsDim0;
 use netpod::log::*;
+use netpod::query::CacheUsage;
 use netpod::range::evrange::SeriesRange;
 use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
@@ -45,6 +46,7 @@ type BoxedInput = Pin<Box<dyn Stream<Item = Sitemty<BinsDim0<f32>>> + Send>>;
 
 pub struct TimeBinnedFromLayers {
     ch_conf: ChannelTypeConfigGen,
+    cache_usage: CacheUsage,
     transform_query: TransformQuery,
     sub: EventsSubQuerySettings,
     log_level: String,
@@ -60,6 +62,7 @@ impl TimeBinnedFromLayers {
 
     pub fn new(
         ch_conf: ChannelTypeConfigGen,
+        cache_usage: CacheUsage,
         transform_query: TransformQuery,
         sub: EventsSubQuerySettings,
         log_level: String,
@@ -85,6 +88,7 @@ impl TimeBinnedFromLayers {
             let inp = super::gapfill::GapFill::new(
                 "FromLayers".into(),
                 ch_conf.clone(),
+                cache_usage.clone(),
                 transform_query.clone(),
                 sub.clone(),
                 log_level.clone(),
@@ -98,6 +102,7 @@ impl TimeBinnedFromLayers {
             )?;
             let ret = Self {
                 ch_conf,
+                cache_usage,
                 transform_query,
                 sub,
                 log_level,
@@ -119,6 +124,7 @@ impl TimeBinnedFromLayers {
                     let inp = super::gapfill::GapFill::new(
                         "FromLayers".into(),
                         ch_conf.clone(),
+                        cache_usage.clone(),
                         transform_query.clone(),
                         sub.clone(),
                         log_level.clone(),
@@ -137,6 +143,7 @@ impl TimeBinnedFromLayers {
                     );
                     let ret = Self {
                         ch_conf,
+                        cache_usage,
                         transform_query,
                         sub,
                         log_level,
@@ -168,6 +175,7 @@ impl TimeBinnedFromLayers {
                             )?;
                             let ret = Self {
                                 ch_conf,
+                                cache_usage,
                                 transform_query,
                                 sub,
                                 log_level,

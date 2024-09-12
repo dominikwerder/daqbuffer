@@ -1,4 +1,6 @@
 use crate::collect::Collect;
+use crate::json_stream::JsonBytes;
+use crate::json_stream::JsonStream;
 use crate::rangefilter2::RangeFilter2;
 use crate::tcprawclient::container_stream_from_bytes_stream;
 use crate::tcprawclient::make_sub_query;
@@ -335,14 +337,15 @@ async fn timebinned_stream(
                     .collect()
             } else {
                 vec![
-                    DtMs::from_ms_u64(1000 * 60),
-                    // DtMs::from_ms_u64(1000 * 60 * 60),
+                    DtMs::from_ms_u64(1000 * 10),
+                    DtMs::from_ms_u64(1000 * 60 * 60),
                     // DtMs::from_ms_u64(1000 * 60 * 60 * 12),
                     // DtMs::from_ms_u64(1000 * 10),
                 ]
             };
             let stream = crate::timebin::TimeBinnedFromLayers::new(
                 ch_conf,
+                query.cache_usage(),
                 query.transform().clone(),
                 EventsSubQuerySettings::from(&query),
                 query.log_level().into(),
@@ -444,4 +447,115 @@ pub async fn timebinned_json(
     };
     let jsval = serde_json::to_value(&collected)?;
     Ok(jsval)
+}
+
+fn take_collector_result(coll: &mut Box<dyn items_0::collect_s::Collector>) -> Option<serde_json::Value> {
+    match coll.result(None, None) {
+        Ok(collres) => {
+            let collres = if let Some(bins) = collres
+                .as_any_ref()
+                .downcast_ref::<items_2::binsdim0::BinsDim0CollectedResult<netpod::EnumVariant>>()
+            {
+                info!("MATCHED ENUM");
+                bins.boxed_collected_with_enum_fix()
+            } else {
+                collres
+            };
+            match serde_json::to_value(&collres) {
+                Ok(val) => Some(val),
+                Err(e) => Some(serde_json::Value::String(format!("{e}"))),
+            }
+        }
+        Err(e) => Some(serde_json::Value::String(format!("{e}"))),
+    }
+}
+
+pub async fn timebinned_json_framed(
+    query: BinnedQuery,
+    ch_conf: ChannelTypeConfigGen,
+    ctx: &ReqCtx,
+    open_bytes: OpenBoxedBytesStreamsBox,
+    cache_read_provider: Option<Arc<dyn CacheReadProvider>>,
+    events_read_provider: Option<Arc<dyn EventsReadProvider>>,
+) -> Result<JsonStream, Error> {
+    trace!("timebinned_json_framed");
+    let binned_range = BinnedRangeEnum::covering_range(query.range().clone(), query.bin_count())?;
+    // TODO derive better values, from query
+    let stream = timebinned_stream(
+        query.clone(),
+        binned_range.clone(),
+        ch_conf,
+        ctx,
+        open_bytes,
+        cache_read_provider,
+        events_read_provider,
+    )
+    .await?;
+    let stream = timebinned_to_collectable(stream);
+
+    let mut coll = None;
+    let interval = tokio::time::interval(Duration::from(
+        query.timeout_content().unwrap_or(Duration::from_millis(1000)),
+    ));
+    let stream = stream.map(|x| Some(x)).chain(futures_util::stream::iter([None]));
+    let stream = tokio_stream::StreamExt::timeout_repeating(stream, interval).map(move |x| match x {
+        Ok(item) => match item {
+            Some(x) => match x {
+                Ok(x) => match x {
+                    StreamItem::DataItem(x) => match x {
+                        RangeCompletableItem::Data(mut item) => {
+                            let coll = coll.get_or_insert_with(|| item.new_collector());
+                            coll.ingest(&mut item);
+                            if coll.len() >= 128 {
+                                take_collector_result(coll)
+                            } else {
+                                None
+                            }
+                        }
+                        RangeCompletableItem::RangeComplete => None,
+                    },
+                    StreamItem::Log(x) => {
+                        info!("{x:?}");
+                        None
+                    }
+                    StreamItem::Stats(x) => {
+                        info!("{x:?}");
+                        None
+                    }
+                },
+                Err(e) => Some(serde_json::Value::String(format!("{e}"))),
+            },
+            None => {
+                if let Some(coll) = coll.as_mut() {
+                    take_collector_result(coll)
+                } else {
+                    None
+                }
+            }
+        },
+        Err(_) => {
+            if let Some(coll) = coll.as_mut() {
+                if coll.len() != 0 {
+                    take_collector_result(coll)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+    });
+    // TODO skip the intermediate conversion to js value, go directly to string data
+    let stream = stream.map(|x| match x {
+        Some(x) => Some(JsonBytes::new(serde_json::to_string(&x).unwrap())),
+        None => None,
+    });
+    let stream = stream.filter_map(|x| futures_util::future::ready(x));
+    let stream = stream.map(|x| Ok(x));
+
+    // let stream = dyn_events_stream(evq, ch_conf, ctx, open_bytes).await?;
+    // let stream = events_stream_to_json_stream(stream);
+    // let stream = non_empty(stream);
+    // let stream = only_first_err(stream);
+    Ok(Box::pin(stream))
 }

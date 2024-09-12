@@ -13,6 +13,7 @@ use items_0::Empty;
 use items_0::WithLen;
 use items_2::binsdim0::BinsDim0;
 use netpod::log::*;
+use netpod::query::CacheUsage;
 use netpod::range::evrange::NanoRange;
 use netpod::range::evrange::SeriesRange;
 use netpod::BinnedRange;
@@ -59,6 +60,7 @@ type INP = Pin<Box<dyn Stream<Item = Sitemty<BinsDim0<f32>>> + Send>>;
 pub struct GapFill {
     dbgname: String,
     ch_conf: ChannelTypeConfigGen,
+    cache_usage: CacheUsage,
     transform_query: TransformQuery,
     sub: EventsSubQuerySettings,
     log_level: String,
@@ -89,6 +91,7 @@ impl GapFill {
     pub fn new(
         dbgname_parent: String,
         ch_conf: ChannelTypeConfigGen,
+        cache_usage: CacheUsage,
         transform_query: TransformQuery,
         sub: EventsSubQuerySettings,
         log_level: String,
@@ -102,19 +105,21 @@ impl GapFill {
     ) -> Result<Self, Error> {
         let dbgname = format!("{}--[{}]", dbgname_parent, range);
         debug_init!("new  dbgname {}", dbgname);
-        let inp = super::cached::reader::CachedReader::new(
-            series,
-            range.bin_len.to_dt_ms(),
-            range.clone(),
-            cache_read_provider.clone(),
-        )?
-        .map(|x| match x {
-            Ok(x) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))),
-            Err(e) => Err(::err::Error::from_string(e)),
-        });
+        let inp = if cache_usage.is_cache_read() {
+            let stream = super::cached::reader::CachedReader::new(series, range.clone(), cache_read_provider.clone())?
+                .map(|x| match x {
+                    Ok(x) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))),
+                    Err(e) => Err(::err::Error::from_string(e)),
+                });
+            Box::pin(stream) as Pin<Box<dyn Stream<Item = Sitemty<BinsDim0<f32>>> + Send>>
+        } else {
+            let stream = futures_util::stream::empty();
+            Box::pin(stream)
+        };
         let ret = Self {
             dbgname,
             ch_conf,
+            cache_usage,
             transform_query,
             sub,
             log_level,
@@ -123,7 +128,7 @@ impl GapFill {
             range,
             do_time_weight,
             bin_len_layers,
-            inp: Some(Box::pin(inp)),
+            inp: Some(inp),
             inp_range_final: false,
             inp_buf: None,
             inp_finer: None,
@@ -156,13 +161,20 @@ impl GapFill {
         if bins.len() != 0 {
             bins.clone().drain_into(&mut self.bins_for_cache_write, 0..bins.len());
         }
-        self.cache_write_intermediate()?;
-        // TODO make sure that input does not send "made-up" empty future bins.
-        // On the other hand, if the request is over past range, but the channel was silent ever since?
-        // Then we should in principle know that from is-alive status checking.
-        // So, until then, allow made-up bins?
-        // Maybe, for now, only write those bins before some last non-zero-count bin. The only safe way.
+        if self.cache_usage.is_cache_write() {
+            self.cache_write_intermediate()?;
+        } // TODO make sure that input does not send "made-up" empty future bins.
+          // On the other hand, if the request is over past range, but the channel was silent ever since?
+          // Then we should in principle know that from is-alive status checking.
+          // So, until then, allow made-up bins?
+          // Maybe, for now, only write those bins before some last non-zero-count bin. The only safe way.
         Ok(bins)
+    }
+
+    fn setup_sub(self: Pin<&mut Self>, range: NanoRange) -> Result<(), Error> {
+        trace_handle!("{}  SETUP SUB STREAM  {}", self.dbgname, range);
+        self.setup_inp_finer(range, true)?;
+        Ok(())
     }
 
     fn handle_bins(mut self: Pin<&mut Self>, bins: BinsDim0<f32>) -> Result<BinsDim0<f32>, Error> {
@@ -178,12 +190,7 @@ impl GapFill {
             }
             if let Some(last) = self.last_bin_ts2 {
                 if ts1 != last.ns() {
-                    trace_handle!(
-                        "{}  detect a gap -------------   SETUP SUB STREAM    ts1 {}  last {}",
-                        self.dbgname,
-                        ts1,
-                        last
-                    );
+                    trace_handle!("{}  detect a gap  BETWEEN  last {}  ts1 {}", self.dbgname, last, ts1);
                     let mut ret = <BinsDim0<f32> as items_0::Empty>::empty();
                     let mut bins = bins;
                     bins.drain_into(&mut ret, 0..i);
@@ -192,9 +199,24 @@ impl GapFill {
                         beg: last.ns(),
                         end: ts1,
                     };
-                    self.setup_inp_finer(range, true)?;
+                    self.setup_sub(range)?;
                     return Ok(ret);
+                } else {
+                    // nothing to do
                 }
+            } else if ts1 != self.range.nano_beg().ns() {
+                trace_handle!(
+                    "{}  detect a gap  BEGIN  beg {}  ts1 {}",
+                    self.dbgname,
+                    self.range.nano_beg(),
+                    ts1
+                );
+                let range = NanoRange {
+                    beg: self.range.nano_beg().ns(),
+                    end: ts1,
+                };
+                self.setup_sub(range)?;
+                return Ok(BinsDim0::empty());
             }
             self.last_bin_ts2 = Some(TsNano::from_ns(ts2));
         }
@@ -220,6 +242,7 @@ impl GapFill {
             let inp_finer = GapFill::new(
                 self.dbgname.clone(),
                 self.ch_conf.clone(),
+                self.cache_usage.clone(),
                 self.transform_query.clone(),
                 self.sub.clone(),
                 self.log_level.clone(),
@@ -282,7 +305,7 @@ impl GapFill {
         }
         let aa = &self.bins_for_cache_write;
         if aa.len() >= 2 {
-            for (i, (&c1, &c2)) in aa.counts.iter().rev().zip(aa.counts.iter().rev().skip(1)).enumerate() {
+            for (i, (&c1, &_c2)) in aa.counts.iter().rev().zip(aa.counts.iter().rev().skip(1)).enumerate() {
                 if c1 != 0 {
                     let n = aa.len() - (1 + i);
                     debug_cache!("{}  cache_write_on_end  consider {} for write", self.dbgname, n);
@@ -299,7 +322,7 @@ impl GapFill {
     fn cache_write_intermediate(mut self: Pin<&mut Self>) -> Result<(), Error> {
         let aa = &self.bins_for_cache_write;
         if aa.len() >= 2 {
-            for (i, (&c1, &c2)) in aa.counts.iter().rev().zip(aa.counts.iter().rev().skip(1)).enumerate() {
+            for (i, (&c1, &_c2)) in aa.counts.iter().rev().zip(aa.counts.iter().rev().skip(1)).enumerate() {
                 if c1 != 0 {
                     let n = aa.len() - (1 + i);
                     debug_cache!("{}  cache_write_intermediate  consider {} for write", self.dbgname, n);
@@ -335,10 +358,6 @@ impl Stream for GapFill {
                     Pending => Pending,
                 }
             } else if let Some(inp_finer) = self.inp_finer.as_mut() {
-                // TODO
-                // detect also gaps here: if gap from finer, then error.
-                // on CacheUsage Use or Rereate:
-                // write these bins to cache because we did not find them in cache before.
                 match inp_finer.poll_next_unpin(cx) {
                     Ready(Some(Ok(x))) => match x {
                         StreamItem::DataItem(RangeCompletableItem::Data(x)) => {
@@ -351,9 +370,13 @@ impl Stream for GapFill {
                             trace_handle!("{}  RECV RANGE FINAL", self.dbgname);
                             self.inp_finer_range_final = true;
                             self.inp_finer_range_final_cnt += 1;
-                            match self.as_mut().cache_write_on_end() {
-                                Ok(()) => continue,
-                                Err(e) => Ready(Some(Err(::err::Error::from_string(e)))),
+                            if self.cache_usage.is_cache_write() {
+                                match self.as_mut().cache_write_on_end() {
+                                    Ok(()) => continue,
+                                    Err(e) => Ready(Some(Err(::err::Error::from_string(e)))),
+                                }
+                            } else {
+                                continue;
                             }
                         }
                         StreamItem::Log(x) => Ready(Some(Ok(StreamItem::Log(x)))),
@@ -366,23 +389,32 @@ impl Stream for GapFill {
                             self.dbgname,
                             self.last_bin_ts2
                         );
+                        let exp_finer_range =
+                            ::core::mem::replace(&mut self.exp_finer_range, NanoRange { beg: 0, end: 0 });
                         self.inp_finer = None;
                         if let Some(j) = self.last_bin_ts2 {
-                            if j.ns() != self.exp_finer_range.end() {
+                            if j.ns() != exp_finer_range.end() {
                                 trace_handle!(
                                     "{}  inp_finer Ready(None)  last_bin_ts2 {:?}  exp_finer_range {:?}",
                                     self.dbgname,
                                     self.last_bin_ts2,
-                                    self.exp_finer_range
+                                    exp_finer_range
                                 );
-                                Ready(Some(Err(::err::Error::from_string(
-                                    "finer input didn't deliver to the end",
-                                ))))
+                                if self.inp_finer_fills_gap {
+                                    Ready(Some(Err(::err::Error::from_string(
+                                        "finer input didn't deliver to the end",
+                                    ))))
+                                } else {
+                                    warn!(
+                                        "{}  inp_finer  Ready(None)  last_bin_ts2 {:?}  not delivered to the end, but maybe in the future",
+                                        self.dbgname, self.last_bin_ts2
+                                    );
+                                    continue;
+                                }
                             } else {
-                                self.exp_finer_range = NanoRange { beg: 0, end: 0 };
                                 continue;
                             }
-                        } else {
+                        } else if self.inp_finer_fills_gap {
                             error!(
                                 "{}  inp_finer  Ready(None)  last_bin_ts2 {:?}",
                                 self.dbgname, self.last_bin_ts2
@@ -390,6 +422,12 @@ impl Stream for GapFill {
                             Ready(Some(Err(::err::Error::from_string(
                                 "finer input delivered nothing, received nothing at all so far",
                             ))))
+                        } else {
+                            warn!(
+                                "{}  inp_finer  Ready(None)  last_bin_ts2 {:?}",
+                                self.dbgname, self.last_bin_ts2
+                            );
+                            continue;
                         }
                     }
                     Pending => Pending,

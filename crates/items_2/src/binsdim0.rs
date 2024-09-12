@@ -848,6 +848,7 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
             continue_at,
             finished_at,
         };
+        *self = Self::new();
         Ok(ret)
     }
 }

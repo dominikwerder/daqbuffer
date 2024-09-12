@@ -104,7 +104,7 @@ pub async fn plain_events_json_stream(
     ctx: &ReqCtx,
     open_bytes: OpenBoxedBytesStreamsBox,
 ) -> Result<JsonStream, Error> {
-    trace!("build stream");
+    trace!("plain_events_json_stream");
     let stream = dyn_events_stream(evq, ch_conf, ctx, open_bytes).await?;
     let stream = events_stream_to_json_stream(stream);
     let stream = non_empty(stream);

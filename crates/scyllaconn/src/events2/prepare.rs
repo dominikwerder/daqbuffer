@@ -248,3 +248,53 @@ impl StmtsEvents {
         }
     }
 }
+
+#[derive(Debug)]
+pub struct StmtsCache {
+    st_write_f32: PreparedStatement,
+    st_read_f32: PreparedStatement,
+}
+
+impl StmtsCache {
+    pub async fn new(ks: &str, scy: &Session) -> Result<Self, Error> {
+        let rt = RetentionTime::Short;
+        let st_write_f32 = scy
+            .prepare(format!(
+                concat!(
+                    "insert into {}.{}binned_scalar_f32",
+                    " (series, bin_len_ms, ts_msp, off, count, min, max, avg)",
+                    " values (?, ?, ?, ?, ?, ?, ?, ?)"
+                ),
+                ks,
+                rt.table_prefix()
+            ))
+            .await?;
+        let st_read_f32 = scy
+            .prepare(format!(
+                concat!(
+                    "select off, count, min, max, avg",
+                    " from {}.{}binned_scalar_f32",
+                    " where series = ?",
+                    " and bin_len_ms = ?",
+                    " and ts_msp = ?",
+                    " and off >= ? and off < ?"
+                ),
+                ks,
+                rt.table_prefix()
+            ))
+            .await?;
+        let ret = Self {
+            st_write_f32,
+            st_read_f32,
+        };
+        Ok(ret)
+    }
+
+    pub fn st_write_f32(&self) -> &PreparedStatement {
+        &self.st_write_f32
+    }
+
+    pub fn st_read_f32(&self) -> &PreparedStatement {
+        &self.st_read_f32
+    }
+}

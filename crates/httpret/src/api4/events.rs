@@ -275,7 +275,8 @@ where
         .filter(|x| if let Ok(x) = x { ready(x.len() > 0) } else { ready(true) })
 }
 
-fn bytes_chunks_to_len_framed_str<S, T>(stream: S) -> impl Stream<Item = Result<String, crate::err::Error>>
+// TODO move this, it's also used by binned.
+pub fn bytes_chunks_to_len_framed_str<S, T>(stream: S) -> impl Stream<Item = Result<String, crate::err::Error>>
 where
     S: Stream<Item = Result<T, ::err::Error>>,
     T: Into<String>,

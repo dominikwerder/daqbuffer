@@ -1,14 +1,18 @@
+use crate::api4::events::bytes_chunks_to_len_framed_str;
 use crate::bodystream::response;
 use crate::channelconfig::ch_conf_from_binned;
+use crate::requests::accepts_json_framed;
 use crate::requests::accepts_json_or_all;
 use crate::requests::accepts_octets;
 use crate::ServiceSharedResources;
 use dbconn::worker::PgQueue;
 use err::thiserror;
 use err::ThisError;
+use http::header::CONTENT_TYPE;
 use http::Method;
 use http::StatusCode;
 use httpclient::body_empty;
+use httpclient::body_stream;
 use httpclient::error_response;
 use httpclient::not_found_response;
 use httpclient::IntoBody;
@@ -21,6 +25,8 @@ use netpod::timeunits::SEC;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
+use netpod::APP_JSON_FRAMED;
+use netpod::HEADER_NAME_REQUEST_ID;
 use nodenet::client::OpenBoxedBytesViaHttp;
 use nodenet::scylla::ScyllaEventReadProvider;
 use query::api4::binned::BinnedQuery;
@@ -112,9 +118,11 @@ async fn binned(
     {
         Err(Error::ServerError)?;
     }
-    if accepts_json_or_all(&req.headers()) {
-        Ok(binned_json(url, req, ctx, pgqueue, scyqueue, ncc).await?)
-    } else if accepts_octets(&req.headers()) {
+    if accepts_json_framed(req.headers()) {
+        Ok(binned_json_framed(url, req, ctx, pgqueue, scyqueue, ncc).await?)
+    } else if accepts_json_or_all(req.headers()) {
+        Ok(binned_json_single(url, req, ctx, pgqueue, scyqueue, ncc).await?)
+    } else if accepts_octets(req.headers()) {
         Ok(error_response(
             format!("binary binned data not yet available"),
             ctx.reqid(),
@@ -125,7 +133,7 @@ async fn binned(
     }
 }
 
-async fn binned_json(
+async fn binned_json_single(
     url: Url,
     req: Requ,
     ctx: &ReqCtx,
@@ -133,7 +141,8 @@ async fn binned_json(
     scyqueue: Option<ScyllaQueue>,
     ncc: &NodeConfigCached,
 ) -> Result<StreamResponse, Error> {
-    debug!("{:?}", req);
+    // TODO unify with binned_json_framed
+    debug!("binned_json_single  {:?}", req);
     let reqid = crate::status_board().map_err(|_e| Error::ServerError)?.new_status_id();
     let (_head, _body) = req.into_parts();
     let query = BinnedQuery::from_url(&url).map_err(|e| {
@@ -176,5 +185,63 @@ async fn binned_json(
     .await
     .map_err(|e| Error::BinnedStream(e))?;
     let ret = response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?;
+    Ok(ret)
+}
+
+async fn binned_json_framed(
+    url: Url,
+    req: Requ,
+    ctx: &ReqCtx,
+    pgqueue: &PgQueue,
+    scyqueue: Option<ScyllaQueue>,
+    ncc: &NodeConfigCached,
+) -> Result<StreamResponse, Error> {
+    debug!("binned_json_framed  {:?}", req);
+    let reqid = crate::status_board().map_err(|_e| Error::ServerError)?.new_status_id();
+    let (_head, _body) = req.into_parts();
+    let query = BinnedQuery::from_url(&url).map_err(|e| {
+        error!("binned_json: {e:?}");
+        Error::BadQuery(e.to_string())
+    })?;
+    // TODO handle None case better and return 404
+    let ch_conf = ch_conf_from_binned(&query, ctx, pgqueue, ncc)
+        .await?
+        .ok_or_else(|| Error::ChannelNotFound)?;
+    let span1 = span!(
+        Level::INFO,
+        "httpret::binned",
+        reqid,
+        beg = query.range().beg_u64() / SEC,
+        end = query.range().end_u64() / SEC,
+        ch = query.channel().name(),
+    );
+    span1.in_scope(|| {
+        debug!("begin");
+    });
+    let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
+    let open_bytes = Arc::pin(open_bytes);
+    let cache_read_provider = scyqueue
+        .clone()
+        .map(|qu| ScyllaCacheReadProvider::new(qu))
+        .map(|x| Arc::new(x) as Arc<dyn CacheReadProvider>);
+    let events_read_provider = scyqueue
+        .map(|qu| ScyllaEventReadProvider::new(qu))
+        .map(|x| Arc::new(x) as Arc<dyn EventsReadProvider>);
+    let stream = streams::timebinnedjson::timebinned_json_framed(
+        query,
+        ch_conf,
+        ctx,
+        open_bytes,
+        cache_read_provider,
+        events_read_provider,
+    )
+    .instrument(span1)
+    .await
+    .map_err(|e| Error::BinnedStream(e))?;
+    let stream = bytes_chunks_to_len_framed_str(stream);
+    let ret = response(StatusCode::OK)
+        .header(CONTENT_TYPE, APP_JSON_FRAMED)
+        .header(HEADER_NAME_REQUEST_ID, ctx.reqid())
+        .body(body_stream(stream))?;
     Ok(ret)
 }

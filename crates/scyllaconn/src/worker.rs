@@ -1,4 +1,5 @@
 use crate::conn::create_scy_session_no_ks;
+use crate::events2::prepare::StmtsCache;
 use crate::events2::prepare::StmtsEvents;
 use crate::range::ScyllaSeriesRange;
 use async_channel::Receiver;
@@ -10,6 +11,7 @@ use items_0::Events;
 use items_2::binsdim0::BinsDim0;
 use netpod::log::*;
 use netpod::ttl::RetentionTime;
+use netpod::DtMs;
 use netpod::ScyllaConfig;
 use netpod::TsMs;
 use scylla::Session;
@@ -34,6 +36,15 @@ pub enum Error {
 }
 
 #[derive(Debug)]
+struct ReadCacheF32 {
+    series: u64,
+    bin_len: DtMs,
+    msp: u64,
+    offs: core::ops::Range<u32>,
+    tx: Sender<Result<BinsDim0<f32>, streams::timebin::cached::reader::Error>>,
+}
+
+#[derive(Debug)]
 enum Job {
     FindTsMsp(
         RetentionTime,
@@ -54,6 +65,7 @@ enum Job {
         BinsDim0<f32>,
         Sender<Result<(), streams::timebin::cached::reader::Error>>,
     ),
+    ReadCacheF32(ReadCacheF32),
 }
 
 struct ReadNextValues {
@@ -142,6 +154,32 @@ impl ScyllaQueue {
             .map_err(|_| streams::timebin::cached::reader::Error::ChannelRecv)??;
         Ok(res)
     }
+
+    pub async fn read_cache_f32(
+        &self,
+        series: u64,
+        bin_len: DtMs,
+        msp: u64,
+        offs: core::ops::Range<u32>,
+    ) -> Result<BinsDim0<f32>, streams::timebin::cached::reader::Error> {
+        let (tx, rx) = async_channel::bounded(1);
+        let job = Job::ReadCacheF32(ReadCacheF32 {
+            series,
+            bin_len,
+            msp,
+            offs,
+            tx,
+        });
+        self.tx
+            .send(job)
+            .await
+            .map_err(|_| streams::timebin::cached::reader::Error::ChannelSend)?;
+        let res = rx
+            .recv()
+            .await
+            .map_err(|_| streams::timebin::cached::reader::Error::ChannelRecv)??;
+        Ok(res)
+    }
 }
 
 #[derive(Debug)]
@@ -182,6 +220,8 @@ impl ScyllaWorker {
         info!("scylla worker  PREPARE START");
         let stmts = StmtsEvents::new(kss.try_into().map_err(|_| Error::MissingKeyspaceConfig)?, &scy).await?;
         let stmts = Arc::new(stmts);
+        let stmts_cache = StmtsCache::new(kss[0], &scy).await?;
+        let stmts_cache = Arc::new(stmts_cache);
         info!("scylla worker  PREPARE DONE");
         loop {
             let x = self.rx.recv().await;
@@ -217,8 +257,16 @@ impl ScyllaWorker {
                     }
                 }
                 Job::WriteCacheF32(series, bins, tx) => {
-                    let res = super::bincache::worker_write(series, bins, &scy).await;
+                    let res = super::bincache::worker_write(series, bins, &stmts_cache, &scy).await;
                     if tx.send(res).await.is_err() {
+                        // TODO count for stats
+                    }
+                }
+                Job::ReadCacheF32(job) => {
+                    let res =
+                        super::bincache::worker_read(job.series, job.bin_len, job.msp, job.offs, &stmts_cache, &scy)
+                            .await;
+                    if job.tx.send(res).await.is_err() {
                         // TODO count for stats
                     }
                 }

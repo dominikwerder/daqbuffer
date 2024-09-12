@@ -72,6 +72,22 @@ impl CacheUsage {
         };
         Ok(ret)
     }
+
+    pub fn is_cache_write(&self) -> bool {
+        match self {
+            CacheUsage::Use => true,
+            CacheUsage::Ignore => false,
+            CacheUsage::Recreate => true,
+        }
+    }
+
+    pub fn is_cache_read(&self) -> bool {
+        match self {
+            CacheUsage::Use => true,
+            CacheUsage::Ignore => false,
+            CacheUsage::Recreate => false,
+        }
+    }
 }
 
 impl fmt::Display for CacheUsage {

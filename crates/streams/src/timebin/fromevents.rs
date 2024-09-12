@@ -1,5 +1,4 @@
 use super::cached::reader::EventsReadProvider;
-use super::cached::reader::EventsReading;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Stream;
@@ -17,6 +16,9 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
+
+#[allow(unused)]
+macro_rules! trace_emit { ($($arg:tt)*) => ( if true { trace!($($arg)*); } ) }
 
 #[derive(Debug, ThisError)]
 #[cstm(name = "ReadingBinnedFromEvents")]
@@ -47,6 +49,8 @@ impl BinnedFromEvents {
                         // TODO need a typed time binner
                         if let Some(x) = x.as_any_mut().downcast_mut::<BinsDim0<f32>>() {
                             let y = x.clone();
+                            use items_0::WithLen;
+                            trace_emit!("===========  =========  emit from events {}", y.len());
                             Ok(StreamItem::DataItem(RangeCompletableItem::Data(y)))
                         } else {
                             Err(::err::Error::with_msg_no_trace(
