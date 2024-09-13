@@ -268,7 +268,7 @@ pub async fn worker_write(
             max,
             avg,
         );
-        eprintln!("cache write {:?}", params);
+        // trace!("cache write {:?}", params);
         scy.execute(stmts_cache.st_write_f32(), params)
             .await
             .map_err(|e| streams::timebin::cached::reader::Error::Scylla(e.to_string()))?;

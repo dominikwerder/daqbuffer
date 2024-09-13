@@ -288,12 +288,12 @@ where
                 use std::fmt::Write;
                 let s = y.into();
                 let mut b2 = String::with_capacity(16);
-                write!(b2, "\n{}\n", s.len()).unwrap();
-                stream::iter([Ok::<_, crate::err::Error>(b2), Ok(s)])
+                write!(b2, "{:15}\n", s.len()).unwrap();
+                stream::iter([Ok::<_, crate::err::Error>(b2), Ok(s), Ok(String::from("\n"))])
             }
             Err(e) => {
                 let e = crate::err::Error::with_msg_no_trace(e.to_string());
-                stream::iter([Err(e), Ok(String::new())])
+                stream::iter([Err(e), Ok(String::new()), Ok(String::new())])
             }
         })
         .filter(|x| if let Ok(x) = x { ready(x.len() > 0) } else { ready(true) })

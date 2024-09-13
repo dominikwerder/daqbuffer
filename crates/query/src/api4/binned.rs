@@ -6,7 +6,10 @@ use netpod::query::CacheUsage;
 use netpod::range::evrange::SeriesRange;
 use netpod::ttl::RetentionTime;
 use netpod::AppendToUrl;
+use netpod::BinnedRange;
+use netpod::BinnedRangeEnum;
 use netpod::ByteSize;
+use netpod::DtMs;
 use netpod::FromUrl;
 use netpod::HasBackend;
 use netpod::HasTimeout;
@@ -57,7 +60,8 @@ mod serde_option_vec_duration {
 pub struct BinnedQuery {
     channel: SfDbChannel,
     range: SeriesRange,
-    bin_count: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    bin_count: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "humantime_serde")]
     bin_width: Option<Duration>,
     #[serde(
@@ -67,8 +71,6 @@ pub struct BinnedQuery {
     transform: TransformQuery,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cache_usage: Option<CacheUsage>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    bins_max: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none", with = "serde_option_vec_duration")]
     subgrids: Option<Vec<Duration>>,
     #[serde(
@@ -97,11 +99,10 @@ impl BinnedQuery {
         Self {
             channel,
             range,
-            bin_count,
+            bin_count: Some(bin_count),
             bin_width: None,
             transform: TransformQuery::default_time_binned(),
             cache_usage: None,
-            bins_max: None,
             subgrids: None,
             buf_len_disk_io: None,
             disk_stats_every: None,
@@ -121,8 +122,12 @@ impl BinnedQuery {
         &self.channel
     }
 
-    pub fn bin_count(&self) -> u32 {
+    pub fn bin_count(&self) -> Option<u32> {
         self.bin_count
+    }
+
+    pub fn bin_width(&self) -> Option<Duration> {
+        self.bin_width
     }
 
     pub fn transform(&self) -> &TransformQuery {
@@ -149,10 +154,6 @@ impl BinnedQuery {
 
     pub fn timeout_content(&self) -> Option<Duration> {
         self.timeout_content
-    }
-
-    pub fn bins_max(&self) -> u32 {
-        self.bins_max.unwrap_or(200000)
     }
 
     pub fn subgrids(&self) -> Option<&[Duration]> {
@@ -208,6 +209,32 @@ impl BinnedQuery {
     pub fn use_rt(&self) -> Option<RetentionTime> {
         self.use_rt.clone()
     }
+
+    pub fn covering_range(&self) -> Result<BinnedRangeEnum, Error> {
+        match &self.range {
+            SeriesRange::TimeRange(range) => match self.bin_width {
+                Some(dt) => {
+                    if self.bin_count.is_some() {
+                        Err(Error::with_public_msg_no_trace(format!(
+                            "must not specify both binWidth and binCount"
+                        )))
+                    } else {
+                        let ret = BinnedRangeEnum::Time(BinnedRange::covering_range_time(
+                            range.clone(),
+                            DtMs::from_ms_u64(dt.as_millis() as u64),
+                        )?);
+                        Ok(ret)
+                    }
+                }
+                None => {
+                    let bc = self.bin_count.unwrap_or(20);
+                    let ret = BinnedRangeEnum::covering_range(self.range.clone(), bc)?;
+                    Ok(ret)
+                }
+            },
+            SeriesRange::PulseRange(_) => todo!(),
+        }
+    }
 }
 
 impl HasBackend for BinnedQuery {
@@ -232,7 +259,7 @@ impl FromUrl for BinnedQuery {
         let ret = Self {
             channel: SfDbChannel::from_pairs(&pairs)?,
             range: SeriesRange::from_pairs(pairs)?,
-            bin_count: pairs.get("binCount").and_then(|x| x.parse().ok()).unwrap_or(10),
+            bin_count: pairs.get("binCount").and_then(|x| x.parse().ok()),
             bin_width: pairs.get("binWidth").and_then(|x| humantime::parse_duration(x).ok()),
             transform: TransformQuery::from_pairs(pairs)?,
             cache_usage: CacheUsage::from_pairs(&pairs)?,
@@ -252,7 +279,6 @@ impl FromUrl for BinnedQuery {
             timeout_content: pairs
                 .get("contentTimeout")
                 .and_then(|x| humantime::parse_duration(x).ok()),
-            bins_max: pairs.get("binsMax").map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
             subgrids: pairs
                 .get("subgrids")
                 .map(|x| x.split(",").filter_map(|x| humantime::parse_duration(x).ok()).collect()),
@@ -278,7 +304,9 @@ impl AppendToUrl for BinnedQuery {
         self.range.append_to_url(url);
         {
             let mut g = url.query_pairs_mut();
-            g.append_pair("binCount", &format!("{}", self.bin_count));
+            if let Some(x) = self.bin_count {
+                g.append_pair("binCount", &format!("{}", x));
+            }
             if let Some(x) = self.bin_width {
                 if x < Duration::from_secs(1) {
                     g.append_pair("binWidth", &format!("{:.0}ms", x.subsec_millis()));
@@ -300,9 +328,6 @@ impl AppendToUrl for BinnedQuery {
         }
         if let Some(x) = &self.timeout_content {
             g.append_pair("contentTimeout", &format!("{:.0}ms", 1e3 * x.as_secs_f64()));
-        }
-        if let Some(x) = self.bins_max {
-            g.append_pair("binsMax", &format!("{}", x));
         }
         if let Some(x) = &self.subgrids {
             let s: String =

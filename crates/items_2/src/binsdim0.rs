@@ -361,6 +361,8 @@ where
     min: STY,
     max: STY,
     avg: f64,
+    filled_up_to: TsNano,
+    last_seen_avg: f32,
 }
 
 impl<STY> BinsDim0TimeBinnerTy<STY>
@@ -385,6 +387,8 @@ where
             min: STY::zero_b(),
             max: STY::zero_b(),
             avg: 0.,
+            filled_up_to: ts1now,
+            last_seen_avg: 0.,
         }
     }
 
@@ -467,6 +471,8 @@ where
                         panic!("TODO non-time-weighted binning to be impl");
                     }
                 }
+                self.filled_up_to = TsNano::from_ns(ts2);
+                self.last_seen_avg = avg;
             }
         }
         if count_before != 0 {
@@ -496,6 +502,21 @@ where
     }
 
     fn push_in_progress(&mut self, push_empty: bool) {
+        if self.filled_up_to != self.ts2now {
+            if self.cnt != 0 {
+                info!("push_in_progress  partially filled bin");
+                if self.do_time_weight {
+                    let f = (self.ts2now.ns() - self.filled_up_to.ns()) as f64
+                        / (self.ts2now.ns() - self.ts1now.ns()) as f64;
+                    self.avg += self.last_seen_avg as f64 * f;
+                    self.filled_up_to = self.ts2now;
+                } else {
+                    panic!("TODO non-time-weighted binning to be impl");
+                }
+            } else {
+                error!("partially filled bin with cnt 0");
+            }
+        }
         if self.cnt == 0 && !push_empty {
             self.reset_agg();
         } else {

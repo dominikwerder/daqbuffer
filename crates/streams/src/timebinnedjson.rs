@@ -416,8 +416,13 @@ pub async fn timebinned_json(
     cache_read_provider: Option<Arc<dyn CacheReadProvider>>,
     events_read_provider: Option<Arc<dyn EventsReadProvider>>,
 ) -> Result<JsonValue, Error> {
-    let deadline = Instant::now() + query.timeout_content().unwrap_or(Duration::from_millis(5000));
-    let binned_range = BinnedRangeEnum::covering_range(query.range().clone(), query.bin_count())?;
+    let deadline = Instant::now()
+        + query
+            .timeout_content()
+            .unwrap_or(Duration::from_millis(5000))
+            .min(Duration::from_millis(5000))
+            .max(Duration::from_millis(200));
+    let binned_range = query.covering_range()?;
     // TODO derive better values, from query
     let collect_max = 10000;
     let bytes_max = 100 * collect_max;
@@ -479,7 +484,7 @@ pub async fn timebinned_json_framed(
     events_read_provider: Option<Arc<dyn EventsReadProvider>>,
 ) -> Result<JsonStream, Error> {
     trace!("timebinned_json_framed");
-    let binned_range = BinnedRangeEnum::covering_range(query.range().clone(), query.bin_count())?;
+    let binned_range = query.covering_range()?;
     // TODO derive better values, from query
     let stream = timebinned_stream(
         query.clone(),
@@ -492,11 +497,18 @@ pub async fn timebinned_json_framed(
     )
     .await?;
     let stream = timebinned_to_collectable(stream);
-
+    // TODO create a custom Stream adapter.
+    // Want to timeout only on data items: the user wants to wait for bins only a maximum time.
+    // But also, I want to coalesce.
+    let timeout_content_base = query
+        .timeout_content()
+        .unwrap_or(Duration::from_millis(1000))
+        .min(Duration::from_millis(5000))
+        .max(Duration::from_millis(100));
+    let timeout_content_2 = timeout_content_base * 2 / 3;
     let mut coll = None;
-    let interval = tokio::time::interval(Duration::from(
-        query.timeout_content().unwrap_or(Duration::from_millis(1000)),
-    ));
+    let interval = tokio::time::interval(Duration::from(timeout_content_base));
+    let mut last_emit = Instant::now();
     let stream = stream.map(|x| Some(x)).chain(futures_util::stream::iter([None]));
     let stream = tokio_stream::StreamExt::timeout_repeating(stream, interval).map(move |x| match x {
         Ok(item) => match item {
@@ -506,29 +518,37 @@ pub async fn timebinned_json_framed(
                         RangeCompletableItem::Data(mut item) => {
                             let coll = coll.get_or_insert_with(|| item.new_collector());
                             coll.ingest(&mut item);
-                            if coll.len() >= 128 {
-                                take_collector_result(coll)
+                            if coll.len() >= 128 || last_emit.elapsed() >= timeout_content_2 {
+                                last_emit = Instant::now();
+                                take_collector_result(coll).map(|x| Ok(x))
                             } else {
+                                // Some(serde_json::Value::String(format!("coll len {}", coll.len())))
                                 None
                             }
                         }
                         RangeCompletableItem::RangeComplete => None,
                     },
                     StreamItem::Log(x) => {
-                        info!("{x:?}");
+                        debug!("{x:?}");
+                        // Some(serde_json::Value::String(format!("{x:?}")))
                         None
                     }
                     StreamItem::Stats(x) => {
-                        info!("{x:?}");
+                        debug!("{x:?}");
+                        // Some(serde_json::Value::String(format!("{x:?}")))
                         None
                     }
                 },
-                Err(e) => Some(serde_json::Value::String(format!("{e}"))),
+                Err(e) => Some(Err(e)),
             },
             None => {
                 if let Some(coll) = coll.as_mut() {
-                    take_collector_result(coll)
+                    last_emit = Instant::now();
+                    take_collector_result(coll).map(|x| Ok(x))
                 } else {
+                    // Some(serde_json::Value::String(format!(
+                    //     "end of input but no collector to take something from"
+                    // )))
                     None
                 }
             }
@@ -536,26 +556,23 @@ pub async fn timebinned_json_framed(
         Err(_) => {
             if let Some(coll) = coll.as_mut() {
                 if coll.len() != 0 {
-                    take_collector_result(coll)
+                    last_emit = Instant::now();
+                    take_collector_result(coll).map(|x| Ok(x))
                 } else {
+                    // Some(serde_json::Value::String(format!("timeout but nothing to do")))
                     None
                 }
             } else {
+                // Some(serde_json::Value::String(format!("timeout but no collector")))
                 None
             }
         }
     });
+    let stream = stream.filter_map(|x| futures_util::future::ready(x));
     // TODO skip the intermediate conversion to js value, go directly to string data
     let stream = stream.map(|x| match x {
-        Some(x) => Some(JsonBytes::new(serde_json::to_string(&x).unwrap())),
-        None => None,
+        Ok(x) => Ok(JsonBytes::new(serde_json::to_string(&x).unwrap())),
+        Err(e) => Err(e),
     });
-    let stream = stream.filter_map(|x| futures_util::future::ready(x));
-    let stream = stream.map(|x| Ok(x));
-
-    // let stream = dyn_events_stream(evq, ch_conf, ctx, open_bytes).await?;
-    // let stream = events_stream_to_json_stream(stream);
-    // let stream = non_empty(stream);
-    // let stream = only_first_err(stream);
     Ok(Box::pin(stream))
 }

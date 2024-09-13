@@ -1748,6 +1748,10 @@ mod dt_nano_serde {
 pub struct DtMs(u64);
 
 impl DtMs {
+    pub const fn from_nano_u64(x: u64) -> Self {
+        Self(x / 1000000)
+    }
+
     pub const fn from_ms_u64(x: u64) -> Self {
         Self(x)
     }
@@ -2108,20 +2112,7 @@ const PATCH_T_LEN_OPTIONS_WAVE: [u64; 3] = [
     DAY * 32,
 ];
 
-const TIME_BIN_THRESHOLDS: [u64; 39] = [
-    MU,
-    MU * 2,
-    MU * 5,
-    MU * 10,
-    MU * 20,
-    MU * 50,
-    MU * 100,
-    MU * 200,
-    MU * 500,
-    MS,
-    MS * 2,
-    MS * 5,
-    MS * 10,
+const TIME_BIN_THRESHOLDS: [u64; 26] = [
     MS * 20,
     MS * 50,
     MS * 100,
@@ -2415,6 +2406,52 @@ impl BinnedRange<TsNano> {
         }
     }
 
+    pub fn covering_range_time(range: NanoRange, bin_len_req: DtMs) -> Result<Self, Error> {
+        let opts = <TsNano as Dim0Index>::binned_bin_len_opts();
+        let bin_len_req = if bin_len_req.ms() < opts[0].ms() {
+            DtMs::from_ms_u64(opts[0].ms())
+        } else {
+            bin_len_req
+        };
+        let bin_len_req = if bin_len_req.ms() > opts.last().unwrap().ms() {
+            DtMs::from_ms_u64(opts.last().unwrap().ms())
+        } else {
+            bin_len_req
+        };
+        let pv = TsNano::from_ns(bin_len_req.ns());
+        let pi = opts.partition_point(|&x| x < pv);
+        let bin_len = if pi == 0 {
+            DtMs::from_ms_u64(opts[0].ms())
+        } else {
+            let v1 = DtMs::from_ms_u64(opts[pi - 1].ms());
+            if let Some(&v2) = opts.get(pi) {
+                let v2 = DtMs::from_ms_u64(v2.ms());
+                if v1 >= bin_len_req || v2 < bin_len_req {
+                    panic!("logic covering_range_time");
+                } else {
+                    let f1 = (bin_len_req.ms() - v1.ms()) / bin_len_req.ms();
+                    let f2 = (v2.ms() - bin_len_req.ms()) / bin_len_req.ms();
+                    if f1 < f2 {
+                        v1
+                    } else {
+                        v2
+                    }
+                }
+            } else {
+                DtMs::from_ms_u64(v1.ms())
+            }
+        };
+        let bin_off = range.beg() / bin_len.ns();
+        let off2 = (range.end() + bin_len.ns() - 1) / bin_len.ns();
+        let bin_cnt = off2 - bin_off;
+        let ret = Self {
+            bin_len: TsNano::from_ns(bin_len.ns()),
+            bin_off,
+            bin_cnt,
+        };
+        Ok(ret)
+    }
+
     pub fn nano_beg(&self) -> TsNano {
         self.bin_len.times(self.bin_off)
     }
@@ -2510,6 +2547,16 @@ impl BinnedRangeEnum {
             }
         }
         Err(Error::with_msg_no_trace("can not find matching pre-binned grid"))
+    }
+
+    /// Cover at least the given range while selecting the bin width which best fits the requested bin width.
+    pub fn covering_range_time(range: SeriesRange, bin_len_req: DtMs) -> Result<Self, Error> {
+        match range {
+            SeriesRange::TimeRange(k) => Ok(Self::Time(BinnedRange::covering_range_time(k, bin_len_req)?)),
+            SeriesRange::PulseRange(_) => Err(Error::with_msg_no_trace(format!(
+                "timelike bin width not possible for a pulse range"
+            ))),
+        }
     }
 
     /// Cover at least the given range with at least as many as the requested number of bins.

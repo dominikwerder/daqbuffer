@@ -12,7 +12,8 @@ Parameters:
 - `begDate`: start of the time range, inclusive. In ISO format e.g. `2024-02-15T12:41:00Z`.
 - `endDate`: end of the time range, exclusive.
 - `oneBeforeRange`: if set to `true` the reponse will in addition also contain the most recent event before the given range.
-- `allowLargeResult=true` **DEPRECATED**. indicates that the client is prepared to accept also larger responses compared to
+- `allowLargeResult=true` **DEPRECATED, will be rejected in the future**
+  indicates that the client is prepared to accept also larger responses compared to
   what might be suitable for a typical browser. Please download large result sets as
   framed json or framed cbor streams, see below.
 
