@@ -2475,6 +2475,18 @@ impl BinnedRange<TsNano> {
     pub fn nano_end(&self) -> TsNano {
         self.bin_len.times(self.bin_off + self.bin_cnt)
     }
+
+    pub fn one_before_bin(&self) -> Self {
+        Self {
+            bin_len: self.bin_len,
+            bin_off: self.bin_off - 1,
+            bin_cnt: self.bin_cnt + 1,
+        }
+    }
+
+    pub fn bin_len_dt_ms(&self) -> DtMs {
+        self.bin_len.to_dt_ms()
+    }
 }
 
 impl<T> BinnedRange<T>
@@ -2501,7 +2513,7 @@ where
         }*/
         let beg = self.bin_len.times(self.bin_off).as_u64();
         let end = self.bin_len.times(self.bin_off + self.bin_cnt).as_u64();
-        debug!("TODO make generic for pulse");
+        panic!("TODO make generic for pulse");
         NanoRange { beg, end }
     }
 

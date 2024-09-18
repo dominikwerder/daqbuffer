@@ -566,6 +566,7 @@ impl<STY: ScalarOps> TimeAggregatorCommonV0Trait for EventsDim0Aggregator<STY> {
     }
 
     fn common_ingest_unweight_range(&mut self, item: &Self::Input, r: core::ops::Range<usize>) {
+        panic!("TODO common_ingest_unweight_range");
         for (&ts, val) in item.tss.range(r.clone()).zip(item.values.range(r)) {
             self.apply_event_unweight(val.clone());
             self.count += 1;
@@ -574,7 +575,7 @@ impl<STY: ScalarOps> TimeAggregatorCommonV0Trait for EventsDim0Aggregator<STY> {
     }
 
     fn common_ingest_one_before(&mut self, item: &Self::Input, j: usize) {
-        //trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  BEFORE", i1, ts, val);
+        trace_ingest!("{}  common_ingest_one_before  {:?}  {:?}", Self::type_name(), j, item,);
         self.apply_min_max_lst(item.values[j].clone());
         self.last_ts = item.tss[j];
     }
@@ -676,7 +677,7 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
     }
 
     fn ingest_unweight(&mut self, item: &<Self as TimeBinnableTypeAggregator>::Input) {
-        TimeAggregatorCommonV0Func::ingest_time_weight(self, item)
+        TimeAggregatorCommonV0Func::ingest_unweight(self, item)
     }
 
     fn ingest_time_weight(&mut self, item: &<Self as TimeBinnableTypeAggregator>::Input) {
@@ -1174,6 +1175,7 @@ impl<STY: ScalarOps> TimeBinnerCommonV0Trait for EventsDim0TimeBinner<STY> {
 
 impl<STY: ScalarOps> TimeBinner for EventsDim0TimeBinner<STY> {
     fn ingest(&mut self, item: &mut dyn TimeBinnable) {
+        trace_ingest!("{}::ingest  {:?}", Self::type_name(), item);
         TimeBinnerCommonV0Func::ingest(self, item)
     }
 

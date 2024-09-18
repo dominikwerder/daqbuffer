@@ -52,10 +52,7 @@ use std::mem;
 use std::ops::Range;
 
 #[allow(unused)]
-macro_rules! trace44 {
-    ($($arg:tt)*) => ();
-    ($($arg:tt)*) => (eprintln!($($arg)*));
-}
+macro_rules! trace_ingest { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
 
 // TODO make members private
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
@@ -82,6 +79,9 @@ where
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let self_name = any::type_name::<Self>();
+        // if true {
+        //     return fmt::Display::fmt(self, fmt);
+        // }
         if true {
             write!(
                 fmt,
@@ -163,7 +163,7 @@ where
         let self_name = any::type_name::<Self>();
         write!(
             fmt,
-            "{self_name}  {{  len: {:?},  ts1s: {},  ts2s {},  counts {},  mins {},  maxs {},  avgs {}  }}",
+            "{self_name}  {{  len: {:?},  ts1s: {},  ts2s {},  counts {},  mins {},  maxs {},  avgs {}, lsts {}  }}",
             self.len(),
             VecPreview::new(&self.ts1s),
             VecPreview::new(&self.ts2s),
@@ -171,6 +171,7 @@ where
             VecPreview::new(&self.mins),
             VecPreview::new(&self.maxs),
             VecPreview::new(&self.avgs),
+            VecPreview::new(&self.lsts),
         )
     }
 }
@@ -296,6 +297,7 @@ impl<STY> Resettable for BinsDim0<STY> {
         self.mins.clear();
         self.maxs.clear();
         self.avgs.clear();
+        self.lsts.clear();
     }
 }
 
@@ -327,23 +329,27 @@ items_0::impl_range_overlap_info_bins!(BinsDim0);
 
 impl<NTY: ScalarOps> AppendEmptyBin for BinsDim0<NTY> {
     fn append_empty_bin(&mut self, ts1: u64, ts2: u64) {
+        error!("AppendEmptyBin::append_empty_bin  should not get used");
         self.ts1s.push_back(ts1);
         self.ts2s.push_back(ts2);
         self.cnts.push_back(0);
         self.mins.push_back(NTY::zero_b());
         self.maxs.push_back(NTY::zero_b());
         self.avgs.push_back(0.);
+        self.lsts.push_back(NTY::zero_b());
     }
 }
 
 impl<NTY: ScalarOps> AppendAllFrom for BinsDim0<NTY> {
     fn append_all_from(&mut self, src: &mut Self) {
+        error!("AppendAllFrom::append_all_from  should not get used");
         self.ts1s.extend(src.ts1s.drain(..));
         self.ts2s.extend(src.ts2s.drain(..));
         self.cnts.extend(src.cnts.drain(..));
         self.mins.extend(src.mins.drain(..));
         self.maxs.extend(src.maxs.drain(..));
         self.avgs.extend(src.avgs.drain(..));
+        self.lsts.extend(src.lsts.drain(..));
     }
 }
 
@@ -396,6 +402,7 @@ where
     min: STY,
     max: STY,
     avg: f64,
+    lst: STY,
     filled_up_to: TsNano,
     last_seen_avg: f32,
 }
@@ -404,12 +411,15 @@ impl<STY> BinsDim0TimeBinnerTy<STY>
 where
     STY: ScalarOps,
 {
+    pub fn type_name() -> &'static str {
+        any::type_name::<Self>()
+    }
+
     pub fn new(binrange: BinnedRange<TsNano>, do_time_weight: bool, emit_empty_bins: bool) -> Self {
         // let ts1now = TsNano::from_ns(binrange.bin_off * binrange.bin_len.ns());
         // let ts2 = ts1.add_dt_nano(binrange.bin_len.to_dt_nano());
-        let ts1now = TsNano::from_ns(binrange.full_range().beg());
+        let ts1now = TsNano::from_ns(binrange.nano_beg().ns());
         let ts2now = ts1now.add_dt_nano(binrange.bin_len.to_dt_nano());
-        let buf = <Self as TimeBinnerTy>::Output::empty();
         Self {
             ts1now,
             ts2now,
@@ -422,6 +432,7 @@ where
             min: STY::zero_b(),
             max: STY::zero_b(),
             avg: 0.,
+            lst: STY::zero_b(),
             filled_up_to: ts1now,
             last_seen_avg: 0.,
         }
@@ -444,8 +455,9 @@ where
     type Output = BinsDim0<STY>;
 
     fn ingest(&mut self, item: &mut Self::Input) {
+        trace_ingest!("<{} as TimeBinnerTy>::ingest  {:?}", Self::type_name(), item);
         let mut count_before = 0;
-        for (((((&ts1, &ts2), &cnt), min), max), &avg) in item
+        for ((((((&ts1, &ts2), &cnt), min), max), &avg), lst) in item
             .ts1s
             .iter()
             .zip(&item.ts2s)
@@ -453,9 +465,18 @@ where
             .zip(&item.mins)
             .zip(&item.maxs)
             .zip(&item.avgs)
+            .zip(&item.lsts)
         {
             if ts1 < self.ts1now.ns() {
+                if ts2 > self.ts1now.ns() {
+                    error!("{}  bad input grid mismatch", Self::type_name());
+                    continue;
+                }
                 // warn!("encountered bin from time before  {}  {}", ts1, self.ts1now.ns());
+                trace_ingest!("{}  input bin before  {}", Self::type_name(), TsNano::from_ns(ts1));
+                self.min = min.clone();
+                self.max = max.clone();
+                self.lst = lst.clone();
                 count_before += 1;
                 continue;
             } else {
@@ -543,7 +564,7 @@ where
                 if self.do_time_weight {
                     let f = (self.ts2now.ns() - self.filled_up_to.ns()) as f64
                         / (self.ts2now.ns() - self.ts1now.ns()) as f64;
-                    self.avg += self.last_seen_avg as f64 * f;
+                    self.avg += self.lst.as_prim_f32_b() as f64 * f;
                     self.filled_up_to = self.ts2now;
                 } else {
                     panic!("TODO non-time-weighted binning to be impl");
@@ -563,6 +584,7 @@ where
             self.out.mins.push_back(self.min.clone());
             self.out.maxs.push_back(self.max.clone());
             self.out.avgs.push_back(self.avg as f32);
+            self.out.lsts.push_back(self.lst.clone());
             self.reset_agg();
         }
     }
@@ -823,6 +845,7 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
         vals.mins.append(&mut src.mins);
         vals.maxs.append(&mut src.maxs);
         vals.avgs.append(&mut src.avgs);
+        vals.lsts.append(&mut src.lsts);
     }
 
     fn set_range_complete(&mut self) {
@@ -1377,6 +1400,7 @@ impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
             dst.mins.extend(self.mins.drain(range.clone()));
             dst.maxs.extend(self.maxs.drain(range.clone()));
             dst.avgs.extend(self.avgs.drain(range.clone()));
+            dst.lsts.extend(self.lsts.drain(range.clone()));
             Ok(())
         } else {
             let type_name = any::type_name::<Self>();

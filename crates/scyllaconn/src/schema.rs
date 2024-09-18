@@ -7,9 +7,17 @@ use scylla::Session as ScySession;
 #[derive(Debug, ThisError)]
 #[cstm(name = "ScyllaSchema")]
 pub enum Error {
-    Scylla,
+    Scylla(#[from] scylla::transport::errors::QueryError),
 }
 
 pub async fn schema(rt: RetentionTime, scyco: &ScyllaConfig, scy: &ScySession) -> Result<(), Error> {
-    todo!()
+    let table = "binned_scalar_f32";
+    let cql = format!(
+        concat!("alter table {}.{}{}", " add lst float"),
+        &scyco.keyspace,
+        rt.table_prefix(),
+        table
+    );
+    let _ = scy.query(cql, ()).await;
+    Ok(())
 }

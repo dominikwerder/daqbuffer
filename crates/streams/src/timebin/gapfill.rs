@@ -46,7 +46,10 @@ macro_rules! trace_handle { ($($arg:tt)*) => ( if true { trace!($($arg)*); } ) }
 #[cstm(name = "BinCachedGapFill")]
 pub enum Error {
     CacheReader(#[from] super::cached::reader::Error),
-    GapFromFiner,
+    #[error("GapFromFiner({0}, {1}, {2})")]
+    GapFromFiner(TsNano, TsNano, DtMs),
+    #[error("MissingBegFromFiner({0}, {1}, {2})")]
+    MissingBegFromFiner(TsNano, TsNano, DtMs),
     #[error("InputBeforeRange({0}, {1})")]
     InputBeforeRange(NanoRange, BinnedRange<TsNano>),
     SfDatabufferNotSupported,
@@ -153,13 +156,24 @@ impl GapFill {
         for (&ts1, &ts2) in bins.ts1s.iter().zip(&bins.ts2s) {
             if let Some(last) = self.last_bin_ts2 {
                 if ts1 != last.ns() {
-                    return Err(Error::GapFromFiner);
+                    return Err(Error::GapFromFiner(
+                        TsNano::from_ns(ts1),
+                        last,
+                        self.range.bin_len_dt_ms(),
+                    ));
                 }
+            } else if ts1 != self.range.nano_beg().ns() {
+                return Err(Error::MissingBegFromFiner(
+                    TsNano::from_ns(ts1),
+                    self.range.nano_beg(),
+                    self.range.bin_len_dt_ms(),
+                ));
             }
             self.last_bin_ts2 = Some(TsNano::from_ns(ts2));
         }
         if bins.len() != 0 {
-            bins.clone().drain_into(&mut self.bins_for_cache_write, 0..bins.len());
+            let mut bins2 = bins.clone();
+            bins2.drain_into(&mut self.bins_for_cache_write, 0..bins2.len());
         }
         if self.cache_usage.is_cache_write() {
             self.cache_write_intermediate()?;
@@ -239,6 +253,7 @@ impl GapFill {
                 self.range.bin_len.to_dt_ms()
             );
             let range_finer = BinnedRange::from_nano_range(range, bin_len_finer);
+            let range_finer_one_before_bin = range_finer.one_before_bin();
             let inp_finer = GapFill::new(
                 self.dbgname.clone(),
                 self.ch_conf.clone(),
@@ -248,7 +263,7 @@ impl GapFill {
                 self.log_level.clone(),
                 self.ctx.clone(),
                 self.series,
-                range_finer.clone(),
+                range_finer_one_before_bin,
                 self.do_time_weight,
                 self.bin_len_layers.clone(),
                 self.cache_read_provider.clone(),

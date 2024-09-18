@@ -11,31 +11,13 @@ use std::collections::VecDeque;
 use std::ops::Range;
 
 #[allow(unused)]
-macro_rules! trace_ingest {
-    ($($arg:tt)*) => {
-        if false {
-            trace!($($arg)*);
-        }
-    };
-}
+macro_rules! trace_init { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_ingest_item {
-    ($($arg:tt)*) => {
-        if false {
-            info!($($arg)*);
-        }
-    };
-}
+macro_rules! trace_ingest { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace2 {
-    ($($arg:tt)*) => {
-        if false {
-            trace!($($arg)*);
-        }
-    };
-}
+macro_rules! trace_ingest_detail { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
 
 pub trait TimeBinnerCommonV0Trait {
     type Input: RangeOverlapInfo + 'static;
@@ -59,7 +41,7 @@ impl TimeBinnerCommonV0Func {
         B: TimeBinnerCommonV0Trait,
     {
         let self_name = B::type_name();
-        trace_ingest_item!(
+        trace_ingest!(
             "TimeBinner for {} ingest  common_range_current {:?}  item {:?}",
             self_name,
             binner.common_range_current(),
@@ -74,19 +56,20 @@ impl TimeBinnerCommonV0Func {
         // Or consume the input data.
         loop {
             while item.starts_after(B::common_range_current(binner)) {
-                trace_ingest_item!("{self_name}  ignore item and cycle  starts_after");
+                trace_ingest!("{self_name}  ignore item and cycle  starts_after");
                 TimeBinnerCommonV0Func::cycle(binner);
                 if !B::common_has_more_range(binner) {
                     debug!("{self_name}  no more bin in edges after starts_after");
                     return;
                 }
             }
-            if item.ends_before(B::common_range_current(binner)) {
-                trace_ingest_item!("{self_name}  ignore item  ends_before");
-                return;
-            } else {
+            // if item.ends_before(B::common_range_current(binner)) {
+            //     trace_ingest_item!("{self_name}  ignore item  ends_before");
+            //     return;
+            // }
+            {
                 if !B::common_has_more_range(binner) {
-                    trace_ingest_item!("{self_name}  no more bin in edges");
+                    trace_ingest!("{self_name}  no more bin in edges");
                     return;
                 } else {
                     if let Some(item) = item
@@ -95,10 +78,10 @@ impl TimeBinnerCommonV0Func {
                         .downcast_mut::<B::Input>()
                     {
                         // TODO collect statistics associated with this request:
-                        trace_ingest_item!("{self_name}  FEED THE ITEM...");
+                        trace_ingest!("{self_name}  FEED THE ITEM...");
                         TimeBinnerCommonV0Func::agg_ingest(binner, item);
                         if item.ends_after(B::common_range_current(binner)) {
-                            trace_ingest_item!(
+                            trace_ingest!(
                                 "{self_name}  FED ITEM, ENDS AFTER  agg-range {:?}",
                                 B::common_range_current(binner)
                             );
@@ -107,14 +90,18 @@ impl TimeBinnerCommonV0Func {
                                 warn!("{self_name}  no more bin in edges after ingest and cycle");
                                 return;
                             } else {
-                                trace_ingest_item!("{self_name}  item fed, cycled, continue");
+                                trace_ingest!("{self_name}  item fed, cycled, continue");
                             }
                         } else {
-                            trace_ingest_item!("{self_name}  item fed, break");
+                            trace_ingest!("{self_name}  item fed, break");
                             break;
                         }
                     } else {
-                        error!("{self_name}::ingest  unexpected item type");
+                        error!(
+                            "{self_name}::ingest  unexpected item type {}  expected {}",
+                            item.type_name(),
+                            any::type_name::<B::Input>()
+                        );
                     };
                 }
             }
@@ -134,7 +121,7 @@ impl TimeBinnerCommonV0Func {
         B: TimeBinnerCommonV0Trait,
     {
         let self_name = B::type_name();
-        trace_ingest_item!("{self_name}::push_in_progress  push_empty {push_empty}");
+        trace_ingest!("{self_name}::push_in_progress  push_empty {push_empty}");
         // TODO expand should be derived from AggKind. Is it still required after all?
         // TODO here, the expand means that agg will assume that the current value is kept constant during
         // the rest of the time range.
@@ -158,7 +145,7 @@ impl TimeBinnerCommonV0Func {
         B: TimeBinnerCommonV0Trait,
     {
         let self_name = any::type_name::<Self>();
-        trace_ingest_item!("{self_name}::cycle");
+        trace_ingest!("{self_name}::cycle");
         // TODO refactor this logic.
         let n = TimeBinnerCommonV0Trait::common_bins_ready_count(binner);
         TimeBinnerCommonV0Func::push_in_progress(binner, true);

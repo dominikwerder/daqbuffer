@@ -34,6 +34,9 @@ use std::fmt;
 use std::time::Duration;
 use std::time::SystemTime;
 
+#[allow(unused)]
+macro_rules! trace_ingest { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
+
 // TODO maybe rename to ChannelStatus?
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ConnStatus {
@@ -1062,26 +1065,21 @@ impl TimeBinnerTy for ChannelEventsTimeBinner {
     type Output = Box<dyn TimeBinned>;
 
     fn ingest(&mut self, item: &mut Self::Input) {
-        trace!("{}  INGEST  {:?}", Self::type_name(), item);
+        trace_ingest!("{}  INGEST  {:?}", Self::type_name(), item);
         match item {
             ChannelEvents::Events(item) => {
-                if self.binner.is_none() {
-                    let binner = item.time_binner_new(self.binrange.clone(), self.do_time_weight, self.emit_empty_bins);
-                    self.binner = Some(binner);
-                }
-                match self.binner.as_mut() {
-                    Some(binner) => binner.ingest(item.as_time_binnable_mut()),
-                    None => {
-                        error!("ingest without active binner item {item:?}");
-                        ()
-                    }
-                }
+                let binner = self.binner.get_or_insert_with(|| {
+                    item.time_binner_new(self.binrange.clone(), self.do_time_weight, self.emit_empty_bins)
+                });
+                binner.ingest(item.as_time_binnable_mut())
             }
             ChannelEvents::Status(item) => {
                 warn!("TODO consider channel status in time binning {item:?}");
             }
         }
+        trace_ingest!("{}  INGEST RETURN  {:?}", Self::type_name(), item);
     }
+
     fn bins_ready_count(&self) -> usize {
         match &self.binner {
             Some(binner) => binner.bins_ready_count(),
