@@ -886,10 +886,11 @@ impl<NTY: ScalarOps> TimeBinned for BinsXbinDim0<NTY> {
         let ret = super::binsdim0::BinsDim0::<f32> {
             ts1s: replace(&mut self.ts1s, VecDeque::new()),
             ts2s: replace(&mut self.ts2s, VecDeque::new()),
-            counts: replace(&mut self.counts, VecDeque::new()),
+            cnts: replace(&mut self.counts, VecDeque::new()),
             mins: self.mins.iter().map(AsPrimF32::as_prim_f32_b).collect(),
             maxs: self.maxs.iter().map(AsPrimF32::as_prim_f32_b).collect(),
             avgs: replace(&mut self.avgs, VecDeque::new()),
+            lsts: err::todoval(),
             dim0kind: None,
         };
         Box::new(ret)
@@ -905,6 +906,7 @@ impl<NTY: ScalarOps> TimeBinned for BinsXbinDim0<NTY> {
             dst.mins.extend(self.mins.drain(range.clone()));
             dst.maxs.extend(self.maxs.drain(range.clone()));
             dst.avgs.extend(self.avgs.drain(range.clone()));
+            todo!("handle last_seen");
             Ok(())
         } else {
             let type_name = any::type_name::<Self>();

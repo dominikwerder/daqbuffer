@@ -134,8 +134,8 @@ impl BinnedQuery {
         &self.transform
     }
 
-    pub fn cache_usage(&self) -> CacheUsage {
-        self.cache_usage.as_ref().map_or(CacheUsage::Ignore, |x| x.clone())
+    pub fn cache_usage(&self) -> Option<CacheUsage> {
+        self.cache_usage.clone()
     }
 
     pub fn disk_stats_every(&self) -> ByteSize {

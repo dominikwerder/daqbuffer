@@ -163,13 +163,13 @@ impl Stream for ScyllaEventsReadStream {
             } else if let Some(fut) = self.stream.as_mut() {
                 match fut.poll_next_unpin(cx) {
                     Ready(Some(x)) => {
-                        let x = try_map_sitemty_data!(x, |x| match x {
-                            ChannelEvents::Events(x) => {
-                                let x = x.to_dim0_f32_for_binning();
-                                Ok(ChannelEvents::Events(x))
-                            }
-                            ChannelEvents::Status(x) => Ok(ChannelEvents::Status(x)),
-                        });
+                        // let x = try_map_sitemty_data!(x, |x| match x {
+                        //     ChannelEvents::Events(x) => {
+                        //         let x = x.to_dim0_f32_for_binning();
+                        //         Ok(ChannelEvents::Events(x))
+                        //     }
+                        //     ChannelEvents::Status(x) => Ok(ChannelEvents::Status(x)),
+                        // });
                         Ready(Some(x))
                     }
                     Ready(None) => Ready(None),

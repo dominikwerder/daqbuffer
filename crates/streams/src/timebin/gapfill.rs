@@ -305,7 +305,7 @@ impl GapFill {
         }
         let aa = &self.bins_for_cache_write;
         if aa.len() >= 2 {
-            for (i, (&c1, &_c2)) in aa.counts.iter().rev().zip(aa.counts.iter().rev().skip(1)).enumerate() {
+            for (i, (&c1, &_c2)) in aa.cnts.iter().rev().zip(aa.cnts.iter().rev().skip(1)).enumerate() {
                 if c1 != 0 {
                     let n = aa.len() - (1 + i);
                     debug_cache!("{}  cache_write_on_end  consider {} for write", self.dbgname, n);
@@ -322,7 +322,7 @@ impl GapFill {
     fn cache_write_intermediate(mut self: Pin<&mut Self>) -> Result<(), Error> {
         let aa = &self.bins_for_cache_write;
         if aa.len() >= 2 {
-            for (i, (&c1, &_c2)) in aa.counts.iter().rev().zip(aa.counts.iter().rev().skip(1)).enumerate() {
+            for (i, (&c1, &_c2)) in aa.cnts.iter().rev().zip(aa.cnts.iter().rev().skip(1)).enumerate() {
                 if c1 != 0 {
                     let n = aa.len() - (1 + i);
                     debug_cache!("{}  cache_write_intermediate  consider {} for write", self.dbgname, n);
@@ -462,9 +462,9 @@ impl Stream for GapFill {
                                     beg: j.ns(),
                                     end: self.range.full_range().end(),
                                 };
-                                warn!(
-                                    "-----   RECEIVED SOMETHING, BUT NOT ALL, setup rest from finer  {}  {}  {}",
-                                    self.range, j, range
+                                debug!(
+                                    "{}  received something but not all, setup rest from finer  {}  {}  {}",
+                                    self.dbgname, self.range, j, range
                                 );
                                 match self.as_mut().setup_inp_finer(range, false) {
                                     Ok(()) => {
@@ -473,14 +473,14 @@ impl Stream for GapFill {
                                     Err(e) => Ready(Some(Err(::err::Error::from_string(e)))),
                                 }
                             } else {
-                                info!("-----   RECEIVED EVERYTHING");
+                                debug!("{}  received everything", self.dbgname);
                                 Ready(None)
                             }
                         } else {
                             let range = self.range.to_nano_range();
-                            warn!(
-                                "-----   RECEIVED NOTHING SO FAR AT ALL, setup full range from finer  {}  {}",
-                                self.range, range
+                            debug!(
+                                "{}  received nothing at all, setup full range from finer  {}  {}",
+                                self.dbgname, self.range, range
                             );
                             match self.as_mut().setup_inp_finer(range, false) {
                                 Ok(()) => {
@@ -495,10 +495,10 @@ impl Stream for GapFill {
             } else {
                 self.done = true;
                 if self.inp_finer_range_final_cnt == self.inp_finer_range_final_max {
-                    trace_handle!("{}  RANGE FINAL  ALL", self.dbgname);
+                    trace_handle!("{}  range finale  all", self.dbgname);
                     Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))))
                 } else {
-                    trace_handle!("{}  SUBSTREAMS NOT FINAL", self.dbgname);
+                    trace_handle!("{}  substreams not final", self.dbgname);
                     continue;
                 }
             };

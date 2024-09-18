@@ -57,31 +57,22 @@ use std::fmt;
 use std::mem;
 
 #[allow(unused)]
-macro_rules! trace_ingest {
-    ($($arg:tt)*) => {};
-    ($($arg:tt)*) => { trace!($($arg)*); };
-}
+macro_rules! trace_init { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_ingest_item {
-    ($($arg:tt)*) => {};
-    ($($arg:tt)*) => { trace!($($arg)*); };
-}
+macro_rules! trace_ingest { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace2 {
-    ($($arg:tt)*) => {};
-    ($($arg:tt)*) => { trace!($($arg)*); };
-}
+macro_rules! trace_ingest_item { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_binning {
-    ($($arg:tt)*) => {
-        if false {
-            trace!($($arg)*);
-        }
-    };
-}
+macro_rules! trace2 { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
+
+#[allow(unused)]
+macro_rules! trace_binning { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
+
+#[allow(unused)]
+macro_rules! debug_ingest { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
 
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 pub struct EventsDim0NoPulse<STY> {
@@ -545,12 +536,11 @@ impl<STY: ScalarOps> items_0::collect_s::CollectableType for EventsDim0<STY> {
 pub struct EventsDim0Aggregator<STY> {
     range: SeriesRange,
     count: u64,
-    minmax: Option<(STY, STY)>,
+    minmaxlst: Option<(STY, STY, STY)>,
     sumc: u64,
     sum: f32,
     int_ts: u64,
     last_ts: u64,
-    last_val: Option<STY>,
     do_time_weight: bool,
     events_ignored_count: u64,
     items_seen: usize,
@@ -580,14 +570,13 @@ impl<STY: ScalarOps> TimeAggregatorCommonV0Trait for EventsDim0Aggregator<STY> {
             self.apply_event_unweight(val.clone());
             self.count += 1;
             self.last_ts = ts;
-            self.last_val = Some(val.clone());
         }
     }
 
     fn common_ingest_one_before(&mut self, item: &Self::Input, j: usize) {
         //trace_ingest!("{self_name} ingest  {:6}  {:20}  {:10?}  BEFORE", i1, ts, val);
+        self.apply_min_max_lst(item.values[j].clone());
         self.last_ts = item.tss[j];
-        self.last_val = Some(item.values[j].clone());
     }
 
     fn common_ingest_range(&mut self, item: &Self::Input, r: core::ops::Range<usize>) {
@@ -598,7 +587,6 @@ impl<STY: ScalarOps> TimeAggregatorCommonV0Trait for EventsDim0Aggregator<STY> {
             }
             self.count += 1;
             self.last_ts = ts;
-            self.last_val = Some(val.clone());
         }
     }
 }
@@ -609,16 +597,16 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
     }
 
     pub fn new(range: SeriesRange, do_time_weight: bool) -> Self {
+        trace_init!("{}::new", Self::type_name());
         let int_ts = range.beg_u64();
         Self {
             range,
             count: 0,
-            minmax: None,
+            minmaxlst: None,
             sumc: 0,
             sum: 0.,
             int_ts,
             last_ts: 0,
-            last_val: None,
             do_time_weight,
             events_ignored_count: 0,
             items_seen: 0,
@@ -626,24 +614,24 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
     }
 
     // TODO reduce clone.. optimize via more traits to factor the trade-offs?
-    fn apply_min_max(&mut self, val: STY) {
+    fn apply_min_max_lst(&mut self, val: STY) {
         trace_ingest!(
-            "apply_min_max  val {:?}  last_val {:?}  count {}  sumc {:?}  minmax {:?}",
+            "apply_min_max_lst  val {:?}  count {}  sumc {:?}  minmaxlst {:?}",
             val,
-            self.last_val,
             self.count,
             self.sumc,
-            self.minmax,
+            self.minmaxlst,
         );
-        if let Some((min, max)) = self.minmax.as_mut() {
+        if let Some((min, max, lst)) = self.minmaxlst.as_mut() {
             if *min > val {
                 *min = val.clone();
             }
             if *max < val {
                 *max = val.clone();
             }
+            *lst = val.clone();
         } else {
-            self.minmax = Some((val.clone(), val.clone()));
+            self.minmaxlst = Some((val.clone(), val.clone(), val.clone()));
         }
     }
 
@@ -651,7 +639,7 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
         error!("TODO check again result_reset_unweight");
         err::todo();
         let vf = val.as_prim_f32_b();
-        self.apply_min_max(val);
+        self.apply_min_max_lst(val);
         if vf.is_nan() {
         } else {
             self.sum += vf;
@@ -660,11 +648,11 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
     }
 
     fn apply_event_time_weight(&mut self, px: u64) {
-        if let Some(v) = &self.last_val {
+        if let Some((_, _, v)) = self.minmaxlst.as_ref() {
             trace_ingest!("apply_event_time_weight with v {v:?}");
             let vf = v.as_prim_f32_b();
             let v2 = v.clone();
-            self.apply_min_max(v2);
+            self.apply_min_max_lst(v2);
             self.sumc += 1;
             let w = (px - self.int_ts) as f32 * 1e-9;
             if false {
@@ -683,7 +671,7 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
             }
             self.int_ts = px;
         } else {
-            debug!("apply_event_time_weight NO VALUE");
+            debug_ingest!("apply_event_time_weight NO VALUE");
         }
     }
 
@@ -695,44 +683,47 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
         TimeAggregatorCommonV0Func::ingest_time_weight(self, item)
     }
 
-    fn reset_values(&mut self, range: SeriesRange) {
+    fn reset_values(&mut self, lst: STY, range: SeriesRange) {
         self.int_ts = range.beg_u64();
-        trace_binning!("ON RESET SET int_ts {:10}", self.int_ts);
+        trace_init!("ON RESET SET int_ts {:10}", self.int_ts);
         self.range = range;
         self.count = 0;
         self.sum = 0.;
         self.sumc = 0;
-        self.minmax = None;
+        self.minmaxlst = Some((lst.clone(), lst.clone(), lst));
         self.items_seen = 0;
     }
 
     fn result_reset_unweight(&mut self, range: SeriesRange) -> BinsDim0<STY> {
-        let (min, max) = if let Some((min, max)) = self.minmax.take() {
-            (min, max)
+        error!("TODO result_reset_unweight");
+        panic!("TODO result_reset_unweight");
+        if let Some((min, max, lst)) = self.minmaxlst.take() {
+            let avg = if self.sumc > 0 {
+                self.sum / self.sumc as f32
+            } else {
+                STY::zero_b().as_prim_f32_b()
+            };
+            let ret = if self.range.is_time() {
+                BinsDim0 {
+                    ts1s: [self.range.beg_u64()].into(),
+                    ts2s: [self.range.end_u64()].into(),
+                    cnts: [self.count].into(),
+                    mins: [min].into(),
+                    maxs: [max].into(),
+                    avgs: [avg].into(),
+                    lsts: [lst.clone()].into(),
+                    dim0kind: Some(self.range.dim0kind()),
+                }
+            } else {
+                error!("TODO result_reset_unweight");
+                err::todoval()
+            };
+            self.reset_values(lst, range);
+            ret
         } else {
-            (STY::zero_b(), STY::zero_b())
-        };
-        let avg = if self.sumc > 0 {
-            self.sum / self.sumc as f32
-        } else {
-            STY::zero_b().as_prim_f32_b()
-        };
-        let ret = if self.range.is_time() {
-            BinsDim0 {
-                ts1s: [self.range.beg_u64()].into(),
-                ts2s: [self.range.end_u64()].into(),
-                counts: [self.count].into(),
-                mins: [min].into(),
-                maxs: [max].into(),
-                avgs: [avg].into(),
-                dim0kind: Some(self.range.dim0kind()),
-            }
-        } else {
-            error!("TODO result_reset_unweight");
-            err::todoval()
-        };
-        self.reset_values(range);
-        ret
+            // TODO add check that nothing is different from initial values, or reset without lst.
+            BinsDim0::empty()
+        }
     }
 
     fn result_reset_time_weight(&mut self, range: SeriesRange) -> BinsDim0<STY> {
@@ -751,36 +742,33 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
             error!("TODO result_reset_time_weight");
             err::todoval()
         }
-        let (min, max) = if let Some((min, max)) = self.minmax.take() {
-            (min, max)
-        } else {
-            (STY::zero_b(), STY::zero_b())
-        };
-        let avg = if self.sumc > 0 {
-            self.sum / (self.range.delta_u64() as f32 * 1e-9)
-        } else {
-            if let Some(v) = self.last_val.as_ref() {
-                v.as_prim_f32_b()
+        if let Some((min, max, lst)) = self.minmaxlst.take() {
+            let avg = if self.sumc > 0 {
+                self.sum / (self.range.delta_u64() as f32 * 1e-9)
             } else {
-                STY::zero_b().as_prim_f32_b()
-            }
-        };
-        let ret = if self.range.is_time() {
-            BinsDim0 {
-                ts1s: [range_beg].into(),
-                ts2s: [range_end].into(),
-                counts: [self.count].into(),
-                mins: [min].into(),
-                maxs: [max].into(),
-                avgs: [avg].into(),
-                dim0kind: Some(self.range.dim0kind()),
-            }
+                lst.as_prim_f32_b()
+            };
+            let ret = if self.range.is_time() {
+                BinsDim0 {
+                    ts1s: [range_beg].into(),
+                    ts2s: [range_end].into(),
+                    cnts: [self.count].into(),
+                    mins: [min].into(),
+                    maxs: [max].into(),
+                    avgs: [avg].into(),
+                    lsts: [lst.clone()].into(),
+                    dim0kind: Some(self.range.dim0kind()),
+                }
+            } else {
+                error!("TODO result_reset_time_weight");
+                err::todoval()
+            };
+            self.reset_values(lst, range);
+            ret
         } else {
-            error!("TODO result_reset_time_weight");
-            err::todoval()
-        };
-        self.reset_values(range);
-        ret
+            // TODO add check that nothing is different from initial values, or reset without lst.
+            BinsDim0::empty()
+        }
     }
 }
 
@@ -793,9 +781,7 @@ impl<STY: ScalarOps> TimeBinnableTypeAggregator for EventsDim0Aggregator<STY> {
     }
 
     fn ingest(&mut self, item: &Self::Input) {
-        if true {
-            trace_ingest!("{} ingest {} events", Self::type_name(), item.len());
-        }
+        trace_ingest!("{} ingest {} events", Self::type_name(), item.len());
         if false {
             for (i, &ts) in item.tss.iter().enumerate() {
                 trace_ingest!("{} ingest  {:6}  {:20}", Self::type_name(), i, ts);
@@ -825,6 +811,10 @@ impl<STY: ScalarOps> TimeBinnable for EventsDim0<STY> {
         do_time_weight: bool,
         emit_empty_bins: bool,
     ) -> Box<dyn TimeBinner> {
+        trace_init!(
+            "<{} as items_0::timebin::TimeBinnable>::time_binner_new",
+            self.type_name()
+        );
         // TODO get rid of unwrap
         let ret = EventsDim0TimeBinner::<STY>::new(binrange, do_time_weight, emit_empty_bins).unwrap();
         Box::new(ret)
@@ -1095,11 +1085,11 @@ impl<STY: ScalarOps> EventsDim0TimeBinner<STY> {
     }
 
     pub fn new(binrange: BinnedRangeEnum, do_time_weight: bool, emit_empty_bins: bool) -> Result<Self, Error> {
-        trace!("{}::new  binrange {:?}", Self::type_name(), binrange);
+        trace_init!("{}::new  binrange {:?}", Self::type_name(), binrange);
         let rng = binrange
             .range_at(0)
             .ok_or_else(|| Error::with_msg_no_trace("empty binrange"))?;
-        trace!("{}::new  rng {:?}", Self::type_name(), rng);
+        trace_init!("{}::new  rng {:?}", Self::type_name(), rng);
         let agg = EventsDim0Aggregator::new(rng, do_time_weight);
         let ret = Self {
             binrange,
@@ -1480,7 +1470,7 @@ fn events_timebin_ingest_continuous_00() {
     let got = ready.unwrap();
     let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
     let mut exp = BinsDim0::empty();
-    exp.push(SEC * 18, SEC * 20, 0, 0, 0, 0.);
-    exp.push(SEC * 20, SEC * 22, 1, 20, 20, 20.);
+    // exp.push(SEC * 18, SEC * 20, 0, 0, 0, 0., None);
+    exp.push(SEC * 20, SEC * 22, 1, 20, 20, 20., 20);
     assert!(f32_iter_cmp_near(got.avgs.clone(), exp.avgs.clone(), 0.0001, 0.0001));
 }

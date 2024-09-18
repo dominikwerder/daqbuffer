@@ -262,8 +262,8 @@ impl StmtsCache {
             .prepare(format!(
                 concat!(
                     "insert into {}.{}binned_scalar_f32",
-                    " (series, bin_len_ms, ts_msp, off, count, min, max, avg)",
-                    " values (?, ?, ?, ?, ?, ?, ?, ?)"
+                    " (series, bin_len_ms, ts_msp, off, count, min, max, avg, lst)",
+                    " values (?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 ),
                 ks,
                 rt.table_prefix()
@@ -272,7 +272,7 @@ impl StmtsCache {
         let st_read_f32 = scy
             .prepare(format!(
                 concat!(
-                    "select off, count, min, max, avg",
+                    "select off, count, min, max, avg, lst",
                     " from {}.{}binned_scalar_f32",
                     " where series = ?",
                     " and bin_len_ms = ?",

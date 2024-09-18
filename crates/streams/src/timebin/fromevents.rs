@@ -7,6 +7,7 @@ use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_2::binsdim0::BinsDim0;
+use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
 use netpod::BinnedRange;
 use netpod::ChConf;
@@ -40,6 +41,16 @@ impl BinnedFromEvents {
             panic!();
         }
         let stream = read_provider.read(evq, chconf);
+        let stream = stream.map(|x| {
+            let x = items_0::try_map_sitemty_data!(x, |x| match x {
+                ChannelEvents::Events(x) => {
+                    let x = x.to_dim0_f32_for_binning();
+                    Ok(ChannelEvents::Events(x))
+                }
+                ChannelEvents::Status(x) => Ok(ChannelEvents::Status(x)),
+            });
+            x
+        });
         let stream = Box::pin(stream);
         let stream = super::basic::TimeBinnedStream::new(stream, netpod::BinnedRangeEnum::Time(range), do_time_weight);
         let stream = stream.map(|item| match item {

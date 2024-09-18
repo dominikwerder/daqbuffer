@@ -245,14 +245,15 @@ pub async fn worker_write(
     scy: &ScySession,
 ) -> Result<(), streams::timebin::cached::reader::Error> {
     let mut msp_last = u64::MAX;
-    for (((((&ts1, &ts2), &cnt), &min), &max), &avg) in bins
+    for ((((((&ts1, &ts2), &cnt), &min), &max), &avg), &lst) in bins
         .ts1s
         .iter()
         .zip(bins.ts2s.iter())
-        .zip(bins.counts.iter())
+        .zip(bins.cnts.iter())
         .zip(bins.mins.iter())
         .zip(bins.maxs.iter())
         .zip(bins.avgs.iter())
+        .zip(bins.lsts.iter())
     {
         let bin_len = DtMs::from_ms_u64((ts2 - ts1) / 1000000);
         let div = streams::timebin::cached::reader::part_len(bin_len).ns();
@@ -267,6 +268,7 @@ pub async fn worker_write(
             min,
             max,
             avg,
+            lst,
         );
         // trace!("cache write {:?}", params);
         scy.execute(stmts_cache.st_write_f32(), params)
@@ -296,7 +298,7 @@ pub async fn worker_read(
         .execute_iter(stmts_cache.st_read_f32().clone(), params)
         .await
         .map_err(|e| streams::timebin::cached::reader::Error::Scylla(e.to_string()))?;
-    let mut it = res.into_typed::<(i32, i64, f32, f32, f32)>();
+    let mut it = res.into_typed::<(i32, i64, f32, f32, f32, f32)>();
     let mut bins = BinsDim0::empty();
     while let Some(x) = it.next().await {
         let row = x.map_err(|e| streams::timebin::cached::reader::Error::Scylla(e.to_string()))?;
@@ -305,9 +307,10 @@ pub async fn worker_read(
         let min = row.2;
         let max = row.3;
         let avg = row.4;
+        let lst = row.5;
         let ts1 = bin_len.ns() * off + div * msp;
         let ts2 = ts1 + bin_len.ns();
-        bins.push(ts1, ts2, cnt, min, max, avg);
+        bins.push(ts1, ts2, cnt, min, max, avg, lst);
     }
     Ok(bins)
 }

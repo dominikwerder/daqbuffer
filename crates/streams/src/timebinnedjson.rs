@@ -52,7 +52,6 @@ fn assert_stream_send<'u, R>(stream: impl 'u + Send + Stream<Item = R>) -> impl 
     stream
 }
 
-// TODO factor out, it is use now also from GapFill.
 pub async fn timebinnable_stream(
     range: NanoRange,
     one_before_range: bool,
@@ -92,6 +91,7 @@ pub async fn timebinnable_stream(
         on_sitemty_data!(k, |k| {
             let k: Box<dyn Events> = Box::new(k);
             // trace!("got len {}", k.len());
+            let k = k.to_dim0_f32_for_binning();
             let k = tr.0.transform(k);
             Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
         })
@@ -316,19 +316,24 @@ async fn timebinned_stream(
     events_read_provider: Option<Arc<dyn EventsReadProvider>>,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>, Error> {
     use netpod::query::CacheUsage;
-    match (query.cache_usage(), cache_read_provider, events_read_provider) {
-        (CacheUsage::Use | CacheUsage::Recreate, Some(cache_read_provider), Some(events_read_provider)) => {
-            let series = if let Some(x) = query.channel().series() {
-                x
-            } else {
-                return Err(Error::with_msg_no_trace(
-                    "cached time binned only available given a series id",
-                ));
-            };
-            info!("--- CACHING PATH ---");
-            info!("{query:?}");
-            info!("subgrids {:?}", query.subgrids());
-            let range = binned_range.binned_range_time().to_nano_range();
+    let cache_usage = query.cache_usage().unwrap_or(CacheUsage::Use);
+    match (
+        ch_conf.series(),
+        cache_usage.clone(),
+        cache_read_provider,
+        events_read_provider,
+    ) {
+        (
+            Some(series),
+            CacheUsage::Use | CacheUsage::Recreate | CacheUsage::Ignore,
+            Some(cache_read_provider),
+            Some(events_read_provider),
+        ) => {
+            debug!(
+                "timebinned_stream  caching {:?}  subgrids {:?}",
+                query,
+                query.subgrids()
+            );
             let do_time_weight = true;
             let bin_len_layers = if let Some(subgrids) = query.subgrids() {
                 subgrids
@@ -336,16 +341,11 @@ async fn timebinned_stream(
                     .map(|&x| DtMs::from_ms_u64(1000 * x.as_secs()))
                     .collect()
             } else {
-                vec![
-                    DtMs::from_ms_u64(1000 * 10),
-                    DtMs::from_ms_u64(1000 * 60 * 60),
-                    // DtMs::from_ms_u64(1000 * 60 * 60 * 12),
-                    // DtMs::from_ms_u64(1000 * 10),
-                ]
+                netpod::time_bin_len_cache_opts().to_vec()
             };
             let stream = crate::timebin::TimeBinnedFromLayers::new(
                 ch_conf,
-                query.cache_usage(),
+                cache_usage,
                 query.transform().clone(),
                 EventsSubQuerySettings::from(&query),
                 query.log_level().into(),
@@ -369,10 +369,8 @@ async fn timebinned_stream(
         }
         _ => {
             let range = binned_range.binned_range_time().to_nano_range();
-
             let do_time_weight = true;
             let one_before_range = true;
-
             let stream = timebinnable_stream(
                 range,
                 one_before_range,
@@ -419,7 +417,7 @@ pub async fn timebinned_json(
     let deadline = Instant::now()
         + query
             .timeout_content()
-            .unwrap_or(Duration::from_millis(5000))
+            .unwrap_or(Duration::from_millis(3000))
             .min(Duration::from_millis(5000))
             .max(Duration::from_millis(200));
     let binned_range = query.covering_range()?;
@@ -439,18 +437,19 @@ pub async fn timebinned_json(
     let stream = timebinned_to_collectable(stream);
     let collected = Collect::new(stream, deadline, collect_max, bytes_max, None, Some(binned_range));
     let collected: BoxFuture<_> = Box::pin(collected);
-    let collected = collected.await?;
-    info!("timebinned_json collected type_name {:?}", collected.type_name());
-    let collected = if let Some(bins) = collected
+    let collres = collected.await?;
+    info!("timebinned_json collected type_name {:?}", collres.type_name());
+    let collres = if let Some(bins) = collres
         .as_any_ref()
         .downcast_ref::<items_2::binsdim0::BinsDim0CollectedResult<netpod::EnumVariant>>()
     {
-        info!("MATCHED");
-        bins.boxed_collected_with_enum_fix()
+        warn!("unexpected binned enum");
+        // bins.boxed_collected_with_enum_fix()
+        collres
     } else {
-        collected
+        collres
     };
-    let jsval = serde_json::to_value(&collected)?;
+    let jsval = serde_json::to_value(&collres)?;
     Ok(jsval)
 }
 
@@ -461,8 +460,9 @@ fn take_collector_result(coll: &mut Box<dyn items_0::collect_s::Collector>) -> O
                 .as_any_ref()
                 .downcast_ref::<items_2::binsdim0::BinsDim0CollectedResult<netpod::EnumVariant>>()
             {
-                info!("MATCHED ENUM");
-                bins.boxed_collected_with_enum_fix()
+                warn!("unexpected binned enum");
+                // bins.boxed_collected_with_enum_fix()
+                collres
             } else {
                 collres
             };

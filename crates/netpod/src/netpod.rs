@@ -702,6 +702,12 @@ impl Default for EnumVariant {
     }
 }
 
+impl fmt::Display for EnumVariant {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{}({})", self.ix, self.name)
+    }
+}
+
 impl AppendToUrl for ScalarType {
     fn append_to_url(&self, url: &mut Url) {
         let mut g = url.query_pairs_mut();
@@ -2141,6 +2147,16 @@ const TIME_BIN_THRESHOLDS: [u64; 26] = [
     DAY * 64,
 ];
 
+const TIME_BIN_LEN_CACHE_OPTS: [DtMs; 2] = [
+    //
+    DtMs(1000 * 10),
+    DtMs(1000 * 60 * 60),
+];
+
+pub fn time_bin_len_cache_opts() -> &'static [DtMs] {
+    &TIME_BIN_LEN_CACHE_OPTS
+}
+
 const PULSE_BIN_THRESHOLDS: [u64; 25] = [
     10, 20, 40, 80, 100, 200, 400, 800, 1000, 2000, 4000, 8000, 10000, 20000, 40000, 80000, 100000, 200000, 400000,
     800000, 1000000, 2000000, 4000000, 8000000, 10000000,
@@ -2485,7 +2501,7 @@ where
         }*/
         let beg = self.bin_len.times(self.bin_off).as_u64();
         let end = self.bin_len.times(self.bin_off + self.bin_cnt).as_u64();
-        warn!("TODO make generic for pulse");
+        debug!("TODO make generic for pulse");
         NanoRange { beg, end }
     }
 
@@ -3713,6 +3729,13 @@ impl ChannelTypeConfigGen {
         match self {
             ChannelTypeConfigGen::Scylla(x) => &x.shape,
             ChannelTypeConfigGen::SfDatabuffer(x) => x.shape(),
+        }
+    }
+
+    pub fn series(&self) -> Option<u64> {
+        match self {
+            ChannelTypeConfigGen::Scylla(ch_conf) => Some(ch_conf.series()),
+            ChannelTypeConfigGen::SfDatabuffer(sf_ch_fetch_info) => None,
         }
     }
 }

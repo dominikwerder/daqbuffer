@@ -64,7 +64,18 @@ impl AsPrimF32 for String {
 }
 
 pub trait ScalarOps:
-    fmt::Debug + Clone + PartialOrd + PartialEq + SubFrId + AsPrimF32 + ByteEstimate + Serialize + Unpin + Send + 'static
+    fmt::Debug
+    + fmt::Display
+    + Clone
+    + PartialOrd
+    + PartialEq
+    + SubFrId
+    + AsPrimF32
+    + ByteEstimate
+    + Serialize
+    + Unpin
+    + Send
+    + 'static
 {
     fn scalar_type_name() -> &'static str;
     fn zero_b() -> Self;

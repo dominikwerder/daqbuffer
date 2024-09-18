@@ -33,6 +33,7 @@ pub enum Error {
     Toplist(#[from] crate::accounting::toplist::Error),
     MissingKeyspaceConfig,
     CacheWriteF32(#[from] streams::timebin::cached::reader::Error),
+    Schema(#[from] crate::schema::Error),
 }
 
 #[derive(Debug)]
@@ -212,6 +213,9 @@ impl ScyllaWorker {
             .await
             .map_err(Error::ScyllaConnection)?;
         let scy = Arc::new(scy);
+        crate::schema::schema(RetentionTime::Short, &self.scyconf_st, &scy).await?;
+        crate::schema::schema(RetentionTime::Medium, &self.scyconf_mt, &scy).await?;
+        crate::schema::schema(RetentionTime::Long, &self.scyconf_lt, &scy).await?;
         let kss = [
             self.scyconf_st.keyspace.as_str(),
             self.scyconf_mt.keyspace.as_str(),

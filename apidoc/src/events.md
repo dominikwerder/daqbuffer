@@ -9,6 +9,9 @@ curl "https://data-api.psi.ch/api/4/events?backend=sf-databuffer&channelName=S10
 Parameters:
 - `backend`: the backend that the channel exists in, e.g. `sf-databuffer`.
 - `channelName`: the name of the channel.
+- `seriesId`: instead of a channel name, can specify the (unique within backend) series id
+  as returned by channel search.
+  Note that it is an error to provide both `channelName` and `seriesId`.
 - `begDate`: start of the time range, inclusive. In ISO format e.g. `2024-02-15T12:41:00Z`.
 - `endDate`: end of the time range, exclusive.
 - `oneBeforeRange`: if set to `true` the reponse will in addition also contain the most recent event before the given range.

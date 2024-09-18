@@ -64,14 +64,15 @@ fn time_bin_00() -> Result<(), Error> {
             let bins = BinsDim0::empty();
             d.push_back(bins);
             let mut bins = BinsDim0::empty();
-            bins.push(SEC * 0, SEC * 1, 0, 0.0, 0.0, 0.0);
-            bins.push(SEC * 1, SEC * 2, 2, 0.0535830, 100.0589, 50.05624);
-            bins.push(SEC * 2, SEC * 3, 2, 200.06143, 300.07645, 250.06894);
-            bins.push(SEC * 3, SEC * 4, 2, 400.08554, 500.05222, 450.06888);
-            bins.push(SEC * 4, SEC * 5, 2, 600.0025, 700.09094, 650.04675);
+            // Currently can not cosntruct bins without minmaxlst
+            // bins.push(SEC * 0, SEC * 1, 0, 0.0, 0.0, 0.0);
+            bins.push(SEC * 1, SEC * 2, 2, 0.0535830, 100.0589, 50.05624, 100.0589);
+            bins.push(SEC * 2, SEC * 3, 2, 200.06143, 300.07645, 250.06894, 300.07645);
+            bins.push(SEC * 3, SEC * 4, 2, 400.08554, 500.05222, 450.06888, 500.05222);
+            bins.push(SEC * 4, SEC * 5, 2, 600.0025, 700.09094, 650.04675, 700.09094);
             d.push_back(bins);
             let mut bins = BinsDim0::empty();
-            bins.push(SEC * 5, SEC * 6, 2, 800.0619, 900.02844, 850.04517);
+            bins.push(SEC * 5, SEC * 6, 2, 800.0619, 900.02844, 850.04517, 900.02844);
             d.push_back(bins);
             d
         };
@@ -342,6 +343,7 @@ fn timebin_multi_stage_00() -> Result<(), Error> {
                     20 + 2 * i as i32,
                     21 + 2 * i as i32,
                     20.5 + 2. * i as f32,
+                    21 + 2 * i as i32,
                 );
             }
             bins
@@ -356,6 +358,7 @@ fn timebin_multi_stage_00() -> Result<(), Error> {
                     20 + 4 * i as i32,
                     23 + 4 * i as i32,
                     21.5 + 4. * i as f32,
+                    23 + 4 * i as i32,
                 );
             }
             bins

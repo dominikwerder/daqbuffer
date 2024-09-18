@@ -5,6 +5,7 @@ pub mod errconv;
 pub mod events;
 pub mod events2;
 pub mod range;
+pub mod schema;
 pub mod status;
 pub mod worker;
 

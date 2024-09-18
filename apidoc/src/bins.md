@@ -28,6 +28,62 @@ The server may return more than `binCount` bins, and it will choose a `binWidth`
 supported widths to best possibly match the requested width.
 
 
+Example response, truncated to 4 bins:
+```json
+{
+  "avgs": [
+    0.010802877135574818,
+    0.010565019212663174,
+    0.01061472948640585,
+    0.010656529106199741
+  ],
+  "counts": [
+    3000,
+    2999,
+    3000,
+    3000
+  ],
+  "maxs": [
+    0.017492100596427917,
+    0.016716860234737396,
+    0.01769270747900009,
+    0.01670699194073677
+  ],
+  "mins": [
+    0.005227561108767986,
+    0.0040797283872962,
+    0.004329073242843151,
+    0.004934651777148247
+  ],
+  "ts1Ms": [
+    0,
+    300000,
+    600000,
+    900000
+  ],
+  "ts1Ns": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "ts2Ms": [
+    300000,
+    600000,
+    900000,
+    1200000
+  ],
+  "ts2Ns": [
+    0,
+    0,
+    0,
+    0
+  ],
+  "tsAnchor": 1726394700
+}
+```
+
+
 ## As framed JSON stream
 
 To download larger amounts data as JSON it is recommended to use the `json-framed` content encoding.

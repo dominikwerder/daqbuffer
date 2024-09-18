@@ -191,18 +191,17 @@ impl TimeBinnable for Box<dyn TimeBinnable> {
     }
 }
 
-#[allow(unused)]
 impl RangeOverlapInfo for Box<dyn Events> {
     fn ends_before(&self, range: &SeriesRange) -> bool {
-        todo!()
+        RangeOverlapInfo::ends_before(self.as_ref(), range)
     }
 
     fn ends_after(&self, range: &SeriesRange) -> bool {
-        todo!()
+        RangeOverlapInfo::ends_after(self.as_ref(), range)
     }
 
     fn starts_after(&self, range: &SeriesRange) -> bool {
-        todo!()
+        RangeOverlapInfo::starts_after(self.as_ref(), range)
     }
 }
 

@@ -52,7 +52,7 @@ use std::mem;
 use std::ops::Range;
 
 #[allow(unused)]
-macro_rules! trace4 {
+macro_rules! trace44 {
     ($($arg:tt)*) => ();
     ($($arg:tt)*) => (eprintln!($($arg)*));
 }
@@ -62,10 +62,11 @@ macro_rules! trace4 {
 pub struct BinsDim0<NTY> {
     pub ts1s: VecDeque<u64>,
     pub ts2s: VecDeque<u64>,
-    pub counts: VecDeque<u64>,
+    pub cnts: VecDeque<u64>,
     pub mins: VecDeque<NTY>,
     pub maxs: VecDeque<NTY>,
     pub avgs: VecDeque<f32>,
+    pub lsts: VecDeque<NTY>,
     pub dim0kind: Option<Dim0Kind>,
 }
 
@@ -88,7 +89,7 @@ where
                 self.ts1s.len(),
                 self.ts1s.iter().map(|k| k / SEC).collect::<Vec<_>>(),
                 self.ts2s.iter().map(|k| k / SEC).collect::<Vec<_>>(),
-                self.counts,
+                self.cnts,
                 self.mins,
                 self.maxs,
                 self.avgs,
@@ -100,57 +101,89 @@ where
                 self.ts1s.len(),
                 self.ts1s.front().map(|k| k / SEC),
                 self.ts2s.back().map(|k| k / SEC),
-                self.counts.front(),
-                self.counts.back(),
+                self.cnts.front(),
+                self.cnts.back(),
                 self.avgs.front(),
                 self.avgs.back(),
             )
+        }
+    }
+}
+
+trait HasFrontBack<T> {
+    fn len(&self) -> usize;
+    fn front(&self) -> Option<&T>;
+    fn back(&self) -> Option<&T>;
+}
+
+impl<T> HasFrontBack<T> for VecDeque<T> {
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn front(&self) -> Option<&T> {
+        self.front()
+    }
+
+    fn back(&self) -> Option<&T> {
+        self.back()
+    }
+}
+
+struct VecPreview<'a, T> {
+    c: &'a dyn HasFrontBack<T>,
+}
+
+impl<'a, T> VecPreview<'a, T> {
+    fn new(c: &'a dyn HasFrontBack<T>) -> Self {
+        Self { c }
+    }
+}
+
+impl<'a, T> fmt::Display for VecPreview<'a, T>
+where
+    T: fmt::Display,
+{
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        if self.c.len() == 0 {
+            write!(fmt, "()")
+        } else if self.c.len() == 1 {
+            write!(fmt, "{}", self.c.front().unwrap())
+        } else {
+            write!(fmt, "{}", self.c.front().unwrap())
         }
     }
 }
 
 impl<NTY> fmt::Display for BinsDim0<NTY>
 where
-    NTY: fmt::Debug,
+    NTY: fmt::Display,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let self_name = any::type_name::<Self>();
-        if true {
-            write!(
-                fmt,
-                "{self_name}  count {:?}  ts1s {:?}  ts2s {:?}  counts {:?}  mins {:?}  maxs {:?}  avgs {:?}",
-                self.ts1s.len(),
-                self.ts1s.iter().map(|&k| TsNano::from_ns(k)).collect::<Vec<_>>(),
-                self.ts2s.iter().map(|&k| TsNano::from_ns(k)).collect::<Vec<_>>(),
-                self.counts,
-                self.mins,
-                self.maxs,
-                self.avgs,
-            )
-        } else {
-            write!(
-                fmt,
-                "{self_name}  count {:?}  edges {:?} .. {:?}  counts {:?} .. {:?}  avgs {:?} .. {:?}",
-                self.ts1s.len(),
-                self.ts1s.front().map(|&k| TsNano::from_ns(k)),
-                self.ts2s.back().map(|&k| TsNano::from_ns(k)),
-                self.counts.front(),
-                self.counts.back(),
-                self.avgs.front(),
-                self.avgs.back(),
-            )
-        }
+        write!(
+            fmt,
+            "{self_name}  {{  len: {:?},  ts1s: {},  ts2s {},  counts {},  mins {},  maxs {},  avgs {}  }}",
+            self.len(),
+            VecPreview::new(&self.ts1s),
+            VecPreview::new(&self.ts2s),
+            VecPreview::new(&self.cnts),
+            VecPreview::new(&self.mins),
+            VecPreview::new(&self.maxs),
+            VecPreview::new(&self.avgs),
+        )
     }
 }
 
 impl<NTY: ScalarOps> BinsDim0<NTY> {
-    pub fn push(&mut self, ts1: u64, ts2: u64, count: u64, min: NTY, max: NTY, avg: f32) {
+    pub fn push(&mut self, ts1: u64, ts2: u64, count: u64, min: NTY, max: NTY, avg: f32, lst: NTY) {
         self.ts1s.push_back(ts1);
         self.ts2s.push_back(ts2);
-        self.counts.push_back(count);
+        self.cnts.push_back(count);
         self.mins.push_back(min);
         self.maxs.push_back(max);
         self.avgs.push_back(avg);
+        self.lsts.push_back(lst);
     }
 
     pub fn equal_slack(&self, other: &Self) -> bool {
@@ -190,10 +223,11 @@ impl<NTY: ScalarOps> BinsDim0<NTY> {
     pub fn drain_into(&mut self, dst: &mut Self, range: Range<usize>) -> () {
         dst.ts1s.extend(self.ts1s.drain(range.clone()));
         dst.ts2s.extend(self.ts2s.drain(range.clone()));
-        dst.counts.extend(self.counts.drain(range.clone()));
+        dst.cnts.extend(self.cnts.drain(range.clone()));
         dst.mins.extend(self.mins.drain(range.clone()));
         dst.maxs.extend(self.maxs.drain(range.clone()));
         dst.avgs.extend(self.avgs.drain(range.clone()));
+        dst.lsts.extend(self.lsts.drain(range.clone()));
     }
 }
 
@@ -220,10 +254,11 @@ impl<STY> Empty for BinsDim0<STY> {
         Self {
             ts1s: VecDeque::new(),
             ts2s: VecDeque::new(),
-            counts: VecDeque::new(),
+            cnts: VecDeque::new(),
             mins: VecDeque::new(),
             maxs: VecDeque::new(),
             avgs: VecDeque::new(),
+            lsts: VecDeque::new(),
             dim0kind: None,
         }
     }
@@ -257,7 +292,7 @@ impl<STY> Resettable for BinsDim0<STY> {
     fn reset(&mut self) {
         self.ts1s.clear();
         self.ts2s.clear();
-        self.counts.clear();
+        self.cnts.clear();
         self.mins.clear();
         self.maxs.clear();
         self.avgs.clear();
@@ -266,7 +301,7 @@ impl<STY> Resettable for BinsDim0<STY> {
 
 impl<STY: ScalarOps> HasNonemptyFirstBin for BinsDim0<STY> {
     fn has_nonempty_first_bin(&self) -> bool {
-        self.counts.front().map_or(false, |x| *x > 0)
+        self.cnts.front().map_or(false, |x| *x > 0)
     }
 }
 
@@ -294,7 +329,7 @@ impl<NTY: ScalarOps> AppendEmptyBin for BinsDim0<NTY> {
     fn append_empty_bin(&mut self, ts1: u64, ts2: u64) {
         self.ts1s.push_back(ts1);
         self.ts2s.push_back(ts2);
-        self.counts.push_back(0);
+        self.cnts.push_back(0);
         self.mins.push_back(NTY::zero_b());
         self.maxs.push_back(NTY::zero_b());
         self.avgs.push_back(0.);
@@ -305,7 +340,7 @@ impl<NTY: ScalarOps> AppendAllFrom for BinsDim0<NTY> {
     fn append_all_from(&mut self, src: &mut Self) {
         self.ts1s.extend(src.ts1s.drain(..));
         self.ts2s.extend(src.ts2s.drain(..));
-        self.counts.extend(src.counts.drain(..));
+        self.cnts.extend(src.cnts.drain(..));
         self.mins.extend(src.mins.drain(..));
         self.maxs.extend(src.maxs.drain(..));
         self.avgs.extend(src.avgs.drain(..));
@@ -414,7 +449,7 @@ where
             .ts1s
             .iter()
             .zip(&item.ts2s)
-            .zip(&item.counts)
+            .zip(&item.cnts)
             .zip(&item.mins)
             .zip(&item.maxs)
             .zip(&item.avgs)
@@ -514,7 +549,9 @@ where
                     panic!("TODO non-time-weighted binning to be impl");
                 }
             } else {
-                error!("partially filled bin with cnt 0");
+                if self.filled_up_to != self.ts1now {
+                    error!("partially filled bin with cnt 0");
+                }
             }
         }
         if self.cnt == 0 && !push_empty {
@@ -522,7 +559,7 @@ where
         } else {
             self.out.ts1s.push_back(self.ts1now.ns());
             self.out.ts2s.push_back(self.ts2now.ns());
-            self.out.counts.push_back(self.cnt);
+            self.out.cnts.push_back(self.cnt);
             self.out.mins.push_back(self.min.clone());
             self.out.maxs.push_back(self.max.clone());
             self.out.avgs.push_back(self.avg as f32);
@@ -611,8 +648,9 @@ where
             .as_any_ref()
             .downcast_ref::<BinsDim0CollectedResult<netpod::EnumVariant>>()
         {
-            let mins = self.mins.iter().map(|x| 0).collect();
-            let maxs = self.mins.iter().map(|x| 0).collect();
+            debug!("boxed_collected_with_enum_fix");
+            let mins = self.mins.iter().map(|x| 6).collect();
+            let maxs = self.mins.iter().map(|x| 7).collect();
             let bins = BinsDim0CollectedResult::<u16> {
                 ts_anchor_sec: self.ts_anchor_sec.clone(),
                 ts1_off_ms: self.ts1_off_ms.clone(),
@@ -781,7 +819,7 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
         let vals = self.vals.as_mut().unwrap();
         vals.ts1s.append(&mut src.ts1s);
         vals.ts2s.append(&mut src.ts2s);
-        vals.counts.append(&mut src.counts);
+        vals.cnts.append(&mut src.cnts);
         vals.mins.append(&mut src.mins);
         vals.maxs.append(&mut src.maxs);
         vals.avgs.append(&mut src.avgs);
@@ -809,7 +847,7 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
         let bin_count_exp = if let Some(r) = &binrange {
             r.bin_count() as u32
         } else {
-            warn!("no binrange given");
+            debug!("no binrange given");
             0
         };
         let mut vals = if let Some(x) = self.vals.take() {
@@ -818,8 +856,8 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
             return Err(Error::with_msg_no_trace("BinsDim0Collector without vals"));
         };
         let bin_count = vals.ts1s.len() as u32;
-        eprintln!(
-            "--------------  MAKE MISSING BINS  bin_count_exp {}  bin_count {}",
+        debug!(
+            "result  make missing bins  bin_count_exp {}  bin_count {}",
             bin_count_exp, bin_count
         );
         let (missing_bins, continue_at, finished_at) = if bin_count < bin_count_exp {
@@ -849,7 +887,7 @@ impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
         let ts2s = vals.ts2s.make_contiguous();
         let (ts_anch, ts1ms, ts1ns) = ts_offs_from_abs(ts1s);
         let (ts2ms, ts2ns) = ts_offs_from_abs_with_anchor(ts_anch, ts2s);
-        let counts = vals.counts;
+        let counts = vals.cnts;
         let mins = vals.mins;
         let maxs = vals.maxs;
         let avgs = vals.avgs;
@@ -885,8 +923,8 @@ impl<NTY: ScalarOps> CollectableType for BinsDim0<NTY> {
 #[derive(Debug)]
 pub struct BinsDim0Aggregator<NTY> {
     range: SeriesRange,
-    count: u64,
-    minmax: Option<(NTY, NTY)>,
+    cnt: u64,
+    minmaxlst: Option<(NTY, NTY, NTY)>,
     sumc: u64,
     sum: f32,
 }
@@ -895,8 +933,8 @@ impl<NTY: ScalarOps> BinsDim0Aggregator<NTY> {
     pub fn new(range: SeriesRange, _do_time_weight: bool) -> Self {
         Self {
             range,
-            count: 0,
-            minmax: None,
+            cnt: 0,
+            minmaxlst: None,
             sumc: 0,
             sum: 0f32,
         }
@@ -914,30 +952,32 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for BinsDim0Aggregator<NTY> {
     fn ingest(&mut self, item: &Self::Input) {
         let beg = self.range.beg_u64();
         let end = self.range.end_u64();
-        for (((((&ts1, &ts2), &count), min), max), &avg) in item
+        for ((((((&ts1, &ts2), &count), min), max), &avg), lst) in item
             .ts1s
             .iter()
             .zip(item.ts2s.iter())
-            .zip(item.counts.iter())
+            .zip(item.cnts.iter())
             .zip(item.mins.iter())
             .zip(item.maxs.iter())
             .zip(item.avgs.iter())
+            .zip(item.lsts.iter())
         {
-            if count == 0 {
-            } else if ts2 <= beg {
+            if ts2 <= beg {
             } else if ts1 >= end {
             } else {
-                if let Some((cmin, cmax)) = self.minmax.as_mut() {
+                if let Some((cmin, cmax, clst)) = self.minmaxlst.as_mut() {
                     if min < cmin {
                         *cmin = min.clone();
                     }
                     if max > cmax {
                         *cmax = max.clone();
                     }
+                    *clst = lst.clone();
                 } else {
-                    self.minmax = Some((min.clone(), max.clone()));
+                    self.minmaxlst = Some((min.clone(), max.clone(), lst.clone()));
                 }
-                self.count += count;
+                self.cnt += count;
+                // TODO this works only for equidistant bins edges.
                 self.sumc += 1;
                 self.sum += avg;
             }
@@ -945,29 +985,33 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for BinsDim0Aggregator<NTY> {
     }
 
     fn result_reset(&mut self, range: SeriesRange) -> Self::Output {
-        let (min, max) = if let Some((min, max)) = self.minmax.take() {
-            (min, max)
+        let ret = if let Some((min, max, lst)) = self.minmaxlst.take() {
+            self.minmaxlst = Some((lst.clone(), lst.clone(), lst.clone()));
+            let avg = if self.sumc > 0 {
+                self.sum / self.sumc as f32
+            } else {
+                NTY::zero_b().as_prim_f32_b()
+            };
+            Self::Output {
+                ts1s: [self.range.beg_u64()].into(),
+                ts2s: [self.range.end_u64()].into(),
+                cnts: [self.cnt].into(),
+                mins: [min].into(),
+                maxs: [max].into(),
+                avgs: [avg].into(),
+                lsts: [lst].into(),
+                // TODO
+                dim0kind: None,
+            }
         } else {
-            (NTY::zero_b(), NTY::zero_b())
-        };
-        let avg = if self.sumc > 0 {
-            self.sum / self.sumc as f32
-        } else {
-            NTY::zero_b().as_prim_f32_b()
-        };
-        let ret = Self::Output {
-            ts1s: [self.range.beg_u64()].into(),
-            ts2s: [self.range.end_u64()].into(),
-            counts: [self.count].into(),
-            mins: [min].into(),
-            maxs: [max].into(),
-            avgs: [avg].into(),
-            // TODO
-            dim0kind: None,
+            if self.cnt != 0 {
+                error!("result_reset  non-zero cnt but no minmaxlst");
+            }
+            warn!("result_reset  missing minmaxlst");
+            Self::Output::empty()
         };
         self.range = range;
-        self.count = 0;
-        self.minmax = None;
+        self.cnt = 0;
         self.sumc = 0;
         self.sum = 0.;
         ret
@@ -1264,7 +1308,7 @@ impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
 
     fn counts(&self) -> &[u64] {
         // TODO check for contiguous
-        self.counts.as_slices().0
+        self.cnts.as_slices().0
     }
 
     // TODO is Vec needed?
@@ -1288,7 +1332,7 @@ impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
         if self.ts1s.len() != self.ts2s.len() {
             write!(&mut msg, "ts1s ≠ ts2s\n").unwrap();
         }
-        for (i, ((count, min), max)) in self.counts.iter().zip(&self.mins).zip(&self.maxs).enumerate() {
+        for (i, ((count, min), max)) in self.cnts.iter().zip(&self.mins).zip(&self.maxs).enumerate() {
             if min.as_prim_f32_b() < 1. && *count != 0 {
                 write!(&mut msg, "i {}  count {}  min {:?}  max {:?}\n", i, count, min, max).unwrap();
             }
@@ -1313,10 +1357,11 @@ impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
         let ret = BinsDim0::<f32> {
             ts1s: replace(&mut self.ts1s, VecDeque::new()),
             ts2s: replace(&mut self.ts2s, VecDeque::new()),
-            counts: replace(&mut self.counts, VecDeque::new()),
+            cnts: replace(&mut self.cnts, VecDeque::new()),
             mins: self.mins.iter().map(AsPrimF32::as_prim_f32_b).collect(),
             maxs: self.maxs.iter().map(AsPrimF32::as_prim_f32_b).collect(),
             avgs: replace(&mut self.avgs, VecDeque::new()),
+            lsts: self.lsts.iter().map(AsPrimF32::as_prim_f32_b).collect(),
             dim0kind: None,
         };
         Box::new(ret)
@@ -1328,7 +1373,7 @@ impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
             // TODO make it harder to forget new members when the struct may get modified in the future
             dst.ts1s.extend(self.ts1s.drain(range.clone()));
             dst.ts2s.extend(self.ts2s.drain(range.clone()));
-            dst.counts.extend(self.counts.drain(range.clone()));
+            dst.cnts.extend(self.cnts.drain(range.clone()));
             dst.mins.extend(self.mins.drain(range.clone()));
             dst.maxs.extend(self.maxs.drain(range.clone()));
             dst.avgs.extend(self.avgs.drain(range.clone()));
@@ -1359,9 +1404,10 @@ fn bins_timebin_fill_empty_00() {
     let got = ready.unwrap();
     let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
     let mut exp = BinsDim0::empty();
-    for i in 0..5 {
-        exp.push(SEC * 2 * (9 + i), SEC * 2 * (10 + i), 0, 0, 0, 0.);
-    }
+    // Currently bins without lst can not exist.
+    // for i in 0..5 {
+    //     exp.push(SEC * 2 * (9 + i), SEC * 2 * (10 + i), 0, 0, 0, 0., None);
+    // }
     assert_eq!(got, &exp);
 }
 
@@ -1384,9 +1430,10 @@ fn bins_timebin_fill_empty_01() {
     let got = ready.unwrap();
     let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
     let mut exp = BinsDim0::empty();
-    for i in 0..5 {
-        exp.push(SEC * 2 * (9 + i), SEC * 2 * (10 + i), 0, 0, 0, 0.);
-    }
+    // Currently bins without lst can not exist.
+    // for i in 0..5 {
+    //     exp.push(SEC * 2 * (9 + i), SEC * 2 * (10 + i), 0, 0, 0, 0., None);
+    // }
     assert_eq!(got, &exp);
 }
 
@@ -1408,9 +1455,10 @@ fn bins_timebin_push_empty_00() {
     let got = ready.unwrap();
     let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
     let mut exp = BinsDim0::empty();
-    for i in 0..1 {
-        exp.push(SEC * 2 * (9 + i), SEC * 2 * (10 + i), 0, 0, 0, 0.);
-    }
+    // Currently bins without lst can not exist.
+    // for i in 0..1 {
+    //     exp.push(SEC * 2 * (9 + i), SEC * 2 * (10 + i), 0, 0, 0, 0., None);
+    // }
     assert_eq!(got, &exp);
 }
 
@@ -1434,17 +1482,18 @@ fn bins_timebin_push_empty_01() {
     let got = ready.unwrap();
     let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
     let mut exp = BinsDim0::empty();
-    for i in 0..3 {
-        exp.push(SEC * 2 * (9 + i), SEC * 2 * (10 + i), 0, 0, 0, 0.);
-    }
+    // Currently bins without lst can not exist.
+    // for i in 0..3 {
+    //     exp.push(SEC * 2 * (9 + i), SEC * 2 * (10 + i), 0, 0, 0, 0., None);
+    // }
     assert_eq!(got, &exp);
 }
 
 #[test]
 fn bins_timebin_ingest_only_before() {
     let mut bins = BinsDim0::<u32>::empty();
-    bins.push(SEC * 2, SEC * 4, 3, 7, 9, 8.1);
-    bins.push(SEC * 4, SEC * 6, 3, 6, 9, 8.2);
+    bins.push(SEC * 2, SEC * 4, 3, 7, 9, 8.1, 8);
+    bins.push(SEC * 4, SEC * 6, 3, 6, 9, 8.2, 8);
     let binrange = BinnedRangeEnum::Time(BinnedRange {
         bin_len: TsNano::from_ns(SEC * 2),
         bin_off: 9,
@@ -1460,16 +1509,17 @@ fn bins_timebin_ingest_only_before() {
     let got = ready.unwrap();
     let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
     let mut exp = BinsDim0::empty();
-    exp.push(SEC * 18, SEC * 20, 0, 0, 0, 0.);
+    // Currently bins without lst can not exist.
+    // exp.push(SEC * 18, SEC * 20, 0, 0, 0, 0., None);
     assert_eq!(got, &exp);
 }
 
 #[test]
 fn bins_timebin_ingest_00() {
     let mut bins = BinsDim0::<u32>::empty();
-    bins.push(SEC * 20, SEC * 21, 3, 70, 94, 82.);
-    bins.push(SEC * 21, SEC * 22, 5, 71, 93, 86.);
-    bins.push(SEC * 23, SEC * 24, 6, 72, 92, 81.);
+    bins.push(SEC * 20, SEC * 21, 3, 70, 94, 82., 80);
+    bins.push(SEC * 21, SEC * 22, 5, 71, 93, 86., 81);
+    bins.push(SEC * 23, SEC * 24, 6, 72, 92, 81., 82);
     let binrange = BinnedRangeEnum::Time(BinnedRange {
         bin_len: TsNano::from_ns(SEC * 2),
         bin_off: 9,
@@ -1485,9 +1535,10 @@ fn bins_timebin_ingest_00() {
     let got = ready.unwrap();
     let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
     let mut exp = BinsDim0::empty();
-    exp.push(SEC * 18, SEC * 20, 0, 0, 0, 0.);
-    exp.push(SEC * 20, SEC * 22, 8, 70, 94, 84.);
-    exp.push(SEC * 22, SEC * 24, 6, 72, 92, 81.);
+    // Currently bins without lst can not exist.
+    // exp.push(SEC * 18, SEC * 20, 0, 0, 0, 0., None);
+    exp.push(SEC * 20, SEC * 22, 8, 70, 94, 84., 82);
+    exp.push(SEC * 22, SEC * 24, 6, 72, 92, 81., 91);
     assert_eq!(got, &exp);
 }
 
@@ -1500,7 +1551,7 @@ fn bins_timebin_ingest_continuous_00() {
     });
     let do_time_weight = true;
     let mut bins = BinsDim0::<u32>::empty();
-    bins.push(SEC * 20, SEC * 21, 3, 70, 94, 82.);
+    bins.push(SEC * 20, SEC * 21, 3, 70, 94, 82., 80);
     //bins.push(SEC * 21, SEC * 22, 5, 71, 93, 86.);
     //bins.push(SEC * 23, SEC * 24, 6, 72, 92, 81.);
     let mut binner = bins
@@ -1512,8 +1563,9 @@ fn bins_timebin_ingest_continuous_00() {
     let got = ready.unwrap();
     let got: &BinsDim0<u32> = got.as_any_ref().downcast_ref().unwrap();
     let mut exp = BinsDim0::empty();
-    exp.push(SEC * 18, SEC * 20, 0, 0, 0, 0.);
-    exp.push(SEC * 20, SEC * 22, 8, 70, 94, 84.);
-    exp.push(SEC * 22, SEC * 24, 6, 72, 92, 81.);
+    // Currently bins without lst can not exist.
+    // exp.push(SEC * 18, SEC * 20, 0, 0, 0, 0., None);
+    exp.push(SEC * 20, SEC * 22, 8, 70, 94, 84., 82);
+    exp.push(SEC * 22, SEC * 24, 6, 72, 92, 81., 91);
     assert_eq!(got, &exp);
 }

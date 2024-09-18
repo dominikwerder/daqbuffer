@@ -30,6 +30,7 @@ pub enum CacheUsage {
     Use,
     Ignore,
     Recreate,
+    V0NoCache,
 }
 
 impl CacheUsage {
@@ -38,6 +39,7 @@ impl CacheUsage {
             CacheUsage::Use => "use",
             CacheUsage::Ignore => "ignore",
             CacheUsage::Recreate => "recreate",
+            CacheUsage::V0NoCache => "v0nocache",
         }
         .into()
     }
@@ -53,6 +55,8 @@ impl CacheUsage {
                     Ok(Some(CacheUsage::Ignore))
                 } else if k == "recreate" {
                     Ok(Some(CacheUsage::Recreate))
+                } else if k == "v0nocache" {
+                    Ok(Some(CacheUsage::V0NoCache))
                 } else {
                     Err(Error::with_msg(format!("unexpected cacheUsage {:?}", k)))?
                 }
@@ -67,6 +71,8 @@ impl CacheUsage {
             CacheUsage::Recreate
         } else if s == "use" {
             CacheUsage::Use
+        } else if s == "v0nocache" {
+            CacheUsage::V0NoCache
         } else {
             return Err(Error::with_msg(format!("can not interpret cache usage string: {}", s)));
         };
@@ -78,6 +84,7 @@ impl CacheUsage {
             CacheUsage::Use => true,
             CacheUsage::Ignore => false,
             CacheUsage::Recreate => true,
+            CacheUsage::V0NoCache => false,
         }
     }
 
@@ -86,6 +93,7 @@ impl CacheUsage {
             CacheUsage::Use => true,
             CacheUsage::Ignore => false,
             CacheUsage::Recreate => false,
+            CacheUsage::V0NoCache => false,
         }
     }
 }
