@@ -2,6 +2,7 @@ use crate::timebin::TimeBinnerCommonV0Func;
 use crate::timebin::TimeBinnerCommonV0Trait;
 use crate::ts_offs_from_abs;
 use crate::ts_offs_from_abs_with_anchor;
+use crate::vecpreview::VecPreview;
 use crate::IsoDateTime;
 use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
@@ -79,9 +80,9 @@ where
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let self_name = any::type_name::<Self>();
-        // if true {
-        //     return fmt::Display::fmt(self, fmt);
-        // }
+        if true {
+            return fmt::Display::fmt(self, fmt);
+        }
         if true {
             write!(
                 fmt,
@@ -110,60 +111,15 @@ where
     }
 }
 
-trait HasFrontBack<T> {
-    fn len(&self) -> usize;
-    fn front(&self) -> Option<&T>;
-    fn back(&self) -> Option<&T>;
-}
-
-impl<T> HasFrontBack<T> for VecDeque<T> {
-    fn len(&self) -> usize {
-        self.len()
-    }
-
-    fn front(&self) -> Option<&T> {
-        self.front()
-    }
-
-    fn back(&self) -> Option<&T> {
-        self.back()
-    }
-}
-
-struct VecPreview<'a, T> {
-    c: &'a dyn HasFrontBack<T>,
-}
-
-impl<'a, T> VecPreview<'a, T> {
-    fn new(c: &'a dyn HasFrontBack<T>) -> Self {
-        Self { c }
-    }
-}
-
-impl<'a, T> fmt::Display for VecPreview<'a, T>
-where
-    T: fmt::Display,
-{
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        if self.c.len() == 0 {
-            write!(fmt, "()")
-        } else if self.c.len() == 1 {
-            write!(fmt, "{}", self.c.front().unwrap())
-        } else {
-            write!(fmt, "{}", self.c.front().unwrap())
-        }
-    }
-}
-
 impl<NTY> fmt::Display for BinsDim0<NTY>
 where
-    NTY: fmt::Display,
+    NTY: fmt::Debug,
 {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         let self_name = any::type_name::<Self>();
         write!(
             fmt,
-            "{self_name}  {{  len: {:?},  ts1s: {},  ts2s {},  counts {},  mins {},  maxs {},  avgs {}, lsts {}  }}",
+            "{self_name}  {{  len: {:?},  ts1s: {:?},  ts2s {:?},  counts {:?},  mins {:?},  maxs {:?},  avgs {:?}, lsts {:?}  }}",
             self.len(),
             VecPreview::new(&self.ts1s),
             VecPreview::new(&self.ts2s),

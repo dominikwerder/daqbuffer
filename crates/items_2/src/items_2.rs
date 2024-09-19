@@ -20,6 +20,7 @@ pub mod test;
 pub mod testgen;
 pub mod timebin;
 pub mod transform;
+pub mod vecpreview;
 
 use channelevents::ChannelEvents;
 use futures_util::Stream;
