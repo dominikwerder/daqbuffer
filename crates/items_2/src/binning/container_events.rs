@@ -48,6 +48,7 @@ impl EventValueType for f32 {
     type AggregatorTimeWeight = AggregatorNumeric<Self>;
 }
 
+#[derive(Debug, Clone)]
 pub struct EventSingle<EVT> {
     pub ts: TsNano,
     pub val: EVT,
@@ -100,6 +101,12 @@ where
 
     pub fn ts_last(&self) -> Option<TsNano> {
         self.tss.back().map(|&x| x)
+    }
+
+    pub fn len_before(&self, end: TsNano) -> usize {
+        let pp = self.tss.partition_point(|&x| x < end);
+        assert!(pp <= self.len(), "len_before  pp {}  len {}", pp, self.len());
+        pp
     }
 
     pub fn event_next(&mut self) -> Option<EventSingle<EVT>> {
