@@ -4,6 +4,8 @@ use super::___;
 use crate::vecpreview::PreviewRange;
 use crate::vecpreview::VecPreview;
 use core::fmt;
+use err::thiserror;
+use err::ThisError;
 use netpod::TsNano;
 use serde::Deserialize;
 use serde::Serialize;
@@ -13,27 +15,48 @@ use std::collections::VecDeque;
 #[allow(unused)]
 macro_rules! trace_init { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
 
-pub trait Container: fmt::Debug + Clone + PreviewRange + Serialize + for<'a> Deserialize<'a> {
+#[derive(Debug, ThisError)]
+#[cstm(name = "ValueContainerError")]
+pub enum ValueContainerError {}
+
+pub trait Container<EVT>: fmt::Debug + Clone + PreviewRange + Serialize + for<'a> Deserialize<'a> {
     fn new() -> Self;
+    // fn verify(&self) -> Result<(), ValueContainerError>;
+    fn pop_front(&mut self) -> Option<EVT>;
 }
 
 pub trait EventValueType: fmt::Debug + Clone {
-    type Container: Container;
+    type Container: Container<Self>;
     type AggregatorTimeWeight: AggregatorTimeWeight;
 }
 
-impl<T> Container for VecDeque<T>
+impl<T> Container<T> for VecDeque<T>
 where
     T: EventValueType + Serialize + for<'a> Deserialize<'a>,
 {
     fn new() -> Self {
         VecDeque::new()
     }
+
+    fn pop_front(&mut self) -> Option<T> {
+        todo!()
+    }
 }
 
 impl EventValueType for f32 {
     type Container = VecDeque<Self>;
     type AggregatorTimeWeight = AggregatorNumeric<Self>;
+}
+
+pub struct EventSingle<EVT> {
+    pub ts: TsNano,
+    pub val: EVT,
+}
+
+#[derive(Debug, ThisError)]
+#[cstm(name = "EventsContainerError")]
+pub enum EventsContainerError {
+    Unordered,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -62,6 +85,29 @@ where
 
     pub fn len(&self) -> usize {
         self.tss.len()
+    }
+
+    pub fn verify(&self) -> Result<(), EventsContainerError> {
+        if self.tss.iter().zip(self.tss.iter().skip(1)).any(|(&a, &b)| a > b) {
+            return Err(EventsContainerError::Unordered);
+        }
+        Ok(())
+    }
+
+    pub fn ts_first(&self) -> Option<TsNano> {
+        self.tss.front().map(|&x| x)
+    }
+
+    pub fn ts_last(&self) -> Option<TsNano> {
+        self.tss.back().map(|&x| x)
+    }
+
+    pub fn event_next(&mut self) -> Option<EventSingle<EVT>> {
+        if let (Some(ts), Some(val)) = (self.tss.pop_front(), self.vals.pop_front()) {
+            Some(EventSingle { ts, val })
+        } else {
+            None
+        }
     }
 }
 
