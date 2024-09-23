@@ -691,6 +691,10 @@ impl EnumVariant {
     pub fn name_string(&self) -> String {
         self.name.clone()
     }
+
+    pub fn into_parts(self) -> (u16, String) {
+        (self.ix, self.name)
+    }
 }
 
 impl Default for EnumVariant {

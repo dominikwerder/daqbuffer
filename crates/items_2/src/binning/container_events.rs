@@ -22,30 +22,59 @@ pub enum ValueContainerError {}
 pub trait Container<EVT>: fmt::Debug + Clone + PreviewRange + Serialize + for<'a> Deserialize<'a> {
     fn new() -> Self;
     // fn verify(&self) -> Result<(), ValueContainerError>;
+    fn push_back(&mut self, val: EVT);
     fn pop_front(&mut self) -> Option<EVT>;
 }
 
 pub trait EventValueType: fmt::Debug + Clone + PartialOrd {
     type Container: Container<Self>;
-    type AggregatorTimeWeight: AggregatorTimeWeight;
+    type AggregatorTimeWeight: AggregatorTimeWeight<Self>;
+
+    fn sum_identity() -> Self;
 }
 
-impl<T> Container<T> for VecDeque<T>
+impl<EVT> Container<EVT> for VecDeque<EVT>
 where
-    T: EventValueType + Serialize + for<'a> Deserialize<'a>,
+    EVT: EventValueType + Serialize + for<'a> Deserialize<'a>,
 {
     fn new() -> Self {
         VecDeque::new()
     }
 
-    fn pop_front(&mut self) -> Option<T> {
-        todo!()
+    fn push_back(&mut self, val: EVT) {
+        self.push_back(val);
+    }
+
+    fn pop_front(&mut self) -> Option<EVT> {
+        self.pop_front()
     }
 }
 
 impl EventValueType for f32 {
     type Container = VecDeque<Self>;
     type AggregatorTimeWeight = AggregatorNumeric<Self>;
+
+    fn sum_identity() -> Self {
+        0.
+    }
+}
+
+impl EventValueType for f64 {
+    type Container = VecDeque<Self>;
+    type AggregatorTimeWeight = AggregatorNumeric<Self>;
+
+    fn sum_identity() -> Self {
+        0.
+    }
+}
+
+impl EventValueType for u64 {
+    type Container = VecDeque<Self>;
+    type AggregatorTimeWeight = AggregatorNumeric<Self>;
+
+    fn sum_identity() -> Self {
+        0
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +145,11 @@ where
             None
         }
     }
+
+    pub fn push_back(&mut self, ts: TsNano, val: EVT) {
+        self.tss.push_back(ts);
+        self.vals.push_back(val);
+    }
 }
 
 impl<EVT> fmt::Debug for ContainerEvents<EVT>
@@ -131,5 +165,53 @@ where
             VecPreview::new(&self.tss),
             VecPreview::new(&self.vals),
         )
+    }
+}
+
+pub struct ContainerEventsTakeUpTo<'a, EVT>
+where
+    EVT: EventValueType,
+{
+    evs: &'a mut ContainerEvents<EVT>,
+    len: usize,
+}
+
+impl<'a, EVT> ContainerEventsTakeUpTo<'a, EVT>
+where
+    EVT: EventValueType,
+{
+    pub fn new(evs: &'a mut ContainerEvents<EVT>, len: usize) -> Self {
+        let len = len.min(evs.len());
+        Self { evs, len }
+    }
+}
+
+impl<'a, EVT> ContainerEventsTakeUpTo<'a, EVT>
+where
+    EVT: EventValueType,
+{
+    pub fn ts_first(&self) -> Option<TsNano> {
+        self.evs.ts_first()
+    }
+
+    pub fn ts_last(&self) -> Option<TsNano> {
+        self.evs.ts_last()
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn event_next(&mut self) -> Option<EventSingle<EVT>> {
+        if self.len != 0 {
+            if let Some(ev) = self.evs.event_next() {
+                self.len -= 1;
+                Some(ev)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 }
