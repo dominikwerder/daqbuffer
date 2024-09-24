@@ -11,6 +11,7 @@ use netpod::log::*;
 use netpod::BinnedRange;
 use netpod::DtNano;
 use netpod::TsNano;
+use std::collections::VecDeque;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::Context;
@@ -147,7 +148,7 @@ where
         minmax: &mut MinMax<EVT>,
     ) -> Result<(), Error> {
         trace_ingest_event!("ingest_with_lst_gt_range_beg");
-        while let Some(ev) = evs.event_next() {
+        while let Some(ev) = evs.pop_front() {
             trace_event_next!("ingest_with_lst_ge_range_beg  {:?}", ev);
             if ev.ts <= self.active_beg {
                 panic!("should never get here");
@@ -168,7 +169,7 @@ where
         minmax: &mut MinMax<EVT>,
     ) -> Result<(), Error> {
         trace_ingest_event!("ingest_with_lst_ge_range_beg");
-        while let Some(ev) = evs.event_next() {
+        while let Some(ev) = evs.pop_front() {
             trace_event_next!("ingest_with_lst_ge_range_beg  {:?}", ev);
             if ev.ts < self.active_beg {
                 panic!("should never get here");
@@ -205,6 +206,24 @@ where
             }
         } else {
             Ok(())
+        }
+    }
+
+    // PRECONDITION: filled_until < ts <= active_end
+    fn fill_until(&mut self, ts: TsNano, lst: LstRef<EVT>) {
+        trace_cycle!("fill_until  ts {:?}", ts);
+        let b = self;
+        assert!(b.filled_until < ts);
+        assert!(ts <= b.active_end);
+        b.agg.ingest(ts.delta(b.filled_until), b.active_len, lst.0.val.clone());
+        b.filled_until = ts;
+    }
+
+    fn fill_remaining_if_space_left(&mut self, lst: LstRef<EVT>) {
+        trace_cycle!("fill_remaining_if_space_left");
+        let b = self;
+        if b.filled_until < b.active_end {
+            b.fill_until(b.active_end, lst);
         }
     }
 }
@@ -249,7 +268,7 @@ where
         if let Some(minmax) = self.minmax.as_mut() {
             self.inner_b.ingest_with_lst_minmax(evs, lst, minmax)
         } else {
-            if let Some(ev) = evs.event_next() {
+            if let Some(ev) = evs.pop_front() {
                 trace_event_next!("ingest_with_lst  {:?}", ev);
                 let beg = self.inner_b.active_beg;
                 let end = self.inner_b.active_end;
@@ -290,6 +309,7 @@ where
     lst: Option<EventSingle<EVT>>,
     range: BinnedRange<TsNano>,
     inner_a: InnerA<EVT>,
+    out: VecDeque<EVT::AggTimeWeightOutputAvg>,
 }
 
 impl<EVT> BinnedEventsTimeweight<EVT>
@@ -314,12 +334,13 @@ where
                 minmax: None,
             },
             lst: None,
+            out: VecDeque::new(),
         }
     }
 
     fn ingest_event_without_lst(&mut self, ev: EventSingle<EVT>) -> Result<(), Error> {
         if ev.ts >= self.inner_a.inner_b.active_end {
-            Err(Error::EventAfterRange)
+            panic!("should never get here");
         } else {
             trace_ingest_init_lst!("ingest_event_without_lst  set lst  {:?}", ev);
             self.lst = Some(ev.clone());
@@ -333,10 +354,10 @@ where
     }
 
     fn ingest_without_lst(&mut self, mut evs: ContainerEventsTakeUpTo<EVT>) -> Result<(), Error> {
-        if let Some(ev) = evs.event_next() {
+        if let Some(ev) = evs.pop_front() {
             trace_event_next!("ingest_without_lst  {:?}", ev);
             if ev.ts >= self.inner_a.inner_b.active_end {
-                Err(Error::EventAfterRange)
+                panic!("should never get here");
             } else {
                 self.ingest_event_without_lst(ev)?;
                 if let Some(lst) = self.lst.as_mut() {
@@ -364,6 +385,51 @@ where
         }
     }
 
+    fn cycle_01(&mut self, ts: TsNano) {
+        let b = &self.inner_a.inner_b;
+        trace_cycle!("cycle_01  {:?}  {:?}", ts, b.active_end);
+        assert!(b.active_beg < ts);
+        let div = self.range.bin_len.ns();
+        if let Some(lst) = self.lst.as_ref() {
+            loop {
+                let b = &self.inner_a.inner_b;
+                if b.filled_until >= ts {
+                    break;
+                }
+                if ts >= b.active_end {
+                    self.inner_a.inner_b.fill_remaining_if_space_left(LstRef(lst));
+                    let b = &mut self.inner_a.inner_b;
+                    {
+                        // TODO push bin to output.
+                        let res = b.agg.result_and_reset_for_new_bin();
+                        let cnt = b.cnt;
+                        b.cnt = 0;
+                    }
+                    trace_cycle!("cycle_01  filled up to {:?}  emit and reset", b.active_end);
+                    let old_end = b.active_end;
+                    let ts1 = TsNano::from_ns(b.active_end.ns() / div * div);
+                    assert!(ts1 == old_end);
+                    b.active_beg = ts1;
+                    b.active_end = ts1.add_dt_nano(b.active_len);
+                    b.filled_until = ts1;
+                    self.inner_a.minmax = Some((lst.clone(), lst.clone()));
+                } else {
+                    self.inner_a.inner_b.fill_until(ts, LstRef(lst));
+                }
+            }
+        } else {
+            let ts1 = TsNano::from_ns(ts.ns() / div * div);
+            let b = &mut self.inner_a.inner_b;
+            b.active_beg = ts1;
+            b.active_end = ts1.add_dt_nano(b.active_len);
+            b.filled_until = ts1;
+            b.cnt = 0;
+            b.agg.reset_for_new_bin();
+            assert!(self.inner_a.minmax.is_none());
+            trace_cycle!("cycled direct to  {:?}  {:?}", b.active_beg, b.active_end);
+        }
+    }
+
     pub fn ingest(&mut self, mut evs_all: ContainerEvents<EVT>) -> Result<(), Error> {
         // It is this type's task to find and store the one-before event.
         // We then pass it to the aggregation.
@@ -382,35 +448,13 @@ where
             // How to handle to not emit bins until at least some partially filled bin is encountered?
             break if let Some(ts) = evs_all.ts_first() {
                 let b = &mut self.inner_a.inner_b;
+                if ts >= self.range.nano_end() {
+                    return Err(Error::EventAfterRange);
+                }
                 if ts >= b.active_end {
                     trace_cycle!("bin edge boundary {:?}", b.active_end);
-                    if let Some(lst) = self.lst.as_ref() {
-                        trace_cycle!("fill remaining width");
-                        self.inner_a
-                            .inner_b
-                            .ingest_event_with_lst_gt_range_beg_agg(lst.clone(), LstRef(lst));
-                    } else {
-                        // nothing to do
-                    }
-                    let b = &mut self.inner_a.inner_b;
-                    if b.filled_until < b.active_beg {
-                        panic!("fille until before bin begin");
-                    } else if b.filled_until == b.active_beg {
-                        // TODO bin is meaningless
-                    } else {
-                        // TODO need the output type.
-                    }
-                    trace_cycle!("cycle bin  {:?}  {:?}", ts, b.active_end);
-                    // TODO check if the bin has content to emit: either it itself contains events, or is filled with lst value.
-                    // For the check for filled with lst I might need another flag.
-                    let div = self.range.bin_len.ns();
-                    let ts1 = TsNano::from_ns(ts.ns() / div * div);
-                    b.active_beg = ts1;
-                    b.active_end = ts1.add_dt_nano(b.active_len);
-                    b.filled_until = ts1;
-                    b.cnt = 0;
-                    b.agg.reset_for_new_bin();
-                    trace_cycle!("cycled to  {:?}  {:?}", b.active_beg, b.active_end);
+                    assert!(b.filled_until < b.active_beg);
+                    self.cycle_01(ts);
                 }
                 let n1 = evs_all.len();
                 let len_before = evs_all.len_before(self.inner_a.inner_b.active_end);
@@ -440,7 +484,9 @@ where
     }
 
     pub fn range_final(&mut self) -> Result<(), Error> {
-        todo!()
+        trace_cycle!("range_final");
+        self.cycle_01(self.range.nano_end());
+        Ok(())
     }
 }
 

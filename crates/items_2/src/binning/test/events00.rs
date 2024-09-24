@@ -53,7 +53,7 @@ fn test_bin_events_f32_simple_01() -> Result<(), Error> {
 }
 
 #[test]
-fn test_bin_events_enum_simple_00() -> Result<(), Error> {
+fn test_bin_events_enum_simple_range_final() -> Result<(), Error> {
     let beg = TsNano::from_ms(100);
     let end = TsNano::from_ms(120);
     let nano_range = NanoRange {
@@ -66,5 +66,6 @@ fn test_bin_events_enum_simple_00() -> Result<(), Error> {
     evs.push_back(TsNano::from_ms(103), EnumVariant::new(1, "one"));
     evs.push_back(TsNano::from_ms(104), EnumVariant::new(2, "two"));
     binner.ingest(evs)?;
+    binner.range_final()?;
     Ok(())
 }

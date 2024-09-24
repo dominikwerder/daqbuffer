@@ -29,8 +29,10 @@ pub trait Container<EVT>: fmt::Debug + Clone + PreviewRange + Serialize + for<'a
 pub trait EventValueType: fmt::Debug + Clone + PartialOrd {
     type Container: Container<Self>;
     type AggregatorTimeWeight: AggregatorTimeWeight<Self>;
+    type AggTimeWeightOutputAvg;
 
-    fn sum_identity() -> Self;
+    fn identity_sum() -> Self;
+    fn add_weighted(&self, add: &Self, f: f32) -> Self;
 }
 
 impl<EVT> Container<EVT> for VecDeque<EVT>
@@ -53,27 +55,42 @@ where
 impl EventValueType for f32 {
     type Container = VecDeque<Self>;
     type AggregatorTimeWeight = AggregatorNumeric<Self>;
+    type AggTimeWeightOutputAvg = <Self::AggregatorTimeWeight as AggregatorTimeWeight<Self>>::OutputAvg;
 
-    fn sum_identity() -> Self {
+    fn identity_sum() -> Self {
         0.
+    }
+
+    fn add_weighted(&self, add: &Self, f: f32) -> Self {
+        todo!()
     }
 }
 
 impl EventValueType for f64 {
     type Container = VecDeque<Self>;
     type AggregatorTimeWeight = AggregatorNumeric<Self>;
+    type AggTimeWeightOutputAvg = <Self::AggregatorTimeWeight as AggregatorTimeWeight<Self>>::OutputAvg;
 
-    fn sum_identity() -> Self {
+    fn identity_sum() -> Self {
         0.
+    }
+
+    fn add_weighted(&self, add: &Self, f: f32) -> Self {
+        todo!()
     }
 }
 
 impl EventValueType for u64 {
     type Container = VecDeque<Self>;
     type AggregatorTimeWeight = AggregatorNumeric<Self>;
+    type AggTimeWeightOutputAvg = <Self::AggregatorTimeWeight as AggregatorTimeWeight<Self>>::OutputAvg;
 
-    fn sum_identity() -> Self {
+    fn identity_sum() -> Self {
         0
+    }
+
+    fn add_weighted(&self, add: &Self, f: f32) -> Self {
+        todo!()
     }
 }
 
@@ -138,7 +155,7 @@ where
         pp
     }
 
-    pub fn event_next(&mut self) -> Option<EventSingle<EVT>> {
+    pub fn pop_front(&mut self) -> Option<EventSingle<EVT>> {
         if let (Some(ts), Some(val)) = (self.tss.pop_front(), self.vals.pop_front()) {
             Some(EventSingle { ts, val })
         } else {
@@ -202,9 +219,9 @@ where
         self.len
     }
 
-    pub fn event_next(&mut self) -> Option<EventSingle<EVT>> {
+    pub fn pop_front(&mut self) -> Option<EventSingle<EVT>> {
         if self.len != 0 {
-            if let Some(ev) = self.evs.event_next() {
+            if let Some(ev) = self.evs.pop_front() {
                 self.len -= 1;
                 Some(ev)
             } else {

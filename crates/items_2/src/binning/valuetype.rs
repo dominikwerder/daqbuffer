@@ -1,4 +1,5 @@
 use super::aggregator::AggregatorTimeWeight;
+use super::binnedvaluetype::BinnedNumericValue;
 use super::container_events::Container;
 use super::container_events::EventValueType;
 use crate::vecpreview::PreviewRange;
@@ -48,27 +49,41 @@ pub struct EnumVariantAggregatorTimeWeight {
 }
 
 impl AggregatorTimeWeight<EnumVariant> for EnumVariantAggregatorTimeWeight {
+    type OutputAvg = f32;
+
     fn new() -> Self {
         Self { sum: 0. }
     }
 
-    fn reset_for_new_bin(&mut self) {
-        self.sum = 0.
-    }
-
     fn ingest(&mut self, dt: DtNano, bl: DtNano, val: EnumVariant) {
         let f = dt.ns() as f32 / bl.ns() as f32;
-        eprintln!("INGEST  {}  {:?}", f, val);
-        let h = items_0::scalar_ops::AsPrimF32::as_prim_f32_b(&val);
-        self.sum += f * h;
+        eprintln!("INGEST ENUM  {}  {:?}", f, val);
+        self.sum += f * val.ix() as f32;
+    }
+
+    fn reset_for_new_bin(&mut self) {
+        self.sum = f32::identity_sum();
+    }
+
+    fn result_and_reset_for_new_bin(&mut self) -> Self::OutputAvg {
+        let ret = self.sum.clone();
+        self.sum = f32::identity_sum();
+        ret
     }
 }
 
 impl EventValueType for EnumVariant {
     type Container = EnumVariantContainer;
     type AggregatorTimeWeight = EnumVariantAggregatorTimeWeight;
+    type AggTimeWeightOutputAvg = <Self::AggregatorTimeWeight as AggregatorTimeWeight<Self>>::OutputAvg;
 
-    fn sum_identity() -> Self {
+    // TODO remove this from trait, only needed for common numeric cases but not in general.
+    fn identity_sum() -> Self {
+        todo!()
+    }
+
+    // TODO also remove from trait, push it to a more specialized trait for the plain numeric cases.
+    fn add_weighted(&self, add: &Self, f: f32) -> Self {
         todo!()
     }
 }
