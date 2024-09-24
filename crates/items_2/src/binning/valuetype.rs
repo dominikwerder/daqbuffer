@@ -49,8 +49,6 @@ pub struct EnumVariantAggregatorTimeWeight {
 }
 
 impl AggregatorTimeWeight<EnumVariant> for EnumVariantAggregatorTimeWeight {
-    type OutputAvg = f32;
-
     fn new() -> Self {
         Self { sum: 0. }
     }
@@ -65,7 +63,7 @@ impl AggregatorTimeWeight<EnumVariant> for EnumVariantAggregatorTimeWeight {
         self.sum = f32::identity_sum();
     }
 
-    fn result_and_reset_for_new_bin(&mut self) -> Self::OutputAvg {
+    fn result_and_reset_for_new_bin(&mut self) -> <EnumVariant as EventValueType>::AggTimeWeightOutputAvg {
         let ret = self.sum.clone();
         self.sum = f32::identity_sum();
         ret
@@ -75,7 +73,7 @@ impl AggregatorTimeWeight<EnumVariant> for EnumVariantAggregatorTimeWeight {
 impl EventValueType for EnumVariant {
     type Container = EnumVariantContainer;
     type AggregatorTimeWeight = EnumVariantAggregatorTimeWeight;
-    type AggTimeWeightOutputAvg = <Self::AggregatorTimeWeight as AggregatorTimeWeight<Self>>::OutputAvg;
+    type AggTimeWeightOutputAvg = f32;
 
     // TODO remove this from trait, only needed for common numeric cases but not in general.
     fn identity_sum() -> Self {

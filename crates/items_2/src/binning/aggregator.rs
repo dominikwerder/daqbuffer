@@ -1,101 +1,107 @@
-use super::binnedvaluetype::BinnedNumericValue;
-use super::binnedvaluetype::BinnedValueType;
 use super::container_events::EventValueType;
+use core::fmt;
 use netpod::DtNano;
+use serde::Deserialize;
+use serde::Serialize;
+
+pub trait AggTimeWeightOutputAvg: fmt::Debug + Clone + Serialize + for<'a> Deserialize<'a> {}
+
+impl AggTimeWeightOutputAvg for u64 {}
+
+impl AggTimeWeightOutputAvg for f32 {}
+
+impl AggTimeWeightOutputAvg for f64 {}
 
 pub trait AggregatorTimeWeight<EVT>
 where
     EVT: EventValueType,
 {
-    type OutputAvg;
-
     fn new() -> Self;
     fn ingest(&mut self, dt: DtNano, bl: DtNano, val: EVT);
     fn reset_for_new_bin(&mut self);
-    fn result_and_reset_for_new_bin(&mut self) -> Self::OutputAvg;
+    fn result_and_reset_for_new_bin(&mut self) -> EVT::AggTimeWeightOutputAvg;
 }
 
-pub struct AggregatorNumeric<EVT> {
-    sum: EVT,
+pub struct AggregatorNumeric {
+    sum: f64,
 }
 
-trait AggWithSame: EventValueType {}
+trait AggWithF64: EventValueType<AggTimeWeightOutputAvg = f64> {
+    fn as_f64(&self) -> f64;
+}
 
-impl AggWithSame for f64 {}
+impl AggWithF64 for f64 {
+    fn as_f64(&self) -> f64 {
+        *self
+    }
+}
 
-impl<EVT> AggregatorTimeWeight<EVT> for AggregatorNumeric<EVT>
+impl<EVT> AggregatorTimeWeight<EVT> for AggregatorNumeric
 where
-    EVT: AggWithSame,
+    EVT: AggWithF64,
 {
-    type OutputAvg = EVT;
-
     fn new() -> Self {
-        Self {
-            sum: EVT::identity_sum(),
-        }
+        Self { sum: 0. }
     }
 
     fn ingest(&mut self, dt: DtNano, bl: DtNano, val: EVT) {
-        let f = dt.ns() as f32 / bl.ns() as f32;
+        let f = dt.ns() as f64 / bl.ns() as f64;
         eprintln!("INGEST  {}  {:?}", f, val);
-        self.sum.add_weighted(&val, f);
+        self.sum += f * val.as_f64();
     }
 
     fn reset_for_new_bin(&mut self) {
-        self.sum = EVT::identity_sum();
+        self.sum = 0.;
     }
 
-    fn result_and_reset_for_new_bin(&mut self) -> Self::OutputAvg {
+    fn result_and_reset_for_new_bin(&mut self) -> EVT::AggTimeWeightOutputAvg {
+        // fn result_and_reset_for_new_bin(&mut self) -> f64 {
         let ret = self.sum.clone();
-        self.sum = EVT::identity_sum();
+        self.sum = 0.;
         ret
     }
 }
 
-impl AggregatorTimeWeight<f32> for AggregatorNumeric<f32> {
-    type OutputAvg = f32;
-
+impl AggregatorTimeWeight<f32> for AggregatorNumeric {
     fn new() -> Self {
-        Self {
-            sum: f32::identity_sum(),
-        }
+        Self { sum: 0. }
     }
 
     fn ingest(&mut self, dt: DtNano, bl: DtNano, val: f32) {
-        let f = dt.ns() as f32 / bl.ns() as f32;
+        let f = dt.ns() as f64 / bl.ns() as f64;
         eprintln!("INGEST  {}  {}", f, val);
-        self.sum += f * val;
+        self.sum += f * val as f64;
     }
 
     fn reset_for_new_bin(&mut self) {
-        self.sum = f32::identity_sum();
+        self.sum = 0.;
     }
 
-    fn result_and_reset_for_new_bin(&mut self) -> Self::OutputAvg {
+    fn result_and_reset_for_new_bin(&mut self) -> f64 {
         let ret = self.sum.clone();
-        self.sum = f32::identity_sum();
+        self.sum = 0.;
         ret
     }
 }
 
-impl AggregatorTimeWeight<u64> for AggregatorNumeric<u64> {
-    type OutputAvg = u64;
-
+impl AggregatorTimeWeight<u64> for AggregatorNumeric {
     fn new() -> Self {
-        todo!()
+        Self { sum: 0. }
     }
 
     fn ingest(&mut self, dt: DtNano, bl: DtNano, val: u64) {
-        todo!()
+        let f = dt.ns() as f64 / bl.ns() as f64;
+        eprintln!("INGEST  {}  {}", f, val);
+        self.sum += f * val as f64;
     }
 
     fn reset_for_new_bin(&mut self) {
-        self.sum = u64::identity_sum();
+        self.sum = 0.;
     }
 
-    fn result_and_reset_for_new_bin(&mut self) -> Self::OutputAvg {
+    fn result_and_reset_for_new_bin(&mut self) -> f64 {
         let ret = self.sum.clone();
-        self.sum = u64::identity_sum();
+        self.sum = 0.;
         ret
     }
 }

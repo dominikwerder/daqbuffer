@@ -67,5 +67,7 @@ fn test_bin_events_enum_simple_range_final() -> Result<(), Error> {
     evs.push_back(TsNano::from_ms(104), EnumVariant::new(2, "two"));
     binner.ingest(evs)?;
     binner.range_final()?;
+    let bins = binner.output();
+    eprintln!("{:?}", bins);
     Ok(())
 }

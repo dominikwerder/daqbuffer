@@ -1,3 +1,4 @@
+use super::aggregator::AggTimeWeightOutputAvg;
 use super::aggregator::AggregatorNumeric;
 use super::aggregator::AggregatorTimeWeight;
 use super::___;
@@ -29,7 +30,7 @@ pub trait Container<EVT>: fmt::Debug + Clone + PreviewRange + Serialize + for<'a
 pub trait EventValueType: fmt::Debug + Clone + PartialOrd {
     type Container: Container<Self>;
     type AggregatorTimeWeight: AggregatorTimeWeight<Self>;
-    type AggTimeWeightOutputAvg;
+    type AggTimeWeightOutputAvg: AggTimeWeightOutputAvg;
 
     fn identity_sum() -> Self;
     fn add_weighted(&self, add: &Self, f: f32) -> Self;
@@ -54,8 +55,8 @@ where
 
 impl EventValueType for f32 {
     type Container = VecDeque<Self>;
-    type AggregatorTimeWeight = AggregatorNumeric<Self>;
-    type AggTimeWeightOutputAvg = <Self::AggregatorTimeWeight as AggregatorTimeWeight<Self>>::OutputAvg;
+    type AggregatorTimeWeight = AggregatorNumeric;
+    type AggTimeWeightOutputAvg = f64;
 
     fn identity_sum() -> Self {
         0.
@@ -68,8 +69,8 @@ impl EventValueType for f32 {
 
 impl EventValueType for f64 {
     type Container = VecDeque<Self>;
-    type AggregatorTimeWeight = AggregatorNumeric<Self>;
-    type AggTimeWeightOutputAvg = <Self::AggregatorTimeWeight as AggregatorTimeWeight<Self>>::OutputAvg;
+    type AggregatorTimeWeight = AggregatorNumeric;
+    type AggTimeWeightOutputAvg = f64;
 
     fn identity_sum() -> Self {
         0.
@@ -82,8 +83,8 @@ impl EventValueType for f64 {
 
 impl EventValueType for u64 {
     type Container = VecDeque<Self>;
-    type AggregatorTimeWeight = AggregatorNumeric<Self>;
-    type AggTimeWeightOutputAvg = <Self::AggregatorTimeWeight as AggregatorTimeWeight<Self>>::OutputAvg;
+    type AggregatorTimeWeight = AggregatorNumeric;
+    type AggTimeWeightOutputAvg = f64;
 
     fn identity_sum() -> Self {
         0

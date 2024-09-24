@@ -1,6 +1,7 @@
 use super::super::container_events::EventValueType;
 use super::___;
 use crate::binning::aggregator::AggregatorTimeWeight;
+use crate::binning::container_bins::ContainerBins;
 use crate::binning::container_events::ContainerEvents;
 use crate::binning::container_events::ContainerEventsTakeUpTo;
 use crate::binning::container_events::EventSingle;
@@ -309,7 +310,7 @@ where
     lst: Option<EventSingle<EVT>>,
     range: BinnedRange<TsNano>,
     inner_a: InnerA<EVT>,
-    out: VecDeque<EVT::AggTimeWeightOutputAvg>,
+    out: ContainerBins<EVT>,
 }
 
 impl<EVT> BinnedEventsTimeweight<EVT>
@@ -334,7 +335,7 @@ where
                 minmax: None,
             },
             lst: None,
-            out: VecDeque::new(),
+            out: ContainerBins::new(),
         }
     }
 
@@ -399,11 +400,24 @@ where
                 if ts >= b.active_end {
                     self.inner_a.inner_b.fill_remaining_if_space_left(LstRef(lst));
                     let b = &mut self.inner_a.inner_b;
+                    let minmax = self.inner_a.minmax.get_or_insert_with(|| {
+                        trace_cycle!("cycle_01  minmax not yet set");
+                        (lst.clone(), lst.clone())
+                    });
                     {
                         // TODO push bin to output.
                         let res = b.agg.result_and_reset_for_new_bin();
                         let cnt = b.cnt;
                         b.cnt = 0;
+                        self.out.push_back(
+                            b.active_beg,
+                            b.active_end,
+                            b.cnt,
+                            minmax.0.val.clone(),
+                            minmax.1.val.clone(),
+                            res,
+                            lst.val.clone(),
+                        );
                     }
                     trace_cycle!("cycle_01  filled up to {:?}  emit and reset", b.active_end);
                     let old_end = b.active_end;
@@ -487,6 +501,10 @@ where
         trace_cycle!("range_final");
         self.cycle_01(self.range.nano_end());
         Ok(())
+    }
+
+    pub fn output(&mut self) -> ContainerBins<EVT> {
+        ::core::mem::replace(&mut self.out, ContainerBins::new())
     }
 }
 

@@ -52,7 +52,7 @@ where
     cnts: VecDeque<u64>,
     mins: VecDeque<EVT>,
     maxs: VecDeque<EVT>,
-    avgs: VecDeque<f32>,
+    avgs: VecDeque<EVT::AggTimeWeightOutputAvg>,
     lsts: VecDeque<EVT>,
 }
 
@@ -118,10 +118,24 @@ where
         todo!()
     }
 
-    // pub fn push_back(&mut self, ts1: TsNano, val: EVT) {
-    //     self.tss.push_back(ts);
-    //     self.vals.push_back(val);
-    // }
+    pub fn push_back(
+        &mut self,
+        ts1: TsNano,
+        ts2: TsNano,
+        cnt: u64,
+        min: EVT,
+        max: EVT,
+        avg: EVT::AggTimeWeightOutputAvg,
+        lst: EVT,
+    ) {
+        self.ts1s.push_back(ts1);
+        self.ts2s.push_back(ts2);
+        self.cnts.push_back(cnt);
+        self.mins.push_back(min);
+        self.maxs.push_back(max);
+        self.avgs.push_back(avg);
+        self.lsts.push_back(lst);
+    }
 }
 
 impl<EVT> fmt::Debug for ContainerBins<EVT>
