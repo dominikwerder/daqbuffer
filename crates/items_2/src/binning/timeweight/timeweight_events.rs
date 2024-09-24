@@ -407,8 +407,6 @@ where
                     {
                         // TODO push bin to output.
                         let res = b.agg.result_and_reset_for_new_bin();
-                        let cnt = b.cnt;
-                        b.cnt = 0;
                         self.out.push_back(
                             b.active_beg,
                             b.active_end,
@@ -426,6 +424,7 @@ where
                     b.active_beg = ts1;
                     b.active_end = ts1.add_dt_nano(b.active_len);
                     b.filled_until = ts1;
+                    b.cnt = 0;
                     self.inner_a.minmax = Some((lst.clone(), lst.clone()));
                 } else {
                     self.inner_a.inner_b.fill_until(ts, LstRef(lst));
