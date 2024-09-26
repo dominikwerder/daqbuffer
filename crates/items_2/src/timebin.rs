@@ -14,7 +14,10 @@ use std::ops::Range;
 macro_rules! trace_init { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_ingest { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
+macro_rules! trace_ingest_item { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
+
+#[allow(unused)]
+macro_rules! trace_ingest_event { ($($arg:tt)*) => ( if false { trace!($($arg)*); }) }
 
 #[allow(unused)]
 macro_rules! trace_ingest_detail { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
@@ -41,7 +44,7 @@ impl TimeBinnerCommonV0Func {
         B: TimeBinnerCommonV0Trait,
     {
         let self_name = B::type_name();
-        trace_ingest!(
+        trace_ingest_item!(
             "TimeBinner for {} ingest  common_range_current {:?}  item {:?}",
             self_name,
             binner.common_range_current(),
@@ -56,20 +59,20 @@ impl TimeBinnerCommonV0Func {
         // Or consume the input data.
         loop {
             while item.starts_after(B::common_range_current(binner)) {
-                trace_ingest!("{self_name}  ignore item and cycle  starts_after");
+                trace_ingest_item!("{self_name}  ignore item and cycle  starts_after");
                 TimeBinnerCommonV0Func::cycle(binner);
                 if !B::common_has_more_range(binner) {
                     debug!("{self_name}  no more bin in edges after starts_after");
                     return;
                 }
             }
-            // if item.ends_before(B::common_range_current(binner)) {
-            //     trace_ingest_item!("{self_name}  ignore item  ends_before");
-            //     return;
-            // }
+            if item.ends_before(B::common_range_current(binner)) {
+                trace_ingest_item!("{self_name}  ignore item  ends_before");
+                return;
+            }
             {
                 if !B::common_has_more_range(binner) {
-                    trace_ingest!("{self_name}  no more bin in edges");
+                    trace_ingest_item!("{self_name}  no more bin in edges");
                     return;
                 } else {
                     if let Some(item) = item
@@ -78,10 +81,10 @@ impl TimeBinnerCommonV0Func {
                         .downcast_mut::<B::Input>()
                     {
                         // TODO collect statistics associated with this request:
-                        trace_ingest!("{self_name}  FEED THE ITEM...");
+                        trace_ingest_item!("{self_name}  FEED THE ITEM...");
                         TimeBinnerCommonV0Func::agg_ingest(binner, item);
                         if item.ends_after(B::common_range_current(binner)) {
-                            trace_ingest!(
+                            trace_ingest_item!(
                                 "{self_name}  FED ITEM, ENDS AFTER  agg-range {:?}",
                                 B::common_range_current(binner)
                             );
@@ -90,10 +93,10 @@ impl TimeBinnerCommonV0Func {
                                 warn!("{self_name}  no more bin in edges after ingest and cycle");
                                 return;
                             } else {
-                                trace_ingest!("{self_name}  item fed, cycled, continue");
+                                trace_ingest_item!("{self_name}  item fed, cycled, continue");
                             }
                         } else {
-                            trace_ingest!("{self_name}  item fed, break");
+                            trace_ingest_item!("{self_name}  item fed, break");
                             break;
                         }
                     } else {
@@ -121,7 +124,7 @@ impl TimeBinnerCommonV0Func {
         B: TimeBinnerCommonV0Trait,
     {
         let self_name = B::type_name();
-        trace_ingest!("{self_name}::push_in_progress  push_empty {push_empty}");
+        trace_ingest_item!("{self_name}::push_in_progress  push_empty {push_empty}");
         // TODO expand should be derived from AggKind. Is it still required after all?
         // TODO here, the expand means that agg will assume that the current value is kept constant during
         // the rest of the time range.
@@ -145,7 +148,7 @@ impl TimeBinnerCommonV0Func {
         B: TimeBinnerCommonV0Trait,
     {
         let self_name = any::type_name::<Self>();
-        trace_ingest!("{self_name}::cycle");
+        trace_ingest_item!("{self_name}::cycle");
         // TODO refactor this logic.
         let n = TimeBinnerCommonV0Trait::common_bins_ready_count(binner);
         TimeBinnerCommonV0Func::push_in_progress(binner, true);
@@ -203,18 +206,19 @@ impl ChooseIndicesForTimeBinEvents {
         let mut k = tss.len();
         for (i1, &ts) in tss.iter().enumerate() {
             if ts >= end {
-                trace_ingest!("{self_name} ingest  {:6}  {:20}  AFTER", i1, ts);
+                trace_ingest_event!("{self_name} ingest  {:6}  {:20}  AFTER", i1, ts);
                 // TODO count all the ignored events for stats
                 k = i1;
                 break;
             } else if ts >= beg {
-                trace_ingest!("{self_name} ingest  {:6}  {:20}  INSIDE", i1, ts);
+                trace_ingest_event!("{self_name} ingest  {:6}  {:20}  INSIDE", i1, ts);
             } else {
-                trace_ingest!("{self_name} ingest  {:6}  {:20}  BEFORE", i1, ts);
+                trace_ingest_event!("{self_name} ingest  {:6}  {:20}  BEFORE", i1, ts);
                 one_before = Some(i1);
                 j = i1 + 1;
             }
         }
+        trace_ingest_item!("{self_name}  chosen {one_before:?} {j:?} {k:?}");
         (one_before, j, k)
     }
 }
@@ -239,7 +243,7 @@ impl TimeAggregatorCommonV0Func {
         let self_name = B::type_name();
         // TODO
         let items_seen = 777;
-        trace_ingest!(
+        trace_ingest_item!(
             "{self_name}::ingest_unweight  item len {}  items_seen {}",
             item.len(),
             items_seen
@@ -266,7 +270,7 @@ impl TimeAggregatorCommonV0Func {
         let self_name = B::type_name();
         // TODO
         let items_seen = 777;
-        trace_ingest!(
+        trace_ingest_item!(
             "{self_name}::ingest_time_weight  item len {}  items_seen {}",
             item.len(),
             items_seen

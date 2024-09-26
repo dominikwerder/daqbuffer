@@ -31,6 +31,46 @@ the key `continueAt` which indicates that the response is incomplete and that th
 issue another request with `begDate` as given by `continueAt`.
 
 
+By default, or explicitly with `Accept: application/json` the response will be a json object.
+
+Example response:
+```json
+{
+  "tsAnchor": 1727336613,
+  "tsMs": [
+    3,
+    13,
+    23,
+    33
+  ],
+  "tsNs": [
+    80998,
+    80999,
+    81000,
+    81001
+  ],
+  "pulseAnchor": 22238080000,
+  "pulseOff": [
+    998,
+    999,
+    1000,
+    1001
+  ],
+  "values": [
+    -0.005684227774617943,
+    -0.0056660833356960184,
+    -0.005697272133280464,
+    -0.005831689871131955
+  ]
+}
+```
+
+The timestamp of each event is `TIMESTAMP = ANCHOR + MILLIS + NANOS`.
+
+Note: the field `tsNs` may be omitted in the response if they are all zero.
+
+
+
 ## Events as framed JSON stream
 
 To download larger amounts data as JSON it is recommended to use the `json-framed` content encoding.

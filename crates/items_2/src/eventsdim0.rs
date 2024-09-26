@@ -57,19 +57,19 @@ use std::fmt;
 use std::mem;
 
 #[allow(unused)]
-macro_rules! trace_init { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
+macro_rules! trace_init { ($($arg:tt)*) => ( if false { trace!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_ingest { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
+macro_rules! trace_ingest { ($($arg:tt)*) => ( if false { trace!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_ingest_item { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
+macro_rules! trace_ingest_item { ($($arg:tt)*) => ( if false { trace!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace2 { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
+macro_rules! trace2 { ($($arg:tt)*) => ( if false { trace!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_binning { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
+macro_rules! trace_binning { ($($arg:tt)*) => ( if false { trace!($($arg)*); }) }
 
 #[allow(unused)]
 macro_rules! debug_ingest { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
@@ -588,6 +588,11 @@ impl<STY: ScalarOps> TimeAggregatorCommonV0Trait for EventsDim0Aggregator<STY> {
             }
             self.count += 1;
             self.last_ts = ts;
+            if let Some(minmaxlst) = self.minmaxlst.as_mut() {
+                minmaxlst.2 = val.clone();
+            } else {
+                self.minmaxlst = Some((val.clone(), val.clone(), val.clone()));
+            }
         }
     }
 }

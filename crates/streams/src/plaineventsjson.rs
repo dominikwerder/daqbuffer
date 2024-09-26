@@ -1,4 +1,5 @@
 use crate::collect::Collect;
+use crate::collect::CollectResult;
 use crate::firsterr::non_empty;
 use crate::firsterr::only_first_err;
 use crate::json_stream::events_stream_to_json_stream;
@@ -34,7 +35,7 @@ pub async fn plain_events_json(
     ctx: &ReqCtx,
     _cluster: &Cluster,
     open_bytes: OpenBoxedBytesStreamsBox,
-) -> Result<JsonValue, Error> {
+) -> Result<CollectResult<JsonValue>, Error> {
     debug!("plain_events_json  evquery {:?}", evq);
     let deadline = Instant::now() + evq.timeout().unwrap_or(Duration::from_millis(4000));
 
@@ -93,9 +94,14 @@ pub async fn plain_events_json(
     .await
     .map_err(Error::Collect)?;
     debug!("plain_events_json  collected");
-    let jsval = serde_json::to_value(&collected)?;
-    debug!("plain_events_json  json serialized");
-    Ok(jsval)
+    if let CollectResult::Some(x) = collected {
+        let jsval = serde_json::to_value(&x)?;
+        debug!("plain_events_json  json serialized");
+        Ok(CollectResult::Some(jsval))
+    } else {
+        debug!("plain_events_json  timeout");
+        Ok(CollectResult::Timeout)
+    }
 }
 
 pub async fn plain_events_json_stream(

@@ -285,7 +285,7 @@ items_0::impl_range_overlap_info_bins!(BinsDim0);
 
 impl<NTY: ScalarOps> AppendEmptyBin for BinsDim0<NTY> {
     fn append_empty_bin(&mut self, ts1: u64, ts2: u64) {
-        error!("AppendEmptyBin::append_empty_bin  should not get used");
+        debug!("AppendEmptyBin::append_empty_bin  should not get used");
         self.ts1s.push_back(ts1);
         self.ts2s.push_back(ts2);
         self.cnts.push_back(0);
@@ -298,7 +298,7 @@ impl<NTY: ScalarOps> AppendEmptyBin for BinsDim0<NTY> {
 
 impl<NTY: ScalarOps> AppendAllFrom for BinsDim0<NTY> {
     fn append_all_from(&mut self, src: &mut Self) {
-        error!("AppendAllFrom::append_all_from  should not get used");
+        debug!("AppendAllFrom::append_all_from  should not get used");
         self.ts1s.extend(src.ts1s.drain(..));
         self.ts2s.extend(src.ts2s.drain(..));
         self.cnts.extend(src.cnts.drain(..));

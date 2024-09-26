@@ -19,6 +19,7 @@ use http::StatusCode;
 use httpclient::body_empty;
 use httpclient::body_stream;
 use httpclient::error_response;
+use httpclient::error_status_response;
 use httpclient::IntoBody;
 use httpclient::Requ;
 use httpclient::StreamBody;
@@ -37,6 +38,7 @@ use netpod::HEADER_NAME_REQUEST_ID;
 use nodenet::client::OpenBoxedBytesViaHttp;
 use query::api4::events::PlainEventsQuery;
 use std::sync::Arc;
+use streams::collect::CollectResult;
 use streams::instrument::InstrumentStream;
 use tracing::Instrument;
 
@@ -238,12 +240,24 @@ async fn plain_events_json(
             return Err(e.into());
         }
     };
-    let ret = response(StatusCode::OK)
-        .header(CONTENT_TYPE, APP_JSON)
-        .header(HEADER_NAME_REQUEST_ID, ctx.reqid())
-        .body(ToJsonBody::from(&item).into_body())?;
-    debug!("{self_name}  response created");
-    Ok(ret)
+    match item {
+        CollectResult::Some(item) => {
+            let ret = response(StatusCode::OK)
+                .header(CONTENT_TYPE, APP_JSON)
+                .header(HEADER_NAME_REQUEST_ID, ctx.reqid())
+                .body(ToJsonBody::from(&item).into_body())?;
+            debug!("{self_name}  response created");
+            Ok(ret)
+        }
+        CollectResult::Timeout => {
+            let ret = error_status_response(
+                StatusCode::GATEWAY_TIMEOUT,
+                format!("no data within timeout"),
+                ctx.reqid(),
+            );
+            Ok(ret)
+        }
+    }
 }
 
 fn bytes_chunks_to_framed<S, T>(stream: S) -> impl Stream<Item = Result<Bytes, crate::err::Error>>

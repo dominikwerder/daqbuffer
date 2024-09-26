@@ -41,6 +41,11 @@ macro_rules! trace4 {
     ($($arg:tt)*) => (eprintln!($($arg)*));
 }
 
+pub enum CollectResult<T> {
+    Timeout,
+    Some(T),
+}
+
 pub struct Collect {
     inp: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>>,
     events_max: u64,
@@ -156,7 +161,7 @@ impl Collect {
 }
 
 impl Future for Collect {
-    type Output = Result<Box<dyn Collected>, Error>;
+    type Output = Result<CollectResult<Box<dyn Collected>>, Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         use Poll::*;
@@ -177,14 +182,13 @@ impl Future for Collect {
                     Some(mut coll) => match coll.result(self.range.clone(), self.binrange.clone()) {
                         Ok(res) => {
                             //info!("collect stats total duration: {:?}", total_duration);
-                            Ready(Ok(res))
+                            Ready(Ok(CollectResult::Some(res)))
                         }
                         Err(e) => Ready(Err(e)),
                     },
                     None => {
-                        let e = Error::with_msg_no_trace(format!("no result because no collector was created"));
-                        error!("{e}");
-                        Ready(Err(e))
+                        debug!("no result because no collector was created");
+                        Ready(Ok(CollectResult::Timeout))
                     }
                 }
             } else {
@@ -245,7 +249,7 @@ where
                     info!("collect_in_span  call  set_timed_out");
                     coll.set_timed_out();
                 } else {
-                    warn!("collect timeout but no collector yet");
+                    warn!("collect_in_span  collect timeout but no collector yet");
                 }
                 break;
             }
@@ -258,11 +262,11 @@ where
                         if let Some(coll) = collector.as_mut() {
                             coll.set_range_complete();
                         } else {
-                            warn!("collect received RangeComplete but no collector yet");
+                            warn!("collect_in_span  received RangeComplete but no collector yet");
                         }
                     }
                     RangeCompletableItem::Data(mut item) => {
-                        trace!("collect sees len {}", item.len());
+                        trace!("collect_in_span  sees len {}", item.len());
                         if collector.is_none() {
                             let c = item.new_collector();
                             collector = Some(c);
@@ -278,10 +282,10 @@ where
                     }
                 },
                 StreamItem::Log(item) => {
-                    trace!("collect log {:?}", item);
+                    trace!("collect_in_span  log {:?}", item);
                 }
                 StreamItem::Stats(item) => {
-                    trace!("collect stats {:?}", item);
+                    trace!("collect_in_span  stats {:?}", item);
                     match item {
                         // TODO factor and simplify the stats collection:
                         StatsItem::EventDataReadStats(_) => {}
@@ -313,9 +317,9 @@ where
     let _ = range_complete;
     let _ = timed_out;
     let res = collector
-        .ok_or_else(|| Error::with_msg_no_trace(format!("no result because no collector was created")))?
+        .ok_or_else(|| Error::with_msg_no_trace(format!("no result, no collector created")))?
         .result(range, binrange)?;
-    info!("collect stats total duration: {:?}", total_duration);
+    info!("collect_in_span  stats total duration: {:?}", total_duration);
     Ok(res)
 }
 

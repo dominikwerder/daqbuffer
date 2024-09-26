@@ -1,4 +1,5 @@
 use crate::collect::Collect;
+use crate::collect::CollectResult;
 use crate::json_stream::JsonBytes;
 use crate::json_stream::JsonStream;
 use crate::rangefilter2::RangeFilter2;
@@ -316,7 +317,7 @@ async fn timebinned_stream(
     events_read_provider: Option<Arc<dyn EventsReadProvider>>,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>, Error> {
     use netpod::query::CacheUsage;
-    let cache_usage = query.cache_usage().unwrap_or(CacheUsage::Use);
+    let cache_usage = query.cache_usage().unwrap_or(CacheUsage::V0NoCache);
     match (
         ch_conf.series(),
         cache_usage.clone(),
@@ -413,7 +414,7 @@ pub async fn timebinned_json(
     open_bytes: OpenBoxedBytesStreamsBox,
     cache_read_provider: Option<Arc<dyn CacheReadProvider>>,
     events_read_provider: Option<Arc<dyn EventsReadProvider>>,
-) -> Result<JsonValue, Error> {
+) -> Result<CollectResult<JsonValue>, Error> {
     let deadline = Instant::now()
         + query
             .timeout_content()
@@ -438,19 +439,24 @@ pub async fn timebinned_json(
     let collected = Collect::new(stream, deadline, collect_max, bytes_max, None, Some(binned_range));
     let collected: BoxFuture<_> = Box::pin(collected);
     let collres = collected.await?;
-    info!("timebinned_json collected type_name {:?}", collres.type_name());
-    let collres = if let Some(bins) = collres
-        .as_any_ref()
-        .downcast_ref::<items_2::binsdim0::BinsDim0CollectedResult<netpod::EnumVariant>>()
-    {
-        warn!("unexpected binned enum");
-        // bins.boxed_collected_with_enum_fix()
-        collres
-    } else {
-        collres
-    };
-    let jsval = serde_json::to_value(&collres)?;
-    Ok(jsval)
+    match collres {
+        CollectResult::Some(collres) => {
+            let collres = if let Some(bins) = collres
+                .as_any_ref()
+                .downcast_ref::<items_2::binsdim0::BinsDim0CollectedResult<netpod::EnumVariant>>()
+            {
+                debug!("unexpected binned enum");
+                // bins.boxed_collected_with_enum_fix()
+                collres
+            } else {
+                debug!("timebinned_json collected type_name {:?}", collres.type_name());
+                collres
+            };
+            let jsval = serde_json::to_value(&collres)?;
+            Ok(CollectResult::Some(jsval))
+        }
+        CollectResult::Timeout => Ok(CollectResult::Timeout),
+    }
 }
 
 fn take_collector_result(coll: &mut Box<dyn items_0::collect_s::Collector>) -> Option<serde_json::Value> {

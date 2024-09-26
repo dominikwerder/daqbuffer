@@ -1,4 +1,5 @@
 use crate::collect::Collect;
+use crate::collect::CollectResult;
 use crate::test::runfut;
 use crate::transform::build_event_transform;
 use crate::transform::build_time_binning_transform;
@@ -11,8 +12,6 @@ use items_0::on_sitemty_data;
 use items_0::streamitem::sitem_data;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::StreamItem;
-use items_0::transform::EventStreamBox;
-use items_0::transform::EventStreamTrait;
 use items_0::WithLen;
 use items_2::eventsdim0::EventsDim0CollectorOutput;
 use items_2::streams::PlainEventStream;
@@ -69,14 +68,18 @@ fn collect_channel_events_01() -> Result<(), Error> {
         let stream = TimeBinnableToCollectable::new(stream);
         let stream = Box::pin(stream);
         let res = Collect::new(stream, deadline, events_max, bytes_max, None, None).await?;
-        if let Some(res) = res.as_any_ref().downcast_ref::<EventsDim0CollectorOutput<f32>>() {
-            eprintln!("Great, a match");
-            eprintln!("{res:?}");
-            assert_eq!(res.len(), 40);
+        if let CollectResult::Some(res) = res {
+            if let Some(res) = res.as_any_ref().downcast_ref::<EventsDim0CollectorOutput<f32>>() {
+                eprintln!("Great, a match");
+                eprintln!("{res:?}");
+                assert_eq!(res.len(), 40);
+            } else {
+                return Err(Error::with_msg(format!("bad type of collected result")));
+            }
+            Ok(())
         } else {
             return Err(Error::with_msg(format!("bad type of collected result")));
         }
-        Ok(())
     };
     runfut(fut)
 }
@@ -110,14 +113,18 @@ fn collect_channel_events_pulse_id_diff() -> Result<(), Error> {
         let stream = TimeBinnableToCollectable::new(stream);
         let stream = Box::pin(stream);
         let res = Collect::new(stream, deadline, events_max, bytes_max, None, None).await?;
-        if let Some(res) = res.as_any_ref().downcast_ref::<EventsDim0CollectorOutput<i64>>() {
-            eprintln!("Great, a match");
-            eprintln!("{res:?}");
-            assert_eq!(res.len(), 40);
+        if let CollectResult::Some(res) = res {
+            if let Some(res) = res.as_any_ref().downcast_ref::<EventsDim0CollectorOutput<i64>>() {
+                eprintln!("Great, a match");
+                eprintln!("{res:?}");
+                assert_eq!(res.len(), 40);
+            } else {
+                return Err(Error::with_msg(format!("bad type of collected result")));
+            }
+            Ok(())
         } else {
             return Err(Error::with_msg(format!("bad type of collected result")));
         }
-        Ok(())
     };
     runfut(fut)
 }

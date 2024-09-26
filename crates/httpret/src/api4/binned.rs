@@ -14,6 +14,7 @@ use http::StatusCode;
 use httpclient::body_empty;
 use httpclient::body_stream;
 use httpclient::error_response;
+use httpclient::error_status_response;
 use httpclient::not_found_response;
 use httpclient::IntoBody;
 use httpclient::Requ;
@@ -25,6 +26,7 @@ use netpod::timeunits::SEC;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
+use netpod::APP_JSON;
 use netpod::APP_JSON_FRAMED;
 use netpod::HEADER_NAME_REQUEST_ID;
 use nodenet::client::OpenBoxedBytesViaHttp;
@@ -33,6 +35,7 @@ use query::api4::binned::BinnedQuery;
 use scyllaconn::bincache::ScyllaCacheReadProvider;
 use scyllaconn::worker::ScyllaQueue;
 use std::sync::Arc;
+use streams::collect::CollectResult;
 use streams::timebin::cached::reader::EventsReadProvider;
 use streams::timebin::CacheReadProvider;
 use tracing::Instrument;
@@ -184,8 +187,23 @@ async fn binned_json_single(
     .instrument(span1)
     .await
     .map_err(|e| Error::BinnedStream(e))?;
-    let ret = response(StatusCode::OK).body(ToJsonBody::from(&item).into_body())?;
-    Ok(ret)
+    match item {
+        CollectResult::Some(item) => {
+            let ret = response(StatusCode::OK)
+                .header(CONTENT_TYPE, APP_JSON)
+                .header(HEADER_NAME_REQUEST_ID, ctx.reqid())
+                .body(ToJsonBody::from(&item).into_body())?;
+            Ok(ret)
+        }
+        CollectResult::Timeout => {
+            let ret = error_status_response(
+                StatusCode::GATEWAY_TIMEOUT,
+                format!("no data within timeout"),
+                ctx.reqid(),
+            );
+            Ok(ret)
+        }
+    }
 }
 
 async fn binned_json_framed(
