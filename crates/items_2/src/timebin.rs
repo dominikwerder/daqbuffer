@@ -34,6 +34,8 @@ pub trait TimeBinnerCommonV0Trait {
     fn common_take_or_append_all_from(&mut self, item: Self::Output);
     fn common_result_reset(&mut self, range: Option<SeriesRange>) -> Self::Output;
     fn common_agg_ingest(&mut self, item: &mut Self::Input);
+    fn common_has_lst(&self) -> bool;
+    fn common_feed_lst(&mut self, item: &mut Self::Input);
 }
 
 pub struct TimeBinnerCommonV0Func {}
@@ -57,6 +59,22 @@ impl TimeBinnerCommonV0Func {
         // TODO optimize by remembering at which event array index we have arrived.
         // That needs modified interfaces which can take and yield the start and latest index.
         // Or consume the input data.
+        if B::common_has_lst(binner) == false {
+            if let Some(item) = item
+                .as_any_mut()
+                // TODO make statically sure that we attempt to cast to the correct type here:
+                .downcast_mut::<B::Input>()
+            {
+                B::common_feed_lst(binner, item);
+            } else {
+                error!(
+                    "{self_name}::ingest  unexpected item type {}  expected {}",
+                    item.type_name(),
+                    any::type_name::<B::Input>()
+                );
+                return;
+            }
+        }
         loop {
             while item.starts_after(B::common_range_current(binner)) {
                 trace_ingest_item!("{self_name}  ignore item and cycle  starts_after");
@@ -105,6 +123,7 @@ impl TimeBinnerCommonV0Func {
                             item.type_name(),
                             any::type_name::<B::Input>()
                         );
+                        return;
                     };
                 }
             }

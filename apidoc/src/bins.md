@@ -1,6 +1,6 @@
 # Binned Data
 
-Binned data can be fetched like this:
+Binned data can be fetched this way:
 
 ```bash
 curl "https://data-api.psi.ch/api/4/binned?backend=sf-databuffer&channelName=S10BC01-DBPM010:Q1&begDate=2024-02-15T00:00:00Z&endDate=2024-02-15T12:00:00Z&binWidth=5m"

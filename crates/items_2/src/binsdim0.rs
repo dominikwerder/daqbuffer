@@ -1114,6 +1114,14 @@ impl<STY: ScalarOps> TimeBinnerCommonV0Trait for BinsDim0TimeBinner<STY> {
     fn common_agg_ingest(&mut self, item: &mut Self::Input) {
         self.agg.ingest(item)
     }
+
+    fn common_has_lst(&self) -> bool {
+        todo!()
+    }
+
+    fn common_feed_lst(&mut self, item: &mut Self::Input) {
+        todo!()
+    }
 }
 
 impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {

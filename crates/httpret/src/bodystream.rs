@@ -13,7 +13,7 @@ where
     http::StatusCode: std::convert::TryFrom<T>,
     <http::StatusCode as std::convert::TryFrom<T>>::Error: Into<http::Error>,
 {
-    Response::builder().status(status)
+    Response::builder().status(status).header("daqbuf-api-version", "1.0")
 }
 
 pub trait ToPublicResponse {
