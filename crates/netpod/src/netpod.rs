@@ -50,12 +50,12 @@ pub mod log_macros {
     }
 }
 
-pub mod log {
+pub mod log2 {
     pub use tracing::{self, event, span, Level};
     pub use tracing::{debug, error, info, trace, warn};
 }
 
-pub mod log2 {
+pub mod log {
     pub use crate::{debug, error, info, trace, warn};
     pub use tracing::{self, event, span, Level};
 }
@@ -1697,6 +1697,14 @@ impl DtNano {
 
     pub fn to_i64(&self) -> i64 {
         self.0 as i64
+    }
+
+    pub fn add(self, rhs: Self) -> Self {
+        Self(self.0 + rhs.0)
+    }
+
+    pub fn fraction_of(self, rhs: Self) -> f32 {
+        self.0 as f32 / rhs.0 as f32
     }
 }
 

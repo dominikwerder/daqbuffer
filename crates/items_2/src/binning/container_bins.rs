@@ -40,6 +40,59 @@ pub struct BinSingle<EVT> {
     pub max: EVT,
     pub avg: f32,
     pub lst: EVT,
+    pub fnl: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct BinRef<'a, EVT>
+where
+    EVT: EventValueType,
+{
+    pub ts1: TsNano,
+    pub ts2: TsNano,
+    pub cnt: u64,
+    pub min: &'a EVT,
+    pub max: &'a EVT,
+    pub avg: &'a EVT::AggTimeWeightOutputAvg,
+    pub lst: &'a EVT,
+    pub fnl: bool,
+}
+
+pub struct IterDebug<'a, EVT>
+where
+    EVT: EventValueType,
+{
+    bins: &'a ContainerBins<EVT>,
+    ix: usize,
+    len: usize,
+}
+
+impl<'a, EVT> Iterator for IterDebug<'a, EVT>
+where
+    EVT: EventValueType,
+{
+    type Item = BinRef<'a, EVT>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.ix < self.bins.len() && self.ix < self.len {
+            let b = &self.bins;
+            let i = self.ix;
+            self.ix += 1;
+            let ret = BinRef {
+                ts1: b.ts1s[i],
+                ts2: b.ts2s[i],
+                cnt: b.cnts[i],
+                min: &b.mins[i],
+                max: &b.maxs[i],
+                avg: &b.avgs[i],
+                lst: &b.lsts[i],
+                fnl: b.fnls[i],
+            };
+            Some(ret)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -54,6 +107,7 @@ where
     maxs: VecDeque<EVT>,
     avgs: VecDeque<EVT::AggTimeWeightOutputAvg>,
     lsts: VecDeque<EVT>,
+    fnls: VecDeque<bool>,
 }
 
 impl<EVT> ContainerBins<EVT>
@@ -73,6 +127,7 @@ where
             maxs: VecDeque::new(),
             avgs: VecDeque::new(),
             lsts: VecDeque::new(),
+            fnls: VecDeque::new(),
         }
     }
 
@@ -96,6 +151,10 @@ where
 
     pub fn ts2_last(&self) -> Option<TsNano> {
         self.ts2s.back().map(|&x| x)
+    }
+
+    pub fn cnts_iter(&self) -> std::collections::vec_deque::Iter<u64> {
+        self.cnts.iter()
     }
 
     pub fn len_before(&self, end: TsNano) -> usize {
@@ -127,6 +186,7 @@ where
         max: EVT,
         avg: EVT::AggTimeWeightOutputAvg,
         lst: EVT,
+        fnl: bool,
     ) {
         self.ts1s.push_back(ts1);
         self.ts2s.push_back(ts2);
@@ -135,6 +195,15 @@ where
         self.maxs.push_back(max);
         self.avgs.push_back(avg);
         self.lsts.push_back(lst);
+        self.fnls.push_back(fnl);
+    }
+
+    pub fn iter_debug(&self) -> IterDebug<EVT> {
+        IterDebug {
+            bins: self,
+            ix: 0,
+            len: self.len(),
+        }
     }
 }
 
@@ -146,12 +215,13 @@ where
         let self_name = any::type_name::<Self>();
         write!(
             fmt,
-            "{self_name}  {{  len: {:?},  ts1s: {:?},  ts2s: {:?}, cnts: {:?},  avgs {:?}  }}",
+            "{self_name}  {{  len: {:?},  ts1s: {:?},  ts2s: {:?}, cnts: {:?},  avgs {:?},  fnls {:?}  }}",
             self.len(),
             VecPreview::new(&self.ts1s),
             VecPreview::new(&self.ts2s),
             VecPreview::new(&self.cnts),
             VecPreview::new(&self.avgs),
+            VecPreview::new(&self.fnls),
         )
     }
 }

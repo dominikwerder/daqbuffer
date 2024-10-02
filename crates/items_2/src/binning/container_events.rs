@@ -56,7 +56,7 @@ where
 impl EventValueType for f32 {
     type Container = VecDeque<Self>;
     type AggregatorTimeWeight = AggregatorNumeric;
-    type AggTimeWeightOutputAvg = f64;
+    type AggTimeWeightOutputAvg = f32;
 
     fn identity_sum() -> Self {
         0.

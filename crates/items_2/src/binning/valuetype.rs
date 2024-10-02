@@ -68,10 +68,13 @@ impl AggregatorTimeWeight<EnumVariant> for EnumVariantAggregatorTimeWeight {
         self.sum = f32::identity_sum();
     }
 
-    fn result_and_reset_for_new_bin(&mut self) -> <EnumVariant as EventValueType>::AggTimeWeightOutputAvg {
+    fn result_and_reset_for_new_bin(
+        &mut self,
+        filled_width_fraction: f32,
+    ) -> <EnumVariant as EventValueType>::AggTimeWeightOutputAvg {
         let ret = self.sum.clone();
         self.sum = f32::identity_sum();
-        ret
+        ret / filled_width_fraction
     }
 }
 

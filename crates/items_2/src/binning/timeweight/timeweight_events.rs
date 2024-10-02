@@ -19,7 +19,7 @@ use std::task::Context;
 use std::task::Poll;
 
 #[allow(unused)]
-macro_rules! trace_ { ($($arg:tt)*) => ( if true { eprintln!($($arg)*); }) }
+macro_rules! trace_ { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
 
 #[allow(unused)]
 macro_rules! trace_init { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
@@ -48,6 +48,11 @@ macro_rules! trace_ingest_finish_bin { ($($arg:tt)*) => ( if true { trace_!($($a
 #[allow(unused)]
 macro_rules! trace_ingest_container { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
 
+#[cold]
+#[inline]
+#[allow(unused)]
+fn cold() {}
+
 const DEBUG_CHECKS: bool = true;
 
 #[derive(Debug, ThisError)]
@@ -67,6 +72,7 @@ pub enum Error {
 
 type MinMax<EVT> = (EventSingle<EVT>, EventSingle<EVT>);
 
+#[derive(Clone)]
 struct LstRef<'a, EVT>(&'a EventSingle<EVT>);
 
 struct LstMut<'a, EVT>(&'a mut EventSingle<EVT>);
@@ -80,6 +86,7 @@ where
     active_end: TsNano,
     active_len: DtNano,
     filled_until: TsNano,
+    filled_width: DtNano,
     agg: <EVT as EventValueType>::AggregatorTimeWeight,
 }
 
@@ -99,11 +106,13 @@ where
             }
         }
         let dt = ev.ts.delta(self.filled_until);
+        trace_ingest_event!("ingest_event_with_lst_gt_range_beg_agg  dt {:?}  ev {:?}", dt, ev);
         // TODO can the caller already take the value and replace it afterwards with the current value?
         // This fn could swap the value in lst and directly use it.
         // This would require that any call path does not mess with lst.
         // NOTE that this fn is also used during bin-cycle.
         self.agg.ingest(dt, self.active_len, lst.0.val.clone());
+        self.filled_width = self.filled_width.add(dt);
         self.filled_until = ev.ts;
     }
 
@@ -150,7 +159,7 @@ where
     ) -> Result<(), Error> {
         trace_ingest_event!("ingest_with_lst_gt_range_beg");
         while let Some(ev) = evs.pop_front() {
-            trace_event_next!("ingest_with_lst_ge_range_beg  {:?}", ev);
+            trace_event_next!("EVENT POP FRONT  {:?}  {:30}", ev, "ingest_with_lst_gt_range_beg");
             if ev.ts <= self.active_beg {
                 panic!("should never get here");
             }
@@ -171,7 +180,7 @@ where
     ) -> Result<(), Error> {
         trace_ingest_event!("ingest_with_lst_ge_range_beg");
         while let Some(ev) = evs.pop_front() {
-            trace_event_next!("ingest_with_lst_ge_range_beg  {:?}", ev);
+            trace_event_next!("EVENT POP FRONT  {:?}  {:30}", ev, "ingest_with_lst_ge_range_beg");
             if ev.ts < self.active_beg {
                 panic!("should never get here");
             }
@@ -200,6 +209,8 @@ where
         trace_ingest_event!("ingest_with_lst_minmax");
         // TODO how to handle the min max? I don't take event data yet out of the container.
         if let Some(ts0) = evs.ts_first() {
+            trace_ingest_event!("EVENT POP FRONT  ingest_with_lst_minmax");
+            trace_ingest_event!("EVENT TIMESTAMP FRONT  {:?}  ingest_with_lst_minmax", ts0);
             if ts0 < self.active_beg {
                 panic!("should never get here");
             } else {
@@ -212,20 +223,16 @@ where
 
     // PRECONDITION: filled_until < ts <= active_end
     fn fill_until(&mut self, ts: TsNano, lst: LstRef<EVT>) {
-        trace_cycle!("fill_until  ts {:?}", ts);
         let b = self;
         assert!(b.filled_until < ts);
         assert!(ts <= b.active_end);
-        b.agg.ingest(ts.delta(b.filled_until), b.active_len, lst.0.val.clone());
+        let dt = ts.delta(b.filled_until);
+        trace_cycle!("fill_until  ts {:?}  dt {:?}  lst {:?}", ts, dt, lst.0);
+        assert!(b.filled_until < ts);
+        assert!(ts <= b.active_end);
+        b.agg.ingest(dt, b.active_len, lst.0.val.clone());
+        b.filled_width = b.filled_width.add(dt);
         b.filled_until = ts;
-    }
-
-    fn fill_remaining_if_space_left(&mut self, lst: LstRef<EVT>) {
-        trace_cycle!("fill_remaining_if_space_left");
-        let b = self;
-        if b.filled_until < b.active_end {
-            b.fill_until(b.active_end, lst);
-        }
     }
 }
 
@@ -270,7 +277,7 @@ where
             self.inner_b.ingest_with_lst_minmax(evs, lst, minmax)
         } else {
             if let Some(ev) = evs.pop_front() {
-                trace_event_next!("ingest_with_lst  {:?}", ev);
+                trace_event_next!("EVENT POP FRONT  {:?}  {:30}", ev, "ingest_with_lst");
                 let beg = self.inner_b.active_beg;
                 let end = self.inner_b.active_end;
                 if ev.ts < beg {
@@ -301,6 +308,53 @@ where
             }
         }
     }
+
+    fn reset_01(&mut self, lst: LstRef<EVT>) {
+        let selfname = "reset_01";
+        let b = &mut self.inner_b;
+        trace_cycle!(
+            "{selfname}  active_end {:?}  filled_until {:?}",
+            b.active_end,
+            b.filled_until
+        );
+        let div = b.active_len.ns();
+        let old_end = b.active_end;
+        let ts1 = TsNano::from_ns(b.active_end.ns() / div * div);
+        assert!(ts1 == old_end);
+        b.active_beg = ts1;
+        b.active_end = ts1.add_dt_nano(b.active_len);
+        b.filled_until = ts1;
+        b.filled_width = DtNano::from_ns(0);
+        b.cnt = 0;
+        self.minmax = Some((lst.0.clone(), lst.0.clone()));
+    }
+
+    fn push_out_and_reset(&mut self, lst: LstRef<EVT>, range_final: bool, out: &mut ContainerBins<EVT>) {
+        let selfname = "push_out_and_reset";
+        // TODO there is not always good enough input to produce a meaningful bin.
+        // TODO can we always reset, and what exactly does reset mean here?
+        // TODO what logic can I save here? To output a bin I need to have min, max, lst.
+        let b = &mut self.inner_b;
+        let minmax = self.minmax.get_or_insert_with(|| {
+            trace_cycle!("{selfname}  minmax not yet set");
+            (lst.0.clone(), lst.0.clone())
+        });
+        {
+            let filled_width_fraction = b.filled_width.fraction_of(b.active_len);
+            let res = b.agg.result_and_reset_for_new_bin(filled_width_fraction);
+            out.push_back(
+                b.active_beg,
+                b.active_end,
+                b.cnt,
+                minmax.0.val.clone(),
+                minmax.1.val.clone(),
+                res,
+                lst.0.val.clone(),
+                range_final,
+            );
+        }
+        self.reset_01(lst);
+    }
 }
 
 pub struct BinnedEventsTimeweight<EVT>
@@ -330,6 +384,7 @@ where
                     active_end,
                     active_len,
                     filled_until: active_beg,
+                    filled_width: DtNano::from_ns(0),
                     agg: <<EVT as EventValueType>::AggregatorTimeWeight as AggregatorTimeWeight<EVT>>::new(),
                 },
                 minmax: None,
@@ -349,6 +404,7 @@ where
                 trace_ingest_minmax!("ingest_event_without_lst");
                 self.inner_a.init_minmax(&ev);
                 self.inner_a.inner_b.cnt += 1;
+                self.inner_a.inner_b.filled_until = ev.ts;
             }
             Ok(())
         }
@@ -356,7 +412,7 @@ where
 
     fn ingest_without_lst(&mut self, mut evs: ContainerEventsTakeUpTo<EVT>) -> Result<(), Error> {
         if let Some(ev) = evs.pop_front() {
-            trace_event_next!("ingest_without_lst  {:?}", ev);
+            trace_event_next!("EVENT POP FRONT  {:?}  {:30}", ev, "ingest_without_lst");
             if ev.ts >= self.inner_a.inner_b.active_end {
                 panic!("should never get here");
             } else {
@@ -390,56 +446,53 @@ where
         let b = &self.inner_a.inner_b;
         trace_cycle!("cycle_01  {:?}  {:?}", ts, b.active_end);
         assert!(b.active_beg < ts);
-        let div = self.range.bin_len.ns();
+        assert!(b.active_beg <= b.filled_until);
+        assert!(b.filled_until < ts);
+        assert!(b.filled_until <= b.active_end);
+        let div = b.active_len.ns();
         if let Some(lst) = self.lst.as_ref() {
+            let lst = LstRef(lst);
+            let mut i = 0;
             loop {
+                i += 1;
+                assert!(i < 100000, "too many iterations");
                 let b = &self.inner_a.inner_b;
-                if b.filled_until >= ts {
-                    break;
-                }
-                if ts >= b.active_end {
-                    self.inner_a.inner_b.fill_remaining_if_space_left(LstRef(lst));
-                    let b = &mut self.inner_a.inner_b;
-                    let minmax = self.inner_a.minmax.get_or_insert_with(|| {
-                        trace_cycle!("cycle_01  minmax not yet set");
-                        (lst.clone(), lst.clone())
-                    });
-                    {
-                        // TODO push bin to output.
-                        let res = b.agg.result_and_reset_for_new_bin();
-                        self.out.push_back(
-                            b.active_beg,
-                            b.active_end,
-                            b.cnt,
-                            minmax.0.val.clone(),
-                            minmax.1.val.clone(),
-                            res,
-                            lst.val.clone(),
-                        );
+                if ts > b.filled_until {
+                    if ts >= b.active_end {
+                        if b.filled_until < b.active_end {
+                            self.inner_a.inner_b.fill_until(b.active_end, lst.clone());
+                        }
+                        self.inner_a.push_out_and_reset(lst.clone(), true, &mut self.out);
+                    } else {
+                        self.inner_a.inner_b.fill_until(ts, lst.clone());
                     }
-                    trace_cycle!("cycle_01  filled up to {:?}  emit and reset", b.active_end);
-                    let old_end = b.active_end;
-                    let ts1 = TsNano::from_ns(b.active_end.ns() / div * div);
-                    assert!(ts1 == old_end);
-                    b.active_beg = ts1;
-                    b.active_end = ts1.add_dt_nano(b.active_len);
-                    b.filled_until = ts1;
-                    b.cnt = 0;
-                    self.inner_a.minmax = Some((lst.clone(), lst.clone()));
                 } else {
-                    self.inner_a.inner_b.fill_until(ts, LstRef(lst));
+                    break;
                 }
             }
         } else {
+            // TODO merge with the other reset
             let ts1 = TsNano::from_ns(ts.ns() / div * div);
             let b = &mut self.inner_a.inner_b;
             b.active_beg = ts1;
             b.active_end = ts1.add_dt_nano(b.active_len);
             b.filled_until = ts1;
+            b.filled_width = DtNano::from_ns(0);
             b.cnt = 0;
             b.agg.reset_for_new_bin();
             assert!(self.inner_a.minmax.is_none());
             trace_cycle!("cycled direct to  {:?}  {:?}", b.active_beg, b.active_end);
+        }
+    }
+
+    fn cycle_02(&mut self) {
+        let b = &self.inner_a.inner_b;
+        trace_cycle!("cycle_02  {:?}", b.active_end);
+        if let Some(lst) = self.lst.as_ref() {
+            let lst = LstRef(lst);
+            self.inner_a.push_out_and_reset(lst, false, &mut self.out);
+        } else {
+            // there is nothing we can produce
         }
     }
 
@@ -457,16 +510,15 @@ where
         evs_all.verify()?;
 
         loop {
-            // How to handle transition to the next bin?
-            // How to handle to not emit bins until at least some partially filled bin is encountered?
             break if let Some(ts) = evs_all.ts_first() {
+                trace_ingest_event!("EVENT TIMESTAMP FRONT  {:?}  ingest", ts);
                 let b = &mut self.inner_a.inner_b;
                 if ts >= self.range.nano_end() {
                     return Err(Error::EventAfterRange);
                 }
                 if ts >= b.active_end {
                     trace_cycle!("bin edge boundary {:?}", b.active_end);
-                    assert!(b.filled_until < b.active_beg);
+                    assert!(b.filled_until < b.active_end, "{} < {}", b.filled_until, b.active_end);
                     self.cycle_01(ts);
                 }
                 let n1 = evs_all.len();
@@ -496,9 +548,15 @@ where
         Ok(())
     }
 
-    pub fn range_final(&mut self) -> Result<(), Error> {
-        trace_cycle!("range_final");
+    pub fn input_done_range_final(&mut self) -> Result<(), Error> {
+        trace_cycle!("input_done_range_final");
         self.cycle_01(self.range.nano_end());
+        Ok(())
+    }
+
+    pub fn input_done_range_open(&mut self) -> Result<(), Error> {
+        trace_cycle!("input_done_range_open");
+        self.cycle_02();
         Ok(())
     }
 
