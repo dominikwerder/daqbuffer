@@ -157,6 +157,14 @@ where
         self.cnts.iter()
     }
 
+    pub fn mins_iter(&self) -> std::collections::vec_deque::Iter<EVT> {
+        self.mins.iter()
+    }
+
+    pub fn maxs_iter(&self) -> std::collections::vec_deque::Iter<EVT> {
+        self.maxs.iter()
+    }
+
     pub fn len_before(&self, end: TsNano) -> usize {
         let pp = self.ts2s.partition_point(|&x| x <= end);
         assert!(pp <= self.len(), "len_before  pp {}  len {}", pp, self.len());

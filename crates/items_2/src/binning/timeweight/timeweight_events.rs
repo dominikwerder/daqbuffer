@@ -117,9 +117,11 @@ where
     }
 
     fn ingest_event_with_lst_gt_range_beg_2(&mut self, ev: EventSingle<EVT>, lst: LstMut<EVT>) -> Result<(), Error> {
-        trace_ingest_event!("ingest_event_with_lst_gt_range_beg_2");
+        let selfname = "ingest_event_with_lst_gt_range_beg_2";
+        trace_ingest_event!("{selfname}");
         self.ingest_event_with_lst_gt_range_beg_agg(ev.clone(), LstRef(lst.0));
         InnerA::apply_lst_after_event_handled(ev, lst);
+        // self.cnt += 1;
         Ok(())
     }
 
@@ -129,7 +131,8 @@ where
         lst: LstMut<EVT>,
         minmax: &mut MinMax<EVT>,
     ) -> Result<(), Error> {
-        trace_ingest_event!("ingest_event_with_lst_gt_range_beg");
+        let selfname = "ingest_event_with_lst_gt_range_beg";
+        trace_ingest_event!("{selfname}");
         // TODO if the event is exactly on the current bin first edge, then there is no contribution to the avg yet
         // and I must initialize the min/max with the current event.
         InnerA::apply_min_max(&ev, minmax);
@@ -268,18 +271,21 @@ where
 
     fn init_minmax_with_lst(&mut self, ev: &EventSingle<EVT>, lst: LstRef<EVT>) {
         trace_ingest_minmax!("init_minmax_with_lst  {:?}  {:?}", ev, lst.0);
-        self.minmax = Some((lst.0.clone(), lst.0.clone()));
-        Self::apply_min_max(ev, self.minmax.as_mut().unwrap());
+        let minmax = self.minmax.insert((lst.0.clone(), lst.0.clone()));
+        Self::apply_min_max(ev, minmax);
     }
 
     fn ingest_with_lst(&mut self, mut evs: ContainerEventsTakeUpTo<EVT>, lst: LstMut<EVT>) -> Result<(), Error> {
+        let selfname = "ingest_with_lst";
+        trace_ingest_container!("{selfname}");
+        let b = &mut self.inner_b;
         if let Some(minmax) = self.minmax.as_mut() {
-            self.inner_b.ingest_with_lst_minmax(evs, lst, minmax)
+            b.ingest_with_lst_minmax(evs, lst, minmax)
         } else {
             if let Some(ev) = evs.pop_front() {
-                trace_event_next!("EVENT POP FRONT  {:?}  {:30}", ev, "ingest_with_lst");
-                let beg = self.inner_b.active_beg;
-                let end = self.inner_b.active_end;
+                trace_event_next!("EVENT POP FRONT  {:?}  {selfname:30}", ev);
+                let beg = b.active_beg;
+                let end = b.active_end;
                 if ev.ts < beg {
                     panic!("should never get here");
                 } else if ev.ts >= end {
@@ -288,16 +294,20 @@ where
                     if ev.ts == beg {
                         self.init_minmax(&ev);
                         InnerA::apply_lst_after_event_handled(ev, lst);
+                        let b = &mut self.inner_b;
+                        b.cnt += 1;
                         Ok(())
                     } else {
                         self.init_minmax_with_lst(&ev, LstRef(lst.0));
+                        let b = &mut self.inner_b;
                         if let Some(minmax) = self.minmax.as_mut() {
                             if ev.ts == beg {
                                 panic!("logic error, is handled before");
                             } else {
-                                self.inner_b.ingest_event_with_lst_gt_range_beg_2(ev, LstMut(lst.0))?;
+                                b.ingest_event_with_lst_gt_range_beg_2(ev, LstMut(lst.0))?;
                             }
-                            self.inner_b.ingest_with_lst_minmax(evs, lst, minmax)
+                            b.cnt += 1;
+                            b.ingest_with_lst_minmax(evs, lst, minmax)
                         } else {
                             Err(Error::NoMinMaxAfterInit)
                         }
@@ -395,16 +405,18 @@ where
     }
 
     fn ingest_event_without_lst(&mut self, ev: EventSingle<EVT>) -> Result<(), Error> {
-        if ev.ts >= self.inner_a.inner_b.active_end {
+        let b = &self.inner_a.inner_b;
+        if ev.ts >= b.active_end {
             panic!("should never get here");
         } else {
             trace_ingest_init_lst!("ingest_event_without_lst  set lst  {:?}", ev);
             self.lst = Some(ev.clone());
-            if ev.ts >= self.inner_a.inner_b.active_beg {
+            if ev.ts >= b.active_beg {
                 trace_ingest_minmax!("ingest_event_without_lst");
                 self.inner_a.init_minmax(&ev);
-                self.inner_a.inner_b.cnt += 1;
-                self.inner_a.inner_b.filled_until = ev.ts;
+                let b = &mut self.inner_a.inner_b;
+                b.cnt += 1;
+                b.filled_until = ev.ts;
             }
             Ok(())
         }
