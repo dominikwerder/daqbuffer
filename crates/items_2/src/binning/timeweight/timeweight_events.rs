@@ -5,9 +5,13 @@ use crate::binning::container_bins::ContainerBins;
 use crate::binning::container_events::ContainerEvents;
 use crate::binning::container_events::ContainerEventsTakeUpTo;
 use crate::binning::container_events::EventSingle;
+use crate::channelevents::ChannelEvents;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Stream;
+use items_0::streamitem::Sitemty;
+use items_0::timebin::BinningggBinnerDyn;
+use items_0::timebin::BinningggBinnerTy;
 use netpod::log::*;
 use netpod::BinnedRange;
 use netpod::DtNano;
@@ -574,15 +578,5 @@ where
 
     pub fn output(&mut self) -> ContainerBins<EVT> {
         ::core::mem::replace(&mut self.out, ContainerBins::new())
-    }
-}
-
-pub struct BinnedEventsTimeweightStream {}
-
-impl Stream for BinnedEventsTimeweightStream {
-    type Item = ();
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        todo!()
     }
 }

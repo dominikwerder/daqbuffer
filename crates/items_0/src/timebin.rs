@@ -13,7 +13,9 @@ use crate::WithLen;
 use err::Error;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
+use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
+use netpod::TsNano;
 use std::any::Any;
 use std::fmt;
 use std::ops::Range;
@@ -61,6 +63,55 @@ pub trait TimeBinnableTy: fmt::Debug + WithLen + Send + Sized {
         emit_empty_bins: bool,
     ) -> Self::TimeBinner;
 }
+
+pub enum BinningggError {
+    Dyn(Box<dyn std::error::Error>),
+}
+
+impl<E> From<E> for BinningggError
+where
+    E: std::error::Error + 'static,
+{
+    fn from(value: E) -> Self {
+        Self::Dyn(Box::new(value))
+    }
+}
+
+pub trait BinningggBinnerTy: fmt::Debug + Send {
+    type Input: fmt::Debug;
+    type Output: fmt::Debug;
+
+    fn ingest(&mut self, item: &mut Self::Input);
+    fn range_final(&mut self);
+    fn bins_ready_count(&self) -> usize;
+    fn bins_ready(&mut self) -> Option<Self::Output>;
+
+    /// If there is a bin in progress with non-zero count, push it to the result set.
+    /// With push_empty == true, a bin in progress is pushed even if it contains no counts.
+    fn push_in_progress(&mut self, push_empty: bool);
+
+    /// Implies `Self::push_in_progress` but in addition, pushes a zero-count bin if the call
+    /// to `push_in_progress` did not change the result count, as long as edges are left.
+    /// The next call to `Self::bins_ready_count` must return one higher count than before.
+    fn cycle(&mut self);
+
+    fn empty(&self) -> Option<Self::Output>;
+
+    fn append_empty_until_end(&mut self);
+}
+
+pub trait BinningggBinnableTy: fmt::Debug + WithLen + Send {
+    type Binner: BinningggBinnerTy<Input = Self>;
+
+    fn binner_new(range: BinnedRange<TsNano>) -> Self::Binner;
+}
+
+pub trait BinningggBinnerDyn: fmt::Debug + Send {
+    fn input_done_range_final(&mut self) -> Result<(), BinningggError>;
+    fn input_done_range_open(&mut self) -> Result<(), BinningggError>;
+}
+
+pub trait BinningBinnableDyn: fmt::Debug + Send {}
 
 /// Data in time-binned form.
 pub trait TimeBinned: Any + TypeName + TimeBinnable + Resettable + Collectable + erased_serde::Serialize {
