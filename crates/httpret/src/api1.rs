@@ -3,6 +3,7 @@ use crate::body_string;
 use crate::err::Error;
 use crate::gather::gather_get_json_generic;
 use crate::gather::SubRes;
+use crate::requests::accepts_json_or_all;
 use crate::response;
 use crate::ReqCtx;
 use crate::Requ;
@@ -16,8 +17,10 @@ use http::header;
 use http::Method;
 use http::Response;
 use http::StatusCode;
+use httpclient::body_bytes;
 use httpclient::body_stream;
 use httpclient::connect_client;
+use httpclient::error_status_response;
 use httpclient::read_body_bytes;
 use httpclient::IntoBody;
 use httpclient::StreamResponse;
@@ -1045,7 +1048,7 @@ impl Api1EventsBinaryHandler {
                     .parse()
                     .map_err(|e| Error::with_msg_no_trace(format!("{e}")))?
             } else {
-                0
+                ncc.ix as _
             };
             let req_stat_id = format!("{}{:02}", reqctx.reqid_this(), nodeno);
             info!("return req_stat_id {req_stat_id}");
@@ -1076,29 +1079,41 @@ impl RequestStatusHandler {
         }
     }
 
-    pub async fn handle(&self, req: Requ, _ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
+    pub async fn handle(&self, req: Requ, ctx: &ReqCtx, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
         let (head, body) = req.into_parts();
         if head.method != Method::GET {
             return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?);
         }
-        let accept = head
-            .headers
-            .get(header::ACCEPT)
-            .map_or(Ok(ACCEPT_ALL), |k| k.to_str())
-            .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?
-            .to_owned();
-        if accept != APP_JSON && accept != ACCEPT_ALL {
-            // TODO set the public error code and message and return Err(e).
-            let e = Error::with_public_msg_no_trace(format!("unsupported accept: {:?}", accept));
-            error!("{e}");
+        if accepts_json_or_all(&head.headers) {
+            let _body_data = read_body_bytes(body).await?;
+            let status_id = &head.uri.path()[Self::path_prefix().len()..];
+            if status_id.len() == 8 {
+                debug!("RequestStatusHandler  status_id {:?}", status_id);
+                let status = crate::status_board().unwrap().status_as_json(status_id);
+                let s = serde_json::to_string(&status)?;
+                let ret = response(StatusCode::OK).body(body_string(s))?;
+                Ok(ret)
+            } else if status_id.len() == 10 {
+                let node_id =
+                    u32::from_str_radix(&status_id[8..10], 16).map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
+                let status_id = status_id[0..8].to_string();
+                let node2 = ncc
+                    .node_config
+                    .cluster
+                    .nodes
+                    .get(node_id as usize)
+                    .ok_or_else(|| Error::with_msg_no_trace(format!("node {node_id} unknown")))?;
+                let url = Url::parse(&format!("{}api/1/requestStatus/{}", node2.baseurl(), status_id))
+                    .map_err(|_| Error::with_msg_no_trace(format!("bad url")))?;
+                let res = httpclient::http_get(url, APP_JSON, ctx).await?;
+                let ret = response(StatusCode::OK).body(body_bytes(res.body))?;
+                Ok(ret)
+            } else {
+                let ret = error_status_response(StatusCode::BAD_REQUEST, format!("bad status id requested"), "0000");
+                Ok(ret)
+            }
+        } else {
             return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
         }
-        let _body_data = read_body_bytes(body).await?;
-        let status_id = &head.uri.path()[Self::path_prefix().len()..];
-        debug!("RequestStatusHandler  status_id {:?}", status_id);
-        let status = crate::status_board().unwrap().status_as_json(status_id);
-        let s = serde_json::to_string(&status)?;
-        let ret = response(StatusCode::OK).body(body_string(s))?;
-        Ok(ret)
     }
 }

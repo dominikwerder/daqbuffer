@@ -227,15 +227,15 @@ pub enum Error {
     NoHostInUrl,
     NoPortInUrl,
     Connection,
-    IO,
+    IO(std::io::Error),
     Http,
 }
 
 impl std::error::Error for Error {}
 
 impl From<std::io::Error> for Error {
-    fn from(_: std::io::Error) -> Self {
-        Self::IO
+    fn from(value: std::io::Error) -> Self {
+        Self::IO(value)
     }
 }
 
@@ -269,6 +269,7 @@ pub struct HttpResponse {
 }
 
 pub async fn http_get(url: Url, accept: &str, ctx: &ReqCtx) -> Result<HttpResponse, Error> {
+    debug!("http_get  {:?}  {:?}  {:?}", url, accept, ctx);
     let req = Request::builder()
         .method(http::Method::GET)
         .uri(url.to_string())

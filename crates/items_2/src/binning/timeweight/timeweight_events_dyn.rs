@@ -1,9 +1,14 @@
+use super::timeweight_events::BinnedEventsTimeweight;
+use crate::binning::container_events::EventValueType;
 use crate::channelevents::ChannelEvents;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Stream;
 use items_0::streamitem::Sitemty;
+use items_0::timebin::BinnedEventsTimeweightTrait;
 use items_0::timebin::BinningggBinnerDyn;
+use items_0::timebin::BinningggContainerBinsDyn;
+use items_0::timebin::BinningggContainerEventsDyn;
 use items_0::timebin::BinningggError;
 use netpod::BinnedRange;
 use netpod::TsNano;
@@ -17,37 +22,48 @@ pub enum Error {
     InnerDynMissing,
 }
 
-pub struct BinnedEventsTimeweightDyn {
+#[derive(Debug)]
+pub struct BinnedEventsTimeweightDynbox<EVT>
+where
+    EVT: EventValueType,
+{
     range: BinnedRange<TsNano>,
-    binner: Option<Box<dyn BinningggBinnerDyn>>,
+    binner: BinnedEventsTimeweight<EVT>,
 }
 
-impl BinnedEventsTimeweightDyn {
-    pub fn new(range: BinnedRange<TsNano>) -> Self {
-        Self { range, binner: None }
+impl<EVT> BinnedEventsTimeweightDynbox<EVT>
+where
+    EVT: EventValueType + 'static,
+{
+    pub fn new(range: BinnedRange<TsNano>) -> Box<dyn BinnedEventsTimeweightTrait> {
+        let ret = Self {
+            binner: BinnedEventsTimeweight::new(range.clone()),
+            range,
+        };
+        Box::new(ret)
     }
+}
 
-    pub fn ingest(&mut self, mut evs_all: ContainerEventsDyn) -> Result<(), BinningggError> {
-        TODO;
+impl<EVT> BinnedEventsTimeweightTrait for BinnedEventsTimeweightDynbox<EVT>
+where
+    EVT: EventValueType,
+{
+    fn ingest(&mut self, evs_all: Box<dyn BinningggContainerEventsDyn>) -> Result<(), BinningggError> {
         todo!()
     }
 
-    pub fn input_done_range_final(&mut self) -> Result<(), BinningggError> {
-        self.binner
-            .as_mut()
-            .ok_or(Error::InnerDynMissing)?
-            .input_done_range_final()
+    fn input_done_range_final(&mut self) -> Result<(), BinningggError> {
+        // self.binner.input_done_range_final()
+        todo!()
     }
 
-    pub fn input_done_range_open(&mut self) -> Result<(), BinningggError> {
-        self.binner
-            .as_mut()
-            .ok_or(Error::InnerDynMissing)?
-            .input_done_range_open()
+    fn input_done_range_open(&mut self) -> Result<(), BinningggError> {
+        // self.binner.input_done_range_open()
+        todo!()
     }
 
-    pub fn output(&mut self) -> ContainerBinsDyn {
-        TODO;
+    fn output(&mut self) -> Result<Box<dyn BinningggContainerBinsDyn>, BinningggError> {
+        // self.binner.output()
         todo!()
     }
 }
@@ -60,6 +76,41 @@ impl Stream for BinnedEventsTimeweightStream {
     type Item = ();
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        todo!()
+    }
+}
+
+#[derive(Debug)]
+pub struct BinnedEventsTimeweightLazy {
+    range: BinnedRange<TsNano>,
+    binned_events: Option<Box<dyn BinnedEventsTimeweightTrait>>,
+}
+
+impl BinnedEventsTimeweightLazy {
+    pub fn new(range: BinnedRange<TsNano>) -> Self {
+        Self {
+            range,
+            binned_events: None,
+        }
+    }
+}
+
+impl BinnedEventsTimeweightTrait for BinnedEventsTimeweightLazy {
+    fn ingest(&mut self, evs_all: Box<dyn BinningggContainerEventsDyn>) -> Result<(), BinningggError> {
+        // TODO the container must provide a method to create the dyn binner.
+        let binned_events = self.binned_events.get_or_insert_with(|| todo!());
+        todo!()
+    }
+
+    fn input_done_range_final(&mut self) -> Result<(), BinningggError> {
+        todo!()
+    }
+
+    fn input_done_range_open(&mut self) -> Result<(), BinningggError> {
+        todo!()
+    }
+
+    fn output(&mut self) -> Result<Box<dyn BinningggContainerBinsDyn>, BinningggError> {
         todo!()
     }
 }

@@ -6,6 +6,7 @@ use crate::binning::container_events::ContainerEvents;
 use crate::binning::container_events::ContainerEventsTakeUpTo;
 use crate::binning::container_events::EventSingle;
 use crate::channelevents::ChannelEvents;
+use core::fmt;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Stream;
@@ -81,6 +82,7 @@ struct LstRef<'a, EVT>(&'a EventSingle<EVT>);
 
 struct LstMut<'a, EVT>(&'a mut EventSingle<EVT>);
 
+#[derive(Debug)]
 struct InnerB<EVT>
 where
     EVT: EventValueType,
@@ -243,6 +245,7 @@ where
     }
 }
 
+#[derive(Debug)]
 struct InnerA<EVT>
 where
     EVT: EventValueType,
@@ -379,6 +382,20 @@ where
     range: BinnedRange<TsNano>,
     inner_a: InnerA<EVT>,
     out: ContainerBins<EVT>,
+}
+
+impl<EVT> fmt::Debug for BinnedEventsTimeweight<EVT>
+where
+    EVT: EventValueType,
+{
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.debug_struct("BinnedEventsTimeweight")
+            .field("lst", &self.lst)
+            .field("range", &self.range)
+            .field("inner_a", &self.inner_a)
+            .field("out", &self.out)
+            .finish()
+    }
 }
 
 impl<EVT> BinnedEventsTimeweight<EVT>

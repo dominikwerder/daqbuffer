@@ -5,7 +5,7 @@ use netpod::DtNano;
 use serde::Deserialize;
 use serde::Serialize;
 
-pub trait AggTimeWeightOutputAvg: fmt::Debug + Clone + Serialize + for<'a> Deserialize<'a> {}
+pub trait AggTimeWeightOutputAvg: fmt::Debug + Clone + Send + Serialize + for<'a> Deserialize<'a> {}
 
 impl AggTimeWeightOutputAvg for u64 {}
 
@@ -13,7 +13,7 @@ impl AggTimeWeightOutputAvg for f32 {}
 
 impl AggTimeWeightOutputAvg for f64 {}
 
-pub trait AggregatorTimeWeight<EVT>
+pub trait AggregatorTimeWeight<EVT>: fmt::Debug + Send
 where
     EVT: EventValueType,
 {
@@ -23,6 +23,7 @@ where
     fn result_and_reset_for_new_bin(&mut self, filled_width_fraction: f32) -> EVT::AggTimeWeightOutputAvg;
 }
 
+#[derive(Debug)]
 pub struct AggregatorNumeric {
     sum: f64,
 }

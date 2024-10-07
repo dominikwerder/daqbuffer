@@ -50,12 +50,12 @@ pub mod log_macros {
     }
 }
 
-pub mod log2 {
+pub mod log {
     pub use tracing::{self, event, span, Level};
     pub use tracing::{debug, error, info, trace, warn};
 }
 
-pub mod log {
+pub mod log_ {
     pub use crate::{debug, error, info, trace, warn};
     pub use tracing::{self, event, span, Level};
 }
@@ -1335,6 +1335,12 @@ pub enum Shape {
     Scalar,
     Wave(u32),
     Image(u32, u32),
+}
+
+impl fmt::Display for Shape {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(self, fmt)
+    }
 }
 
 mod serde_shape {

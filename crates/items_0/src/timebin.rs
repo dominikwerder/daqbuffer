@@ -77,6 +77,12 @@ where
     }
 }
 
+pub trait BinningggContainerEventsDyn: fmt::Debug {
+    fn binned_events_timeweight_traitobj(&self) -> Box<dyn BinnedEventsTimeweightTrait>;
+}
+
+pub trait BinningggContainerBinsDyn: fmt::Debug {}
+
 pub trait BinningggBinnerTy: fmt::Debug + Send {
     type Input: fmt::Debug;
     type Output: fmt::Debug;
@@ -85,19 +91,6 @@ pub trait BinningggBinnerTy: fmt::Debug + Send {
     fn range_final(&mut self);
     fn bins_ready_count(&self) -> usize;
     fn bins_ready(&mut self) -> Option<Self::Output>;
-
-    /// If there is a bin in progress with non-zero count, push it to the result set.
-    /// With push_empty == true, a bin in progress is pushed even if it contains no counts.
-    fn push_in_progress(&mut self, push_empty: bool);
-
-    /// Implies `Self::push_in_progress` but in addition, pushes a zero-count bin if the call
-    /// to `push_in_progress` did not change the result count, as long as edges are left.
-    /// The next call to `Self::bins_ready_count` must return one higher count than before.
-    fn cycle(&mut self);
-
-    fn empty(&self) -> Option<Self::Output>;
-
-    fn append_empty_until_end(&mut self);
 }
 
 pub trait BinningggBinnableTy: fmt::Debug + WithLen + Send {
@@ -111,7 +104,12 @@ pub trait BinningggBinnerDyn: fmt::Debug + Send {
     fn input_done_range_open(&mut self) -> Result<(), BinningggError>;
 }
 
-pub trait BinningBinnableDyn: fmt::Debug + Send {}
+pub trait BinnedEventsTimeweightTrait: fmt::Debug + Send {
+    fn ingest(&mut self, evs_all: Box<dyn BinningggContainerEventsDyn>) -> Result<(), BinningggError>;
+    fn input_done_range_final(&mut self) -> Result<(), BinningggError>;
+    fn input_done_range_open(&mut self) -> Result<(), BinningggError>;
+    fn output(&mut self) -> Result<Box<dyn BinningggContainerBinsDyn>, BinningggError>;
+}
 
 /// Data in time-binned form.
 pub trait TimeBinned: Any + TypeName + TimeBinnable + Resettable + Collectable + erased_serde::Serialize {

@@ -49,6 +49,7 @@ impl Container<EnumVariant> for EnumVariantContainer {
     }
 }
 
+#[derive(Debug)]
 pub struct EnumVariantAggregatorTimeWeight {
     sum: f32,
 }

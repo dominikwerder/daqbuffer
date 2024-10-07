@@ -43,7 +43,8 @@ pub enum DataParseError {
     HeaderTooLarge,
     Utf8Error,
     EventTooShort,
-    EventTooLong,
+    #[error("EventTooLong({0}, {1})")]
+    EventTooLong(Shape, u32),
     TooManyBeforeRange,
     EventWithOptional,
     BadTypeIndex,
@@ -261,10 +262,17 @@ impl EventChunker {
                     if len < 20 {
                         return Err(DataParseError::EventTooShort);
                     }
-                    match self.fetch_info.shape() {
-                        Shape::Scalar if len > 1000 => return Err(DataParseError::EventTooLong),
-                        Shape::Wave(_) if len > 500000 * 8 => return Err(DataParseError::EventTooLong),
-                        Shape::Image(_, _) if len > 3200 * 3200 * 8 => return Err(DataParseError::EventTooLong),
+                    let shape = self.fetch_info.shape();
+                    match shape {
+                        Shape::Scalar if len > 1024 * 64 => {
+                            return Err(DataParseError::EventTooLong(shape.clone(), len as _))
+                        }
+                        Shape::Wave(_) if len > 1024 * 1024 * 32 => {
+                            return Err(DataParseError::EventTooLong(shape.clone(), len as _))
+                        }
+                        Shape::Image(_, _) if len > 1024 * 1024 * 200 => {
+                            return Err(DataParseError::EventTooLong(shape.clone(), len as _))
+                        }
                         _ => {}
                     }
                     let len = len as u32;
@@ -481,11 +489,12 @@ impl EventChunker {
                                         log_items.push(item);
                                     }
                                 }
-                                Err(_) => {
+                                Err(e) => {
                                     self.discard_count_shape_derived_err += 1;
                                     ret.pop_back();
                                     let msg = format!(
-                                        "shape_derived error  {:?}  {:?}",
+                                        "shape_derived error  {}  {:?}  {:?}",
+                                        e,
                                         self.fetch_info.scalar_type(),
                                         self.fetch_info.shape(),
                                     );
