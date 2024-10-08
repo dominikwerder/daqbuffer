@@ -4160,6 +4160,17 @@ pub struct StatusBoardEntryUser {
     errors: Vec<::err::PublicError>,
 }
 
+impl StatusBoardEntryUser {
+    pub fn new_all_good() -> Self {
+        Self {
+            error_count: 0,
+            warn_count: 0,
+            channel_not_found: 0,
+            errors: Vec::new(),
+        }
+    }
+}
+
 impl From<&StatusBoardEntry> for StatusBoardEntryUser {
     fn from(e: &StatusBoardEntry) -> Self {
         Self {
@@ -4248,19 +4259,10 @@ impl StatusBoard {
         }
     }
 
-    pub fn status_as_json(&self, status_id: &str) -> StatusBoardEntryUser {
+    pub fn status_as_json(&self, status_id: &str) -> Option<StatusBoardEntryUser> {
         match self.entries.get(status_id) {
-            Some(e) => e.into(),
-            None => {
-                error!("can not find status id {}", status_id);
-                let _e = ::err::Error::with_public_msg_no_trace(format!("request-id unknown {status_id}"));
-                StatusBoardEntryUser {
-                    error_count: 1,
-                    warn_count: 0,
-                    channel_not_found: 0,
-                    errors: vec![::err::Error::with_public_msg_no_trace("request-id not found").into()],
-                }
-            }
+            Some(e) => Some(e.into()),
+            None => None,
         }
     }
 }

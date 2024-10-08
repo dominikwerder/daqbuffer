@@ -1,19 +1,20 @@
 use crate::bodystream::response;
 use crate::err::Error;
-use http::header;
+use crate::requests::accepts_json_or_all;
+use http::request::Parts;
 use http::Method;
-use http::Request;
 use http::StatusCode;
-use http::Uri;
 use httpclient::body_bytes;
 use httpclient::body_empty;
-use httpclient::connect_client;
+use httpclient::body_string;
 use httpclient::read_body_bytes;
 use httpclient::Requ;
 use httpclient::StreamResponse;
+use netpod::get_url_query_pairs;
 use netpod::log::*;
+use netpod::req_uri_to_url;
 use netpod::ProxyConfig;
-use netpod::ACCEPT_ALL;
+use netpod::ReqCtx;
 use netpod::APP_JSON;
 
 pub struct RequestStatusHandler {}
@@ -31,68 +32,56 @@ impl RequestStatusHandler {
         }
     }
 
-    pub async fn handle(&self, req: Requ, proxy_config: &ProxyConfig) -> Result<StreamResponse, Error> {
+    pub async fn handle(&self, req: Requ, ctx: &ReqCtx, proxy_config: &ProxyConfig) -> Result<StreamResponse, Error> {
         let (head, body) = req.into_parts();
         if head.method != Method::GET {
-            return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?);
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
+        } else if !accepts_json_or_all(&head.headers) {
+            Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?)
+        } else {
+            let _body_data = read_body_bytes(body).await?;
+            self.handle_json(ctx, head, proxy_config).await
         }
-        let accept = head
-            .headers
-            .get(http::header::ACCEPT)
-            .map_or(Ok(ACCEPT_ALL), |k| k.to_str())
-            .map_err(|e| Error::with_msg_no_trace(format!("{e:?}")))?
-            .to_owned();
-        if accept != APP_JSON && accept != ACCEPT_ALL {
-            // TODO set the public error code and message and return Err(e).
-            let e = Error::with_public_msg_no_trace(format!("Unsupported Accept: {:?}", accept));
-            error!("{e}");
-            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
-        }
-        let _body_data = read_body_bytes(body).await?;
+    }
+
+    async fn handle_json(
+        &self,
+        ctx: &ReqCtx,
+        head: Parts,
+        proxy_config: &ProxyConfig,
+    ) -> Result<StreamResponse, Error> {
         let status_id = &head.uri.path()[Self::path_prefix().len()..];
         debug!("RequestStatusHandler  status_id {:?}", status_id);
-        if status_id.len() < 8 {
-            return Err(Error::with_msg_no_trace(format!("bad status id {}", status_id)));
+
+        if false {
+            let status = netpod::StatusBoardEntryUser::new_all_good();
+            let s = serde_json::to_string(&status)?;
+            let ret = response(StatusCode::OK).body(body_string(s))?;
+            return Ok(ret);
         }
 
-        let back = {
-            let mut ret = None;
-            for b in &proxy_config.backends {
-                if b.name == "sf-databuffer" {
-                    ret = Some(b);
-                    break;
-                }
-            }
-            ret
-        };
-        if let Some(back) = back {
-            let (status_id, url) = if back.url.contains("sf-daqbuf-23.psi.ch") {
-                // TODO split_at may panic on bad input
-                let (status_id, node_tgt) = status_id.split_at(status_id.len() - 2);
-                (status_id, back.url.replace("-23.", &format!("-{}.", node_tgt)))
-            } else {
-                (status_id, back.url.clone())
-            };
-            let url_str = format!("{}{}{}", url, Self::path_prefix(), status_id);
-            debug!("try to ask {url_str}");
-            let uri: Uri = url_str.parse()?;
-            let req = Request::builder()
-                .method(Method::GET)
-                .header(header::HOST, uri.host().unwrap())
-                .uri(&uri)
-                .body(body_empty())?;
-            let res = connect_client(&uri).await?.send_request(req).await?;
-            let (head, body) = res.into_parts();
-            if head.status != StatusCode::OK {
-                error!("backend returned error: {head:?}");
-                Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
-            } else {
-                debug!("backend returned OK");
-                let body = read_body_bytes(body).await?;
-                Ok(response(StatusCode::OK).body(body_bytes(body))?)
-            }
+        let url = req_uri_to_url(&head.uri).map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
+        let pairs = get_url_query_pairs(&url);
+        let pn = if let Some(backend) = pairs.get("backend") {
+            proxy_config
+                .backends
+                .iter()
+                .filter(|x| x.name == *backend)
+                .next()
+                .ok_or_else(|| Error::with_msg_no_trace(format!("no default backend found")))?
         } else {
-            Ok(response(StatusCode::INTERNAL_SERVER_ERROR).body(body_empty())?)
-        }
+            proxy_config
+                .backends
+                .iter()
+                .filter(|x| x.name == "sf-databuffer")
+                .next()
+                .ok_or_else(|| Error::with_msg_no_trace(format!("no default backend found")))?
+        };
+        let url_str = format!("{}{}{}", pn.url, Self::path_prefix(), status_id);
+        debug!("try to ask {url_str}");
+        let url = url_str.parse()?;
+        let res = httpclient::http_get(url, APP_JSON, ctx).await?;
+        let ret = response(StatusCode::OK).body(body_bytes(res.body))?;
+        Ok(ret)
     }
 }

@@ -9,6 +9,7 @@ use crate::ReqCtx;
 use crate::Requ;
 use crate::ServiceSharedResources;
 use bytes::BufMut;
+use bytes::Bytes;
 use bytes::BytesMut;
 use disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes;
 use futures_util::Stream;
@@ -1036,21 +1037,7 @@ impl Api1EventsBinaryHandler {
             );
             let s = s.instrument(span).instrument(reqidspan);
             let body = body_stream(s);
-            let n2 = ncc
-                .node_config
-                .cluster
-                .nodes
-                .get(ncc.ix)
-                .ok_or_else(|| Error::with_msg_no_trace(format!("node ix {} not found", ncc.ix)))?;
-            let nodeno_pre = "sf-daqbuf-";
-            let nodeno: u32 = if n2.host.starts_with(nodeno_pre) {
-                n2.host[nodeno_pre.len()..nodeno_pre.len() + 2]
-                    .parse()
-                    .map_err(|e| Error::with_msg_no_trace(format!("{e}")))?
-            } else {
-                ncc.ix as _
-            };
-            let req_stat_id = format!("{}{:02}", reqctx.reqid_this(), nodeno);
+            let req_stat_id = format!("{}{:02x}", reqctx.reqid_this(), ncc.ix);
             info!("return req_stat_id {req_stat_id}");
             let ret = response(StatusCode::OK).header(X_DAQBUF_REQID, req_stat_id);
             let ret = ret.body(body)?;
@@ -1082,38 +1069,52 @@ impl RequestStatusHandler {
     pub async fn handle(&self, req: Requ, ctx: &ReqCtx, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
         let (head, body) = req.into_parts();
         if head.method != Method::GET {
-            return Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?);
-        }
-        if accepts_json_or_all(&head.headers) {
-            let _body_data = read_body_bytes(body).await?;
+            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
+        } else if !accepts_json_or_all(&head.headers) {
+            Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?)
+        } else {
             let status_id = &head.uri.path()[Self::path_prefix().len()..];
-            if status_id.len() == 8 {
-                debug!("RequestStatusHandler  status_id {:?}", status_id);
-                let status = crate::status_board().unwrap().status_as_json(status_id);
+            debug!("RequestStatusHandler  status_id {:?}", status_id);
+
+            if false {
+                let status = netpod::StatusBoardEntryUser::new_all_good();
                 let s = serde_json::to_string(&status)?;
                 let ret = response(StatusCode::OK).body(body_string(s))?;
-                Ok(ret)
-            } else if status_id.len() == 10 {
-                let node_id =
-                    u32::from_str_radix(&status_id[8..10], 16).map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
-                let status_id = status_id[0..8].to_string();
-                let node2 = ncc
-                    .node_config
-                    .cluster
-                    .nodes
-                    .get(node_id as usize)
-                    .ok_or_else(|| Error::with_msg_no_trace(format!("node {node_id} unknown")))?;
-                let url = Url::parse(&format!("{}api/1/requestStatus/{}", node2.baseurl(), status_id))
-                    .map_err(|_| Error::with_msg_no_trace(format!("bad url")))?;
-                let res = httpclient::http_get(url, APP_JSON, ctx).await?;
-                let ret = response(StatusCode::OK).body(body_bytes(res.body))?;
-                Ok(ret)
-            } else {
-                let ret = error_status_response(StatusCode::BAD_REQUEST, format!("bad status id requested"), "0000");
-                Ok(ret)
+                return Ok(ret);
             }
+
+            let _body_data = read_body_bytes(body).await?;
+            match self.try_make_status(status_id, ctx, ncc).await {
+                Ok(x) => Ok(response(StatusCode::OK).body(body_bytes(x))?),
+                Err(e) => {
+                    let ret = error_status_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string(), "0");
+                    Ok(ret)
+                }
+            }
+        }
+    }
+
+    async fn try_make_status(&self, status_id: &str, ctx: &ReqCtx, ncc: &NodeConfigCached) -> Result<Bytes, Error> {
+        if status_id.len() == 8 {
+            let status = crate::status_board().unwrap().status_as_json(status_id);
+            let v = serde_json::to_vec(&status)?;
+            Ok(v.into())
+        } else if status_id.len() == 10 {
+            let node_id =
+                u32::from_str_radix(&status_id[8..10], 16).map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
+            let status_id = status_id[0..8].to_string();
+            let node2 = ncc
+                .node_config
+                .cluster
+                .nodes
+                .get(node_id as usize)
+                .ok_or_else(|| Error::with_msg_no_trace(format!("node {node_id} unknown")))?;
+            let url = Url::parse(&format!("{}api/1/requestStatus/{}", node2.baseurl(), status_id))
+                .map_err(|_| Error::with_msg_no_trace(format!("bad url")))?;
+            let res = httpclient::http_get(url, APP_JSON, ctx).await?;
+            Ok(res.body)
         } else {
-            return Ok(response(StatusCode::NOT_ACCEPTABLE).body(body_empty())?);
+            Err(Error::with_msg_no_trace(format!("bad request id")))
         }
     }
 }
