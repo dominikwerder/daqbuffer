@@ -12,6 +12,9 @@ use items_0::timebin::BinningggBinnerDyn;
 use items_0::timebin::BinningggContainerBinsDyn;
 use items_0::timebin::BinningggContainerEventsDyn;
 use items_0::timebin::BinningggError;
+use items_0::timebin::BinsBoxed;
+use items_0::timebin::EventsBoxed;
+use netpod::log::*;
 use netpod::BinnedRange;
 use netpod::TsNano;
 use std::arch::x86_64;
@@ -52,7 +55,7 @@ impl<EVT> BinnedEventsTimeweightTrait for BinnedEventsTimeweightDynbox<EVT>
 where
     EVT: EventValueType,
 {
-    fn ingest(&mut self, evs_all: Box<dyn BinningggContainerEventsDyn>) -> Result<(), BinningggError> {
+    fn ingest(&mut self, evs_all: EventsBoxed) -> Result<(), BinningggError> {
         todo!()
     }
 
@@ -66,7 +69,7 @@ where
         todo!()
     }
 
-    fn output(&mut self) -> Result<Box<dyn BinningggContainerBinsDyn>, BinningggError> {
+    fn output(&mut self) -> Result<BinsBoxed, BinningggError> {
         // self.binner.output()
         todo!()
     }
@@ -88,21 +91,31 @@ impl BinnedEventsTimeweightLazy {
 }
 
 impl BinnedEventsTimeweightTrait for BinnedEventsTimeweightLazy {
-    fn ingest(&mut self, evs_all: Box<dyn BinningggContainerEventsDyn>) -> Result<(), BinningggError> {
-        // TODO the container must provide a method to create the dyn binner.
-        let binned_events = self.binned_events.get_or_insert_with(|| todo!());
-        todo!()
+    fn ingest(&mut self, evs_all: EventsBoxed) -> Result<(), BinningggError> {
+        self.binned_events
+            .get_or_insert_with(|| evs_all.binned_events_timeweight_traitobj())
+            .ingest(evs_all)
     }
 
     fn input_done_range_final(&mut self) -> Result<(), BinningggError> {
-        todo!()
+        debug!("TODO something to do if we miss the binner here?");
+        self.binned_events
+            .as_mut()
+            .map(|x| x.input_done_range_final())
+            .unwrap_or(Ok(()))
     }
 
     fn input_done_range_open(&mut self) -> Result<(), BinningggError> {
-        todo!()
+        debug!("TODO something to do if we miss the binner here?");
+        self.binned_events
+            .as_mut()
+            .map(|x| x.input_done_range_open())
+            .unwrap_or(Ok(()))
     }
 
-    fn output(&mut self) -> Result<Box<dyn BinningggContainerBinsDyn>, BinningggError> {
+    fn output(&mut self) -> Result<BinsBoxed, BinningggError> {
+        debug!("TODO something to do if we miss the binner here?");
+        // TODO change trait because without binner we can not produce any container here
         todo!()
     }
 }

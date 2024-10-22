@@ -109,6 +109,8 @@ pub trait BinningggContainerBinsDyn: fmt::Debug + Send + fmt::Display + WithLen 
 
 pub type BinsBoxed = Box<dyn BinningggContainerBinsDyn>;
 
+pub type EventsBoxed = Box<dyn BinningggContainerEventsDyn>;
+
 pub trait BinningggBinnerTy: fmt::Debug + Send {
     type Input: fmt::Debug;
     type Output: fmt::Debug;

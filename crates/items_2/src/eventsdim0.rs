@@ -1105,11 +1105,15 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
     }
 
     fn to_container_events(&self) -> Box<dyn ::items_0::timebin::BinningggContainerEventsDyn> {
-        // let tss = self.tss.iter().map(|&x| TsNano::from_ns(x)).collect();
-        // let vals = self.values.clone();
-        // let ret = crate::binning::container_events::ContainerEvents::from_constituents(tss, vals);
-        // Box::new(ret)
-        todo!()
+        use crate::binning::container_events::ContainerEvents;
+        let tss = self.tss.iter().map(|&x| TsNano::from_ns(x)).collect();
+        if let Some(evs) = self.as_any_ref().downcast_ref::<EventsDim0<f64>>() {
+            let vals = evs.values.clone();
+            let ret = ContainerEvents::<f64>::from_constituents(tss, vals);
+            Box::new(ret)
+        } else {
+            todo!()
+        }
     }
 }
 
