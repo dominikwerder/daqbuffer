@@ -85,7 +85,7 @@ fn make_test_channel_events_stream_data_inner(
     debug!("use test backend data");
     let chn = subq.name();
     let range = subq.range().clone();
-    let one_before = subq.transform().need_one_before_range();
+    let one_before = subq.need_one_before_range();
     if chn == "test-gen-i32-dim0-v00" {
         Ok(Box::pin(GenerateI32V00::new(node_ix, node_count, range, one_before)))
     } else if chn == "test-gen-i32-dim0-v01" {

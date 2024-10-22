@@ -62,11 +62,8 @@ pub async fn make_event_pipe(
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
     // sf-databuffer type backends identify channels by their (backend, name) only.
     let range = evq.range().clone();
-    let one_before = evq.transform().need_one_before_range();
-    info!(
-        "make_event_pipe  need_expand {need_expand}  {evq:?}",
-        need_expand = one_before
-    );
+    let one_before = evq.need_one_before_range();
+    info!("make_event_pipe  one_before {one_before}  {evq:?}");
     let event_chunker_conf = EventChunkerConf::new(ByteSize::from_kb(1024));
     // TODO should not need this for correctness.
     // Should limit based on return size and latency.
@@ -94,7 +91,7 @@ pub async fn make_event_pipe(
 pub fn make_event_blobs_stream(
     range: NanoRange,
     fetch_info: SfChFetchInfo,
-    expand: bool,
+    one_before: bool,
     event_chunker_conf: EventChunkerConf,
     disk_io_tune: DiskIoTune,
     reqctx: ReqCtxArc,
@@ -115,7 +112,7 @@ pub fn make_event_blobs_stream(
         ncc.ix,
         disk_io_tune,
         event_chunker_conf,
-        expand,
+        one_before,
         out_max_len,
         reqctx,
     );
@@ -128,13 +125,13 @@ pub fn make_event_blobs_pipe_real(
     reqctx: ReqCtxArc,
     ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
-    let expand = subq.transform().need_one_before_range();
+    let one_before = subq.need_one_before_range();
     let range = subq.range();
     let event_chunker_conf = EventChunkerConf::new(ByteSize::from_kb(1024));
     let event_blobs = make_event_blobs_stream(
         range.try_into()?,
         fetch_info.clone(),
-        expand,
+        one_before,
         event_chunker_conf,
         subq.disk_io_tune(),
         reqctx,

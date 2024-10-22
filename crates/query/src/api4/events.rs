@@ -537,7 +537,7 @@ impl EventsSubQuery {
     }
 
     pub fn need_one_before_range(&self) -> bool {
-        self.select.one_before_range
+        self.select.one_before_range | self.transform().need_one_before_range()
     }
 
     pub fn transform(&self) -> &TransformQuery {

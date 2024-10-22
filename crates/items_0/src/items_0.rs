@@ -9,6 +9,7 @@ pub mod subfr;
 pub mod test;
 pub mod timebin;
 pub mod transform;
+pub mod vecpreview;
 
 pub mod bincode {
     pub use bincode::*;
@@ -21,6 +22,7 @@ use container::ByteEstimate;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
+use timebin::BinningggContainerEventsDyn;
 use timebin::TimeBinnable;
 
 pub trait WithLen {
@@ -158,6 +160,7 @@ pub trait Events:
     fn clear(&mut self);
     // TODO: can not name EventsDim0 from here, so use trait object for now. Anyway is a workaround.
     fn to_dim0_f32_for_binning(&self) -> Box<dyn Events>;
+    fn to_container_events(&self) -> Box<dyn BinningggContainerEventsDyn>;
 }
 
 impl WithLen for Box<dyn Events> {
@@ -295,5 +298,9 @@ impl Events for Box<dyn Events> {
 
     fn to_dim0_f32_for_binning(&self) -> Box<dyn Events> {
         Events::to_dim0_f32_for_binning(self.as_ref())
+    }
+
+    fn to_container_events(&self) -> Box<dyn BinningggContainerEventsDyn> {
+        Events::to_container_events(self.as_ref())
     }
 }

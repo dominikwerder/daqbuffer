@@ -381,6 +381,10 @@ impl<STY: ScalarOps> Events for EventsXbinDim0<STY> {
     fn to_dim0_f32_for_binning(&self) -> Box<dyn Events> {
         todo!("{}::to_dim0_f32_for_binning", self.type_name())
     }
+
+    fn to_container_events(&self) -> Box<dyn ::items_0::timebin::BinningggContainerEventsDyn> {
+        todo!("{}::to_container_events", self.type_name())
+    }
 }
 
 #[derive(Debug)]

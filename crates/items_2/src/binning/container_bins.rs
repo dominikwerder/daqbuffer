@@ -2,11 +2,10 @@ use super::aggregator::AggregatorNumeric;
 use super::aggregator::AggregatorTimeWeight;
 use super::container_events::EventValueType;
 use super::___;
-use crate::vecpreview::PreviewRange;
-use crate::vecpreview::VecPreview;
 use core::fmt;
 use err::thiserror;
 use err::ThisError;
+use items_0::vecpreview::VecPreview;
 use netpod::TsNano;
 use serde::Deserialize;
 use serde::Serialize;
@@ -114,6 +113,28 @@ impl<EVT> ContainerBins<EVT>
 where
     EVT: EventValueType,
 {
+    pub fn from_constituents(
+        ts1s: VecDeque<TsNano>,
+        ts2s: VecDeque<TsNano>,
+        cnts: VecDeque<u64>,
+        mins: VecDeque<EVT>,
+        maxs: VecDeque<EVT>,
+        avgs: VecDeque<EVT::AggTimeWeightOutputAvg>,
+        lsts: VecDeque<EVT>,
+        fnls: VecDeque<bool>,
+    ) -> Self {
+        Self {
+            ts1s,
+            ts2s,
+            cnts,
+            mins,
+            maxs,
+            avgs,
+            lsts,
+            fnls,
+        }
+    }
+
     pub fn type_name() -> &'static str {
         any::type_name::<Self>()
     }
@@ -153,6 +174,14 @@ where
         self.ts2s.back().map(|&x| x)
     }
 
+    pub fn ts1s_iter(&self) -> std::collections::vec_deque::Iter<TsNano> {
+        self.ts1s.iter()
+    }
+
+    pub fn ts2s_iter(&self) -> std::collections::vec_deque::Iter<TsNano> {
+        self.ts2s.iter()
+    }
+
     pub fn cnts_iter(&self) -> std::collections::vec_deque::Iter<u64> {
         self.cnts.iter()
     }
@@ -163,6 +192,50 @@ where
 
     pub fn maxs_iter(&self) -> std::collections::vec_deque::Iter<EVT> {
         self.maxs.iter()
+    }
+
+    pub fn avgs_iter(&self) -> std::collections::vec_deque::Iter<EVT::AggTimeWeightOutputAvg> {
+        self.avgs.iter()
+    }
+
+    pub fn fnls_iter(&self) -> std::collections::vec_deque::Iter<bool> {
+        self.fnls.iter()
+    }
+
+    pub fn zip_iter(
+        &self,
+    ) -> std::iter::Zip<
+        std::iter::Zip<
+            std::iter::Zip<
+                std::iter::Zip<
+                    std::iter::Zip<
+                        std::iter::Zip<
+                            std::collections::vec_deque::Iter<TsNano>,
+                            std::collections::vec_deque::Iter<TsNano>,
+                        >,
+                        std::collections::vec_deque::Iter<u64>,
+                    >,
+                    std::collections::vec_deque::Iter<EVT>,
+                >,
+                std::collections::vec_deque::Iter<EVT>,
+            >,
+            std::collections::vec_deque::Iter<EVT::AggTimeWeightOutputAvg>,
+        >,
+        std::collections::vec_deque::Iter<bool>,
+    > {
+        self.ts1s_iter()
+            .zip(self.ts2s_iter())
+            .zip(self.cnts_iter())
+            .zip(self.mins_iter())
+            .zip(self.maxs_iter())
+            .zip(self.avgs_iter())
+            .zip(self.fnls_iter())
+    }
+
+    pub fn edges_iter(
+        &self,
+    ) -> std::iter::Zip<std::collections::vec_deque::Iter<TsNano>, std::collections::vec_deque::Iter<TsNano>> {
+        self.ts1s.iter().zip(self.ts2s.iter())
     }
 
     pub fn len_before(&self, end: TsNano) -> usize {

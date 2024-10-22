@@ -9,9 +9,7 @@ use futures_util::StreamExt;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
-use items_0::Empty;
-use items_0::WithLen;
-use items_2::binsdim0::BinsDim0;
+use items_0::timebin::BinsBoxed;
 use netpod::log::*;
 use netpod::query::CacheUsage;
 use netpod::range::evrange::NanoRange;
@@ -56,7 +54,7 @@ pub enum Error {
     EventsReader(#[from] super::fromevents::Error),
 }
 
-type INP = Pin<Box<dyn Stream<Item = Sitemty<BinsDim0<f32>>> + Send>>;
+type Input = Pin<Box<dyn Stream<Item = Sitemty<BinsBoxed>> + Send>>;
 
 // Try to read from cache for the given bin len.
 // For gaps in the stream, construct an alternative input from finer bin len with a binner.
@@ -72,10 +70,10 @@ pub struct GapFill {
     range: BinnedRange<TsNano>,
     do_time_weight: bool,
     bin_len_layers: Vec<DtMs>,
-    inp: Option<INP>,
+    inp: Option<Input>,
     inp_range_final: bool,
-    inp_buf: Option<BinsDim0<f32>>,
-    inp_finer: Option<INP>,
+    inp_buf: Option<BinsBoxed>,
+    inp_finer: Option<Input>,
     inp_finer_range_final: bool,
     inp_finer_range_final_cnt: u32,
     inp_finer_range_final_max: u32,
@@ -84,7 +82,7 @@ pub struct GapFill {
     exp_finer_range: NanoRange,
     cache_read_provider: Arc<dyn CacheReadProvider>,
     events_read_provider: Arc<dyn EventsReadProvider>,
-    bins_for_cache_write: BinsDim0<f32>,
+    bins_for_cache_write: Option<BinsBoxed>,
     done: bool,
     cache_writing: Option<super::cached::reader::CacheWriting>,
 }
@@ -114,7 +112,7 @@ impl GapFill {
                     Ok(x) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))),
                     Err(e) => Err(::err::Error::from_string(e)),
                 });
-            Box::pin(stream) as Pin<Box<dyn Stream<Item = Sitemty<BinsDim0<f32>>> + Send>>
+            Box::pin(stream) as Pin<Box<dyn Stream<Item = Sitemty<BinsBoxed>> + Send>>
         } else {
             let stream = futures_util::stream::empty();
             Box::pin(stream)
@@ -144,36 +142,33 @@ impl GapFill {
             exp_finer_range: NanoRange { beg: 0, end: 0 },
             cache_read_provider,
             events_read_provider,
-            bins_for_cache_write: BinsDim0::empty(),
+            bins_for_cache_write: None,
             done: false,
             cache_writing: None,
         };
         Ok(ret)
     }
 
-    fn handle_bins_finer(mut self: Pin<&mut Self>, bins: BinsDim0<f32>) -> Result<BinsDim0<f32>, Error> {
+    fn handle_bins_finer(mut self: Pin<&mut Self>, bins: BinsBoxed) -> Result<BinsBoxed, Error> {
         trace_handle!("{}  handle_bins_finer  {}", self.dbgname, bins);
-        for (&ts1, &ts2) in bins.ts1s.iter().zip(&bins.ts2s) {
+        for (&ts1, &ts2) in bins.edges_iter() {
             if let Some(last) = self.last_bin_ts2 {
-                if ts1 != last.ns() {
-                    return Err(Error::GapFromFiner(
-                        TsNano::from_ns(ts1),
-                        last,
-                        self.range.bin_len_dt_ms(),
-                    ));
+                if ts1 != last {
+                    return Err(Error::GapFromFiner(ts1, last, self.range.bin_len_dt_ms()));
                 }
-            } else if ts1 != self.range.nano_beg().ns() {
+            } else if ts1 != self.range.nano_beg() {
                 return Err(Error::MissingBegFromFiner(
-                    TsNano::from_ns(ts1),
+                    ts1,
                     self.range.nano_beg(),
                     self.range.bin_len_dt_ms(),
                 ));
             }
-            self.last_bin_ts2 = Some(TsNano::from_ns(ts2));
+            self.last_bin_ts2 = Some(ts2);
         }
         if bins.len() != 0 {
             let mut bins2 = bins.clone();
-            bins2.drain_into(&mut self.bins_for_cache_write, 0..bins2.len());
+            let dst = self.bins_for_cache_write.get_or_insert_with(|| bins.empty());
+            bins2.drain_into(dst.as_mut(), 0..bins2.len());
         }
         if self.cache_usage.is_cache_write() {
             self.cache_write_intermediate()?;
@@ -191,34 +186,34 @@ impl GapFill {
         Ok(())
     }
 
-    fn handle_bins(mut self: Pin<&mut Self>, bins: BinsDim0<f32>) -> Result<BinsDim0<f32>, Error> {
+    fn handle_bins(mut self: Pin<&mut Self>, bins: BinsBoxed) -> Result<BinsBoxed, Error> {
         trace_handle!("{}  handle_bins  {}", self.dbgname, bins);
         // TODO could use an interface to iterate over opaque bin items that only expose
         // edge and count information with all remaining values opaque.
-        for (i, (&ts1, &ts2)) in bins.ts1s.iter().zip(&bins.ts2s).enumerate() {
-            if ts1 < self.range.nano_beg().ns() {
+        for (i, (&ts1, &ts2)) in bins.edges_iter().enumerate() {
+            if ts1 < self.range.nano_beg() {
                 return Err(Error::InputBeforeRange(
-                    NanoRange::from_ns_u64(ts1, ts2),
+                    NanoRange::from_ns_u64(ts1.ns(), ts2.ns()),
                     self.range.clone(),
                 ));
             }
             if let Some(last) = self.last_bin_ts2 {
-                if ts1 != last.ns() {
+                if ts1 != last {
                     trace_handle!("{}  detect a gap  BETWEEN  last {}  ts1 {}", self.dbgname, last, ts1);
-                    let mut ret = <BinsDim0<f32> as items_0::Empty>::empty();
+                    let mut ret = bins.empty();
                     let mut bins = bins;
-                    bins.drain_into(&mut ret, 0..i);
+                    bins.drain_into(ret.as_mut(), 0..i);
                     self.inp_buf = Some(bins);
                     let range = NanoRange {
                         beg: last.ns(),
-                        end: ts1,
+                        end: ts1.ns(),
                     };
                     self.setup_sub(range)?;
                     return Ok(ret);
                 } else {
                     // nothing to do
                 }
-            } else if ts1 != self.range.nano_beg().ns() {
+            } else if ts1 != self.range.nano_beg() {
                 trace_handle!(
                     "{}  detect a gap  BEGIN  beg {}  ts1 {}",
                     self.dbgname,
@@ -227,12 +222,12 @@ impl GapFill {
                 );
                 let range = NanoRange {
                     beg: self.range.nano_beg().ns(),
-                    end: ts1,
+                    end: ts1.ns(),
                 };
                 self.setup_sub(range)?;
-                return Ok(BinsDim0::empty());
+                return Ok(bins.empty());
             }
-            self.last_bin_ts2 = Some(TsNano::from_ns(ts2));
+            self.last_bin_ts2 = Some(ts2);
         }
         Ok(bins)
     }
@@ -270,10 +265,12 @@ impl GapFill {
                 self.events_read_provider.clone(),
             )?;
             let stream = Box::pin(inp_finer);
-            let do_time_weight = self.do_time_weight;
             let range = BinnedRange::from_nano_range(range_finer.full_range(), self.range.bin_len.to_dt_ms());
-            let stream =
-                super::basic::TimeBinnedStream::new(stream, netpod::BinnedRangeEnum::Time(range), do_time_weight);
+            let stream = if self.do_time_weight {
+                ::items_2::binning::timeweight::timeweight_bins_dyn::BinnedBinsTimeweightStream::new(range, stream)
+            } else {
+                panic!("TODO unweighted")
+            };
             self.inp_finer = Some(Box::pin(stream));
         } else {
             debug_setup!("{}  setup_inp_finer  next finer from events  {}", self.dbgname, range);
@@ -309,7 +306,7 @@ impl GapFill {
         Ok(())
     }
 
-    fn cache_write(mut self: Pin<&mut Self>, bins: BinsDim0<f32>) -> Result<(), Error> {
+    fn cache_write(mut self: Pin<&mut Self>, bins: BinsBoxed) -> Result<(), Error> {
         self.cache_writing = Some(self.cache_read_provider.write(self.series, bins));
         Ok(())
     }
@@ -318,42 +315,27 @@ impl GapFill {
         if self.inp_finer_fills_gap {
             // TODO can consider all incoming bins as final by assumption.
         }
-        let aa = &self.bins_for_cache_write;
-        if aa.len() >= 2 {
-            for (i, (&c1, &_c2)) in aa.cnts.iter().rev().zip(aa.cnts.iter().rev().skip(1)).enumerate() {
-                if c1 != 0 {
-                    let n = aa.len() - (1 + i);
-                    debug_cache!("{}  cache_write_on_end  consider {} for write", self.dbgname, n);
-                    let mut bins_write = BinsDim0::empty();
-                    self.bins_for_cache_write.drain_into(&mut bins_write, 0..n);
-                    self.cache_write(bins_write)?;
-                    break;
-                }
+        if let Some(bins) = &self.bins_for_cache_write {
+            if bins.len() >= 2 {
+                // TODO guard behind flag.
+                // TODO emit to a async user-given channel, if given.
+                // Therefore, move to poll loop.
+                // Should only write to cache with non-zero count, therefore, not even emit others?
+                // TODO afterwards set to None.
+                self.bins_for_cache_write = None;
             }
         }
         Ok(())
     }
 
-    fn cache_write_intermediate(mut self: Pin<&mut Self>) -> Result<(), Error> {
-        let aa = &self.bins_for_cache_write;
-        if aa.len() >= 2 {
-            for (i, (&c1, &_c2)) in aa.cnts.iter().rev().zip(aa.cnts.iter().rev().skip(1)).enumerate() {
-                if c1 != 0 {
-                    let n = aa.len() - (1 + i);
-                    debug_cache!("{}  cache_write_intermediate  consider {} for write", self.dbgname, n);
-                    let mut bins_write = BinsDim0::empty();
-                    self.bins_for_cache_write.drain_into(&mut bins_write, 0..n);
-                    self.cache_write(bins_write)?;
-                    break;
-                }
-            }
-        }
+    fn cache_write_intermediate(self: Pin<&mut Self>) -> Result<(), Error> {
+        // TODO See cache_write_on_end
         Ok(())
     }
 }
 
 impl Stream for GapFill {
-    type Item = Sitemty<BinsDim0<f32>>;
+    type Item = Sitemty<BinsBoxed>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;

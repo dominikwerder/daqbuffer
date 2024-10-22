@@ -2,7 +2,6 @@ use crate::timebin::TimeBinnerCommonV0Func;
 use crate::timebin::TimeBinnerCommonV0Trait;
 use crate::ts_offs_from_abs;
 use crate::ts_offs_from_abs_with_anchor;
-use crate::vecpreview::VecPreview;
 use crate::IsoDateTime;
 use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
@@ -25,6 +24,7 @@ use items_0::timebin::TimeBinned;
 use items_0::timebin::TimeBinner;
 use items_0::timebin::TimeBinnerTy;
 use items_0::timebin::TimeBins;
+use items_0::vecpreview::VecPreview;
 use items_0::AppendAllFrom;
 use items_0::AppendEmptyBin;
 use items_0::AsAnyMut;
@@ -134,6 +134,10 @@ where
 
 impl<NTY: ScalarOps> BinsDim0<NTY> {
     pub fn push(&mut self, ts1: u64, ts2: u64, count: u64, min: NTY, max: NTY, avg: f32, lst: NTY) {
+        if avg < min.as_prim_f32_b() || avg > max.as_prim_f32_b() {
+            // TODO rounding issues?
+            debug!("bad avg");
+        }
         self.ts1s.push_back(ts1);
         self.ts2s.push_back(ts2);
         self.cnts.push_back(count);
@@ -534,12 +538,19 @@ where
         if self.cnt == 0 && !push_empty {
             self.reset_agg();
         } else {
+            let min = self.min.clone();
+            let max = self.max.clone();
+            let avg = self.avg as f32;
+            if avg < min.as_prim_f32_b() || avg > max.as_prim_f32_b() {
+                // TODO rounding issues?
+                debug!("bad avg");
+            }
             self.out.ts1s.push_back(self.ts1now.ns());
             self.out.ts2s.push_back(self.ts2now.ns());
             self.out.cnts.push_back(self.cnt);
-            self.out.mins.push_back(self.min.clone());
-            self.out.maxs.push_back(self.max.clone());
-            self.out.avgs.push_back(self.avg as f32);
+            self.out.mins.push_back(min);
+            self.out.maxs.push_back(max);
+            self.out.avgs.push_back(avg);
             self.out.lsts.push_back(self.lst.clone());
             self.reset_agg();
         }

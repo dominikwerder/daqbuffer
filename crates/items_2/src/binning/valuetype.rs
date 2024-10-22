@@ -2,8 +2,8 @@ use super::aggregator::AggregatorTimeWeight;
 use super::binnedvaluetype::BinnedNumericValue;
 use super::container_events::Container;
 use super::container_events::EventValueType;
-use crate::vecpreview::PreviewRange;
 use core::fmt;
+use items_0::vecpreview::PreviewRange;
 use netpod::DtNano;
 use netpod::EnumVariant;
 use serde::Deserialize;
@@ -18,7 +18,7 @@ pub struct EnumVariantContainer {
 
 impl PreviewRange for EnumVariantContainer {
     fn preview<'a>(&'a self) -> Box<dyn fmt::Debug + 'a> {
-        let ret = crate::vecpreview::PreviewCell {
+        let ret = items_0::vecpreview::PreviewCell {
             a: self.ixs.front(),
             b: self.ixs.back(),
         };

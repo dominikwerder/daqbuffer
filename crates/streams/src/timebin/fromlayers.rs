@@ -12,7 +12,10 @@ use items_0::on_sitemty_data;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
+use items_0::timebin::BinningggContainerBinsDyn;
+use items_0::timebin::BinsBoxed;
 use items_0::timebin::TimeBinnableTy;
+use items_2::binning::timeweight::timeweight_bins_dyn::BinnedBinsTimeweightStream;
 use items_2::binsdim0::BinsDim0;
 use netpod::log::*;
 use netpod::query::CacheUsage;
@@ -44,7 +47,7 @@ pub enum Error {
     FinerGridMismatch(DtMs, DtMs),
 }
 
-type BoxedInput = Pin<Box<dyn Stream<Item = Sitemty<BinsDim0<f32>>> + Send>>;
+type BoxedInput = Pin<Box<dyn Stream<Item = Sitemty<BinsBoxed>> + Send>>;
 
 pub struct TimeBinnedFromLayers {
     ch_conf: ChannelTypeConfigGen,
@@ -141,11 +144,7 @@ impl TimeBinnedFromLayers {
                         cache_read_provider,
                         events_read_provider.clone(),
                     )?;
-                    let inp = super::basic::TimeBinnedStream::new(
-                        Box::pin(inp),
-                        BinnedRangeEnum::Time(range),
-                        do_time_weight,
-                    );
+                    let inp = BinnedBinsTimeweightStream::new(range, Box::pin(inp));
                     let ret = Self {
                         ch_conf,
                         cache_usage,
@@ -200,7 +199,7 @@ impl TimeBinnedFromLayers {
 }
 
 impl Stream for TimeBinnedFromLayers {
-    type Item = Sitemty<BinsDim0<f32>>;
+    type Item = Sitemty<BinsBoxed>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;

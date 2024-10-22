@@ -270,6 +270,7 @@ pub enum DecompError {
     UnusedBytes,
     BitshuffleError,
     ShapeMakesNoSense,
+    UnexpectedCompressedScalarValue,
 }
 
 fn decompress(databuf: &[u8], type_size: u32) -> Result<Vec<u8>, DecompError> {
@@ -325,10 +326,18 @@ impl EventFull {
     /// but we still don't know whether that's an image or a waveform.
     /// Therefore, the function accepts the expected shape to at least make an assumption
     /// about whether this is an image or a waveform.
-    pub fn shape_derived(&self, i: usize, shape_exp: &Shape) -> Result<Shape, DecompError> {
+    pub fn shape_derived(
+        &self,
+        i: usize,
+        scalar_type_exp: &ScalarType,
+        shape_exp: &Shape,
+    ) -> Result<Shape, DecompError> {
         match shape_exp {
             Shape::Scalar => match &self.comps[i] {
-                Some(_) => Err(DecompError::ShapeMakesNoSense),
+                Some(_) => match scalar_type_exp {
+                    ScalarType::STRING => Ok(Shape::Scalar),
+                    _ => Err(DecompError::UnexpectedCompressedScalarValue),
+                },
                 None => Ok(Shape::Scalar),
             },
             Shape::Wave(_) => match &self.shapes[i] {

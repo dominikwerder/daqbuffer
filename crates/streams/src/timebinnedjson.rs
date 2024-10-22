@@ -361,9 +361,9 @@ async fn timebinned_stream(
             )
             .map_err(Error::from_string)?;
             let stream = stream.map(|item| {
-                on_sitemty_data!(item, |k| Ok(StreamItem::DataItem(RangeCompletableItem::Data(
-                    Box::new(k) as Box<dyn TimeBinned>
-                ))))
+                on_sitemty_data!(item, |k: items_0::timebin::BinsBoxed| Ok(StreamItem::DataItem(
+                    RangeCompletableItem::Data(k.to_old_time_binned())
+                )))
             });
             let stream: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>> = Box::pin(stream);
             Ok(stream)

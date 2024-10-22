@@ -1,14 +1,15 @@
 # Search Channels
 
-To search for e.g. DBPM channels in `sf-databuffer` that end in `:Q1` the request
-looks like this:
+Example search request:
 
 ```bash
-curl "https://data-api.psi.ch/api/4/search/channel?backend=sf-archiver&nameRegex=S10CB08-KBOC-HP.*PI-OUT"
+curl "https://data-api.psi.ch/api/4/search/channel?nameRegex=S10CB08-KBOC-HP.*PI-OUT"
 ```
 
 Parameters:
-- `icase=true` uses case-insensitive search (default: case-sensitive).
+- `nameRegex` searches for a channel name by regular expression.
+- `backend` restricts search to the given backend (optional).
+- `icase=true` uses case-insensitive search (optional, default case-sensitive).
 
 
 Example response:

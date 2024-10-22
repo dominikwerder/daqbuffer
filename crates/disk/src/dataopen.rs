@@ -51,10 +51,13 @@ async fn position_file(
             match OpenOptions::new().read(true).open(&index_path).await {
                 Ok(mut index_file) => {
                     let meta = index_file.metadata().await?;
-                    if meta.len() > 1024 * 1024 * 120 {
+                    if meta.len() > 1024 * 1024 * 500 {
                         let msg = format!("too large index file  {} bytes  for {:?}", meta.len(), index_path);
                         error!("{}", msg);
                         return Err(Error::with_msg(msg));
+                    } else if meta.len() > 1024 * 1024 * 200 {
+                        let msg = format!("very large index file  {} bytes  for {:?}", meta.len(), index_path);
+                        warn!("{}", msg);
                     } else if meta.len() > 1024 * 1024 * 80 {
                         let msg = format!("very large index file  {} bytes  for {:?}", meta.len(), index_path);
                         warn!("{}", msg);
@@ -184,30 +187,31 @@ async fn position_file(
 }
 
 pub struct OpenedFile {
+    pub pos: u64,
     pub path: PathBuf,
     pub file: Option<File>,
     pub positioned: bool,
     pub index: bool,
     pub nreads: u32,
-    pub pos: u64,
+}
+
+impl fmt::Debug for OpenedFile {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("OpenedFile")
+            .field("pos", &self.pos)
+            .field("path", &self.path)
+            .field("file", &self.file.is_some())
+            .field("positioned", &self.positioned)
+            .field("index", &self.index)
+            .field("nreads", &self.nreads)
+            .finish()
+    }
 }
 
 #[derive(Debug)]
 pub struct OpenedFileSet {
     pub timebin: u64,
     pub files: Vec<OpenedFile>,
-}
-
-impl fmt::Debug for OpenedFile {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("OpenedFile")
-            .field("path", &self.path)
-            .field("file", &self.file)
-            .field("positioned", &self.positioned)
-            .field("index", &self.index)
-            .field("nreads", &self.nreads)
-            .finish()
-    }
 }
 
 pub fn open_files(
@@ -299,7 +303,7 @@ pub fn open_expanded_files(
                 Ok(_) => {}
                 Err(e) => {
                     // To be expected
-                    debug!("open_files  channel send error {:?}", e);
+                    debug!("open_expanded_files  channel send error {:?}", e);
                 }
             },
         }
@@ -345,18 +349,19 @@ async fn open_expanded_files_inner(
 ) -> Result<(), Error> {
     let fetch_info = fetch_info.clone();
     let timebins = get_timebins(&fetch_info, node.clone()).await?;
+    debug!("timebins {timebins:?}");
     if timebins.len() == 0 {
         return Ok(());
     }
     let mut p1 = None;
-    for (i1, tb) in timebins.iter().enumerate().rev() {
+    for (i, tb) in timebins.iter().enumerate().rev() {
         let ts_bin = TsNano::from_ns(tb * fetch_info.bs().ns());
         if ts_bin.ns() <= range.beg {
-            p1 = Some(i1);
+            p1 = Some(i);
             break;
         }
     }
-    let mut p1 = if let Some(i1) = p1 { i1 } else { 0 };
+    let mut p1 = if let Some(i) = p1 { i } else { 0 };
     if p1 >= timebins.len() {
         return Err(Error::with_msg(format!(
             "logic error p1 {}  range {:?}  fetch_info {:?}",
@@ -370,9 +375,11 @@ async fn open_expanded_files_inner(
         for path in paths::datapaths_for_timebin(tb, &fetch_info, &node).await? {
             let w = position_file(&path, range, true, false).await?;
             if w.found {
-                debug!("----- open_expanded_files_inner  w.found for {:?}", path);
+                debug!("----- open_expanded_files_inner  FOUND  tb {:?}  path {:?}", tb, path);
                 a.push(w.file);
                 found_pre = true;
+            } else {
+                debug!("----- open_expanded_files_inner  UNFND  tb {:?}  path {:?}", tb, path);
             }
         }
         let h = OpenedFileSet { timebin: tb, files: a };

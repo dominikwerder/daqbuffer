@@ -4,18 +4,24 @@ use crate::collect_s::Collectable;
 use crate::collect_s::Collector;
 use crate::collect_s::ToJsonResult;
 use crate::overlap::RangeOverlapInfo;
+use crate::vecpreview::PreviewRange;
 use crate::AsAnyMut;
 use crate::AsAnyRef;
+use crate::Empty;
 use crate::Events;
 use crate::Resettable;
 use crate::TypeName;
 use crate::WithLen;
+use err::thiserror;
 use err::Error;
+use err::ThisError;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
 use netpod::TsNano;
+use serde::Deserialize;
+use serde::Serialize;
 use std::any::Any;
 use std::fmt;
 use std::ops::Range;
@@ -64,8 +70,18 @@ pub trait TimeBinnableTy: fmt::Debug + WithLen + Send + Sized {
     ) -> Self::TimeBinner;
 }
 
+// #[derive(Debug, ThisError)]
+// #[cstm(name = "Binninggg")]
 pub enum BinningggError {
     Dyn(Box<dyn std::error::Error>),
+}
+
+impl fmt::Display for BinningggError {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BinningggError::Dyn(e) => write!(fmt, "{e}"),
+        }
+    }
 }
 
 impl<E> From<E> for BinningggError
@@ -77,11 +93,21 @@ where
     }
 }
 
-pub trait BinningggContainerEventsDyn: fmt::Debug {
+pub trait BinningggContainerEventsDyn: fmt::Debug + Send {
     fn binned_events_timeweight_traitobj(&self) -> Box<dyn BinnedEventsTimeweightTrait>;
 }
 
-pub trait BinningggContainerBinsDyn: fmt::Debug {}
+pub trait BinningggContainerBinsDyn: fmt::Debug + Send + fmt::Display + WithLen {
+    fn empty(&self) -> BinsBoxed;
+    fn clone(&self) -> BinsBoxed;
+    fn edges_iter(
+        &self,
+    ) -> std::iter::Zip<std::collections::vec_deque::Iter<TsNano>, std::collections::vec_deque::Iter<TsNano>>;
+    fn drain_into(&mut self, dst: &mut dyn BinningggContainerBinsDyn, range: Range<usize>);
+    fn to_old_time_binned(&self) -> Box<dyn TimeBinned>;
+}
+
+pub type BinsBoxed = Box<dyn BinningggContainerBinsDyn>;
 
 pub trait BinningggBinnerTy: fmt::Debug + Send {
     type Input: fmt::Debug;

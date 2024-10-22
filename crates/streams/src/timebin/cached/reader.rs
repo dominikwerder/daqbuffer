@@ -5,8 +5,7 @@ use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::streamitem::Sitemty;
-use items_0::timebin::TimeBinnable;
-use items_2::binsdim0::BinsDim0;
+use items_0::timebin::BinsBoxed;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
 use netpod::BinnedRange;
@@ -55,19 +54,19 @@ pub trait EventsReadProvider: Send + Sync {
 }
 
 pub struct CacheReading {
-    fut: Pin<Box<dyn Future<Output = Result<BinsDim0<f32>, streams::timebin::cached::reader::Error>> + Send>>,
+    fut: Pin<Box<dyn Future<Output = Result<BinsBoxed, streams::timebin::cached::reader::Error>> + Send>>,
 }
 
 impl CacheReading {
     pub fn new(
-        fut: Pin<Box<dyn Future<Output = Result<BinsDim0<f32>, streams::timebin::cached::reader::Error>> + Send>>,
+        fut: Pin<Box<dyn Future<Output = Result<BinsBoxed, streams::timebin::cached::reader::Error>> + Send>>,
     ) -> Self {
         Self { fut }
     }
 }
 
 impl Future for CacheReading {
-    type Output = Result<BinsDim0<f32>, streams::timebin::cached::reader::Error>;
+    type Output = Result<BinsBoxed, streams::timebin::cached::reader::Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         self.fut.poll_unpin(cx)
@@ -94,7 +93,7 @@ impl Future for CacheWriting {
 
 pub trait CacheReadProvider: Send + Sync {
     fn read(&self, series: u64, bin_len: DtMs, msp: u64, offs: Range<u32>) -> CacheReading;
-    fn write(&self, series: u64, bins: BinsDim0<f32>) -> CacheWriting;
+    fn write(&self, series: u64, bins: BinsBoxed) -> CacheWriting;
 }
 
 #[derive(Debug, ThisError)]
@@ -112,7 +111,7 @@ pub struct CachedReader {
     ts1next: TsNano,
     bin_len: DtMs,
     cache_read_provider: Arc<dyn CacheReadProvider>,
-    reading: Option<Pin<Box<dyn Future<Output = Result<BinsDim0<f32>, Error>> + Send>>>,
+    reading: Option<Pin<Box<dyn Future<Output = Result<BinsBoxed, Error>> + Send>>>,
 }
 
 impl CachedReader {
@@ -134,7 +133,7 @@ impl CachedReader {
 }
 
 impl Stream for CachedReader {
-    type Item = Result<BinsDim0<f32>, Error>;
+    type Item = Result<BinsBoxed, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -151,7 +150,6 @@ impl Stream for CachedReader {
                         self.reading = None;
                         match x {
                             Ok(bins) => {
-                                use items_0::WithLen;
                                 trace_emit!(
                                     "- - - - - - - - - - - -  emit cached bins  {}  bin_len {}",
                                     bins.len(),

@@ -760,6 +760,31 @@ impl<STY: ScalarOps> EventsDim0Aggregator<STY> {
             } else {
                 lst.as_prim_f32_b()
             };
+            let max = if min > max {
+                // TODO count
+                debug!("min > max");
+                min.clone()
+            } else {
+                max
+            };
+            let avg = {
+                let g = min.as_prim_f32_b();
+                if avg < g {
+                    debug!("avg < min");
+                    g
+                } else {
+                    avg
+                }
+            };
+            let avg = {
+                let g = max.as_prim_f32_b();
+                if avg > g {
+                    debug!("avg > max");
+                    g
+                } else {
+                    avg
+                }
+            };
             let ret = if self.range.is_time() {
                 BinsDim0 {
                     ts1s: [range_beg].into(),
@@ -1077,6 +1102,14 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
             ret.push(ts, 0, val.as_prim_f32_b());
         }
         Box::new(ret)
+    }
+
+    fn to_container_events(&self) -> Box<dyn ::items_0::timebin::BinningggContainerEventsDyn> {
+        // let tss = self.tss.iter().map(|&x| TsNano::from_ns(x)).collect();
+        // let vals = self.values.clone();
+        // let ret = crate::binning::container_events::ContainerEvents::from_constituents(tss, vals);
+        // Box::new(ret)
+        todo!()
     }
 }
 

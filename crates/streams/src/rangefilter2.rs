@@ -39,7 +39,7 @@ where
     inp: S,
     range: NanoRange,
     range_str: String,
-    one_before_range: bool,
+    one_before: bool,
     stats: RangeFilterStats,
     slot1: Option<ITY>,
     have_range_complete: bool,
@@ -59,20 +59,20 @@ where
         std::any::type_name::<Self>()
     }
 
-    pub fn new(inp: S, range: NanoRange, one_before_range: bool) -> Self {
+    pub fn new(inp: S, range: NanoRange, one_before: bool) -> Self {
         let trdet = false;
         trace_emit!(
             trdet,
-            "{}::new  range: {:?}  one_before_range {:?}",
+            "{}::new  range: {:?}  one_before {:?}",
             Self::type_name(),
             range,
-            one_before_range
+            one_before
         );
         Self {
             inp,
             range_str: format!("{:?}", range),
             range,
-            one_before_range,
+            one_before,
             stats: RangeFilterStats::new(),
             slot1: None,
             have_range_complete: false,
@@ -116,6 +116,11 @@ where
     }
 
     fn handle_item(&mut self, item: ITY) -> Result<ITY, Error> {
+        if let Some(ts_min) = item.ts_min() {
+            if ts_min < self.range.beg() {
+                debug!("ITEM  BEFORE RANGE  (how many?)");
+            }
+        }
         let min = item.ts_min().map(|x| TsNano::from_ns(x).fmt());
         let max = item.ts_max().map(|x| TsNano::from_ns(x).fmt());
         trace_emit!(
@@ -126,7 +131,7 @@ where
             max
         );
         let mut item = self.prune_high(item, self.range.end)?;
-        let ret = if self.one_before_range {
+        let ret = if self.one_before {
             let lige = item.find_lowest_index_ge(self.range.beg);
             trace_emit!(self.trdet, "YES one_before_range  ilge {:?}", lige);
             match lige {

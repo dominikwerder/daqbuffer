@@ -1023,6 +1023,10 @@ impl Events for ChannelEvents {
             Status(x) => panic!("ChannelEvents::to_dim0_f32_for_binning"),
         }
     }
+
+    fn to_container_events(&self) -> Box<dyn ::items_0::timebin::BinningggContainerEventsDyn> {
+        panic!("should not get used")
+    }
 }
 
 impl Collectable for ChannelEvents {

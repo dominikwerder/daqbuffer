@@ -6,8 +6,7 @@ use futures_util::StreamExt;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
-use items_2::binsdim0::BinsDim0;
-use items_2::channelevents::ChannelEvents;
+use items_0::timebin::BinsBoxed;
 use netpod::log::*;
 use netpod::BinnedRange;
 use netpod::ChConf;
@@ -26,7 +25,7 @@ macro_rules! trace_emit { ($($arg:tt)*) => ( if true { trace!($($arg)*); } ) }
 pub enum Error {}
 
 pub struct BinnedFromEvents {
-    stream: Pin<Box<dyn Stream<Item = Sitemty<BinsDim0<f32>>> + Send>>,
+    stream: Pin<Box<dyn Stream<Item = Sitemty<BinsBoxed>> + Send>>,
 }
 
 impl BinnedFromEvents {
@@ -41,33 +40,28 @@ impl BinnedFromEvents {
             panic!();
         }
         let stream = read_provider.read(evq, chconf);
-        let stream = stream.map(|x| {
-            let x = items_0::try_map_sitemty_data!(x, |x| match x {
-                ChannelEvents::Events(x) => {
-                    let x = x.to_dim0_f32_for_binning();
-                    Ok(ChannelEvents::Events(x))
-                }
-                ChannelEvents::Status(x) => Ok(ChannelEvents::Status(x)),
-            });
-            x
-        });
-        let stream = Box::pin(stream);
-        let stream = super::basic::TimeBinnedStream::new(stream, netpod::BinnedRangeEnum::Time(range), do_time_weight);
+        // let stream = stream.map(|x| {
+        //     let x = items_0::try_map_sitemty_data!(x, |x| match x {
+        //         ChannelEvents::Events(x) => {
+        //             let x = x.to_dim0_f32_for_binning();
+        //             Ok(ChannelEvents::Events(x))
+        //         }
+        //         ChannelEvents::Status(x) => Ok(ChannelEvents::Status(x)),
+        //     });
+        //     x
+        // });
+        let stream = if do_time_weight {
+            let stream = Box::pin(stream);
+            items_2::binning::timeweight::timeweight_events_dyn::BinnedEventsTimeweightStream::new(range, stream)
+        } else {
+            panic!("non-weighted TODO")
+        };
         let stream = stream.map(|item| match item {
             Ok(x) => match x {
                 StreamItem::DataItem(x) => match x {
-                    RangeCompletableItem::Data(mut x) => {
-                        // TODO need a typed time binner
-                        if let Some(x) = x.as_any_mut().downcast_mut::<BinsDim0<f32>>() {
-                            let y = x.clone();
-                            use items_0::WithLen;
-                            trace_emit!("===========  =========  emit from events {}", y.len());
-                            Ok(StreamItem::DataItem(RangeCompletableItem::Data(y)))
-                        } else {
-                            Err(::err::Error::with_msg_no_trace(
-                                "GapFill expects incoming BinsDim0<f32>",
-                            ))
-                        }
+                    RangeCompletableItem::Data(x) => {
+                        debug!("see item {:?}", x);
+                        Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
                     }
                     RangeCompletableItem::RangeComplete => {
                         info!("BinnedFromEvents  sees range final");
@@ -87,7 +81,7 @@ impl BinnedFromEvents {
 }
 
 impl Stream for BinnedFromEvents {
-    type Item = Sitemty<BinsDim0<f32>>;
+    type Item = Sitemty<BinsBoxed>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.stream.poll_next_unpin(cx)

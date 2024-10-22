@@ -19,6 +19,7 @@ use netpod::DtNano;
 use netpod::TsNano;
 use std::collections::VecDeque;
 use std::marker::PhantomData;
+use std::mem;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
@@ -382,6 +383,7 @@ where
     range: BinnedRange<TsNano>,
     inner_a: InnerA<EVT>,
     out: ContainerBins<EVT>,
+    produce_cnt_zero: bool,
 }
 
 impl<EVT> fmt::Debug for BinnedEventsTimeweight<EVT>
@@ -422,7 +424,14 @@ where
             },
             lst: None,
             out: ContainerBins::new(),
+            produce_cnt_zero: true,
         }
+    }
+
+    pub fn disable_cnt_zero(self) -> Self {
+        let mut ret = self;
+        ret.produce_cnt_zero = false;
+        ret
     }
 
     fn ingest_event_without_lst(&mut self, ev: EventSingle<EVT>) -> Result<(), Error> {
@@ -485,10 +494,26 @@ where
         let div = b.active_len.ns();
         if let Some(lst) = self.lst.as_ref() {
             let lst = LstRef(lst);
-            let mut i = 0;
-            loop {
-                i += 1;
-                assert!(i < 100000, "too many iterations");
+            if self.produce_cnt_zero {
+                let mut i = 0;
+                loop {
+                    i += 1;
+                    assert!(i < 100000, "too many iterations");
+                    let b = &self.inner_a.inner_b;
+                    if ts > b.filled_until {
+                        if ts >= b.active_end {
+                            if b.filled_until < b.active_end {
+                                self.inner_a.inner_b.fill_until(b.active_end, lst.clone());
+                            }
+                            self.inner_a.push_out_and_reset(lst.clone(), true, &mut self.out);
+                        } else {
+                            self.inner_a.inner_b.fill_until(ts, lst.clone());
+                        }
+                    } else {
+                        break;
+                    }
+                }
+            } else {
                 let b = &self.inner_a.inner_b;
                 if ts > b.filled_until {
                     if ts >= b.active_end {
@@ -497,13 +522,29 @@ where
                         }
                         self.inner_a.push_out_and_reset(lst.clone(), true, &mut self.out);
                     } else {
+                        // TODO should not hit this case. Prove it, assert it.
                         self.inner_a.inner_b.fill_until(ts, lst.clone());
                     }
                 } else {
-                    break;
+                    // TODO should never hit this case. Count.
                 }
+
+                // TODO jump to next bin
+                // TODO merge with the other reset
+                // Below uses the same code
+                let ts1 = TsNano::from_ns(ts.ns() / div * div);
+                let b = &mut self.inner_a.inner_b;
+                b.active_beg = ts1;
+                b.active_end = ts1.add_dt_nano(b.active_len);
+                b.filled_until = ts1;
+                b.filled_width = DtNano::from_ns(0);
+                b.cnt = 0;
+                b.agg.reset_for_new_bin();
+                // assert!(self.inner_a.minmax.is_none());
+                trace_cycle!("cycled direct to  {:?}  {:?}", b.active_beg, b.active_end);
             }
         } else {
+            assert!(self.inner_a.minmax.is_none());
             // TODO merge with the other reset
             let ts1 = TsNano::from_ns(ts.ns() / div * div);
             let b = &mut self.inner_a.inner_b;
@@ -513,7 +554,6 @@ where
             b.filled_width = DtNano::from_ns(0);
             b.cnt = 0;
             b.agg.reset_for_new_bin();
-            assert!(self.inner_a.minmax.is_none());
             trace_cycle!("cycled direct to  {:?}  {:?}", b.active_beg, b.active_end);
         }
     }
@@ -594,6 +634,6 @@ where
     }
 
     pub fn output(&mut self) -> ContainerBins<EVT> {
-        ::core::mem::replace(&mut self.out, ContainerBins::new())
+        mem::replace(&mut self.out, ContainerBins::new())
     }
 }

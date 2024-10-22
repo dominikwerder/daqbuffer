@@ -279,7 +279,7 @@ pub fn events_parse_input_query(frames: Vec<InMemoryFrame>) -> Result<(EventsSub
         },
         Err(e) => return Err(e.into()),
     };
-    info!("parsing json {:?}", qitem.str());
+    trace!("parsing json {:?}", qitem.str());
     let frame1: Frame1Parts = serde_json::from_str(&qitem.str()).map_err(|_e| {
         let e = Error::BadQuery;
         error!("{e}");

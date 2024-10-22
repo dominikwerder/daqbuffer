@@ -73,7 +73,6 @@ pub struct EventChunker {
     node_ix: usize,
     dbg_path: PathBuf,
     last_ts: u64,
-    expand: bool,
     item_len_emit_histo: HistoLog2,
     seen_before_range_count: usize,
     seen_after_range_count: usize,
@@ -144,7 +143,6 @@ impl EventChunker {
         stats_conf: EventChunkerConf,
         node_ix: usize,
         dbg_path: PathBuf,
-        expand: bool,
     ) -> Self {
         debug!("{}::{}  node {}", Self::self_name(), "from_start", node_ix);
         let need_min_max = match fetch_info.shape() {
@@ -172,7 +170,6 @@ impl EventChunker {
             dbg_path,
             node_ix,
             last_ts: 0,
-            expand,
             item_len_emit_histo: HistoLog2::new(0),
             seen_before_range_count: 0,
             seen_after_range_count: 0,
@@ -188,7 +185,6 @@ impl EventChunker {
         }
     }
 
-    // TODO   `expand` flag usage
     pub fn from_event_boundary(
         inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>,
         fetch_info: SfChFetchInfo,
@@ -196,10 +192,9 @@ impl EventChunker {
         stats_conf: EventChunkerConf,
         node_ix: usize,
         dbg_path: PathBuf,
-        expand: bool,
     ) -> Self {
         debug!("{}::{}  node {}", Self::self_name(), "from_event_boundary", node_ix);
-        let mut ret = Self::from_start(inp, fetch_info, range, stats_conf, node_ix, dbg_path, expand);
+        let mut ret = Self::from_start(inp, fetch_info, range, stats_conf, node_ix, dbg_path);
         ret.state = DataFileState::Event;
         ret.need_min = 4;
         ret.inp.set_need_min(4);
@@ -324,15 +319,15 @@ impl EventChunker {
                             discard = true;
                             self.discard_count_range += 1;
                             self.seen_after_range_count += 1;
-                            if !self.expand || self.seen_after_range_count >= 2 {
-                                self.seen_beyond_range = true;
+                            self.seen_beyond_range = true;
+                            if self.seen_after_range_count >= 2 {
                                 self.data_emit_complete = true;
                                 break;
                             }
                         }
                         if ts < self.range.beg {
-                            discard = true;
-                            self.discard_count_range += 1;
+                            // discard = true;
+                            // self.discard_count_range += 1;
                             self.seen_before_range_count += 1;
                             if self.seen_before_range_count < 20 {
                                 let msg = format!(
@@ -349,6 +344,8 @@ impl EventChunker {
                                     self.dbg_path
                                 );
                                 warn!("{}", msg);
+                                let item = LogItem::from_node(self.node_ix, Level::INFO, msg);
+                                self.log_items.push_back(item);
                             }
                             if self.seen_before_range_count > 100 {
                                 let msg = format!(
@@ -474,13 +471,17 @@ impl EventChunker {
                                 shape_this,
                                 comp_this,
                             );
-                            match ret.shape_derived(ret.len() - 1, self.fetch_info.shape()) {
+                            match ret.shape_derived(
+                                ret.len() - 1,
+                                self.fetch_info.scalar_type(),
+                                self.fetch_info.shape(),
+                            ) {
                                 Ok(sh) => {
                                     if sh.ne(self.fetch_info.shape()) {
                                         self.discard_count_shape_derived += 1;
                                         ret.pop_back();
                                         let msg = format!(
-                                            "shape_derived mismatch  {:?}  {:?}  {:?}",
+                                            "EventChunker  shape_derived mismatch  {:?}  {:?}  {:?}",
                                             self.fetch_info.scalar_type(),
                                             self.fetch_info.shape(),
                                             sh,
@@ -493,7 +494,7 @@ impl EventChunker {
                                     self.discard_count_shape_derived_err += 1;
                                     ret.pop_back();
                                     let msg = format!(
-                                        "shape_derived error  {}  {:?}  {:?}",
+                                        "EventChunker  shape_derived error  {}  {:?}  {:?}",
                                         e,
                                         self.fetch_info.scalar_type(),
                                         self.fetch_info.shape(),

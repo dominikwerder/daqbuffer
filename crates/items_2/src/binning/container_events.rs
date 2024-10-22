@@ -2,11 +2,12 @@ use super::aggregator::AggTimeWeightOutputAvg;
 use super::aggregator::AggregatorNumeric;
 use super::aggregator::AggregatorTimeWeight;
 use super::___;
-use crate::vecpreview::PreviewRange;
-use crate::vecpreview::VecPreview;
 use core::fmt;
 use err::thiserror;
 use err::ThisError;
+use items_0::timebin::BinningggContainerEventsDyn;
+use items_0::vecpreview::PreviewRange;
+use items_0::vecpreview::VecPreview;
 use netpod::TsNano;
 use serde::Deserialize;
 use serde::Serialize;
@@ -20,7 +21,7 @@ macro_rules! trace_init { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
 #[cstm(name = "ValueContainerError")]
 pub enum ValueContainerError {}
 
-pub trait Container<EVT>: fmt::Debug + Clone + PreviewRange + Serialize + for<'a> Deserialize<'a> {
+pub trait Container<EVT>: fmt::Debug + Send + Clone + PreviewRange + Serialize + for<'a> Deserialize<'a> {
     fn new() -> Self;
     // fn verify(&self) -> Result<(), ValueContainerError>;
     fn push_back(&mut self, val: EVT);
@@ -120,6 +121,10 @@ impl<EVT> ContainerEvents<EVT>
 where
     EVT: EventValueType,
 {
+    pub fn from_constituents(tss: VecDeque<TsNano>, vals: <EVT as EventValueType>::Container) -> Self {
+        Self { tss, vals }
+    }
+
     pub fn type_name() -> &'static str {
         any::type_name::<Self>()
     }
@@ -231,5 +236,14 @@ where
         } else {
             None
         }
+    }
+}
+
+impl<EVT> BinningggContainerEventsDyn for ContainerEvents<EVT>
+where
+    EVT: EventValueType,
+{
+    fn binned_events_timeweight_traitobj(&self) -> Box<dyn items_0::timebin::BinnedEventsTimeweightTrait> {
+        todo!()
     }
 }

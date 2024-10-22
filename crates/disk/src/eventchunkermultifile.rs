@@ -39,7 +39,7 @@ pub struct EventChunkerMultifile {
     range: NanoRange,
     files_count: u32,
     node_ix: usize,
-    expand: bool,
+    one_before: bool,
     max_ts: u64,
     out_max_len: usize,
     emit_count: usize,
@@ -64,12 +64,12 @@ impl EventChunkerMultifile {
         node_ix: usize,
         disk_io_tune: DiskIoTune,
         event_chunker_conf: EventChunkerConf,
-        expand: bool,
+        one_before: bool,
         out_max_len: usize,
         reqctx: ReqCtxArc,
     ) -> Self {
-        debug!("EventChunkerMultifile  expand {expand}");
-        let file_chan = if expand {
+        debug!("EventChunkerMultifile  one_before {one_before}");
+        let file_chan = if one_before {
             open_expanded_files(&range, &fetch_info, node)
         } else {
             open_files(&range, &fetch_info, reqctx.reqid(), node)
@@ -83,7 +83,7 @@ impl EventChunkerMultifile {
             range,
             files_count: 0,
             node_ix,
-            expand,
+            one_before,
             max_ts: 0,
             out_max_len,
             emit_count: 0,
@@ -129,6 +129,9 @@ impl Stream for EventChunkerMultifile {
                                 if h.len() > 0 {
                                     let min = h.tss.iter().fold(u64::MAX, |a, &x| a.min(x));
                                     let max = h.tss.iter().fold(u64::MIN, |a, &x| a.max(x));
+                                    if min < self.range.beg() {
+                                        debug!("ITEM BEFORE RANGE (how many?)");
+                                    }
                                     if min <= self.max_ts {
                                         let msg = format!("EventChunkerMultifile  repeated or unordered ts {}", min);
                                         error!("{}", msg);
@@ -180,13 +183,19 @@ impl Stream for EventChunkerMultifile {
                     None => match self.file_chan.poll_next_unpin(cx) {
                         Ready(Some(k)) => match k {
                             Ok(ofs) => {
+                                let msg = format!("received files for timebin {:?}", ofs.timebin);
+                                let item = LogItem::from_node(self.node_ix, Level::INFO, msg);
+                                self.log_queue.push_back(item);
+                                for e in &ofs.files {
+                                    let msg = format!("file {:?}", e);
+                                    let item = LogItem::from_node(self.node_ix, Level::INFO, msg);
+                                    self.log_queue.push_back(item);
+                                }
                                 self.files_count += ofs.files.len() as u32;
                                 if ofs.files.len() == 1 {
                                     let mut ofs = ofs;
                                     let file = ofs.files.pop().unwrap();
                                     let path = file.path;
-                                    let msg = format!("use opened files {:?}", ofs);
-                                    let item = LogItem::from_node(self.node_ix, Level::DEBUG, msg);
                                     match file.file {
                                         Some(file) => {
                                             let inp = Box::pin(crate::file_content_stream(
@@ -202,22 +211,19 @@ impl Stream for EventChunkerMultifile {
                                                 self.event_chunker_conf.clone(),
                                                 self.node_ix,
                                                 path.clone(),
-                                                self.expand,
                                             );
-                                            let filtered = RangeFilter2::new(chunker, self.range.clone(), self.expand);
+                                            let filtered =
+                                                RangeFilter2::new(chunker, self.range.clone(), self.one_before);
                                             self.evs = Some(Box::pin(filtered));
                                         }
                                         None => {}
                                     }
-                                    Ready(Some(Ok(StreamItem::Log(item))))
+                                    continue;
                                 } else if ofs.files.len() == 0 {
                                     let msg = format!("use opened files {:?}  no files", ofs);
                                     let item = LogItem::from_node(self.node_ix, Level::DEBUG, msg);
                                     Ready(Some(Ok(StreamItem::Log(item))))
                                 } else {
-                                    // let paths: Vec<_> = ofs.files.iter().map(|x| &x.path).collect();
-                                    let msg = format!("use opened files {:?}  locally merged", ofs);
-                                    let item = LogItem::from_node(self.node_ix, Level::DEBUG, msg);
                                     let mut chunkers = Vec::new();
                                     for of in ofs.files {
                                         if let Some(file) = of.file {
@@ -234,14 +240,15 @@ impl Stream for EventChunkerMultifile {
                                                 self.event_chunker_conf.clone(),
                                                 self.node_ix,
                                                 of.path.clone(),
-                                                self.expand,
                                             );
                                             chunkers.push(Box::pin(chunker) as _);
                                         }
                                     }
                                     let merged = Merger::new(chunkers, Some(self.out_max_len as u32));
-                                    let filtered = RangeFilter2::new(merged, self.range.clone(), self.expand);
+                                    let filtered = RangeFilter2::new(merged, self.range.clone(), self.one_before);
                                     self.evs = Some(Box::pin(filtered));
+                                    let msg = format!("LOCALLY MERGED");
+                                    let item = LogItem::from_node(self.node_ix, Level::DEBUG, msg);
                                     Ready(Some(Ok(StreamItem::Log(item))))
                                 }
                             }

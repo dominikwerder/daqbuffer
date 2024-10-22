@@ -7,6 +7,7 @@ use err::Error;
 use futures_util::Future;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items_0::timebin::BinsBoxed;
 use items_0::timebin::TimeBinned;
 use items_0::Empty;
 use items_2::binsdim0::BinsDim0;
@@ -227,12 +228,14 @@ impl streams::timebin::CacheReadProvider for ScyllaCacheReadProvider {
         offs: Range<u32>,
     ) -> streams::timebin::cached::reader::CacheReading {
         let scyqueue = self.scyqueue.clone();
-        let fut = async move { scyqueue.read_cache_f32(series, bin_len, msp, offs).await };
+        // let fut = async move { scyqueue.read_cache_f32(series, bin_len, msp, offs).await };
+        let fut = async { todo!("TODO impl scylla cache read") };
         streams::timebin::cached::reader::CacheReading::new(Box::pin(fut))
     }
 
-    fn write(&self, series: u64, bins: BinsDim0<f32>) -> streams::timebin::cached::reader::CacheWriting {
+    fn write(&self, series: u64, bins: BinsBoxed) -> streams::timebin::cached::reader::CacheWriting {
         let scyqueue = self.scyqueue.clone();
+        let bins = todo!("TODO impl scylla cache write");
         let fut = async move { scyqueue.write_cache_f32(series, bins).await };
         streams::timebin::cached::reader::CacheWriting::new(Box::pin(fut))
     }

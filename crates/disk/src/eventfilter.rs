@@ -6,6 +6,7 @@ use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::WithLen;
 use items_2::eventfull::EventFull;
+use netpod::ScalarType;
 use netpod::Shape;
 use std::collections::VecDeque;
 use std::pin::Pin;
@@ -15,6 +16,7 @@ use tracing::Level;
 
 pub struct EventFullShapeFilter<INP> {
     inp: INP,
+    scalar_type_exp: ScalarType,
     shape_exp: Shape,
     node_ix: usize,
     log_items: VecDeque<LogItem>,
@@ -25,11 +27,14 @@ impl<INP> EventFullShapeFilter<INP> {
         let node_ix = self.node_ix;
         let p: Vec<_> = (0..item.len())
             .map(|i| {
-                let sh = item.shape_derived(i, &self.shape_exp);
+                let sh = item.shape_derived(i, &self.scalar_type_exp, &self.shape_exp);
                 match sh {
                     Ok(sh) => {
                         if sh.ne(&self.shape_exp) {
-                            let msg = format!("shape_derived mismatch  {:?}  {:?}", sh, self.shape_exp);
+                            let msg = format!(
+                                "EventFullShapeFilter  shape_derived mismatch  {:?}  {:?}",
+                                sh, self.shape_exp
+                            );
                             let item = LogItem::from_node(node_ix, Level::WARN, msg);
                             self.log_items.push_back(item);
                             false
@@ -38,7 +43,10 @@ impl<INP> EventFullShapeFilter<INP> {
                         }
                     }
                     Err(_) => {
-                        let msg = format!("shape_derived mismatch  {:?}  {:?}", sh, self.shape_exp);
+                        let msg = format!(
+                            "EventFullShapeFilter  shape_derived mismatch  {:?}  {:?}",
+                            sh, self.shape_exp
+                        );
                         let item = LogItem::from_node(self.node_ix, Level::WARN, msg);
                         self.log_items.push_back(item);
                         false
