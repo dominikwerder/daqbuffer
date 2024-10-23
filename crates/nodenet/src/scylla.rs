@@ -193,13 +193,18 @@ impl ScyllaEventReadProvider {
 }
 
 impl EventsReadProvider for ScyllaEventReadProvider {
-    fn read(&self, evq: EventsSubQuery, chconf: ChConf) -> streams::timebin::cached::reader::EventsReading {
+    fn read(&self, evq: EventsSubQuery) -> streams::timebin::cached::reader::EventsReading {
         let scyqueue = self.scyqueue.clone();
-        let fut1 = async move { crate::scylla::scylla_channel_event_stream(evq, chconf, &scyqueue).await };
-        let stream = ScyllaEventsReadStream {
-            fut1: Some(Box::pin(fut1)),
-            stream: None,
-        };
-        streams::timebin::cached::reader::EventsReading::new(Box::pin(stream))
+        match evq.ch_conf().clone() {
+            netpod::ChannelTypeConfigGen::Scylla(ch_conf) => {
+                let fut1 = async move { crate::scylla::scylla_channel_event_stream(evq, ch_conf, &scyqueue).await };
+                let stream = ScyllaEventsReadStream {
+                    fut1: Some(Box::pin(fut1)),
+                    stream: None,
+                };
+                streams::timebin::cached::reader::EventsReading::new(Box::pin(stream))
+            }
+            netpod::ChannelTypeConfigGen::SfDatabuffer(_) => panic!("not a scylla reader"),
+        }
     }
 }

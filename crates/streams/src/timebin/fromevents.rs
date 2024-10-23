@@ -32,14 +32,13 @@ impl BinnedFromEvents {
     pub fn new(
         range: BinnedRange<TsNano>,
         evq: EventsSubQuery,
-        chconf: ChConf,
         do_time_weight: bool,
         read_provider: Arc<dyn EventsReadProvider>,
     ) -> Result<Self, Error> {
         if !evq.range().is_time() {
             panic!();
         }
-        let stream = read_provider.read(evq, chconf);
+        let stream = read_provider.read(evq);
         // let stream = stream.map(|x| {
         //     let x = items_0::try_map_sitemty_data!(x, |x| match x {
         //         ChannelEvents::Events(x) => {

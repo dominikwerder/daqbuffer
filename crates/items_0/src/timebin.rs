@@ -74,12 +74,16 @@ pub trait TimeBinnableTy: fmt::Debug + WithLen + Send + Sized {
 // #[cstm(name = "Binninggg")]
 pub enum BinningggError {
     Dyn(Box<dyn std::error::Error>),
+    TypeMismatch { have: String, expect: String },
 }
 
 impl fmt::Display for BinningggError {
     fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
         match self {
             BinningggError::Dyn(e) => write!(fmt, "{e}"),
+            BinningggError::TypeMismatch { have, expect } => {
+                write!(fmt, "TypeMismatch(have: {have}, expect: {expect})")
+            }
         }
     }
 }
@@ -94,10 +98,13 @@ where
 }
 
 pub trait BinningggContainerEventsDyn: fmt::Debug + Send {
-    fn binned_events_timeweight_traitobj(&self) -> Box<dyn BinnedEventsTimeweightTrait>;
+    fn type_name(&self) -> &'static str;
+    fn binned_events_timeweight_traitobj(&self, range: BinnedRange<TsNano>) -> Box<dyn BinnedEventsTimeweightTrait>;
+    fn to_anybox(&mut self) -> Box<dyn std::any::Any>;
 }
 
-pub trait BinningggContainerBinsDyn: fmt::Debug + Send + fmt::Display + WithLen {
+pub trait BinningggContainerBinsDyn: fmt::Debug + Send + fmt::Display + WithLen + AsAnyMut {
+    fn type_name(&self) -> &'static str;
     fn empty(&self) -> BinsBoxed;
     fn clone(&self) -> BinsBoxed;
     fn edges_iter(
@@ -133,10 +140,10 @@ pub trait BinningggBinnerDyn: fmt::Debug + Send {
 }
 
 pub trait BinnedEventsTimeweightTrait: fmt::Debug + Send {
-    fn ingest(&mut self, evs_all: Box<dyn BinningggContainerEventsDyn>) -> Result<(), BinningggError>;
+    fn ingest(&mut self, evs_all: EventsBoxed) -> Result<(), BinningggError>;
     fn input_done_range_final(&mut self) -> Result<(), BinningggError>;
     fn input_done_range_open(&mut self) -> Result<(), BinningggError>;
-    fn output(&mut self) -> Result<Box<dyn BinningggContainerBinsDyn>, BinningggError>;
+    fn output(&mut self) -> Result<Option<BinsBoxed>, BinningggError>;
 }
 
 /// Data in time-binned form.

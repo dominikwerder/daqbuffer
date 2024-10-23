@@ -9,7 +9,6 @@ use items_0::timebin::BinsBoxed;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
 use netpod::BinnedRange;
-use netpod::ChConf;
 use netpod::DtMs;
 use netpod::TsNano;
 use query::api4::events::EventsSubQuery;
@@ -50,23 +49,23 @@ impl Stream for EventsReading {
 }
 
 pub trait EventsReadProvider: Send + Sync {
-    fn read(&self, evq: EventsSubQuery, chconf: ChConf) -> EventsReading;
+    fn read(&self, evq: EventsSubQuery) -> EventsReading;
 }
 
 pub struct CacheReading {
-    fut: Pin<Box<dyn Future<Output = Result<BinsBoxed, streams::timebin::cached::reader::Error>> + Send>>,
+    fut: Pin<Box<dyn Future<Output = Result<Option<BinsBoxed>, streams::timebin::cached::reader::Error>> + Send>>,
 }
 
 impl CacheReading {
     pub fn new(
-        fut: Pin<Box<dyn Future<Output = Result<BinsBoxed, streams::timebin::cached::reader::Error>> + Send>>,
+        fut: Pin<Box<dyn Future<Output = Result<Option<BinsBoxed>, streams::timebin::cached::reader::Error>> + Send>>,
     ) -> Self {
         Self { fut }
     }
 }
 
 impl Future for CacheReading {
-    type Output = Result<BinsBoxed, streams::timebin::cached::reader::Error>;
+    type Output = Result<Option<BinsBoxed>, streams::timebin::cached::reader::Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         self.fut.poll_unpin(cx)
@@ -111,7 +110,7 @@ pub struct CachedReader {
     ts1next: TsNano,
     bin_len: DtMs,
     cache_read_provider: Arc<dyn CacheReadProvider>,
-    reading: Option<Pin<Box<dyn Future<Output = Result<BinsBoxed, Error>> + Send>>>,
+    reading: Option<Pin<Box<dyn Future<Output = Result<Option<BinsBoxed>, Error>> + Send>>>,
 }
 
 impl CachedReader {
@@ -149,13 +148,16 @@ impl Stream for CachedReader {
                     Ready(x) => {
                         self.reading = None;
                         match x {
-                            Ok(bins) => {
+                            Ok(Some(bins)) => {
                                 trace_emit!(
                                     "- - - - - - - - - - - -  emit cached bins  {}  bin_len {}",
                                     bins.len(),
                                     self.bin_len
                                 );
                                 Ready(Some(Ok(bins)))
+                            }
+                            Ok(None) => {
+                                continue;
                             }
                             Err(e) => Ready(Some(Err(e))),
                         }

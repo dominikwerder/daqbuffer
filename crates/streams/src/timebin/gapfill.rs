@@ -66,7 +66,6 @@ pub struct GapFill {
     sub: EventsSubQuerySettings,
     log_level: String,
     ctx: Arc<ReqCtx>,
-    series: u64,
     range: BinnedRange<TsNano>,
     do_time_weight: bool,
     bin_len_layers: Vec<DtMs>,
@@ -97,7 +96,6 @@ impl GapFill {
         sub: EventsSubQuerySettings,
         log_level: String,
         ctx: Arc<ReqCtx>,
-        series: u64,
         range: BinnedRange<TsNano>,
         do_time_weight: bool,
         bin_len_layers: Vec<DtMs>,
@@ -107,6 +105,7 @@ impl GapFill {
         let dbgname = format!("{}--[{}]", dbgname_parent, range);
         debug_init!("new  dbgname {}", dbgname);
         let inp = if cache_usage.is_cache_read() {
+            let series = ch_conf.series().expect("series id for cache read");
             let stream = super::cached::reader::CachedReader::new(series, range.clone(), cache_read_provider.clone())?
                 .map(|x| match x {
                     Ok(x) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))),
@@ -125,7 +124,6 @@ impl GapFill {
             sub,
             log_level,
             ctx,
-            series,
             range,
             do_time_weight,
             bin_len_layers,
@@ -257,7 +255,6 @@ impl GapFill {
                 self.sub.clone(),
                 self.log_level.clone(),
                 self.ctx.clone(),
-                self.series,
                 range_finer_one_before_bin,
                 self.do_time_weight,
                 self.bin_len_layers.clone(),
@@ -288,26 +285,16 @@ impl GapFill {
                 self.ctx.reqid().into(),
                 self.log_level.clone(),
             );
-            match &self.ch_conf {
-                ChannelTypeConfigGen::Scylla(chconf) => {
-                    let range = BinnedRange::from_nano_range(range.clone(), self.range.bin_len.to_dt_ms());
-                    let inp = BinnedFromEvents::new(
-                        range,
-                        evq,
-                        chconf.clone(),
-                        self.do_time_weight,
-                        self.events_read_provider.clone(),
-                    )?;
-                    self.inp_finer = Some(Box::pin(inp));
-                }
-                ChannelTypeConfigGen::SfDatabuffer(_) => return Err(Error::SfDatabufferNotSupported),
-            }
+            let range = BinnedRange::from_nano_range(range.clone(), self.range.bin_len.to_dt_ms());
+            let inp = BinnedFromEvents::new(range, evq, self.do_time_weight, self.events_read_provider.clone())?;
+            self.inp_finer = Some(Box::pin(inp));
         }
         Ok(())
     }
 
     fn cache_write(mut self: Pin<&mut Self>, bins: BinsBoxed) -> Result<(), Error> {
-        self.cache_writing = Some(self.cache_read_provider.write(self.series, bins));
+        let series = ::err::todoval();
+        self.cache_writing = Some(self.cache_read_provider.write(series, bins));
         Ok(())
     }
 

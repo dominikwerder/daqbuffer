@@ -1,6 +1,7 @@
 use super::aggregator::AggTimeWeightOutputAvg;
 use super::aggregator::AggregatorNumeric;
 use super::aggregator::AggregatorTimeWeight;
+use super::timeweight::timeweight_events_dyn::BinnedEventsTimeweightDynbox;
 use super::___;
 use core::fmt;
 use err::thiserror;
@@ -8,6 +9,7 @@ use err::ThisError;
 use items_0::timebin::BinningggContainerEventsDyn;
 use items_0::vecpreview::PreviewRange;
 use items_0::vecpreview::VecPreview;
+use netpod::BinnedRange;
 use netpod::TsNano;
 use serde::Deserialize;
 use serde::Serialize;
@@ -28,13 +30,13 @@ pub trait Container<EVT>: fmt::Debug + Send + Clone + PreviewRange + Serialize +
     fn pop_front(&mut self) -> Option<EVT>;
 }
 
-pub trait EventValueType: fmt::Debug + Clone + PartialOrd + Send {
+pub trait EventValueType: fmt::Debug + Clone + PartialOrd + Send + 'static {
     type Container: Container<Self>;
     type AggregatorTimeWeight: AggregatorTimeWeight<Self>;
     type AggTimeWeightOutputAvg: AggTimeWeightOutputAvg;
 
     fn identity_sum() -> Self;
-    fn add_weighted(&self, add: &Self, f: f32) -> Self;
+    // fn add_weighted(&self, add: &Self, f: f32) -> Self;
 }
 
 impl<EVT> Container<EVT> for VecDeque<EVT>
@@ -54,6 +56,31 @@ where
     }
 }
 
+macro_rules! impl_event_value_type {
+    ($evt:ty, $zero:expr) => {
+        impl EventValueType for $evt {
+            type Container = VecDeque<Self>;
+            type AggregatorTimeWeight = AggregatorNumeric;
+            type AggTimeWeightOutputAvg = f64;
+
+            fn identity_sum() -> Self {
+                $zero
+            }
+        }
+    };
+}
+
+impl_event_value_type!(u8, 0);
+impl_event_value_type!(u16, 0);
+impl_event_value_type!(u32, 0);
+impl_event_value_type!(u64, 0);
+impl_event_value_type!(i8, 0);
+impl_event_value_type!(i16, 0);
+impl_event_value_type!(i32, 0);
+impl_event_value_type!(i64, 0);
+// impl_event_value_type!(f32, 0.);
+// impl_event_value_type!(f64, 0.);
+
 impl EventValueType for f32 {
     type Container = VecDeque<Self>;
     type AggregatorTimeWeight = AggregatorNumeric;
@@ -61,10 +88,6 @@ impl EventValueType for f32 {
 
     fn identity_sum() -> Self {
         0.
-    }
-
-    fn add_weighted(&self, add: &Self, f: f32) -> Self {
-        todo!()
     }
 }
 
@@ -75,24 +98,6 @@ impl EventValueType for f64 {
 
     fn identity_sum() -> Self {
         0.
-    }
-
-    fn add_weighted(&self, add: &Self, f: f32) -> Self {
-        todo!()
-    }
-}
-
-impl EventValueType for u64 {
-    type Container = VecDeque<Self>;
-    type AggregatorTimeWeight = AggregatorNumeric;
-    type AggTimeWeightOutputAvg = f64;
-
-    fn identity_sum() -> Self {
-        0
-    }
-
-    fn add_weighted(&self, add: &Self, f: f32) -> Self {
-        todo!()
     }
 }
 
@@ -243,7 +248,19 @@ impl<EVT> BinningggContainerEventsDyn for ContainerEvents<EVT>
 where
     EVT: EventValueType,
 {
-    fn binned_events_timeweight_traitobj(&self) -> Box<dyn items_0::timebin::BinnedEventsTimeweightTrait> {
-        todo!()
+    fn type_name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
+    fn binned_events_timeweight_traitobj(
+        &self,
+        range: BinnedRange<TsNano>,
+    ) -> Box<dyn items_0::timebin::BinnedEventsTimeweightTrait> {
+        BinnedEventsTimeweightDynbox::<EVT>::new(range)
+    }
+
+    fn to_anybox(&mut self) -> Box<dyn std::any::Any> {
+        let ret = core::mem::replace(self, Self::new());
+        Box::new(ret)
     }
 }

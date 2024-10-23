@@ -5,7 +5,11 @@ use super::___;
 use core::fmt;
 use err::thiserror;
 use err::ThisError;
+use items_0::timebin::BinningggContainerBinsDyn;
+use items_0::timebin::BinsBoxed;
 use items_0::vecpreview::VecPreview;
+use items_0::AsAnyMut;
+use items_0::WithLen;
 use netpod::TsNano;
 use serde::Deserialize;
 use serde::Serialize;
@@ -245,6 +249,7 @@ where
     }
 
     pub fn pop_front(&mut self) -> Option<BinSingle<EVT>> {
+        todo!("pop_front");
         let ts1 = if let Some(x) = self.ts1s.pop_front() {
             x
         } else {
@@ -304,6 +309,88 @@ where
             VecPreview::new(&self.avgs),
             VecPreview::new(&self.fnls),
         )
+    }
+}
+
+impl<EVT> fmt::Display for ContainerBins<EVT>
+where
+    EVT: EventValueType,
+{
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt::Debug::fmt(self, fmt)
+    }
+}
+
+impl<EVT> AsAnyMut for ContainerBins<EVT>
+where
+    EVT: EventValueType,
+{
+    fn as_any_mut(&mut self) -> &mut dyn any::Any {
+        self
+    }
+}
+
+impl<EVT> WithLen for ContainerBins<EVT>
+where
+    EVT: EventValueType,
+{
+    fn len(&self) -> usize {
+        Self::len(self)
+    }
+}
+
+impl<EVT> BinningggContainerBinsDyn for ContainerBins<EVT>
+where
+    EVT: EventValueType,
+{
+    fn type_name(&self) -> &'static str {
+        any::type_name::<Self>()
+    }
+
+    fn empty(&self) -> BinsBoxed {
+        Box::new(Self::new())
+    }
+
+    fn clone(&self) -> BinsBoxed {
+        Box::new(<Self as Clone>::clone(self))
+    }
+
+    fn edges_iter(
+        &self,
+    ) -> std::iter::Zip<std::collections::vec_deque::Iter<TsNano>, std::collections::vec_deque::Iter<TsNano>> {
+        self.ts1s.iter().zip(self.ts2s.iter())
+    }
+
+    fn drain_into(&mut self, dst: &mut dyn BinningggContainerBinsDyn, range: std::ops::Range<usize>) {
+        let obj = dst.as_any_mut();
+        if let Some(dst) = obj.downcast_mut::<Self>() {
+            dst.ts1s.extend(self.ts1s.drain(range.clone()));
+        } else {
+            let styn = any::type_name::<EVT>();
+            panic!("unexpected drain  EVT {}  dst {}", styn, dst.type_name());
+        }
+    }
+
+    fn to_old_time_binned(&self) -> Box<dyn items_0::timebin::TimeBinned> {
+        let a = self as &dyn any::Any;
+        if let Some(src) = a.downcast_ref::<ContainerBins<f64>>() {
+            use items_0::Empty;
+            let mut ret = crate::binsdim0::BinsDim0::<f64>::empty();
+            for ((((((&ts1, &ts2), &cnt), min), max), avg), fnl) in src.zip_iter() {
+                ret.push(ts1.ns(), ts2.ns(), cnt, *min, *max, *avg as f32, 0.);
+            }
+            Box::new(ret)
+        } else if let Some(src) = a.downcast_ref::<ContainerBins<f32>>() {
+            use items_0::Empty;
+            let mut ret = crate::binsdim0::BinsDim0::<f32>::empty();
+            for ((((((&ts1, &ts2), &cnt), min), max), avg), fnl) in src.zip_iter() {
+                ret.push(ts1.ns(), ts2.ns(), cnt, *min, *max, *avg as f32, 0.);
+            }
+            Box::new(ret)
+        } else {
+            let styn = any::type_name::<EVT>();
+            todo!("TODO impl for {styn}")
+        }
     }
 }
 

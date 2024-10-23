@@ -53,7 +53,7 @@ fn assert_stream_send<'u, R>(stream: impl 'u + Send + Stream<Item = R>) -> impl 
     stream
 }
 
-pub async fn timebinnable_stream(
+pub async fn timebinnable_stream_sf_databuffer_box_events(
     range: NanoRange,
     one_before_range: bool,
     ch_conf: ChannelTypeConfigGen,
@@ -62,7 +62,7 @@ pub async fn timebinnable_stream(
     log_level: String,
     ctx: Arc<ReqCtx>,
     open_bytes: OpenBoxedBytesStreamsBox,
-) -> Result<TimeBinnableStreamBox, Error> {
+) -> Result<impl Stream<Item = Sitemty<Box<dyn Events>>>, Error> {
     let subq = make_sub_query(
         ch_conf,
         range.clone().into(),
@@ -222,6 +222,32 @@ pub async fn timebinnable_stream(
         let stream = stream.map(|x| x);
         Box::pin(stream)
     };
+    Ok(stream)
+}
+
+async fn timebinnable_stream_sf_databuffer_binnable_box(
+    range: NanoRange,
+    one_before_range: bool,
+    ch_conf: ChannelTypeConfigGen,
+    transform_query: TransformQuery,
+    sub: EventsSubQuerySettings,
+    log_level: String,
+    ctx: Arc<ReqCtx>,
+    open_bytes: OpenBoxedBytesStreamsBox,
+) -> Result<TimeBinnableStreamBox, Error> {
+    let stream = timebinnable_stream_sf_databuffer_box_events(
+        range,
+        one_before_range,
+        ch_conf,
+        transform_query,
+        sub,
+        log_level,
+        ctx,
+        open_bytes,
+    )
+    .await?;
+    // let stream = stream.map(|x| x);
+    // let stream = stream.map(|x| ChannelEvents::Events(x));
 
     // let stream = stream.map(move |k| {
     //     on_sitemty_data!(k, |k| {
@@ -234,6 +260,39 @@ pub async fn timebinnable_stream(
     let stream = EventsToTimeBinnable::new(stream);
     let stream = Box::pin(stream);
     Ok(TimeBinnableStreamBox(stream))
+}
+
+pub async fn timebinnable_stream_sf_databuffer_channelevents(
+    range: NanoRange,
+    one_before_range: bool,
+    ch_conf: ChannelTypeConfigGen,
+    transform_query: TransformQuery,
+    sub: EventsSubQuerySettings,
+    log_level: String,
+    ctx: Arc<ReqCtx>,
+    open_bytes: OpenBoxedBytesStreamsBox,
+) -> Result<impl Stream<Item = Sitemty<ChannelEvents>>, Error> {
+    let stream = timebinnable_stream_sf_databuffer_box_events(
+        range,
+        one_before_range,
+        ch_conf,
+        transform_query,
+        sub,
+        log_level,
+        ctx,
+        open_bytes,
+    )
+    .await?;
+    // let stream = stream.map(|x| x);
+    let stream = stream.map(move |k| {
+        on_sitemty_data!(k, |k| {
+            // let k: Box<dyn Collectable> = Box::new(k);
+            Ok(StreamItem::DataItem(RangeCompletableItem::Data(ChannelEvents::Events(
+                k,
+            ))))
+        })
+    });
+    Ok(stream)
 }
 
 pub struct TimeBinnableStream {
@@ -253,7 +312,7 @@ impl TimeBinnableStream {
         ctx: Arc<ReqCtx>,
         open_bytes: OpenBoxedBytesStreamsBox,
     ) -> Self {
-        let fut = timebinnable_stream(
+        let fut = timebinnable_stream_sf_databuffer_binnable_box(
             range,
             one_before_range,
             ch_conf,
@@ -313,23 +372,13 @@ async fn timebinned_stream(
     ch_conf: ChannelTypeConfigGen,
     ctx: &ReqCtx,
     open_bytes: OpenBoxedBytesStreamsBox,
-    cache_read_provider: Option<Arc<dyn CacheReadProvider>>,
-    events_read_provider: Option<Arc<dyn EventsReadProvider>>,
+    cache_read_provider: Arc<dyn CacheReadProvider>,
+    events_read_provider: Arc<dyn EventsReadProvider>,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>, Error> {
     use netpod::query::CacheUsage;
     let cache_usage = query.cache_usage().unwrap_or(CacheUsage::V0NoCache);
-    match (
-        ch_conf.series(),
-        cache_usage.clone(),
-        cache_read_provider,
-        events_read_provider,
-    ) {
-        (
-            Some(series),
-            CacheUsage::Use | CacheUsage::Recreate | CacheUsage::Ignore,
-            Some(cache_read_provider),
-            Some(events_read_provider),
-        ) => {
+    match cache_usage.clone() {
+        CacheUsage::Use | CacheUsage::Recreate | CacheUsage::Ignore => {
             debug!(
                 "timebinned_stream  caching {:?}  subgrids {:?}",
                 query,
@@ -351,8 +400,6 @@ async fn timebinned_stream(
                 EventsSubQuerySettings::from(&query),
                 query.log_level().into(),
                 Arc::new(ctx.clone()),
-                open_bytes.clone(),
-                series,
                 binned_range.binned_range_time(),
                 do_time_weight,
                 bin_len_layers,
@@ -372,7 +419,7 @@ async fn timebinned_stream(
             let range = binned_range.binned_range_time().to_nano_range();
             let do_time_weight = true;
             let one_before_range = true;
-            let stream = timebinnable_stream(
+            let stream = timebinnable_stream_sf_databuffer_binnable_box(
                 range,
                 one_before_range,
                 ch_conf,
@@ -412,8 +459,8 @@ pub async fn timebinned_json(
     ch_conf: ChannelTypeConfigGen,
     ctx: &ReqCtx,
     open_bytes: OpenBoxedBytesStreamsBox,
-    cache_read_provider: Option<Arc<dyn CacheReadProvider>>,
-    events_read_provider: Option<Arc<dyn EventsReadProvider>>,
+    cache_read_provider: Arc<dyn CacheReadProvider>,
+    events_read_provider: Arc<dyn EventsReadProvider>,
 ) -> Result<CollectResult<JsonValue>, Error> {
     let deadline = Instant::now()
         + query
@@ -486,8 +533,8 @@ pub async fn timebinned_json_framed(
     ch_conf: ChannelTypeConfigGen,
     ctx: &ReqCtx,
     open_bytes: OpenBoxedBytesStreamsBox,
-    cache_read_provider: Option<Arc<dyn CacheReadProvider>>,
-    events_read_provider: Option<Arc<dyn EventsReadProvider>>,
+    cache_read_provider: Arc<dyn CacheReadProvider>,
+    events_read_provider: Arc<dyn EventsReadProvider>,
 ) -> Result<JsonStream, Error> {
     trace!("timebinned_json_framed");
     let binned_range = query.covering_range()?;

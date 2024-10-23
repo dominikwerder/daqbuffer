@@ -2,6 +2,7 @@ pub mod boxed;
 pub mod cbor_stream;
 pub mod collect;
 pub mod dtflags;
+pub mod eventsplainreader;
 pub mod filechunkread;
 pub mod firsterr;
 pub mod framed_bytes;

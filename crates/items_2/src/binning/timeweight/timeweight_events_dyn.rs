@@ -1,11 +1,13 @@
 use super::timeweight_events::BinnedEventsTimeweight;
 use crate::binning::container_bins::ContainerBins;
+use crate::binning::container_events::ContainerEvents;
 use crate::binning::container_events::EventValueType;
 use crate::channelevents::ChannelEvents;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items_0::streamitem::LogItem;
 use items_0::streamitem::Sitemty;
 use items_0::timebin::BinnedEventsTimeweightTrait;
 use items_0::timebin::BinningggBinnerDyn;
@@ -17,6 +19,7 @@ use items_0::timebin::EventsBoxed;
 use netpod::log::*;
 use netpod::BinnedRange;
 use netpod::TsNano;
+use std::any;
 use std::arch::x86_64;
 use std::ops::ControlFlow;
 use std::pin::Pin;
@@ -55,23 +58,40 @@ impl<EVT> BinnedEventsTimeweightTrait for BinnedEventsTimeweightDynbox<EVT>
 where
     EVT: EventValueType,
 {
-    fn ingest(&mut self, evs_all: EventsBoxed) -> Result<(), BinningggError> {
-        todo!()
+    fn ingest(&mut self, mut evs: EventsBoxed) -> Result<(), BinningggError> {
+        // let a = (&evs as &dyn any::Any).downcast_ref::<String>();
+        // evs.downcast::<String>();
+        // evs.as_anybox().downcast::<ContainerEvents<f64>>();
+        match evs.to_anybox().downcast::<ContainerEvents<EVT>>() {
+            Ok(evs) => {
+                let evs = {
+                    let a = evs;
+                    *a
+                };
+                Ok(self.binner.ingest(evs)?)
+            }
+            Err(_) => Err(BinningggError::TypeMismatch {
+                have: evs.type_name().into(),
+                expect: std::any::type_name::<ContainerEvents<EVT>>().into(),
+            }),
+        }
     }
 
     fn input_done_range_final(&mut self) -> Result<(), BinningggError> {
-        // self.binner.input_done_range_final()
-        todo!()
+        Ok(self.binner.input_done_range_final()?)
     }
 
     fn input_done_range_open(&mut self) -> Result<(), BinningggError> {
-        // self.binner.input_done_range_open()
-        todo!()
+        Ok(self.binner.input_done_range_open()?)
     }
 
-    fn output(&mut self) -> Result<BinsBoxed, BinningggError> {
-        // self.binner.output()
-        todo!()
+    fn output(&mut self) -> Result<Option<BinsBoxed>, BinningggError> {
+        if self.binner.output_len() == 0 {
+            Ok(None)
+        } else {
+            let c = self.binner.output();
+            Ok(Some(Box::new(c)))
+        }
     }
 }
 
@@ -93,36 +113,36 @@ impl BinnedEventsTimeweightLazy {
 impl BinnedEventsTimeweightTrait for BinnedEventsTimeweightLazy {
     fn ingest(&mut self, evs_all: EventsBoxed) -> Result<(), BinningggError> {
         self.binned_events
-            .get_or_insert_with(|| evs_all.binned_events_timeweight_traitobj())
+            .get_or_insert_with(|| evs_all.binned_events_timeweight_traitobj(self.range.clone()))
             .ingest(evs_all)
     }
 
     fn input_done_range_final(&mut self) -> Result<(), BinningggError> {
-        debug!("TODO something to do if we miss the binner here?");
         self.binned_events
             .as_mut()
             .map(|x| x.input_done_range_final())
-            .unwrap_or(Ok(()))
+            .unwrap_or_else(|| {
+                debug!("TODO something to do if we miss the binner here?");
+                Ok(())
+            })
     }
 
     fn input_done_range_open(&mut self) -> Result<(), BinningggError> {
-        debug!("TODO something to do if we miss the binner here?");
         self.binned_events
             .as_mut()
             .map(|x| x.input_done_range_open())
             .unwrap_or(Ok(()))
     }
 
-    fn output(&mut self) -> Result<BinsBoxed, BinningggError> {
-        debug!("TODO something to do if we miss the binner here?");
-        // TODO change trait because without binner we can not produce any container here
-        todo!()
+    fn output(&mut self) -> Result<Option<BinsBoxed>, BinningggError> {
+        self.binned_events.as_mut().map(|x| x.output()).unwrap_or(Ok(None))
     }
 }
 
 enum StreamState {
     Reading,
     Done,
+    Invalid,
 }
 
 pub struct BinnedEventsTimeweightStream {
@@ -158,13 +178,14 @@ impl BinnedEventsTimeweightStream {
                         ChannelEvents::Events(evs) => match self.binned_events.ingest(evs.to_container_events()) {
                             Ok(()) => {
                                 match self.binned_events.output() {
-                                    Ok(x) => {
+                                    Ok(Some(x)) => {
                                         if x.len() == 0 {
                                             Continue(())
                                         } else {
                                             Break(Ready(Some(Ok(DataItem(Data(x))))))
                                         }
                                     }
+                                    Ok(None) => Continue(()),
                                     Err(e) => Break(Ready(Some(Err(::err::Error::from_string(e))))),
                                 }
                                 // Continue(())
@@ -192,18 +213,53 @@ impl BinnedEventsTimeweightStream {
     }
 
     fn handle_eos(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<<Self as Stream>::Item>> {
+        debug!("handle_eos");
         use items_0::streamitem::RangeCompletableItem::*;
         use items_0::streamitem::StreamItem::*;
         use Poll::*;
+        self.state = StreamState::Done;
         if self.range_complete {
-            self.binned_events.input_done_range_final();
+            self.binned_events
+                .input_done_range_final()
+                .map_err(::err::Error::from_string)?;
         } else {
-            self.binned_events.input_done_range_open();
+            self.binned_events
+                .input_done_range_open()
+                .map_err(::err::Error::from_string)?;
         }
-        match self.binned_events.output() {
-            Ok(x) => Ready(Some(Ok(DataItem(Data(x))))),
-            Err(e) => Ready(Some(Err(::err::Error::from_string(e)))),
+        match self.binned_events.output().map_err(::err::Error::from_string)? {
+            Some(x) => {
+                debug!("seeing ready bins {:?}", x);
+                Ready(Some(Ok(DataItem(Data(x)))))
+            }
+            None => {
+                let item = LogItem::from_node(888, Level::INFO, format!("no bins ready on eos"));
+                Ready(Some(Ok(Log(item))))
+            }
         }
+    }
+
+    fn handle_main(mut self: Pin<&mut Self>, cx: &mut Context) -> ControlFlow<Poll<Option<<Self as Stream>::Item>>> {
+        use ControlFlow::*;
+        use Poll::*;
+        let ret = match &self.state {
+            StreamState::Reading => match self.as_mut().inp.poll_next_unpin(cx) {
+                Ready(Some(x)) => self.as_mut().handle_sitemty(x, cx),
+                Ready(None) => Break(self.as_mut().handle_eos(cx)),
+                Pending => Break(Pending),
+            },
+            StreamState::Done => {
+                self.state = StreamState::Invalid;
+                Break(Ready(None))
+            }
+            StreamState::Invalid => {
+                panic!("StreamState::Invalid")
+            }
+        };
+        if let Break(Ready(Some(Err(_)))) = ret {
+            self.state = StreamState::Done;
+        }
+        ret
     }
 }
 
@@ -212,15 +268,10 @@ impl Stream for BinnedEventsTimeweightStream {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use ControlFlow::*;
-        use Poll::*;
         loop {
-            break match self.as_mut().inp.poll_next_unpin(cx) {
-                Ready(Some(x)) => match self.as_mut().handle_sitemty(x, cx) {
-                    Continue(()) => continue,
-                    Break(x) => x,
-                },
-                Ready(None) => self.handle_eos(cx),
-                Pending => Pending,
+            break match self.as_mut().handle_main(cx) {
+                Break(x) => x,
+                Continue(()) => continue,
             };
         }
     }

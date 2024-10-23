@@ -34,8 +34,11 @@ use nodenet::scylla::ScyllaEventReadProvider;
 use query::api4::binned::BinnedQuery;
 use scyllaconn::bincache::ScyllaCacheReadProvider;
 use scyllaconn::worker::ScyllaQueue;
+use std::pin::Pin;
 use std::sync::Arc;
 use streams::collect::CollectResult;
+use streams::eventsplainreader::DummyCacheReadProvider;
+use streams::eventsplainreader::SfDatabufferEventReadProvider;
 use streams::timebin::cached::reader::EventsReadProvider;
 use streams::timebin::CacheReadProvider;
 use tracing::Instrument;
@@ -136,6 +139,40 @@ async fn binned(
     }
 }
 
+fn make_read_provider(
+    scyqueue: Option<ScyllaQueue>,
+    open_bytes: Pin<Arc<OpenBoxedBytesViaHttp>>,
+    ctx: &ReqCtx,
+    ncc: &NodeConfigCached,
+) -> (Arc<dyn EventsReadProvider>, Arc<dyn CacheReadProvider>) {
+    let events_read_provider = if ncc.node_config.cluster.scylla_lt().is_some() {
+        scyqueue
+            .clone()
+            .map(|qu| ScyllaEventReadProvider::new(qu))
+            .map(|x| Arc::new(x) as Arc<dyn EventsReadProvider>)
+            .expect("expect scylla queue")
+    } else if ncc.node.sf_databuffer.is_some() {
+        // TODO do not clone the request. Pass an Arc up to here.
+        let x = SfDatabufferEventReadProvider::new(Arc::new(ctx.clone()), open_bytes);
+        Arc::new(x)
+    } else {
+        panic!()
+    };
+    let cache_read_provider = if ncc.node_config.cluster.scylla_lt().is_some() {
+        scyqueue
+            .clone()
+            .map(|qu| ScyllaCacheReadProvider::new(qu))
+            .map(|x| Arc::new(x) as Arc<dyn CacheReadProvider>)
+            .expect("expect scylla queue")
+    } else if ncc.node.sf_databuffer.is_some() {
+        let x = DummyCacheReadProvider::new();
+        Arc::new(x)
+    } else {
+        panic!()
+    };
+    (events_read_provider, cache_read_provider)
+}
+
 async fn binned_json_single(
     url: Url,
     req: Requ,
@@ -169,13 +206,8 @@ async fn binned_json_single(
     });
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let open_bytes = Arc::pin(open_bytes);
-    let cache_read_provider = scyqueue
-        .clone()
-        .map(|qu| ScyllaCacheReadProvider::new(qu))
-        .map(|x| Arc::new(x) as Arc<dyn CacheReadProvider>);
-    let events_read_provider = scyqueue
-        .map(|qu| ScyllaEventReadProvider::new(qu))
-        .map(|x| Arc::new(x) as Arc<dyn EventsReadProvider>);
+    let open_bytes2 = Arc::pin(OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone()));
+    let (events_read_provider, cache_read_provider) = make_read_provider(scyqueue, open_bytes2, ctx, ncc);
     let item = streams::timebinnedjson::timebinned_json(
         query,
         ch_conf,
@@ -238,13 +270,8 @@ async fn binned_json_framed(
     });
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let open_bytes = Arc::pin(open_bytes);
-    let cache_read_provider = scyqueue
-        .clone()
-        .map(|qu| ScyllaCacheReadProvider::new(qu))
-        .map(|x| Arc::new(x) as Arc<dyn CacheReadProvider>);
-    let events_read_provider = scyqueue
-        .map(|qu| ScyllaEventReadProvider::new(qu))
-        .map(|x| Arc::new(x) as Arc<dyn EventsReadProvider>);
+    let open_bytes2 = Arc::pin(OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone()));
+    let (events_read_provider, cache_read_provider) = make_read_provider(scyqueue, open_bytes2, ctx, ncc);
     let stream = streams::timebinnedjson::timebinned_json_framed(
         query,
         ch_conf,

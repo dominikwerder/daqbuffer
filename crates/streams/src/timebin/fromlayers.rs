@@ -56,7 +56,6 @@ pub struct TimeBinnedFromLayers {
     sub: EventsSubQuerySettings,
     log_level: String,
     ctx: Arc<ReqCtx>,
-    open_bytes: OpenBoxedBytesStreamsBox,
     inp: BoxedInput,
 }
 
@@ -72,8 +71,6 @@ impl TimeBinnedFromLayers {
         sub: EventsSubQuerySettings,
         log_level: String,
         ctx: Arc<ReqCtx>,
-        open_bytes: OpenBoxedBytesStreamsBox,
-        series: u64,
         range: BinnedRange<TsNano>,
         do_time_weight: bool,
         bin_len_layers: Vec<DtMs>,
@@ -83,7 +80,7 @@ impl TimeBinnedFromLayers {
         debug!(
             "{}::new  {:?}  {:?}  {:?}",
             Self::type_name(),
-            series,
+            ch_conf.series(),
             range,
             bin_len_layers
         );
@@ -98,7 +95,6 @@ impl TimeBinnedFromLayers {
                 sub.clone(),
                 log_level.clone(),
                 ctx.clone(),
-                series,
                 range,
                 do_time_weight,
                 bin_len_layers,
@@ -112,7 +108,6 @@ impl TimeBinnedFromLayers {
                 sub,
                 log_level,
                 ctx,
-                open_bytes,
                 inp: Box::pin(inp),
             };
             Ok(ret)
@@ -137,7 +132,6 @@ impl TimeBinnedFromLayers {
                         sub.clone(),
                         log_level.clone(),
                         ctx.clone(),
-                        series,
                         range_finer.clone(),
                         do_time_weight,
                         bin_len_layers,
@@ -152,7 +146,6 @@ impl TimeBinnedFromLayers {
                         sub,
                         log_level,
                         ctx,
-                        open_bytes,
                         inp: Box::pin(inp),
                     };
                     Ok(ret)
@@ -168,30 +161,18 @@ impl TimeBinnedFromLayers {
                         transform_query.clone(),
                     );
                     let evq = EventsSubQuery::from_parts(select, sub.clone(), ctx.reqid().into(), log_level.clone());
-                    match &ch_conf {
-                        ChannelTypeConfigGen::Scylla(chconf) => {
-                            let inp = BinnedFromEvents::new(
-                                range,
-                                evq,
-                                chconf.clone(),
-                                do_time_weight,
-                                events_read_provider,
-                            )?;
-                            let ret = Self {
-                                ch_conf,
-                                cache_usage,
-                                transform_query,
-                                sub,
-                                log_level,
-                                ctx,
-                                open_bytes,
-                                inp: Box::pin(inp),
-                            };
-                            debug!("{}::new  setup from events", Self::type_name());
-                            Ok(ret)
-                        }
-                        ChannelTypeConfigGen::SfDatabuffer(_) => return Err(Error::SfDatabufferNotSupported),
-                    }
+                    let inp = BinnedFromEvents::new(range, evq, do_time_weight, events_read_provider)?;
+                    let ret = Self {
+                        ch_conf,
+                        cache_usage,
+                        transform_query,
+                        sub,
+                        log_level,
+                        ctx,
+                        inp: Box::pin(inp),
+                    };
+                    debug!("{}::new  setup from events", Self::type_name());
+                    Ok(ret)
                 }
             }
         }

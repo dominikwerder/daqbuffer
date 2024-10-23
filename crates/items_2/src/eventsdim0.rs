@@ -882,6 +882,18 @@ impl<STY: ScalarOps> EventsNonObj for EventsDim0<STY> {
     }
 }
 
+macro_rules! try_to_container_events {
+    ($sty:ty, $this:expr) => {
+        if let Some(evs) = $this.as_any_ref().downcast_ref::<EventsDim0<$sty>>() {
+            use crate::binning::container_events::ContainerEvents;
+            let tss = $this.tss.iter().map(|&x| TsNano::from_ns(x)).collect();
+            let vals = evs.values.clone();
+            let ret = ContainerEvents::<$sty>::from_constituents(tss, vals);
+            return Box::new(ret);
+        }
+    };
+}
+
 impl<STY: ScalarOps> Events for EventsDim0<STY> {
     fn as_time_binnable_ref(&self) -> &dyn TimeBinnable {
         self
@@ -1105,15 +1117,32 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
     }
 
     fn to_container_events(&self) -> Box<dyn ::items_0::timebin::BinningggContainerEventsDyn> {
-        use crate::binning::container_events::ContainerEvents;
-        let tss = self.tss.iter().map(|&x| TsNano::from_ns(x)).collect();
-        if let Some(evs) = self.as_any_ref().downcast_ref::<EventsDim0<f64>>() {
-            let vals = evs.values.clone();
-            let ret = ContainerEvents::<f64>::from_constituents(tss, vals);
-            Box::new(ret)
-        } else {
-            todo!()
-        }
+        try_to_container_events!(u8, self);
+        try_to_container_events!(u16, self);
+        try_to_container_events!(u32, self);
+        try_to_container_events!(u64, self);
+        try_to_container_events!(f32, self);
+        try_to_container_events!(f64, self);
+        let styn = any::type_name::<STY>();
+        todo!("TODO for {styn}")
+    }
+}
+
+fn try_to_container_events_fn<STY, EVT>(
+    this: &EventsDim0<STY>,
+) -> Option<Box<dyn ::items_0::timebin::BinningggContainerEventsDyn>>
+where
+    STY: ScalarOps,
+    EVT: crate::binning::container_events::EventValueType<Container = std::collections::VecDeque<STY>>,
+{
+    use crate::binning::container_events::ContainerEvents;
+    if let Some(evs) = this.as_any_ref().downcast_ref::<EventsDim0<STY>>() {
+        let tss = this.tss.iter().map(|&x| TsNano::from_ns(x)).collect();
+        let vals = evs.values.clone();
+        let ret = ContainerEvents::<EVT>::from_constituents(tss, vals);
+        Some(Box::new(ret))
+    } else {
+        None
     }
 }
 

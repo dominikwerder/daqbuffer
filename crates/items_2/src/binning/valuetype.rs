@@ -1,5 +1,4 @@
 use super::aggregator::AggregatorTimeWeight;
-use super::binnedvaluetype::BinnedNumericValue;
 use super::container_events::Container;
 use super::container_events::EventValueType;
 use core::fmt;
@@ -86,11 +85,6 @@ impl EventValueType for EnumVariant {
 
     // TODO remove this from trait, only needed for common numeric cases but not in general.
     fn identity_sum() -> Self {
-        todo!()
-    }
-
-    // TODO also remove from trait, push it to a more specialized trait for the plain numeric cases.
-    fn add_weighted(&self, add: &Self, f: f32) -> Self {
         todo!()
     }
 }

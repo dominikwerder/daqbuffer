@@ -610,6 +610,10 @@ impl EventsSubQuery {
     pub fn merger_out_len_max(&self) -> Option<u32> {
         self.settings.merger_out_len_max()
     }
+
+    pub fn settings(&self) -> &EventsSubQuerySettings {
+        &self.settings
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

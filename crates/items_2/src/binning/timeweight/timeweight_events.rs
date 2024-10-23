@@ -5,24 +5,14 @@ use crate::binning::container_bins::ContainerBins;
 use crate::binning::container_events::ContainerEvents;
 use crate::binning::container_events::ContainerEventsTakeUpTo;
 use crate::binning::container_events::EventSingle;
-use crate::channelevents::ChannelEvents;
 use core::fmt;
 use err::thiserror;
 use err::ThisError;
-use futures_util::Stream;
-use items_0::streamitem::Sitemty;
-use items_0::timebin::BinningggBinnerDyn;
-use items_0::timebin::BinningggBinnerTy;
 use netpod::log::*;
 use netpod::BinnedRange;
 use netpod::DtNano;
 use netpod::TsNano;
-use std::collections::VecDeque;
-use std::marker::PhantomData;
 use std::mem;
-use std::pin::Pin;
-use std::task::Context;
-use std::task::Poll;
 
 #[allow(unused)]
 macro_rules! trace_ { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
@@ -34,7 +24,7 @@ macro_rules! trace_init { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
 macro_rules! trace_cycle { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_event_next { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
+macro_rules! trace_event_next { ($($arg:tt)*) => ( if false { trace_!($($arg)*); }) }
 
 #[allow(unused)]
 macro_rules! trace_ingest_init_lst { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
@@ -43,7 +33,7 @@ macro_rules! trace_ingest_init_lst { ($($arg:tt)*) => ( if true { trace_!($($arg
 macro_rules! trace_ingest_minmax { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_ingest_event { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
+macro_rules! trace_ingest_event { ($($arg:tt)*) => ( if false { trace_!($($arg)*); }) }
 
 #[allow(unused)]
 macro_rules! trace_ingest_firsts { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
@@ -103,7 +93,8 @@ where
 {
     // NOTE that this is also used during bin-cycle.
     fn ingest_event_with_lst_gt_range_beg_agg(&mut self, ev: EventSingle<EVT>, lst: LstRef<EVT>) {
-        trace_ingest_event!("ingest_event_with_lst_gt_range_beg_agg  {:?}", ev);
+        let selfname = "ingest_event_with_lst_gt_range_beg_agg";
+        trace_ingest_event!("{selfname}  {:?}", ev);
         if DEBUG_CHECKS {
             if ev.ts <= self.active_beg {
                 panic!("should never get here");
@@ -113,7 +104,7 @@ where
             }
         }
         let dt = ev.ts.delta(self.filled_until);
-        trace_ingest_event!("ingest_event_with_lst_gt_range_beg_agg  dt {:?}  ev {:?}", dt, ev);
+        trace_ingest_event!("{selfname}  dt {:?}  ev {:?}", dt, ev);
         // TODO can the caller already take the value and replace it afterwards with the current value?
         // This fn could swap the value in lst and directly use it.
         // This would require that any call path does not mess with lst.
@@ -153,7 +144,8 @@ where
         lst: LstMut<EVT>,
         minmax: &mut MinMax<EVT>,
     ) -> Result<(), Error> {
-        trace_ingest_event!("ingest_event_with_lst_eq_range_beg");
+        let selfname = "ingest_event_with_lst_eq_range_beg";
+        trace_ingest_event!("{selfname}");
         // TODO if the event is exactly on the current bin first edge, then there is no contribution to the avg yet
         // and I must initialize the min/max with the current event.
         InnerA::apply_min_max(&ev, minmax);
@@ -167,9 +159,10 @@ where
         lst: LstMut<EVT>,
         minmax: &mut MinMax<EVT>,
     ) -> Result<(), Error> {
-        trace_ingest_event!("ingest_with_lst_gt_range_beg");
+        let selfname = "ingest_with_lst_gt_range_beg";
+        trace_ingest_event!("{selfname}");
         while let Some(ev) = evs.pop_front() {
-            trace_event_next!("EVENT POP FRONT  {:?}  {:30}", ev, "ingest_with_lst_gt_range_beg");
+            trace_event_next!("EVENT POP FRONT  {:?}  {:30}", ev, selfname);
             if ev.ts <= self.active_beg {
                 panic!("should never get here");
             }
@@ -188,9 +181,10 @@ where
         lst: LstMut<EVT>,
         minmax: &mut MinMax<EVT>,
     ) -> Result<(), Error> {
-        trace_ingest_event!("ingest_with_lst_ge_range_beg");
+        let selfname = "ingest_with_lst_ge_range_beg";
+        trace_ingest_event!("{selfname}");
         while let Some(ev) = evs.pop_front() {
-            trace_event_next!("EVENT POP FRONT  {:?}  {:30}", ev, "ingest_with_lst_ge_range_beg");
+            trace_event_next!("EVENT POP FRONT  {:?}  {:30}", ev, selfname);
             if ev.ts < self.active_beg {
                 panic!("should never get here");
             }
@@ -203,7 +197,7 @@ where
             } else {
                 self.ingest_event_with_lst_gt_range_beg(ev.clone(), LstMut(lst.0), minmax)?;
                 self.cnt += 1;
-                trace_ingest_firsts!("ingest_with_lst_ge_range_beg  now calling ingest_with_lst_gt_range_beg");
+                trace_ingest_firsts!("{selfname}  now calling ingest_with_lst_gt_range_beg");
                 return self.ingest_with_lst_gt_range_beg(evs, LstMut(lst.0), minmax);
             }
         }
@@ -216,11 +210,12 @@ where
         lst: LstMut<EVT>,
         minmax: &mut MinMax<EVT>,
     ) -> Result<(), Error> {
-        trace_ingest_event!("ingest_with_lst_minmax");
+        let selfname = "ingest_with_lst_minmax";
+        trace_ingest_event!("{selfname}");
         // TODO how to handle the min max? I don't take event data yet out of the container.
         if let Some(ts0) = evs.ts_first() {
-            trace_ingest_event!("EVENT POP FRONT  ingest_with_lst_minmax");
-            trace_ingest_event!("EVENT TIMESTAMP FRONT  {:?}  ingest_with_lst_minmax", ts0);
+            trace_ingest_event!("EVENT POP FRONT  {selfname}");
+            trace_ingest_event!("EVENT TIMESTAMP FRONT  {:?}  {selfname}", ts0);
             if ts0 < self.active_beg {
                 panic!("should never get here");
             } else {
@@ -435,9 +430,10 @@ where
     }
 
     fn ingest_event_without_lst(&mut self, ev: EventSingle<EVT>) -> Result<(), Error> {
+        let selfname = "ingest_event_without_lst";
         let b = &self.inner_a.inner_b;
         if ev.ts >= b.active_end {
-            panic!("should never get here");
+            panic!("{selfname}  should never get here");
         } else {
             trace_ingest_init_lst!("ingest_event_without_lst  set lst  {:?}", ev);
             self.lst = Some(ev.clone());
@@ -453,10 +449,11 @@ where
     }
 
     fn ingest_without_lst(&mut self, mut evs: ContainerEventsTakeUpTo<EVT>) -> Result<(), Error> {
+        let selfname = "ingest_without_lst";
         if let Some(ev) = evs.pop_front() {
-            trace_event_next!("EVENT POP FRONT  {:?}  {:30}", ev, "ingest_without_lst");
+            trace_event_next!("EVENT POP FRONT  {:?}  {:30}", ev, selfname);
             if ev.ts >= self.inner_a.inner_b.active_end {
-                panic!("should never get here");
+                panic!("{selfname}  should never get here");
             } else {
                 self.ingest_event_without_lst(ev)?;
                 if let Some(lst) = self.lst.as_mut() {
@@ -631,6 +628,10 @@ where
         trace_cycle!("input_done_range_open");
         self.cycle_02();
         Ok(())
+    }
+
+    pub fn output_len(&self) -> usize {
+        self.out.len()
     }
 
     pub fn output(&mut self) -> ContainerBins<EVT> {
