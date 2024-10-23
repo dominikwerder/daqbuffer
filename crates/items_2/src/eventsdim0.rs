@@ -884,9 +884,10 @@ impl<STY: ScalarOps> EventsNonObj for EventsDim0<STY> {
 
 macro_rules! try_to_container_events {
     ($sty:ty, $this:expr) => {
-        if let Some(evs) = $this.as_any_ref().downcast_ref::<EventsDim0<$sty>>() {
+        let this = $this;
+        if let Some(evs) = this.as_any_ref().downcast_ref::<EventsDim0<$sty>>() {
             use crate::binning::container_events::ContainerEvents;
-            let tss = $this.tss.iter().map(|&x| TsNano::from_ns(x)).collect();
+            let tss = this.tss.iter().map(|&x| TsNano::from_ns(x)).collect();
             let vals = evs.values.clone();
             let ret = ContainerEvents::<$sty>::from_constituents(tss, vals);
             return Box::new(ret);
@@ -1121,8 +1122,26 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
         try_to_container_events!(u16, self);
         try_to_container_events!(u32, self);
         try_to_container_events!(u64, self);
+        try_to_container_events!(i8, self);
+        try_to_container_events!(i16, self);
+        try_to_container_events!(i32, self);
+        try_to_container_events!(i64, self);
         try_to_container_events!(f32, self);
         try_to_container_events!(f64, self);
+        // try_to_container_events!(bool, self);
+        // try_to_container_events!(String, self);
+        let this = self;
+        if let Some(evs) = self.as_any_ref().downcast_ref::<EventsDim0<netpod::EnumVariant>>() {
+            use crate::binning::container_events::ContainerEvents;
+            let tss = this.tss.iter().map(|&x| TsNano::from_ns(x)).collect();
+            use crate::binning::container_events::Container;
+            let mut vals = crate::binning::valuetype::EnumVariantContainer::new();
+            for x in evs.values.iter() {
+                vals.push_back(x.clone());
+            }
+            let ret = ContainerEvents::<netpod::EnumVariant>::from_constituents(tss, vals);
+            return Box::new(ret);
+        }
         let styn = any::type_name::<STY>();
         todo!("TODO for {styn}")
     }
