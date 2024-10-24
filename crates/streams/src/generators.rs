@@ -57,7 +57,7 @@ pub fn make_test_channel_events_bytes_stream(
                 }
             })
         });
-        let stream = stream.map(|x| x.make_frame().map(|x| x.freeze()));
+        let stream = stream.map(|x| x.make_frame_dyn().map(|x| x.freeze()));
         let ret = Box::pin(stream);
         Ok(ret)
     }

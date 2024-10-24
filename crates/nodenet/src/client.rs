@@ -28,7 +28,7 @@ async fn open_bytes_data_streams_http(
     let mut streams = Vec::new();
     for node in &cluster.nodes {
         let item = sitem_data(frame1.clone());
-        let buf = item.make_frame()?;
+        let buf = item.make_frame_dyn()?;
 
         let url = node.baseurl().join("/api/4/private/eventdata/frames").unwrap();
         debug!("open_event_data_streams_http  post  {url}");

@@ -161,4 +161,48 @@ impl AggregatorTimeWeight<u64> for AggregatorNumeric {
     }
 }
 
-// TODO do enum right from begin, using a SOA enum container.
+impl AggregatorTimeWeight<bool> for AggregatorNumeric {
+    fn new() -> Self {
+        Self { sum: 0. }
+    }
+
+    fn ingest(&mut self, dt: DtNano, bl: DtNano, val: bool) {
+        let f = dt.ns() as f64 / bl.ns() as f64;
+        trace!("INGEST  {}  {}", f, val);
+        self.sum += f * val as u8 as f64;
+    }
+
+    fn reset_for_new_bin(&mut self) {
+        self.sum = 0.;
+    }
+
+    fn result_and_reset_for_new_bin(&mut self, filled_width_fraction: f32) -> f64 {
+        let sum = self.sum.clone();
+        trace!("result_and_reset_for_new_bin  sum {}  {}", sum, filled_width_fraction);
+        self.sum = 0.;
+        sum / filled_width_fraction as f64
+    }
+}
+
+impl AggregatorTimeWeight<String> for AggregatorNumeric {
+    fn new() -> Self {
+        Self { sum: 0. }
+    }
+
+    fn ingest(&mut self, dt: DtNano, bl: DtNano, val: String) {
+        let f = dt.ns() as f64 / bl.ns() as f64;
+        trace!("INGEST  {}  {}", f, val);
+        self.sum += f * val.len() as f64;
+    }
+
+    fn reset_for_new_bin(&mut self) {
+        self.sum = 0.;
+    }
+
+    fn result_and_reset_for_new_bin(&mut self, filled_width_fraction: f32) -> f64 {
+        let sum = self.sum.clone();
+        trace!("result_and_reset_for_new_bin  sum {}  {}", sum, filled_width_fraction);
+        self.sum = 0.;
+        sum / filled_width_fraction as f64
+    }
+}

@@ -69,7 +69,7 @@ pub async fn x_processed_event_blobs_stream_from_node_tcp(
     let net = TcpStream::connect(addr.clone()).await?;
     let (netin, mut netout) = net.into_split();
     let item = sitem_data(frame1);
-    let buf = item.make_frame()?;
+    let buf = item.make_frame_dyn()?;
     netout.write_all(&buf).await?;
     let buf = make_term_frame()?;
     netout.write_all(&buf).await?;
@@ -95,7 +95,7 @@ pub async fn x_processed_event_blobs_stream_from_node_http(
 
     let frame1 = make_node_command_frame(subq.clone())?;
     let item = sitem_data(frame1.clone());
-    let buf = item.make_frame()?;
+    let buf = item.make_frame_dyn()?;
 
     let url = node.baseurl().join("/api/4/private/eventdata/frames").unwrap();
     debug!("open_event_data_streams_http  post  {url}");
@@ -168,7 +168,7 @@ where
         let net = TcpStream::connect(addr.clone()).await?;
         let (netin, mut netout) = net.into_split();
         let item = sitem_data(frame1.clone());
-        let buf = item.make_frame()?;
+        let buf = item.make_frame_dyn()?;
         netout.write_all(&buf).await?;
         let buf = make_term_frame()?;
         netout.write_all(&buf).await?;

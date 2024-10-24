@@ -139,7 +139,7 @@ pub async fn create_response_bytes_stream(
         let fetch_info = evq.ch_conf().to_sf_databuffer()?;
         let stream = disk::raw::conn::make_event_blobs_pipe(&evq, &fetch_info, reqctx, ncc)?;
         // let stream = stream.map(|x| Box::new(x) as _);
-        let stream = stream.map(|x| x.make_frame().map(|x| x.freeze()));
+        let stream = stream.map(|x| x.make_frame_dyn().map(|x| x.freeze()));
         let ret = Box::pin(stream);
         Ok(ret)
     } else {
@@ -161,7 +161,7 @@ pub async fn create_response_bytes_stream(
             })
         });
         // let stream = stream.map(move |x| Box::new(x) as Box<dyn Framable + Send>);
-        let stream = stream.map(|x| x.make_frame().map(bytes::BytesMut::freeze));
+        let stream = stream.map(|x| x.make_frame_dyn().map(bytes::BytesMut::freeze));
         let ret = Box::pin(stream);
         Ok(ret)
     }
@@ -204,7 +204,7 @@ async fn events_conn_handler_with_reqid(
             msg: format!("buf_len_histo: {:?}", buf_len_histo),
         };
         let item: Sitemty<ChannelEvents> = Ok(StreamItem::Log(item));
-        let buf = match item.make_frame() {
+        let buf = match item.make_frame_dyn() {
             Ok(k) => k,
             Err(e) => return Err((e, netout))?,
         };
@@ -331,7 +331,7 @@ where
         Err(ce) => {
             let mut out = ce.netout;
             let item: Sitemty<ChannelEvents> = Err(err::Error::from_string(ce.err));
-            let buf = Framable::make_frame(&item)?;
+            let buf = Framable::make_frame_dyn(&item)?;
             out.write_all(&buf).await?;
         }
     }

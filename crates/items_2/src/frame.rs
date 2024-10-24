@@ -27,22 +27,6 @@ use serde::Serialize;
 use std::any;
 use std::io;
 
-trait EC {
-    fn ec(self) -> err::Error;
-}
-
-impl EC for rmp_serde::encode::Error {
-    fn ec(self) -> err::Error {
-        err::Error::with_msg_no_trace(format!("{self:?}"))
-    }
-}
-
-impl EC for rmp_serde::decode::Error {
-    fn ec(self) -> err::Error {
-        err::Error::with_msg_no_trace(format!("{self:?}"))
-    }
-}
-
 pub fn bincode_ser<W>(
     w: W,
 ) -> bincode::Serializer<

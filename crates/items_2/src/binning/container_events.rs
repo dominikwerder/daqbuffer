@@ -9,6 +9,7 @@ use err::ThisError;
 use items_0::timebin::BinningggContainerEventsDyn;
 use items_0::vecpreview::PreviewRange;
 use items_0::vecpreview::VecPreview;
+use items_0::AsAnyRef;
 use netpod::BinnedRange;
 use netpod::TsNano;
 use serde::Deserialize;
@@ -35,7 +36,7 @@ pub trait EventValueType: fmt::Debug + Clone + PartialOrd + Send + 'static {
     type AggregatorTimeWeight: AggregatorTimeWeight<Self>;
     type AggTimeWeightOutputAvg: AggTimeWeightOutputAvg;
 
-    fn identity_sum() -> Self;
+    // fn identity_sum() -> Self;
     // fn add_weighted(&self, add: &Self, f: f32) -> Self;
 }
 
@@ -57,48 +58,48 @@ where
 }
 
 macro_rules! impl_event_value_type {
-    ($evt:ty, $zero:expr) => {
+    ($evt:ty) => {
         impl EventValueType for $evt {
             type Container = VecDeque<Self>;
             type AggregatorTimeWeight = AggregatorNumeric;
             type AggTimeWeightOutputAvg = f64;
-
-            fn identity_sum() -> Self {
-                $zero
-            }
         }
     };
 }
 
-impl_event_value_type!(u8, 0);
-impl_event_value_type!(u16, 0);
-impl_event_value_type!(u32, 0);
-impl_event_value_type!(u64, 0);
-impl_event_value_type!(i8, 0);
-impl_event_value_type!(i16, 0);
-impl_event_value_type!(i32, 0);
-impl_event_value_type!(i64, 0);
-// impl_event_value_type!(f32, 0.);
-// impl_event_value_type!(f64, 0.);
+impl_event_value_type!(u8);
+impl_event_value_type!(u16);
+impl_event_value_type!(u32);
+impl_event_value_type!(u64);
+impl_event_value_type!(i8);
+impl_event_value_type!(i16);
+impl_event_value_type!(i32);
+impl_event_value_type!(i64);
+// impl_event_value_type!(f32);
+// impl_event_value_type!(f64);
 
 impl EventValueType for f32 {
     type Container = VecDeque<Self>;
     type AggregatorTimeWeight = AggregatorNumeric;
     type AggTimeWeightOutputAvg = f32;
-
-    fn identity_sum() -> Self {
-        0.
-    }
 }
 
 impl EventValueType for f64 {
     type Container = VecDeque<Self>;
     type AggregatorTimeWeight = AggregatorNumeric;
     type AggTimeWeightOutputAvg = f64;
+}
 
-    fn identity_sum() -> Self {
-        0.
-    }
+impl EventValueType for bool {
+    type Container = VecDeque<Self>;
+    type AggregatorTimeWeight = AggregatorNumeric;
+    type AggTimeWeightOutputAvg = f64;
+}
+
+impl EventValueType for String {
+    type Container = VecDeque<Self>;
+    type AggregatorTimeWeight = AggregatorNumeric;
+    type AggTimeWeightOutputAvg = f64;
 }
 
 #[derive(Debug, Clone)]
@@ -120,6 +121,20 @@ where
 {
     tss: VecDeque<TsNano>,
     vals: <EVT as EventValueType>::Container,
+}
+
+macro_rules! try_to_events_dim0 {
+    ($sty:ty, $this:expr) => {
+        let this = $this;
+        if let Some(evs) = this.as_any_ref().downcast_ref::<ContainerEvents<$sty>>() {
+            use crate::eventsdim0::EventsDim0;
+            let tss: VecDeque<_> = this.tss.iter().map(|x| x.ns()).collect();
+            let pulses = tss.iter().map(|_| 0).collect();
+            let values = evs.vals.clone();
+            let ret = EventsDim0::<$sty> { tss, pulses, values };
+            return Box::new(ret);
+        }
+    };
 }
 
 impl<EVT> ContainerEvents<EVT>
@@ -178,6 +193,12 @@ where
         self.tss.push_back(ts);
         self.vals.push_back(val);
     }
+
+    pub fn to_events_dim0(&self) -> Box<dyn items_0::Events> {
+        try_to_events_dim0!(f64, self);
+        let styn = any::type_name::<EVT>();
+        todo!("TODO to_container_events for {styn}")
+    }
 }
 
 impl<EVT> fmt::Debug for ContainerEvents<EVT>
@@ -193,6 +214,15 @@ where
             VecPreview::new(&self.tss),
             VecPreview::new(&self.vals),
         )
+    }
+}
+
+impl<EVT> AsAnyRef for ContainerEvents<EVT>
+where
+    EVT: EventValueType,
+{
+    fn as_any_ref(&self) -> &dyn any::Any {
+        self
     }
 }
 

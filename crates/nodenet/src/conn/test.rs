@@ -89,7 +89,7 @@ fn raw_data_00() {
         let qu = EventsSubQuery::from_parts(select, settings, "dummy".into(), log_level);
         let frame1 = Frame1Parts::new(qu.clone());
         let query = EventQueryJsonStringFrame(serde_json::to_string(&frame1).unwrap());
-        let frame = sitem_data(query).make_frame()?;
+        let frame = sitem_data(query).make_frame_dyn()?;
         let scyqueue = err::todoval();
         let jh = taskrun::spawn(events_conn_handler(client, addr, scyqueue, cfg));
         con.write_all(&frame).await.unwrap();

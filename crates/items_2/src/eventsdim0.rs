@@ -1128,8 +1128,8 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
         try_to_container_events!(i64, self);
         try_to_container_events!(f32, self);
         try_to_container_events!(f64, self);
-        // try_to_container_events!(bool, self);
-        // try_to_container_events!(String, self);
+        try_to_container_events!(bool, self);
+        try_to_container_events!(String, self);
         let this = self;
         if let Some(evs) = self.as_any_ref().downcast_ref::<EventsDim0<netpod::EnumVariant>>() {
             use crate::binning::container_events::ContainerEvents;
@@ -1143,25 +1143,7 @@ impl<STY: ScalarOps> Events for EventsDim0<STY> {
             return Box::new(ret);
         }
         let styn = any::type_name::<STY>();
-        todo!("TODO for {styn}")
-    }
-}
-
-fn try_to_container_events_fn<STY, EVT>(
-    this: &EventsDim0<STY>,
-) -> Option<Box<dyn ::items_0::timebin::BinningggContainerEventsDyn>>
-where
-    STY: ScalarOps,
-    EVT: crate::binning::container_events::EventValueType<Container = std::collections::VecDeque<STY>>,
-{
-    use crate::binning::container_events::ContainerEvents;
-    if let Some(evs) = this.as_any_ref().downcast_ref::<EventsDim0<STY>>() {
-        let tss = this.tss.iter().map(|&x| TsNano::from_ns(x)).collect();
-        let vals = evs.values.clone();
-        let ret = ContainerEvents::<EVT>::from_constituents(tss, vals);
-        Some(Box::new(ret))
-    } else {
-        None
+        todo!("TODO to_container_events for {styn}")
     }
 }
 
@@ -1352,7 +1334,7 @@ mod test_frame {
         let events: Box<dyn Events> = Box::new(events);
         let item = ChannelEvents::Events(events);
         let item = Ok::<_, Error>(StreamItem::DataItem(RangeCompletableItem::Data(item)));
-        let mut buf = item.make_frame().unwrap();
+        let mut buf = item.make_frame_dyn().unwrap();
         let s = String::from_utf8_lossy(&buf[20..buf.len() - 4]);
         eprintln!("[[{s}]]");
         let buflen = buf.len();

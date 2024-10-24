@@ -65,7 +65,7 @@ impl AggregatorTimeWeight<EnumVariant> for EnumVariantAggregatorTimeWeight {
     }
 
     fn reset_for_new_bin(&mut self) {
-        self.sum = f32::identity_sum();
+        self.sum = 0.;
     }
 
     fn result_and_reset_for_new_bin(
@@ -73,7 +73,7 @@ impl AggregatorTimeWeight<EnumVariant> for EnumVariantAggregatorTimeWeight {
         filled_width_fraction: f32,
     ) -> <EnumVariant as EventValueType>::AggTimeWeightOutputAvg {
         let ret = self.sum.clone();
-        self.sum = f32::identity_sum();
+        self.sum = 0.;
         ret / filled_width_fraction
     }
 }
@@ -82,9 +82,4 @@ impl EventValueType for EnumVariant {
     type Container = EnumVariantContainer;
     type AggregatorTimeWeight = EnumVariantAggregatorTimeWeight;
     type AggTimeWeightOutputAvg = f32;
-
-    // TODO remove this from trait, only needed for common numeric cases but not in general.
-    fn identity_sum() -> Self {
-        todo!()
-    }
 }

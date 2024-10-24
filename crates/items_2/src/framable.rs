@@ -59,7 +59,7 @@ impl FrameType for Box<dyn Events> {
 }
 
 pub trait Framable {
-    fn make_frame(&self) -> Result<BytesMut, Error>;
+    fn make_frame_dyn(&self) -> Result<BytesMut, Error>;
 }
 
 pub trait FramableInner: erased_serde::Serialize + FrameTypeInnerDyn + Send {
@@ -74,7 +74,7 @@ impl<T> Framable for Sitemty<T>
 where
     T: Sized + serde::Serialize + FrameType,
 {
-    fn make_frame(&self) -> Result<BytesMut, Error> {
+    fn make_frame_dyn(&self) -> Result<BytesMut, Error> {
         match self {
             Ok(StreamItem::DataItem(RangeCompletableItem::Data(k))) => {
                 let frame_type_id = k.frame_type_id();
@@ -95,8 +95,8 @@ impl<T> Framable for Box<T>
 where
     T: Framable + ?Sized,
 {
-    fn make_frame(&self) -> Result<BytesMut, Error> {
-        self.as_ref().make_frame()
+    fn make_frame_dyn(&self) -> Result<BytesMut, Error> {
+        self.as_ref().make_frame_dyn()
     }
 }
 
@@ -177,7 +177,7 @@ fn test_frame_log() {
         msg: format!("test-log-message"),
     };
     let item: Sitemty<ChannelEvents> = Ok(StreamItem::Log(item));
-    let buf = Framable::make_frame(&item).unwrap();
+    let buf = Framable::make_frame_dyn(&item).unwrap();
     let len = u32::from_le_bytes(buf[12..16].try_into().unwrap());
     let item2: LogItem = decode_from_slice(&buf[20..20 + len as usize]).unwrap();
 }
@@ -187,7 +187,7 @@ fn test_frame_error() {
     use crate::channelevents::ChannelEvents;
     use crate::frame::json_from_slice;
     let item: Sitemty<ChannelEvents> = Err(Error::with_msg_no_trace(format!("dummy-error-message")));
-    let buf = Framable::make_frame(&item).unwrap();
+    let buf = Framable::make_frame_dyn(&item).unwrap();
     let len = u32::from_le_bytes(buf[12..16].try_into().unwrap());
     let tyid = u32::from_le_bytes(buf[8..12].try_into().unwrap());
     if tyid != ERROR_FRAME_TYPE_ID {
