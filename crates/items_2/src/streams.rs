@@ -2,7 +2,7 @@ use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use items_0::collect_s::Collectable;
+use items_0::collect_s::CollectableDyn;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;

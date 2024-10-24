@@ -4,10 +4,10 @@ use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
 use err::Error;
-use items_0::collect_s::Collectable;
+use items_0::collect_s::CollectableDyn;
 use items_0::collect_s::CollectableType;
-use items_0::collect_s::Collected;
-use items_0::collect_s::CollectorType;
+use items_0::collect_s::CollectedDyn;
+use items_0::collect_s::CollectorTy;
 use items_0::collect_s::ToJsonBytes;
 use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
@@ -227,15 +227,15 @@ impl<STY: ScalarOps> Events for EventsXbinDim0<STY> {
         )
     }
 
-    fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
+    fn as_collectable_mut(&mut self) -> &mut dyn CollectableDyn {
         self
     }
 
-    fn as_collectable_with_default_ref(&self) -> &dyn Collectable {
+    fn as_collectable_with_default_ref(&self) -> &dyn CollectableDyn {
         self
     }
 
-    fn as_collectable_with_default_mut(&mut self) -> &mut dyn Collectable {
+    fn as_collectable_with_default_mut(&mut self) -> &mut dyn CollectableDyn {
         self
     }
 
@@ -953,13 +953,12 @@ impl<NTY> ToJsonResult for EventsXbinDim0CollectorOutput<NTY>
 where
     NTY: ScalarOps,
 {
-    fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error> {
-        let k = serde_json::to_value(self)?;
-        Ok(Box::new(k))
+    fn to_json_value(&self) -> Result<serde_json::Value, Error> {
+        serde_json::to_value(self).map_err(Error::from_string)
     }
 }
 
-impl<NTY> Collected for EventsXbinDim0CollectorOutput<NTY> where NTY: ScalarOps {}
+impl<NTY> CollectedDyn for EventsXbinDim0CollectorOutput<NTY> where NTY: ScalarOps {}
 
 #[derive(Debug)]
 pub struct EventsXbinDim0Collector<NTY> {
@@ -996,7 +995,7 @@ impl<STY> ByteEstimate for EventsXbinDim0Collector<STY> {
     }
 }
 
-impl<NTY> CollectorType for EventsXbinDim0Collector<NTY>
+impl<NTY> CollectorTy for EventsXbinDim0Collector<NTY>
 where
     NTY: ScalarOps,
 {

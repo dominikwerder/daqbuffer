@@ -6,10 +6,10 @@ use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
 use chrono::{TimeZone, Utc};
 use err::Error;
-use items_0::collect_s::Collectable;
+use items_0::collect_s::CollectableDyn;
 use items_0::collect_s::CollectableType;
-use items_0::collect_s::Collected;
-use items_0::collect_s::CollectorType;
+use items_0::collect_s::CollectedDyn;
+use items_0::collect_s::CollectorTy;
 use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
 use items_0::scalar_ops::AsPrimF32;
@@ -356,7 +356,7 @@ impl<NTY: ScalarOps> WithLen for BinsXbinDim0CollectedResult<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> Collected for BinsXbinDim0CollectedResult<NTY> {}
+impl<NTY: ScalarOps> CollectedDyn for BinsXbinDim0CollectedResult<NTY> {}
 
 impl<NTY> BinsXbinDim0CollectedResult<NTY> {
     pub fn ts_anchor_sec(&self) -> u64 {
@@ -397,9 +397,8 @@ impl<NTY> BinsXbinDim0CollectedResult<NTY> {
 }
 
 impl<NTY: ScalarOps> ToJsonResult for BinsXbinDim0CollectedResult<NTY> {
-    fn to_json_result(&self) -> Result<Box<dyn items_0::collect_s::ToJsonBytes>, Error> {
-        let k = serde_json::to_value(self)?;
-        Ok(Box::new(k))
+    fn to_json_value(&self) -> Result<serde_json::Value, Error> {
+        serde_json::to_value(self).map_err(Error::from_string)
     }
 }
 
@@ -436,7 +435,7 @@ impl<STY: ScalarOps> ByteEstimate for BinsXbinDim0Collector<STY> {
     }
 }
 
-impl<NTY: ScalarOps> CollectorType for BinsXbinDim0Collector<NTY> {
+impl<NTY: ScalarOps> CollectorTy for BinsXbinDim0Collector<NTY> {
     type Input = BinsXbinDim0<NTY>;
     type Output = BinsXbinDim0CollectedResult<NTY>;
 
@@ -877,7 +876,7 @@ impl<NTY: ScalarOps> TimeBinned for BinsXbinDim0<NTY> {
         }
     }
 
-    fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
+    fn as_collectable_mut(&mut self) -> &mut dyn CollectableDyn {
         self
     }
 

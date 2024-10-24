@@ -1,9 +1,9 @@
 use crate::framable::FrameType;
 use crate::merger::Mergeable;
 use crate::Events;
-use items_0::collect_s::Collectable;
-use items_0::collect_s::Collected;
-use items_0::collect_s::Collector;
+use items_0::collect_s::CollectableDyn;
+use items_0::collect_s::CollectedDyn;
+use items_0::collect_s::CollectorDyn;
 use items_0::container::ByteEstimate;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::isodate::IsoDateTime;
@@ -884,15 +884,15 @@ impl Events for ChannelEvents {
         todo!()
     }
 
-    fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
+    fn as_collectable_mut(&mut self) -> &mut dyn CollectableDyn {
         todo!()
     }
 
-    fn as_collectable_with_default_ref(&self) -> &dyn Collectable {
+    fn as_collectable_with_default_ref(&self) -> &dyn CollectableDyn {
         todo!()
     }
 
-    fn as_collectable_with_default_mut(&mut self) -> &mut dyn Collectable {
+    fn as_collectable_with_default_mut(&mut self) -> &mut dyn CollectableDyn {
         todo!()
     }
 
@@ -1033,8 +1033,8 @@ impl Events for ChannelEvents {
     }
 }
 
-impl Collectable for ChannelEvents {
-    fn new_collector(&self) -> Box<dyn Collector> {
+impl CollectableDyn for ChannelEvents {
+    fn new_collector(&self) -> Box<dyn CollectorDyn> {
         Box::new(ChannelEventsCollector::new())
     }
 }
@@ -1237,16 +1237,16 @@ impl WithLen for ChannelEventsCollectorOutput {
 }
 
 impl items_0::collect_s::ToJsonResult for ChannelEventsCollectorOutput {
-    fn to_json_result(&self) -> Result<Box<dyn items_0::collect_s::ToJsonBytes>, err::Error> {
-        todo!()
+    fn to_json_value(&self) -> Result<serde_json::Value, ::err::Error> {
+        serde_json::to_value(self).map_err(::err::Error::from_string)
     }
 }
 
-impl Collected for ChannelEventsCollectorOutput {}
+impl CollectedDyn for ChannelEventsCollectorOutput {}
 
 #[derive(Debug)]
 pub struct ChannelEventsCollector {
-    coll: Option<Box<dyn Collector>>,
+    coll: Option<Box<dyn CollectorDyn>>,
     range_complete: bool,
     timed_out: bool,
     needs_continue_at: bool,
@@ -1283,8 +1283,8 @@ impl ByteEstimate for ChannelEventsCollector {
     }
 }
 
-impl Collector for ChannelEventsCollector {
-    fn ingest(&mut self, item: &mut dyn Collectable) {
+impl CollectorDyn for ChannelEventsCollector {
+    fn ingest(&mut self, item: &mut dyn CollectableDyn) {
         if let Some(item) = item.as_any_mut().downcast_mut::<ChannelEvents>() {
             match item {
                 ChannelEvents::Events(item) => {
@@ -1325,7 +1325,7 @@ impl Collector for ChannelEventsCollector {
         &mut self,
         range: Option<SeriesRange>,
         binrange: Option<BinnedRangeEnum>,
-    ) -> Result<Box<dyn Collected>, err::Error> {
+    ) -> Result<Box<dyn CollectedDyn>, err::Error> {
         match self.coll.as_mut() {
             Some(coll) => {
                 if self.needs_continue_at {

@@ -9,10 +9,10 @@ use crate::TimeBinnableTypeAggregator;
 use chrono::TimeZone;
 use chrono::Utc;
 use err::Error;
-use items_0::collect_s::Collectable;
+use items_0::collect_s::CollectableDyn;
 use items_0::collect_s::CollectableType;
-use items_0::collect_s::Collected;
-use items_0::collect_s::CollectorType;
+use items_0::collect_s::CollectedDyn;
+use items_0::collect_s::CollectorTy;
 use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
 use items_0::overlap::HasTimestampDeque;
@@ -632,7 +632,7 @@ impl<STY> BinsDim0CollectedResult<STY>
 where
     STY: ScalarOps,
 {
-    pub fn boxed_collected_with_enum_fix(&self) -> Box<dyn Collected> {
+    pub fn boxed_collected_with_enum_fix(&self) -> Box<dyn CollectedDyn> {
         if let Some(bins) = self
             .as_any_ref()
             .downcast_ref::<BinsDim0CollectedResult<netpod::EnumVariant>>()
@@ -709,7 +709,7 @@ impl<NTY: ScalarOps> WithLen for BinsDim0CollectedResult<NTY> {
     }
 }
 
-impl<NTY: ScalarOps> Collected for BinsDim0CollectedResult<NTY> {}
+impl<NTY: ScalarOps> CollectedDyn for BinsDim0CollectedResult<NTY> {}
 
 impl<NTY> BinsDim0CollectedResult<NTY> {
     pub fn ts_anchor_sec(&self) -> u64 {
@@ -758,9 +758,8 @@ impl<NTY> BinsDim0CollectedResult<NTY> {
 }
 
 impl<NTY: ScalarOps> ToJsonResult for BinsDim0CollectedResult<NTY> {
-    fn to_json_result(&self) -> Result<Box<dyn items_0::collect_s::ToJsonBytes>, Error> {
-        let k = serde_json::to_value(self)?;
-        Ok(Box::new(k))
+    fn to_json_value(&self) -> Result<serde_json::Value, Error> {
+        serde_json::to_value(self).map_err(Error::from_string)
     }
 }
 
@@ -797,7 +796,7 @@ impl<STY: ScalarOps> ByteEstimate for BinsDim0Collector<STY> {
     }
 }
 
-impl<NTY: ScalarOps> CollectorType for BinsDim0Collector<NTY> {
+impl<NTY: ScalarOps> CollectorTy for BinsDim0Collector<NTY> {
     type Input = BinsDim0<NTY>;
     type Output = BinsDim0CollectedResult<NTY>;
 
@@ -1425,7 +1424,7 @@ impl<NTY: ScalarOps> TimeBinned for BinsDim0<NTY> {
         }
     }
 
-    fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
+    fn as_collectable_mut(&mut self) -> &mut dyn CollectableDyn {
         self
     }
 

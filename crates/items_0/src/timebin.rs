@@ -1,8 +1,9 @@
 pub mod timebinimpl;
 
-use crate::collect_s::Collectable;
-use crate::collect_s::Collector;
+use crate::collect_s::CollectableDyn;
+use crate::collect_s::CollectorDyn;
 use crate::collect_s::ToJsonResult;
+use crate::container::ByteEstimate;
 use crate::overlap::RangeOverlapInfo;
 use crate::vecpreview::PreviewRange;
 use crate::AsAnyMut;
@@ -103,7 +104,7 @@ pub trait BinningggContainerEventsDyn: fmt::Debug + Send {
     fn to_anybox(&mut self) -> Box<dyn std::any::Any>;
 }
 
-pub trait BinningggContainerBinsDyn: fmt::Debug + Send + fmt::Display + WithLen + AsAnyMut + Collectable {
+pub trait BinningggContainerBinsDyn: fmt::Debug + Send + fmt::Display + WithLen + AsAnyMut + CollectableDyn {
     fn type_name(&self) -> &'static str;
     fn empty(&self) -> BinsBoxed;
     fn clone(&self) -> BinsBoxed;
@@ -147,11 +148,11 @@ pub trait BinnedEventsTimeweightTrait: fmt::Debug + Send {
 }
 
 /// Data in time-binned form.
-pub trait TimeBinned: Any + TypeName + TimeBinnable + Resettable + Collectable + erased_serde::Serialize {
+pub trait TimeBinned: Any + TypeName + TimeBinnable + Resettable + CollectableDyn + erased_serde::Serialize {
     fn clone_box_time_binned(&self) -> Box<dyn TimeBinned>;
     fn as_time_binnable_ref(&self) -> &dyn TimeBinnable;
     fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable;
-    fn as_collectable_mut(&mut self) -> &mut dyn Collectable;
+    fn as_collectable_mut(&mut self) -> &mut dyn CollectableDyn;
     fn edges_slice(&self) -> (&[u64], &[u64]);
     fn counts(&self) -> &[u64];
     fn mins(&self) -> Vec<f32>;
@@ -230,7 +231,7 @@ pub trait TimeBinner: fmt::Debug + Send {
 /// Provides a time-binned representation of the implementing type.
 /// In contrast to `TimeBinnableType` this is meant for trait objects.
 pub trait TimeBinnable:
-    fmt::Debug + WithLen + RangeOverlapInfo + Collectable + Any + AsAnyRef + AsAnyMut + Send
+    fmt::Debug + WithLen + RangeOverlapInfo + CollectableDyn + Any + AsAnyRef + AsAnyMut + Send
 {
     // TODO implementors may fail if edges contain not at least 2 entries.
     fn time_binner_new(
@@ -324,8 +325,8 @@ impl TypeName for Box<dyn TimeBinnable> {
     }
 }
 
-impl Collectable for Box<dyn TimeBinnable> {
-    fn new_collector(&self) -> Box<dyn Collector> {
+impl CollectableDyn for Box<dyn TimeBinnable> {
+    fn new_collector(&self) -> Box<dyn CollectorDyn> {
         self.as_ref().new_collector()
     }
 }

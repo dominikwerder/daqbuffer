@@ -2,10 +2,14 @@ use super::aggregator::AggregatorNumeric;
 use super::aggregator::AggregatorTimeWeight;
 use super::container_events::EventValueType;
 use super::___;
+use crate::ts_offs_from_abs;
+use crate::ts_offs_from_abs_with_anchor;
 use core::fmt;
 use err::thiserror;
 use err::ThisError;
-use items_0::collect_s::Collectable;
+use items_0::collect_s::CollectableDyn;
+use items_0::collect_s::CollectedDyn;
+use items_0::collect_s::ToJsonResult;
 use items_0::timebin::BinningggContainerBinsDyn;
 use items_0::timebin::BinsBoxed;
 use items_0::vecpreview::VecPreview;
@@ -13,12 +17,14 @@ use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use items_0::TypeName;
 use items_0::WithLen;
+use netpod::log::*;
 use netpod::EnumVariant;
 use netpod::TsNano;
 use serde::Deserialize;
 use serde::Serialize;
 use std::any;
 use std::collections::VecDeque;
+use std::mem;
 
 #[allow(unused)]
 macro_rules! trace_init { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
@@ -362,11 +368,125 @@ where
 }
 
 #[derive(Debug)]
+pub struct ContainerBinsCollectorOutput<EVT>
+where
+    EVT: EventValueType,
+{
+    bins: ContainerBins<EVT>,
+}
+
+impl<EVT> TypeName for ContainerBinsCollectorOutput<EVT>
+where
+    EVT: EventValueType,
+{
+    fn type_name(&self) -> String {
+        any::type_name::<Self>().into()
+    }
+}
+
+impl<EVT> AsAnyRef for ContainerBinsCollectorOutput<EVT>
+where
+    EVT: EventValueType,
+{
+    fn as_any_ref(&self) -> &dyn any::Any {
+        self
+    }
+}
+
+impl<EVT> AsAnyMut for ContainerBinsCollectorOutput<EVT>
+where
+    EVT: EventValueType,
+{
+    fn as_any_mut(&mut self) -> &mut dyn any::Any {
+        self
+    }
+}
+
+impl<EVT> WithLen for ContainerBinsCollectorOutput<EVT>
+where
+    EVT: EventValueType,
+{
+    fn len(&self) -> usize {
+        self.bins.len()
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ContainerBinsCollectorOutputUser<EVT>
+where
+    EVT: EventValueType,
+{
+    #[serde(rename = "tsAnchor")]
+    ts_anchor_sec: u64,
+    #[serde(rename = "ts1Ms")]
+    ts1_off_ms: VecDeque<u64>,
+    #[serde(rename = "ts2Ms")]
+    ts2_off_ms: VecDeque<u64>,
+    #[serde(rename = "ts1Ns")]
+    ts1_off_ns: VecDeque<u64>,
+    #[serde(rename = "ts2Ns")]
+    ts2_off_ns: VecDeque<u64>,
+    #[serde(rename = "counts")]
+    counts: VecDeque<u64>,
+    #[serde(rename = "mins")]
+    mins: VecDeque<EVT>,
+    #[serde(rename = "maxs")]
+    maxs: VecDeque<EVT>,
+    #[serde(rename = "avgs")]
+    avgs: VecDeque<EVT::AggTimeWeightOutputAvg>,
+    // #[serde(rename = "rangeFinal", default, skip_serializing_if = "is_false")]
+    // range_final: bool,
+    // #[serde(rename = "timedOut", default, skip_serializing_if = "is_false")]
+    // timed_out: bool,
+    // #[serde(rename = "missingBins", default, skip_serializing_if = "CmpZero::is_zero")]
+    // missing_bins: u32,
+    // #[serde(rename = "continueAt", default, skip_serializing_if = "Option::is_none")]
+    // continue_at: Option<IsoDateTime>,
+    // #[serde(rename = "finishedAt", default, skip_serializing_if = "Option::is_none")]
+    // finished_at: Option<IsoDateTime>,
+}
+
+impl<EVT> ToJsonResult for ContainerBinsCollectorOutput<EVT>
+where
+    EVT: EventValueType,
+{
+    fn to_json_value(&self) -> Result<serde_json::Value, err::Error> {
+        let bins = &self.bins;
+        let ts1sns: Vec<_> = bins.ts1s.iter().map(|x| x.ns()).collect();
+        let ts2sns: Vec<_> = bins.ts2s.iter().map(|x| x.ns()).collect();
+        let (ts_anch, ts1ms, ts1ns) = ts_offs_from_abs(&ts1sns);
+        let (ts2ms, ts2ns) = ts_offs_from_abs_with_anchor(ts_anch, &ts2sns);
+        let counts = bins.cnts.clone();
+        let mins = bins.mins.clone();
+        let maxs = bins.maxs.clone();
+        let avgs = bins.avgs.clone();
+        let val = ContainerBinsCollectorOutputUser::<EVT> {
+            ts_anchor_sec: ts_anch,
+            ts1_off_ms: ts1ms,
+            ts2_off_ms: ts2ms,
+            ts1_off_ns: ts1ns,
+            ts2_off_ns: ts2ns,
+            counts,
+            mins,
+            maxs,
+            avgs,
+        };
+        let ret = serde_json::to_value(&val).map_err(err::Error::from_string);
+        info!("VALUE: {:?}", ret);
+        ret
+    }
+}
+
+impl<EVT> CollectedDyn for ContainerBinsCollectorOutput<EVT> where EVT: EventValueType {}
+
+#[derive(Debug)]
 pub struct ContainerBinsCollector<EVT>
 where
     EVT: EventValueType,
 {
     bins: ContainerBins<EVT>,
+    timed_out: bool,
+    range_final: bool,
 }
 
 impl<EVT> ContainerBinsCollector<EVT> where EVT: EventValueType {}
@@ -390,41 +510,57 @@ where
     }
 }
 
-impl<EVT> items_0::collect_s::Collector for ContainerBinsCollector<EVT>
+impl<EVT> items_0::collect_s::CollectorDyn for ContainerBinsCollector<EVT>
 where
     EVT: EventValueType,
 {
-    fn ingest(&mut self, src: &mut dyn Collectable) {
-        todo!()
+    fn ingest(&mut self, src: &mut dyn CollectableDyn) {
+        if let Some(src) = src.as_any_mut().downcast_mut::<ContainerBins<EVT>>() {
+            src.drain_into(&mut self.bins, 0..src.len());
+        } else {
+            let srcn = src.type_name();
+            panic!("wrong src type {srcn}");
+        }
     }
 
     fn set_range_complete(&mut self) {
-        todo!()
+        self.range_final = true;
     }
 
     fn set_timed_out(&mut self) {
-        todo!()
+        self.timed_out = true;
     }
 
     fn set_continue_at_here(&mut self) {
-        todo!()
+        debug!("TODO remember the continue at");
     }
 
     fn result(
         &mut self,
         range: Option<netpod::range::evrange::SeriesRange>,
         binrange: Option<netpod::BinnedRangeEnum>,
-    ) -> Result<Box<dyn items_0::collect_s::Collected>, err::Error> {
-        todo!()
+    ) -> Result<Box<dyn items_0::collect_s::CollectedDyn>, err::Error> {
+        info!(
+            "-----------   ContainerBinsCollector  result called  len {}",
+            self.len()
+        );
+        let bins = mem::replace(&mut self.bins, ContainerBins::new());
+        let ret = ContainerBinsCollectorOutput { bins };
+        Ok(Box::new(ret))
     }
 }
 
-impl<EVT> Collectable for ContainerBins<EVT>
+impl<EVT> CollectableDyn for ContainerBins<EVT>
 where
     EVT: EventValueType,
 {
-    fn new_collector(&self) -> Box<dyn items_0::collect_s::Collector> {
-        todo!()
+    fn new_collector(&self) -> Box<dyn items_0::collect_s::CollectorDyn> {
+        let ret = ContainerBinsCollector::<EVT> {
+            bins: ContainerBins::new(),
+            timed_out: false,
+            range_final: false,
+        };
+        Box::new(ret)
     }
 }
 
@@ -469,6 +605,13 @@ where
         let obj = dst.as_any_mut();
         if let Some(dst) = obj.downcast_mut::<Self>() {
             dst.ts1s.extend(self.ts1s.drain(range.clone()));
+            dst.ts2s.extend(self.ts2s.drain(range.clone()));
+            dst.cnts.extend(self.cnts.drain(range.clone()));
+            dst.mins.extend(self.mins.drain(range.clone()));
+            dst.maxs.extend(self.maxs.drain(range.clone()));
+            dst.avgs.extend(self.avgs.drain(range.clone()));
+            dst.lsts.extend(self.lsts.drain(range.clone()));
+            dst.fnls.extend(self.fnls.drain(range.clone()));
         } else {
             let styn = any::type_name::<EVT>();
             panic!("unexpected drain  EVT {}  dst {}", styn, Self::type_name());

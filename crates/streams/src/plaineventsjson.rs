@@ -9,7 +9,7 @@ use crate::tcprawclient::OpenBoxedBytesStreamsBox;
 use err::thiserror;
 use err::ThisError;
 use futures_util::StreamExt;
-use items_0::collect_s::Collectable;
+use items_0::collect_s::CollectableDyn;
 use items_0::on_sitemty_data;
 use netpod::log::*;
 use netpod::ChannelTypeConfigGen;
@@ -27,6 +27,7 @@ pub enum Error {
     Stream(#[from] crate::plaineventsstream::Error),
     Collect(err::Error),
     Json(#[from] serde_json::Error),
+    Err(err::Error),
 }
 
 pub async fn plain_events_json(
@@ -56,23 +57,23 @@ pub async fn plain_events_json(
                             for (&ts, val) in g.tss.iter().zip(g.values.iter()) {
                                 out.push_back(ts, val.ix(), val.name_string());
                             }
-                            let k: Box<dyn Collectable> = Box::new(out);
+                            let k: Box<dyn CollectableDyn> = Box::new(out);
                             Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
                         } else {
                             trace!("consider container channel events other events  {}", k.type_name());
-                            let k: Box<dyn Collectable> = Box::new(k);
+                            let k: Box<dyn CollectableDyn> = Box::new(k);
                             Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
                         }
                     }
                     items_2::channelevents::ChannelEvents::Status(_) => {
                         trace!("consider container channel events status  {}", k.type_name());
-                        let k: Box<dyn Collectable> = Box::new(k);
+                        let k: Box<dyn CollectableDyn> = Box::new(k);
                         Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
                     }
                 }
             } else {
                 trace!("consider container else  {}", k.type_name());
-                let k: Box<dyn Collectable> = Box::new(k);
+                let k: Box<dyn CollectableDyn> = Box::new(k);
                 Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
             }
         })
@@ -95,7 +96,7 @@ pub async fn plain_events_json(
     .map_err(Error::Collect)?;
     debug!("plain_events_json  collected");
     if let CollectResult::Some(x) = collected {
-        let jsval = serde_json::to_value(&x)?;
+        let jsval = x.to_json_value().map_err(|e| Error::Err(e))?;
         debug!("plain_events_json  json serialized");
         Ok(CollectResult::Some(jsval))
     } else {

@@ -31,7 +31,7 @@ pub trait Container<EVT>: fmt::Debug + Send + Clone + PreviewRange + Serialize +
     fn pop_front(&mut self) -> Option<EVT>;
 }
 
-pub trait EventValueType: fmt::Debug + Clone + PartialOrd + Send + 'static {
+pub trait EventValueType: fmt::Debug + Clone + PartialOrd + Send + 'static + Serialize {
     type Container: Container<Self>;
     type AggregatorTimeWeight: AggregatorTimeWeight<Self>;
     type AggTimeWeightOutputAvg: AggTimeWeightOutputAvg;

@@ -1,5 +1,5 @@
-use crate::collect_s::Collectable;
-use crate::collect_s::Collected;
+use crate::collect_s::CollectableDyn;
+use crate::collect_s::CollectedDyn;
 use crate::streamitem::RangeCompletableItem;
 use crate::streamitem::Sitemty;
 use crate::streamitem::StreamItem;
@@ -22,7 +22,7 @@ pub trait TimeBinnableStreamTrait:
 }
 
 pub trait CollectableStreamTrait:
-    Stream<Item = Sitemty<Box<dyn Collectable>>> + WithTransformProperties + Send
+    Stream<Item = Sitemty<Box<dyn CollectableDyn>>> + WithTransformProperties + Send
 {
 }
 
@@ -158,7 +158,7 @@ impl TimeBinnableStreamTrait for TimeBinnableStreamBox {}
 pub struct CollectableStreamBox(pub Pin<Box<dyn CollectableStreamTrait>>);
 
 impl Stream for CollectableStreamBox {
-    type Item = Sitemty<Box<dyn Collectable>>;
+    type Item = Sitemty<Box<dyn CollectableDyn>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         self.0.poll_next_unpin(cx)
@@ -182,7 +182,7 @@ impl<T> WithTransformProperties for stream::Empty<T> {
 impl<T> CollectableStreamTrait for stream::Empty<T>
 where
     T: Send,
-    stream::Empty<T>: Stream<Item = Sitemty<Box<dyn Collectable>>>,
+    stream::Empty<T>: Stream<Item = Sitemty<Box<dyn CollectableDyn>>>,
 {
 }
 

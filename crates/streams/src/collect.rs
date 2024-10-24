@@ -3,9 +3,9 @@ use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use items_0::collect_s::Collectable;
-use items_0::collect_s::Collected;
-use items_0::collect_s::Collector;
+use items_0::collect_s::CollectableDyn;
+use items_0::collect_s::CollectedDyn;
+use items_0::collect_s::CollectorDyn;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StatsItem;
@@ -47,12 +47,12 @@ pub enum CollectResult<T> {
 }
 
 pub struct Collect {
-    inp: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>>,
+    inp: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn CollectableDyn>>> + Send>>,
     events_max: u64,
     bytes_max: u64,
     range: Option<SeriesRange>,
     binrange: Option<BinnedRangeEnum>,
-    collector: Option<Box<dyn Collector>>,
+    collector: Option<Box<dyn CollectorDyn>>,
     range_final: bool,
     timeout: bool,
     timer: Pin<Box<dyn Future<Output = ()> + Send>>,
@@ -61,7 +61,7 @@ pub struct Collect {
 
 impl Collect {
     pub fn new(
-        inp: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>>,
+        inp: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn CollectableDyn>>> + Send>>,
         deadline: Instant,
         events_max: u64,
         bytes_max: u64,
@@ -83,7 +83,7 @@ impl Collect {
         }
     }
 
-    fn handle_item(&mut self, item: Sitemty<Box<dyn Collectable>>) -> Result<(), Error> {
+    fn handle_item(&mut self, item: Sitemty<Box<dyn CollectableDyn>>) -> Result<(), Error> {
         match item {
             Ok(item) => match item {
                 StreamItem::DataItem(item) => match item {
@@ -161,7 +161,7 @@ impl Collect {
 }
 
 impl Future for Collect {
-    type Output = Result<CollectResult<Box<dyn Collected>>, Error>;
+    type Output = Result<CollectResult<Box<dyn CollectedDyn>>, Error>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
         use Poll::*;
@@ -226,13 +226,13 @@ async fn collect_in_span<T, S>(
     events_max: u64,
     range: Option<SeriesRange>,
     binrange: Option<BinnedRangeEnum>,
-) -> Result<Box<dyn Collected>, Error>
+) -> Result<Box<dyn CollectedDyn>, Error>
 where
     S: Stream<Item = Sitemty<T>> + Unpin,
-    T: Collectable,
+    T: CollectableDyn,
 {
     info!("collect  events_max {events_max}  deadline {deadline:?}");
-    let mut collector: Option<Box<dyn Collector>> = None;
+    let mut collector: Option<Box<dyn CollectorDyn>> = None;
     let mut stream = stream;
     let deadline = deadline.into();
     let mut range_complete = false;
@@ -329,10 +329,10 @@ pub async fn collect<T, S>(
     events_max: u64,
     range: Option<SeriesRange>,
     binrange: Option<BinnedRangeEnum>,
-) -> Result<Box<dyn Collected>, Error>
+) -> Result<Box<dyn CollectedDyn>, Error>
 where
     S: Stream<Item = Sitemty<T>> + Unpin,
-    T: Collectable + WithLen + fmt::Debug,
+    T: CollectableDyn + WithLen + fmt::Debug,
 {
     let span = span!(Level::INFO, "collect");
     collect_in_span(stream, deadline, events_max, range, binrange)

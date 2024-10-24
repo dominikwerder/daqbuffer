@@ -17,7 +17,7 @@ pub mod bincode {
 
 pub use futures_util;
 
-use collect_s::Collectable;
+use collect_s::CollectableDyn;
 use container::ByteEstimate;
 use std::any::Any;
 use std::collections::VecDeque;
@@ -122,7 +122,7 @@ pub trait Events:
     fmt::Debug
     + TypeName
     + Any
-    + Collectable
+    + CollectableDyn
     + TimeBinnable
     + WithLen
     + ByteEstimate
@@ -134,9 +134,9 @@ pub trait Events:
     fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable;
     fn verify(&self) -> bool;
     fn output_info(&self) -> String;
-    fn as_collectable_mut(&mut self) -> &mut dyn Collectable;
-    fn as_collectable_with_default_ref(&self) -> &dyn Collectable;
-    fn as_collectable_with_default_mut(&mut self) -> &mut dyn Collectable;
+    fn as_collectable_mut(&mut self) -> &mut dyn CollectableDyn;
+    fn as_collectable_with_default_ref(&self) -> &dyn CollectableDyn;
+    fn as_collectable_with_default_mut(&mut self) -> &mut dyn CollectableDyn;
     fn ts_min(&self) -> Option<u64>;
     fn ts_max(&self) -> Option<u64>;
     // TODO is this used?
@@ -204,15 +204,15 @@ impl Events for Box<dyn Events> {
         Events::output_info(self.as_ref())
     }
 
-    fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
+    fn as_collectable_mut(&mut self) -> &mut dyn CollectableDyn {
         Events::as_collectable_mut(self.as_mut())
     }
 
-    fn as_collectable_with_default_ref(&self) -> &dyn Collectable {
+    fn as_collectable_with_default_ref(&self) -> &dyn CollectableDyn {
         Events::as_collectable_with_default_ref(self.as_ref())
     }
 
-    fn as_collectable_with_default_mut(&mut self) -> &mut dyn Collectable {
+    fn as_collectable_with_default_mut(&mut self) -> &mut dyn CollectableDyn {
         Events::as_collectable_with_default_mut(self.as_mut())
     }
 

@@ -5,8 +5,8 @@ use crate::Error;
 use futures_util::Future;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use items_0::collect_s::Collected;
-use items_0::collect_s::Collector;
+use items_0::collect_s::CollectedDyn;
+use items_0::collect_s::CollectorDyn;
 use items_0::collect_s::ToJsonResult;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
@@ -27,7 +27,7 @@ use std::time::Instant;
 
 fn flush_binned(
     binner: &mut Box<dyn TimeBinner>,
-    coll: &mut Option<Box<dyn Collector>>,
+    coll: &mut Option<Box<dyn CollectorDyn>>,
     force: bool,
 ) -> Result<(), Error> {
     trace!("flush_binned  bins_ready_count: {}", binner.bins_ready_count());
@@ -62,7 +62,7 @@ fn flush_binned(
 pub struct BinnedCollectedResult {
     pub range_final: bool,
     pub did_timeout: bool,
-    pub result: Box<dyn Collected>,
+    pub result: Box<dyn CollectedDyn>,
 }
 
 fn _old_binned_collected(
@@ -102,7 +102,7 @@ pub struct BinnedCollected {
     emit_empty_bins: bool,
     did_timeout: bool,
     range_final: bool,
-    coll: Option<Box<dyn Collector>>,
+    coll: Option<Box<dyn CollectorDyn>>,
     binner: Option<Box<dyn TimeBinner>>,
     inp: Pin<Box<dyn ChannelEventsInput>>,
 }

@@ -1,8 +1,8 @@
 use err::Error;
-use items_0::collect_s::Collectable;
-use items_0::collect_s::Collected;
-use items_0::collect_s::Collector;
-use items_0::collect_s::CollectorType;
+use items_0::collect_s::CollectableDyn;
+use items_0::collect_s::CollectedDyn;
+use items_0::collect_s::CollectorDyn;
+use items_0::collect_s::CollectorTy;
 use items_0::collect_s::ToJsonBytes;
 use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
@@ -122,14 +122,14 @@ impl TypeName for EventsDim0EnumCollectorOutput {
 }
 
 impl ToJsonResult for EventsDim0EnumCollectorOutput {
-    fn to_json_result(&self) -> Result<Box<dyn ToJsonBytes>, Error> {
+    fn to_json_value(&self) -> Result<serde_json::Value, Error> {
         todo!()
     }
 }
 
-impl Collected for EventsDim0EnumCollectorOutput {}
+impl CollectedDyn for EventsDim0EnumCollectorOutput {}
 
-impl CollectorType for EventsDim0EnumCollector {
+impl CollectorTy for EventsDim0EnumCollector {
     type Input = EventsDim0Enum;
     type Output = EventsDim0EnumCollectorOutput;
 
@@ -264,8 +264,8 @@ impl WithLen for EventsDim0Enum {
     }
 }
 
-impl Collectable for EventsDim0Enum {
-    fn new_collector(&self) -> Box<dyn Collector> {
+impl CollectableDyn for EventsDim0Enum {
+    fn new_collector(&self) -> Box<dyn CollectorDyn> {
         Box::new(EventsDim0EnumCollector::new())
     }
 }
@@ -398,15 +398,15 @@ impl Events for EventsDim0Enum {
         todo!()
     }
 
-    fn as_collectable_mut(&mut self) -> &mut dyn Collectable {
+    fn as_collectable_mut(&mut self) -> &mut dyn CollectableDyn {
         todo!()
     }
 
-    fn as_collectable_with_default_ref(&self) -> &dyn Collectable {
+    fn as_collectable_with_default_ref(&self) -> &dyn CollectableDyn {
         todo!()
     }
 
-    fn as_collectable_with_default_mut(&mut self) -> &mut dyn Collectable {
+    fn as_collectable_with_default_mut(&mut self) -> &mut dyn CollectableDyn {
         todo!()
     }
 

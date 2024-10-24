@@ -1,7 +1,7 @@
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use items_0::collect_s::Collectable;
+use items_0::collect_s::CollectableDyn;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
@@ -109,7 +109,7 @@ impl TimeBinnableToCollectable {
 }
 
 impl Stream for TimeBinnableToCollectable {
-    type Item = Sitemty<Box<dyn Collectable>>;
+    type Item = Sitemty<Box<dyn CollectableDyn>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -163,21 +163,24 @@ pub fn build_full_transform_collectable(
     // TODO this must return a Stream!
     //let evs = build_event_transform(tr, inp)?;
     let trtb = tr.get_tr_time_binning();
-    let a: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>> = Box::pin(inp.0.map(|item| match item {
-        Ok(item) => match item {
-            StreamItem::DataItem(item) => match item {
-                RangeCompletableItem::Data(item) => {
-                    let item: Box<dyn Collectable> = Box::new(item);
-                    Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
-                }
-                RangeCompletableItem::RangeComplete => Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)),
+    let a: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn CollectableDyn>>> + Send>> =
+        Box::pin(inp.0.map(|item| match item {
+            Ok(item) => match item {
+                StreamItem::DataItem(item) => match item {
+                    RangeCompletableItem::Data(item) => {
+                        let item: Box<dyn CollectableDyn> = Box::new(item);
+                        Ok(StreamItem::DataItem(RangeCompletableItem::Data(item)))
+                    }
+                    RangeCompletableItem::RangeComplete => {
+                        Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
+                    }
+                },
+                StreamItem::Log(item) => Ok(StreamItem::Log(item)),
+                StreamItem::Stats(item) => Ok(StreamItem::Stats(item)),
             },
-            StreamItem::Log(item) => Ok(StreamItem::Log(item)),
-            StreamItem::Stats(item) => Ok(StreamItem::Stats(item)),
-        },
-        Err(e) => Err(e),
-    }));
-    let stream: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>> =
+            Err(e) => Err(e),
+        }));
+    let stream: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn CollectableDyn>>> + Send>> =
         Box::pin(futures_util::stream::empty());
     let stream = Box::pin(futures_util::stream::empty()) as _;
     match trtb {

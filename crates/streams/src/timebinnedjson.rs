@@ -17,7 +17,7 @@ use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use items_0::collect_s::Collectable;
+use items_0::collect_s::CollectableDyn;
 use items_0::on_sitemty_data;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
@@ -374,7 +374,7 @@ async fn timebinned_stream(
     open_bytes: OpenBoxedBytesStreamsBox,
     cache_read_provider: Arc<dyn CacheReadProvider>,
     events_read_provider: Arc<dyn EventsReadProvider>,
-) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>>, Error> {
+) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn CollectableDyn>>> + Send>>, Error> {
     use netpod::query::CacheUsage;
     let cache_usage = query.cache_usage().unwrap_or(CacheUsage::V0NoCache);
     match cache_usage.clone() {
@@ -407,19 +407,21 @@ async fn timebinned_stream(
                 events_read_provider,
             )
             .map_err(Error::from_string)?;
+            // let stream = stream.map(|item| {
+            //     on_sitemty_data!(item, |k: items_0::timebin::BinsBoxed| {
+            //         let ret = k.to_old_time_binned();
+            //         Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))
+            //     })
+            // });
             let stream = stream.map(|item| {
-                on_sitemty_data!(item, |k: items_0::timebin::BinsBoxed| {
-                    let ret = k.to_old_time_binned();
+                use items_0::timebin::BinningggContainerBinsDyn;
+                on_sitemty_data!(item, |x: Box<dyn BinningggContainerBinsDyn>| {
+                    let g = x.new_collector();
+                    let ret = Box::new(x) as Box<dyn CollectableDyn>;
+                    // let ret = x as Box<dyn CollectableDyn>;
                     Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))
                 })
             });
-            let stream = stream.map(|item| {
-                on_sitemty_data!(item, |x| {
-                    let ret = Box::new(x) as Box<dyn Collectable>;
-                    Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))
-                })
-            });
-            // let stream: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>> = Box::pin(stream);
             let stream = Box::pin(stream);
             Ok(stream)
         }
@@ -452,7 +454,7 @@ async fn timebinned_stream(
             }
             let stream = stream.map(|x| {
                 on_sitemty_data!(x, |x| {
-                    let ret = Box::new(x) as Box<dyn Collectable>;
+                    let ret = Box::new(x) as Box<dyn CollectableDyn>;
                     Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))
                 })
             });
@@ -508,14 +510,14 @@ pub async fn timebinned_json(
                 debug!("timebinned_json collected type_name {:?}", collres.type_name());
                 collres
             };
-            let jsval = serde_json::to_value(&collres)?;
+            let jsval = collres.to_json_value()?;
             Ok(CollectResult::Some(jsval))
         }
         CollectResult::Timeout => Ok(CollectResult::Timeout),
     }
 }
 
-fn take_collector_result(coll: &mut Box<dyn items_0::collect_s::Collector>) -> Option<serde_json::Value> {
+fn take_collector_result(coll: &mut Box<dyn items_0::collect_s::CollectorDyn>) -> Option<serde_json::Value> {
     match coll.result(None, None) {
         Ok(collres) => {
             let collres = if let Some(bins) = collres
@@ -528,7 +530,7 @@ fn take_collector_result(coll: &mut Box<dyn items_0::collect_s::Collector>) -> O
             } else {
                 collres
             };
-            match serde_json::to_value(&collres) {
+            match collres.to_json_value() {
                 Ok(val) => Some(val),
                 Err(e) => Some(serde_json::Value::String(format!("{e}"))),
             }

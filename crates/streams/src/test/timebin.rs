@@ -220,7 +220,9 @@ fn time_bin_02() -> Result<(), Error> {
         } else {
             let res = collect(binned_stream, deadline, 200, None, Some(binned_range)).await?;
             assert_eq!(res.len(), expected_bin_count);
-            let d = res.to_json_result()?.to_json_bytes()?;
+            // use crate::json_stream::JsonBytes;
+            let v = res.to_json_value()?;
+            let d = serde_json::to_vec(&v)?;
             let s = String::from_utf8_lossy(&d);
             eprintln!("{s}");
             let jsval: JsValue = serde_json::from_slice(&d)?;
