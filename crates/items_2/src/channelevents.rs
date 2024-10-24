@@ -849,6 +849,10 @@ impl TimeBinnable for ChannelEvents {
     fn to_box_to_json_result(&self) -> Box<dyn items_0::collect_s::ToJsonResult> {
         todo!()
     }
+
+    fn to_container_bins(&self) -> Box<dyn items_0::timebin::BinningggContainerBinsDyn> {
+        panic!("logic error must not get used on ChannelEvents")
+    }
 }
 
 impl EventsNonObj for ChannelEvents {

@@ -861,6 +861,10 @@ impl<STY: ScalarOps> TimeBinnable for EventsDim0<STY> {
         let k = serde_json::to_value(self).unwrap();
         Box::new(k) as _
     }
+
+    fn to_container_bins(&self) -> Box<dyn items_0::timebin::BinningggContainerBinsDyn> {
+        panic!("logic error must not get used on events")
+    }
 }
 
 impl<STY> TypeName for EventsDim0<STY> {

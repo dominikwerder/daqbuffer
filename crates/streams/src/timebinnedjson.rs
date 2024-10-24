@@ -374,7 +374,7 @@ async fn timebinned_stream(
     open_bytes: OpenBoxedBytesStreamsBox,
     cache_read_provider: Arc<dyn CacheReadProvider>,
     events_read_provider: Arc<dyn EventsReadProvider>,
-) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>, Error> {
+) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>>, Error> {
     use netpod::query::CacheUsage;
     let cache_usage = query.cache_usage().unwrap_or(CacheUsage::V0NoCache);
     match cache_usage.clone() {
@@ -408,11 +408,19 @@ async fn timebinned_stream(
             )
             .map_err(Error::from_string)?;
             let stream = stream.map(|item| {
-                on_sitemty_data!(item, |k: items_0::timebin::BinsBoxed| Ok(StreamItem::DataItem(
-                    RangeCompletableItem::Data(k.to_old_time_binned())
-                )))
+                on_sitemty_data!(item, |k: items_0::timebin::BinsBoxed| {
+                    let ret = k.to_old_time_binned();
+                    Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))
+                })
             });
-            let stream: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>> = Box::pin(stream);
+            let stream = stream.map(|item| {
+                on_sitemty_data!(item, |x| {
+                    let ret = Box::new(x) as Box<dyn Collectable>;
+                    Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))
+                })
+            });
+            // let stream: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>> = Box::pin(stream);
+            let stream = Box::pin(stream);
             Ok(stream)
         }
         _ => {
@@ -434,24 +442,25 @@ async fn timebinned_stream(
             let stream = Box::pin(stream);
             // TODO rename TimeBinnedStream to make it more clear that it is the component which initiates the time binning.
             let stream = TimeBinnedStream::new(stream, binned_range, do_time_weight);
-            let stream: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>> = Box::pin(stream);
+            if false {
+                let stream = stream.map(|x| {
+                    on_sitemty_data!(x, |x: Box<dyn TimeBinned>| Ok(StreamItem::DataItem(
+                        RangeCompletableItem::Data(x.to_container_bins())
+                    )))
+                });
+                todo!();
+            }
+            let stream = stream.map(|x| {
+                on_sitemty_data!(x, |x| {
+                    let ret = Box::new(x) as Box<dyn Collectable>;
+                    Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))
+                })
+            });
+            // let stream: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>> = Box::pin(stream);
+            let stream = Box::pin(stream);
             Ok(stream)
         }
     }
-}
-
-fn timebinned_to_collectable(
-    stream: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn TimeBinned>>> + Send>>,
-) -> Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>> {
-    let stream = stream.map(|k| {
-        on_sitemty_data!(k, |k| {
-            let k: Box<dyn Collectable> = Box::new(k);
-            trace!("got len {}", k.len());
-            Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
-        })
-    });
-    let stream: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Collectable>>> + Send>> = Box::pin(stream);
-    stream
 }
 
 pub async fn timebinned_json(
@@ -482,7 +491,7 @@ pub async fn timebinned_json(
         events_read_provider,
     )
     .await?;
-    let stream = timebinned_to_collectable(stream);
+    // let stream = timebinned_to_collectable(stream);
     let collected = Collect::new(stream, deadline, collect_max, bytes_max, None, Some(binned_range));
     let collected: BoxFuture<_> = Box::pin(collected);
     let collres = collected.await?;
@@ -549,7 +558,7 @@ pub async fn timebinned_json_framed(
         events_read_provider,
     )
     .await?;
-    let stream = timebinned_to_collectable(stream);
+    // let stream = timebinned_to_collectable(stream);
     // TODO create a custom Stream adapter.
     // Want to timeout only on data items: the user wants to wait for bins only a maximum time.
     // But also, I want to coalesce.

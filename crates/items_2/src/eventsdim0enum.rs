@@ -367,6 +367,10 @@ impl TimeBinnable for EventsDim0Enum {
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
         todo!()
     }
+
+    fn to_container_bins(&self) -> Box<dyn items_0::timebin::BinningggContainerBinsDyn> {
+        panic!("logic error must not get used on events")
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]

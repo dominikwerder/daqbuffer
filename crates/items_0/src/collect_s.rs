@@ -88,7 +88,7 @@ pub trait CollectorType: fmt::Debug + Send + Unpin + WithLen + ByteEstimate {
     fn result(&mut self, range: Option<SeriesRange>, binrange: Option<BinnedRangeEnum>) -> Result<Self::Output, Error>;
 }
 
-pub trait Collector: fmt::Debug + Send + Unpin + WithLen + ByteEstimate {
+pub trait Collector: fmt::Debug + Send + WithLen + ByteEstimate {
     fn ingest(&mut self, src: &mut dyn Collectable);
     fn set_range_complete(&mut self);
     fn set_timed_out(&mut self);

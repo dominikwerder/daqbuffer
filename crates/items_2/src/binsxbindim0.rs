@@ -628,6 +628,10 @@ impl<NTY: ScalarOps> TimeBinnable for BinsXbinDim0<NTY> {
         let k = serde_json::to_value(self).unwrap();
         Box::new(k)
     }
+
+    fn to_container_bins(&self) -> Box<dyn items_0::timebin::BinningggContainerBinsDyn> {
+        panic!("not supported, remove")
+    }
 }
 
 #[derive(Debug)]

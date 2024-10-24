@@ -1008,6 +1008,26 @@ impl<NTY: ScalarOps> TimeBinnableTypeAggregator for BinsDim0Aggregator<NTY> {
     }
 }
 
+macro_rules! try_to_container_bins {
+    ($sty:ty, $avgty:ty, $this:expr) => {
+        let this = $this;
+        if let Some(bins) = this.as_any_ref().downcast_ref::<BinsDim0<$sty>>() {
+            let ts1s = bins.ts1s.iter().map(|&x| TsNano::from_ns(x)).collect();
+            let ts2s = bins.ts2s.iter().map(|&x| TsNano::from_ns(x)).collect();
+            let cnts = bins.cnts.iter().map(|&x| x).collect();
+            let mins = bins.mins.iter().map(|&x| x).collect();
+            let maxs = bins.maxs.iter().map(|&x| x).collect();
+            let avgs = bins.avgs.iter().map(|&x| x as $avgty).collect();
+            let lsts = bins.lsts.iter().map(|&x| x).collect();
+            let fnls = bins.ts1s.iter().map(|_| true).collect();
+            let dst = crate::binning::container_bins::ContainerBins::<$sty>::from_constituents(
+                ts1s, ts2s, cnts, mins, maxs, avgs, lsts, fnls,
+            );
+            return Box::new(dst);
+        }
+    };
+}
+
 impl<NTY: ScalarOps> TimeBinnable for BinsDim0<NTY> {
     fn time_binner_new(
         &self,
@@ -1024,6 +1044,69 @@ impl<NTY: ScalarOps> TimeBinnable for BinsDim0<NTY> {
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
         let k = serde_json::to_value(self).unwrap();
         Box::new(k) as _
+    }
+
+    fn to_container_bins(&self) -> Box<dyn items_0::timebin::BinningggContainerBinsDyn> {
+        let this = self;
+
+        try_to_container_bins!(u8, f64, self);
+        try_to_container_bins!(u16, f64, self);
+        try_to_container_bins!(u32, f64, self);
+        try_to_container_bins!(u64, f64, self);
+        try_to_container_bins!(i8, f64, self);
+        try_to_container_bins!(i16, f64, self);
+        try_to_container_bins!(i32, f64, self);
+        try_to_container_bins!(i64, f64, self);
+        try_to_container_bins!(f32, f32, self);
+        try_to_container_bins!(f64, f64, self);
+
+        if let Some(bins) = this.as_any_ref().downcast_ref::<BinsDim0<bool>>() {
+            let ts1s = bins.ts1s.iter().map(|&x| TsNano::from_ns(x)).collect();
+            let ts2s = bins.ts2s.iter().map(|&x| TsNano::from_ns(x)).collect();
+            let cnts = bins.cnts.iter().map(|&x| x).collect();
+            let mins = bins.mins.iter().map(|x| x.clone()).collect();
+            let maxs = bins.maxs.iter().map(|x| x.clone()).collect();
+            let avgs = bins.avgs.iter().map(|&x| x as f64).collect();
+            let lsts = bins.lsts.iter().map(|&x| x).collect();
+            let fnls = bins.ts1s.iter().map(|_| true).collect();
+            let dst = crate::binning::container_bins::ContainerBins::<bool>::from_constituents(
+                ts1s, ts2s, cnts, mins, maxs, avgs, lsts, fnls,
+            );
+            return Box::new(dst);
+        }
+
+        if let Some(bins) = this.as_any_ref().downcast_ref::<BinsDim0<String>>() {
+            let ts1s = bins.ts1s.iter().map(|&x| TsNano::from_ns(x)).collect();
+            let ts2s = bins.ts2s.iter().map(|&x| TsNano::from_ns(x)).collect();
+            let cnts = bins.cnts.iter().map(|&x| x).collect();
+            let mins = bins.mins.iter().map(|x| x.clone()).collect();
+            let maxs = bins.maxs.iter().map(|x| x.clone()).collect();
+            let avgs = bins.avgs.iter().map(|&x| x as f64).collect();
+            let lsts = bins.lsts.iter().map(|x| x.clone()).collect();
+            let fnls = bins.ts1s.iter().map(|_| true).collect();
+            let dst = crate::binning::container_bins::ContainerBins::<String>::from_constituents(
+                ts1s, ts2s, cnts, mins, maxs, avgs, lsts, fnls,
+            );
+            return Box::new(dst);
+        }
+
+        if let Some(bins) = this.as_any_ref().downcast_ref::<BinsDim0<netpod::EnumVariant>>() {
+            let ts1s = bins.ts1s.iter().map(|&x| TsNano::from_ns(x)).collect();
+            let ts2s = bins.ts2s.iter().map(|&x| TsNano::from_ns(x)).collect();
+            let cnts = bins.cnts.iter().map(|&x| x).collect();
+            let mins = bins.mins.iter().map(|x| x.clone()).collect();
+            let maxs = bins.maxs.iter().map(|x| x.clone()).collect();
+            let avgs = bins.avgs.iter().map(|&x| x).collect();
+            let lsts = bins.lsts.iter().map(|x| x.clone()).collect();
+            let fnls = bins.ts1s.iter().map(|_| true).collect();
+            let dst = crate::binning::container_bins::ContainerBins::<netpod::EnumVariant>::from_constituents(
+                ts1s, ts2s, cnts, mins, maxs, avgs, lsts, fnls,
+            );
+            return Box::new(dst);
+        }
+
+        let styn = any::type_name::<NTY>();
+        todo!("TODO impl for {styn}");
     }
 }
 

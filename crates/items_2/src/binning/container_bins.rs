@@ -5,10 +5,13 @@ use super::___;
 use core::fmt;
 use err::thiserror;
 use err::ThisError;
+use items_0::collect_s::Collectable;
 use items_0::timebin::BinningggContainerBinsDyn;
 use items_0::timebin::BinsBoxed;
 use items_0::vecpreview::VecPreview;
 use items_0::AsAnyMut;
+use items_0::AsAnyRef;
+use items_0::TypeName;
 use items_0::WithLen;
 use netpod::EnumVariant;
 use netpod::TsNano;
@@ -340,6 +343,91 @@ where
     }
 }
 
+impl<EVT> TypeName for ContainerBins<EVT>
+where
+    EVT: EventValueType,
+{
+    fn type_name(&self) -> String {
+        BinningggContainerBinsDyn::type_name(self).into()
+    }
+}
+
+impl<EVT> AsAnyRef for ContainerBins<EVT>
+where
+    EVT: EventValueType,
+{
+    fn as_any_ref(&self) -> &dyn any::Any {
+        self
+    }
+}
+
+#[derive(Debug)]
+pub struct ContainerBinsCollector<EVT>
+where
+    EVT: EventValueType,
+{
+    bins: ContainerBins<EVT>,
+}
+
+impl<EVT> ContainerBinsCollector<EVT> where EVT: EventValueType {}
+
+impl<EVT> WithLen for ContainerBinsCollector<EVT>
+where
+    EVT: EventValueType,
+{
+    fn len(&self) -> usize {
+        self.bins.len()
+    }
+}
+
+impl<EVT> items_0::container::ByteEstimate for ContainerBinsCollector<EVT>
+where
+    EVT: EventValueType,
+{
+    fn byte_estimate(&self) -> u64 {
+        // TODO need better estimate
+        self.bins.len() as u64 * 200
+    }
+}
+
+impl<EVT> items_0::collect_s::Collector for ContainerBinsCollector<EVT>
+where
+    EVT: EventValueType,
+{
+    fn ingest(&mut self, src: &mut dyn Collectable) {
+        todo!()
+    }
+
+    fn set_range_complete(&mut self) {
+        todo!()
+    }
+
+    fn set_timed_out(&mut self) {
+        todo!()
+    }
+
+    fn set_continue_at_here(&mut self) {
+        todo!()
+    }
+
+    fn result(
+        &mut self,
+        range: Option<netpod::range::evrange::SeriesRange>,
+        binrange: Option<netpod::BinnedRangeEnum>,
+    ) -> Result<Box<dyn items_0::collect_s::Collected>, err::Error> {
+        todo!()
+    }
+}
+
+impl<EVT> Collectable for ContainerBins<EVT>
+where
+    EVT: EventValueType,
+{
+    fn new_collector(&self) -> Box<dyn items_0::collect_s::Collector> {
+        todo!()
+    }
+}
+
 macro_rules! try_to_old_time_binned {
     ($sty:ty, $this:expr, $lst:expr) => {
         let this = $this;
@@ -383,7 +471,7 @@ where
             dst.ts1s.extend(self.ts1s.drain(range.clone()));
         } else {
             let styn = any::type_name::<EVT>();
-            panic!("unexpected drain  EVT {}  dst {}", styn, dst.type_name());
+            panic!("unexpected drain  EVT {}  dst {}", styn, Self::type_name());
         }
     }
 
@@ -419,25 +507,6 @@ where
         }
         let styn = any::type_name::<EVT>();
         todo!("TODO impl for {styn}");
-        // let a = self as &dyn any::Any;
-        // if let Some(src) = a.downcast_ref::<ContainerBins<f64>>() {
-        //     use items_0::Empty;
-        //     let mut ret = crate::binsdim0::BinsDim0::<f64>::empty();
-        //     for ((((((&ts1, &ts2), &cnt), min), max), avg), fnl) in src.zip_iter() {
-        //         ret.push(ts1.ns(), ts2.ns(), cnt, *min, *max, *avg as f32, 0.);
-        //     }
-        //     Box::new(ret)
-        // } else if let Some(src) = a.downcast_ref::<ContainerBins<f32>>() {
-        //     use items_0::Empty;
-        //     let mut ret = crate::binsdim0::BinsDim0::<f32>::empty();
-        //     for ((((((&ts1, &ts2), &cnt), min), max), avg), fnl) in src.zip_iter() {
-        //         ret.push(ts1.ns(), ts2.ns(), cnt, *min, *max, *avg as f32, 0.);
-        //     }
-        //     Box::new(ret)
-        // } else {
-        //     let styn = any::type_name::<EVT>();
-        //     todo!("TODO impl for {styn}")
-        // }
     }
 }
 

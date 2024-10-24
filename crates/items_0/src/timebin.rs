@@ -103,7 +103,7 @@ pub trait BinningggContainerEventsDyn: fmt::Debug + Send {
     fn to_anybox(&mut self) -> Box<dyn std::any::Any>;
 }
 
-pub trait BinningggContainerBinsDyn: fmt::Debug + Send + fmt::Display + WithLen + AsAnyMut {
+pub trait BinningggContainerBinsDyn: fmt::Debug + Send + fmt::Display + WithLen + AsAnyMut + Collectable {
     fn type_name(&self) -> &'static str;
     fn empty(&self) -> BinsBoxed;
     fn clone(&self) -> BinsBoxed;
@@ -196,6 +196,10 @@ impl TimeBinnable for Box<dyn TimeBinned> {
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
         self.as_ref().to_box_to_json_result()
     }
+
+    fn to_container_bins(&self) -> Box<dyn BinningggContainerBinsDyn> {
+        self.as_ref().to_container_bins()
+    }
 }
 
 pub trait TimeBinner: fmt::Debug + Send {
@@ -237,6 +241,8 @@ pub trait TimeBinnable:
     ) -> Box<dyn TimeBinner>;
     // TODO just a helper for the empty result.
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult>;
+    // TODO temporary converter
+    fn to_container_bins(&self) -> Box<dyn BinningggContainerBinsDyn>;
 }
 
 impl WithLen for Box<dyn TimeBinnable> {
@@ -273,6 +279,10 @@ impl TimeBinnable for Box<dyn TimeBinnable> {
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
         todo!()
     }
+
+    fn to_container_bins(&self) -> Box<dyn BinningggContainerBinsDyn> {
+        self.as_ref().to_container_bins()
+    }
 }
 
 impl RangeOverlapInfo for Box<dyn Events> {
@@ -301,6 +311,10 @@ impl TimeBinnable for Box<dyn Events> {
 
     fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
         TimeBinnable::to_box_to_json_result(self.as_ref())
+    }
+
+    fn to_container_bins(&self) -> Box<dyn BinningggContainerBinsDyn> {
+        panic!("logic error this converter must not get used on events")
     }
 }
 
