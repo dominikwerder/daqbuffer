@@ -115,6 +115,39 @@ impl fmt::Display for MergeError {
 
 impl std::error::Error for MergeError {}
 
+pub trait IntoTimeBinnable: BoxedIntoTimeBinnable {
+    fn into_time_binnable(self) -> Box<dyn TimeBinnable>;
+}
+
+pub trait BoxedIntoTimeBinnable {
+    fn boxed_into_time_binnable(self: Box<Self>) -> Box<dyn TimeBinnable>;
+}
+
+impl<T> BoxedIntoTimeBinnable for T
+where
+    T: IntoTimeBinnable,
+{
+    fn boxed_into_time_binnable(self: Box<Self>) -> Box<dyn TimeBinnable> {
+        <Self as IntoTimeBinnable>::into_time_binnable(*self)
+    }
+}
+
+impl IntoTimeBinnable for Box<dyn IntoTimeBinnable + '_> {
+    fn into_time_binnable(self) -> Box<dyn TimeBinnable> {
+        <dyn IntoTimeBinnable as BoxedIntoTimeBinnable>::boxed_into_time_binnable(self)
+    }
+}
+
+impl IntoTimeBinnable for Box<dyn Events + '_> {
+    fn into_time_binnable(self) -> Box<dyn TimeBinnable> {
+        // <dyn IntoTimeBinnable as BoxedIntoTimeBinnable>::boxed_into_time_binnable(self)
+        // Box::new(*self)
+        // let a: Box<dyn Events> = err::todoval();
+        // let b: Box<dyn TimeBinnable> = Box::new(*a);
+        todo!()
+    }
+}
+
 // TODO can I remove the Any bound?
 
 /// Container of some form of events, for use as trait object.
@@ -129,6 +162,7 @@ pub trait Events:
     + Send
     + erased_serde::Serialize
     + EventsNonObj
+    + IntoTimeBinnable
 {
     fn as_time_binnable_ref(&self) -> &dyn TimeBinnable;
     fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable;

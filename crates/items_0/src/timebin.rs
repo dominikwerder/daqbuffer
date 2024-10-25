@@ -113,7 +113,6 @@ pub trait BinningggContainerBinsDyn: fmt::Debug + Send + fmt::Display + WithLen 
     ) -> std::iter::Zip<std::collections::vec_deque::Iter<TsNano>, std::collections::vec_deque::Iter<TsNano>>;
     fn drain_into(&mut self, dst: &mut dyn BinningggContainerBinsDyn, range: Range<usize>);
     fn fix_numerics(&mut self);
-    fn to_old_time_binned(&self) -> Box<dyn TimeBinned>;
 }
 
 pub type BinsBoxed = Box<dyn BinningggContainerBinsDyn>;

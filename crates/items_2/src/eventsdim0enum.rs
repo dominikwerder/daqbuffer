@@ -373,6 +373,12 @@ impl TimeBinnable for EventsDim0Enum {
     }
 }
 
+impl items_0::IntoTimeBinnable for EventsDim0Enum {
+    fn into_time_binnable(self) -> Box<dyn TimeBinnable> {
+        Box::new(self)
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EventsDim0EnumChunkOutput {
     tss: VecDeque<u64>,

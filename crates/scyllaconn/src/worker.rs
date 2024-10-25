@@ -8,7 +8,7 @@ use err::thiserror;
 use err::ThisError;
 use futures_util::Future;
 use items_0::Events;
-use items_2::binsdim0::BinsDim0;
+use items_2::binning::container_bins::ContainerBins;
 use netpod::log::*;
 use netpod::ttl::RetentionTime;
 use netpod::DtMs;
@@ -42,7 +42,7 @@ struct ReadCacheF32 {
     bin_len: DtMs,
     msp: u64,
     offs: core::ops::Range<u32>,
-    tx: Sender<Result<BinsDim0<f32>, streams::timebin::cached::reader::Error>>,
+    tx: Sender<Result<ContainerBins<f32>, streams::timebin::cached::reader::Error>>,
 }
 
 #[derive(Debug)]
@@ -63,7 +63,7 @@ enum Job {
     ),
     WriteCacheF32(
         u64,
-        BinsDim0<f32>,
+        ContainerBins<f32>,
         Sender<Result<(), streams::timebin::cached::reader::Error>>,
     ),
     ReadCacheF32(ReadCacheF32),
@@ -141,7 +141,7 @@ impl ScyllaQueue {
     pub async fn write_cache_f32(
         &self,
         series: u64,
-        bins: BinsDim0<f32>,
+        bins: ContainerBins<f32>,
     ) -> Result<(), streams::timebin::cached::reader::Error> {
         let (tx, rx) = async_channel::bounded(1);
         let job = Job::WriteCacheF32(series, bins, tx);
@@ -162,7 +162,7 @@ impl ScyllaQueue {
         bin_len: DtMs,
         msp: u64,
         offs: core::ops::Range<u32>,
-    ) -> Result<BinsDim0<f32>, streams::timebin::cached::reader::Error> {
+    ) -> Result<ContainerBins<f32>, streams::timebin::cached::reader::Error> {
         let (tx, rx) = async_channel::bounded(1);
         let job = Job::ReadCacheF32(ReadCacheF32 {
             series,

@@ -157,6 +157,12 @@ where
     }
 }
 
+impl<STY: ScalarOps> items_0::IntoTimeBinnable for EventsXbinDim0<STY> {
+    fn into_time_binnable(self) -> Box<dyn TimeBinnable> {
+        Box::new(self)
+    }
+}
+
 impl<STY> WithLen for EventsXbinDim0<STY> {
     fn len(&self) -> usize {
         self.tss.len()

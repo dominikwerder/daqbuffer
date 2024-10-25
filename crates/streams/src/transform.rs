@@ -51,6 +51,7 @@ pub fn build_merged_event_transform(tr: &TransformQuery) -> Result<TransformEven
     }
 }
 
+// TODO remove, in its current usage it reboxes
 pub struct EventsToTimeBinnable {
     inp: Pin<Box<dyn EventStreamTrait>>,
 }

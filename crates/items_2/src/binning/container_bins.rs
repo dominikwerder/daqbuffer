@@ -564,21 +564,6 @@ where
     }
 }
 
-macro_rules! try_to_old_time_binned {
-    ($sty:ty, $this:expr, $lst:expr) => {
-        let this = $this;
-        let a = this as &dyn any::Any;
-        if let Some(src) = a.downcast_ref::<ContainerBins<$sty>>() {
-            use items_0::Empty;
-            let mut ret = crate::binsdim0::BinsDim0::<$sty>::empty();
-            for ((((((&ts1, &ts2), &cnt), min), max), avg), fnl) in src.zip_iter() {
-                ret.push(ts1.ns(), ts2.ns(), cnt, *min, *max, *avg as f32, $lst);
-            }
-            return Box::new(ret);
-        }
-    };
-}
-
 impl<EVT> BinningggContainerBinsDyn for ContainerBins<EVT>
 where
     EVT: EventValueType,
@@ -620,40 +605,6 @@ where
 
     fn fix_numerics(&mut self) {
         for ((min, max), avg) in self.mins.iter_mut().zip(self.maxs.iter_mut()).zip(self.avgs.iter_mut()) {}
-    }
-
-    fn to_old_time_binned(&self) -> Box<dyn items_0::timebin::TimeBinned> {
-        try_to_old_time_binned!(u8, self, 0);
-        try_to_old_time_binned!(u16, self, 0);
-        try_to_old_time_binned!(u32, self, 0);
-        try_to_old_time_binned!(u64, self, 0);
-        try_to_old_time_binned!(i8, self, 0);
-        try_to_old_time_binned!(i16, self, 0);
-        try_to_old_time_binned!(i32, self, 0);
-        try_to_old_time_binned!(i64, self, 0);
-        try_to_old_time_binned!(f32, self, 0.);
-        try_to_old_time_binned!(f64, self, 0.);
-        try_to_old_time_binned!(bool, self, false);
-        // try_to_old_time_binned!(String, self, String::new());
-        let a = self as &dyn any::Any;
-        if let Some(src) = a.downcast_ref::<ContainerBins<EnumVariant>>() {
-            use items_0::Empty;
-            let mut ret = crate::binsdim0::BinsDim0::<EnumVariant>::empty();
-            for ((((((&ts1, &ts2), &cnt), min), max), avg), _fnl) in src.zip_iter() {
-                ret.push(
-                    ts1.ns(),
-                    ts2.ns(),
-                    cnt,
-                    min.clone(),
-                    max.clone(),
-                    *avg as f32,
-                    EnumVariant::new(0, ""),
-                );
-            }
-            return Box::new(ret);
-        }
-        let styn = any::type_name::<EVT>();
-        todo!("TODO impl for {styn}");
     }
 }
 

@@ -166,6 +166,12 @@ impl ChannelEvents {
     }
 }
 
+impl items_0::IntoTimeBinnable for ChannelEvents {
+    fn into_time_binnable(self) -> Box<dyn TimeBinnable> {
+        Box::new(self)
+    }
+}
+
 impl TypeName for ChannelEvents {
     fn type_name(&self) -> String {
         any::type_name::<Self>().into()

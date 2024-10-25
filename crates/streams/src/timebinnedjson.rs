@@ -89,9 +89,9 @@ pub async fn timebinnable_stream_sf_databuffer_box_events(
     let stream = RangeFilter2::new(stream, range, one_before_range);
 
     let stream = stream.map(move |k| {
-        on_sitemty_data!(k, |k| {
+        on_sitemty_data!(k, |k: Box<dyn Events>| {
+            TODO;
             let k: Box<dyn Events> = Box::new(k);
-            // trace!("got len {}", k.len());
             let k = k.to_dim0_f32_for_binning();
             let k = tr.0.transform(k);
             Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
@@ -247,6 +247,12 @@ async fn timebinnable_stream_sf_databuffer_binnable_box(
     )
     .await?;
     let stream = PlainEventStream::new(stream);
+    // let stream = stream.map(|x| {
+    //     on_sitemty_data!(x, |x| {
+    //         let ret = x.binnable;
+    //         ret
+    //     })
+    // });
     let stream = EventsToTimeBinnable::new(stream);
     let stream = Box::pin(stream);
     Ok(TimeBinnableStreamBox(stream))
