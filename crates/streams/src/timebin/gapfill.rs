@@ -10,6 +10,7 @@ use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::timebin::BinsBoxed;
+use items_2::binning::timeweight::timeweight_bins_dyn::BinnedBinsTimeweightStream;
 use netpod::log::*;
 use netpod::query::CacheUsage;
 use netpod::range::evrange::NanoRange;
@@ -50,7 +51,6 @@ pub enum Error {
     MissingBegFromFiner(TsNano, TsNano, DtMs),
     #[error("InputBeforeRange({0}, {1})")]
     InputBeforeRange(NanoRange, BinnedRange<TsNano>),
-    SfDatabufferNotSupported,
     EventsReader(#[from] super::fromevents::Error),
 }
 
@@ -264,7 +264,7 @@ impl GapFill {
             let stream = Box::pin(inp_finer);
             let range = BinnedRange::from_nano_range(range_finer.full_range(), self.range.bin_len.to_dt_ms());
             let stream = if self.do_time_weight {
-                ::items_2::binning::timeweight::timeweight_bins_dyn::BinnedBinsTimeweightStream::new(range, stream)
+                BinnedBinsTimeweightStream::new(range, stream)
             } else {
                 panic!("TODO unweighted")
             };
@@ -293,6 +293,7 @@ impl GapFill {
     }
 
     fn cache_write(mut self: Pin<&mut Self>, bins: BinsBoxed) -> Result<(), Error> {
+        // TODO emit bins that are ready for cache write into some separate channel
         let series = ::err::todoval();
         self.cache_writing = Some(self.cache_read_provider.write(series, bins));
         Ok(())

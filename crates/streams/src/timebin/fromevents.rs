@@ -1,4 +1,5 @@
 use super::cached::reader::EventsReadProvider;
+use crate::events::convertforbinning::ConvertForBinning;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Stream;
@@ -7,9 +8,9 @@ use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::timebin::BinsBoxed;
+use items_2::binning::timeweight::timeweight_events_dyn::BinnedEventsTimeweightStream;
 use netpod::log::*;
 use netpod::BinnedRange;
-use netpod::ChConf;
 use netpod::TsNano;
 use query::api4::events::EventsSubQuery;
 use std::pin::Pin;
@@ -39,9 +40,10 @@ impl BinnedFromEvents {
             panic!();
         }
         let stream = read_provider.read(evq);
+        let stream = ConvertForBinning::new(Box::pin(stream));
         let stream = if do_time_weight {
             let stream = Box::pin(stream);
-            items_2::binning::timeweight::timeweight_events_dyn::BinnedEventsTimeweightStream::new(range, stream)
+            BinnedEventsTimeweightStream::new(range, stream)
         } else {
             panic!("non-weighted TODO")
         };

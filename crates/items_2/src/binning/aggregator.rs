@@ -9,6 +9,9 @@ use serde::Serialize;
 #[allow(unused)]
 macro_rules! trace_event { ($($arg:tt)*) => ( if false { trace!($($arg)*); }) }
 
+#[allow(unused)]
+macro_rules! trace_result { ($($arg:tt)*) => ( if false { trace!($($arg)*); }) }
+
 pub trait AggTimeWeightOutputAvg: fmt::Debug + Clone + Send + Serialize + for<'a> Deserialize<'a> {}
 
 impl AggTimeWeightOutputAvg for u8 {}
@@ -93,7 +96,7 @@ impl AggregatorTimeWeight<f32> for AggregatorNumeric {
 
     fn result_and_reset_for_new_bin(&mut self, filled_width_fraction: f32) -> f32 {
         let sum = self.sum.clone() as f32;
-        trace!("result_and_reset_for_new_bin  sum {}  {}", sum, filled_width_fraction);
+        trace_result!("result_and_reset_for_new_bin  sum {}  {}", sum, filled_width_fraction);
         self.sum = 0.;
         sum / filled_width_fraction
     }
@@ -108,7 +111,7 @@ macro_rules! impl_agg_tw_for_agg_num {
 
             fn ingest(&mut self, dt: DtNano, bl: DtNano, val: $evt) {
                 let f = dt.ns() as f64 / bl.ns() as f64;
-                trace!("INGEST  {}  {}", f, val);
+                trace_event!("INGEST  {}  {}", f, val);
                 self.sum += f * val as f64;
             }
 
@@ -118,7 +121,7 @@ macro_rules! impl_agg_tw_for_agg_num {
 
             fn result_and_reset_for_new_bin(&mut self, filled_width_fraction: f32) -> f64 {
                 let sum = self.sum.clone();
-                trace!(
+                trace_result!(
                     "result_and_reset_for_new_bin  sum {}  {}",
                     sum,
                     filled_width_fraction
@@ -145,7 +148,7 @@ impl AggregatorTimeWeight<u64> for AggregatorNumeric {
 
     fn ingest(&mut self, dt: DtNano, bl: DtNano, val: u64) {
         let f = dt.ns() as f64 / bl.ns() as f64;
-        trace!("INGEST  {}  {}", f, val);
+        trace_event!("INGEST  {}  {}", f, val);
         self.sum += f * val as f64;
     }
 
@@ -155,7 +158,7 @@ impl AggregatorTimeWeight<u64> for AggregatorNumeric {
 
     fn result_and_reset_for_new_bin(&mut self, filled_width_fraction: f32) -> f64 {
         let sum = self.sum.clone();
-        trace!("result_and_reset_for_new_bin  sum {}  {}", sum, filled_width_fraction);
+        trace_result!("result_and_reset_for_new_bin  sum {}  {}", sum, filled_width_fraction);
         self.sum = 0.;
         sum / filled_width_fraction as f64
     }
@@ -168,7 +171,7 @@ impl AggregatorTimeWeight<bool> for AggregatorNumeric {
 
     fn ingest(&mut self, dt: DtNano, bl: DtNano, val: bool) {
         let f = dt.ns() as f64 / bl.ns() as f64;
-        trace!("INGEST  {}  {}", f, val);
+        trace_event!("INGEST  {}  {}", f, val);
         self.sum += f * val as u8 as f64;
     }
 
@@ -178,7 +181,7 @@ impl AggregatorTimeWeight<bool> for AggregatorNumeric {
 
     fn result_and_reset_for_new_bin(&mut self, filled_width_fraction: f32) -> f64 {
         let sum = self.sum.clone();
-        trace!("result_and_reset_for_new_bin  sum {}  {}", sum, filled_width_fraction);
+        trace_result!("result_and_reset_for_new_bin  sum {}  {}", sum, filled_width_fraction);
         self.sum = 0.;
         sum / filled_width_fraction as f64
     }
@@ -191,7 +194,7 @@ impl AggregatorTimeWeight<String> for AggregatorNumeric {
 
     fn ingest(&mut self, dt: DtNano, bl: DtNano, val: String) {
         let f = dt.ns() as f64 / bl.ns() as f64;
-        trace!("INGEST  {}  {}", f, val);
+        trace_event!("INGEST  {}  {}", f, val);
         self.sum += f * val.len() as f64;
     }
 
@@ -201,7 +204,7 @@ impl AggregatorTimeWeight<String> for AggregatorNumeric {
 
     fn result_and_reset_for_new_bin(&mut self, filled_width_fraction: f32) -> f64 {
         let sum = self.sum.clone();
-        trace!("result_and_reset_for_new_bin  sum {}  {}", sum, filled_width_fraction);
+        trace_result!("result_and_reset_for_new_bin  sum {}  {}", sum, filled_width_fraction);
         self.sum = 0.;
         sum / filled_width_fraction as f64
     }

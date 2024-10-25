@@ -42,7 +42,13 @@ macro_rules! trace_ingest_firsts { ($($arg:tt)*) => ( if true { trace_!($($arg)*
 macro_rules! trace_ingest_finish_bin { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_ingest_container { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
+macro_rules! trace_ingest_container { ($($arg:tt)*) => ( if false { trace_!($($arg)*); }) }
+
+#[allow(unused)]
+macro_rules! trace_ingest_container_2 { ($($arg:tt)*) => ( if false { trace_!($($arg)*); }) }
+
+#[allow(unused)]
+macro_rules! trace_fill_until { ($($arg:tt)*) => ( if false { trace_!($($arg)*); }) }
 
 #[cold]
 #[inline]
@@ -197,7 +203,7 @@ where
             } else {
                 self.ingest_event_with_lst_gt_range_beg(ev.clone(), LstMut(lst.0), minmax)?;
                 self.cnt += 1;
-                trace_ingest_firsts!("{selfname}  now calling ingest_with_lst_gt_range_beg");
+                trace_ingest_event!("{selfname}  now calling ingest_with_lst_gt_range_beg");
                 return self.ingest_with_lst_gt_range_beg(evs, LstMut(lst.0), minmax);
             }
         }
@@ -232,7 +238,7 @@ where
         assert!(b.filled_until < ts);
         assert!(ts <= b.active_end);
         let dt = ts.delta(b.filled_until);
-        trace_cycle!("fill_until  ts {:?}  dt {:?}  lst {:?}", ts, dt, lst.0);
+        trace_fill_until!("fill_until  ts {:?}  dt {:?}  lst {:?}", ts, dt, lst.0);
         assert!(b.filled_until < ts);
         assert!(ts <= b.active_end);
         b.agg.ingest(dt, b.active_len, lst.0.val.clone());
@@ -280,7 +286,7 @@ where
 
     fn ingest_with_lst(&mut self, mut evs: ContainerEventsTakeUpTo<EVT>, lst: LstMut<EVT>) -> Result<(), Error> {
         let selfname = "ingest_with_lst";
-        trace_ingest_container!("{selfname}");
+        trace_ingest_container!("{selfname}  evs len {}", evs.len());
         let b = &mut self.inner_b;
         if let Some(minmax) = self.minmax.as_mut() {
             b.ingest_with_lst_minmax(evs, lst, minmax)
@@ -587,7 +593,6 @@ where
                     return Err(Error::EventAfterRange);
                 }
                 if ts >= b.active_end {
-                    trace_cycle!("bin edge boundary {:?}", b.active_end);
                     assert!(b.filled_until < b.active_end, "{} < {}", b.filled_until, b.active_end);
                     self.cycle_01(ts);
                 }
@@ -603,7 +608,7 @@ where
                 } else {
                     self.ingest_ordered(evs)?
                 };
-                trace_ingest_container!("ingest  after still left len  evs {}", evs_all.len());
+                trace_ingest_container_2!("ingest  after still left len  evs {}", evs_all.len());
                 let n2 = evs_all.len();
                 if n2 != 0 {
                     if n2 == n1 {

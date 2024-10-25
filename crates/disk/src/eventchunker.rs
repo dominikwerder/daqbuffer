@@ -34,6 +34,9 @@ use streams::dtflags::*;
 use streams::filechunkread::FileChunkRead;
 use streams::needminbuffer::NeedMinBuffer;
 
+#[allow(unused)]
+macro_rules! trace_parse_buf { ($($arg:tt)*) => ( if false { trace!($($arg)*); }) }
+
 #[derive(Debug, ThisError, Serialize, Deserialize)]
 #[cstm(name = "DatabufferDataParse")]
 pub enum DataParseError {
@@ -210,7 +213,7 @@ impl EventChunker {
     fn parse_buf_inner(&mut self, buf: &mut BytesMut) -> Result<(ParseResult, Vec<LogItem>), DataParseError> {
         use byteorder::ReadBytesExt;
         use byteorder::BE;
-        trace!("parse_buf_inner  buf len {}", buf.len());
+        trace_parse_buf!("parse_buf_inner  buf len {}", buf.len());
         let mut ret = EventFull::empty();
         let mut log_items = Vec::new();
         let mut parsed_bytes = 0;

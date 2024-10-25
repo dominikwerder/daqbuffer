@@ -1,6 +1,8 @@
-mod basic;
 pub mod cached;
 pub mod fromevents;
+pub mod timebin;
+
+mod basic;
 mod fromlayers;
 mod gapfill;
 mod grid;

@@ -1,32 +1,21 @@
 use super::cached::reader::CacheReadProvider;
 use super::cached::reader::EventsReadProvider;
-use crate::tcprawclient::OpenBoxedBytesStreamsBox;
 use crate::timebin::fromevents::BinnedFromEvents;
 use crate::timebin::grid::find_next_finer_bin_len;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use futures_util::TryStreamExt;
-use items_0::on_sitemty_data;
-use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
-use items_0::streamitem::StreamItem;
-use items_0::timebin::BinningggContainerBinsDyn;
 use items_0::timebin::BinsBoxed;
-use items_0::timebin::TimeBinnableTy;
 use items_2::binning::timeweight::timeweight_bins_dyn::BinnedBinsTimeweightStream;
-use items_2::binsdim0::BinsDim0;
 use netpod::log::*;
 use netpod::query::CacheUsage;
 use netpod::range::evrange::SeriesRange;
 use netpod::BinnedRange;
-use netpod::BinnedRangeEnum;
-use netpod::ChConf;
 use netpod::ChannelTypeConfigGen;
 use netpod::DtMs;
 use netpod::ReqCtx;
-use netpod::SeriesKind;
 use netpod::TsNano;
 use query::api4::events::EventsSubQuery;
 use query::api4::events::EventsSubQuerySelect;
@@ -42,7 +31,6 @@ use std::task::Poll;
 pub enum Error {
     GapFill(#[from] super::gapfill::Error),
     BinnedFromEvents(#[from] super::fromevents::Error),
-    SfDatabufferNotSupported,
     #[error("FinerGridMismatch({0}, {1})")]
     FinerGridMismatch(DtMs, DtMs),
 }
@@ -50,12 +38,6 @@ pub enum Error {
 type BoxedInput = Pin<Box<dyn Stream<Item = Sitemty<BinsBoxed>> + Send>>;
 
 pub struct TimeBinnedFromLayers {
-    ch_conf: ChannelTypeConfigGen,
-    cache_usage: CacheUsage,
-    transform_query: TransformQuery,
-    sub: EventsSubQuerySettings,
-    log_level: String,
-    ctx: Arc<ReqCtx>,
     inp: BoxedInput,
 }
 
@@ -101,15 +83,7 @@ impl TimeBinnedFromLayers {
                 cache_read_provider,
                 events_read_provider.clone(),
             )?;
-            let ret = Self {
-                ch_conf,
-                cache_usage,
-                transform_query,
-                sub,
-                log_level,
-                ctx,
-                inp: Box::pin(inp),
-            };
+            let ret = Self { inp: Box::pin(inp) };
             Ok(ret)
         } else {
             match find_next_finer_bin_len(bin_len, &bin_len_layers) {
@@ -139,15 +113,7 @@ impl TimeBinnedFromLayers {
                         events_read_provider.clone(),
                     )?;
                     let inp = BinnedBinsTimeweightStream::new(range, Box::pin(inp));
-                    let ret = Self {
-                        ch_conf,
-                        cache_usage,
-                        transform_query,
-                        sub,
-                        log_level,
-                        ctx,
-                        inp: Box::pin(inp),
-                    };
+                    let ret = Self { inp: Box::pin(inp) };
                     Ok(ret)
                 }
                 None => {
@@ -162,15 +128,7 @@ impl TimeBinnedFromLayers {
                     );
                     let evq = EventsSubQuery::from_parts(select, sub.clone(), ctx.reqid().into(), log_level.clone());
                     let inp = BinnedFromEvents::new(range, evq, do_time_weight, events_read_provider)?;
-                    let ret = Self {
-                        ch_conf,
-                        cache_usage,
-                        transform_query,
-                        sub,
-                        log_level,
-                        ctx,
-                        inp: Box::pin(inp),
-                    };
+                    let ret = Self { inp: Box::pin(inp) };
                     debug!("{}::new  setup from events", Self::type_name());
                     Ok(ret)
                 }
