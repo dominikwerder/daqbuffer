@@ -39,16 +39,6 @@ impl BinnedFromEvents {
             panic!();
         }
         let stream = read_provider.read(evq);
-        // let stream = stream.map(|x| {
-        //     let x = items_0::try_map_sitemty_data!(x, |x| match x {
-        //         ChannelEvents::Events(x) => {
-        //             let x = x.to_dim0_f32_for_binning();
-        //             Ok(ChannelEvents::Events(x))
-        //         }
-        //         ChannelEvents::Status(x) => Ok(ChannelEvents::Status(x)),
-        //     });
-        //     x
-        // });
         let stream = if do_time_weight {
             let stream = Box::pin(stream);
             items_2::binning::timeweight::timeweight_events_dyn::BinnedEventsTimeweightStream::new(range, stream)

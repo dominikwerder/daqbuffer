@@ -140,12 +140,16 @@ async fn binned(
 }
 
 fn make_read_provider(
+    chname: &str,
     scyqueue: Option<ScyllaQueue>,
     open_bytes: Pin<Arc<OpenBoxedBytesViaHttp>>,
     ctx: &ReqCtx,
     ncc: &NodeConfigCached,
 ) -> (Arc<dyn EventsReadProvider>, Arc<dyn CacheReadProvider>) {
-    let events_read_provider = if ncc.node_config.cluster.scylla_lt().is_some() {
+    let events_read_provider = if chname.starts_with("unittest") {
+        let x = streams::teststream::UnitTestStream::new();
+        Arc::new(x)
+    } else if ncc.node_config.cluster.scylla_lt().is_some() {
         scyqueue
             .clone()
             .map(|qu| ScyllaEventReadProvider::new(qu))
@@ -189,7 +193,6 @@ async fn binned_json_single(
         error!("binned_json: {e:?}");
         Error::BadQuery(e.to_string())
     })?;
-    // TODO handle None case better and return 404
     let ch_conf = ch_conf_from_binned(&query, ctx, pgqueue, ncc)
         .await?
         .ok_or_else(|| Error::ChannelNotFound)?;
@@ -207,7 +210,8 @@ async fn binned_json_single(
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let open_bytes = Arc::pin(open_bytes);
     let open_bytes2 = Arc::pin(OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone()));
-    let (events_read_provider, cache_read_provider) = make_read_provider(scyqueue, open_bytes2, ctx, ncc);
+    let (events_read_provider, cache_read_provider) =
+        make_read_provider(ch_conf.name(), scyqueue, open_bytes2, ctx, ncc);
     let item = streams::timebinnedjson::timebinned_json(
         query,
         ch_conf,
@@ -271,7 +275,8 @@ async fn binned_json_framed(
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let open_bytes = Arc::pin(open_bytes);
     let open_bytes2 = Arc::pin(OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone()));
-    let (events_read_provider, cache_read_provider) = make_read_provider(scyqueue, open_bytes2, ctx, ncc);
+    let (events_read_provider, cache_read_provider) =
+        make_read_provider(ch_conf.name(), scyqueue, open_bytes2, ctx, ncc);
     let stream = streams::timebinnedjson::timebinned_json_framed(
         query,
         ch_conf,

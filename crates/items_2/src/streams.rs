@@ -199,8 +199,6 @@ impl<T> VecStream<T> {
     }
 }
 
-/*impl<T> Unpin for VecStream<T> where T: Unpin {}*/
-
 impl<T> Stream for VecStream<T>
 where
     T: Unpin,

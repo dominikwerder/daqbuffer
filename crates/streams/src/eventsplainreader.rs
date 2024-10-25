@@ -15,16 +15,11 @@ use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
 
+type ChEvsBox = Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>;
+
 enum StreamState {
-    Opening(
-        Pin<
-            Box<
-                dyn Future<Output = Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, ::err::Error>>
-                    + Send,
-            >,
-        >,
-    ),
-    Reading(Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>),
+    Opening(Pin<Box<dyn Future<Output = Result<ChEvsBox, ::err::Error>> + Send>>),
+    Reading(ChEvsBox),
 }
 
 struct InnerStream {

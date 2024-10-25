@@ -246,16 +246,6 @@ async fn timebinnable_stream_sf_databuffer_binnable_box(
         open_bytes,
     )
     .await?;
-    // let stream = stream.map(|x| x);
-    // let stream = stream.map(|x| ChannelEvents::Events(x));
-
-    // let stream = stream.map(move |k| {
-    //     on_sitemty_data!(k, |k| {
-    //         let k: Box<dyn Collectable> = Box::new(k);
-    //         Ok(StreamItem::DataItem(RangeCompletableItem::Data(k)))
-    //     })
-    // });
-
     let stream = PlainEventStream::new(stream);
     let stream = EventsToTimeBinnable::new(stream);
     let stream = Box::pin(stream);
@@ -376,9 +366,10 @@ async fn timebinned_stream(
     events_read_provider: Arc<dyn EventsReadProvider>,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn CollectableDyn>>> + Send>>, Error> {
     use netpod::query::CacheUsage;
-    let cache_usage = query.cache_usage().unwrap_or(CacheUsage::V0NoCache);
+    let cache_usage = query.cache_usage().unwrap_or(CacheUsage::Ignore);
     match cache_usage.clone() {
         CacheUsage::Use | CacheUsage::Recreate | CacheUsage::Ignore => {
+            debug!("BINNING NEW METHOD");
             debug!(
                 "timebinned_stream  caching {:?}  subgrids {:?}",
                 query,
@@ -407,18 +398,11 @@ async fn timebinned_stream(
                 events_read_provider,
             )
             .map_err(Error::from_string)?;
-            // let stream = stream.map(|item| {
-            //     on_sitemty_data!(item, |k: items_0::timebin::BinsBoxed| {
-            //         let ret = k.to_old_time_binned();
-            //         Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))
-            //     })
-            // });
             let stream = stream.map(|item| {
                 use items_0::timebin::BinningggContainerBinsDyn;
-                on_sitemty_data!(item, |x: Box<dyn BinningggContainerBinsDyn>| {
-                    let g = x.new_collector();
+                on_sitemty_data!(item, |mut x: Box<dyn BinningggContainerBinsDyn>| {
+                    x.fix_numerics();
                     let ret = Box::new(x) as Box<dyn CollectableDyn>;
-                    // let ret = x as Box<dyn CollectableDyn>;
                     Ok(StreamItem::DataItem(RangeCompletableItem::Data(ret)))
                 })
             });
@@ -426,6 +410,7 @@ async fn timebinned_stream(
             Ok(stream)
         }
         _ => {
+            debug!("BINNING OLD METHOD");
             let range = binned_range.binned_range_time().to_nano_range();
             let do_time_weight = true;
             let one_before_range = true;

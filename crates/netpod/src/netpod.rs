@@ -2165,10 +2165,10 @@ const TIME_BIN_THRESHOLDS: [u64; 26] = [
     DAY * 64,
 ];
 
-const TIME_BIN_LEN_CACHE_OPTS: [DtMs; 2] = [
+const TIME_BIN_LEN_CACHE_OPTS: [DtMs; 0] = [
     //
-    DtMs(1000 * 10),
-    DtMs(1000 * 60 * 60),
+    // DtMs(1000 * 10),
+    // DtMs(1000 * 60 * 60),
 ];
 
 pub fn time_bin_len_cache_opts() -> &'static [DtMs] {
@@ -2592,7 +2592,7 @@ impl BinnedRangeEnum {
                 return Ok(ret);
             }
         }
-        Err(Error::with_msg_no_trace("can not find matching pre-binned grid"))
+        Err(Error::with_msg_no_trace("can not find matching binned grid"))
     }
 
     /// Cover at least the given range while selecting the bin width which best fits the requested bin width.

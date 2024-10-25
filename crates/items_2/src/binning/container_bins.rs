@@ -618,6 +618,10 @@ where
         }
     }
 
+    fn fix_numerics(&mut self) {
+        for ((min, max), avg) in self.mins.iter_mut().zip(self.maxs.iter_mut()).zip(self.avgs.iter_mut()) {}
+    }
+
     fn to_old_time_binned(&self) -> Box<dyn items_0::timebin::TimeBinned> {
         try_to_old_time_binned!(u8, self, 0);
         try_to_old_time_binned!(u16, self, 0);

@@ -22,6 +22,7 @@ pub mod slidebuf;
 pub mod tcprawclient;
 #[cfg(test)]
 pub mod test;
+pub mod teststream;
 pub mod timebin;
 pub mod timebinnedjson;
 pub mod transform;
