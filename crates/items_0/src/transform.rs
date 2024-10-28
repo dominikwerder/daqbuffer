@@ -3,7 +3,6 @@ use crate::collect_s::CollectedDyn;
 use crate::streamitem::RangeCompletableItem;
 use crate::streamitem::Sitemty;
 use crate::streamitem::StreamItem;
-use crate::timebin::TimeBinnable;
 use crate::Events;
 use err::Error;
 use futures_util::stream;
@@ -15,11 +14,6 @@ use std::task::Context;
 use std::task::Poll;
 
 pub trait EventStreamTrait: Stream<Item = Sitemty<Box<dyn Events>>> + WithTransformProperties + Send {}
-
-pub trait TimeBinnableStreamTrait:
-    Stream<Item = Sitemty<Box<dyn TimeBinnable>>> + WithTransformProperties + Send
-{
-}
 
 pub trait CollectableStreamTrait:
     Stream<Item = Sitemty<Box<dyn CollectableDyn>>> + WithTransformProperties + Send
@@ -136,24 +130,6 @@ where
         Self(Box::pin(x))
     }
 }
-
-pub struct TimeBinnableStreamBox(pub Pin<Box<dyn TimeBinnableStreamTrait>>);
-
-impl WithTransformProperties for TimeBinnableStreamBox {
-    fn query_transform_properties(&self) -> TransformProperties {
-        self.0.query_transform_properties()
-    }
-}
-
-impl Stream for TimeBinnableStreamBox {
-    type Item = <dyn TimeBinnableStreamTrait as Stream>::Item;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        self.0.poll_next_unpin(cx)
-    }
-}
-
-impl TimeBinnableStreamTrait for TimeBinnableStreamBox {}
 
 pub struct CollectableStreamBox(pub Pin<Box<dyn CollectableStreamTrait>>);
 

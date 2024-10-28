@@ -8,10 +8,7 @@ use items_0::container::ByteEstimate;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::isodate::IsoDateTime;
 use items_0::streamitem::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID;
-use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinnableTy;
-use items_0::timebin::TimeBinned;
-use items_0::timebin::TimeBinner;
 use items_0::timebin::TimeBinnerTy;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
@@ -162,12 +159,6 @@ impl ChannelEvents {
             ChannelEvents::Events(_) => true,
             ChannelEvents::Status(_) => false,
         }
-    }
-}
-
-impl items_0::IntoTimeBinnable for ChannelEvents {
-    fn into_time_binnable(self) -> Box<dyn TimeBinnable> {
-        Box::new(self)
     }
 }
 
@@ -826,26 +817,6 @@ impl Mergeable for ChannelEvents {
     }
 }
 
-impl TimeBinnable for ChannelEvents {
-    fn time_binner_new(
-        &self,
-        binrange: BinnedRangeEnum,
-        do_time_weight: bool,
-        emit_empty_bins: bool,
-    ) -> Box<dyn TimeBinner> {
-        let ret = <ChannelEvents as TimeBinnableTy>::time_binner_new(&self, binrange, do_time_weight, emit_empty_bins);
-        Box::new(ret)
-    }
-
-    fn to_box_to_json_result(&self) -> Box<dyn items_0::collect_s::ToJsonResult> {
-        todo!()
-    }
-
-    fn to_container_bins(&self) -> Box<dyn items_0::timebin::BinningggContainerBinsDyn> {
-        panic!("logic error must not get used on ChannelEvents")
-    }
-}
-
 impl EventsNonObj for ChannelEvents {
     fn into_tss_pulses(self: Box<Self>) -> (VecDeque<u64>, VecDeque<u64>) {
         match *self {
@@ -856,14 +827,6 @@ impl EventsNonObj for ChannelEvents {
 }
 
 impl Events for ChannelEvents {
-    fn as_time_binnable_ref(&self) -> &dyn TimeBinnable {
-        todo!()
-    }
-
-    fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable {
-        todo!()
-    }
-
     fn verify(&self) -> bool {
         match self {
             ChannelEvents::Events(x) => Events::verify(x),
@@ -1027,174 +990,6 @@ impl Events for ChannelEvents {
 impl CollectableDyn for ChannelEvents {
     fn new_collector(&self) -> Box<dyn CollectorDyn> {
         Box::new(ChannelEventsCollector::new())
-    }
-}
-
-pub struct ChannelEventsTimeBinner {
-    // TODO `ConnStatus` contains all the changes that can happen to a connection, but
-    // here we would rather require a simplified current state for binning purpose.
-    binrange: BinnedRangeEnum,
-    do_time_weight: bool,
-    emit_empty_bins: bool,
-    conn_state: ConnStatus,
-    binner: Option<Box<dyn TimeBinner>>,
-}
-
-impl ChannelEventsTimeBinner {
-    pub fn type_name() -> &'static str {
-        std::any::type_name::<Self>()
-    }
-}
-
-impl fmt::Debug for ChannelEventsTimeBinner {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        fmt.debug_struct(Self::type_name())
-            .field("binrange", &self.binrange)
-            .field("do_time_weight", &self.do_time_weight)
-            .field("emit_empty_bins", &self.emit_empty_bins)
-            .field("conn_state", &self.conn_state)
-            .finish()
-    }
-}
-
-impl ChannelEventsTimeBinner {}
-
-impl TimeBinnerTy for ChannelEventsTimeBinner {
-    type Input = ChannelEvents;
-    type Output = Box<dyn TimeBinned>;
-
-    fn ingest(&mut self, item: &mut Self::Input) {
-        trace_ingest!("{}  INGEST  {:?}", Self::type_name(), item);
-        match item {
-            ChannelEvents::Events(item) => {
-                let binner = self.binner.get_or_insert_with(|| {
-                    item.time_binner_new(self.binrange.clone(), self.do_time_weight, self.emit_empty_bins)
-                });
-                binner.ingest(item.as_time_binnable_mut())
-            }
-            ChannelEvents::Status(item) => {
-                warn!("TODO consider channel status in time binning {item:?}");
-            }
-        }
-        trace_ingest!("{}  INGEST RETURN  {:?}", Self::type_name(), item);
-    }
-
-    fn bins_ready_count(&self) -> usize {
-        match &self.binner {
-            Some(binner) => binner.bins_ready_count(),
-            None => 0,
-        }
-    }
-
-    fn bins_ready(&mut self) -> Option<Self::Output> {
-        match self.binner.as_mut() {
-            Some(binner) => binner.bins_ready(),
-            None => None,
-        }
-    }
-
-    fn push_in_progress(&mut self, push_empty: bool) {
-        match self.binner.as_mut() {
-            Some(binner) => binner.push_in_progress(push_empty),
-            None => (),
-        }
-    }
-
-    fn cycle(&mut self) {
-        match self.binner.as_mut() {
-            Some(binner) => binner.cycle(),
-            None => (),
-        }
-    }
-
-    fn set_range_complete(&mut self) {
-        match self.binner.as_mut() {
-            Some(binner) => binner.set_range_complete(),
-            None => (),
-        }
-    }
-
-    fn empty(&self) -> Option<Self::Output> {
-        match self.binner.as_ref() {
-            Some(binner) => Some(binner.empty()),
-            None => None,
-        }
-    }
-
-    fn append_empty_until_end(&mut self) {
-        match self.binner.as_mut() {
-            Some(binner) => binner.append_empty_until_end(),
-            None => panic!(),
-        }
-    }
-}
-
-impl TimeBinner for ChannelEventsTimeBinner {
-    fn ingest(&mut self, item: &mut dyn TimeBinnable) {
-        if let Some(item) = item.as_any_mut().downcast_mut::<ChannelEvents>() {
-            TimeBinnerTy::ingest(self, item)
-        } else {
-            panic!()
-        }
-    }
-
-    fn bins_ready_count(&self) -> usize {
-        TimeBinnerTy::bins_ready_count(self)
-    }
-
-    fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>> {
-        TimeBinnerTy::bins_ready(self)
-    }
-
-    fn push_in_progress(&mut self, push_empty: bool) {
-        TimeBinnerTy::push_in_progress(self, push_empty)
-    }
-
-    fn cycle(&mut self) {
-        TimeBinnerTy::cycle(self)
-    }
-
-    fn set_range_complete(&mut self) {
-        TimeBinnerTy::set_range_complete(self)
-    }
-
-    fn empty(&self) -> Box<dyn TimeBinned> {
-        match TimeBinnerTy::empty(self) {
-            Some(x) => x,
-            None => panic!("TODO TimeBinner::empty for ChannelEventsTimeBinner"),
-        }
-    }
-
-    fn append_empty_until_end(&mut self) {
-        match self.binner.as_mut() {
-            Some(binner) => binner.append_empty_until_end(),
-            None => panic!(),
-        }
-    }
-}
-
-impl TimeBinnableTy for ChannelEvents {
-    type TimeBinner = ChannelEventsTimeBinner;
-
-    fn time_binner_new(
-        &self,
-        binrange: BinnedRangeEnum,
-        do_time_weight: bool,
-        emit_empty_bins: bool,
-    ) -> Self::TimeBinner {
-        trace!("TimeBinnableTy for ChannelEvents  make ChannelEventsTimeBinner");
-        // TODO probably wrong?
-        let (binner, status) = match self {
-            ChannelEvents::Events(_events) => (None, ConnStatus::Connect),
-            ChannelEvents::Status(_status) => (None, ConnStatus::Connect),
-        };
-        ChannelEventsTimeBinner {
-            binrange,
-            do_time_weight,
-            emit_empty_bins,
-            conn_state: status,
-            binner,
-        }
     }
 }
 

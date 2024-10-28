@@ -23,7 +23,6 @@ use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;
 use timebin::BinningggContainerEventsDyn;
-use timebin::TimeBinnable;
 
 pub trait WithLen {
     fn len(&self) -> usize;
@@ -115,57 +114,12 @@ impl fmt::Display for MergeError {
 
 impl std::error::Error for MergeError {}
 
-pub trait IntoTimeBinnable: BoxedIntoTimeBinnable {
-    fn into_time_binnable(self) -> Box<dyn TimeBinnable>;
-}
-
-pub trait BoxedIntoTimeBinnable {
-    fn boxed_into_time_binnable(self: Box<Self>) -> Box<dyn TimeBinnable>;
-}
-
-impl<T> BoxedIntoTimeBinnable for T
-where
-    T: IntoTimeBinnable,
-{
-    fn boxed_into_time_binnable(self: Box<Self>) -> Box<dyn TimeBinnable> {
-        <Self as IntoTimeBinnable>::into_time_binnable(*self)
-    }
-}
-
-impl IntoTimeBinnable for Box<dyn IntoTimeBinnable + '_> {
-    fn into_time_binnable(self) -> Box<dyn TimeBinnable> {
-        <dyn IntoTimeBinnable as BoxedIntoTimeBinnable>::boxed_into_time_binnable(self)
-    }
-}
-
-impl IntoTimeBinnable for Box<dyn Events + '_> {
-    fn into_time_binnable(self) -> Box<dyn TimeBinnable> {
-        // <dyn IntoTimeBinnable as BoxedIntoTimeBinnable>::boxed_into_time_binnable(self)
-        // Box::new(*self)
-        // let a: Box<dyn Events> = err::todoval();
-        // let b: Box<dyn TimeBinnable> = Box::new(*a);
-        todo!()
-    }
-}
-
 // TODO can I remove the Any bound?
 
 /// Container of some form of events, for use as trait object.
 pub trait Events:
-    fmt::Debug
-    + TypeName
-    + Any
-    + CollectableDyn
-    + TimeBinnable
-    + WithLen
-    + ByteEstimate
-    + Send
-    + erased_serde::Serialize
-    + EventsNonObj
-    + IntoTimeBinnable
+    fmt::Debug + TypeName + Any + CollectableDyn + WithLen + ByteEstimate + Send + erased_serde::Serialize + EventsNonObj
 {
-    fn as_time_binnable_ref(&self) -> &dyn TimeBinnable;
-    fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable;
     fn verify(&self) -> bool;
     fn output_info(&self) -> String;
     fn as_collectable_mut(&mut self) -> &mut dyn CollectableDyn;
@@ -222,14 +176,6 @@ impl EventsNonObj for Box<dyn Events> {
 }
 
 impl Events for Box<dyn Events> {
-    fn as_time_binnable_ref(&self) -> &dyn TimeBinnable {
-        Events::as_time_binnable_ref(self.as_ref())
-    }
-
-    fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable {
-        Events::as_time_binnable_mut(self.as_mut())
-    }
-
     fn verify(&self) -> bool {
         Events::verify(self.as_ref())
     }

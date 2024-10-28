@@ -1,4 +1,3 @@
-use crate::timebin::TimeBinned;
 use err::Error;
 use netpod::log::Level;
 use netpod::DiskStats;
@@ -202,5 +201,3 @@ mod levelserde {
         de.deserialize_u32(VisitLevel)
     }
 }
-
-erased_serde::serialize_trait_object!(TimeBinned);

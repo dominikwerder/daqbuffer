@@ -1,7 +1,5 @@
 use crate::binsxbindim0::BinsXbinDim0;
 use crate::IsoDateTime;
-use crate::TimeBinnableType;
-use crate::TimeBinnableTypeAggregator;
 use err::Error;
 use items_0::collect_s::CollectableDyn;
 use items_0::collect_s::CollectableType;
@@ -11,9 +9,6 @@ use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
 use items_0::overlap::HasTimestampDeque;
 use items_0::scalar_ops::ScalarOps;
-use items_0::timebin::TimeBinnable;
-use items_0::timebin::TimeBinned;
-use items_0::timebin::TimeBinner;
 use items_0::timebin::TimeBinnerTy;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
@@ -155,12 +150,6 @@ where
     }
 }
 
-impl<STY: ScalarOps> items_0::IntoTimeBinnable for EventsXbinDim0<STY> {
-    fn into_time_binnable(self) -> Box<dyn TimeBinnable> {
-        Box::new(self)
-    }
-}
-
 impl<STY> WithLen for EventsXbinDim0<STY> {
     fn len(&self) -> usize {
         self.tss.len()
@@ -197,14 +186,6 @@ impl<STY: ScalarOps> EventsNonObj for EventsXbinDim0<STY> {
 }
 
 impl<STY: ScalarOps> Events for EventsXbinDim0<STY> {
-    fn as_time_binnable_ref(&self) -> &dyn TimeBinnable {
-        self
-    }
-
-    fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable {
-        self
-    }
-
     fn verify(&self) -> bool {
         let mut good = true;
         let mut ts_max = 0;
@@ -386,198 +367,6 @@ impl<STY: ScalarOps> Events for EventsXbinDim0<STY> {
 
     fn to_container_events(&self) -> Box<dyn ::items_0::timebin::BinningggContainerEventsDyn> {
         todo!("{}::to_container_events", self.type_name())
-    }
-}
-
-#[derive(Debug)]
-pub struct EventsXbinDim0TimeBinner<STY: ScalarOps> {
-    binrange: BinnedRangeEnum,
-    rix: usize,
-    rng: Option<SeriesRange>,
-    agg: EventsXbinDim0Aggregator<STY>,
-    ready: Option<<EventsXbinDim0Aggregator<STY> as TimeBinnableTypeAggregator>::Output>,
-    range_final: bool,
-}
-
-impl<STY: ScalarOps> EventsXbinDim0TimeBinner<STY> {
-    fn type_name() -> &'static str {
-        any::type_name::<Self>()
-    }
-
-    fn new(binrange: BinnedRangeEnum, do_time_weight: bool) -> Result<Self, Error> {
-        trace!("{}::new  binrange {:?}", Self::type_name(), binrange);
-        let rng = binrange
-            .range_at(0)
-            .ok_or_else(|| Error::with_msg_no_trace("empty binrange"))?;
-        trace!("{}::new  rng {rng:?}", Self::type_name());
-        let agg = EventsXbinDim0Aggregator::new(rng, do_time_weight);
-        trace!("{}  agg range {:?}", Self::type_name(), agg.range());
-        let ret = Self {
-            binrange,
-            rix: 0,
-            rng: Some(agg.range.clone()),
-            agg,
-            ready: None,
-            range_final: false,
-        };
-        Ok(ret)
-    }
-
-    fn next_bin_range(&mut self) -> Option<SeriesRange> {
-        self.rix += 1;
-        if let Some(rng) = self.binrange.range_at(self.rix) {
-            trace!("{}  next_bin_range {:?}", Self::type_name(), rng);
-            Some(rng)
-        } else {
-            trace!("{}  next_bin_range None", Self::type_name());
-            None
-        }
-    }
-}
-
-impl<STY: ScalarOps> TimeBinner for EventsXbinDim0TimeBinner<STY> {
-    fn bins_ready_count(&self) -> usize {
-        match &self.ready {
-            Some(k) => k.len(),
-            None => 0,
-        }
-    }
-
-    fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>> {
-        match self.ready.take() {
-            Some(k) => Some(Box::new(k)),
-            None => None,
-        }
-    }
-
-    fn ingest(&mut self, item: &mut dyn TimeBinnable) {
-        panic!("TODO remove TimeBinner for EventsXbinDim0TimeBinner ingest")
-    }
-
-    fn push_in_progress(&mut self, push_empty: bool) {
-        trace!("{}::push_in_progress  push_empty {push_empty}", Self::type_name());
-        // TODO expand should be derived from AggKind. Is it still required after all?
-        // TODO here, the expand means that agg will assume that the current value is kept constant during
-        // the rest of the time range.
-        if self.rng.is_none() {
-        } else {
-            let expand = true;
-            let range_next = self.next_bin_range();
-            trace!("\n+++++\n+++++\n{}  range_next {:?}", Self::type_name(), range_next);
-            self.rng = range_next.clone();
-            let mut bins = if let Some(range_next) = range_next {
-                self.agg.result_reset(range_next)
-            } else {
-                // Acts as placeholder
-                let range_next = NanoRange {
-                    beg: u64::MAX - 1,
-                    end: u64::MAX,
-                };
-                self.agg.result_reset(range_next.into())
-            };
-            if bins.len() != 1 {
-                error!("{}::push_in_progress  bins.len() {}", Self::type_name(), bins.len());
-                return;
-            } else {
-                if push_empty || bins.counts()[0] != 0 {
-                    match self.ready.as_mut() {
-                        Some(ready) => {
-                            ready.append_all_from(&mut bins);
-                        }
-                        None => {
-                            self.ready = Some(bins);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn cycle(&mut self) {
-        trace!("{}::cycle", Self::type_name());
-        // TODO refactor this logic.
-        let n = self.bins_ready_count();
-        self.push_in_progress(true);
-        if self.bins_ready_count() == n {
-            let range_next = self.next_bin_range();
-            self.rng = range_next.clone();
-            if let Some(range) = range_next {
-                let mut bins = BinsXbinDim0::empty();
-                if range.is_time() {
-                    bins.append_zero(range.beg_u64(), range.end_u64());
-                } else {
-                    error!("TODO  {}::cycle  is_pulse", Self::type_name());
-                }
-                match self.ready.as_mut() {
-                    Some(ready) => {
-                        ready.append_all_from(&mut bins);
-                    }
-                    None => {
-                        self.ready = Some(bins);
-                    }
-                }
-                if self.bins_ready_count() <= n {
-                    error!("failed to push a zero bin");
-                }
-            } else {
-                warn!("cycle: no in-progress bin pushed, but also no more bin to add as zero-bin");
-            }
-        }
-    }
-
-    fn set_range_complete(&mut self) {
-        self.range_final = true;
-    }
-
-    fn empty(&self) -> Box<dyn TimeBinned> {
-        let ret = <EventsXbinDim0Aggregator<STY> as TimeBinnableTypeAggregator>::Output::empty();
-        Box::new(ret)
-    }
-
-    fn append_empty_until_end(&mut self) {
-        // nothing to do for events
-    }
-}
-
-impl<STY> TimeBinnableType for EventsXbinDim0<STY>
-where
-    STY: ScalarOps,
-{
-    type Output = BinsXbinDim0<STY>;
-    type Aggregator = EventsXbinDim0Aggregator<STY>;
-
-    fn aggregator(range: SeriesRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
-        let name = any::type_name::<Self>();
-        debug!(
-            "TimeBinnableType for {}  aggregator()  range {:?}  x_bin_count {}  do_time_weight {}",
-            name, range, x_bin_count, do_time_weight
-        );
-        Self::Aggregator::new(range, do_time_weight)
-    }
-}
-
-impl<STY> TimeBinnable for EventsXbinDim0<STY>
-where
-    STY: ScalarOps,
-{
-    fn time_binner_new(
-        &self,
-        binrange: BinnedRangeEnum,
-        do_time_weight: bool,
-        emit_empty_bins: bool,
-    ) -> Box<dyn items_0::timebin::TimeBinner> {
-        // TODO respect emit_empty_bins
-        let ret = EventsXbinDim0TimeBinner::<STY>::new(binrange, do_time_weight).unwrap();
-        Box::new(ret)
-    }
-
-    fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
-        let k = serde_json::to_value(self).unwrap();
-        Box::new(k) as _
-    }
-
-    fn to_container_bins(&self) -> Box<dyn items_0::timebin::BinningggContainerBinsDyn> {
-        panic!("logic error must not get used on events")
     }
 }
 
@@ -800,35 +589,6 @@ where
         self.min = STY::zero_b();
         self.max = STY::zero_b();
         ret
-    }
-}
-
-impl<NTY> TimeBinnableTypeAggregator for EventsXbinDim0Aggregator<NTY>
-where
-    NTY: ScalarOps,
-{
-    type Input = EventsXbinDim0<NTY>;
-    type Output = BinsXbinDim0<NTY>;
-
-    fn range(&self) -> &SeriesRange {
-        &self.range
-    }
-
-    fn ingest(&mut self, item: &Self::Input) {
-        trace!("{} ingest", Self::type_name());
-        if self.do_time_weight {
-            self.ingest_time_weight(item)
-        } else {
-            self.ingest_unweight(item)
-        }
-    }
-
-    fn result_reset(&mut self, range: SeriesRange) -> Self::Output {
-        if self.do_time_weight {
-            self.result_reset_time_weight(range)
-        } else {
-            self.result_reset_unweight(range)
-        }
     }
 }
 

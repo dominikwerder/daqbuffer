@@ -1,6 +1,5 @@
 use crate::container::ByteEstimate;
 use crate::timebin::BinningggContainerBinsDyn;
-use crate::timebin::TimeBinned;
 use crate::AsAnyMut;
 use crate::AsAnyRef;
 use crate::Events;
@@ -251,23 +250,5 @@ impl WithLen for Box<dyn CollectableDyn> {
 impl CollectableDyn for Box<dyn CollectableDyn> {
     fn new_collector(&self) -> Box<dyn CollectorDyn> {
         CollectableDyn::new_collector(self.as_ref())
-    }
-}
-
-impl WithLen for Box<dyn TimeBinned> {
-    fn len(&self) -> usize {
-        WithLen::len(self.as_ref())
-    }
-}
-
-impl TypeName for Box<dyn TimeBinned> {
-    fn type_name(&self) -> String {
-        self.as_ref().type_name()
-    }
-}
-
-impl CollectableDyn for Box<dyn TimeBinned> {
-    fn new_collector(&self) -> Box<dyn CollectorDyn> {
-        self.as_ref().new_collector()
     }
 }

@@ -1,50 +1,12 @@
 use crate::events2::prepare::StmtsCache;
 use crate::worker::ScyllaQueue;
-use err::Error;
-use futures_util::Future;
 use futures_util::StreamExt;
 use items_0::timebin::BinsBoxed;
-use items_0::timebin::TimeBinned;
 use items_2::binning::container_bins::ContainerBins;
-use netpod::log::*;
-use netpod::ChannelTyped;
 use netpod::DtMs;
-use netpod::PreBinnedPatchCoordEnum;
 use netpod::TsNano;
 use scylla::Session as ScySession;
 use std::ops::Range;
-use std::pin::Pin;
-use std::task::Context;
-use std::task::Poll;
-
-#[allow(unused)]
-struct WriteFut<'a> {
-    chn: &'a ChannelTyped,
-    coord: &'a PreBinnedPatchCoordEnum,
-    data: &'a dyn TimeBinned,
-    scy: &'a ScySession,
-}
-
-impl<'a> WriteFut<'a> {
-    #[allow(unused)]
-    fn new(
-        chn: &'a ChannelTyped,
-        coord: &'a PreBinnedPatchCoordEnum,
-        data: &'a dyn TimeBinned,
-        scy: &'a ScySession,
-    ) -> Self {
-        Self { chn, coord, data, scy }
-    }
-}
-
-impl<'a> Future for WriteFut<'a> {
-    type Output = Result<(), Error>;
-
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let _ = cx;
-        Poll::Ready(Ok(()))
-    }
-}
 
 pub struct ScyllaCacheReadProvider {
     scyqueue: ScyllaQueue,

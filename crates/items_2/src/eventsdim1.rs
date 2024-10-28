@@ -1,8 +1,6 @@
 use crate::binsdim0::BinsDim0;
 use crate::eventsxbindim0::EventsXbinDim0;
 use crate::IsoDateTime;
-use crate::TimeBinnableType;
-use crate::TimeBinnableTypeAggregator;
 use err::Error;
 use items_0::collect_s::CollectableDyn;
 use items_0::collect_s::CollectableType;
@@ -12,9 +10,6 @@ use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
 use items_0::overlap::HasTimestampDeque;
 use items_0::scalar_ops::ScalarOps;
-use items_0::timebin::TimeBinnable;
-use items_0::timebin::TimeBinned;
-use items_0::timebin::TimeBinner;
 use items_0::Appendable;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
@@ -148,12 +143,6 @@ where
     }
 }
 
-impl<STY: ScalarOps> items_0::IntoTimeBinnable for EventsDim1<STY> {
-    fn into_time_binnable(self) -> Box<dyn TimeBinnable> {
-        Box::new(self)
-    }
-}
-
 impl<STY> WithLen for EventsDim1<STY> {
     fn len(&self) -> usize {
         self.tss.len()
@@ -183,18 +172,6 @@ impl<STY: ScalarOps> HasTimestampDeque for EventsDim1<STY> {
 
     fn pulse_max(&self) -> Option<u64> {
         self.pulses.back().map(|x| *x)
-    }
-}
-
-impl<STY> TimeBinnableType for EventsDim1<STY>
-where
-    STY: ScalarOps,
-{
-    type Output = BinsDim0<STY>;
-    type Aggregator = EventsDim1Aggregator<STY>;
-
-    fn aggregator(_range: SeriesRange, _x_bin_count: usize, _do_time_weight: bool) -> Self::Aggregator {
-        panic!("TODO remove")
     }
 }
 
@@ -483,42 +460,6 @@ impl<STY: ScalarOps> EventsDim1Aggregator<STY> {
     }
 }
 
-impl<STY: ScalarOps> TimeBinnableTypeAggregator for EventsDim1Aggregator<STY> {
-    type Input = EventsDim1<STY>;
-    type Output = BinsDim0<STY>;
-
-    fn range(&self) -> &SeriesRange {
-        panic!("TODO remove")
-    }
-
-    fn ingest(&mut self, _item: &Self::Input) {
-        panic!("TODO remove")
-    }
-
-    fn result_reset(&mut self, _range: SeriesRange) -> Self::Output {
-        panic!("TODO remove")
-    }
-}
-
-impl<STY: ScalarOps> TimeBinnable for EventsDim1<STY> {
-    fn time_binner_new(
-        &self,
-        _binrange: BinnedRangeEnum,
-        _do_time_weight: bool,
-        _emit_empty_bins: bool,
-    ) -> Box<dyn TimeBinner> {
-        panic!("TODO remove")
-    }
-
-    fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
-        panic!("TODO remove")
-    }
-
-    fn to_container_bins(&self) -> Box<dyn items_0::timebin::BinningggContainerBinsDyn> {
-        panic!("TODO remove")
-    }
-}
-
 impl<STY> items_0::TypeName for EventsDim1<STY> {
     fn type_name(&self) -> String {
         let sty = std::any::type_name::<STY>();
@@ -533,14 +474,6 @@ impl<STY: ScalarOps> EventsNonObj for EventsDim1<STY> {
 }
 
 impl<STY: ScalarOps> Events for EventsDim1<STY> {
-    fn as_time_binnable_ref(&self) -> &dyn TimeBinnable {
-        self
-    }
-
-    fn as_time_binnable_mut(&mut self) -> &mut dyn TimeBinnable {
-        self
-    }
-
     fn verify(&self) -> bool {
         let mut good = true;
         let mut ts_max = 0;
@@ -744,47 +677,6 @@ impl<STY: ScalarOps> Events for EventsDim1<STY> {
 
     fn to_container_events(&self) -> Box<dyn ::items_0::timebin::BinningggContainerEventsDyn> {
         todo!("{}::to_container_events", self.type_name())
-    }
-}
-
-#[derive(Debug)]
-pub struct EventsDim1TimeBinner<STY: ScalarOps> {
-    _t1: PhantomData<STY>,
-}
-
-impl<STY: ScalarOps> EventsDim1TimeBinner<STY> {}
-
-impl<STY: ScalarOps> TimeBinner for EventsDim1TimeBinner<STY> {
-    fn bins_ready_count(&self) -> usize {
-        panic!("TODO remove")
-    }
-
-    fn bins_ready(&mut self) -> Option<Box<dyn TimeBinned>> {
-        panic!("TODO remove")
-    }
-
-    fn ingest(&mut self, _item: &mut dyn TimeBinnable) {
-        panic!("TODO remove")
-    }
-
-    fn push_in_progress(&mut self, _push_empty: bool) {
-        panic!("TODO remove")
-    }
-
-    fn cycle(&mut self) {
-        panic!("TODO remove")
-    }
-
-    fn set_range_complete(&mut self) {
-        panic!("TODO remove")
-    }
-
-    fn empty(&self) -> Box<dyn TimeBinned> {
-        panic!("TODO remove")
-    }
-
-    fn append_empty_until_end(&mut self) {
-        panic!("TODO remove")
     }
 }
 

@@ -1,4 +1,3 @@
-use items_0::timebin::TimeBinnable;
 use items_0::AppendEmptyBin;
 use items_0::Empty;
 use items_0::HasNonemptyFirstBin;
@@ -20,94 +19,6 @@ macro_rules! trace_ingest_event { ($($arg:tt)*) => ( if false { trace!($($arg)*)
 
 #[allow(unused)]
 macro_rules! trace_ingest_detail { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
-
-pub trait TimeBinnerCommonV0Trait {
-    type Input: 'static;
-    type Output: WithLen + Empty + AppendEmptyBin + HasNonemptyFirstBin + 'static;
-    fn type_name() -> &'static str;
-    fn common_bins_ready_count(&self) -> usize;
-    fn common_range_current(&self) -> &SeriesRange;
-    fn common_has_more_range(&self) -> bool;
-    fn common_next_bin_range(&mut self) -> Option<SeriesRange>;
-    fn common_set_current_range(&mut self, range: Option<SeriesRange>);
-    fn common_take_or_append_all_from(&mut self, item: Self::Output);
-    fn common_result_reset(&mut self, range: Option<SeriesRange>) -> Self::Output;
-    fn common_agg_ingest(&mut self, item: &mut Self::Input);
-    fn common_has_lst(&self) -> bool;
-    fn common_feed_lst(&mut self, item: &mut Self::Input);
-}
-
-pub struct TimeBinnerCommonV0Func {}
-
-impl TimeBinnerCommonV0Func {
-    pub fn ingest<B>(binner: &mut B, item: &mut dyn TimeBinnable)
-    where
-        B: TimeBinnerCommonV0Trait,
-    {
-        panic!("TimeBinnerCommonV0Func::ingest")
-    }
-
-    fn agg_ingest<B>(binner: &mut B, item: &mut <B as TimeBinnerCommonV0Trait>::Input)
-    where
-        B: TimeBinnerCommonV0Trait,
-    {
-        //self.agg.ingest(item);
-        <B as TimeBinnerCommonV0Trait>::common_agg_ingest(binner, item)
-    }
-
-    pub fn push_in_progress<B>(binner: &mut B, push_empty: bool)
-    where
-        B: TimeBinnerCommonV0Trait,
-    {
-        let self_name = B::type_name();
-        trace_ingest_item!("{self_name}::push_in_progress  push_empty {push_empty}");
-        // TODO expand should be derived from AggKind. Is it still required after all?
-        // TODO here, the expand means that agg will assume that the current value is kept constant during
-        // the rest of the time range.
-        if B::common_has_more_range(binner) {
-            let range_next = TimeBinnerCommonV0Trait::common_next_bin_range(binner);
-            B::common_set_current_range(binner, range_next.clone());
-            let bins = TimeBinnerCommonV0Trait::common_result_reset(binner, range_next);
-            if bins.len() != 1 {
-                error!("{self_name}::push_in_progress  bins.len() {}", bins.len());
-                return;
-            } else {
-                if push_empty || HasNonemptyFirstBin::has_nonempty_first_bin(&bins) {
-                    TimeBinnerCommonV0Trait::common_take_or_append_all_from(binner, bins);
-                }
-            }
-        }
-    }
-
-    pub fn cycle<B>(binner: &mut B)
-    where
-        B: TimeBinnerCommonV0Trait,
-    {
-        let self_name = any::type_name::<Self>();
-        trace_ingest_item!("{self_name}::cycle");
-        // TODO refactor this logic.
-        let n = TimeBinnerCommonV0Trait::common_bins_ready_count(binner);
-        TimeBinnerCommonV0Func::push_in_progress(binner, true);
-        if TimeBinnerCommonV0Trait::common_bins_ready_count(binner) == n {
-            let range_next = TimeBinnerCommonV0Trait::common_next_bin_range(binner);
-            B::common_set_current_range(binner, range_next.clone());
-            if let Some(range) = range_next {
-                let mut bins = <B as TimeBinnerCommonV0Trait>::Output::empty();
-                if range.is_time() {
-                    bins.append_empty_bin(range.beg_u64(), range.end_u64());
-                } else {
-                    error!("TODO  {self_name}::cycle  is_pulse");
-                }
-                TimeBinnerCommonV0Trait::common_take_or_append_all_from(binner, bins);
-                if TimeBinnerCommonV0Trait::common_bins_ready_count(binner) <= n {
-                    error!("failed to push a zero bin");
-                }
-            } else {
-                warn!("cycle: no in-progress bin pushed, but also no more bin to add as zero-bin");
-            }
-        }
-    }
-}
 
 pub trait ChooseIndicesForTimeBin {
     fn choose_indices_unweight(&self, beg: u64, end: u64) -> (Option<usize>, usize, usize);

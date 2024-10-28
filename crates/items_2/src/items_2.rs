@@ -173,21 +173,6 @@ impl Mergeable for Box<dyn Events> {
     }
 }
 
-// TODO rename to `Typed`
-pub trait TimeBinnableType: Send + Unpin + Empty {
-    type Output: TimeBinnableType;
-    type Aggregator: TimeBinnableTypeAggregator<Input = Self, Output = Self::Output> + Send + Unpin;
-    fn aggregator(range: SeriesRange, bin_count: usize, do_time_weight: bool) -> Self::Aggregator;
-}
-
-pub trait TimeBinnableTypeAggregator: Send {
-    type Input: TimeBinnableType;
-    type Output: TimeBinnableType;
-    fn range(&self) -> &SeriesRange;
-    fn ingest(&mut self, item: &Self::Input);
-    fn result_reset(&mut self, range: SeriesRange) -> Self::Output;
-}
-
 pub trait ChannelEventsInput: Stream<Item = Sitemty<ChannelEvents>> + EventTransform + Send {}
 
 impl<T> ChannelEventsInput for T where T: Stream<Item = Sitemty<ChannelEvents>> + EventTransform + Send {}

@@ -8,7 +8,6 @@ use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
 use items_0::isodate::IsoDateTime;
 use items_0::scalar_ops::ScalarOps;
-use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinnableTy;
 use items_0::timebin::TimeBinnerTy;
 use items_0::AsAnyMut;
@@ -339,30 +338,6 @@ impl TimeBinnableTy for EventsDim0Enum {
 }
 
 // NOTE just a dummy because currently we don't use this for time binning
-impl TimeBinnable for EventsDim0Enum {
-    fn time_binner_new(
-        &self,
-        binrange: BinnedRangeEnum,
-        do_time_weight: bool,
-        emit_empty_bins: bool,
-    ) -> Box<dyn items_0::timebin::TimeBinner> {
-        todo!()
-    }
-
-    fn to_box_to_json_result(&self) -> Box<dyn ToJsonResult> {
-        todo!()
-    }
-
-    fn to_container_bins(&self) -> Box<dyn items_0::timebin::BinningggContainerBinsDyn> {
-        panic!("logic error must not get used on events")
-    }
-}
-
-impl items_0::IntoTimeBinnable for EventsDim0Enum {
-    fn into_time_binnable(self) -> Box<dyn TimeBinnable> {
-        Box::new(self)
-    }
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct EventsDim0EnumChunkOutput {
@@ -373,14 +348,6 @@ pub struct EventsDim0EnumChunkOutput {
 }
 
 impl Events for EventsDim0Enum {
-    fn as_time_binnable_ref(&self) -> &dyn items_0::timebin::TimeBinnable {
-        todo!()
-    }
-
-    fn as_time_binnable_mut(&mut self) -> &mut dyn items_0::timebin::TimeBinnable {
-        todo!()
-    }
-
     fn verify(&self) -> bool {
         todo!()
     }
