@@ -1,6 +1,5 @@
 use crate::binsxbindim0::BinsXbinDim0;
 use crate::IsoDateTime;
-use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
 use err::Error;
@@ -8,7 +7,6 @@ use items_0::collect_s::CollectableDyn;
 use items_0::collect_s::CollectableType;
 use items_0::collect_s::CollectedDyn;
 use items_0::collect_s::CollectorTy;
-use items_0::collect_s::ToJsonBytes;
 use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
 use items_0::overlap::HasTimestampDeque;
@@ -186,8 +184,6 @@ impl<STY: ScalarOps> HasTimestampDeque for EventsXbinDim0<STY> {
         self.pulses.back().map(|x| *x)
     }
 }
-
-items_0::impl_range_overlap_info_events!(EventsXbinDim0);
 
 impl<STY: ScalarOps> EventsNonObj for EventsXbinDim0<STY> {
     fn into_tss_pulses(self: Box<Self>) -> (VecDeque<u64>, VecDeque<u64>) {
@@ -455,70 +451,7 @@ impl<STY: ScalarOps> TimeBinner for EventsXbinDim0TimeBinner<STY> {
     }
 
     fn ingest(&mut self, item: &mut dyn TimeBinnable) {
-        trace2!(
-            "TimeBinner for {} ingest  agg.range {:?}  item {:?}",
-            Self::type_name(),
-            self.agg.range(),
-            item
-        );
-        if item.len() == 0 {
-            // Return already here, RangeOverlapInfo would not give much sense.
-            return;
-        }
-        // TODO optimize by remembering at which event array index we have arrived.
-        // That needs modified interfaces which can take and yield the start and latest index.
-        loop {
-            while item.starts_after(self.agg.range()) {
-                trace!(
-                    "{}  IGNORE ITEM  AND CYCLE  BECAUSE item.starts_after",
-                    Self::type_name()
-                );
-                self.cycle();
-                if self.rng.is_none() {
-                    warn!("{}  no more bin in edges B", Self::type_name());
-                    return;
-                }
-            }
-            if item.ends_before(self.agg.range()) {
-                trace!(
-                    "{}  IGNORE ITEM  BECAUSE ends_before  {:?}  {:?}",
-                    Self::type_name(),
-                    self.agg.range(),
-                    item
-                );
-                return;
-            } else {
-                if self.rng.is_none() {
-                    trace!("{}  no more bin in edges D", Self::type_name());
-                    return;
-                } else {
-                    if let Some(item) = item
-                        .as_any_ref()
-                        // TODO make statically sure that we attempt to cast to the correct type here:
-                        .downcast_ref::<<EventsXbinDim0Aggregator<STY> as TimeBinnableTypeAggregator>::Input>()
-                    {
-                        // TODO collect statistics associated with this request:
-                        trace_ingest!("{}  FEED THE ITEM...", Self::type_name());
-                        self.agg.ingest(item);
-                        if item.ends_after(self.agg.range()) {
-                            trace_ingest!("{}  FED ITEM, ENDS AFTER.", Self::type_name());
-                            self.cycle();
-                            if self.rng.is_none() {
-                                warn!("{}  no more bin in edges C", Self::type_name());
-                                return;
-                            } else {
-                                trace_ingest!("{}  FED ITEM, CYCLED, CONTINUE.", Self::type_name());
-                            }
-                        } else {
-                            trace_ingest!("{}  FED ITEM.", Self::type_name());
-                            break;
-                        }
-                    } else {
-                        error!("{}::ingest  unexpected item type", Self::type_name());
-                    };
-                }
-            }
-        }
+        panic!("TODO remove TimeBinner for EventsXbinDim0TimeBinner ingest")
     }
 
     fn push_in_progress(&mut self, push_empty: bool) {

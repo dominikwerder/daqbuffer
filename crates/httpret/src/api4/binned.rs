@@ -207,22 +207,13 @@ async fn binned_json_single(
     span1.in_scope(|| {
         debug!("begin");
     });
-    let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
-    let open_bytes = Arc::pin(open_bytes);
-    let open_bytes2 = Arc::pin(OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone()));
+    let open_bytes = Arc::pin(OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone()));
     let (events_read_provider, cache_read_provider) =
-        make_read_provider(ch_conf.name(), scyqueue, open_bytes2, ctx, ncc);
-    let item = streams::timebinnedjson::timebinned_json(
-        query,
-        ch_conf,
-        ctx,
-        open_bytes,
-        cache_read_provider,
-        events_read_provider,
-    )
-    .instrument(span1)
-    .await
-    .map_err(|e| Error::BinnedStream(e))?;
+        make_read_provider(ch_conf.name(), scyqueue, open_bytes, ctx, ncc);
+    let item = streams::timebinnedjson::timebinned_json(query, ch_conf, ctx, cache_read_provider, events_read_provider)
+        .instrument(span1)
+        .await
+        .map_err(|e| Error::BinnedStream(e))?;
     match item {
         CollectResult::Some(item) => {
             let ret = response(StatusCode::OK)
@@ -272,22 +263,14 @@ async fn binned_json_framed(
     span1.in_scope(|| {
         debug!("begin");
     });
-    let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
-    let open_bytes = Arc::pin(open_bytes);
-    let open_bytes2 = Arc::pin(OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone()));
+    let open_bytes = Arc::pin(OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone()));
     let (events_read_provider, cache_read_provider) =
-        make_read_provider(ch_conf.name(), scyqueue, open_bytes2, ctx, ncc);
-    let stream = streams::timebinnedjson::timebinned_json_framed(
-        query,
-        ch_conf,
-        ctx,
-        open_bytes,
-        cache_read_provider,
-        events_read_provider,
-    )
-    .instrument(span1)
-    .await
-    .map_err(|e| Error::BinnedStream(e))?;
+        make_read_provider(ch_conf.name(), scyqueue, open_bytes, ctx, ncc);
+    let stream =
+        streams::timebinnedjson::timebinned_json_framed(query, ch_conf, ctx, cache_read_provider, events_read_provider)
+            .instrument(span1)
+            .await
+            .map_err(|e| Error::BinnedStream(e))?;
     let stream = bytes_chunks_to_len_framed_str(stream);
     let ret = response(StatusCode::OK)
         .header(CONTENT_TYPE, APP_JSON_FRAMED)

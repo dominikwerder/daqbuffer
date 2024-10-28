@@ -1,4 +1,3 @@
-use items_0::overlap::RangeOverlapInfo;
 use items_0::timebin::TimeBinnable;
 use items_0::AppendEmptyBin;
 use items_0::Empty;
@@ -23,7 +22,7 @@ macro_rules! trace_ingest_event { ($($arg:tt)*) => ( if false { trace!($($arg)*)
 macro_rules! trace_ingest_detail { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
 
 pub trait TimeBinnerCommonV0Trait {
-    type Input: RangeOverlapInfo + 'static;
+    type Input: 'static;
     type Output: WithLen + Empty + AppendEmptyBin + HasNonemptyFirstBin + 'static;
     fn type_name() -> &'static str;
     fn common_bins_ready_count(&self) -> usize;
@@ -45,89 +44,7 @@ impl TimeBinnerCommonV0Func {
     where
         B: TimeBinnerCommonV0Trait,
     {
-        let self_name = B::type_name();
-        trace_ingest_item!(
-            "TimeBinner for {} ingest  common_range_current {:?}  item {:?}",
-            self_name,
-            binner.common_range_current(),
-            item
-        );
-        if item.len() == 0 {
-            // Return already here, RangeOverlapInfo would not give much sense.
-            return;
-        }
-        // TODO optimize by remembering at which event array index we have arrived.
-        // That needs modified interfaces which can take and yield the start and latest index.
-        // Or consume the input data.
-        if B::common_has_lst(binner) == false {
-            if let Some(item) = item
-                .as_any_mut()
-                // TODO make statically sure that we attempt to cast to the correct type here:
-                .downcast_mut::<B::Input>()
-            {
-                B::common_feed_lst(binner, item);
-            } else {
-                error!(
-                    "{self_name}::ingest  unexpected item type {}  expected {}",
-                    item.type_name(),
-                    any::type_name::<B::Input>()
-                );
-                return;
-            }
-        }
-        loop {
-            while item.starts_after(B::common_range_current(binner)) {
-                trace_ingest_item!("{self_name}  ignore item and cycle  starts_after");
-                TimeBinnerCommonV0Func::cycle(binner);
-                if !B::common_has_more_range(binner) {
-                    debug!("{self_name}  no more bin in edges after starts_after");
-                    return;
-                }
-            }
-            if item.ends_before(B::common_range_current(binner)) {
-                trace_ingest_item!("{self_name}  ignore item  ends_before");
-                return;
-            }
-            {
-                if !B::common_has_more_range(binner) {
-                    trace_ingest_item!("{self_name}  no more bin in edges");
-                    return;
-                } else {
-                    if let Some(item) = item
-                        .as_any_mut()
-                        // TODO make statically sure that we attempt to cast to the correct type here:
-                        .downcast_mut::<B::Input>()
-                    {
-                        // TODO collect statistics associated with this request:
-                        trace_ingest_item!("{self_name}  FEED THE ITEM...");
-                        TimeBinnerCommonV0Func::agg_ingest(binner, item);
-                        if item.ends_after(B::common_range_current(binner)) {
-                            trace_ingest_item!(
-                                "{self_name}  FED ITEM, ENDS AFTER  agg-range {:?}",
-                                B::common_range_current(binner)
-                            );
-                            TimeBinnerCommonV0Func::cycle(binner);
-                            if !B::common_has_more_range(binner) {
-                                warn!("{self_name}  no more bin in edges after ingest and cycle");
-                                return;
-                            } else {
-                                trace_ingest_item!("{self_name}  item fed, cycled, continue");
-                            }
-                        } else {
-                            trace_ingest_item!("{self_name}  item fed, break");
-                            break;
-                        }
-                    } else {
-                        error!(
-                            "{self_name}::ingest  unexpected item type {}  expected {}",
-                            item.type_name(),
-                            any::type_name::<B::Input>()
-                        );
-                        return;
-                    };
-                }
-            }
-        }
+        panic!("TimeBinnerCommonV0Func::ingest")
     }
 
     fn agg_ingest<B>(binner: &mut B, item: &mut <B as TimeBinnerCommonV0Trait>::Input)
@@ -243,7 +160,7 @@ impl ChooseIndicesForTimeBinEvents {
 }
 
 pub trait TimeAggregatorCommonV0Trait {
-    type Input: WithLen + RangeOverlapInfo + ChooseIndicesForTimeBin + 'static;
+    type Input: WithLen + ChooseIndicesForTimeBin + 'static;
     type Output: WithLen + Empty + AppendEmptyBin + HasNonemptyFirstBin + 'static;
     fn type_name() -> &'static str;
     fn common_range_current(&self) -> &SeriesRange;

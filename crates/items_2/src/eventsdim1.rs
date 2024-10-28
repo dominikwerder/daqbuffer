@@ -1,7 +1,6 @@
 use crate::binsdim0::BinsDim0;
 use crate::eventsxbindim0::EventsXbinDim0;
 use crate::IsoDateTime;
-use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
 use err::Error;
@@ -187,8 +186,6 @@ impl<STY: ScalarOps> HasTimestampDeque for EventsDim1<STY> {
     }
 }
 
-items_0::impl_range_overlap_info_events!(EventsDim1);
-
 impl<STY> TimeBinnableType for EventsDim1<STY>
 where
     STY: ScalarOps,
@@ -196,7 +193,7 @@ where
     type Output = BinsDim0<STY>;
     type Aggregator = EventsDim1Aggregator<STY>;
 
-    fn aggregator(range: SeriesRange, x_bin_count: usize, do_time_weight: bool) -> Self::Aggregator {
+    fn aggregator(_range: SeriesRange, _x_bin_count: usize, _do_time_weight: bool) -> Self::Aggregator {
         panic!("TODO remove")
     }
 }

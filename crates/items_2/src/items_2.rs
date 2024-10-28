@@ -24,7 +24,6 @@ pub mod transform;
 use channelevents::ChannelEvents;
 use futures_util::Stream;
 use items_0::isodate::IsoDateTime;
-use items_0::overlap::RangeOverlapInfo;
 use items_0::streamitem::Sitemty;
 use items_0::transform::EventTransform;
 use items_0::Empty;
@@ -175,7 +174,7 @@ impl Mergeable for Box<dyn Events> {
 }
 
 // TODO rename to `Typed`
-pub trait TimeBinnableType: Send + Unpin + RangeOverlapInfo + Empty {
+pub trait TimeBinnableType: Send + Unpin + Empty {
     type Output: TimeBinnableType;
     type Aggregator: TimeBinnableTypeAggregator<Input = Self, Output = Self::Output> + Send + Unpin;
     fn aggregator(range: SeriesRange, bin_count: usize, do_time_weight: bool) -> Self::Aggregator;

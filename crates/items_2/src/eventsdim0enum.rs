@@ -7,7 +7,6 @@ use items_0::collect_s::ToJsonBytes;
 use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
 use items_0::isodate::IsoDateTime;
-use items_0::overlap::RangeOverlapInfo;
 use items_0::scalar_ops::ScalarOps;
 use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinnableTy;
@@ -280,20 +279,6 @@ impl ByteEstimate for EventsDim0Enum {
 
 impl EventsNonObj for EventsDim0Enum {
     fn into_tss_pulses(self: Box<Self>) -> (VecDeque<u64>, VecDeque<u64>) {
-        todo!()
-    }
-}
-
-impl RangeOverlapInfo for EventsDim0Enum {
-    fn ends_before(&self, range: &SeriesRange) -> bool {
-        todo!()
-    }
-
-    fn ends_after(&self, range: &SeriesRange) -> bool {
-        todo!()
-    }
-
-    fn starts_after(&self, range: &SeriesRange) -> bool {
         todo!()
     }
 }

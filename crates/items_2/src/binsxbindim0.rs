@@ -1,10 +1,8 @@
 use crate::ts_offs_from_abs;
 use crate::ts_offs_from_abs_with_anchor;
 use crate::IsoDateTime;
-use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
-use chrono::{TimeZone, Utc};
 use err::Error;
 use items_0::collect_s::CollectableDyn;
 use items_0::collect_s::CollectableType;
@@ -232,20 +230,6 @@ impl<STY> Resettable for BinsXbinDim0<STY> {
         self.mins.clear();
         self.maxs.clear();
         self.avgs.clear();
-    }
-}
-
-impl<NTY> RangeOverlapInfo for BinsXbinDim0<NTY> {
-    fn ends_before(&self, range: &SeriesRange) -> bool {
-        todo!()
-    }
-
-    fn ends_after(&self, range: &SeriesRange) -> bool {
-        todo!()
-    }
-
-    fn starts_after(&self, range: &SeriesRange) -> bool {
-        todo!()
     }
 }
 

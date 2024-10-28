@@ -1,6 +1,4 @@
 use crate::binsdim0::BinsDim0;
-use crate::framable::FrameType;
-use crate::framable::FrameTypeStatic;
 use crate::timebin::ChooseIndicesForTimeBin;
 use crate::timebin::ChooseIndicesForTimeBinEvents;
 use crate::timebin::TimeAggregatorCommonV0Func;
@@ -8,44 +6,35 @@ use crate::timebin::TimeAggregatorCommonV0Trait;
 use crate::timebin::TimeBinnerCommonV0Func;
 use crate::timebin::TimeBinnerCommonV0Trait;
 use crate::IsoDateTime;
-use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
 use err::Error;
 use items_0::collect_s::CollectableDyn;
 use items_0::collect_s::CollectedDyn;
-use items_0::collect_s::CollectorDyn;
 use items_0::collect_s::CollectorTy;
-use items_0::collect_s::ToJsonBytes;
 use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
-use items_0::framable::FrameTypeInnerStatic;
 use items_0::overlap::HasTimestampDeque;
 use items_0::scalar_ops::ScalarOps;
-use items_0::test::f32_iter_cmp_near;
 use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinned;
 use items_0::timebin::TimeBinner;
 use items_0::AppendAllFrom;
-use items_0::AppendEmptyBin;
 use items_0::Appendable;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
 use items_0::Empty;
 use items_0::Events;
 use items_0::EventsNonObj;
-use items_0::HasNonemptyFirstBin;
 use items_0::MergeError;
 use items_0::Resettable;
 use items_0::TypeName;
 use items_0::WithLen;
 use netpod::is_false;
 use netpod::log::*;
-use netpod::range::evrange::NanoRange;
 use netpod::range::evrange::SeriesRange;
 use netpod::timeunits::MS;
 use netpod::timeunits::SEC;
-use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
 use netpod::TsNano;
 use serde::Deserialize;
@@ -243,8 +232,6 @@ impl<STY: ScalarOps> HasTimestampDeque for EventsDim0<STY> {
         self.pulses.back().map(|x| *x)
     }
 }
-
-items_0::impl_range_overlap_info_events!(EventsDim0);
 
 impl<STY> ChooseIndicesForTimeBin for EventsDim0<STY> {
     fn choose_indices_unweight(&self, beg: u64, end: u64) -> (Option<usize>, usize, usize) {
@@ -1432,30 +1419,6 @@ mod test_serde_opt {
 }
 
 #[test]
-fn overlap_info_00() {
-    let mut ev1 = EventsDim0::empty();
-    ev1.push(MS * 1200, 3, 1.2f32);
-    ev1.push(MS * 3200, 3, 3.2f32);
-    let range = SeriesRange::TimeRange(NanoRange {
-        beg: MS * 1000,
-        end: MS * 2000,
-    });
-    assert_eq!(ev1.ends_after(&range), true);
-}
-
-#[test]
-fn overlap_info_01() {
-    let mut ev1 = EventsDim0::empty();
-    ev1.push(MS * 1200, 3, 1.2f32);
-    ev1.push(MS * 1400, 3, 3.2f32);
-    let range = SeriesRange::TimeRange(NanoRange {
-        beg: MS * 1000,
-        end: MS * 2000,
-    });
-    assert_eq!(ev1.ends_after(&range), false);
-}
-
-#[test]
 fn binner_00() {
     let mut ev1 = EventsDim0::empty();
     ev1.push(MS * 1200, 3, 1.2f32);
@@ -1553,7 +1516,7 @@ fn bin_binned_02() {
 
 #[test]
 fn events_timebin_ingest_continuous_00() {
-    let binrange = BinnedRangeEnum::Time(BinnedRange {
+    let binrange = BinnedRangeEnum::Time(netpod::BinnedRange {
         bin_len: TsNano::from_ns(SEC * 2),
         bin_off: 9,
         bin_cnt: 20,
@@ -1573,5 +1536,10 @@ fn events_timebin_ingest_continuous_00() {
     let mut exp = BinsDim0::empty();
     // exp.push(SEC * 18, SEC * 20, 0, 0, 0, 0., None);
     exp.push(SEC * 20, SEC * 22, 1, 20, 20, 20., 20);
-    assert!(f32_iter_cmp_near(got.avgs.clone(), exp.avgs.clone(), 0.0001, 0.0001));
+    assert!(items_0::test::f32_iter_cmp_near(
+        got.avgs.clone(),
+        exp.avgs.clone(),
+        0.0001,
+        0.0001
+    ));
 }

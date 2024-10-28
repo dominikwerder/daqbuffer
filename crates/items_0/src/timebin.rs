@@ -1,28 +1,17 @@
-pub mod timebinimpl;
-
 use crate::collect_s::CollectableDyn;
 use crate::collect_s::CollectorDyn;
 use crate::collect_s::ToJsonResult;
-use crate::container::ByteEstimate;
-use crate::overlap::RangeOverlapInfo;
-use crate::vecpreview::PreviewRange;
 use crate::AsAnyMut;
 use crate::AsAnyRef;
-use crate::Empty;
 use crate::Events;
 use crate::Resettable;
 use crate::TypeName;
 use crate::WithLen;
-use err::thiserror;
 use err::Error;
-use err::ThisError;
 use netpod::log::*;
-use netpod::range::evrange::SeriesRange;
 use netpod::BinnedRange;
 use netpod::BinnedRangeEnum;
 use netpod::TsNano;
-use serde::Deserialize;
-use serde::Serialize;
 use std::any::Any;
 use std::fmt;
 use std::ops::Range;
@@ -170,20 +159,6 @@ impl Clone for Box<dyn TimeBinned> {
     }
 }
 
-impl RangeOverlapInfo for Box<dyn TimeBinned> {
-    fn ends_before(&self, range: &SeriesRange) -> bool {
-        todo!()
-    }
-
-    fn ends_after(&self, range: &SeriesRange) -> bool {
-        todo!()
-    }
-
-    fn starts_after(&self, range: &SeriesRange) -> bool {
-        todo!()
-    }
-}
-
 impl TimeBinnable for Box<dyn TimeBinned> {
     fn time_binner_new(
         &self,
@@ -230,9 +205,7 @@ pub trait TimeBinner: fmt::Debug + Send {
 
 /// Provides a time-binned representation of the implementing type.
 /// In contrast to `TimeBinnableType` this is meant for trait objects.
-pub trait TimeBinnable:
-    fmt::Debug + WithLen + RangeOverlapInfo + CollectableDyn + Any + AsAnyRef + AsAnyMut + Send
-{
+pub trait TimeBinnable: fmt::Debug + WithLen + CollectableDyn + Any + AsAnyRef + AsAnyMut + Send {
     // TODO implementors may fail if edges contain not at least 2 entries.
     fn time_binner_new(
         &self,
@@ -252,21 +225,6 @@ impl WithLen for Box<dyn TimeBinnable> {
     }
 }
 
-#[allow(unused)]
-impl RangeOverlapInfo for Box<dyn TimeBinnable> {
-    fn ends_before(&self, range: &SeriesRange) -> bool {
-        todo!()
-    }
-
-    fn ends_after(&self, range: &SeriesRange) -> bool {
-        todo!()
-    }
-
-    fn starts_after(&self, range: &SeriesRange) -> bool {
-        todo!()
-    }
-}
-
 impl TimeBinnable for Box<dyn TimeBinnable> {
     fn time_binner_new(
         &self,
@@ -283,20 +241,6 @@ impl TimeBinnable for Box<dyn TimeBinnable> {
 
     fn to_container_bins(&self) -> Box<dyn BinningggContainerBinsDyn> {
         self.as_ref().to_container_bins()
-    }
-}
-
-impl RangeOverlapInfo for Box<dyn Events> {
-    fn ends_before(&self, range: &SeriesRange) -> bool {
-        RangeOverlapInfo::ends_before(self.as_ref(), range)
-    }
-
-    fn ends_after(&self, range: &SeriesRange) -> bool {
-        RangeOverlapInfo::ends_after(self.as_ref(), range)
-    }
-
-    fn starts_after(&self, range: &SeriesRange) -> bool {
-        RangeOverlapInfo::starts_after(self.as_ref(), range)
     }
 }
 
@@ -425,7 +369,7 @@ impl TimeBinnerTy for TimeBinnerDynStruct {
 }
 
 impl TimeBinner for TimeBinnerDynStruct {
-    fn ingest(&mut self, item: &mut dyn TimeBinnable) {
+    fn ingest(&mut self, _item: &mut dyn TimeBinnable) {
         todo!()
     }
 
@@ -437,7 +381,7 @@ impl TimeBinner for TimeBinnerDynStruct {
         todo!()
     }
 
-    fn push_in_progress(&mut self, push_empty: bool) {
+    fn push_in_progress(&mut self, _push_empty: bool) {
         todo!()
     }
 

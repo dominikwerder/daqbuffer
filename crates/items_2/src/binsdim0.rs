@@ -3,11 +3,8 @@ use crate::timebin::TimeBinnerCommonV0Trait;
 use crate::ts_offs_from_abs;
 use crate::ts_offs_from_abs_with_anchor;
 use crate::IsoDateTime;
-use crate::RangeOverlapInfo;
 use crate::TimeBinnableType;
 use crate::TimeBinnableTypeAggregator;
-use chrono::TimeZone;
-use chrono::Utc;
 use err::Error;
 use items_0::collect_s::CollectableDyn;
 use items_0::collect_s::CollectableType;
@@ -284,8 +281,6 @@ impl<STY: ScalarOps> HasTimestampDeque for BinsDim0<STY> {
         todo!()
     }
 }
-
-items_0::impl_range_overlap_info_bins!(BinsDim0);
 
 impl<NTY: ScalarOps> AppendEmptyBin for BinsDim0<NTY> {
     fn append_empty_bin(&mut self, ts1: u64, ts2: u64) {
@@ -1230,121 +1225,17 @@ impl<NTY: ScalarOps> TimeBinner for BinsDim0TimeBinner<NTY> {
     }
 
     fn ingest(&mut self, item: &mut dyn TimeBinnable) {
-        /*let self_name = any::type_name::<Self>();
-        if item.len() == 0 {
-            // Return already here, RangeOverlapInfo would not give much sense.
-            return;
-        }
-        if self.edges.len() < 2 {
-            warn!("TimeBinnerDyn for {self_name}  no more bin in edges A\n{:?}\n\n", item);
-            return;
-        }
-        // TODO optimize by remembering at which event array index we have arrived.
-        // That needs modified interfaces which can take and yield the start and latest index.
-        loop {
-            while item.starts_after(NanoRange {
-                beg: 0,
-                end: self.edges[1],
-            }) {
-                self.cycle();
-                if self.edges.len() < 2 {
-                    warn!("TimeBinnerDyn for {self_name}  no more bin in edges B\n{:?}\n\n", item);
-                    return;
-                }
-            }
-            if item.ends_before(NanoRange {
-                beg: self.edges[0],
-                end: u64::MAX,
-            }) {
-                return;
-            } else {
-                if self.edges.len() < 2 {
-                    warn!("TimeBinnerDyn for {self_name}  edge list exhausted");
-                    return;
-                } else {
-                    let agg = if let Some(agg) = self.agg.as_mut() {
-                        agg
-                    } else {
-                        self.agg = Some(BinsDim0Aggregator::new(
-                            // We know here that we have enough edges for another bin.
-                            // and `next_bin_range` will pop the first edge.
-                            self.next_bin_range().unwrap(),
-                            self.do_time_weight,
-                        ));
-                        self.agg.as_mut().unwrap()
-                    };
-                    if let Some(item) = item
-                        .as_any_ref()
-                        // TODO make statically sure that we attempt to cast to the correct type here:
-                        .downcast_ref::<<BinsDim0Aggregator<NTY> as TimeBinnableTypeAggregator>::Input>()
-                    {
-                        agg.ingest(item);
-                    } else {
-                        let tyid_item = std::any::Any::type_id(item.as_any_ref());
-                        error!("not correct item type  {:?}", tyid_item);
-                    };
-                    if item.ends_after(agg.range().clone()) {
-                        self.cycle();
-                        if self.edges.len() < 2 {
-                            warn!("TimeBinnerDyn for {self_name}  no more bin in edges C\n{:?}\n\n", item);
-                            return;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-            }
-        }*/
-        TimeBinnerCommonV0Func::ingest(self, item)
+        panic!("TODO do not use")
     }
 
     // TODO there is too much common code between implementors:
     fn push_in_progress(&mut self, push_empty: bool) {
-        // TODO expand should be derived from AggKind. Is it still required after all?
-        /*let expand = true;
-        if let Some(agg) = self.agg.as_mut() {
-            let dummy_range = NanoRange { beg: 4, end: 5 };
-            let mut bins = agg.result_reset(dummy_range, expand);
-            self.agg = None;
-            assert_eq!(bins.len(), 1);
-            if push_empty || bins.counts[0] != 0 {
-                match self.ready.as_mut() {
-                    Some(ready) => {
-                        ready.append_all_from(&mut bins);
-                    }
-                    None => {
-                        self.ready = Some(bins);
-                    }
-                }
-            }
-        }*/
-        TimeBinnerCommonV0Func::push_in_progress(self, push_empty)
+        panic!("TODO do not use")
     }
 
     // TODO there is too much common code between implementors:
     fn cycle(&mut self) {
-        /*let n = self.bins_ready_count();
-        self.push_in_progress(true);
-        if self.bins_ready_count() == n {
-            if let Some(range) = self.next_bin_range() {
-                let mut bins = BinsDim0::<NTY>::empty();
-                bins.append_zero(range.beg, range.end);
-                match self.ready.as_mut() {
-                    Some(ready) => {
-                        ready.append_all_from(&mut bins);
-                    }
-                    None => {
-                        self.ready = Some(bins);
-                    }
-                }
-                if self.bins_ready_count() <= n {
-                    error!("failed to push a zero bin");
-                }
-            } else {
-                warn!("cycle: no in-progress bin pushed, but also no more bin to add as zero-bin");
-            }
-        }*/
-        TimeBinnerCommonV0Func::cycle(self)
+        panic!("TODO do not use")
     }
 
     fn set_range_complete(&mut self) {

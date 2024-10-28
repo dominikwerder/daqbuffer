@@ -7,7 +7,6 @@ use items_0::collect_s::CollectorDyn;
 use items_0::container::ByteEstimate;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::isodate::IsoDateTime;
-use items_0::overlap::RangeOverlapInfo;
 use items_0::streamitem::ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID;
 use items_0::timebin::TimeBinnable;
 use items_0::timebin::TimeBinnableTy;
@@ -827,20 +826,6 @@ impl Mergeable for ChannelEvents {
     }
 }
 
-impl RangeOverlapInfo for ChannelEvents {
-    fn ends_before(&self, range: &SeriesRange) -> bool {
-        todo!()
-    }
-
-    fn ends_after(&self, range: &SeriesRange) -> bool {
-        todo!()
-    }
-
-    fn starts_after(&self, range: &SeriesRange) -> bool {
-        todo!()
-    }
-}
-
 impl TimeBinnable for ChannelEvents {
     fn time_binner_new(
         &self,
@@ -865,7 +850,7 @@ impl EventsNonObj for ChannelEvents {
     fn into_tss_pulses(self: Box<Self>) -> (VecDeque<u64>, VecDeque<u64>) {
         match *self {
             ChannelEvents::Events(k) => k.into_tss_pulses(),
-            ChannelEvents::Status(k) => (VecDeque::new(), VecDeque::new()),
+            ChannelEvents::Status(_) => (VecDeque::new(), VecDeque::new()),
         }
     }
 }
@@ -910,7 +895,7 @@ impl Events for ChannelEvents {
         todo!()
     }
 
-    fn take_new_events_until_ts(&mut self, ts_end: u64) -> Box<dyn Events> {
+    fn take_new_events_until_ts(&mut self, _ts_end: u64) -> Box<dyn Events> {
         todo!()
     }
 
@@ -937,15 +922,15 @@ impl Events for ChannelEvents {
         }
     }
 
-    fn find_lowest_index_gt_evs(&self, ts: u64) -> Option<usize> {
+    fn find_lowest_index_gt_evs(&self, _ts: u64) -> Option<usize> {
         todo!()
     }
 
-    fn find_lowest_index_ge_evs(&self, ts: u64) -> Option<usize> {
+    fn find_lowest_index_ge_evs(&self, _ts: u64) -> Option<usize> {
         todo!()
     }
 
-    fn find_highest_index_lt_evs(&self, ts: u64) -> Option<usize> {
+    fn find_highest_index_lt_evs(&self, _ts: u64) -> Option<usize> {
         todo!()
     }
 
@@ -953,7 +938,7 @@ impl Events for ChannelEvents {
         todo!()
     }
 
-    fn partial_eq_dyn(&self, other: &dyn Events) -> bool {
+    fn partial_eq_dyn(&self, _other: &dyn Events) -> bool {
         todo!()
     }
 
@@ -990,7 +975,7 @@ impl Events for ChannelEvents {
     fn to_json_string(&self) -> String {
         match self {
             ChannelEvents::Events(item) => item.to_json_string(),
-            ChannelEvents::Status(item) => {
+            ChannelEvents::Status(_item) => {
                 error!("TODO convert status to json");
                 String::new()
             }
@@ -1000,7 +985,7 @@ impl Events for ChannelEvents {
     fn to_json_vec_u8(&self) -> Vec<u8> {
         match self {
             ChannelEvents::Events(item) => item.to_json_vec_u8(),
-            ChannelEvents::Status(item) => {
+            ChannelEvents::Status(_item) => {
                 error!("TODO convert status to json");
                 Vec::new()
             }
@@ -1010,7 +995,7 @@ impl Events for ChannelEvents {
     fn to_cbor_vec_u8(&self) -> Vec<u8> {
         match self {
             ChannelEvents::Events(item) => item.to_cbor_vec_u8(),
-            ChannelEvents::Status(item) => {
+            ChannelEvents::Status(_item) => {
                 error!("TODO convert status to cbor");
                 Vec::new()
             }
@@ -1030,7 +1015,7 @@ impl Events for ChannelEvents {
         use ChannelEvents::*;
         match self {
             Events(x) => x.to_dim0_f32_for_binning(),
-            Status(x) => panic!("ChannelEvents::to_dim0_f32_for_binning"),
+            Status(_x) => panic!("ChannelEvents::to_dim0_f32_for_binning"),
         }
     }
 
