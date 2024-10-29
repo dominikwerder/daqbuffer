@@ -1,4 +1,5 @@
 use crate::conn::create_scy_session_no_ks;
+use crate::events::ReadJobTrace;
 use crate::events2::prepare::StmtsCache;
 use crate::events2::prepare::StmtsEvents;
 use crate::range::ScyllaSeriesRange;
@@ -74,11 +75,12 @@ struct ReadNextValues {
         dyn FnOnce(
                 Arc<Session>,
                 Arc<StmtsEvents>,
-            ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>>
+                ReadJobTrace,
+            ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>>
             + Send,
     >,
-    // fut: Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>>,
-    tx: Sender<Result<Box<dyn Events>, Error>>,
+    tx: Sender<Result<(Box<dyn Events>, ReadJobTrace), Error>>,
+    jobtrace: ReadJobTrace,
 }
 
 impl fmt::Debug for ReadNextValues {
@@ -107,12 +109,17 @@ impl ScyllaQueue {
         Ok(res)
     }
 
-    pub async fn read_next_values<F>(&self, futgen: F) -> Result<Box<dyn Events>, Error>
+    pub async fn read_next_values<F>(
+        &self,
+        futgen: F,
+        jobtrace: ReadJobTrace,
+    ) -> Result<(Box<dyn Events>, ReadJobTrace), Error>
     where
         F: FnOnce(
                 Arc<Session>,
                 Arc<StmtsEvents>,
-            ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>>
+                ReadJobTrace,
+            ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>>
             + Send
             + 'static,
     {
@@ -120,6 +127,7 @@ impl ScyllaQueue {
         let job = Job::ReadNextValues(ReadNextValues {
             futgen: Box::new(futgen),
             tx,
+            jobtrace,
         });
         self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;
         let res = rx.recv().await.map_err(|_| Error::ChannelRecv)??;
@@ -243,7 +251,7 @@ impl ScyllaWorker {
                     }
                 }
                 Job::ReadNextValues(job) => {
-                    let fut = (job.futgen)(scy.clone(), stmts.clone());
+                    let fut = (job.futgen)(scy.clone(), stmts.clone(), job.jobtrace);
                     let res = fut.await;
                     if job.tx.send(res.map_err(Into::into)).await.is_err() {
                         // TODO count for stats

@@ -2,6 +2,7 @@ use crate::events2::events::EventReadOpts;
 use crate::events2::prepare::StmtsEvents;
 use crate::range::ScyllaSeriesRange;
 use crate::worker::ScyllaQueue;
+use core::fmt;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Future;
@@ -24,6 +25,7 @@ use scylla::Session;
 use series::SeriesId;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::Instrument;
 
 #[allow(unused)]
@@ -44,10 +46,12 @@ pub enum Error {
     ScyllaTypeConv(#[from] scylla::cql_to_rust::FromRowError),
     ScyllaWorker(Box<crate::worker::Error>),
     MissingQuery(String),
+    NotTokenAware,
     RangeEndOverflow,
     InvalidFuture,
     TestError(String),
     Logic,
+    TodoUnsupported,
 }
 
 impl From<crate::worker::Error> for Error {
@@ -66,11 +70,12 @@ pub(super) trait ValTy: Sized + 'static {
     fn default() -> Self;
     fn is_valueblob() -> bool;
     fn st_name() -> &'static str;
-    fn read_next_values(
+    fn read_next_values_trait(
         opts: ReadNextValuesOpts,
+        jobtrace: ReadJobTrace,
         scy: Arc<Session>,
         stmts: Arc<StmtsEvents>,
-    ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>>;
+    ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>>;
     fn convert_rows(
         rows: Vec<Row>,
         range: ScyllaSeriesRange,
@@ -112,12 +117,13 @@ macro_rules! impl_scaty_scalar {
                 $st_name
             }
 
-            fn read_next_values(
+            fn read_next_values_trait(
                 opts: ReadNextValuesOpts,
+                jobtrace: ReadJobTrace,
                 scy: Arc<Session>,
                 stmts: Arc<StmtsEvents>,
-            ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>> {
-                Box::pin(read_next_values_2::<Self>(opts, scy, stmts))
+            ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>> {
+                Box::pin(read_next_values_2::<Self>(opts, jobtrace, scy, stmts))
             }
 
             fn convert_rows(
@@ -178,12 +184,13 @@ macro_rules! impl_scaty_array {
                 $st_name
             }
 
-            fn read_next_values(
+            fn read_next_values_trait(
                 opts: ReadNextValuesOpts,
+                jobtrace: ReadJobTrace,
                 scy: Arc<Session>,
                 stmts: Arc<StmtsEvents>,
-            ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>> {
-                Box::pin(read_next_values_2::<Self>(opts, scy, stmts))
+            ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>> {
+                Box::pin(read_next_values_2::<Self>(opts, jobtrace, scy, stmts))
             }
 
             fn convert_rows(
@@ -231,13 +238,13 @@ impl ValTy for EnumVariant {
         "enum"
     }
 
-    fn read_next_values(
+    fn read_next_values_trait(
         opts: ReadNextValuesOpts,
+        jobtrace: ReadJobTrace,
         scy: Arc<Session>,
         stmts: Arc<StmtsEvents>,
-    ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>> {
-        let fut = read_next_values_2::<Self>(opts, scy, stmts);
-        Box::pin(fut)
+    ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>> {
+        Box::pin(read_next_values_2::<Self>(opts, jobtrace, scy, stmts))
     }
 
     fn convert_rows(
@@ -283,12 +290,13 @@ impl ValTy for Vec<String> {
         "string"
     }
 
-    fn read_next_values(
+    fn read_next_values_trait(
         opts: ReadNextValuesOpts,
+        jobtrace: ReadJobTrace,
         scy: Arc<Session>,
         stmts: Arc<StmtsEvents>,
-    ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>> {
-        let fut = read_next_values_2::<Self>(opts, scy, stmts);
+    ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>> {
+        let fut = read_next_values_2::<Self>(opts, jobtrace, scy, stmts);
         Box::pin(fut)
     }
 
@@ -330,6 +338,51 @@ impl_scaty_array!(Vec<f64>, f64, Vec<f64>, "f64", "f64");
 impl_scaty_array!(Vec<bool>, bool, Vec<bool>, "bool", "bool");
 
 #[derive(Debug)]
+pub enum ReadEventKind {
+    Create,
+    FutgenCallingReadNextValues,
+    FutgenFutureCreated,
+    CallExecuteIter,
+    ScyllaReadRow(u32),
+    ScyllaReadRowDone(u32),
+    ReadNextValuesFutureDone,
+    EventsStreamRtSees(u32),
+}
+
+#[derive(Debug)]
+pub struct ReadJobTrace {
+    jobid: u64,
+    ts0: Instant,
+    events: Vec<(Instant, ReadEventKind)>,
+}
+
+impl ReadJobTrace {
+    pub fn new() -> Self {
+        static JOBID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        Self {
+            jobid: JOBID.fetch_add(1, std::sync::atomic::Ordering::AcqRel),
+            ts0: Instant::now(),
+            events: Vec::with_capacity(128),
+        }
+    }
+
+    pub fn add_event_now(&mut self, kind: ReadEventKind) {
+        self.events.push((Instant::now(), kind))
+    }
+}
+
+impl fmt::Display for ReadJobTrace {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "ReadJobTrace  jobid {jid}", jid = self.jobid)?;
+        for (ts, kind) in &self.events {
+            let dt = 1e3 * ts.saturating_duration_since(self.ts0).as_secs_f32();
+            write!(fmt, "\njobid {jid:4}  {dt:7.2}  {kind:?}", jid = self.jobid)?;
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub(super) struct ReadNextValuesOpts {
     rt: RetentionTime,
     series: u64,
@@ -362,15 +415,25 @@ impl ReadNextValuesOpts {
     }
 }
 
-pub(super) async fn read_next_values<ST>(opts: ReadNextValuesOpts) -> Result<Box<dyn Events>, Error>
+pub(super) struct ReadNextValuesParams {
+    pub opts: ReadNextValuesOpts,
+    pub jobtrace: ReadJobTrace,
+}
+
+pub(super) async fn read_next_values<ST>(params: ReadNextValuesParams) -> Result<(Box<dyn Events>, ReadJobTrace), Error>
 where
     ST: ValTy,
 {
+    let opts = params.opts;
+    let jobtrace = params.jobtrace;
     // TODO could take scyqeue out of opts struct.
     let scyqueue = opts.scyqueue.clone();
     let level = taskrun::query_log_level();
-    let futgen = Box::new(move |scy: Arc<Session>, stmts: Arc<StmtsEvents>| {
+    let futgen = move |scy: Arc<Session>, stmts: Arc<StmtsEvents>, mut jobtrace: ReadJobTrace| {
+        // TODO avoid this
+        // opts.jobtrace = jobtrace;
         let fut = async move {
+            // let jobtrace = &mut opts.jobtrace;
             let logspan = if level == Level::DEBUG {
                 tracing::span!(Level::INFO, "log_span_debug")
             } else if level == Level::TRACE {
@@ -378,25 +441,34 @@ where
             } else {
                 tracing::Span::none()
             };
-            ST::read_next_values(opts, scy, stmts)
-                .instrument(logspan)
-                .await
-                .map_err(crate::worker::Error::from)
+            jobtrace.add_event_now(ReadEventKind::FutgenCallingReadNextValues);
+            let fut = ST::read_next_values_trait(opts, jobtrace, scy, stmts).instrument(logspan);
+            match fut.await.map_err(crate::worker::Error::from) {
+                Ok((ret, mut jobtrace)) => {
+                    jobtrace.add_event_now(ReadEventKind::ReadNextValuesFutureDone);
+                    Ok((ret, jobtrace))
+                }
+                Err(e) => Err(e),
+            }
         };
-        Box::pin(fut) as Pin<Box<dyn Future<Output = Result<Box<dyn Events>, crate::worker::Error>> + Send>>
-    });
-    let res = scyqueue.read_next_values(futgen).await?;
-    Ok(res)
+        Box::pin(fut)
+            as Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), crate::worker::Error>> + Send>>
+    };
+    let (res, jobtrace) = scyqueue.read_next_values(futgen, jobtrace).await?;
+    Ok((res, jobtrace))
 }
 
 async fn read_next_values_2<ST>(
     opts: ReadNextValuesOpts,
+    mut jobtrace: ReadJobTrace,
     scy: Arc<Session>,
     stmts: Arc<StmtsEvents>,
-) -> Result<Box<dyn Events>, Error>
+) -> Result<(Box<dyn Events>, ReadJobTrace), Error>
 where
     ST: ValTy,
 {
+    let use_method_2 = true;
+
     trace!("read_next_values_2  {:?}  st_name {}", opts, ST::st_name());
     let series = opts.series;
     let ts_msp = opts.ts_msp;
@@ -429,6 +501,15 @@ where
             .lsp(!opts.fwd, with_values)
             .shape(ST::is_valueblob())
             .st(ST::st_name())?;
+        let qu = {
+            let mut qu = qu.clone();
+            if qu.is_token_aware() == false {
+                return Err(Error::NotTokenAware);
+            }
+            qu.set_page_size(10000);
+            // qu.disable_paging();
+            qu
+        };
         let params = (
             series as i64,
             ts_msp.ms() as i64,
@@ -436,14 +517,58 @@ where
             ts_lsp_max.ns() as i64,
         );
         trace!("FWD event search  params {:?}", params);
+        jobtrace.add_event_now(ReadEventKind::CallExecuteIter);
         let mut res = scy.execute_iter(qu.clone(), params).await?;
-        let mut rows = Vec::new();
-        while let Some(x) = res.next().await {
-            rows.push(x?);
+        if use_method_2 == false {
+            let mut rows = Vec::new();
+            while let Some(x) = res.next().await {
+                rows.push(x?);
+            }
+            let mut last_before = None;
+            let ret = <ST as ValTy>::convert_rows(rows, range, ts_msp, with_values, !opts.fwd, &mut last_before)?;
+            ret
+        } else {
+            let mut ret = <ST as ValTy>::Container::empty();
+            // TODO must branch already here depending on what input columns we expect
+            if with_values {
+                if <ST as ValTy>::is_valueblob() {
+                    let mut it = res.into_typed::<(i64, Vec<u8>)>();
+                    while let Some(x) = it.next().await {
+                        let row = x?;
+                        let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
+                        let value = <ST as ValTy>::from_valueblob(row.1);
+                        ret.push(ts.ns(), 0, value);
+                    }
+                    ret
+                } else {
+                    let mut i = 0;
+                    let mut it = res.into_typed::<(i64, ST::ScyTy)>();
+                    while let Some(x) = it.next().await {
+                        let row = x?;
+                        let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
+                        let value = <ST as ValTy>::from_scyty(row.1);
+                        ret.push(ts.ns(), 0, value);
+                        i += 1;
+                        if i % 2000 == 0 {
+                            jobtrace.add_event_now(ReadEventKind::ScyllaReadRow(i));
+                        }
+                    }
+                    {
+                        jobtrace.add_event_now(ReadEventKind::ScyllaReadRowDone(i));
+                    }
+                    ret
+                }
+            } else {
+                let mut it = res.into_typed::<(i64,)>();
+                while let Some(x) = it.next().await {
+                    let row = x?;
+                    let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
+                    let value = <ST as ValTy>::default();
+                    ret.push(ts.ns(), 0, value);
+                }
+                ret
+            }
         }
-        let mut last_before = None;
-        let ret = ST::convert_rows(rows, range, ts_msp, with_values, !opts.fwd, &mut last_before)?;
-        ret
     } else {
         let ts_lsp_max = if ts_msp.ns() < range.beg() {
             range.beg().delta(ts_msp.ns())
@@ -477,7 +602,7 @@ where
     };
     trace!("read  ts_msp {}  len {}", ts_msp.fmt(), ret.len());
     let ret = Box::new(ret);
-    Ok(ret)
+    Ok((ret, jobtrace))
 }
 
 fn convert_rows_0<ST: ValTy>(

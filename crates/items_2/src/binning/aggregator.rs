@@ -73,7 +73,7 @@ where
 
     fn result_and_reset_for_new_bin(&mut self, filled_width_fraction: f32) -> EVT::AggTimeWeightOutputAvg {
         let sum = self.sum.clone();
-        trace!("result_and_reset_for_new_bin  sum {}  {}", sum, filled_width_fraction);
+        trace_result!("result_and_reset_for_new_bin  sum {}  {}", sum, filled_width_fraction);
         self.sum = 0.;
         sum / filled_width_fraction as f64
     }

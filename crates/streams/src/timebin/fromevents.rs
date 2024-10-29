@@ -23,7 +23,10 @@ macro_rules! trace_emit { ($($arg:tt)*) => ( if true { trace!($($arg)*); } ) }
 
 #[derive(Debug, ThisError)]
 #[cstm(name = "ReadingBinnedFromEvents")]
-pub enum Error {}
+pub enum Error {
+    ExpectTimerange,
+    ExpectTimeweighted,
+}
 
 pub struct BinnedFromEvents {
     stream: Pin<Box<dyn Stream<Item = Sitemty<BinsBoxed>> + Send>>,
@@ -37,7 +40,7 @@ impl BinnedFromEvents {
         read_provider: Arc<dyn EventsReadProvider>,
     ) -> Result<Self, Error> {
         if !evq.range().is_time() {
-            panic!();
+            return Err(Error::ExpectTimerange);
         }
         let stream = read_provider.read(evq);
         let stream = ConvertForBinning::new(Box::pin(stream));
@@ -45,17 +48,17 @@ impl BinnedFromEvents {
             let stream = Box::pin(stream);
             BinnedEventsTimeweightStream::new(range, stream)
         } else {
-            panic!("non-weighted TODO")
+            return Err(Error::ExpectTimeweighted);
         };
         let stream = stream.map(|item| match item {
             Ok(x) => match x {
                 StreamItem::DataItem(x) => match x {
                     RangeCompletableItem::Data(x) => {
-                        debug!("see item {:?}", x);
+                        trace_emit!("see item {:?}", x);
                         Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
                     }
                     RangeCompletableItem::RangeComplete => {
-                        info!("BinnedFromEvents  sees range final");
+                        debug!("BinnedFromEvents  sees range final");
                         Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete))
                     }
                 },

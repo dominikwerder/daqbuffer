@@ -18,28 +18,28 @@ use std::mem;
 macro_rules! trace_ { ($($arg:tt)*) => ( if true { trace!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_init { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
+macro_rules! trace_init { ($($arg:tt)*) => ( if false { trace_!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_cycle { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
+macro_rules! trace_cycle { ($($arg:tt)*) => ( if false { trace_!($($arg)*); }) }
 
 #[allow(unused)]
 macro_rules! trace_event_next { ($($arg:tt)*) => ( if false { trace_!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_ingest_init_lst { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
+macro_rules! trace_ingest_init_lst { ($($arg:tt)*) => ( if false { trace_!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_ingest_minmax { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
+macro_rules! trace_ingest_minmax { ($($arg:tt)*) => ( if false { trace_!($($arg)*); }) }
 
 #[allow(unused)]
 macro_rules! trace_ingest_event { ($($arg:tt)*) => ( if false { trace_!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_ingest_firsts { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
+macro_rules! trace_ingest_firsts { ($($arg:tt)*) => ( if false { trace_!($($arg)*); }) }
 
 #[allow(unused)]
-macro_rules! trace_ingest_finish_bin { ($($arg:tt)*) => ( if true { trace_!($($arg)*); }) }
+macro_rules! trace_ingest_finish_bin { ($($arg:tt)*) => ( if false { trace_!($($arg)*); }) }
 
 #[allow(unused)]
 macro_rules! trace_ingest_container { ($($arg:tt)*) => ( if false { trace_!($($arg)*); }) }

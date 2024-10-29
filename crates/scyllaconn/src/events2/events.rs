@@ -1,5 +1,6 @@
 use super::msp::MspStreamRt;
 use crate::events::read_next_values;
+use crate::events::ReadJobTrace;
 use crate::events::ReadNextValuesOpts;
 use crate::range::ScyllaSeriesRange;
 use crate::worker::ScyllaQueue;
@@ -27,12 +28,7 @@ use std::task::Poll;
 
 #[allow(unused)]
 macro_rules! trace_fetch {
-    ($($arg:tt)*) => {
-        if true {
-            trace!($($arg)*);
-        }
-    };
-}
+    ($($arg:tt)*) => ( if true { trace!($($arg)*); } ) }
 
 #[allow(unused)]
 macro_rules! trace_emit {
@@ -90,14 +86,75 @@ pub enum Error {
     Logic,
     Merge(#[from] items_0::MergeError),
     TruncateLogic,
+    AlreadyTaken,
 }
 
 struct FetchMsp {
     fut: Pin<Box<dyn Future<Output = Option<Result<TsMs, crate::events2::msp::Error>>> + Send>>,
 }
 
+type ReadEventsFutOut = Result<(Box<dyn Events>, ReadJobTrace), crate::events2::events::Error>;
+
+type FetchEventsFut = Pin<Box<dyn Future<Output = ReadEventsFutOut> + Send>>;
+
+enum Fst<F>
+where
+    F: Future + Unpin,
+    <F as Future>::Output: Unpin,
+{
+    Ongoing(F),
+    Ready(<F as Future>::Output),
+    Taken,
+}
+
+impl<F> Fst<F>
+where
+    F: Future + Unpin,
+    <F as Future>::Output: Unpin,
+{
+    fn take_if_ready(&mut self) -> Poll<Option<<F as Future>::Output>> {
+        use Poll::*;
+        match self {
+            Fst::Ongoing(_) => Pending,
+            Fst::Ready(_) => match core::mem::replace(self, Fst::Taken) {
+                Fst::Ready(x) => Ready(Some(x)),
+                _ => panic!(),
+            },
+            Fst::Taken => Ready(None),
+        }
+    }
+}
+
+impl<F> Future for Fst<F>
+where
+    F: Future + Unpin,
+    <F as Future>::Output: Unpin,
+{
+    type Output = ();
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+        use Poll::*;
+        match self.as_mut().get_mut() {
+            Fst::Ongoing(fut) => match fut.poll_unpin(cx) {
+                Ready(x) => {
+                    *self = Fst::Ready(x);
+                    Ready(())
+                }
+                Pending => Pending,
+            },
+            Fst::Ready(_) => Ready(()),
+            Fst::Taken => Ready(()),
+        }
+    }
+}
+
+struct FetchEvents2 {
+    fut: Fst<FetchEventsFut>,
+}
+
 struct FetchEvents {
-    fut: Pin<Box<dyn Future<Output = Result<Box<dyn Events>, crate::events2::events::Error>> + Send>>,
+    a: FetchEvents2,
+    b: Option<FetchEvents2>,
 }
 
 enum ReadingState {
@@ -182,7 +239,9 @@ impl EventsStreamRt {
         ts_msp: TsMs,
         bck: bool,
         scyqueue: ScyllaQueue,
-    ) -> Pin<Box<dyn Future<Output = Result<Box<dyn Events>, Error>> + Send>> {
+        jobtrace: ReadJobTrace,
+    ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>> {
+        trace!("make_read_events_fut   ---   {}   ---", ts_msp);
         let opts = ReadNextValuesOpts::new(
             self.rt.clone(),
             self.series.clone(),
@@ -203,34 +262,35 @@ impl EventsStreamRt {
             scalar_type
         );
         let fut = async move {
+            let params = crate::events::ReadNextValuesParams { opts, jobtrace };
             let ret = match &shape {
                 Shape::Scalar => match &scalar_type {
-                    ScalarType::U8 => read_next_values::<u8>(opts).await,
-                    ScalarType::U16 => read_next_values::<u16>(opts).await,
-                    ScalarType::U32 => read_next_values::<u32>(opts).await,
-                    ScalarType::U64 => read_next_values::<u64>(opts).await,
-                    ScalarType::I8 => read_next_values::<i8>(opts).await,
-                    ScalarType::I16 => read_next_values::<i16>(opts).await,
-                    ScalarType::I32 => read_next_values::<i32>(opts).await,
-                    ScalarType::I64 => read_next_values::<i64>(opts).await,
-                    ScalarType::F32 => read_next_values::<f32>(opts).await,
-                    ScalarType::F64 => read_next_values::<f64>(opts).await,
-                    ScalarType::BOOL => read_next_values::<bool>(opts).await,
-                    ScalarType::STRING => read_next_values::<String>(opts).await,
-                    ScalarType::Enum => read_next_values::<EnumVariant>(opts).await,
+                    ScalarType::U8 => read_next_values::<u8>(params).await,
+                    ScalarType::U16 => read_next_values::<u16>(params).await,
+                    ScalarType::U32 => read_next_values::<u32>(params).await,
+                    ScalarType::U64 => read_next_values::<u64>(params).await,
+                    ScalarType::I8 => read_next_values::<i8>(params).await,
+                    ScalarType::I16 => read_next_values::<i16>(params).await,
+                    ScalarType::I32 => read_next_values::<i32>(params).await,
+                    ScalarType::I64 => read_next_values::<i64>(params).await,
+                    ScalarType::F32 => read_next_values::<f32>(params).await,
+                    ScalarType::F64 => read_next_values::<f64>(params).await,
+                    ScalarType::BOOL => read_next_values::<bool>(params).await,
+                    ScalarType::STRING => read_next_values::<String>(params).await,
+                    ScalarType::Enum => read_next_values::<EnumVariant>(params).await,
                 },
                 Shape::Wave(_) => match &scalar_type {
-                    ScalarType::U8 => read_next_values::<Vec<u8>>(opts).await,
-                    ScalarType::U16 => read_next_values::<Vec<u16>>(opts).await,
-                    ScalarType::U32 => read_next_values::<Vec<u32>>(opts).await,
-                    ScalarType::U64 => read_next_values::<Vec<u64>>(opts).await,
-                    ScalarType::I8 => read_next_values::<Vec<i8>>(opts).await,
-                    ScalarType::I16 => read_next_values::<Vec<i16>>(opts).await,
-                    ScalarType::I32 => read_next_values::<Vec<i32>>(opts).await,
-                    ScalarType::I64 => read_next_values::<Vec<i64>>(opts).await,
-                    ScalarType::F32 => read_next_values::<Vec<f32>>(opts).await,
-                    ScalarType::F64 => read_next_values::<Vec<f64>>(opts).await,
-                    ScalarType::BOOL => read_next_values::<Vec<bool>>(opts).await,
+                    ScalarType::U8 => read_next_values::<Vec<u8>>(params).await,
+                    ScalarType::U16 => read_next_values::<Vec<u16>>(params).await,
+                    ScalarType::U32 => read_next_values::<Vec<u32>>(params).await,
+                    ScalarType::U64 => read_next_values::<Vec<u64>>(params).await,
+                    ScalarType::I8 => read_next_values::<Vec<i8>>(params).await,
+                    ScalarType::I16 => read_next_values::<Vec<i16>>(params).await,
+                    ScalarType::I32 => read_next_values::<Vec<i32>>(params).await,
+                    ScalarType::I64 => read_next_values::<Vec<i64>>(params).await,
+                    ScalarType::F32 => read_next_values::<Vec<f32>>(params).await,
+                    ScalarType::F64 => read_next_values::<Vec<f64>>(params).await,
+                    ScalarType::BOOL => read_next_values::<Vec<bool>>(params).await,
                     ScalarType::STRING => {
                         warn!("read not yet supported  {:?}  {:?}", shape, scalar_type);
                         err::todoval()
@@ -273,10 +333,14 @@ impl EventsStreamRt {
     fn setup_bck_read(&mut self) {
         if let Some(ts) = self.msp_buf_bck.pop_back() {
             trace_fetch!("setup_bck_read  {}", ts.fmt());
+            let jobtrace = ReadJobTrace::new();
             let scyqueue = self.scyqueue.clone();
-            let fut = self.make_read_events_fut(ts, true, scyqueue);
+            let fut = self.make_read_events_fut(ts, true, scyqueue, jobtrace);
             self.state = State::ReadingBck(ReadingBck {
-                reading_state: ReadingState::FetchEvents(FetchEvents { fut }),
+                reading_state: ReadingState::FetchEvents(FetchEvents {
+                    a: FetchEvents2 { fut: Fst::Ongoing(fut) },
+                    b: None,
+                }),
             });
         } else {
             trace_fetch!("setup_bck_read  no msp");
@@ -292,13 +356,66 @@ impl EventsStreamRt {
     }
 
     fn setup_fwd_read(&mut self) {
+        // TODO always try to setup all available slots.
         if let Some(ts) = self.msp_buf.pop_front() {
             trace_fetch!("setup_fwd_read  {}", ts.fmt());
+            let jobtrace = ReadJobTrace::new();
             let scyqueue = self.scyqueue.clone();
-            let fut = self.make_read_events_fut(ts, false, scyqueue);
-            self.state = State::ReadingFwd(ReadingFwd {
-                reading_state: ReadingState::FetchEvents(FetchEvents { fut }),
-            });
+            let fut = self.make_read_events_fut(ts, false, scyqueue, jobtrace);
+
+            // Assert that this fn is only called when there is at least one slot available.
+            // At the moment with 2 slots, this means that the 2nd is always empty.
+            // TODO careful in general, MUST NOT overwrite the secondary slot with None, there could be something running.
+
+            if let State::ReadingFwd(st2) = &self.state {
+                if let ReadingState::FetchEvents(st3) = &st2.reading_state {
+                    if st3.b.is_some() {
+                        panic!()
+                    } else {
+                    }
+                } else {
+                    self.state = State::ReadingFwd(ReadingFwd {
+                        reading_state: ReadingState::FetchEvents(FetchEvents {
+                            a: FetchEvents2 { fut: Fst::Ongoing(fut) },
+                            b: None,
+                        }),
+                    });
+                }
+            } else {
+                self.state = State::ReadingFwd(ReadingFwd {
+                    reading_state: ReadingState::FetchEvents(FetchEvents {
+                        a: FetchEvents2 { fut: Fst::Ongoing(fut) },
+                        b: None,
+                    }),
+                });
+            }
+
+            if let State::ReadingFwd(st2) = &self.state {
+                if let ReadingState::FetchEvents(st3) = &st2.reading_state {
+                    if st3.b.is_some() {
+                        panic!()
+                    } else {
+                        // Try the same with the 2nd slot
+                        if let Some(ts) = self.msp_buf.pop_front() {
+                            trace_fetch!("setup_fwd_read  {}  SECONDARY SLOT", ts.fmt());
+                            let jobtrace = ReadJobTrace::new();
+                            let scyqueue = self.scyqueue.clone();
+                            let fut = self.make_read_events_fut(ts, false, scyqueue, jobtrace);
+                            if let State::ReadingFwd(st2) = &mut self.state {
+                                if let ReadingState::FetchEvents(st3) = &mut st2.reading_state {
+                                    if st3.b.is_some() {
+                                        panic!()
+                                    } else {
+                                        st3.b = Some(FetchEvents2 { fut: Fst::Ongoing(fut) });
+                                    }
+                                }
+                            }
+                        } else {
+                            // nothing to do
+                        }
+                    }
+                }
+            }
         } else {
             trace_fetch!("setup_fwd_read  no msp");
             let fut = Self::make_msp_read_fut(&mut self.msp_inp);
@@ -424,38 +541,51 @@ impl Stream for EventsStreamRt {
                         }
                         Pending => Pending,
                     },
-                    ReadingState::FetchEvents(st2) => match st2.fut.poll_unpin(cx) {
-                        Ready(Ok(mut x)) => {
-                            use items_2::merger::Mergeable;
-                            trace_fetch!("ReadingBck  FetchEvents  got len {}", x.len());
-                            for ts in Mergeable::tss(&x) {
-                                trace_every_event!("ReadingBck  FetchEvents     ts {}", ts.fmt());
-                            }
-                            if let Some(ix) = Mergeable::find_highest_index_lt(&x, self.range.beg().ns()) {
-                                trace_fetch!("ReadingBck  FetchEvents  find_highest_index_lt {:?}", ix);
-                                let mut y = Mergeable::new_empty(&x);
-                                match Mergeable::drain_into(&mut x, &mut y, (ix, 1 + ix)) {
-                                    Ok(()) => {
-                                        trace_fetch!("ReadingBck  FetchEvents  drained y len {:?}", y.len());
-                                        self.out.push_back(y);
-                                        self.transition_to_fwd_read();
+                    ReadingState::FetchEvents(st2) => match st2.a.fut.poll_unpin(cx) {
+                        Ready(()) => match st2.a.fut.take_if_ready() {
+                            Ready(Some(x)) => match x {
+                                Ok((mut evs, jobtrace)) => {
+                                    use items_2::merger::Mergeable;
+                                    trace!("ReadingBck  {jobtrace}");
+                                    trace_fetch!("ReadingBck  FetchEvents  got len {}", evs.len());
+                                    for ts in Mergeable::tss(&evs) {
+                                        trace_every_event!("ReadingBck  FetchEvents     ts {}", ts.fmt());
+                                    }
+                                    if let Some(ix) = Mergeable::find_highest_index_lt(&evs, self.range.beg().ns()) {
+                                        trace_fetch!("ReadingBck  FetchEvents  find_highest_index_lt {:?}", ix);
+                                        let mut y = Mergeable::new_empty(&evs);
+                                        match Mergeable::drain_into(&mut evs, &mut y, (ix, 1 + ix)) {
+                                            Ok(()) => {
+                                                trace_fetch!("ReadingBck  FetchEvents  drained y len {:?}", y.len());
+                                                self.out.push_back(y);
+                                                self.transition_to_fwd_read();
+                                                continue;
+                                            }
+                                            Err(e) => {
+                                                self.state = State::Done;
+                                                Ready(Some(Err(e.into())))
+                                            }
+                                        }
+                                    } else {
+                                        trace_fetch!("ReadingBck  FetchEvents  find_highest_index_lt None");
+                                        self.setup_bck_read();
                                         continue;
                                     }
-                                    Err(e) => {
-                                        self.state = State::Done;
-                                        Ready(Some(Err(e.into())))
-                                    }
                                 }
-                            } else {
-                                trace_fetch!("ReadingBck  FetchEvents  find_highest_index_lt None");
-                                self.setup_bck_read();
-                                continue;
+                                Err(e) => {
+                                    self.state = State::Done;
+                                    Ready(Some(Err(e)))
+                                }
+                            },
+                            Ready(None) => {
+                                self.state = State::Done;
+                                Ready(Some(Err(Error::AlreadyTaken)))
                             }
-                        }
-                        Ready(Err(e)) => {
-                            self.state = State::Done;
-                            Ready(Some(Err(e.into())))
-                        }
+                            Pending => {
+                                self.state = State::Done;
+                                Ready(Some(Err(Error::Logic)))
+                            }
+                        },
                         Pending => Pending,
                     },
                 },
@@ -474,23 +604,43 @@ impl Stream for EventsStreamRt {
                         }
                         Pending => Pending,
                     },
-                    ReadingState::FetchEvents(st2) => match st2.fut.poll_unpin(cx) {
-                        Ready(Ok(x)) => {
-                            use items_2::merger::Mergeable;
-                            trace_fetch!("ReadingFwd  FetchEvents  got len {:?}", x.len());
-                            for ts in Mergeable::tss(&x) {
-                                trace_every_event!("ReadingFwd  FetchEvents     ts {}", ts.fmt());
+                    ReadingState::FetchEvents(st2) => {
+                        let _ = st2.a.fut.poll_unpin(cx);
+                        if let Some(st3) = st2.b.as_mut() {
+                            let _ = st3.fut.poll_unpin(cx);
+                        }
+                        match st2.a.fut.take_if_ready() {
+                            Ready(Some(x)) => {
+                                if let Some(b) = st2.b.take() {
+                                    st2.a = b;
+                                }
+                                match x {
+                                    Ok((evs, mut jobtrace)) => {
+                                        jobtrace.add_event_now(crate::events::ReadEventKind::EventsStreamRtSees(
+                                            evs.len() as u32,
+                                        ));
+                                        use items_2::merger::Mergeable;
+                                        trace!("ReadingFwd  {jobtrace}");
+                                        for ts in Mergeable::tss(&evs) {
+                                            trace_every_event!("ReadingFwd  FetchEvents     ts {}", ts.fmt());
+                                        }
+                                        self.out.push_back(evs);
+                                        self.setup_fwd_read();
+                                        continue;
+                                    }
+                                    Err(e) => {
+                                        self.state = State::Done;
+                                        Ready(Some(Err(e.into())))
+                                    }
+                                }
                             }
-                            self.out.push_back(x);
-                            self.setup_fwd_read();
-                            continue;
+                            Ready(None) => {
+                                self.state = State::Done;
+                                Ready(Some(Err(Error::Logic)))
+                            }
+                            Pending => Pending,
                         }
-                        Ready(Err(e)) => {
-                            self.state = State::Done;
-                            Ready(Some(Err(e.into())))
-                        }
-                        Pending => Pending,
-                    },
+                    }
                 },
                 State::InputDone => {
                     if self.out.len() == 0 {

@@ -472,7 +472,6 @@ where
             avgs,
         };
         let ret = serde_json::to_value(&val).map_err(err::Error::from_string);
-        info!("VALUE: {:?}", ret);
         ret
     }
 }
@@ -540,10 +539,7 @@ where
         range: Option<netpod::range::evrange::SeriesRange>,
         binrange: Option<netpod::BinnedRangeEnum>,
     ) -> Result<Box<dyn items_0::collect_s::CollectedDyn>, err::Error> {
-        info!(
-            "-----------   ContainerBinsCollector  result called  len {}",
-            self.len()
-        );
+        // TODO do we need to set timeout, continueAt or anything?
         let bins = mem::replace(&mut self.bins, ContainerBins::new());
         let ret = ContainerBinsCollectorOutput { bins };
         Ok(Box::new(ret))
