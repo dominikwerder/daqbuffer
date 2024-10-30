@@ -157,13 +157,20 @@ impl IntoBody for ToJsonBody {
 pub fn body_stream<S, I, E>(stream: S) -> StreamBody
 where
     S: Stream<Item = Result<I, E>> + Send + 'static,
-    I: Into<Bytes>,
-    E: fmt::Display,
+    I: Into<Bytes> + Send,
+    E: fmt::Display + Send,
 {
-    let stream = stream.map(|x| match x {
-        Ok(x) => Ok(Frame::data(x.into())),
-        Err(_e) => Err(BodyError::Bad),
-    });
+    let stream = stream
+        .inspect(|x| {
+            if let Err(e) = x {
+                error!("observe error in body stream: {e}");
+            }
+        })
+        .take_while(|x| futures_util::future::ready(x.is_ok()))
+        .map(|x| match x {
+            Ok(x) => Ok(Frame::data(x.into())),
+            Err(_e) => Err(BodyError::Bad),
+        });
     StreamBody::new(Box::pin(stream))
 }
 

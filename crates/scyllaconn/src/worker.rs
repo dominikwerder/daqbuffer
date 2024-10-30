@@ -8,6 +8,7 @@ use async_channel::Sender;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Future;
+use futures_util::StreamExt;
 use items_0::Events;
 use items_2::binning::container_bins::ContainerBins;
 use netpod::log::*;
@@ -205,7 +206,7 @@ impl ScyllaWorker {
         scyconf_mt: ScyllaConfig,
         scyconf_lt: ScyllaConfig,
     ) -> Result<(ScyllaQueue, Self), Error> {
-        let (tx, rx) = async_channel::bounded(64);
+        let (tx, rx) = async_channel::bounded(200);
         let queue = ScyllaQueue { tx };
         let worker = Self {
             rx,
@@ -229,61 +230,64 @@ impl ScyllaWorker {
             self.scyconf_mt.keyspace.as_str(),
             self.scyconf_lt.keyspace.as_str(),
         ];
-        info!("scylla worker  PREPARE START");
+        debug!("scylla worker  prepare start");
         let stmts = StmtsEvents::new(kss.try_into().map_err(|_| Error::MissingKeyspaceConfig)?, &scy).await?;
         let stmts = Arc::new(stmts);
         let stmts_cache = StmtsCache::new(kss[0], &scy).await?;
         let stmts_cache = Arc::new(stmts_cache);
-        info!("scylla worker  PREPARE DONE");
-        loop {
-            let x = self.rx.recv().await;
-            let job = match x {
-                Ok(x) => x,
-                Err(_) => {
-                    break;
-                }
-            };
-            match job {
-                Job::FindTsMsp(rt, series, range, bck, tx) => {
-                    let res = crate::events2::msp::find_ts_msp(&rt, series, range, bck, &stmts, &scy).await;
-                    if tx.send(res.map_err(Into::into)).await.is_err() {
-                        // TODO count for stats
+        debug!("scylla worker  prepare done");
+        self.rx
+            .map(|job| async {
+                match job {
+                    Job::FindTsMsp(rt, series, range, bck, tx) => {
+                        let res = crate::events2::msp::find_ts_msp(&rt, series, range, bck, &stmts, &scy).await;
+                        if tx.send(res.map_err(Into::into)).await.is_err() {
+                            // TODO count for stats
+                        }
+                    }
+                    Job::ReadNextValues(job) => {
+                        let fut = (job.futgen)(scy.clone(), stmts.clone(), job.jobtrace);
+                        let res = fut.await;
+                        if job.tx.send(res.map_err(Into::into)).await.is_err() {
+                            // TODO count for stats
+                        }
+                    }
+                    Job::AccountingReadTs(rt, ts, tx) => {
+                        let ks = match &rt {
+                            RetentionTime::Short => &self.scyconf_st.keyspace,
+                            RetentionTime::Medium => &self.scyconf_mt.keyspace,
+                            RetentionTime::Long => &self.scyconf_lt.keyspace,
+                        };
+                        let res = crate::accounting::toplist::read_ts(&ks, rt, ts, &scy).await;
+                        if tx.send(res.map_err(Into::into)).await.is_err() {
+                            // TODO count for stats
+                        }
+                    }
+                    Job::WriteCacheF32(series, bins, tx) => {
+                        let res = super::bincache::worker_write(series, bins, &stmts_cache, &scy).await;
+                        if tx.send(res).await.is_err() {
+                            // TODO count for stats
+                        }
+                    }
+                    Job::ReadCacheF32(job) => {
+                        let res = super::bincache::worker_read(
+                            job.series,
+                            job.bin_len,
+                            job.msp,
+                            job.offs,
+                            &stmts_cache,
+                            &scy,
+                        )
+                        .await;
+                        if job.tx.send(res).await.is_err() {
+                            // TODO count for stats
+                        }
                     }
                 }
-                Job::ReadNextValues(job) => {
-                    let fut = (job.futgen)(scy.clone(), stmts.clone(), job.jobtrace);
-                    let res = fut.await;
-                    if job.tx.send(res.map_err(Into::into)).await.is_err() {
-                        // TODO count for stats
-                    }
-                }
-                Job::AccountingReadTs(rt, ts, tx) => {
-                    let ks = match &rt {
-                        RetentionTime::Short => &self.scyconf_st.keyspace,
-                        RetentionTime::Medium => &self.scyconf_mt.keyspace,
-                        RetentionTime::Long => &self.scyconf_lt.keyspace,
-                    };
-                    let res = crate::accounting::toplist::read_ts(&ks, rt, ts, &scy).await;
-                    if tx.send(res.map_err(Into::into)).await.is_err() {
-                        // TODO count for stats
-                    }
-                }
-                Job::WriteCacheF32(series, bins, tx) => {
-                    let res = super::bincache::worker_write(series, bins, &stmts_cache, &scy).await;
-                    if tx.send(res).await.is_err() {
-                        // TODO count for stats
-                    }
-                }
-                Job::ReadCacheF32(job) => {
-                    let res =
-                        super::bincache::worker_read(job.series, job.bin_len, job.msp, job.offs, &stmts_cache, &scy)
-                            .await;
-                    if job.tx.send(res).await.is_err() {
-                        // TODO count for stats
-                    }
-                }
-            }
-        }
+            })
+            .buffer_unordered(80)
+            .for_each(|_| futures_util::future::ready(()))
+            .await;
         info!("scylla worker finished");
         Ok(())
     }

@@ -474,7 +474,7 @@ where
     let ts_msp = opts.ts_msp;
     let range = opts.range;
     let table_name = ST::table_name();
-    let with_values = opts.readopts.with_values;
+    let with_values = opts.readopts.with_values();
     if range.end() > TsNano::from_ns(i64::MAX as u64) {
         return Err(Error::RangeEndOverflow);
     }

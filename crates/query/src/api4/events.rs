@@ -60,6 +60,8 @@ pub struct PlainEventsQuery {
     test_do_wasm: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     merger_out_len_max: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    scylla_read_queue_len: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     create_errors: Vec<String>,
     #[serde(default)]
@@ -91,6 +93,7 @@ impl PlainEventsQuery {
             do_test_stream_error: false,
             test_do_wasm: None,
             merger_out_len_max: None,
+            scylla_read_queue_len: None,
             create_errors: Vec::new(),
             log_level: String::new(),
             use_rt: None,
@@ -158,6 +161,10 @@ impl PlainEventsQuery {
 
     pub fn merger_out_len_max(&self) -> Option<u32> {
         self.merger_out_len_max
+    }
+
+    pub fn scylla_read_queue_len(&self) -> Option<u32> {
+        self.scylla_read_queue_len
     }
 
     pub fn do_test_main_error(&self) -> bool {
@@ -292,6 +299,9 @@ impl FromUrl for PlainEventsQuery {
             merger_out_len_max: pairs
                 .get("mergerOutLenMax")
                 .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
+            scylla_read_queue_len: pairs
+                .get("scyllaReadQueueLen")
+                .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
             create_errors: pairs
                 .get("create_errors")
                 .map(|x| x.split(",").map(|x| x.to_string()).collect())
@@ -357,6 +367,9 @@ impl AppendToUrl for PlainEventsQuery {
         if let Some(x) = self.merger_out_len_max.as_ref() {
             g.append_pair("mergerOutLenMax", &x.to_string());
         }
+        if let Some(x) = self.scylla_read_queue_len.as_ref() {
+            g.append_pair("scyllaReadQueueLen", &x.to_string());
+        }
         if self.create_errors.len() != 0 {
             g.append_pair("create_errors", &self.create_errors.join(","));
         }
@@ -418,11 +431,16 @@ pub struct EventsSubQuerySettings {
     create_errors: Vec<String>,
     use_rt: Option<RetentionTime>,
     merger_out_len_max: Option<u32>,
+    scylla_read_queue_len: Option<u32>,
 }
 
 impl EventsSubQuerySettings {
     pub fn merger_out_len_max(&self) -> Option<u32> {
         self.merger_out_len_max
+    }
+
+    pub fn scylla_read_queue_len(&self) -> Option<u32> {
+        self.scylla_read_queue_len
     }
 }
 
@@ -439,6 +457,7 @@ impl Default for EventsSubQuerySettings {
             create_errors: Vec::new(),
             use_rt: None,
             merger_out_len_max: None,
+            scylla_read_queue_len: None,
         }
     }
 }
@@ -457,6 +476,7 @@ impl From<&PlainEventsQuery> for EventsSubQuerySettings {
             create_errors: value.create_errors.clone(),
             use_rt: value.use_rt(),
             merger_out_len_max: value.merger_out_len_max(),
+            scylla_read_queue_len: value.scylla_read_queue_len(),
         }
     }
 }
@@ -476,6 +496,7 @@ impl From<&BinnedQuery> for EventsSubQuerySettings {
             create_errors: Vec::new(),
             use_rt: value.use_rt(),
             merger_out_len_max: value.merger_out_len_max(),
+            scylla_read_queue_len: value.scylla_read_queue_len(),
         }
     }
 }
@@ -495,6 +516,7 @@ impl From<&Api1Query> for EventsSubQuerySettings {
             create_errors: Vec::new(),
             use_rt: None,
             merger_out_len_max: None,
+            scylla_read_queue_len: None,
         }
     }
 }

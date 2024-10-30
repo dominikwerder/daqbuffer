@@ -87,6 +87,8 @@ pub struct BinnedQuery {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merger_out_len_max: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    scylla_read_queue_len: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     test_do_wasm: Option<String>,
     #[serde(default)]
     log_level: String,
@@ -108,6 +110,7 @@ impl BinnedQuery {
             disk_stats_every: None,
             timeout_content: None,
             merger_out_len_max: None,
+            scylla_read_queue_len: None,
             test_do_wasm: None,
             log_level: String::new(),
             use_rt: None,
@@ -162,6 +165,10 @@ impl BinnedQuery {
 
     pub fn merger_out_len_max(&self) -> Option<u32> {
         self.merger_out_len_max
+    }
+
+    pub fn scylla_read_queue_len(&self) -> Option<u32> {
+        self.scylla_read_queue_len
     }
 
     pub fn set_series_id(&mut self, series: u64) {
@@ -285,6 +292,9 @@ impl FromUrl for BinnedQuery {
             merger_out_len_max: pairs
                 .get("mergerOutLenMax")
                 .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
+            scylla_read_queue_len: pairs
+                .get("scyllaReadQueueLen")
+                .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
             test_do_wasm: pairs.get("testDoWasm").map(|x| String::from(x)),
             log_level: pairs.get("log_level").map_or(String::new(), String::from),
             use_rt: pairs.get("useRt").map_or(Ok(None), |k| {
@@ -350,6 +360,9 @@ impl AppendToUrl for BinnedQuery {
         }
         if let Some(x) = self.merger_out_len_max.as_ref() {
             g.append_pair("mergerOutLenMax", &format!("{}", x));
+        }
+        if let Some(x) = self.scylla_read_queue_len.as_ref() {
+            g.append_pair("scyllaReadQueueLen", &x.to_string());
         }
         if let Some(x) = &self.test_do_wasm {
             g.append_pair("testDoWasm", &x);
