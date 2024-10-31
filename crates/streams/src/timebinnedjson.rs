@@ -228,12 +228,6 @@ async fn timebinned_stream(
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<Box<dyn CollectableDyn>>> + Send>>, Error> {
     use netpod::query::CacheUsage;
     let cache_usage = query.cache_usage().unwrap_or(CacheUsage::Ignore);
-    debug!("BINNING NEW METHOD");
-    debug!(
-        "timebinned_stream  caching {:?}  subgrids {:?}",
-        query,
-        query.subgrids()
-    );
     let do_time_weight = true;
     let bin_len_layers = if let Some(subgrids) = query.subgrids() {
         subgrids

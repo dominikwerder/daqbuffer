@@ -7,14 +7,13 @@ pub mod channelconfig;
 pub mod download;
 pub mod err;
 pub mod gather;
-#[cfg(DISABLED)]
+#[cfg(feature = "prometheus_endpoint")]
 pub mod prometheus;
 pub mod proxy;
 pub mod pulsemap;
 pub mod requests;
 pub mod settings;
 
-use self::bodystream::ToPublicResponse;
 use crate::bodystream::response;
 use crate::err::Error;
 use ::err::thiserror;
@@ -39,7 +38,6 @@ use netpod::query::prebinned::PreBinnedQuery;
 use netpod::req_uri_to_url;
 use netpod::status_board;
 use netpod::status_board_init;
-use netpod::Database;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
 use netpod::ServiceVersion;
@@ -118,7 +116,7 @@ impl ServiceSharedResources {
 
 pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Result<(), RetrievalError> {
     status_board_init();
-    #[cfg(DISABLED)]
+    #[cfg(feature = "prometheus_endpoint")]
     if let Some(bind) = ncc.node.prometheus_api_bind {
         tokio::spawn(prometheus::host(bind));
     }

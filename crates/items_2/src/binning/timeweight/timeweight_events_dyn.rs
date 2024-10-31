@@ -1,5 +1,4 @@
 use super::timeweight_events::BinnedEventsTimeweight;
-use crate::binning::container_bins::ContainerBins;
 use crate::binning::container_events::ContainerEvents;
 use crate::binning::container_events::EventValueType;
 use crate::channelevents::ChannelEvents;
@@ -10,21 +9,21 @@ use futures_util::StreamExt;
 use items_0::streamitem::LogItem;
 use items_0::streamitem::Sitemty;
 use items_0::timebin::BinnedEventsTimeweightTrait;
-use items_0::timebin::BinningggBinnerDyn;
 use items_0::timebin::BinningggContainerBinsDyn;
-use items_0::timebin::BinningggContainerEventsDyn;
 use items_0::timebin::BinningggError;
 use items_0::timebin::BinsBoxed;
 use items_0::timebin::EventsBoxed;
 use netpod::log::*;
 use netpod::BinnedRange;
 use netpod::TsNano;
-use std::any;
-use std::arch::x86_64;
 use std::ops::ControlFlow;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
+
+macro_rules! trace_input_container { ($($arg:tt)*) => ( if false { trace!($($arg)*); }) }
+
+macro_rules! trace_emit { ($($arg:tt)*) => ( if false { trace!($($arg)*); }) }
 
 #[derive(Debug, ThisError)]
 #[cstm(name = "BinnedEventsTimeweightDyn")]
@@ -37,7 +36,6 @@ pub struct BinnedEventsTimeweightDynbox<EVT>
 where
     EVT: EventValueType,
 {
-    range: BinnedRange<TsNano>,
     binner: BinnedEventsTimeweight<EVT>,
 }
 
@@ -47,8 +45,7 @@ where
 {
     pub fn new(range: BinnedRange<TsNano>) -> Box<dyn BinnedEventsTimeweightTrait> {
         let ret = Self {
-            binner: BinnedEventsTimeweight::new(range.clone()),
-            range,
+            binner: BinnedEventsTimeweight::new(range),
         };
         Box::new(ret)
     }
@@ -165,7 +162,7 @@ impl BinnedEventsTimeweightStream {
     fn handle_sitemty(
         mut self: Pin<&mut Self>,
         item: Sitemty<ChannelEvents>,
-        cx: &mut Context,
+        _cx: &mut Context,
     ) -> ControlFlow<Poll<Option<<Self as Stream>::Item>>> {
         use items_0::streamitem::RangeCompletableItem::*;
         use items_0::streamitem::StreamItem::*;
@@ -212,8 +209,8 @@ impl BinnedEventsTimeweightStream {
         }
     }
 
-    fn handle_eos(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<<Self as Stream>::Item>> {
-        debug!("handle_eos");
+    fn handle_eos(mut self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Option<<Self as Stream>::Item>> {
+        trace_input_container!("handle_eos");
         use items_0::streamitem::RangeCompletableItem::*;
         use items_0::streamitem::StreamItem::*;
         use Poll::*;
@@ -229,7 +226,7 @@ impl BinnedEventsTimeweightStream {
         }
         match self.binned_events.output().map_err(::err::Error::from_string)? {
             Some(x) => {
-                debug!("seeing ready bins {:?}", x);
+                trace_emit!("seeing ready bins {:?}", x);
                 Ready(Some(Ok(DataItem(Data(x)))))
             }
             None => {

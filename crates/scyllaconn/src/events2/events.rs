@@ -27,39 +27,33 @@ use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
 
-#[allow(unused)]
+macro_rules! trace_init { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ) }
+
 macro_rules! trace_fetch { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ) }
 
-#[allow(unused)]
 macro_rules! trace_msp_fetch { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ) }
 
-#[allow(unused)]
 macro_rules! trace_redo_fwd_read { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ) }
 
-#[allow(unused)]
 macro_rules! trace_emit { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ) }
 
-#[allow(unused)]
 macro_rules! trace_every_event { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ) }
 
-#[allow(unused)]
 macro_rules! warn_item { ($($arg:tt)*) => ( if true { debug!($($arg)*); } ) }
 
 #[derive(Debug, Clone)]
 pub struct EventReadOpts {
     with_values: bool,
-    enum_as_strings: bool,
     one_before: bool,
     qucap: u32,
 }
 
 impl EventReadOpts {
-    pub fn new(one_before: bool, with_values: bool, enum_as_strings: bool, qucap: Option<u32>) -> Self {
+    pub fn new(one_before: bool, with_values: bool, qucap: Option<u32>) -> Self {
         Self {
             one_before,
             with_values,
-            enum_as_strings,
-            qucap: qucap.unwrap_or(2),
+            qucap: qucap.unwrap_or(1),
         }
     }
 
@@ -144,10 +138,6 @@ impl ReadQueue {
         }
     }
 
-    fn cap(&self) -> usize {
-        self.cap
-    }
-
     fn len(&self) -> usize {
         self.futs.len()
     }
@@ -185,12 +175,14 @@ impl Stream for ReadQueue {
     }
 }
 
-struct FetchEvents2 {
-    fut: Fst<FetchEventsFut>,
+struct FetchEvents {
+    fut: FetchEventsFut,
 }
 
-struct FetchEvents {
-    qu: ReadQueue,
+impl FetchEvents {
+    fn from_fut(fut: Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>>) -> Self {
+        Self { fut }
+    }
 }
 
 enum ReadingState {
@@ -276,7 +268,7 @@ impl EventsStreamRt {
         readopts: EventReadOpts,
         scyqueue: ScyllaQueue,
     ) -> Self {
-        debug!("EventsStreamRt::new  {ch_conf:?}  {range:?}  {rt:?}  {readopts:?}");
+        trace_init!("EventsStreamRt::new  {ch_conf:?}  {range:?}  {rt:?}  {readopts:?}");
         let series = SeriesId::new(ch_conf.series());
         let msp_inp = crate::events2::msp::MspStreamRt::new(rt.clone(), series, range.clone(), scyqueue.clone());
         Self {
@@ -422,10 +414,8 @@ impl EventsStreamRt {
             let jobtrace = ReadJobTrace::new();
             let mfi = MakeFutInfo::new(self);
             let fut = Self::make_read_events_fut(ts, true, mfi, jobtrace);
-            let mut qu = ReadQueue::new(self.qucap);
-            qu.push(fut);
             self.state = State::ReadingBck(ReadingBck {
-                reading_state: ReadingState::FetchEvents(FetchEvents { qu }),
+                reading_state: ReadingState::FetchEvents(FetchEvents::from_fut(fut)),
             });
         } else {
             trace_fetch!("setup_bck_read  no msp");
@@ -558,7 +548,6 @@ impl Stream for EventsStreamRt {
                         });
                     } else {
                         trace_fetch!("State::Begin  Fwd");
-                        // let fut = Self::make_msp_read_fut(&mut self.msp_inp);
                         self.setup_fwd_read();
                     }
                     continue;
@@ -566,7 +555,6 @@ impl Stream for EventsStreamRt {
                 State::ReadingBck(st) => match &mut st.reading_state {
                     ReadingState::FetchMsp(st2) => match st2.fut.poll_unpin(cx) {
                         Ready(Ok(a)) => {
-                            // trace_fetch!("ReadingBck  FetchMsp  {}", a.fmt());
                             if a.len() == 0 {
                                 self.transition_to_bck_read();
                                 continue;
@@ -592,8 +580,8 @@ impl Stream for EventsStreamRt {
                         Ready(Err(e)) => Ready(Some(Err(e.into()))),
                         Pending => Pending,
                     },
-                    ReadingState::FetchEvents(st2) => match st2.qu.poll_next_unpin(cx) {
-                        Ready(Some(x)) => match x {
+                    ReadingState::FetchEvents(st2) => match st2.fut.poll_unpin(cx) {
+                        Ready(x) => match x {
                             Ok((mut evs, jobtrace)) => {
                                 use items_2::merger::Mergeable;
                                 trace_fetch!("ReadingBck  {jobtrace}");
@@ -627,10 +615,6 @@ impl Stream for EventsStreamRt {
                                 Ready(Some(Err(e)))
                             }
                         },
-                        Ready(None) => {
-                            self.state = State::Done;
-                            Ready(Some(Err(Error::ReadQueueEmptyBck)))
-                        }
                         Pending => Pending,
                     },
                 },
@@ -643,7 +627,7 @@ impl Stream for EventsStreamRt {
                                 match a {
                                     Ok(a) => {
                                         if a.len() == 0 {
-                                            trace_fetch!("MSP INPUT DONE  --------------------");
+                                            trace_msp_fetch!("msp input done");
                                             st.msp_done = true;
                                         }
                                         for x in a {
@@ -664,8 +648,6 @@ impl Stream for EventsStreamRt {
                         trace_msp_fetch!("create msp read fut");
                         let fut = Self::make_msp_read_fut(&mut self2.msp_inp);
                         st.msp_fut = Some(FetchMsp { fut });
-                    } else {
-                        // trace_fetch!("nothing to do for msp fetch");
                     }
                     if st.qu.has_space() {
                         Self::redo_fwd_read(st, msp_buf);
@@ -706,50 +688,6 @@ impl Stream for EventsStreamRt {
                         }
                     }
                 }
-                // State::ReadingFwd(st) => match &mut st.reading_state {
-                //     ReadingState::FetchMsp(st2) => match st2.fut.poll_unpin(cx) {
-                //         Ready(Ok(a)) => {
-                //             // trace_fetch!("ReadingFwd  FetchMsp  {}", ts.fmt());
-                //             for x in a {
-                //                 self.msp_buf.push_back(x);
-                //             }
-                //             if self.msp_buf.len() == 0 {
-                //                 self.state = State::InputDone;
-                //                 continue;
-                //             } else {
-                //                 self.setup_fwd_read();
-                //                 continue;
-                //             }
-                //         }
-                //         Ready(Err(e)) => Ready(Some(Err(e.into()))),
-                //         Pending => Pending,
-                //     },
-                //     ReadingState::FetchEvents(st2) => match st2.qu.poll_next_unpin(cx) {
-                //         Ready(Some(x)) => match x {
-                //             Ok((evs, mut jobtrace)) => {
-                //                 jobtrace
-                //                     .add_event_now(crate::events::ReadEventKind::EventsStreamRtSees(evs.len() as u32));
-                //                 use items_2::merger::Mergeable;
-                //                 trace_fetch!("ReadingFwd  {jobtrace}");
-                //                 for ts in Mergeable::tss(&evs) {
-                //                     trace_every_event!("ReadingFwd  FetchEvents     ts {}", ts.fmt());
-                //                 }
-                //                 self.out.push_back(evs);
-                //                 self.setup_fwd_read();
-                //                 continue;
-                //             }
-                //             Err(e) => {
-                //                 self.state = State::Done;
-                //                 Ready(Some(Err(e.into())))
-                //             }
-                //         },
-                //         Ready(None) => {
-                //             self.state = State::Done;
-                //             Ready(Some(Err(Error::ReadQueueEmptyFwd)))
-                //         }
-                //         Pending => Pending,
-                //     },
-                // },
                 State::InputDone => {
                     if self.out.len() == 0 {
                         self.state = State::Done;
@@ -758,7 +696,6 @@ impl Stream for EventsStreamRt {
                                 items_2::empty::empty_events_dyn_ev(self.ch_conf.scalar_type(), self.ch_conf.shape());
                             match d {
                                 Ok(empty) => {
-                                    // let empty = items_0::streamitem::sitem_data(ChannelEvents::Events(empty));
                                     let item = items_2::channelevents::ChannelEvents::Events(empty);
                                     Ready(Some(Ok(item)))
                                 }

@@ -43,3 +43,6 @@ taskrun = { path = "../taskrun" }
 scyllaconn = { path = "../scyllaconn" }
 daqbuf-redis = { path = "../daqbuf-redis" }
 httpclient = { path = "../httpclient" }
+
+[features]
+prometheus_endpoint = []

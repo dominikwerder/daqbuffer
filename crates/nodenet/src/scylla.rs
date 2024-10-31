@@ -41,7 +41,6 @@ pub async fn scylla_channel_event_stream(
     let readopts = EventReadOpts::new(
         evq.need_one_before_range(),
         evq.need_value_data(),
-        evq.transform().enum_as_string().unwrap_or(false),
         evq.settings().scylla_read_queue_len(),
     );
     let stream: Pin<Box<dyn Stream<Item = _> + Send>> = if let Some(rt) = evq.use_rt() {

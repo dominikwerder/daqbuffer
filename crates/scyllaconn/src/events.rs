@@ -28,14 +28,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use tracing::Instrument;
 
-#[allow(unused)]
-macro_rules! trace_fetch {
-    ($($arg:tt)*) => {
-        if true {
-            trace!($($arg)*);
-        }
-    };
-}
+macro_rules! trace_fetch { ($($arg:tt)*) => ( if true { trace!($($arg)*); } ) }
 
 #[derive(Debug, ThisError)]
 #[cstm(name = "ScyllaReadEvents")]

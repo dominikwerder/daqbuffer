@@ -1,7 +1,6 @@
 use super::prepare::StmtsEvents;
 use crate::range::ScyllaSeriesRange;
 use crate::worker::ScyllaQueue;
-use core::fmt;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Future;
@@ -19,14 +18,7 @@ use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 
-#[allow(unused)]
-macro_rules! trace_emit {
-    ($det:expr, $($arg:tt)*) => {
-        if $det {
-            trace!($($arg)*);
-        }
-    };
-}
+macro_rules! trace_emit { ($det:expr, $($arg:tt)*) => ( if $det { trace!($($arg)*); } ) }
 
 #[derive(Debug, ThisError)]
 #[cstm(name = "EventsMsp")]

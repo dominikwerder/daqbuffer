@@ -18,7 +18,6 @@ use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
 
-#[allow(unused)]
 macro_rules! trace_emit { ($($arg:tt)*) => ( if true { trace!($($arg)*); } ) }
 
 #[derive(Debug, ThisError)]

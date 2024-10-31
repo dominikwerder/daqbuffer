@@ -6,7 +6,6 @@ use chrono::TimeZone;
 use chrono::Utc;
 use err::Error;
 use netpod::get_url_query_pairs;
-use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 use netpod::ttl::RetentionTime;
 use netpod::AppendToUrl;
