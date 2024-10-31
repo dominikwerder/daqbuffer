@@ -17,7 +17,6 @@ pub mod streams;
 #[cfg(test)]
 pub mod test;
 pub mod testgen;
-pub mod timebin;
 pub mod transform;
 
 use channelevents::ChannelEvents;

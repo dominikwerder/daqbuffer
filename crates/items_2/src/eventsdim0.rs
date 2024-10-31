@@ -1,8 +1,3 @@
-use crate::binsdim0::BinsDim0;
-use crate::timebin::ChooseIndicesForTimeBin;
-use crate::timebin::ChooseIndicesForTimeBinEvents;
-use crate::timebin::TimeAggregatorCommonV0Func;
-use crate::timebin::TimeAggregatorCommonV0Trait;
 use crate::IsoDateTime;
 use err::Error;
 use items_0::collect_s::CollectableDyn;
@@ -12,7 +7,6 @@ use items_0::collect_s::ToJsonResult;
 use items_0::container::ByteEstimate;
 use items_0::overlap::HasTimestampDeque;
 use items_0::scalar_ops::ScalarOps;
-use items_0::AppendAllFrom;
 use items_0::Appendable;
 use items_0::AsAnyMut;
 use items_0::AsAnyRef;
@@ -217,16 +211,6 @@ impl<STY: ScalarOps> HasTimestampDeque for EventsDim0<STY> {
 
     fn pulse_max(&self) -> Option<u64> {
         self.pulses.back().map(|x| *x)
-    }
-}
-
-impl<STY> ChooseIndicesForTimeBin for EventsDim0<STY> {
-    fn choose_indices_unweight(&self, beg: u64, end: u64) -> (Option<usize>, usize, usize) {
-        ChooseIndicesForTimeBinEvents::choose_unweight(beg, end, &self.tss)
-    }
-
-    fn choose_indices_timeweight(&self, beg: u64, end: u64) -> (Option<usize>, usize, usize) {
-        ChooseIndicesForTimeBinEvents::choose_timeweight(beg, end, &self.tss)
     }
 }
 
@@ -855,33 +839,6 @@ mod test_frame {
             panic!()
         };
         assert_eq!(item.tss(), &[123]);
-        #[cfg(DISABLED)]
-        {
-            eprintln!("NOW WE SEE: {:?}", item);
-            // type_name_of_val alloc::boxed::Box<dyn items_0::Events>
-            eprintln!("0 {:22?}", item.as_any_mut().type_id());
-            eprintln!("A {:22?}", std::any::TypeId::of::<Box<dyn items_0::Events>>());
-            eprintln!("B {:22?}", std::any::TypeId::of::<dyn items_0::Events>());
-            eprintln!("C {:22?}", std::any::TypeId::of::<&dyn items_0::Events>());
-            eprintln!("D {:22?}", std::any::TypeId::of::<&mut dyn items_0::Events>());
-            eprintln!("E {:22?}", std::any::TypeId::of::<&mut Box<dyn items_0::Events>>());
-            eprintln!("F {:22?}", std::any::TypeId::of::<Box<EventsDim0<f32>>>());
-            eprintln!("G {:22?}", std::any::TypeId::of::<&EventsDim0<f32>>());
-            eprintln!("H {:22?}", std::any::TypeId::of::<&mut EventsDim0<f32>>());
-            eprintln!("I {:22?}", std::any::TypeId::of::<Box<Box<EventsDim0<f32>>>>());
-            //let item = item.as_mut();
-            //eprintln!("1 {:22?}", item.type_id());
-            /*
-            let item = if let Some(item) =
-                items_0::collect_s::Collectable::as_any_mut(item).downcast_ref::<Box<EventsDim0<f32>>>()
-            {
-                item
-            } else {
-                panic!()
-            };
-            */
-            //eprintln!("Final value: {item:?}");
-        }
     }
 }
 

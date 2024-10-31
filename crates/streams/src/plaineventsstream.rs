@@ -57,18 +57,18 @@ pub async fn dyn_events_stream(
     // TODO propagate also the max-buf-len for the first stage event reader.
     // TODO use a mixture of count and byte-size as threshold.
     let stream = Merger::new(inps, evq.merger_out_len_max());
-    #[cfg(DISABLED)]
-    let stream = stream.map(|item| {
-        info!("item after merge: {item:?}");
-        item
-    });
-    //#[cfg(DISABLED)]
+
+    // let stream = stream.map(|item| {
+    //     info!("item after merge: {item:?}");
+    //     item
+    // });
+
     let stream = crate::rangefilter2::RangeFilter2::new(stream, evq.range().try_into()?, evq.one_before_range());
-    #[cfg(DISABLED)]
-    let stream = stream.map(|item| {
-        info!("item after rangefilter: {item:?}");
-        item
-    });
+
+    // let stream = stream.map(|item| {
+    //     info!("item after rangefilter: {item:?}");
+    //     item
+    // });
 
     let stream = stream.map(move |k| {
         on_sitemty_data!(k, |k| {
@@ -83,12 +83,11 @@ pub async fn dyn_events_stream(
         let stream = transform_wasm(stream, wasmname, ctx).await?;
         Ok(Box::pin(stream))
     } else {
-        // let stream = stream.map(|x| x);
         Ok(Box::pin(stream))
     }
 }
 
-#[cfg(not(wasm_transform))]
+#[cfg(not(feature = "wasm_transform"))]
 async fn transform_wasm<INP>(
     stream: INP,
     _wasmname: &str,
@@ -101,8 +100,7 @@ where
     Ok(ret)
 }
 
-#[cfg(DISABLED)]
-#[cfg(wasm_transform)]
+#[cfg(feature = "wasm_transform")]
 async fn transform_wasm<INP>(
     stream: INP,
     wasmname: &str,

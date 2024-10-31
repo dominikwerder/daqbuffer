@@ -23,7 +23,6 @@ pub async fn plain_events_cbor_stream(
     ctx: &ReqCtx,
     open_bytes: OpenBoxedBytesStreamsBox,
 ) -> Result<CborStream, Error> {
-    trace!("build stream");
     let stream = dyn_events_stream(evq, ch_conf, ctx, open_bytes).await?;
     let stream = events_stream_to_cbor_stream(stream);
     let stream = non_empty(stream);

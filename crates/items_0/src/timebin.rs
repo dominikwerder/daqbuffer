@@ -23,6 +23,7 @@ pub trait TimeBins {
     fn ts_min_max(&self) -> Option<(u64, u64)>;
 }
 
+// TODO remove
 pub trait TimeBinnerTy: fmt::Debug + Send + Unpin {
     type Input: fmt::Debug;
     type Output: fmt::Debug;

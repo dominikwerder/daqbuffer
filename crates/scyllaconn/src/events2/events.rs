@@ -620,6 +620,7 @@ impl Stream for EventsStreamRt {
                 },
                 State::ReadingFwd(st) => {
                     let mut have_pending = false;
+                    let mut dbg_have_new_msp_fut = false;
                     if let Some(fut) = st.msp_fut.as_mut() {
                         match fut.fut.poll_unpin(cx) {
                             Ready(a) => {
@@ -648,6 +649,7 @@ impl Stream for EventsStreamRt {
                         trace_msp_fetch!("create msp read fut");
                         let fut = Self::make_msp_read_fut(&mut self2.msp_inp);
                         st.msp_fut = Some(FetchMsp { fut });
+                        dbg_have_new_msp_fut = true;
                     }
                     if st.qu.has_space() {
                         Self::redo_fwd_read(st, msp_buf);
@@ -682,6 +684,8 @@ impl Stream for EventsStreamRt {
                             self.state = State::InputDone;
                             continue;
                         } else if self.out.len() != 0 {
+                            continue;
+                        } else if dbg_have_new_msp_fut {
                             continue;
                         } else {
                             panic!("not pending, nothing to output")

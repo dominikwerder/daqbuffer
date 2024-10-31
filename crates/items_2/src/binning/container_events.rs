@@ -2,7 +2,6 @@ use super::aggregator::AggTimeWeightOutputAvg;
 use super::aggregator::AggregatorNumeric;
 use super::aggregator::AggregatorTimeWeight;
 use super::timeweight::timeweight_events_dyn::BinnedEventsTimeweightDynbox;
-use super::___;
 use core::fmt;
 use err::thiserror;
 use err::ThisError;
@@ -123,20 +122,6 @@ where
     vals: <EVT as EventValueType>::Container,
 }
 
-macro_rules! try_to_events_dim0 {
-    ($sty:ty, $this:expr) => {
-        let this = $this;
-        if let Some(evs) = this.as_any_ref().downcast_ref::<ContainerEvents<$sty>>() {
-            use crate::eventsdim0::EventsDim0;
-            let tss: VecDeque<_> = this.tss.iter().map(|x| x.ns()).collect();
-            let pulses = tss.iter().map(|_| 0).collect();
-            let values = evs.vals.clone();
-            let ret = EventsDim0::<$sty> { tss, pulses, values };
-            return Box::new(ret);
-        }
-    };
-}
-
 impl<EVT> ContainerEvents<EVT>
 where
     EVT: EventValueType,
@@ -192,12 +177,6 @@ where
     pub fn push_back(&mut self, ts: TsNano, val: EVT) {
         self.tss.push_back(ts);
         self.vals.push_back(val);
-    }
-
-    pub fn to_events_dim0(&self) -> Box<dyn items_0::Events> {
-        try_to_events_dim0!(f64, self);
-        let styn = any::type_name::<EVT>();
-        todo!("TODO to_container_events for {styn}")
     }
 }
 
