@@ -1,6 +1,4 @@
 use crate as streams;
-use err::thiserror;
-use err::ThisError;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
@@ -18,6 +16,15 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "BinCachedReader")]
+pub enum Error {
+    TodoImpl,
+    ChannelSend,
+    ChannelRecv,
+    Scylla(String),
+}
 
 #[allow(unused)]
 macro_rules! trace_emit { ($($arg:tt)*) => ( if true { trace!($($arg)*); } ) }
@@ -108,15 +115,6 @@ impl Future for CacheWriting {
 pub trait CacheReadProvider: Send + Sync {
     fn read(&self, series: u64, bin_len: DtMs, msp: u64, offs: Range<u32>) -> CacheReading;
     fn write(&self, series: u64, bins: BinsBoxed) -> CacheWriting;
-}
-
-#[derive(Debug, ThisError)]
-#[cstm(name = "BinCachedReader")]
-pub enum Error {
-    TodoImpl,
-    ChannelSend,
-    ChannelRecv,
-    Scylla(String),
 }
 
 pub struct CachedReader {

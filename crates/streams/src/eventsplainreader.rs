@@ -6,6 +6,7 @@ use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items_0::streamitem::sitem_err_from_string;
 use items_0::streamitem::Sitemty;
 use items_2::channelevents::ChannelEvents;
 use netpod::ReqCtx;
@@ -15,10 +16,16 @@ use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
 
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "EventsPlainReader")]
+pub enum Error {
+    Timebinned(#[from] crate::timebinnedjson::Error),
+}
+
 type ChEvsBox = Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>;
 
 enum StreamState {
-    Opening(Pin<Box<dyn Future<Output = Result<ChEvsBox, ::err::Error>> + Send>>),
+    Opening(Pin<Box<dyn Future<Output = Result<ChEvsBox, Error>> + Send>>),
     Reading(ChEvsBox),
 }
 
@@ -38,7 +45,7 @@ impl Stream for InnerStream {
                         self.state = StreamState::Reading(x);
                         continue;
                     }
-                    Ready(Err(e)) => Ready(Some(Err(e))),
+                    Ready(Err(e)) => Ready(Some(sitem_err_from_string(e))),
                     Pending => Pending,
                 },
                 StreamState::Reading(fut) => match fut.poll_next_unpin(cx) {
@@ -82,7 +89,7 @@ impl EventsReadProvider for SfDatabufferEventReadProvider {
                 open_bytes,
             )
             .await;
-            ret.map(|x| Box::pin(x) as _)
+            ret.map_err(|e| e.into()).map(|x| Box::pin(x) as _)
         }));
         let stream = InnerStream { state };
         EventsReading::new(Box::pin(stream))

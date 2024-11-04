@@ -21,7 +21,7 @@ url = "2.5.0"
 num-traits = "0.2.16"
 hex = "0.4.3"
 rand = "0.8.5"
-thiserror = "1"
+thiserror = "0.0.1"
 err = { path = "../err" }
 
 [patch.crates-io]

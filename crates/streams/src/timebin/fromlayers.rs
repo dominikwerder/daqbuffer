@@ -2,8 +2,6 @@ use super::cached::reader::CacheReadProvider;
 use super::cached::reader::EventsReadProvider;
 use crate::timebin::fromevents::BinnedFromEvents;
 use crate::timebin::grid::find_next_finer_bin_len;
-use err::thiserror;
-use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::streamitem::Sitemty;
@@ -26,7 +24,7 @@ use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
 
-#[derive(Debug, ThisError)]
+#[derive(Debug, thiserror::Error)]
 #[cstm(name = "TimeBinnedFromLayers")]
 pub enum Error {
     GapFill(#[from] super::gapfill::Error),

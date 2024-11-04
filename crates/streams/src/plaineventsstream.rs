@@ -2,14 +2,10 @@ use crate::tcprawclient::container_stream_from_bytes_stream;
 use crate::tcprawclient::make_sub_query;
 use crate::tcprawclient::OpenBoxedBytesStreamsBox;
 use crate::transform::build_merged_event_transform;
-use err::thiserror;
-use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::on_sitemty_data;
-use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
-use items_0::streamitem::StreamItem;
 use items_0::Events;
 use items_2::channelevents::ChannelEvents;
 use items_2::merger::Merger;
@@ -19,10 +15,11 @@ use netpod::ReqCtx;
 use query::api4::events::PlainEventsQuery;
 use std::pin::Pin;
 
-#[derive(Debug, ThisError)]
+#[derive(Debug, thiserror::Error)]
 #[cstm(name = "PlainEventsStream")]
 pub enum Error {
-    OtherErr(#[from] err::Error),
+    Netpod(#[from] netpod::NetpodError),
+    Transform(#[from] crate::transform::Error),
 }
 
 pub type DynEventsStream = Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Events>>> + Send>>;
@@ -88,13 +85,13 @@ pub async fn dyn_events_stream(
 }
 
 #[cfg(not(feature = "wasm_transform"))]
-async fn transform_wasm<INP>(
+async fn transform_wasm<INP, ETS>(
     stream: INP,
     _wasmname: &str,
     _ctx: &ReqCtx,
-) -> Result<impl Stream<Item = Result<StreamItem<RangeCompletableItem<Box<dyn Events>>>, err::Error>> + Send, err::Error>
+) -> Result<impl Stream<Item = Sitemty<Box<dyn Events>>> + Send, Error>
 where
-    INP: Stream<Item = Result<StreamItem<RangeCompletableItem<Box<dyn Events>>>, err::Error>> + Send + 'static,
+    INP: Stream<Item = Sitemty<Box<dyn Events>>> + Send + 'static,
 {
     let ret: Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Events>>> + Send>> = Box::pin(stream);
     Ok(ret)
@@ -105,9 +102,9 @@ async fn transform_wasm<INP>(
     stream: INP,
     wasmname: &str,
     ctx: &ReqCtx,
-) -> Result<impl Stream<Item = Result<StreamItem<RangeCompletableItem<Box<dyn Events>>>, Error>> + Send, Error>
+) -> Result<impl Stream<Item = Sitemty<Box<dyn Events>>> + Send, Error>
 where
-    INP: Stream<Item = Result<StreamItem<RangeCompletableItem<Box<dyn Events>>>, Error>> + Send + 'static,
+    INP: Stream<Item = Sitemty<Box<dyn Events>>> + Send + 'static,
 {
     debug!("make wasm transform");
     use httpclient::url::Url;

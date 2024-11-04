@@ -12,7 +12,7 @@ chrono = { version = "0.4.19", features = ["serde"] }
 url = "2.2"
 humantime = "2.1.0"
 humantime-serde = "1.1.1"
-thiserror = "1"
+thiserror = "0.0.1"
 netpod = { path = "../netpod" }
 items_0 = { path = "../items_0" }
 items_2 = { path = "../items_2" }

@@ -3,7 +3,7 @@ pub mod fromevents;
 pub mod timebin;
 
 mod basic;
-mod fromlayers;
+pub(super) mod fromlayers;
 mod gapfill;
 mod grid;
 

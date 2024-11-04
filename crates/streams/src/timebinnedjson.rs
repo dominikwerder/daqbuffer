@@ -9,7 +9,6 @@ use crate::tcprawclient::OpenBoxedBytesStreamsBox;
 use crate::timebin::cached::reader::EventsReadProvider;
 use crate::timebin::CacheReadProvider;
 use crate::transform::build_merged_event_transform;
-use err::Error;
 use futures_util::future::BoxFuture;
 use futures_util::Stream;
 use futures_util::StreamExt;
@@ -35,6 +34,14 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::Instant;
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "TimebinnedJson")]
+pub enum Error {
+    Query(#[from] query::api4::binned::Error),
+    FromLayers(#[from] super::timebin::fromlayers::Error),
+    Transform(#[from] super::transform::Error),
+}
 
 #[allow(unused)]
 fn assert_stream_send<'u, R>(stream: impl 'u + Send + Stream<Item = R>) -> impl 'u + Send + Stream<Item = R> {
@@ -249,8 +256,7 @@ async fn timebinned_stream(
         bin_len_layers,
         cache_read_provider,
         events_read_provider,
-    )
-    .map_err(Error::from_string)?;
+    )?;
     let stream = stream.map(|item| {
         use items_0::timebin::BinningggContainerBinsDyn;
         on_sitemty_data!(item, |mut x: Box<dyn BinningggContainerBinsDyn>| {

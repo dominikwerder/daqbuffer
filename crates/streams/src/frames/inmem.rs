@@ -1,8 +1,8 @@
 use crate::slidebuf::SlideBuf;
 use bytes::Bytes;
-use err::Error;
 use futures_util::pin_mut;
 use futures_util::Stream;
+use items_0::streamitem::SitemErrTy;
 use items_0::streamitem::StreamItem;
 use items_0::streamitem::TERM_FRAME_TYPE_ID;
 use items_2::framable::INMEM_FRAME_FOOT;
@@ -16,16 +16,24 @@ use std::task::Context;
 use std::task::Poll;
 use tokio::io::AsyncRead;
 
-pub type BoxedBytesStream = Pin<Box<dyn Stream<Item = Result<Bytes, Error>> + Send>>;
-
-#[allow(unused)]
-macro_rules! trace2 { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ); }
-
-impl err::ToErr for crate::slidebuf::Error {
-    fn to_err(self) -> Error {
-        Error::with_msg_no_trace(format!("{self}"))
-    }
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "InMem")]
+pub enum Error {
+    Input,
+    Slidebuf(#[from] crate::slidebuf::Error),
+    IO(#[from] std::io::Error),
+    LessThanNeedMin,
+    LessThanHeader,
+    HugeFrame(u32),
+    BadMagic(u32),
+    TryFromSlice(#[from] std::array::TryFromSliceError),
+    BadCrc,
+    EnoughInputNothingParsed,
 }
+
+pub type BoxedBytesStream = Pin<Box<dyn Stream<Item = Result<Bytes, SitemErrTy>> + Send>>;
+
+macro_rules! trace2 { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ); }
 
 pub struct TcpReadAsBytes<INP> {
     inp: INP,
@@ -41,7 +49,7 @@ impl<INP> Stream for TcpReadAsBytes<INP>
 where
     INP: AsyncRead + Unpin,
 {
-    type Item = Result<Bytes, err::Error>;
+    type Item = Result<Bytes, Error>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
@@ -118,7 +126,7 @@ where
                 }
                 Err(e) => Ready(Err(e.into())),
             },
-            Ready(Some(Err(_e))) => Ready(Err(Error::with_msg_no_trace("input error"))),
+            Ready(Some(Err(_e))) => Ready(Err(Error::Input)),
             Ready(None) => Ready(Ok(0)),
             Pending => Pending,
         }
@@ -140,10 +148,10 @@ where
     fn parse(&mut self) -> Result<Option<InMemoryFrame>, Error> {
         let buf = self.buf.data();
         if buf.len() < self.need_min {
-            return Err(Error::with_msg_no_trace("expect at least need_min"));
+            return Err(Error::LessThanNeedMin);
         }
         if buf.len() < INMEM_FRAME_HEAD {
-            return Err(Error::with_msg_no_trace("expect at least enough bytes for the header"));
+            return Err(Error::LessThanHeader);
         }
         let magic = u32::from_le_bytes(buf[0..4].try_into()?);
         let encid = u32::from_le_bytes(buf[4..8].try_into()?);
@@ -158,7 +166,7 @@ where
                 magic, u
             );
             error!("{msg}");
-            return Err(Error::with_msg(msg));
+            return Err(Error::BadMagic(magic));
         }
         if len > 1024 * 1024 * 50 {
             let msg = format!(
@@ -166,7 +174,7 @@ where
                 len, self.inp_bytes_consumed
             );
             error!("{msg}");
-            return Err(Error::with_msg(msg));
+            return Err(Error::HugeFrame(len));
         }
         let lentot = INMEM_FRAME_HEAD + INMEM_FRAME_FOOT + len as usize;
         if buf.len() < lentot {
@@ -191,7 +199,7 @@ where
                 payload_crc_match, frame_crc_match,
             );
             error!("{msg}");
-            let e = Error::with_msg_no_trace(msg);
+            let e = Error::BadCrc;
             return Err(e);
         }
         self.inp_bytes_consumed += lentot as u64;
@@ -230,7 +238,7 @@ where
                     Ok(None) => {
                         if self.buf.len() >= self.need_min {
                             self.done = true;
-                            let e = Error::with_msg_no_trace("enough bytes but nothing parsed");
+                            let e = Error::EnoughInputNothingParsed;
                             Ready(Some(Err(e)))
                         } else {
                             continue;

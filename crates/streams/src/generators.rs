@@ -1,14 +1,16 @@
 use crate::frames::inmem::BoxedBytesStream;
 use crate::transform::build_event_transform;
-use err::Error;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use items_0::container::ByteEstimate;
 use items_0::on_sitemty_data;
 use items_0::streamitem::sitem_data;
+use items_0::streamitem::sitem_err2_from_string;
 use items_0::streamitem::RangeCompletableItem;
+use items_0::streamitem::SitemErrTy;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::Appendable;
@@ -30,13 +32,20 @@ use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
 
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "Generator")]
+pub enum Error {
+    UnsupportedIsEventBlobs,
+    Transform(#[from] crate::transform::Error),
+}
+
 pub fn make_test_channel_events_bytes_stream(
     subq: EventsSubQuery,
     node_count: u64,
     node_ix: u64,
 ) -> Result<BoxedBytesStream, Error> {
     if subq.is_event_blobs() {
-        let e = Error::with_msg_no_trace("evq.is_event_blobs() not supported in this generator");
+        let e = Error::UnsupportedIsEventBlobs;
         error!("{e}");
         Err(e)
     } else {
@@ -57,7 +66,9 @@ pub fn make_test_channel_events_bytes_stream(
                 }
             })
         });
-        let stream = stream.map(|x| x.make_frame_dyn().map(|x| x.freeze()));
+        let stream = stream
+            .map_err(sitem_err2_from_string)
+            .map(|x| x.make_frame_dyn().map(|x| x.freeze()));
         let ret = Box::pin(stream);
         Ok(ret)
     }

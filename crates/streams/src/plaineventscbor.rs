@@ -4,14 +4,11 @@ use crate::firsterr::non_empty;
 use crate::firsterr::only_first_err;
 use crate::plaineventsstream::dyn_events_stream;
 use crate::tcprawclient::OpenBoxedBytesStreamsBox;
-use err::thiserror;
-use err::ThisError;
-use netpod::log::*;
 use netpod::ChannelTypeConfigGen;
 use netpod::ReqCtx;
 use query::api4::events::PlainEventsQuery;
 
-#[derive(Debug, ThisError)]
+#[derive(Debug, thiserror::Error)]
 #[cstm(name = "PlainEventsCbor")]
 pub enum Error {
     Stream(#[from] crate::plaineventsstream::Error),

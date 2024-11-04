@@ -1,6 +1,5 @@
 use async_channel::Send;
 use async_channel::Sender;
-use err::Error;
 use futures_util::pin_mut;
 use futures_util::Future;
 use futures_util::Stream;
@@ -9,6 +8,10 @@ use std::pin::Pin;
 use std::ptr::NonNull;
 use std::task::Context;
 use std::task::Poll;
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "ItemClone")]
+pub enum Error {}
 
 pub struct Itemclone<'a, T, INP>
 where

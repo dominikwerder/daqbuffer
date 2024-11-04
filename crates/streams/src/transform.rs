@@ -1,4 +1,3 @@
-use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::collect_s::CollectableDyn;
@@ -18,6 +17,10 @@ use query::transform::EventTransformQuery;
 use query::transform::TimeBinningTransformQuery;
 use query::transform::TransformQuery;
 use std::pin::Pin;
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "Transform")]
+pub enum Error {}
 
 pub fn build_event_transform(tr: &TransformQuery) -> Result<TransformEvent, Error> {
     let trev = tr.get_tr_event();

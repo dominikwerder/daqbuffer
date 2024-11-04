@@ -1,7 +1,5 @@
 use super::cached::reader::EventsReadProvider;
 use crate::events::convertforbinning::ConvertForBinning;
-use err::thiserror;
-use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::streamitem::RangeCompletableItem;
@@ -20,7 +18,7 @@ use std::task::Poll;
 
 macro_rules! trace_emit { ($($arg:tt)*) => ( if true { trace!($($arg)*); } ) }
 
-#[derive(Debug, ThisError)]
+#[derive(Debug, thiserror::Error)]
 #[cstm(name = "ReadingBinnedFromEvents")]
 pub enum Error {
     ExpectTimerange,

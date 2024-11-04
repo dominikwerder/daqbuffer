@@ -1,4 +1,3 @@
-use err::Error;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
@@ -23,22 +22,24 @@ use std::time::Duration;
 use std::time::Instant;
 use tracing::Instrument;
 
-#[allow(unused)]
-macro_rules! trace2 {
-    (D$($arg:tt)*) => ();
-    ($($arg:tt)*) => (eprintln!($($arg)*));
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "CollectDyn")]
+pub enum Error {
+    Msg(String),
+    NoResultNoCollector,
 }
 
-#[allow(unused)]
-macro_rules! trace3 {
-    (D$($arg:tt)*) => ();
-    ($($arg:tt)*) => (eprintln!($($arg)*));
-}
+struct ErrMsg<E>(E)
+where
+    E: ToString;
 
-#[allow(unused)]
-macro_rules! trace4 {
-    (D$($arg:tt)*) => ();
-    ($($arg:tt)*) => (eprintln!($($arg)*));
+impl<E> From<ErrMsg<E>> for Error
+where
+    E: ToString,
+{
+    fn from(value: ErrMsg<E>) -> Self {
+        Self::Msg(value.0.to_string())
+    }
 }
 
 pub enum CollectResult<T> {
@@ -154,7 +155,7 @@ impl Collect {
             },
             Err(e) => {
                 // TODO  Need to use some flags to get good enough error message for remote user.
-                Err(e)
+                Err(ErrMsg(e).into())
             }
         }
     }
@@ -184,7 +185,7 @@ impl Future for Collect {
                             //info!("collect stats total duration: {:?}", total_duration);
                             Ready(Ok(CollectResult::Some(res)))
                         }
-                        Err(e) => Ready(Err(e)),
+                        Err(e) => Ready(Err(ErrMsg(e).into())),
                     },
                     None => {
                         debug!("no result because no collector was created");
@@ -310,15 +311,16 @@ where
             },
             Err(e) => {
                 // TODO  Need to use some flags to get good enough error message for remote user.
-                return Err(e);
+                return Err(ErrMsg(e).into());
             }
         }
     }
     let _ = range_complete;
     let _ = timed_out;
     let res = collector
-        .ok_or_else(|| Error::with_msg_no_trace(format!("no result, no collector created")))?
-        .result(range, binrange)?;
+        .ok_or_else(|| Error::NoResultNoCollector)?
+        .result(range, binrange)
+        .map_err(ErrMsg)?;
     info!("collect_in_span  stats total duration: {:?}", total_duration);
     Ok(res)
 }

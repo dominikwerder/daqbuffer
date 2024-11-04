@@ -102,12 +102,12 @@ impl From<(u64, u64)> for NanoRange {
 }
 
 impl TryFrom<&SeriesRange> for NanoRange {
-    type Error = Error;
+    type Error = NetpodError;
 
     fn try_from(val: &SeriesRange) -> Result<NanoRange, Self::Error> {
         match val {
             SeriesRange::TimeRange(x) => Ok(x.clone()),
-            SeriesRange::PulseRange(_) => Err(Error::with_public_msg_no_trace("given SeriesRange is not a time range")),
+            SeriesRange::PulseRange(_) => Err(NetpodError::NotTimerange),
         }
     }
 }

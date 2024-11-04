@@ -2,8 +2,6 @@ use bytes::Buf;
 use bytes::BufMut;
 use bytes::Bytes;
 use bytes::BytesMut;
-use err::thiserror;
-use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use netpod::log::*;
@@ -24,7 +22,7 @@ macro_rules! trace_parse {
     };
 }
 
-#[derive(Debug, ThisError)]
+#[derive(Debug, thiserror::Error)]
 #[cstm(name = "StreamFramedBytes")]
 pub enum Error {
     FrameTooLarge,

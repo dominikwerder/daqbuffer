@@ -1,4 +1,3 @@
-use err::Error;
 use netpod::log::Level;
 use netpod::DiskStats;
 use netpod::EventDataReadStats;
@@ -69,7 +68,9 @@ impl LogItem {
     }
 }
 
-pub type Sitemty<T> = Result<StreamItem<RangeCompletableItem<T>>, Error>;
+pub type SitemErrTy = err::Error;
+
+pub type Sitemty<T> = Result<StreamItem<RangeCompletableItem<T>>, SitemErrTy>;
 
 pub type Sitemty2<T, E> = Result<StreamItem<RangeCompletableItem<T>>, E>;
 
@@ -142,6 +143,20 @@ macro_rules! try_map_sitemty_data {
 
 pub fn sitem_data<X>(x: X) -> Sitemty<X> {
     Ok(StreamItem::DataItem(RangeCompletableItem::Data(x)))
+}
+
+pub fn sitem_err_from_string<T, D>(x: T) -> Sitemty<D>
+where
+    T: ToString,
+{
+    Err(err::Error::from_string(x))
+}
+
+pub fn sitem_err2_from_string<T>(x: T) -> err::Error
+where
+    T: ToString,
+{
+    err::Error::from_string(x)
 }
 
 mod levelserde {

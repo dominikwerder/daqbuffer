@@ -1,11 +1,10 @@
 use super::cached::reader::CacheReadProvider;
 use super::cached::reader::EventsReadProvider;
 use crate::timebin::fromevents::BinnedFromEvents;
-use err::thiserror;
-use err::ThisError;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items_0::streamitem::sitem_err_from_string;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
@@ -41,7 +40,7 @@ macro_rules! debug_cache { ($($arg:tt)*) => ( if true { debug!($($arg)*); } ) }
 #[allow(unused)]
 macro_rules! trace_handle { ($($arg:tt)*) => ( if true { trace!($($arg)*); } ) }
 
-#[derive(Debug, ThisError)]
+#[derive(Debug, thiserror::Error)]
 #[cstm(name = "BinCachedGapFill")]
 pub enum Error {
     CacheReader(#[from] super::cached::reader::Error),
@@ -109,7 +108,7 @@ impl GapFill {
             let stream = super::cached::reader::CachedReader::new(series, range.clone(), cache_read_provider.clone())?
                 .map(|x| match x {
                     Ok(x) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))),
-                    Err(e) => Err(::err::Error::from_string(e)),
+                    Err(e) => sitem_err_from_string(e),
                 });
             Box::pin(stream) as Pin<Box<dyn Stream<Item = Sitemty<BinsBoxed>> + Send>>
         } else {
@@ -294,7 +293,7 @@ impl GapFill {
 
     fn cache_write(mut self: Pin<&mut Self>, bins: BinsBoxed) -> Result<(), Error> {
         // TODO emit bins that are ready for cache write into some separate channel
-        let series = ::err::todoval();
+        let series = todo!();
         self.cache_writing = Some(self.cache_read_provider.write(series, bins));
         Ok(())
     }
@@ -338,7 +337,7 @@ impl Stream for GapFill {
                     }
                     Ready(Err(e)) => {
                         self.cache_writing = None;
-                        Ready(Some(Err(::err::Error::from_string(e))))
+                        Ready(Some(sitem_err_from_string(e)))
                     }
                     Pending => Pending,
                 }
@@ -348,7 +347,7 @@ impl Stream for GapFill {
                         StreamItem::DataItem(RangeCompletableItem::Data(x)) => {
                             match self.as_mut().handle_bins_finer(x) {
                                 Ok(x) => Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))))),
-                                Err(e) => Ready(Some(Err(::err::Error::from_string(e)))),
+                                Err(e) => Ready(Some(sitem_err_from_string(e))),
                             }
                         }
                         StreamItem::DataItem(RangeCompletableItem::RangeComplete) => {
@@ -358,7 +357,7 @@ impl Stream for GapFill {
                             if self.cache_usage.is_cache_write() {
                                 match self.as_mut().cache_write_on_end() {
                                     Ok(()) => continue,
-                                    Err(e) => Ready(Some(Err(::err::Error::from_string(e)))),
+                                    Err(e) => Ready(Some(sitem_err_from_string(e))),
                                 }
                             } else {
                                 continue;
@@ -367,7 +366,7 @@ impl Stream for GapFill {
                         StreamItem::Log(x) => Ready(Some(Ok(StreamItem::Log(x)))),
                         StreamItem::Stats(x) => Ready(Some(Ok(StreamItem::Stats(x)))),
                     },
-                    Ready(Some(Err(e))) => Ready(Some(Err(::err::Error::from_string(e)))),
+                    Ready(Some(Err(e))) => Ready(Some(sitem_err_from_string(e))),
                     Ready(None) => {
                         trace_handle!(
                             "{}  inp_finer Ready(None)  last_bin_ts2 {:?}",
@@ -386,9 +385,7 @@ impl Stream for GapFill {
                                     exp_finer_range
                                 );
                                 if self.inp_finer_fills_gap {
-                                    Ready(Some(Err(::err::Error::from_string(
-                                        "finer input didn't deliver to the end",
-                                    ))))
+                                    Ready(Some(sitem_err_from_string("finer input didn't deliver to the end")))
                                 } else {
                                     warn!(
                                         "{}  inp_finer  Ready(None)  last_bin_ts2 {:?}  not delivered to the end, but maybe in the future",
@@ -404,9 +401,9 @@ impl Stream for GapFill {
                                 "{}  inp_finer  Ready(None)  last_bin_ts2 {:?}",
                                 self.dbgname, self.last_bin_ts2
                             );
-                            Ready(Some(Err(::err::Error::from_string(
+                            Ready(Some(sitem_err_from_string(
                                 "finer input delivered nothing, received nothing at all so far",
-                            ))))
+                            )))
                         } else {
                             warn!(
                                 "{}  inp_finer  Ready(None)  last_bin_ts2 {:?}",
@@ -420,14 +417,14 @@ impl Stream for GapFill {
             } else if let Some(x) = self.inp_buf.take() {
                 match self.as_mut().handle_bins_finer(x) {
                     Ok(x) => Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))))),
-                    Err(e) => Ready(Some(Err(::err::Error::from_string(e)))),
+                    Err(e) => Ready(Some(sitem_err_from_string(e))),
                 }
             } else if let Some(inp) = self.inp.as_mut() {
                 match inp.poll_next_unpin(cx) {
                     Ready(Some(Ok(x))) => match x {
                         StreamItem::DataItem(RangeCompletableItem::Data(x)) => match self.as_mut().handle_bins(x) {
                             Ok(x) => Ready(Some(Ok(StreamItem::DataItem(RangeCompletableItem::Data(x))))),
-                            Err(e) => Ready(Some(Err(::err::Error::from_string(e)))),
+                            Err(e) => Ready(Some(sitem_err_from_string(e))),
                         },
                         StreamItem::DataItem(RangeCompletableItem::RangeComplete) => {
                             self.inp_range_final = true;
@@ -436,7 +433,7 @@ impl Stream for GapFill {
                         StreamItem::Log(x) => Ready(Some(Ok(StreamItem::Log(x)))),
                         StreamItem::Stats(x) => Ready(Some(Ok(StreamItem::Stats(x)))),
                     },
-                    Ready(Some(Err(e))) => Ready(Some(Err(::err::Error::from_string(e)))),
+                    Ready(Some(Err(e))) => Ready(Some(sitem_err_from_string(e))),
                     Ready(None) => {
                         self.inp = None;
                         // TODO assert that we have emitted up to the requested range.
@@ -455,7 +452,7 @@ impl Stream for GapFill {
                                     Ok(()) => {
                                         continue;
                                     }
-                                    Err(e) => Ready(Some(Err(::err::Error::from_string(e)))),
+                                    Err(e) => Ready(Some(sitem_err_from_string(e))),
                                 }
                             } else {
                                 debug!("{}  received everything", self.dbgname);
@@ -471,7 +468,7 @@ impl Stream for GapFill {
                                 Ok(()) => {
                                     continue;
                                 }
-                                Err(e) => Ready(Some(Err(::err::Error::from_string(e)))),
+                                Err(e) => Ready(Some(sitem_err_from_string(e))),
                             }
                         }
                     }

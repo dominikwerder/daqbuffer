@@ -1,10 +1,15 @@
 use crate::filechunkread::FileChunkRead;
-use err::Error;
-use futures_util::{Stream, StreamExt};
+use futures_util::Stream;
+use futures_util::StreamExt;
 use netpod::histo::HistoLog2;
 use netpod::log::*;
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::Context;
+use std::task::Poll;
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "NeedMinBuffer")]
+pub enum Error {}
 
 pub struct NeedMinBuffer {
     inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>,

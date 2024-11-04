@@ -5,7 +5,6 @@ use crate::lenframed;
 use crate::plaineventscbor::plain_events_cbor_stream;
 use crate::tcprawclient::OpenBoxedBytesStreams;
 use crate::tcprawclient::TEST_BACKEND;
-use err::Error;
 use futures_util::future;
 use futures_util::Future;
 use futures_util::StreamExt;
@@ -22,6 +21,13 @@ use query::api4::events::EventsSubQuery;
 use query::api4::events::PlainEventsQuery;
 use std::pin::Pin;
 use std::sync::Arc;
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "TestEvents")]
+pub enum Error {
+    InMem(#[from] crate::frames::inmem::Error),
+    Generator(#[from] crate::generators::Error),
+}
 
 #[test]
 fn merged_events_cbor() {

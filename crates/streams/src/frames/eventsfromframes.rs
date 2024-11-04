@@ -1,7 +1,7 @@
-use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::framable::FrameTypeInnerStatic;
+use items_0::streamitem::sitem_err_from_string;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
@@ -13,6 +13,10 @@ use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "FromFrames")]
+pub enum Error {}
 
 pub struct EventsFromFrames<O> {
     inp: Pin<Box<dyn Stream<Item = Result<StreamItem<InMemoryFrame>, Error>> + Send>>,
@@ -100,7 +104,7 @@ where
                     },
                     Ready(Some(Err(e))) => {
                         self.errored = true;
-                        Ready(Some(Err(e)))
+                        Ready(Some(sitem_err_from_string(e)))
                     }
                     Ready(None) => {
                         self.completed = true;

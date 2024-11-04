@@ -1,5 +1,4 @@
 use crate::cbor_stream::SitemtyDynEventsStream;
-use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::streamitem::RangeCompletableItem;
@@ -9,6 +8,10 @@ use items_0::WithLen;
 use netpod::log::*;
 use std::pin::Pin;
 use std::time::Duration;
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "JsonStream")]
+pub enum Error {}
 
 pub struct JsonBytes(String);
 

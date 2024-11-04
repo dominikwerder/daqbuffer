@@ -1,7 +1,7 @@
-use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::streamitem::sitem_data;
+use items_0::streamitem::sitem_err_from_string;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
@@ -16,17 +16,21 @@ use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 
-#[allow(unused)]
 macro_rules! debug_first { ($($arg:tt)*) => ( if false { debug!($($arg)*); } ) }
 
-#[allow(unused)]
 macro_rules! trace2 { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ) }
 
-#[allow(unused)]
 macro_rules! trace3 { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ) }
 
-#[allow(unused)]
-macro_rules! trace4 { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ) }
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "TimeBinnedStream")]
+pub enum Error {
+    MissingBinnerAfterProcessItem,
+    CreateEmpty,
+    NoBinnerAfterInputDone,
+    Stream,
+    Msg(String),
+}
 
 type SitemtyStream<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;
 
@@ -106,7 +110,7 @@ where
                 self.binner.is_some()
             );
             if self.binner.is_none() {
-                let e = Error::with_msg_no_trace("must emit on first input but no binner");
+                let e = Error::MissingBinnerAfterProcessItem;
                 self.done = true;
                 return Err(e);
             }
@@ -125,7 +129,7 @@ where
                     if let Some(bins) = binner.empty() {
                         Ok(Break(Ready(sitem_data(bins))))
                     } else {
-                        let e = Error::with_msg_no_trace("must emit but can not even create empty A");
+                        let e = Error::CreateEmpty;
                         error!("{e}");
                         Err(e)
                     }
@@ -142,7 +146,7 @@ where
 
     fn handle_item(
         &mut self,
-        item: Result<StreamItem<RangeCompletableItem<T>>, Error>,
+        item: Sitemty<T>,
     ) -> Result<ControlFlow<Poll<Sitemty<<<T as TimeBinnableTy>::TimeBinner as TimeBinnerTy>::Output>>>, Error> {
         use ControlFlow::*;
         use Poll::*;
@@ -163,7 +167,7 @@ where
             Err(e) => {
                 error!("received error item: {e}");
                 self.done = true;
-                Err(e)
+                Err(Error::Msg(e.to_string()))
             }
         }
     }
@@ -191,7 +195,7 @@ where
                     self.done_data = true;
                     Ok(Break(Ready(sitem_data(bins))))
                 } else {
-                    let e = Error::with_msg_no_trace("must emit but can not even create empty B");
+                    let e = Error::CreateEmpty;
                     error!("{e}");
                     self.done_data = true;
                     Err(e)
@@ -200,7 +204,7 @@ where
         } else {
             warn!("input stream finished, still no binner");
             self.done_data = true;
-            let e = Error::with_msg_no_trace(format!("input stream finished, still no binner"));
+            let e = Error::NoBinnerAfterInputDone;
             Err(e)
         }
     }
@@ -261,7 +265,7 @@ where
                     },
                     Err(e) => {
                         self.done = true;
-                        break Ready(Some(Err(e)));
+                        break Ready(Some(sitem_err_from_string(e)));
                     }
                 }
             };

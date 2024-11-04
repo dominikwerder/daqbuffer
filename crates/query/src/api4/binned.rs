@@ -22,9 +22,11 @@ use url::Url;
 #[derive(Debug, thiserror::Error)]
 #[cstm(name = "BinnedQuery")]
 pub enum Error {
+    BadInt(#[from] std::num::ParseIntError),
     MultipleBinCountBinWidth,
     BadUseRt,
     Netpod(#[from] netpod::NetpodError),
+    Transform(#[from] crate::transform::Error),
 }
 
 mod serde_option_vec_duration {

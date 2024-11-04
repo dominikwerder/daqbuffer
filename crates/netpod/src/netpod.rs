@@ -205,6 +205,10 @@ pub enum NetpodError {
     MissingBinningScheme,
     BadCacheUsage(String),
     TimelikeBinWidthImpossibleForPulseRange,
+    BinCountTooLarge,
+    BinCountTooSmall,
+    BinnedNoGridMatch,
+    NotTimerange,
 }
 
 #[derive(Debug, ThisError)]
@@ -2572,20 +2576,17 @@ pub enum BinnedRangeEnum {
 }
 
 impl BinnedRangeEnum {
-    fn covering_range_ty<T>(a: T, b: T, min_bin_count: u32) -> Result<Self, Error>
+    fn covering_range_ty<T>(a: T, b: T, min_bin_count: u32) -> Result<Self, NetpodError>
     where
         T: Dim0Index + 'static,
     {
         let opts = T::binned_bin_len_opts();
         if min_bin_count < 1 {
-            Err(Error::with_msg("min_bin_count < 1"))?;
+            Err(NetpodError::BinCountTooSmall)?;
         }
         let bin_count_max = i32::MAX as u32;
         if min_bin_count > bin_count_max {
-            Err(Error::with_msg(format!(
-                "min_bin_count > {}: {}",
-                bin_count_max, min_bin_count
-            )))?;
+            Err(NetpodError::BinCountTooLarge)?;
         }
         let du = b.sub(&a);
         let max_bin_len = du.div_n(min_bin_count as u64);
@@ -2599,7 +2600,7 @@ impl BinnedRangeEnum {
                 return Ok(ret);
             }
         }
-        Err(Error::with_msg_no_trace("can not find matching binned grid"))
+        Err(NetpodError::BinnedNoGridMatch)
     }
 
     /// Cover at least the given range while selecting the bin width which best fits the requested bin width.
@@ -2611,7 +2612,7 @@ impl BinnedRangeEnum {
     }
 
     /// Cover at least the given range with at least as many as the requested number of bins.
-    pub fn covering_range(range: SeriesRange, min_bin_count: u32) -> Result<Self, Error> {
+    pub fn covering_range(range: SeriesRange, min_bin_count: u32) -> Result<Self, NetpodError> {
         match range {
             SeriesRange::TimeRange(k) => Self::covering_range_ty(TsNano(k.beg), TsNano(k.end), min_bin_count),
             SeriesRange::PulseRange(k) => Self::covering_range_ty(PulseId(k.beg), PulseId(k.end), min_bin_count),

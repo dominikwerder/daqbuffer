@@ -6,8 +6,6 @@ use crate::json_stream::events_stream_to_json_stream;
 use crate::json_stream::JsonStream;
 use crate::plaineventsstream::dyn_events_stream;
 use crate::tcprawclient::OpenBoxedBytesStreamsBox;
-use err::thiserror;
-use err::ThisError;
 use futures_util::StreamExt;
 use items_0::collect_s::CollectableDyn;
 use items_0::on_sitemty_data;
@@ -21,13 +19,11 @@ use serde_json::Value as JsonValue;
 use std::time::Duration;
 use std::time::Instant;
 
-#[derive(Debug, ThisError)]
+#[derive(Debug, thiserror::Error)]
 #[cstm(name = "PlainEventsJson")]
 pub enum Error {
     Stream(#[from] crate::plaineventsstream::Error),
-    Collect(err::Error),
     Json(#[from] serde_json::Error),
-    Err(err::Error),
 }
 
 pub async fn plain_events_json(
@@ -92,11 +88,10 @@ pub async fn plain_events_json(
         Some(evq.range().clone()),
         None,
     )
-    .await
-    .map_err(Error::Collect)?;
+    .await?;
     debug!("plain_events_json  collected");
     if let CollectResult::Some(x) = collected {
-        let jsval = x.to_json_value().map_err(|e| Error::Err(e))?;
+        let jsval = x.to_json_value()?;
         debug!("plain_events_json  json serialized");
         Ok(CollectResult::Some(jsval))
     } else {
