@@ -91,7 +91,6 @@ impl FindActiveHandler {
             .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
         let _url = req_uri_to_url(req.uri()).map_err(|_| FindActiveError::HttpBadUrl)?;
         if accept.contains(APP_JSON) || accept.contains(ACCEPT_ALL) {
-            type _A = netpod::BodyStream;
             let stream = FindActiveStream::new(40, 2, ncc);
             let stream = stream.chain(FindActiveStream::new(40, 3, ncc));
             let stream = stream.chain(FindActiveStream::new(40, 4, ncc));

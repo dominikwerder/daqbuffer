@@ -188,9 +188,11 @@ pub enum AsyncChannelError {
     Recv,
 }
 
-pub struct BodyStream {
-    //pub receiver: async_channel::Receiver<Result<Bytes, Error>>,
-    pub inner: Box<dyn Stream<Item = Result<Bytes, Error>> + Send + Unpin>,
+pub struct BodyStream<E>
+where
+    E: std::error::Error,
+{
+    pub inner: Box<dyn Stream<Item = Result<Bytes, E>> + Send + Unpin>,
 }
 
 #[derive(Debug, Clone, PartialEq, PartialOrd, Eq, Ord, Serialize, Deserialize)]

@@ -31,6 +31,16 @@ use netpod::BinnedRangeEnum;
 use std::time::Duration;
 use std::time::Instant;
 
+#[cfg(test)]
+pub fn runfut<T, F>(fut: F) -> Result<T, err::Error>
+where
+    F: std::future::Future<Output = Result<T, Error>>,
+{
+    use futures_util::TryFutureExt;
+    let fut = fut.map_err(|e| e.into());
+    taskrun::run(fut)
+}
+
 #[test]
 fn items_move_events() {
     let evs = make_some_boxed_d0_f32(10, SEC, SEC, 0, 1846713782);

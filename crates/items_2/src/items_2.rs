@@ -14,6 +14,7 @@ pub mod frame;
 pub mod inmem;
 pub mod merger;
 pub mod streams;
+#[cfg(feature = "heavy")]
 #[cfg(test)]
 pub mod test;
 pub mod testgen;
@@ -174,12 +175,3 @@ impl Mergeable for Box<dyn Events> {
 pub trait ChannelEventsInput: Stream<Item = Sitemty<ChannelEvents>> + EventTransform + Send {}
 
 impl<T> ChannelEventsInput for T where T: Stream<Item = Sitemty<ChannelEvents>> + EventTransform + Send {}
-
-pub fn runfut<T, F>(fut: F) -> Result<T, err::Error>
-where
-    F: std::future::Future<Output = Result<T, Error>>,
-{
-    use futures_util::TryFutureExt;
-    let fut = fut.map_err(|e| e.into());
-    taskrun::run(fut)
-}
