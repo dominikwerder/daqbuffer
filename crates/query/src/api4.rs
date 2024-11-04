@@ -4,7 +4,6 @@ pub mod events;
 use chrono::DateTime;
 use chrono::TimeZone;
 use chrono::Utc;
-use err::Error;
 use netpod::get_url_query_pairs;
 use netpod::range::evrange::SeriesRange;
 use netpod::ttl::RetentionTime;
@@ -20,6 +19,16 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::time::Duration;
 use url::Url;
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "Query")]
+pub enum Error {
+    MissingTimerange,
+    ChronoParse(#[from] chrono::ParseError),
+    HumantimeDurationParse(#[from] humantime::DurationError),
+    MissingBackend,
+    MissingRetentionTime,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AccountingIngestedBytesQuery {
@@ -46,16 +55,18 @@ impl HasTimeout for AccountingIngestedBytesQuery {
 }
 
 impl FromUrl for AccountingIngestedBytesQuery {
-    fn from_url(url: &Url) -> Result<Self, err::Error> {
+    type Error = netpod::NetpodError;
+
+    fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let ret = Self {
             backend: pairs
                 .get("backend")
-                .ok_or_else(|| Error::with_public_msg_no_trace("missing backend"))?
+                .ok_or_else(|| netpod::NetpodError::MissingBackend)?
                 .to_string(),
             range: SeriesRange::from_pairs(pairs)?,
         };
@@ -115,36 +126,32 @@ impl HasTimeout for AccountingToplistQuery {
 }
 
 impl FromUrl for AccountingToplistQuery {
-    fn from_url(url: &Url) -> Result<Self, err::Error> {
+    type Error = Error;
+
+    fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let fn1 = |pairs: &BTreeMap<String, String>| {
-            let v = pairs
-                .get("tsDate")
-                .ok_or(Error::with_public_msg_no_trace("missing tsDate"))?;
+            let v = pairs.get("tsDate").ok_or(Self::Error::MissingTimerange)?;
             let mut w = v.parse::<DateTime<Utc>>();
             if w.is_err() && v.ends_with("ago") {
-                let d = humantime::parse_duration(&v[..v.len() - 3])
-                    .map_err(|_| Error::with_public_msg_no_trace(format!("can not parse {v}")))?;
+                let d = humantime::parse_duration(&v[..v.len() - 3])?;
                 w = Ok(Utc::now() - d);
             }
             let w = w?;
-            Ok::<_, Error>(TsNano::from_ns(w.to_nanos()))
+            Ok::<_, Self::Error>(TsNano::from_ns(w.to_nanos()))
         };
         let ret = Self {
             rt: pairs
                 .get("retentionTime")
-                .ok_or_else(|| Error::with_public_msg_no_trace("missing retentionTime"))
-                .and_then(|x| {
-                    x.parse()
-                        .map_err(|_| Error::with_public_msg_no_trace("missing retentionTime"))
-                })?,
+                .ok_or_else(|| Self::Error::MissingRetentionTime)
+                .and_then(|x| x.parse().map_err(|_| Self::Error::MissingRetentionTime))?,
             backend: pairs
                 .get("backend")
-                .ok_or_else(|| Error::with_public_msg_no_trace("missing backend"))?
+                .ok_or_else(|| Self::Error::MissingBackend)?
                 .to_string(),
             ts: fn1(pairs)?,
             limit: pairs.get("limit").map_or(None, |x| x.parse().ok()).unwrap_or(20),

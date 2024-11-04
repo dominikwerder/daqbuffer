@@ -181,7 +181,33 @@ impl CmpZero for usize {
     }
 }
 
-#[derive(Debug, err::ThisError)]
+#[derive(Debug, ThisError)]
+#[cstm(name = "Netpod")]
+pub enum NetpodError {
+    UnknownSeriesKind(i64),
+    BadInt(#[from] std::num::ParseIntError),
+    ChronoParse(#[from] chrono::ParseError),
+    HumantimeDurationParse(#[from] humantime::DurationError),
+    MissingQueryParameters,
+    MissingSeries,
+    MissingBackend,
+    MissingTimerange,
+    BadTimerange,
+    NoSeriesNoName,
+    BadScalarTypeIndex(i64),
+    UnsupportedDtype(u8),
+    JsonParse(#[from] serde_json::Error),
+    BadScalarTypeVariant(String),
+    BadScalarTypeCaId(u16),
+    ScalarTypeNotInCa,
+    MissingScalarType,
+    MissingShape,
+    MissingBinningScheme,
+    BadCacheUsage(String),
+    TimelikeBinWidthImpossibleForPulseRange,
+}
+
+#[derive(Debug, ThisError)]
 #[cstm(name = "AsyncChannelError")]
 pub enum AsyncChannelError {
     Send,
@@ -212,12 +238,12 @@ impl SeriesKind {
         }
     }
 
-    pub fn from_db_i16(x: i16) -> Result<Self, Error> {
+    pub fn from_db_i16(x: i16) -> Result<Self, NetpodError> {
         let ret = match x {
             1 => Self::ChannelStatus,
             2 => Self::ChannelData,
             3 => Self::CaStatus,
-            _ => return Err(Error::with_msg_no_trace("bad SeriesKind value")),
+            _ => return Err(NetpodError::UnknownSeriesKind(x as i64)),
         };
         Ok(ret)
     }
@@ -230,12 +256,14 @@ impl Default for SeriesKind {
 }
 
 impl FromUrl for SeriesKind {
-    fn from_url(url: &Url) -> Result<Self, Error> {
+    type Error = NetpodError;
+
+    fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let ret = pairs
             .get("seriesKind")
             .and_then(|x| match x.as_str() {
@@ -360,7 +388,7 @@ pub trait HasScalarType {
 }
 
 impl ScalarType {
-    pub fn from_dtype_index(ix: u8) -> Result<Self, Error> {
+    pub fn from_dtype_index(ix: u8) -> Result<Self, NetpodError> {
         use ScalarType::*;
         let g = match ix {
             0 => BOOL,
@@ -377,8 +405,7 @@ impl ScalarType {
             12 => F64,
             13 => STRING,
             15 => Enum,
-            6 => return Err(Error::with_msg(format!("CHARACTER not supported"))),
-            _ => return Err(Error::with_msg(format!("unknown dtype code: {:?}", ix))),
+            _ => return Err(NetpodError::UnsupportedDtype(ix)),
         };
         Ok(g)
     }
@@ -402,7 +429,7 @@ impl ScalarType {
         }
     }
 
-    pub fn from_variant_str(s: &str) -> Result<Self, Error> {
+    pub fn from_variant_str(s: &str) -> Result<Self, NetpodError> {
         use ScalarType::*;
         let ret = match s {
             "u8" => U8,
@@ -418,12 +445,7 @@ impl ScalarType {
             "bool" => BOOL,
             "string" => STRING,
             "enum" => Enum,
-            _ => {
-                return Err(Error::with_msg_no_trace(format!(
-                    "from_bsread_str can not understand bsread {:?}",
-                    s
-                )))
-            }
+            _ => return Err(NetpodError::BadScalarTypeVariant(s.into())),
         };
         Ok(ret)
     }
@@ -447,7 +469,7 @@ impl ScalarType {
         }
     }
 
-    pub fn from_bsread_str(s: &str) -> Result<Self, Error> {
+    pub fn from_bsread_str(s: &str) -> Result<Self, NetpodError> {
         use ScalarType::*;
         let ret = match s {
             "uint8" => U8,
@@ -465,17 +487,12 @@ impl ScalarType {
             "bool" => BOOL,
             "string" => STRING,
             "enum" => Enum,
-            _ => {
-                return Err(Error::with_msg_no_trace(format!(
-                    "from_bsread_str can not understand bsread {:?}",
-                    s
-                )))
-            }
+            _ => return Err(NetpodError::BadScalarTypeVariant(s.into())),
         };
         Ok(ret)
     }
 
-    pub fn from_ca_id(k: u16) -> Result<Self, Error> {
+    pub fn from_ca_id(k: u16) -> Result<Self, NetpodError> {
         use ScalarType::*;
         let ret = match k {
             0 => STRING,
@@ -485,17 +502,12 @@ impl ScalarType {
             4 => I8,
             5 => I32,
             6 => F64,
-            _ => {
-                return Err(Error::with_msg_no_trace(format!(
-                    "from_ca_id can not understand {:?}",
-                    k
-                )))
-            }
+            _ => return Err(NetpodError::BadScalarTypeCaId(k)),
         };
         Ok(ret)
     }
 
-    pub fn to_ca_id(&self) -> Result<u16, Error> {
+    pub fn to_ca_id(&self) -> Result<u16, NetpodError> {
         use ScalarType::*;
         let ret = match self {
             I8 => 4,
@@ -505,12 +517,12 @@ impl ScalarType {
             F64 => 6,
             STRING => 0,
             Enum => 3,
-            _ => return Err(Error::with_msg_no_trace(format!("can not represent {self:?} as CA id"))),
+            _ => return Err(NetpodError::ScalarTypeNotInCa),
         };
         Ok(ret)
     }
 
-    pub fn from_archeng_db_str(s: &str) -> Result<Self, Error> {
+    pub fn from_archeng_db_str(s: &str) -> Result<Self, NetpodError> {
         use ScalarType::*;
         let ret = match s {
             "I8" => I8,
@@ -519,19 +531,14 @@ impl ScalarType {
             "I64" => I64,
             "F32" => F32,
             "F64" => F64,
-            _ => {
-                return Err(Error::with_msg_no_trace(format!(
-                    "from_archeng_db_str can not understand {:?}",
-                    s
-                )))
-            }
+            _ => return Err(NetpodError::BadScalarTypeVariant(s.into())),
         };
         Ok(ret)
     }
 
-    pub fn from_scylla_i32(k: i32) -> Result<Self, Error> {
+    pub fn from_scylla_i32(k: i32) -> Result<Self, NetpodError> {
         if k < 0 || k > u8::MAX as i32 {
-            return Err(Error::with_public_msg_no_trace(format!("bad scalar type index {k}")));
+            return Err(NetpodError::BadScalarTypeIndex(k as i64));
         }
         Self::from_dtype_index(k as u8)
     }
@@ -583,7 +590,7 @@ impl ScalarType {
         self.index() as i32
     }
 
-    pub fn from_url_str(s: &str) -> Result<Self, Error> {
+    pub fn from_url_str(s: &str) -> Result<Self, NetpodError> {
         let ret = serde_json::from_str(&format!("\"{s}\""))?;
         Ok(ret)
     }
@@ -1120,17 +1127,16 @@ impl fmt::Display for SfDbChannel {
 }
 
 impl FromUrl for SfDbChannel {
-    fn from_url(url: &Url) -> Result<Self, Error> {
+    type Error = NetpodError;
+
+    fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let ret = SfDbChannel {
-            backend: pairs
-                .get("backend")
-                .ok_or_else(|| Error::with_public_msg_no_trace("missing backend"))?
-                .into(),
+            backend: pairs.get("backend").ok_or_else(|| NetpodError::MissingBackend)?.into(),
             name: pairs
                 .get("channelName")
                 .map(String::from)
@@ -1142,9 +1148,7 @@ impl FromUrl for SfDbChannel {
             kind: SeriesKind::from_pairs(pairs)?,
         };
         if ret.name.is_empty() && ret.series.is_none() {
-            return Err(Error::with_public_msg_no_trace(format!(
-                "Missing one of channelName or seriesId parameters."
-            )));
+            return Err(NetpodError::NoSeriesNoName);
         }
         Ok(ret)
     }
@@ -1207,21 +1211,20 @@ impl DaqbufSeries {
 }
 
 impl FromUrl for DaqbufSeries {
-    fn from_url(url: &Url) -> Result<Self, Error> {
+    type Error = NetpodError;
+
+    fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let ret = DaqbufSeries {
             series: pairs
                 .get("seriesId")
-                .ok_or_else(|| Error::with_public_msg_no_trace("missing seriesId"))
+                .ok_or_else(|| NetpodError::MissingSeries)
                 .map(|x| x.parse::<u64>())??,
-            backend: pairs
-                .get("backend")
-                .ok_or_else(|| Error::with_public_msg_no_trace("missing backend"))?
-                .into(),
+            backend: pairs.get("backend").ok_or_else(|| NetpodError::MissingBackend)?.into(),
             name: pairs
                 .get("channelName")
                 .map(String::from)
@@ -1593,7 +1596,7 @@ impl Shape {
         }
     }
 
-    pub fn from_url_str(s: &str) -> Result<Self, Error> {
+    pub fn from_url_str(s: &str) -> Result<Self, NetpodError> {
         let ret = serde_json::from_str(s)?;
         Ok(ret)
     }
@@ -2304,11 +2307,13 @@ impl PreBinnedPatchCoordEnum {
 }
 
 impl FromUrl for PreBinnedPatchCoordEnum {
-    fn from_url(_url: &Url) -> Result<Self, Error> {
+    type Error = NetpodError;
+
+    fn from_url(_url: &Url) -> Result<Self, Self::Error> {
         todo!()
     }
 
-    fn from_pairs(_pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+    fn from_pairs(_pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         todo!()
     }
 }
@@ -2442,7 +2447,7 @@ impl BinnedRange<TsNano> {
         }
     }
 
-    pub fn covering_range_time(range: NanoRange, bin_len_req: DtMs) -> Result<Self, Error> {
+    pub fn covering_range_time(range: NanoRange, bin_len_req: DtMs) -> Result<Self, NetpodError> {
         let opts = <TsNano as Dim0Index>::binned_bin_len_opts();
         let bin_len_req = if bin_len_req.ms() < opts[0].ms() {
             DtMs::from_ms_u64(opts[0].ms())
@@ -2598,12 +2603,10 @@ impl BinnedRangeEnum {
     }
 
     /// Cover at least the given range while selecting the bin width which best fits the requested bin width.
-    pub fn covering_range_time(range: SeriesRange, bin_len_req: DtMs) -> Result<Self, Error> {
+    pub fn covering_range_time(range: SeriesRange, bin_len_req: DtMs) -> Result<Self, NetpodError> {
         match range {
             SeriesRange::TimeRange(k) => Ok(Self::Time(BinnedRange::covering_range_time(k, bin_len_req)?)),
-            SeriesRange::PulseRange(_) => Err(Error::with_msg_no_trace(format!(
-                "timelike bin width not possible for a pulse range"
-            ))),
+            SeriesRange::PulseRange(_) => Err(NetpodError::TimelikeBinWidthImpossibleForPulseRange),
         }
     }
 
@@ -3222,11 +3225,13 @@ impl Default for DiskIoTune {
 }
 
 impl FromUrl for DiskIoTune {
-    fn from_url(url: &Url) -> Result<Self, Error> {
+    type Error = NetpodError;
+
+    fn from_url(url: &Url) -> Result<Self, Self::Error> {
         Self::from_pairs(&get_url_query_pairs(url))
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let read_sys = pairs
             .get("ReadSys")
             .map(|x| x.as_str().into())
@@ -3263,7 +3268,7 @@ pub struct ChannelSearchQuery {
 }
 
 impl ChannelSearchQuery {
-    pub fn from_url(url: &Url) -> Result<Self, Error> {
+    pub fn from_url(url: &Url) -> Result<Self, NetpodError> {
         let pairs = get_url_query_pairs(url);
         let ret = Self {
             backend: pairs.get("backend").map(Into::into),
@@ -3358,9 +3363,10 @@ pub trait HasTimeout {
 }
 
 pub trait FromUrl: Sized {
-    fn from_url(url: &Url) -> Result<Self, Error>;
+    type Error;
+    fn from_url(url: &Url) -> Result<Self, Self::Error>;
     // TODO put this in separate trait, because some implementors need url path segments to construct.
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error>;
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error>;
 }
 
 pub trait AppendToUrl {
@@ -3379,12 +3385,14 @@ impl AppendToUrl for MapQuery {
 }
 
 impl FromUrl for MapQuery {
-    fn from_url(url: &Url) -> Result<Self, Error> {
+    type Error = NetpodError;
+
+    fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         Ok(pairs.clone())
     }
 }
@@ -3434,12 +3442,14 @@ impl HasTimeout for ChannelConfigQuery {
 }
 
 impl FromUrl for ChannelConfigQuery {
-    fn from_url(url: &Url) -> Result<Self, Error> {
+    type Error = NetpodError;
+
+    fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let beg_date = pairs
             .get("begDate")
             .map(String::from)

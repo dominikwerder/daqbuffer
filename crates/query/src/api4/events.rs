@@ -1,6 +1,5 @@
 use super::binned::BinnedQuery;
 use crate::transform::TransformQuery;
-use err::Error;
 use netpod::get_url_query_pairs;
 use netpod::is_false;
 use netpod::query::api1::Api1Query;
@@ -21,6 +20,16 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::time::Duration;
 use url::Url;
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "EventsQuery")]
+pub enum Error {
+    BadInt(#[from] std::num::ParseIntError),
+    MissingTimerange,
+    BadQuery,
+    Transform(#[from] crate::transform::Error),
+    Netpod(#[from] netpod::NetpodError),
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlainEventsQuery {
@@ -246,18 +255,20 @@ impl HasTimeout for PlainEventsQuery {
 }
 
 impl FromUrl for PlainEventsQuery {
-    fn from_url(url: &Url) -> Result<Self, Error> {
+    type Error = Error;
+
+    fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let range = if let Ok(x) = TimeRangeQuery::from_pairs(pairs) {
             SeriesRange::TimeRange(x.into())
         } else if let Ok(x) = PulseRangeQuery::from_pairs(pairs) {
             SeriesRange::PulseRange(x.into())
         } else {
-            return Err(Error::with_public_msg_no_trace("no time range in url"));
+            return Err(Error::MissingTimerange);
         };
         let ret = Self {
             channel: SfDbChannel::from_pairs(pairs)?,
@@ -284,12 +295,12 @@ impl FromUrl for PlainEventsQuery {
                 .get("doTestMainError")
                 .map_or("false", |k| k)
                 .parse()
-                .map_err(|e| Error::with_public_msg_no_trace(format!("can not parse doTestMainError: {}", e)))?,
+                .map_err(|_| Error::BadQuery)?,
             do_test_stream_error: pairs
                 .get("doTestStreamError")
                 .map_or("false", |k| k)
                 .parse()
-                .map_err(|e| Error::with_public_msg_no_trace(format!("can not parse doTestStreamError: {}", e)))?,
+                .map_err(|_| Error::BadQuery)?,
             // test_do_wasm: pairs
             //     .get("testDoWasm")
             //     .map(|x| x.parse::<bool>().ok())
@@ -307,11 +318,9 @@ impl FromUrl for PlainEventsQuery {
                 .map(|x| x.split(",").map(|x| x.to_string()).collect())
                 .unwrap_or(Vec::new()),
             log_level: pairs.get("log_level").map_or(String::new(), String::from),
-            use_rt: pairs.get("useRt").map_or(Ok(None), |k| {
-                k.parse()
-                    .map(Some)
-                    .map_err(|_| Error::with_public_msg_no_trace(format!("can not parse useRt: {}", k)))
-            })?,
+            use_rt: pairs
+                .get("useRt")
+                .map_or(Ok(None), |k| k.parse().map(Some).map_err(|_| Error::BadQuery))?,
             querymarker: pairs.get("querymarker").map_or(String::new(), |x| x.to_string()),
         };
         Ok(ret)

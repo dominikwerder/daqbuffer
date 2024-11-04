@@ -4,6 +4,7 @@ use crate::timeunits::SEC;
 use crate::AppendToUrl;
 use crate::Dim0Kind;
 use crate::FromUrl;
+use crate::NetpodError;
 use crate::TsNano;
 use chrono::DateTime;
 use chrono::TimeZone;
@@ -189,18 +190,20 @@ impl From<PulseRange> for SeriesRange {
 }
 
 impl FromUrl for SeriesRange {
-    fn from_url(url: &url::Url) -> Result<Self, Error> {
+    type Error = NetpodError;
+
+    fn from_url(url: &url::Url) -> Result<Self, Self::Error> {
         let pairs = crate::get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let ret = if let Ok(x) = TimeRangeQuery::from_pairs(pairs) {
             SeriesRange::TimeRange(x.into())
         } else if let Ok(x) = PulseRangeQuery::from_pairs(pairs) {
             SeriesRange::PulseRange(x.into())
         } else {
-            return Err(Error::with_public_msg_no_trace("no time range in url"));
+            return Err(NetpodError::MissingTimerange);
         };
         Ok(ret)
     }

@@ -1,5 +1,4 @@
 use crate::transform::TransformQuery;
-use err::Error;
 use netpod::get_url_query_pairs;
 use netpod::log::*;
 use netpod::query::CacheUsage;
@@ -19,6 +18,14 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::time::Duration;
 use url::Url;
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "BinnedQuery")]
+pub enum Error {
+    MultipleBinCountBinWidth,
+    BadUseRt,
+    Netpod(#[from] netpod::NetpodError),
+}
 
 mod serde_option_vec_duration {
     use serde::Deserialize;
@@ -222,9 +229,7 @@ impl BinnedQuery {
             SeriesRange::TimeRange(range) => match self.bin_width {
                 Some(dt) => {
                     if self.bin_count.is_some() {
-                        Err(Error::with_public_msg_no_trace(format!(
-                            "must not specify both binWidth and binCount"
-                        )))
+                        Err(Error::MultipleBinCountBinWidth)
                     } else {
                         let ret = BinnedRangeEnum::Time(BinnedRange::covering_range_time(
                             range.clone(),
@@ -257,12 +262,14 @@ impl HasTimeout for BinnedQuery {
 }
 
 impl FromUrl for BinnedQuery {
-    fn from_url(url: &Url) -> Result<Self, Error> {
+    type Error = Error;
+
+    fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let ret = Self {
             channel: SfDbChannel::from_pairs(&pairs)?,
             range: SeriesRange::from_pairs(pairs)?,
@@ -297,11 +304,9 @@ impl FromUrl for BinnedQuery {
                 .map_or(Ok(None), |k| k.parse().map(|k| Some(k)))?,
             test_do_wasm: pairs.get("testDoWasm").map(|x| String::from(x)),
             log_level: pairs.get("log_level").map_or(String::new(), String::from),
-            use_rt: pairs.get("useRt").map_or(Ok(None), |k| {
-                k.parse()
-                    .map(Some)
-                    .map_err(|_| Error::with_public_msg_no_trace(format!("can not parse useRt: {}", k)))
-            })?,
+            use_rt: pairs
+                .get("useRt")
+                .map_or(Ok(None), |k| k.parse().map(Some).map_err(|_| Error::BadUseRt))?,
         };
         debug!("BinnedQuery::from_url  {:?}", ret);
         Ok(ret)

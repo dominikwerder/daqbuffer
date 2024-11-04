@@ -1,4 +1,3 @@
-use err::Error;
 use netpod::get_url_query_pairs;
 use netpod::log::*;
 use netpod::AppendToUrl;
@@ -6,7 +5,16 @@ use netpod::FromUrl;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
+use thiserror;
 use url::Url;
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "Query")]
+pub enum Error {
+    ParseInt(#[from] std::num::ParseIntError),
+    BadEnumAsString,
+    BadBinningScheme,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum EventTransformQuery {
@@ -155,17 +163,16 @@ impl TransformQuery {
 }
 
 impl FromUrl for TransformQuery {
-    fn from_url(url: &Url) -> Result<Self, Error> {
+    type Error = Error;
+
+    fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let enum_as_string = if let Some(k) = pairs.get("enumAsString") {
-            Some(
-                k.parse()
-                    .map_err(|_| Error::with_public_msg_no_trace(format!("can not parse enumAsString: {}", k)))?,
-            )
+            Some(k.parse().map_err(|_| Error::BadEnumAsString)?)
         } else {
             None
         };
@@ -217,7 +224,7 @@ impl FromUrl for TransformQuery {
                     enum_as_string,
                 }
             } else {
-                return Err(Error::with_msg("can not extract binningScheme"));
+                return Err(Error::BadBinningScheme);
             };
             Ok(ret)
         } else {

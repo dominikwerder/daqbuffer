@@ -12,7 +12,10 @@ chrono = { version = "0.4.19", features = ["serde"] }
 url = "2.2"
 humantime = "2.1.0"
 humantime-serde = "1.1.1"
-err = { path = "../err" }
+thiserror = "1"
 netpod = { path = "../netpod" }
 items_0 = { path = "../items_0" }
 items_2 = { path = "../items_2" }
+
+[patch.crates-io]
+thiserror = { git = "https://github.com/dominikwerder/thiserror.git", branch = "cstm" }
