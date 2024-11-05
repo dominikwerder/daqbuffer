@@ -56,6 +56,7 @@ pub enum Error {
     EventsJson(#[from] streams::plaineventsjson::Error),
     ServerError,
     BinnedStream(::err::Error),
+    TimebinnedJson(#[from] streams::timebinnedjson::Error),
 }
 
 impl From<crate::channelconfig::Error> for Error {
@@ -212,8 +213,7 @@ async fn binned_json_single(
         make_read_provider(ch_conf.name(), scyqueue, open_bytes, ctx, ncc);
     let item = streams::timebinnedjson::timebinned_json(query, ch_conf, ctx, cache_read_provider, events_read_provider)
         .instrument(span1)
-        .await
-        .map_err(|e| Error::BinnedStream(e))?;
+        .await?;
     match item {
         CollectResult::Some(item) => {
             let ret = response(StatusCode::OK)
@@ -269,8 +269,7 @@ async fn binned_json_framed(
     let stream =
         streams::timebinnedjson::timebinned_json_framed(query, ch_conf, ctx, cache_read_provider, events_read_provider)
             .instrument(span1)
-            .await
-            .map_err(|e| Error::BinnedStream(e))?;
+            .await?;
     let stream = bytes_chunks_to_len_framed_str(stream);
     let ret = response(StatusCode::OK)
         .header(CONTENT_TYPE, APP_JSON_FRAMED)

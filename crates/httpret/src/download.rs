@@ -21,12 +21,14 @@ pub struct DownloadQuery {
 }
 
 impl FromUrl for DownloadQuery {
-    fn from_url(url: &Url) -> Result<Self, ::err::Error> {
+    type Error = crate::err::Error;
+
+    fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &std::collections::BTreeMap<String, String>) -> Result<Self, err::Error> {
+    fn from_pairs(pairs: &std::collections::BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let read_sys = pairs
             .get("ReadSys")
             .map(|x| x.as_str().into())

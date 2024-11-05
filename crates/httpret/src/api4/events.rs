@@ -124,8 +124,7 @@ impl EventsHandler {
         }
         let self_name = "handle";
         let url = req_uri_to_url(req.uri())?;
-        let evq =
-            PlainEventsQuery::from_url(&url).map_err(|e| e.add_public_msg(format!("Can not understand query")))?;
+        let evq = PlainEventsQuery::from_url(&url)?;
         debug!("{self_name}  evq {evq:?}");
         let logspan = if evq.log_level() == "trace" {
             trace!("enable trace for handler");
@@ -260,10 +259,11 @@ async fn plain_events_json(
     }
 }
 
-fn bytes_chunks_to_framed<S, T>(stream: S) -> impl Stream<Item = Result<Bytes, crate::err::Error>>
+fn bytes_chunks_to_framed<S, T, E>(stream: S) -> impl Stream<Item = Result<Bytes, E>>
 where
-    S: Stream<Item = Result<T, err::Error>>,
+    S: Stream<Item = Result<T, E>>,
     T: Into<Bytes>,
+    E: std::error::Error,
 {
     use future::ready;
     stream
@@ -279,21 +279,22 @@ where
                 b2.put_slice(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
                 let mut b3 = BytesMut::with_capacity(16);
                 b3.put_slice(&[0, 0, 0, 0, 0, 0, 0, 0][..pad]);
-                stream::iter([Ok::<_, crate::err::Error>(b2.freeze()), Ok(buf), Ok(b3.freeze())])
+                stream::iter([Ok(b2.freeze()), Ok(buf), Ok(b3.freeze())])
             }
             Err(e) => {
-                let e = crate::err::Error::with_msg_no_trace(e.to_string());
-                stream::iter([Err(e), Ok(Bytes::new()), Ok(Bytes::new())])
+                error!("{e}");
+                stream::iter([Ok(Bytes::new()), Ok(Bytes::new()), Ok(Bytes::new())])
             }
         })
         .filter(|x| if let Ok(x) = x { ready(x.len() > 0) } else { ready(true) })
 }
 
 // TODO move this, it's also used by binned.
-pub fn bytes_chunks_to_len_framed_str<S, T>(stream: S) -> impl Stream<Item = Result<String, crate::err::Error>>
+pub fn bytes_chunks_to_len_framed_str<S, T, E>(stream: S) -> impl Stream<Item = Result<String, E>>
 where
-    S: Stream<Item = Result<T, ::err::Error>>,
+    S: Stream<Item = Result<T, E>>,
     T: Into<String>,
+    E: std::error::Error,
 {
     use future::ready;
     stream
@@ -303,11 +304,11 @@ where
                 let s = y.into();
                 let mut b2 = String::with_capacity(16);
                 write!(b2, "{:15}\n", s.len()).unwrap();
-                stream::iter([Ok::<_, crate::err::Error>(b2), Ok(s), Ok(String::from("\n"))])
+                stream::iter([Ok::<_, E>(b2), Ok(s), Ok(String::from("\n"))])
             }
             Err(e) => {
-                let e = crate::err::Error::with_msg_no_trace(e.to_string());
-                stream::iter([Err(e), Ok(String::new()), Ok(String::new())])
+                error!("{e}");
+                stream::iter([Ok(String::new()), Ok(String::new()), Ok(String::new())])
             }
         })
         .filter(|x| if let Ok(x) = x { ready(x.len() > 0) } else { ready(true) })

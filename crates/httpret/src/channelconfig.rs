@@ -54,6 +54,7 @@ pub enum Error {
     MissingShape,
     MissingShapeKind,
     MissingEdge,
+    MissingTimerange,
     Uri(netpod::UriError),
     ChannelConfigQuery(err::Error),
     ExpectScyllaBackend,
@@ -64,6 +65,7 @@ pub enum Error {
     PgWorker(dbconn::worker::Error),
     Async(netpod::AsyncChannelError),
     ChannelConfig(dbconn::channelconfig::Error),
+    Netpod(netpod::NetpodError),
 }
 
 impl fmt::Display for Error {
@@ -82,6 +84,7 @@ impl fmt::Display for Error {
             Error::MissingShape => write!(fmt, "MissingShape")?,
             Error::MissingShapeKind => write!(fmt, "MissingShapeKind")?,
             Error::MissingEdge => write!(fmt, "MissingEdge")?,
+            Error::MissingTimerange => write!(fmt, "MissingTimerange")?,
             Error::Uri(x) => write!(fmt, "Uri({x})")?,
             Error::ChannelConfigQuery(e) => write!(fmt, "ChannelConfigQuery({e})")?,
             Error::ExpectScyllaBackend => write!(fmt, "ExpectScyllaBackend")?,
@@ -92,6 +95,7 @@ impl fmt::Display for Error {
             Error::PgWorker(e) => write!(fmt, "PgWorker({e})")?,
             Error::Async(e) => write!(fmt, "Async({e})")?,
             Error::ChannelConfig(e) => write!(fmt, "ChannelConfig({e})")?,
+            Error::Netpod(e) => write!(fmt, "Netpod({e})")?,
         }
         write!(fmt, ")")?;
         Ok(())
@@ -185,6 +189,12 @@ impl From<netpod::AsyncChannelError> for Error {
 impl From<dbconn::channelconfig::Error> for Error {
     fn from(e: dbconn::channelconfig::Error) -> Self {
         Self::ChannelConfig(e)
+    }
+}
+
+impl From<netpod::NetpodError> for Error {
+    fn from(e: netpod::NetpodError) -> Self {
+        Self::Netpod(e)
     }
 }
 
@@ -296,7 +306,7 @@ impl ChannelConfigHandler {
         node_config: &NodeConfigCached,
     ) -> Result<StreamResponse, Error> {
         let url = req_uri_to_url(req.uri())?;
-        let q = ChannelConfigQuery::from_url(&url).map_err(|e| Error::BadQuery(e))?;
+        let q = ChannelConfigQuery::from_url(&url)?;
         let conf =
             nodenet::channelconfig::channel_config(q.range.clone(), q.channel.clone(), pgqueue, node_config).await?;
         match conf {
@@ -354,7 +364,7 @@ impl ChannelConfigsHandler {
     async fn channel_configs(&self, req: Requ, ncc: &NodeConfigCached) -> Result<StreamResponse, Error> {
         info!("channel_configs");
         let url = req_uri_to_url(req.uri())?;
-        let q = ChannelConfigQuery::from_url(&url).map_err(|e| Error::BadQuery(e))?;
+        let q = ChannelConfigQuery::from_url(&url)?;
         info!("channel_configs  for q {q:?}");
         let ch_confs = nodenet::channelconfig::channel_configs(q.channel, ncc).await?;
         let ret = response(StatusCode::OK)
@@ -413,7 +423,7 @@ impl ChannelConfigQuorumHandler {
     ) -> Result<StreamResponse, Error> {
         info!("channel_config_quorum");
         let url = req_uri_to_url(req.uri())?;
-        let q = ChannelConfigQuery::from_url(&url).map_err(|e| Error::ChannelConfigQuery(e))?;
+        let q = ChannelConfigQuery::from_url(&url)?;
         info!("channel_config_quorum  for q {q:?}");
         let ch_confs =
             nodenet::configquorum::find_config_basics_quorum(q.channel, q.range.into(), ctx, pgqueue, ncc).await?;
@@ -436,12 +446,14 @@ pub struct ChannelsWithTypeQuery {
 }
 
 impl FromUrl for ChannelsWithTypeQuery {
-    fn from_url(url: &Url) -> Result<Self, err::Error> {
+    type Error = err::Error;
+
+    fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let s = pairs
             .get("scalar_type")
             .ok_or_else(|| err::Error::with_public_msg_no_trace("missing scalar_type"))?;
@@ -472,6 +484,8 @@ fn bool_false(x: &bool) -> bool {
 }
 
 impl FromUrl for ScyllaChannelEventSeriesIdQuery {
+    type Error = err::Error;
+
     fn from_url(url: &Url) -> Result<Self, err::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
@@ -521,6 +535,8 @@ pub struct ScyllaChannelsActiveQuery {
 }
 
 impl FromUrl for ScyllaChannelsActiveQuery {
+    type Error = err::Error;
+
     fn from_url(url: &Url) -> Result<Self, err::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
@@ -627,12 +643,14 @@ pub struct IocForChannelQuery {
 }
 
 impl FromUrl for IocForChannelQuery {
-    fn from_url(url: &Url) -> Result<Self, err::Error> {
+    type Error = err::Error;
+
+    fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let backend = pairs
             .get("backend")
             .ok_or_else(|| err::Error::with_public_msg_no_trace("missing backend"))?
@@ -719,19 +737,21 @@ pub struct ScyllaSeriesTsMspQuery {
 }
 
 impl FromUrl for ScyllaSeriesTsMspQuery {
-    fn from_url(url: &Url) -> Result<Self, err::Error> {
+    type Error = Error;
+
+    fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let channel = SfDbChannel::from_pairs(pairs)?;
         let range = if let Ok(x) = TimeRangeQuery::from_pairs(pairs) {
             SeriesRange::TimeRange(x.into())
         } else if let Ok(x) = PulseRangeQuery::from_pairs(pairs) {
             SeriesRange::PulseRange(x.into())
         } else {
-            return Err(err::Error::with_public_msg_no_trace("no time range in url"));
+            return Err(Error::MissingTimerange);
         };
         Ok(Self { channel, range })
     }
@@ -769,7 +789,7 @@ impl ScyllaSeriesTsMsp {
                 .map_or(accept_def, |k| k.to_str().unwrap_or(accept_def));
             if accept == APP_JSON || accept == ACCEPT_ALL {
                 let url = req_uri_to_url(req.uri())?;
-                let q = ScyllaSeriesTsMspQuery::from_url(&url).map_err(|e| Error::BadQuery(e))?;
+                let q = ScyllaSeriesTsMspQuery::from_url(&url)?;
                 match self.get_ts_msps(&q, shared_res).await {
                     Ok(k) => {
                         let body = ToJsonBody::from(&k).into_body();
@@ -906,7 +926,7 @@ impl AmbigiousChannelNames {
             let g = AmbigiousChannel {
                 series: row.get::<_, i64>(0) as u64,
                 name: row.get(1),
-                scalar_type: ScalarType::from_scylla_i32(row.get(2)).map_err(other_err_error)?,
+                scalar_type: ScalarType::from_scylla_i32(row.get(2))?,
                 shape: Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(3)).map_err(other_err_error)?,
             };
             ret.ambigious.push(g);

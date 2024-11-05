@@ -281,9 +281,10 @@ impl<S> FramedBytesToSitemtyDynEventsStream<S> {
     }
 }
 
-impl<S> Stream for FramedBytesToSitemtyDynEventsStream<S>
+impl<S, E> Stream for FramedBytesToSitemtyDynEventsStream<S>
 where
-    S: Stream<Item = Result<Bytes, Error>> + Unpin,
+    S: Stream<Item = Result<Bytes, E>> + Unpin,
+    E: std::error::Error,
 {
     type Item = <SitemtyDynEventsStream as Stream>::Item;
 

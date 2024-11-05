@@ -849,7 +849,9 @@ impl HasTimeout for MapPulseQuery {
 }
 
 impl FromUrl for MapPulseQuery {
-    fn from_url(url: &url::Url) -> Result<Self, err::Error> {
+    type Error = Error;
+
+    fn from_url(url: &url::Url) -> Result<Self, Self::Error> {
         let mut pit = url
             .path_segments()
             .ok_or_else(|| Error::with_msg_no_trace(format!("no path in url  {url}")))?
@@ -870,10 +872,8 @@ impl FromUrl for MapPulseQuery {
         Ok(ret)
     }
 
-    fn from_pairs(_pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
-        Err(err::Error::with_msg_no_trace(format!(
-            "can not only construct from pairs"
-        )))
+    fn from_pairs(_pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
+        Err(Error::with_msg_no_trace(format!("can not only construct from pairs")))
     }
 }
 
