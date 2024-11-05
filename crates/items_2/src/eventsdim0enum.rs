@@ -120,7 +120,7 @@ impl TypeName for EventsDim0EnumCollectorOutput {
 }
 
 impl ToJsonResult for EventsDim0EnumCollectorOutput {
-    fn to_json_value(&self) -> Result<serde_json::Value, Error> {
+    fn to_json_value(&self) -> Result<serde_json::Value, serde_json::Error> {
         todo!()
     }
 }

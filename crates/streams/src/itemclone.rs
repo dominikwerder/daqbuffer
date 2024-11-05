@@ -65,7 +65,7 @@ where
         pin_mut!(fut);
         match fut.poll(cx) {
             Ready(Ok(())) => Ready(Ok(())),
-            Ready(Err(e)) => Ready(Err(e.into())),
+            Ready(Err(_)) => todo!("can not send copy"),
             Pending => Pending,
         }
     }

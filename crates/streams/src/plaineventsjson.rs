@@ -24,6 +24,7 @@ use std::time::Instant;
 pub enum Error {
     Stream(#[from] crate::plaineventsstream::Error),
     Json(#[from] serde_json::Error),
+    Collect(#[from] crate::collect::Error),
 }
 
 pub async fn plain_events_json(

@@ -14,6 +14,7 @@ use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::collect_s::CollectableDyn;
 use items_0::on_sitemty_data;
+use items_0::streamitem::sitem_err2_from_string;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
@@ -41,6 +42,23 @@ pub enum Error {
     Query(#[from] query::api4::binned::Error),
     FromLayers(#[from] super::timebin::fromlayers::Error),
     Transform(#[from] super::transform::Error),
+    TcpRawClient(#[from] crate::tcprawclient::Error),
+    Collect(#[from] crate::collect::Error),
+    Json(#[from] serde_json::Error),
+    Msg(String),
+}
+
+struct ErrMsg<E>(E)
+where
+    E: ToString;
+
+impl<E> From<ErrMsg<E>> for Error
+where
+    E: ToString,
+{
+    fn from(value: ErrMsg<E>) -> Self {
+        Self::Msg(value.0.to_string())
+    }
 }
 
 #[allow(unused)]
@@ -435,7 +453,7 @@ pub async fn timebinned_json_framed(
     // TODO skip the intermediate conversion to js value, go directly to string data
     let stream = stream.map(|x| match x {
         Ok(x) => Ok(JsonBytes::new(serde_json::to_string(&x).unwrap())),
-        Err(e) => Err(e),
+        Err(e) => Err(crate::json_stream::Error::from(crate::json_stream::ErrMsg(e))),
     });
     Ok(Box::pin(stream))
 }

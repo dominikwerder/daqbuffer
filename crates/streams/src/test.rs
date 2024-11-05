@@ -5,7 +5,6 @@ mod events;
 #[cfg(test)]
 mod timebin;
 
-use err::Error;
 use futures_util::stream;
 use futures_util::Stream;
 use items_0::streamitem::sitem_data;
@@ -16,6 +15,10 @@ use items_2::channelevents::ChannelEvents;
 use items_2::eventsdim0::EventsDim0;
 use netpod::timeunits::SEC;
 use std::pin::Pin;
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "StreamsTest")]
+pub enum Error {}
 
 type BoxedEventStream = Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>;
 
@@ -51,11 +54,10 @@ fn merge_mergeable_00() -> Result<(), Error> {
     runfut(fut)
 }
 
-fn runfut<T, F>(fut: F) -> Result<T, err::Error>
+fn runfut<F, T, E>(fut: F) -> Result<T, E>
 where
-    F: std::future::Future<Output = Result<T, Error>>,
+    F: std::future::Future<Output = Result<T, E>>,
+    E: std::error::Error,
 {
-    use futures_util::TryFutureExt;
-    let fut = fut.map_err(|e| e.into());
     taskrun::run(fut)
 }

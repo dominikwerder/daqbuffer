@@ -20,6 +20,7 @@ use std::pin::Pin;
 pub enum Error {
     Netpod(#[from] netpod::NetpodError),
     Transform(#[from] crate::transform::Error),
+    TcpRawClient(#[from] crate::tcprawclient::Error),
 }
 
 pub type DynEventsStream = Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Events>>> + Send>>;
@@ -77,7 +78,7 @@ pub async fn dyn_events_stream(
     });
 
     if let Some(wasmname) = evq.test_do_wasm() {
-        let stream = transform_wasm(stream, wasmname, ctx).await?;
+        let stream = transform_wasm::<_, items_0::streamitem::SitemErrTy>(stream, wasmname, ctx).await?;
         Ok(Box::pin(stream))
     } else {
         Ok(Box::pin(stream))

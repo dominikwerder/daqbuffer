@@ -334,8 +334,8 @@ impl<STY: ScalarOps> WithLen for EventsDim1CollectorOutput<STY> {
 }
 
 impl<STY: ScalarOps> ToJsonResult for EventsDim1CollectorOutput<STY> {
-    fn to_json_value(&self) -> Result<serde_json::Value, Error> {
-        serde_json::to_value(self).map_err(Error::from_string)
+    fn to_json_value(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::to_value(self)
     }
 }
 

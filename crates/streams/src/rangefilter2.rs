@@ -1,6 +1,6 @@
-use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items_0::streamitem::sitem_err_from_string;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StatsItem;
@@ -22,13 +22,12 @@ use items_0::Events;
 #[cfg(test)]
 use std::collections::VecDeque;
 
-#[allow(unused)]
-macro_rules! trace_emit {
-    ($det:expr, $($arg:tt)*) => {
-        if $det {
-            eprintln!($($arg)*);
-        }
-    };
+macro_rules! trace_emit { ($det:expr, $($arg:tt)*) => ( if false && $det { trace!($($arg)*); } ) }
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "Rangefilter")]
+pub enum Error {
+    Merge(#[from] MergeError),
 }
 
 pub struct RangeFilter2<S, ITY>
@@ -146,8 +145,7 @@ where
                     } else {
                         trace_emit!(self.trdet, "discarding events  len {:?}", lige - 1);
                         let mut dummy = item.new_empty();
-                        item.drain_into(&mut dummy, (0, lige - 1))
-                            .map_err(|e| format!("{e} unexpected MergeError while remove of items"))?;
+                        item.drain_into(&mut dummy, (0, lige - 1))?;
                         self.slot1 = None;
                         item
                     }
@@ -157,8 +155,7 @@ where
                     trace_emit!(self.trdet, "drain into to keep one before");
                     let n = item.len();
                     let mut keep = item.new_empty();
-                    item.drain_into(&mut keep, (n.max(1) - 1, n))
-                        .map_err(|e| format!("{e} unexpected MergeError while remove of items"))?;
+                    item.drain_into(&mut keep, (n.max(1) - 1, n))?;
                     self.slot1 = Some(keep);
                     item.new_empty()
                 }
@@ -192,10 +189,7 @@ where
         loop {
             break if self.complete {
                 error!("{} poll_next on complete", Self::type_name());
-                Ready(Some(Err(Error::with_msg_no_trace(format!(
-                    "{} poll_next on complete",
-                    Self::type_name()
-                )))))
+                Ready(Some(sitem_err_from_string("poll next on complete")))
             } else if self.done {
                 self.complete = true;
                 Ready(None)
@@ -223,7 +217,7 @@ where
                             Err(e) => {
                                 error!("sees: {e}");
                                 self.inp_done = true;
-                                Ready(Some(Err(e)))
+                                Ready(Some(sitem_err_from_string(e)))
                             }
                         },
                         Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)) => {

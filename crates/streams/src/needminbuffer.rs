@@ -12,7 +12,7 @@ use std::task::Poll;
 pub enum Error {}
 
 pub struct NeedMinBuffer {
-    inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>,
+    inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, items_0::streamitem::SitemErrTy>> + Send>>,
     need_min: u32,
     left: Option<FileChunkRead>,
     buf_len_histo: HistoLog2,
@@ -21,9 +21,11 @@ pub struct NeedMinBuffer {
 }
 
 impl NeedMinBuffer {
-    pub fn new(inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>) -> Self {
+    pub fn new(
+        inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, items_0::streamitem::SitemErrTy>> + Send>>,
+    ) -> Self {
         Self {
-            inp: inp,
+            inp,
             need_min: 1,
             left: None,
             buf_len_histo: HistoLog2::new(8),
@@ -50,7 +52,7 @@ impl Drop for NeedMinBuffer {
 }
 
 impl Stream for NeedMinBuffer {
-    type Item = Result<FileChunkRead, Error>;
+    type Item = Result<FileChunkRead, items_0::streamitem::SitemErrTy>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;

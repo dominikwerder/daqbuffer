@@ -13,7 +13,6 @@ use bincode::config::WithOtherTrailing;
 use bincode::DefaultOptions;
 use bytes::BufMut;
 use bytes::BytesMut;
-use err::Error;
 use items_0::bincode;
 use items_0::streamitem::LogItem;
 use items_0::streamitem::StatsItem;
@@ -26,6 +25,37 @@ use netpod::log::*;
 use serde::Serialize;
 use std::any;
 use std::io;
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "ItemFrame")]
+pub enum Error {
+    TooLongPayload(usize),
+    UnknownEncoder(u32),
+    #[error("BufferMismatch({0}, {1}, {2})")]
+    BufferMismatch(u32, usize, u32),
+    #[error("TyIdMismatch({0}, {1})")]
+    TyIdMismatch(u32, u32),
+    Msg(String),
+    Bincode(#[from] Box<bincode::ErrorKind>),
+    RmpEnc(#[from] rmp_serde::encode::Error),
+    RmpDec(#[from] rmp_serde::decode::Error),
+    ErasedSerde(#[from] erased_serde::Error),
+    Postcard(#[from] postcard::Error),
+    SerdeJson(#[from] serde_json::Error),
+}
+
+struct ErrMsg<E>(E)
+where
+    E: ToString;
+
+impl<E> From<ErrMsg<E>> for Error
+where
+    E: ToString,
+{
+    fn from(value: ErrMsg<E>) -> Self {
+        Self::Msg(value.0.to_string())
+    }
+}
 
 pub fn bincode_ser<W>(
     w: W,
@@ -54,7 +84,7 @@ where
 {
     let mut out = Vec::new();
     let mut ser = bincode_ser(&mut out);
-    item.serialize(&mut ser).map_err(|e| format!("{e}"))?;
+    item.serialize(&mut ser)?;
     Ok(out)
 }
 
@@ -68,14 +98,14 @@ where
         .with_fixint_encoding()
         .reject_trailing_bytes();
     let mut de = bincode::Deserializer::from_slice(buf, opts);
-    <T as serde::Deserialize>::deserialize(&mut de).map_err(|e| format!("{e}").into())
+    <T as serde::Deserialize>::deserialize(&mut de).map_err(Into::into)
 }
 
 fn msgpack_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
 where
     T: Serialize,
 {
-    rmp_serde::to_vec_named(&item).map_err(|e| format!("{e}").into())
+    rmp_serde::to_vec_named(&item).map_err(Error::from)
 }
 
 fn msgpack_erased_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
@@ -86,8 +116,7 @@ where
     {
         let mut ser1 = rmp_serde::Serializer::new(&mut out).with_struct_map();
         let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser1);
-        item.erased_serialize(&mut ser2)
-            .map_err(|e| Error::from(format!("{e}")))?;
+        item.erased_serialize(&mut ser2)?;
     }
     Ok(out)
 }
@@ -96,14 +125,14 @@ fn msgpack_from_slice<T>(buf: &[u8]) -> Result<T, Error>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
-    rmp_serde::from_slice(buf).map_err(|e| format!("{e}").into())
+    rmp_serde::from_slice(buf).map_err(Error::from)
 }
 
 fn postcard_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
 where
     T: Serialize,
 {
-    postcard::to_stdvec(&item).map_err(|e| format!("{e}").into())
+    postcard::to_stdvec(&item).map_err(Error::from)
 }
 
 fn postcard_erased_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
@@ -117,31 +146,30 @@ where
     {
         let mut ser2 = <dyn erased_serde::Serializer>::erase(&mut ser1);
         item.erased_serialize(&mut ser2)
-    }
-    .map_err(|e| Error::from(format!("{e}")))?;
-    let ret = ser1.output.finalize().map_err(|e| format!("{e}").into());
-    ret
+    }?;
+    let ret = ser1.output.finalize()?;
+    Ok(ret)
 }
 
 pub fn postcard_from_slice<T>(buf: &[u8]) -> Result<T, Error>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
-    postcard::from_bytes(buf).map_err(|e| format!("{e}").into())
+    Ok(postcard::from_bytes(buf)?)
 }
 
 fn json_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
 where
     T: Serialize,
 {
-    serde_json::to_vec(&item).map_err(Error::from_string)
+    Ok(serde_json::to_vec(&item)?)
 }
 
 pub fn json_from_slice<T>(buf: &[u8]) -> Result<T, Error>
 where
     T: for<'de> serde::Deserialize<'de>,
 {
-    serde_json::from_slice(buf).map_err(Error::from_string)
+    Ok(serde_json::from_slice(buf)?)
 }
 
 pub fn encode_to_vec<T>(item: T) -> Result<Vec<u8>, Error>
@@ -187,7 +215,7 @@ where
 {
     let enc = encode_erased_to_vec(item)?;
     if enc.len() > u32::MAX as usize {
-        return Err(Error::with_msg(format!("too long payload {}", enc.len())));
+        return Err(Error::TooLongPayload(enc.len()));
     }
     let mut h = crc32fast::Hasher::new();
     h.update(&enc);
@@ -323,15 +351,10 @@ where
     T: FrameDecodable,
 {
     if frame.encid() != INMEM_FRAME_ENCID {
-        return Err(Error::with_msg(format!("unknown encoder id {:?}", frame)));
+        return Err(Error::UnknownEncoder(frame.encid()));
     }
     if frame.len() as usize != frame.buf().len() {
-        return Err(Error::with_msg(format!(
-            "buf mismatch  {}  vs  {}  in {:?}",
-            frame.len(),
-            frame.buf().len(),
-            frame
-        )));
+        return Err(Error::BufferMismatch(frame.len(), frame.buf().len(), frame.tyid()));
     }
     if frame.tyid() == ERROR_FRAME_TYPE_ID {
         // error frames are always encoded as json
@@ -376,12 +399,7 @@ where
     } else {
         let tyid = T::FRAME_TYPE_ID;
         if frame.tyid() != tyid {
-            Err(Error::with_msg(format!(
-                "type id mismatch  expect {:04x}  found {:04x}  {:?}",
-                tyid,
-                frame.tyid(),
-                frame
-            )))
+            Err(Error::TyIdMismatch(tyid, frame.tyid()))
         } else {
             match decode_from_slice(frame.buf()) {
                 Ok(item) => Ok(item),

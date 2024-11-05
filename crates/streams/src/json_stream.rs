@@ -2,6 +2,7 @@ use crate::cbor_stream::SitemtyDynEventsStream;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::streamitem::RangeCompletableItem;
+use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::Events;
 use items_0::WithLen;
@@ -11,7 +12,23 @@ use std::time::Duration;
 
 #[derive(Debug, thiserror::Error)]
 #[cstm(name = "JsonStream")]
-pub enum Error {}
+pub enum Error {
+    Json(#[from] serde_json::Error),
+    Msg(String),
+}
+
+pub struct ErrMsg<E>(pub E)
+where
+    E: ToString;
+
+impl<E> From<ErrMsg<E>> for Error
+where
+    E: ToString,
+{
+    fn from(value: ErrMsg<E>) -> Self {
+        Self::Msg(value.0.to_string())
+    }
+}
 
 pub struct JsonBytes(String);
 
@@ -56,7 +73,7 @@ pub fn events_stream_to_json_stream(stream: SitemtyDynEventsStream) -> impl Stre
     prepend.chain(stream)
 }
 
-fn map_events(x: Result<StreamItem<RangeCompletableItem<Box<dyn Events>>>, Error>) -> Result<JsonBytes, Error> {
+fn map_events(x: Sitemty<Box<dyn Events>>) -> Result<JsonBytes, Error> {
     match x {
         Ok(x) => match x {
             StreamItem::DataItem(x) => match x {
@@ -104,12 +121,12 @@ fn map_events(x: Result<StreamItem<RangeCompletableItem<Box<dyn Events>>>, Error
                 }
             },
             StreamItem::Log(item) => {
-                info!("{item:?}");
+                debug!("{item:?}");
                 let item = JsonBytes::new(String::new());
                 Ok(item)
             }
             StreamItem::Stats(item) => {
-                info!("{item:?}");
+                debug!("{item:?}");
                 let item = JsonBytes::new(String::new());
                 Ok(item)
             }

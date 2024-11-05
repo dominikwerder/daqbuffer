@@ -20,7 +20,7 @@ pub trait ToJsonBytes {
 }
 
 pub trait ToJsonResult: fmt::Debug + AsAnyRef + AsAnyMut + Send {
-    fn to_json_value(&self) -> Result<serde_json::Value, Error>;
+    fn to_json_value(&self) -> Result<serde_json::Value, serde_json::Error>;
 }
 
 impl AsAnyRef for serde_json::Value {
@@ -36,7 +36,7 @@ impl AsAnyMut for serde_json::Value {
 }
 
 impl ToJsonResult for serde_json::Value {
-    fn to_json_value(&self) -> Result<serde_json::Value, Error> {
+    fn to_json_value(&self) -> Result<serde_json::Value, serde_json::Error> {
         Ok(self.clone())
     }
 }
@@ -50,7 +50,7 @@ impl ToJsonBytes for serde_json::Value {
 pub trait CollectedDyn: fmt::Debug + TypeName + Send + AsAnyRef + WithLen + ToJsonResult {}
 
 impl ToJsonResult for Box<dyn CollectedDyn> {
-    fn to_json_value(&self) -> Result<serde_json::Value, Error> {
+    fn to_json_value(&self) -> Result<serde_json::Value, serde_json::Error> {
         ToJsonResult::to_json_value(self.as_ref())
     }
 }

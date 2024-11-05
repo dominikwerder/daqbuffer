@@ -450,7 +450,7 @@ impl<EVT> ToJsonResult for ContainerBinsCollectorOutput<EVT>
 where
     EVT: EventValueType,
 {
-    fn to_json_value(&self) -> Result<serde_json::Value, err::Error> {
+    fn to_json_value(&self) -> Result<serde_json::Value, serde_json::Error> {
         let bins = &self.bins;
         let ts1sns: Vec<_> = bins.ts1s.iter().map(|x| x.ns()).collect();
         let ts2sns: Vec<_> = bins.ts2s.iter().map(|x| x.ns()).collect();
@@ -471,8 +471,7 @@ where
             maxs,
             avgs,
         };
-        let ret = serde_json::to_value(&val).map_err(err::Error::from_string);
-        ret
+        serde_json::to_value(&val)
     }
 }
 

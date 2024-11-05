@@ -20,23 +20,20 @@ use std::pin::Pin;
 
 #[derive(Debug, thiserror::Error)]
 #[cstm(name = "Transform")]
-pub enum Error {}
+pub enum Error {
+    #[error("UnhandledQuery({0:?})")]
+    UnhandledQuery(EventTransformQuery),
+}
 
 pub fn build_event_transform(tr: &TransformQuery) -> Result<TransformEvent, Error> {
     let trev = tr.get_tr_event();
     match trev {
         EventTransformQuery::ValueFull => Ok(make_transform_identity()),
         EventTransformQuery::MinMaxAvgDev => Ok(make_transform_min_max_avg()),
-        EventTransformQuery::ArrayPick(..) => Err(Error::with_msg_no_trace(format!(
-            "build_event_transform don't know what to do {trev:?}"
-        ))),
+        EventTransformQuery::ArrayPick(..) => Err(Error::UnhandledQuery(trev.clone())),
         EventTransformQuery::PulseIdDiff => Ok(make_transform_pulse_id_diff()),
-        EventTransformQuery::EventBlobsVerbatim => Err(Error::with_msg_no_trace(format!(
-            "build_event_transform don't know what to do {trev:?}"
-        ))),
-        EventTransformQuery::EventBlobsUncompressed => Err(Error::with_msg_no_trace(format!(
-            "build_event_transform don't know what to do {trev:?}"
-        ))),
+        EventTransformQuery::EventBlobsVerbatim => Err(Error::UnhandledQuery(trev.clone())),
+        EventTransformQuery::EventBlobsUncompressed => Err(Error::UnhandledQuery(trev.clone())),
     }
 }
 

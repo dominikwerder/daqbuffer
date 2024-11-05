@@ -73,7 +73,7 @@ pub async fn make_event_pipe(
         128
     };
     let event_blobs = EventChunkerMultifile::new(
-        (&range).try_into()?,
+        (&range).try_into().map_err(Error::from_string)?,
         fetch_info.clone(),
         ncc.node.clone(),
         ncc.ix,
@@ -129,7 +129,7 @@ pub fn make_event_blobs_pipe_real(
     let range = subq.range();
     let event_chunker_conf = EventChunkerConf::new(ByteSize::from_kb(1024));
     let event_blobs = make_event_blobs_stream(
-        range.try_into()?,
+        range.try_into().map_err(Error::from_string)?,
         fetch_info.clone(),
         one_before,
         event_chunker_conf,

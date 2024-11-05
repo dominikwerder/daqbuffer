@@ -4,7 +4,9 @@ use err::thiserror;
 use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use items_0::on_sitemty_data;
+use items_0::streamitem::sitem_err2_from_string;
 use items_0::streamitem::LogItem;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
@@ -49,6 +51,11 @@ pub enum Error {
     Items(#[from] items_2::Error),
     NotAvailable,
     DebugTest,
+    Generator(#[from] streams::generators::Error),
+    Transform(#[from] streams::transform::Error),
+    Framable(#[from] items_2::framable::Error),
+    Frame(#[from] items_2::frame::Error),
+    InMem(#[from] streams::frames::inmem::Error),
 }
 
 pub async fn events_service(ncc: NodeConfigCached) -> Result<(), Error> {
@@ -138,8 +145,7 @@ pub async fn create_response_bytes_stream(
         // TODO support event blobs as transform
         let fetch_info = evq.ch_conf().to_sf_databuffer()?;
         let stream = disk::raw::conn::make_event_blobs_pipe(&evq, &fetch_info, reqctx, ncc)?;
-        // let stream = stream.map(|x| Box::new(x) as _);
-        let stream = stream.map(|x| x.make_frame_dyn().map(|x| x.freeze()));
+        let stream = stream.map(|x| x.make_frame_dyn().map(|x| x.freeze()).map_err(sitem_err2_from_string));
         let ret = Box::pin(stream);
         Ok(ret)
     } else {
@@ -161,7 +167,11 @@ pub async fn create_response_bytes_stream(
             })
         });
         // let stream = stream.map(move |x| Box::new(x) as Box<dyn Framable + Send>);
-        let stream = stream.map(|x| x.make_frame_dyn().map(bytes::BytesMut::freeze));
+        let stream = stream.map(|x| {
+            x.make_frame_dyn()
+                .map(bytes::BytesMut::freeze)
+                .map_err(sitem_err2_from_string)
+        });
         let ret = Box::pin(stream);
         Ok(ret)
     }
@@ -324,13 +334,13 @@ async fn events_conn_handler_inner<INP>(
     ncc: &NodeConfigCached,
 ) -> Result<(), Error>
 where
-    INP: Stream<Item = Result<Bytes, err::Error>> + Unpin,
+    INP: Stream<Item = Result<Bytes, items_0::streamitem::SitemErrTy>> + Unpin,
 {
     match events_conn_handler_inner_try(netin, netout, addr, scyqueue, ncc).await {
         Ok(_) => (),
         Err(ce) => {
             let mut out = ce.netout;
-            let item: Sitemty<ChannelEvents> = Err(err::Error::from_string(ce.err));
+            let item: Sitemty<ChannelEvents> = Err(items_0::streamitem::SitemErrTy::from_string(ce.err));
             let buf = Framable::make_frame_dyn(&item)?;
             out.write_all(&buf).await?;
         }
@@ -345,7 +355,9 @@ async fn events_conn_handler(
     ncc: NodeConfigCached,
 ) -> Result<(), Error> {
     let (netin, netout) = stream.into_split();
-    let inp = Box::new(TcpReadAsBytes::new(netin));
+    let inp = TcpReadAsBytes::new(netin);
+    let inp = inp.map_err(sitem_err2_from_string);
+    let inp = Box::new(inp);
     let span1 = span!(Level::INFO, "events_conn_handler");
     let r = events_conn_handler_inner(inp, netout, addr, scyqueue, &ncc)
         .instrument(span1)

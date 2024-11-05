@@ -3,6 +3,7 @@ use futures_util::StreamExt;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::streamitem::sitem_err_from_string;
 use items_0::streamitem::RangeCompletableItem;
+use items_0::streamitem::SitemErrTy;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_2::frame::decode_frame;
@@ -19,7 +20,7 @@ use std::task::Poll;
 pub enum Error {}
 
 pub struct EventsFromFrames<O> {
-    inp: Pin<Box<dyn Stream<Item = Result<StreamItem<InMemoryFrame>, Error>> + Send>>,
+    inp: Pin<Box<dyn Stream<Item = Result<StreamItem<InMemoryFrame>, SitemErrTy>> + Send>>,
     dbgdesc: String,
     errored: bool,
     completed: bool,
@@ -28,7 +29,7 @@ pub struct EventsFromFrames<O> {
 
 impl<O> EventsFromFrames<O> {
     pub fn new(
-        inp: Pin<Box<dyn Stream<Item = Result<StreamItem<InMemoryFrame>, Error>> + Send>>,
+        inp: Pin<Box<dyn Stream<Item = Result<StreamItem<InMemoryFrame>, SitemErrTy>> + Send>>,
         dbgdesc: String,
     ) -> Self {
         Self {
@@ -98,7 +99,7 @@ where
                                     e
                                 );
                                 self.errored = true;
-                                Ready(Some(Err(e)))
+                                Ready(Some(sitem_err_from_string(e)))
                             }
                         },
                     },

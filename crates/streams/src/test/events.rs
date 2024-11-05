@@ -8,6 +8,7 @@ use crate::tcprawclient::TEST_BACKEND;
 use futures_util::future;
 use futures_util::Future;
 use futures_util::StreamExt;
+use futures_util::TryFutureExt;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::range::evrange::SeriesRange;
@@ -83,8 +84,8 @@ impl OpenBoxedBytesStreams for StreamOpener {
         &self,
         subq: EventsSubQuery,
         _ctx: ReqCtx,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<BoxedBytesStream>, Error>> + Send>> {
-        Box::pin(stream_opener(subq))
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<BoxedBytesStream>, crate::tcprawclient::Error>> + Send>> {
+        Box::pin(stream_opener(subq).map_err(|e| crate::tcprawclient::Error::Msg(format!("{e}"))))
     }
 }
 

@@ -140,7 +140,7 @@ impl EventChunker {
 
     // TODO   `expand` flag usage
     pub fn from_start(
-        inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, Error>> + Send>>,
+        inp: Pin<Box<dyn Stream<Item = Result<FileChunkRead, items_0::streamitem::SitemErrTy>> + Send>>,
         fetch_info: SfChFetchInfo,
         range: NanoRange,
         stats_conf: EventChunkerConf,

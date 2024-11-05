@@ -7,14 +7,15 @@ use crate::frames::eventsfromframes::EventsFromFrames;
 use crate::frames::inmem::BoxedBytesStream;
 use crate::frames::inmem::InMemoryFrameStream;
 use crate::frames::inmem::TcpReadAsBytes;
-use err::Error;
 use futures_util::Future;
 use futures_util::Stream;
+use futures_util::TryStreamExt;
 use http::Uri;
 use httpclient::body_bytes;
 use httpclient::http;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::streamitem::sitem_data;
+use items_0::streamitem::sitem_err2_from_string;
 use items_0::streamitem::Sitemty;
 use items_2::eventfull::EventFull;
 use items_2::framable::EventQueryJsonStringFrame;
@@ -41,6 +42,40 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
 pub const TEST_BACKEND: &str = "testbackend-00";
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "TcpRawClient")]
+pub enum Error {
+    IO(#[from] std::io::Error),
+    Msg(String),
+    Frame(#[from] items_2::frame::Error),
+    Framable(#[from] items_2::framable::Error),
+    Json(#[from] serde_json::Error),
+    Http(#[from] http::Error),
+    HttpClient(#[from] httpclient::Error),
+    Hyper(#[from] httpclient::hyper::Error),
+    #[error("ServerError({0:?}, {1})")]
+    ServerError(http::response::Parts, String),
+}
+
+struct ErrMsg<E>(E)
+where
+    E: ToString;
+
+impl<E> From<ErrMsg<E>> for Error
+where
+    E: ToString,
+{
+    fn from(value: ErrMsg<E>) -> Self {
+        Self::Msg(value.0.to_string())
+    }
+}
+
+impl From<String> for Error {
+    fn from(value: String) -> Self {
+        Self::Msg(value)
+    }
+}
 
 pub trait OpenBoxedBytesStreams {
     fn open(
@@ -75,8 +110,10 @@ pub async fn x_processed_event_blobs_stream_from_node_tcp(
     netout.write_all(&buf).await?;
     netout.flush().await?;
     netout.forget();
-    let inp = Box::pin(TcpReadAsBytes::new(netin)) as BoxedBytesStream;
+    let inp = TcpReadAsBytes::new(netin).map_err(sitem_err2_from_string);
+    let inp = Box::pin(inp) as BoxedBytesStream;
     let frames = InMemoryFrameStream::new(inp, subq.inmem_bufcap());
+    let frames = frames.map_err(sitem_err2_from_string);
     let frames = Box::pin(frames);
     let items = EventsFromFrames::new(frames, addr);
     Ok(Box::pin(items))
@@ -106,31 +143,20 @@ pub async fn x_processed_event_blobs_stream_from_node_http(
         .header(header::HOST, uri.host().unwrap())
         .header(header::ACCEPT, APP_OCTET)
         .header(ctx.header_name(), ctx.header_value())
-        .body(body_bytes(buf))
-        .map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
+        .body(body_bytes(buf))?;
     let mut client = httpclient::connect_client(req.uri()).await?;
-    let res = client
-        .send_request(req)
-        .await
-        .map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
+    let res = client.send_request(req).await?;
     if res.status() != StatusCode::OK {
         error!("Server error  {:?}", res);
         let (head, body) = res.into_parts();
         let buf = httpclient::read_body_bytes(body).await?;
         let s = String::from_utf8_lossy(&buf);
-        return Err(Error::with_msg(format!(
-            concat!(
-                "Server error  {:?}\n",
-                "---------------------- message from http body:\n",
-                "{}\n",
-                "---------------------- end of http body",
-            ),
-            head, s
-        )));
+        return Err(Error::ServerError(head, s.to_string()));
     }
     let (_head, body) = res.into_parts();
     let inp = Box::pin(httpclient::IncomingStream::new(body)) as BoxedBytesStream;
     let frames = InMemoryFrameStream::new(inp, subq.inmem_bufcap());
+    let frames = frames.map_err(sitem_err2_from_string);
     let frames = Box::pin(frames);
     let stream = EventsFromFrames::new(frames, url.to_string());
     debug!("open_event_data_streams_http  done  {url}");
@@ -175,8 +201,11 @@ where
         netout.flush().await?;
         netout.forget();
         // TODO for images, we need larger buffer capacity
-        let inp = Box::pin(TcpReadAsBytes::new(netin)) as BoxedBytesStream;
+        let inp = TcpReadAsBytes::new(netin);
+        let inp = inp.map_err(sitem_err2_from_string);
+        let inp = Box::pin(inp) as BoxedBytesStream;
         let frames = InMemoryFrameStream::new(inp, subq.inmem_bufcap());
+        let frames = frames.map_err(sitem_err2_from_string);
         let frames = Box::pin(frames);
         let stream = EventsFromFrames::<T>::new(frames, addr);
         streams.push(Box::pin(stream) as _);
@@ -193,6 +222,7 @@ where
     T: FrameTypeInnerStatic + DeserializeOwned + Send + Unpin + fmt::Debug + 'static,
 {
     let frames = InMemoryFrameStream::new(inp, bufcap);
+    let frames = frames.map_err(sitem_err2_from_string);
     // TODO let EventsFromFrames accept also non-boxed input?
     let frames = Box::pin(frames);
     let stream = EventsFromFrames::<T>::new(frames, dbgdesc);

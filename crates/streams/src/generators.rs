@@ -10,7 +10,6 @@ use items_0::on_sitemty_data;
 use items_0::streamitem::sitem_data;
 use items_0::streamitem::sitem_err2_from_string;
 use items_0::streamitem::RangeCompletableItem;
-use items_0::streamitem::SitemErrTy;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::Appendable;
@@ -37,6 +36,8 @@ use std::time::Duration;
 pub enum Error {
     UnsupportedIsEventBlobs,
     Transform(#[from] crate::transform::Error),
+    Items2(#[from] items_2::Error),
+    BadChannelName,
 }
 
 pub fn make_test_channel_events_bytes_stream(
@@ -68,7 +69,7 @@ pub fn make_test_channel_events_bytes_stream(
         });
         let stream = stream
             .map_err(sitem_err2_from_string)
-            .map(|x| x.make_frame_dyn().map(|x| x.freeze()));
+            .map(|x| x.make_frame_dyn().map(|x| x.freeze()).map_err(sitem_err2_from_string));
         let ret = Box::pin(stream);
         Ok(ret)
     }
@@ -106,14 +107,10 @@ fn make_test_channel_events_stream_data_inner(
     } else {
         let na: Vec<_> = chn.split("-").collect();
         if na.len() != 3 {
-            Err(Error::with_msg_no_trace(format!(
-                "make_channel_events_stream_data can not understand test channel name: {chn:?}"
-            )))
+            Err(Error::BadChannelName)
         } else {
             if na[0] != "inmem" {
-                Err(Error::with_msg_no_trace(format!(
-                    "make_channel_events_stream_data can not understand test channel name: {chn:?}"
-                )))
+                Err(Error::BadChannelName)
             } else {
                 let _range = subq.range().clone();
                 if na[1] == "d0" {
@@ -124,14 +121,10 @@ fn make_test_channel_events_stream_data_inner(
                         //generator::generate_f32(node_ix, node_count, range)
                         panic!()
                     } else {
-                        Err(Error::with_msg_no_trace(format!(
-                            "make_channel_events_stream_data can not understand test channel name: {chn:?}"
-                        )))
+                        Err(Error::BadChannelName)
                     }
                 } else {
-                    Err(Error::with_msg_no_trace(format!(
-                        "make_channel_events_stream_data can not understand test channel name: {chn:?}"
-                    )))
+                    Err(Error::BadChannelName)
                 }
             }
         }

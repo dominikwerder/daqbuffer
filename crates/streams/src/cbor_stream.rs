@@ -18,7 +18,6 @@ use netpod::log::Level;
 use netpod::log::*;
 use netpod::ScalarType;
 use netpod::Shape;
-use std::fmt;
 use std::io::Cursor;
 use std::pin::Pin;
 use std::task::Context;

@@ -731,8 +731,8 @@ impl<NTY> BinsDim0CollectedResult<NTY> {
 }
 
 impl<NTY: ScalarOps> ToJsonResult for BinsDim0CollectedResult<NTY> {
-    fn to_json_value(&self) -> Result<serde_json::Value, Error> {
-        serde_json::to_value(self).map_err(Error::from_string)
+    fn to_json_value(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::to_value(self)
     }
 }
 

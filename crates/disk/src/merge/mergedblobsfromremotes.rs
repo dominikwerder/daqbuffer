@@ -1,7 +1,8 @@
-use err::Error;
 use futures_util::pin_mut;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use futures_util::TryFutureExt;
+use items_0::streamitem::sitem_err2_from_string;
 use items_0::streamitem::Sitemty;
 use items_2::eventfull::EventFull;
 use items_2::merger::Merger;
@@ -16,7 +17,7 @@ use std::task::Poll;
 use streams::tcprawclient::x_processed_event_blobs_stream_from_node;
 
 type T001<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;
-type T002<T> = Pin<Box<dyn Future<Output = Result<T001<T>, Error>> + Send>>;
+type T002<T> = Pin<Box<dyn Future<Output = Result<T001<T>, items_0::streamitem::SitemErrTy>> + Send>>;
 
 pub struct MergedBlobsFromRemotes {
     tcp_establish_futs: Vec<T002<EventFull>>,
@@ -32,6 +33,7 @@ impl MergedBlobsFromRemotes {
         let mut tcp_establish_futs = Vec::new();
         for node in &cluster.nodes {
             let f = x_processed_event_blobs_stream_from_node(subq.clone(), node.clone(), ctx.clone());
+            let f = f.map_err(sitem_err2_from_string);
             let f: T002<EventFull> = Box::pin(f);
             tcp_establish_futs.push(f);
         }

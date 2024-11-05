@@ -1,5 +1,6 @@
 use err::Error;
 use futures_util::Future;
+use futures_util::TryFutureExt;
 use http::header;
 use http::Method;
 use http::Request;
@@ -8,6 +9,7 @@ use httpclient::http;
 use httpclient::hyper::StatusCode;
 use httpclient::hyper::Uri;
 use items_0::streamitem::sitem_data;
+use items_0::streamitem::sitem_err2_from_string;
 use items_2::framable::Framable;
 use netpod::log::*;
 use netpod::Cluster;
@@ -24,11 +26,11 @@ async fn open_bytes_data_streams_http(
     ctx: ReqCtx,
     cluster: Cluster,
 ) -> Result<Vec<BoxedBytesStream>, Error> {
-    let frame1 = make_node_command_frame(subq.clone())?;
+    let frame1 = make_node_command_frame(subq.clone()).map_err(|e| Error::from_string(e))?;
     let mut streams = Vec::new();
     for node in &cluster.nodes {
         let item = sitem_data(frame1.clone());
-        let buf = item.make_frame_dyn()?;
+        let buf = item.make_frame_dyn().map_err(|e| Error::from_string(e))?;
 
         let url = node.baseurl().join("/api/4/private/eventdata/frames").unwrap();
         debug!("open_event_data_streams_http  post  {url}");
@@ -84,8 +86,9 @@ impl OpenBoxedBytesStreams for OpenBoxedBytesViaHttp {
         &self,
         subq: EventsSubQuery,
         ctx: ReqCtx,
-    ) -> Pin<Box<dyn Future<Output = Result<Vec<BoxedBytesStream>, Error>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<Vec<BoxedBytesStream>, streams::tcprawclient::Error>> + Send>> {
         let fut = open_bytes_data_streams_http(subq, ctx, self.cluster.clone());
+        let fut = fut.map_err(|e| streams::tcprawclient::Error::from(e.to_string()));
         Box::pin(fut)
     }
 }

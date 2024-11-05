@@ -1023,8 +1023,8 @@ impl WithLen for ChannelEventsCollectorOutput {
 }
 
 impl items_0::collect_s::ToJsonResult for ChannelEventsCollectorOutput {
-    fn to_json_value(&self) -> Result<serde_json::Value, ::err::Error> {
-        serde_json::to_value(self).map_err(::err::Error::from_string)
+    fn to_json_value(&self) -> Result<serde_json::Value, serde_json::Error> {
+        serde_json::to_value(self)
     }
 }
 

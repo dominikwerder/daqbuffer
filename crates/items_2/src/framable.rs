@@ -4,7 +4,6 @@ use crate::frame::make_log_frame;
 use crate::frame::make_range_complete_frame;
 use crate::frame::make_stats_frame;
 use bytes::BytesMut;
-use err::Error;
 use items_0::framable::FrameTypeInnerDyn;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::streamitem::LogItem;
@@ -25,6 +24,27 @@ pub const INMEM_FRAME_ENCID: u32 = 0x12121212;
 pub const INMEM_FRAME_HEAD: usize = 20;
 pub const INMEM_FRAME_FOOT: usize = 4;
 pub const INMEM_FRAME_MAGIC: u32 = 0xc6c3b73d;
+
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "ItemFramable")]
+pub enum Error {
+    Msg(String),
+    DummyError,
+    Frame(#[from] crate::frame::Error),
+}
+
+struct ErrMsg<E>(E)
+where
+    E: ToString;
+
+impl<E> From<ErrMsg<E>> for Error
+where
+    E: ToString,
+{
+    fn from(value: ErrMsg<E>) -> Self {
+        Self::Msg(value.0.to_string())
+    }
+}
 
 pub trait FrameTypeStatic {
     const FRAME_TYPE_ID: u32;
@@ -78,14 +98,16 @@ where
         match self {
             Ok(StreamItem::DataItem(RangeCompletableItem::Data(k))) => {
                 let frame_type_id = k.frame_type_id();
-                make_frame_2(self, frame_type_id)
+                make_frame_2(self, frame_type_id).map_err(Error::from)
             }
-            Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)) => make_range_complete_frame(),
-            Ok(StreamItem::Log(item)) => make_log_frame(item),
-            Ok(StreamItem::Stats(item)) => make_stats_frame(item),
+            Ok(StreamItem::DataItem(RangeCompletableItem::RangeComplete)) => {
+                make_range_complete_frame().map_err(Error::from)
+            }
+            Ok(StreamItem::Log(item)) => make_log_frame(item).map_err(Error::from),
+            Ok(StreamItem::Stats(item)) => make_stats_frame(item).map_err(Error::from),
             Err(e) => {
                 info!("calling make_error_frame for [[{e}]]");
-                make_error_frame(e)
+                make_error_frame(e).map_err(Error::from)
             }
         }
     }
@@ -186,7 +208,7 @@ fn test_frame_log() {
 fn test_frame_error() {
     use crate::channelevents::ChannelEvents;
     use crate::frame::json_from_slice;
-    let item: Sitemty<ChannelEvents> = Err(Error::with_msg_no_trace(format!("dummy-error-message")));
+    let item: Sitemty<ChannelEvents> = items_0::streamitem::sitem_err_from_string("dummyerror");
     let buf = Framable::make_frame_dyn(&item).unwrap();
     let len = u32::from_le_bytes(buf[12..16].try_into().unwrap());
     let tyid = u32::from_le_bytes(buf[8..12].try_into().unwrap());
@@ -194,5 +216,5 @@ fn test_frame_error() {
         panic!("bad tyid");
     }
     eprintln!("buf len {}  len {}", buf.len(), len);
-    let item2: Error = json_from_slice(&buf[20..20 + len as usize]).unwrap();
+    let item2: items_0::streamitem::SitemErrTy = json_from_slice(&buf[20..20 + len as usize]).unwrap();
 }
