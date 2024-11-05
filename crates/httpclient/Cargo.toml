@@ -22,3 +22,7 @@ async-channel = "1.9.0"
 err = { path = "../err" }
 netpod = { path = "../netpod" }
 parse = { path = "../parse" }
+thiserror = "0.0.1"
+
+[patch.crates-io]
+thiserror = { git = "https://github.com/dominikwerder/thiserror.git", branch = "cstm" }

@@ -29,6 +29,48 @@ use std::task::Poll;
 use tokio::net::TcpStream;
 use url::Url;
 
+#[derive(Debug)]
+pub enum Error {
+    NoHostInUrl,
+    NoPortInUrl,
+    Connection,
+    IO(std::io::Error),
+    Http,
+    Body(Box<dyn std::error::Error + Send>),
+}
+
+impl std::error::Error for Error {}
+
+impl From<std::io::Error> for Error {
+    fn from(value: std::io::Error) -> Self {
+        Self::IO(value)
+    }
+}
+
+impl From<http::Error> for Error {
+    fn from(_: http::Error) -> Self {
+        Self::Http
+    }
+}
+
+impl From<hyper::Error> for Error {
+    fn from(_: hyper::Error) -> Self {
+        Self::Http
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        write!(fmt, "{self:?}")
+    }
+}
+
+impl err::ToErr for Error {
+    fn to_err(self) -> err::Error {
+        err::Error::with_msg_no_trace(format!("self"))
+    }
+}
+
 pub type BodyBox = BoxBody<Bytes, BodyError>;
 pub type RespBox = Response<BodyBox>;
 pub type Requ = Request<Incoming>;
@@ -229,47 +271,6 @@ impl From<std::convert::Infallible> for BodyError {
     }
 }
 
-#[derive(Debug)]
-pub enum Error {
-    NoHostInUrl,
-    NoPortInUrl,
-    Connection,
-    IO(std::io::Error),
-    Http,
-}
-
-impl std::error::Error for Error {}
-
-impl From<std::io::Error> for Error {
-    fn from(value: std::io::Error) -> Self {
-        Self::IO(value)
-    }
-}
-
-impl From<http::Error> for Error {
-    fn from(_: http::Error) -> Self {
-        Self::Http
-    }
-}
-
-impl From<hyper::Error> for Error {
-    fn from(_: hyper::Error) -> Self {
-        Self::Http
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        write!(fmt, "{self:?}")
-    }
-}
-
-impl err::ToErr for Error {
-    fn to_err(self) -> err::Error {
-        err::Error::with_msg_no_trace(format!("self"))
-    }
-}
-
 pub struct HttpResponse {
     pub head: http::response::Parts,
     pub body: Bytes,
@@ -404,7 +405,7 @@ impl futures_util::Stream for IncomingStream {
                         Ready(Some(Ok(Bytes::new())))
                     }
                 }
-                Err(e) => Ready(Some(Err(e.into()))),
+                Err(e) => Ready(Some(Err(err::Error::from_string(e)))),
             },
             Ready(None) => Ready(None),
             Pending => Pending,

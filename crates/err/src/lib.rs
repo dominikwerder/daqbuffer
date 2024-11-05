@@ -436,12 +436,6 @@ impl From<anyhow::Error> for Error {
     }
 }
 
-impl From<tokio::task::JoinError> for Error {
-    fn from(k: tokio::task::JoinError) -> Self {
-        Self::from_string(format!("{k}"))
-    }
-}
-
 impl From<http::Error> for Error {
     fn from(k: http::Error) -> Self {
         Self::from_string(k)
@@ -450,12 +444,6 @@ impl From<http::Error> for Error {
 
 impl From<http::uri::InvalidUri> for Error {
     fn from(k: http::uri::InvalidUri) -> Self {
-        Self::from_string(k)
-    }
-}
-
-impl From<hyper::Error> for Error {
-    fn from(k: hyper::Error) -> Self {
         Self::from_string(k)
     }
 }

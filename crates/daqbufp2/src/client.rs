@@ -30,7 +30,7 @@ pub async fn status(host: String, port: u16) -> Result<(), Error> {
         .uri(uri)
         .body(body_empty())?;
     let mut client = httpclient::connect_client(req.uri()).await?;
-    let res = client.send_request(req).await?;
+    let res = client.send_request(req).await.map_err(Error::from_string)?;
     if res.status() != StatusCode::OK {
         error!("Server error  {:?}", res);
         return Err(Error::with_msg(format!("Server error  {:?}", res)));
@@ -81,7 +81,7 @@ pub async fn get_binned(
         .body(body_empty())
         .ec()?;
     let mut client = httpclient::connect_client(req.uri()).await?;
-    let res = client.send_request(req).await?;
+    let res = client.send_request(req).await.map_err(Error::from_string)?;
     if res.status() != StatusCode::OK {
         error!("Server error  {:?}", res);
         let (head, body) = res.into_parts();

@@ -32,7 +32,8 @@ impl MergedBlobsFromRemotes {
         debug!("MergedBlobsFromRemotes::new  subq {:?}", subq);
         let mut tcp_establish_futs = Vec::new();
         for node in &cluster.nodes {
-            let f = x_processed_event_blobs_stream_from_node(subq.clone(), node.clone(), ctx.clone());
+            let post = todo!();
+            let f = x_processed_event_blobs_stream_from_node(subq.clone(), node.clone(), post, ctx.clone());
             let f = f.map_err(sitem_err2_from_string);
             let f: T002<EventFull> = Box::pin(f);
             tcp_establish_futs.push(f);
