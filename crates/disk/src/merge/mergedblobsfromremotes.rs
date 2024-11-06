@@ -2,6 +2,7 @@ use futures_util::pin_mut;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use futures_util::TryFutureExt;
+use httpclient::postimpl::HttpSimplePostImpl1;
 use items_0::streamitem::sitem_err2_from_string;
 use items_0::streamitem::Sitemty;
 use items_2::eventfull::EventFull;
@@ -32,7 +33,8 @@ impl MergedBlobsFromRemotes {
         debug!("MergedBlobsFromRemotes::new  subq {:?}", subq);
         let mut tcp_establish_futs = Vec::new();
         for node in &cluster.nodes {
-            let post = todo!();
+            let post = HttpSimplePostImpl1::new();
+            let post = Box::new(post);
             let f = x_processed_event_blobs_stream_from_node(subq.clone(), node.clone(), post, ctx.clone());
             let f = f.map_err(sitem_err2_from_string);
             let f: T002<EventFull> = Box::pin(f);

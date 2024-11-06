@@ -411,12 +411,6 @@ async fn http_service_inner(
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
-    } else if path == "/api/4/clear_cache" {
-        if req.method() == Method::GET {
-            Ok(clear_cache_all(req, ctx, &node_config).await?)
-        } else {
-            Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
-        }
     } else if let Some(h) = api4::maintenance::UpdateDbWithChannelNamesHandler::handler(&req) {
         Ok(h.handle(req, ctx, &node_config).await?)
     } else if let Some(h) = api4::maintenance::UpdateDbWithAllChannelConfigsHandler::handler(&req) {
@@ -522,23 +516,6 @@ async fn random_channel(
     let (_head, _body) = req.into_parts();
     let ret = dbconn::random_channel(node_config).await?;
     let ret = response(StatusCode::OK).body(body_string(ret))?;
-    Ok(ret)
-}
-
-async fn clear_cache_all(
-    req: Requ,
-    _ctx: &ReqCtx,
-    node_config: &NodeConfigCached,
-) -> Result<StreamResponse, RetrievalError> {
-    let (head, _body) = req.into_parts();
-    let dry = match head.uri.query() {
-        Some(q) => q.contains("dry"),
-        None => false,
-    };
-    let res = disk::cache::clear_cache_all(node_config, dry).await?;
-    let ret = response(StatusCode::OK)
-        .header(http::header::CONTENT_TYPE, APP_JSON)
-        .body(body_string(serde_json::to_string(&res)?))?;
     Ok(ret)
 }
 

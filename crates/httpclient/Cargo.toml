@@ -22,6 +22,7 @@ async-channel = "1.9.0"
 err = { path = "../err" }
 netpod = { path = "../netpod" }
 parse = { path = "../parse" }
+streams = { path = "../streams" }
 thiserror = "0.0.1"
 
 [patch.crates-io]

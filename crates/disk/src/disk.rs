@@ -1,7 +1,6 @@
 #[cfg(test)]
 pub mod aggtest;
 pub mod binnedstream;
-pub mod cache;
 pub mod channelconfig;
 pub mod dataopen;
 pub mod decode;

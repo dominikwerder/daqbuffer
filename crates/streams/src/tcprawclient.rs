@@ -14,6 +14,7 @@ use futures_util::Stream;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
 use http::Uri;
+use http_body_util::BodyExt;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::streamitem::sitem_data;
 use items_0::streamitem::sitem_err2_from_string;
@@ -122,15 +123,17 @@ pub async fn x_processed_event_blobs_stream_from_node_tcp(
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum ErrorBody {}
+pub enum ErrorBody {
+    #[error("{0}")]
+    Msg(String),
+}
 
 pub trait HttpSimplePost: Send {
     fn http_simple_post(
         &self,
-        // req: http::Request<http_body_util::BodyDataStream<http_body::Frame<Bytes>>>,
-        req: http::Request<http_body_util::BodyDataStream<Bytes>>,
-    ) -> http::Response<
-        http_body_util::StreamBody<Pin<Box<dyn Stream<Item = Result<http_body::Frame<Bytes>, ErrorBody>> + Send>>>,
+        req: http::Request<http_body_util::Full<Bytes>>,
+    ) -> Pin<
+        Box<dyn Future<Output = http::Response<http_body_util::combinators::UnsyncBoxBody<Bytes, ErrorBody>>> + Send>,
     >;
 }
 
@@ -167,18 +170,15 @@ pub async fn x_processed_event_blobs_stream_from_node_http(
     let url = node.baseurl().join("/api/4/private/eventdata/frames").unwrap();
     debug!("open_event_data_streams_http  post  {url}");
     let uri: Uri = url.as_str().parse().unwrap();
-    let body = http_body_util::BodyDataStream::new(buf);
+    let body = http_body_util::Full::new(buf);
     let req = Request::builder()
         .method(Method::POST)
         .uri(&uri)
         .header(header::HOST, uri.host().unwrap())
         .header(header::ACCEPT, APP_OCTET)
         .header(ctx.header_name(), ctx.header_value())
-        // .body(body_bytes(buf))?;
         .body(body)?;
-    let res = post.http_simple_post(req);
-    // let mut client = httpclient::connect_client(req.uri()).await?;
-    // let res = client.send_request(req).await?;
+    let res = post.http_simple_post(req).await;
     if res.status() != StatusCode::OK {
         let (head, body) = res.into_parts();
         error!("server error  {:?}", head);
@@ -187,22 +187,13 @@ pub async fn x_processed_event_blobs_stream_from_node_http(
         return Err(Error::ServerError(head, s.to_string()));
     }
     let (_head, body) = res.into_parts();
-    // while let Some(x) = body.next().await {
-    //     let fr = x?;
-    // }
     let inp = body;
+    let inp = inp.into_data_stream();
     let inp = inp.map(|x| match x {
-        Ok(x) => match x.into_data() {
-            Ok(x) => Ok(x),
-            Err(e) => {
-                debug!("see non-data frame {e:?}");
-                Ok(Bytes::new())
-            }
-        },
+        Ok(x) => Ok(x),
         Err(e) => Err(sitem_err2_from_string(e)),
     });
     let inp = Box::pin(inp) as BoxedBytesStream;
-    // let inp = Box::pin(httpclient::IncomingStream::new(body)) as BoxedBytesStream;
     let frames = InMemoryFrameStream::new(inp, subq.inmem_bufcap());
     let frames = frames.map_err(sitem_err2_from_string);
     let frames = Box::pin(frames);

@@ -28,7 +28,6 @@ query = { path = "../query" }
 items_0 = { path = "../items_0" }
 items_2 = { path = "../items_2" }
 parse = { path = "../parse" }
-#httpclient = { path = "../httpclient" }
 http = "1"
 http-body = "1"
 http-body-util = "0.1.0"

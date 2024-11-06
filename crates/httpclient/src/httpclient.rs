@@ -344,7 +344,12 @@ pub async fn http_post(url: Url, accept: &str, body: String, ctx: &ReqCtx) -> Re
     Ok(buf)
 }
 
-pub async fn connect_client(uri: &http::Uri) -> Result<SendRequest<StreamBody>, Error> {
+pub async fn connect_client<B>(uri: &http::Uri) -> Result<SendRequest<B>, Error>
+where
+    B: Body + Send + 'static,
+    <B as Body>::Data: Send,
+    <B as Body>::Error: Into<Box<(dyn std::error::Error + Send + Sync + 'static)>>,
+{
     let scheme = uri.scheme_str().unwrap_or("http");
     let host = uri.host().ok_or_else(|| Error::NoHostInUrl)?;
     let port = uri.port_u16().unwrap_or_else(|| {
