@@ -28,4 +28,5 @@ dbconn = { path = "../dbconn" }
 scyllaconn = { path = "../scyllaconn" }
 taskrun = { path = "../taskrun" }
 streams = { path = "../streams" }
+streamio = { path = "../streamio" }
 httpclient = { path = "../httpclient" }

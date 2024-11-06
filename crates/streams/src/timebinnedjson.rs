@@ -3,6 +3,8 @@ use crate::collect::CollectResult;
 use crate::json_stream::JsonBytes;
 use crate::json_stream::JsonStream;
 use crate::rangefilter2::RangeFilter2;
+use crate::streamtimeout::StreamTimeout;
+use crate::streamtimeout::StreamTimeout2;
 use crate::tcprawclient::container_stream_from_bytes_stream;
 use crate::tcprawclient::make_sub_query;
 use crate::tcprawclient::OpenBoxedBytesStreamsBox;
@@ -364,6 +366,7 @@ pub async fn timebinned_json_framed(
     ctx: &ReqCtx,
     cache_read_provider: Arc<dyn CacheReadProvider>,
     events_read_provider: Arc<dyn EventsReadProvider>,
+    stream_timeout_provider: Box<dyn StreamTimeout2<Box<dyn CollectableDyn>>>,
 ) -> Result<JsonStream, Error> {
     trace!("timebinned_json_framed");
     let binned_range = query.covering_range()?;

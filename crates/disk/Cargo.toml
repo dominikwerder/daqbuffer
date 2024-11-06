@@ -39,5 +39,6 @@ parse = { path = "../parse" }
 items_0 = { path = "../items_0" }
 items_2 = { path = "../items_2" }
 streams = { path = "../streams" }
+streamio = { path = "../streamio" }
 httpclient = { path = "../httpclient" }
 bitshuffle = { path = "../bitshuffle" }

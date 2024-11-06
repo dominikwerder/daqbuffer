@@ -1,5 +1,5 @@
 [package]
-name = "streams"
+name = "streamio"
 version = "0.0.2"
 authors = ["Dominik Werder <dominik.werder@gmail.com>"]
 edition = "2021"
@@ -28,6 +28,7 @@ query = { path = "../query" }
 items_0 = { path = "../items_0" }
 items_2 = { path = "../items_2" }
 parse = { path = "../parse" }
+streams = { path = "../streams" }
 http = "1"
 http-body = "1"
 http-body-util = "0.1.0"

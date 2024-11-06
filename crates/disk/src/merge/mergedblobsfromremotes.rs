@@ -15,7 +15,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
-use streams::tcprawclient::x_processed_event_blobs_stream_from_node;
+use streamio::tcprawclient::x_processed_event_blobs_stream_from_node;
 
 type T001<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;
 type T002<T> = Pin<Box<dyn Future<Output = Result<T001<T>, items_0::streamitem::SitemErrTy>> + Send>>;

@@ -20,6 +20,7 @@ pub mod plaineventsstream;
 pub mod print_on_done;
 pub mod rangefilter2;
 pub mod slidebuf;
+pub mod streamtimeout;
 pub mod tcprawclient;
 #[cfg(test)]
 pub mod test;

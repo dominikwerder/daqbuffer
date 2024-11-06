@@ -1,12 +1,6 @@
-//! Delivers event data.
-//!
-//! Delivers event data (not yet time-binned) from local storage and provides client functions
-//! to request such data from nodes.
-
 use crate::frames::eventsfromframes::EventsFromFrames;
 use crate::frames::inmem::BoxedBytesStream;
 use crate::frames::inmem::InMemoryFrameStream;
-use crate::frames::inmem::TcpReadAsBytes;
 use bytes::Bytes;
 use bytes::BytesMut;
 use futures_util::Future;
@@ -22,12 +16,10 @@ use items_0::streamitem::Sitemty;
 use items_2::eventfull::EventFull;
 use items_2::framable::EventQueryJsonStringFrame;
 use items_2::framable::Framable;
-use items_2::frame::make_term_frame;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;
 use netpod::ByteSize;
 use netpod::ChannelTypeConfigGen;
-use netpod::Cluster;
 use netpod::Node;
 use netpod::ReqCtx;
 use netpod::APP_OCTET;
@@ -40,8 +32,6 @@ use serde::de::DeserializeOwned;
 use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
-use tokio::net::TcpStream;
 
 pub const TEST_BACKEND: &str = "testbackend-00";
 
@@ -95,31 +85,6 @@ pub fn make_node_command_frame(query: EventsSubQuery) -> Result<EventQueryJsonSt
     let obj = Frame1Parts::new(query);
     let ret = serde_json::to_string(&obj)?;
     Ok(EventQueryJsonStringFrame(ret))
-}
-
-pub async fn x_processed_event_blobs_stream_from_node_tcp(
-    subq: EventsSubQuery,
-    node: Node,
-) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
-    let addr = format!("{}:{}", node.host, node.port_raw);
-    debug!("x_processed_event_blobs_stream_from_node  to: {addr}",);
-    let frame1 = make_node_command_frame(subq.clone())?;
-    let net = TcpStream::connect(addr.clone()).await?;
-    let (netin, mut netout) = net.into_split();
-    let item = sitem_data(frame1);
-    let buf = item.make_frame_dyn()?;
-    netout.write_all(&buf).await?;
-    let buf = make_term_frame()?;
-    netout.write_all(&buf).await?;
-    netout.flush().await?;
-    netout.forget();
-    let inp = TcpReadAsBytes::new(netin).map_err(sitem_err2_from_string);
-    let inp = Box::pin(inp) as BoxedBytesStream;
-    let frames = InMemoryFrameStream::new(inp, subq.inmem_bufcap());
-    let frames = frames.map_err(sitem_err2_from_string);
-    let frames = Box::pin(frames);
-    let items = EventsFromFrames::new(frames, addr);
-    Ok(Box::pin(items))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -200,57 +165,6 @@ pub async fn x_processed_event_blobs_stream_from_node_http(
     let stream = EventsFromFrames::new(frames, url.to_string());
     debug!("open_event_data_streams_http  done  {url}");
     Ok(Box::pin(stream))
-}
-
-// Currently used only for the python data api3 protocol endpoint.
-// TODO merge with main method.
-pub async fn x_processed_event_blobs_stream_from_node(
-    subq: EventsSubQuery,
-    node: Node,
-    post: Box<dyn HttpSimplePost>,
-    ctx: ReqCtx,
-) -> Result<Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>, Error> {
-    if true {
-        x_processed_event_blobs_stream_from_node_http(subq, node, post, &ctx).await
-    } else {
-        x_processed_event_blobs_stream_from_node_tcp(subq, node).await
-    }
-}
-
-pub type BoxedStream<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;
-
-#[allow(unused)]
-async fn open_event_data_streams_tcp<T>(subq: EventsSubQuery, cluster: &Cluster) -> Result<Vec<BoxedStream<T>>, Error>
-where
-    // TODO group bounds in new trait
-    T: FrameTypeInnerStatic + DeserializeOwned + Send + Unpin + fmt::Debug + 'static,
-{
-    // TODO when unit tests established, change to async connect:
-    let frame1 = make_node_command_frame(subq.clone())?;
-    let mut streams = Vec::new();
-    for node in &cluster.nodes {
-        let addr = format!("{}:{}", node.host, node.port_raw);
-        debug!("open_tcp_streams  to: {addr}");
-        let net = TcpStream::connect(addr.clone()).await?;
-        let (netin, mut netout) = net.into_split();
-        let item = sitem_data(frame1.clone());
-        let buf = item.make_frame_dyn()?;
-        netout.write_all(&buf).await?;
-        let buf = make_term_frame()?;
-        netout.write_all(&buf).await?;
-        netout.flush().await?;
-        netout.forget();
-        // TODO for images, we need larger buffer capacity
-        let inp = TcpReadAsBytes::new(netin);
-        let inp = inp.map_err(sitem_err2_from_string);
-        let inp = Box::pin(inp) as BoxedBytesStream;
-        let frames = InMemoryFrameStream::new(inp, subq.inmem_bufcap());
-        let frames = frames.map_err(sitem_err2_from_string);
-        let frames = Box::pin(frames);
-        let stream = EventsFromFrames::<T>::new(frames, addr);
-        streams.push(Box::pin(stream) as _);
-    }
-    Ok(streams)
 }
 
 pub fn container_stream_from_bytes_stream<T>(

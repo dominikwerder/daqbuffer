@@ -35,44 +35,6 @@ pub type BoxedBytesStream = Pin<Box<dyn Stream<Item = Result<Bytes, SitemErrTy>>
 
 macro_rules! trace2 { ($($arg:tt)*) => ( if false { trace!($($arg)*); } ); }
 
-pub struct TcpReadAsBytes<INP> {
-    inp: INP,
-}
-
-impl<INP> TcpReadAsBytes<INP> {
-    pub fn new(inp: INP) -> Self {
-        Self { inp }
-    }
-}
-
-impl<INP> Stream for TcpReadAsBytes<INP>
-where
-    INP: AsyncRead + Unpin,
-{
-    type Item = Result<Bytes, Error>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
-        use Poll::*;
-        // TODO keep this small as long as InMemoryFrameStream uses SlideBuf internally.
-        let mut buf1 = vec![0; 128];
-        let mut buf2 = tokio::io::ReadBuf::new(&mut buf1);
-        match tokio::io::AsyncRead::poll_read(Pin::new(&mut self.inp), cx, &mut buf2) {
-            Ready(Ok(())) => {
-                let n = buf2.filled().len();
-                if n == 0 {
-                    Ready(None)
-                } else {
-                    buf1.truncate(n);
-                    let item = Bytes::from(buf1);
-                    Ready(Some(Ok(item)))
-                }
-            }
-            Ready(Err(e)) => Ready(Some(Err(e.into()))),
-            Pending => Pending,
-        }
-    }
-}
-
 /// Interprets a byte stream as length-delimited frames.
 ///
 /// Emits each frame as a single item. Therefore, each item must fit easily into memory.

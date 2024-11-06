@@ -266,10 +266,18 @@ async fn binned_json_framed(
     let open_bytes = Arc::pin(OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone()));
     let (events_read_provider, cache_read_provider) =
         make_read_provider(ch_conf.name(), scyqueue, open_bytes, ctx, ncc);
-    let stream =
-        streams::timebinnedjson::timebinned_json_framed(query, ch_conf, ctx, cache_read_provider, events_read_provider)
-            .instrument(span1)
-            .await?;
+    let stream_timeout = streamio::streamtimeout::StreamTimeout::new();
+    let stream_timeout = Box::new(stream_timeout);
+    let stream = streams::timebinnedjson::timebinned_json_framed(
+        query,
+        ch_conf,
+        ctx,
+        cache_read_provider,
+        events_read_provider,
+        stream_timeout,
+    )
+    .instrument(span1)
+    .await?;
     let stream = bytes_chunks_to_len_framed_str(stream);
     let ret = response(StatusCode::OK)
         .header(CONTENT_TYPE, APP_JSON_FRAMED)
