@@ -294,6 +294,7 @@ pub async fn timebinned_json(
     ctx: &ReqCtx,
     cache_read_provider: Arc<dyn CacheReadProvider>,
     events_read_provider: Arc<dyn EventsReadProvider>,
+    timeout_provider: Box<dyn StreamTimeout2>,
 ) -> Result<CollectResult<JsonValue>, Error> {
     let deadline = Instant::now()
         + query
@@ -314,7 +315,15 @@ pub async fn timebinned_json(
         events_read_provider,
     )
     .await?;
-    let collected = Collect::new(stream, deadline, collect_max, bytes_max, None, Some(binned_range));
+    let collected = Collect::new(
+        stream,
+        deadline,
+        collect_max,
+        bytes_max,
+        None,
+        Some(binned_range),
+        timeout_provider,
+    );
     let collected: BoxFuture<_> = Box::pin(collected);
     let collres = collected.await?;
     match collres {

@@ -208,7 +208,9 @@ async fn plain_events_json_framed(
     debug!("plain_events_json_framed  {ch_conf:?}  {req:?}");
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let open_bytes = Arc::pin(open_bytes);
-    let stream = streams::plaineventsjson::plain_events_json_stream(&evq, ch_conf, ctx, open_bytes).await?;
+    let timeout_provider = streamio::streamtimeout::StreamTimeout::boxed();
+    let stream =
+        streams::plaineventsjson::plain_events_json_stream(&evq, ch_conf, ctx, open_bytes, timeout_provider).await?;
     let stream = bytes_chunks_to_len_framed_str(stream);
     let ret = response(StatusCode::OK)
         .header(CONTENT_TYPE, APP_JSON_FRAMED)
@@ -231,8 +233,16 @@ async fn plain_events_json(
     debug!("{self_name}  chconf_from_events_quorum: {ch_conf:?}");
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let open_bytes = Arc::pin(open_bytes);
-    let item =
-        streams::plaineventsjson::plain_events_json(&evq, ch_conf, ctx, &ncc.node_config.cluster, open_bytes).await;
+    let timeout_provider = streamio::streamtimeout::StreamTimeout::boxed();
+    let item = streams::plaineventsjson::plain_events_json(
+        &evq,
+        ch_conf,
+        ctx,
+        &ncc.node_config.cluster,
+        open_bytes,
+        timeout_provider,
+    )
+    .await;
     debug!("{self_name}  returned  {}", item.is_ok());
     let item = match item {
         Ok(item) => item,

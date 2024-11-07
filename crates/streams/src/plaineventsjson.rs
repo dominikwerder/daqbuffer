@@ -5,6 +5,7 @@ use crate::firsterr::only_first_err;
 use crate::json_stream::events_stream_to_json_stream;
 use crate::json_stream::JsonStream;
 use crate::plaineventsstream::dyn_events_stream;
+use crate::streamtimeout::StreamTimeout2;
 use crate::tcprawclient::OpenBoxedBytesStreamsBox;
 use futures_util::StreamExt;
 use items_0::collect_s::CollectableDyn;
@@ -33,6 +34,7 @@ pub async fn plain_events_json(
     ctx: &ReqCtx,
     _cluster: &Cluster,
     open_bytes: OpenBoxedBytesStreamsBox,
+    timeout_provider: Box<dyn StreamTimeout2>,
 ) -> Result<CollectResult<JsonValue>, Error> {
     debug!("plain_events_json  evquery {:?}", evq);
     let deadline = Instant::now() + evq.timeout().unwrap_or(Duration::from_millis(4000));
@@ -88,6 +90,7 @@ pub async fn plain_events_json(
         evq.bytes_max(),
         Some(evq.range().clone()),
         None,
+        timeout_provider,
     )
     .await?;
     debug!("plain_events_json  collected");
@@ -106,10 +109,11 @@ pub async fn plain_events_json_stream(
     ch_conf: ChannelTypeConfigGen,
     ctx: &ReqCtx,
     open_bytes: OpenBoxedBytesStreamsBox,
+    timeout_provider: Box<dyn StreamTimeout2>,
 ) -> Result<JsonStream, Error> {
     trace!("plain_events_json_stream");
     let stream = dyn_events_stream(evq, ch_conf, ctx, open_bytes).await?;
-    let stream = events_stream_to_json_stream(stream);
+    let stream = events_stream_to_json_stream(stream, timeout_provider);
     let stream = non_empty(stream);
     let stream = only_first_err(stream);
     Ok(Box::pin(stream))

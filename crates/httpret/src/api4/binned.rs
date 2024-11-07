@@ -211,9 +211,17 @@ async fn binned_json_single(
     let open_bytes = Arc::pin(OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone()));
     let (events_read_provider, cache_read_provider) =
         make_read_provider(ch_conf.name(), scyqueue, open_bytes, ctx, ncc);
-    let item = streams::timebinnedjson::timebinned_json(query, ch_conf, ctx, cache_read_provider, events_read_provider)
-        .instrument(span1)
-        .await?;
+    let timeout_provider = streamio::streamtimeout::StreamTimeout::boxed();
+    let item = streams::timebinnedjson::timebinned_json(
+        query,
+        ch_conf,
+        ctx,
+        cache_read_provider,
+        events_read_provider,
+        timeout_provider,
+    )
+    .instrument(span1)
+    .await?;
     match item {
         CollectResult::Some(item) => {
             let ret = response(StatusCode::OK)

@@ -29,7 +29,6 @@ use std::f64::consts::PI;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
-use std::time::Duration;
 
 #[derive(Debug, thiserror::Error)]
 #[cstm(name = "Generator")]
@@ -38,6 +37,10 @@ pub enum Error {
     Transform(#[from] crate::transform::Error),
     Items2(#[from] items_2::Error),
     BadChannelName,
+}
+
+fn make_sleep_fut() -> Pin<Box<dyn Future<Output = ()> + Send>> {
+    todo!()
 }
 
 pub fn make_test_channel_events_bytes_stream(
@@ -209,7 +212,7 @@ impl Stream for GenerateI32V00 {
                     Pending => Pending,
                 }
             } else {
-                self.timeout = Some(Box::pin(tokio::time::sleep(Duration::from_millis(2))));
+                self.timeout = Some(make_sleep_fut());
                 continue;
             };
         }
@@ -315,7 +318,7 @@ impl Stream for GenerateI32V01 {
                     Pending => Pending,
                 }
             } else {
-                self.timeout = Some(Box::pin(tokio::time::sleep(Duration::from_millis(2))));
+                self.timeout = Some(make_sleep_fut());
                 continue;
             };
         }
@@ -418,7 +421,7 @@ impl Stream for GenerateF64V00 {
                     Pending => Pending,
                 }
             } else {
-                self.timeout = Some(Box::pin(tokio::time::sleep(Duration::from_millis(2))));
+                self.timeout = Some(make_sleep_fut());
                 continue;
             };
         }
@@ -529,7 +532,7 @@ impl Stream for GenerateWaveI16V00 {
                     Pending => Pending,
                 }
             } else {
-                self.timeout = Some(Box::pin(tokio::time::sleep(Duration::from_millis(2))));
+                self.timeout = Some(make_sleep_fut());
                 continue;
             };
         }
