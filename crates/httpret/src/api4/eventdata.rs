@@ -1,6 +1,7 @@
 use crate::response;
 use crate::ReqCtx;
 use crate::ServiceSharedResources;
+use daqbuf_err as err;
 use err::thiserror;
 use err::PublicError;
 use err::ThisError;

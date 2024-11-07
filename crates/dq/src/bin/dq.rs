@@ -1,5 +1,6 @@
 use clap::ArgAction;
 use clap::Parser;
+use daqbuf_err as err;
 use disk::eventchunker::EventChunker;
 use disk::eventchunker::EventChunkerConf;
 use err::Error;

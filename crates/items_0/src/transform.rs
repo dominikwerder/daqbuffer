@@ -4,6 +4,7 @@ use crate::streamitem::RangeCompletableItem;
 use crate::streamitem::Sitemty;
 use crate::streamitem::StreamItem;
 use crate::Events;
+use daqbuf_err as err;
 use err::Error;
 use futures_util::stream;
 use futures_util::Future;

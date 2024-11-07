@@ -2,6 +2,7 @@ use crate::create_connection;
 use async_channel::Receiver;
 use async_channel::RecvError;
 use async_channel::Sender;
+use daqbuf_err as err;
 use err::thiserror;
 use err::ThisError;
 use netpod::log::*;

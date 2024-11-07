@@ -3,6 +3,7 @@ use crate::err::Error;
 use crate::requests::accepts_json_or_all;
 use crate::ReqCtx;
 use crate::ServiceSharedResources;
+use daqbuf_err as err;
 use dbconn::worker::PgQueue;
 use err::ToPublicError;
 use http::Method;

@@ -2,6 +2,7 @@ use crate::eventchunker::EventChunkerConf;
 use crate::eventchunkermultifile::EventChunkerMultifile;
 use crate::AggQuerySingleChannel;
 use crate::SfDbChConf;
+use daqbuf_err as err;
 use err::Error;
 use netpod::range::evrange::NanoRange;
 use netpod::test_data_base_path_databuffer;

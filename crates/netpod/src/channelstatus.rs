@@ -1,3 +1,5 @@
+use daqbuf_err as err;
+
 #[derive(Debug, Clone)]
 pub enum ChannelStatusClosedReason {
     ShutdownCommand,

@@ -1,5 +1,6 @@
 use crate::conn::events_conn_handler;
 use crate::conn::Frame1Parts;
+use daqbuf_err as err;
 use err::Error;
 use futures_util::StreamExt;
 use items_0::streamitem::sitem_data;

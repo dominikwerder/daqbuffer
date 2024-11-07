@@ -12,6 +12,7 @@ pub mod pg {
     pub use tokio_postgres::Statement;
 }
 
+use daqbuf_err as err;
 use err::anyhow;
 use err::thiserror;
 use err::Error;

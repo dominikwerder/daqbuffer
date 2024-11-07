@@ -21,6 +21,7 @@ pub mod testgen;
 pub mod transform;
 
 use channelevents::ChannelEvents;
+use daqbuf_err as err;
 use futures_util::Stream;
 use items_0::isodate::IsoDateTime;
 use items_0::streamitem::Sitemty;

@@ -1,4 +1,5 @@
 use crate::err::Error;
+use daqbuf_err as err;
 use err::ToPublicError;
 use http::Response;
 use http::StatusCode;
@@ -26,7 +27,7 @@ impl ToPublicResponse for Error {
     }
 }
 
-impl ToPublicResponse for ::err::Error {
+impl ToPublicResponse for daqbuf_err::Error {
     fn to_public_response(&self) -> StreamResponse {
         use err::Reason;
         let e = self.to_public_error();

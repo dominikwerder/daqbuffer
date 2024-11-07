@@ -1,6 +1,6 @@
 #![allow(unused)]
 use crate::nodes::require_archapp_test_host_running;
-use err::Error;
+use daqbuf_err::Error;
 use netpod::f64_close;
 use netpod::log::*;
 

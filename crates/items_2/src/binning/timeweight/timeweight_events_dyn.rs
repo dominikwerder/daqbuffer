@@ -2,6 +2,7 @@ use super::timeweight_events::BinnedEventsTimeweight;
 use crate::binning::container_events::ContainerEvents;
 use crate::binning::container_events::EventValueType;
 use crate::channelevents::ChannelEvents;
+use daqbuf_err as err;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Stream;
@@ -183,11 +184,11 @@ impl BinnedEventsTimeweightStream {
                                         }
                                     }
                                     Ok(None) => Continue(()),
-                                    Err(e) => Break(Ready(Some(Err(::err::Error::from_string(e))))),
+                                    Err(e) => Break(Ready(Some(Err(err::Error::from_string(e))))),
                                 }
                                 // Continue(())
                             }
-                            Err(e) => Break(Ready(Some(Err(::err::Error::from_string(e))))),
+                            Err(e) => Break(Ready(Some(Err(err::Error::from_string(e))))),
                         },
                         ChannelEvents::Status(_) => {
                             // TODO use the status
@@ -218,13 +219,13 @@ impl BinnedEventsTimeweightStream {
         if self.range_complete {
             self.binned_events
                 .input_done_range_final()
-                .map_err(::err::Error::from_string)?;
+                .map_err(err::Error::from_string)?;
         } else {
             self.binned_events
                 .input_done_range_open()
-                .map_err(::err::Error::from_string)?;
+                .map_err(err::Error::from_string)?;
         }
-        match self.binned_events.output().map_err(::err::Error::from_string)? {
+        match self.binned_events.output().map_err(err::Error::from_string)? {
             Some(x) => {
                 trace_emit!("seeing ready bins {:?}", x);
                 Ready(Some(Ok(DataItem(Data(x)))))

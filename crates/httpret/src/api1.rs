@@ -11,6 +11,7 @@ use crate::ServiceSharedResources;
 use bytes::BufMut;
 use bytes::Bytes;
 use bytes::BytesMut;
+use daqbuf_err as err;
 use disk::merge::mergedblobsfromremotes::MergedBlobsFromRemotes;
 use futures_util::Stream;
 use futures_util::StreamExt;

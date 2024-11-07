@@ -1,3 +1,4 @@
+use daqbuf_err as err;
 use err::Error;
 use scylla::frame::response::cql_to_rust::FromRowError as ScyFromRowError;
 use scylla::transport::errors::NewSessionError as ScyNewSessionError;

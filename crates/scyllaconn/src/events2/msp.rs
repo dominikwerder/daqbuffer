@@ -1,6 +1,8 @@
 use super::prepare::StmtsEvents;
 use crate::range::ScyllaSeriesRange;
 use crate::worker::ScyllaQueue;
+use daqbuf_err as err;
+use daqbuf_series::SeriesId;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Future;
@@ -12,7 +14,6 @@ use netpod::ttl::RetentionTime;
 use netpod::TsMs;
 use netpod::TsMsVecFmt;
 use scylla::Session;
-use series::SeriesId;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::Context;

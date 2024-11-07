@@ -1,6 +1,7 @@
 pub mod ringbuf;
 
 use async_channel::Sender;
+use daqbuf_err as err;
 use err::ErrStr;
 use err::Error;
 use futures_util::StreamExt;

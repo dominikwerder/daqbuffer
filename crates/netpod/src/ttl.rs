@@ -1,4 +1,5 @@
 use core::fmt;
+use daqbuf_err as err;
 use err::thiserror;
 use err::ThisError;
 use serde::Deserialize;

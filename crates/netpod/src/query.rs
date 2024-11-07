@@ -2,6 +2,8 @@ pub mod api1;
 pub mod datetime;
 pub mod prebinned;
 
+use daqbuf_err as err;
+
 use crate::get_url_query_pairs;
 use crate::log::*;
 use crate::AggKind;

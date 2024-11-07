@@ -1,4 +1,5 @@
 use clap::{ArgAction, Parser};
+use daqbuf_err as err;
 use err::Error;
 use netpod::timeunits::*;
 use std::path::PathBuf;

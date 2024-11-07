@@ -28,7 +28,7 @@ rand = "0.8.5"
 ciborium = "0.2.1"
 flate2 = "1"
 brotli = "3.4.0"
-err = { path = "../err" }
+daqbuf-err = { path = "../../../daqbuf-err" }
 netpod = { path = "../netpod" }
 query = { path = "../query" }
 dbconn = { path = "../dbconn" }

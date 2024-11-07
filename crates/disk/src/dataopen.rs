@@ -1,5 +1,6 @@
 use super::paths;
 use bytes::BytesMut;
+use daqbuf_err as err;
 use err::ErrStr;
 use err::Error;
 use futures_util::StreamExt;

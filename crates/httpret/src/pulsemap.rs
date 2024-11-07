@@ -889,24 +889,24 @@ struct LocalMap {
 }
 
 pub trait ErrConv<T> {
-    fn err_conv(self) -> Result<T, err::Error>;
+    fn err_conv(self) -> Result<T, daqbuf_err::Error>;
 }
 
 impl<T> ErrConv<T> for Result<T, scylla::transport::errors::NewSessionError> {
-    fn err_conv(self) -> Result<T, err::Error> {
-        self.map_err(|e| err::Error::with_msg_no_trace(format!("{e:?}")))
+    fn err_conv(self) -> Result<T, daqbuf_err::Error> {
+        self.map_err(|e| daqbuf_err::Error::with_msg_no_trace(format!("{e:?}")))
     }
 }
 
 impl<T> ErrConv<T> for Result<T, scylla::transport::errors::QueryError> {
-    fn err_conv(self) -> Result<T, err::Error> {
-        self.map_err(|e| err::Error::with_msg_no_trace(format!("{e:?}")))
+    fn err_conv(self) -> Result<T, daqbuf_err::Error> {
+        self.map_err(|e| daqbuf_err::Error::with_msg_no_trace(format!("{e:?}")))
     }
 }
 
 impl<T> ErrConv<T> for Result<T, scylla::transport::query_result::RowsExpectedError> {
-    fn err_conv(self) -> Result<T, err::Error> {
-        self.map_err(|e| err::Error::with_msg_no_trace(format!("{e:?}")))
+    fn err_conv(self) -> Result<T, daqbuf_err::Error> {
+        self.map_err(|e| daqbuf_err::Error::with_msg_no_trace(format!("{e:?}")))
     }
 }
 

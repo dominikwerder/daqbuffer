@@ -4,7 +4,7 @@ pub mod nodes;
 #[cfg(test)]
 pub mod test;
 
-use ::err::Error;
+use daqbuf_err::Error;
 use futures_util::TryFutureExt;
 use netpod::Cluster;
 use netpod::NodeConfig;

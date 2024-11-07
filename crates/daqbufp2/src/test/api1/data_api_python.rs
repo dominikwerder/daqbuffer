@@ -1,6 +1,6 @@
 use crate::nodes::require_test_hosts_running;
 use chrono::Utc;
-use err::Error;
+use daqbuf_err::Error;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::timeunits::MS;

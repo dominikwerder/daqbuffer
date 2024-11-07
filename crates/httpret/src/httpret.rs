@@ -16,8 +16,9 @@ pub mod settings;
 
 use crate::bodystream::response;
 use crate::err::Error;
-use ::err::thiserror;
-use ::err::ThisError;
+use daqbuf_err;
+use daqbuf_err::thiserror;
+use daqbuf_err::ThisError;
 use dbconn::worker::PgQueue;
 use dbconn::worker::PgWorker;
 use futures_util::Future;
@@ -63,7 +64,7 @@ use tracing::Instrument;
 #[derive(Debug, ThisError, Serialize, Deserialize)]
 #[cstm(name = "Retrieval")]
 pub enum RetrievalError {
-    Error(#[from] ::err::Error),
+    Error(#[from] daqbuf_err::Error),
     Error2(#[from] crate::err::Error),
     TextError(String),
     #[serde(skip)]
@@ -99,9 +100,9 @@ where
     }
 }
 
-impl ::err::ToErr for RetrievalError {
-    fn to_err(self) -> ::err::Error {
-        ::err::Error::with_msg_no_trace(self.to_string())
+impl daqbuf_err::ToErr for RetrievalError {
+    fn to_err(self) -> daqbuf_err::Error {
+        daqbuf_err::Error::with_msg_no_trace(self.to_string())
     }
 }
 

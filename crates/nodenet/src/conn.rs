@@ -1,5 +1,6 @@
 use crate::scylla::scylla_channel_event_stream;
 use bytes::Bytes;
+use daqbuf_err as err;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Stream;

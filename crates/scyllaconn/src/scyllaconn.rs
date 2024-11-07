@@ -9,8 +9,8 @@ pub mod schema;
 pub mod status;
 pub mod worker;
 
+pub use daqbuf_series::SeriesId;
 pub use scylla;
-pub use series::SeriesId;
 
 pub async fn test_log() {
     use netpod::log::*;

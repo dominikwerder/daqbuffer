@@ -5,6 +5,7 @@ use super::___;
 use crate::ts_offs_from_abs;
 use crate::ts_offs_from_abs_with_anchor;
 use core::fmt;
+use daqbuf_err as err;
 use err::thiserror;
 use err::ThisError;
 use items_0::collect_s::CollectableDyn;

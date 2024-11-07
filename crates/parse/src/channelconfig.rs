@@ -1,3 +1,4 @@
+use daqbuf_err as err;
 use err::*;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;

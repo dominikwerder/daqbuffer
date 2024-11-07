@@ -6,6 +6,7 @@ use async_channel::bounded;
 use async_channel::Receiver;
 use chrono::DateTime;
 use chrono::Utc;
+use daqbuf_err as err;
 use err::Error;
 use futures_util::FutureExt;
 use futures_util::Stream;

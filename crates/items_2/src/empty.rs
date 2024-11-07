@@ -1,6 +1,7 @@
 use crate::eventsdim0::EventsDim0;
 use crate::eventsdim1::EventsDim1;
 use crate::Error;
+use daqbuf_err as err;
 use items_0::Empty;
 use items_0::Events;
 use netpod::log::*;

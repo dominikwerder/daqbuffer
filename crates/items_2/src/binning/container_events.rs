@@ -3,6 +3,7 @@ use super::aggregator::AggregatorNumeric;
 use super::aggregator::AggregatorTimeWeight;
 use super::timeweight::timeweight_events_dyn::BinnedEventsTimeweightDynbox;
 use core::fmt;
+use daqbuf_err as err;
 use err::thiserror;
 use err::ThisError;
 use items_0::timebin::BinningggContainerEventsDyn;

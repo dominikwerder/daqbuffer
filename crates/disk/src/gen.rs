@@ -3,6 +3,7 @@ use crate::SfDbChConf;
 use bitshuffle::bitshuffle_compress;
 use bytes::BufMut;
 use bytes::BytesMut;
+use daqbuf_err as err;
 use err::Error;
 use netpod::log::*;
 use netpod::timeunits::*;

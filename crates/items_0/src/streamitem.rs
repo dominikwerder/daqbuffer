@@ -1,3 +1,4 @@
+use daqbuf_err as err;
 use netpod::log::Level;
 use netpod::DiskStats;
 use netpod::EventDataReadStats;

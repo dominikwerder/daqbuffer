@@ -2,6 +2,7 @@ use crate::bodystream::response;
 use async_channel::Receiver;
 use async_channel::Sender;
 use bytes::Bytes;
+use daqbuf_err as err;
 use err::thiserror;
 use err::PublicError;
 use err::ThisError;

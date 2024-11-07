@@ -60,6 +60,8 @@ pub mod log_ {
     pub use tracing::{self, event, span, Level};
 }
 
+use daqbuf_err as err;
+
 use bytes::Bytes;
 use chrono::DateTime;
 use chrono::TimeZone;
@@ -4103,7 +4105,7 @@ pub struct StatusBoardEntry {
     // #[serde(skip_serializing_if = "is_false")]
     done: bool,
     // #[serde(skip_serializing_if = "Vec::is_empty")]
-    errors: Vec<::err::Error>,
+    errors: Vec<err::Error>,
     // TODO make this a better Stats container and remove pub access.
     // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
     error_count: usize,
@@ -4170,7 +4172,7 @@ pub struct StatusBoardEntryUser {
     // #[serde(default, skip_serializing_if = "CmpZero::is_zero")]
     channel_not_found: usize,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    errors: Vec<::err::PublicError>,
+    errors: Vec<err::PublicError>,
 }
 
 impl StatusBoardEntryUser {
@@ -4257,7 +4259,7 @@ impl StatusBoard {
         }
     }
 
-    pub fn add_error(&mut self, status_id: &str, err: ::err::Error) {
+    pub fn add_error(&mut self, status_id: &str, err: err::Error) {
         match self.entries.get_mut(status_id) {
             Some(e) => {
                 e.ts_updated = SystemTime::now();

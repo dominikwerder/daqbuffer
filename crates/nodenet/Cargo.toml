@@ -17,7 +17,7 @@ byteorder = "1.4.3"
 futures-util = "0.3.14"
 tracing = "0.1.25"
 hex = "0.4.3"
-err = { path = "../err" }
+daqbuf-err = { path = "../../../daqbuf-err" }
 netpod = { path = "../netpod" }
 query = { path = "../query" }
 disk = { path = "../disk" }

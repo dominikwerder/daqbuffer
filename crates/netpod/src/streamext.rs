@@ -1,3 +1,4 @@
+use daqbuf_err as err;
 use err::Error;
 use futures_util::{Stream, StreamExt};
 use std::pin::Pin;

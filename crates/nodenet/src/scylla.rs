@@ -1,3 +1,4 @@
+use daqbuf_err as err;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Future;
@@ -157,7 +158,7 @@ impl Stream for ScyllaEventsReadStream {
                         self.stream = Some(x);
                         continue;
                     }
-                    Ready(Err(e)) => Ready(Some(Err(::err::Error::from_string(e)))),
+                    Ready(Err(e)) => Ready(Some(Err(err::Error::from_string(e)))),
                     Pending => Pending,
                 }
             } else if let Some(fut) = self.stream.as_mut() {

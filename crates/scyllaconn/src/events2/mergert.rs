@@ -4,6 +4,7 @@ use super::firstbefore::FirstBeforeAndInside;
 use crate::events2::firstbefore;
 use crate::range::ScyllaSeriesRange;
 use crate::worker::ScyllaQueue;
+use daqbuf_err as err;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Future;

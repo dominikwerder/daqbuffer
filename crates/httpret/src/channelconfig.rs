@@ -48,7 +48,7 @@ pub enum Error {
     Http(crate::Error),
     HttpCrate(http::Error),
     // TODO create dedicated error type for query parsing
-    BadQuery(err::Error),
+    BadQuery(daqbuf_err::Error),
     MissingBackend,
     MissingScalarType,
     MissingShape,
@@ -56,12 +56,12 @@ pub enum Error {
     MissingEdge,
     MissingTimerange,
     Uri(netpod::UriError),
-    ChannelConfigQuery(err::Error),
+    ChannelConfigQuery(daqbuf_err::Error),
     ExpectScyllaBackend,
     Pg(dbconn::pg::Error),
     Scylla(String),
     Join,
-    OtherErr(err::Error),
+    OtherErr(daqbuf_err::Error),
     PgWorker(dbconn::worker::Error),
     Async(netpod::AsyncChannelError),
     ChannelConfig(dbconn::channelconfig::Error),
@@ -102,7 +102,7 @@ impl fmt::Display for Error {
     }
 }
 
-fn other_err_error(e: err::Error) -> Error {
+fn other_err_error(e: daqbuf_err::Error) -> Error {
     Error::OtherErr(e)
 }
 
@@ -446,7 +446,7 @@ pub struct ChannelsWithTypeQuery {
 }
 
 impl FromUrl for ChannelsWithTypeQuery {
-    type Error = err::Error;
+    type Error = daqbuf_err::Error;
 
     fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
@@ -456,12 +456,12 @@ impl FromUrl for ChannelsWithTypeQuery {
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let s = pairs
             .get("scalar_type")
-            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing scalar_type"))?;
+            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing scalar_type"))?;
         //let scalar_type = ScalarType::from_bsread_str(s)?;
         let scalar_type: ScalarType = serde_json::from_str(&format!("\"{s}\""))?;
         let s = pairs
             .get("shape")
-            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing shape"))?;
+            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing shape"))?;
         let shape = Shape::from_dims_str(s)?;
         Ok(Self { scalar_type, shape })
     }
@@ -484,29 +484,29 @@ fn bool_false(x: &bool) -> bool {
 }
 
 impl FromUrl for ScyllaChannelEventSeriesIdQuery {
-    type Error = err::Error;
+    type Error = daqbuf_err::Error;
 
-    fn from_url(url: &Url) -> Result<Self, err::Error> {
+    fn from_url(url: &Url) -> Result<Self, daqbuf_err::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, daqbuf_err::Error> {
         let backend = pairs
             .get("backend")
-            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing backend"))?
+            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing backend"))?
             .into();
         let name = pairs
             .get("channelName")
-            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing channelName"))?
+            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing channelName"))?
             .into();
         let s = pairs
             .get("scalarType")
-            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing scalarType"))?;
+            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing scalarType"))?;
         let scalar_type: ScalarType = serde_json::from_str(&format!("\"{s}\""))?;
         let s = pairs
             .get("shape")
-            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing shape"))?;
+            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing shape"))?;
         let shape = Shape::from_dims_str(s)?;
         let do_create = pairs.get("doCreate").map_or("false", |x| x.as_str()) == "true";
         Ok(Self {
@@ -535,25 +535,25 @@ pub struct ScyllaChannelsActiveQuery {
 }
 
 impl FromUrl for ScyllaChannelsActiveQuery {
-    type Error = err::Error;
+    type Error = daqbuf_err::Error;
 
-    fn from_url(url: &Url) -> Result<Self, err::Error> {
+    fn from_url(url: &Url) -> Result<Self, daqbuf_err::Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, err::Error> {
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, daqbuf_err::Error> {
         let s = pairs
             .get("tsedge")
-            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing tsedge"))?;
+            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing tsedge"))?;
         let tsedge: u64 = s.parse()?;
         let s = pairs
             .get("shapeKind")
-            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing shapeKind"))?;
+            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing shapeKind"))?;
         let shape_kind: u32 = s.parse()?;
         let s = pairs
             .get("scalarType")
-            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing scalarType"))?;
+            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing scalarType"))?;
         let scalar_type: ScalarType = serde_json::from_str(&format!("\"{s}\""))?;
         info!("parsed scalar type  inp: {s:?}  val: {scalar_type:?}");
         Ok(Self {
@@ -643,7 +643,7 @@ pub struct IocForChannelQuery {
 }
 
 impl FromUrl for IocForChannelQuery {
-    type Error = err::Error;
+    type Error = daqbuf_err::Error;
 
     fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
@@ -653,11 +653,11 @@ impl FromUrl for IocForChannelQuery {
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
         let backend = pairs
             .get("backend")
-            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing backend"))?
+            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing backend"))?
             .into();
         let name = pairs
             .get("channelName")
-            .ok_or_else(|| err::Error::with_public_msg_no_trace("missing channelName"))?
+            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing channelName"))?
             .into();
         Ok(Self { backend, name })
     }

@@ -1,3 +1,4 @@
+use daqbuf_err as err;
 use err::Error;
 use futures_util::Future;
 use futures_util::TryFutureExt;

@@ -30,7 +30,7 @@ num-traits = "0.2.14"
 num-derive = "0.4.0"
 url = "2.5.0"
 tiny-keccak = { version = "2.0", features = ["sha3"] }
-err = { path = "../err" }
+daqbuf-err = { path = "../../../daqbuf-err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }
 query = { path = "../query" }

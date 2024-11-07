@@ -2,6 +2,7 @@ use crate::eventchunker::EventChunkerConf;
 use crate::eventchunkermultifile::EventChunkerMultifile;
 use crate::raw::generated::EventBlobsGeneratorI32Test00;
 use crate::raw::generated::EventBlobsGeneratorI32Test01;
+use daqbuf_err as err;
 use err::Error;
 use futures_util::stream;
 use futures_util::Stream;

@@ -1,5 +1,5 @@
 use crate::spawn_test_hosts;
-use err::Error;
+use daqbuf_err::Error;
 use netpod::log::*;
 use netpod::Cluster;
 use std::sync::{Arc, Mutex};

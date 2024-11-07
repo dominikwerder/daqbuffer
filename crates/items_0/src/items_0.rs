@@ -19,6 +19,7 @@ pub use futures_util;
 
 use collect_s::CollectableDyn;
 use container::ByteEstimate;
+use daqbuf_err as err;
 use std::any::Any;
 use std::collections::VecDeque;
 use std::fmt;

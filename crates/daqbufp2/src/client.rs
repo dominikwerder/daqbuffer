@@ -1,8 +1,8 @@
 use crate::err::ErrConv;
 use chrono::DateTime;
 use chrono::Utc;
+use daqbuf_err::Error;
 use disk::streamlog::Streamlog;
-use err::Error;
 use futures_util::TryStreamExt;
 use http::StatusCode;
 use http::Uri;
@@ -118,7 +118,7 @@ pub async fn get_binned(
                     StreamItem::DataItem(_frame) => {
                         // TODO
                         // The expected type nowadays depends on the channel and agg-kind.
-                        err::todo();
+                        daqbuf_err::todo();
                         Some(Ok(()))
                     }
                 },

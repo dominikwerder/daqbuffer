@@ -1,4 +1,5 @@
 use crate::channelconfig::http_get_channel_config;
+use daqbuf_err as err;
 use dbconn::worker::PgQueue;
 use err::thiserror;
 use err::ThisError;

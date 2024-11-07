@@ -1,6 +1,7 @@
 use crate::binsdim0::BinsDim0;
 use crate::eventsxbindim0::EventsXbinDim0;
 use crate::IsoDateTime;
+use daqbuf_err as err;
 use err::Error;
 use items_0::collect_s::CollectableDyn;
 use items_0::collect_s::CollectableType;

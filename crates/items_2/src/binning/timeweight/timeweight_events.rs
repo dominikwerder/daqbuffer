@@ -5,6 +5,7 @@ use crate::binning::container_events::ContainerEvents;
 use crate::binning::container_events::ContainerEventsTakeUpTo;
 use crate::binning::container_events::EventSingle;
 use core::fmt;
+use daqbuf_err as err;
 use err::thiserror;
 use err::ThisError;
 use netpod::log::*;

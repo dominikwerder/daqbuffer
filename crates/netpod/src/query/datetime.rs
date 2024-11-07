@@ -1,5 +1,6 @@
 use chrono::DateTime;
 use chrono::FixedOffset;
+use daqbuf_err as err;
 use err::Error;
 use serde::de::Visitor;
 use serde::Deserialize;

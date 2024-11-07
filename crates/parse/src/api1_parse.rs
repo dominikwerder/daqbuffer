@@ -1,5 +1,6 @@
 use crate::channelconfig::CompressionMethod;
 use crate::nom;
+use daqbuf_err as err;
 use netpod::log::*;
 use netpod::ScalarType;
 use netpod::Shape;

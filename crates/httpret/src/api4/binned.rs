@@ -5,6 +5,7 @@ use crate::requests::accepts_json_framed;
 use crate::requests::accepts_json_or_all;
 use crate::requests::accepts_octets;
 use crate::ServiceSharedResources;
+use daqbuf_err as err;
 use dbconn::worker::PgQueue;
 use err::thiserror;
 use err::ThisError;
@@ -55,7 +56,7 @@ pub enum Error {
     EventsCbor(#[from] streams::plaineventscbor::Error),
     EventsJson(#[from] streams::plaineventsjson::Error),
     ServerError,
-    BinnedStream(::err::Error),
+    BinnedStream(err::Error),
     TimebinnedJson(#[from] streams::timebinnedjson::Error),
 }
 

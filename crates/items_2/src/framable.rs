@@ -4,6 +4,7 @@ use crate::frame::make_log_frame;
 use crate::frame::make_range_complete_frame;
 use crate::frame::make_stats_frame;
 use bytes::BytesMut;
+use daqbuf_err as err;
 use items_0::framable::FrameTypeInnerDyn;
 use items_0::framable::FrameTypeInnerStatic;
 use items_0::streamitem::LogItem;

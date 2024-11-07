@@ -1,5 +1,5 @@
 use chrono::Utc;
-use err::Error;
+use daqbuf_err::Error;
 use netpod::log::*;
 use netpod::AppendToUrl;
 use netpod::Cluster;

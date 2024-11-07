@@ -1,7 +1,7 @@
 use crate::nodes::require_test_hosts_running;
 use crate::test::api4::common::fetch_events_json;
 use chrono::Utc;
-use err::Error;
+use daqbuf_err::Error;
 use items_0::WithLen;
 use items_2::eventsdim0::EventsDim0CollectorOutput;
 use netpod::log::*;

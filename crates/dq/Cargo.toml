@@ -8,12 +8,12 @@ edition = "2021"
 path = "src/dq.rs"
 
 [dependencies]
-tokio = { version = "1.21.1", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
+tokio = { version = "1.41.1", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }
 futures-util = "0.3.14"
 clap = { version = "4.0", features = ["derive", "cargo"] }
 chrono = "0.4.19"
-bytes = "1.0.1"
-err = { path = "../err" }
+bytes = "1.7"
+daqbuf-err = { path = "../../../daqbuf-err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../netpod" }
 parse = { path = "../parse" }

@@ -5,6 +5,7 @@ pub use hyper_util;
 use bytes::BufMut;
 use bytes::Bytes;
 use bytes::BytesMut;
+use daqbuf_err as err;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use http::header;

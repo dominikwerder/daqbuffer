@@ -1,4 +1,5 @@
 use crate::SfDbChConf;
+use daqbuf_err as err;
 use err::*;
 #[allow(unused)]
 use netpod::log::*;

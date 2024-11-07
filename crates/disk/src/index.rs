@@ -1,4 +1,5 @@
 use arrayref::array_ref;
+use daqbuf_err as err;
 use err::Error;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;

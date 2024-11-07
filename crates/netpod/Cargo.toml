@@ -22,7 +22,7 @@ num-traits = "0.2.16"
 hex = "0.4.3"
 rand = "0.8.5"
 thiserror = "0.0.1"
-err = { path = "../err" }
+daqbuf-err = { path = "../../../daqbuf-err" }
 
 [patch.crates-io]
 thiserror = { git = "https://github.com/dominikwerder/thiserror.git", branch = "cstm" }

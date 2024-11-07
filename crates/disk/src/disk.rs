@@ -22,6 +22,7 @@ pub use parse;
 use async_channel::Receiver;
 use async_channel::Sender;
 use bytes::BytesMut;
+use daqbuf_err as err;
 use err::Error;
 use futures_util::future::FusedFuture;
 use futures_util::FutureExt;

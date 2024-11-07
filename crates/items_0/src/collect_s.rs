@@ -5,6 +5,7 @@ use crate::AsAnyRef;
 use crate::Events;
 use crate::TypeName;
 use crate::WithLen;
+use daqbuf_err as err;
 use err::Error;
 use netpod::log::*;
 use netpod::range::evrange::SeriesRange;

@@ -1,5 +1,6 @@
 use bytes::Buf;
 use bytes::BytesMut;
+use daqbuf_err as err;
 use err::thiserror;
 use err::Error;
 use err::ThisError;

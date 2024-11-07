@@ -5,6 +5,7 @@ pub use tracing;
 pub use tracing_subscriber;
 
 use crate::log::*;
+use daqbuf_err as err;
 // use console_subscriber::ConsoleLayer;
 use err::Error;
 use std::fmt;

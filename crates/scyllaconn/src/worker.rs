@@ -5,6 +5,7 @@ use crate::events2::prepare::StmtsEvents;
 use crate::range::ScyllaSeriesRange;
 use async_channel::Receiver;
 use async_channel::Sender;
+use daqbuf_err as err;
 use err::thiserror;
 use err::ThisError;
 use futures_util::Future;

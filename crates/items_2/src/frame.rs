@@ -13,6 +13,7 @@ use bincode::config::WithOtherTrailing;
 use bincode::DefaultOptions;
 use bytes::BufMut;
 use bytes::BytesMut;
+use daqbuf_err as err;
 use items_0::bincode;
 use items_0::streamitem::LogItem;
 use items_0::streamitem::StatsItem;

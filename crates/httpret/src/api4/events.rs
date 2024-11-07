@@ -6,6 +6,7 @@ use crate::response;
 use crate::ServiceSharedResources;
 use bytes::Bytes;
 use bytes::BytesMut;
+use daqbuf_err as err;
 use dbconn::worker::PgQueue;
 use err::thiserror;
 use err::ThisError;

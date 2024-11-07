@@ -1,6 +1,7 @@
 use crate::framable::FrameType;
 use crate::merger::Mergeable;
 use bytes::BytesMut;
+use daqbuf_err as err;
 use err::thiserror;
 use err::ThisError;
 use items_0::container::ByteEstimate;

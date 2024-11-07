@@ -1,6 +1,6 @@
 use chrono::DateTime;
 use chrono::Utc;
-use err::Error;
+use daqbuf_err::Error;
 use netpod::log::*;
 use netpod::query::CacheUsage;
 use netpod::range::evrange::NanoRange;

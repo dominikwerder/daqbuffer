@@ -1,5 +1,5 @@
-use err::thiserror;
-use err::ThisError;
+use daqbuf_err::thiserror;
+use daqbuf_err::ThisError;
 use futures_util::future;
 use futures_util::StreamExt;
 use http::header;

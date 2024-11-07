@@ -3,6 +3,7 @@ use crate::dataopen::open_files;
 use crate::dataopen::OpenedFileSet;
 use crate::eventchunker::EventChunker;
 use crate::eventchunker::EventChunkerConf;
+use daqbuf_err as err;
 use err::Error;
 use futures_util::Stream;
 use futures_util::StreamExt;

@@ -1,6 +1,7 @@
 use crate::framable::FrameType;
 use crate::merger::Mergeable;
 use crate::Events;
+use daqbuf_err as err;
 use items_0::collect_s::CollectableDyn;
 use items_0::collect_s::CollectedDyn;
 use items_0::collect_s::CollectorDyn;

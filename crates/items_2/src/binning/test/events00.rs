@@ -1,6 +1,7 @@
 use crate::binning::container_bins::ContainerBins;
 use crate::binning::container_events::ContainerEvents;
 use crate::binning::timeweight::timeweight_events::BinnedEventsTimeweight;
+use daqbuf_err as err;
 use err::thiserror;
 use err::ThisError;
 use netpod::log::*;

@@ -1,7 +1,11 @@
 use crate::query::datetime::Datetime;
-use crate::{DiskIoTune, FileIoBufferSize, ReadSys};
+use crate::DiskIoTune;
+use crate::FileIoBufferSize;
+use crate::ReadSys;
+use daqbuf_err as err;
 use err::Error;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
+use serde::Serialize;
 use std::fmt;
 use std::time::Duration;
 

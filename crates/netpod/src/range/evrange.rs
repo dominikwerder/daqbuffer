@@ -9,6 +9,7 @@ use crate::TsNano;
 use chrono::DateTime;
 use chrono::TimeZone;
 use chrono::Utc;
+use daqbuf_err as err;
 use err::Error;
 use serde::Deserialize;
 use serde::Serialize;

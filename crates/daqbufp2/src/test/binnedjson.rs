@@ -1,6 +1,6 @@
 mod channelarchiver;
 
-use err::Error;
+use daqbuf_err::Error;
 
 #[test]
 fn get_sls_archive_1() -> Result<(), Error> {

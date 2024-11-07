@@ -1,6 +1,7 @@
 use crate::create_connection;
 use crate::worker::PgQueue;
 use crate::ErrConv;
+use daqbuf_err as err;
 use err::Error;
 use netpod::log::*;
 use netpod::ChannelArchiver;

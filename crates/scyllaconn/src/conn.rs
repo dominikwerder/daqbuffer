@@ -1,4 +1,5 @@
 use crate::errconv::ErrConv;
+use daqbuf_err as err;
 use err::Error;
 use netpod::log::*;
 use netpod::ScyllaConfig;

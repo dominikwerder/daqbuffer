@@ -1,3 +1,4 @@
+use daqbuf_err as err;
 use err::ToPublicError;
 use serde::Deserialize;
 use serde::Serialize;
@@ -28,7 +29,7 @@ impl Error {
         self.0.msg()
     }
 
-    pub fn reason(&self) -> Option<::err::Reason> {
+    pub fn reason(&self) -> Option<err::Reason> {
         self.0.reason()
     }
 
@@ -84,7 +85,7 @@ where
     T: ToString,
 {
     fn from(x: T) -> Self {
-        Self(::err::Error::from_string(x))
+        Self(err::Error::from_string(x))
     }
 }
 
