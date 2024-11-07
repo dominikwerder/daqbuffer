@@ -21,4 +21,3 @@ daqbuf-err = { path = "../../../daqbuf-err" }
 netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 taskrun = { path = "../taskrun" }
 items_0 = { path = "../../../daqbuf-items-0", package = "daqbuf-items-0" }
-items_proc = { path = "../items_proc" }

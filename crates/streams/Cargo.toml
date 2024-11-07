@@ -24,8 +24,8 @@ wasmer = { version = "4.1.0", default-features = false, features = ["sys", "cran
 netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 query = { path = "../query" }
 items_0 = { path = "../../../daqbuf-items-0", package = "daqbuf-items-0" }
-items_2 = { path = "../items_2" }
-parse = { path = "../parse" }
+items_2 = { path = "../../../daqbuf-items-2", package = "daqbuf-items-2" }
+parse = { path = "../../../daqbuf-parse", package = "daqbuf-parse" }
 http = "1"
 http-body = "1"
 http-body-util = "0.1.0"

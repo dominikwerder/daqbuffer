@@ -16,6 +16,6 @@ bytes = "1.7"
 daqbuf-err = { path = "../../../daqbuf-err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
-parse = { path = "../parse" }
+parse = { path = "../../../daqbuf-parse", package = "daqbuf-parse" }
 disk = { path = "../disk" }
 streams = { path = "../streams" }

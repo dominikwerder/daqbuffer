@@ -22,5 +22,5 @@ chrono = "0.4.38"
 regex = "1.10.4"
 daqbuf-err = { path = "../../../daqbuf-err" }
 netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
-parse = { path = "../parse" }
+parse = { path = "../../../daqbuf-parse", package = "daqbuf-parse" }
 taskrun = { path = "../taskrun" }

@@ -22,7 +22,7 @@ netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 query = { path = "../query" }
 disk = { path = "../disk" }
 items_0 = { path = "../../../daqbuf-items-0", package = "daqbuf-items-0" }
-items_2 = { path = "../items_2" }
+items_2 = { path = "../../../daqbuf-items-2", package = "daqbuf-items-2" }
 dbconn = { path = "../dbconn" }
 scyllaconn = { path = "../scyllaconn" }
 taskrun = { path = "../taskrun" }
