@@ -5,8 +5,6 @@ authors = ["Dominik Werder <dominik.werder@gmail.com>"]
 edition = "2021"
 
 [dependencies]
-#tokio = { version = "1.41", features = ["io-util", "net", "time", "sync", "fs"] }
-#tokio-stream = "0.1.16"
 futures-util = "0.3.15"
 pin-project = "1.0.12"
 serde = { version = "1.0", features = ["derive"] }
@@ -32,12 +30,13 @@ http = "1"
 http-body = "1"
 http-body-util = "0.1.0"
 
-[dev-dependencies]
-taskrun = { path = "../taskrun" }
+#[dev-dependencies]
+#taskrun = { path = "../taskrun" }
 
 [features]
 wasm_transform = ["wasmer"]
 indev = []
+tests-runtime = []
 
 [patch.crates-io]
 thiserror = { git = "https://github.com/dominikwerder/thiserror.git", branch = "cstm" }

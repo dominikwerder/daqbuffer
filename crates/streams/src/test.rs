@@ -1,8 +1,5 @@
-#[cfg(test)]
 mod collect;
-#[cfg(test)]
 mod events;
-#[cfg(test)]
 mod timebin;
 
 use futures_util::stream;
@@ -59,5 +56,7 @@ where
     F: std::future::Future<Output = Result<T, E>>,
     E: std::error::Error,
 {
-    taskrun::run(fut)
+    // taskrun::run(fut)
+    let _ = fut;
+    todo!()
 }
