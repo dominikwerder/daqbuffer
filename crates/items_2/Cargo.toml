@@ -26,7 +26,7 @@ thiserror = "0.0.1"
 daqbuf-err = { path = "../../../daqbuf-err" }
 items_0 = { path = "../items_0" }
 items_proc = { path = "../items_proc" }
-netpod = { path = "../netpod" }
+netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 parse = { path = "../parse" }
 bitshuffle = { path = "../bitshuffle" }
 

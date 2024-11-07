@@ -29,7 +29,7 @@ ciborium = "0.2.1"
 flate2 = "1"
 brotli = "3.4.0"
 daqbuf-err = { path = "../../../daqbuf-err" }
-netpod = { path = "../netpod" }
+netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 query = { path = "../query" }
 dbconn = { path = "../dbconn" }
 disk = { path = "../disk" }

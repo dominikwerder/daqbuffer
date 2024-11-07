@@ -18,7 +18,7 @@ async-channel = "1.9.0"
 parking_lot = "0.12"
 crc32fast = "1.2"
 daqbuf-err = { path = "../../../daqbuf-err" }
+netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 taskrun = { path = "../taskrun" }
-netpod = { path = "../netpod" }
 items_0 = { path = "../items_0" }
 items_proc = { path = "../items_proc" }

@@ -32,7 +32,7 @@ url = "2.5.0"
 tiny-keccak = { version = "2.0", features = ["sha3"] }
 daqbuf-err = { path = "../../../daqbuf-err" }
 taskrun = { path = "../taskrun" }
-netpod = { path = "../netpod" }
+netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 query = { path = "../query" }
 dbconn = { path = "../dbconn" }
 parse = { path = "../parse" }

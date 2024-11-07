@@ -18,7 +18,7 @@ futures-util = "0.3.14"
 tracing = "0.1.25"
 hex = "0.4.3"
 daqbuf-err = { path = "../../../daqbuf-err" }
-netpod = { path = "../netpod" }
+netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 query = { path = "../query" }
 disk = { path = "../disk" }
 #parse = { path = "../parse" }

@@ -169,7 +169,7 @@ async fn test_log() {
 // TODO use httpclient for the request: need to add binary POST.
 //#[test]
 #[allow(unused)]
-#[cfg(DISABLED)]
+#[cfg(feature = "DISABLED")]
 fn simple_fetch() {
     use daqbuffer::err::ErrConv;
     use netpod::timeunits::*;

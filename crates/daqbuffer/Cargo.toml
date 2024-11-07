@@ -16,8 +16,11 @@ url = "2.5.0"
 clap = { version = "4.5.7", features = ["derive", "cargo"] }
 daqbuf-err = { path = "../../../daqbuf-err" }
 taskrun = { path = "../taskrun" }
-netpod = { path = "../netpod" }
+netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 disk = { path = "../disk" }
 httpclient = { path = "../httpclient" }
 streams = { path = "../streams" }
 daqbufp2 = { path = "../daqbufp2" }
+
+[features]
+DISABLED = []

@@ -23,7 +23,7 @@ url = "2.2.2"
 lazy_static = "1.4.0"
 daqbuf-err = { path = "../../../daqbuf-err" }
 taskrun = { path = "../taskrun" }
-netpod = { path = "../netpod" }
+netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 query = { path = "../query" }
 httpret = { path = "../httpret" }
 httpclient = { path = "../httpclient" }
