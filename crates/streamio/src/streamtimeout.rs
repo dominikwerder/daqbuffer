@@ -1,6 +1,9 @@
-use futures_util::Stream;
-use std::pin::Pin;
-use streams::streamtimeout::TimeoutableStream;
+#[cfg(test)]
+mod test;
+
+use std::time::Duration;
+use streams::streamtimeout::BoxedTimeoutFuture;
+use streams::streamtimeout::StreamTimeout2;
 
 pub struct StreamTimeout {}
 
@@ -8,16 +11,14 @@ impl StreamTimeout {
     pub fn new() -> Self {
         Self {}
     }
-}
 
-impl<S> streams::streamtimeout::StreamTimeout<S> for StreamTimeout {
-    fn timeout_intervals(&self, inp: Pin<Box<dyn Stream<Item = S> + Send>>) -> Pin<Box<dyn Stream<Item = S> + Send>> {
-        todo!()
+    pub fn boxed() -> Box<dyn StreamTimeout2> {
+        Box::new(Self::new())
     }
 }
 
-impl<S> streams::streamtimeout::StreamTimeout2<S> for StreamTimeout {
-    fn timeout_intervals(&self, inp: S) -> TimeoutableStream<S> {
-        todo!()
+impl StreamTimeout2 for StreamTimeout {
+    fn timeout_intervals(&self, ivl: Duration) -> BoxedTimeoutFuture {
+        Box::pin(tokio::time::sleep(ivl))
     }
 }

@@ -55,7 +55,7 @@ async fn merged_events_inner() -> Result<(), Error> {
     let evq = PlainEventsQuery::new(channel, range);
     let open_bytes = StreamOpener::new();
     let open_bytes = Arc::pin(open_bytes);
-    let stream = plain_events_cbor_stream(&evq, ch_conf.clone().into(), &ctx, open_bytes)
+    let stream = plain_events_cbor_stream(&evq, ch_conf.clone().into(), &ctx, open_bytes, todo!())
         .await
         .unwrap();
     let stream = lenframed::length_framed(stream);

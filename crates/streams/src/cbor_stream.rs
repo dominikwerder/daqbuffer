@@ -1,3 +1,5 @@
+use crate::streamtimeout::StreamTimeout2;
+use crate::streamtimeout::TimeoutableStream;
 use bytes::Buf;
 use bytes::BufMut;
 use bytes::Bytes;
@@ -77,11 +79,15 @@ pub type CborStream = Pin<Box<dyn Stream<Item = Result<CborBytes, Error>> + Send
 // TODO move this type decl because it is not specific to cbor
 pub type SitemtyDynEventsStream = Pin<Box<dyn Stream<Item = Sitemty<Box<dyn Events>>> + Send>>;
 
-pub fn events_stream_to_cbor_stream(stream: SitemtyDynEventsStream) -> impl Stream<Item = Result<CborBytes, Error>> {
-    let interval = tokio::time::interval(Duration::from_millis(4000));
-    let stream = tokio_stream::StreamExt::timeout_repeating(stream, interval).map(|x| match x {
-        Ok(x) => map_events(x),
-        Err(_) => make_keepalive(),
+pub fn events_stream_to_cbor_stream(
+    stream: SitemtyDynEventsStream,
+    timeout_provider: Box<dyn StreamTimeout2>,
+) -> impl Stream<Item = Result<CborBytes, Error>> {
+    let ivl = Duration::from_millis(4000);
+    let stream = TimeoutableStream::new(ivl, timeout_provider, stream);
+    let stream = stream.map(|x| match x {
+        Some(x) => map_events(x),
+        None => make_keepalive(),
     });
     let prepend = {
         let item = make_keepalive();

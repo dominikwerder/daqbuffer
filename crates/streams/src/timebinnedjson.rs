@@ -3,8 +3,8 @@ use crate::collect::CollectResult;
 use crate::json_stream::JsonBytes;
 use crate::json_stream::JsonStream;
 use crate::rangefilter2::RangeFilter2;
-use crate::streamtimeout::StreamTimeout;
 use crate::streamtimeout::StreamTimeout2;
+use crate::streamtimeout::TimeoutableStream;
 use crate::tcprawclient::container_stream_from_bytes_stream;
 use crate::tcprawclient::make_sub_query;
 use crate::tcprawclient::OpenBoxedBytesStreamsBox;
@@ -16,7 +16,6 @@ use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::collect_s::CollectableDyn;
 use items_0::on_sitemty_data;
-use items_0::streamitem::sitem_err2_from_string;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
@@ -366,7 +365,7 @@ pub async fn timebinned_json_framed(
     ctx: &ReqCtx,
     cache_read_provider: Arc<dyn CacheReadProvider>,
     events_read_provider: Arc<dyn EventsReadProvider>,
-    stream_timeout_provider: Box<dyn StreamTimeout2<Box<dyn CollectableDyn>>>,
+    timeout_provider: Box<dyn StreamTimeout2>,
 ) -> Result<JsonStream, Error> {
     trace!("timebinned_json_framed");
     let binned_range = query.covering_range()?;
@@ -391,64 +390,66 @@ pub async fn timebinned_json_framed(
         .max(Duration::from_millis(100));
     let timeout_content_2 = timeout_content_base * 2 / 3;
     let mut coll = None;
-    let interval = tokio::time::interval(Duration::from(timeout_content_base));
     let mut last_emit = Instant::now();
     let stream = stream.map(|x| Some(x)).chain(futures_util::stream::iter([None]));
-    let stream = tokio_stream::StreamExt::timeout_repeating(stream, interval).map(move |x| match x {
-        Ok(item) => match item {
+    let stream = TimeoutableStream::new(timeout_content_base, timeout_provider, stream);
+    let stream = stream.map(move |x| {
+        match x {
             Some(x) => match x {
-                Ok(x) => match x {
-                    StreamItem::DataItem(x) => match x {
-                        RangeCompletableItem::Data(mut item) => {
-                            let coll = coll.get_or_insert_with(|| item.new_collector());
-                            coll.ingest(&mut item);
-                            if coll.len() >= 128 || last_emit.elapsed() >= timeout_content_2 {
-                                last_emit = Instant::now();
-                                take_collector_result(coll).map(|x| Ok(x))
-                            } else {
-                                // Some(serde_json::Value::String(format!("coll len {}", coll.len())))
-                                None
+                Some(x) => match x {
+                    Ok(x) => match x {
+                        StreamItem::DataItem(x) => match x {
+                            RangeCompletableItem::Data(mut item) => {
+                                let coll = coll.get_or_insert_with(|| item.new_collector());
+                                coll.ingest(&mut item);
+                                if coll.len() >= 128 || last_emit.elapsed() >= timeout_content_2 {
+                                    last_emit = Instant::now();
+                                    take_collector_result(coll).map(|x| Ok(x))
+                                } else {
+                                    // Some(serde_json::Value::String(format!("coll len {}", coll.len())))
+                                    None
+                                }
                             }
+                            RangeCompletableItem::RangeComplete => None,
+                        },
+                        StreamItem::Log(x) => {
+                            debug!("{x:?}");
+                            // Some(serde_json::Value::String(format!("{x:?}")))
+                            None
                         }
-                        RangeCompletableItem::RangeComplete => None,
+                        StreamItem::Stats(x) => {
+                            debug!("{x:?}");
+                            // Some(serde_json::Value::String(format!("{x:?}")))
+                            None
+                        }
                     },
-                    StreamItem::Log(x) => {
-                        debug!("{x:?}");
-                        // Some(serde_json::Value::String(format!("{x:?}")))
-                        None
-                    }
-                    StreamItem::Stats(x) => {
-                        debug!("{x:?}");
-                        // Some(serde_json::Value::String(format!("{x:?}")))
-                        None
-                    }
+                    Err(e) => Some(Err(e)),
                 },
-                Err(e) => Some(Err(e)),
+                None => {
+                    if let Some(coll) = coll.as_mut() {
+                        last_emit = Instant::now();
+                        take_collector_result(coll).map(|x| Ok(x))
+                    } else {
+                        // Some(serde_json::Value::String(format!(
+                        //     "end of input but no collector to take something from"
+                        // )))
+                        None
+                    }
+                }
             },
             None => {
                 if let Some(coll) = coll.as_mut() {
-                    last_emit = Instant::now();
-                    take_collector_result(coll).map(|x| Ok(x))
+                    if coll.len() != 0 {
+                        last_emit = Instant::now();
+                        take_collector_result(coll).map(|x| Ok(x))
+                    } else {
+                        // Some(serde_json::Value::String(format!("timeout but nothing to do")))
+                        None
+                    }
                 } else {
-                    // Some(serde_json::Value::String(format!(
-                    //     "end of input but no collector to take something from"
-                    // )))
+                    // Some(serde_json::Value::String(format!("timeout but no collector")))
                     None
                 }
-            }
-        },
-        Err(_) => {
-            if let Some(coll) = coll.as_mut() {
-                if coll.len() != 0 {
-                    last_emit = Instant::now();
-                    take_collector_result(coll).map(|x| Ok(x))
-                } else {
-                    // Some(serde_json::Value::String(format!("timeout but nothing to do")))
-                    None
-                }
-            } else {
-                // Some(serde_json::Value::String(format!("timeout but no collector")))
-                None
             }
         }
     });

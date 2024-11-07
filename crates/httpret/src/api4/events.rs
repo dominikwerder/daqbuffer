@@ -177,7 +177,9 @@ async fn plain_events_cbor_framed(
     debug!("plain_events_cbor_framed  {ch_conf:?}  {req:?}");
     let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
     let open_bytes = Arc::pin(open_bytes);
-    let stream = streams::plaineventscbor::plain_events_cbor_stream(&evq, ch_conf, ctx, open_bytes).await?;
+    let timeout_provider = streamio::streamtimeout::StreamTimeout::boxed();
+    let stream =
+        streams::plaineventscbor::plain_events_cbor_stream(&evq, ch_conf, ctx, open_bytes, timeout_provider).await?;
     let stream = bytes_chunks_to_framed(stream);
     let logspan = if evq.log_level() == "trace" {
         trace!("enable trace for handler");
