@@ -23,7 +23,7 @@ chrono = { version = "0.4.19", features = ["serde"] }
 wasmer = { version = "4.1.0", default-features = false, features = ["sys", "cranelift"], optional = true }
 netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 query = { path = "../query" }
-items_0 = { path = "../items_0" }
+items_0 = { path = "../../../daqbuf-items-0", package = "daqbuf-items-0" }
 items_2 = { path = "../items_2" }
 parse = { path = "../parse" }
 http = "1"

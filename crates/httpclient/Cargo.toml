@@ -23,7 +23,7 @@ daqbuf-err = { path = "../../../daqbuf-err" }
 netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 parse = { path = "../parse" }
 streams = { path = "../streams" }
-thiserror = "0.0.1"
+thiserror = "=0.0.1"
 
 [patch.crates-io]
 thiserror = { git = "https://github.com/dominikwerder/thiserror.git", branch = "cstm" }
