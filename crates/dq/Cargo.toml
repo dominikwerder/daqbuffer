@@ -18,4 +18,4 @@ taskrun = { path = "../taskrun" }
 netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 parse = { path = "../../../daqbuf-parse", package = "daqbuf-parse" }
 disk = { path = "../disk" }
-streams = { path = "../streams" }
+streams = { path = "../../../daqbuf-streams", package = "daqbuf-streams" }

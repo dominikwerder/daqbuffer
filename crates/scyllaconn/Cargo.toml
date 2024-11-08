@@ -14,9 +14,9 @@ async-channel = "2.3.1"
 scylla = "0.13.0"
 daqbuf-err = { path = "../../../daqbuf-err" }
 netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
-query = { path = "../query" }
+query = { path = "../../../daqbuf-query", package = "daqbuf-query" }
 items_0 = { path = "../../../daqbuf-items-0", package = "daqbuf-items-0" }
 items_2 = { path = "../../../daqbuf-items-2", package = "daqbuf-items-2" }
-streams = { path = "../streams" }
+streams = { path = "../../../daqbuf-streams", package = "daqbuf-streams" }
 daqbuf-series = { path = "../../../daqbuf-series" }
 taskrun = { path = "../taskrun" }

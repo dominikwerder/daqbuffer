@@ -33,12 +33,12 @@ tiny-keccak = { version = "2.0", features = ["sha3"] }
 daqbuf-err = { path = "../../../daqbuf-err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
-query = { path = "../query" }
+query = { path = "../../../daqbuf-query", package = "daqbuf-query" }
 dbconn = { path = "../dbconn" }
 parse = { path = "../../../daqbuf-parse", package = "daqbuf-parse" }
 items_0 = { path = "../../../daqbuf-items-0", package = "daqbuf-items-0" }
 items_2 = { path = "../../../daqbuf-items-2", package = "daqbuf-items-2" }
-streams = { path = "../streams" }
+streams = { path = "../../../daqbuf-streams", package = "daqbuf-streams" }
 streamio = { path = "../streamio" }
 httpclient = { path = "../httpclient" }
 bitshuffle = { path = "../../../daqbuf-bitshuffle", package = "daqbuf-bitshuffle" }

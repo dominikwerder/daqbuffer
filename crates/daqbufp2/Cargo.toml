@@ -24,11 +24,11 @@ lazy_static = "1.4.0"
 daqbuf-err = { path = "../../../daqbuf-err" }
 taskrun = { path = "../taskrun" }
 netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
-query = { path = "../query" }
+query = { path = "../../../daqbuf-query", package = "daqbuf-query" }
 httpret = { path = "../httpret" }
 httpclient = { path = "../httpclient" }
 disk = { path = "../disk" }
 items_0 = { path = "../../../daqbuf-items-0", package = "daqbuf-items-0" }
 items_2 = { path = "../../../daqbuf-items-2", package = "daqbuf-items-2" }
-streams = { path = "../streams" }
+streams = { path = "../../../daqbuf-streams", package = "daqbuf-streams" }
 parse = { path = "../../../daqbuf-parse", package = "daqbuf-parse" }

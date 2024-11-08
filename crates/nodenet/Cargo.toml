@@ -19,13 +19,13 @@ tracing = "0.1.25"
 hex = "0.4.3"
 daqbuf-err = { path = "../../../daqbuf-err" }
 netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
-query = { path = "../query" }
+query = { path = "../../../daqbuf-query", package = "daqbuf-query" }
 disk = { path = "../disk" }
 items_0 = { path = "../../../daqbuf-items-0", package = "daqbuf-items-0" }
 items_2 = { path = "../../../daqbuf-items-2", package = "daqbuf-items-2" }
 dbconn = { path = "../dbconn" }
 scyllaconn = { path = "../scyllaconn" }
 taskrun = { path = "../taskrun" }
-streams = { path = "../streams" }
+streams = { path = "../../../daqbuf-streams", package = "daqbuf-streams" }
 streamio = { path = "../streamio" }
 httpclient = { path = "../httpclient" }

@@ -22,7 +22,7 @@ async-channel = "1.9.0"
 daqbuf-err = { path = "../../../daqbuf-err" }
 netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 parse = { path = "../../../daqbuf-parse", package = "daqbuf-parse" }
-streams = { path = "../streams" }
+streams = { path = "../../../daqbuf-streams", package = "daqbuf-streams" }
 thiserror = "=0.0.1"
 
 [patch.crates-io]
