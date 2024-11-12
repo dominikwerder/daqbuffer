@@ -45,7 +45,7 @@ pub async fn scylla_channel_event_stream(
         evq.settings().scylla_read_queue_len(),
     );
     let stream: Pin<Box<dyn Stream<Item = _> + Send>> = if let Some(rt) = evq.use_rt() {
-        info!("=========    SOLO {rt:?}   =====================");
+        trace!("=========    SOLO {rt:?}   =====================");
         let x = scyllaconn::events2::events::EventsStreamRt::new(
             rt,
             chconf.clone(),
@@ -53,10 +53,10 @@ pub async fn scylla_channel_event_stream(
             readopts,
             scyqueue.clone(),
         )
-        .map_err(|e| scyllaconn::events2::mergert::Error::from(e));
+        .map_err(|e| scyllaconn::events2::mergert::Error::Msg(e.to_string()));
         Box::pin(x)
     } else {
-        info!("=========    MERGED   =====================");
+        trace!("=========    MERGED   =====================");
         let x =
             scyllaconn::events2::mergert::MergeRts::new(chconf.clone(), evq.range().into(), readopts, scyqueue.clone());
         Box::pin(x)

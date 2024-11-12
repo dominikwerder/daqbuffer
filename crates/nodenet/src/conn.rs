@@ -115,17 +115,6 @@ async fn make_channel_events_stream_data(
     }
 }
 
-async fn make_channel_events_stream(
-    subq: EventsSubQuery,
-    reqctx: ReqCtxArc,
-    scyqueue: Option<&ScyllaQueue>,
-    ncc: &NodeConfigCached,
-) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
-    let stream = make_channel_events_stream_data(subq, reqctx, scyqueue, ncc).await?;
-    let ret = Box::pin(stream);
-    Ok(ret)
-}
-
 pub async fn create_response_bytes_stream(
     evq: EventsSubQuery,
     scyqueue: Option<&ScyllaQueue>,
@@ -151,7 +140,7 @@ pub async fn create_response_bytes_stream(
         Ok(ret)
     } else {
         let mut tr = build_event_transform(evq.transform())?;
-        let stream = make_channel_events_stream(evq, reqctx, scyqueue, ncc).await?;
+        let stream = make_channel_events_stream_data(evq, reqctx, scyqueue, ncc).await?;
         let stream = stream.map(move |x| {
             on_sitemty_data!(x, |x: ChannelEvents| {
                 match x {
@@ -167,7 +156,6 @@ pub async fn create_response_bytes_stream(
                 }
             })
         });
-        // let stream = stream.map(move |x| Box::new(x) as Box<dyn Framable + Send>);
         let stream = stream.map(|x| {
             x.make_frame_dyn()
                 .map(bytes::BytesMut::freeze)
