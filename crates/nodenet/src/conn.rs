@@ -32,7 +32,6 @@ use streamio::tcpreadasbytes::TcpReadAsBytes;
 use streams::frames::inmem::BoxedBytesStream;
 use streams::frames::inmem::InMemoryFrameStream;
 use streams::tcprawclient::TEST_BACKEND;
-use streams::transform::build_event_transform;
 use taskrun::tokio;
 use tokio::io::AsyncWriteExt;
 use tokio::net::tcp::OwnedWriteHalf;
@@ -139,17 +138,13 @@ pub async fn create_response_bytes_stream(
         let ret = Box::pin(stream);
         Ok(ret)
     } else {
-        let mut tr = build_event_transform(evq.transform())?;
         let stream = make_channel_events_stream_data(evq, reqctx, scyqueue, ncc).await?;
         let stream = stream.map(move |x| {
             on_sitemty_data!(x, |x: ChannelEvents| {
                 match x {
-                    ChannelEvents::Events(evs) => {
-                        let evs = tr.0.transform(evs);
-                        Ok(StreamItem::DataItem(RangeCompletableItem::Data(ChannelEvents::Events(
-                            evs,
-                        ))))
-                    }
+                    ChannelEvents::Events(evs) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(
+                        ChannelEvents::Events(evs),
+                    ))),
                     ChannelEvents::Status(x) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(
                         ChannelEvents::Status(x),
                     ))),
