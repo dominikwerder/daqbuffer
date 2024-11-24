@@ -8,6 +8,7 @@ use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::Events;
 use items_0::WithLen;
+use items_2::empty::empty_events_dyn_ev;
 use items_2::eventfull::EventFull;
 use items_2::eventsdim0::EventsDim0;
 use items_2::eventsdim1::EventsDim1;
@@ -325,7 +326,7 @@ impl EventsDynStream {
         let sh = &shape;
         warn!("TODO EventsDynStream::new feed through transform");
         // TODO do we need/want the empty item from here?
-        let events_out = items_2::empty::empty_events_dyn_ev(st, sh)?;
+        let events_out = empty_events_dyn_ev(st, sh)?;
         let scalar_conv = make_scalar_conv(st, sh, &agg_kind)?;
         let emit_threshold = match &shape {
             Shape::Scalar => 2048,
@@ -350,7 +351,7 @@ impl EventsDynStream {
         let sh = &self.shape;
         // error!("TODO replace_events_out feed through transform");
         // TODO do we need/want the empty item from here?
-        let empty = items_2::empty::empty_events_dyn_ev(st, sh)?;
+        let empty = empty_events_dyn_ev(st, sh)?;
         let evs = mem::replace(&mut self.events_out, empty);
         Ok(evs)
     }

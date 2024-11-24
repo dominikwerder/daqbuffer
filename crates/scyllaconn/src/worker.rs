@@ -45,7 +45,7 @@ struct ReadCacheF32 {
     bin_len: DtMs,
     msp: u64,
     offs: core::ops::Range<u32>,
-    tx: Sender<Result<ContainerBins<f32>, streams::timebin::cached::reader::Error>>,
+    tx: Sender<Result<ContainerBins<f32, f32>, streams::timebin::cached::reader::Error>>,
 }
 
 #[derive(Debug)]
@@ -66,7 +66,7 @@ enum Job {
     ),
     WriteCacheF32(
         u64,
-        ContainerBins<f32>,
+        ContainerBins<f32, f32>,
         Sender<Result<(), streams::timebin::cached::reader::Error>>,
     ),
     ReadCacheF32(ReadCacheF32),
@@ -151,7 +151,7 @@ impl ScyllaQueue {
     pub async fn write_cache_f32(
         &self,
         series: u64,
-        bins: ContainerBins<f32>,
+        bins: ContainerBins<f32, f32>,
     ) -> Result<(), streams::timebin::cached::reader::Error> {
         let (tx, rx) = async_channel::bounded(1);
         let job = Job::WriteCacheF32(series, bins, tx);
@@ -172,7 +172,7 @@ impl ScyllaQueue {
         bin_len: DtMs,
         msp: u64,
         offs: core::ops::Range<u32>,
-    ) -> Result<ContainerBins<f32>, streams::timebin::cached::reader::Error> {
+    ) -> Result<ContainerBins<f32, f32>, streams::timebin::cached::reader::Error> {
         let (tx, rx) = async_channel::bounded(1);
         let job = Job::ReadCacheF32(ReadCacheF32 {
             series,

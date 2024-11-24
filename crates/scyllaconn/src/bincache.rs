@@ -42,7 +42,7 @@ impl streams::timebin::CacheReadProvider for ScyllaCacheReadProvider {
 
 pub async fn worker_write(
     series: u64,
-    bins: ContainerBins<f32>,
+    bins: ContainerBins<f32, f32>,
     stmts_cache: &StmtsCache,
     scy: &ScySession,
 ) -> Result<(), streams::timebin::cached::reader::Error> {
@@ -77,7 +77,7 @@ pub async fn worker_read(
     offs: core::ops::Range<u32>,
     stmts_cache: &StmtsCache,
     scy: &ScySession,
-) -> Result<ContainerBins<f32>, streams::timebin::cached::reader::Error> {
+) -> Result<ContainerBins<f32, f32>, streams::timebin::cached::reader::Error> {
     let div = streams::timebin::cached::reader::part_len(bin_len).ns();
     let params = (
         series as i64,

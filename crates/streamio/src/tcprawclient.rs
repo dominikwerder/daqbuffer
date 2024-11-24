@@ -61,7 +61,6 @@ pub async fn x_processed_event_blobs_stream_from_node_tcp(
     Ok(Box::pin(items))
 }
 
-#[allow(unused)]
 async fn open_event_data_streams_tcp<T>(subq: EventsSubQuery, cluster: &Cluster) -> Result<Vec<BoxedStream<T>>, Error>
 where
     // TODO group bounds in new trait
