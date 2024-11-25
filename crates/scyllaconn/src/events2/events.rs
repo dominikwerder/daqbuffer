@@ -12,6 +12,7 @@ use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items_0::merge::DrainIntoNewDynResult;
 use items_0::merge::MergeableDyn;
 use items_0::timebin::BinningggContainerEventsDyn;
 use items_2::channelevents::ChannelEvents;
@@ -23,6 +24,7 @@ use netpod::ScalarType;
 use netpod::Shape;
 use netpod::TsMs;
 use netpod::TsMsVecFmt;
+use netpod::TsNano;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::Context;
@@ -78,6 +80,7 @@ pub enum Error {
     Logic,
     TruncateLogic,
     AlreadyTaken,
+    DrainFailure,
 }
 
 struct FetchMsp {
@@ -259,7 +262,7 @@ pub struct EventsStreamRt {
     msp_buf_bck: VecDeque<TsMs>,
     out: VecDeque<Box<dyn BinningggContainerEventsDyn>>,
     out_cnt: u64,
-    ts_seen_max: u64,
+    ts_seen_max: TsNano,
     qucap: usize,
 }
 
@@ -288,7 +291,7 @@ impl EventsStreamRt {
             msp_buf_bck: VecDeque::new(),
             out: VecDeque::new(),
             out_cnt: 0,
-            ts_seen_max: 0,
+            ts_seen_max: TsNano::from_ns(0),
         }
     }
 
@@ -476,7 +479,7 @@ impl Stream for EventsStreamRt {
                     break Ready(Some(Err(Error::BadBatch)));
                 }
                 if let Some(item_min) = item.ts_min() {
-                    if !self.readopts.one_before && item_min < self.range.beg().ns() {
+                    if !self.readopts.one_before && item_min < self.range.beg() {
                         warn_item!(
                             "{}out of range error A  {}  {:?}",
                             "\n\n--------------------------\n",
@@ -493,15 +496,18 @@ impl Stream for EventsStreamRt {
                             item_min,
                             self.ts_seen_max
                         );
-                        let mut r = MergeableDyn::new_empty(&item);
-                        match MergeableDyn::find_highest_index_lt(&item, self.ts_seen_max) {
-                            Some(ix) => match MergeableDyn::drain_into(&mut item, &mut r, (0, 1 + ix)) {
-                                Ok(()) => {
-                                    // TODO count for metrics
+                        match MergeableDyn::find_highest_index_lt(item.as_ref(), self.ts_seen_max) {
+                            Some(ix) => match MergeableDyn::drain_into_new(item.as_mut(), 0..1 + ix) {
+                                DrainIntoNewDynResult::Done(_) => {
+                                    // TODO count drained elements for metrics
                                 }
-                                Err(e) => {
+                                DrainIntoNewDynResult::Partial(_) => {
                                     self.state = State::Done;
-                                    break Ready(Some(Err(e.into())));
+                                    break Ready(Some(Err(Error::DrainFailure)));
+                                }
+                                DrainIntoNewDynResult::NotCompatible => {
+                                    self.state = State::Done;
+                                    break Ready(Some(Err(Error::DrainFailure)));
                                 }
                             },
                             None => {
@@ -512,7 +518,7 @@ impl Stream for EventsStreamRt {
                     }
                 }
                 if let Some(item_max) = item.ts_max() {
-                    if item_max >= self.range.end().ns() {
+                    if item_max >= self.range.end() {
                         warn_item!(
                             "{}out of range error B  {}  {:?}",
                             "\n\n--------------------------\n",
@@ -535,7 +541,7 @@ impl Stream for EventsStreamRt {
                         self.ts_seen_max = item_max;
                     }
                 }
-                trace_emit!("deliver item  {}", item.output_info());
+                trace_emit!("deliver item  {:?}", item);
                 self.out_cnt += item.len() as u64;
                 break Ready(Some(Ok(ChannelEvents::Events(item))));
             }
@@ -588,22 +594,25 @@ impl Stream for EventsStreamRt {
                             Ok((mut evs, jobtrace)) => {
                                 trace_fetch!("ReadingBck  {jobtrace}");
                                 trace_fetch!("ReadingBck  FetchEvents  got len {}", evs.len());
-                                for ts in MergeableDyn::tss_for_testing(&evs) {
+                                for ts in MergeableDyn::tss_for_testing(evs.as_ref()) {
                                     trace_every_event!("ReadingBck  FetchEvents     ts {}", ts.fmt());
                                 }
-                                if let Some(ix) = MergeableDyn::find_highest_index_lt(&evs, self.range.beg().ns()) {
+                                if let Some(ix) = MergeableDyn::find_highest_index_lt(evs.as_ref(), self.range.beg()) {
                                     trace_fetch!("ReadingBck  FetchEvents  find_highest_index_lt {:?}", ix);
-                                    let mut y = MergeableDyn::new_empty(&evs);
-                                    match MergeableDyn::drain_into(&mut evs, &mut y, (ix, 1 + ix)) {
-                                        Ok(()) => {
+                                    match MergeableDyn::drain_into_new(evs.as_mut(), ix..1 + ix) {
+                                        DrainIntoNewDynResult::Done(y) => {
                                             trace_fetch!("ReadingBck  FetchEvents  drained y len {:?}", y.len());
                                             self.out.push_back(y);
                                             self.transition_to_fwd_read();
                                             continue;
                                         }
-                                        Err(e) => {
+                                        DrainIntoNewDynResult::Partial(_) => {
                                             self.state = State::Done;
-                                            Ready(Some(Err(e.into())))
+                                            Ready(Some(Err(Error::DrainFailure)))
+                                        }
+                                        DrainIntoNewDynResult::NotCompatible => {
+                                            self.state = State::Done;
+                                            Ready(Some(Err(Error::DrainFailure)))
                                         }
                                     }
                                 } else {
@@ -662,7 +671,7 @@ impl Stream for EventsStreamRt {
                                 jobtrace
                                     .add_event_now(crate::events::ReadEventKind::EventsStreamRtSees(evs.len() as u32));
                                 trace_fetch!("ReadingFwd  {jobtrace}");
-                                for ts in MergeableDyn::tss_for_testing(&evs) {
+                                for ts in MergeableDyn::tss_for_testing(evs.as_ref()) {
                                     trace_every_event!("ReadingFwd  FetchEvents     ts {}", ts.fmt());
                                 }
                                 self.out.push_back(evs);

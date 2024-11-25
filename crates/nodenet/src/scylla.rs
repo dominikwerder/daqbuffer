@@ -9,6 +9,7 @@ use futures_util::TryStreamExt;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
+use items_2::binning::container_events::ContainerEvents;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
 use netpod::ChConf;
@@ -66,25 +67,21 @@ pub async fn scylla_channel_event_stream(
             Ok(k) => match k {
                 ChannelEvents::Events(mut k) => {
                     if let SeriesKind::ChannelStatus = chconf.kind() {
-                        use items_0::Empty;
-                        type C1 = items_2::eventsdim0::EventsDim0<u64>;
-                        type C2 = items_2::eventsdim0::EventsDim0<String>;
+                        type C1 = ContainerEvents<u64>;
+                        type C2 = ContainerEvents<String>;
                         if let Some(j) = k.as_any_mut().downcast_mut::<C1>() {
-                            let mut g = C2::empty();
-                            let tss = j.tss();
-                            let vals = j.private_values_ref();
-                            for (&ts, &val) in tss.iter().zip(vals.iter()) {
+                            let mut g = C2::new();
+                            for (&ts, val) in j.iter_zip() {
                                 use netpod::channelstatus as cs2;
                                 let val = match cs2::ChannelStatus::from_kind(val as _) {
                                     Ok(x) => x.to_user_variant_string(),
                                     Err(_) => format!("{}", val),
                                 };
                                 if val.len() != 0 {
-                                    g.push_back(ts, 0, val);
+                                    g.push_back(ts, val);
                                 }
                             }
                             Ok(ChannelEvents::Events(Box::new(g)))
-                            // Ok(ChannelEvents::Events(k))
                         } else {
                             Ok(ChannelEvents::Events(k))
                         }

@@ -56,7 +56,7 @@ impl From<crate::worker::Error> for Error {
 pub(super) trait ValTy: Sized + 'static {
     type ScaTy: ScalarOps + std::default::Default;
     type ScyTy: scylla::cql_to_rust::FromCqlVal<scylla::frame::response::result::CqlValue>;
-    type Container: BinningggContainerEventsDyn + Appendable<Self>;
+    type Container: BinningggContainerEventsDyn + Empty + Appendable<Self>;
     fn from_scyty(inp: Self::ScyTy) -> Self;
     fn from_valueblob(inp: Vec<u8>) -> Self;
     fn table_name() -> &'static str;
@@ -538,7 +538,7 @@ where
                         let row = x?;
                         let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
                         let value = <ST as ValTy>::from_valueblob(row.1);
-                        ret.push(ts.ns(), 0, value);
+                        ret.push(ts, value);
                     }
                     ret
                 } else {
@@ -548,7 +548,7 @@ where
                         let row = x?;
                         let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
                         let value = <ST as ValTy>::from_scyty(row.1);
-                        ret.push(ts.ns(), 0, value);
+                        ret.push(ts, value);
                         i += 1;
                         if i % 2000 == 0 {
                             jobtrace.add_event_now(ReadEventKind::ScyllaReadRow(i));
@@ -565,7 +565,7 @@ where
                     let row = x?;
                     let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
                     let value = <ST as ValTy>::default();
-                    ret.push(ts.ns(), 0, value);
+                    ret.push(ts, value);
                 }
                 ret
             }
@@ -640,7 +640,7 @@ fn convert_rows_0<ST: ValTy>(
                 // TODO count as logic error
                 error!("ts >= range.beg");
             } else if ts < range.beg() {
-                ret.push(ts.ns(), 0, value);
+                ret.push(ts, value);
             } else {
                 *last_before = Some((ts, value));
             }
@@ -649,7 +649,7 @@ fn convert_rows_0<ST: ValTy>(
                 // TODO count as logic error
                 error!("ts >= range.end");
             } else if ts >= range.beg() {
-                ret.push(ts.ns(), 0, value);
+                ret.push(ts, value);
             } else {
                 if last_before.is_none() {
                     warn!("encounter event before range in forward read {ts}");

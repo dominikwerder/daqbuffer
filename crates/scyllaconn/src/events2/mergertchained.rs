@@ -11,6 +11,7 @@ use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items_0::merge::DrainIntoNewResult;
 use items_0::merge::MergeableTy;
 use items_0::WithLen;
 use items_2::channelevents::ChannelEvents;
@@ -270,26 +271,38 @@ impl MergeRtsChained {
         }
     }
 
-    fn handle_first_st(&mut self, mut before: ChannelEvents, bulk: ChannelEvents) {
+    fn handle_first_st(&mut self, mut before: Option<ChannelEvents>, bulk: Option<ChannelEvents>) {
         trace_fetch!("handle_first_st");
-        Self::move_latest_to_before_buf(&mut before, &mut self.buf_before);
-        self.buf_st.push_back(bulk);
+        if let Some(before) = before.as_mut() {
+            Self::move_latest_to_before_buf(before, &mut self.buf_before);
+        }
+        if let Some(bulk) = bulk {
+            self.buf_st.push_back(bulk);
+        }
         self.setup_first_mt();
         self.state = State::FetchFirstMt(self.setup_read_mt());
     }
 
-    fn handle_first_mt(&mut self, mut before: ChannelEvents, bulk: ChannelEvents) {
+    fn handle_first_mt(&mut self, mut before: Option<ChannelEvents>, bulk: Option<ChannelEvents>) {
         trace_fetch!("handle_first_mt");
-        Self::move_latest_to_before_buf(&mut before, &mut self.buf_before);
-        self.buf_mt.push_back(bulk);
+        if let Some(before) = before.as_mut() {
+            Self::move_latest_to_before_buf(before, &mut self.buf_before);
+        }
+        if let Some(bulk) = bulk {
+            self.buf_mt.push_back(bulk);
+        }
         self.setup_first_lt();
         self.state = State::FetchFirstLt(self.setup_read_lt());
     }
 
-    fn handle_first_lt(&mut self, mut before: ChannelEvents, bulk: ChannelEvents) {
+    fn handle_first_lt(&mut self, mut before: Option<ChannelEvents>, bulk: Option<ChannelEvents>) {
         trace_fetch!("handle_first_lt");
-        Self::move_latest_to_before_buf(&mut before, &mut self.buf_before);
-        self.buf_lt.push_back(bulk);
+        if let Some(before) = before.as_mut() {
+            Self::move_latest_to_before_buf(before, &mut self.buf_before);
+        }
+        if let Some(bulk) = bulk {
+            self.buf_lt.push_back(bulk);
+        }
     }
 
     fn handle_all_firsts_done(&mut self) {
@@ -306,17 +319,20 @@ impl MergeRtsChained {
     }
 
     fn move_latest_to_before_buf(before: &mut ChannelEvents, buf: &mut Option<ChannelEvents>) {
-        let buf = buf.get_or_insert_with(|| {
-            trace_fetch!("move_latest_to_before_buf  init before buf");
-            before.new_empty()
-        });
         if let Some(tsn) = before.ts_max() {
-            let tsn = tsn;
-            if buf.ts_max().map_or(true, |x| tsn.ns() > x) {
+            if buf
+                .as_ref()
+                .map_or(true, |buf2| buf2.ts_max().map_or(true, |x| tsn > x))
+            {
                 trace_fetch!("move_latest_to_before_buf  move possible before item  {tsn}");
                 let n = before.len();
-                buf.clear();
-                before.drain_into(buf, (n - 1, n)).unwrap();
+                match before.drain_into_new(n - 1..n) {
+                    DrainIntoNewResult::Done(x) => {
+                        *buf = Some(x);
+                    }
+                    DrainIntoNewResult::Partial(_) => panic!(),
+                    DrainIntoNewResult::NotCompatible => panic!(),
+                }
             }
         }
     }
@@ -388,12 +404,11 @@ impl Stream for MergeRtsChained {
                     Ready(Some(Ok(x))) => match x {
                         onebeforeandbulk::Output::Before(before) => {
                             trace_fetch!("have first from ST");
-                            let empty = before.new_empty();
-                            self.handle_first_st(before, empty);
+                            self.handle_first_st(Some(before), None);
                             continue;
                         }
                         onebeforeandbulk::Output::Bulk(item) => {
-                            self.handle_first_st(item.new_empty(), item);
+                            self.handle_first_st(None, Some(item));
                             continue;
                         }
                     },
@@ -414,12 +429,11 @@ impl Stream for MergeRtsChained {
                     Ready(Some(Ok(x))) => match x {
                         onebeforeandbulk::Output::Before(before) => {
                             trace_fetch!("have first from MT");
-                            let empty = before.new_empty();
-                            self.handle_first_mt(before, empty);
+                            self.handle_first_mt(Some(before), None);
                             continue;
                         }
                         onebeforeandbulk::Output::Bulk(item) => {
-                            self.handle_first_mt(item.new_empty(), item);
+                            self.handle_first_mt(None, Some(item));
                             continue;
                         }
                     },
@@ -440,13 +454,12 @@ impl Stream for MergeRtsChained {
                     Ready(Some(Ok(x))) => match x {
                         onebeforeandbulk::Output::Before(before) => {
                             trace_fetch!("have first from LT");
-                            let empty = before.new_empty();
-                            self.handle_first_lt(before, empty);
+                            self.handle_first_lt(Some(before), None);
                             self.handle_all_firsts_done();
                             continue;
                         }
                         onebeforeandbulk::Output::Bulk(item) => {
-                            self.handle_first_lt(item.new_empty(), item);
+                            self.handle_first_lt(None, Some(item));
                             self.handle_all_firsts_done();
                             continue;
                         }
